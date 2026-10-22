@@ -28,6 +28,7 @@ from tooling.acceptance.core.provisioner import (
     EnvironmentProvisioner,
     load_env_file,
     resolve_deployment_environment_path,
+    resolve_reviewed_profile_environment,
 )
 from tooling.acceptance.core.provisioning import (
     ClientRuntime,
@@ -36,16 +37,19 @@ from tooling.acceptance.core.provisioning import (
     ServiceAttestation,
     utc_now,
 )
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.fixtures.chat_native_actors import (
     fixture_password,
     produce_bound_actor_manifest,
 )
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
+from tooling.acceptance.provisioners.station_access_relay_role import (
+    _station_compose_environment_file,
+    _station_runtime_config,
+)
 
 
 GATE_ID = "NCP-G06"
-PROFILE_NAME = "one"
-DEPLOYMENT_ENVIRONMENT = "station-1"
 COMPOSE_RELATIVE_PATH = (
     "tooling/acceptance/runtime/node-connectivity-cluster.compose.yml"
 )
@@ -532,15 +536,24 @@ class NodeConnectivityClusterProvisioner(EnvironmentProvisioner):
                 profile_name=profile_name,
                 slot=slot,
             )
-            if (
-                profile_name != PROFILE_NAME
-                or profile_env.get("PT_STATION_MODE") != "remote"
-                or profile_env.get("PT_STATION_DEPLOY_ENV")
-                != DEPLOYMENT_ENVIRONMENT
-            ):
+            deployment_environment = profile_env.get(
+                "PT_STATION_DEPLOY_ENV", ""
+            ).strip()
+            if profile_env.get("PT_STATION_MODE") != "remote" or not deployment_environment:
                 raise BlockedError(
-                    reason="NCP cluster runtime requires reviewed profile one",
-                    resource="profile:one",
+                    reason="NCP cluster runtime requires a reviewed remote Profile",
+                    resource="profile:remote-station",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="node-connectivity-cluster-provisioner",
+                        recovery_action="Select an assigned reviewed remote Profile before provisioning NCP-G06.",
+                        resource="profile:remote-station",
+                        expected={"mode": "remote", "deploymentPresent": True},
+                        observed={
+                            "profile": profile_name,
+                            "mode": profile_env.get("PT_STATION_MODE"),
+                            "deploymentPresent": bool(deployment_environment),
+                        },
+                    ),
                 )
             if manifest.workspace_digest != "clean":
                 raise BlockedError(
@@ -560,7 +573,7 @@ class NodeConnectivityClusterProvisioner(EnvironmentProvisioner):
                 )
 
             deployment_path = resolve_deployment_environment_path(
-                DEPLOYMENT_ENVIRONMENT
+                deployment_environment
             )
             deployment = load_env_file(deployment_path)
             host = deployment.get("PT_DEPLOY_HOST", "")
@@ -579,9 +592,9 @@ class NodeConnectivityClusterProvisioner(EnvironmentProvisioner):
                 )
             )
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
-            self.acquire_profile_lease(DEPLOYMENT_ENVIRONMENT, owner)
+            self.acquire_profile_lease(deployment_environment, owner)
             self.acquire_remote_git_source_lease(
-                DEPLOYMENT_ENVIRONMENT,
+                deployment_environment,
                 owner,
             )
 
@@ -597,7 +610,54 @@ class NodeConnectivityClusterProvisioner(EnvironmentProvisioner):
                 )
             project = PROJECT_PREFIX + manifest.run_id
             remote_root = f"{home}/{REMOTE_ROOT_PREFIX}{manifest.run_id}"
-            station_env = f"{home}/peers-touch/station.env"
+            station_env = _station_compose_environment_file(
+                _station_runtime_config(
+                    deployment_environment,
+                    station_url=profile_env.get("PT_STATION_URL", ""),
+                    allow_profile_managed=True,
+                ),
+                home,
+            )
+            presence = self._transport.run_argv(
+                ("test", "-r", station_env), timeout=15, check=False,
+            )
+            if presence.returncode != 0:
+                raise BlockedError(
+                    reason=f"NCP Compose environment file is not readable: {station_env}",
+                    resource="ncp-runtime:compose-environment",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner=self.attestation_producer,
+                        recovery_action=f"Prepare the reviewed Compose environment file for {deployment_environment}; then rerun NCP-G06.",
+                        resource="ncp-runtime:compose-environment",
+                        expected={"path": station_env, "readable": True},
+                        observed={"path": station_env, "probeExitCode": presence.returncode},
+                    ),
+                )
+            credential_presence = json.loads(self._run_remote(
+                (
+                    "python3", "-c",
+                    "import json,pathlib,sys\n"
+                    "values={}\n"
+                    "for line in pathlib.Path(sys.argv[1]).read_text().splitlines():\n"
+                    "    key,sep,value=line.partition('=')\n"
+                    "    if sep: values[key.strip()]=bool(value.strip().strip(chr(39)+chr(34)))\n"
+                    "print(json.dumps({key:values.get(key,False) for key in ('PEERS_AUTH_SECRET','PEERS_DB_PASSWORD')}))",
+                    station_env,
+                ),
+                timeout=15,
+            ))
+            if not all(credential_presence.values()):
+                raise BlockedError(
+                    reason=f"NCP Compose credentials are not declared in {station_env}",
+                    resource="ncp-runtime:compose-credentials",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner=self.attestation_producer,
+                        recovery_action=f"Prepare PEERS_AUTH_SECRET and PEERS_DB_PASSWORD in the reviewed {station_env} file, then repeat NCP-G06.",
+                        resource="ncp-runtime:compose-credentials",
+                        expected={"path": station_env, "declaredNonempty": {"PEERS_AUTH_SECRET": True, "PEERS_DB_PASSWORD": True}},
+                        observed={"path": station_env, "declaredNonempty": credential_presence},
+                    ),
+                )
             self._project = project
             self._remote_root = remote_root
             self._postgres_container = f"{project}-postgres-1"
@@ -789,6 +849,8 @@ class NodeConnectivityClusterProvisioner(EnvironmentProvisioner):
                 ],
                 "postgresContainer": self._postgres_container,
                 "postgresVolume": f"{project}_postgres-data",
+                "resolvedProfile": profile_name,
+                "deploymentEnvironment": deployment_environment,
             }
             with tempfile.TemporaryDirectory(
                 prefix="pt-ncp-cluster-fixture-"
@@ -854,6 +916,20 @@ class NodeConnectivityClusterProvisioner(EnvironmentProvisioner):
             )
 
 
+def _manifest_deployment(manifest: Mapping[str, Any]) -> dict[str, str]:
+    binding = manifest.get("profile")
+    profile_name = (
+        str(binding.get("resolvedName") or "")
+        if isinstance(binding, Mapping)
+        else ""
+    )
+    _, profile = resolve_reviewed_profile_environment(profile_name)
+    deployment = profile.get("PT_STATION_DEPLOY_ENV", "").strip()
+    if profile.get("PT_STATION_MODE") != "remote" or not deployment:
+        raise ProvisioningError("cluster manifest Profile has no reviewed remote target")
+    return load_env_file(resolve_deployment_environment_path(deployment))
+
+
 def stop_cluster_node(
     manifest: Mapping[str, Any],
     node: str,
@@ -873,9 +949,7 @@ def stop_cluster_node(
         raise ProvisioningError("cluster node control run identity is invalid")
     project = PROJECT_PREFIX + run_id
     container = f"{project}-{node}-1"
-    deployment = load_env_file(
-        resolve_deployment_environment_path(DEPLOYMENT_ENVIRONMENT)
-    )
+    deployment = _manifest_deployment(manifest)
     transport = SshTransport(
         SshTarget(
             host=deployment.get("PT_DEPLOY_HOST", ""),
@@ -949,9 +1023,7 @@ def cluster_message_readback(
         )
     project = PROJECT_PREFIX + run_id
     postgres_container = f"{project}-postgres-1"
-    deployment = load_env_file(
-        resolve_deployment_environment_path(DEPLOYMENT_ENVIRONMENT)
-    )
+    deployment = _manifest_deployment(manifest)
     transport = SshTransport(
         SshTarget(
             host=deployment.get("PT_DEPLOY_HOST", ""),

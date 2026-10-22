@@ -69,6 +69,27 @@ class ResourceDiagnostic:
             resource_checks=value["resourceChecks"],
         )
 
+    @classmethod
+    def observed(
+        cls,
+        *,
+        owner: str,
+        recovery_action: str,
+        resource: str,
+        expected: Any,
+        observed: Any,
+    ) -> "ResourceDiagnostic":
+        return cls(
+            owner=owner,
+            recovery_action=recovery_action,
+            resource_checks=[{
+                "resource": resource,
+                "expected": expected,
+                "state": "OBSERVED",
+                "observed": observed,
+            }],
+        )
+
     def require_resource(self, resource: str) -> None:
         if resource not in {
             check["resource"] for check in self.to_dict()["resourceChecks"]

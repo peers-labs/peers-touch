@@ -374,3 +374,27 @@ Runner 为准备异常和 deadline 生成本 Gate 的不可变失败 observation
 
 构建复用和诊断通道不修改业务拒绝条件，不证明跨 Gate Runtime 复用、
 共享业务断言或产品证明已完成。
+
+具体资源生产者遵循以下观察边界：
+
+- 凭据只记录解析结果、存在性和安全脱敏条件，不保存值。配置存在不等于
+  外部 Provider 已完成投递或授权。
+- 服务 attestation 保存 live/deployed commit、目标和实际 source 状态；
+  Station 与候选源码不同的恢复动作是部署到已绑定的 reviewed 目标并读回。
+- Mobile preflight 保存 Appium status/version 与实际设备 inventory 数量。
+  inventory 命令未成功时，设备检查为 `NOT_EVALUATED`。Host 的 FCM/APNs
+  配置检查明确属于 prerequisite-configuration，不能代替推送结果。
+- Linux Cell 的 Profile、部署描述符、host 和 ready document 分别有自己的
+  资源观察。未获得 ready document 不足以判断 display 是否可用。
+- retained-current-profile 检查既有 Alice/Bob worktree 和身份存储。新建
+  worktree 或启动新客户端不能证明 retained Engine 的恢复行为。
+- Mobile W5 场景若只分派到声明性拒绝过程，诊断记录缺少可执行 Gate
+  Journey，并将产品依赖状态标为 `NOT_EVALUATED`；常量中的旧拒绝文本
+  不是当前产品缺实现的证据。
+
+NCP 的独立 Compose 集群在 active reviewed remote Profile 上创建。
+远端 env-file 来自该部署的 reviewed Compose 命令，并在创建集群前检查
+文件可读性及所需凭据声明。stop/readback 从原 Runtime Manifest 的
+`profile.resolvedName` 解析目标，不使用后来选择的 active Profile。
+消息发布客户端使用 resolved Profile 和 Station 服务角色，Agent Profile
+约束只适用于 Agent Gates。Profile 选择和源码部署不降低产品断言。

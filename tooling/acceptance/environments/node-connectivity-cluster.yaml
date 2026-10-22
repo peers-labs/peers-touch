@@ -43,7 +43,7 @@
       "id": "ncp-cluster-actors",
       "authorization_required": true,
       "authorization_ref": "env:PT_NCP_CLUSTER_RESET_AUTHORIZED",
-      "target_assertion": "run-scoped isolated Compose project on profile one",
+      "target_assertion": "run-scoped isolated Compose project on the active reviewed remote Profile; controls remain bound to the manifest Profile",
       "initial_assertion": "Alice and Bob are canonical actors in one logical Station"
     }
   ],

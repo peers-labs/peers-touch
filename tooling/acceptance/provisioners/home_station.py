@@ -21,6 +21,7 @@ from tooling.acceptance.core.attestation import (
 )
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.provisioning import (
     ActorIdentity,
     ActorManifest,
@@ -1076,13 +1077,15 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         run_id: str,
         slot: int,
         profile_env: dict[str, str],
+        *,
+        profile_name: str,
     ) -> ClientRuntime:
         client = self._agent_native_client(
             run_id,
             slot,
             profile_env,
             journey="message-publishing",
-            profile=AGENT_V2_PROFILE,
+            profile=profile_name,
             worktree_variable="PT_MESSAGE_PUBLISHING_WORKTREE",
             gateway_port_variable="PT_MESSAGE_PUBLISHING_GATEWAY_PORT",
             renderer_port_variable="PT_MESSAGE_PUBLISHING_RENDERER_PORT",
@@ -1238,6 +1241,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     "in the approved profile"
                 ),
                 resource="credential-ref:profile:CHAT_NATIVE_DEMO_PASSWORD",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="home-station-provisioner",
+                    recovery_action=f"Prepare CHAT_NATIVE_DEMO_PASSWORD for the reviewed {manifest.profile_resolved} Profile; then rerun {AGENT_V2_FOUNDATION_GATE}.",
+                    resource="credential-ref:profile:CHAT_NATIVE_DEMO_PASSWORD",
+                    expected={"present": True},
+                    observed={"profile": manifest.profile_resolved, "present": False},
+                ),
             )
         provider_api_key = profile_env.get("PT_AGENT_PROVIDER_API_KEY", "")
         if provider_api_key:
@@ -1705,6 +1715,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     "in the approved profile"
                 ),
                 resource="credential-ref:profile:CHAT_NATIVE_DEMO_PASSWORD",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="home-station-provisioner",
+                    recovery_action=f"Prepare CHAT_NATIVE_DEMO_PASSWORD for the reviewed {manifest.profile_resolved} Profile; then rerun {gate_id}.",
+                    resource="credential-ref:profile:CHAT_NATIVE_DEMO_PASSWORD",
+                    expected={"present": True},
+                    observed={"profile": manifest.profile_resolved, "present": False},
+                ),
             )
         requires_provider = agent_native_requires_provider(gate_id)
         if requires_provider:
@@ -1804,6 +1821,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 manifest.run_id,
                 manifest.profile_slot,
                 profile_env,
+                profile_name=manifest.profile_resolved,
             )
             if identity_resolution is None:
                 raise RuntimeError(
@@ -1874,11 +1892,25 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     f"profile; active profile is {profile_name}"
                 ),
                 resource=f"profile:required:{required_profile}",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="home-station-provisioner",
+                    recovery_action=f"Select the contract-required reviewed {required_profile} Profile for {gate_id}.",
+                    resource=f"profile:required:{required_profile}",
+                    expected={"profile": required_profile},
+                    observed={"profile": profile_name},
+                ),
             )
         if profile_env.get("PT_STATION_MODE", "local") != "remote":
             raise BlockedError(
                 reason=f"{gate_id} requires a source-attested remote Station",
                 resource="profile:PT_STATION_MODE",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="home-station-provisioner",
+                    recovery_action=f"Select a reviewed remote Station Profile for {gate_id}.",
+                    resource="profile:PT_STATION_MODE",
+                    expected={"mode": "remote"},
+                    observed={"profile": profile_name, "mode": profile_env.get("PT_STATION_MODE", "local")},
+                ),
             )
         if not profile_env.get("PT_STATION_DEPLOY_ENV", "").strip():
             raise BlockedError(
@@ -1886,6 +1918,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     f"{gate_id} requires the remote Station deployment identity"
                 ),
                 resource="profile:PT_STATION_DEPLOY_ENV",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="home-station-provisioner",
+                    recovery_action=f"Prepare the reviewed Station deployment binding for {profile_name}.",
+                    resource="profile:PT_STATION_DEPLOY_ENV",
+                    expected={"present": True},
+                    observed={"profile": profile_name, "present": False},
+                ),
             )
 
     def provision(self, gate_id: str) -> RuntimeManifest:
@@ -1908,7 +1947,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_EVALUATION_GATE,
                     AGENT_V2_EXTERNAL_RUNTIME_GATE,
                 }
-                or gate_id in HOME_SINGLE_NATIVE_GATES
+                or gate_id in AGENT_NATIVE_GATES
             ):
                 self._validate_agent_profile(
                     gate_id,
@@ -1929,6 +1968,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 raise BlockedError(
                     reason="Active profile is missing PT_STATION_URL",
                     resource="profile:PT_STATION_URL",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="home-station-provisioner",
+                        recovery_action=f"Prepare PT_STATION_URL in the reviewed {profile_name} Profile.",
+                        resource="profile:PT_STATION_URL",
+                        expected={"present": True},
+                        observed={"profile": profile_name, "present": bool(station_url)},
+                    ),
                 )
             if gate_id in AGENT_V2_SCENARIO_CONTROL_GATES:
                 self._deploy_agent_v2_scenario_control(
@@ -2007,6 +2053,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                             "approved git-based Station workflow."
                         ),
                         resource=f"station:{station_url}",
+                        diagnostic=ResourceDiagnostic.observed(
+                            owner="home-station-provisioner",
+                            recovery_action=f"Deploy {deployment_environment} through make station for the assigned {profile_name} Profile, then verify health.",
+                            resource=f"station:{station_url}",
+                            expected={"endpoint": health_url or f"{station_url}/api/oauth/providers", "ready": True},
+                            observed={"endpoint": health_url or f"{station_url}/api/oauth/providers", "ready": False},
+                        ),
                     )
 
             attestation = produce_station_attestation(
@@ -2029,6 +2082,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                         f"client source commit {manifest.source_commit}"
                     ),
                     resource="source-identity:commit",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="home-station-provisioner",
+                        recovery_action=f"Deploy checked source {manifest.source_commit} to {deployment_environment} through make station and verify /app-meta/version.",
+                        resource="source-identity:commit",
+                        expected={"commit": manifest.source_commit, "deployment": deployment_environment},
+                        observed={"commit": attestation.live_commit, "stationUrl": station_url},
+                    ),
                 )
             if gate_id in {
                 AGENT_V2_FOUNDATION_GATE,

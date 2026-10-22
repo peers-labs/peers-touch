@@ -98,6 +98,13 @@ def resolve_machine_profile_environment(
         raise BlockedError(
             reason=f"Machine Dev profile binding is unavailable: {error}",
             resource="profile:machine-control-plane",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="machine-profile-binding",
+                recovery_action=f"Restore the Machine Dev executable for {root} and repeat profile resolution.",
+                resource="profile:machine-control-plane",
+                expected={"command": "machine-dev check", "exitCode": 0},
+                observed={"errorType": type(error).__name__},
+            ),
         ) from error
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
@@ -107,6 +114,13 @@ def resolve_machine_profile_environment(
                 f"{detail or 'machine-dev check returned no output'}"
             ),
             resource="profile:machine-control-plane",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="machine-profile-binding",
+                recovery_action=f"Resolve the workspace Profile capability with make profile in {root}, then repeat machine-dev check.",
+                resource="profile:machine-control-plane",
+                expected={"command": "machine-dev check", "exitCode": 0},
+                observed={"exitCode": completed.returncode},
+            ),
         )
     try:
         resolved = json.loads(completed.stdout)
@@ -151,6 +165,13 @@ def resolve_machine_profile_environment(
         raise BlockedError(
             reason="Machine Dev profile binding is not authoritative",
             resource="profile:machine-control-plane",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="machine-profile-binding",
+                recovery_action=f"Reconcile the reviewed Profile binding for {root} through Machine Dev.",
+                resource="profile:machine-control-plane",
+                expected={"authority": "machine-control-plane", "sourceState": "tracked-clean"},
+                observed={"authority": resolved.get("authority"), "sourceState": profile.get("sourceState")},
+            ),
         )
     declared_profile = values.get("PT_DEV_PROFILE", "")
     if require_identity_match and declared_profile != profile_name:
@@ -160,6 +181,13 @@ def resolve_machine_profile_environment(
                 f"but machine binding is {profile_name}"
             ),
             resource=f"profile:identity:{profile_name}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="machine-profile-binding",
+                recovery_action=f"Align the reviewed {profile_name} Profile ID and Machine Dev binding; repeat profile selection.",
+                resource=f"profile:identity:{profile_name}",
+                expected={"profile": profile_name},
+                observed={"profile": declared_profile},
+            ),
         )
     port_fields = {
         "desktopAppGateway": "PT_DESKTOP_APP_GATEWAY_PORT",
@@ -544,6 +572,21 @@ class EnvironmentProvisioner(ABC):
                         f"{credential.source_ref}: {error}"
                     ),
                     resource=f"credential-ref:{credential.source_ref}",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner=f"environment-provisioner:{self.environment_id}",
+                        recovery_action=f"Prepare the required credential at {credential.source_ref} through its owner, then repeat provisioning.",
+                        resource=f"credential-ref:{credential.source_ref}",
+                        expected={"resolved": True},
+                        observed={
+                            "resolved": False,
+                            "resolverErrorType": type(error).__name__,
+                            "environmentVariablePresent": (
+                                bool(os.environ.get(credential.source_ref[4:], ""))
+                                if credential.source_ref.startswith("env:")
+                                else None
+                            ),
+                        },
+                    ),
                 ) from error
             if len(value) < 4:
                 raise BlockedError(
@@ -553,6 +596,13 @@ class EnvironmentProvisioner(ABC):
                         "evidence redaction"
                     ),
                     resource=f"credential-ref:{credential.source_ref}",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner=f"environment-provisioner:{self.environment_id}",
+                        recovery_action=f"Prepare a credential that satisfies the safe-redaction contract at {credential.source_ref}.",
+                        resource=f"credential-ref:{credential.source_ref}",
+                        expected={"present": True, "safeRedactionLength": True},
+                        observed={"present": bool(value), "safeRedactionLength": False},
+                    ),
                 )
             refs.append(credential.source_ref)
             values[credential.id] = value

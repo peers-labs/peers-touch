@@ -14,6 +14,8 @@ from tooling.acceptance.core.errors import BlockedError, EphemeralCapabilityBloc
 from tooling.acceptance.core.gate import AcceptanceGate
 from tooling.acceptance.core.launch_context import _blocked_error_from_response, _blocked_response
 from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
+from tooling.acceptance.core.provisioner import EnvironmentProvisioner
+from tooling.acceptance.core.provisioning import CredentialRef, EnvironmentContract
 
 
 def script_module(name: str):
@@ -41,6 +43,44 @@ def diagnostic() -> ResourceDiagnostic:
 
 
 class ResourceDiagnosticTests(unittest.TestCase):
+    def test_actual_credential_probe_survives_durable_result_and_reporter(self) -> None:
+        class CredentialProbe(EnvironmentProvisioner):
+            environment_id = "credential-probe"
+
+            def provision(self, gate_id):
+                raise NotImplementedError
+
+        variable = "PT_DIAGNOSTIC_TEST_CREDENTIAL"
+        owner = CredentialProbe(EnvironmentContract(
+            id="credential-probe",
+            credentials=(CredentialRef(id="required", source_ref=f"env:{variable}"),),
+        ))
+        with patch.dict("os.environ", {variable: ""}):
+            with self.assertRaises(BlockedError) as caught:
+                owner.prepare_credentials()
+        error = caught.exception
+        check = error.diagnostic.to_dict()["resourceChecks"][0]
+        self.assertFalse(check["observed"]["environmentVariablePresent"])
+        runner = script_module("acceptance-run")
+        reporter = script_module("acceptance-report")
+        source = {"commit": "credential-probe", "workspaceDigest": "clean"}
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=REPO_ROOT)
+            with store.begin_run("credential-probe", source=source) as run:
+                result = runner.runtime_cell_failure_result(
+                    gate_id="credential-probe", command="credential-probe",
+                    environment="credential-probe", tier="local-evidence",
+                    runtime_cell="credential-probe", error=error, duration_seconds=0,
+                )
+                result = runner.record_failure_observation(result, run)
+                result = runner.enrich_result_with_run_artifacts(result, run)
+                run.finalize(result=result)
+                delivered = {**result, "runManifest": run.manifest_ref.to_dict()}
+            self.assertEqual(
+                reporter.result_diagnostic(delivered, source, store)["missingFields"],
+                [],
+            )
+
     def test_checks_are_copied_validated_and_cover_the_blocked_resource(self) -> None:
         original = diagnostic().to_dict()
         copied = ResourceDiagnostic.from_dict(original)

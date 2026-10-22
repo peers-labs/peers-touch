@@ -65,6 +65,7 @@ from tooling.acceptance.core.provisioning import (
     utc_now,
 )
 from tooling.acceptance.core.redaction import redact_value
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.reset_authority import (
     require_station_reset_authority,
 )
@@ -522,6 +523,13 @@ class SubprocessExecutor:
                     f"{command[0]}: {type(error).__name__}"
                 ),
                 resource=f"mobile-runtime:command:{command[0]}",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="mobile-native-command-owner",
+                    recovery_action=f"Restore or repair the bounded {command[0]} tool operation and repeat Mobile native preflight.",
+                    resource=f"mobile-runtime:command:{command[0]}",
+                    expected={"completed": True, "timeoutSeconds": timeout},
+                    observed={"errorType": type(error).__name__, "executablePath": shutil.which(command[0])},
+                ),
             ) from error
         return CommandResult(
             returncode=completed.returncode,
@@ -2360,6 +2368,13 @@ def _required_env_ref(reference: str, resource: str) -> tuple[str, str]:
         raise BlockedError(
             reason=f"Mobile native preflight requires {variable}",
             resource=f"{resource}:{variable}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="mobile-native-preflight",
+                recovery_action=f"Prepare {variable} through the reviewed Mobile runtime Profile, then repeat preflight.",
+                resource=f"{resource}:{variable}",
+                expected={"present": True},
+                observed={"reference": reference, "present": False},
+            ),
         )
     return variable, value
 
@@ -3357,6 +3372,13 @@ def _appium_server_version(server_url: str, status_path: str) -> str:
                     f"HTTP {error.code}"
                 ),
                 resource="mobile-runtime:appium-server",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="mobile-native-preflight",
+                    recovery_action=f"Restore the reviewed Appium server at {status_url} with version {EXPECTED_APPIUM_VERSION}; repeat preflight.",
+                    resource="mobile-runtime:appium-server",
+                    expected={"endpoint": status_url, "response": "version-status"},
+                    observed={"httpStatus": error.code},
+                ),
             ) from error
         finally:
             error.close()
@@ -3372,6 +3394,13 @@ def _appium_server_version(server_url: str, status_path: str) -> str:
         raise BlockedError(
             reason=f"Appium server is unavailable at {status_url}: {error}",
             resource="mobile-runtime:appium-server",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="mobile-native-preflight",
+                recovery_action=f"Restore the reviewed Appium status endpoint at {status_url} with version {EXPECTED_APPIUM_VERSION}; repeat preflight.",
+                resource="mobile-runtime:appium-server",
+                expected={"endpoint": status_url, "response": "version-status"},
+                observed={"errorType": type(error).__name__},
+            ),
         ) from error
     value = payload.get("value") if isinstance(payload, dict) else None
     build = value.get("build") if isinstance(value, dict) else None
@@ -3380,6 +3409,13 @@ def _appium_server_version(server_url: str, status_path: str) -> str:
         raise BlockedError(
             reason="Appium status does not expose server build version",
             resource="mobile-runtime:appium-server-identity",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="mobile-native-preflight",
+                recovery_action=f"Repair the Appium build.version response at {status_url} before preflight.",
+                resource="mobile-runtime:appium-server-identity",
+                expected={"versionPresent": True},
+                observed={"versionPresent": False},
+            ),
         )
     return version
 
@@ -3733,6 +3769,13 @@ def preflight_mobile_native_inputs(
                 f"match required version {spec.appium_expected_version!r}"
             ),
             resource="mobile-runtime:appium-server-version",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="mobile-native-preflight",
+                recovery_action=f"Prepare Appium {spec.appium_expected_version} at {appium_url}; repeat preflight.",
+                resource="mobile-runtime:appium-server-version",
+                expected={"version": spec.appium_expected_version, "endpoint": appium_url},
+                observed={"version": actual_appium_version},
+            ),
         )
 
     driver_versions = _discover_appium_drivers(
@@ -3781,6 +3824,13 @@ def preflight_mobile_native_inputs(
             raise BlockedError(
                 reason=reason,
                 resource="mobile-runtime:ios-device-isolation",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="mobile-native-device-owner",
+                    recovery_action=f"Connect and assign {len(ios_clients)} physical iOS devices for scenario {spec.scenario.id}; repeat its inventory preflight.",
+                    resource="mobile-runtime:ios-device-isolation",
+                    expected={"platform": "ios", "count": len(ios_clients), "exactCount": spec.scenario.require_exact_device_count},
+                    observed={"connectedPhysicalCount": len(connected_ios), "clientRoles": [client.id for client in ios_clients]},
+                ),
             )
 
     ios_wda_bundle_id = ""
@@ -3831,6 +3881,13 @@ def preflight_mobile_native_inputs(
         raise BlockedError(
             reason=reason,
             resource="mobile-runtime:android-device-isolation",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="mobile-native-device-owner",
+                recovery_action=f"Connect and assign {len(android_clients)} physical Android devices for scenario {spec.scenario.id}; repeat its inventory preflight.",
+                resource="mobile-runtime:android-device-isolation",
+                expected={"platform": "android", "count": len(android_clients), "exactCount": spec.scenario.require_exact_device_count},
+                observed={"connectedPhysicalCount": len(connected_android), "clientRoles": [client.id for client in android_clients]},
+            ),
         )
     device_identifiers = {
         **dict(

@@ -28,6 +28,7 @@ from tooling.acceptance.core.attestation import (
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.evidence_store import (
     current_artifact_ref,
     workspace_id,
@@ -95,6 +96,13 @@ def _required(values: Mapping[str, str], key: str) -> str:
         raise BlockedError(
             reason=f"Active profile is missing {key}",
             resource=f"profile:{key}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="station-access-relay-role-provisioner",
+                recovery_action=f"Prepare {key} in the reviewed active Profile; Station and Relay endpoints must retain their own service roles.",
+                resource=f"profile:{key}",
+                expected={"present": True},
+                observed={"present": False},
+            ),
         )
     return value
 
@@ -304,6 +312,13 @@ def _validate_runtime_status(
                 f"Attached {config.role} runtime status is incomplete or unhealthy"
             ),
             resource=f"runtime-status:{config.environment_name}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="station-access-relay-role-provisioner",
+                recovery_action=f"Prepare the reviewed {config.role} runtime {config.environment_name} through its canonical runtime owner, then repeat health/source readback.",
+                resource=f"runtime-status:{config.environment_name}",
+                expected={"role": config.role, "healthy": True, "sourceClean": True, "processPresent": True},
+                observed={"role": status.get("role"), "healthy": status.get("healthy"), "sourceClean": status.get("sourceClean"), "processCount": len(process_ids) if isinstance(process_ids, list) else None},
+            ),
         )
 
     status_commit = str(status.get("sourceCommit") or "")
@@ -333,6 +348,13 @@ def _validate_runtime_status(
                 f"source {source_commit}"
             ),
             resource=f"source-identity:{config.environment_name}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="station-access-relay-role-provisioner",
+                recovery_action=f"Prepare source {source_commit} and the reviewed ports for {config.role} runtime {config.environment_name}; repeat runtime attestation.",
+                resource=f"source-identity:{config.environment_name}",
+                expected={"commit": source_commit, "httpPort": config.http_port, "publicPort": config.public_port, "libp2pPort": config.libp2p_port},
+                observed={"sourceCommit": status_commit, "buildCommit": build_commit, "httpPort": http_port, "publicPort": public_port, "libp2pPort": libp2p_port, "ownerPresent": bool(status.get("runtimeOwner")), "containerPresent": bool(status.get("containerId"))},
+            ),
         )
     return {
         "environmentName": config.environment_name,

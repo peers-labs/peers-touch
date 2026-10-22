@@ -39,6 +39,7 @@ from tooling.acceptance.provisioners import (
     get_provisioner,
 )
 from tooling.acceptance.provisioners.home_station import (
+    AGENT_NATIVE_GATES,
     GATE_ROLES,
     HOME_SINGLE_NATIVE_GATES,
     MESSAGE_PUBLISHING_GATE,
@@ -1049,7 +1050,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(client.webdriver_port, 14449)
         self.assertIn("pt-agent-stream-run-stream-resilience", client.storage_root)
 
-    def test_message_publishing_uses_one_alice_profile_without_reset(self):
+    def test_message_publishing_uses_resolved_alice_profile_without_reset(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
         )
@@ -1066,18 +1067,19 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "run-message-publishing",
                 1,
                 profile_env,
+                profile_name="assigned-chat-profile",
             )
 
         self.assertEqual(GATE_ROLES[MESSAGE_PUBLISHING_GATE], ("alice",))
         self.assertIn(MESSAGE_PUBLISHING_GATE, HOME_SINGLE_NATIVE_GATES)
+        self.assertNotIn(MESSAGE_PUBLISHING_GATE, AGENT_NATIVE_GATES)
         self.assertFalse(
             agent_native_requires_disposable_fixture(MESSAGE_PUBLISHING_GATE)
         )
         self.assertFalse(agent_native_requires_provider(MESSAGE_PUBLISHING_GATE))
-        self.assertEqual(agent_profile_for_gate(MESSAGE_PUBLISHING_GATE), "one")
         self.assertEqual(client.actor, "alice")
         self.assertEqual(client.id, "alice")
-        self.assertEqual(client.profile, "one")
+        self.assertEqual(client.profile, "assigned-chat-profile")
         self.assertEqual(client.required_service_roles, ("station",))
         self.assertEqual(
             client.service_bindings["station"],

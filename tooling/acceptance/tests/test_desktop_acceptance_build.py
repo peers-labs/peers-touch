@@ -186,6 +186,22 @@ time.sleep(30)
             "FAILED",
         )
 
+    def test_relative_protoc_include_uses_cargo_build_directory(self) -> None:
+        includes = self.root / ".local/proto-include"
+        includes.mkdir(parents=True)
+        definition = includes / "included.proto"
+        definition.write_text("first include")
+        with patch.dict(os.environ, {"PROTOC_INCLUDE": "../../../.local/proto-include"}):
+            DesktopAcceptanceBuild(self.root).ensure()
+            warm = DesktopAcceptanceBuild(self.root)
+            warm.ensure()
+            self.assertEqual(warm.observation["reuse"], "VERIFIED_BUILD")
+            definition.write_text("changed include")
+            invalidated = DesktopAcceptanceBuild(self.root)
+            invalidated.ensure()
+            self.assertEqual(invalidated.observation["reuse"], "COLD_BUILD")
+            self.assertEqual(self.count(), 2)
+
     def test_outer_gate_cancellation_preserves_typed_deadline_and_owner_diagnostic(self) -> None:
         self.tool("pnpm", "import time\ntime.sleep(30)\n")
         build = DesktopAcceptanceBuild(self.root)

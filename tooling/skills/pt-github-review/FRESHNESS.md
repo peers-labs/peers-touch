@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 0cf84e6916b6e5d2421e40c983ccf30ac1b9537fb11c4be30d518ab0f76b7d11
+covered_docs_hash: 8adcb8bd79e46eedba9fbc9bd3ae92bf763a0423c777cba23cd0a0f109075cc7
 
 covered_docs:
   - AGENTS.md
@@ -41,6 +41,17 @@ function. Source and configuration changes invalidate binary reuse, while
 generated output changes do not. Receipts remain build caches and confer no
 Gate proof. Existing exact-source and single-owner review rules cover this
 change; no review policy or knowledge amendment is required.
+
+## Resource Producer Review
+
+Resource diagnostics preserve only owner observations and explicit unevaluated
+scope. Credential values and device identifiers are excluded. Configuration
+presence, inventory counts, source identity and declared missing Gate procedures
+remain distinct from product proof. A failed inventory command does not prove
+device absence, and a missing Linux readiness document does not prove display
+absence. NCP controls resolve the original manifest Profile; publishing clients
+use their resolved Station Profile. Existing evidence, source and role-boundary
+review rules cover these changes without a new review policy.
 
 ## Frozen Source Dispatch Review
 

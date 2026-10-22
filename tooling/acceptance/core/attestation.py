@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, Tuple
 
 from ._paths import REPO_ROOT
 from .errors import BlockedError, ProvisioningError
+from .resource_diagnostic import ResourceDiagnostic
 from .evidence_store import (
     current_artifact_ref,
     write_current_artifact,
@@ -126,6 +127,13 @@ def read_service_version(service_url: str) -> dict[str, Any]:
         raise BlockedError(
             reason=f"Station runtime identity is unavailable at {url}: {error}",
             resource=f"station-identity:{url}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="service-attestation",
+                recovery_action=f"Restore the service version endpoint {url} and repeat source attestation.",
+                resource=f"station-identity:{url}",
+                expected={"endpoint": url, "response": "version-object"},
+                observed={"errorType": type(error).__name__, "httpStatus": getattr(error, "code", None)},
+            ),
         ) from error
     data = payload.get("data") if isinstance(payload, dict) else None
     version = data if isinstance(data, dict) else payload
@@ -133,6 +141,13 @@ def read_service_version(service_url: str) -> dict[str, Any]:
         raise BlockedError(
             reason=f"Station runtime identity at {url} is not a JSON object",
             resource=f"station-identity:{url}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="service-attestation",
+                recovery_action=f"Repair the version response at {url} before repeating source attestation.",
+                resource=f"station-identity:{url}",
+                expected={"responseType": "dict"},
+                observed={"responseType": type(version).__name__},
+            ),
         )
     return version
 
@@ -263,6 +278,13 @@ def produce_service_attestation(
                 "a stable build_commit"
             ),
             resource=f"service-identity:{service_id}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner=producer,
+                recovery_action=f"Deploy a source-identified {service_kind} build to {deployment_environment or 'local'} and verify its build_commit at {endpoint}.",
+                resource=f"service-identity:{service_id}",
+                expected={"buildCommit": "known-commit", "endpoint": endpoint},
+                observed={"buildCommit": live_commit, "deployment": deployment_environment},
+            ),
         )
 
     if mode == "remote":
@@ -295,11 +317,25 @@ def produce_service_attestation(
                 f"commit {deployed_commit}"
             ),
             resource=f"service-attestation:{service_id}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner=producer,
+                recovery_action=f"Deploy the checked {service_kind} source for {deployment_environment or 'local'} and repeat live/deployed commit readback at {endpoint}.",
+                resource=f"service-attestation:{service_id}",
+                expected={"commit": deployed_commit, "deployment": deployment_environment},
+                observed={"commit": live_commit, "endpoint": endpoint},
+            ),
         )
     if workspace_digest != "clean":
         raise BlockedError(
             reason=f"Service {service_id!r} deployment workspace is dirty",
             resource=f"service-attestation:{service_id}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner=producer,
+                recovery_action=f"Reconcile owned source changes in {deployment_environment or 'local'} without discarding unrelated work; redeploy and repeat attestation.",
+                resource=f"service-attestation:{service_id}",
+                expected={"workspaceDigest": "clean", "deployment": deployment_environment},
+                observed={"workspaceDigest": workspace_digest, "commit": deployed_commit},
+            ),
         )
 
     produced_at = utc_now()

@@ -225,7 +225,10 @@ class DesktopAcceptanceBuild:
             paths.update((directory / ".cargo").glob("config*"))
         include_root = self.environment.get("PROTOC_INCLUDE")
         if include_root:
-            paths.update(Path(include_root).rglob("*"))
+            include_path = Path(include_root)
+            if not include_path.is_absolute():
+                include_path = self.root / "apps/desktop/src-tauri" / include_path
+            paths.update(include_path.resolve().rglob("*"))
         local_inputs = {
             str(path): file_digest(path) for path in sorted(paths)
             if path.is_file()

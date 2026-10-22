@@ -57,6 +57,22 @@ def evidence(platform: str) -> dict:
 
 
 class UnifiedHostSuiteTest(unittest.TestCase):
+    def test_unavailable_inventory_does_not_claim_device_absence(self) -> None:
+        for platform, variable in (
+            ("android", "PT_ANDROID_FCM_PROVIDER_CONFIG"),
+            ("ios", "PT_IOS_APNS_PROVIDER_CONFIG"),
+        ):
+            with self.subTest(platform=platform):
+                diagnostic = unified_host_suite.host_prerequisite_diagnostic(
+                    platform=platform, tool_path=None, physical_device_count=0,
+                    inventory_evaluated=False, environment={variable: "private-provider-config"},
+                ).to_dict()
+                checks = diagnostic["resourceChecks"]
+                self.assertTrue(checks[0]["observed"]["providerConfigurationPresent"])
+                self.assertEqual(checks[0]["observed"]["stage"], "prerequisite-configuration")
+                self.assertEqual(checks[1]["state"], "NOT_EVALUATED")
+                self.assertNotIn("private-provider-config", json.dumps(diagnostic))
+
     def validate(self, value: dict, platform: str) -> dict:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

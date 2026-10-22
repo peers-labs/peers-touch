@@ -17,6 +17,7 @@ from tooling.acceptance.core.attestation import (
 )
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.provisioning import (
     ActorIdentity,
     ActorManifest,
@@ -136,6 +137,13 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                         f"Desktop identity store at {seed}"
                     ),
                     resource="fixture:desktop-identity-storage",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-tauri-current-profile-provisioner",
+                        recovery_action=f"Supply the existing retained Desktop identity seed at {seed}; a fresh client cannot prove retained Engine recovery.",
+                        resource="fixture:desktop-identity-storage",
+                        expected={"path": str(seed / "peers-touch"), "directoryPresent": True},
+                        observed={"path": str(seed / "peers-touch"), "directoryPresent": False},
+                    ),
                 )
         return seeds
 
@@ -421,6 +429,13 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
             raise BlockedError(
                 reason=f"Native client worktree has no Makefile: {root}",
                 resource="client-isolation:worktrees",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="native-tauri-current-profile-provisioner",
+                    recovery_action="Resolve the existing retained client worktree roots through PT_CHAT_NATIVE_CLIENT_WORKTREES; do not create fresh clients as retained proof.",
+                    resource="client-isolation:worktrees",
+                    expected={"path": str(root / "Makefile"), "filePresent": True},
+                    observed={"path": str(root / "Makefile"), "filePresent": False},
+                ),
             )
         canonical_root = Path(
             cls._git_value(root, "rev-parse", "--show-toplevel")
@@ -432,6 +447,13 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                     f"{root}"
                 ),
                 resource="client-isolation:worktrees",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="native-tauri-current-profile-provisioner",
+                    recovery_action="Bind the retained client to its canonical Git root through PT_CHAT_NATIVE_CLIENT_WORKTREES.",
+                    resource="client-isolation:worktrees",
+                    expected={"path": str(canonical_root)},
+                    observed={"path": str(root)},
+                ),
             )
         common_dir = Path(
             cls._git_value(
@@ -479,6 +501,13 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                     "for Alice and one for Bob"
                 ),
                 resource="client-isolation:worktrees",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="native-tauri-current-profile-provisioner",
+                    recovery_action="The retained-client Gate owner must supply the existing Alice/Bob worktrees and retained Engine state through PT_CHAT_NATIVE_CLIENT_WORKTREES; fresh clients do not satisfy this contract.",
+                    resource="client-isolation:worktrees",
+                    expected={"roles": list(CLIENT_ROLES), "logicalWorktrees": CLIENT_WORKTREE_NAMES},
+                    observed={"roles": sorted(identities), "worktrees": {role: str(identity.root) for role, identity in identities.items()}},
+                ),
             )
         for role, expected_name in CLIENT_WORKTREE_NAMES.items():
             identity = identities[role]
@@ -489,6 +518,13 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                         f"{expected_name}, got {identity.logical_name}"
                     ),
                     resource=f"client-worktree:{role}",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-tauri-current-profile-provisioner",
+                        recovery_action=f"Bind retained {role} state to the existing {expected_name} worktree; do not rename or create a fresh worktree to simulate the history.",
+                        resource=f"client-worktree:{role}",
+                        expected={"logicalWorktree": expected_name},
+                        observed={"logicalWorktree": identity.logical_name, "path": str(identity.root)},
+                    ),
                 )
         roots = {identity.root for identity in identities.values()}
         if len(roots) != len(CLIENT_ROLES):
@@ -506,6 +542,13 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                     "so its existing Bob client initiates the journey"
                 ),
                 resource="client-worktree:initiator",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="native-tauri-current-profile-provisioner",
+                    recovery_action="Run the retained recovery journey from its existing Bob peers-group-chat worktree under the owning task; keep this training worktree unchanged.",
+                    resource="client-worktree:initiator",
+                    expected={"path": str(identities["bob"].root), "logicalWorktree": "peers-group-chat"},
+                    observed={"path": str(REPO_ROOT.resolve())},
+                ),
             )
         if len(
             {identity.common_dir for identity in identities.values()}
@@ -811,6 +854,13 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                         f"match client source {manifest.source_commit}"
                     ),
                     resource="source-identity:commit",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-tauri-current-profile-provisioner",
+                        recovery_action=f"Deploy checked source {manifest.source_commit} to reviewed Station {deployment_environment}; repeat source readback before retained recovery.",
+                        resource="source-identity:commit",
+                        expected={"commit": manifest.source_commit, "deployment": deployment_environment},
+                        observed={"commit": attestation.live_commit, "stationUrl": station_url},
+                    ),
                 )
             if attestation.protocol_digest != source_proto_digest(REPO_ROOT):
                 raise BlockedError(

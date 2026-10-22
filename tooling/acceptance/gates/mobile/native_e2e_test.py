@@ -150,8 +150,13 @@ class ScenarioContractMatrixTests(unittest.TestCase):
             if gate_id in SCENARIO_GATES.values()
         }
 
-        self.assertEqual(environment_matrix, SCENARIO_GATES)
-        self.assertEqual(MOBILE_NATIVE_SCENARIO_GATES, SCENARIO_GATES)
+        complete_matrix = {
+            **SCENARIO_GATES,
+            "uca-android-host": "unified-client-android-host-e2e",
+            "uca-ios-host": "unified-client-ios-host-e2e",
+        }
+        self.assertEqual(environment_matrix, complete_matrix)
+        self.assertEqual(MOBILE_NATIVE_SCENARIO_GATES, complete_matrix)
         self.assertEqual(catalog_matrix, SCENARIO_GATES)
         self.assertEqual(set(SCENARIO_METADATA), set(SCENARIO_GATES))
 
@@ -269,10 +274,14 @@ class ScenarioContractMatrixTests(unittest.TestCase):
                             "dependency": blocker["workstream"],
                             "status": "BLOCKED",
                             "proofStatus": "UNPROVEN",
-                            "reason": blocker["reason"],
+                            "reason": report["blockedReason"],
                         }
                     ],
                 )
+                checks = report["diagnostic"]["resourceChecks"]
+                self.assertFalse(checks[0]["observed"]["executableJourney"])
+                self.assertEqual(checks[1]["state"], "NOT_EVALUATED")
+                self.assertIn("not been evaluated", report["blockedReason"])
 
 
 class AccessVariantLedgerTests(unittest.TestCase):

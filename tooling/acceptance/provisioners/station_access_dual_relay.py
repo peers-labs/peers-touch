@@ -31,6 +31,7 @@ from tooling.acceptance.core.attestation import (
 )
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.provisioning import (
     ProvisioningState,
     RuntimeManifest,
@@ -962,6 +963,13 @@ class StationAccessDualRelayProvisioner(EnvironmentProvisioner):
                 raise BlockedError(
                     reason="dual-Relay proof requires a reviewed remote Relay host",
                     resource=f"profile:{profile_name}",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="station-access-dual-relay-provisioner",
+                        recovery_action=f"Bind a reviewed Relay deployment to {profile_name} using PT_RELAY_MODE=remote and PT_RELAY_DEPLOY_ENV; a Station deployment cannot substitute for this role.",
+                        resource=f"profile:{profile_name}",
+                        expected={"relayMode": "remote", "relayDeploymentPresent": True},
+                        observed={"profile": profile_name, "relayMode": profile_env.get("PT_RELAY_MODE"), "relayDeploymentPresent": bool(relay_deployment)},
+                    ),
                 )
             base_config = PosixServiceRuntimeConfig.load(
                 relay_deployment,
