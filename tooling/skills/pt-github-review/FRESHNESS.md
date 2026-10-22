@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 6a03581431ada9224b7b0449c2c682ec5f89cf7bdcbb640968e1fa19828ab56f
+covered_docs_hash: 21dee6352fe043dba6a8ba8331b2f5b6be5bbaaba572f61db8a44416ca5c1562
 
 covered_docs:
   - AGENTS.md
@@ -62,6 +62,8 @@ The parent environment now projects and restores all eight canonical lease
 fields during credentials, provisioning and cleanup. A real OS-held lease
 probe verifies the parent path rather than only child descriptor inheritance.
 Native macOS input admission precedes source builds and PREPARING state.
+Its default delegates to the Native Input contract's semantic-nonintrusive
+mode; no local exclusive session is inferred from an unset variable.
 The tray provisioner admits its required exclusive input before packaging;
 the selected Runtime Cell owns the Acceptance driver build and smoke probe.
 These changes preserve physical assertions and isolation requirements.

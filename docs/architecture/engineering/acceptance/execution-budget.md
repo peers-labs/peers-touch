@@ -150,7 +150,8 @@ workspace、branch、head 八个字段，并在退出时恢复原值。取得租
 credentials、provision 与 cleanup 均重新进入这一上下文；只更新子进程
 环境字典不能证明父 Provisioner 持有可验证权限。
 
-macOS Runtime Cell 在构建和写入 PREPARING 状态之前检查输入隔离。
+macOS Runtime Cell 采用 Native Input 合同的 semantic-nonintrusive 默认值，
+在构建和写入 PREPARING 状态之前检查输入隔离。
 托盘 Gate 必须先通过 exclusive-native-input 的隔离检查，再构建真实
 app bundle；其 Acceptance driver 由 Runtime Cell 唯一构建。共享用户
 会话不能冒充 isolated-gui-session，拒绝输入资源不允许先花构建预算。

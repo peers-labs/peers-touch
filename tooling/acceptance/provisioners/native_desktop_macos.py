@@ -206,8 +206,7 @@ class NativeDesktopMacOSProvisioner:
             )
 
         admit_local_native_input_mode(
-            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
-            or NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value,
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE"),
             os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"),
         )
         run_id = (
@@ -424,8 +423,7 @@ class NativeDesktopMacOSProvisioner:
         self,
     ) -> tuple[CellAdapterIdentity, int]:
         input_mode = admit_local_native_input_mode(
-            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
-            or NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value,
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE"),
             os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"),
         )
         webdriver_port = resolve_smoke_port(0)
