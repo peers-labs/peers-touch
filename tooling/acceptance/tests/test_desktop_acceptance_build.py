@@ -58,7 +58,7 @@ print(json.dumps({
     'executable': ROOT + '/.local/compiler-binary',
 }))
 """)
-        self.tool("node", "")
+        self.tool("node", "print('{\"inputs\": {}, \"externalSources\": []}')\n")
         self.tool("rustc", "")
         self.environment = patch.dict(os.environ, {
             "PATH": f"{self.tools}:{os.environ['PATH']}",
@@ -133,12 +133,36 @@ print(json.dumps({
             self.assertEqual(self.count(), 4)
             DesktopAcceptanceBuild(self.root).ensure()
             self.assertEqual(self.count(), 4)
-            self.tool("node", "", version="2.0")
+            self.tool("node", "print('{\"inputs\": {}, \"externalSources\": []}')\n", version="2.0")
             DesktopAcceptanceBuild(self.root).ensure()
             self.assertEqual(self.count(), 5)
         receipt = json.loads((cold.state / "receipt.json").read_text())
         self.assertEqual(receipt["identity"]["workspaceDigest"], "clean")
         self.assertNotIn("RUSTFLAGS", json.dumps(receipt))
+
+    def test_source_projection_conflict_is_rejected_before_frontend(self) -> None:
+        with patch.dict(os.environ, {"PT_BUILD_SOURCE_COMMIT": "f" * 40}):
+            with self.assertRaisesRegex(BlockedError, "projection conflicts"):
+                DesktopAcceptanceBuild(self.root).ensure()
+        self.assertFalse((self.root / ".local/count").exists())
+
+    def test_external_sources_and_desktop_environment_invalidate_reuse(self) -> None:
+        DesktopAcceptanceBuild(self.root).ensure()
+        for index, name in enumerate((
+            "PT_DESKTOP_E2E", "PEERS_STATION_URL", "PEERS_TOUCH_EXTERNAL_LYNX_APPLETS",
+        ), 2):
+            with patch.dict(os.environ, {name: "synthetic-build-input"}):
+                build = DesktopAcceptanceBuild(self.root)
+                build.ensure()
+                self.assertEqual(build.observation["reuse"], "COLD_BUILD")
+                self.assertEqual(self.count(), index)
+                DesktopAcceptanceBuild(self.root).ensure()
+                self.assertEqual(self.count(), index)
+        self.tool("node", "print('{\"inputs\": {}, \"externalSources\": [{\"sha256\": \"changed\"}]}')\n")
+        build = DesktopAcceptanceBuild(self.root)
+        build.ensure()
+        self.assertEqual(build.observation["reuse"], "COLD_BUILD")
+        self.assertEqual(self.count(), 5)
 
     def test_build_timeout_retains_output_and_does_not_publish_a_receipt(self) -> None:
         self.tool("pnpm", """

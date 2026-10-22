@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: fce404bb0e242bddf8ce20a897f3601a4bd921652e4ef67da979f13e2b289e51
+covered_docs_hash: 0cf84e6916b6e5d2421e40c983ccf30ac1b9537fb11c4be30d518ab0f76b7d11
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,17 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Desktop Build Input Review
+
+The canonical build owner rejects conflicting source projections and binds
+Desktop build environment, configured tool bytes and protoc includes.
+Applet discovery and external source hashing remain in the existing applet
+build owner; read-only inventory and real builds use the same discovery
+function. Source and configuration changes invalidate binary reuse, while
+generated output changes do not. Receipts remain build caches and confer no
+Gate proof. Existing exact-source and single-owner review rules cover this
+change; no review policy or knowledge amendment is required.
 
 ## Frozen Source Dispatch Review
 

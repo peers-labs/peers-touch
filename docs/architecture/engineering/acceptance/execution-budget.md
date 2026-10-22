@@ -57,6 +57,16 @@ Owner 先获取 worktree-local OS 文件锁，再核对干净 HEAD/tree、
 被重新标为当前 commit。依赖安装由原有包管理器管理，receipt 不替代
 依赖完整性审计。
 
+`PT_BUILD_SOURCE_COMMIT` 必须等于已核对的 HEAD；冲突在构建前拒绝，
+Owner 将同一 commit 注入 frontend 与 Rust。配置摘要包含 Desktop E2E、
+Station URL、外部 Lynx applet 根、protoc 与 sccache 输入，显式工具包装器
+的文件内容也参与身份核对。`PROTOC_INCLUDE` 的文件内容参与本地输入摘要。
+Applet 发现规则由 `packages/applets/build.js` 唯一拥有；只读
+`--build-inputs` 与真实构建消费同一发现函数，输出外部 applet 的实际
+源码内容摘要及上级 workspace/安装锁配置摘要。排除 dist、target、
+node_modules、Git 元数据和临时构建目录，保留源码、manifest、配置和
+源码链接；外部源码修改或 applet 增删必须使旧 binary 失效。
+
 冷构建仍执行完整 applets/Desktop frontend 与 `acceptance-webdriver`
 Cargo 构建，完成后重查源码和输入，再原子发布 binary 与 receipt。
 锁等待、身份探测和两段构建共享有限总时长；沿用

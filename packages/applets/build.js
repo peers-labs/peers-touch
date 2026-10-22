@@ -340,6 +340,69 @@ async function getOfficialAppletDirs() {
   return dirs
 }
 
+async function discoverAppletInputs() {
+  const inputs = {
+    appletDirs: await getAppletDirs(),
+    officialAppletDirs: await getOfficialAppletDirs(),
+    canonicalLynxAppletDirs: config.canonicalLynxAppletDirs,
+    externalLynxAppletDirs: await getExternalLynxAppletDirs(),
+  }
+  return Object.fromEntries(Object.entries(inputs).map(([kind, directories]) => [
+    kind, [...directories].sort(),
+  ]))
+}
+
+const generatedInputDirectories = new Set([
+  '.git', '.peers-touch-build', 'node_modules', 'dist', 'target',
+])
+
+async function externalSourceDigest(directory) {
+  const hashes = {}
+  async function visit(current, relative, ancestors) {
+    const real = await fs.realpath(current)
+    const stat = await fs.stat(current)
+    if (stat.isDirectory()) {
+      if (ancestors.has(real)) throw new Error(`Cyclic applet source link: ${current}`)
+      const next = new Set([...ancestors, real])
+      for (const name of (await fs.readdir(current)).sort()) {
+        if (!generatedInputDirectories.has(name)) {
+          await visit(path.join(current, name), `${relative}${name}/`, next)
+        }
+      }
+    } else if (stat.isFile()) {
+      hashes[relative.slice(0, -1)] = createHash('sha256')
+        .update(await fs.readFile(current)).digest('hex')
+    }
+  }
+  await visit(directory, '', new Set())
+  // Workspace/dependency configuration above an external applet also affects
+  // rspeedy resolution. Record hashes only, never configuration contents.
+  for (let parent = directory; ; parent = path.dirname(parent)) {
+    for (const name of [
+      'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc',
+      'node_modules/.modules.yaml', 'node_modules/.pnpm/lock.yaml',
+    ]) {
+      const file = path.join(parent, name)
+      try {
+        hashes[file] = createHash('sha256').update(await fs.readFile(file)).digest('hex')
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+      }
+    }
+    if (path.dirname(parent) === parent) break
+  }
+  return createHash('sha256').update(JSON.stringify(hashes)).digest('hex')
+}
+
+async function buildInputSnapshot() {
+  const inputs = await discoverAppletInputs()
+  const externalSources = []
+  for (const directory of inputs.externalLynxAppletDirs) {
+    externalSources.push({ directory, sha256: await externalSourceDigest(directory) })
+  }
+  return { inputs, externalSources }
+}
+
 /**
  * 构建单个Applet
  */
@@ -527,13 +590,13 @@ async function main() {
     await initOutputDirs()
     
     // 获取所有Applet
-    const appletDirs = await getAppletDirs()
+    const {
+      appletDirs, officialAppletDirs, canonicalLynxAppletDirs, externalLynxAppletDirs,
+    } = await discoverAppletInputs()
     writeStdout(`Found ${appletDirs.length} applets: ${appletDirs.map(d => path.basename(d)).join(', ')}`)
-    const officialAppletDirs = await getOfficialAppletDirs()
     if (officialAppletDirs.length > 0) {
       writeStdout(`Found ${officialAppletDirs.length} official applets: ${officialAppletDirs.map(d => path.basename(d)).join(', ')}`)
     }
-    const externalLynxAppletDirs = await getExternalLynxAppletDirs()
     if (externalLynxAppletDirs.length > 0) {
       writeStdout(`Found ${externalLynxAppletDirs.length} external Lynx applets: ${externalLynxAppletDirs.map(d => path.basename(path.dirname(d))).join(', ')}`)
     }
@@ -545,7 +608,7 @@ async function main() {
     for (const dir of officialAppletDirs) {
       await buildOfficialApplet(dir)
     }
-    for (const dir of config.canonicalLynxAppletDirs) {
+    for (const dir of canonicalLynxAppletDirs) {
       await buildCanonicalLynxApplet(dir)
     }
     for (const dir of externalLynxAppletDirs) {
@@ -566,4 +629,11 @@ async function main() {
   }
 }
 
-main()
+if (process.argv.includes('--build-inputs')) {
+  buildInputSnapshot().then(snapshot => writeStdout(JSON.stringify(snapshot))).catch(error => {
+    writeStderr(error.message)
+    process.exitCode = 1
+  })
+} else {
+  main()
+}

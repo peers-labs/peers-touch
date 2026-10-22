@@ -144,6 +144,14 @@ class DesktopAcceptanceBuild:
         if dirty:
             self.observation["source"] = {"commit": commit, "clean": False}
             raise self._blocked("Desktop Acceptance build requires clean source")
+        projected_commit = self.environment.get("PT_BUILD_SOURCE_COMMIT")
+        if projected_commit is not None and projected_commit != commit:
+            self.observation["sourceProjection"] = {
+                "expected": commit,
+                "observedSha256": hashlib.sha256(projected_commit.encode()).hexdigest(),
+            }
+            raise self._blocked("Desktop build source projection conflicts with checked HEAD")
+        self.environment["PT_BUILD_SOURCE_COMMIT"] = commit
         # Make owns the repository tool search path. Direct Cell callers use
         # that same exported path; repeated Make prefixes are equivalent.
         exported = json.loads(self._run((
@@ -169,6 +177,24 @@ class DesktopAcceptanceBuild:
                 "version": self._run((executable, *options)).stdout.strip(),
                 "sha256": file_digest(Path(executable)),
             }
+        for name in ("protoc", "sccache", "cc", "c++", "ar", "ranlib"):
+            executable = shutil.which(name, path=self.environment.get("PATH"))
+            if executable:
+                tools[name] = {
+                    "path": str(Path(executable).resolve()),
+                    "sha256": file_digest(Path(executable)),
+                }
+        for name in ("PROTOC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CC", "CXX", "AR", "RANLIB"):
+            configured = self.environment.get(name)
+            if configured:
+                executable = shutil.which(configured, path=self.environment.get("PATH"))
+                if executable is None:
+                    self.observation["missingTool"] = name
+                    raise self._blocked(f"Configured Desktop build tool {name} is unavailable")
+                tools[name] = {
+                    "path": str(Path(executable).resolve()),
+                    "sha256": file_digest(Path(executable)),
+                }
         if platform.system() == "Darwin":
             tools["xcode"] = self._run(("xcodebuild", "-version")).stdout.strip()
             tools["developerDirectory"] = self._run(("xcode-select", "-p")).stdout.strip()
@@ -178,10 +204,13 @@ class DesktopAcceptanceBuild:
             if name.startswith((
                 "CARGO_", "RUST", "TAURI_", "VITE_", "npm_config_", "PNPM_",
                 "CC_", "CXX_", "AR_", "CFLAGS_", "LDFLAGS_", "OPENSSL_",
+                "SCCACHE_", "PROTOC",
             )) or name in {
                 "PATH", "NODE_OPTIONS", "NODE_ENV", "CC", "CXX", "AR",
                 "CFLAGS", "CXXFLAGS", "LDFLAGS", "SDKROOT", "DEVELOPER_DIR",
                 "MACOSX_DEPLOYMENT_TARGET", "RANLIB",
+                "PT_BUILD_SOURCE_COMMIT", "PT_DESKTOP_E2E", "PEERS_STATION_URL",
+                "PEERS_TOUCH_EXTERNAL_LYNX_APPLETS",
             }
         }
         cargo_home = Path(self.environment.get("CARGO_HOME", str(Path.home() / ".cargo")))
@@ -194,15 +223,32 @@ class DesktopAcceptanceBuild:
         for directory in (self.root, self.root / "apps/desktop", self.root / "apps/desktop/src-tauri"):
             paths.update(directory.glob(".env*"))
             paths.update((directory / ".cargo").glob("config*"))
+        include_root = self.environment.get("PROTOC_INCLUDE")
+        if include_root:
+            paths.update(Path(include_root).rglob("*"))
         local_inputs = {
             str(path): file_digest(path) for path in sorted(paths)
             if path.is_file()
         }
+        self.observation["stage"] = "applet-inputs"
+        try:
+            applet_inputs = json.loads(self._run((
+                "node", "packages/applets/build.js", "--build-inputs",
+            )).stdout)
+        except ValueError as error:
+            raise self._blocked("Applet build owner returned invalid source inputs") from error
+        if (
+            not isinstance(applet_inputs, dict)
+            or not isinstance(applet_inputs.get("inputs"), dict)
+            or not isinstance(applet_inputs.get("externalSources"), list)
+        ):
+            raise self._blocked("Applet build owner did not publish its source inputs")
         return {
             "worktree": str(self.root), "commit": commit, "tree": tree,
             "workspaceDigest": "clean", "platform": platform.platform(),
             "tools": tools, "configurationDigest": digest(build_environment),
             "localInputs": local_inputs, "binary": str(self.binary),
+            "appletInputs": applet_inputs,
             "features": ["acceptance-webdriver"], "tauriConfig": TAURI_CONFIG,
         }
 
