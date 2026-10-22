@@ -252,6 +252,14 @@ def run_environment(environment: dict[str, str]):
         "PT_ACCEPTANCE_REDACTION_VALUES",
         "PT_ACCEPTANCE_RUNTIME_CELL",
         AGGREGATE_SOURCE_ENV,
+        "PT_MACHINE_LEASE_FD",
+        "PT_MACHINE_LEASE_ID",
+        "PT_MACHINE_LEASE_KIND",
+        "PT_MACHINE_LEASE_RESOURCE_ID",
+        "PT_MACHINE_LEASE_RESET_SCOPE",
+        "PT_MACHINE_LEASE_WORKSPACE_ID",
+        "PT_MACHINE_LEASE_SOURCE_BRANCH",
+        "PT_MACHINE_LEASE_SOURCE_HEAD",
     )
     previous = {key: os.environ.get(key) for key in keys}
     for key in keys:
@@ -2673,9 +2681,10 @@ def main() -> int:
                             )
                             gate_env.update(authority_environment)
                             try:
-                                execute_stage(
-                                    execution, "credentials", provisioner.prepare_credentials
-                                )
+                                with run_environment(gate_env):
+                                    execute_stage(
+                                        execution, "credentials", provisioner.prepare_credentials
+                                    )
                             except Exception as error:
                                 preparation_error = error
                         runtime_secrets = credential_values(provisioner)

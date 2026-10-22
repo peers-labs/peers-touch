@@ -145,6 +145,16 @@ Profile reset policy，也不实现业务删除。
 时明确拒绝，不能用一个 scope 冒充全部权限。锁内校验失败或取消都会清空
 metadata 并释放锁。子 Gate 的隔离环境仍不接受 raw reset authority。
 
+Runner 的父进程上下文显式投影租约的 FD、ID、kind、resource、scope、
+workspace、branch、head 八个字段，并在退出时恢复原值。取得租约之后，
+credentials、provision 与 cleanup 均重新进入这一上下文；只更新子进程
+环境字典不能证明父 Provisioner 持有可验证权限。
+
+macOS Runtime Cell 在构建和写入 PREPARING 状态之前检查输入隔离。
+托盘 Gate 必须先通过 exclusive-native-input 的隔离检查，再构建真实
+app bundle；其 Acceptance driver 由 Runtime Cell 唯一构建。共享用户
+会话不能冒充 isolated-gui-session，拒绝输入资源不允许先花构建预算。
+
 全量 Catalog 的 Profile 分配仅传给 registration 明确支持的 binding
 类别，并按真实 service ID 过滤；精确 Gate 请求继续拒绝不支持的参数。
 同服务名不代表可复用运行时，distinct-Station 合同依然检查 Profile 唯一性。

@@ -544,7 +544,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             "PT_ACCEPTANCE_RUNTIME_CELL",
             "",
         ).strip()
-        if runtime_cell and runtime_cell != "desktop-macos-native":
+        if runtime_cell:
             return manifest
         try:
             self._run_preflight_command(

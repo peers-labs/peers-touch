@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 923c58f651bdc39efd350bc5408b322697aa8eae2d86ba86bc951e745f347b6f
+covered_docs_hash: 6a03581431ada9224b7b0449c2c682ec5f89cf7bdcbb640968e1fa19828ab56f
 
 covered_docs:
   - AGENTS.md
@@ -55,6 +55,17 @@ contention, failed validation, failed resource cleanup, metadata clearing and
 release. The existing Machine Dev suite verifies admission and source fencing.
 Catalog allocations follow registered binding categories; explicit Gate
 requests retain unsupported-input rejection.
+
+## Parent Context and Native Preparation Review
+
+The parent environment now projects and restores all eight canonical lease
+fields during credentials, provisioning and cleanup. A real OS-held lease
+probe verifies the parent path rather than only child descriptor inheritance.
+Native macOS input admission precedes source builds and PREPARING state.
+The tray provisioner admits its required exclusive input before packaging;
+the selected Runtime Cell owns the Acceptance driver build and smoke probe.
+These changes preserve physical assertions and isolation requirements.
+No timeout threshold or review SKILL.md policy is widened.
 
 ## Actionable Blocked Result Review
 

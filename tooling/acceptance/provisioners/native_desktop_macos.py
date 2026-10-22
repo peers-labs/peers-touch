@@ -205,6 +205,11 @@ class NativeDesktopMacOSProvisioner:
                 resource=f"runtime-cell:{self.contract.cell_id}",
             )
 
+        admit_local_native_input_mode(
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
+            or NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value,
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"),
+        )
         run_id = (
             f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}-"
             f"{secrets.token_hex(8)}"
