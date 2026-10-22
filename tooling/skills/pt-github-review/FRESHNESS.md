@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 8adcb8bd79e46eedba9fbc9bd3ae92bf763a0423c777cba23cd0a0f109075cc7
+covered_docs_hash: d7de96bcc92e05b5382ec51dc400b1ebca8db2c74f323e85717ad5217e51d443
 
 covered_docs:
   - AGENTS.md
@@ -45,8 +45,10 @@ change; no review policy or knowledge amendment is required.
 ## Resource Producer Review
 
 Resource diagnostics preserve only owner observations and explicit unevaluated
-scope. Credential values and device identifiers are excluded. Configuration
-presence, inventory counts, source identity and declared missing Gate procedures
+scope. Credential values and device identifiers are excluded.
+Home Station inherits Core's generic CredentialRef resolver; a concrete
+override must represent a different credential source and retain diagnostics.
+Configuration presence, inventory counts, source identity and declared missing Gate procedures
 remain distinct from product proof. A failed inventory command does not prove
 device absence, and a missing Linux readiness document does not prove display
 absence. NCP controls resolve the original manifest Profile; publishing clients

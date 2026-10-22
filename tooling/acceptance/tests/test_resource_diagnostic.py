@@ -16,6 +16,7 @@ from tooling.acceptance.core.launch_context import _blocked_error_from_response,
 from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import CredentialRef, EnvironmentContract
+from tooling.acceptance.provisioners.home_station import HomeStationProvisioner
 
 
 def script_module(name: str):
@@ -43,6 +44,19 @@ def diagnostic() -> ResourceDiagnostic:
 
 
 class ResourceDiagnosticTests(unittest.TestCase):
+    def test_home_station_preserves_core_credential_diagnostic(self) -> None:
+        variable = "PT_DIAGNOSTIC_TEST_CREDENTIAL"
+        owner = HomeStationProvisioner(EnvironmentContract(
+            id="home-station",
+            credentials=(CredentialRef(id="required", source_ref=f"env:{variable}"),),
+        ))
+        with patch.dict("os.environ", {variable: ""}):
+            with self.assertRaises(BlockedError) as caught:
+                owner.prepare_credentials()
+        diagnostic = caught.exception.diagnostic.to_dict()
+        self.assertEqual(diagnostic["owner"], "environment-provisioner:home-station")
+        self.assertFalse(diagnostic["resourceChecks"][0]["observed"]["environmentVariablePresent"])
+
     def test_actual_credential_probe_survives_durable_result_and_reporter(self) -> None:
         class CredentialProbe(EnvironmentProvisioner):
             environment_id = "credential-probe"

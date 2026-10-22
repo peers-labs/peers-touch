@@ -378,7 +378,9 @@ Runner 为准备异常和 deadline 生成本 Gate 的不可变失败 observation
 具体资源生产者遵循以下观察边界：
 
 - 凭据只记录解析结果、存在性和安全脱敏条件，不保存值。配置存在不等于
-  外部 Provider 已完成投递或授权。
+  外部 Provider 已完成投递或授权。Home Station 的通用 CredentialRef
+  解析由 Core EnvironmentProvisioner 唯一负责；业务层只保留专有凭据来源
+  或产品约束，不复制同一个通用解析过程。
 - 服务 attestation 保存 live/deployed commit、目标和实际 source 状态；
   Station 与候选源码不同的恢复动作是部署到已绑定的 reviewed 目标并读回。
 - Mobile preflight 保存 Appium status/version 与实际设备 inventory 数量。
