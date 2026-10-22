@@ -2,11 +2,7 @@
 kind: pitfall
 title: Chat Fixture implicit URL must resolve its bound reviewed target
 status: superseded-by:docs/knowledge/pitfalls/chat-fixture-target-and-direct-fault-ownership.md
-owns:
-  - tooling/acceptance/fixtures/chat_reset_targets.py
-  - tooling/acceptance/fixtures/chat_native_reset.py
-  - tooling/acceptance/fixtures/chat_submit_fault_proxy.py
-  - tooling/acceptance/tests/test_chat_reset_target_resolution.py
+owns: []
 referenced-by: []
 related:
   - docs/architecture/engineering/acceptance/execution-budget.md
