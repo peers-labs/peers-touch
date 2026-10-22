@@ -313,6 +313,7 @@ test('current repository satisfies the module registry', () => {
     'oauth-login-broker',
     'secure-content',
     'station-access-lifecycle',
+    'x-config',
   ]);
   assert.deepEqual(result.capabilityIds, [
     'agent.chat.minimum-usable',
@@ -335,6 +336,9 @@ test('current repository satisfies the module registry', () => {
     'relay.control.enrollment',
     'relay.transport.circuit',
     'station.connectivity.node-authorization',
+    'x.config.operator',
+    'x.config.publication',
+    'x.config.snapshot',
   ]);
 });
 
@@ -370,6 +374,11 @@ test('current shared client dependencies are capability-registered', () => {
       {
         id: 'cargo:station-trust',
         capabilityId: 'client.station-trust.portable-core',
+        reuseLayer: 'portable-rust-core',
+      },
+      {
+        id: 'cargo:x-config-core',
+        capabilityId: 'x.config.snapshot',
         reuseLayer: 'portable-rust-core',
       },
       {
