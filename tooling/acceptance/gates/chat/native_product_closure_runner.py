@@ -2774,6 +2774,9 @@ class NativeProductClosureGate(AcceptanceGate):
               overlayKind: overlay?.getAttribute(
                 'data-message-action-overlay',
               ) || '',
+              overlayMessageId: overlay?.getAttribute(
+                'data-message-action-message',
+              ) || '',
               overlayLabel: overlay?.getAttribute('aria-label') || '',
             };
         """
@@ -2814,6 +2817,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 Keys.TAB,
                 Keys.ENTER,
                 Keys.ENTER,
+                interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS,
             )
         else:
             self.native_adapter.post_key_sequence_to_process(
@@ -2828,19 +2832,17 @@ class NativeProductClosureGate(AcceptanceGate):
                 private_source=True,
             )
         try:
-            selected_emoji = WebDriverWait(client.driver, 15).until(
-                lambda driver: driver.execute_script(
-                    """
-                    const events = window.__PT_REACTION_KEYBOARD_DEBUG__?.events || [];
-                    return events
-                      .filter(
-                        (event) => event.kind === 'click' && event.target?.emoji,
-                      )
-                      .at(-1)?.target?.emoji || '';
-                    """
-                )
+            snapshot = self.wait_step(
+                lambda: client.execute_script(keyboard_debug_script),
+                f"{actor}.reaction-keyboard-selection",
+                expected={"messageId": message_id, "selectedEmoji": "nonempty"},
+                ready=lambda value: any(
+                    event.get("kind") == "click" and event.get("target", {}).get("emoji")
+                    for event in value.get("events", [])
+                ),
+                timeout=15,
             )
-        except TimeoutException:
+        except GateError:
             # #region debug-point V-X:reaction-keyboard-lifecycle
             _debug_report(
                 "V-X",
@@ -2849,8 +2851,14 @@ class NativeProductClosureGate(AcceptanceGate):
                 client.execute_script(keyboard_debug_script),
             )
             # #endregion
+            self.save_screenshot(client, f"{actor}-reaction-keyboard-failed")
+            self.save_dom(client, f"{actor}-reaction-keyboard-failed")
             raise
-        snapshot = client.execute_script(keyboard_debug_script)
+        selected_emoji = next(
+            str(event["target"]["emoji"])
+            for event in reversed(snapshot["events"])
+            if event.get("kind") == "click" and event.get("target", {}).get("emoji")
+        )
         picker_events = [
             event
             for event in snapshot.get("events", [])

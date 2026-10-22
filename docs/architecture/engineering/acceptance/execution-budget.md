@@ -447,6 +447,14 @@ Interactions 的消息 DOM 检查未命中时保留实际 active conversation、
 可见消息行、滚动位置和已打开的 Thread root；这些辅助投影不能使原有
 nullable message predicate 满足。
 
+Semantic keyboard sequence 由 Tauri Driver 以一次目标 WebView 的异步调用执行。
+每键之间让出事件循环，采用与对应原生 sequence 相同的显式输入间隔，
+使 React 有机会提交动作栏焦点及 picker 控件，再从实际 activeElement
+解析下一键的目标。单个同步循环不能等价于跨事件循环的真实键盘输入。
+等待 interval 为零时也必须让出任务；不增加业务等待预算。Reaction 的
+选中等待通过已有 Step owner 保存实际按键、焦点、overlay Message ID 和
+click emoji 事件，失败保留截图及 DOM，不能把空 TimeoutException 当作诊断。
+
 Chat product closure 与联系人 Message 故障场景使用已存在的 Direct TCP proxy。
 Runtime Binding 始终通过 canonical Station origin 完成签名发现和 binding proof，
 只在 live client 完成发现后应用 opaque handle 到 Direct dial override。Reaction

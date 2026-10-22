@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import signal
 import shutil
@@ -991,11 +992,18 @@ class TauriSession(DomDriver):
         self,
         element: Any,
         *keys: str,
+        interval_seconds: float = 0.1,
     ) -> None:
-        self.execute_script(
+        if not keys:
+            raise ValueError("Semantic key sequence must not be empty")
+        if not math.isfinite(interval_seconds) or interval_seconds < 0:
+            raise ValueError("Semantic key sequence interval must be finite and non-negative")
+        result = self.execute_async_script(
             """
             const element = arguments[0];
             const requestedKeys = arguments[1];
+            const intervalMs = arguments[2];
+            const done = arguments[arguments.length - 1];
             const descriptors = {
               '\uE004': { key: 'Tab', code: 'Tab', keyCode: 9 },
               '\uE007': { key: 'Enter', code: 'Enter', keyCode: 13 },
@@ -1016,8 +1024,9 @@ class TauriSession(DomDriver):
                 && rect.width > 0
                 && rect.height > 0;
             });
+            (async () => {
             element.focus({ preventScroll: true });
-            for (const requestedKey of requestedKeys) {
+            for (const [index, requestedKey] of requestedKeys.entries()) {
               const descriptor = descriptors[requestedKey];
               if (!descriptor) {
                 throw new Error(
@@ -1060,11 +1069,21 @@ class TauriSession(DomDriver):
               (document.activeElement || target).dispatchEvent(
                 new KeyboardEvent('keyup', init),
               );
+              if (index + 1 < requestedKeys.length) {
+                // Let the WebView commit focus and rendered controls before
+                // resolving the next key's target, as real input does.
+                await new Promise(resolve => setTimeout(resolve, intervalMs));
+              }
             }
+            done({ ok: true });
+            })().catch(error => done({ ok: false, error: String(error) }));
             """,
             element,
             list(keys),
+            interval_seconds * 1000,
         )
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise DriverError(f"Semantic key sequence failed: {result!r}")
 
     def save_screenshot(self, path: str | Path) -> None:
         self._connected_driver().save_screenshot(path)

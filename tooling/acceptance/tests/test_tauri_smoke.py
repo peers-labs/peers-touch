@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +36,7 @@ class TauriSessionSemanticActionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.session = TauriSession(Mock())
         self.native_driver = Mock()
+        self.native_driver.execute_async_script.return_value = {"ok": True}
         self.session._driver = self.native_driver
         self.element = Mock()
 
@@ -64,14 +66,89 @@ class TauriSessionSemanticActionTests(unittest.TestCase):
             "TAB",
         )
 
-        script, element, keys = self.native_driver.execute_script.call_args.args
+        script, element, keys, interval = self.native_driver.execute_async_script.call_args.args
         self.assertIs(element, self.element)
         self.assertIn("focus({ preventScroll: true })", script)
         self.assertIn("new KeyboardEvent('keydown'", script)
         self.assertIn("descriptor.key === 'Tab'", script)
         self.assertIn("target.click()", script)
         self.assertEqual(keys, ["ENTER", "TAB"])
+        self.assertEqual(interval, 100)
         self.element.send_keys.assert_not_called()
+
+    def test_key_sequence_consumes_controls_after_deferred_focus_and_render(self) -> None:
+        self.session.semantic_key_sequence(
+            self.element, "\ue007", "\ue004", "\ue007", "\ue007",
+            interval_seconds=0.01,
+        )
+        script, _, keys, interval = self.native_driver.execute_async_script.call_args.args
+        harness = r"""
+            const fs = require('fs');
+            const { script, keys, interval } = JSON.parse(fs.readFileSync(0, 'utf8'));
+            const targets = [];
+            let selected = 0;
+            class KeyboardEvent {
+              constructor(type, init) {
+                this.type = type;
+                Object.assign(this, init);
+                this.defaultPrevented = false;
+              }
+              preventDefault() { this.defaultPrevented = true; }
+            }
+            global.KeyboardEvent = KeyboardEvent;
+            global.getComputedStyle = () => ({ display: 'block', visibility: 'visible' });
+            const control = (name, button) => ({
+              name,
+              focus() { document.activeElement = this; },
+              getBoundingClientRect() { return { width: 28, height: 28 }; },
+              matches() { return button; },
+              getAttribute() { return ''; },
+              dispatchEvent(event) {
+                if (event.type === 'keydown') targets.push(this.name);
+                if (this === row && event.type === 'keydown' && event.key === 'Enter') {
+                  event.preventDefault();
+                  setTimeout(() => first.focus(), 3);
+                }
+              },
+              click() {},
+            });
+            const row = control('row', false);
+            const first = control('first', true);
+            const second = control('second', true);
+            const choice = control('choice', true);
+            const candidates = [row, first, second];
+            second.click = () => setTimeout(() => {
+              candidates.push(choice);
+              choice.focus();
+            }, 3);
+            choice.click = () => { selected += 1; };
+            global.document = {
+              activeElement: row,
+              querySelectorAll() { return candidates; },
+            };
+            new Promise(resolve => {
+              new Function(script)(row, keys, interval, resolve);
+            }).then(result => process.stdout.write(JSON.stringify({ result, targets, selected })));
+        """
+        completed = subprocess.run(
+            ["node", "-e", harness],
+            input=json.dumps({"script": script, "keys": keys, "interval": interval}),
+            capture_output=True, text=True, timeout=3, check=True,
+        )
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["result"], {"ok": True})
+        self.assertEqual(result["targets"], ["row", "first", "second", "choice"])
+        self.assertEqual(result["selected"], 1)
+
+    def test_invalid_key_sequences_fail_before_dispatch(self) -> None:
+        for interval in (-1, float("nan"), float("inf")):
+            with self.subTest(interval=interval), self.assertRaises(ValueError):
+                self.session.semantic_key_sequence(
+                    self.element, "\ue007", interval_seconds=interval,
+                )
+        with self.assertRaises(ValueError):
+            self.session.semantic_key_sequence(self.element)
+        self.native_driver.execute_async_script.assert_not_called()
 
 
 class MakeDesktopLauncherProfileTests(unittest.TestCase):

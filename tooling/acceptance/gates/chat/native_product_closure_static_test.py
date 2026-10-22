@@ -2768,7 +2768,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             sequence_post,
         )
         picker_wait = keyboard_path.index(
-            "WebDriverWait(client.driver, 15).until(",
+            "snapshot = self.wait_step(",
             sequence_keys,
         )
         self.assertNotIn("self.click_element(actor, row)", keyboard_path)
@@ -2807,7 +2807,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         normalized_selection = " ".join(selection_source.split())
         self.assertIn(
             "client.semantic_key_sequence( row, Keys.ENTER, Keys.TAB, "
-            "Keys.ENTER, Keys.ENTER, )",
+            "Keys.ENTER, Keys.ENTER, "
+            "interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS, )",
             normalized_selection,
         )
         self.assertIn(
@@ -2820,6 +2821,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertEqual(selection_source.count("Keys.TAB"), 1)
         self.assertEqual(selection_source.count("NativeKey.ENTER"), 3)
         self.assertEqual(selection_source.count("NativeKey.TAB"), 1)
+        self.assertIn('f"{actor}.reaction-keyboard-selection"', selection_source)
+        self.assertIn('str(event["target"]["emoji"])', selection_source)
+        self.assertIn('overlayMessageId:', selection_source)
         self.assertIn("reaction_picker_localized", selection_source)
         self.assertIn("return str(selected_emoji)", selection_source)
         self.assertEqual(

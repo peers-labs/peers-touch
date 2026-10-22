@@ -8,6 +8,8 @@ owns:
   - tooling/acceptance/fixtures/chat_native_actors.py
   - tooling/acceptance/provisioners/native_tauri_embedded_webdriver.py
   - tooling/acceptance/drivers/native/runtime.py
+  - tooling/acceptance/drivers/tauri.py
+  - tooling/acceptance/tests/test_tauri_smoke.py
   - tooling/acceptance/gates/chat/native_interactions_runner.py
   - tooling/acceptance/gates/chat/native_product_closure_runner.py
   - tooling/acceptance/gates/chat/contact_message_resilience_runner.py
@@ -100,3 +102,11 @@ messages leaves its IDs empty forever. Preserve exact summary/panel ID and count
 equality after the on-visit load for both actors and recovery. Regressions cover
 cold timeline hydration, stale timeline replies, and a deliberately divergent
 Bob summary. No eager reply load or relaxed identity assertion is permitted.
+Semantic keyboard input must yield between keys. The real action toolbar moves
+focus and renders the picker through React effects; a synchronous four-key loop
+targets stale controls before those effects run. Use one async WebView sequence
+with the same explicit inter-key interval as native input, including a task yield
+when the interval is zero. A regression must execute the actual emitted script
+against deferred focus and control creation. Reaction selection must durably
+retain actual focus, key/click events and the overlay Message ID when its
+predicate rejects, plus failed screenshot/DOM, without relaxing keyboard proof.

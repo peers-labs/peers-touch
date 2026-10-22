@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: fa70db0113ca96a03ea6c298c8c795386d2244900fcd8bda0cb10bc3b77f6271
+covered_docs_hash: 88bae5269cc330802be79a0c7c0a5d9b6ade000e56ee233d119817a7f88b98e3
 
 covered_docs:
   - AGENTS.md
@@ -55,6 +55,13 @@ run after visible on-visit loading and still require exact count/ID equality
 for both actors and recovery. Cold hydration, stale timeline and divergent
 summary regressions cover this ownership correction. No eager fetch, new
 runtime owner or proof relaxation is introduced; existing Skill rules apply.
+Semantic keyboard input now yields the WebView event loop between keys within
+one async target-bound call, using the same explicit interval as native input.
+The emitted-script regression exercises deferred focus and control creation;
+Reaction selection retains actual focus, events and overlay Message ID through
+the existing durable Step owner. Keyboard proof and business budgets remain
+unchanged. Existing Driver ownership and supporting-evidence rules cover the
+correction; no Skill policy amendment is required.
 
 The Fixture owner groups account reads by exact Station and checks both
 containers in one SSH operation. Identity completeness and per-account
