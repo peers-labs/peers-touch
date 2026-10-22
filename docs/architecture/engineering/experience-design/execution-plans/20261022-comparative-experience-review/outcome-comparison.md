@@ -151,42 +151,60 @@
   "kind": "peers-touch-outcome-comparison-results",
   "schemaVersion": 1,
   "planId": "CER-20261022",
-  "sourceIdentity": null,
+  "sourceIdentity": "commit=2b8f9604de109f69056bf868d96adc75e71a0538; controlPlaneVersionDigest=sha256:60c730513a72a3cd4fd0181b5148abacefa36836ca0e017db5151d55fed95a68",
   "items": [
     {
       "id": "CER-O01",
-      "status": "UNPROVEN",
-      "actualEffect": "Implementation has not started.",
-      "evidenceRefs": [],
-      "deviation": "No current-source implementation evidence."
+      "status": "PARTIAL",
+      "actualEffect": "CER calibration and CLI produce Oracle-bound material deltas with exact paired facts, earliest divergent states, causal level, user consequence and a recomputable priority tuple instead of a feature/page similarity list.",
+      "evidenceRefs": [
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/experience-design-tests.tap",
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/control-plane-check.json"
+      ],
+      "deviation": "Source mechanics are proven on calibrated cases. A fresh Quality-owned blind A/B against the previous benchmark workflow has not run, so incremental gap-finding value remains UNPROVEN."
     },
     {
       "id": "CER-O02",
-      "status": "UNPROVEN",
-      "actualEffect": "Implementation has not started.",
-      "evidenceRefs": [],
-      "deviation": "No current-source implementation evidence."
+      "status": "PASS",
+      "actualEffect": "The seven-artifact current chain validates independent leg evidence, blind review, sealed identity reveal, current Peers EDX binding and disposition review before projecting only accepted adopt/adapt Target Contract proposals.",
+      "evidenceRefs": [
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/experience-design-tests.tap",
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/control-plane-check.json"
+      ],
+      "deviation": "Projection remains a proposal and does not modify an active Product or Client contract."
     },
     {
       "id": "CER-O03",
-      "status": "UNPROVEN",
-      "actualEffect": "Implementation has not started.",
-      "evidenceRefs": [],
-      "deviation": "No current-source implementation evidence."
+      "status": "PASS",
+      "actualEffect": "Blind legs use one identity-neutral schema; the blind report forbids owner, disposition and intervention-confirmed claims; IdentityMap becomes valid only after an accepted independent blind review.",
+      "evidenceRefs": [
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/experience-design-tests.tap",
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/code-structure-decision.json"
+      ],
+      "deviation": "Real artifacts that visibly expose a brand must declare leakage and cannot establish blind promotion."
     },
     {
       "id": "CER-O04",
-      "status": "UNPROVEN",
-      "actualEffect": "Implementation has not started.",
-      "evidenceRefs": [],
-      "deviation": "No current-source implementation evidence."
+      "status": "PASS",
+      "actualEffect": "Canonical compare validate/evaluate/blind-review/disposition-review/project-target commands recompute package containment, canonical digests, stage bindings and current Peers EDX review. All comparative implementation files are included in the control-plane source digest.",
+      "evidenceRefs": [
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/experience-design-tests.tap",
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/architecture-governance.tap",
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/plan-validation.json"
+      ],
+      "deviation": "The CLI remains read-only and does not collect browser/runtime evidence or manage credentials."
     },
     {
       "id": "CER-O05",
-      "status": "UNPROVEN",
-      "actualEffect": "Implementation has not started.",
-      "evidenceRefs": [],
-      "deviation": "Framework blind A/B remains external and unproven."
+      "status": "PASS",
+      "actualEffect": "Current-source tests and hard rules reject stale artifacts, path/symlink escape, graph or evidence orphans, author overlap, priority drift, identity leakage, causal overclaim, unauthorized target projection and second-source integration drift.",
+      "evidenceRefs": [
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/experience-design-tests.tap",
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/hard-rules.log",
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/skill-check.log",
+        "file:///tmp/peers-touch-show-cer-2b8f9604d/code-structure-decision.json"
+      ],
+      "deviation": "PASS covers source behavior and governance only. Framework blind A/B, future comparison quality and any product runtime outcome remain outside this proof."
     }
   ]
 }
