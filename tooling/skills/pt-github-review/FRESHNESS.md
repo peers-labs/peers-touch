@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: c657e218b6b8e94ad681409f36d279da80112a3d88f6851a695d6c483aae13ad
+covered_docs_hash: 174baee37e1a52d8e74b4c46312e5bf4bc8d1edd70fada9b8cfdb9c9f90e723e
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,17 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Batch Fixture And Native Diagnostic Review
+
+The Fixture owner groups account reads by exact Station and checks both
+containers in one SSH operation. Identity completeness and per-account
+uniqueness remain mandatory; manifest hydration and pre-contact drift checking
+remain separate operations. Native Station mismatch diagnostics retain the
+actual assigned Profile, deployment, endpoint and expected/observed identity.
+Product closure persists Step boundaries as supporting observations and checks
+the already-hydrated login Actor ID while retaining device readiness. Existing
+ownership and proof rules cover these changes; no Skill policy change is needed.
 
 ## Bound Fixture Target Review
 

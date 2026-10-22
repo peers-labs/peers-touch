@@ -33,6 +33,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     fixture_federation_id,
     machine_lease_reset_profile,
     read_fixture_actor,
+    read_fixture_actors,
     seed_bound_contacts,
     seed_federation_context,
     verify_disposable_station_runtime,
@@ -348,14 +349,53 @@ def resolve_actor_identity(
             reason=f"Cannot resolve canonical PTID for fixture role {role}: {error}",
             resource=f"fixture-actor:{role}",
         ) from error
+    return _resolved_actor_identity(role, record)
+
+
+def _resolved_actor_identity(
+    role: str,
+    record: FixtureActorRecord,
+) -> ResolvedActorIdentity:
     return ResolvedActorIdentity(
         role=role,
-        account_ref=f"station-account:{account}",
+        account_ref=f"station-account:{ACTOR_ACCOUNTS[role]}",
         ptid=record.ptid,
         display_name=record.name.strip(),
         federated_handle=record.federated_handle,
         home_station_peer_id=record.home_station_peer_id,
     )
+
+
+def _read_bound_actor_records(
+    role_targets: Mapping[str, tuple[str, str]],
+) -> dict[str, FixtureActorRecord]:
+    grouped: dict[tuple[str, str], list[str]] = {}
+    for role, target in role_targets.items():
+        if role not in ACTOR_ACCOUNTS:
+            raise BlockedError(
+                reason=f"Chat native actor role is unsupported: {role}",
+                resource=f"fixture-actor:{role}",
+            )
+        grouped.setdefault(target, []).append(role)
+    records: dict[str, FixtureActorRecord] = {}
+    for (station_url, environment), roles in grouped.items():
+        try:
+            by_account = read_fixture_actors(
+                station_url, environment,
+                tuple(ACTOR_ACCOUNTS[role] for role in roles),
+            )
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            raise BlockedError(
+                reason=(
+                    f"Cannot resolve canonical PTIDs for fixture roles "
+                    f"{','.join(roles)}: {error}"
+                ),
+                resource=f"fixture-actor:{roles[0]}",
+            ) from error
+        records.update({
+            role: by_account[ACTOR_ACCOUNTS[role]] for role in roles
+        })
+    return {role: records[role] for role in role_targets}
 
 
 def resolve_existing_actor_identity(
@@ -632,13 +672,8 @@ def prepare_bound_friendships(
     actors: tuple[ActorIdentity, ...],
 ) -> None:
     by_role = {actor.role: actor for actor in actors}
-    records: dict[str, FixtureActorRecord] = {}
-    for role, (station_url, environment) in role_targets.items():
-        record = read_fixture_actor(
-            station_url,
-            environment,
-            ACTOR_ACCOUNTS[role],
-        )
+    records = _read_bound_actor_records(role_targets)
+    for role, record in records.items():
         identity = by_role.get(role)
         if identity is None or identity.ptid != record.ptid:
             raise BlockedError(
@@ -648,8 +683,6 @@ def prepare_bound_friendships(
                 ),
                 resource=f"fixture-actor:{role}",
             )
-        records[role] = record
-
     federation_members = tuple(records.values())
     contacts_by_target: dict[
         tuple[str, str], list[tuple[FixtureActorRecord, FixtureActorRecord]]
@@ -673,12 +706,11 @@ def prepare_federation_contexts(
 ) -> str:
     records_by_target: dict[str, tuple[FixtureActorRecord, ...]] = {}
     for service_id, (station_url, environment, roles) in targets.items():
+        by_account = read_fixture_actors(
+            station_url, environment, tuple(ACTOR_ACCOUNTS[role] for role in roles),
+        )
         records_by_target[service_id] = tuple(
-            read_fixture_actor(
-                station_url,
-                environment,
-                ACTOR_ACCOUNTS[role],
-            )
+            by_account[ACTOR_ACCOUNTS[role]]
             for role in roles
         )
     members = tuple({
@@ -771,13 +803,9 @@ def produce_bound_actor_manifest(
             target_roles,
             reset_authorized=reset_authorized,
         )
+    records = _read_bound_actor_records(role_targets)
     actors = tuple(
-        resolve_actor_identity(
-            role_targets[role][0],
-            role_targets[role][1],
-            role,
-        )
-        for role in unique_roles
+        _resolved_actor_identity(role, records[role]) for role in unique_roles
     )
     prepare_bound_friendships(role_targets, actors)
     manifest = ActorManifest(

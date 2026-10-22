@@ -671,7 +671,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 "engineInteractionSnapshot",
                 "engineMessages",
                 "getRealtimeDevice",
-                "hydrateActiveActor",
                 "loginWithPassword",
                 "openAttachment",
             ],
@@ -2219,13 +2218,29 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         gate = object.__new__(NativeProductClosureGate)
         gate.steps = []
         gate.report = new_report(gate.gate_id)
+        gate._step_observation_sequence = 0
+        gate.manifest = {"source": {"commit": "test", "workspaceDigest": "clean"}}
 
-        with self.assertRaisesRegex(GateError, "group timed out"):
+        with patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner."
+            "write_current_artifact",
+        ) as write_observation, self.assertRaisesRegex(GateError, "group timed out"):
             gate.step(
                 "group.create.ui",
                 lambda: (_ for _ in ()).throw(GateError("group timed out")),
             )
 
+        observations = [
+            json.loads(call.args[1]) for call in write_observation.call_args_list
+        ]
+        self.assertEqual(
+            [observation["state"] for observation in observations],
+            ["STARTED", "FAILED"],
+        )
+        self.assertTrue(all(
+            observation["proofStatus"] == "NOT_APPLICABLE"
+            for observation in observations
+        ))
         self.assertEqual(gate.report.runtime["firstFailedStep"], "group.create.ui")
         self.assertEqual(
             gate.report.runtime["steps"],

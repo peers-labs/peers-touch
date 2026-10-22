@@ -5,6 +5,8 @@ status: active
 owns:
   - tooling/acceptance/fixtures/chat_reset_targets.py
   - tooling/acceptance/fixtures/chat_native_reset.py
+  - tooling/acceptance/fixtures/chat_native_actors.py
+  - tooling/acceptance/provisioners/native_tauri_embedded_webdriver.py
   - tooling/acceptance/drivers/native/runtime.py
   - tooling/acceptance/gates/chat/native_product_closure_runner.py
   - tooling/acceptance/gates/chat/contact_message_resilience_runner.py
@@ -39,6 +41,12 @@ definition per candidate, then requires one exact reviewed target. Explicit
 targets validate their own Profile. Deployment and reset authorization consume
 the same result. Each new operation revalidates; no cross-operation cache exists.
 Unknown, ambiguous, drifted or stable targets remain rejected with diagnostics.
+Actor reads group accounts by exact Station. Each read validates the target
+and both containers once, then verifies one local row per requested account.
+Manifest hydration and the pre-contact drift check remain independent reads;
+the optimization never reuses authority or identity across operations.
+The Native Station attestation comparison records actual commit/protocol
+mismatch, assigned Profile, deployment and endpoint with its recovery action.
 
 Runtime Binding always launches, discovers and proves the canonical Station.
 Live Direct fault handles alter only dial multiaddrs. Chat uses the existing
@@ -61,3 +69,8 @@ current source, acquire the canonical Fixture lease, verify the borrowed child
 FD, resolve and reset both targets, read back Actors and seal actual mismatch
 diagnostics. The real product scenarios separately prove Direct interruption,
 UI failure, recovery and cleanup. Fixture routing alone is not product proof.
+Batch read regressions must reject missing/duplicate accounts and invalid
+container identity or volume. Actual three-actor timing must retain both
+independent read phases. Product closure records durable Step and login/device
+boundaries; already-hydrated login identity is checked without a second
+hydration. Neither timing nor intermediate observations establish product PASS.

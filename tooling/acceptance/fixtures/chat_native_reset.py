@@ -682,22 +682,27 @@ def verify_disposable_station_runtime(
         "station": environment["PT_ACCEPTANCE_STATION_CONTAINER"],
         "postgres": environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"],
     }
-    observed: dict[str, str] = {}
-    for service, container in containers.items():
-        output = _remote_command(
-            environment,
-            "docker inspect "
-            "--format '{{json .}}' "
-            f"{shlex.quote(container)}",
-            deadline_monotonic=deadline_monotonic,
-            cancellation=cancellation,
+    output = _remote_command(
+        environment,
+        "docker inspect --format '{{json .}}' "
+        + " ".join(shlex.quote(container) for container in containers.values()),
+        deadline_monotonic=deadline_monotonic,
+        cancellation=cancellation,
+    )
+    try:
+        inspections = [json.loads(line) for line in output.splitlines()]
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            "Disposable Chat Acceptance container inspect is invalid"
+        ) from error
+    if len(inspections) != len(containers):
+        raise RuntimeError(
+            "Disposable Chat Acceptance container inspect is incomplete"
         )
-        try:
-            inspection = json.loads(output)
-        except json.JSONDecodeError as error:
-            raise RuntimeError(
-                f"Disposable Chat Acceptance {service} inspect is invalid"
-            ) from error
+    observed: dict[str, str] = {}
+    for (service, container), inspection in zip(
+        containers.items(), inspections, strict=True,
+    ):
         labels = (
             inspection.get("Config", {}).get("Labels", {})
             if isinstance(inspection, dict)
@@ -1469,6 +1474,19 @@ def read_fixture_actor(
     environment_name: str,
     account_email: str,
 ) -> FixtureActorRecord:
+    return read_fixture_actors(
+        station_url, environment_name, (account_email,),
+    )[account_email]
+
+
+def read_fixture_actors(
+    station_url: str,
+    environment_name: str,
+    account_emails: Iterable[str],
+) -> dict[str, FixtureActorRecord]:
+    accounts = tuple(dict.fromkeys(account_emails))
+    if not accounts or any(not account for account in accounts):
+        raise RuntimeError("Chat fixture actor read requires non-empty accounts")
     environment = acceptance_station_environment(
         station_url,
         environment_name,
@@ -1481,51 +1499,34 @@ def read_fixture_actor(
         )) as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
-                """
+                f"""
 SELECT
+  email AS accountEmail,
   ptid,
-  preferred_username,
+  preferred_username AS preferredUsername,
   name,
   summary,
   icon,
   image,
   url,
-  federated_handle,
-  home_station_peer_id,
-  home_station_domain,
+  federated_handle AS federatedHandle,
+  home_station_peer_id AS homeStationPeerId,
+  home_station_domain AS homeStationDomain,
   visibility,
-  locator_seq
+  locator_seq AS locatorSeq
 FROM touch_actor
-WHERE email = ?
+WHERE email IN ({", ".join("?" for _ in accounts)})
   AND origin = 'local'
 """,
-                (account_email,),
+                accounts,
             ).fetchall()
-        if len(rows) != 1:
-            raise RuntimeError(
-                "Chat fixture requires exactly one local actor for "
-                f"account={account_email}"
-            )
-        row = rows[0]
-        value = {
-            "ptid": row["ptid"],
-            "preferredUsername": row["preferred_username"],
-            "name": row["name"],
-            "summary": row["summary"],
-            "icon": row["icon"],
-            "image": row["image"],
-            "url": row["url"],
-            "federatedHandle": row["federated_handle"],
-            "homeStationPeerId": row["home_station_peer_id"],
-            "homeStationDomain": row["home_station_domain"],
-            "visibility": row["visibility"],
-            "locatorSeq": row["locator_seq"],
-        }
+        values = [dict(row) for row in rows]
     else:
         output = _remote_psql(
             environment,
             f"""
 SELECT json_build_object(
+  'accountEmail', email,
   'ptid', ptid,
   'preferredUsername', preferred_username,
   'name', name,
@@ -1540,24 +1541,38 @@ SELECT json_build_object(
   'locatorSeq', locator_seq
 )
 FROM touch_actor
-WHERE email = {_sql_literal(account_email)}
+WHERE email IN ({", ".join(_sql_literal(account) for account in accounts)})
   AND origin = 'local';
 """,
         )
-        lines = [
-            line for line in output.splitlines()
+        values = [
+            json.loads(line) for line in output.splitlines()
             if line.strip().startswith("{")
         ]
-        if len(lines) != 1:
+    records: dict[str, FixtureActorRecord] = {}
+    for value in values:
+        if not isinstance(value, dict):
+            raise RuntimeError("Chat fixture actor projection is invalid")
+        account = str(value.get("accountEmail") or "")
+        if account not in accounts or account in records:
             raise RuntimeError(
                 "Chat fixture requires exactly one local actor for "
-                f"account={account_email}"
+                f"account={account or 'unknown'}"
             )
-        value = json.loads(lines[0])
-    if not isinstance(value, dict):
+        records[account] = _fixture_actor_record(value, account)
+    missing = set(accounts) - records.keys()
+    if missing:
         raise RuntimeError(
-            f"Chat fixture actor projection is invalid for account={account_email}"
+            "Chat fixture requires exactly one local actor for "
+            f"account={sorted(missing)[0]}"
         )
+    return {account: records[account] for account in accounts}
+
+
+def _fixture_actor_record(
+    value: dict[str, object],
+    account_email: str,
+) -> FixtureActorRecord:
     record = FixtureActorRecord(
         ptid=str(value.get("ptid") or ""),
         preferred_username=str(value.get("preferredUsername") or ""),

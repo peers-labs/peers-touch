@@ -32,6 +32,7 @@ from tooling.acceptance.core import (
     REPO_ROOT,
     call_async_harness,
 )
+from tooling.acceptance.core.evidence_store import write_current_artifact
 from tooling.acceptance.core.provisioning import load_runtime_manifest
 from tooling.acceptance.drivers.native import (
     MouseAction,
@@ -347,6 +348,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.steps: list[dict[str, Any]] = []
+        self._step_observation_sequence = 0
         self.structured_evidence: dict[str, Any] = {}
         self.localization_checks: dict[str, dict[str, list[str]]] = {}
         self.native_activation_diagnostics: list[dict[str, Any]] = []
@@ -357,15 +359,46 @@ class NativeProductClosureGate(AcceptanceGate):
         self.report.manifest = self.manifest
         self.report.runtime["desktopInputMode"] = self.input_mode.value
 
+    def observe_step(
+        self, name: str, state: str, started: float,
+        *, error: Exception | None = None,
+    ) -> None:
+        self._step_observation_sequence += 1
+        observation = {
+            "artifactKind": "acceptance-step-observation",
+            "evidenceClass": "SUPPORTING_OBSERVATION",
+            "proofStatus": "NOT_APPLICABLE",
+            "gateId": self.gate_id,
+            "sequence": self._step_observation_sequence,
+            "source": self.manifest["source"],
+            "step": name,
+            "client": name.split(".", 1)[0] if name.split(".", 1)[0] in CLIENT_ACTOR_ROLES else "",
+            "state": state,
+            "elapsedMs": int((time.monotonic() - started) * 1000),
+        }
+        if error is not None:
+            observation["errorType"] = type(error).__name__
+            observation["error"] = str(error)
+        write_current_artifact(
+            f"observations/step-{self._step_observation_sequence:05d}.json",
+            (json.dumps(observation, sort_keys=True) + "\n").encode("utf-8"),
+            repo_root=REPO_ROOT,
+        )
+        print(json.dumps(observation, sort_keys=True), flush=True)
+
     def step(self, name: str, action: Callable[[], Any]) -> Any:
+        started = time.monotonic()
+        self.observe_step(name, "STARTED", started)
         try:
             value = action()
         except Exception as error:
             self.steps.append({"step": name, "status": "fail", "error": str(error)})
             self.report.runtime["steps"] = list(self.steps)
             self.report.runtime["firstFailedStep"] = name
+            self.observe_step(name, "FAILED", started, error=error)
             raise
         self.steps.append({"step": name, "status": "pass"})
+        self.observe_step(name, "COMPLETED", started)
         return value
 
     def write_json_evidence(self, key: str, value: Any) -> None:
@@ -458,24 +491,20 @@ class NativeProductClosureGate(AcceptanceGate):
                     self.actor_specs[actor_role].get("accountRef") or ""
                 )
                 account = account_ref.removeprefix("station-account:")
-                login = call_async_harness(
-                    client,
-                    "loginWithPassword",
-                    {"account": account, "password": public_fixture_password()},
-                    namespace="chat",
-                    script_timeout=NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS,
+                login = self.step(
+                    f"{actor}.login",
+                    lambda: call_async_harness(
+                        client,
+                        "loginWithPassword",
+                        {"account": account, "password": public_fixture_password()},
+                        namespace="chat",
+                        script_timeout=NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS,
+                    ),
                 )
                 if not (login or {}).get("authenticated"):
                     raise GateError(f"{actor} login did not authenticate")
                 self.client_lifecycles.mark_authenticated(client)
-                hydration = call_async_harness(
-                    client,
-                    "hydrateActiveActor",
-                    {},
-                    namespace="chat",
-                    script_timeout=30,
-                )
-                ptid = str((hydration or {}).get("actorPtid") or "")
+                ptid = str((login or {}).get("actorPtid") or "")
                 if ptid != expected_ptid:
                     raise GateError(
                         f"{actor} login identity mismatch: "
@@ -486,7 +515,10 @@ class NativeProductClosureGate(AcceptanceGate):
             ptid = expected_ptid
             device_id = ""
             if wait_for_device:
-                device = self.wait_for_realtime_device(client, expected_ptid)
+                device = self.step(
+                    f"{actor}.device",
+                    lambda: self.wait_for_realtime_device(client, expected_ptid),
+                )
                 ptid = str(device.get("actorPtid") or "")
                 device_id = str((device or {}).get("deviceId") or "")
                 if not device_id:

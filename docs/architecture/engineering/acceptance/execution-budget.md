@@ -216,6 +216,11 @@ Profile 推断另一个 URL 的归属。显式 deployment 仍须通过原有精�
 registry owner；显式目标只解析其 Profile。解析结果沿同一次 deployment
 加载与授权检查传递，不跨操作缓存。Core held-lease 校验子进程有独立
 10 秒 deadline，超时保留真实资源检查，不将命令参数当作进程超时。
+Fixture Actor 读取按精确 Station 目标批量执行：每次操作解析目标一次、
+在一次 SSH 调用内检查 Station/PostgreSQL 两个容器，再以一个查询读取该目标
+全部账号。每个账号必须恰有一个 local Actor，遗漏、重复、身份字段不完整均
+拒绝。建档和联系人写入前仍各自执行一次独立读取与身份漂移核对，不跨阶段
+或租约缓存。Federation 准备使用同一批量读取 owner。
 
 macOS Runtime Cell 采用 Native Input 合同的 semantic-nonintrusive 默认值，
 在构建和写入 PREPARING 状态之前检查输入隔离。
@@ -381,6 +386,9 @@ source mismatch 都保留 `DIAGNOSTIC_INCOMPLETE`，不能复制生产者报告�
 不可变复制、字段校验、资源去重与 blockedResource 覆盖校验；
 `BlockedError`、Runtime Manifest、命令侧 EvidenceReport 与 ephemeral
 channel 保留同一个检查内容，没有诊断时保持缺失。
+Native Tauri Station 的 commit/protocol mismatch 由其 Provisioner 在实际
+attestation 比较处产生诊断，记录 service ID、Profile、部署环境、期望和
+实际身份、端点，以及对该 Profile 的规范部署和读回动作；不能只返回拒绝文本。
 
 Runner 为准备异常和 deadline 生成本 Gate 的不可变失败 observation，
 并将原始 Manifest、Report 或 observation 的 ArtifactRef 绑定到每项
@@ -415,9 +423,13 @@ owner；predicate observation 保留期望值、实际值或实际异常，以�
 记录调用边界；轮询内仅采样实际结果，避免每次 RPC 生成嵌套 Step。
 权限负向断言拥有拒绝是否符合预期的判断，RPC 异常 observation 不能
 抢先把已预期的拒绝记为 Gate 首个失败。所有事件仍只是 supporting evidence。
-登录 Harness 已完成 Actor hydration，interactions 直接核对返回的 Actor ID，
+登录 Harness 已完成 Actor hydration，interactions 与 product closure
+直接核对返回的 Actor ID，
 保留原有 device readiness 检查；不再次加载同一 Actor。消费等待记录
 `consumptionCount > beforeCount` 的真实基线，避免诊断缺少 predicate 操作数。
+Product closure 同样持久化全部外层 Step 及登录/device readiness 的实际
+开始、完成和失败边界，保留原始错误与运行身份。步骤观测不签发产品 PASS，
+不改变原生输入、接收者断言或等待预算。
 
 Chat product closure 与联系人 Message 故障场景使用已存在的 Direct TCP proxy。
 Runtime Binding 始终通过 canonical Station origin 完成签名发现和 binding proof，

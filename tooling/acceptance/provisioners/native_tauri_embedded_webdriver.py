@@ -36,6 +36,7 @@ from tooling.acceptance.core.provisioning import (
     RuntimeManifest,
     ServiceAttestation,
 )
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.fixtures.chat_native_actors import (
     fixture_password,
     produce_bound_actor_manifest,
@@ -322,6 +323,27 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                         f"not match client source {manifest.source_commit}"
                     ),
                     resource=f"source-identity:{service_id}:commit",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-tauri-embedded-webdriver-provisioner",
+                        recovery_action=(
+                            f"Deploy checked source {manifest.source_commit} through "
+                            f"make station for Profile {profile_name} "
+                            f"(deployment {deployment_environment}), then verify "
+                            f"{station_url}/app-meta/version."
+                        ),
+                        resource=f"source-identity:{service_id}:commit",
+                        expected={
+                            "commit": manifest.source_commit,
+                            "serviceId": service_id,
+                            "profile": profile_name,
+                            "deployment": deployment_environment,
+                        },
+                        observed={
+                            "commit": attestation.live_commit,
+                            "stationUrl": station_url,
+                            "runtimeIdentity": attestation.runtime_identity,
+                        },
+                    ),
                 )
             if attestation.protocol_digest != local_proto_digest:
                 raise BlockedError(
@@ -330,6 +352,27 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                         "client source"
                     ),
                     resource=f"source-identity:{service_id}:proto",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-tauri-embedded-webdriver-provisioner",
+                        recovery_action=(
+                            f"Deploy checked source {manifest.source_commit} through "
+                            f"make station for Profile {profile_name} "
+                            f"(deployment {deployment_environment}), then verify "
+                            f"{station_url}/app-meta/version and protocol digest."
+                        ),
+                        resource=f"source-identity:{service_id}:proto",
+                        expected={
+                            "protocolDigest": local_proto_digest,
+                            "serviceId": service_id,
+                            "profile": profile_name,
+                            "deployment": deployment_environment,
+                        },
+                        observed={
+                            "protocolDigest": attestation.protocol_digest,
+                            "stationUrl": station_url,
+                            "runtimeIdentity": attestation.runtime_identity,
+                        },
+                    ),
                 )
             services[service_id] = attestation
         return services

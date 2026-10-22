@@ -23,6 +23,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     machine_lease_reset_profile,
     prepare_local_friend_request_lifecycle,
     read_fixture_actor,
+    read_fixture_actors,
     reset_fixture_follow_edges,
     reset_local_client_storage,
     restart_acceptance_station,
@@ -665,7 +666,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self,
         remote_command,
     ) -> None:
-        remote_command.side_effect = [
+        remote_command.return_value = "\n".join([
             json.dumps({
                 "Config": {
                     "Labels": {
@@ -693,7 +694,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                     "Destination": "/var/lib/postgresql/data",
                 }],
             }),
-        ]
+        ])
 
         actual = verify_disposable_station_runtime({
             **DISPOSABLE_ENVIRONMENT,
@@ -712,7 +713,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self,
         remote_command,
     ) -> None:
-        remote_command.side_effect = [
+        remote_command.return_value = "\n".join([
             json.dumps({
                 "Config": {
                     "Labels": {
@@ -740,7 +741,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                     "Destination": "/var/lib/postgresql/data",
                 }],
             }),
-        ]
+        ])
 
         with self.assertRaisesRegex(RuntimeError, "volume mismatch"):
             verify_disposable_station_runtime({
@@ -1114,6 +1115,41 @@ INSERT INTO touch_actor VALUES (
 
             self.assertEqual(actor.ptid, "ptid:alice")
             self.assertEqual(actor.home_station_peer_id, "peer-sixwin")
+
+    def test_batch_actor_read_requires_one_complete_local_identity_per_account(self) -> None:
+        def row(account: str) -> str:
+            role = account.split("@", 1)[0]
+            return json.dumps({
+                "accountEmail": account,
+                "ptid": f"ptid:{role}",
+                "preferredUsername": role,
+                "federatedHandle": f"@{role}@station.example",
+                "homeStationPeerId": "peer-station",
+                "homeStationDomain": "station.example",
+            })
+
+        accounts = ("bob@p.t", "carol@p.t")
+        valid_rows = [row(account) for account in accounts]
+        with patch(
+            "tooling.acceptance.fixtures.chat_native_reset.acceptance_station_environment",
+            return_value={"PT_ACCEPTANCE_RUNTIME_KIND": "remote"},
+        ) as resolve, patch(
+            "tooling.acceptance.fixtures.chat_native_reset.verify_disposable_station_runtime",
+        ) as verify, patch(
+            "tooling.acceptance.fixtures.chat_native_reset._remote_psql",
+            return_value="\n".join(valid_rows),
+        ) as query:
+            records = read_fixture_actors("http://station.example", "assigned", accounts)
+            self.assertEqual(list(records), list(accounts))
+            self.assertEqual([record.ptid for record in records.values()], ["ptid:bob", "ptid:carol"])
+            resolve.assert_called_once()
+            verify.assert_called_once()
+            query.assert_called_once()
+            for rows in (valid_rows[:1], [*valid_rows, valid_rows[0]], [*valid_rows, row("eve@p.t")]):
+                with self.subTest(rows=len(rows)):
+                    query.return_value = "\n".join(rows)
+                    with self.assertRaisesRegex(RuntimeError, "exactly one local actor"):
+                        read_fixture_actors("http://station.example", "assigned", accounts)
 
     def test_same_station_contact_seeds_canonical_sqlite_projection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -52,6 +52,25 @@ from tooling.acceptance.provisioners import (
 from tooling.acceptance.remote_platform import RemotePlatform
 
 
+def fixture_actor_record(account: str, station: str) -> chat_native_reset.FixtureActorRecord:
+    role = account.split("@", 1)[0]
+    station_id = station.rsplit("-", 1)[-1]
+    return chat_native_reset.FixtureActorRecord(
+        ptid=f"ptid:{role}:{station_id}",
+        preferred_username=role,
+        name=role.title(),
+        summary="",
+        icon="",
+        image="",
+        url=f"{station}/actors/{role}",
+        federated_handle=f"@{role}@{station_id}.example",
+        home_station_peer_id=station_id,
+        home_station_domain=f"{station_id}.example",
+        visibility=1,
+        locator_seq=1,
+    )
+
+
 class StationAttestationOwnerTests(unittest.TestCase):
     def test_proto_digest_uses_only_git_tracked_contract_artifacts(self) -> None:
         native_git_environment = {
@@ -1077,8 +1096,6 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             )
 
     def test_actor_manifest_contains_ptid_refs_but_not_password(self) -> None:
-        from tooling.acceptance.core.provisioning import ActorIdentity
-
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             worktree = root / "repo"
@@ -1096,12 +1113,11 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             ), patch(
                 "tooling.acceptance.fixtures.chat_native_actors.reset_fixture"
             ), patch(
-                "tooling.acceptance.fixtures.chat_native_actors.resolve_actor_identity",
-                side_effect=lambda station, environment, role: ActorIdentity(
-                    role=role,
-                    account_ref=f"station-account:{role}@p.t",
-                    ptid=f"ptid:{role}",
-                ),
+                "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actors",
+                side_effect=lambda station, environment, accounts: {
+                    account: fixture_actor_record(account, station)
+                    for account in accounts
+                },
             ), patch(
                 "tooling.acceptance.fixtures.chat_native_actors.prepare_bound_friendships"
             ) as friendships:
@@ -1133,8 +1149,6 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             )
 
     def test_bound_actor_manifest_uses_each_roles_declared_station(self) -> None:
-        from tooling.acceptance.core.provisioning import ActorIdentity
-
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             worktree = root / "repo"
@@ -1152,12 +1166,11 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             ) as verify, patch(
                 "tooling.acceptance.fixtures.chat_native_actors.reset_fixture"
             ) as reset, patch(
-                "tooling.acceptance.fixtures.chat_native_actors.resolve_actor_identity",
-                side_effect=lambda station, environment, role: ActorIdentity(
-                    role=role,
-                    account_ref=f"station-account:{role}@p.t",
-                    ptid=f"ptid:{role}:{station.rsplit('-', 1)[-1]}",
-                ),
+                "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actors",
+                side_effect=lambda station, environment, accounts: {
+                    account: fixture_actor_record(account, station)
+                    for account in accounts
+                },
             ) as resolve, patch(
                 "tooling.acceptance.fixtures.chat_native_actors.prepare_bound_friendships"
             ) as friendships:
@@ -1187,8 +1200,8 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             self.assertEqual(
                 [call.args for call in resolve.call_args_list],
                 [
-                    ("http://station-four", "station-four", "alice"),
-                    ("http://station-five", "station-five", "bob"),
+                    ("http://station-four", "station-four", ("alice@p.t",)),
+                    ("http://station-five", "station-five", ("bob@p.t",)),
                 ],
             )
             friendships.assert_called_once_with(
@@ -1253,8 +1266,10 @@ class ActorFixtureOwnerTests(unittest.TestCase):
 
         federation_members = tuple(records.values())
         with patch(
-            "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actor",
-            side_effect=lambda _station, _environment, account: by_account[account],
+            "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actors",
+            side_effect=lambda _station, _environment, accounts: {
+                account: by_account[account] for account in accounts
+            },
         ) as read_actor, patch(
             "tooling.acceptance.fixtures.chat_native_actors.seed_bound_contacts"
         ) as seed_contact, patch(
@@ -1263,7 +1278,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
         ) as prepare_routing:
             prepare_bound_friendships(role_targets, actors)
 
-        self.assertEqual(read_actor.call_count, 3)
+        self.assertEqual(read_actor.call_count, 2)
         prepare_routing.assert_called_once_with(role_targets, records)
         self.assertEqual(
             seed_contact.call_args_list,
