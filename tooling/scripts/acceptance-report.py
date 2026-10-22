@@ -100,9 +100,21 @@ def result_diagnostic(result: dict, source: dict, store: Any) -> dict:
                 or reference not in sealed.get("artifacts", {}).values()
             ):
                 raise ValueError("artifact outside sealed Gate inventory")
-            payload = store.read_json(ref)
+            payload = json.loads(store.resolve(ref).read_text(encoding="utf-8"))
+            if reference == source_ref and not isinstance(payload, dict):
+                raise ValueError("source observation must be a JSON object")
         except (TypeError, ValueError, OSError, RuntimeError):
             missing.append(f"evidence: invalid {reference.get('path', '<unknown>')}")
+            continue
+        if not isinstance(payload, dict):
+            supporting = {
+                "artifact": reference,
+                "kind": None,
+                "jsonValueType": "array" if isinstance(payload, list) else type(payload).__name__,
+            }
+            if isinstance(payload, list):
+                supporting["itemCount"] = len(payload)
+            evidence.append(supporting)
             continue
         evidence.append({"artifact": reference, "kind": payload.get("artifactKind")})
         if payload.get("artifactKind") == "acceptance-runtime-manifest":

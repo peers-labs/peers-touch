@@ -250,6 +250,7 @@ export function ChatMessageActionOverlay({
     width: 28,
     height: 28,
     borderRadius: 8,
+    transitionProperty: 'color, background-color, border-color, box-shadow',
   };
   const surfacePosition = geometry
     ? {

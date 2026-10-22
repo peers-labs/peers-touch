@@ -170,6 +170,76 @@ class ResourceDiagnosticTests(unittest.TestCase):
                 reporter.result_diagnostic(delivered, {"commit": "other"}, store)["missingFields"],
             )
 
+    def test_sealed_supporting_json_values_preserve_diagnostics_and_hash_checks(self) -> None:
+        runner = script_module("acceptance-run")
+        reporter = script_module("acceptance-report")
+        source = {"commit": "synthetic", "workspaceDigest": "clean"}
+        values = [
+            [{"artifactKind": "acceptance-runtime-manifest", "services": ["untrusted"]}],
+            [], "supporting observation", 3, True, None,
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=REPO_ROOT)
+            with store.begin_run("producer", source=source) as run:
+                result = runner.runtime_cell_failure_result(
+                    gate_id="producer", command="synthetic", environment="synthetic",
+                    tier="local-evidence", runtime_cell="synthetic-cell",
+                    error=BlockedError(
+                        "endpoint unavailable", "service:synthetic", diagnostic=diagnostic(),
+                    ), duration_seconds=1,
+                )
+                references = [
+                    run.write_bytes(
+                        f"reports/supporting-{index}.json",
+                        json.dumps(value).encode(), media_type="application/json",
+                    ) for index, value in enumerate(values)
+                ]
+                result = runner.record_failure_observation(result, run)
+                result = runner.enrich_result_with_run_artifacts(result, run)
+                # Mislabelled supporting metadata must not become a deployment.
+                result["evidenceArtifacts"] += [
+                    {"path": ref.to_dict(), "artifactKind": "service-deployment-attestation"}
+                    for ref in references
+                ]
+                run.finalize(result=result)
+                delivered = {**result, "runManifest": run.manifest_ref.to_dict()}
+            projected = reporter.result_diagnostic(delivered, source, store)
+            self.assertEqual(projected["missingFields"], [])
+            self.assertEqual(projected["runtime"], {})
+            self.assertEqual(projected["deployments"], [])
+            supporting = [
+                item for item in projected["evidence"]
+                if item["artifact"] in [ref.to_dict() for ref in references]
+            ]
+            self.assertEqual(len(supporting), len(values))
+            self.assertEqual(supporting[0]["jsonValueType"], "array")
+            self.assertEqual(supporting[0]["itemCount"], 1)
+            store.resolve(references[0]).write_text("[]")
+            self.assertIn(
+                "evidence: invalid reports/supporting-0.json",
+                reporter.result_diagnostic(delivered, source, store)["missingFields"],
+            )
+
+    def test_sealed_source_observation_must_remain_a_json_object(self) -> None:
+        reporter = script_module("acceptance-report")
+        source = {"commit": "synthetic", "workspaceDigest": "clean"}
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=REPO_ROOT)
+            with store.begin_run("producer", source=source) as run:
+                ref = run.write_bytes(
+                    "reports/source.json", b"[]", media_type="application/json",
+                )
+                result = {
+                    "id": "producer", "status": "failed", "proofStatus": "UNPROVEN",
+                    "sourceArtifact": ref.to_dict(), "reason": "synthetic",
+                }
+                run.finalize(result=result)
+                delivered = {**result, "runManifest": run.manifest_ref.to_dict()}
+            self.assertIn(
+                "evidence: invalid reports/source.json",
+                reporter.result_diagnostic(delivered, source, store)["missingFields"],
+            )
+
     def test_command_gate_keeps_diagnostic_but_cleanup_replacement_clears_it(self) -> None:
         class SyntheticGate(AcceptanceGate):
             gate_id = "synthetic-command"

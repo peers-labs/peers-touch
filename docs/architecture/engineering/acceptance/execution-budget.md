@@ -365,6 +365,10 @@ traceability 不能证明诊断完整。
 依赖来自 sealed result；caller 修改 aggregate 字段会被标为诊断缺口。
 部署 attestation 展示实际服务、endpoint、环境、producer、commit 与
 候选 source；二者是已记录的身份值，Reporter 不生成部署、不猜测拓扑。
+通用 supporting evidence 可以是 JSON 数组或标量；Reporter 在相同的
+inventory 与 hash 校验后解析其真实值类型，保留类型与数组长度，不将其
+内容或 caller 标签投影为 Runtime 或部署。`sourceArtifact` 仍必须是对象，
+Evidence Store 的对象读取合同不变。合法数组不能被误报为损坏证据。
 
 消费者的 `requiredGateIds` 递归展开为完整根依赖路径，保留原始生产者
 manifest 和证据引用。缺节点、环、缺失/损坏 artifact、跨 Gate 引用或
@@ -455,6 +459,11 @@ Semantic keyboard sequence 由 Tauri Driver 以一次目标 WebView 的异步调
 等待 interval 为零时也必须让出任务；不增加业务等待预算。Reaction 的
 选中等待通过已有 Step owner 保存实际按键、焦点、overlay Message ID 和
 click emoji 事件，失败保留截图及 DOM，不能把空 TimeoutException 当作诊断。
+键名只记录 Enter、Tab、Escape 和空格的允许集合，避免通用 secret-key
+脱敏抹除输入语义；普通字符不记录。键盘观察同时保留动作控件实际
+visibility、transition property 与动画时间。动作按钮只动画明确的视觉
+属性，不动画继承的 visibility；后台 WebView 的动画停顿不能使已显示的
+动作栏控件持续隐藏。此修复不变更按键间隔、焦点顺序或工作预算。
 
 Chat product closure 与联系人 Message 故障场景使用已存在的 Direct TCP proxy。
 Runtime Binding 始终通过 canonical Station origin 完成签名发现和 binding proof，

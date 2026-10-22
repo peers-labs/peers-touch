@@ -2717,7 +2717,8 @@ class NativeProductClosureGate(AcceptanceGate):
               );
               state.events.push({
                 active: describe(active),
-                eventKey: event?.key || '',
+                inputName: ['Enter', 'Tab', 'Escape', ' '].includes(event?.key)
+                  ? event.key : '',
                 kind,
                 overlayKind: overlay?.getAttribute(
                   'data-message-action-overlay',
@@ -2778,6 +2779,20 @@ class NativeProductClosureGate(AcceptanceGate):
                 'data-message-action-message',
               ) || '',
               overlayLabel: overlay?.getAttribute('aria-label') || '',
+              actionControls: Array.from(
+                overlay?.querySelectorAll('[data-message-action]') || [],
+              ).map(element => ({
+                action: element.getAttribute('data-message-action'),
+                visibility: getComputedStyle(element).visibility,
+                transitionProperty: getComputedStyle(element).transitionProperty,
+                transitions: element.getAnimations().map(animation => ({
+                  currentTime: animation.currentTime,
+                  playState: animation.playState,
+                  keyframes: animation.effect?.getKeyframes().map(frame => ({
+                    visibility: frame.visibility,
+                  })),
+                })),
+              })),
             };
         """
         # #endregion

@@ -46,6 +46,10 @@ Legal action patterns:
 - Keyboard-accessible overflow menu anchored to `ActionAnchor`.
 - Detached side popover when the message is near viewport edges.
 
+Action-button transitions MUST name visual properties explicitly. They must not
+animate inherited `visibility`: a toolbar becoming visible must make its
+controls focusable immediately, including in a background WebView.
+
 Forbidden patterns:
 
 - Hover bar covering text selection, image body, file name, voice scrubber, or retry control.

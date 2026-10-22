@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: ce14979ae8b41bdf755e269ff64ae166e78a35c5be50e1364deebd3dbdd4b2b4
+covered_docs_hash: 13b106bbdbeff8e810394235bcd78ed624f7c247c57664178f0f9bc9e8cf8f60
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,20 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Supporting JSON And Action Focus Review
+
+Reporter accepts hash-verified same-run supporting arrays and scalars while
+keeping source observations object-only and excluding nonobjects from runtime
+and deployment projections. Sealed-value regressions cover valid arrays,
+misleading metadata, corrupted bytes and invalid source type.
+Action buttons animate explicit visual properties instead of inherited
+visibility. An actual public-component probe on the assigned native binary
+isolated a stalled visibility transition; the same keyboard sequence succeeds
+when only the transition properties change. The native producer records allowed
+input names and actual control animation state. These observations support
+attribution and do not replace original dual-client product proof.
+Existing ownership and proof rules cover both changes; no Skill policy changes.
 
 ## Batch Fixture And Native Diagnostic Review
 
