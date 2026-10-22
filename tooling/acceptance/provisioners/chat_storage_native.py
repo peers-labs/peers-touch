@@ -213,4 +213,5 @@ class ChatStorageNativeProvisioner(HomeStationProvisioner):
                 manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )

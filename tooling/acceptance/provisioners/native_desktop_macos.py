@@ -52,6 +52,7 @@ from tooling.acceptance.drivers.tauri import (
     find_app_binary,
     resolve_smoke_port,
 )
+from .desktop_acceptance_build import DesktopAcceptanceBuild
 
 
 NATIVE_WINDOW_READY_TIMEOUT_SECONDS = 30.0
@@ -301,6 +302,13 @@ class NativeDesktopMacOSProvisioner:
         self._require_clean_source()
         binary = self._build_acceptance_binary()
         self._require_clean_source()
+        if (self._git("rev-parse", "HEAD"), self._git("rev-parse", "HEAD^{tree}")) != (
+            commit, tree,
+        ):
+            raise BlockedError(
+                reason="macOS runtime-cell source changed while preparing its binary",
+                resource="source-identity:worktree-commit",
+            )
         return CellSourceIdentity(
             mode="local-worktree",
             commit=commit,
@@ -339,29 +347,12 @@ class NativeDesktopMacOSProvisioner:
             )
 
     def _build_acceptance_binary(self) -> Path:
-        completed = subprocess.run(
-            ("make", "acceptance-driver-build"),
-            cwd=self.source_root,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=1800,
+        override = os.environ.get("PT_ACCEPTANCE_APP_BINARY", "").strip()
+        build = DesktopAcceptanceBuild(
+            self.source_root,
+            binary=Path(override) if override else None,
         )
-        if completed.returncode != 0:
-            raise BlockedError(
-                reason=(
-                    "desktop-macos-native could not build its exact-source "
-                    "Acceptance binary"
-                ),
-                resource="desktop-acceptance-binary",
-            )
-        binary = Path(find_app_binary()).resolve()
-        if not binary.is_file():
-            raise BlockedError(
-                reason=f"macOS Acceptance binary is missing: {binary}",
-                resource="desktop-acceptance-binary",
-            )
-        return binary
+        return build.ensure()
 
     def _host_identity(
         self,

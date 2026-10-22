@@ -15,6 +15,7 @@ from .evidence_store import (
 )
 from .errors import EvidenceError
 from .redaction import redact_text, redact_value
+from .resource_diagnostic import ResourceDiagnostic
 
 
 TEXT_EVIDENCE_SUFFIXES = {".html", ".json", ".log", ".md", ".txt", ".xml"}
@@ -57,6 +58,7 @@ class EvidenceReport:
     blocked_reason: Optional[str] = None
     blocked_resource: Optional[str] = None
     manifest: Optional[dict[str, Any]] = None
+    diagnostic: ResourceDiagnostic | None = None
 
     def add_evidence_file(
         self,
@@ -145,6 +147,9 @@ class EvidenceReport:
             report["blockedReason"] = self.blocked_reason
         if self.blocked_resource:
             report["blockedResource"] = self.blocked_resource
+        if self.diagnostic is not None:
+            self.diagnostic.require_resource(self.blocked_resource or "")
+            report["diagnostic"] = self.diagnostic.to_dict()
         if self.phase:
             report["phase"] = self.phase
         if self.bom:

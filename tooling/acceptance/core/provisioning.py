@@ -11,6 +11,7 @@ from typing import Any
 
 from .errors import ClientBindingError, ProvisioningError
 from .redaction import redact_value
+from .resource_diagnostic import ResourceDiagnostic
 
 
 SERVICE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -842,6 +843,7 @@ class RuntimeManifest:
     cleanup_resources: tuple[str, ...] = ()
     blocked_reason: str | None = None
     blocked_resource: str | None = None
+    diagnostic: ResourceDiagnostic | None = None
 
     def to_dict(self) -> dict[str, Any]:
         _validate_runtime_client_bindings(self.clients, self.services)
@@ -891,6 +893,9 @@ class RuntimeManifest:
             result["blockedReason"] = self.blocked_reason
         if self.blocked_resource:
             result["blockedResource"] = self.blocked_resource
+        if self.diagnostic is not None:
+            self.diagnostic.require_resource(self.blocked_resource or "")
+            result["diagnostic"] = self.diagnostic.to_dict()
         return redact_value(result)
 
     def write(self, path: Path) -> Path:
@@ -944,6 +949,8 @@ def blocked_manifest(
     base: RuntimeManifest,
     reason: str,
     resource: str = "",
+    *,
+    diagnostic: ResourceDiagnostic | None = None,
 ) -> RuntimeManifest:
     from dataclasses import replace
 
@@ -952,6 +959,7 @@ def blocked_manifest(
         state=ProvisioningState.BLOCKED,
         blocked_reason=reason,
         blocked_resource=resource or None,
+        diagnostic=diagnostic,
     )
 
 

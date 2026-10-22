@@ -26,6 +26,7 @@ tooling/acceptance/
 │   ├── evidence.py                 # Evidence Schema + 报告工具
 │   ├── evidence_store.py           # [D-11] 唯一root/run/ref/manifest/latest/cleanup owner
 │   ├── errors.py                   # GateError 统一异常
+│   ├── resource_diagnostic.py      # Owner 的不可变资源检查与缺项状态
 │   ├── redaction.py                # 结构化报告和文本证据统一脱敏
 │   ├── harness.py                  # 通用 JS harness 桥接 helper
 │   ├── provisioning.py             # Environment contract、runtime manifest 与生命周期接口
@@ -86,6 +87,7 @@ tooling/acceptance/
 │   ├── __init__.py
 │   ├── home_station.py
 │   ├── native_desktop_macos.py
+│   ├── desktop_acceptance_build.py # 本地精确源码构建、完整性校验与有界复用
 │   ├── local_tunnel_supervisor.py # bounded local SSH-forward ownership
 │   ├── remote_source_identity.py  # SSH-backed deployment source identity adapter
 │   ├── native_desktop_linux.py

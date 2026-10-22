@@ -752,6 +752,8 @@ def provisioning_failure_result(
     if blocked:
         result["blockedReason"] = error.reason
         result["blockedResource"] = error.resource
+        if error.diagnostic is not None:
+            result["diagnostic"] = error.diagnostic.to_dict()
     return result
 
 
@@ -794,7 +796,9 @@ def runtime_cell_failure_result(
     }
     if blocked:
         result["blockedReason"] = redact_text(str(error))
-        result["blockedResource"] = f"runtime-cell:{runtime_cell}"
+        result["blockedResource"] = error.resource
+        if error.diagnostic is not None:
+            result["diagnostic"] = error.diagnostic.to_dict()
     return result
 
 
@@ -851,6 +855,8 @@ def ephemeral_launch_failure_result(
     elif isinstance(error, BlockedError):
         result["blockedReason"] = redact_text(error.reason)
         result["blockedResource"] = redact_text(error.resource)
+        if error.diagnostic is not None:
+            result["diagnostic"] = error.diagnostic.to_dict()
     elif blocked:
         result["blockedReason"] = redact_text(str(error))
         result["blockedResource"] = f"ephemeral-launch-context:{gate_id}"
@@ -1206,6 +1212,40 @@ def load_json_artifact(path: Path) -> Any | None:
         return None
 
 
+def record_failure_observation(result: dict[str, Any], run: Any) -> dict[str, Any]:
+    """Give preparation/deadline causes an immutable observation in this Gate."""
+    if not result_is_incomplete(result) or not result.get("reason"):
+        return result
+    if isinstance(result.get("sourceArtifact"), dict):
+        # Already produced by this Gate's Runtime Manifest or command report.
+        if result["sourceArtifact"] in [
+            ref.to_dict() for ref in run.collect_existing_artifacts().values()
+        ]:
+            return result
+    observation = {
+        key: value for key, value in result.items()
+        if key not in {"sourceArtifact", "sourceArtifactKind"}
+    }
+    observation.update(
+        artifactKind="acceptance-execution-failure-observation",
+        gateId=result["id"],
+        gate=result.get("sourceGate", result["id"]),
+        phase=result.get("sourcePhase", "Gate Execution"),
+        bom=result.get("sourceBom", ["acceptance-execution"]),
+        spec=result.get("sourceSpec", ["execution-budget"]),
+    )
+    ref = run.write_json(
+        "reports/execution-failure.json", observation,
+        role="execution-failure-observation",
+    )
+    return {
+        **result,
+        "sourceArtifact": ref.to_dict(),
+        "sourceArtifactKind": observation["artifactKind"],
+        "sourcePhase": observation["phase"],
+    }
+
+
 def evidence_summary_from_artifact(path: Any, artifact: Any) -> dict[str, Any]:
     summary: dict[str, Any] = {"path": path}
     if not isinstance(artifact, dict):
@@ -1230,6 +1270,7 @@ def evidence_summary_from_artifact(path: Any, artifact: Any) -> dict[str, Any]:
         "error_type",
         "failedStep",
         "sampleEmissionAllowed",
+        "diagnostic",
     ):
         if key in artifact:
             summary[key] = artifact[key]
@@ -1282,7 +1323,14 @@ def enrich_result_with_run_artifacts(
         return result
     enriched = dict(result)
     enriched["evidenceArtifacts"] = artifacts
+    # An explicit same-run failure observation owns the cause. A successful
+    # cleanup artifact must never replace it or supply the failure's status.
     primary = next(
+        (artifact for artifact in artifacts
+         if artifact["path"] == result.get("sourceArtifact")),
+        None,
+    )
+    primary = primary or next(
         (
             artifact
             for artifact in artifacts
@@ -1308,19 +1356,20 @@ def enrich_result_with_run_artifacts(
             (
                 artifact
                 for artifact in artifacts
-                if any(
-                    key in artifact
-                    for key in (
-                        "artifactKind",
-                        "status",
-                        "completionStatus",
-                        "proofStatus",
-                    )
+                if artifact.get("gateId", result.get("id")) == result.get("id")
+                and (
+                    artifact.get("status") in {"FAIL", "FAILED", "BLOCKED", "failed", "blocked"}
+                    or artifact.get("completionStatus") in {"PARTIAL", "BLOCKED"}
+                    and all(key in artifact for key in ("phase", "bom", "spec", "gate"))
                 )
             ),
-            artifacts[0],
+            None,
         )
-    traceability_artifact = next(
+    if primary is None:
+        return enriched
+    traceability_artifact = primary if all(
+        key in primary for key in ("phase", "bom", "spec", "gate")
+    ) else next(
         (
             artifact
             for artifact in artifacts
@@ -1329,6 +1378,22 @@ def enrich_result_with_run_artifacts(
         primary,
     )
     enriched["sourceArtifact"] = primary.get("path")
+    if "diagnostic" in primary:
+        from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
+
+        try:
+            diagnostic = ResourceDiagnostic.from_dict(primary["diagnostic"])
+            diagnostic.require_resource(
+                primary.get("blockedResource") or result.get("blockedResource") or ""
+            )
+        except (TypeError, ValueError):
+            enriched["diagnosticError"] = "producer resource diagnostic is invalid"
+            enriched.pop("diagnostic", None)
+        else:
+            bound = diagnostic.to_dict()
+            for check in bound["resourceChecks"]:
+                check["evidenceArtifact"] = primary["path"]
+            enriched["diagnostic"] = bound
     for source_key, target_key in (
         ("artifactKind", "sourceArtifactKind"),
         ("status", "evidenceStatus"),
@@ -2739,6 +2804,8 @@ def main() -> int:
                                 "product Gate execution"
                             ),
                         }
+                        if "diagnostic" in manifest:
+                            result["diagnostic"] = manifest["diagnostic"]
                     if result is None and manifest:
                         print(
                             f"[PROVISIONED] {environment} "
@@ -3006,7 +3073,29 @@ def main() -> int:
                     "reason": str(error),
                     "timedOut": True,
                     "sampleEmissionAllowed": False,
+                    "sourcePhase": f"Gate {error.phase}: {error.stage}",
                 }
+                from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
+
+                diagnostic = getattr(error, "diagnostic", None)
+                resource = getattr(error, "resource", "") or f"gate-budget:{gate_id}"
+                if diagnostic is None:
+                    diagnostic = ResourceDiagnostic(
+                        owner="tooling/acceptance/core/execution_budget.py",
+                        recovery_action=(
+                            f"Diagnose the recorded {error.stage} stage at its owner; "
+                            "repair and qualify it, then refreeze the unchanged scope "
+                            "and policy. Do not increase the budget."
+                        ),
+                        resource_checks=[{
+                            "resource": resource,
+                            "expected": execution.budget.to_dict(),
+                            "state": "OBSERVED",
+                            "observed": execution.report(),
+                        }],
+                    )
+                result["blockedResource"] = resource
+                result["diagnostic"] = diagnostic.to_dict()
             finally:
                 if execution is not None:
                     execution.enter_phase("cleanup")
@@ -3270,10 +3359,15 @@ def main() -> int:
             if cleanup_artifact is not None:
                 result["cleanupArtifact"] = cleanup_artifact
             if cleanup_error:
+                result.pop("diagnostic", None)
+                for field in ("blockedReason", "blockedResource", "sourceArtifact"):
+                    result.pop(field, None)
+                result["reason"] = cleanup_error
                 result["cleanupError"] = cleanup_error
                 result["status"] = "failed"
                 result["completionStatus"] = "PARTIAL"
                 result["proofStatus"] = "UNPROVEN"
+                result["sourcePhase"] = "Gate Resource Cleanup"
                 if gate_process_cleanup_error:
                     result["errorType"] = "EphemeralLaunchCleanupFailed"
                     result["sourcePhase"] = "Gate Process Cleanup"
@@ -3290,6 +3384,10 @@ def main() -> int:
                 result["sampleEmissionAllowed"] = False
             result["prerequisiteProofs"] = prerequisite_refs
 
+            result = execute_stage(
+                execution, "failure-observation", record_failure_observation,
+                result, gate_run, phase="publish",
+            )
             result = execute_stage(
                 execution, "evidence-read", enrich_result_with_run_artifacts,
                 result, gate_run, phase="publish",

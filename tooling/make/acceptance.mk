@@ -35,14 +35,8 @@ CELL_GATE ?= runtime-cell-preflight
 RUNTIME_CELL ?= desktop-macos-native
 
 acceptance-driver-build:
-	VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build
-	cd apps/desktop/src-tauri && \
-		TAURI_CONFIG='{"app":{"withGlobalTauri":true}}' \
-		cargo build --features acceptance-webdriver
-	@mkdir -p "$(dir $(ACCEPTANCE_DRIVER_BINARY))"
-	@cp apps/desktop/src-tauri/target/debug/peers-touch-desktop "$(ACCEPTANCE_DRIVER_BINARY).tmp"
-	@chmod 0755 "$(ACCEPTANCE_DRIVER_BINARY).tmp"
-	@mv "$(ACCEPTANCE_DRIVER_BINARY).tmp" "$(ACCEPTANCE_DRIVER_BINARY)"
+	"$${PT_ACCEPTANCE_PYTHON:-python3}" tooling/scripts/acceptance-driver-build.py \
+		--binary "$(ACCEPTANCE_DRIVER_BINARY)"
 
 acceptance-driver-smoke:
 	python3 -m tooling.acceptance.drivers.tauri \

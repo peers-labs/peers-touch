@@ -868,4 +868,5 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 self._manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )

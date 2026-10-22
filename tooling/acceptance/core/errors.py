@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .resource_diagnostic import ResourceDiagnostic
+
 
 class GateError(RuntimeError):
     pass
@@ -126,10 +128,21 @@ class ClientBindingError(ProvisioningError):
 
 
 class BlockedError(ProvisioningError):
-    def __init__(self, reason: str, resource: str = "") -> None:
+    def __init__(
+        self,
+        reason: str,
+        resource: str = "",
+        *,
+        diagnostic: ResourceDiagnostic | None = None,
+    ) -> None:
         super().__init__(reason)
+        if diagnostic is not None:
+            if not isinstance(diagnostic, ResourceDiagnostic):
+                raise TypeError("blocked diagnostic must be ResourceDiagnostic")
+            diagnostic.require_resource(resource)
         self.reason = reason
         self.resource = resource
+        self.diagnostic = diagnostic
 
 
 class NativeInputBlocked(BlockedError):
@@ -197,10 +210,10 @@ class EphemeralCapabilityBlocked(EphemeralLaunchError, BlockedError):
         *,
         resource: str = "",
         operation: str = "invoke",
+        diagnostic: ResourceDiagnostic | None = None,
     ) -> None:
         EphemeralLaunchError.__init__(self, reason, operation=operation)
-        self.reason = reason
-        self.resource = resource
+        BlockedError.__init__(self, reason, resource, diagnostic=diagnostic)
 
 
 class EphemeralLaunchCleanupFailed(EphemeralLaunchError):

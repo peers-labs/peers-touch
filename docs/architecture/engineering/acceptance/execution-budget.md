@@ -19,8 +19,8 @@ Runtime Profile、证明合同或 Evidence Store。数值是显式实验阈值�
 
 当前方案适合分阶段落地，不能声称现有 Gate 已具备完整场景复用能力。
 
-- `acceptance-run.py` 当前只对命令设置 timeout，资源准备、清理、
-  evidence 扫描与发布缺少统一生命周期上界。这是 Infra 缺陷。
+- `acceptance-run.py` 通过 `GateExecution` 对资源准备、命令、清理、
+  evidence 扫描与发布设置同一个生命周期预算，并保留清理与发布尾部。
 - shell 子进程超时可能遗留后代。预算实验沿用已有
   `GateProcessLauncher`，将既有 shell 命令作为明确的 `sh -c` argv，
   由同一进程组终止机制处理；不新造进程监督器。
@@ -36,6 +36,29 @@ Runtime Profile、证明合同或 Evidence Store。数值是显式实验阈值�
 完整执行模型仍见 [proposals/execution-model](proposals/execution-model/README.md)。
 本版实现预算、显式结构检查依赖图和修复循环。业务 case/断言生产者、
 跨 Gate 原生资源共享及产品 input→receiver 细粒度计量仍是后续注入范围。
+
+## Desktop 构建复用
+
+`provisioners/desktop_acceptance_build.py::DesktopAcceptanceBuild` 是本地
+Desktop Acceptance binary 的唯一构建 Owner。`make acceptance-driver-build`
+与 macOS Runtime Cell 均消费该 Owner；其他调用 Make 的 Provisioner
+同时获得同一构建校验，不保留独立的 Vite/Cargo 构建配方。
+
+Owner 先获取 worktree-local OS 文件锁，再核对干净 HEAD/tree、
+工作区绝对路径、平台、工具版本/可执行文件 hash、构建环境摘要、
+本地 npm/Cargo/Vite 配置及安装依赖锁元数据。上述身份与私有 receipt
+完全一致，且 binary 存在、可执行、SHA-256 一致时才复用。
+源码、配置、工具或产物改变均失效；没有 receipt 的旧 binary 不能
+被重新标为当前 commit。依赖安装由原有包管理器管理，receipt 不替代
+依赖完整性审计。
+
+冷构建仍执行完整 applets/Desktop frontend 与 `acceptance-webdriver`
+Cargo 构建，完成后重查源码和输入，再原子发布 binary 与 receipt。
+锁等待、身份探测和两段构建共享有限总时长；沿用
+`GateProcessLauncher` 的取消及进程组清理，不扩大 Gate 阈值。
+每次尝试记录真实冷/热成本、阶段、返回码和输出；Gate 内构建输出
+写入该 Gate 的 Evidence Store，独立准备的输出保留在 `.local`。
+Receipt 是可重建产物缓存，不是产品证明，不继承任何 Gate PASS。
 
 ## 唯一执行入口
 
@@ -310,6 +333,18 @@ source mismatch 都保留 `DIAGNOSTIC_INCOMPLETE`，不能复制生产者报告�
   列表必须覆盖该结果的 blockedResource；没有记录、畸形记录和没有
   可验证证据的记录都不能合格。
 
+生产者在探测边界创建 `core/resource_diagnostic.py::ResourceDiagnostic`，
+只传实际 `OBSERVED` 或带理由的 `NOT_EVALUATED` 检查。Core 对其进行
+不可变复制、字段校验、资源去重与 blockedResource 覆盖校验；
+`BlockedError`、Runtime Manifest、命令侧 EvidenceReport 与 ephemeral
+channel 保留同一个检查内容，没有诊断时保持缺失。
+
+Runner 为准备异常和 deadline 生成本 Gate 的不可变失败 observation，
+并将原始 Manifest、Report 或 observation 的 ArtifactRef 绑定到每项
+检查；生产者不签发自引用 hash。显式失败 observation 优先于清理和
+其他辅助 artifact。若清理失败替换了原始阻断原因，最终诊断不能继续
+描述原始阻断为最终失败。Reporter 只验真并投影这些原始记录。
+
 缺少原因、具体资源、生产阶段、上述诊断或有效证据时，输出逐项缺口，
 而非合成完整结论。业务 producer 负责补足业务检查；Reporter 只投影。
 消费者继承根生产者的诊断缺口，不伪造自己的资源故障。
@@ -322,5 +357,5 @@ source mismatch 都保留 `DIAGNOSTIC_INCOMPLETE`，不能复制生产者报告�
 合法的业务 BLOCKED 可以具有完整诊断；诊断完整不等于产品通过。
 结构判定的渲染直接复用 `core/execution_graph.py::validate_judgment`。
 
-本轮只补报告与诊断验真，不修改业务拒绝条件，不证明跨 Gate Runtime
-复用、共享业务断言或自动成本优化已完成。
+构建复用和诊断通道不修改业务拒绝条件，不证明跨 Gate Runtime 复用、
+共享业务断言或产品证明已完成。

@@ -90,29 +90,23 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
                 stdout="",
                 stderr="",
             )
-            built = subprocess.CompletedProcess(
-                args=("make", "acceptance-driver-build"),
-                returncode=0,
-                stdout="built",
-                stderr="",
-            )
             with (
                 patch.object(
                     lifecycle,
                     "_git",
-                    side_effect=(commit, tree),
+                    side_effect=(commit, tree, commit, tree),
                 ),
                 patch(
                     "tooling.acceptance.provisioners."
                     "native_desktop_macos.subprocess.run",
-                    side_effect=(clean, built, clean),
-                ) as run,
+                    side_effect=(clean, clean),
+                ),
                 patch(
                     "tooling.acceptance.provisioners."
-                    "native_desktop_macos.find_app_binary",
-                    return_value=str(binary),
-                ),
+                    "native_desktop_macos.DesktopAcceptanceBuild",
+                ) as owner,
             ):
+                owner.return_value.ensure.return_value = binary
                 source = lifecycle._source_identity()
 
         self.assertEqual(source.commit, commit)
@@ -120,11 +114,8 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             source.binary_sha256,
             hashlib.sha256(b"exact-source-binary").hexdigest(),
         )
-        self.assertEqual(
-            run.call_args_list[1].args[0],
-            ("make", "acceptance-driver-build"),
-        )
-        self.assertEqual(run.call_args_list[1].kwargs["cwd"], root.resolve())
+        owner.assert_called_once_with(root.resolve(), binary=None)
+        owner.return_value.ensure.assert_called_once_with()
 
     def test_probe_launcher_places_probe_window_on_main_display(
         self,

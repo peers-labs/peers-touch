@@ -135,6 +135,7 @@ class AcceptanceGate(ABC):
             self.report.error_type = type(error).__name__
             self.report.blocked_reason = error.reason
             self.report.blocked_resource = error.resource
+            self.report.diagnostic = error.diagnostic
             runtime_binding = getattr(self, "runtime_binding", None)
             if runtime_binding is not None:
                 self.report.runtime["clientBindingProofs"] = {
@@ -163,6 +164,7 @@ class AcceptanceGate(ABC):
                 self.report.error_type = type(caught_error).__name__
                 self.report.blocked_reason = None
                 self.report.blocked_resource = None
+                self.report.diagnostic = None
 
         self.report.duration_ms = int((time.time() - self._start_time) * 1000)
         try:

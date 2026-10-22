@@ -2562,6 +2562,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 self._manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
     def _create_isolated_ios_simulator(
@@ -4366,6 +4367,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                 self._manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
     def create_appium_session(
@@ -4915,6 +4917,7 @@ class MobileIOSLayoutSimulatorProvisioner(MobileSimulatorProvisioner):
                 self._manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
 
@@ -7330,6 +7333,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 self._manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
     def create_gate_launch_context(
@@ -8224,6 +8228,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 self._manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
     def _new_base_provisioner(
@@ -9582,6 +9587,7 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
                 self._manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
     def create_gate_launch_context(

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from .errors import (
     EphemeralCapabilityBlocked,
@@ -35,6 +35,7 @@ from .errors import (
     EphemeralLaunchTimeout,
     EphemeralLaunchTransportUnsupported,
 )
+from .resource_diagnostic import ResourceDiagnostic
 
 
 EPHEMERAL_CONTEXT_FD_ENV = "PT_ACCEPTANCE_EPHEMERAL_CONTEXT_FD"
@@ -240,6 +241,8 @@ class GateProcessLauncher:
         self,
         spec: GateLaunchSpec,
         binding: Optional[GateLaunchBinding],
+        *,
+        capture_output: Callable[[str, str], None] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         has_context = binding is not None
         if bool(spec.required_capabilities) != has_context:
@@ -321,15 +324,21 @@ class GateProcessLauncher:
         try:
             stdout, stderr = process.communicate(timeout=spec.timeout_seconds)
         except subprocess.TimeoutExpired as error:
-            self._terminate(process)
+            stdout, stderr = self._terminate(process)
+            if capture_output is not None:
+                capture_output(stdout, stderr)
             raise EphemeralLaunchTimeout(
                 "Gate process exceeded its launch timeout",
                 operation="gate_process",
             ) from error
         except BaseException:
-            self._terminate(process)
+            stdout, stderr = self._terminate(process)
+            if capture_output is not None:
+                capture_output(stdout, stderr)
             raise
         self._kill_remaining_process_group(process)
+        if capture_output is not None:
+            capture_output(stdout, stderr)
         return subprocess.CompletedProcess(
             args=spec.argv,
             returncode=process.returncode,
@@ -337,19 +346,19 @@ class GateProcessLauncher:
             stderr=stderr,
         )
 
-    def _terminate(self, process: subprocess.Popen[str]) -> None:
+    def _terminate(self, process: subprocess.Popen[str]) -> tuple[str, str]:
         self._signal_process_tree(process, force=False)
         try:
-            process.communicate(timeout=self._termination_timeout_seconds)
+            output = process.communicate(timeout=self._termination_timeout_seconds)
         except subprocess.TimeoutExpired:
             self._signal_process_tree(process, force=True)
         except BaseException:
             self._signal_process_tree(process, force=True)
         else:
             self._kill_remaining_process_group(process)
-            return
+            return output
         try:
-            process.communicate(timeout=self._termination_timeout_seconds)
+            output = process.communicate(timeout=self._termination_timeout_seconds)
         except subprocess.TimeoutExpired as error:
             raise EphemeralLaunchCleanupFailed(
                 "Gate process did not stop after termination",
@@ -361,6 +370,7 @@ class GateProcessLauncher:
                 operation="gate_process",
             ) from error
         self._kill_remaining_process_group(process)
+        return output
 
     @staticmethod
     def _signal_process_tree(
@@ -1317,11 +1327,7 @@ class EphemeralGateClient:
                         "ephemeral capability blocked response is invalid",
                         operation="invoke",
                     )
-                raise EphemeralCapabilityBlocked(
-                    reason,
-                    resource=resource,
-                    operation="invoke",
-                )
+                raise _blocked_error_from_response(response)
             if code == EphemeralLaunchTimeout.code:
                 raise EphemeralLaunchTimeout(
                     "ephemeral capability request timed out",
@@ -1617,6 +1623,16 @@ def _validate_projected_response(
             "blocked capability response projection resource is invalid",
             operation="invoke",
         )
+    if "diagnostic" in error:
+        try:
+            ResourceDiagnostic.from_dict(error["diagnostic"]).require_resource(
+                error.get("resource", "")
+            )
+        except (TypeError, ValueError) as invalid:
+            raise EphemeralLaunchProtocolError(
+                "blocked capability resource diagnostic is invalid",
+                operation="invoke",
+            ) from invalid
 
 
 def _blocked_error_from_response(
@@ -1632,6 +1648,10 @@ def _blocked_error_from_response(
         reason,
         resource=resource,
         operation="invoke",
+        diagnostic=(
+            ResourceDiagnostic.from_dict(error["diagnostic"])
+            if "diagnostic" in error else None
+        ),
     )
 
 
@@ -1836,6 +1856,8 @@ def _blocked_response(
     }
     if error.resource:
         error_data["resource"] = error.resource
+    if error.diagnostic is not None:
+        error_data["diagnostic"] = error.diagnostic.to_dict()
     return {
         "requestId": request_id,
         "status": "BLOCKED",

@@ -460,6 +460,7 @@ class DesktopShellNativeProvisioner(EnvironmentProvisioner):
                 self._manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
     def create_gate_launch_context(

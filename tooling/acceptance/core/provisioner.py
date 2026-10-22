@@ -30,6 +30,7 @@ from .provisioning import (
     blocked_manifest,
     new_manifest,
 )
+from .resource_diagnostic import ResourceDiagnostic
 from .reset_authority import (
     STATION_RESET_AUTHORITY_PREFIX,
     acquire_station_reset_authority,
@@ -696,8 +697,11 @@ class EnvironmentProvisioner(ABC):
         *,
         reason: str,
         resource: str,
+        diagnostic: ResourceDiagnostic | None = None,
     ) -> RuntimeManifest:
-        blocked = blocked_manifest(manifest, reason=reason, resource=resource)
+        blocked = blocked_manifest(
+            manifest, reason=reason, resource=resource, diagnostic=diagnostic,
+        )
         self._manifest = blocked
         return blocked
 

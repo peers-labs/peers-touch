@@ -542,6 +542,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 self._manifest,
                 reason=error.reason,
                 resource=error.resource,
+                diagnostic=error.diagnostic,
             )
 
         runtime_cell = os.environ.get(
@@ -574,6 +575,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
     @staticmethod
