@@ -109,6 +109,9 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::runtime::station_route::station_route_refresh,
         crate::runtime::station_route::station_route_restore,
         crate::runtime::station_route::station_route_snapshot,
+        crate::runtime::x_config::x_config_projection,
+        crate::runtime::x_config::x_config_refresh,
+        crate::runtime::x_config::x_config_discover_suggestion,
         // Secure storage
         secure_storage::secure_storage_get,
         secure_storage::secure_storage_remove,
@@ -271,6 +274,9 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::runtime::station_route::station_route_refresh,
         crate::runtime::station_route::station_route_restore,
         crate::runtime::station_route::station_route_snapshot,
+        crate::runtime::x_config::x_config_projection,
+        crate::runtime::x_config::x_config_refresh,
+        crate::runtime::x_config::x_config_discover_suggestion,
         // Secure storage
         secure_storage::secure_storage_get,
         secure_storage::secure_storage_remove,

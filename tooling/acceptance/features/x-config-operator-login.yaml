@@ -1,0 +1,55 @@
+{
+  "id": "x-config-operator-login",
+  "status": "active",
+  "product_area": "x-config",
+  "owners": [
+    "model/domain/oauth/operator_login.proto",
+    "packages/github-repository/**",
+    "apps/oauth2-client/internal/application/oauth/usecase/operator_login.go",
+    "apps/oauth2-client/internal/interfaces/http/handler/operator_login_handler.go",
+    "apps/x-config/internal/application/operatorauth/**",
+    "apps/x-config/internal/infrastructure/operatorstore/**",
+    "apps/x-config/internal/interfaces/http/auth_handler.go"
+  ],
+  "truth_sources": [
+    "OAuth durable one-use operator handoff",
+    "X Config Home SQLite attempt and assertion-consumption records",
+    "X Config Home SQLite operator session and revocation records"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "http",
+      "route": "/api/admin/auth/{start|callback|session|logout}"
+    },
+    {
+      "type": "http",
+      "route": "/api/oauth/operator/redeem"
+    }
+  ],
+  "required_gates": [
+    "x-config-operator-login-contract",
+    "x-config-home-operator-login-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "operator assertion binds exact purpose, audience, site, receiver challenge, provider subject, assertion identity and two-minute lifetime",
+      "OAuth handoff and X Config assertion identity are each durably consumed once",
+      "only reviewed provider subjects receive a one-hour operator session",
+      "state-changing admin requests require the session-bound CSRF value and logout durably revokes the session",
+      "attempt consumption, assertion consumption and session creation commit in one local transaction after Broker redemption",
+      "session and revocation survive X Config restart without an X Config GitHub auth write",
+      "the exact Home release proves real provider login, replay denial, CSRF denial, logout, restart continuity and segmented warm timing"
+    ],
+    "visible": [
+      "successful callback removes the handoff code through a clean redirect",
+      "session readback exposes only provider subject and expiry",
+      "replayed, cross-audience, unauthorized, expired, revoked and CSRF-invalid requests fail closed"
+    ]
+  },
+  "negative": [
+    "Station account-login and connector-link assertions cannot authorize X Config",
+    "provider credentials, receiver verifier, assertion bytes and session token never enter URLs or logs",
+    "X Config cannot fall back to memory or GitHub for production operator state",
+    "X Config login cannot expose signing material, administer Relay, or mutate Station Access"
+  ]
+}

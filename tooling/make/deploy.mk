@@ -16,13 +16,17 @@
 #   make git-serve-stop     # Stop local git server
 #   make git-serve-status   # Check if running
 
-.PHONY: deploy deploy-status deploy-logs setup-git-server git-serve git-serve-stop git-serve-status
+.PHONY: deploy deploy-repair deploy-status deploy-logs setup-git-server git-serve git-serve-stop git-serve-status
 
 DEPLOY_SCRIPTS := tooling/scripts/deploy
 
 deploy:
 	@if [ -z "$(ENV)" ]; then echo "Usage: make deploy ENV=<name> [BRANCH=main]"; exit 1; fi
 	@BRANCH=$(or $(BRANCH),main) /bin/bash $(DEPLOY_SCRIPTS)/deploy.sh $(ENV)
+
+deploy-repair:
+	@if [ -z "$(ENV)" ]; then echo "Usage: make deploy-repair ENV=<name>"; exit 1; fi
+	@/bin/bash $(DEPLOY_SCRIPTS)/deploy.sh repair $(ENV)
 
 deploy-status:
 	@if [ -z "$(ENV)" ]; then echo "Usage: make deploy-status ENV=<name>"; exit 1; fi

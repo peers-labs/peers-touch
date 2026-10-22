@@ -127,6 +127,13 @@ impl MobileError {
             message: message.into(),
         }
     }
+
+    pub fn x_config(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_X_CONFIG",
+            message: message.into(),
+        }
+    }
 }
 
 impl std::fmt::Display for MobileError {

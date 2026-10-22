@@ -173,27 +173,99 @@ The sync allowlist excludes `ADDR`, plaintext `OAUTH_ADMIN_PASSWORD`, and
 Vercel system variables. It emits key names, environment, visibility, and
 status only.
 
+When X Config operator login is enabled, the same private env file may
+also provide the allowlisted `OAUTH_OPERATOR_LOGIN_*` site, audience, callback,
+key ID, signing key, and redeem-secret values. The signing key and redeem
+secret are synchronized as Secret values; they are never printed or passed in
+argv.
+
 ### 5. Deploy And Verify Preview
 
-1. From the monorepo root, deploy the linked project with
-   `vercel deploy --target=preview --yes`. The explicit target is mandatory
-   because Vercel treats a new Project's first deployment as Production when
-   no target is supplied. Do not invoke Vercel CLI from
-   `apps/oauth2-client`; the Project Root Directory already selects it.
-2. Capture the immutable Preview deployment URL, deployment ID, and source
+1. From clean source, prepare a temporary upload artifact outside Git:
+
+   ```bash
+   python3 tooling/skills/pt-oauth2-client-2-vercel/scripts/prepare_artifact.py \
+     --repo-root . \
+     --output-dir /tmp/peers-oauth-vercel-artifact
+   ```
+
+   The artifact keeps `apps/oauth2-client` at the reviewed Root Directory,
+   copies the neutral `packages/github-repository` module under that app for
+   direct CLI upload, and rewrites only the artifact-local Go `replace`.
+   Repository source remains the single owner.
+2. Deploy that artifact with the OAuth local configuration and explicit
+   Preview target:
+
+   ```bash
+   vercel -A apps/oauth2-client/vercel.json deploy \
+     /tmp/peers-oauth-vercel-artifact \
+     --project peers-touch-oauth \
+     --target=preview \
+     --yes
+   ```
+
+   The explicit target is mandatory because Vercel treats a new Project's
+   first deployment as Production when no target is supplied. Do not invoke
+   Vercel CLI from `apps/oauth2-client`; its configured Root Directory would be
+   applied twice.
+3. Capture the immutable Preview deployment URL, deployment ID, and source
    commit from structured CLI output and `vercel inspect`.
-3. Point the pre-approved stable verification domain at that exact Preview.
-4. Inspect the stable domain and require it to resolve to the same deployment
+4. Point the pre-approved stable verification domain at that exact Preview.
+5. Inspect the stable domain and require it to resolve to the same deployment
    ID before and after live OAuth verification.
-5. Run deterministic HTTP checks:
+6. Run deterministic HTTP checks. When the candidate is an ephemeral Preview but
+   Provider callbacks are registered against the stable Production domain,
+   pass that domain with `--stable-base-url` so the redirect `redirect_uri` is
+   compared against the registered origin instead of the Preview host:
 
 ```bash
 python3 tooling/skills/pt-oauth2-client-2-vercel/scripts/verify_deployment.py \
   --repo-root . \
-  --base-url https://oauth.example.com
+  --env-file ../env/peers-touch-infra/oauth2-client-test/runtime.env \
+  --base-url https://oauth-preview.example.com \
+  --stable-base-url https://oauth.example.com \
+  --timeout 30
 ```
 
-6. For each selected Provider, start one run-bound verifier. It captures the
+   The `--env-file` is mandatory once operator login is enabled for the site
+   (see "Operator-Locked Start" below). The verifier proves:
+
+   - **Health contract** — `GET /api/healthz` is HTTP 200 with the exact JSON
+     object `{"status":"ok","version":"<major.minor.patch>"}`. The body must
+     contain exactly those two keys, `status` must equal `ok`, and `version`
+     must match `^\d+\.\d+\.\d+$` (mirrors the Go handler's `semverRegexp`).
+     A bare 200 or `{"status":"ok"}` is a contract failure.
+   - **GET-only method contract** — every health, admin, start, and callback
+     route rejects POST with HTTP 405 and `Allow: GET`.
+   - **Ambiguous callback rejection** — a callback carrying both `code` and
+     `error` returns HTTP 400 `invalid_callback_result`.
+   - **Provider start redirects** — each start returns a 3xx to the catalog
+     authorization host over HTTPS with a nonempty `state`, the registered
+     stable callback as `redirect_uri`, and PKCE S256 parameters when the
+     catalog requires them.
+
+7. **Operator-Locked Start.** When the env binds
+   `OAUTH_OPERATOR_LOGIN_SITE_ID` to the requested `--site-id`, the deployed
+   site is operator-locked and consumer self-service login is disabled. The
+   verifier resolves the bound operator admin callback from
+   `OAUTH_OPERATOR_LOGIN_CALLBACK_URL` and asserts both sides of the contract:
+
+   - a bare `…/start?site_id=<id>` without a bound `return_to` is rejected
+     with HTTP 400 `operator_handoff_binding_mismatch` before any session is
+     persisted;
+   - a bound start whose `return_to` matches the operator callback
+     scheme/host/path exactly, carries an empty fragment, and includes exactly
+     `receiver_challenge` (32 decoded bytes) and a
+     `^[A-Za-z0-9_-]{16,128}$` `login_attempt_id` succeeds with the Provider
+     302. The report records `startEntry: "operator-handoff"`; a direct site
+     reports `"direct"`.
+
+   The operator callback must be HTTPS with no fragment. Missing operator env
+   keys block with `OPERATOR_LOGIN_CONFIG_INCOMPLETE`; a malformed callback
+   blocks with `OPERATOR_LOGIN_CALLBACK_URL_INVALID`.
+
+8. For each selected Provider on a direct (non-operator-locked) site, start
+   one run-bound verifier. It captures the
    admin baseline, verifies that the configured GitHub persistence repository
    is private, opens an ephemeral loopback receiver, emits the Provider
    authorization URL, and waits. Open that URL in the browser and complete
@@ -212,8 +284,15 @@ python3 tooling/skills/pt-oauth2-client-2-vercel/scripts/verify_deployment.py \
    receiver ID and challenge, then requires that Provider's aggregate login
    count to advance. Repeat it for Google and any other selected Provider.
 
-7. On the final Provider run, also authenticate every GitHub record envelope
-   with the configured AES-256-GCM key ring:
+   `--run-live-provider` models the consumer self-service flow and therefore
+   does not apply to an operator-locked site; combining them fails closed with
+   `OPERATOR_LOGIN_LIVE_PROVIDER_UNSUPPORTED`. Operator login is proven through
+   its own admin/operator handoff and signed-assertion journey, not this
+   loopback receiver.
+
+9. On the final Provider run, or standalone against any candidate, also
+   authenticate every GitHub record envelope with the configured AES-256-GCM
+   key ring:
 
 ```bash
 python3 tooling/skills/pt-oauth2-client-2-vercel/scripts/verify_deployment.py \
@@ -228,16 +307,32 @@ python3 tooling/skills/pt-oauth2-client-2-vercel/scripts/verify_deployment.py \
 Enable Weixin in this command only when its source config, env credentials,
 reviewed callback, and catalog rules all pass.
 
+`--verify-github-storage` is independent of consumer consent and can run
+standalone, which is the required persistence proof for an operator-locked
+candidate where `--run-live-provider` is rejected:
+
+```bash
+python3 tooling/skills/pt-oauth2-client-2-vercel/scripts/verify_deployment.py \
+  --repo-root . \
+  --env-file ../env/peers-touch-infra/oauth2-client-test/runtime.env \
+  --base-url https://oauth-preview.example.com \
+  --stable-base-url https://oauth.example.com \
+  --verify-github-storage \
+  --timeout 30
+```
+
 ### 6. Promote Or Deploy Production
 
-Proceed only when Preview health, HTTP contract, every selected real callback,
-and GitHub encrypted persistence pass.
+Proceed only when Preview health, HTTP contract, the applicable login proof
+(real consumer Provider callbacks on a direct site, or the operator handoff and
+signed-assertion journey on an operator-locked site), and GitHub encrypted
+persistence pass.
 
 - Promote the verified Preview with `vercel promote <preview-url> --yes`, or
   deploy with `vercel deploy --prod --yes` when promotion is not appropriate.
 - Preview promotion creates a new Production deployment. Capture its new
-  deployment ID and rerun every HTTP, live Provider, and GitHub persistence
-  check against the stable Production domain.
+  deployment ID and rerun every HTTP, the applicable login proof, and GitHub
+  persistence check against the stable Production domain.
 - If any environment value changed after the candidate build, redeploy before
   promotion or Production verification.
 - On failure after an alias change, restore the recorded previous deployment.
@@ -257,6 +352,15 @@ storage configuration.
 | `VERCEL_CLI_UNAVAILABLE` | Neither the pinned standalone CLI nor `npx` is available | Install the pinned CLI, then rerun dry-run |
 | `VERCEL_CLI_VERSION_UNSUPPORTED` | Standalone CLI differs from the reviewed pin | Use the pinned version or update source/reference/tests together |
 | `PREVIEW_PROTECTION_BLOCKED` | Provider or health traffic cannot reach Preview | Correct protection policy; do not promote |
+| `HEALTH_CONTRACT_FAILED` | `/api/healthz` is not 200 with exactly `{"status":"ok","version":"<semver>"}` | Treat as a broken or wrong build; do not promote on a bare 200 |
+| `HTTP_METHOD_CONTRACT_FAILED` | A GET-only route accepted POST or returned the wrong `Allow` | Fix the Function method handling before promotion |
+| `CALLBACK_CONTRACT_FAILED` | An ambiguous Provider callback was not rejected with `invalid_callback_result` | Keep Production blocked and investigate |
+| `PROVIDER_START_CONTRACT_FAILED` | Start redirect host, scheme, state, or registered `redirect_uri` is wrong | Reconcile stable callback config and catalog; redeploy |
+| `PROVIDER_PKCE_CONTRACT_FAILED` | A catalog S256 Provider start omitted the PKCE challenge/method | Fix Provider start construction; do not promote |
+| `OPERATOR_LOGIN_CONFIG_INCOMPLETE` | An operator-locked site is missing operator callback/audience/key/redeem env | Complete the allowlisted operator env through the env-repository task |
+| `OPERATOR_LOGIN_CALLBACK_URL_INVALID` | The operator callback is not HTTPS or carries a fragment | Correct `OAUTH_OPERATOR_LOGIN_CALLBACK_URL` and resync |
+| `OPERATOR_START_BINDING_FAILED` | A bare start was accepted or a bound start was rejected unexpectedly | Investigate operator-lock enforcement; keep Production blocked |
+| `OPERATOR_LOGIN_LIVE_PROVIDER_UNSUPPORTED` | Consumer `--run-live-provider` was requested on an operator-locked site | Prove operator login through its own handoff/assertion journey instead |
 | `LIVE_CALLBACK_RECEIVER_MISMATCH` | Callback is not bound to this verifier's receiver ID and challenge | Reject it and restart that Provider flow |
 | `LIVE_CALLBACK_SIGNATURE_INVALID` | Broker callback signature does not verify | Keep Production blocked and investigate |
 | `LIVE_PROVIDER_CALLBACK_UNPROVEN` | Real consent did not produce durable identity | Keep Production blocked |
@@ -275,6 +379,8 @@ Return one redacted evidence object containing:
 - provider discovery and catalog delta;
 - env key names, Config/Secret visibility, targets, and missing-key delta;
 - health, HTTP method, redirect, callback, admin, and GitHub envelope results;
+- start entry (`direct` vs `operator-handoff`) and the registered callback base
+  the Provider `redirect_uri` was asserted against;
 - deployment IDs and whether Production was promoted or rebuilt;
 - unproven providers or external steps;
 - rollback action and cleanup result.
@@ -290,6 +396,10 @@ private keys, password material, ciphertext, or raw upstream bodies.
 - Treating the provider catalog as implementation truth instead of comparing it
   with source.
 - Using Preview URLs as permanent provider callbacks.
+- Asserting the Provider `redirect_uri` against the ephemeral Preview host
+  instead of the registered stable domain (omit `--stable-base-url`).
+- Running the consumer `--run-live-provider` flow against an operator-locked
+  site, or accepting a bare operator start that should be binding-rejected.
 - Promoting before real callback and GitHub persistence proof.
 - Treating a `200` health response as OAuth acceptance.
 - Using `OAUTH_STORAGE_DRIVER=memory` on Vercel.

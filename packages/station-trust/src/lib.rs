@@ -1,18 +1,34 @@
 use libp2p_identity::{KeyType, PublicKey};
 use multiaddr::Multiaddr;
 use prost::Message;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::crypto::{
+    ring::default_provider, verify_tls12_signature, verify_tls13_signature,
+    WebPkiSupportedAlgorithms,
+};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{
+    CertificateError, ClientConfig, DigitallySignedStruct, Error as RustlsError, RootCertStore,
+    SignatureScheme,
+};
 use sha2::{Digest, Sha256};
 use std::fmt;
+use std::net::IpAddr;
 use std::str::FromStr;
+use std::sync::Arc;
+use url::{Host, Url};
+use x509_parser::{parse_x509_certificate, time::ASN1Time};
 
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
 }
 
 use proto::{
-    StationCapabilitySet, StationIdentityResponse, StationIdentityStatement,
-    StationNodeAuthorization, StationNodeAuthorizationStatement, StationRouteAttestation,
-    StationRouteKind, StationRouteStatement, StationRouteVisibility,
+    endpoint_tls_trust, AccessEndpointRole, EndpointTlsTrust, PublicEndpointConnectionMaterial,
+    PublicStationAdvertisementStatement, SignedPublicStationAdvertisement, StationCapabilitySet,
+    StationIdentityResponse, StationIdentityStatement, StationNodeAuthorization,
+    StationNodeAuthorizationStatement, StationRouteAttestation, StationRouteKind,
+    StationRouteStatement, StationRouteVisibility,
 };
 
 pub const MAX_SIGNED_CONTROL_BYTES: usize = 1 << 20;
@@ -20,11 +36,18 @@ pub const STATION_IDENTITY_CHALLENGE_SIZE: usize = 32;
 pub const MAX_STATION_IDENTITY_LIFETIME_MS: i64 = 5 * 60 * 1_000;
 pub const MAX_NODE_AUTHORIZATION_LIFETIME_MS: i64 = 24 * 60 * 60 * 1_000;
 pub const MAX_ROUTE_LIFETIME_MS: i64 = 5 * 60 * 1_000;
+pub const PUBLIC_CONNECTION_MATERIAL_SCHEMA_VERSION: u32 = 1;
+pub const MAX_PUBLIC_CONNECTION_MATERIAL_LIFETIME_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+pub const MAX_PUBLIC_STATION_ADVERTISEMENT_LIFETIME_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+pub const MAX_PUBLIC_DISCOVERY_ORIGIN_BYTES: usize = 512;
+pub const MAX_PUBLIC_DISPLAY_NAME_BYTES: usize = 128;
+pub const MAX_ENDPOINT_CERTIFICATE_AUTHORITY_BYTES: usize = 16 * 1024;
 pub const CLOCK_SKEW_MS: i64 = 60_000;
 
 const STATION_NODE_AUTHORIZATION_DOMAIN: &[u8] = b"peers-touch/station-node-authorization/v1\0";
 const STATION_IDENTITY_DOMAIN: &[u8] = b"peers-touch/station-identity/v1\0";
 const STATION_ROUTE_DOMAIN: &[u8] = b"peers-touch/station-route/v1\0";
+const PUBLIC_STATION_ADVERTISEMENT_DOMAIN: &[u8] = b"peers-touch/public-station-advertisement/v1\0";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrustError {
@@ -81,6 +104,261 @@ pub struct VerifiedStationRoute {
     pub authorization_epoch: u64,
     pub addresses: Vec<String>,
     pub expires_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VerifiedEndpointTlsTrust {
+    WebPki,
+    AuthenticatedPlaintextBootstrap,
+    CertificateAuthorityDer(Vec<u8>),
+    LeafSpkiSha256([u8; 32]),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerifiedPublicEndpointConnectionMaterial {
+    pub canonical_discovery_origin: String,
+    pub expected_endpoint_role: AccessEndpointRole,
+    pub expected_endpoint_identity: String,
+    pub station_root_public_key: Option<Vec<u8>>,
+    pub tls_trust: VerifiedEndpointTlsTrust,
+    pub expires_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerifiedPublicStationAdvertisement {
+    pub statement: PublicStationAdvertisementStatement,
+    pub material: VerifiedPublicEndpointConnectionMaterial,
+}
+
+pub fn endpoint_tls_client_config(
+    trust: &VerifiedEndpointTlsTrust,
+) -> Result<Option<ClientConfig>, TrustError> {
+    let provider = default_provider();
+    let supported = provider.signature_verification_algorithms;
+    let builder = ClientConfig::builder_with_provider(Arc::new(provider))
+        .with_safe_default_protocol_versions()
+        .map_err(|_| TrustError::new("public_connection_material_tls_config"))?;
+    match trust {
+        VerifiedEndpointTlsTrust::WebPki
+        | VerifiedEndpointTlsTrust::AuthenticatedPlaintextBootstrap => Ok(None),
+        VerifiedEndpointTlsTrust::CertificateAuthorityDer(bytes) => {
+            let mut roots = RootCertStore::empty();
+            roots
+                .add(CertificateDer::from(bytes.clone()))
+                .map_err(|_| TrustError::new("public_connection_material_tls_config"))?;
+            Ok(Some(
+                builder.with_root_certificates(roots).with_no_client_auth(),
+            ))
+        }
+        VerifiedEndpointTlsTrust::LeafSpkiSha256(expected) => Ok(Some(
+            builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(PinnedSpkiVerifier {
+                    expected: *expected,
+                    supported,
+                }))
+                .with_no_client_auth(),
+        )),
+    }
+}
+
+#[derive(Debug)]
+struct PinnedSpkiVerifier {
+    expected: [u8; 32],
+    supported: WebPkiSupportedAlgorithms,
+}
+
+impl ServerCertVerifier for PinnedSpkiVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, RustlsError> {
+        let (remainder, certificate) = parse_x509_certificate(end_entity.as_ref())
+            .map_err(|_| invalid_tls_certificate(CertificateError::BadEncoding))?;
+        if !remainder.is_empty() {
+            return Err(invalid_tls_certificate(CertificateError::BadEncoding));
+        }
+        let validation_time = ASN1Time::from_timestamp(now.as_secs() as i64)
+            .map_err(|_| invalid_tls_certificate(CertificateError::BadEncoding))?;
+        if !certificate.validity().is_valid_at(validation_time) {
+            return Err(invalid_tls_certificate(CertificateError::Expired));
+        }
+        let digest: [u8; 32] = Sha256::digest(certificate.tbs_certificate.subject_pki.raw).into();
+        if digest != self.expected {
+            return Err(invalid_tls_certificate(CertificateError::UnknownIssuer));
+        }
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        certificate: &CertificateDer<'_>,
+        signature: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        verify_tls12_signature(message, certificate, signature, &self.supported)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        certificate: &CertificateDer<'_>,
+        signature: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        verify_tls13_signature(message, certificate, signature, &self.supported)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.supported.supported_schemes()
+    }
+}
+
+fn invalid_tls_certificate(error: CertificateError) -> RustlsError {
+    RustlsError::InvalidCertificate(error)
+}
+
+pub fn verify_public_connection_material_bytes(
+    bytes: &[u8],
+    source_authenticated: bool,
+    now_unix_ms: i64,
+) -> Result<VerifiedPublicEndpointConnectionMaterial, TrustError> {
+    let material =
+        decode_canonical::<PublicEndpointConnectionMaterial>(bytes, "public_connection_material")?;
+    verify_public_connection_material(&material, source_authenticated, now_unix_ms)
+}
+
+pub fn verify_public_connection_material(
+    material: &PublicEndpointConnectionMaterial,
+    source_authenticated: bool,
+    now_unix_ms: i64,
+) -> Result<VerifiedPublicEndpointConnectionMaterial, TrustError> {
+    validate_size(&material.encode_to_vec(), "public_connection_material_size")?;
+    if material.schema_version != PUBLIC_CONNECTION_MATERIAL_SCHEMA_VERSION {
+        return Err(TrustError::new("public_connection_material_schema"));
+    }
+    let scheme = canonical_public_discovery_origin(&material.canonical_discovery_origin)?;
+    if scheme == "http" && !source_authenticated {
+        return Err(TrustError::new(
+            "public_connection_material_source_authentication",
+        ));
+    }
+    let expected_identity = libp2p_identity::PeerId::from_str(&material.expected_endpoint_identity)
+        .map_err(|_| TrustError::new("public_connection_material_identity"))?;
+    if expected_identity.to_string() != material.expected_endpoint_identity
+        || !valid_public_lifetime(
+            material.issued_at_unix_ms,
+            material.expires_at_unix_ms,
+            now_unix_ms,
+            MAX_PUBLIC_CONNECTION_MATERIAL_LIFETIME_MS,
+        )
+    {
+        return Err(TrustError::new("public_connection_material_fields"));
+    }
+
+    let role = AccessEndpointRole::try_from(material.expected_endpoint_role)
+        .map_err(|_| TrustError::new("public_connection_material_role"))?;
+    let station_root_public_key = match role {
+        AccessEndpointRole::Relay => {
+            if !material.expected_station_root_public_key.is_empty() {
+                return Err(TrustError::new("public_connection_material_relay_root"));
+            }
+            None
+        }
+        AccessEndpointRole::DirectStation => {
+            let root = decode_ed25519_public_key(&material.expected_station_root_public_key)?;
+            if root.to_peer_id() != expected_identity {
+                return Err(TrustError::new("public_connection_material_station_root"));
+            }
+            Some(material.expected_station_root_public_key.clone())
+        }
+        _ => return Err(TrustError::new("public_connection_material_role")),
+    };
+    let tls_trust = verify_endpoint_tls_trust(material.endpoint_tls_trust.as_ref(), &scheme)?;
+    Ok(VerifiedPublicEndpointConnectionMaterial {
+        canonical_discovery_origin: material.canonical_discovery_origin.clone(),
+        expected_endpoint_role: role,
+        expected_endpoint_identity: expected_identity.to_string(),
+        station_root_public_key,
+        tls_trust,
+        expires_at_unix_ms: material.expires_at_unix_ms,
+    })
+}
+
+pub fn public_connection_material_digest(
+    material: &PublicEndpointConnectionMaterial,
+) -> Result<[u8; 32], TrustError> {
+    let bytes = material.encode_to_vec();
+    validate_size(&bytes, "public_connection_material_size")?;
+    Ok(Sha256::digest(bytes).into())
+}
+
+pub fn verify_public_station_advertisement_bytes(
+    bytes: &[u8],
+    material: &PublicEndpointConnectionMaterial,
+    now_unix_ms: i64,
+) -> Result<VerifiedPublicStationAdvertisement, TrustError> {
+    let advertisement = decode_canonical::<SignedPublicStationAdvertisement>(
+        bytes,
+        "public_station_advertisement",
+    )?;
+    verify_public_station_advertisement(&advertisement, material, now_unix_ms)
+}
+
+pub fn verify_public_station_advertisement(
+    advertisement: &SignedPublicStationAdvertisement,
+    material: &PublicEndpointConnectionMaterial,
+    now_unix_ms: i64,
+) -> Result<VerifiedPublicStationAdvertisement, TrustError> {
+    validate_size(
+        &advertisement.encode_to_vec(),
+        "public_station_advertisement_size",
+    )?;
+    let verified_material = verify_public_connection_material(material, true, now_unix_ms)?;
+    if verified_material.expected_endpoint_role != AccessEndpointRole::DirectStation {
+        return Err(TrustError::new("public_station_advertisement_role"));
+    }
+    let statement = decode_canonical::<PublicStationAdvertisementStatement>(
+        &advertisement.statement_bytes,
+        "public_station_advertisement_statement",
+    )?;
+    let material_digest = public_connection_material_digest(material)?;
+    if statement.schema_version != PUBLIC_CONNECTION_MATERIAL_SCHEMA_VERSION
+        || statement.station_peer_id != verified_material.expected_endpoint_identity
+        || statement.station_root_public_key != material.expected_station_root_public_key
+        || statement.connection_material_digest != material_digest
+        || !statement.public_discovery_consent
+        || statement.advertisement_sequence == 0
+        || statement.canonical_discovery_origin != verified_material.canonical_discovery_origin
+        || !valid_public_display_name(&statement.display_name)
+        || StationRouteVisibility::try_from(statement.visibility).ok()
+            != Some(StationRouteVisibility::Public)
+        || statement.issued_at_unix_ms < material.issued_at_unix_ms
+        || statement.expires_at_unix_ms > verified_material.expires_at_unix_ms
+        || !valid_public_lifetime(
+            statement.issued_at_unix_ms,
+            statement.expires_at_unix_ms,
+            now_unix_ms,
+            MAX_PUBLIC_STATION_ADVERTISEMENT_LIFETIME_MS,
+        )
+    {
+        return Err(TrustError::new("public_station_advertisement_fields"));
+    }
+    let root = decode_ed25519_public_key(&statement.station_root_public_key)?;
+    verify_signature(
+        &root,
+        PUBLIC_STATION_ADVERTISEMENT_DOMAIN,
+        &advertisement.statement_bytes,
+        &advertisement.station_root_signature,
+        "public_station_advertisement_signature",
+    )?;
+    Ok(VerifiedPublicStationAdvertisement {
+        statement,
+        material: verified_material,
+    })
 }
 
 pub fn station_capabilities_digest(capabilities: &[String]) -> Result<[u8; 32], TrustError> {
@@ -399,6 +677,162 @@ fn route_addresses_match_kind(
     })
 }
 
+fn verify_endpoint_tls_trust(
+    trust: Option<&EndpointTlsTrust>,
+    scheme: &str,
+) -> Result<VerifiedEndpointTlsTrust, TrustError> {
+    let Some(value) = trust.and_then(|trust| trust.trust.as_ref()) else {
+        return Ok(if scheme == "https" {
+            VerifiedEndpointTlsTrust::WebPki
+        } else {
+            VerifiedEndpointTlsTrust::AuthenticatedPlaintextBootstrap
+        });
+    };
+    if scheme != "https" {
+        return Err(TrustError::new("public_connection_material_http_tls"));
+    }
+    match value {
+        endpoint_tls_trust::Trust::CertificateAuthorityDer(bytes) => {
+            if bytes.is_empty() || bytes.len() > MAX_ENDPOINT_CERTIFICATE_AUTHORITY_BYTES {
+                return Err(TrustError::new(
+                    "public_connection_material_certificate_authority",
+                ));
+            }
+            let (remainder, certificate) = parse_x509_certificate(bytes)
+                .map_err(|_| TrustError::new("public_connection_material_certificate_authority"))?;
+            let constraints = certificate
+                .basic_constraints()
+                .map_err(|_| TrustError::new("public_connection_material_certificate_authority"))?;
+            if !remainder.is_empty() || !constraints.is_some_and(|extension| extension.value.ca) {
+                return Err(TrustError::new(
+                    "public_connection_material_certificate_authority",
+                ));
+            }
+            Ok(VerifiedEndpointTlsTrust::CertificateAuthorityDer(
+                bytes.clone(),
+            ))
+        }
+        endpoint_tls_trust::Trust::LeafSpkiSha256(bytes) => {
+            let digest: [u8; 32] = bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| TrustError::new("public_connection_material_spki"))?;
+            Ok(VerifiedEndpointTlsTrust::LeafSpkiSha256(digest))
+        }
+    }
+}
+
+fn canonical_public_discovery_origin(origin: &str) -> Result<String, TrustError> {
+    if origin.is_empty()
+        || origin.trim() != origin
+        || origin.len() > MAX_PUBLIC_DISCOVERY_ORIGIN_BYTES
+    {
+        return Err(TrustError::new("public_connection_material_origin"));
+    }
+    let parsed =
+        Url::parse(origin).map_err(|_| TrustError::new("public_connection_material_origin"))?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(TrustError::new("public_connection_material_origin"));
+    }
+    let prefix = format!("{}://", parsed.scheme());
+    let authority = origin
+        .strip_prefix(&prefix)
+        .ok_or_else(|| TrustError::new("public_connection_material_origin"))?;
+    let (host_literal, port) = split_canonical_authority(authority)?;
+    let parsed_host_matches = match parsed.host() {
+        Some(Host::Domain(value)) => value == host_literal,
+        Some(Host::Ipv4(value)) => value.to_string() == host_literal,
+        Some(Host::Ipv6(value)) => value.to_string() == host_literal,
+        None => false,
+    };
+    if !valid_canonical_host(host_literal)
+        || !parsed_host_matches
+        || port.is_some_and(|value| {
+            value.parse::<u16>().ok().filter(|port| *port > 0).is_none()
+                || value.parse::<u16>().unwrap().to_string() != value
+        })
+    {
+        return Err(TrustError::new("public_connection_material_origin"));
+    }
+    Ok(parsed.scheme().to_string())
+}
+
+fn split_canonical_authority(authority: &str) -> Result<(&str, Option<&str>), TrustError> {
+    if let Some(ipv6) = authority.strip_prefix('[') {
+        let closing = ipv6
+            .find(']')
+            .ok_or_else(|| TrustError::new("public_connection_material_origin"))?;
+        let host = &ipv6[..closing];
+        let suffix = &ipv6[closing + 1..];
+        let port = if suffix.is_empty() {
+            None
+        } else {
+            Some(
+                suffix
+                    .strip_prefix(':')
+                    .ok_or_else(|| TrustError::new("public_connection_material_origin"))?,
+            )
+        };
+        if port == Some("") {
+            return Err(TrustError::new("public_connection_material_origin"));
+        }
+        return Ok((host, port));
+    }
+    if authority.matches(':').count() > 1 {
+        return Err(TrustError::new("public_connection_material_origin"));
+    }
+    if let Some((host, port)) = authority.rsplit_once(':') {
+        if host.is_empty() || port.is_empty() {
+            return Err(TrustError::new("public_connection_material_origin"));
+        }
+        return Ok((host, Some(port)));
+    }
+    Ok((authority, None))
+}
+
+fn valid_canonical_host(host: &str) -> bool {
+    if host.is_empty() || host != host.to_ascii_lowercase() || host.ends_with('.') {
+        return false;
+    }
+    if let Ok(address) = IpAddr::from_str(host) {
+        return address.to_string() == host;
+    }
+    if host.len() > 253 {
+        return false;
+    }
+    host.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label.bytes().all(|character| {
+                character.is_ascii_lowercase() || character.is_ascii_digit() || character == b'-'
+            })
+    })
+}
+
+fn valid_public_lifetime(
+    issued_at_unix_ms: i64,
+    expires_at_unix_ms: i64,
+    now_unix_ms: i64,
+    max_lifetime_ms: i64,
+) -> bool {
+    issued_at_unix_ms <= now_unix_ms + CLOCK_SKEW_MS
+        && expires_at_unix_ms > now_unix_ms
+        && expires_at_unix_ms > issued_at_unix_ms
+        && expires_at_unix_ms - issued_at_unix_ms <= max_lifetime_ms
+}
+
+fn valid_public_display_name(value: &str) -> bool {
+    !value.is_empty() && value.trim() == value && value.len() <= MAX_PUBLIC_DISPLAY_NAME_BYTES
+}
+
 fn validate_size(bytes: &[u8], code: &'static str) -> Result<(), TrustError> {
     if bytes.is_empty() || bytes.len() > MAX_SIGNED_CONTROL_BYTES {
         return Err(TrustError::new(code));
@@ -535,6 +969,120 @@ mod tests {
         let mut input = domain.to_vec();
         input.extend_from_slice(statement);
         key.sign(&input).unwrap()
+    }
+
+    #[test]
+    fn public_connection_material_and_station_advertisement_verify_exact_bytes() {
+        let root = Keypair::generate_ed25519();
+        let material = PublicEndpointConnectionMaterial {
+            schema_version: PUBLIC_CONNECTION_MATERIAL_SCHEMA_VERSION,
+            canonical_discovery_origin: "https://station.example:8443".to_string(),
+            expected_endpoint_role: AccessEndpointRole::DirectStation as i32,
+            expected_endpoint_identity: root.public().to_peer_id().to_string(),
+            expected_station_root_public_key: root.public().encode_protobuf(),
+            endpoint_tls_trust: Some(EndpointTlsTrust {
+                trust: Some(endpoint_tls_trust::Trust::LeafSpkiSha256(vec![0x35; 32])),
+            }),
+            issued_at_unix_ms: NOW,
+            expires_at_unix_ms: NOW + 24 * 60 * 60 * 1_000,
+        };
+        let bytes = material.encode_to_vec();
+        let verified = verify_public_connection_material_bytes(&bytes, true, NOW).unwrap();
+        assert_eq!(
+            verified.expected_endpoint_identity,
+            root.public().to_peer_id().to_string()
+        );
+        assert_eq!(
+            verified.tls_trust,
+            VerifiedEndpointTlsTrust::LeafSpkiSha256([0x35; 32])
+        );
+        assert!(endpoint_tls_client_config(&verified.tls_trust)
+            .unwrap()
+            .is_some());
+
+        let statement = PublicStationAdvertisementStatement {
+            schema_version: PUBLIC_CONNECTION_MATERIAL_SCHEMA_VERSION,
+            station_peer_id: root.public().to_peer_id().to_string(),
+            station_root_public_key: root.public().encode_protobuf(),
+            connection_material_digest: public_connection_material_digest(&material)
+                .unwrap()
+                .to_vec(),
+            public_discovery_consent: true,
+            advertisement_sequence: 7,
+            canonical_discovery_origin: material.canonical_discovery_origin.clone(),
+            display_name: "Public Station".to_string(),
+            visibility: StationRouteVisibility::Public as i32,
+            issued_at_unix_ms: NOW,
+            expires_at_unix_ms: NOW + 12 * 60 * 60 * 1_000,
+        };
+        let statement_bytes = statement.encode_to_vec();
+        let advertisement = SignedPublicStationAdvertisement {
+            statement_bytes: statement_bytes.clone(),
+            station_root_signature: sign(
+                &root,
+                PUBLIC_STATION_ADVERTISEMENT_DOMAIN,
+                &statement_bytes,
+            ),
+        };
+        let verified_advertisement = verify_public_station_advertisement_bytes(
+            &advertisement.encode_to_vec(),
+            &material,
+            NOW,
+        )
+        .unwrap();
+        assert_eq!(verified_advertisement.statement.advertisement_sequence, 7);
+
+        let mut forged = advertisement;
+        forged.station_root_signature[0] ^= 0xff;
+        assert!(verify_public_station_advertisement(&forged, &material, NOW,).is_err());
+    }
+
+    #[test]
+    fn public_connection_material_rejects_bare_http_and_invalid_scoped_tls() {
+        let relay = Keypair::generate_ed25519();
+        let mut material = PublicEndpointConnectionMaterial {
+            schema_version: PUBLIC_CONNECTION_MATERIAL_SCHEMA_VERSION,
+            canonical_discovery_origin: "http://192.0.2.10:8080".to_string(),
+            expected_endpoint_role: AccessEndpointRole::Relay as i32,
+            expected_endpoint_identity: relay.public().to_peer_id().to_string(),
+            issued_at_unix_ms: NOW,
+            expires_at_unix_ms: NOW + 60 * 60 * 1_000,
+            ..Default::default()
+        };
+        assert!(verify_public_connection_material(&material, false, NOW).is_err());
+        let plaintext = verify_public_connection_material(&material, true, NOW).unwrap();
+        assert!(endpoint_tls_client_config(&plaintext.tls_trust)
+            .unwrap()
+            .is_none());
+
+        material.endpoint_tls_trust = Some(EndpointTlsTrust {
+            trust: Some(endpoint_tls_trust::Trust::LeafSpkiSha256(vec![0x21; 32])),
+        });
+        assert!(verify_public_connection_material(&material, true, NOW).is_err());
+
+        material.canonical_discovery_origin = "https://relay.example:443".to_string();
+        material.endpoint_tls_trust = Some(EndpointTlsTrust {
+            trust: Some(endpoint_tls_trust::Trust::CertificateAuthorityDer(vec![
+                1, 2, 3,
+            ])),
+        });
+        assert!(verify_public_connection_material(&material, true, NOW).is_err());
+    }
+
+    #[test]
+    fn public_connection_material_accepts_canonical_ipv6_origin() {
+        let relay = Keypair::generate_ed25519();
+        let material = PublicEndpointConnectionMaterial {
+            schema_version: PUBLIC_CONNECTION_MATERIAL_SCHEMA_VERSION,
+            canonical_discovery_origin: "https://[2001:db8::1]:8443".to_string(),
+            expected_endpoint_role: AccessEndpointRole::Relay as i32,
+            expected_endpoint_identity: relay.public().to_peer_id().to_string(),
+            issued_at_unix_ms: NOW,
+            expires_at_unix_ms: NOW + 60 * 60 * 1_000,
+            ..Default::default()
+        };
+
+        assert!(verify_public_connection_material(&material, true, NOW).is_ok());
     }
 
     #[test]

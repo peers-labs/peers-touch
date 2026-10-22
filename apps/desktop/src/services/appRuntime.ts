@@ -21,6 +21,7 @@ import { chatRuntime } from '../runtimes/chatRuntime';
 import { evaluationRuntime } from '../runtimes/evaluationRuntime';
 import { callRuntime } from '../runtimes/callRuntime';
 import { chatStorageRuntime } from '../runtimes/chatStorageRuntime';
+import { xConfigRuntime } from '../runtimes/xConfigRuntime';
 import { getDesktopHostPolicy } from '../kernel/hostPolicy';
 import { log } from '../utils/logger';
 
@@ -34,6 +35,7 @@ export function registerKernelRuntimes(): void {
   if (runtimesRegistered) return;
   runtimesRegistered = true;
   registerRuntime(socialRuntime);
+  registerRuntime(xConfigRuntime);
   registerRuntime(messagingRuntime);
   registerRuntime(chatStorageRuntime);
   registerRuntime(callRuntime);
@@ -94,6 +96,8 @@ export function installAppRuntime(): void {
   installNavigationBadgeProjection();
 
   installRuntime(socialRuntime.id);
+  installRuntime(xConfigRuntime.id);
+  void bootstrapRuntime(xConfigRuntime.id, null);
   installRuntime(appletsRuntime.id);
   void bootstrapRuntime(appletsRuntime.id, null);
 
@@ -162,6 +166,7 @@ export function teardownAppRuntime(): void {
   criticalInstallInFlight = null;
 
   teardownRuntime(socialRuntime.id);
+  teardownRuntime(xConfigRuntime.id);
   teardownRuntime(messagingRuntime.id);
   teardownRuntime(chatStorageRuntime.id);
   teardownRuntime(callRuntime.id);

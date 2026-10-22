@@ -1,0 +1,46 @@
+{
+  "id": "x-config-api-closure",
+  "status": "active",
+  "product_area": "x-config",
+  "owners": [
+    "tooling/acceptance/gates/x_config/**",
+    "tooling/acceptance/provisioners/x_config_*.py",
+    "packages/x-config-core/examples/verify_production.rs"
+  ],
+  "truth_sources": [
+    "reviewed Home release source and env identities",
+    "Home SQLite operator session and revocation state",
+    "GitHub-backed publication metadata and signed envelope",
+    "Home public snapshot bytes",
+    "authoritative durable Evidence Store latest manifests"
+  ],
+  "visible_surfaces": [
+    {"type": "operator-service", "surface": "Home X Config console and admin API"},
+    {"type": "public-static-api", "surface": "production signed snapshot"}
+  ],
+  "required_gates": [
+    "x-config-home-operator-login-e2e",
+    "x-config-home-publication-e2e",
+    "x-config-api-aggregate-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "one Home release binds the current clean application and committed environment revisions",
+      "one reusable Home Suite Runtime proves operator login, restart continuity, publication, logout and durable revocation",
+      "operator login and logout create no x-config/admin-auth Git mutation",
+      "publication requires a real allowlisted operator session, current repository CAS and configured signing identity",
+      "Home public readback and the shared client kernel verify exact bytes, signature, channel, expiry and rollback denial",
+      "aggregate consumes validated durable current-source Gate manifests and rejects missing, stale or incomplete proof"
+    ],
+    "visible": [
+      "the real GitHub provider journey returns the operator to the Home console",
+      "public snapshot reads remain credential free"
+    ]
+  },
+  "negative": [
+    "provider credentials, handoff codes, operator cookies and signing material never enter Gate environment, argv, Git or evidence",
+    "operator session, catalog, source identity or Home runtime absence remains blocked rather than synthesized",
+    "the Gate never provisions a second X Config runtime or mutates unrelated GitHub paths",
+    "native Desktop and Mobile UI remain outside this Home closure"
+  ]
+}

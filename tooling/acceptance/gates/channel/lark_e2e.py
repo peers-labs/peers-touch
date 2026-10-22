@@ -27,8 +27,8 @@ class LarkChannelJourneyGate(AcceptanceGate):
     phase = "Lark Channel live receiver proof"
     bom = ("LARK-CLOSURE",)
     spec = (
-        "docs/architecture/agent/lark/acceptance-matrix.md",
-        "docs/architecture/agent/execution-plans/"
+        "docs/architecture/domains/agent/lark/acceptance-matrix.md",
+        "docs/architecture/domains/agent/execution-plans/"
         "20261015-lark-capability-closure/plan.md",
     )
 

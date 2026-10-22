@@ -520,7 +520,16 @@ lifecycle 状态。
 
 - **原型不绑定最终运行时，不碰 Lynx / applet 容器 / SDK**：原型只为展示形态。即使功能终态是 applet（Lynx）或 Desktop 页面，原型也只用上表的 web 栈画界面，**不要**为了"贴近运行时"把原型做成 ReactLynx 工程或 applet 容器——那既重又偏离"快速展示终态"的初衷。web 原型可以自由用 DOM、`iframe`、`localStorage` 等浏览器能力。
 - **禁止重复造基础件**：原型复用项目已有的桌面组件体系（LobeUI / antd 组件），不得每个需求各搭一套基础库。
-- **源码集中在统一原型工作区**：所有界面原型工程集中放在 `packages/prototypes/<id>/`（纳入 pnpm workspace），统一一处便于追踪、统一工具链、基础件可跨原型复用。`architecture/<taxonomy>/<module>/prototype/README.md` 只写「原型在哪、怎么跑、对应哪版设计、做到什么程度」，不复制源码。原型经确认门置 `confirmed`、进入落地时，由对应落地工程（如 Applet 落到 `packages/applets/<id>/` 并按其运行时实现、Desktop 页面落到桌面工程）**参照原型重新实现**，总账状态推进到 `landed`——原型本身不要求能直接搬成产物。
+- **源码集中在统一原型工作区**：所有界面原型工程集中放在
+  `packages/prototypes/<site>/<area-or-id>/`（纳入 pnpm workspace），其中一级
+  `<site>` 只允许 `desktop`、`mobile`、`dashboard`、`control`；`control`
+  用于独立部署、被多端消费的云控产品，Station/Relay 运维仍归
+  `dashboard`。统一一处便于追踪、统一工具链、基础件可跨原型复用。
+  `architecture/<taxonomy>/<module>/prototype/README.md` 只写「原型在哪、
+  怎么跑、对应哪版设计、做到什么程度」，不复制源码。原型经确认门置
+  `confirmed`、进入落地时，由对应落地工程（如 Applet 落到
+  `packages/applets/<id>/` 并按其运行时实现、Desktop 页面落到桌面工程）
+  **参照原型重新实现**，总账状态推进到 `landed`——原型本身不要求能直接搬成产物。
 - **从设计推导，不脱节**：原型界面区域要能对回 `design.md` / `functional-modules` 的模块编号；设计变更时原型同步或在 README 标注差异。
 - **可以用 mock 数据**：原型重在形态与交互，可用假数据驱动，不要求接通真实后端。
 - **不替代落地与验收**：原型是设计对齐工具，不是产品代码，不能当作任何运行时的验收证据（如 Desktop L3 须 Lynx bundle 经 Host Gateway，见 applet-runtime 验收门槛）。
@@ -545,7 +554,7 @@ lifecycle 状态。
 
 ## 原型在哪
 
-`packages/prototypes/<id>/`（统一原型工作区；独立 web 工程）
+`packages/prototypes/<site>/<area-or-id>/`（统一原型工作区；独立 web 工程）
 
 ## 落地目标
 
@@ -554,7 +563,7 @@ lifecycle 状态。
 ## 怎么跑
 
 ```bash
-cd packages/prototypes/<id>
+cd packages/prototypes/<site>/<area-or-id>
 pnpm install
 pnpm dev          # Vite，浏览器打开 localhost
 ```

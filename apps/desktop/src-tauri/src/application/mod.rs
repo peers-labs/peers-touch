@@ -13,6 +13,7 @@ pub mod auth;
 pub mod capability_authority;
 pub mod channels;
 pub mod chat_storage;
+pub mod x_config;
 pub mod cron;
 pub mod desktop_executor_worker;
 pub mod error_resolver;

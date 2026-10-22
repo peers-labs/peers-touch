@@ -42,12 +42,12 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
-    agent_turn, agents, applets, auth, bot, capability_authority, channels, conversation, cron,
-    crypto, desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home,
-    host_events, i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands,
-    messaging_recovery, model_config, native_surface, notebook, notification, oauth2, oss,
-    presence, profile, provider, realtime, runtime_evidence, search, settings, skills,
-    skills_market, social as social_commands, station, system, tools, tts,
+    agent_turn, agents, applets, auth, bot, capability_authority, channels, x_config,
+    conversation, cron, crypto, desktop_capture, evaluation, federation, frontend_log,
+    frontend_telemetry, home, host_events, i18n, ice, key_exchange, mcp, memory,
+    messaging as messaging_commands, messaging_recovery, model_config, native_surface, notebook,
+    notification, oauth2, oss, presence, profile, provider, realtime, runtime_evidence, search,
+    settings, skills, skills_market, social as social_commands, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1218,6 +1218,9 @@ fn main() {
             station::station_add,
             station::station_remove,
             station::station_probe,
+            x_config::x_config_projection,
+            x_config::x_config_refresh,
+            x_config::x_config_discover_suggestion,
             realtime::group_call_join,
             messaging_commands::messaging_create_direct,
             messaging_commands::messaging_create_group,

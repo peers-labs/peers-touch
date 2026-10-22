@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-06-22 | **Updated**: 2026-06-24
+> **Created**: 2026-06-22 | **Updated**: 2026-10-18
 > **Owner**: Architecture Team
 
 ---
@@ -27,9 +27,14 @@
 原型体系的目标形态不是只有文档总账，而是一个随时可运行的统一前端入口：
 
 - 各原型模块各自维护代码，通过 manifest 注入统一入口。
-- 统一入口按 `desktop` / `mobile` / `dashboard` 三类站点聚合原型（`dashboard` 指 Station Dashboard）。
+- 统一入口按 `desktop` / `mobile` / `dashboard` / `control` 四类一级站点聚合原型：
+  `dashboard` 指 Station Dashboard，`control` 指独立云控管理面。
 - 当前 worktree 内的 `prototype.manifest.ts` 由 Portal 自动发现并展示。
 - 不同 worktree / branch 的原型版本可在同一个入口中切换预览。
+- 四个一级站点的选中原型都通过统一预览壳层提供全屏查看；远端 worktree
+  iframe 使用相同入口。
+- 一级站点支持 `?site=desktop|mobile|dashboard|control` 深链，便于直接打开目标
+  原型分区；切换站点时 URL 同步更新。
 - 当前总账继续负责确认门、状态和正式落地准入。
 
 执行计划见：[Prototype Portal — 统一原型入口执行计划](./execution-plans/20260622-prototype-portal.md)。
@@ -63,9 +68,10 @@
 | desktop | `bot-inbox` | Desktop Bot/驻留能力原型，不是一级模块，hidden 由 Shell 接入 | `packages/prototypes/desktop/features/bot-inbox/` | Coding-agent webhook Bot：Bot 会话事件卡片（接入 social-chat ChatArea）、全局 Bots 设置、菜单栏 tray 驻留与 OS 通知；原型为 React web 展示 | domains/bot | confirmed | [prototype/README.md](../../domains/bot/prototype/README.md) |
 | mobile | `mobile-chat` | Mobile Shell 一级站点基准 | `packages/prototypes/mobile/chat/` | Mobile Shell / Access Gate / Chat / one-to-one Call / complete Social parity / Contacts / Settings / recovery states；原型为 React web 展示 | apps/mobile MobileShell + client/chat + mobile-social-parity + social-runtime | confirmed | [prototype/README.md](../../platform/client/mobile/prototype/README.md) |
 | dashboard | `station-dashboard` | Station Dashboard 一级站点运维台体验基准 | `packages/prototypes/dashboard/station-dashboard/` | Relay Operator 邀请/撤销与 Station Operator 接受/续期/迁移/卸载的双边挂载生命周期 | relay-attachment v0.1 | pending-review | [prototype/README.md](../../platform/runtime/node-connectivity/relay-attachment/prototype/README.md) |
+| control | `x-config` | X Config 一级站点管理台 | `packages/prototypes/control/x-config/` | 官方 Relay/公开 Station 候选与升级配置、草稿校验、直接发布和恢复 | x-config v2.0 | confirmed | [prototype/README.md](../../platform/client/control-plane/prototype/README.md) |
 
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。
-> 登记表的一级维度是原型站点（`desktop` / `mobile` / `dashboard`），不是每个原型工程目录；applet、通话、聊天等都必须挂在所属站点下。
+> 登记表的一级维度是原型站点（`desktop` / `mobile` / `dashboard` / `control`），不是每个原型工程目录；applet、通话、聊天等都必须挂在所属站点下。
 
 ---
 
@@ -109,12 +115,25 @@ L2 截图要求：
 
 ---
 
-## 5. 技术栈约束（摘要）
+## 5. 一级站点全屏预览
+
+- `desktop`、`mobile`、`dashboard`、`control` 的 Live Preview / Remote Preview 顶栏
+  必须提供 `全屏查看` 图标按钮。
+- 全屏只扩大当前选中原型的预览壳层，不改变原型状态、路由或 manifest 归属。
+- 本地组件与远端 iframe 共用一个全屏 owner；各原型不得重复实现 Portal
+  全屏按钮。
+- 全屏覆盖整个 viewport，预览顶栏持续可见；本地内容区独立滚动，远端 iframe
+  占满剩余空间。
+- `Esc` 和顶栏 `退出全屏` 都能退出；退出后焦点回到原全屏按钮。
+- 切换一级站点或 worktree 时自动退出全屏，避免预览归属与导航状态分离。
+- 窄屏保留图标按钮和可访问名称，隐藏长按钮文字，不能压缩原型内容区。
+
+## 6. 技术栈约束（摘要）
 
 原型是**独立运行的 web 工程**（Vite + React + LobeUI/antd + CSS，浏览器直接看），只为展示终态产品的样子，**不绑定最终运行时**——不碰 Lynx / applet 容器 / SDK。完整约束见 [`global/architecture-document-standard.md` §5.8.2](../../../global/architecture-document-standard.md)。
 
 | 维度 | 约定 |
 |------|------|
 | 技术栈 | React + Vite + `@lobehub/ui` 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + CSS |
-| 运行 | 统一使用 `make run-prototype`；在 Prototype Portal 内切换 desktop / mobile / dashboard；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
+| 运行 | 统一使用 `make run-prototype`；在 Prototype Portal 内切换 desktop / mobile / dashboard / control；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
 | 落地 | 由对应工程参照原型按其运行时重新实现（如 Applet 用 Lynx），原型本身不要求能直接搬成产物 |

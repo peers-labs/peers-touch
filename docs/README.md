@@ -260,6 +260,10 @@
   （active；定义同一接入地址自动识别直连 Station 或 Relay、签名 Station identity、
   route-aware binding、protobuf Access Gate 与 scope 隔离；Relay transport
   内部合同由 Node Connectivity 定义）
+- X Config：`architecture/platform/client/control-plane/README.md`
+  （active；定义单体云控控制台、Git CAS 签名发布、Vercel 公开快照、
+  Relay/Public Station 候选、升级描述、双端缓存与 Station selector 初始化；
+  云控只提供 discovery seed，不拥有身份或 binding）
 - Federation 虚拟网络与治理账本：`architecture/domains/federation/README.md`
   （active；定义 Federation membership、Ledger、policy 与跨站业务授权；
   Node Connectivity 提供无业务 authority 的传输）

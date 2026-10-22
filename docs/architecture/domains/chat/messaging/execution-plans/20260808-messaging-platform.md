@@ -1129,7 +1129,7 @@ and Mobile Chat TypeScript generated contracts are identical.
 
 The old Conversation thread-count and member-settings proto, routes, commands,
 service/repository methods, and persistence owner have zero live references.
-Source scans also find no client-controlled membership `home_station_id`, no
+Source scans also find no x-configled membership `home_station_id`, no
 production parsing of `DeviceEventDelivery.endpoint_payload`, no new
 chat-owned presence path, and no new debug statements. `MP-W14-E` remains
 partial after the runtime checkpoint below.

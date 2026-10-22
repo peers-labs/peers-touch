@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package peers_touch.model.x_config.v1;
+
+import "domain/peer/access_endpoint.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/xconfig;xconfig";
+
+enum EndpointSeedKind {
+  ENDPOINT_SEED_KIND_UNSPECIFIED = 0;
+  ENDPOINT_SEED_KIND_RELAY = 1;
+  ENDPOINT_SEED_KIND_DIRECT_STATION = 2;
+}
+
+enum ClientPlatform {
+  CLIENT_PLATFORM_UNSPECIFIED = 0;
+  CLIENT_PLATFORM_MACOS = 1;
+  CLIENT_PLATFORM_WINDOWS = 2;
+  CLIENT_PLATFORM_LINUX = 3;
+  CLIENT_PLATFORM_IOS = 4;
+  CLIENT_PLATFORM_ANDROID = 5;
+}
+
+enum ClientArchitecture {
+  CLIENT_ARCHITECTURE_UNSPECIFIED = 0;
+  CLIENT_ARCHITECTURE_ARM64 = 1;
+  CLIENT_ARCHITECTURE_X86_64 = 2;
+  CLIENT_ARCHITECTURE_UNIVERSAL = 3;
+}
+
+message EndpointSeed {
+  string seed_id = 1;
+  EndpointSeedKind kind = 2;
+  string display_name = 3;
+  peers_touch.model.peer.v1.PublicEndpointConnectionMaterial connection_material = 4;
+  repeated string regions = 5;
+  peers_touch.model.peer.v1.SignedPublicStationAdvertisement station_advertisement = 6;
+  google.protobuf.Timestamp available_from = 7;
+  google.protobuf.Timestamp available_until = 8;
+}
+
+message ReleaseDescriptor {
+  string release_id = 1;
+  ClientPlatform platform = 2;
+  ClientArchitecture architecture = 3;
+  string version = 4;
+  string minimum_supported_version = 5;
+  string manifest_url = 6;
+  bytes manifest_sha256 = 7;
+  string release_signing_key_id = 8;
+  string release_notes_url = 9;
+  google.protobuf.Timestamp published_at = 10;
+}
+
+message XConfigSnapshotStatement {
+  uint32 schema_version = 1;
+  string channel = 2;
+  uint64 sequence = 3;
+  google.protobuf.Timestamp issued_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  repeated EndpointSeed endpoint_seeds = 6;
+  repeated ReleaseDescriptor releases = 7;
+}
+
+message SignedXConfigSnapshot {
+  string signing_key_id = 1;
+  bytes statement_bytes = 2;
+  bytes ed25519_signature = 3;
+}

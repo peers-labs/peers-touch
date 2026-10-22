@@ -4822,6 +4822,41 @@ export interface StationDiscoveryResult {
   entries: StationEntry[];
 }
 
+export type XConfigFreshness = 'current' | 'stale' | 'embedded' | 'unavailable';
+
+export interface XConfigSuggestion {
+  seed_id: string;
+  kind: 'relay' | 'direct_station';
+  display_name: string;
+  canonical_origin: string;
+  regions: string[];
+  freshness: Exclude<XConfigFreshness, 'unavailable'>;
+  actionable: boolean;
+  source_sequence: number;
+}
+
+export interface XConfigRelease {
+  release_id: string;
+  version: string;
+  manifest_url: string;
+  manifest_sha256_hex: string;
+  release_signing_key_id: string;
+  release_notes_url: string;
+}
+
+export interface XConfigProjection {
+  channel: string;
+  sequence?: number | null;
+  expires_at_unix_ms?: number | null;
+  freshness: XConfigFreshness;
+  suggestions: XConfigSuggestion[];
+  release?: XConfigRelease | null;
+  refreshing: boolean;
+  last_refresh_attempt_at_unix_ms?: number | null;
+  next_refresh_at_unix_ms?: number | null;
+  last_refresh_error?: string | null;
+}
+
 function requireEvaluationValue<T>(
   value: T | undefined,
   errorKey: string,
@@ -8422,6 +8457,21 @@ export const api = {
 
   stationProbe: (input: string) =>
     invokeRustDataFromStatus<{ input: string }, StationDiscoveryResult>('station_probe', { input }),
+
+  xConfigProjection: () =>
+    invokeRustDataFromStatus<void, XConfigProjection>('x_config_projection'),
+
+  xConfigRefresh: (force = false) =>
+    invokeRustDataFromStatus<{ force: boolean }, XConfigProjection>(
+      'x_config_refresh',
+      { force },
+    ),
+
+  xConfigDiscoverSuggestion: (seedId: string) =>
+    invokeRustDataFromStatus<{ seed_id: string }, StationDiscoveryResult>(
+      'x_config_discover_suggestion',
+      { seed_id: seedId },
+    ),
 
   resolveErrorAction: (action: { type: string; cliId?: string; providerId?: string; label: string }) =>
     invoke<{ ok: boolean; reauth?: boolean; message?: string; opened?: boolean }>('resolve_error_action', { action }),

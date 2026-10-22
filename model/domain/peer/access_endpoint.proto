@@ -36,6 +36,50 @@ enum StationRouteKind {
   STATION_ROUTE_KIND_CIRCUIT = 2;
 }
 
+// EndpointTlsTrust is scoped to one canonical discovery origin. An absent
+// value means WebPKI validation. Implementations must never install this
+// material as a process-wide or operating-system trust root.
+message EndpointTlsTrust {
+  oneof trust {
+    bytes certificate_authority_der = 1;
+    bytes leaf_spki_sha256 = 2;
+  }
+}
+
+// PublicEndpointConnectionMaterial is an authenticated bootstrap input. The
+// role-specific expected identity is a Relay PeerID or logical Station PeerID.
+// It never contains an invitation, grant, credential, Session, or private key.
+message PublicEndpointConnectionMaterial {
+  uint32 schema_version = 1;
+  string canonical_discovery_origin = 2;
+  AccessEndpointRole expected_endpoint_role = 3;
+  string expected_endpoint_identity = 4;
+  bytes expected_station_root_public_key = 5;
+  EndpointTlsTrust endpoint_tls_trust = 6;
+  int64 issued_at_unix_ms = 7;
+  int64 expires_at_unix_ms = 8;
+}
+
+message PublicStationAdvertisementStatement {
+  uint32 schema_version = 1;
+  string station_peer_id = 2;
+  bytes station_root_public_key = 3;
+  bytes connection_material_digest = 4;
+  bool public_discovery_consent = 5;
+  uint64 advertisement_sequence = 6;
+  string canonical_discovery_origin = 7;
+  string display_name = 8;
+  StationRouteVisibility visibility = 9;
+  int64 issued_at_unix_ms = 10;
+  int64 expires_at_unix_ms = 11;
+}
+
+message SignedPublicStationAdvertisement {
+  bytes statement_bytes = 1;
+  reserved 2, 3;
+  bytes station_root_signature = 4;
+}
+
 message AccessEndpointSourceProofStatement {
   bytes challenge = 1;
   bytes connection_grant_digest = 2;

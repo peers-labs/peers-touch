@@ -5564,6 +5564,7 @@ dependencies = [
  "tracing-subscriber",
  "ulid",
  "urlencoding",
+ "x-config-core",
  "x25519-dalek 2.0.1",
  "zeroize",
  "zip",
@@ -7532,7 +7533,10 @@ dependencies = [
  "multiaddr",
  "prost",
  "prost-build",
+ "rustls",
  "sha2 0.10.9",
+ "url",
+ "x509-parser 0.18.1",
 ]
 
 [[package]]
@@ -9937,6 +9941,23 @@ dependencies = [
  "windows-core 0.61.2",
  "windows-version",
  "x11-dl",
+]
+
+[[package]]
+name = "x-config-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "ed25519-dalek 2.2.0",
+ "prost",
+ "prost-build",
+ "prost-types",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "station-trust",
+ "url",
 ]
 
 [[package]]

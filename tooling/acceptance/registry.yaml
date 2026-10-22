@@ -2,6 +2,159 @@
   "version": 1,
   "rules": [
     {
+      "id": "x-config-api-closure",
+      "features": ["x-config-api-closure"],
+      "when": {
+        "paths": [
+          "tooling/acceptance/gates/x_config/**",
+          "tooling/acceptance/provisioners/x_config_*.py",
+          "tooling/acceptance/environments/x-config-*-api.yaml",
+          "tooling/acceptance/features/x-config-api-closure.yaml",
+          "packages/x-config-core/examples/verify_production.rs"
+        ]
+      },
+      "require": [
+        "x-config-home-operator-login-e2e",
+        "x-config-home-publication-e2e",
+        "x-config-api-aggregate-e2e",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-domain-contract",
+      "features": [
+        "x-config-operator-login",
+        "x-config-snapshot-core",
+        "x-config-publication",
+        "x-config-client-adapters",
+        "x-config-admin-console",
+        "x-config-api-closure"
+      ],
+      "when": {
+        "paths": [
+          "tooling/acceptance/capabilities/x-config.yaml",
+          "tooling/acceptance/domains/x-config.yaml"
+        ]
+      },
+      "require": [
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-operator-login",
+      "features": [
+        "x-config-operator-login"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/oauth/operator_login.proto",
+          "packages/github-repository/**",
+          "apps/oauth2-client/internal/application/oauth/usecase/operator_login*",
+          "apps/oauth2-client/internal/infrastructure/persistence/**",
+          "apps/oauth2-client/internal/interfaces/http/handler/operator_login*",
+          "apps/oauth2-client/api/oauth/operator/**",
+          "apps/x-config/internal/application/operatorauth/**",
+          "apps/x-config/internal/infrastructure/operatorstore/**",
+          "apps/x-config/internal/interfaces/http/auth_handler.go",
+          "tooling/acceptance/features/x-config-operator-login.yaml"
+        ]
+      },
+      "require": [
+        "x-config-operator-login-contract",
+        "x-config-home-operator-login-e2e",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-snapshot-core",
+      "features": [
+        "x-config-snapshot-core"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/x_config/**",
+          "packages/x-config-core/**",
+          "apps/station/frame/touch/model/xconfig/**",
+          "apps/desktop/src/gen/proto/domain/x_config/**",
+          "tooling/acceptance/features/x-config-snapshot-core.yaml"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "x-config-snapshot-core-contract",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-publication",
+      "features": [
+        "x-config-publication"
+      ],
+      "when": {
+        "paths": [
+          "apps/x-config/internal/application/admin/**",
+          "apps/x-config/internal/infrastructure/catalogrepo/**",
+          "apps/x-config/internal/interfaces/http/public_handler.go",
+          "apps/x-config/internal/publication/**",
+          "tooling/acceptance/features/x-config-publication.yaml"
+        ]
+      },
+      "require": [
+        "x-config-snapshot-publication-contract",
+        "x-config-home-publication-e2e",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-client-adapters",
+      "features": [
+        "x-config-client-adapters"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/application/x_config/**",
+          "apps/desktop/src-tauri/src/infrastructure/station_discovery.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/x_config.rs",
+          "apps/desktop/src/runtimes/xConfigRuntime.ts",
+          "apps/desktop/src/services/xConfig*",
+          "apps/desktop/src/components/common/StationPicker*",
+          "apps/mobile/src-tauri/src/runtime/x_config.rs",
+          "apps/mobile/src-tauri/src/runtime/station_route.rs",
+          "apps/mobile/src/runtimes/runtimeRegistry.ts",
+          "apps/mobile/src/features/station/xConfig*",
+          "apps/mobile/src/features/station/StationSelector*",
+          "tooling/acceptance/features/x-config-client-adapters.yaml"
+        ]
+      },
+      "require": [
+        "x-config-desktop-adapter-contract",
+        "x-config-mobile-adapter-contract",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-admin-console",
+      "features": [
+        "x-config-admin-console"
+      ],
+      "when": {
+        "paths": [
+          "apps/x-config/internal/application/admin/**",
+          "apps/x-config/internal/domain/catalog/**",
+          "apps/x-config/internal/infrastructure/catalogrepo/**",
+          "apps/x-config/internal/infrastructure/endpointvalidator/**",
+          "apps/x-config/internal/interfaces/http/admin_handler.go",
+          "apps/x-config/console/**",
+          "tooling/acceptance/features/x-config-admin-console.yaml"
+        ]
+      },
+      "require": [
+        "x-config-admin-api-contract",
+        "x-config-console-admin-e2e",
+        "x-config-domain-validation"
+      ]
+    },
+    {
       "id": "agent-chat-production",
       "features": ["agent-chat-production"],
       "when": {
