@@ -1,8 +1,10 @@
 # Provider Runtime Strategy — Execution Plan
 
-> Status: DRAFT
+> Status: SUPERSEDED
 > Architecture source: `docs/architecture/domains/agent/provider-runtime-strategy.md`
 > Date: 2026-07-29
+> Historical plan only. Desktop-local CLI execution was rejected; the accepted
+> architecture keeps check, discovery, execution, and catalog ownership in Station.
 
 ## Scope
 

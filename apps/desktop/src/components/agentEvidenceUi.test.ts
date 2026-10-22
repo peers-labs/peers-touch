@@ -251,6 +251,9 @@ describe('Agent evidence UI projections', () => {
     expect(sources).toContain('data-source-badge');
     expect(composer).toContain('data-agent-capability-warning');
     expect(composer).toContain('data-pt-agent-attachment-input');
+    expect(composer).toContain('data-pt-agent-composer-slash');
+    expect(composer).toContain('data-pt-agent-composer-attachment-choose');
+    expect(composer).toContain('requestAnimationFrame(() => el.focus())');
     expect(composer).toContain('composerFocusNonce');
     expect(attachments).toContain('data-pt-agent-composer-attachment-status');
     expect(attachments).toContain('data-pt-agent-composer-attachment-remove');
@@ -259,15 +262,14 @@ describe('Agent evidence UI projections', () => {
     expect(details).toContain('requestId !== loadRequestRef.current');
   });
 
-  it('mounts the Connector projection on the Agent capability surface', () => {
+  it('keeps ordinary Profile extensions scoped to Skills and MCP', () => {
     const profile = readFileSync(
       new URL('../pages/AgentProfilePage.tsx', import.meta.url),
       'utf8',
     );
 
-    expect(profile).toContain(
-      "import { AgentConnectorsPanel } from '../components/agent/AgentConnectorsPanel';",
-    );
-    expect(profile).toContain('<AgentConnectorsPanel agentId={agent.id} />');
+    expect(profile).toContain('CapabilitySourceKind.SKILL');
+    expect(profile).toContain('CapabilitySourceKind.MCP');
+    expect(profile).not.toContain('AgentConnectorsPanel');
   });
 });

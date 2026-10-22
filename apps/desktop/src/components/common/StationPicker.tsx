@@ -3,16 +3,19 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Check,
+  Cloud,
   Copy,
   Loader2,
   Plus,
   RadioTower,
+  RefreshCw,
   Server,
   Trash2,
   Wifi,
@@ -21,10 +24,17 @@ import { theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../services/desktop_api';
 import type {
+  XConfigSuggestion,
   StationEntry,
   StationRouteCandidate,
   StationRouteHealth,
 } from '../../services/desktop_api';
+import {
+  discoverXConfigSuggestion,
+  getXConfigProjection,
+  refreshXConfigProjection,
+  subscribeXConfigProjection,
+} from '../../services/xConfig';
 import { log } from '../../utils/logger';
 
 type StationHealthStatus = 'unknown' | 'checking' | 'online' | 'offline';
@@ -44,6 +54,9 @@ export function StationPicker() {
   const [activeStationPeerId, setActiveStationPeerId] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [adding, setAdding] = useState(false);
+  const [selectingSuggestionId, setSelectingSuggestionId] = useState<string | null>(null);
+  const [suggestionErrorId, setSuggestionErrorId] = useState<string | null>(null);
+  const [refreshingSuggestions, setRefreshingSuggestions] = useState(false);
   const [checkingStationPeerId, setCheckingStationPeerId] = useState<string | null>(null);
   const [hoveredStationPeerId, setHoveredStationPeerId] = useState<string | null>(null);
   const [copiedEndpoint, setCopiedEndpoint] = useState<string | null>(null);
@@ -54,6 +67,11 @@ export function StationPicker() {
   const requestRef = useRef(0);
   const copyResetTimerRef = useRef<number | null>(null);
   const [panelPos, setPanelPos] = useState({ top: 0, left: 0, openRight: true });
+  const xConfig = useSyncExternalStore(
+    subscribeXConfigProjection,
+    getXConfigProjection,
+    getXConfigProjection,
+  );
 
   const loadStations = useCallback(async () => {
     const requestId = ++requestRef.current;
@@ -194,6 +212,41 @@ export function StationPicker() {
     }
   };
 
+  const handleSuggestion = async (suggestion: XConfigSuggestion) => {
+    if (!suggestion.actionable || selectingSuggestionId) return;
+    setSelectingSuggestionId(suggestion.seed_id);
+    setSuggestionErrorId(null);
+    try {
+      const discovered = await discoverXConfigSuggestion(suggestion.seed_id);
+      await loadStations();
+      if (discovered.entries.length === 1 && discovered.entries[0]?.routes.length === 1) {
+        const entry = discovered.entries[0];
+        const route = entry.routes[0];
+        if (entry && route) await selectRoute(entry, route);
+      }
+    } catch (error) {
+      setSuggestionErrorId(suggestion.seed_id);
+      log.warn('StationPicker', 'Suggested Station discovery failed', {
+        seedId: suggestion.seed_id,
+        error,
+      });
+    } finally {
+      setSelectingSuggestionId(null);
+    }
+  };
+
+  const refreshSuggestions = async () => {
+    if (refreshingSuggestions) return;
+    setRefreshingSuggestions(true);
+    try {
+      await refreshXConfigProjection(true);
+    } catch (error) {
+      log.warn('StationPicker', 'X Config refresh failed', { error });
+    } finally {
+      setRefreshingSuggestions(false);
+    }
+  };
+
   const handleRemove = async (entry: StationEntry, event: ReactMouseEvent) => {
     event.stopPropagation();
     try {
@@ -234,6 +287,7 @@ export function StationPicker() {
   const displayLabel = activeEntry?.display_name
     || shortPeerId(activeEntry?.station_peer_id)
     || t('common.stationPicker.fallbackLabel');
+  const suggestions = visibleXConfigSuggestions(entries, xConfig.suggestions);
 
   return (
     <>
@@ -268,13 +322,22 @@ export function StationPicker() {
             zIndex: 10000,
           }}
         >
-          <div style={{ padding: '4px 6px 10px' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: token.colorText }}>
-              {t('common.stationPicker.title')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px 10px' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: token.colorText }}>
+                {t('common.stationPicker.title')}
+              </div>
+              <div style={{ marginTop: 2, fontSize: 11, color: token.colorTextQuaternary }}>
+                {t('common.stationPicker.subtitle')}
+              </div>
             </div>
-            <div style={{ marginTop: 2, fontSize: 11, color: token.colorTextQuaternary }}>
-              {t('common.stationPicker.subtitle')}
-            </div>
+            <IconAction
+              visible
+              label={t('common.stationPicker.refreshSuggestions')}
+              token={token}
+              onClick={() => void refreshSuggestions()}
+              icon={<RefreshCw size={13} style={refreshingSuggestions ? { animation: 'spin 1s linear infinite' } : undefined} />}
+            />
           </div>
 
           <div style={{ maxHeight: 276, overflowY: 'auto', paddingRight: 2 }}>
@@ -312,6 +375,34 @@ export function StationPicker() {
               <div style={{ padding: 18, fontSize: 12, color: token.colorTextQuaternary, textAlign: 'center' }}>
                 {t('common.stationPicker.empty')}
               </div>
+            )}
+            {suggestions.length > 0 && (
+              <>
+                <div
+                  style={{
+                    padding: '9px 6px 6px',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: token.colorTextQuaternary,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {t('common.stationPicker.suggestions')}
+                </div>
+                {suggestions.map((suggestion) => (
+                  <StationSuggestionRow
+                    key={suggestion.seed_id}
+                    suggestion={suggestion}
+                    selecting={suggestion.seed_id === selectingSuggestionId}
+                    failed={suggestion.seed_id === suggestionErrorId}
+                    token={token}
+                    suggestionLabel={t('common.stationPicker.suggested')}
+                    staleLabel={t('common.stationPicker.suggestionStale')}
+                    failedLabel={t('common.stationPicker.suggestionInvalid')}
+                    onSelect={() => void handleSuggestion(suggestion)}
+                  />
+                ))}
+              </>
             )}
           </div>
 
@@ -551,6 +642,80 @@ function StationRow(props: {
   );
 }
 
+function StationSuggestionRow(props: {
+  suggestion: XConfigSuggestion;
+  selecting: boolean;
+  failed: boolean;
+  token: DesignToken;
+  suggestionLabel: string;
+  staleLabel: string;
+  failedLabel: string;
+  onSelect: () => void;
+}) {
+  const { suggestion, token } = props;
+  const disabled = !suggestion.actionable || props.selecting;
+  const status = props.failed
+    ? props.failedLabel
+    : suggestion.freshness === 'stale'
+      ? props.staleLabel
+      : props.suggestionLabel;
+  return (
+    <button
+      type="button"
+      data-x-config-seed-id={suggestion.seed_id}
+      data-x-config-freshness={suggestion.freshness}
+      disabled={disabled}
+      onClick={props.onSelect}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '18px minmax(0, 1fr) auto',
+        alignItems: 'center',
+        gap: 8,
+        width: '100%',
+        minHeight: 52,
+        marginBottom: 5,
+        padding: '8px 9px',
+        border: `1px dashed ${props.failed ? token.colorErrorBorder : token.colorBorderSecondary}`,
+        borderRadius: 8,
+        background: 'transparent',
+        color: disabled ? token.colorTextDisabled : token.colorText,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        fontFamily: 'inherit',
+        textAlign: 'left',
+      }}
+    >
+      {props.selecting
+        ? <Loader2 size={15} aria-hidden="true" style={{ color: token.colorPrimary }} />
+        : suggestion.kind === 'relay'
+          ? <RadioTower size={15} aria-hidden="true" />
+          : <Cloud size={15} aria-hidden="true" />}
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 650 }}>
+          {suggestion.display_name}
+        </span>
+        <span style={{ display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, color: token.colorTextQuaternary }}>
+          {suggestion.canonical_origin}
+        </span>
+      </span>
+      <span
+        aria-live={props.failed ? 'polite' : undefined}
+        style={{
+          color: props.failed
+            ? token.colorError
+            : suggestion.actionable
+              ? token.colorPrimary
+              : token.colorTextQuaternary,
+          fontSize: 10,
+          fontWeight: 700,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {status}
+      </span>
+    </button>
+  );
+}
+
 function IconAction(props: {
   visible: boolean;
   active?: boolean;
@@ -649,6 +814,18 @@ function mergeDiscoveredEntries(
     }
   }
   return merged;
+}
+
+export function visibleXConfigSuggestions(
+  entries: StationEntry[],
+  suggestions: XConfigSuggestion[],
+): XConfigSuggestion[] {
+  const verifiedOrigins = new Set(
+    entries.flatMap((entry) => entry.routes.map((route) => route.endpoint_origin)),
+  );
+  return suggestions.filter(
+    (suggestion) => !verifiedOrigins.has(suggestion.canonical_origin),
+  );
 }
 
 function shortPeerId(value?: string): string {

@@ -48,6 +48,7 @@ func NewToolRegistryService(
 	r.registerSkillViewTool(skillSvc)
 	r.registerSkillManageTool(skillSvc)
 	r.registerDesktopLocalBuiltinTools()
+	r.registerClarificationTool()
 
 	return r
 }

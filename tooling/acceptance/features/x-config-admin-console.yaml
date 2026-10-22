@@ -1,0 +1,53 @@
+{
+  "id": "x-config-admin-console",
+  "status": "active",
+  "product_area": "x-config",
+  "owners": [
+    "apps/x-config/internal/application/admin/**",
+    "apps/x-config/internal/domain/catalog/**",
+    "apps/x-config/internal/infrastructure/catalogrepo/**",
+    "apps/x-config/internal/infrastructure/endpointvalidator/**",
+    "apps/x-config/internal/interfaces/http/admin_handler.go",
+    "apps/x-config/console/**"
+  ],
+  "truth_sources": [
+    "shared repository catalog revision",
+    "typed validation findings",
+    "direct publication history and persisted signed envelope"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "web",
+      "surface": "X Config operator console"
+    },
+    {
+      "type": "http",
+      "route": "/api/admin/{catalog|publications}"
+    }
+  ],
+  "required_gates": [
+    "x-config-admin-api-contract",
+    "x-config-console-admin-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "typed endpoint and release drafts use bounded Git CAS",
+      "initial draft CAS is scoped to the channel catalog path rather than an otherwise shared repository head",
+      "validation rejects private, loopback, link-local, metadata and redirect targets",
+      "successful validation returns findings as an empty array rather than null",
+      "direct publication requires exact source revision and acknowledged content digest",
+      "unchanged reviewed content can be explicitly republished with a higher sequence before expiry",
+      "restore creates a new revision instead of mutating history"
+    ],
+    "visible": [
+      "console preserves draft input and shows field and owner findings",
+      "source, publication and repository-conflict states remain distinct",
+      "wide and narrow layouts preserve action hierarchy without overlap"
+    ]
+  },
+  "negative": [
+    "browser bundle contains no GitHub App, session-record or deployment credential",
+    "browser bundle contains no snapshot signing private key",
+    "failed signing or persistence cannot report publication success"
+  ]
+}

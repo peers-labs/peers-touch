@@ -160,6 +160,12 @@ func (s *ExternalRuntimeService) RecoverPendingResets(ctx context.Context) error
 	var recoveryErr error
 	for index := range commands {
 		command := &commands[index]
+		// These fences belong to a whole deletion transaction. A standalone
+		// reset commit would advance one Topic version and release its fence
+		// before the other members commit, making deletion retry impossible.
+		if strings.HasPrefix(command.IdempotencyKey, "conversation-delete:") {
+			continue
+		}
 		if !s.Available() {
 			recoveryErr = errors.Join(
 				recoveryErr,
@@ -427,6 +433,17 @@ func (s *ExternalRuntimeService) persistCleanupFailure(
 		return nil
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var persisted persistence.ExternalRuntimeResetCommand
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND reset_fence = ?", command.ID, command.ResetFence).
+			First(&persisted).Error; err != nil {
+			return err
+		}
+		if persisted.State != persistence.ExternalRuntimeResetPrepared &&
+			persisted.State != persistence.ExternalRuntimeResetCleanupFailed {
+			return errcode.New(errcode.AgentInvalidSourceState, http.StatusConflict,
+				"external runtime reset command is no longer pending", nil)
+		}
 		conversation, binding, err := loadExternalBindingForUpdate(
 			tx,
 			command.Ptid,

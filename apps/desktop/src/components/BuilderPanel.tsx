@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useChatStore, type ChatMessage } from '../store/chat';
 import { useAgentStore } from '../store/agent';
+import { useTopicModel } from '../hooks/useTopicModel';
 import { MessageBubble } from './MessageBubble';
 import { ModelProviderSelect } from './ModelProviderSelect';
 import { executeAgentTurn, type Agent, type Session } from '../services/desktop_api';
@@ -147,9 +148,9 @@ export function BuilderPanel({
 
   const agents = useAgentStore(s => s.agents);
   const defaultModel = useAgentStore(s => s.defaultModel);
-  const selectedModel = useAgentStore(s => s.selectedModel);
+  const defaultProviderId = useAgentStore(s => s.defaultProviderId);
+  const { selectedModel, selectedProviderId, setSelectedModel } = useTopicModel();
   const availableModels = useAgentStore(s => s.availableModels);
-  const setSelectedModel = useAgentStore(s => s.setSelectedModel);
   const sessions = useChatStore(s => s.sessions);
   const selectedAgent = useMemo(
     () => agents.find((candidate) => candidate.name === currentAgent),
@@ -157,10 +158,15 @@ export function BuilderPanel({
   );
 
   const currentModelId = selectedModel || defaultModel;
+  const currentProviderId = selectedProviderId || defaultProviderId;
   const currentModelLabel = useMemo(() => {
-    const model = availableModels.find((item) => item.id === currentModelId);
+    const model = availableModels.find(
+      (item) =>
+        item.id === currentModelId
+        && item.provider_id === currentProviderId,
+    );
     return model?.display_name || currentModelId || t('agent.builder.context.model');
-  }, [availableModels, currentModelId, t]);
+  }, [availableModels, currentModelId, currentProviderId, t]);
 
   const scopedSessionKey = useMemo(() => {
     return sessionKey || `${scope}:${currentAgent}`;
@@ -572,6 +578,7 @@ export function BuilderPanel({
                   content={
                     <ModelProviderSelect
                       selectedModelId={currentModelId}
+                      selectedProviderId={currentProviderId}
                       onSelect={(id, pid) => {
                         setSelectedModel(id, pid);
                         setModelOpen(false);

@@ -1,265 +1,343 @@
-use crate::contracts::{
-    ChannelCreateInput, ChannelEventsInput, ChannelIdInput, ChannelSendMessageInput,
-    ChannelUpdateInput, StubPayload,
-};
+use prost::Message;
+use reqwest::Method;
+use serde::Deserialize;
+
+use crate::application::station_runtime::client::StationClient;
 use crate::error::{AppResult, ErrorCode};
-use serde_json::{json, Value};
-use std::sync::{Mutex, OnceLock};
+use crate::model::channel;
 
-#[derive(Clone)]
-struct ChannelRecord {
-    id: String,
-    data: Value,
+const CHANNEL_API_PREFIX: &str = "/sub-channel";
+
+fn channel_path(path: &str) -> String {
+    format!("{CHANNEL_API_PREFIX}{path}")
 }
 
-#[derive(Default)]
-struct ChannelStore {
-    channels: Vec<ChannelRecord>,
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncodedChannelRequestInput {
+    #[serde(alias = "request_bytes")]
+    pub request_bytes: Vec<u8>,
 }
 
-impl ChannelStore {
-    fn seeded() -> Self {
-        // The default Webhook channel is seeded on first launch, so its
-        // creation time is the process-local store initialization. The UI
-        // renders createdAt unconditionally; without it the row shows an
-        // "Invalid Date" label.
-        let created_at = now_unix_ms().to_string();
-        Self {
-            channels: vec![ChannelRecord {
-                id: "channel-1".to_string(),
-                data: json!({
-                    "id":"channel-1",
-                    "name":"i18n:channels.default.title",
-                    "type":"webhook",
-                    "config":"{}",
-                    "enabled":true,
-                    "createdAt": created_at,
-                    "updatedAt": created_at
-                }),
-            }],
+fn forward<Req, Resp>(
+    station_client: &StationClient,
+    input: EncodedChannelRequestInput,
+    token: &str,
+    path: &'static str,
+    invalid_request_key: &'static str,
+    operation_error_key: &'static str,
+) -> AppResult<Vec<u8>>
+where
+    Req: Message + Default,
+    Resp: Message + Default,
+{
+    let endpoint_path = channel_path(path);
+    let request = match Req::decode(input.request_bytes.as_slice()) {
+        Ok(request) => request,
+        Err(error) => {
+            tracing::warn!(path = %endpoint_path, error = %error, "invalid Channel protobuf request");
+            return AppResult::fail(ErrorCode::InvalidArgument, invalid_request_key, None);
         }
-    }
-}
+    };
 
-fn now_unix_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| i64::try_from(duration.as_millis()).unwrap_or(0))
-        .unwrap_or(0)
-}
-
-static CHANNEL_STORE: OnceLock<Mutex<ChannelStore>> = OnceLock::new();
-
-fn channel_store() -> &'static Mutex<ChannelStore> {
-    CHANNEL_STORE.get_or_init(|| Mutex::new(ChannelStore::seeded()))
-}
-
-fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
-    AppResult::success(StubPayload {
-        command: command.to_string(),
-        status: data.to_string(),
-    })
-}
-
-fn invalid_argument(message: &str) -> AppResult<StubPayload> {
-    AppResult::fail(ErrorCode::InvalidArgument, message, None)
-}
-
-fn store_lock_error(e: impl std::fmt::Display) -> AppResult<StubPayload> {
-    tracing::error!(error = %e, "Failed to acquire channels store lock");
-    AppResult::fail(
-        ErrorCode::InternalError,
-        format!("Failed to access channels store: {}", e),
+    match station_client.request_proto::<Req, Resp>(
+        Method::POST,
+        &endpoint_path,
+        token,
         None,
-    )
+        Some(&request),
+    ) {
+        Ok(response) => AppResult::success(response.encode_to_vec()),
+        Err(error) => error.into_app_result(operation_error_key),
+    }
 }
 
-pub fn channels_list() -> AppResult<StubPayload> {
-    let guard = match channel_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
-    };
-    let channels = guard
-        .channels
-        .iter()
-        .map(|item| item.data.clone())
-        .collect::<Vec<_>>();
-    success_payload("channels_list", json!({ "channels": channels }))
-}
-
-pub fn channels_get(input: ChannelIdInput) -> AppResult<StubPayload> {
-    let id = input.id.trim();
-    if id.is_empty() {
-        return invalid_argument("id is required");
-    }
-    let guard = match channel_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
-    };
-    if let Some(channel) = guard.channels.iter().find(|item| item.id == id) {
-        return success_payload("channels_get", channel.data.clone());
-    }
-    AppResult::fail(ErrorCode::NotFound, "Channel not found", None)
-}
-
-pub fn channels_create(input: ChannelCreateInput) -> AppResult<StubPayload> {
-    if input.name.trim().is_empty() {
-        return invalid_argument("name is required");
-    }
-    let mut guard = match channel_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
-    };
-    let id = format!("channel-{}", guard.channels.len() + 1);
-    let now = now_unix_ms().to_string();
-    let data = json!({
-        "id": id,
-        "name": input.name,
-        "type": input.r#type,
-        "config": input.config,
-        "enabled": input.enabled.unwrap_or(true),
-        "createdAt": now,
-        "updatedAt": now
-    });
-    guard.channels.push(ChannelRecord {
-        id: data
-            .get("id")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        data: data.clone(),
-    });
-    success_payload("channels_create", data)
-}
-
-pub fn channels_update(input: ChannelUpdateInput) -> AppResult<StubPayload> {
-    let id = input.id.trim();
-    if id.is_empty() {
-        return invalid_argument("id is required");
-    }
-    let mut guard = match channel_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
-    };
-    if let Some(channel) = guard.channels.iter_mut().find(|item| item.id == id) {
-        if let Some(obj) = channel.data.as_object_mut() {
-            if let Some(name) = input.name {
-                obj.insert("name".to_string(), json!(name));
-            }
-            if let Some(ty) = input.r#type {
-                obj.insert("type".to_string(), json!(ty));
-            }
-            if let Some(config) = input.config {
-                obj.insert("config".to_string(), json!(config));
-            }
-            if let Some(enabled) = input.enabled {
-                obj.insert("enabled".to_string(), json!(enabled));
-            }
-            obj.insert("updatedAt".to_string(), json!(now_unix_ms().to_string()));
+macro_rules! channel_operation {
+    ($name:ident, $request:ty, $response:ty, $path:literal, $invalid:literal, $failed:literal) => {
+        pub fn $name(
+            station_client: &StationClient,
+            input: EncodedChannelRequestInput,
+            token: &str,
+        ) -> AppResult<Vec<u8>> {
+            forward::<$request, $response>(station_client, input, token, $path, $invalid, $failed)
         }
-        return success_payload("channels_update", channel.data.clone());
-    }
-    AppResult::fail(ErrorCode::NotFound, "Channel not found", None)
-}
-
-pub fn channels_delete(input: ChannelIdInput) -> AppResult<StubPayload> {
-    let id = input.id.trim().to_string();
-    if id.is_empty() {
-        return invalid_argument("id is required");
-    }
-    let mut guard = match channel_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
     };
-    let before = guard.channels.len();
-    guard.channels.retain(|item| item.id != id);
-    success_payload(
-        "channels_delete",
-        json!({ "ok": before != guard.channels.len() }),
-    )
 }
 
-pub fn channels_test(input: ChannelIdInput) -> AppResult<StubPayload> {
-    let id = input.id.trim();
-    if id.is_empty() {
-        return invalid_argument("id is required");
-    }
-    success_payload("channels_test", json!({ "ok": true }))
-}
+channel_operation!(
+    list_bindings,
+    channel::ListChannelBindingsRequest,
+    channel::ListChannelBindingsResponse,
+    "/channel/binding/list",
+    "channels.request.invalid",
+    "channels.binding.listFailed"
+);
+channel_operation!(
+    create_binding,
+    channel::CreateChannelBindingRequest,
+    channel::CreateChannelBindingResponse,
+    "/channel/binding/create",
+    "channels.binding.createRequestInvalid",
+    "channels.binding.createFailed"
+);
+channel_operation!(
+    update_binding,
+    channel::UpdateChannelBindingRequest,
+    channel::UpdateChannelBindingResponse,
+    "/channel/binding/update",
+    "channels.binding.updateRequestInvalid",
+    "channels.binding.updateFailed"
+);
+channel_operation!(
+    delete_binding,
+    channel::DeleteChannelBindingRequest,
+    channel::DeleteChannelBindingResponse,
+    "/channel/binding/delete",
+    "channels.binding.deleteRequestInvalid",
+    "channels.binding.deleteFailed"
+);
+channel_operation!(
+    start_binding,
+    channel::StartChannelBindingRequest,
+    channel::StartChannelBindingResponse,
+    "/channel/binding/start",
+    "channels.binding.startRequestInvalid",
+    "channels.binding.startFailed"
+);
+channel_operation!(
+    stop_binding,
+    channel::StopChannelBindingRequest,
+    channel::StopChannelBindingResponse,
+    "/channel/binding/stop",
+    "channels.binding.stopRequestInvalid",
+    "channels.binding.stopFailed"
+);
+channel_operation!(
+    set_default_binding,
+    channel::SetDefaultChannelBindingRequest,
+    channel::SetDefaultChannelBindingResponse,
+    "/channel/binding/default",
+    "channels.binding.defaultRequestInvalid",
+    "channels.binding.defaultFailed"
+);
+channel_operation!(
+    validate_app,
+    channel::ValidateChannelAppRequest,
+    channel::ValidateChannelAppResponse,
+    "/channel/app/validate",
+    "channels.app.validateRequestInvalid",
+    "channels.app.validateFailed"
+);
+channel_operation!(
+    check_health,
+    channel::CheckChannelHealthRequest,
+    channel::CheckChannelHealthResponse,
+    "/channel/health/check",
+    "channels.health.requestInvalid",
+    "channels.health.checkFailed"
+);
+channel_operation!(
+    start_requester_authorization,
+    channel::StartChannelRequesterAuthorizationRequest,
+    channel::StartChannelRequesterAuthorizationResponse,
+    "/channel/requester-authorization/start",
+    "channels.requesterAuthorization.startRequestInvalid",
+    "channels.requesterAuthorization.startFailed"
+);
+channel_operation!(
+    get_requester_authorization,
+    channel::GetChannelRequesterAuthorizationRequest,
+    channel::GetChannelRequesterAuthorizationResponse,
+    "/channel/requester-authorization/get",
+    "channels.requesterAuthorization.getRequestInvalid",
+    "channels.requesterAuthorization.getFailed"
+);
+channel_operation!(
+    refresh_requester_authorization,
+    channel::RefreshChannelRequesterAuthorizationRequest,
+    channel::RefreshChannelRequesterAuthorizationResponse,
+    "/channel/requester-authorization/refresh",
+    "channels.requesterAuthorization.refreshRequestInvalid",
+    "channels.requesterAuthorization.refreshFailed"
+);
+channel_operation!(
+    revoke_requester_authorization,
+    channel::RevokeChannelRequesterAuthorizationRequest,
+    channel::RevokeChannelRequesterAuthorizationResponse,
+    "/channel/requester-authorization/revoke",
+    "channels.requesterAuthorization.revokeRequestInvalid",
+    "channels.requesterAuthorization.revokeFailed"
+);
+channel_operation!(
+    cancel_requester_authorization,
+    channel::CancelChannelRequesterAuthorizationRequest,
+    channel::CancelChannelRequesterAuthorizationResponse,
+    "/channel/requester-authorization/cancel",
+    "channels.requesterAuthorization.cancelRequestInvalid",
+    "channels.requesterAuthorization.cancelFailed"
+);
+channel_operation!(
+    list_routes,
+    channel::ListChannelRoutesRequest,
+    channel::ListChannelRoutesResponse,
+    "/channel/route/list",
+    "channels.route.listRequestInvalid",
+    "channels.route.listFailed"
+);
+channel_operation!(
+    upsert_route,
+    channel::UpsertChannelRouteRequest,
+    channel::UpsertChannelRouteResponse,
+    "/channel/route/upsert",
+    "channels.route.upsertRequestInvalid",
+    "channels.route.upsertFailed"
+);
+channel_operation!(
+    delete_route,
+    channel::DeleteChannelRouteRequest,
+    channel::DeleteChannelRouteResponse,
+    "/channel/route/delete",
+    "channels.route.deleteRequestInvalid",
+    "channels.route.deleteFailed"
+);
+channel_operation!(
+    list_member_access,
+    channel::ListChannelMemberAccessRequest,
+    channel::ListChannelMemberAccessResponse,
+    "/channel/member/list",
+    "channels.member.listRequestInvalid",
+    "channels.member.listFailed"
+);
+channel_operation!(
+    decide_member_access,
+    channel::DecideChannelMemberAccessRequest,
+    channel::ChannelMemberAccess,
+    "/channel/member/decide",
+    "channels.member.decisionRequestInvalid",
+    "channels.member.decisionFailed"
+);
+channel_operation!(
+    list_chats,
+    channel::ListChannelChatsRequest,
+    channel::ListChannelChatsResponse,
+    "/channel/chat/list",
+    "channels.chat.listRequestInvalid",
+    "channels.chat.listFailed"
+);
+channel_operation!(
+    list_automations,
+    channel::ListChannelAutomationsRequest,
+    channel::ListChannelAutomationsResponse,
+    "/channel/automation/list",
+    "channels.automation.listRequestInvalid",
+    "channels.automation.listFailed"
+);
+channel_operation!(
+    upsert_automation,
+    channel::UpsertChannelAutomationRequest,
+    channel::UpsertChannelAutomationResponse,
+    "/channel/automation/upsert",
+    "channels.automation.upsertRequestInvalid",
+    "channels.automation.upsertFailed"
+);
+channel_operation!(
+    delete_automation,
+    channel::DeleteChannelAutomationRequest,
+    channel::DeleteChannelAutomationResponse,
+    "/channel/automation/delete",
+    "channels.automation.deleteRequestInvalid",
+    "channels.automation.deleteFailed"
+);
+channel_operation!(
+    run_automation,
+    channel::RunChannelAutomationRequest,
+    channel::RunChannelAutomationResponse,
+    "/channel/automation/run",
+    "channels.automation.runRequestInvalid",
+    "channels.automation.runFailed"
+);
+channel_operation!(
+    send_message,
+    channel::SendChannelMessageRequest,
+    channel::SendChannelMessageResponse,
+    "/channel/message/send",
+    "channels.message.sendRequestInvalid",
+    "channels.message.sendFailed"
+);
+channel_operation!(
+    list_events,
+    channel::ListChannelEventsRequest,
+    channel::ListChannelEventsResponse,
+    "/channel/event/list",
+    "channels.event.listRequestInvalid",
+    "channels.event.listFailed"
+);
+channel_operation!(
+    get_stats,
+    channel::ChannelStatsRequest,
+    channel::ChannelStatsResponse,
+    "/channel/stats",
+    "channels.stats.requestInvalid",
+    "channels.stats.loadFailed"
+);
+channel_operation!(
+    retry_delivery,
+    channel::RetryChannelDeliveryRequest,
+    channel::RetryChannelDeliveryResponse,
+    "/channel/delivery/retry",
+    "channels.delivery.retryRequestInvalid",
+    "channels.delivery.retryFailed"
+);
+channel_operation!(
+    export_diagnostics,
+    channel::ExportChannelDiagnosticsRequest,
+    channel::ExportChannelDiagnosticsResponse,
+    "/channel/diagnostics/export",
+    "channels.diagnostics.exportRequestInvalid",
+    "channels.diagnostics.exportFailed"
+);
+channel_operation!(
+    start_provisioning,
+    channel::StartChannelProvisioningRequest,
+    channel::StartChannelProvisioningResponse,
+    "/channel/provisioning/start",
+    "channels.provisioning.startRequestInvalid",
+    "channels.provisioning.startFailed"
+);
+channel_operation!(
+    poll_provisioning,
+    channel::PollChannelProvisioningRequest,
+    channel::PollChannelProvisioningResponse,
+    "/channel/provisioning/poll",
+    "channels.provisioning.pollRequestInvalid",
+    "channels.provisioning.pollFailed"
+);
+channel_operation!(
+    confirm_provisioning,
+    channel::ConfirmChannelProvisioningRequest,
+    channel::ConfirmChannelProvisioningResponse,
+    "/channel/provisioning/confirm",
+    "channels.provisioning.confirmRequestInvalid",
+    "channels.provisioning.confirmFailed"
+);
+channel_operation!(
+    cancel_provisioning,
+    channel::CancelChannelProvisioningRequest,
+    channel::CancelChannelProvisioningResponse,
+    "/channel/provisioning/cancel",
+    "channels.provisioning.cancelRequestInvalid",
+    "channels.provisioning.cancelFailed"
+);
 
-pub fn channels_send(input: ChannelSendMessageInput) -> AppResult<StubPayload> {
-    let id = input.id.trim();
-    if id.is_empty() {
-        return invalid_argument("id is required");
-    }
-    if input.text.trim().is_empty() {
-        return invalid_argument("text is required");
-    }
-    success_payload("channels_send", json!({ "ok": true }))
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-pub fn channels_list_chats(input: ChannelIdInput) -> AppResult<StubPayload> {
-    let id = input.id.trim();
-    if id.is_empty() {
-        return invalid_argument("id is required");
+    #[test]
+    fn channel_routes_are_scoped_to_the_channel_subserver() {
+        assert_eq!(
+            channel_path("/channel/binding/list"),
+            "/sub-channel/channel/binding/list"
+        );
     }
-    success_payload("channels_list_chats", json!({ "chats": [] }))
-}
-
-pub fn channels_start_bot(input: ChannelIdInput) -> AppResult<StubPayload> {
-    let id = input.id.trim();
-    if id.is_empty() {
-        return invalid_argument("id is required");
-    }
-    success_payload("channels_start_bot", json!({ "ok": true }))
-}
-
-pub fn channels_stop_bot(input: ChannelIdInput) -> AppResult<StubPayload> {
-    let id = input.id.trim();
-    if id.is_empty() {
-        return invalid_argument("id is required");
-    }
-    success_payload("channels_stop_bot", json!({ "ok": true }))
-}
-
-pub fn channels_bot_status(input: ChannelIdInput) -> AppResult<StubPayload> {
-    let id = input.id.trim();
-    if id.is_empty() {
-        return invalid_argument("id is required");
-    }
-    success_payload(
-        "channels_bot_status",
-        json!({
-            "running": true,
-            "last_error": null
-        }),
-    )
-}
-
-pub fn channels_list_events(input: ChannelEventsInput) -> AppResult<StubPayload> {
-    let id = input.id.trim();
-    if id.is_empty() {
-        return invalid_argument("id is required");
-    }
-    let limit = input.limit.unwrap_or(50);
-    let offset = input.offset.unwrap_or(0);
-    success_payload(
-        "channels_list_events",
-        json!({ "events": [], "total": 0, "limit": limit, "offset": offset }),
-    )
-}
-
-pub fn channels_stats(input: ChannelIdInput) -> AppResult<StubPayload> {
-    let id = input.id.trim();
-    if id.is_empty() {
-        return invalid_argument("id is required");
-    }
-    success_payload(
-        "channels_stats",
-        json!({
-            "total_messages": 0,
-            "success_messages": 0,
-            "failed_messages": 0
-        }),
-    )
 }

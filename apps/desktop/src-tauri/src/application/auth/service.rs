@@ -1213,15 +1213,6 @@ pub(crate) fn auth_restore_session_for_device(
     state: &AppState,
     device_type: &str,
 ) -> AppResult<AuthSessionPayload> {
-    if let Err(error) =
-        crate::application::oauth2::reconcile_broker_cancellations_after_restart(station_client)
-    {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            "oauth cancellation recovery failed",
-            Some(json!({ "cause": error })),
-        );
-    }
     let Some(account_id) = session_vault::active_account_id() else {
         return unauthorized(
             "missing session",
@@ -1245,6 +1236,18 @@ pub(crate) fn auth_restore_session_for_device(
         }
         Err(error) => return session_vault_to_app(error),
     };
+    if let Err(error) = access_scope::<AuthSessionPayload>(&state.station) {
+        return error;
+    }
+    if let Err(error) =
+        crate::application::oauth2::reconcile_broker_cancellations_after_restart(station_client)
+    {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "oauth cancellation recovery failed",
+            Some(json!({ "cause": error })),
+        );
+    }
     if blob.source == SessionSource::OauthBridge {
         match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(
             station_client,

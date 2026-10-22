@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tag } from '@lobehub/ui';
 import { theme } from 'antd';
@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import type { ToolCallInfo, DelegationTaskInfo } from '../../store/chat';
 import { ToolExecutionOwner } from '../../gen/proto/domain/agent/agent_pb';
-import { usePortalStore } from '../../store/portal';
 import { useAgentCapabilityStore } from '../../store/agentCapabilities';
 import {
   logToolDecisionFailure,
@@ -26,6 +25,7 @@ import {
   toolRuntime,
 } from '../../runtimes/toolRuntime';
 import { useTranslation } from 'react-i18next';
+import { ClarificationQuestion } from './ClarificationQuestion';
 
 function executionOwnerLocaleKey(owner: ToolExecutionOwner): string {
   if (owner === ToolExecutionOwner.STATION) return 'station';
@@ -166,6 +166,12 @@ export function ToolCallItem({
   );
   const tool = resolveToolCallProjection(sourceTool, projection);
   const approvalRequired = tool.status === 'approval_required' && !!tool.approvalId;
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (approvalRequired && tool.name !== 'ask_user') {
+      cancelRef.current?.focus({ preventScroll: true });
+    }
+  }, [approvalRequired, tool.id, tool.name]);
   const executorUnavailable =
     approvalRequired
     && tool.error === 'agent.errors.executorUnavailable';
@@ -249,6 +255,7 @@ export function ToolCallItem({
     <div
       data-pt-agent-tool-call={tool.id}
       data-pt-agent-tool-turn={turnId}
+      data-pt-agent-tool-message={messageId}
       style={{ borderRadius: 6, overflow: 'hidden' }}
     >
       <div
@@ -290,20 +297,6 @@ export function ToolCallItem({
             {tool.args.length > 60 ? tool.args.slice(0, 60) + '…' : tool.args}
           </span>
         )}
-        {messageId && (
-          <span
-            role="button"
-            tabIndex={0}
-            style={{ marginLeft: 'auto', cursor: 'pointer', color: token.colorTextQuaternary, flexShrink: 0 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              usePortalStore.getState().openToolDetail(messageId, tool.id);
-            }}
-            title={t('chat.message.toolCall.openPanel')}
-          >
-            ⋯
-          </span>
-        )}
       </div>
       {visibleExpanded && (
         <div style={{
@@ -311,7 +304,8 @@ export function ToolCallItem({
           fontSize: 12,
           color: token.colorTextTertiary,
         }}>
-          {tool.args && (
+          {tool.name === 'ask_user' && <ClarificationQuestion key={tool.id} tool={tool} />}
+          {tool.args && tool.name !== 'ask_user' && (
             <div style={{ marginBottom: 4 }}>
               <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.arguments')}</div>
               <pre style={{
@@ -418,7 +412,7 @@ export function ToolCallItem({
               </span>
             </div>
           )}
-          {approvalRequired && tool.approvalId && (
+          {approvalRequired && tool.approvalId && tool.name !== 'ask_user' && (
             <Flexbox horizontal gap={8} style={{ marginBottom: 8 }}>
               <button
                 data-pt-agent-tool-decision="approve"
@@ -444,6 +438,7 @@ export function ToolCallItem({
                 {t('chat.message.toolCall.approve')}
               </button>
               <button
+                ref={cancelRef}
                 data-pt-agent-tool-recovery="continue-without-tool"
                 disabled={!canSubmitDecision}
                 onClick={(event) => {
@@ -539,7 +534,7 @@ export function ToolCallItem({
           {delegationResults.length > 0 && (
             <DelegationResultsBlock results={delegationResults} />
           )}
-          {tool.result && (
+          {tool.result && tool.name !== 'ask_user' && (
             <div>
               <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.result')}</div>
               <pre style={{
@@ -664,6 +659,19 @@ export function ToolCallsBlock({
           ))}
         </div>
       )}
+      {projectedToolCalls.filter((tool) => (
+        tool.decisionId && !tool.pending && tool.status !== 'approval_required'
+      )).map((tool) => (
+        <div
+          key={tool.id}
+          role="status"
+          data-pt-agent-tool-receipt={tool.id}
+          data-pt-agent-tool-receipt-status={tool.status}
+          style={{ padding: '4px 8px', fontSize: 12, color: token.colorTextSecondary }}
+        >
+          {tool.name} · {t(`chat.message.toolCall.status.${tool.status}`)}
+        </div>
+      ))}
     </div>
   );
 }

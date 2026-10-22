@@ -114,7 +114,7 @@ func reportArkProviderRequestDebug(
 	if messages, ok := payload["messages"].([]openAIMessage); ok {
 		for _, message := range messages {
 			messageRoles = append(messageRoles, message.Role)
-			messageLengths = append(messageLengths, len(message.Content))
+			messageLengths = append(messageLengths, providerMessageContentLength(message.Content))
 		}
 	}
 	eventData := map[string]any{
@@ -216,6 +216,7 @@ type ProviderCallRequest struct {
 	Model                           string
 	SystemPrompt                    string
 	Messages                        []domain.Message
+	Attachments                     []AdmittedAttachment
 	Tools                           []*domain.ToolDefinition
 	UserID                          string
 	ProviderType                    string // "ollama", "openai", "anthropic", or empty for auto-detect
@@ -362,19 +363,20 @@ func (s *ProviderService) resolveProviderForCall(
 	cp := catalog.Find(logicalProviderID)
 	if cp != nil &&
 		strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
+		config, _ := json.Marshal(DefaultProviderRuntimeConfig(cp))
 		return &persistence.AgentProvider{
-			ID:            "catalog:" + cp.ID,
-			ActorPTID:     strings.TrimSpace(req.UserID),
-			Name:          cp.ID,
-			DisplayName:   cp.Name,
-			BaseURL:       cp.DefaultBaseURL,
-			SourceType:    "catalog",
-			RuntimeKind:   cp.RuntimeKind,
-			CliCommand:    cp.CliCommand,
-			ModelsCommand: cp.ModelsCommand,
-			Protocol:      cp.Protocol,
-			Enabled:       cp.Enabled,
-			Version:       0,
+			ID:          "catalog:" + cp.ID,
+			ActorPTID:   strings.TrimSpace(req.UserID),
+			Name:        cp.ID,
+			DisplayName: cp.Name,
+			BaseURL:     cp.DefaultBaseURL,
+			SourceType:  "catalog",
+			RuntimeKind: cp.RuntimeKind,
+			CliCommand:  catalog.FormatArgv(cp.CLIArgv),
+			Config:      config,
+			Protocol:    cp.Protocol,
+			Enabled:     cp.Enabled,
+			Version:     0,
 		}, nil
 	}
 
@@ -523,6 +525,12 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	if model == "" {
 		model = provider.CheckModel
 	}
+	if model == "" && providerType == providerRuntimeCLI {
+		model = EffectiveProviderRuntimeConfig(
+			catalog.Find(provider.Name),
+			provider,
+		).GetDefaultModel()
+	}
 	thinkingMode, modeErr := normalizeThinkingMode(req.ThinkingMode)
 	if modeErr != nil {
 		return nil, modeErr
@@ -570,6 +578,12 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		func(providerCtx context.Context) (*ProviderCallResponse, error) {
 			switch providerType {
 			case providerRuntimeCLI:
+				if len(req.Attachments) > 0 {
+					return nil, errcode.NewRuntimeIncompatibleCapability(
+						"attachments",
+						"cli_provider_does_not_support_binary_attachments",
+					)
+				}
 				return s.callCLI(providerCtx, provider, req, model)
 			case providerTypeOllama:
 				if baseURL == "" {
@@ -581,6 +595,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 					model,
 					req.SystemPrompt,
 					req.Messages,
+					req.Attachments,
 					dispatchThinkingMode,
 					maxOutputTokens,
 					req.Tools,
@@ -610,6 +625,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 					model,
 					req.SystemPrompt,
 					req.Messages,
+					req.Attachments,
 					cachingResult,
 					maxOutputTokens,
 					req.DeltaSink,
@@ -632,6 +648,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 					model,
 					req.SystemPrompt,
 					req.Messages,
+					req.Attachments,
 					req.Effort,
 					dispatchThinkingMode,
 					maxOutputTokens,
@@ -685,7 +702,7 @@ func (s *ProviderService) callCLI(
 	if registered == nil ||
 		!strings.EqualFold(strings.TrimSpace(registered.RuntimeKind), providerRuntimeCLI) ||
 		!strings.EqualFold(strings.TrimSpace(registered.Protocol), providerRuntimeCLI) ||
-		strings.TrimSpace(registered.CliCommand) == "" {
+		len(registered.CLIArgv) == 0 {
 		return nil, errcode.NewRuntimeUnavailable(
 			"direct_model",
 			"cli_adapter_not_registered",
@@ -698,6 +715,7 @@ func (s *ProviderService) callCLI(
 		)
 	}
 
+	runtimeConfig := EffectiveProviderRuntimeConfig(registered, provider)
 	result, err := s.cliExecutor.Execute(ctx, &providercli.ExecuteRequest{
 		ActorPTID:      req.UserID,
 		AgentID:        req.AgentID,
@@ -705,10 +723,15 @@ func (s *ProviderService) callCLI(
 		Provider:       provider.Name,
 		Model:          model,
 		Effort:         req.Effort,
-		CliCommand:     registered.CliCommand,
-		SystemPrompt:   req.SystemPrompt,
-		Messages:       req.Messages,
-		AllowedRoots:   req.AllowedRoots,
+		Command:        registered.CLIArgv,
+		StartupArgs:    runtimeConfig.GetStartupArgs(),
+		Environment:    runtimeConfig.GetEnvironment(),
+		Timeout: time.Duration(
+			runtimeConfig.GetTimeoutSeconds(),
+		) * time.Second,
+		SystemPrompt: req.SystemPrompt,
+		Messages:     req.Messages,
+		AllowedRoots: req.AllowedRoots,
 	}, func(deltaCtx context.Context, delta providercli.Delta) error {
 		if req.DeltaSink == nil {
 			return nil
@@ -953,6 +976,7 @@ func (s *ProviderService) callOllama(
 	baseURL, model string,
 	systemPrompt string,
 	messages []domain.Message,
+	attachments []AdmittedAttachment,
 	thinkingMode domain.ThinkingMode,
 	maxOutputTokens int,
 	tools []*domain.ToolDefinition,
@@ -973,6 +997,9 @@ func (s *ProviderService) callOllama(
 		return nil, err
 	}
 	apiMessages = append(apiMessages, convertedMessages...)
+	if err := applyOllamaAttachments(apiMessages, attachments); err != nil {
+		return nil, err
+	}
 
 	payload := map[string]any{
 		"model":    model,
@@ -1204,6 +1231,7 @@ func (s *ProviderService) callOpenAI(
 	baseURL, apiKey, model string,
 	systemPrompt string,
 	messages []domain.Message,
+	attachments []AdmittedAttachment,
 	effort string,
 	thinkingMode domain.ThinkingMode,
 	maxOutputTokens int,
@@ -1238,6 +1266,9 @@ func (s *ProviderService) callOpenAI(
 		return nil, err
 	}
 	apiMessages = append(apiMessages, convertedMessages...)
+	if err := applyOpenAIAttachments(apiMessages, attachments); err != nil {
+		return nil, err
+	}
 
 	payload := map[string]any{
 		"model":      model,
@@ -1640,6 +1671,7 @@ func (s *ProviderService) callAnthropic(
 	baseURL, apiKey, model string,
 	systemPrompt string,
 	messages []domain.Message,
+	attachments []AdmittedAttachment,
 	cachingResult *PromptCachingResult,
 	maxOutputTokens int,
 	deltaSink ProviderDeltaSink,
@@ -1654,7 +1686,7 @@ func (s *ProviderService) callAnthropic(
 		"max_tokens": maxOutputTokens,
 	}
 
-	if cachingResult != nil {
+	if cachingResult != nil && len(attachments) == 0 {
 		// Use cache-annotated system and messages from the caching service.
 		body["system"] = cachingResult.SystemContent
 		body["messages"] = cachingResult.Messages
@@ -1664,7 +1696,11 @@ func (s *ProviderService) callAnthropic(
 		if systemPrompt != "" {
 			body["system"] = systemPrompt
 		}
-		body["messages"] = s.toAnthropicMessages(messages)
+		apiMessages := s.toAnthropicMessages(messages)
+		if err := applyAnthropicAttachments(apiMessages, attachments); err != nil {
+			return nil, err
+		}
+		body["messages"] = apiMessages
 	}
 	if deltaSink != nil {
 		body["stream"] = true
@@ -1923,7 +1959,7 @@ type openAIToolCallDelta struct {
 
 type openAIMessage struct {
 	Role       string           `json:"role"`
-	Content    string           `json:"content,omitempty"`
+	Content    any              `json:"content,omitempty"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 }
@@ -1953,6 +1989,7 @@ type ollamaToolCall struct {
 type ollamaMessage struct {
 	Role      string           `json:"role"`
 	Content   string           `json:"content,omitempty"`
+	Images    []string         `json:"images,omitempty"`
 	ToolCalls []ollamaToolCall `json:"tool_calls,omitempty"`
 	ToolName  string           `json:"tool_name,omitempty"`
 }
@@ -2147,7 +2184,7 @@ func toOpenAIMessages(messages []domain.Message) ([]openAIMessage, error) {
 				return nil, fmt.Errorf("assistant tool_calls cannot be empty")
 			}
 		}
-		if strings.TrimSpace(apiMessage.Content) == "" && len(apiMessage.ToolCalls) == 0 {
+		if openAIContentEmpty(apiMessage.Content) && len(apiMessage.ToolCalls) == 0 {
 			continue
 		}
 		out = append(out, apiMessage)
@@ -2224,13 +2261,198 @@ func (s *ProviderService) toAnthropicMessages(messages []domain.Message) []map[s
 
 		out = append(out, map[string]any{
 			"role": role,
-			"content": []map[string]string{
-				{"type": "text", "text": content},
+			"content": []any{
+				map[string]any{"type": "text", "text": content},
 			},
 		})
 	}
 
 	return out
+}
+
+func applyOllamaAttachments(
+	messages []ollamaMessage,
+	attachments []AdmittedAttachment,
+) error {
+	if len(attachments) == 0 {
+		return nil
+	}
+	index := -1
+	for candidate := len(messages) - 1; candidate >= 0; candidate-- {
+		if messages[candidate].Role == "user" {
+			index = candidate
+			break
+		}
+	}
+	if index < 0 {
+		return fmt.Errorf("attachment input requires a user message")
+	}
+	for _, attachment := range attachments {
+		if attachment.OmissionReason != "" {
+			return fmt.Errorf("attachment is unsupported: %s", attachment.OmissionReason)
+		}
+		if attachment.Ref == nil {
+			continue
+		}
+		switch attachment.Ref.GetMimeType() {
+		case "image/png", "image/jpeg":
+			messages[index].Images = append(
+				messages[index].Images,
+				base64.StdEncoding.EncodeToString(attachment.Body),
+			)
+		case "text/plain":
+			messages[index].Content += "\n\nFile " +
+				attachment.Ref.GetFilename() + ":\n" + string(attachment.Body)
+		default:
+			return fmt.Errorf(
+				"ollama adapter does not support attachment MIME %s",
+				attachment.Ref.GetMimeType(),
+			)
+		}
+	}
+	return nil
+}
+
+func applyOpenAIAttachments(
+	messages []openAIMessage,
+	attachments []AdmittedAttachment,
+) error {
+	if len(attachments) == 0 {
+		return nil
+	}
+	index := -1
+	for candidate := len(messages) - 1; candidate >= 0; candidate-- {
+		if messages[candidate].Role == "user" {
+			index = candidate
+			break
+		}
+	}
+	if index < 0 {
+		return fmt.Errorf("attachment input requires a user message")
+	}
+	blocks := []any{}
+	if text, ok := messages[index].Content.(string); ok && strings.TrimSpace(text) != "" {
+		blocks = append(blocks, map[string]any{"type": "text", "text": text})
+	}
+	for _, attachment := range attachments {
+		if attachment.OmissionReason != "" {
+			return fmt.Errorf("attachment is unsupported: %s", attachment.OmissionReason)
+		}
+		if attachment.Ref == nil {
+			continue
+		}
+		dataURI := attachmentDataURI(attachment)
+		switch attachment.Ref.GetMimeType() {
+		case "image/png", "image/jpeg":
+			blocks = append(blocks, map[string]any{
+				"type":      "image_url",
+				"image_url": map[string]any{"url": dataURI},
+			})
+		case "application/pdf", "text/plain":
+			blocks = append(blocks, map[string]any{
+				"type": "file",
+				"file": map[string]any{
+					"filename":  attachment.Ref.GetFilename(),
+					"file_data": dataURI,
+				},
+			})
+		default:
+			return fmt.Errorf(
+				"openai adapter does not support attachment MIME %s",
+				attachment.Ref.GetMimeType(),
+			)
+		}
+	}
+	messages[index].Content = blocks
+	return nil
+}
+
+func applyAnthropicAttachments(
+	messages []map[string]any,
+	attachments []AdmittedAttachment,
+) error {
+	if len(attachments) == 0 {
+		return nil
+	}
+	index := -1
+	for candidate := len(messages) - 1; candidate >= 0; candidate-- {
+		if messages[candidate]["role"] == "user" {
+			index = candidate
+			break
+		}
+	}
+	if index < 0 {
+		return fmt.Errorf("attachment input requires a user message")
+	}
+	blocks, _ := messages[index]["content"].([]any)
+	for _, attachment := range attachments {
+		if attachment.OmissionReason != "" {
+			return fmt.Errorf("attachment is unsupported: %s", attachment.OmissionReason)
+		}
+		if attachment.Ref == nil {
+			continue
+		}
+		source := map[string]any{
+			"type": "base64", "media_type": attachment.Ref.GetMimeType(),
+			"data": base64.StdEncoding.EncodeToString(attachment.Body),
+		}
+		switch attachment.Ref.GetMimeType() {
+		case "image/png", "image/jpeg":
+			blocks = append(blocks, map[string]any{
+				"type": "image", "source": source,
+			})
+		case "application/pdf":
+			blocks = append(blocks, map[string]any{
+				"type": "document", "source": source,
+				"title": attachment.Ref.GetFilename(),
+			})
+		case "text/plain":
+			blocks = append(blocks, map[string]any{
+				"type": "text",
+				"text": "File " + attachment.Ref.GetFilename() + ":\n" +
+					string(attachment.Body),
+			})
+		default:
+			return fmt.Errorf(
+				"anthropic adapter does not support attachment MIME %s",
+				attachment.Ref.GetMimeType(),
+			)
+		}
+	}
+	messages[index]["content"] = blocks
+	return nil
+}
+
+func attachmentDataURI(attachment AdmittedAttachment) string {
+	mimeType := "application/octet-stream"
+	if attachment.Ref != nil && attachment.Ref.GetMimeType() != "" {
+		mimeType = attachment.Ref.GetMimeType()
+	}
+	return "data:" + mimeType + ";base64," +
+		base64.StdEncoding.EncodeToString(attachment.Body)
+}
+
+func openAIContentEmpty(content any) bool {
+	switch value := content.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(value) == ""
+	case []any:
+		return len(value) == 0
+	default:
+		return false
+	}
+}
+
+func providerMessageContentLength(content any) int {
+	switch value := content.(type) {
+	case string:
+		return len(value)
+	default:
+		encoded, _ := json.Marshal(value)
+		return len(encoded)
+	}
 }
 
 // ---------------------------------------------------------------------------

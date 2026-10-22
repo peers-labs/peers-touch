@@ -42,12 +42,12 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
-    agent_turn, agents, applets, auth, bot, capability_authority, channels, conversation, cron,
-    crypto, desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home,
-    host_events, i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands,
-    messaging_recovery, model_config, native_surface, notebook, notification, oauth2, oss,
-    presence, profile, provider, realtime, runtime_evidence, search, settings, skills,
-    skills_market, social as social_commands, station, system, tools, tts,
+    agent_turn, agents, applets, auth, bot, capability_authority, channels, x_config,
+    conversation, cron, crypto, desktop_capture, evaluation, federation, frontend_log,
+    frontend_telemetry, home, host_events, i18n, ice, key_exchange, mcp, memory,
+    messaging as messaging_commands, messaging_recovery, model_config, native_surface, notebook,
+    notification, oauth2, oss, presence, profile, provider, realtime, runtime_evidence, search,
+    settings, skills, skills_market, social as social_commands, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -179,11 +179,9 @@ fn acceptance_input_mode_is_exclusive(
             if isolation == Some("isolated-gui-session") {
                 Ok(true)
             } else {
-                Err(
-                    "exclusive-native-input requires \
+                Err("exclusive-native-input requires \
                      PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION=isolated-gui-session"
-                        .to_string(),
-                )
+                    .to_string())
             }
         }
         value => Err(format!(
@@ -369,38 +367,22 @@ mod acceptance_window_tests {
 
     #[test]
     fn semantic_input_is_the_default() {
+        assert!(!acceptance_input_mode_is_exclusive(None, None).expect("mode should parse"));
         assert!(
-            !acceptance_input_mode_is_exclusive(None, None)
-                .expect("mode should parse")
-        );
-        assert!(
-            !acceptance_input_mode_is_exclusive(
-                Some("semantic-nonintrusive"),
-                None,
-            )
+            !acceptance_input_mode_is_exclusive(Some("semantic-nonintrusive"), None,)
                 .expect("mode should parse")
         );
     }
 
     #[test]
     fn exclusive_input_requires_an_explicit_mode() {
-        assert!(
-            acceptance_input_mode_is_exclusive(
-                Some("exclusive-native-input"),
-                Some("isolated-gui-session"),
-            )
-            .expect("mode should parse")
-        );
-        assert!(
-            acceptance_input_mode_is_exclusive(
-                Some("exclusive-native-input"),
-                None,
-            )
-            .is_err()
-        );
-        assert!(
-            acceptance_input_mode_is_exclusive(Some("legacy"), None).is_err()
-        );
+        assert!(acceptance_input_mode_is_exclusive(
+            Some("exclusive-native-input"),
+            Some("isolated-gui-session"),
+        )
+        .expect("mode should parse"));
+        assert!(acceptance_input_mode_is_exclusive(Some("exclusive-native-input"), None,).is_err());
+        assert!(acceptance_input_mode_is_exclusive(Some("legacy"), None).is_err());
     }
 
     #[test]
@@ -749,6 +731,8 @@ fn main() {
             auth::acceptance_logout_window_session,
             #[cfg(feature = "acceptance-webdriver")]
             auth::acceptance_window_session_identity,
+            #[cfg(feature = "acceptance-webdriver")]
+            auth::acceptance_session_persistence_state,
             auth::auth_restore_session,
             auth::auth_validate_token,
             auth::ensure_station_session,
@@ -843,7 +827,7 @@ fn main() {
             provider::provider_delete,
             provider::provider_apply_preset,
             provider::provider_list_available_models,
-            provider::model_fetch_remote,
+            provider::model_discover,
             provider::model_toggle,
             provider::model_delete,
             provider::model_add,
@@ -934,6 +918,7 @@ fn main() {
             agent_turn::agent_conversation_messages,
             agent_turn::agent_conversation_update,
             agent_turn::agent_conversation_archive,
+            agent_turn::agent_conversation_delete_batch,
             agent_turn::agent_conversation_restore,
             agent_turn::agent_conversation_runtime_reset,
             agent_turn::agent_retry_turn,
@@ -1081,19 +1066,39 @@ fn main() {
             model_config::model_config_set,
             model_config::model_config_delete,
             model_config::model_config_provider_references,
-            channels::channels_list,
-            channels::channels_get,
-            channels::channels_create,
-            channels::channels_update,
-            channels::channels_delete,
-            channels::channels_test,
-            channels::channels_send,
+            channels::channels_list_bindings,
+            channels::channels_create_binding,
+            channels::channels_update_binding,
+            channels::channels_delete_binding,
+            channels::channels_start_binding,
+            channels::channels_stop_binding,
+            channels::channels_set_default_binding,
+            channels::channels_validate_app,
+            channels::channels_check_health,
+            channels::channels_start_requester_authorization,
+            channels::channels_get_requester_authorization,
+            channels::channels_refresh_requester_authorization,
+            channels::channels_revoke_requester_authorization,
+            channels::channels_cancel_requester_authorization,
+            channels::channels_list_routes,
+            channels::channels_upsert_route,
+            channels::channels_delete_route,
+            channels::channels_list_member_access,
+            channels::channels_decide_member_access,
             channels::channels_list_chats,
-            channels::channels_start_bot,
-            channels::channels_stop_bot,
-            channels::channels_bot_status,
+            channels::channels_list_automations,
+            channels::channels_upsert_automation,
+            channels::channels_delete_automation,
+            channels::channels_run_automation,
+            channels::channels_send_message,
             channels::channels_list_events,
-            channels::channels_stats,
+            channels::channels_get_stats,
+            channels::channels_retry_delivery,
+            channels::channels_export_diagnostics,
+            channels::channels_start_provisioning,
+            channels::channels_poll_provisioning,
+            channels::channels_confirm_provisioning,
+            channels::channels_cancel_provisioning,
             oauth2::oauth2_list_providers,
             oauth2::oauth2_get_provider,
             oauth2::oauth2_get_credential_info,
@@ -1211,6 +1216,9 @@ fn main() {
             station::station_add,
             station::station_remove,
             station::station_probe,
+            x_config::x_config_projection,
+            x_config::x_config_refresh,
+            x_config::x_config_discover_suggestion,
             realtime::group_call_join,
             messaging_commands::messaging_create_direct,
             messaging_commands::messaging_create_group,

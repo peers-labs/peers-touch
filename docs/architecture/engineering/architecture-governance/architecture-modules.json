@@ -440,7 +440,8 @@
         "OLB-D14",
         "OLB-D15",
         "OLB-D16",
-        "OLB-D17"
+        "OLB-D17",
+        "OLB-D18"
       ],
       "governedPaths": [
         "apps/oauth2-client",
@@ -585,7 +586,10 @@
         "NCP-D15",
         "NCP-D16",
         "NCP-D17",
-        "NCP-D18"
+        "NCP-D18",
+        "NCP-D19",
+        "NCP-D20",
+        "NCP-D21"
       ],
       "governedPaths": [
         "apps/station/frame/core/federation",
@@ -669,6 +673,123 @@
           "evidenceGates": [
             "NCP-G01",
             "NCP-G08"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
+      "id": "x-config",
+      "root": "docs/architecture/platform/client/control-plane",
+      "status": "active",
+      "owner": "Client Platform",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "CCP-D02",
+        "CCP-D03",
+        "CCP-D04",
+        "CCP-D05",
+        "CCP-D06",
+        "CCP-D09",
+        "CCP-D11",
+        "XCFG-D01",
+        "XCFG-D03"
+      ],
+      "governedPaths": [
+        "apps/x-config",
+        "apps/desktop/src-tauri/src/application/x_config",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/x_config.rs",
+        "apps/desktop/src/runtimes/xConfigRuntime.ts",
+        "apps/desktop/src/services/xConfig.ts",
+        "apps/mobile/src-tauri/src/runtime/x_config.rs",
+        "docs/architecture/platform/client/control-plane",
+        "model/domain/x_config",
+        "packages/x-config-core",
+        "packages/prototypes/control/x-config",
+        "tooling/acceptance/gates/x_config"
+      ],
+      "capabilities": [
+        {
+          "id": "x.config.operator",
+          "owner": "x.config",
+          "contractRoots": [
+            "apps/x-config/internal/domain/operator",
+            "docs/architecture/platform/client/control-plane"
+          ],
+          "consumers": [
+            "apps/x-config/internal/interfaces/http"
+          ],
+          "allowedDependencies": [
+            "oauth.login.broker",
+            "go.crypto",
+            "sqlite.transaction"
+          ],
+          "evidenceGates": [
+            "x-config-operator-login-contract",
+            "x-config-home-operator-login-e2e"
+          ]
+        },
+        {
+          "id": "x.config.snapshot",
+          "owner": "x.config",
+          "contractRoots": [
+            "model/domain/x_config",
+            "packages/x-config-core"
+          ],
+          "consumers": [
+            "apps/desktop/src-tauri/src/application/x_config",
+            "apps/mobile/src-tauri/src/runtime/x_config.rs"
+          ],
+          "allowedDependencies": [
+            "station.connectivity.node-authorization",
+            "go.crypto"
+          ],
+          "evidenceGates": [
+            "x-config-snapshot-core-contract",
+            "x-config-desktop-adapter-contract",
+            "x-config-mobile-adapter-contract"
+          ]
+        },
+        {
+          "id": "x.config.publication",
+          "owner": "x.config",
+          "contractRoots": [
+            "apps/x-config/internal/application/admin",
+            "apps/x-config/internal/infrastructure/catalogrepo",
+            "apps/x-config/internal/publication",
+            "apps/x-config/cmd/server",
+            "docs/architecture/platform/client/control-plane"
+          ],
+          "consumers": [
+            "apps/x-config/internal/interfaces/http",
+            "apps/desktop/src-tauri/src/application/x_config",
+            "apps/mobile/src-tauri/src/runtime/x_config.rs",
+            "tooling/acceptance/gates/x_config"
+          ],
+          "allowedDependencies": [
+            "github.rest",
+            "go.crypto",
+            "home.http"
+          ],
+          "evidenceGates": [
+            "x-config-snapshot-publication-contract",
+            "x-config-home-publication-e2e"
           ]
         }
       ],

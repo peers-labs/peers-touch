@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package peers_touch.model.oauth.operator.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/oauth2-client/model/operatorlogin;operatorlogin";
+
+enum OperatorLoginPurpose {
+  OPERATOR_LOGIN_PURPOSE_UNSPECIFIED = 0;
+  OPERATOR_LOGIN_PURPOSE_OPERATOR_LOGIN = 1;
+}
+
+message OperatorLoginAssertionStatement {
+  uint32 schema_version = 1;
+  OperatorLoginPurpose purpose = 2;
+  string audience = 3;
+  string site_id = 4;
+  string assertion_id = 5;
+  string provider = 6;
+  string provider_subject = 7;
+  bytes receiver_challenge = 8;
+  int64 issued_at_unix_ms = 9;
+  int64 expires_at_unix_ms = 10;
+}
+
+message SignedOperatorLoginAssertion {
+  string signing_key_id = 1;
+  bytes statement_bytes = 2;
+  bytes ed25519_signature = 3;
+}
+
+message RedeemOperatorLoginHandoffRequest {
+  string handoff_code = 1;
+  bytes receiver_verifier = 2;
+  string audience = 3;
+  string site_id = 4;
+}
+
+message RedeemOperatorLoginHandoffResponse {
+  SignedOperatorLoginAssertion assertion = 1;
+}

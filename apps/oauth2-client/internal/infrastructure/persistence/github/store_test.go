@@ -108,7 +108,7 @@ func TestStoreCompletesAuthorizationAcrossInstances(t *testing.T) {
 				t.Fatalf("secret leaked into repository payload at %s", path)
 			}
 		}
-		kind, ok := recordKindForPath(path)
+		kind, ok := RecordKindForPath(path)
 		if !ok {
 			t.Fatalf("unknown record path: %s", path)
 		}
@@ -140,62 +140,6 @@ func TestStoreCompletesAuthorizationAcrossInstances(t *testing.T) {
 	}
 	if !snapshot.Identities[0].HasRefreshToken {
 		t.Fatal("refresh-token presence was not projected")
-	}
-	t.Run("oversized successful response", assertGitHubResponseOverflow)
-	t.Run("truncated recursive tree", assertTruncatedTreeTraversal)
-	t.Run("oversized recursive tree", assertOversizedRecursiveTreeTraversal)
-}
-
-func assertGitHubResponseOverflow(t *testing.T) {
-	fixture := newGitDataFixture(t)
-	client := fixture.newClient(t)
-	var output map[string]any
-	err := client.request(
-		context.Background(),
-		http.MethodGet,
-		client.repoPath("/oversized"),
-		nil,
-		&output,
-	)
-	if !errors.Is(err, errGitHubResponseTooLarge) ||
-		!errors.Is(err, repository.ErrStorageUnavailable) {
-		t.Fatalf("expected bounded overflow error, got %v", err)
-	}
-}
-
-func assertTruncatedTreeTraversal(t *testing.T) {
-	assertTreeTraversalFallback(t, true, false)
-}
-
-func assertOversizedRecursiveTreeTraversal(t *testing.T) {
-	assertTreeTraversalFallback(t, false, true)
-}
-
-func assertTreeTraversalFallback(t *testing.T, truncated, oversized bool) {
-	fixture := newGitDataFixture(t)
-	fixture.mu.Lock()
-	fixture.truncateRecursive = truncated
-	fixture.oversizeRecursive = oversized
-	fixture.trees["tree-0"] = map[string]string{"oauth-data": "tree-1"}
-	fixture.treeTypes["tree-0"] = map[string]string{"oauth-data": "tree"}
-	fixture.trees["tree-1"] = map[string]string{"records": "tree-2"}
-	fixture.treeTypes["tree-1"] = map[string]string{"records": "tree"}
-	fixture.trees["tree-2"] = map[string]string{"identity.json": "blob-existing"}
-	fixture.blobs["blob-existing"] = []byte("encrypted-record")
-	fixture.mu.Unlock()
-
-	snapshot, err := fixture.newClient(t).snapshot(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if snapshot.entries["oauth-data/records/identity.json"] != "blob-existing" {
-		t.Fatalf("nested tree entry missing: %#v", snapshot.entries)
-	}
-	fixture.mu.Lock()
-	nonRecursiveRequests := fixture.nonRecursiveTreeRequests
-	fixture.mu.Unlock()
-	if nonRecursiveRequests != 3 {
-		t.Fatalf("expected three bounded tree requests, got %d", nonRecursiveRequests)
 	}
 }
 

@@ -38,6 +38,38 @@ describe('mergeServerMessages', () => {
     expect(merged.every((m) => !m.loading)).toBe(true);
   });
 
+  it('deduplicates an identified optimistic turn across host clock skew', () => {
+    const current = [
+      msg('temp-user-1', 'user', 'hello', {
+        timestamp: 20_000,
+        turnId: 'turn-1',
+      }),
+      msg('temp-assistant-1', 'assistant', 'hi there', {
+        timestamp: 20_000,
+        turnId: 'turn-1',
+        terminalStatus: 'completed',
+      }),
+    ];
+    const server = [
+      msg('server-user-1', 'user', 'hello', {
+        timestamp: 1_000,
+        turnId: 'turn-1',
+      }),
+      msg('server-assistant-1', 'assistant', 'hi there', {
+        timestamp: 1_100,
+        turnId: 'turn-1',
+        terminalStatus: 'completed',
+      }),
+    ];
+
+    const merged = mergeServerMessages(current, server);
+
+    expect(merged.map((message) => message.id)).toEqual([
+      'server-user-1',
+      'server-assistant-1',
+    ]);
+  });
+
   it('keeps the optimistic user message while the assistant is still in flight and server has only the user message', () => {
     const current = [
       msg('temp-user-1', 'user', 'hello'),
@@ -85,6 +117,28 @@ describe('mergeServerMessages', () => {
     expect(merged[0].content).toBe('final answer');
     expect(merged[0].thinking).toBe('working');
     expect(merged[0].toolCalls).toHaveLength(1);
+  });
+
+  it('keeps streamed follow-up suggestions when authoritative message sync catches up', () => {
+    const current = [
+      msg('a1', 'assistant', 'final answer', {
+        terminalStatus: 'completed',
+        followUpSuggestions: ['Explain further', 'Compare options', 'Next step'],
+      }),
+    ];
+    const server = [
+      msg('a1', 'assistant', 'final answer', {
+        terminalStatus: 'completed',
+      }),
+    ];
+
+    const [merged] = mergeServerMessages(current, server);
+
+    expect(merged.followUpSuggestions).toEqual([
+      'Explain further',
+      'Compare options',
+      'Next step',
+    ]);
   });
 
   it('carries a live ToolCall onto an unkeyed authoritative assistant reply', () => {

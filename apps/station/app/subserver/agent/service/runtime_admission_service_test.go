@@ -782,14 +782,14 @@ func TestCatalogProviderAvailableRequiresCLIExecutable(t *testing.T) {
 	available := catalog.CatalogProvider{
 		RuntimeKind: "cli",
 		Protocol:    "cli",
-		CliCommand:  os.Args[0],
+		CLIArgv:     []string{os.Args[0]},
 	}
 	if !CatalogProviderAvailable(available) {
 		t.Fatal("executable CLI provider was not available")
 	}
 
 	missing := available
-	missing.CliCommand = "peers-touch-cli-that-does-not-exist"
+	missing.CLIArgv = []string{"peers-touch-cli-that-does-not-exist"}
 	if CatalogProviderAvailable(missing) {
 		t.Fatal("missing CLI provider binary remained available")
 	}
@@ -800,6 +800,73 @@ func TestCatalogProviderAvailableRequiresCLIExecutable(t *testing.T) {
 	}
 	if !CatalogProviderAvailable(httpProvider) {
 		t.Fatal("HTTP provider availability must not depend on a CLI binary")
+	}
+}
+
+func TestRuntimeAdmissionConsumesActorScopedDiscoveredCatalog(t *testing.T) {
+	showAPIKey := false
+	catalog.SetForTesting([]catalog.CatalogProvider{{
+		ID:          "test-cli",
+		Name:        "Test CLI",
+		Enabled:     true,
+		ShowAPIKey:  &showAPIKey,
+		RuntimeKind: "cli",
+		Protocol:    "cli",
+		CLIArgv:     []string{os.Args[0]},
+	}})
+	defer catalog.RestoreForTesting()
+	openAdmissionTestDB(t, "admission_discovered_cli_catalog")
+
+	runtimeCatalog := NewRuntimeModelCatalog()
+	runtimeCatalog.Replace(
+		"actor-a",
+		"test-cli",
+		[]catalog.CatalogModel{{
+			ID:            "discovered-model",
+			DisplayName:   "Discovered Model",
+			Type:          "chat",
+			Enabled:       true,
+			ContextWindow: 200000,
+			Capabilities:  []string{"text-input", "text-output", "streaming"},
+		}},
+		time.Now().UTC(),
+	)
+	resolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
+	resolver.SetRuntimeModelCatalog(runtimeCatalog)
+
+	models, err := resolver.ListAvailableModels(context.Background(), "actor-a")
+	if err != nil {
+		t.Fatalf("list actor A discovered models: %v", err)
+	}
+	if len(models) != 1 ||
+		models[0].ProviderID != "test-cli" ||
+		models[0].ID != "discovered-model" {
+		t.Fatalf("actor A available models = %+v", models)
+	}
+	actorBModels, err := resolver.ListAvailableModels(context.Background(), "actor-b")
+	if err != nil {
+		t.Fatalf("list actor B models: %v", err)
+	}
+	if len(actorBModels) != 0 {
+		t.Fatalf("actor B observed actor A catalog: %+v", actorBModels)
+	}
+
+	admission, err := resolver.Resolve(
+		context.Background(),
+		"actor-a",
+		"test-cli",
+		"discovered-model",
+	)
+	if err != nil {
+		t.Fatalf("resolve discovered model: %v", err)
+	}
+	if admission.ProviderID != "test-cli" ||
+		admission.ModelID != "discovered-model" ||
+		admission.Capabilities.GetLimits().GetContextTokens() != 200000 {
+		t.Fatalf("discovered model admission = %+v", admission)
 	}
 }
 

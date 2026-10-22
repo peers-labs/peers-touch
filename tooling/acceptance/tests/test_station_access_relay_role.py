@@ -962,6 +962,90 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             any(value.startswith("LIBP2P_PORT=") for value in argv)
         )
 
+    def test_disposable_station_restart_preserves_host_cli_runtime(
+        self,
+    ) -> None:
+        config = _config("station")
+        transport = Mock()
+        transport.run_argv.side_effect = (
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="station-container\n",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps([{
+                    "Config": {
+                        "Env": [
+                            "PEERS_HOST_CLI_BIN=/usr/local/bin/traecli",
+                            "PEERS_HOST_CLI_HOME=/root/.trae",
+                        ],
+                    },
+                    "Mounts": [
+                        {
+                            "Destination": "/usr/local/bin/host-cli-bin",
+                            "Source": "/home/operator/.local/bin/traex",
+                        },
+                        {
+                            "Destination": "/root/.host-cli-home",
+                            "Source": "/home/operator/.trae",
+                        },
+                    ],
+                }]),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="",
+                stderr="",
+            ),
+        )
+        config.transport = Mock(return_value=transport)
+        with (
+            patch.object(
+                PosixServiceRuntimeConfig,
+                "transport",
+                return_value=transport,
+            ),
+            patch.object(
+                StationAccessRelayRoleProvisioner,
+                "_remote_home",
+                return_value="/home/operator",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_deployment_environment_path",
+                return_value=Path("/tmp/station.env"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "load_env_file",
+                return_value={
+                    "PT_DEPLOY_RESTART_CMD": (
+                        "docker compose --env-file "
+                        "$HOME/peers-touch/station.env up -d station"
+                    )
+                },
+            ),
+        ):
+            StationAccessRelayRoleProvisioner._restart_station_origin(
+                config,
+                "https://station.example",
+            )
+
+        argv = transport.run_argv.call_args.args[0]
+        for assignment in (
+            "PEERS_HOST_CLI_BIN_MOUNT=/home/operator/.local/bin/traex",
+            "PEERS_HOST_CLI_BIN=/usr/local/bin/traecli",
+            "PEERS_HOST_CLI_HOME_MOUNT=/home/operator/.trae",
+            "PEERS_HOST_CLI_HOME=/root/.trae",
+        ):
+            self.assertIn(assignment, argv)
+
     def test_relay_ca_install_restarts_the_same_station_container(self) -> None:
         provisioner = StationAccessRelayRoleProvisioner(self.contract)
         config = _config("station")

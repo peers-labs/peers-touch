@@ -122,9 +122,15 @@ mkdir -p \
   /app/data/messaging-attachments \
   /app/data/social-private-objects \
   /app/data/relay-credentials \
+  /app/data/channel/plugins \
+  /app/data/channel/lark-requesters \
   "$(dirname "/app/$PEERS_STATION_ROOT_KEY_FILE")" \
   "$(dirname "/app/$PEERS_STATION_NODE_KEY_FILE")" \
   "$(dirname "/app/$PEERS_LIBP2P_IDENTITY_KEY_FILE")"
+chmod 0700 \
+  /app/data/channel \
+  /app/data/channel/plugins \
+  /app/data/channel/lark-requesters
 
 # ── Node label pattern injection ──────────────────────────────────────────────
 # Expand ${PEERS_NODE_LABEL} in actor.yml using envsubst.
@@ -169,6 +175,11 @@ peers:
           default: false
           dsn: ${PEERS_DB_DSN}
         - name: agent
+          driver: postgres
+          enable: true
+          default: false
+          dsn: ${PEERS_DB_DSN}
+        - name: channel
           driver: postgres
           enable: true
           default: false

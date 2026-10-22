@@ -12,6 +12,7 @@ pub mod auth;
 pub mod bot;
 pub mod capability_authority;
 pub mod channels;
+pub mod x_config;
 pub mod conversation;
 pub mod cron;
 pub mod crypto;

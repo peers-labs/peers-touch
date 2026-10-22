@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ProviderListItem } from '../services/desktop_api';
-import { mapProviderUIStatus } from './provider';
+import { isProviderUsable, mapProviderUIStatus } from './providerReadiness';
 
 function provider(overrides: Partial<ProviderListItem> = {}): ProviderListItem {
   return {
@@ -37,5 +37,18 @@ describe('mapProviderUIStatus', () => {
 
   it('marks disabled providers unavailable', () => {
     expect(mapProviderUIStatus(provider({ enabled: false }))).toEqual({ status: 'unavailable' });
+  });
+
+  it('shows only enabled and configured providers as usable', () => {
+    expect(isProviderUsable(provider())).toBe(false);
+    expect(isProviderUsable(provider({
+      has_api_key: true,
+      credential_status: 'configured',
+    }))).toBe(true);
+    expect(isProviderUsable(provider({
+      enabled: false,
+      has_api_key: true,
+      credential_status: 'configured',
+    }))).toBe(false);
   });
 });

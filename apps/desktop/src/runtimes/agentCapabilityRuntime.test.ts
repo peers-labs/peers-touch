@@ -5,6 +5,7 @@ import {
   authorityEventAgentId,
   reconcileAgentCapabilityProjection,
   selectActiveCapabilitySession,
+  selectAuthorityStreamAgentIds,
 } from './agentCapabilityRuntime';
 
 type CapabilitySession = AgentCapabilitySessionList['sessions'][number];
@@ -88,6 +89,31 @@ describe('authorityEventAgentId', () => {
   });
 });
 
+describe('selectAuthorityStreamAgentIds', () => {
+  const agents = Array.from({ length: 7 }, (_, index) => ({
+    id: `agent-${index + 1}`,
+    name: `Agent ${index + 1}`,
+  }));
+
+  it('prioritizes the selected Agent within a bounded stream set', () => {
+    expect(selectAuthorityStreamAgentIds(agents, 'Agent 7')).toEqual([
+      'agent-7',
+      'agent-1',
+      'agent-2',
+      'agent-3',
+    ]);
+  });
+
+  it('uses stable roster order when the selected Agent is unavailable', () => {
+    expect(selectAuthorityStreamAgentIds(agents, 'Missing')).toEqual([
+      'agent-1',
+      'agent-2',
+      'agent-3',
+      'agent-4',
+    ]);
+  });
+});
+
 describe('reconcileAgentCapabilityProjection', () => {
   it('reconciles descriptors with catalog and per-Agent authority state', async () => {
     const authorityStore = {
@@ -110,5 +136,62 @@ describe('reconcileAgentCapabilityProjection', () => {
     expect(authorityStore.loadAgent).toHaveBeenNthCalledWith(2, 'agent-2', {
       clientCapabilitySessionId: 'session-desktop',
     });
+  });
+
+  it('bounds per-Agent authority projection concurrency', async () => {
+    let activeLoads = 0;
+    let maximumActiveLoads = 0;
+    const releases: Array<() => void> = [];
+    const authorityStore = {
+      loadCatalog: vi.fn().mockResolvedValue(undefined),
+      loadKnowledgeDescriptors: vi.fn().mockResolvedValue(undefined),
+      loadAgent: vi.fn(async () => {
+        activeLoads += 1;
+        maximumActiveLoads = Math.max(maximumActiveLoads, activeLoads);
+        await new Promise<void>((resolve) => {
+          releases.push(resolve);
+        });
+        activeLoads -= 1;
+      }),
+    };
+
+    const reconciliation = reconcileAgentCapabilityProjection(
+      authorityStore,
+      ['agent-1', 'agent-2', 'agent-3', 'agent-4', 'agent-5'],
+    );
+    await vi.waitFor(() => {
+      expect(authorityStore.loadAgent).toHaveBeenCalledTimes(2);
+    });
+    releases.splice(0).forEach((release) => release());
+    await vi.waitFor(() => {
+      expect(authorityStore.loadAgent).toHaveBeenCalledTimes(4);
+    });
+    releases.splice(0).forEach((release) => release());
+    await vi.waitFor(() => {
+      expect(authorityStore.loadAgent).toHaveBeenCalledTimes(5);
+    });
+    releases.splice(0).forEach((release) => release());
+    await reconciliation;
+
+    expect(maximumActiveLoads).toBe(2);
+    expect(authorityStore.loadAgent).toHaveBeenCalledTimes(5);
+  });
+
+  it('settles all Agent projections before propagating a failure', async () => {
+    const failure = new Error('agent-2 failed');
+    const authorityStore = {
+      loadCatalog: vi.fn().mockResolvedValue(undefined),
+      loadKnowledgeDescriptors: vi.fn().mockResolvedValue(undefined),
+      loadAgent: vi.fn(async (agentId: string) => {
+        if (agentId === 'agent-2') throw failure;
+      }),
+    };
+
+    await expect(reconcileAgentCapabilityProjection(
+      authorityStore,
+      ['agent-1', 'agent-2', 'agent-3'],
+    )).rejects.toBe(failure);
+
+    expect(authorityStore.loadAgent).toHaveBeenCalledTimes(3);
   });
 });

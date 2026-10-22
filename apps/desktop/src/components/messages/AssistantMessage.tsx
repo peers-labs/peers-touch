@@ -29,6 +29,7 @@ import {
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../../store/chat';
 import { useAgentStore } from '../../store/agent';
+import { useAgentTopicStore } from '../../store/agentTopics';
 import { usePortalStore } from '../../store/portal';
 import { useTTSStore } from '../../store/tts';
 import {
@@ -205,7 +206,7 @@ function DiagnosticsBlock({
       ? t(message.error, { ns: 'agent', defaultValue: message.error })
       : t(message.error, { defaultValue: message.error })
     : undefined;
-  const hasRuntimeDiagnostics = !!message.thinking || !!message.error || !!message.processDuration || toolCalls.length > 0 || knowledgeChunks.length > 0 || delegationResults.length > 0;
+  const hasRuntimeDiagnostics = !!message.thinking || !!message.error || message.processDuration != null || toolCalls.length > 0 || knowledgeChunks.length > 0 || delegationResults.length > 0;
   const hasDiagnostics = hasRuntimeDiagnostics;
 
   if (!hasDiagnostics) return null;
@@ -225,7 +226,18 @@ function DiagnosticsBlock({
     >
       <div
         data-pt-agent-message-error-toggle={message.error ? 'true' : undefined}
+        data-pt-agent-activity-toggle
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-label={message.error ? t('chat.message.errorTitle', { defaultValue: 'Could not complete' }) : t('chat.message.diagnostics.title')}
         onClick={() => setExpanded(!expanded)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -362,6 +374,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const resetExternalRuntime = useChatStore(s => s.resetExternalRuntime);
   const reconcileClientLease = useChatStore(s => s.reconcileClientLease);
   const requestComposerFocus = useChatStore(s => s.requestComposerFocus);
+  const requestComposerModelSelection = useChatStore(s => s.requestComposerModelSelection);
   const syncTurnQueue = useChatStore(s => s.syncTurnQueue);
   const requestComposerReferenceRemoval = useChatStore(
     s => s.requestComposerReferenceRemoval,
@@ -372,7 +385,6 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const sendMessage = useChatStore(s => s.sendMessage);
   const translateMessage = useChatStore(s => s.translateMessage);
   const openThread = usePortalStore(s => s.openThread);
-  const openTurnDetails = usePortalStore(s => s.openTurnDetails);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const operation = useChatStore((state) => {
     const current = state.operations[state.currentSessionKey];
@@ -391,8 +403,17 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const focusAgentCapability = useAgentStore(s => s.focusAgentCapability);
   const activeAgent = agents.find((agent) => agent.name === selectedAgent);
   const activeChatConfig = activeAgent ? parseAgentChatConfig(activeAgent) : {};
-  const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
-  const providerName = messageModel?.provider_name || messageModel?.provider_id || activeAgent?.provider || '';
+  const topicProvider = useAgentTopicStore((state) => Object.values(state.topicsByAgentId)
+    .flat().find((topic) => topic.key === currentSessionKey)?.provider_override);
+  const messageProvider = message.providerId || topicProvider || '';
+  const messageModel = message.model
+    ? availableModels.find(
+      (model) =>
+        model.id === message.model
+        && model.provider_id === messageProvider,
+    )
+    : undefined;
+  const providerName = messageModel?.provider_name || messageModel?.provider_id || messageProvider;
   const agentDisplayName = activeAgent?.title || activeAgent?.name;
   const isContextOverflow = isAgentContextOverflowError(message.typedError);
   const resolutionLabel = message.resolution?.label.startsWith('agent.')
@@ -513,10 +534,6 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     tray.focus({ preventScroll: true });
   }, [currentSessionKey, message.resolution, syncTurnQueue]);
 
-  const handleOpenTurnDetails = useCallback(() => {
-    if (message.turnId) openTurnDetails(message.id, message.turnId);
-  }, [message.id, message.turnId, openTurnDetails]);
-
   const handleInspectBudget = useCallback(() => {
     const resolution = message.resolution;
     if (
@@ -527,8 +544,20 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       toast.error(t('chat.message.turnDetails.loadFailed'));
       return;
     }
-    openTurnDetails(message.id, resolution.turnId);
-  }, [message.id, message.resolution, message.turnId, openTurnDetails, t]);
+    const notice = Array.from(document.querySelectorAll<HTMLElement>(
+      '[data-pt-agent-message-id] [data-budget-kind]',
+    )).find((candidate) => (
+      candidate.closest<HTMLElement>('[data-pt-agent-message-id]')
+        ?.dataset.ptAgentMessageId === message.id
+    ));
+    if (!notice) {
+      toast.error(t('chat.message.turnDetails.loadFailed'));
+      return;
+    }
+    notice.scrollIntoView({ block: 'nearest' });
+    notice.tabIndex = -1;
+    notice.focus({ preventScroll: true });
+  }, [message.id, message.resolution, message.turnId, t]);
 
   const handleOpenResult = useCallback(() => {
     const resolution = message.resolution;
@@ -541,13 +570,21 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       toast.error(t('chat.message.turnDetails.loadFailed'));
       return;
     }
-    openTurnDetails(message.id, resolution.turnId);
+    const result = Array.from(document.querySelectorAll<HTMLElement>(
+      '[data-pt-agent-message-id]',
+    )).find((candidate) => candidate.dataset.ptAgentMessageId === message.id);
+    if (!result) {
+      toast.error(t('chat.message.turnDetails.loadFailed'));
+      return;
+    }
+    result.scrollIntoView({ block: 'nearest' });
+    result.tabIndex = -1;
+    result.focus({ preventScroll: true });
   }, [
     message.id,
     message.resolution,
     message.terminalStatus,
     message.turnId,
-    openTurnDetails,
     t,
   ]);
 
@@ -563,17 +600,25 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       toast.error(t('chat.message.turnDetails.loadFailed'));
       return;
     }
-    openTurnDetails(originalMessage.id, turnId);
-  }, [message.id, openTurnDetails, t]);
+    const original = Array.from(document.querySelectorAll<HTMLElement>(
+      '[data-pt-agent-message-id]',
+    )).find((candidate) => candidate.dataset.ptAgentMessageId === originalMessage.id);
+    if (!original) {
+      toast.error(t('chat.message.turnDetails.loadFailed'));
+      return;
+    }
+    original.scrollIntoView({ block: 'nearest' });
+    original.tabIndex = -1;
+    original.focus({ preventScroll: true });
+  }, [message.id, t]);
 
   const handleChooseCompatibleModel = useCallback(() => {
-    if (!activeAgent) {
+    if (!currentSessionKey || !useChatStore.getState().messages.some((candidate) => candidate.id === message.id)) {
       toast.error(t('chat.message.resolution.actionFailed'));
       return;
     }
-    setAgentSurface(activeAgent.name, 'profile');
-    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
-  }, [activeAgent, setAgentSurface, t]);
+    requestComposerModelSelection(currentSessionKey);
+  }, [currentSessionKey, message.id, requestComposerModelSelection, t]);
 
   const handleOpenPermissionSettings = useCallback(() => {
     const resolution = message.resolution;
@@ -707,6 +752,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     message.id,
     message.loading,
     message.resolution,
+    message.role,
     message.terminalStatus,
     message.toolCalls,
     message.turnId,
@@ -924,7 +970,6 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           <div data-source-badges>
             <SourceAttributionBadges
               message={message}
-              onOpenDetails={message.turnId ? handleOpenTurnDetails : undefined}
             />
           </div>
 
@@ -1108,7 +1153,12 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                           return;
                         }
                         if (message.resolution!.type === 'chooseTool') {
-                          handleChooseCompatibleModel();
+                          if (!activeAgent) {
+                            toast.error(t('chat.message.resolution.actionFailed'));
+                            return;
+                          }
+                          setAgentSurface(activeAgent.name, 'profile');
+                          eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
                           return;
                         }
                         if (message.resolution!.type === 'recover') {
@@ -1200,7 +1250,6 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             onDeleteAndRegenerate: handleDelAndRegenerate,
             onTranslate: () => translateMessage(message.id),
             onThread: () => openThread(currentSessionKey, message.id),
-            onTurnDetails: handleOpenTurnDetails,
             onReadAloud: () => {
               if (message.content) {
                 useTTSStore.getState().speak(message.id, message.content);

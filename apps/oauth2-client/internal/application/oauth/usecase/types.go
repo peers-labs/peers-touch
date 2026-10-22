@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"crypto/ed25519"
 	"time"
 
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/port"
@@ -17,6 +18,16 @@ type SiteConfig struct {
 	// BridgeSecret is the shared HMAC key used to sign callback query params.
 	// If empty, signing is skipped.
 	BridgeSecret string
+
+	OperatorLogin *OperatorLoginSiteConfig
+}
+
+type OperatorLoginSiteConfig struct {
+	Audience          string
+	CallbackURL       string
+	SigningKeyID      string
+	SigningPrivateKey ed25519.PrivateKey
+	RedeemSecret      []byte
 }
 
 type SiteRegistry interface {

@@ -22,7 +22,7 @@ import {
   resolveAgentTypedErrorAction,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
-import { useAgentStore } from './agent';
+import { useAgentStore, resolveAvailableModelSelection } from './agent';
 import { useAgentCapabilityStore } from './agentCapabilities';
 import { useAgentTopicStore } from './agentTopics';
 import {
@@ -32,6 +32,7 @@ import {
 } from './agentTurnRecovery';
 import { currentAuthenticatedActorPtid } from './session';
 import {
+  agentIdFromDraftKey,
   conversationIdFromAgentDraftKey,
   createAgentDraftKey,
   isAgentDraftKey,
@@ -302,6 +303,7 @@ function cachedConversationToSession(conversation: CachedAgentConversation): Ses
     message_count: 0,
     version: conversation.version,
     model_override: conversation.modelName,
+    provider_override: conversation.providerId,
     created_at: conversation.createdAt,
     updated_at: conversation.updatedAt,
   };
@@ -428,11 +430,27 @@ export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMes
       // Malformed persisted tool-call payload; render message without tool calls.
     }
   }
-  // Restore a persisted translation from message metadata (R10).
+  // Restore user-facing assistant projections persisted in message metadata.
   if (message.metadataJson) {
     try {
-      const meta = JSON.parse(message.metadataJson) as { translation?: string };
+      const meta = JSON.parse(message.metadataJson) as {
+        translation?: string;
+        follow_up_suggestions?: unknown;
+      };
       if (meta.translation) chatMessage.translation = meta.translation;
+      if (
+        message.role === 'assistant'
+        && Array.isArray(meta.follow_up_suggestions)
+      ) {
+        const suggestions = meta.follow_up_suggestions.filter(
+          (suggestion): suggestion is string => (
+            typeof suggestion === 'string' && suggestion.trim().length > 0
+          ),
+        );
+        if (suggestions.length > 0) {
+          chatMessage.followUpSuggestions = suggestions;
+        }
+      }
     } catch {
       // Malformed metadata; ignore.
     }
@@ -490,10 +508,11 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     Boolean(target.terminalStatus) && !sourceOwnsNonTerminalLeaseIncident;
   const terminalStatusMatches = targetOwnsTerminal
     && target.terminalStatus === source.terminalStatus;
-  const hasCot = source.toolCalls
+  const hasLocalProjection = source.toolCalls
     || source.thinking
     || source.thinkingDone != null
     || source.processDuration != null
+    || source.followUpSuggestions?.length
     || source.lastEventAt != null
     || source.attachments?.length
     || source.images?.length
@@ -504,12 +523,13 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     || source.errorDetail
     || source.resolution
     || source.budgetNotice;
-  const merged = hasCot ? {
+  const merged = hasLocalProjection ? {
     ...target,
     toolCalls: target.toolCalls ?? source.toolCalls,
     thinking: target.thinking ?? source.thinking,
     thinkingDone: target.thinkingDone ?? source.thinkingDone,
     processDuration: target.processDuration ?? source.processDuration,
+    followUpSuggestions: target.followUpSuggestions ?? source.followUpSuggestions,
     lastEventAt: target.lastEventAt ?? source.lastEventAt,
     attachments: target.attachments ?? source.attachments,
     images: target.images ?? source.images,
@@ -555,18 +575,25 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
 export function mergeServerMessages(currentMessages: ChatMessage[], serverMessages: ChatMessage[]): ChatMessage[] {
   const currentById = new Map<string, ChatMessage>();
   const currentAssistantByTurnId = new Map<string, ChatMessage>();
+  const currentUserByTurnId = new Map<string, ChatMessage>();
   for (const message of currentMessages) currentById.set(message.id, message);
   for (const message of currentMessages) {
     if (message.role === 'assistant' && message.turnId) {
       currentAssistantByTurnId.set(message.turnId, message);
+    } else if (message.role === 'user' && message.turnId) {
+      currentUserByTurnId.set(message.turnId, message);
     }
   }
 
   const merged: ChatMessage[] = serverMessages.map((serverMessage) => {
     const match = currentById.get(serverMessage.id)
       ?? (
-        serverMessage.role === 'assistant' && serverMessage.turnId
-          ? currentAssistantByTurnId.get(serverMessage.turnId)
+        serverMessage.turnId
+          ? serverMessage.role === 'assistant'
+            ? currentAssistantByTurnId.get(serverMessage.turnId)
+            : serverMessage.role === 'user'
+              ? currentUserByTurnId.get(serverMessage.turnId)
+              : undefined
           : undefined
       );
     if (!match) return serverMessage;
@@ -635,11 +662,14 @@ function isSupersededByServer(
   currentMessages: ChatMessage[],
 ): boolean {
   if (localMessage.role === 'user') {
-    return serverMessages.some(
-      (serverMessage) => serverMessage.role === 'user'
-        && serverMessage.content === localMessage.content
-        && serverMessage.timestamp >= localMessage.timestamp - 1000,
-    );
+    return serverMessages.some((serverMessage) => {
+      if (serverMessage.role !== 'user') return false;
+      if (localMessage.turnId) {
+        return serverMessage.turnId === localMessage.turnId;
+      }
+      return serverMessage.content === localMessage.content
+        && serverMessage.timestamp >= localMessage.timestamp - 1000;
+    });
   }
   if (localMessage.role === 'assistant') {
     if (
@@ -803,6 +833,7 @@ interface ChatState {
   abortController: AbortController | null;
   memoryDisabledSessions: Record<string, boolean>;
   draftPromotions: Record<string, string>;
+  composerDrafts: Record<string, string>;
   readinessErrorKey: string | null;
   revisionCommandFailure: AgentRevisionCommandFailure | null;
   revisionReloadingConversationId: string | null;
@@ -813,18 +844,20 @@ interface ChatState {
   // Composer fill channel (I2 follow-up): a one-shot request to populate the ChatInput
   // draft WITHOUT sending, aligning with LobeHub `fillInputMessage`. ChatInput consumes
   // the pending value, writes it into its draft, focuses, and clears the request.
-  composerFill: { text: string; nonce: number } | null;
+  composerFill: { text: string; nonce: number; append?: boolean; sessionKey: string } | null;
   composerReferenceRemoval: ComposerReferenceRemovalIntent | null;
   composerResourceSelection: ComposerResourceSelectionIntent | null;
+  composerModelSelection: { sessionKey: string; nonce: number } | null;
   composerFocusNonce: number;
 
   loadSessions: () => Promise<void>;
   mergeSessions: (sessions: Session[]) => void;
-  mergeSessionModel: (key: string, model: string, agentId: string) => void;
   selectSession: (key: string, sessionOverride?: Session) => Promise<void>;
+  setComposerDraft: (sessionKey: string, value: string) => void;
   bootstrapSession: () => Promise<void>;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
+  purgeSessions: (keys: string[]) => Promise<void>;
   sendMessage: (
     content: string,
     attachments?: ChatComposerAttachment[],
@@ -875,6 +908,7 @@ interface ChatState {
   cancelQueuedTurn: (conversationId: string, queueEntryId: string) => Promise<void>;
   setWideScreen: (wide: boolean) => void;
   fillComposer: (text: string) => void;
+  appendComposer: (text: string) => void;
   consumeComposerFill: () => void;
   requestComposerReferenceRemoval: (
     referenceKind: string,
@@ -886,6 +920,8 @@ interface ChatState {
     resourceRefHash: string,
   ) => void;
   consumeComposerResourceSelection: (nonce: number) => void;
+  requestComposerModelSelection: (sessionKey: string) => void;
+  consumeComposerModelSelection: (nonce: number) => void;
   requestComposerFocus: () => void;
   consumeComposerFocus: () => void;
   toggleSessionMemory: (sessionKey?: string) => void;
@@ -1002,6 +1038,7 @@ function reconcileRevisionSession(
     message_count: existing?.message_count ?? 0,
     version: conversation.version,
     model_override: conversation.model_name,
+    provider_override: conversation.provider_id,
     created_at: conversation.created_at,
     updated_at: conversation.updated_at,
     pinned: existing?.pinned,
@@ -1120,9 +1157,18 @@ function buildAgentTurnInput(
   attachments: ChatComposerAttachment[],
   requestedBudget?: AgentRuntimeBudgetInput,
   clientIdempotencyKey?: string,
+  topicKey = conversationId,
 ) {
   const agentState = useAgentStore.getState();
-  const agent = agentState.agents.find((a) => a.id === agentId);
+  const topic = useAgentTopicStore.getState().getTopicsForAgent(agentId)
+    .find((item) => item.key === topicKey);
+  const selection = resolveAvailableModelSelection(
+    agentState.availableModels,
+    topic?.model_override || '',
+    topic?.provider_override || '',
+    agentState.defaultModel,
+    agentState.defaultProviderId,
+  );
   const clientCapabilitySessionId = useAgentCapabilityStore
     .getState()
     .readinessByAgentId[agentId]
@@ -1132,8 +1178,8 @@ function buildAgentTurnInput(
     conversation_id: conversationId,
     agent_id: agentId,
     user_input: userInput,
-    provider: agent?.provider || undefined,
-    model: agent?.model || undefined,
+    provider: selection.providerId || undefined,
+    model: selection.modelId || undefined,
     requested_budget: requestedBudget,
     client_capability_session_id: clientCapabilitySessionId,
     attachments: attachments
@@ -1487,6 +1533,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   abortController: null,
   memoryDisabledSessions: {},
   draftPromotions: {},
+  composerDrafts: {},
   readinessErrorKey: null,
   revisionCommandFailure: null,
   revisionReloadingConversationId: null,
@@ -1496,6 +1543,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   composerFill: null,
   composerReferenceRemoval: null,
   composerResourceSelection: null,
+  composerModelSelection: null,
   composerFocusNonce: 0,
 
   reset: () => {
@@ -1516,12 +1564,14 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       abortController: null,
       memoryDisabledSessions: {},
       draftPromotions: {},
+      composerDrafts: {},
       readinessErrorKey: null,
       revisionCommandFailure: null,
       revisionReloadingConversationId: null,
       composerFill: null,
       composerReferenceRemoval: null,
       composerResourceSelection: null,
+      composerModelSelection: null,
       composerFocusNonce: 0,
     });
   },
@@ -1563,20 +1613,34 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     });
   },
 
-  mergeSessionModel: (key: string, model: string, agentId: string) => {
-    set((state) => {
-      const byKey = new Map(state.sessions.map((s) => [s.key, s]));
-      const existing = byKey.get(key);
-      const updated: Session = existing
-        ? { ...existing, model_override: model }
-        : { id: key, key, agent_name: agentId, title: '', message_count: 0, model_override: model, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-      byKey.set(key, updated);
-      return { sessions: Array.from(byKey.values()) };
-    });
-  },
-
-  selectSession: async (key: string, _sessionOverride?: Session) => {
+  selectSession: async (key: string, sessionOverride?: Session) => {
     log.info('chat', 'Selecting session', { key });
+    if (sessionOverride) {
+      set((state) => {
+        const draftAgentId = agentIdFromDraftKey(key);
+        const retained = state.sessions.filter((session) => (
+          session.key !== key
+          && (
+            draftAgentId === null
+            || agentIdFromDraftKey(session.key) !== draftAgentId
+          )
+        ));
+        const composerDrafts = draftAgentId === null
+          ? state.composerDrafts
+          : Object.fromEntries(
+            Object.entries(state.composerDrafts).filter(
+              ([sessionKey]) => (
+                sessionKey === key
+                || agentIdFromDraftKey(sessionKey) !== draftAgentId
+              ),
+            ),
+          );
+        return {
+          sessions: [sessionOverride, ...retained],
+          composerDrafts,
+        };
+      });
+    }
     if (key === get().currentSessionKey) return;
     const liveOp = get().operations[key];
     // Adopt active streams and local pre-admission rejections. Rejections have
@@ -1599,6 +1663,16 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       return;
     }
     await loadSessionMessages(key, get, set);
+  },
+
+  setComposerDraft: (sessionKey: string, value: string) => {
+    if (!sessionKey) return;
+    set((state) => {
+      const composerDrafts = { ...state.composerDrafts };
+      if (value) composerDrafts[sessionKey] = value;
+      else delete composerDrafts[sessionKey];
+      return { composerDrafts };
+    });
   },
 
   bootstrapSession: async () => {
@@ -1637,29 +1711,70 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       currentSessionKey: key,
       messages: [],
       readinessErrorKey: null,
-      sessions: [draftSession, ...state.sessions.filter((s) => !isAgentDraftKey(s.key))],
+      sessions: [
+        draftSession,
+        ...state.sessions.filter(
+          (session) => agentIdFromDraftKey(session.key) !== agent.id,
+        ),
+      ],
+      composerDrafts: Object.fromEntries(
+        Object.entries(state.composerDrafts).filter(
+          ([sessionKey]) => agentIdFromDraftKey(sessionKey) !== agent.id,
+        ),
+      ),
     }));
   },
 
   deleteSession: async (key: string) => {
     log.info('chat', 'Deleting session', { key });
-    try {
+    if (!isAgentDraftKey(key)) {
       const version = await stationConversationVersion(key);
-      await api.archiveAgentConversation(key, version, true);
-      const { sessions, currentSessionKey } = get();
-      const remaining = sessions.filter((s) => s.key !== key);
-      if (key === currentSessionKey) {
-        set({
-          sessions: remaining,
-          currentSessionKey: remaining[0]?.key || 'main',
-          messages: [],
-        });
-      } else {
-        set({ sessions: remaining });
-      }
-    } catch (e) {
-      log.error('chat', 'Failed to delete session', e);
+      await api.deleteAgentConversations([{ conversation_id: key, expected_version: version }]);
     }
+    await get().purgeSessions([key]);
+  },
+
+  purgeSessions: async (keys: string[]) => {
+    const removed = new Set(keys);
+    const retain = <T,>(records: Record<string, T>) => Object.fromEntries(
+      Object.entries(records).filter(([key]) => !removed.has(key)),
+    );
+    set((state) => {
+      const currentDeleted = removed.has(state.currentSessionKey);
+      return {
+        sessions: state.sessions.filter((session) => !removed.has(session.key)),
+        sessionBuffers: retain(state.sessionBuffers),
+        turnQueues: retain(state.turnQueues),
+        memoryDisabledSessions: retain(state.memoryDisabledSessions),
+        composerDrafts: retain(state.composerDrafts),
+        draftPromotions: Object.fromEntries(Object.entries(state.draftPromotions)
+          .filter(([key, promoted]) => !removed.has(key) && !removed.has(promoted))),
+        operations: Object.fromEntries(Object.entries(state.operations)
+          .filter(([, operation]) => !removed.has(operation.sessionKey))),
+        ...(state.revisionCommandFailure && removed.has(state.revisionCommandFailure.conversationId)
+          ? { revisionCommandFailure: null } : {}),
+        ...(state.revisionReloadingConversationId && removed.has(state.revisionReloadingConversationId)
+          ? { revisionReloadingConversationId: null } : {}),
+        ...(currentDeleted ? {
+          currentSessionKey: '',
+          messages: [],
+          composerFill: null,
+          composerReferenceRemoval: null,
+          composerResourceSelection: null,
+          composerModelSelection: null,
+          readinessErrorKey: null,
+          isStreaming: false,
+          streamingStartedAt: null,
+        } : {}),
+      };
+    });
+    await Promise.all(keys.filter((key) => !isAgentDraftKey(key)).map(async (key) => {
+      try {
+        await agentChatCache.clearConversation(key);
+      } catch (error) {
+        log.warn('chat', 'Deleted conversation cache cleanup failed', { key, error: String(error) });
+      }
+    }));
   },
 
   syncMessages: async () => {
@@ -2088,11 +2203,14 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         attachments,
         lifecycle?.requestedBudget,
         lifecycle?.clientIdempotencyKey,
+        currentSessionKey,
       ),
       (event: StreamEvent) => {
         if (event.event !== 'error') notifyAccepted();
         if (event.event === 'conversation_created' && typeof event.data?.conversation_id === 'string' && isDraft) {
           const realConvId = event.data.conversation_id.trim();
+          const topicDraft = useAgentTopicStore.getState()
+            .getTopicsForAgent(agentId).find((topic) => topic.key === currentSessionKey);
           let promotedSession: Session | undefined;
           set((state) => {
             const existingPromotion = state.draftPromotions[currentSessionKey];
@@ -2116,7 +2234,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               agent_name: draft?.agent_name || agentName,
               title: draft?.title || '',
               message_count: draft?.message_count || 0,
-              model_override: draft?.model_override,
+              model_override: topicDraft?.model_override,
+              provider_override: topicDraft?.provider_override,
               created_at: draft?.created_at || now,
               updated_at: now,
             };
@@ -2131,12 +2250,17 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             const draftBuffer = nextBuffers[currentSessionKey];
             delete nextBuffers[currentSessionKey];
             if (draftBuffer) nextBuffers[realConvId] = draftBuffer;
+            const nextComposerDrafts = { ...state.composerDrafts };
+            const composerDraft = nextComposerDrafts[currentSessionKey];
+            delete nextComposerDrafts[currentSessionKey];
+            if (composerDraft) nextComposerDrafts[realConvId] = composerDraft;
             const isCurrent = state.currentSessionKey === currentSessionKey;
             return {
               currentSessionKey: isCurrent ? realConvId : state.currentSessionKey,
               sessions: Array.from(byKey.values()),
               operations: nextOps,
               sessionBuffers: nextBuffers,
+              composerDrafts: nextComposerDrafts,
               draftPromotions: {
                 ...state.draftPromotions,
                 [currentSessionKey]: realConvId,
@@ -2165,11 +2289,23 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
           if (!operationEvent.accepted) return state;
           toolRuntime.consume(event);
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
+          const turnId = operationEvent.operations[resolvedSessionKey]?.turnId;
           const applyTo = (list: ChatMessage[]): ChatMessage[] => {
-            const idx = list.findIndex((m) => m.id === assistantId);
-            if (idx === -1) return list;
+            const assistantIndex = list.findIndex((m) => m.id === assistantId);
+            const userIndex = turnId
+              ? list.findIndex((m) => m.id === userMsg.id)
+              : -1;
+            if (assistantIndex === -1 && userIndex === -1) return list;
             const next = [...list];
-            next[idx] = applyProjectedStreamEvent(next[idx], event);
+            if (assistantIndex !== -1) {
+              next[assistantIndex] = applyProjectedStreamEvent(
+                next[assistantIndex],
+                event,
+              );
+            }
+            if (userIndex !== -1 && next[userIndex].turnId !== turnId) {
+              next[userIndex] = { ...next[userIndex], turnId };
+            }
             return next;
           };
           const sessionBuffers = setBuffer(state.sessionBuffers, resolvedSessionKey, applyTo);
@@ -2764,7 +2900,11 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   // Request the composer to be filled with `text` without sending. The nonce lets
   // ChatInput react even when the same suggestion text is chosen twice in a row.
   fillComposer: (text: string) => {
-    set({ composerFill: { text, nonce: Date.now() } });
+    set({ composerFill: { text, nonce: Date.now(), sessionKey: get().currentSessionKey } });
+  },
+
+  appendComposer: (text: string) => {
+    set({ composerFill: { text, nonce: Date.now(), append: true, sessionKey: get().currentSessionKey } });
   },
 
   consumeComposerFill: () => {
@@ -2815,6 +2955,25 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     set((state) => ({
       composerFocusNonce: state.composerFocusNonce + 1,
     }));
+  },
+
+  requestComposerModelSelection: (sessionKey) => {
+    if (sessionKey !== get().currentSessionKey) return;
+    composerResourceSelectionCounter += 1;
+    set({
+      composerModelSelection: {
+        sessionKey,
+        nonce: composerResourceSelectionCounter,
+      },
+    });
+  },
+
+  consumeComposerModelSelection: (nonce) => {
+    set((state) => (
+      state.composerModelSelection?.nonce === nonce
+        ? { composerModelSelection: null }
+        : {}
+    ));
   },
 
   consumeComposerFocus: () => {

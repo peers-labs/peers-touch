@@ -13,6 +13,7 @@ use platform::push_bridge::PushBridgeRuntime;
 #[cfg(not(target_os = "android"))]
 use platform::secure_storage::SecureStorage;
 use platform::MobilePlatform;
+use runtime::x_config::MobileXConfigRuntime;
 use runtime::oauth::OAuthCoordinator;
 use runtime::reliability::ReliabilityRuntime;
 use runtime::station_transport::StationTransportRuntime;
@@ -31,6 +32,7 @@ pub fn run() {
         .manage(MobilePrivateSocialRuntime::default())
         .manage(PushBridgeRuntime::default())
         .manage(ReliabilityRuntime::default())
+        .manage(MobileXConfigRuntime::default())
         .manage(StationTransportRuntime::default());
 
     #[cfg(target_os = "android")]

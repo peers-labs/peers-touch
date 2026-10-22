@@ -34,7 +34,7 @@ description: 创建、修改和审查 Peers-Touch UI/交互原型。用户要求
 |------|------|
 | 框架 | React + Vite |
 | UI 组件 | `@lobehub/ui`(LobeUI) 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + CSS |
-| 运行 | 统一使用 `make run-prototype`；在 Prototype Portal 内切换 desktop / mobile / dashboard；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
+| 运行 | 统一使用 `make run-prototype`；在 Prototype Portal 内切换 desktop / mobile / dashboard / control；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
 | 运行时 | **不碰** Lynx / applet 容器 / SDK。web 原型可自由用 DOM、`iframe`、`localStorage` 等浏览器能力 |
 | 基础件 | **禁止重复造**——复用项目已有桌面组件体系（LobeUI / antd），不得每个需求另搭基础库 |
 
@@ -168,7 +168,9 @@ packages/prototypes/
 │   └── features/<feature-id>/
 ├── mobile/
 │   └── <prototype-id>/
-└── dashboard/
+├── dashboard/
+│   └── <prototype-id>/
+└── control/
     └── <prototype-id>/
 ```
 
@@ -180,9 +182,13 @@ packages/prototypes/
 desktop            # Desktop App / desktop-web / applet 容器内体验
 mobile             # Mobile 端体验
 dashboard          # Station Dashboard / 管理台 / 运维台
+control            # 独立云控、客户端配置发布与升级控制面
 ```
 
-注意：`atelier` 这类 applet、`call` / `social-chat` 这类局部能力原型，不是一级站点，必须挂在所属站点（例如 `desktop/applets/atelier`、`desktop/features/call`）下。
+注意：`control` 只承载独立部署、被多端消费的云控产品；Station/Relay 运维仍归
+`dashboard`。`atelier` 这类 applet、`call` / `social-chat` 这类局部能力原型，
+不是一级站点，必须挂在所属站点（例如 `desktop/applets/atelier`、
+`desktop/features/call`）下。
 
 ### 4.2 入口文档
 
@@ -265,7 +271,7 @@ Prototype Portal 支持 worktree / branch 切换：
 - 当前 worktree 由 `make run-prototype` 自动注入分支名和 worktree 路径。
 - 其他 worktree 必须自己启动原型服务，再通过 `VITE_PROTOTYPE_WORKTREES` JSON registry 注入 Portal。
 - 跨 worktree 只能用 iframe 预览对应 URL，禁止直接 import 其他 worktree 的源码。
-- registry 的站点 key 只能是 `desktop` / `mobile` / `dashboard`。
+- registry 的站点 key 只能是 `desktop` / `mobile` / `dashboard` / `control`。
 
 ---
 
@@ -314,7 +320,7 @@ Prototype Portal 支持 worktree / branch 切换：
 - [ ] 使用 LobeUI / antd / lucide-react，未引入额外基础组件库
 - [ ] 未碰 Lynx / applet SDK / 非 web 运行时
 - [ ] mock 数据驱动，未依赖后端接口
-- [ ] 原型登记在正确一级站点下（`desktop` / `mobile` / `dashboard`），没有把 applet 或局部能力登记成一级模块
+- [ ] 原型登记在正确一级站点下（`desktop` / `mobile` / `dashboard` / `control`），没有把 applet 或局部能力登记成一级模块
 - [ ] 跨 worktree / branch 预览使用 registry + iframe，没有直接引用其他 worktree 源码
 - [ ] Tab / Segment 切换无布局跳动：所有 tab-content 面板有统一 `min-height` 或使用叠层方案，切换前后容器高度像素一致
 - [ ] 列表 / 空态 / 媒体加载无重排：骨架屏和占位区域已预留正确尺寸

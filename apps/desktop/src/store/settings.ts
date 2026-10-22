@@ -9,6 +9,7 @@ import {
 import { beginMutation, endMutation, toStoreError, type RevalidationState } from './revalidation';
 
 const CHAT_SCREENSHOT_SHORTCUT_SETTING_KEY = 'settings.chat.screenshotShortcut';
+const SHOW_USABLE_PROVIDERS_ONLY_SETTING_KEY = 'settings.providers.showUsableOnly';
 
 function registerChatScreenshotShortcut(shortcut: string): void {
   api.chatScreenshotShortcutRegister({ shortcut }).catch((error) => {
@@ -28,14 +29,16 @@ interface SettingsState extends RevalidationState {
    */
   activeAccount: AccountIdentity | null;
   chatScreenshotShortcut: string;
+  showUsableProvidersOnly: boolean;
 
   loadChatPreferences: () => Promise<void>;
+  loadProviderPreferences: () => Promise<void>;
   loadAgents: () => Promise<void>;
   loadTools: () => Promise<void>;
   refreshActiveAccount: () => Promise<void>;
   setChatScreenshotShortcut: (shortcut: string) => void;
+  setShowUsableProvidersOnly: (show: boolean) => Promise<void>;
   setCurrentAgent: (name: string) => void;
-  setDefaultAgent: (id: string) => Promise<void>;
   updateAgent: (name: string, data: Partial<Agent>) => Promise<void>;
 }
 
@@ -45,6 +48,7 @@ export const useSettingsStore = createDesktopStore<SettingsState>('settings', (s
   currentAgent: 'assistant',
   activeAccount: null,
   chatScreenshotShortcut: DEFAULT_CHAT_SCREENSHOT_SHORTCUT,
+  showUsableProvidersOnly: true,
   loading: false,
   error: null,
   lastLoadedAt: null,
@@ -62,6 +66,22 @@ export const useSettingsStore = createDesktopStore<SettingsState>('settings', (s
     } catch (e) {
       log.warn('settings', 'Failed to load chat preferences', e);
       registerChatScreenshotShortcut(DEFAULT_CHAT_SCREENSHOT_SHORTCUT);
+    }
+  },
+
+  loadProviderPreferences: async () => {
+    try {
+      const result = await api.settingsGet({ key: SHOW_USABLE_PROVIDERS_ONLY_SETTING_KEY });
+      const value = result.ok
+        ? (result.data as { value?: unknown } | undefined)?.value
+        : undefined;
+      set({
+        showUsableProvidersOnly: value === undefined
+          ? true
+          : value === true || value === 'true',
+      });
+    } catch (error) {
+      log.warn('settings', 'Failed to load Provider display preference', { error: toStoreError(error) });
     }
   },
 
@@ -120,39 +140,6 @@ export const useSettingsStore = createDesktopStore<SettingsState>('settings', (s
     });
   },
 
-  setDefaultAgent: async (id: string) => {
-    const previousAgents = get().agents;
-    const target = previousAgents.find((agent) => agent.id === id);
-    if (!target) return;
-    const mutationKey = `agent-default:${id}`;
-    set((state) => ({
-      agents: state.agents.map((agent) => ({
-        ...agent,
-        isDefault: agent.id === id,
-      })),
-      error: null,
-      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
-    }));
-    try {
-      const result = await api.setDefaultAgent(id);
-      set((state) => ({
-        agents: state.agents.map((agent) => ({
-          ...agent,
-          isDefault: agent.name === result.defaultAgent,
-        })),
-        currentAgent: result.defaultAgent,
-        lastLoadedAt: Date.now(),
-      }));
-    } catch (e) {
-      const message = toStoreError(e);
-      log.error('settings', 'Failed to persist default agent', { id, error: message });
-      set({ agents: previousAgents, error: message });
-      throw e;
-    } finally {
-      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
-    }
-  },
-
   setChatScreenshotShortcut: (shortcut: string) => {
     const normalized = normalizeChatScreenshotShortcut(shortcut);
     set({ chatScreenshotShortcut: normalized });
@@ -162,6 +149,22 @@ export const useSettingsStore = createDesktopStore<SettingsState>('settings', (s
       set({ error: message });
     });
     registerChatScreenshotShortcut(normalized);
+  },
+
+  setShowUsableProvidersOnly: async (show: boolean) => {
+    const previous = get().showUsableProvidersOnly;
+    set({ showUsableProvidersOnly: show });
+    try {
+      await api.settingsSet({
+        key: SHOW_USABLE_PROVIDERS_ONLY_SETTING_KEY,
+        value: show,
+      });
+    } catch (error) {
+      const message = toStoreError(error);
+      log.warn('settings', 'Failed to persist Provider display preference', { error: message });
+      set({ showUsableProvidersOnly: previous, error: message });
+      throw error;
+    }
   },
 
   updateAgent: async (name: string, data: Partial<Agent>) => {

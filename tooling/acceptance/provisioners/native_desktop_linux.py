@@ -1037,16 +1037,21 @@ class NativeDesktopLinuxProvisioner:
             )
         endpoint = parse_orchestrator_endpoint(url)
         local_port = endpoint.local_port
+        remote_port = self.transport.available_remote_port()
+        if remote_port == local_port:
+            raise ProvisioningError(
+                "Linux runtime-cell endpoint allocation collided with the local listener"
+            )
         tunnel = self.transport.start_reverse_forward(
             local_port=local_port,
-            remote_port=local_port,
+            remote_port=remote_port,
         )
         runtime = _EndpointRuntime(
             endpoint_id=normalized_id,
             tunnel=tunnel,
             tunnel_pid=tunnel.process_id,
             local_port=local_port,
-            remote_port=local_port,
+            remote_port=remote_port,
         )
         self._endpoints[normalized_id] = runtime
         return {
@@ -1269,6 +1274,47 @@ class NativeDesktopLinuxProvisioner:
                 "Linux runtime-cell manifest is missing"
             )
         return dict(manifest)
+
+    def import_actor_storage_file(
+        self, actor: str, source: Path, relative_path: str, sha256: str,
+    ) -> None:
+        state = self._require_state()
+        if not _ENDPOINT_ID.fullmatch(actor):
+            raise ProvisioningError("Linux storage fixture actor is invalid")
+        runtime = self._actors.get(actor)
+        if runtime is not None:
+            raise ProvisioningError("Linux storage import requires an unlaunched actor")
+        relative = PurePosixPath(relative_path)
+        if (
+            not relative_path or relative.is_absolute()
+            or "\\" in relative_path
+            or any(part in {"", ".", ".."} for part in relative_path.split("/"))
+        ):
+            raise ProvisioningError("Linux storage fixture path is invalid")
+        if source.is_symlink() or not source.is_file() or _file_digest(source) != sha256:
+            raise ProvisioningError("Linux storage fixture digest mismatch")
+        target = Path("/workspace/run/actors") / actor / "storage" / relative_path
+        container = str(state["containerName"])
+        self.transport.run_argv(
+            (
+                "docker", "exec", container, "python3", "-c",
+                "import pathlib,sys; p=pathlib.Path(sys.argv[1]); "
+                "assert not any(x.is_symlink() for x in (p,*p.parents)); "
+                "assert not p.exists(); p.parent.mkdir(parents=True,exist_ok=True); "
+                "p.parent.chmod(0o700)",
+                str(target),
+            ),
+            timeout=15, check=True,
+        )
+        self._copy_actor_file(
+            actor, source, target,
+            target.with_name(f".{target.name}.{secrets.token_hex(8)}.incoming"),
+            sha256,
+        )
+        self.transport.run_argv(
+            ("docker", "exec", container, "chmod", "600", str(target)),
+            timeout=15, check=True,
+        )
 
     def stage_actor_file(
         self,
@@ -2139,6 +2185,7 @@ class NativeDesktopLinuxProvisioner:
             "> \"$CARGO_HOME/config.toml\"; "
             "else rm -f \"$CARGO_HOME/config.toml\"; fi; "
             "pnpm install --frozen-lockfile --store-dir /workspace/cache/pnpm/store; "
+            "bash model/build.sh --typescript-only; "
             "VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build; "
             "cd apps/desktop/src-tauri; "
             "TAURI_CONFIG='{\"app\":{\"withGlobalTauri\":true}}' "

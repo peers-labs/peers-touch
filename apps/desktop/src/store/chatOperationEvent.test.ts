@@ -181,6 +181,64 @@ describe('Agent turn event identity projection', () => {
     }
   });
 
+  it('binds both optimistic messages to the admitted Turn identity', () => {
+    const previousAgentState = useAgentStore.getState();
+    let emitEvent: ((event: StreamEvent) => void) | undefined;
+    const streamSpy = vi.spyOn(agentService, 'streamTurn').mockImplementation(
+      (_input, onEvent) => {
+        emitEvent = onEvent;
+        const controller = new AbortController() as AgentTurnStreamController;
+        Object.defineProperty(controller, 'streamGeneration', {
+          value: 1,
+          enumerable: true,
+        });
+        return controller;
+      },
+    );
+    useChatStore.getState().reset();
+    useChatStore.setState({ currentSessionKey: 'conversation-1' });
+    useAgentStore.setState({
+      selectedAgent: 'assistant',
+      agents: [{
+        id: 'agent-1',
+        name: 'assistant',
+        provider: 'provider-1',
+        model: 'model-1',
+      } as Agent],
+    });
+
+    try {
+      expect(useChatStore.getState().sendMessage('identified input')).toBe(true);
+      emitEvent?.({
+        event: 'done',
+        data: {
+          turnId: 'turn-1',
+          conversationId: 'conversation-1',
+          seq: 1,
+          streamGeneration: 1,
+          status: 'completed',
+        },
+      });
+
+      expect(useChatStore.getState().messages).toEqual([
+        expect.objectContaining({
+          role: 'user',
+          content: 'identified input',
+          turnId: 'turn-1',
+        }),
+        expect.objectContaining({
+          role: 'assistant',
+          turnId: 'turn-1',
+          terminalStatus: 'completed',
+        }),
+      ]);
+    } finally {
+      streamSpy.mockRestore();
+      useChatStore.getState().reset();
+      useAgentStore.setState(previousAgentState);
+    }
+  });
+
   it('retains only local pre-admission failure buffers after navigation', () => {
     expect(shouldUseSessionBuffer({
       ...operation(),
@@ -611,6 +669,31 @@ describe('Agent turn event identity projection', () => {
         label: 'agent.recovery.recover',
       },
     });
+  });
+
+  it('restores follow-up suggestions from authoritative message metadata', () => {
+    const projected = cachedMessageToChatMessage({
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      turnId: 'turn-1',
+      role: 'assistant',
+      status: 'completed',
+      content: 'answer',
+      seq: 1,
+      metadataJson: JSON.stringify({
+        translation: 'translated answer',
+        follow_up_suggestions: ['Explain further', 'Compare options', 'Next step'],
+      }),
+      createdAt: '2026-09-11T00:00:00.000Z',
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    });
+
+    expect(projected.translation).toBe('translated answer');
+    expect(projected.followUpSuggestions).toEqual([
+      'Explain further',
+      'Compare options',
+      'Next step',
+    ]);
   });
 
   it('projects forbidden-actor recovery from a live error event', () => {

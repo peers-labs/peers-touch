@@ -8,6 +8,10 @@ import {
 } from './agentDraft';
 
 const chatSource = readFileSync(new URL('./chat.ts', import.meta.url), 'utf8');
+const composerSource = readFileSync(
+  new URL('../components/ChatInput.tsx', import.meta.url),
+  'utf8',
+);
 
 describe('Agent draft identity', () => {
   it('uses one Agent-id-scoped key format', () => {
@@ -42,5 +46,30 @@ describe('Agent draft identity', () => {
   it('records one draft promotion before replacing Topic identity', () => {
     expect(chatSource).toContain('draftPromotions[currentSessionKey]');
     expect(chatSource).toContain('promoteDraftTopic(agentId, currentSessionKey, promotedSession)');
+  });
+
+  it('projects a selected Topic and replaces the previous local draft', () => {
+    expect(chatSource).toContain(
+      'selectSession: async (key: string, sessionOverride?: Session)',
+    );
+    expect(chatSource).toContain(
+      "agentIdFromDraftKey(session.key) !== draftAgentId",
+    );
+    expect(chatSource).toContain(
+      "sessions: [sessionOverride, ...retained]",
+    );
+  });
+
+  it('owns composer text in the Topic-keyed Chat projection', () => {
+    expect(chatSource).toContain('composerDrafts: Record<string, string>');
+    expect(chatSource).toContain(
+      'setComposerDraft: (sessionKey: string, value: string)',
+    );
+    expect(composerSource).toContain(
+      "state.composerDrafts[state.currentSessionKey] ?? ''",
+    );
+    expect(composerSource).toContain('state.setComposerDraft(');
+    expect(composerSource).not.toContain('topicDraftRef');
+    expect(composerSource).not.toContain('prevSessionKeyRef');
   });
 });

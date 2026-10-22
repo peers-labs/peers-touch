@@ -160,6 +160,7 @@ import {
   SubmitHomeTaskCommandResponseSchema,
 } from '../gen/proto/domain/agent/home_pb';
 import * as EvaluationModel from '../gen/proto/domain/agent/evaluation_pb';
+import * as ChannelModel from '../gen/proto/domain/channel/channel_pb';
 import type {
   ClaimDesktopExecutorTaskResponse,
   CollaborationTask,
@@ -834,6 +835,7 @@ export interface Session {
   message_count: number;
   version?: number;
   model_override?: string;
+  provider_override?: string;
   created_at: string;
   updated_at: string;
   pinned?: boolean;
@@ -1144,6 +1146,9 @@ export interface ModelItem {
   type: string;
   enabled: boolean;
   context_window: number;
+  description?: string;
+  default_reasoning_level?: string;
+  supported_reasoning_levels?: string[];
   streaming?: boolean;
   function_call?: boolean;
   vision?: boolean;
@@ -1151,6 +1156,21 @@ export interface ModelItem {
   search?: boolean;
   image_output?: boolean;
   video?: boolean;
+}
+
+export interface ProviderRuntimeConfig {
+  default_model: string;
+  startup_args: string[];
+  environment: Record<string, string>;
+  timeout_seconds: number;
+}
+
+export interface ProviderAdapterCapabilities {
+  model_discovery: boolean;
+  startup_args: boolean;
+  environment: boolean;
+  configurable_timeout: boolean;
+  runtime_capabilities: string[];
 }
 
 export interface ProviderModelConfigInput {
@@ -1177,6 +1197,11 @@ export interface ProviderDetail extends ProviderListItem {
   api_key: string;
   base_url: string;
   default_base_url: string;
+  cli_command: string;
+  runtime_config: ProviderRuntimeConfig;
+  default_runtime_config: ProviderRuntimeConfig;
+  adapter_capabilities: ProviderAdapterCapabilities;
+  workspace_policy: string;
   show_api_key?: boolean;
   show_checker: boolean;
   check_model?: string;
@@ -1842,55 +1867,21 @@ export interface ModelServiceReference {
 
 // ── Channel types ──
 
-export interface BotStatus {
-  connected: boolean;
-  botName?: string;
-  error?: string;
-}
-
-export interface Channel {
-  id: string;
-  name: string;
-  type: 'telegram' | 'lark' | 'slack' | 'webhook' | 'discord';
-  enabled: boolean;
-  config: string;
-  createdAt: string;
-  updatedAt: string;
-  botStatus?: BotStatus;
-}
-
-export interface ChatTarget {
-  id: string;
-  name: string;
-  type: 'group' | 'p2p';
-}
-
-export interface ChannelEvent {
-  id: string;
-  channelId: string;
-  direction: 'inbound' | 'outbound';
-  phase: 'received' | 'processing' | 'replied' | 'delivered' | 'failed';
-  timestamp: string;
-  msgType?: string;
-  msgText?: string;
-  senderId?: string;
-  senderName?: string;
-  targetId?: string;
-  targetType?: string;
-  sessionId?: string;
-  latencyMs?: number;
-  error?: string;
-  botType?: string;
-}
-
-export interface ChannelEventStats {
-  totalInbound: number;
-  totalOutbound: number;
-  totalErrors: number;
-  avgLatencyMs: number;
-  todayInbound: number;
-  todayOutbound: number;
-}
+export type ChannelBindingInfo = ChannelModel.ChannelBindingInfo;
+export type ChannelRoute = ChannelModel.ChannelRoute;
+export type ChannelAutomation = ChannelModel.ChannelAutomation;
+export type ChannelChat = ChannelModel.ChannelChat;
+export type ChannelEventInfo = ChannelModel.ChannelEventInfo;
+export type ChannelStats = ChannelModel.ChannelStatsResponse;
+export type ChannelMemberAccess = ChannelModel.ChannelMemberAccess;
+export type ChannelHealth = ChannelModel.CheckChannelHealthResponse;
+export type ChannelAppValidation = ChannelModel.ValidateChannelAppResponse;
+export type ChannelRequesterAuthorization =
+  ChannelModel.ChannelRequesterAuthorizationInfo;
+export type ChannelProvisioningStart = ChannelModel.StartChannelProvisioningResponse;
+export type ChannelProvisioningSnapshot = ChannelModel.PollChannelProvisioningResponse;
+export type ChannelProvisioningConfirmation = ChannelModel.ConfirmChannelProvisioningResponse;
+export type ChannelMessageDelivery = ChannelModel.SendChannelMessageResponse;
 
 export interface CronRun {
   id: number;
@@ -2186,6 +2177,15 @@ export interface AuthSessionResponse extends TauriStubPayload {
   login_method?: string;
 }
 
+export interface AcceptanceSessionPersistenceState {
+  activeAccountPresent: boolean;
+  accountHasSessionMetadata: boolean;
+  accountRequiresPin: boolean;
+  rawSessionPresent: boolean;
+  rawSessionActorMatches: boolean;
+  rawSessionSource?: 'password' | 'oauth_bridge' | null;
+}
+
 export interface MessagingAcceptanceInteractionSnapshot {
   actorPtid: string;
   conversationId: string;
@@ -2418,6 +2418,7 @@ export interface ProviderUpdateInput {
   enabled: boolean;
   key_vaults?: string;
   config_json?: string;
+  runtime_config?: ProviderRuntimeConfig;
   runtime_kind?: string;
   protocol?: string;
   version?: number;
@@ -2430,6 +2431,7 @@ export interface ProviderCheckInput {
 }
 
 export interface ProviderCreateInput {
+  id: string;
   name: string;
   description: string;
   logo: string;
@@ -2455,19 +2457,13 @@ export interface ProviderModelDeleteInput {
   model_id: string;
 }
 
-export interface ProviderModelFetchInput {
+export interface ProviderModelDiscoverInput {
   provider_id: string;
-  data?: Record<string, any>;
 }
 
 export interface ProviderModelToggleInput {
   provider_id: string;
   model_id: string;
-  enabled: boolean;
-}
-
-export interface ProviderModelToggleAllInput {
-  provider_id: string;
   enabled: boolean;
 }
 
@@ -2544,6 +2540,7 @@ export interface AgentToolDecisionIntentInput {
   expected_revision: number;
   approved: boolean;
   idempotency_key: string;
+  answer?: string;
 }
 
 export interface AgentTypedErrorPayload {
@@ -4012,6 +4009,7 @@ export interface AgentConversationUpdateInput {
   title?: string;
   description?: string;
   model_name?: string;
+  provider_id?: string;
   meta?: Record<string, string>;
   active_branch_message_id?: string;
 }
@@ -4354,39 +4352,6 @@ export interface ProviderIdInputV2 {
   provider_id: string;
 }
 
-export interface ChannelIdInput {
-  id: string;
-}
-
-export interface ChannelCreateInput {
-  name: string;
-  type: string;
-  config: string;
-  enabled?: boolean;
-}
-
-export interface ChannelUpdateInput {
-  id: string;
-  name?: string;
-  type?: string;
-  config?: string;
-  enabled?: boolean;
-}
-
-export interface ChannelSendMessageInput {
-  id: string;
-  text: string;
-  title?: string;
-  target_id?: string;
-  target_type?: string;
-}
-
-export interface ChannelEventsInput {
-  id: string;
-  limit?: number;
-  offset?: number;
-}
-
 export interface OAuthIdInput {
   id: string;
 }
@@ -4626,11 +4591,6 @@ export interface AgentUpdateInput {
   data: Partial<AgentCreate>;
 }
 
-export interface AgentDuplicateInput {
-  id: string;
-  name: string;
-}
-
 export interface AgentSearchInput {
   q: string;
 }
@@ -4813,6 +4773,41 @@ export interface StationDiscoveryResult {
   entries: StationEntry[];
 }
 
+export type XConfigFreshness = 'current' | 'stale' | 'embedded' | 'unavailable';
+
+export interface XConfigSuggestion {
+  seed_id: string;
+  kind: 'relay' | 'direct_station';
+  display_name: string;
+  canonical_origin: string;
+  regions: string[];
+  freshness: Exclude<XConfigFreshness, 'unavailable'>;
+  actionable: boolean;
+  source_sequence: number;
+}
+
+export interface XConfigRelease {
+  release_id: string;
+  version: string;
+  manifest_url: string;
+  manifest_sha256_hex: string;
+  release_signing_key_id: string;
+  release_notes_url: string;
+}
+
+export interface XConfigProjection {
+  channel: string;
+  sequence?: number | null;
+  expires_at_unix_ms?: number | null;
+  freshness: XConfigFreshness;
+  suggestions: XConfigSuggestion[];
+  release?: XConfigRelease | null;
+  refreshing: boolean;
+  last_refresh_attempt_at_unix_ms?: number | null;
+  next_refresh_at_unix_ms?: number | null;
+  last_refresh_error?: string | null;
+}
+
 function requireEvaluationValue<T>(
   value: T | undefined,
   errorKey: string,
@@ -4844,6 +4839,11 @@ export const api = {
     invokeAuthCommand<{ expected_actor_ptid: string }>(
       'acceptance_logout_window_session',
       { expected_actor_ptid: expectedActorPtid },
+    ),
+
+  acceptanceSessionPersistenceState: () =>
+    invokeRustDataFromStatus<void, AcceptanceSessionPersistenceState>(
+      'acceptance_session_persistence_state',
     ),
 
   authRestoreSession: () =>
@@ -5225,12 +5225,6 @@ export const api = {
       { name },
     ),
 
-  getDefaultAgent: () =>
-    invokeRustDataFromStatus<void, { defaultAgent: string; agent: Agent }>('agents_get_default'),
-
-  setDefaultAgent: (id: string) =>
-    invokeRustDataFromStatus<AgentIdInput, { defaultAgent: string }>('agents_set_default', { id }),
-
   getAgent: (id: string) => invokeRustDataFromStatus<AgentIdInput, Agent>('agents_get', { id }),
 
   createAgent: (data: AgentCreate) =>
@@ -5241,9 +5235,6 @@ export const api = {
 
   deleteAgent: (id: string) =>
     invokeRustDataFromStatus<AgentIdInput, { ok: boolean }>('agents_delete', { id }),
-
-  duplicateAgent: (id: string, name: string) =>
-    invokeRustDataFromStatus<AgentDuplicateInput, Agent>('agents_duplicate', { id, name }),
 
   exportAgentPackage: async (
     id: string,
@@ -5835,17 +5826,29 @@ export const api = {
       mapAIChatProviderToDetail(r.provider || {}),
     ),
 
-  updateProvider: (id: string, data: { api_key?: string; base_url: string; enabled: boolean; version?: number }) =>
+  updateProvider: (id: string, data: {
+    api_key?: string;
+    base_url: string;
+    enabled: boolean;
+    runtime_config?: ProviderRuntimeConfig;
+    version?: number;
+  }) =>
     invokeRustDataFromStatus<ProviderUpdateInput, { provider: any }>('provider_update', {
         id,
         enabled: data.enabled,
         ...(data.api_key ? { key_vaults: JSON.stringify({ api_key: data.api_key }) } : {}),
         config_json: JSON.stringify({ base_url: data.base_url || '' }),
+        runtime_config: data.runtime_config,
         version: data.version ?? 0,
     }),
 
   checkProvider: (id: string, data: { api_key?: string; base_url?: string; model?: string }) =>
-    invokeRustDataFromStatus<ProviderCheckInput, { ok: boolean; message?: string; error?: string }>('provider_check', {
+    invokeRustDataFromStatus<ProviderCheckInput, {
+      ok: boolean;
+      message?: string;
+      error?: string;
+      install_hint?: string;
+    }>('provider_check', {
         id,
         key_vaults: data.api_key ? JSON.stringify({ api_key: data.api_key }) : undefined,
         config_json: data.base_url ? JSON.stringify({ base_url: data.base_url, model: data.model || '' }) : undefined,
@@ -5856,6 +5859,7 @@ export const api = {
 
   createProvider: (data: { id: string; name: string; description?: string; logo?: string; base_url: string; api_key?: string }) =>
     invokeRustDataFromStatus<ProviderCreateInput, { provider: any }>('provider_create', {
+        id: data.id,
         name: data.name,
         description: data.description || '',
         logo: data.logo || '',
@@ -5885,22 +5889,23 @@ export const api = {
       model_id: modelId,
     }),
 
-  fetchRemoteModels: (providerId: string, data?: { api_key?: string; base_url?: string }) =>
-    invokeRustDataFromStatus<ProviderModelFetchInput, { ok: boolean; models: string[] }>('model_fetch_remote', {
-      provider_id: providerId,
-      data,
-    }),
+  discoverModels: async (providerId: string) => {
+    const result = await invokeRustDataFromStatus<
+      ProviderModelDiscoverInput,
+      { models?: unknown[]; observed_at?: string; observedAt?: string }
+    >('model_discover', { provider_id: providerId });
+    return {
+      models: (result.models ?? [])
+        .map(mapProviderModel)
+        .filter((model: ModelItem | null): model is ModelItem => Boolean(model)),
+      observed_at: result.observed_at ?? result.observedAt,
+    };
+  },
 
   toggleModel: (providerId: string, modelId: string, enabled: boolean) =>
     invokeRustDataFromStatus<ProviderModelToggleInput, { ok: boolean }>('model_toggle', {
       provider_id: providerId,
       model_id: modelId,
-      enabled,
-    }),
-
-  toggleAllModels: (providerId: string, enabled: boolean) =>
-    invokeRustDataFromStatus<ProviderModelToggleAllInput, { ok: boolean }>('model_toggle_all', {
-      provider_id: providerId,
       enabled,
     }),
 
@@ -6838,6 +6843,12 @@ export const api = {
       },
     ).then((result) => result.conversation),
 
+  deleteAgentConversations: (targets: { conversation_id: string; expected_version: number }[]) =>
+    invokeRustDataFromStatus<
+      { targets: { conversation_id: string; expected_version: number }[] },
+      { ok: boolean }
+    >('agent_conversation_delete_batch', { targets }),
+
   resetAgentConversationRuntime: (input: AgentConversationRuntimeResetInput) =>
     invokeRustProto<
       AgentConversationRuntimeResetInput,
@@ -7005,56 +7016,431 @@ export const api = {
       { provider_id: providerId },
     ).then((r) => r.references),
 
-  // ── Channels (Bot/Webhook) ──
+  // ── Channels ──
 
-  listChannels: () =>
-    invokeRustDataFromStatus<void, { channels: Channel[] }>('channels_list').then((r) => r.channels),
+  listChannelBindings: async (): Promise<ChannelBindingInfo[]> => {
+    const response = await invokeRustProtoRequest(
+      'channels_list_bindings',
+      ChannelModel.ListChannelBindingsRequestSchema,
+      ChannelModel.ListChannelBindingsResponseSchema,
+      create(ChannelModel.ListChannelBindingsRequestSchema),
+    );
+    return response.bindings;
+  },
 
-  getChannel: (id: string) =>
-    invokeRustDataFromStatus<ChannelIdInput, Channel>('channels_get', { id }),
+  createChannelBinding: (input: {
+    pluginId: string;
+    providerKind: string;
+    providerAppId: string;
+    domain: string;
+    agentId: string;
+    enabled: boolean;
+    appSecret: string;
+    name: string;
+    description: string;
+    region: string;
+    appMode: string;
+  }): Promise<ChannelModel.CreateChannelBindingResponse> =>
+    invokeRustProtoRequest(
+      'channels_create_binding',
+      ChannelModel.CreateChannelBindingRequestSchema,
+      ChannelModel.CreateChannelBindingResponseSchema,
+      create(ChannelModel.CreateChannelBindingRequestSchema, input),
+    ),
 
-  createChannel: (data: { name: string; type: string; config: string; enabled?: boolean }) =>
-    invokeRustDataFromStatus<ChannelCreateInput, Channel>('channels_create', data),
+  updateChannelBinding: (
+    bindingId: string,
+    input: {
+      agentId?: string;
+      enabled?: boolean;
+      appSecret?: string;
+      name?: string;
+      description?: string;
+      groupResponseMode?: string;
+      threadIsolation?: boolean;
+      outputMode?: string;
+      personalOauthConnectionId?: string;
+      accessMode?: string;
+    },
+  ): Promise<ChannelModel.UpdateChannelBindingResponse> =>
+    invokeRustProtoRequest(
+      'channels_update_binding',
+      ChannelModel.UpdateChannelBindingRequestSchema,
+      ChannelModel.UpdateChannelBindingResponseSchema,
+      create(ChannelModel.UpdateChannelBindingRequestSchema, { bindingId, ...input }),
+    ),
 
-  updateChannel: (id: string, data: Partial<{ name: string; type: string; config: string; enabled: boolean }>) =>
-    invokeRustDataFromStatus<ChannelUpdateInput, Channel>('channels_update', { id, ...data }),
+  deleteChannelBinding: (bindingId: string): Promise<ChannelModel.DeleteChannelBindingResponse> =>
+    invokeRustProtoRequest(
+      'channels_delete_binding',
+      ChannelModel.DeleteChannelBindingRequestSchema,
+      ChannelModel.DeleteChannelBindingResponseSchema,
+      create(ChannelModel.DeleteChannelBindingRequestSchema, { bindingId }),
+    ),
 
-  deleteChannel: (id: string) =>
-    invokeRustDataFromStatus<ChannelIdInput, { ok: boolean }>('channels_delete', { id }),
+  startChannelBinding: (bindingId: string): Promise<ChannelModel.StartChannelBindingResponse> =>
+    invokeRustProtoRequest(
+      'channels_start_binding',
+      ChannelModel.StartChannelBindingRequestSchema,
+      ChannelModel.StartChannelBindingResponseSchema,
+      create(ChannelModel.StartChannelBindingRequestSchema, { bindingId }),
+    ),
 
-  testChannel: (id: string) =>
-    invokeRustDataFromStatus<ChannelIdInput, { ok: boolean }>('channels_test', { id }),
+  stopChannelBinding: (bindingId: string): Promise<ChannelModel.StopChannelBindingResponse> =>
+    invokeRustProtoRequest(
+      'channels_stop_binding',
+      ChannelModel.StopChannelBindingRequestSchema,
+      ChannelModel.StopChannelBindingResponseSchema,
+      create(ChannelModel.StopChannelBindingRequestSchema, { bindingId }),
+    ),
 
-  sendChannelMessage: (id: string, text: string, title?: string, targetId?: string, targetType?: string) =>
-    invokeRustDataFromStatus<ChannelSendMessageInput, { ok: boolean }>('channels_send', {
-      id,
-      text,
-      title,
-      target_id: targetId,
-      target_type: targetType,
-    }),
+  setDefaultChannelBinding: (bindingId: string): Promise<ChannelModel.SetDefaultChannelBindingResponse> =>
+    invokeRustProtoRequest(
+      'channels_set_default_binding',
+      ChannelModel.SetDefaultChannelBindingRequestSchema,
+      ChannelModel.SetDefaultChannelBindingResponseSchema,
+      create(ChannelModel.SetDefaultChannelBindingRequestSchema, { bindingId }),
+    ),
 
-  listChannelChats: (id: string) =>
-    invokeRustDataFromStatus<ChannelIdInput, { chats: ChatTarget[] }>('channels_list_chats', { id }),
+  validateChannelApp: (input: {
+    providerKind: string;
+    providerAppId: string;
+    appSecret: string;
+    domain: string;
+    region: string;
+  }): Promise<ChannelAppValidation> =>
+    invokeRustProtoRequest(
+      'channels_validate_app',
+      ChannelModel.ValidateChannelAppRequestSchema,
+      ChannelModel.ValidateChannelAppResponseSchema,
+      create(ChannelModel.ValidateChannelAppRequestSchema, input),
+    ),
 
-  startBot: (id: string) =>
-    invokeRustDataFromStatus<ChannelIdInput, { ok: boolean }>('channels_start_bot', { id }),
+  checkChannelHealth: (bindingId: string): Promise<ChannelHealth> =>
+    invokeRustProtoRequest(
+      'channels_check_health',
+      ChannelModel.CheckChannelHealthRequestSchema,
+      ChannelModel.CheckChannelHealthResponseSchema,
+      create(ChannelModel.CheckChannelHealthRequestSchema, { bindingId }),
+    ),
 
-  stopBot: (id: string) =>
-    invokeRustDataFromStatus<ChannelIdInput, { ok: boolean }>('channels_stop_bot', { id }),
+  startChannelRequesterAuthorization: (input: {
+    bindingId: string;
+    providerUserId?: string;
+    tenantKey?: string;
+    domains: string[];
+    idempotencyKey: string;
+  }): Promise<ChannelModel.StartChannelRequesterAuthorizationResponse> =>
+    invokeRustProtoRequest(
+      'channels_start_requester_authorization',
+      ChannelModel.StartChannelRequesterAuthorizationRequestSchema,
+      ChannelModel.StartChannelRequesterAuthorizationResponseSchema,
+      create(ChannelModel.StartChannelRequesterAuthorizationRequestSchema, input),
+    ),
 
-  getBotStatus: (id: string) =>
-    invokeRustDataFromStatus<ChannelIdInput, BotStatus>('channels_bot_status', { id }),
+  getChannelRequesterAuthorization: (
+    bindingId: string,
+    providerUserId = '',
+  ): Promise<ChannelModel.GetChannelRequesterAuthorizationResponse> =>
+    invokeRustProtoRequest(
+      'channels_get_requester_authorization',
+      ChannelModel.GetChannelRequesterAuthorizationRequestSchema,
+      ChannelModel.GetChannelRequesterAuthorizationResponseSchema,
+      create(ChannelModel.GetChannelRequesterAuthorizationRequestSchema, {
+        bindingId,
+        providerUserId,
+      }),
+    ),
 
-  listChannelEvents: (id: string, limit = 50, offset = 0) =>
-    invokeRustDataFromStatus<ChannelEventsInput, { events: ChannelEvent[]; total: number }>('channels_list_events', {
-      id,
-      limit,
-      offset,
-    }),
+  refreshChannelRequesterAuthorization: (
+    bindingId: string,
+    authorizationId: string,
+    expectedRevision: bigint,
+  ): Promise<ChannelModel.RefreshChannelRequesterAuthorizationResponse> =>
+    invokeRustProtoRequest(
+      'channels_refresh_requester_authorization',
+      ChannelModel.RefreshChannelRequesterAuthorizationRequestSchema,
+      ChannelModel.RefreshChannelRequesterAuthorizationResponseSchema,
+      create(ChannelModel.RefreshChannelRequesterAuthorizationRequestSchema, {
+        bindingId,
+        authorizationId,
+        expectedRevision,
+      }),
+    ),
 
-  getChannelStats: (id: string) =>
-    invokeRustDataFromStatus<ChannelIdInput, ChannelEventStats>('channels_stats', { id }),
+  revokeChannelRequesterAuthorization: (
+    bindingId: string,
+    authorizationId: string,
+    expectedRevision: bigint,
+  ): Promise<ChannelModel.RevokeChannelRequesterAuthorizationResponse> =>
+    invokeRustProtoRequest(
+      'channels_revoke_requester_authorization',
+      ChannelModel.RevokeChannelRequesterAuthorizationRequestSchema,
+      ChannelModel.RevokeChannelRequesterAuthorizationResponseSchema,
+      create(ChannelModel.RevokeChannelRequesterAuthorizationRequestSchema, {
+        bindingId,
+        authorizationId,
+        expectedRevision,
+      }),
+    ),
+
+  cancelChannelRequesterAuthorization: (
+    bindingId: string,
+    authorizationId: string,
+    expectedRevision: bigint,
+  ): Promise<ChannelModel.CancelChannelRequesterAuthorizationResponse> =>
+    invokeRustProtoRequest(
+      'channels_cancel_requester_authorization',
+      ChannelModel.CancelChannelRequesterAuthorizationRequestSchema,
+      ChannelModel.CancelChannelRequesterAuthorizationResponseSchema,
+      create(ChannelModel.CancelChannelRequesterAuthorizationRequestSchema, {
+        bindingId,
+        authorizationId,
+        expectedRevision,
+      }),
+    ),
+
+  listChannelRoutes: async (bindingId: string): Promise<ChannelRoute[]> => {
+    const response = await invokeRustProtoRequest(
+      'channels_list_routes',
+      ChannelModel.ListChannelRoutesRequestSchema,
+      ChannelModel.ListChannelRoutesResponseSchema,
+      create(ChannelModel.ListChannelRoutesRequestSchema, { bindingId }),
+    );
+    return response.routes;
+  },
+
+  upsertChannelRoute: (input: {
+    routeId?: string;
+    bindingId: string;
+    chatId: string;
+    chatName: string;
+    agentId: string;
+    enabled: boolean;
+  }): Promise<ChannelModel.UpsertChannelRouteResponse> =>
+    invokeRustProtoRequest(
+      'channels_upsert_route',
+      ChannelModel.UpsertChannelRouteRequestSchema,
+      ChannelModel.UpsertChannelRouteResponseSchema,
+      create(ChannelModel.UpsertChannelRouteRequestSchema, input),
+    ),
+
+  deleteChannelRoute: (
+    bindingId: string,
+    routeId: string,
+  ): Promise<ChannelModel.DeleteChannelRouteResponse> =>
+    invokeRustProtoRequest(
+      'channels_delete_route',
+      ChannelModel.DeleteChannelRouteRequestSchema,
+      ChannelModel.DeleteChannelRouteResponseSchema,
+      create(ChannelModel.DeleteChannelRouteRequestSchema, { bindingId, routeId }),
+    ),
+
+  listChannelMemberAccess: async (
+    bindingId: string,
+  ): Promise<ChannelMemberAccess[]> => {
+    const response = await invokeRustProtoRequest(
+      'channels_list_member_access',
+      ChannelModel.ListChannelMemberAccessRequestSchema,
+      ChannelModel.ListChannelMemberAccessResponseSchema,
+      create(ChannelModel.ListChannelMemberAccessRequestSchema, { bindingId }),
+    );
+    return response.members;
+  },
+
+  decideChannelMemberAccess: (input: {
+    bindingId: string;
+    accessId: string;
+    decision: string;
+    idempotencyKey: string;
+  }): Promise<ChannelMemberAccess> =>
+    invokeRustProtoRequest(
+      'channels_decide_member_access',
+      ChannelModel.DecideChannelMemberAccessRequestSchema,
+      ChannelModel.ChannelMemberAccessSchema,
+      create(ChannelModel.DecideChannelMemberAccessRequestSchema, input),
+    ),
+
+  listChannelChats: async (bindingId: string): Promise<ChannelChat[]> => {
+    const response = await invokeRustProtoRequest(
+      'channels_list_chats',
+      ChannelModel.ListChannelChatsRequestSchema,
+      ChannelModel.ListChannelChatsResponseSchema,
+      create(ChannelModel.ListChannelChatsRequestSchema, { bindingId }),
+    );
+    return response.chats;
+  },
+
+  listChannelAutomations: async (
+    bindingId: string,
+  ): Promise<ChannelAutomation[]> => {
+    const response = await invokeRustProtoRequest(
+      'channels_list_automations',
+      ChannelModel.ListChannelAutomationsRequestSchema,
+      ChannelModel.ListChannelAutomationsResponseSchema,
+      create(ChannelModel.ListChannelAutomationsRequestSchema, { bindingId }),
+    );
+    return response.automations;
+  },
+
+  upsertChannelAutomation: (input: {
+    automationId?: string;
+    bindingId: string;
+    triggerType: string;
+    triggerValue: string;
+    actionPrompt: string;
+    agentId: string;
+    destinationChatId: string;
+    enabled: boolean;
+  }): Promise<ChannelModel.UpsertChannelAutomationResponse> =>
+    invokeRustProtoRequest(
+      'channels_upsert_automation',
+      ChannelModel.UpsertChannelAutomationRequestSchema,
+      ChannelModel.UpsertChannelAutomationResponseSchema,
+      create(ChannelModel.UpsertChannelAutomationRequestSchema, input),
+    ),
+
+  deleteChannelAutomation: (
+    bindingId: string,
+    automationId: string,
+  ): Promise<ChannelModel.DeleteChannelAutomationResponse> =>
+    invokeRustProtoRequest(
+      'channels_delete_automation',
+      ChannelModel.DeleteChannelAutomationRequestSchema,
+      ChannelModel.DeleteChannelAutomationResponseSchema,
+      create(ChannelModel.DeleteChannelAutomationRequestSchema, {
+        bindingId,
+        automationId,
+      }),
+    ),
+
+  runChannelAutomation: (
+    bindingId: string,
+    automationId: string,
+    idempotencyKey: string,
+  ): Promise<ChannelModel.RunChannelAutomationResponse> =>
+    invokeRustProtoRequest(
+      'channels_run_automation',
+      ChannelModel.RunChannelAutomationRequestSchema,
+      ChannelModel.RunChannelAutomationResponseSchema,
+      create(ChannelModel.RunChannelAutomationRequestSchema, {
+        bindingId,
+        automationId,
+        idempotencyKey,
+      }),
+    ),
+
+  sendChannelMessage: (
+    bindingId: string,
+    targetChatId: string,
+    text: string,
+    idempotencyKey: string,
+  ): Promise<ChannelMessageDelivery> =>
+    invokeRustProtoRequest(
+      'channels_send_message',
+      ChannelModel.SendChannelMessageRequestSchema,
+      ChannelModel.SendChannelMessageResponseSchema,
+      create(ChannelModel.SendChannelMessageRequestSchema, {
+        bindingId,
+        targetChatId,
+        text,
+        idempotencyKey,
+      }),
+    ),
+
+  listChannelEvents: (
+    bindingId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<ChannelModel.ListChannelEventsResponse> =>
+    invokeRustProtoRequest(
+      'channels_list_events',
+      ChannelModel.ListChannelEventsRequestSchema,
+      ChannelModel.ListChannelEventsResponseSchema,
+      create(ChannelModel.ListChannelEventsRequestSchema, { bindingId, limit, offset }),
+    ),
+
+  getChannelStats: (
+    bindingId: string,
+  ): Promise<ChannelStats> =>
+    invokeRustProtoRequest(
+      'channels_get_stats',
+      ChannelModel.ChannelStatsRequestSchema,
+      ChannelModel.ChannelStatsResponseSchema,
+      create(ChannelModel.ChannelStatsRequestSchema, { bindingId }),
+    ),
+
+  retryChannelDelivery: (
+    bindingId: string,
+    deliveryId: string,
+  ): Promise<ChannelModel.RetryChannelDeliveryResponse> =>
+    invokeRustProtoRequest(
+      'channels_retry_delivery',
+      ChannelModel.RetryChannelDeliveryRequestSchema,
+      ChannelModel.RetryChannelDeliveryResponseSchema,
+      create(ChannelModel.RetryChannelDeliveryRequestSchema, { bindingId, deliveryId }),
+    ),
+
+  exportChannelDiagnostics: (
+    bindingId: string,
+  ): Promise<ChannelModel.ExportChannelDiagnosticsResponse> =>
+    invokeRustProtoRequest(
+      'channels_export_diagnostics',
+      ChannelModel.ExportChannelDiagnosticsRequestSchema,
+      ChannelModel.ExportChannelDiagnosticsResponseSchema,
+      create(ChannelModel.ExportChannelDiagnosticsRequestSchema, { bindingId }),
+    ),
+
+  startChannelProvisioning: (input: {
+    appName: string;
+    appDescription: string;
+    region: string;
+  }): Promise<ChannelProvisioningStart> =>
+    invokeRustProtoRequest(
+      'channels_start_provisioning',
+      ChannelModel.StartChannelProvisioningRequestSchema,
+      ChannelModel.StartChannelProvisioningResponseSchema,
+      create(ChannelModel.StartChannelProvisioningRequestSchema, input),
+    ),
+
+  pollChannelProvisioning: (
+    sessionId: string,
+    jobId: string,
+  ): Promise<ChannelProvisioningSnapshot> =>
+    invokeRustProtoRequest(
+      'channels_poll_provisioning',
+      ChannelModel.PollChannelProvisioningRequestSchema,
+      ChannelModel.PollChannelProvisioningResponseSchema,
+      create(ChannelModel.PollChannelProvisioningRequestSchema, { sessionId, jobId }),
+    ),
+
+  confirmChannelProvisioning: (input: {
+    sessionId: string;
+    jobId: string;
+    pluginId: string;
+    providerKind: string;
+    domain: string;
+    agentId: string;
+    enabled: boolean;
+    name: string;
+  }): Promise<ChannelProvisioningConfirmation> =>
+    invokeRustProtoRequest(
+      'channels_confirm_provisioning',
+      ChannelModel.ConfirmChannelProvisioningRequestSchema,
+      ChannelModel.ConfirmChannelProvisioningResponseSchema,
+      create(ChannelModel.ConfirmChannelProvisioningRequestSchema, input),
+    ),
+
+  cancelChannelProvisioning: (
+    sessionId: string,
+    jobId: string,
+  ): Promise<ChannelModel.CancelChannelProvisioningResponse> =>
+    invokeRustProtoRequest(
+      'channels_cancel_provisioning',
+      ChannelModel.CancelChannelProvisioningRequestSchema,
+      ChannelModel.CancelChannelProvisioningResponseSchema,
+      create(ChannelModel.CancelChannelProvisioningRequestSchema, { sessionId, jobId }),
+    ),
 
   tailLogs: (cursor: number, limit: number = 1000, maxBytes: number = 102400) =>
     invokeRustDataFromStatus<LogsTailInput, LogTailResponse>('logs_tail', {
@@ -8001,6 +8387,21 @@ export const api = {
   stationProbe: (input: string) =>
     invokeRustDataFromStatus<{ input: string }, StationDiscoveryResult>('station_probe', { input }),
 
+  xConfigProjection: () =>
+    invokeRustDataFromStatus<void, XConfigProjection>('x_config_projection'),
+
+  xConfigRefresh: (force = false) =>
+    invokeRustDataFromStatus<{ force: boolean }, XConfigProjection>(
+      'x_config_refresh',
+      { force },
+    ),
+
+  xConfigDiscoverSuggestion: (seedId: string) =>
+    invokeRustDataFromStatus<{ seed_id: string }, StationDiscoveryResult>(
+      'x_config_discover_suggestion',
+      { seed_id: seedId },
+    ),
+
   resolveErrorAction: (action: { type: string; cliId?: string; providerId?: string; label: string }) =>
     invoke<{ ok: boolean; reauth?: boolean; message?: string; opened?: boolean }>('resolve_error_action', { action }),
 
@@ -8355,6 +8756,7 @@ function withModelCapabilityConfig<T extends ProviderModelConfigInput>(data: T):
 }
 
 function mapAIChatProviderToListItem(item: any): ProviderListItem {
+  const wireRuntimeKind = String(item.runtime_kind || '').trim().toLowerCase();
   return {
     id: item.id,
     name: item.name || '',
@@ -8365,8 +8767,68 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     has_api_key: item.credential_status === 'configured',
     requires_api_key: Boolean(item.show_api_key),
     credential_status: String(item.credential_status || ''),
-    runtime_kind: String(item.runtime_kind || ''),
+    runtime_kind: wireRuntimeKind === '' || wireRuntimeKind === 'http'
+      ? 'direct'
+      : wireRuntimeKind,
     version: Number(item.version || 0),
+  };
+}
+
+function asUnknownRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function mapProviderRuntimeConfig(value: unknown): ProviderRuntimeConfig {
+  const item = asUnknownRecord(value);
+  const environment = item.environment;
+  const startupArgs = item.startup_args ?? item.startupArgs;
+  return {
+    default_model: String(item.default_model ?? item.defaultModel ?? ''),
+    startup_args: Array.isArray(startupArgs) ? startupArgs.map(String) : [],
+    environment: environment && typeof environment === 'object' && !Array.isArray(environment)
+      ? Object.fromEntries(Object.entries(environment).map(([key, entry]) => [key, String(entry)]))
+      : {},
+    timeout_seconds: Number(item.timeout_seconds ?? item.timeoutSeconds ?? 0),
+  };
+}
+
+function mapProviderAdapterCapabilities(value: unknown): ProviderAdapterCapabilities {
+  const item = asUnknownRecord(value);
+  const runtimeCapabilities = item.runtime_capabilities ?? item.runtimeCapabilities;
+  return {
+    model_discovery: Boolean(item.model_discovery ?? item.modelDiscovery),
+    startup_args: Boolean(item.startup_args ?? item.startupArgs),
+    environment: Boolean(item.environment),
+    configurable_timeout: Boolean(item.configurable_timeout ?? item.configurableTimeout),
+    runtime_capabilities: Array.isArray(runtimeCapabilities) ? runtimeCapabilities.map(String) : [],
+  };
+}
+
+function mapProviderModel(value: unknown): ModelItem | null {
+  const model = asUnknownRecord(value);
+  const id = String(model.id || '').trim();
+  if (!id) return null;
+  const reasoningLevels = model.supported_reasoning_levels ?? model.supportedReasoningLevels;
+  return {
+    id,
+    display_name: String(model.display_name ?? model.displayName ?? id),
+    type: String(model.type || 'chat'),
+    enabled: Boolean(model.enabled ?? true),
+    context_window: Number(model.context_window ?? model.contextWindow ?? 0),
+    description: String(model.description || ''),
+    default_reasoning_level: String(
+      model.default_reasoning_level ?? model.defaultReasoningLevel ?? '',
+    ),
+    supported_reasoning_levels: Array.isArray(reasoningLevels) ? reasoningLevels.map(String) : [],
+    streaming: modelCapabilityFlag(model, 'streaming'),
+    function_call: modelCapabilityFlag(model, 'native-tools'),
+    vision: modelCapabilityFlag(model, 'image-input'),
+    reasoning: modelCapabilityFlag(model, 'reasoning'),
+    search: Boolean(model.search),
+    image_output: modelCapabilityFlag(model, 'image-output'),
+    video: Boolean(model.video),
   };
 }
 
@@ -8380,24 +8842,7 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
       ? cfg.models
       : [];
   const models: ModelItem[] = providerModels
-    .map((model: any) => {
-      const id = String(model?.id || '').trim();
-      if (!id) return null;
-      return {
-        id,
-        display_name: String(model?.display_name || id),
-        type: String(model?.type || 'chat'),
-        enabled: Boolean(model?.enabled ?? true),
-        context_window: Number(model?.context_window || 0),
-        streaming: modelCapabilityFlag(model, 'streaming'),
-        function_call: modelCapabilityFlag(model, 'native-tools'),
-        vision: modelCapabilityFlag(model, 'image-input'),
-        reasoning: modelCapabilityFlag(model, 'reasoning'),
-        search: Boolean(model?.search),
-        image_output: modelCapabilityFlag(model, 'image-output'),
-        video: Boolean(model?.video),
-      } as ModelItem;
-    })
+    .map(mapProviderModel)
     .filter((model: ModelItem | null): model is ModelItem => Boolean(model));
   return {
     ...mapAIChatProviderToListItem(item),
@@ -8406,6 +8851,15 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     api_key: item.api_key || keyVaults.api_key || '',
     base_url: item.base_url || cfg.base_url || '',
     default_base_url: item.base_url || cfg.default_base_url || cfg.base_url || '',
+    cli_command: String(item.cli_command || ''),
+    runtime_config: mapProviderRuntimeConfig(item.runtime_config ?? item.runtimeConfig),
+    default_runtime_config: mapProviderRuntimeConfig(
+      item.default_runtime_config ?? item.defaultRuntimeConfig,
+    ),
+    adapter_capabilities: mapProviderAdapterCapabilities(
+      item.adapter_capabilities ?? item.adapterCapabilities,
+    ),
+    workspace_policy: String(item.workspace_policy ?? item.workspacePolicy ?? ''),
     show_api_key: item.show_api_key ?? cfg.show_api_key ?? cfg.showApiKey,
     show_checker: item.show_checker ?? true,
     check_model: checkModel,

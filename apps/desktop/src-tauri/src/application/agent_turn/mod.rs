@@ -269,13 +269,21 @@ pub fn submit_tool_decision(
         );
     }
 
-    let payload_hash = tool_decision_payload_hash(
+    let mut payload_hash = tool_decision_payload_hash(
         &input.approval_id,
         &input.tool_call_id,
         &input.decision_id,
         input.expected_revision,
         input.approved,
     );
+    if !input.answer.is_empty() {
+        let canonical = format!(
+            "{}\0{}\0{}\0{}\0{}\0{}",
+            input.approval_id, input.tool_call_id, input.decision_id,
+            input.expected_revision, input.approved, input.answer,
+        );
+        payload_hash = hex::encode(Sha256::digest(canonical.as_bytes()));
+    }
     let request = agent::SubmitToolApprovalDecisionRequest {
         approval_id: input.approval_id,
         tool_call_id: input.tool_call_id,
@@ -284,6 +292,7 @@ pub fn submit_tool_decision(
         approved: input.approved,
         idempotency_key: input.idempotency_key,
         payload_hash,
+        answer: input.answer,
     };
     let response = match station_client
         .request_proto_with_policy::<_, agent::SubmitToolApprovalDecisionResponse>(
@@ -1995,15 +2004,20 @@ pub fn agent_conversation_update(
             None,
         );
     }
-    let body = json!({
+    let mut body = json!({
         "conversation_id": conversation_id,
         "expected_version": input.expected_version,
         "title": input.title.unwrap_or_default(),
         "description": input.description.unwrap_or_default(),
-        "model_name": input.model_name.unwrap_or_default(),
         "meta": input.meta.unwrap_or_default(),
         "active_branch_message_id": input.active_branch_message_id,
     });
+    if let Some(model) = input.model_name {
+        body["model_name"] = json!(model);
+    }
+    if let Some(provider) = input.provider_id {
+        body["provider_id"] = json!(provider);
+    }
     match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/conversation/update",
@@ -2530,6 +2544,23 @@ pub fn agent_conversation_archive(
             tracing::error!(command = "agent_conversation_archive", error = %err, "Conversation archive failed");
             err.into_app_result("Failed to archive agent conversation")
         }
+    }
+}
+
+pub fn agent_conversation_delete_batch(
+    station_client: &StationClient,
+    input: crate::contracts::AgentConversationDeleteBatchInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    match station_client.request_json(
+        Method::POST,
+        "/sub-agent/agent/conversation/delete-batch",
+        token,
+        None,
+        Some(json!(input)),
+    ) {
+        Ok(result) => success_payload("agent_conversation_delete_batch", result),
+        Err(err) => err.into_app_result("Failed to delete agent conversations"),
     }
 }
 

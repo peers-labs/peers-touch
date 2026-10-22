@@ -5,24 +5,21 @@ import {
   type ProviderListItem,
   type ProviderModelConfigInput,
   type ProviderModelCreateData,
+  type ProviderRuntimeConfig,
 } from '../services/desktop_api';
 import { log } from '../utils/logger';
 import { useAgentStore } from './agent';
+import {
+  mapProviderUIStatus,
+  type ProviderReadiness,
+} from './providerReadiness';
 
-export type ProviderReadinessStatus =
-  | 'loading'
-  | 'unconfigured'
-  | 'saving'
-  | 'checking'
-  | 'ready'
-  | 'invalid'
-  | 'unavailable'
-  | 'error';
-
-export interface ProviderReadiness {
-  status: ProviderReadinessStatus;
-  error?: string;
-}
+export {
+  isProviderUsable,
+  mapProviderUIStatus,
+  type ProviderReadiness,
+  type ProviderReadinessStatus,
+} from './providerReadiness';
 
 interface ProviderState {
   providers: ProviderListItem[];
@@ -38,29 +35,30 @@ interface ProviderState {
 
   loadProviders: () => Promise<void>;
   selectProvider: (id: string, skipLoading?: boolean) => Promise<void>;
-  updateProvider: (id: string, apiKey: string, baseUrl: string, enabled: boolean) => Promise<void>;
+  updateProvider: (
+    id: string,
+    apiKey: string,
+    baseUrl: string,
+    enabled: boolean,
+    runtimeConfig?: ProviderRuntimeConfig,
+  ) => Promise<void>;
+  updateProviderRuntimeConfig: (id: string, runtimeConfig: ProviderRuntimeConfig) => Promise<void>;
   toggleProvider: (id: string, enabled: boolean) => Promise<void>;
-  checkProvider: (id: string, apiKey?: string, baseUrl?: string, model?: string) => Promise<{ ok: boolean; error?: string }>;
+  checkProvider: (
+    id: string,
+    apiKey?: string,
+    baseUrl?: string,
+    model?: string,
+  ) => Promise<{ ok: boolean; error?: string; installHint?: string }>;
   createProvider: (data: { id: string; name: string; description?: string; logo?: string; base_url: string; api_key?: string }) => Promise<void>;
   deleteProvider: (id: string) => Promise<void>;
   addModel: (providerId: string, data: ProviderModelCreateData) => Promise<void>;
   updateModel: (providerId: string, modelId: string, data: ProviderModelConfigInput) => Promise<void>;
   deleteModel: (providerId: string, modelId: string) => Promise<void>;
-  fetchRemoteModels: (providerId: string, apiKey?: string, baseUrl?: string) => Promise<{ ok: boolean; models?: string[]; error?: string }>;
+  discoverModels: (providerId: string) => Promise<{ count: number; observedAt?: string }>;
   toggleModel: (providerId: string, modelId: string, enabled: boolean) => Promise<void>;
-  toggleAllModels: (providerId: string, enabled: boolean) => Promise<void>;
   // P0: consolidated post-mutation refresh
   refreshAfterMutation: (providerId?: string) => Promise<void>;
-}
-
-export function mapProviderUIStatus(provider: ProviderListItem): ProviderReadiness {
-  if (!provider.enabled) {
-    return { status: 'unavailable' };
-  }
-  if (provider.requires_api_key && !provider.has_api_key) {
-    return { status: 'unconfigured' };
-  }
-  return { status: 'ready' };
 }
 
 export const useProviderStore = createDesktopStore<ProviderState>('provider', (set, get) => ({
@@ -118,14 +116,27 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     }
   },
 
-  updateProvider: async (id: string, apiKey: string, baseUrl: string, enabled: boolean) => {
-    const detail = get().detail;
-    const version = detail?.id === id ? detail.version : 0;
+  updateProvider: async (
+    id: string,
+    apiKey: string,
+    baseUrl: string,
+    enabled: boolean,
+    runtimeConfig?: ProviderRuntimeConfig,
+  ) => {
+    const selectedDetail = get().detail;
+    const detail = selectedDetail?.id === id ? selectedDetail : await api.getProvider(id);
     set((state) => ({
       readinessById: { ...state.readinessById, [id]: { status: 'saving' } },
     }));
     try {
-      await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled, version });
+      await api.updateProvider(id, {
+        api_key: apiKey,
+        base_url: baseUrl,
+        enabled,
+        runtime_config: runtimeConfig
+          ?? (detail.runtime_kind === 'cli' ? detail.runtime_config : undefined),
+        version: detail.version,
+      });
       await get().refreshAfterMutation(id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -134,6 +145,18 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
       }));
       throw error;
     }
+  },
+
+  updateProviderRuntimeConfig: async (id, runtimeConfig) => {
+    const detail = get().detail?.id === id ? get().detail : await api.getProvider(id);
+    if (!detail) throw new Error(`Provider not found: ${id}`);
+    await get().updateProvider(
+      id,
+      detail.api_key || '',
+      detail.base_url || '',
+      detail.enabled,
+      runtimeConfig,
+    );
   },
 
   toggleProvider: async (id: string, enabled: boolean) => {
@@ -146,22 +169,27 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
 
     try {
       const currentDetail = get().detail;
+      let providerDetail: ProviderDetail;
       let apiKey = '';
       let baseUrl = '';
-      let version = 0;
 
       if (currentDetail && currentDetail.id === id) {
-        apiKey = currentDetail.api_key || '';
-        baseUrl = currentDetail.base_url || '';
-        version = currentDetail.version;
+        providerDetail = currentDetail;
       } else {
-        const d = await api.getProvider(id);
-        apiKey = d.api_key || '';
-        baseUrl = d.base_url || '';
-        version = d.version;
+        providerDetail = await api.getProvider(id);
       }
+      apiKey = providerDetail.api_key || '';
+      baseUrl = providerDetail.base_url || '';
 
-      await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled, version });
+      await api.updateProvider(id, {
+        api_key: apiKey,
+        base_url: baseUrl,
+        enabled,
+        runtime_config: providerDetail.runtime_kind === 'cli'
+          ? providerDetail.runtime_config
+          : undefined,
+        version: providerDetail.version,
+      });
       await get().refreshAfterMutation(id);
     } catch (e) {
       // Revert optimistic update on failure
@@ -184,10 +212,16 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
       set((state) => ({
         readinessById: {
           ...state.readinessById,
-          [id]: result.ok ? { status: 'ready' } : { status: 'invalid', error: result.error },
+          [id]: result.ok
+            ? { status: 'ready' }
+            : { status: 'invalid', error: result.error || result.install_hint },
         },
       }));
-      return result;
+      return {
+        ok: result.ok,
+        error: result.error,
+        installHint: result.install_hint,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       set((state) => ({
@@ -233,17 +267,17 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     await useAgentStore.getState().loadModels();
   },
 
-  fetchRemoteModels: async (providerId: string, apiKey?: string, baseUrl?: string) => {
-    return api.fetchRemoteModels(providerId, { api_key: apiKey, base_url: baseUrl });
+  discoverModels: async (providerId: string) => {
+    const result = await api.discoverModels(providerId);
+    await get().refreshAfterMutation(providerId);
+    return {
+      count: Array.isArray(result.models) ? result.models.length : 0,
+      observedAt: result.observed_at,
+    };
   },
 
   toggleModel: async (providerId: string, modelId: string, enabled: boolean) => {
     await api.toggleModel(providerId, modelId, enabled);
-    await get().refreshAfterMutation(providerId);
-  },
-
-  toggleAllModels: async (providerId: string, enabled: boolean) => {
-    await api.toggleAllModels(providerId, enabled);
     await get().refreshAfterMutation(providerId);
   },
 

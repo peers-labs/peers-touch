@@ -28,6 +28,7 @@ describe('chat composer invalid resource-reference intent', () => {
     expect(useChatStore.getState().composerFill).toEqual({
       text: 'preserved draft',
       nonce: expect.any(Number),
+      sessionKey: 'conversation-1',
     });
     expect(useChatStore.getState().composerFocusNonce).toBe(focusNonce);
     expect(useChatStore.getState().isStreaming).toBe(false);

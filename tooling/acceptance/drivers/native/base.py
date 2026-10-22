@@ -74,6 +74,7 @@ class MouseAction(str, Enum):
 
 class NativeKey(str, Enum):
     A = "a"
+    C = "c"
     G = "g"
     L = "l"
     SLASH = "slash"
@@ -310,6 +311,15 @@ class NativeDesktopAdapter(ABC):
         path: str,
     ) -> NativeControlSnapshot | None:
         del process_id, path
+        return None
+
+    def verify_focused_text(
+        self,
+        expected: str,
+        *,
+        timeout_seconds: float,
+    ) -> bool | None:
+        del expected, timeout_seconds
         return None
 
     def accept_media_capture_permission_to_process(

@@ -40,10 +40,6 @@ export class AgentService {
     return api.deleteAgent(id);
   }
 
-  async duplicate(id: string, name: string): Promise<Agent> {
-    return api.duplicateAgent(id, name);
-  }
-
   async exportPackage(id: string, options?: { includeLocalPaths?: boolean }): Promise<AgentPackageExportResult> {
     return api.exportAgentPackage(id, options);
   }

@@ -57,7 +57,7 @@ function isSiteMap(value: unknown): value is Partial<Record<PrototypeSite, strin
   }
 
   const candidate = value as Partial<Record<PrototypeSite, unknown>>;
-  return ['desktop', 'mobile', 'dashboard'].every((site) => {
+  return ['desktop', 'mobile', 'dashboard', 'control'].every((site) => {
     const url = candidate[site as PrototypeSite];
     return url === undefined || typeof url === 'string';
   });
