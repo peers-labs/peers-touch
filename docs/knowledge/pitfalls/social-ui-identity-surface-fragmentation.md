@@ -45,6 +45,9 @@ The methodological error was treating UI ID as a style preference instead of a r
 - Wrapped detail post + comments + reply composer in `SocialThreadSurface`.
 - Added `SocialEmptyState` so incomplete capability states are explicit and visually consistent.
 - Removed the standalone outer card from `MomentComposer`; callers now place it inside the correct Social surface.
+- Comment rows, previews, and reply-target labels use `useActorIdentity` with
+  canonical profiles. Public comment DTOs may contain only an account handle;
+  reading their author fields directly loses the persisted name and portrait.
 
 ### What guards against regression
 
@@ -58,6 +61,7 @@ Run these checks during review:
 
 - `rg "Card|Segmented|borderRadius|marginBottom|source.*reason.*audience" apps/desktop/src/pages/moments apps/desktop/src/components/moments --glob '!**/surfaces/**'`
 - `rg "MomentCard|CommentList|MomentComposer" apps/desktop/src/pages/moments/MomentDetailPage.tsx`
+- `rg "comment.author\\?\\.|replyTarget.author\\?\\.|c.author\\?\\." apps/desktop/src/components/moments` — comment identity must resolve through the shared actor profile projection.
 - `rg "not-implemented|degraded|unavailable" apps/desktop/src/components/moments/surfaces docs/client/common/ui-identity/modules/social`
 
 Interpretation:

@@ -14,6 +14,7 @@ import {
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
 import { ImageGrid } from './ImageGrid';
 import { PrivateMediaGrid } from './PrivateMediaGrid';
+import { MomentCommentAuthorName } from './MomentCommentAuthorName';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useActorIdentity } from '../common/useActorIdentity';
 import {
@@ -661,11 +662,7 @@ export function MomentCard({
             >
               {visibleComments.map((comment) => (
                 <div key={comment.id} style={{ fontSize: 13, lineHeight: 1.6 }}>
-                  <Text strong style={{ fontSize: 13 }}>
-                    {comment.author?.displayName ||
-                      comment.author?.username ||
-                      t('moments.author.unknown')}
-                  </Text>
+                  <MomentCommentAuthorName actorPtid={comment.authorPtid} />
                   <Text style={{ fontSize: 13 }}> {comment.content}</Text>
                 </div>
               ))}
