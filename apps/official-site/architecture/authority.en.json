@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Authority and State Ownership",
+    "subtitle": "Every state has exactly one mutation authority; copies elsewhere are projections, caches or generated artifacts.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/authority.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "client",
+        "focus": [
+          "desktop",
+          "mobile",
+          "hosts"
+        ],
+        "label": "Client-local authority",
+        "note": "Clients own local experience and orchestration, never cross-device business truth."
+      },
+      {
+        "id": "station",
+        "focus": [
+          "frame",
+          "apps"
+        ],
+        "label": "Station authority",
+        "note": "Platform and business authority remain separate inside Station."
+      },
+      {
+        "id": "network",
+        "focus": [
+          "federation",
+          "relay"
+        ],
+        "label": "Network authorities",
+        "note": "Federation governance and Relay admission are different sources of truth."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "desktop",
+      "type": "frontend",
+      "label": "Desktop Owner",
+      "sublabel": "windows · drafts · cache · projections",
+      "tag": "device-local",
+      "pos": [
+        40,
+        100
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/state/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 51
+        }
+      ]
+    },
+    {
+      "id": "mobile",
+      "type": "frontend",
+      "label": "Mobile Owner",
+      "sublabel": "lifecycle · recovery · cache · projections",
+      "tag": "device-local",
+      "pos": [
+        300,
+        100
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "frame",
+      "type": "security",
+      "label": "Frame / Touch Owner",
+      "sublabel": "router · Access Gate · Session · transport",
+      "tag": "platform authority",
+      "pos": [
+        560,
+        100
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "apps",
+      "type": "backend",
+      "label": "Station App Owner",
+      "sublabel": "business state · authorization · policy",
+      "tag": "business authority",
+      "pos": [
+        820,
+        100
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "federation",
+      "type": "database",
+      "label": "Federation Owner",
+      "sublabel": "manifest · membership · ledger · projection",
+      "tag": "network authority",
+      "pos": [
+        40,
+        270
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/ledger_service.go",
+          "label": "ledger_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "type": "external",
+      "label": "Relay Owner",
+      "sublabel": "endpoint · grants · reservations · admission",
+      "tag": "transport authority",
+      "pos": [
+        300,
+        270
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/runtime/role/role.go",
+          "label": "role.go",
+          "line": 1,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "type": "cloud",
+      "label": "Model Owner",
+      "sublabel": "wire shape · shared semantics",
+      "tag": "contract authority",
+      "pos": [
+        560,
+        270
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "model/domain/peer/station_identity.proto",
+          "label": "station_identity.proto",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "hosts",
+      "type": "external",
+      "label": "Platform Hosts",
+      "sublabel": "OS capability observation",
+      "tag": "host authority",
+      "pos": [
+        820,
+        270
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/platform/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 14
+        }
+      ]
+    }
+  ],
+  "boundaries": [],
+  "connections": [],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Reading rule",
+      "items": [
+        "No arrows: regions name mutually exclusive mutation owners.",
+        "Shared copies are explicitly projections, caches or generated bindings."
+      ]
+    }
+  ]
+}

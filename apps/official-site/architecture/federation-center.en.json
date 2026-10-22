@@ -1,0 +1,368 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Federation Network Center",
+    "subtitle": "A persistent virtual network of independent Stations: governance is durable, ordinary social traffic stays off the ledger.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/federation-center.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "governance",
+        "focus": [
+          "operator",
+          "manifest",
+          "membership",
+          "sequencer",
+          "ledger",
+          "projection"
+        ],
+        "label": "Governance control plane",
+        "note": "Verified governance facts form the Federation context."
+      },
+      {
+        "id": "social-data",
+        "focus": [
+          "source-app",
+          "transport",
+          "target-app",
+          "people"
+        ],
+        "label": "Social data plane",
+        "note": "Ordinary social payloads flow directly between business owners."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "Authorized Operator",
+      "sublabel": "proposal · signature",
+      "tag": "governance actor",
+      "pos": [
+        20,
+        170
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "manifest",
+      "type": "security",
+      "label": "Manifest / Genesis",
+      "sublabel": "federation identity · policy root",
+      "tag": "persistent entity",
+      "pos": [
+        200,
+        170
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/federation_service.go",
+          "label": "federation_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "membership",
+      "type": "security",
+      "label": "Membership + Roles",
+      "sublabel": "join · leave · admin · member",
+      "tag": "control context",
+      "pos": [
+        410,
+        170
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/federation_service.go",
+          "label": "federation_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "sequencer",
+      "type": "backend",
+      "label": "Active Sequencer",
+      "sublabel": "single ordered head",
+      "tag": "ordering owner",
+      "pos": [
+        630,
+        170
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/ledger_service.go",
+          "label": "ledger_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "ledger",
+      "type": "database",
+      "label": "Governance Ledger",
+      "sublabel": "append-only verified facts",
+      "tag": "control-plane truth",
+      "pos": [
+        840,
+        170
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/infrastructure/repos.go",
+          "label": "repos.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "projection",
+      "type": "database",
+      "label": "Projection + Catalog",
+      "sublabel": "membership · discovery · resolver",
+      "tag": "materialized context",
+      "pos": [
+        1050,
+        170
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/projection_service.go",
+          "label": "projection_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "source-app",
+      "type": "backend",
+      "label": "Source App Domain",
+      "sublabel": "social · conversation",
+      "tag": "business owner",
+      "pos": [
+        180,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "transport",
+      "type": "messagebus",
+      "label": "Authenticated Pull Transport",
+      "sublabel": "fetch ordered ledger range",
+      "tag": "replication data plane",
+      "pos": [
+        450,
+        390
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/transport.go",
+          "label": "transport.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "target-app",
+      "type": "external",
+      "label": "Replica Apply",
+      "sublabel": "verify · PrevHash · atomic commit",
+      "tag": "member-local authority",
+      "pos": [
+        730,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "people",
+      "type": "external",
+      "label": "People + Communities",
+      "sublabel": "discover · follow · participate",
+      "tag": "product result",
+      "pos": [
+        1030,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "wraps": [
+        "operator",
+        "manifest",
+        "membership",
+        "sequencer",
+        "ledger",
+        "projection"
+      ],
+      "label": "Federation control plane",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "source-app",
+        "transport",
+        "target-app",
+        "people"
+      ],
+      "label": "Federated business data plane",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "operator-manifest",
+      "from": "operator",
+      "to": "manifest",
+      "variant": "security",
+      "label": "signed proposal"
+    },
+    {
+      "id": "manifest-membership",
+      "from": "manifest",
+      "to": "membership",
+      "variant": "security",
+      "label": "policy root"
+    },
+    {
+      "id": "membership-sequencer",
+      "from": "membership",
+      "to": "sequencer",
+      "variant": "security",
+      "label": "authorizes"
+    },
+    {
+      "id": "sequencer-ledger",
+      "from": "sequencer",
+      "to": "ledger",
+      "variant": "emphasis",
+      "label": "ordered append"
+    },
+    {
+      "id": "ledger-projection",
+      "from": "ledger",
+      "to": "projection",
+      "variant": "dashed",
+      "label": "atomic projection"
+    },
+    {
+      "id": "source-transport",
+      "from": "source-app",
+      "to": "transport",
+      "variant": "emphasis",
+      "label": "fetch range"
+    },
+    {
+      "id": "transport-target",
+      "from": "transport",
+      "to": "target-app",
+      "variant": "emphasis",
+      "label": "signed events"
+    },
+    {
+      "id": "target-people",
+      "from": "target-app",
+      "to": "people",
+      "variant": "emphasis",
+      "label": "local context"
+    },
+    {
+      "id": "projection-source",
+      "from": "projection",
+      "to": "source-app",
+      "variant": "dashed",
+      "label": "endpoint + cursor"
+    },
+    {
+      "id": "projection-target",
+      "from": "projection",
+      "to": "target-app",
+      "variant": "dashed",
+      "label": "membership context"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Control-plane truth",
+      "items": [
+        "Manifest, membership and governance facts are ordered in the ledger.",
+        "Ordinary chat, posts, likes and comments remain outside the governance ledger."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Replica contract",
+      "items": [
+        "A member pulls events, verifies signature and PrevHash, then atomically commits Ledger + Projection.",
+        "Only the committed local projection is published to local business actors."
+      ]
+    }
+  ]
+}

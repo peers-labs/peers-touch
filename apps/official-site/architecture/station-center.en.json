@@ -1,0 +1,340 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Home Station Authority Center",
+    "subtitle": "Frame / Touch owns platform mechanics; App Domains own business policy and durable cross-device truth.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/station-center.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "platform",
+        "focus": [
+          "edge",
+          "access"
+        ],
+        "label": "Platform boundary",
+        "note": "Frame / Touch owns ingress, Session and transport lifecycle."
+      },
+      {
+        "id": "business",
+        "focus": [
+          "apps",
+          "state",
+          "events",
+          "objects"
+        ],
+        "label": "Business authority",
+        "note": "App Domains own policy, state transitions and durable results."
+      },
+      {
+        "id": "federation",
+        "focus": [
+          "apps",
+          "delivery",
+          "peer"
+        ],
+        "label": "Cross-Station delivery",
+        "note": "Delivery is a mechanism below business ownership."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Clients",
+      "sublabel": "Desktop · Mobile",
+      "tag": "signed access",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "edge",
+      "type": "backend",
+      "label": "Network Edge",
+      "sublabel": "canonical ingress · events",
+      "tag": "Station scope",
+      "pos": [
+        170,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/server/canonical_protobuf_handler.go",
+          "label": "canonical_protobuf_handler.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Access Gate",
+      "sublabel": "actor · device · client class",
+      "tag": "Session authority",
+      "pos": [
+        380,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "apps",
+      "type": "backend",
+      "label": "App Domain Owners",
+      "sublabel": "social · conversation · agent · applets",
+      "tag": "business authority",
+      "pos": [
+        590,
+        220
+      ],
+      "size": [
+        200,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "state",
+      "type": "database",
+      "label": "Transactional State + UoW",
+      "sublabel": "business · session · inbox / outbox",
+      "tag": "durable truth",
+      "pos": [
+        830,
+        130
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/store/rds.go",
+          "label": "rds.go",
+          "line": 1,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "type": "messagebus",
+      "label": "Wake + Recovery Stream",
+      "sublabel": "post-commit hint · durable cursor",
+      "tag": "not business truth",
+      "pos": [
+        830,
+        310
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "label": "events.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "objects",
+      "type": "cloud",
+      "label": "Object Backing",
+      "sublabel": "local · shared-fs · S3",
+      "tag": "object owner",
+      "pos": [
+        1060,
+        130
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/facility/storage/storage.go",
+          "label": "storage.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "delivery",
+      "type": "messagebus",
+      "label": "Federation Delivery",
+      "sublabel": "sign · verify · inbox / UoW",
+      "tag": "cross-Station",
+      "pos": [
+        590,
+        400
+      ],
+      "size": [
+        200,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/runtime.go",
+          "label": "runtime.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "peer",
+      "type": "external",
+      "label": "Remote Station",
+      "sublabel": "independent authority",
+      "tag": "authenticated peer",
+      "pos": [
+        830,
+        400
+      ],
+      "size": [
+        190,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "edge",
+        "access"
+      ],
+      "label": "Frame / Touch platform",
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "wraps": [
+        "apps",
+        "state",
+        "events",
+        "objects"
+      ],
+      "label": "Station business authority",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-edge",
+      "from": "client",
+      "to": "edge",
+      "variant": "emphasis",
+      "label": "typed request"
+    },
+    {
+      "id": "edge-access",
+      "from": "edge",
+      "to": "access",
+      "variant": "security",
+      "label": "authenticates"
+    },
+    {
+      "id": "access-apps",
+      "from": "access",
+      "to": "apps",
+      "variant": "security",
+      "label": "scoped Session"
+    },
+    {
+      "id": "apps-state",
+      "from": "apps",
+      "to": "state",
+      "variant": "emphasis",
+      "label": "commits UoW"
+    },
+    {
+      "id": "apps-events",
+      "from": "apps",
+      "to": "events",
+      "variant": "dashed",
+      "label": "post-commit wake"
+    },
+    {
+      "id": "apps-objects",
+      "from": "apps",
+      "to": "objects",
+      "variant": "emphasis",
+      "label": "stores objects"
+    },
+    {
+      "id": "apps-delivery",
+      "from": "apps",
+      "to": "delivery",
+      "variant": "dashed",
+      "label": "enqueues"
+    },
+    {
+      "id": "delivery-peer",
+      "from": "delivery",
+      "to": "peer",
+      "variant": "emphasis",
+      "label": "signed frame"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Commit boundary",
+      "items": [
+        "Business mutation, Inbox/Outbox and required event facts commit in the owning transaction.",
+        "SSE or realtime notification is a post-commit wake hint, never the durable truth."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Hard dependency rule",
+      "items": [
+        "Frame/Touch owns ingress, Session and transport without importing App business semantics."
+      ]
+    }
+  ]
+}

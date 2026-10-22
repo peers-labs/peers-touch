@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "显式执行位置的 Agent Turn",
+    "subtitle": "Agent Domain 授权并持久化 Turn，再分派 Station 执行或声明的 Client Capability，业务权威不迁移。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/journey-agent-execution.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "Client Surface",
+      "sublabel": "Desktop / Mobile"
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Station Context",
+      "sublabel": "身份 + 权限",
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "Agent Domain",
+      "sublabel": "Turn + Session Owner",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/agent/module.go",
+          "label": "module.go",
+          "line": 1,
+          "end_line": 34
+        }
+      ]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "Placement Router",
+      "sublabel": "Station 或 Client",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/agent/handler/orchestration_handler.go",
+          "label": "orchestration_handler.go",
+          "line": 1,
+          "end_line": 92
+        }
+      ]
+    },
+    {
+      "id": "provider",
+      "type": "external",
+      "label": "Execution Adapter",
+      "sublabel": "Provider / Capability"
+    },
+    {
+      "id": "state",
+      "type": "database",
+      "label": "Durable State",
+      "sublabel": "Session + Result + Event",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/store/rds.go",
+          "label": "rds.go",
+          "line": 1,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "type": "messagebus",
+      "label": "Client Events",
+      "sublabel": "类型化 Stream",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "label": "events.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 290,
+      "label": "能力授权"
+    },
+    {
+      "from": 300,
+      "to": 440,
+      "label": "执行"
+    },
+    {
+      "from": 450,
+      "to": 590,
+      "label": "提交 + 投影"
+    }
+  ],
+  "messages": [
+    {
+      "id": "invoke",
+      "from": "client",
+      "to": "access",
+      "y": 170,
+      "label": "类型化 Agent Turn Action",
+      "variant": "emphasis"
+    },
+    {
+      "id": "authorize",
+      "from": "access",
+      "to": "domain",
+      "y": 215,
+      "label": "Scope + Permission Context",
+      "variant": "security"
+    },
+    {
+      "id": "plan",
+      "from": "domain",
+      "to": "runtime",
+      "y": 315,
+      "label": "持久化 Turn + 选择声明的 Placement",
+      "variant": "emphasis"
+    },
+    {
+      "id": "call",
+      "from": "runtime",
+      "to": "provider",
+      "y": 360,
+      "label": "分派 Station Adapter 或 Client Capability",
+      "variant": "default"
+    },
+    {
+      "id": "result",
+      "from": "provider",
+      "to": "runtime",
+      "y": 405,
+      "label": "类型化执行结果",
+      "variant": "return"
+    },
+    {
+      "id": "commit",
+      "from": "runtime",
+      "to": "state",
+      "y": 470,
+      "label": "提交 Turn Result + Recovery Cursor",
+      "variant": "emphasis"
+    },
+    {
+      "id": "append",
+      "from": "state",
+      "to": "events",
+      "y": 515,
+      "label": "追加类型化 Turn Event",
+      "variant": "dashed"
+    },
+    {
+      "id": "project",
+      "from": "events",
+      "to": "client",
+      "y": 560,
+      "label": "恢复产品投影",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "权威保持不变",
+      "items": [
+        "Execution Adapter 返回结果；Agent Domain 仍是 Turn 与 Session Authority。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "恢复",
+      "items": [
+        "Durable Turn State 与 Cursor 使 Client 可在 Stream 丢失或进程重启后恢复。"
+      ]
+    }
+  ]
+}

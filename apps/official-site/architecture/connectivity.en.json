@@ -1,0 +1,320 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Identity and Connectivity Architecture",
+    "subtitle": "Verify the Station first; then choose Direct or Circuit without changing Station scope or business authority.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/connectivity.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "direct",
+        "focus": [
+          "client",
+          "binding",
+          "trust",
+          "direct",
+          "ingress",
+          "access"
+        ],
+        "label": "Direct access",
+        "note": "Verified endpoint reaches canonical ingress directly."
+      },
+      {
+        "id": "relay",
+        "focus": [
+          "client",
+          "binding",
+          "trust",
+          "relay",
+          "ingress",
+          "access"
+        ],
+        "label": "Circuit fallback",
+        "note": "Relay changes the route, never the Station identity."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Client Install",
+      "sublabel": "Desktop or Mobile",
+      "tag": "route consumer",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "binding",
+      "type": "security",
+      "label": "Station Binding",
+      "sublabel": "station_peer_id · scope",
+      "tag": "logical identity",
+      "pos": [
+        170,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "trust",
+      "type": "security",
+      "label": "station-trust",
+      "sublabel": "root · node · route · SPKI",
+      "tag": "verification",
+      "pos": [
+        380,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "packages/station-trust/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "direct",
+      "type": "backend",
+      "label": "Direct Route",
+      "sublabel": "verified endpoint",
+      "tag": "candidate",
+      "pos": [
+        610,
+        120
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
+          "label": "access_endpoint.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "type": "external",
+      "label": "Relay Circuit",
+      "sublabel": "opaque Circuit v2",
+      "tag": "candidate only",
+      "pos": [
+        610,
+        330
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/runtime/role/role.go",
+          "label": "role.go",
+          "line": 1,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "ingress",
+      "type": "backend",
+      "label": "Canonical Ingress",
+      "sublabel": "same Station scope",
+      "tag": "route convergence",
+      "pos": [
+        820,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/server/canonical_protobuf_handler.go",
+          "label": "canonical_protobuf_handler.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Access Gate + Session",
+      "sublabel": "actor · device · client class",
+      "tag": "Station authority",
+      "pos": [
+        1040,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "peer",
+      "type": "messagebus",
+      "label": "Peer Transport",
+      "sublabel": "authenticated Station channel",
+      "tag": "Station-to-Station",
+      "pos": [
+        820,
+        420
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/transport.go",
+          "label": "transport.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "wraps": [
+        "binding",
+        "trust"
+      ],
+      "label": "Station identity verification",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "direct",
+        "relay"
+      ],
+      "label": "Replaceable route candidates",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-binding",
+      "from": "client",
+      "to": "binding",
+      "variant": "emphasis",
+      "label": "loads identity"
+    },
+    {
+      "id": "binding-trust",
+      "from": "binding",
+      "to": "trust",
+      "variant": "security",
+      "label": "verifies proof"
+    },
+    {
+      "id": "trust-direct",
+      "from": "trust",
+      "to": "direct",
+      "variant": "emphasis",
+      "label": "admits Direct"
+    },
+    {
+      "id": "trust-relay",
+      "from": "trust",
+      "to": "relay",
+      "variant": "dashed",
+      "label": "admits Circuit"
+    },
+    {
+      "id": "direct-ingress",
+      "from": "direct",
+      "to": "ingress",
+      "variant": "emphasis",
+      "label": "RouteLease"
+    },
+    {
+      "id": "relay-ingress",
+      "from": "relay",
+      "to": "ingress",
+      "variant": "dashed",
+      "label": "opaque Circuit"
+    },
+    {
+      "id": "ingress-access",
+      "from": "ingress",
+      "to": "access",
+      "variant": "security",
+      "label": "finalizes Session"
+    },
+    {
+      "id": "ingress-peer",
+      "from": "ingress",
+      "to": "peer",
+      "variant": "dashed",
+      "label": "peer channel"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Route switch contract",
+      "items": [
+        "Direct and Circuit converge at the same Station identity and canonical ingress.",
+        "Automatic replay is allowed only for SafeRead or explicitly idempotent requests."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Generation fence",
+      "items": [
+        "Route replacement invalidates stale RouteLease, grants and private permits.",
+        "Relay owns bounded admission and opaque bytes, not Session or business routing."
+      ]
+    }
+  ]
+}

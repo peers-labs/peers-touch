@@ -1,0 +1,262 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "契约基座",
+    "subtitle": "Model 拥有共享 Wire 语义；生成 Binding 被运行时消费，但绝不成为在线中间层。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/contracts.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "source",
+        "focus": [
+          "proto",
+          "ts",
+          "rust",
+          "go"
+        ],
+        "label": "契约生成",
+        "note": "一个语义真源生成各语言产物。"
+      },
+      {
+        "id": "consumers",
+        "focus": [
+          "desktop-mobile",
+          "portable",
+          "station"
+        ],
+        "label": "运行时消费者",
+        "note": "Binding 嵌入运行时，不部署为服务。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "proto",
+      "type": "database",
+      "label": "model/domain/**/*.proto",
+      "sublabel": "Canonical 共享语义",
+      "tag": "契约真源",
+      "pos": [
+        470,
+        70
+      ],
+      "size": [
+        220,
+        70
+      ],
+      "sources": [
+        {
+          "path": "model/domain/peer/station_identity.proto",
+          "label": "station_identity.proto",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "ts",
+      "type": "frontend",
+      "label": "TypeScript Bindings",
+      "sublabel": "生成消费类型",
+      "tag": "派生物",
+      "pos": [
+        160,
+        230
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "packages/model/package.json",
+          "label": "package.json",
+          "line": 1,
+          "end_line": 10
+        }
+      ]
+    },
+    {
+      "id": "rust",
+      "type": "backend",
+      "label": "Rust Bindings",
+      "sublabel": "生成原生类型",
+      "tag": "派生物",
+      "pos": [
+        470,
+        230
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "packages/messaging-core/src/proto.rs",
+          "label": "proto.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "go",
+      "type": "backend",
+      "label": "Go Bindings",
+      "sublabel": "生成 Station 类型",
+      "tag": "派生物",
+      "pos": [
+        780,
+        230
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/pb/federation_ledger.pb.go",
+          "label": "federation_ledger.pb.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "desktop-mobile",
+      "type": "external",
+      "label": "Client Consumers",
+      "sublabel": "Desktop · Mobile",
+      "tag": "运行时消费者",
+      "pos": [
+        160,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "portable",
+      "type": "external",
+      "label": "Portable Cores",
+      "sublabel": "Messaging · Security",
+      "tag": "库消费者",
+      "pos": [
+        470,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "station",
+      "type": "external",
+      "label": "Station Consumers",
+      "sublabel": "Frame · Touch · App",
+      "tag": "运行时消费者",
+      "pos": [
+        780,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "ts",
+        "rust",
+        "go"
+      ],
+      "label": "生成产物",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "desktop-mobile",
+        "portable",
+        "station"
+      ],
+      "label": "运行时消费者",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "proto-ts",
+      "from": "proto",
+      "to": "ts",
+      "variant": "dashed",
+      "label": "构建时生成"
+    },
+    {
+      "id": "proto-rust",
+      "from": "proto",
+      "to": "rust",
+      "variant": "dashed",
+      "label": "构建时生成"
+    },
+    {
+      "id": "proto-go",
+      "from": "proto",
+      "to": "go",
+      "variant": "dashed",
+      "label": "构建时生成"
+    },
+    {
+      "id": "ts-clients",
+      "from": "ts",
+      "to": "desktop-mobile",
+      "variant": "dashed",
+      "label": "编译进 Client Runtime"
+    },
+    {
+      "id": "rust-portable",
+      "from": "rust",
+      "to": "portable",
+      "variant": "dashed",
+      "label": "编译进 Portable Core"
+    },
+    {
+      "id": "go-station",
+      "from": "go",
+      "to": "station",
+      "variant": "dashed",
+      "label": "编译进 Station Runtime"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "构建时关系",
+      "items": [
+        "每条箭头表示生成或编译，绝不是在线请求路径。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "兼容规则",
+      "items": [
+        "Wire 语义只在 Proto 真源修改，并重新生成所有语言 Binding。"
+      ]
+    }
+  ]
+}

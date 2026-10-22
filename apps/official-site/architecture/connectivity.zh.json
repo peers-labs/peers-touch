@@ -1,0 +1,320 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "身份与连接架构",
+    "subtitle": "先验证 Station，再选择 Direct 或 Circuit；路径变化不得改写 Station Scope 或业务权威。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/connectivity.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "direct",
+        "focus": [
+          "client",
+          "binding",
+          "trust",
+          "direct",
+          "ingress",
+          "access"
+        ],
+        "label": "Direct 接入",
+        "note": "已验证 Endpoint 直达 Canonical Ingress。"
+      },
+      {
+        "id": "relay",
+        "focus": [
+          "client",
+          "binding",
+          "trust",
+          "relay",
+          "ingress",
+          "access"
+        ],
+        "label": "Circuit Fallback",
+        "note": "Relay 只改变路径，绝不改变 Station 身份。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Client 安装实例",
+      "sublabel": "Desktop 或 Mobile",
+      "tag": "Route 消费者",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "binding",
+      "type": "security",
+      "label": "Station Binding",
+      "sublabel": "station_peer_id · Scope",
+      "tag": "逻辑身份",
+      "pos": [
+        170,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "trust",
+      "type": "security",
+      "label": "station-trust",
+      "sublabel": "Root · Node · Route · SPKI",
+      "tag": "验证",
+      "pos": [
+        380,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "packages/station-trust/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "direct",
+      "type": "backend",
+      "label": "Direct Route",
+      "sublabel": "已验证 Endpoint",
+      "tag": "候选路径",
+      "pos": [
+        610,
+        120
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
+          "label": "access_endpoint.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "type": "external",
+      "label": "Relay Circuit",
+      "sublabel": "不透明 Circuit v2",
+      "tag": "仅候选路径",
+      "pos": [
+        610,
+        330
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/runtime/role/role.go",
+          "label": "role.go",
+          "line": 1,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "ingress",
+      "type": "backend",
+      "label": "Canonical Ingress",
+      "sublabel": "同一 Station Scope",
+      "tag": "路径汇合",
+      "pos": [
+        820,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/server/canonical_protobuf_handler.go",
+          "label": "canonical_protobuf_handler.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Access Gate + Session",
+      "sublabel": "Actor · Device · Client Class",
+      "tag": "Station 权威",
+      "pos": [
+        1040,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "peer",
+      "type": "messagebus",
+      "label": "Peer Transport",
+      "sublabel": "认证 Station 通道",
+      "tag": "Station-to-Station",
+      "pos": [
+        820,
+        420
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/transport.go",
+          "label": "transport.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "wraps": [
+        "binding",
+        "trust"
+      ],
+      "label": "Station 身份验证",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "direct",
+        "relay"
+      ],
+      "label": "可替换 Route 候选",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-binding",
+      "from": "client",
+      "to": "binding",
+      "variant": "emphasis",
+      "label": "加载身份"
+    },
+    {
+      "id": "binding-trust",
+      "from": "binding",
+      "to": "trust",
+      "variant": "security",
+      "label": "验证 Proof"
+    },
+    {
+      "id": "trust-direct",
+      "from": "trust",
+      "to": "direct",
+      "variant": "emphasis",
+      "label": "准入 Direct"
+    },
+    {
+      "id": "trust-relay",
+      "from": "trust",
+      "to": "relay",
+      "variant": "dashed",
+      "label": "准入 Circuit"
+    },
+    {
+      "id": "direct-ingress",
+      "from": "direct",
+      "to": "ingress",
+      "variant": "emphasis",
+      "label": "RouteLease"
+    },
+    {
+      "id": "relay-ingress",
+      "from": "relay",
+      "to": "ingress",
+      "variant": "dashed",
+      "label": "不透明 Circuit"
+    },
+    {
+      "id": "ingress-access",
+      "from": "ingress",
+      "to": "access",
+      "variant": "security",
+      "label": "完成 Session"
+    },
+    {
+      "id": "ingress-peer",
+      "from": "ingress",
+      "to": "peer",
+      "variant": "dashed",
+      "label": "Peer Channel"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "路径切换合同",
+      "items": [
+        "Direct 与 Circuit 汇合到同一 Station Identity 与 Canonical Ingress。",
+        "自动 Replay 仅允许 SafeRead 或显式 Idempotent Request。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Generation Fence",
+      "items": [
+        "Route 替换会使旧 RouteLease、Grant 与 Private Permit 失效。",
+        "Relay 拥有有界 Admission 与不透明字节，不拥有 Session 或业务路由。"
+      ]
+    }
+  ]
+}

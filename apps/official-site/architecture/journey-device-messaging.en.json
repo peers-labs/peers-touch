@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Device Messaging: Commit to Receiver Visibility",
+    "subtitle": "SSE only wakes a device. Durable Device Inbox, client pull, cryptographic apply, local commit and ACK create receiver-visible completion.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/journey-device-messaging.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "Conversation Authority",
+      "sublabel": "ordered hash-chain event",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/conversation/application/command/service.go",
+          "label": "service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "inbox",
+      "type": "database",
+      "label": "Durable Device Inbox",
+      "sublabel": "receiver truth + cursor",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/conversation/production_realtime.go",
+          "label": "production_realtime.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "wake",
+      "type": "messagebus",
+      "label": "SSE Wake",
+      "sublabel": "best-effort notification",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/conversation/production_realtime.go",
+          "label": "production_realtime.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Device Messaging Engine",
+      "sublabel": "pull · verify · decrypt",
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
+          "label": "lifecycle.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "local",
+      "type": "database",
+      "label": "Device Local Store",
+      "sublabel": "atomic message + cursor",
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/messaging/store.rs",
+          "label": "store.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "Receiver UI",
+      "sublabel": "visible projection"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 280,
+      "label": "Station commit"
+    },
+    {
+      "from": 290,
+      "to": 440,
+      "label": "Wake + pull"
+    },
+    {
+      "from": 450,
+      "to": 610,
+      "label": "Apply + acknowledge"
+    }
+  ],
+  "messages": [
+    {
+      "id": "enqueue",
+      "from": "domain",
+      "to": "inbox",
+      "y": 170,
+      "label": "commit ordered event to Device Inbox",
+      "variant": "emphasis"
+    },
+    {
+      "id": "notify",
+      "from": "inbox",
+      "to": "wake",
+      "y": 230,
+      "label": "emit wake only after commit",
+      "variant": "dashed"
+    },
+    {
+      "id": "wake-device",
+      "from": "wake",
+      "to": "engine",
+      "y": 315,
+      "label": "wake hint; loss is recoverable",
+      "variant": "dashed"
+    },
+    {
+      "id": "pull",
+      "from": "engine",
+      "to": "inbox",
+      "y": 365,
+      "label": "pull from durable cursor",
+      "variant": "emphasis"
+    },
+    {
+      "id": "batch",
+      "from": "inbox",
+      "to": "engine",
+      "y": 415,
+      "label": "ordered encrypted batch",
+      "variant": "return"
+    },
+    {
+      "id": "apply",
+      "from": "engine",
+      "to": "local",
+      "y": 485,
+      "label": "verify hash + decrypt + atomic local commit",
+      "variant": "security"
+    },
+    {
+      "id": "project",
+      "from": "local",
+      "to": "ui",
+      "y": 535,
+      "label": "publish committed projection",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ack",
+      "from": "engine",
+      "to": "inbox",
+      "y": 585,
+      "label": "ACK durable cursor after local commit",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Receiver-visible boundary",
+      "items": [
+        "Visible means the receiver device committed and projected the event, not merely that SSE fired."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Recovery",
+      "items": [
+        "On wake loss or restart, the engine resumes from the durable inbox cursor and deduplicates local apply."
+      ]
+    }
+  ]
+}

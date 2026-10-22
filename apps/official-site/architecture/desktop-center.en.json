@@ -1,0 +1,332 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Desktop Product Center",
+    "subtitle": "Desktop owns its product surface, runtime orchestration, local state and native host integration.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/desktop-center.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "product",
+        "focus": [
+          "user",
+          "shell",
+          "page-runtime"
+        ],
+        "label": "Product surface",
+        "note": "Desktop navigation and interaction remain Desktop-owned."
+      },
+      {
+        "id": "native",
+        "focus": [
+          "tauri",
+          "binding",
+          "local",
+          "cores",
+          "host"
+        ],
+        "label": "Native runtime",
+        "note": "Native capabilities stay behind typed commands and runtime ports."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "Desktop User",
+      "sublabel": "keyboard · windows · files",
+      "tag": "actor",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        120,
+        64
+      ]
+    },
+    {
+      "id": "shell",
+      "type": "frontend",
+      "label": "Boot Pipeline + Shell",
+      "sublabel": "readiness · navigation · workspaces",
+      "tag": "presentation owner",
+      "pos": [
+        160,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/kernel/PageHost.tsx",
+          "label": "PageHost.tsx",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "page-runtime",
+      "type": "frontend",
+      "label": "Page / Runtime Kernel",
+      "sublabel": "projection owner · actions · lifecycle",
+      "tag": "single orchestration owner",
+      "pos": [
+        370,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/kernel/runtime.ts",
+          "label": "runtime.ts",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "tauri",
+      "type": "backend",
+      "label": "Tauri Commands",
+      "sublabel": "typed native boundary",
+      "tag": "native runtime",
+      "pos": [
+        590,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/state/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 51
+        }
+      ]
+    },
+    {
+      "id": "binding",
+      "type": "security",
+      "label": "Station Binding",
+      "sublabel": "identity · RouteLease · scope",
+      "tag": "verified access",
+      "pos": [
+        800,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "station",
+      "type": "external",
+      "label": "Home Station API",
+      "sublabel": "canonical typed contracts",
+      "tag": "external authority",
+      "pos": [
+        1020,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "local",
+      "type": "database",
+      "label": "Desktop Local State",
+      "sublabel": "draft · cache · projection",
+      "tag": "device-only mutation owner",
+      "pos": [
+        370,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/secure_content/store.rs",
+          "label": "store.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "cores",
+      "type": "backend",
+      "label": "Portable Cores",
+      "sublabel": "messaging · secure content",
+      "tag": "embedded libraries",
+      "pos": [
+        590,
+        390
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "packages/messaging-core/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 18
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "type": "external",
+      "label": "Desktop Host",
+      "sublabel": "keyring · filesystem · media",
+      "tag": "OS capabilities",
+      "pos": [
+        800,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/main.rs",
+          "label": "main.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "shell",
+        "page-runtime"
+      ],
+      "label": "Desktop presentation",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "tauri",
+        "binding",
+        "cores",
+        "host"
+      ],
+      "label": "Desktop native runtime",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "user-shell",
+      "from": "user",
+      "to": "shell",
+      "variant": "emphasis",
+      "label": "operates"
+    },
+    {
+      "id": "shell-page",
+      "from": "shell",
+      "to": "page-runtime",
+      "variant": "emphasis",
+      "label": "mounts"
+    },
+    {
+      "id": "page-tauri",
+      "from": "page-runtime",
+      "to": "tauri",
+      "variant": "emphasis",
+      "label": "typed commands"
+    },
+    {
+      "id": "tauri-binding",
+      "from": "tauri",
+      "to": "binding",
+      "variant": "emphasis",
+      "label": "RouteLease"
+    },
+    {
+      "id": "binding-station",
+      "from": "binding",
+      "to": "station",
+      "variant": "emphasis",
+      "label": "canonical call"
+    },
+    {
+      "id": "page-local",
+      "from": "page-runtime",
+      "to": "local",
+      "variant": "dashed",
+      "label": "device state"
+    },
+    {
+      "id": "tauri-cores",
+      "from": "tauri",
+      "to": "cores",
+      "variant": "emphasis",
+      "label": "embeds"
+    },
+    {
+      "id": "tauri-host",
+      "from": "tauri",
+      "to": "host",
+      "variant": "dashed",
+      "label": "host ports"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Lifecycle ownership",
+      "items": [
+        "BootPipeline proves dependency readiness before the Shell mounts.",
+        "Page and Runtime kernels own projections and action lifetimes; pages do not create parallel runtimes."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Forbidden ownership",
+      "items": [
+        "Desktop cache, drafts and projections never become cross-device business truth."
+      ]
+    }
+  ]
+}
