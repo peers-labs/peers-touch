@@ -44,6 +44,7 @@ message StationIdentityStatement {
   int64 issued_at_unix_ms = 5;
   int64 expires_at_unix_ms = 6;
   bytes node_authorization_digest = 7;
+  bytes federation_signing_public_key = 8;
 }
 
 message StationIdentityResponse {

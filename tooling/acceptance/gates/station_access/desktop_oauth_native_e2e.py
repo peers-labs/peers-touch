@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -56,7 +57,7 @@ REQUIRED_ASSERTIONS = frozenset(
         "oauth_callback_restores_authenticated_identity",
         "oauth_identity_projection_is_consistent",
         "account_identity_ui_shows_provider_and_ptid",
-        "find_people_scope_labels_and_tooltips_are_distinct",
+        "find_people_scope_excludes_member_station_topology",
         "native_runtime_is_source_bound",
         "native_runtime_cleanup",
     }
@@ -78,25 +79,23 @@ def is_native_tauri_url(value: str) -> bool:
     )
 
 
-def find_people_scopes_are_distinct(evidence: Mapping[str, object]) -> bool:
+def find_people_scope_respects_client_boundary(
+    evidence: Mapping[str, object],
+) -> bool:
+    all_scope = evidence.get("all")
     federation = evidence.get("federation")
-    station = evidence.get("station")
-    if not isinstance(federation, Mapping) or not isinstance(station, Mapping):
+    if not isinstance(all_scope, Mapping) or not isinstance(federation, Mapping):
         return False
+    all_label = str(all_scope.get("label") or "").strip()
     federation_label = str(federation.get("label") or "").strip()
-    station_label = str(station.get("label") or "").strip()
     federation_aria = str(federation.get("ariaLabel") or "").strip()
-    station_aria = str(station.get("ariaLabel") or "").strip()
     return (
-        federation.get("name") == station.get("name") == "local"
+        all_label == "All"
+        and federation.get("name") == "local"
         and federation_label == "Federation: local"
-        and station_label == "Station: local"
-        and federation_label != station_label
         and bool(federation_aria)
-        and bool(station_aria)
-        and federation_aria != station_aria
         and federation.get("tooltip") == federation_aria
-        and station.get("tooltip") == station_aria
+        and evidence.get("memberStationSelectorCount") == 0
     )
 
 
@@ -120,7 +119,11 @@ const timer = window.setTimeout(
   10000,
 );
 Promise.resolve(internals.invoke('oauth2_start_loopback', {
-  input: { id: providerId, environment: 'prod' },
+  input: {
+    id: providerId,
+    environment: 'prod',
+    purpose: 'account_login',
+  },
 })).then(
   (value) => finish({ transport: 'resolved', value }),
   (error) => finish({
@@ -318,6 +321,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
 
             login_start = self._start_oauth_via_product(session, "github")
             signed_callback = self._sign_callback(
+                callback_url=login_start["callbackUrl"],
                 provider_id="github",
                 provider_user_id="acceptance-native-oauth",
                 email="oauth.acceptance@test.invalid",
@@ -470,8 +474,8 @@ class DesktopOAuthNativeGate(AcceptanceGate):
 
             find_people_scopes = self._find_people_scope_evidence(session)
             self.assert_condition(
-                "find_people_scope_labels_and_tooltips_are_distinct",
-                find_people_scopes_are_distinct(find_people_scopes),
+                "find_people_scope_excludes_member_station_topology",
+                find_people_scope_respects_client_boundary(find_people_scopes),
                 json.dumps(find_people_scopes, sort_keys=True),
             )
             self.save_screenshot(session, "desktop-oauth-find-people-scopes")
@@ -584,6 +588,12 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             timeout=20,
         )
 
+        all_scope = self._wait_for_displayed_with_text(
+            session,
+            '[data-chat-find-people-scope="all"]',
+            "All",
+            timeout=20,
+        )
         federation = self._wait_for_displayed_with_text(
             session,
             '[data-chat-find-people-scope="federation"]',
@@ -598,33 +608,21 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             timeout=10,
         )
         federation.click()
-        station = self._wait_for_displayed_with_text(
-            session,
-            '[data-chat-find-people-scope="station"]',
-            "Station: local",
-            timeout=30,
-        )
-
-        station_aria = str(station.get_attribute("aria-label") or "").strip()
-        station_tooltip = self._hover_tooltip(
-            session,
-            station,
-            station_aria,
-            timeout=10,
-        )
         return {
+            "all": {
+                "label": all_scope.text.strip(),
+            },
             "federation": {
                 "name": "local",
                 "label": federation.text.strip(),
                 "ariaLabel": federation_aria,
                 "tooltip": federation_tooltip,
             },
-            "station": {
-                "name": "local",
-                "label": station.text.strip(),
-                "ariaLabel": station_aria,
-                "tooltip": station_tooltip,
-            },
+            "memberStationSelectorCount": len(
+                session.find_elements(
+                    '[data-chat-find-people-scope="station"]'
+                )
+            ),
         }
 
     @staticmethod
@@ -989,7 +987,54 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         )
 
     @staticmethod
+    def _callback_fields(
+        callback_url: str,
+        *,
+        provider_id: str,
+        provider_user_id: str,
+        email: str,
+        timestamp: str,
+    ) -> dict[str, str]:
+        parsed = urlparse(callback_url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        receiver_id = query.get("session_id", [""])[-1]
+        purpose = query.get("purpose", [""])[-1]
+        receiver_challenge = query.get("receiver_challenge", [""])[-1]
+        if (
+            not receiver_id
+            or purpose not in {"account_login", "connector_link"}
+            or not receiver_challenge
+        ):
+            raise GateError(
+                "OAuth loopback callback omitted canonical receiver fields"
+            )
+        assertion_id = hashlib.sha256(
+            (
+                "acceptance-oauth-bridge\0"
+                f"{receiver_id}\0{provider_id}\0"
+                f"{provider_user_id}\0{timestamp}"
+            ).encode("utf-8")
+        ).hexdigest()
+        return {
+            "assertion_id": assertion_id,
+            "avatar_url": OAUTH_AVATAR_URL,
+            "bridge_version": "v1",
+            "display_name": "OAuth Acceptance",
+            "email": email,
+            "email_verified": "true",
+            "provider": provider_id,
+            "provider_user_id": provider_user_id,
+            "purpose": purpose,
+            "receiver_challenge": receiver_challenge,
+            "receiver_id": receiver_id,
+            "site_id": "default",
+            "ts": timestamp,
+            "username": "oauthacceptance",
+        }
+
+    @classmethod
     def _build_callback_url(
+        cls,
         callback_url: str,
         *,
         provider_id: str,
@@ -1005,15 +1050,13 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             if values
         }
         query.update(
-            {
-                "provider": provider_id,
-                "provider_user_id": provider_user_id,
-                "username": "oauthacceptance",
-                "display_name": "OAuth Acceptance",
-                "email": email,
-                "avatar_url": OAUTH_AVATAR_URL,
-                "ts": timestamp,
-            }
+            cls._callback_fields(
+                callback_url,
+                provider_id=provider_id,
+                provider_user_id=provider_user_id,
+                email=email,
+                timestamp=timestamp,
+            )
         )
         if signature is None:
             query.pop("sig", None)
@@ -1109,6 +1152,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
     def _sign_callback(
         self,
         *,
+        callback_url: str,
         provider_id: str,
         provider_user_id: str,
         email: str,
@@ -1120,10 +1164,13 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             SIGNER_CAPABILITY_ID,
             SIGN_OPERATION,
             {
-                "provider": provider_id,
-                "providerUserId": provider_user_id,
-                "email": email,
-                "timestamp": timestamp,
+                "fields": self._callback_fields(
+                    callback_url,
+                    provider_id=provider_id,
+                    provider_user_id=provider_user_id,
+                    email=email,
+                    timestamp=timestamp,
+                ),
             },
             timeout_seconds=10,
         )
@@ -1193,10 +1240,11 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             status = json.loads(status_raw)
         except json.JSONDecodeError as error:
             raise GateError("OAuth cancellation returned invalid status JSON") from error
+        status_value = str(status.get("status") or "")
         return {
             "transport": "resolved",
-            "cancelled": status.get("cancelled") is True,
-            "status": str(status.get("status") or ""),
+            "cancelled": status_value == "cancelled",
+            "status": status_value,
         }
 
     @staticmethod

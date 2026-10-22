@@ -90,6 +90,11 @@ class LifecycleLiveVoiceContractTest(unittest.TestCase):
                     "python3",
                     "tooling/scripts/acceptance-plan.py",
                     "--changed-file",
+                    (
+                        "apps/desktop/src-tauri/src/interface/"
+                        "tauri_commands/realtime.rs"
+                    ),
+                    "--changed-file",
                     "apps/desktop/src/modules/p2p/callP2p.ts",
                     "--changed-file",
                     "apps/desktop/src/components/chat/CallSurface.tsx",
@@ -177,6 +182,9 @@ class LifecycleLiveVoiceContractTest(unittest.TestCase):
         gateway = self.source(
             "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
         )
+        realtime_command = self.source(
+            "apps/desktop/src-tauri/src/interface/tauri_commands/realtime.rs"
+        )
         gate = self.source(
             "tooling/acceptance/gates/chat/lifecycle_live_voice.py"
         )
@@ -195,6 +203,14 @@ class LifecycleLiveVoiceContractTest(unittest.TestCase):
         self.assertIn(
             "station::station_set_active_with_state(",
             gateway,
+        )
+        self.assertIn(
+            "request_json_auth_with_device_id(",
+            realtime_command,
+        )
+        self.assertIn(
+            "signal_request_device_binding(&input)",
+            realtime_command,
         )
         self.assertIn(
             "device.deviceId !== currentDeviceId",

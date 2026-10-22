@@ -556,7 +556,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         *,
         owner=SECURE_CONTENT_OWNER,
     ) -> dict[str, Any]:
-        target = PROFILE_TARGETS[profile_id]
+        target = owner.profile_targets[profile_id]
         value = self._declaration(
             work_item_id,
             task_id,
@@ -776,7 +776,12 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             declarations[binding.work_item_id] = self._profile_declaration(
                 binding.work_item_id,
                 binding.task_id,
-                ("2" if profile_id == "four" else "3") * 64,
+                (
+                    "2"
+                    if profile_id == "chat-native-disposable"
+                    else "3"
+                )
+                * 64,
                 profile_id,
                 owner=descriptor,
             )
@@ -803,9 +808,9 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             generation_id=COMMIT,
             budget_seconds=1800,
         )
-        four = owner.run_profile(
+        primary = owner.run_profile(
             workstream_id="CSS-SCHEMA-FOUR",
-            profile_id="four",
+            profile_id="chat-native-disposable",
             intent="SCHEMA_ACTIVATION",
             generation_id=COMMIT,
             budget_seconds=3600,
@@ -820,7 +825,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         aggregate = owner.aggregate(
             intent="SCHEMA_ACTIVATION",
             generation_id=COMMIT,
-            profiles=PROFILE_ORDER,
+            profiles=tuple(descriptor.profile_targets),
         )
 
         self.assertEqual(
@@ -831,7 +836,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             descriptor.plan_id,
             source_runner.requests[0]["plan_id"],
         )
-        self.assertEqual("CSS-SCHEMA-FOUR", four["workstream_id"])
+        self.assertEqual("CSS-SCHEMA-FOUR", primary["workstream_id"])
         self.assertEqual("CSS-SCHEMA-FIVEARM", five_arm["workstream_id"])
         self.assertEqual("CSS-W-ACTIVATION", aggregate["workstream_id"])
         self.assertEqual(descriptor.source_task_id, aggregate["task_id"])
@@ -852,7 +857,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         ):
             owner.run_profile(
                 workstream_id="W12F-FOUR",
-                profile_id="four",
+                profile_id="chat-native-disposable",
                 intent="FINAL_CUT",
                 generation_id=COMMIT,
                 budget_seconds=3600,
@@ -1008,6 +1013,94 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             "secure-content-w12a-four",
             "W12A-FOUR",
         )
+
+    def test_default_declaration_projection_is_read_only_and_deterministic(
+        self,
+    ) -> None:
+        repo_root = Path(__file__).resolve().parents[3]
+        identity = {
+            "root": str(repo_root),
+            "workspaceId": WORKSPACE_ID,
+            "branch": "feat/federation",
+            "head": COMMIT,
+        }
+        command_runner = mock.Mock(
+            side_effect=AssertionError(
+                "tracked Plan projection must not invoke a command"
+            )
+        )
+        owner = SchemaActivationOwner(
+            repo_root=repo_root,
+            result_root=self.result_root,
+            owner_descriptor=CROSS_STATION_SOCIAL_OWNER,
+            identity_loader=lambda: copy.deepcopy(identity),
+            clean_checker=lambda: None,
+            source_checkpoint_runner=self.source_runner,
+            maintenance_boundary=self.boundary,
+            station_deployment_runner=self.deployment_runner,
+            station_quiescence_runner=self.quiescence_runner,
+            command_runner=command_runner,
+        )
+
+        with mock.patch(
+            "tooling.development.secure_content.schema_activation."
+            "work_item_control.ensure_active_projection",
+            side_effect=AssertionError(
+                "optional Development state must not be activated"
+            ),
+        ):
+            source = owner.declaration_loader(
+                "cross-station-social-source-freeze"
+            )
+            repeated_source = owner.declaration_loader(
+                "cross-station-social-source-freeze"
+            )
+            four = owner.profile_declaration_loader(
+                "cross-station-social-schema-four",
+                "CSS-SCHEMA-FOUR",
+            )
+
+        self.assertEqual(source, repeated_source)
+        self.assertEqual([], source["runtimeClaims"])
+        self.assertEqual(COMMIT, source["sourceHead"])
+        self.assertEqual(
+            CROSS_STATION_SOCIAL_OWNER.plan_id,
+            source["planId"],
+        )
+        self.assertEqual(
+            "CSS-08A-schema-activation",
+            source["taskId"],
+        )
+        self.assertEqual(
+            {
+                "profile": ["chat-native-disposable"],
+                "station.deploy": ["chat-native-disposable-station"],
+                "station.reset": ["chat-native-disposable-social-private"],
+            },
+            {
+                kind: sorted(
+                    claim["resourceId"]
+                    for claim in four["runtimeClaims"]
+                    if claim["kind"] == kind
+                )
+                for kind in ("profile", "station.deploy", "station.reset")
+            },
+        )
+        self.assertEqual(
+            ["chat-native-disposable"],
+            four["authorization"]["runtime"]["deployProfiles"],
+        )
+        self.assertEqual(
+            ["chat-native-disposable-social-private"],
+            four["authorization"]["runtime"]["destructiveResetScopes"],
+        )
+        for declaration in (source, four):
+            unsealed = dict(declaration)
+            digest = unsealed.pop("declarationDigest")
+            self.assertEqual(canonical_digest(unsealed), digest)
+            self.assertNotIn("sessionId", declaration)
+            self.assertNotIn("expiresAt", declaration)
+        command_runner.assert_not_called()
 
     def test_five_arm_cannot_run_before_four(self) -> None:
         self._freeze()

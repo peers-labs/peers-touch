@@ -55,10 +55,12 @@ LIFECYCLE_OBSERVER_CAPABILITIES = frozenset(
 )
 CANONICAL_PROFILES = {
     "four": "station-four",
+    "chat-native-disposable": "station-four",
     "fiveArm": "station-five-arm",
 }
 CANONICAL_PRIVATE_SCHEMA_SCOPES = {
     "four": "station-four-social-private",
+    "chat-native-disposable": "chat-native-disposable-social-private",
     "fiveArm": "station-five-arm-social-private",
 }
 RESET_INTENTS = frozenset({"SCHEMA_ACTIVATION", "FINAL_CUT"})

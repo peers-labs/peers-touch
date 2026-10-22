@@ -196,6 +196,11 @@ fn signal_request_body(input: RealtimeSignalInput) -> Value {
     body
 }
 
+fn signal_request_device_binding(input: &RealtimeSignalInput) -> Option<&str> {
+    let device_id = input.device_id.trim();
+    (!device_id.is_empty()).then_some(device_id)
+}
+
 /// Publishes a single WebRTC signaling event onto the recipient's
 /// (and, for multi-device, sender's own) realtime SSE stream via
 /// Station's `POST /realtime/signal` ingress (contract §2.7.1).
@@ -227,17 +232,28 @@ pub fn realtime_signal_send(
         );
     }
     let mut input = input;
-    if input.device_id.is_empty() && !input.call_id.is_empty() {
+    if input.device_id.trim().is_empty() && !input.call_id.is_empty() {
         input.device_id = device_id_from(&window);
+    } else {
+        input.device_id = input.device_id.trim().to_string();
     }
+    let device_binding = signal_request_device_binding(&input).map(str::to_owned);
     let body = signal_request_body(input);
-    let resp = match state.station.client().request_json(
-        Method::POST,
-        "/realtime/signal",
-        &token,
-        None,
-        Some(body),
-    ) {
+    let client = state.station.client();
+    let request = match device_binding.as_deref() {
+        Some(device_id) => client.request_json_auth_with_device_id(
+            Method::POST,
+            "/realtime/signal",
+            &token,
+            None,
+            Some(&body),
+            device_id,
+        ),
+        None => {
+            client.request_json_auth(Method::POST, "/realtime/signal", &token, None, Some(&body))
+        }
+    };
+    let resp = match request {
         Ok(v) => v,
         Err(reason) => {
             tracing::warn!(reason = %reason, "realtime_signal_send: station rejected publish");
@@ -283,7 +299,7 @@ pub fn realtime_call_resolution_get(
 
 #[cfg(test)]
 mod tests {
-    use super::{signal_request_body, RealtimeSignalInput};
+    use super::{signal_request_body, signal_request_device_binding, RealtimeSignalInput};
 
     #[test]
     fn signal_request_uses_station_wire_field_names() {
@@ -303,16 +319,32 @@ mod tests {
 
     #[test]
     fn signal_request_includes_call_id_when_present() {
-        let body = signal_request_body(RealtimeSignalInput {
+        let input = RealtimeSignalInput {
             recipient_actor_ptid: "ptid:bob".to_string(),
             session_ulid: "session-1".to_string(),
             kind: "CALL_ACCEPT".to_string(),
             payload_b64: "cGF5bG9hZA==".to_string(),
             call_id: "01JTEST".to_string(),
             device_id: "win-main".to_string(),
-        });
+        };
+        assert_eq!(signal_request_device_binding(&input), Some("win-main"));
+        let body = signal_request_body(input);
 
         assert_eq!(body["call_id"], "01JTEST");
         assert_eq!(body["device_id"], "win-main");
+    }
+
+    #[test]
+    fn signal_request_omits_empty_device_binding() {
+        let input = RealtimeSignalInput {
+            recipient_actor_ptid: "ptid:bob".to_string(),
+            session_ulid: "session-1".to_string(),
+            kind: "OFFER".to_string(),
+            payload_b64: "cGF5bG9hZA==".to_string(),
+            call_id: String::new(),
+            device_id: "   ".to_string(),
+        };
+
+        assert_eq!(signal_request_device_binding(&input), None);
     }
 }

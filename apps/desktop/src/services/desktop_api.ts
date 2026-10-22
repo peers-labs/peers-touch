@@ -193,6 +193,7 @@ export type RustErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'UNAVAILABLE'
   | 'INTERNAL_ERROR';
 
 export interface RustCommandError {

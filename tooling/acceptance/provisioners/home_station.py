@@ -88,6 +88,10 @@ GATE_ROLES = {
     "agent-v2-external-runtime-e2e": ("bob",),
     "agent-marketplace-catalog-e2e": ("alice",),
     "chat-message-publishing-native-e2e": ("alice",),
+    "chat-lifecycle-onboarding-e2e": ("alice", "bob"),
+    "chat-lifecycle-direct-e2e": ("alice", "bob"),
+    "chat-lifecycle-rich-voice-e2e": ("alice", "bob"),
+    "chat-lifecycle-live-voice-e2e": ("alice", "bob"),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-presence-layout-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
@@ -159,6 +163,10 @@ AGENT_V2_CREDENTIAL_REFS = (
 
 CLIENT_ROLES = {
     "desktop-primary-navigation-e2e": ("alice",),
+    "chat-lifecycle-onboarding-e2e": ("alice", "bob"),
+    "chat-lifecycle-direct-e2e": ("alice", "bob"),
+    "chat-lifecycle-rich-voice-e2e": ("alice", "bob"),
+    "chat-lifecycle-live-voice-e2e": ("alice", "bob"),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-presence-layout-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),

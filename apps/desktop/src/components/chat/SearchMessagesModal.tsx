@@ -7,6 +7,7 @@ import { Button, Empty, Modal, Spin, Tag, Typography, theme } from 'antd';
 import { ArrowRight, FileText, Image as ImageIcon, MessageSquare, MessagesSquare, Music, Search, Users, Video, X } from 'lucide-react';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import type { SearchResult } from '../../store/socialChat';
+import { actorDisplayName, resolveActorIdentity } from '../../store/socialProfileProjection';
 import { log } from '../../utils/logger';
 
 const { Text } = Typography;
@@ -66,11 +67,6 @@ function highlightMatch(content: string, query: string, warningBg: string): Reac
       {after}
     </>
   );
-}
-
-function shortDid(did: string): string {
-  if (!did) return '';
-  return did.length > 18 ? `${did.slice(0, 8)}...${did.slice(-6)}` : did;
 }
 
 function filenameExtension(filename: string): string {
@@ -201,6 +197,9 @@ export function SearchMessagesModal({
   const {
     currentUserPtid,
     groupMembers,
+    currentUserProfile,
+    peerProfiles,
+    sessions,
     searchQuery,
     searchResults,
     searchLoading,
@@ -214,6 +213,9 @@ export function SearchMessagesModal({
   } = useActiveSocialChatSlice((state) => ({
     currentUserPtid: state.currentUserPtid,
     groupMembers: state.groupMembers,
+    currentUserProfile: state.currentUserProfile,
+    peerProfiles: state.peerProfiles,
+    sessions: state.sessions,
     searchQuery: state.searchQuery,
     searchResults: state.searchResults,
     searchLoading: state.searchLoading,
@@ -291,11 +293,18 @@ export function SearchMessagesModal({
       const member = result.scope === 'group'
         ? groupMembers[result.conversationId]?.find((item) => item.ptid === result.senderPtid)
         : undefined;
+      const sender = resolveActorIdentity({
+        ptid: result.senderPtid,
+        currentUserPtid,
+        currentUserProfile,
+        peerProfiles,
+        sessions,
+        nickname: member?.nickname,
+        fallbackName: result.conversationName,
+      });
       const senderLabel = result.senderPtid === currentUserPtid
         ? t('chat.social.thread.you')
-        : result.scope === 'friend'
-          ? result.conversationName
-          : member?.nickname || shortDid(result.senderPtid) || t('chat.social.search.senderUnknown');
+        : actorDisplayName(sender.displayName, t('chat.social.search.senderUnknown'));
       return {
         fileKind: fileKindForResult(result),
         isThread: isThreadResult(result),
@@ -303,7 +312,7 @@ export function SearchMessagesModal({
         senderLabel,
       };
     }),
-    [currentUserPtid, groupMembers, searchResults, t],
+    [currentUserProfile, currentUserPtid, groupMembers, peerProfiles, searchResults, sessions, t],
   );
 
   const filterCounts = useMemo(

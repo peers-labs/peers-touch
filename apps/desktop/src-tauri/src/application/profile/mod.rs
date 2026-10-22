@@ -506,6 +506,7 @@ fn ambiguous_profile_update_error(error: &StationClientError) -> bool {
     matches!(
         error.kind,
         StationClientErrorKind::Network
+            | StationClientErrorKind::Unavailable
             | StationClientErrorKind::Decode
             | StationClientErrorKind::InvalidResponse
     )

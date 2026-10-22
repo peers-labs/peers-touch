@@ -20,8 +20,10 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     deploy_environment,
     duplicate_acceptance_queue_delivery,
     fixture_federation_id,
+    machine_lease_reset_profile,
     prepare_local_friend_request_lifecycle,
     read_fixture_actor,
+    reset_fixture_follow_edges,
     reset_local_client_storage,
     restart_acceptance_station,
     reset_station_chat_state,
@@ -410,6 +412,56 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             "pt-station_pg_data",
         )
 
+    def test_live_reset_lease_authorizes_non_stable_profile(self) -> None:
+        profile = {
+            "PT_DEV_PROFILE": "four",
+            "PT_STATION_DEPLOY_ENV": "station-four",
+            "PT_STATION_URL": "http://192.0.2.40:18080",
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "PT_MACHINE_LEASE_KIND": "station.reset",
+                "PT_MACHINE_LEASE_RESOURCE_ID": "mobile-social-simulator-actors",
+                "PT_MACHINE_LEASE_RESET_SCOPE": "mobile-social-simulator-actors",
+            },
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "require_station_reset_authority",
+        ) as require_authority, patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "active_profile_environment",
+            return_value=profile,
+        ):
+            self.assertEqual(machine_lease_reset_profile(), "four")
+
+        require_authority.assert_called_once_with(
+            "mobile-social-simulator-actors",
+        )
+
+    def test_live_reset_lease_rejects_stable_profile(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "PT_MACHINE_LEASE_KIND": "station.reset",
+                "PT_MACHINE_LEASE_RESOURCE_ID": "fixture",
+                "PT_MACHINE_LEASE_RESET_SCOPE": "fixture",
+            },
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "require_station_reset_authority",
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "active_profile_environment",
+            return_value={"PT_DEV_PROFILE": "corpstable"},
+        ), self.assertRaisesRegex(
+            RuntimeError,
+            "Agent-resettable Profile",
+        ):
+            machine_lease_reset_profile()
+
     def test_rejects_profile_authorization_for_another_target(self) -> None:
         deployment = {
             "PT_DEPLOY_HOST": "192.0.2.40",
@@ -475,7 +527,10 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             {
                 "CHAT_ACCEPTANCE_RESET_ENVIRONMENTS": (
                     "station-four,station-five-arm"
-                )
+                ),
+                "PT_MACHINE_LEASE_KIND": "station.reset",
+                "PT_MACHINE_LEASE_RESOURCE_ID": "mobile-station-lifecycle-alice",
+                "PT_MACHINE_LEASE_RESET_SCOPE": "mobile-station-lifecycle-alice",
             },
             clear=True,
         ), patch(
@@ -713,6 +768,21 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             storage = root / "alice" / "storage"
             self.assertTrue(storage.is_dir())
             self.assertEqual(list(storage.iterdir()), [])
+
+    def test_reset_supports_isolated_federation_actor_roles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            reset = reset_local_client_storage(
+                ["federation_secondary_owner", "eve"],
+                root,
+            )
+
+            self.assertEqual(reset, 0)
+            self.assertTrue(
+                (root / "federation_secondary_owner" / "storage").is_dir()
+            )
+            self.assertTrue((root / "eve" / "storage").is_dir())
 
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
     def test_local_source_reset_recreates_only_profile_database(self) -> None:
@@ -1268,6 +1338,45 @@ ORDER BY owner_ptid
         self.assertIn(receiver_ptid, sql)
         self.assertIn(
             "friend-request lifecycle relationship reset is incomplete",
+            sql,
+        )
+
+    def test_social_fixture_follow_reset_removes_all_selected_actor_edges(
+        self,
+    ) -> None:
+        ptids = (
+            "ptid:v1:actor:peers:p:alice:fingerprint",
+            "ptid:v1:actor:peers:p:bob:fingerprint",
+            "ptid:v1:actor:peers:p:carol:fingerprint",
+        )
+        with patch.dict(
+            os.environ,
+            {"CHAT_ACCEPTANCE_RESET": "1"},
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "acceptance_station_environment",
+            return_value=DISPOSABLE_ENVIRONMENT,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "verify_disposable_station_runtime",
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset._remote_psql",
+        ) as remote_psql:
+            reset_fixture_follow_edges(
+                DISPOSABLE_ENVIRONMENT["PT_ACCEPTANCE_STATION_URL"],
+                "chat-native-acceptance",
+                ptids,
+            )
+
+        sql = remote_psql.call_args.args[1]
+        self.assertIn("DELETE FROM follows", sql)
+        self.assertIn("follower_id IN", sql)
+        self.assertIn("following_id IN", sql)
+        for ptid in ptids:
+            self.assertIn(ptid, sql)
+        self.assertIn(
+            "Social relationship reset left stale follow edges",
             sql,
         )
 

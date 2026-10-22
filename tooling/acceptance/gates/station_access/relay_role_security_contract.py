@@ -200,9 +200,30 @@ def validate_relay_role_source_contract() -> None:
             "func (a *Admission) AllowConnect(",
             "func (a *Admission) RevokeNode(",
             "valueHost.Network().ClosePeer(nodePeerID)",
-            "permit.RemainingUses--",
+            "permit.Generation == destination.generation",
+            "permit.ExpiresAt.After(now)",
         ),
         "standard Circuit admission",
+    )
+    _reject_tokens(
+        admission_source,
+        ("RemainingUses--",),
+        "read-only Circuit ACL permit projection",
+    )
+
+    discovery_source = _read(
+        "apps/station/frame/core/plugin/native/subserver/relay/application/"
+        "discovery.go"
+    )
+    _require_tokens(
+        discovery_source,
+        (
+            "connectionGrantRedemptionID(",
+            "s.admission.Permit(nativeRelay.ConnectPermit{",
+            "record.RemainingUses--",
+            "s.redemptions[redemptionID] = domain.GrantRedemptionRecord{",
+        ),
+        "source-bound connection grant redemption",
     )
 
     handler_source = _read(
@@ -435,17 +456,30 @@ def _probe_tls_with_openssl(host: str, port: int) -> dict[str, str]:
     }
 
 
-def _probe_tls(stream_endpoint: str) -> dict[str, str]:
-    parsed = urlparse(stream_endpoint)
+def _parse_tls_endpoint(endpoint: str) -> tuple[str, int]:
+    parsed = urlparse(endpoint)
+    port = parsed.port or (443 if parsed.scheme == "https" else None)
     if (
-        parsed.scheme != "tls"
+        parsed.scheme not in {"https", "tls"}
         or not parsed.hostname
-        or parsed.port is None
+        or port is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
     ):
-        raise GateError("Relay stream endpoint must be a tls:// host and port")
+        raise GateError(
+            "Relay TLS endpoint must be a root https:// or tls:// origin"
+        )
+    return parsed.hostname, port
+
+
+def _probe_tls(stream_endpoint: str) -> dict[str, str]:
+    host, port = _parse_tls_endpoint(stream_endpoint)
 
     if not ssl.HAS_TLSv1_3:
-        return _probe_tls_with_openssl(parsed.hostname, parsed.port)
+        return _probe_tls_with_openssl(host, port)
 
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
@@ -454,12 +488,12 @@ def _probe_tls(stream_endpoint: str) -> dict[str, str]:
     context.maximum_version = ssl.TLSVersion.TLSv1_3
     try:
         with socket.create_connection(
-            (parsed.hostname, parsed.port),
+            (host, port),
             timeout=8,
         ) as raw_socket:
             with context.wrap_socket(
                 raw_socket,
-                server_hostname=parsed.hostname,
+                server_hostname=host,
             ) as tls_socket:
                 version = tls_socket.version()
                 certificate = tls_socket.getpeercert(binary_form=True)
@@ -477,12 +511,12 @@ def _probe_tls(stream_endpoint: str) -> dict[str, str]:
     legacy.maximum_version = ssl.TLSVersion.TLSv1_2
     try:
         with socket.create_connection(
-            (parsed.hostname, parsed.port),
+            (host, port),
             timeout=8,
         ) as raw_socket:
             with legacy.wrap_socket(
                 raw_socket,
-                server_hostname=parsed.hostname,
+                server_hostname=host,
             ):
                 pass
     except ssl.SSLError as error:
@@ -568,6 +602,30 @@ def _required_protected_files(
     return sorted(files, key=lambda record: str(record["name"]))
 
 
+def _runtime_source_matches(
+    runtime: dict[str, Any],
+    live_commit: str,
+    source_commit: str,
+) -> bool:
+    if live_commit == source_commit:
+        return True
+    compatibility = runtime.get("sourceCompatibility")
+    if not isinstance(compatibility, dict):
+        return False
+    for phase in ("build", "runtime"):
+        value = compatibility.get(phase)
+        if (
+            not isinstance(value, dict)
+            or value.get("mode") != "service-tree-equivalent"
+            or value.get("runtimeCommit") != live_commit
+            or value.get("sourceCommit") != source_commit
+            or not isinstance(value.get("changedPathCount"), int)
+            or value["changedPathCount"] < 1
+        ):
+            return False
+    return True
+
+
 def _validate_runtime_evidence(
     manifest: dict[str, Any],
     relay_attestation: dict[str, Any],
@@ -589,10 +647,6 @@ def _validate_runtime_evidence(
         if (
             service.get("workspaceDigest") != "clean"
             or len(live_commit) < 7
-            or not (
-                live_commit.startswith(source_commit)
-                or source_commit.startswith(live_commit)
-            )
         ):
             raise GateError(
                 f"{service_id} service is not bound to the clean Gate source"
@@ -623,6 +677,18 @@ def _validate_runtime_evidence(
         "relayRuntime",
         "Relay runtime security",
     )
+    for service_id, service, runtime in (
+        ("station", station, station_runtime),
+        ("relay", relay, relay_runtime),
+    ):
+        if not _runtime_source_matches(
+            runtime,
+            str(service.get("liveCommit") or ""),
+            source_commit,
+        ):
+            raise GateError(
+                f"{service_id} service is not bound to the clean Gate source"
+            )
     storage_security = _required_object(
         security.get("relayStorageSecurity"),
         "relayStorageSecurity",

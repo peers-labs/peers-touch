@@ -481,6 +481,18 @@
       "tier": "ci-cheap",
       "description": "Run Station Federation owner and Touch integration tests."
     },
+    "federation-two-station-lifecycle-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.federation.two_station_lifecycle_e2e"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "cross-station-social-native",
+      "provisioner": "cross-station-social-native",
+      "tier": "env-evidence",
+      "description": "Prove create, cross-Station join, bilateral convergence, non-owner leave, rejoin, restart replay, owner-only archive, Native context visibility, and deterministic cleanup across profile four and fiveArm."
+    },
     "station-dashboard-unit": {
       "command": "cd apps/station && go test ./app/subserver/dashboard/...",
       "timeout_seconds": 600,
@@ -1025,20 +1037,26 @@
       "description": "Fail closed on undeclared Chat debug egress and request-echoed identity evidence."
     },
     "chat-lifecycle-onboarding-e2e": {
-      "command": "PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.lifecycle_onboarding && PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.lifecycle_onboarding_e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_onboarding && python3 -m tooling.acceptance.gates.chat.lifecycle_onboarding_e2e",
       "timeout_seconds": 1800,
-      "environment": "native-tauri-current-profile",
-      "provisioner": "native-tauri-current-profile",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
       "tier": "env-evidence",
-      "description": "Run two synchronized current-profile Native Desktop clients through retained no-PIN account restart without credential prompts; local, federated-handle, and Station-scoped discovery; PTID-keyed selectable request-history consolidation; authoritative Station-name summary with expandable copyable identity details; reject and retry; accept; Direct reuse or creation; and bidirectional exact plaintext."
+      "description": "Run two isolated exact-source Native Desktop clients from one canonical worktree through no-PIN account restart without credential prompts; All and Federation-scoped discovery; PTID-keyed selectable request-history consolidation; authoritative Station-name summary with expandable copyable identity details; reject and retry; accept; Direct reuse or creation; and bidirectional exact plaintext."
     },
     "chat-lifecycle-direct-e2e": {
       "command": "PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.lifecycle_direct",
       "timeout_seconds": 1800,
-      "environment": "native-tauri-current-profile",
-      "provisioner": "native-tauri-current-profile",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
       "tier": "env-evidence",
-      "description": "Run two synchronized current-profile Native Desktop clients through bidirectional Direct messaging, live transcript updates, per-conversation unread state, restart-stable previews, paged history, message-identity-preserving retry, authoritative Station identity and presence, immediate local background preview with durable persistence, canonical local message search, and irreversible current-device conversation clearing."
+      "description": "Run two isolated exact-source Native Desktop clients from one canonical worktree through bidirectional Direct messaging, live transcript updates, per-conversation unread state, restart-stable previews, paged history, message-identity-preserving retry, authoritative Station identity and presence, immediate local background preview with durable persistence, canonical local message search, and irreversible current-device conversation clearing."
     },
     "chat-lifecycle-call-resolution-e2e": {
       "argv": [
@@ -1118,10 +1136,13 @@
     "chat-lifecycle-rich-voice-e2e": {
       "command": "PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.lifecycle_rich_voice",
       "timeout_seconds": 1800,
-      "environment": "native-tauri-current-profile",
-      "provisioner": "native-tauri-current-profile",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
       "tier": "env-evidence",
-      "description": "Run two synchronized current-profile Native Desktop clients through encrypted attachment byte conservation, screenshot cancel/confirm geometry preservation, recorded-voice cancel/preview/discard/send, private duration persistence, verified playback, cache-loss retry, and restart recovery."
+      "description": "Run two isolated exact-source Native Desktop clients from one canonical worktree through encrypted attachment byte conservation, screenshot cancel/confirm geometry preservation, recorded-voice cancel/preview/discard/send, private duration persistence, verified playback, cache-loss retry, and restart recovery."
     },
     "desktop-check": {
       "command": "cd apps/desktop && pnpm run check",
@@ -1220,6 +1241,23 @@
       "environment": "local",
       "tier": "env-evidence",
       "description": "Attach formal proof to the exact-source CSS-09 Native Suite for AS17 through AS24 and same-Station regression."
+    },
+    "social-cross-station-mobile-desktop-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.social.cross_station_gate",
+        "--gate",
+        "social-cross-station-mobile-desktop-e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 10800,
+      "environment": "social-cross-station-mobile-desktop",
+      "provisioner": "social-cross-station-mobile-desktop",
+      "tier": "env-evidence",
+      "description": "Prove SOC-SEC-AS25 through one exact-source Suite where Desktop on Station four and iOS Simulators on Station fiveArm exchange private Moments, Comments, Reactions, revocation, restart, and unauthorized-denial evidence through real product surfaces."
     },
     "browser-social-zero-registration": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate browser-social-zero-registration",
@@ -2095,7 +2133,8 @@
       "description": "Prove one lazy inline comment thread, public/private comment authority separation, runtime-owned private pagination, and temporary public/private media lifecycle without claiming native device behavior."
     },
     "mobile-social-ios-native": {
-      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario ios-social-parity",
+      "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.simulator_social_e2e", "--scenario", "ios-social-parity"],
+      "ephemeralCapabilities": ["mobile.social.actor-identity"],
       "timeout_seconds": 7200,
       "environment": "mobile-social-ios-simulator",
       "provisioner": "mobile-social-ios-simulator",
@@ -2151,7 +2190,9 @@
       "argv": [
         "python3",
         "-m",
-        "tooling.acceptance.gates.mobile.simulator_station_lifecycle_e2e"
+        "tooling.acceptance.gates.mobile.simulator_station_lifecycle_e2e",
+        "--route-expiry-wait-seconds",
+        "310"
       ],
       "ephemeralCapabilities": [
         "mobile.simulator.appium-session"
@@ -2160,7 +2201,7 @@
       "environment": "mobile-station-lifecycle-simulator",
       "provisioner": "mobile-station-lifecycle-simulator",
       "tier": "env-evidence",
-      "description": "Prove valid-session restore, same-device-type takeover and revocation recovery, ten Station switches, logout, generation fencing, old-scope absence, source binding, and cleanup on pinned simulator cells."
+      "description": "Prove expired-route same-session resume and secondary Station selection, valid-session restore, same-device-type takeover and revocation recovery, ten Station switches, logout, generation fencing, old-scope absence, source binding, and cleanup on pinned simulator cells."
     },
     "mobile-ios-simulator-layout-accessibility-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_layout_accessibility_e2e",
@@ -2407,6 +2448,20 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate the Mobile managed domain against contract, native runtime, evidence, and unproven-scope rules."
+    },
+    "release-0.0.1-operation-analysis": {
+      "command": "python3 -m tooling.acceptance.gates.release.operation_analysis",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate exact-source Desktop and iOS operation observations and emit immutable Chinese JSON, Markdown, and HTML UX reports without treating screenshots or Harness output as task proof."
+    },
+    "release-0.0.1-mobile-ios-desktop-aggregate": {
+      "command": "python3 -m tooling.acceptance.gates.release.release_aggregate",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Fail closed unless every preceding 0.0.1 completion Gate belongs to the same current aggregate and clean source with DONE, PROVEN, canonical product, runtime-cell, redaction, secret-scan, and cleanup evidence."
     },
     "chat-lifecycle-tree-zero-reference-e2e": {
       "command": "python3 tooling/acceptance/gates/chat/lifecycle_tree_zero_reference.py",

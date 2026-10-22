@@ -57,7 +57,7 @@ def validate_presence_layout_report(report: dict[str, Any]) -> None:
     )
     require(
         isinstance(unknown, dict)
-        and (unknown.get("proxy") or {}).get("interceptedCount", 0) >= 1
+        and (unknown.get("proxy") or {}).get("failureCount", 0) >= 1
         and (unknown.get("recovered") or {}).get("valid") is True,
         "unavailable-authority and recovery evidence is incomplete",
     )

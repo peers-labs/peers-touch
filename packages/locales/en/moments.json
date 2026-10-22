@@ -52,6 +52,7 @@
   "moments.filter.stationBoundary": "Station boundary",
 
   "moments.source.local": "Local",
+  "moments.source.remote": "Remote",
   "moments.source.station": "From {{station}}",
   "moments.source.unresolved": "Source unresolved",
   "moments.reason.self": "Mine",

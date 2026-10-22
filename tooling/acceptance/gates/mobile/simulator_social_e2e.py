@@ -17,6 +17,7 @@ from tooling.acceptance.core import (
     ArtifactRef,
     ArtifactSession,
     DriverError,
+    EphemeralGateClient,
     GateError,
     ProvisioningError,
     REPO_ROOT,
@@ -59,8 +60,8 @@ SCENARIO_GATES = {
 IOS_SOCIAL_PARITY_SCENARIOS = (
     "rc01-home-explore",
     "rc01-search-profile",
-    "rc01-circles-publish",
     "rc01-thread-reaction",
+    "rc01-circles-publish",
     "rc01-recovery-lifecycle",
     "rc01-native-quality",
 )
@@ -172,6 +173,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             else ENVIRONMENT_ID
         )
         self.suite_runtime_ledger: SuiteRuntimeLedger | None = None
+        self.capability_client: EphemeralGateClient | None = None
 
     def execute(self) -> int:
         with ArtifactSession(
@@ -209,8 +211,30 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                         "errorType": type(error).__name__,
                     }
                 )
+                result["runtimeDiagnostics"] = self._capture_runtime_failure(
+                    artifacts,
+                )
             finally:
                 self._cleanup_sessions(artifacts)
+                if self.capability_client is not None:
+                    try:
+                        self.capability_client.close()
+                    except Exception as error:
+                        self.cleanup.append(
+                            {
+                                "resource": "ephemeral-capability-client",
+                                "status": "failed",
+                                "errorType": type(error).__name__,
+                            }
+                        )
+                    else:
+                        self.cleanup.append(
+                            {
+                                "resource": "ephemeral-capability-client",
+                                "status": "passed",
+                            }
+                        )
+                    self.capability_client = None
 
             cleanup_failed = any(
                 item["status"] == "failed" for item in self.cleanup
@@ -299,6 +323,104 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         stream.write(f"{status}: {self.gate_id}\n")
         return exit_code
 
+    def _capture_runtime_failure(
+        self,
+        artifacts: ArtifactSession,
+    ) -> list[dict[str, Any]]:
+        diagnostics: list[dict[str, Any]] = []
+        for session in self.sessions:
+            client_id = session.client_id
+            try:
+                lifecycle = self._mapping(
+                    session.call_action(
+                        "lifecycle.waitReady",
+                        {"includeDiagnostics": True},
+                    ),
+                    f"{client_id} failed lifecycle",
+                )
+                social = self._mapping(
+                    session.call_action("social.projection.read"),
+                    f"{client_id} failed Social projection",
+                )
+                private_social = self._mapping(
+                    session.call_action("moments.private.snapshot"),
+                    f"{client_id} failed private Social projection",
+                )
+                ingress = social.get("ingress")
+                public_ingress = (
+                    {
+                        key: ingress.get(key)
+                        for key in (
+                            "lifecycle",
+                            "writeAdmissionOpen",
+                            "staleDomains",
+                            "dataQueueDepth",
+                            "controlQueueDepth",
+                        )
+                    }
+                    if isinstance(ingress, Mapping)
+                    else None
+                )
+                value = {
+                    "clientId": client_id,
+                    "lifecycle": {
+                        key: lifecycle.get(key)
+                        for key in (
+                            "phase",
+                            "launchState",
+                            "generation",
+                            "errorKey",
+                            "runtimes",
+                            "runtimeErrors",
+                        )
+                    },
+                    "social": {
+                        "active": social.get("active"),
+                        "lastReconcileAt": social.get("lastReconcileAt"),
+                        "ingress": public_ingress,
+                    },
+                    "privateSocial": {
+                        "publish": [
+                            {
+                                key: item.get(key)
+                                for key in (
+                                    "audienceKind",
+                                    "state",
+                                    "errorCode",
+                                )
+                                if item.get(key) is not None
+                            }
+                            for item in private_social.get("publish", [])
+                            if isinstance(item, Mapping)
+                        ],
+                        "publishStateHistory": private_social.get(
+                            "publishStateHistory",
+                        ),
+                        "report": private_social.get("report"),
+                        "errorPresent": private_social.get("errorPresent"),
+                    },
+                }
+                reference = artifacts.write_json(
+                    f"mobile-simulator-social/{self.scenario}/"
+                    f"{client_id}/failure-runtime.json",
+                    json.loads(redact_text(json.dumps(value))),
+                    role=f"mobile-simulator-social-failure-runtime:{client_id}",
+                )
+                diagnostics.append(
+                    {
+                        "clientId": client_id,
+                        "artifact": reference.to_dict(),
+                    }
+                )
+            except Exception as error:
+                diagnostics.append(
+                    {
+                        "clientId": client_id,
+                        "captureErrorType": type(error).__name__,
+                    }
+                )
+        return diagnostics
+
     def _finalize_suite_runtime(
         self,
         *,
@@ -375,6 +497,9 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         }
         actors = self._load_actors(artifacts, manifest)
         journey = MobileMessagingJourney(timeout_seconds=30)
+        if self.scenario == "ios-social-parity":
+            for client_id, session in sessions.items():
+                self._prepare_actor_identity(session, actors[client_id].role)
         authentication = {
             client_id: journey.authenticate(
                 sessions[client_id],
@@ -685,6 +810,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 SuiteRuntimeAction.LOGIN,
                 resource_id=f"login:{client_id}",
             )
+        private_key_inventories = {
+            client_id: self._prepare_private_keys(sessions[client_id])
+            for client_id in ("sim-ios", "sim-ios-peer")
+        }
 
         state: dict[str, Any] = {}
         scenario_runners = (
@@ -706,21 +835,19 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 ),
             ),
             (
-                "rc01-circles-publish",
-                lambda: self._run_ios_circles_publish(
-                    sender_session,
+                "rc01-thread-reaction",
+                lambda: self._run_ios_thread_reaction(
                     receiver_session,
-                    sender,
-                    receiver,
-                    journey,
                     journey_id,
                     state,
                 ),
             ),
             (
-                "rc01-thread-reaction",
-                lambda: self._run_ios_thread_reaction(
+                "rc01-circles-publish",
+                lambda: self._run_ios_circles_publish(
+                    sender_session,
                     receiver_session,
+                    receiver,
                     journey_id,
                     state,
                 ),
@@ -783,6 +910,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 "bob": receiver.ptid,
                 "eve": eve.ptid,
             },
+            "privateKeyInventories": private_key_inventories,
             "scenarios": results,
             "unprovenScope": [
                 "Android",
@@ -838,6 +966,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         self._click_ui(
             receiver_session,
+            '[data-acceptance-id="social-explore-sort-open"]',
+            "Explore sort sheet",
+        )
+        self._click_ui(
+            receiver_session,
             '[data-acceptance-id="social-explore-sort-hot"]',
             "Explore hot sort",
         )
@@ -890,16 +1023,33 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-search-page"]',
             "Social Search page",
         )
+        federation_selector = (
+            '[data-acceptance-id="social-search-page"] '
+            f'input[type="radio"][value="{receiver.federation_id}"]'
+        )
+        federation_control_selector = (
+            '[data-acceptance-id="social-search-page"] '
+            "label.ant-radio-wrapper:has("
+            f'input[type="radio"][value="{receiver.federation_id}"])'
+        )
+        self._select_radio(
+            session,
+            federation_control_selector,
+            federation_selector,
+            '[data-acceptance-id="social-search-input"] '
+            ".ant-input-search-btn",
+            "Social Search Federation",
+        )
         self._set_ui_value(
             session,
             '[data-acceptance-id="social-search-input"] input',
-            receiver.federated_handle,
+            receiver.role,
             "Social Search query",
         )
         self._click_ui(
             session,
             '[data-acceptance-id="social-search-input"] '
-            ".ant-input-search-button",
+            ".ant-input-search-btn",
             "Social Search submit",
         )
         result_selector = (
@@ -930,29 +1080,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         self,
         sender_session: Any,
         receiver_session: Any,
-        sender: MessagingActor,
         receiver: MessagingActor,
-        journey: MobileMessagingJourney,
         journey_id: str,
         state: dict[str, Any],
     ) -> dict[str, Any]:
-        conversation_id = journey._create_direct(
-            sender_session,
-            receiver_session,
-            sender,
-            receiver,
-        )
-        group_id = f"mps09-group-{journey_id}"
-        sender_session.call_action(
-            "messaging.createGroup",
-            {
-                "conversationId": group_id,
-                "name": f"MPS09 {journey_id}",
-                "memberPtids": [sender.ptid, receiver.ptid],
-                "federationId": sender.federation_id,
-            },
-        )
-
         sender_session.call_action(
             "navigation.apply",
             {"kind": "primary", "routeId": "tab:moments"},
@@ -1012,16 +1143,22 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-circle-member-picker"]',
             "Circle member picker",
         )
+        self._select_antd_option(
+            sender_session,
+            '[data-acceptance-id="social-circle-member-picker"] .ant-select',
+            0,
+            "Circle member Federation",
+        )
         self._set_ui_value(
             sender_session,
             '[data-acceptance-id="social-circle-member-search"] input',
-            receiver.federated_handle,
+            receiver.role,
             "Circle member search",
         )
         self._click_ui(
             sender_session,
             '[data-acceptance-id="social-circle-member-search"] '
-            ".ant-input-search-button",
+            ".ant-input-search-btn",
             "Circle member search submit",
         )
         candidate_selector = (
@@ -1096,7 +1233,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         self._click_ui(
             sender_session,
-            '[data-acceptance-id="social-audience-target-done"]',
+            (
+                '[data-acceptance-id="social-audience-circle"]'
+                f'[data-circle-id="{circle_id}"]'
+            ),
             "Circle target",
         )
         self._wait_ui_attribute(
@@ -1130,8 +1270,6 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "privatePostId": private_post_id,
             "privatePostText": private_text,
             "circleId": circle_id,
-            "groupId": group_id,
-            "conversationId": conversation_id,
         })
         receiver_session.call_action("moments.private.reconcile")
         receiver_read = self._mapping(
@@ -1157,9 +1295,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         return {
             "uiAction": f"circle-create-publish:{circle_id}",
             "receiverAssertion": f"private-post:{private_post_id}",
-            "supportingObservation": (
-                f"circle-member:{receiver.ptid};group:{group_id}"
-            ),
+            "supportingObservation": f"circle-member:{receiver.ptid}",
             "circleId": circle_id,
             "privatePostId": private_post_id,
             "receiverState": receiver_read["state"],
@@ -1172,18 +1308,15 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         state: Mapping[str, Any],
     ) -> dict[str, Any]:
         post_id = self._text(
-            state.get("privatePostId"),
-            "MPS-09 private post state",
+            state.get("publicPostId"),
+            "MPS-09 public post state",
         )
         for index in range(11):
             session.call_action(
-                "moments.private.comment.submit",
+                "moments.comment",
                 {
-                    "draftId": f"mps09-{journey_id}-comment-{index}",
-                    "draftRevision": 1,
                     "postId": post_id,
-                    "text": f"MPS09 comment {index}",
-                    "mentions": [],
+                    "content": f"MPS09 comment {index}",
                 },
             )
         session.call_action(
@@ -1201,7 +1334,24 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-moment-thread"]'
             f'[data-post-id="{post_id}"]'
         )
-        self._wait_ui(session, thread_selector, "Moment thread")
+        try:
+            self._wait_ui(session, thread_selector, "Moment thread")
+        except GateError as error:
+            thread_state = self._moment_thread_state(session, post_id)
+            navigation = self._mapping(
+                session.call_action("navigation.snapshot"),
+                "Moment thread navigation",
+            )
+            raise GateError(
+                "Moment thread did not converge "
+                f"(momentsPages={thread_state['momentsPages']}, "
+                f"cards={thread_state['cards']}, "
+                f"actions={thread_state['actions']}, "
+                f"threads={thread_state['threads']}, "
+                f"primaryRoute={navigation.get('primaryRouteId')}, "
+                f"detailCount={len(navigation.get('detailKeys', []))}, "
+                f"rootError={thread_state['rootError'] or 'none'})"
+            ) from error
         self._wait_ui_attribute(
             session,
             f"{thread_selector} [data-comment-total]",
@@ -1226,18 +1376,19 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             f"MPS09 UI comment {journey_id}",
             "Inline comment readback",
         )
+        self._click_ui_for_post(
+            session,
+            post_id,
+            "social-reaction-open",
+            "Reaction picker",
+        )
         for reaction_kind in range(1, 6):
-            self._click_ui_for_post(
-                session,
-                post_id,
-                "social-reaction-open",
-                "Reaction picker",
-            )
             self._click_ui(
                 session,
                 (
-                    '[data-acceptance-id="social-reaction-choice"]'
-                    f'[data-reaction-kind="{reaction_kind}"]'
+                    '[data-reaction-picker] '
+                    '[data-reaction-picker-item]'
+                    f':nth-child({reaction_kind})'
                 ),
                 f"Reaction kind {reaction_kind}",
             )
@@ -1273,13 +1424,43 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             draft_text,
             "Recovery draft",
         )
-        time.sleep(0.5)
+        self._wait_ui_attribute(
+            session,
+            '[data-acceptance-id="social-composer"]',
+            "data-draft-persisted",
+            "true",
+            "Persisted Recovery draft",
+        )
         restart = self._mapping(
             session.call_action("lifecycle.restart"),
             "MPS-09 lifecycle restart",
         )
         if restart != {"requested": True, "scope": "webview"}:
             raise GateError("MPS-09 lifecycle restart was not acknowledged")
+        self._click_ui(
+            session,
+            '[data-acceptance-id="recovery-draft-restore-action"]',
+            "Restore persisted Moment draft",
+        )
+        self._wait_ui_absent(
+            session,
+            '[data-acceptance-id="recovery-draft-restore"]',
+            "Dismiss restored Moment draft prompt",
+        )
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._wait_ui(
+            session,
+            '[data-acceptance-id="social-moments-page"]',
+            "Return to Moments after draft restoration",
+        )
+        self._click_ui(
+            session,
+            '[data-acceptance-id="social-composer-open"]',
+            "Reopen composer after draft restoration",
+        )
         self._wait_ui_text(
             session,
             '[data-acceptance-id="social-composer"]',
@@ -1290,6 +1471,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "session.logout",
             {"draftDisposition": "discard"},
         )
+        self._prepare_actor_identity(session, eve.role)
         journey.authenticate(
             session,
             eve,
@@ -1399,6 +1581,65 @@ return {
             "screenshotBytes": len(screenshot),
         }
 
+    def _prepare_actor_identity(self, session: Any, role: str) -> None:
+        if self.capability_client is None:
+            self.capability_client = EphemeralGateClient.from_environment()
+        client = self.capability_client
+        if client is None:
+            raise SimulatorGateBlocked(
+                "iOS Social Actor Identity capability is unavailable",
+                "mobile.social.actor-identity",
+            )
+        result = client.invoke(
+            "mobile.social.actor-identity",
+            "prepare",
+            {
+                "clientId": session.client_id,
+                "sessionId": session.session_id,
+                "role": role,
+            },
+            timeout_seconds=180,
+        )
+        if result != {"prepared": True}:
+            raise GateError("iOS Social Actor Identity was not prepared")
+
+    @staticmethod
+    def _prepare_private_keys(session: Any) -> dict[str, int]:
+        prepared = SimulatorSocialGate._mapping(
+            session.call_action("moments.private.acceptance.prepareKeys"),
+            f"{session.client_id} private Content PreKey preparation",
+        )
+        reconciled = SimulatorSocialGate._mapping(
+            session.call_action("moments.private.reconcile"),
+            f"{session.client_id} private Content PreKey reconciliation",
+        )
+        report = reconciled.get("report")
+        if not isinstance(report, Mapping):
+            raise GateError(
+                f"{session.client_id} private Content PreKey report is missing"
+            )
+        inventory: dict[str, int] = {}
+        for key in (
+            "endpointPrekeysAvailable",
+            "recoveryPrekeysAvailable",
+        ):
+            prepared_value = prepared.get(key)
+            reconciled_value = report.get(key)
+            if (
+                not isinstance(prepared_value, int)
+                or isinstance(prepared_value, bool)
+                or prepared_value <= 0
+                or not isinstance(reconciled_value, int)
+                or isinstance(reconciled_value, bool)
+                or reconciled_value <= 0
+            ):
+                raise GateError(
+                    f"{session.client_id} private Content PreKey inventory "
+                    "is unavailable"
+                )
+            inventory[key] = reconciled_value
+        return inventory
+
     @staticmethod
     def _wait_ui(
         session: Any,
@@ -1422,6 +1663,22 @@ return {
         return SimulatorSocialGate._wait_for_value(read, label)
 
     @staticmethod
+    def _wait_ui_absent(
+        session: Any,
+        selector: str,
+        label: str,
+    ) -> None:
+        SimulatorSocialGate._wait_for_value(
+            lambda: True
+            if session.execute_script(
+                "return document.querySelector(arguments[0]) === null;",
+                selector,
+            ) is True
+            else None,
+            label,
+        )
+
+    @staticmethod
     def _click_ui(
         session: Any,
         selector: str,
@@ -1443,34 +1700,117 @@ return true;
         SimulatorSocialGate._wait_for_value(click, label)
 
     @staticmethod
+    def _select_radio(
+        session: Any,
+        control_selector: str,
+        selector: str,
+        enabled_selector: str,
+        label: str,
+    ) -> int:
+        element_ref = session.find_element("css selector", control_selector)
+        session.click_element(element_ref)
+
+        def selected() -> Mapping[str, object] | None:
+            value = session.execute_script(
+                """
+const input = document.querySelector(arguments[0]);
+const enabled = document.querySelector(arguments[1]);
+if (input?.checked !== true || enabled?.disabled !== false) return null;
+const inputs = Array.from(document.querySelectorAll(
+  '[data-acceptance-id="social-search-page"] input[type="radio"]'
+));
+const index = inputs.indexOf(input);
+return index >= 0 ? {index} : null;
+""",
+                selector,
+                enabled_selector,
+            )
+            return value if isinstance(value, Mapping) else None
+
+        result = SimulatorSocialGate._wait_for_value(selected, label)
+        index = result.get("index") if isinstance(result, Mapping) else None
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            raise GateError(f"{label} returned an invalid option index")
+        return index
+
+    @staticmethod
     def _click_ui_for_post(
         session: Any,
         post_id: str,
         acceptance_id: str,
         label: str,
     ) -> None:
+        if any(
+            character in post_id or character in acceptance_id
+            for character in ('"', "\\")
+        ):
+            raise GateError(f"{label} has an invalid selector identity")
+        selector = (
+            '[data-acceptance-id="social-moment-card"]'
+            f'[data-post-id="{post_id}"] '
+            f'[data-acceptance-id="{acceptance_id}"]'
+        )
+
         def click() -> bool | None:
-            value = session.execute_script(
-                """
-const postId = arguments[0];
-const acceptanceId = arguments[1];
-const card = Array.from(document.querySelectorAll(
-  '[data-acceptance-id="social-moment-card"]'
-)).find((node) => node.getAttribute('data-post-id') === postId);
-const target = card?.querySelector(
-  `[data-acceptance-id="${acceptanceId}"]`
-);
-if (!target || target.disabled) return null;
-target.scrollIntoView({block: 'center', inline: 'nearest'});
-target.click();
-return true;
-""",
-                post_id,
-                acceptance_id,
-            )
-            return True if value is True else None
+            try:
+                element_ref = session.find_element("css selector", selector)
+                session.click_element(element_ref)
+                return True
+            except DriverError:
+                return None
 
         SimulatorSocialGate._wait_for_value(click, label)
+
+    @staticmethod
+    def _moment_thread_state(
+        session: Any,
+        post_id: str,
+    ) -> dict[str, int | str]:
+        value = session.execute_script(
+            """
+const postId = arguments[0];
+const cards = Array.from(document.querySelectorAll(
+  '[data-acceptance-id="social-moment-card"]'
+)).filter((node) => node.getAttribute('data-post-id') === postId);
+return {
+  momentsPages: document.querySelectorAll(
+    '[data-acceptance-id="social-moments-page"]'
+  ).length,
+  cards: cards.length,
+  actions: cards.reduce(
+    (count, card) => count + card.querySelectorAll(
+      '[data-acceptance-id="social-thread-open"]'
+    ).length,
+    0
+  ),
+  threads: document.querySelectorAll(
+    `[data-acceptance-id="social-moment-thread"][data-post-id="${postId}"]`
+  ).length,
+  rootError: (
+    document.querySelector('[data-acceptance-root-error-stack]')
+      ?.textContent || ''
+  ).split('\\n')[0].slice(0, 256),
+};
+""",
+            post_id,
+        )
+        if not isinstance(value, Mapping) or any(
+            not isinstance(value.get(key), int)
+            or isinstance(value.get(key), bool)
+            or int(value[key]) < 0
+            for key in ("momentsPages", "cards", "actions", "threads")
+        ):
+            raise GateError("Moment thread diagnostic is invalid")
+        root_error = value.get("rootError")
+        if not isinstance(root_error, str):
+            raise GateError("Moment thread error diagnostic is invalid")
+        return {
+            **{
+                key: int(value[key])
+                for key in ("momentsPages", "cards", "actions", "threads")
+            },
+            "rootError": redact_text(root_error),
+        }
 
     @staticmethod
     def _set_ui_value(
@@ -1509,11 +1849,8 @@ return node.value === value;
         option_index: int,
         label: str,
     ) -> None:
-        SimulatorSocialGate._click_ui(
-            session,
-            f"{selector} .ant-select-selector",
-            f"{label} selector",
-        )
+        element_ref = session.find_element("css selector", selector)
+        session.click_element(element_ref)
 
         def select() -> bool | None:
             selected = session.execute_script(

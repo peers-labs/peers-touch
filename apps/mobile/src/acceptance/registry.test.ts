@@ -161,6 +161,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('social.projection.read');
     expect(actionNames).toContain('moments.private.publishText');
     expect(actionNames).toContain('moments.private.readText');
+    expect(actionNames).toContain('moments.private.acceptance.prepareKeys');
     expect(actionNames).toContain('moments.private.reconcile');
     expect(actionNames).toContain('moments.private.snapshot');
     expect(actionNames).toContain('storage.conversation-clear.seed');
@@ -787,7 +788,9 @@ describe('Mobile Acceptance Harness', () => {
     expect(searchAction).toContain(
       'searchSocialPeople(\n      requireString(query',
     );
+    expect(searchAction).toContain('readFederationContexts()');
     expect(searchAction).toContain('contextId');
+    expect(searchAction).toContain('federationId: result.federationId');
     expect(searchAction).not.toContain('readSocialPeopleSearchFederations()');
   });
 

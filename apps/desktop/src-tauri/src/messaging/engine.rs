@@ -43,12 +43,10 @@ use crate::model::chat::{
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
-use messaging_core::identity::enrollment::{
-    generate_device_identity_for_device_from_parts, generate_fresh_device_identity_from_seed,
-    load_or_create_device_identity_from_seed,
-};
+use messaging_core::identity::enrollment::generate_device_identity_for_device_from_parts;
 use messaging_core::identity::{
-    is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
+    generate_fresh_device_identity_for_device, is_stale_endpoint_error,
+    load_or_create_device_identity_for_device, DeviceEnrollmentManager, FreshDeviceEnrollment,
     FreshDeviceIdentityState,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
@@ -104,6 +102,8 @@ use ulid::Ulid;
 use zeroize::Zeroizing;
 
 const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
+const COMMAND_PLAN_CONVERGENCE_TIMEOUT: Duration = Duration::from_secs(15);
+const COMMAND_PLAN_CONVERGENCE_INTERVAL: Duration = Duration::from_millis(200);
 const ATTACHMENT_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
 const ATTACHMENT_OPEN_RETRY_FLOOR: Duration = Duration::from_millis(10);
 const PREKEY_INVENTORY_RECONCILIATION_INTERVAL_MS: i64 = 60_000;
@@ -522,15 +522,26 @@ impl MessagingEngine {
             );
         }
         let store = Arc::new(MessagingStore::open(&profile_id)?);
-        Self::from_profile_store(
+        let device_id = crate::application::key_exchange::device_install::get_or_create_device_id()
+            .map_err(|error| error.to_string())?;
+        super::device_identity_backup::restore_backed_up_seed(
+            store.as_ref(),
+            &ptid,
+            &device_id,
+            actor_identity_seed,
+            actor_profile_version,
+        )?;
+        let engine = Self::from_profile_store(
             station_client,
             profile_id,
             ptid,
             actor_identity_seed,
             actor_profile_version,
             station_identity_continuity_verified,
-            store,
-        )
+            store.clone(),
+        )?;
+        super::device_identity_backup::preserve_device_seed(store.as_ref())?;
+        Ok(engine)
     }
 
     fn from_profile_store(
@@ -542,17 +553,21 @@ impl MessagingEngine {
         station_identity_continuity_verified: bool,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
+        let device_id = crate::application::key_exchange::device_install::get_or_create_device_id()
+            .map_err(|error| format!("load canonical installation device identity: {error}"))?;
         Self::refresh_stored_device_identity(
             store.as_ref(),
             &ptid,
+            &device_id,
             actor_identity_seed,
             actor_profile_version,
             station_identity_continuity_verified,
         )?;
-        let enrollment = load_or_create_device_identity_from_seed(
+        let enrollment = load_or_create_device_identity_for_device(
             store.as_ref(),
             &ptid,
-            actor_identity_seed,
+            &device_id,
+            *actor_identity_seed,
             actor_profile_version,
         )?;
         let device = enrollment
@@ -576,6 +591,7 @@ impl MessagingEngine {
     fn refresh_stored_device_identity(
         store: &MessagingStore,
         ptid: &str,
+        authenticated_device_id: &str,
         actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
         station_identity_continuity_verified: bool,
@@ -583,6 +599,18 @@ impl MessagingEngine {
         let Some(enrollment) = store.device_enrollment()? else {
             return Ok(());
         };
+        let device_id = enrollment
+            .certificate
+            .device
+            .as_ref()
+            .map(|device| device.device_id.as_str())
+            .filter(|device_id| !device_id.is_empty())
+            .ok_or_else(|| "messaging device identity has no endpoint".to_string())?;
+        if device_id != authenticated_device_id {
+            return Err(
+                "messaging device identity does not match authenticated session".to_string(),
+            );
+        }
         let actor_identity = IdentityKeyPair::from_seed(actor_identity_seed);
         let actor_identity_matches = enrollment.certificate.actor_identity_public_key
             == actor_identity.verifying_key().as_bytes()
@@ -599,13 +627,6 @@ impl MessagingEngine {
         if !actor_identity_matches && !station_identity_continuity_verified {
             return Err("messaging device identity continuity mismatch".to_string());
         }
-        let device_id = enrollment
-            .certificate
-            .device
-            .as_ref()
-            .map(|device| device.device_id.as_str())
-            .filter(|device_id| !device_id.is_empty())
-            .ok_or_else(|| "messaging device identity has no endpoint".to_string())?;
         let (device_signing_seed, signing_key_id) = store
             .device_signing_seed()?
             .ok_or_else(|| "messaging device signing key is unavailable".to_string())?;
@@ -1493,17 +1514,30 @@ impl MessagingEngine {
         token: &str,
         archive: &MessagingRecoveryArchive,
     ) -> Result<RecoveryReconciliation, String> {
-        if token.trim().is_empty() || archive.ptid != self.endpoint.ptid {
+        Self::reconcile_recovery_archive_redactions_for_profile(
+            &self.station_client,
+            &self.endpoint.ptid,
+            token,
+            archive,
+        )
+    }
+
+    pub fn reconcile_recovery_archive_redactions_for_profile(
+        station_client: &StationClient,
+        expected_ptid: &str,
+        token: &str,
+        archive: &MessagingRecoveryArchive,
+    ) -> Result<RecoveryReconciliation, String> {
+        if token.trim().is_empty() || archive.ptid != expected_ptid {
             return Err("messaging recovery reconciliation identity is invalid".to_string());
         }
-
         const PAGE_LIMIT: i32 = 500;
         const MAX_PAGES_PER_CONVERSATION: usize = 1_000;
         let mut reconciliation = RecoveryReconciliation::default();
         for conversation in &archive.conversations {
             let conversation_id = &conversation.conversation_id;
             let query = [("conversation_id", conversation_id.clone())];
-            let response = self.station_client.request_proto_for_actor::<
+            let response = station_client.request_proto_for_actor::<
                 GetConversationPublicHeadRequest,
                 GetConversationPublicHeadResponse,
             >(
@@ -1523,9 +1557,7 @@ impl MessagingEngine {
                         .to_string()
                 })?;
             let authority_station_id = if source == ConversationPublicHeadSource::Follower {
-                let authority_response = self
-                    .station_client
-                    .request_proto_for_actor_at_station::<
+                let authority_response = station_client.request_proto_for_actor_at_station::<
                         GetConversationPublicHeadRequest,
                         GetConversationPublicHeadResponse,
                     >(
@@ -1578,8 +1610,7 @@ impl MessagingEngine {
                         ("limit", limit.to_string()),
                     ];
                     let response = match authority_station_id.as_deref() {
-                        Some(authority_station_id) => self
-                            .station_client
+                        Some(authority_station_id) => station_client
                             .request_proto_for_actor_at_station::<
                                 ListConversationEventsRequest,
                                 ListConversationEventsResponse,
@@ -1591,7 +1622,7 @@ impl MessagingEngine {
                             Some(&query),
                             None,
                         ),
-                        None => self.station_client.request_proto_for_actor::<
+                        None => station_client.request_proto_for_actor::<
                             ListConversationEventsRequest,
                             ListConversationEventsResponse,
                         >(
@@ -1839,8 +1870,8 @@ impl MessagingEngine {
             // 401/403 are excluded — they can succeed again after re-login.
             HttpStatus(status) => matches!(status, 400 | 404 | 409 | 410 | 422),
             // Network/server outages and session revocations may resolve.
-            Network | SessionRevoked | Overloaded | AmbiguousOutcome | Cancelled | StaleRoute
-            | NoRoute | RoutePolicyConflict => false,
+            Network | Unavailable | SessionRevoked | Overloaded | AmbiguousOutcome | Cancelled
+            | StaleRoute | NoRoute | RoutePolicyConflict => false,
         }
     }
 
@@ -1966,6 +1997,42 @@ impl MessagingEngine {
             authority_station_peer_id: authority_station_id,
             command_kind: command_kind as i32,
         })
+    }
+
+    fn prepare_converged_command_plan(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        command_kind: ConversationCommandKind,
+    ) -> Result<PrepareConversationCommandResponse, String> {
+        let deadline = Instant::now() + COMMAND_PLAN_CONVERGENCE_TIMEOUT;
+        loop {
+            self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
+            let plan = self.prepare_command_plan(token, conversation_id, command_kind)?;
+            let (local_sequence, local_hash) = self.store.authority_head(conversation_id)?;
+            if local_sequence == plan.authority_sequence && local_hash == plan.authority_hash {
+                return Ok(plan);
+            }
+
+            let conversation_kind = ConversationKind::try_from(plan.conversation_kind)
+                .map_err(|_| "messaging command plan conversation kind is invalid".to_string())?;
+            if conversation_kind == ConversationKind::Direct
+                && local_sequence == 0
+                && local_hash.is_empty()
+            {
+                self.bootstrap_direct_authority_checkpoint(token, &plan)?;
+                continue;
+            }
+            if Instant::now() >= deadline {
+                return Err(
+                    "messaging local authority head did not converge with command plan".to_string(),
+                );
+            }
+            std::thread::sleep(
+                COMMAND_PLAN_CONVERGENCE_INTERVAL
+                    .min(deadline.saturating_duration_since(Instant::now())),
+            );
+        }
     }
 
     pub fn prepare_direct_text(
@@ -2341,24 +2408,11 @@ impl MessagingEngine {
         }
         let conversation_kind = ConversationKind::try_from(draft.conversation_kind)
             .map_err(|_| "messaging draft conversation kind is invalid".to_string())?;
-        let plan = self.prepare_send_plan(token, &draft.conversation_id)?;
-        // Drain inbox until the local authority head matches the send plan.
-        // A single drain may not suffice if the conversation was just created
-        // and the creation event hasn't arrived in the device inbox yet.
-        for _ in 0..5 {
-            let (local_seq, local_hash) = self.store.authority_head(&draft.conversation_id)?;
-            if local_seq == plan.authority_sequence && local_hash == plan.authority_hash {
-                break;
-            }
-            self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
-        let (local_sequence, local_hash) = self.store.authority_head(&draft.conversation_id)?;
-        if conversation_kind == ConversationKind::Direct
-            && (local_sequence != plan.authority_sequence || local_hash != plan.authority_hash)
-        {
-            self.bootstrap_direct_authority_checkpoint(token, &plan)?;
-        }
+        let plan = self.prepare_converged_command_plan(
+            token,
+            &draft.conversation_id,
+            ConversationCommandKind::SendMessage,
+        )?;
         if plan.conversation_kind != draft.conversation_kind {
             return Err("messaging conversation kind does not match Station plan".to_string());
         }
@@ -2411,26 +2465,11 @@ impl MessagingEngine {
         token: &str,
         conversation_id: &str,
     ) -> Result<PrepareConversationCommandResponse, String> {
-        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
-        let plan = self.prepare_send_plan(token, conversation_id)?;
-        for _ in 0..5 {
-            let (local_sequence, local_hash) = self.store.authority_head(conversation_id)?;
-            if local_sequence == plan.authority_sequence && local_hash == plan.authority_hash {
-                return Ok(plan);
-            }
-            self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
-            std::thread::sleep(Duration::from_millis(200));
-        }
-        let conversation_kind = ConversationKind::try_from(plan.conversation_kind)
-            .map_err(|_| "messaging interaction conversation kind is invalid".to_string())?;
-        if conversation_kind == ConversationKind::Direct {
-            self.bootstrap_direct_authority_checkpoint(token, &plan)?;
-        }
-        let (local_sequence, local_hash) = self.store.authority_head(conversation_id)?;
-        if local_sequence != plan.authority_sequence || local_hash != plan.authority_hash {
-            return Err("messaging local authority head is behind interaction plan".to_string());
-        }
-        Ok(plan)
+        self.prepare_converged_command_plan(
+            token,
+            conversation_id,
+            ConversationCommandKind::SendMessage,
+        )
     }
 
     fn bootstrap_direct_authority_checkpoint(
@@ -2692,7 +2731,7 @@ impl MessagingEngine {
         if projection.sender_ptid != self.endpoint.ptid {
             return Err("messaging edit target is not authored by this actor".to_string());
         }
-        let plan = self.prepare_command_plan(
+        let plan = self.prepare_converged_command_plan(
             token,
             conversation_id,
             ConversationCommandKind::EditMessage,
@@ -2768,7 +2807,7 @@ impl MessagingEngine {
             MetadataInteraction::Reaction { .. } => ConversationCommandKind::React,
             MetadataInteraction::Pin { .. } => ConversationCommandKind::PinMessage,
         };
-        let plan = self.prepare_command_plan(token, conversation_id, command_kind)?;
+        let plan = self.prepare_converged_command_plan(token, conversation_id, command_kind)?;
         let command_id = Ulid::new().to_string();
         let now = now_unix_ms();
         MetadataInteractionPreparer::new(
@@ -3107,7 +3146,7 @@ impl MessagingEngine {
             .send_intent_lock
             .lock()
             .map_err(|_| "messaging Conversation command lock poisoned".to_string())?;
-        let plan = self.prepare_command_plan(token, conversation_id, command_kind)?;
+        let plan = self.prepare_converged_command_plan(token, conversation_id, command_kind)?;
         if ConversationKind::try_from(plan.conversation_kind).ok() != Some(ConversationKind::Group)
             || plan.authority_sequence <= 0
             || plan.authority_hash.len() != 32
@@ -3549,10 +3588,21 @@ impl Drop for MessagingEngine {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessagingProfileReadiness {
+    Inactive,
+    Active { actor_ptid: String },
+    RecoveryRequired { actor_ptid: String },
+}
+
 pub struct EngineRegistry {
     station_client: StationClient,
+    profile_transition: Mutex<()>,
     engines: Mutex<HashMap<String, Arc<MessagingEngine>>>,
     workers: Mutex<HashMap<String, MessagingLifecycleWorker>>,
+    recovery_required_profiles: Mutex<HashMap<String, String>>,
+    #[cfg(any(test, feature = "acceptance-webdriver"))]
+    acceptance_paused_profiles: Mutex<std::collections::HashSet<String>>,
     projection_notifier: Mutex<Option<MessagingProjectionNotifier>>,
 }
 
@@ -3567,8 +3617,12 @@ impl EngineRegistry {
     pub fn new(station_client: StationClient) -> Self {
         Self {
             station_client,
+            profile_transition: Mutex::new(()),
             engines: Mutex::new(HashMap::new()),
             workers: Mutex::new(HashMap::new()),
+            recovery_required_profiles: Mutex::new(HashMap::new()),
+            #[cfg(any(test, feature = "acceptance-webdriver"))]
+            acceptance_paused_profiles: Mutex::new(std::collections::HashSet::new()),
             projection_notifier: Mutex::new(None),
         }
     }
@@ -3578,6 +3632,50 @@ impl EngineRegistry {
             .lock()
             .map_err(|_| "messaging engine registry lock poisoned".to_string())
             .map(|engines| engines.get(profile_id).cloned())
+    }
+
+    pub fn profile_readiness(&self, profile_id: &str) -> Result<MessagingProfileReadiness, String> {
+        let _transition = self
+            .profile_transition
+            .lock()
+            .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
+        if let Some(engine) = self
+            .engines
+            .lock()
+            .map_err(|_| "messaging engine registry lock poisoned".to_string())?
+            .get(profile_id)
+        {
+            return Ok(MessagingProfileReadiness::Active {
+                actor_ptid: engine.endpoint().ptid.clone(),
+            });
+        }
+        Ok(self
+            .recovery_required_profiles
+            .lock()
+            .map_err(|_| "messaging recovery readiness lock poisoned".to_string())?
+            .get(profile_id)
+            .cloned()
+            .map(|actor_ptid| MessagingProfileReadiness::RecoveryRequired { actor_ptid })
+            .unwrap_or(MessagingProfileReadiness::Inactive))
+    }
+
+    pub fn mark_profile_recovery_required(
+        &self,
+        profile_id: &str,
+        actor_ptid: &str,
+    ) -> Result<(), String> {
+        if profile_id.trim().is_empty() || actor_ptid.trim().is_empty() {
+            return Err("messaging recovery readiness identity is incomplete".to_string());
+        }
+        let _transition = self
+            .profile_transition
+            .lock()
+            .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
+        self.recovery_required_profiles
+            .lock()
+            .map_err(|_| "messaging recovery readiness lock poisoned".to_string())?
+            .insert(profile_id.to_string(), actor_ptid.to_string());
+        Ok(())
     }
 
     pub fn profile_ids(&self) -> Result<Vec<String>, String> {
@@ -3595,6 +3693,10 @@ impl EngineRegistry {
         actor_profile_version: u64,
         station_identity_continuity_verified: bool,
     ) -> Result<Arc<MessagingEngine>, String> {
+        let _transition = self
+            .profile_transition
+            .lock()
+            .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
         let notifier = self
             .projection_notifier
             .lock()
@@ -3608,6 +3710,7 @@ impl EngineRegistry {
             if existing.endpoint().ptid != ptid {
                 return Err("messaging profile is already bound to another actor".to_string());
             }
+            self.clear_profile_recovery_required(&profile_id)?;
             return Ok(existing.clone());
         }
         let engine = Arc::new(MessagingEngine::open_profile(
@@ -3620,6 +3723,7 @@ impl EngineRegistry {
         )?);
         engine.set_projection_notifier(notifier)?;
         engines.insert(profile_id, engine.clone());
+        self.clear_profile_recovery_required(engine.profile_id())?;
         Ok(engine)
     }
 
@@ -3628,6 +3732,10 @@ impl EngineRegistry {
         profile_id: String,
         endpoint: EngineEndpoint,
     ) -> Result<Arc<MessagingEngine>, String> {
+        let _transition = self
+            .profile_transition
+            .lock()
+            .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
         let notifier = self
             .projection_notifier
             .lock()
@@ -3641,6 +3749,7 @@ impl EngineRegistry {
             if existing.endpoint() != &endpoint {
                 return Err("messaging profile is already bound to another endpoint".to_string());
             }
+            self.clear_profile_recovery_required(&profile_id)?;
             return Ok(existing.clone());
         }
         let engine = Arc::new(MessagingEngine::open(
@@ -3650,6 +3759,7 @@ impl EngineRegistry {
         )?);
         engine.set_projection_notifier(notifier)?;
         engines.insert(profile_id, engine.clone());
+        self.clear_profile_recovery_required(engine.profile_id())?;
         Ok(engine)
     }
 
@@ -3676,6 +3786,15 @@ impl EngineRegistry {
     }
 
     pub fn activate_profile_worker(&self, profile_id: &str, token: String) -> Result<(), String> {
+        #[cfg(any(test, feature = "acceptance-webdriver"))]
+        let paused_profiles = self
+            .acceptance_paused_profiles
+            .lock()
+            .map_err(|_| "messaging acceptance pause registry lock poisoned".to_string())?;
+        #[cfg(any(test, feature = "acceptance-webdriver"))]
+        if paused_profiles.contains(profile_id) {
+            return Ok(());
+        }
         let engine = self
             .engines
             .lock()
@@ -3708,6 +3827,27 @@ impl EngineRegistry {
             profile_id.to_string(),
             MessagingLifecycleWorker::start(engine, token)?,
         );
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "acceptance-webdriver"))]
+    pub fn set_acceptance_profile_worker_paused(
+        &self,
+        profile_id: &str,
+        paused: bool,
+    ) -> Result<(), String> {
+        if profile_id.trim().is_empty() {
+            return Err("messaging acceptance pause requires profile identity".to_string());
+        }
+        let mut profiles = self
+            .acceptance_paused_profiles
+            .lock()
+            .map_err(|_| "messaging acceptance pause registry lock poisoned".to_string())?;
+        if paused {
+            profiles.insert(profile_id.to_string());
+        } else {
+            profiles.remove(profile_id);
+        }
         Ok(())
     }
 
@@ -3747,6 +3887,10 @@ impl EngineRegistry {
     }
 
     pub fn deactivate(&self, profile_id: &str) -> Result<Option<Arc<MessagingEngine>>, String> {
+        let _transition = self
+            .profile_transition
+            .lock()
+            .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
         let worker = self
             .workers
             .lock()
@@ -3755,13 +3899,20 @@ impl EngineRegistry {
         if let Some(worker) = worker {
             worker.stop()?;
         }
-        self.engines
+        let engine = self
+            .engines
             .lock()
             .map_err(|_| "messaging engine registry lock poisoned".to_string())
-            .map(|mut engines| engines.remove(profile_id))
+            .map(|mut engines| engines.remove(profile_id))?;
+        self.clear_profile_recovery_required(profile_id)?;
+        Ok(engine)
     }
 
     pub fn deactivate_all(&self) -> Result<Vec<Arc<MessagingEngine>>, String> {
+        let _transition = self
+            .profile_transition
+            .lock()
+            .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
         let workers = self
             .workers
             .lock()
@@ -3772,18 +3923,82 @@ impl EngineRegistry {
         for worker in workers {
             worker.stop()?;
         }
-        self.engines
+        let engines = self
+            .engines
             .lock()
             .map_err(|_| "messaging engine registry lock poisoned".to_string())
-            .map(|mut engines| engines.drain().map(|(_, engine)| engine).collect())
+            .map(|mut engines| engines.drain().map(|(_, engine)| engine).collect())?;
+        self.recovery_required_profiles
+            .lock()
+            .map_err(|_| "messaging recovery readiness lock poisoned".to_string())?
+            .clear();
+        Ok(engines)
     }
 
     pub fn restore_profile(
         &self,
         profile_id: &str,
+        token: &str,
         archive: &MessagingRecoveryArchive,
         reconciliation: &RecoveryReconciliation,
     ) -> Result<FreshDeviceEnrollment, String> {
+        let _transition = self
+            .profile_transition
+            .lock()
+            .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
+        if profile_id.trim().is_empty() || token.trim().is_empty() {
+            return Err("messaging recovery profile and token are required".to_string());
+        }
+        let has_active_engine = self
+            .engines
+            .lock()
+            .map_err(|_| "messaging engine registry lock poisoned".to_string())?
+            .contains_key(profile_id);
+        if !has_active_engine {
+            if self
+                .workers
+                .lock()
+                .map_err(|_| "messaging worker registry lock poisoned".to_string())?
+                .contains_key(profile_id)
+            {
+                return Err(
+                    "messaging recovery profile worker exists without an engine".to_string()
+                );
+            }
+            let device_id =
+                crate::application::key_exchange::device_install::get_or_create_device_id()
+                    .map_err(|error| error.to_string())?;
+            let source = MessagingStore::open(profile_id)?;
+            let (device_identity, preserve_device_continuity) =
+                super::device_identity_backup::prepare_recovery_identity(
+                    &self.station_client,
+                    &source,
+                    &archive.ptid,
+                    &device_id,
+                    &archive.actor_identity_seed,
+                    archive.actor_profile_version,
+                    token,
+                )?;
+            source.prepare_for_atomic_replace()?;
+            drop(source);
+            let enrollment = restore_profile_database_atomically(
+                profile_id,
+                archive,
+                reconciliation,
+                &device_identity,
+                preserve_device_continuity,
+            )?;
+            let engine = Arc::new(MessagingEngine::open_profile(
+                self.station_client.clone(),
+                profile_id.to_string(),
+                archive.ptid.clone(),
+                &archive.actor_identity_seed,
+                enrollment.certificate.observed_profile_version,
+                false,
+            )?);
+            self.install_profile_runtime(profile_id, engine, token.to_string())?;
+            return Ok(enrollment);
+        }
         let (previous_ptid, previous_seed, previous_profile_version, current_device_identity) = {
             let engines = self
                 .engines
@@ -3832,15 +4047,18 @@ impl EngineRegistry {
         };
         let preserve_device_continuity =
             previous_seed.as_slice() == archive.actor_identity_seed.as_slice();
-        let device_identity = if preserve_device_continuity {
-            current_device_identity
-        } else {
-            generate_fresh_device_identity_from_seed(
-                &archive.ptid,
-                &archive.actor_identity_seed,
-                archive.actor_profile_version,
-            )?
-        };
+        let device_identity = recovery_device_identity(
+            current_device_identity,
+            &archive.ptid,
+            archive.actor_identity_seed,
+            archive.actor_profile_version,
+            preserve_device_continuity,
+        )?;
+        super::device_identity_backup::verify_recovery_enrollment(
+            &self.station_client,
+            token,
+            &device_identity,
+        )?;
         let (worker, worker_token) = {
             let mut workers = self
                 .workers
@@ -3901,7 +4119,7 @@ impl EngineRegistry {
                     profile_id.to_string(),
                     archive.ptid.clone(),
                     &archive.actor_identity_seed,
-                    archive.actor_profile_version,
+                    enrollment.certificate.observed_profile_version,
                     false,
                 )?);
                 self.install_profile_runtime(profile_id, engine, worker_token)?;
@@ -3978,6 +4196,15 @@ impl EngineRegistry {
         }
         engines.insert(profile_id.to_string(), engine);
         workers.insert(profile_id.to_string(), worker);
+        self.clear_profile_recovery_required(profile_id)?;
+        Ok(())
+    }
+
+    fn clear_profile_recovery_required(&self, profile_id: &str) -> Result<(), String> {
+        self.recovery_required_profiles
+            .lock()
+            .map_err(|_| "messaging recovery readiness lock poisoned".to_string())?
+            .remove(profile_id);
         Ok(())
     }
 
@@ -3987,6 +4214,10 @@ impl EngineRegistry {
         profile_id: String,
         endpoint: EngineEndpoint,
     ) -> Result<Arc<MessagingEngine>, String> {
+        let _transition = self
+            .profile_transition
+            .lock()
+            .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
         let mut engines = self
             .engines
             .lock()
@@ -3995,10 +4226,12 @@ impl EngineRegistry {
             if existing.endpoint() != &endpoint {
                 return Err("messaging profile is already bound to another endpoint".to_string());
             }
+            self.clear_profile_recovery_required(&profile_id)?;
             return Ok(existing.clone());
         }
         let engine = Arc::new(MessagingEngine::in_memory(profile_id.clone(), endpoint)?);
         engines.insert(profile_id, engine.clone());
+        self.clear_profile_recovery_required(engine.profile_id())?;
         Ok(engine)
     }
 }
@@ -4408,6 +4641,33 @@ fn timestamp(unix_ms: i64) -> prost_types::Timestamp {
         seconds: unix_ms.div_euclid(1_000),
         nanos: (unix_ms.rem_euclid(1_000) * 1_000_000) as i32,
     }
+}
+
+fn recovery_device_identity(
+    current: FreshDeviceIdentityState,
+    ptid: &str,
+    actor_identity_seed: [u8; 32],
+    actor_profile_version: u64,
+    preserve_device_continuity: bool,
+) -> Result<FreshDeviceIdentityState, String> {
+    if preserve_device_continuity {
+        return Ok(current);
+    }
+    let device_id = current
+        .enrollment
+        .certificate
+        .device
+        .as_ref()
+        .ok_or_else(|| "messaging replacement recovery device endpoint is unavailable".to_string())?
+        .device_id
+        .clone();
+    generate_device_identity_for_device_from_parts(
+        ptid,
+        &device_id,
+        &actor_identity_seed,
+        actor_profile_version.max(current.enrollment.certificate.observed_profile_version),
+        Some(&current.device_signing_seed),
+    )
 }
 
 #[cfg(test)]
@@ -4990,6 +5250,36 @@ mod tests {
     }
 
     #[test]
+    fn recovery_required_readiness_is_cleared_by_activation_and_deactivation() {
+        let registry = EngineRegistry::default();
+        registry
+            .mark_profile_recovery_required("alice-profile", "ptid:alice")
+            .unwrap();
+        assert_eq!(
+            registry.profile_readiness("alice-profile").unwrap(),
+            MessagingProfileReadiness::RecoveryRequired {
+                actor_ptid: "ptid:alice".to_string(),
+            },
+        );
+
+        registry
+            .activate_in_memory("alice-profile".to_string(), endpoint("device-1"))
+            .unwrap();
+        assert_eq!(
+            registry.profile_readiness("alice-profile").unwrap(),
+            MessagingProfileReadiness::Active {
+                actor_ptid: "ptid:alice".to_string(),
+            },
+        );
+
+        registry.deactivate("alice-profile").unwrap();
+        assert_eq!(
+            registry.profile_readiness("alice-profile").unwrap(),
+            MessagingProfileReadiness::Inactive,
+        );
+    }
+
+    #[test]
     fn engine_reopens_same_device_bound_mls_identity() {
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         let first = MessagingEngine::from_store(
@@ -5131,6 +5421,8 @@ mod tests {
 
     #[test]
     fn profile_engine_owns_stable_cross_signed_endpoint_identity() {
+        let canonical_device_id =
+            crate::application::key_exchange::device_install::get_or_create_device_id().unwrap();
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         let first = MessagingEngine::from_profile_store(
             StationClient::testing_unavailable(),
@@ -5143,7 +5435,7 @@ mod tests {
         )
         .unwrap();
         let device_id = first.endpoint().device_id.clone();
-        assert!(!device_id.is_empty());
+        assert_eq!(device_id, canonical_device_id);
         let pending = store.pending_device_enrollment().unwrap().unwrap();
         let pending_device = pending.certificate.device.as_ref().unwrap();
         let signing_key_id = pending.certificate.signing_key_id.clone();
@@ -5201,6 +5493,48 @@ mod tests {
             store,
         )
         .is_err());
+
+        let mismatched_store = Arc::new(MessagingStore::in_memory().unwrap());
+        load_or_create_device_identity_for_device(
+            mismatched_store.as_ref(),
+            "ptid:alice",
+            &format!("mismatched-{canonical_device_id}"),
+            [17; 32],
+            3,
+        )
+        .unwrap();
+        assert_eq!(
+            MessagingEngine::from_profile_store(
+                StationClient::testing_unavailable(),
+                "alice-profile".to_string(),
+                "ptid:alice".to_string(),
+                &[17; 32],
+                3,
+                false,
+                mismatched_store,
+            )
+            .err()
+            .as_deref(),
+            Some("messaging device identity does not match authenticated session")
+        );
+    }
+
+    #[test]
+    fn recovery_rebinds_actor_without_rotating_enrolled_device_signing_material() {
+        let current =
+            generate_fresh_device_identity_for_device("ptid:alice", "session-device", [17; 32], 3)
+                .unwrap();
+        let current_signing_key_id = current.enrollment.certificate.signing_key_id.clone();
+
+        let recovered =
+            recovery_device_identity(current, "ptid:alice", [18; 32], 4, false).unwrap();
+        let recovered_device = recovered.enrollment.certificate.device.as_ref().unwrap();
+
+        assert_eq!(recovered_device.device_id, "session-device");
+        assert_eq!(
+            recovered.enrollment.certificate.signing_key_id,
+            current_signing_key_id
+        );
     }
 
     #[test]
@@ -5242,6 +5576,7 @@ mod tests {
         assert!(registry
             .restore_profile(
                 "alice-profile",
+                "token-a",
                 &archive,
                 &RecoveryReconciliation::default(),
             )
@@ -5250,6 +5585,74 @@ mod tests {
         assert!(Arc::ptr_eq(&engine, &registered));
         assert!(registry.wake_profile("alice-profile").is_ok());
         registry.deactivate("alice-profile").unwrap();
+    }
+
+    #[test]
+    fn fresh_profile_restore_installs_recovered_actor_with_new_device() {
+        let _guard = crate::infrastructure::storage::test_storage_env_lock();
+        let registry =
+            EngineRegistry::new(super::super::device_identity_backup::tests::enrollment_station());
+        let profile_id = format!("fresh-recovery-profile-{}", Ulid::new());
+        let archive = MessagingRecoveryArchive {
+            ptid: "ptid:alice".to_string(),
+            actor_identity_seed: [17; 32],
+            actor_profile_version: 3,
+            conversations: Vec::new(),
+            messages: Vec::new(),
+            retention_floors: Vec::new(),
+            authority_heads: Vec::new(),
+            redaction_tombstones: Vec::new(),
+            attachments: Vec::new(),
+            trust: Vec::new(),
+        };
+        registry
+            .mark_profile_recovery_required(&profile_id, &archive.ptid)
+            .unwrap();
+        assert!(matches!(
+            registry.profile_readiness(&profile_id).unwrap(),
+            MessagingProfileReadiness::RecoveryRequired { .. }
+        ));
+
+        let enrollment = registry
+            .restore_profile(
+                &profile_id,
+                "token-a",
+                &archive,
+                &RecoveryReconciliation::default(),
+            )
+            .unwrap();
+
+        let device = enrollment.certificate.device.as_ref().unwrap();
+        assert_eq!(actor_device_ptid(device).unwrap(), archive.ptid);
+        assert!(!device.device_id.is_empty());
+        let engine = registry.get(&profile_id).unwrap().unwrap();
+        assert_eq!(engine.endpoint().ptid, archive.ptid);
+        assert_eq!(engine.endpoint().device_id, device.device_id);
+        assert_eq!(
+            engine.store().pending_device_enrollment().unwrap(),
+            Some(enrollment)
+        );
+        assert_eq!(
+            registry.profile_worker_token(&profile_id).unwrap(),
+            Some("token-a".to_string())
+        );
+        assert_eq!(
+            registry.profile_readiness(&profile_id).unwrap(),
+            MessagingProfileReadiness::Active {
+                actor_ptid: archive.ptid.clone(),
+            },
+        );
+        registry.deactivate(&profile_id).unwrap();
+
+        let spec = crate::domain::storage::database::DatabaseOpenSpec::new_chat_main(profile_id);
+        let path = crate::infrastructure::storage::resolve_database_path(
+            &spec.app_name,
+            &spec.domain,
+            &spec.profile,
+            &spec.user_scope,
+        )
+        .unwrap();
+        crate::messaging::recovery::remove_database_files(&path).unwrap();
     }
 
     #[test]
@@ -5299,6 +5702,26 @@ mod tests {
             &engine,
             &registry.get("alice-profile").unwrap().unwrap()
         ));
+        registry
+            .set_acceptance_profile_worker_paused("alice-profile", true)
+            .unwrap();
+        registry
+            .activate_profile_worker("alice-profile", "validated-token".to_string())
+            .unwrap();
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            None
+        );
+        registry
+            .set_acceptance_profile_worker_paused("alice-profile", false)
+            .unwrap();
+        registry
+            .activate_profile_worker("alice-profile", "resumed-token".to_string())
+            .unwrap();
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            Some("resumed-token".to_string())
+        );
         registry.deactivate("alice-profile").unwrap();
     }
 

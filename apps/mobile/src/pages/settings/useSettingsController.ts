@@ -19,6 +19,7 @@ import {
   unblockSocialUser,
 } from '../../features/social/socialRuntime';
 import { useSocialStore } from '../../features/social/socialStore';
+import { actorDisplayName } from '../../features/social/socialProjection';
 import type { PeerProfile } from '../../features/social/socialTypes';
 import {
   ProfileUpdateOutcome,
@@ -1012,7 +1013,7 @@ export function blockedUserViews(
     const profile = peerProfiles[item.targetPtid];
     return {
       targetPtid: item.targetPtid,
-      displayName: profile?.displayName || profile?.acct || item.targetPtid,
+      displayName: actorDisplayName(profile?.displayName || profile?.username, item.targetPtid),
       avatar: profile?.avatar ?? '',
       homeStationPeerId: item.targetHomeStationPeerId ?? '',
     };

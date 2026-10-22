@@ -4290,6 +4290,7 @@ fn stream_atelier_projection_events(
                 error.kind,
                 station_client::StationClientErrorKind::Cancelled
                     | station_client::StationClientErrorKind::Network
+                    | station_client::StationClientErrorKind::Unavailable
             ) {
                 format!("TIMEOUT Station Atelier event stream request failed: {error}")
             } else {

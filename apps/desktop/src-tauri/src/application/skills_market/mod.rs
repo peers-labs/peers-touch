@@ -905,7 +905,8 @@ fn official_catalog_transport_error(error: station_client::StationClientError) -
         station_client::StationClientErrorKind::HttpStatus(404) => {
             "OFFICIAL_CATALOG_ENDPOINT_UNAVAILABLE".to_string()
         }
-        station_client::StationClientErrorKind::Network => {
+        station_client::StationClientErrorKind::Network
+        | station_client::StationClientErrorKind::Unavailable => {
             "OFFICIAL_CATALOG_NETWORK_FAILED".to_string()
         }
         _ => "OFFICIAL_CATALOG_RESPONSE_INVALID".to_string(),

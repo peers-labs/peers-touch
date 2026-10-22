@@ -70,6 +70,9 @@ func (s *PrivateContentService) routeFederatedPrivateCommentSubmit(
 	if err := decodeFederatedPrivateInteractionResult(result, response); err != nil {
 		return nil, err
 	}
+	if err := s.localizeFederatedPrivateCommentResult(ctx, response); err != nil {
+		return nil, err
+	}
 	return response, nil
 }
 
@@ -755,6 +758,41 @@ func (s *PrivateContentService) localizeFederatedPrivateCommentPlan(
 		)
 	}
 	response.StationSigningKeyAttestation = attestation
+	return nil
+}
+
+func (s *PrivateContentService) localizeFederatedPrivateCommentResult(
+	ctx context.Context,
+	response *privatecontentpb.SubmitPrivateCommentResponse,
+) error {
+	const operation = "social.private_content.localize_federated_comment_result"
+	verification := response.GetComment().GetPrivateContent().GetVerification()
+	proof := verification.GetCommitProof()
+	sourceAttestation := verification.GetStationSigningKeyAttestation()
+	if verification == nil || proof == nil || sourceAttestation == nil ||
+		sourceAttestation.GetStationPeerId() == "" ||
+		sourceAttestation.GetProofSigningKeyId() != proof.GetStationSigningKeyId() {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"attestation",
+			"is unavailable",
+		)
+	}
+	attestation, err := s.stationSigner.AttestImportedContentProofVerificationKey(
+		ctx,
+		sourceAttestation.GetStationPeerId(),
+		proof.GetStationSigningKeyId(),
+		s.now(),
+	)
+	if err != nil {
+		return socialdomain.WrapPrivateContentError(
+			socialdomain.PrivateContentDependency,
+			operation,
+			err,
+		)
+	}
+	verification.StationSigningKeyAttestation = attestation
 	return nil
 }
 

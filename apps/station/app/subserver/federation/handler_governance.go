@@ -3,11 +3,14 @@ package federation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
+	"strings"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/federation/application"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
+	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"google.golang.org/protobuf/proto"
 )
 
 func (s *subServer) handleFetchHead(ctx context.Context, req *pb.FetchHeadRequest) (*pb.FetchHeadResponse, error) {
@@ -19,7 +22,12 @@ func (s *subServer) handleFetchHead(ctx context.Context, req *pb.FetchHeadReques
 		return nil, err
 	}
 	if fed == nil {
-		return nil, ErrFederationNotFound
+		return nil, server.NotFound(ErrFederationNotFound.Error())
+	}
+	if fed.Status != "active" && fed.Status != "archived" {
+		return nil, server.Conflict(
+			"Federation ledger is unavailable in its current state",
+		)
 	}
 
 	return &pb.FetchHeadResponse{
@@ -70,12 +78,18 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 	if req.StationPeerId == "" {
 		return nil, errors.New("station_peer_id is required")
 	}
-	if req.JoiningStationName == "" {
-		return nil, errors.New("joining_station_name is required")
+	claims := httpadapter.GetVerifiedClaims(ctx)
+	if claims == nil {
+		return nil, server.Unauthorized(
+			"Federation Station authentication required",
+		)
 	}
-	joiningURL, err := url.ParseRequestURI(req.JoiningStationUrl)
-	if err != nil || joiningURL.Scheme == "" || joiningURL.Host == "" {
-		return nil, errors.New("joining_station_url must be an absolute HTTP endpoint")
+	if claims.Scope != FederationGovernanceProposalScope ||
+		claims.Issuer != req.StationPeerId ||
+		claims.Subject != req.StationPeerId {
+		return nil, server.Forbidden(
+			"Federation Station identity mismatch",
+		)
 	}
 
 	fed, err := s.federationSvc.GetFederation(ctx, req.FederationId)
@@ -83,7 +97,7 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 		return nil, err
 	}
 	if fed == nil {
-		return nil, ErrFederationNotFound
+		return nil, server.NotFound(ErrFederationNotFound.Error())
 	}
 
 	localPeerID := localStationPeerID()
@@ -94,56 +108,157 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 		return nil, errors.New("this station is not the sequencer for this federation")
 	}
 
-	if req.ProposedEventType != pb.EventType_STATION_JOIN_APPROVED {
-		return nil, errors.New("only STATION_JOIN_APPROVED proposals are supported")
-	}
-
-	actorKeySvc := s.actorKeySvc
-	_, actorPriv, err := actorKeySvc.GenerateKeyPair(ctx, req.ActorPtid)
-	if err != nil {
-		actorPriv, err = actorKeySvc.GetPrivateKey(ctx, req.ActorPtid)
+	proposalID := ""
+	var acceptedEvent *pb.LedgerEvent
+	var bootstrapEvents []*pb.LedgerEvent
+	switch req.ProposedEventType {
+	case pb.EventType_STATION_JOIN_APPROVED:
+		if req.JoiningStationName == "" {
+			return nil, errors.New("joining_station_name is required")
+		}
+		joiningURL, parseErr := url.ParseRequestURI(req.JoiningStationUrl)
+		if parseErr != nil || joiningURL.Scheme == "" || joiningURL.Host == "" {
+			return nil, errors.New("joining_station_url must be an absolute HTTP endpoint")
+		}
+		existing, existingErr := s.membershipRepo.GetByStation(
+			ctx,
+			req.FederationId,
+			req.StationPeerId,
+		)
+		if existingErr != nil {
+			return nil, existingErr
+		}
+		if existing != nil && existing.Status == "active" {
+			if existing.StationName != req.JoiningStationName ||
+				strings.TrimRight(existing.StationURL, "/") !=
+					strings.TrimRight(req.JoiningStationUrl, "/") {
+				return nil, errors.New(
+					"active Station join conflicts with existing routing",
+				)
+			}
+			proposalID = existing.ApprovedByEventID
+			break
+		}
+		membership, approveErr := s.federationSvc.ApproveJoinAsSequencer(
+			ctx,
+			req.FederationId,
+			req.StationPeerId,
+			req.JoiningStationName,
+			req.JoiningStationUrl,
+		)
+		if approveErr != nil {
+			return nil, approveErr
+		}
+		proposalID = membership.ApprovedByEventID
+		bootstrapEvents, err = s.ledgerSvc.FetchAllEvents(
+			ctx,
+			req.FederationId,
+		)
 		if err != nil {
-			actorPriv = nil
+			return nil, err
+		}
+		if len(bootstrapEvents) == 0 {
+			return nil, errors.New(
+				"accepted Federation has no bootstrap ledger",
+			)
+		}
+		acceptedEvent = bootstrapEvents[len(bootstrapEvents)-1]
+	case pb.EventType_STATION_LEFT:
+		payload := &pb.StationLeftPayload{}
+		if err := proto.Unmarshal(req.PayloadBytes, payload); err != nil {
+			return nil, errors.New("STATION_LEFT proposal payload is invalid")
+		}
+		if payload.LeavingStationPeerId != req.StationPeerId ||
+			payload.LeavingActorPtid != req.ActorPtid ||
+			payload.LeavingActorFederatedHandle != req.ActorFederatedHandle {
+			return nil, errors.New("STATION_LEFT proposal identity mismatch")
+		}
+		existing, existingErr := s.membershipRepo.GetByStation(
+			ctx,
+			req.FederationId,
+			req.StationPeerId,
+		)
+		if existingErr != nil {
+			return nil, existingErr
+		}
+		if existing != nil && existing.Status == "left" {
+			bootstrapEvents, err = s.ledgerSvc.FetchAllEvents(
+				ctx,
+				req.FederationId,
+			)
+			if err != nil {
+				return nil, err
+			}
+			acceptedEvent, err = latestStationLeftEvent(
+				bootstrapEvents,
+				req.StationPeerId,
+			)
+			if err != nil {
+				return nil, err
+			}
+			proposalID = acceptedEvent.EventId
+			break
+		}
+		acceptedEvent, err = s.federationSvc.ApproveLeaveAsSequencer(
+			ctx,
+			req.FederationId,
+			payload.LeavingActorPtid,
+			payload.LeavingActorFederatedHandle,
+			payload.LeavingStationPeerId,
+			payload.Reason,
+		)
+		if err != nil {
+			return nil, err
+		}
+		proposalID = acceptedEvent.EventId
+	default:
+		return nil, errors.New("proposed event type is unsupported")
+	}
+	if bootstrapEvents == nil {
+		bootstrapEvents, err = s.ledgerSvc.FetchAllEvents(
+			ctx,
+			req.FederationId,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(bootstrapEvents) == 0 {
+			return nil, errors.New(
+				"accepted Federation has no bootstrap ledger",
+			)
 		}
 	}
-
-	sequencerActorPTID := fed.CreatedByActorPTID
-	_, seqPriv, keyErr := actorKeySvc.GenerateKeyPair(ctx, sequencerActorPTID)
-	if keyErr != nil {
-		seqPriv, keyErr = actorKeySvc.GetPrivateKey(ctx, sequencerActorPTID)
-		if keyErr != nil {
-			return nil, errors.New("sequencer key not available")
-		}
-	}
-
-	membership, err := s.federationSvc.ApproveJoin(ctx, &application.ApproveJoinInput{
-		FederationID:                 req.FederationId,
-		JoiningStationPeerID:         req.StationPeerId,
-		JoiningStationName:           req.JoiningStationName,
-		JoiningStationURL:            req.JoiningStationUrl,
-		ApproverActorPTID:            sequencerActorPTID,
-		ApproverActorFederatedHandle: sequencerActorPTID,
-		ApproverStationPeerID:        localPeerID,
-		ActorPrivateKey:              seqPriv,
-		StationPrivateKey:            seqPriv,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	_ = actorPriv
-	events, err := s.ledgerSvc.FetchEvents(ctx, req.FederationId, 0, 1000)
-	if err != nil {
-		return nil, err
-	}
-	if len(events) == 0 {
-		return nil, errors.New("accepted Federation has no bootstrap ledger")
+	if acceptedEvent == nil {
+		acceptedEvent = bootstrapEvents[len(bootstrapEvents)-1]
 	}
 
 	return &pb.SubmitProposalResponse{
-		ProposalId:      membership.ApprovedByEventID,
+		ProposalId:      proposalID,
 		Decision:        pb.ProposalDecision_DECISION_ACCEPTED,
-		AcceptedEvent:   events[len(events)-1],
-		BootstrapEvents: events,
+		AcceptedEvent:   acceptedEvent,
+		BootstrapEvents: bootstrapEvents,
 	}, nil
+}
+
+func latestStationLeftEvent(
+	events []*pb.LedgerEvent,
+	stationPeerID string,
+) (*pb.LedgerEvent, error) {
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if event == nil || event.EventType != pb.EventType_STATION_LEFT {
+			continue
+		}
+		payload := &pb.StationLeftPayload{}
+		if err := proto.Unmarshal(event.PayloadBytes, payload); err != nil {
+			return nil, fmt.Errorf(
+				"decode accepted STATION_LEFT event: %w",
+				err,
+			)
+		}
+		if payload.LeavingStationPeerId == stationPeerID {
+			return event, nil
+		}
+	}
+	return nil, errors.New("accepted STATION_LEFT event is missing")
 }

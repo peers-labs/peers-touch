@@ -264,6 +264,7 @@ impl MobileMessagingRuntime {
         station_origin: String,
         actor_ptid: String,
         device_id: String,
+        actor_profile_version: u64,
         access_token: String,
     ) -> MobileResult<MessagingRuntimeStatus> {
         let station_peer_id = station_peer_id.trim().to_string();
@@ -272,6 +273,11 @@ impl MobileMessagingRuntime {
         let device_id = device_id.trim().to_string();
         validate_account_scope(&station_peer_id, &station_origin, &actor_ptid)
             .map_err(MobileError::messaging)?;
+        if actor_profile_version == 0 {
+            return Err(MobileError::messaging(
+                "mobile messaging actor profile revision is unavailable",
+            ));
+        }
         let user_scope = format!("{station_peer_id}|{actor_ptid}");
         let actor_identity = identity_keys::ensure_identity(storage, &user_scope, &actor_ptid)?;
         let actor_identity_seed = actor_identity.signing_key.to_bytes();
@@ -308,6 +314,7 @@ impl MobileMessagingRuntime {
                 device_id,
                 &database_key,
                 actor_identity_seed,
+                actor_profile_version,
                 access_token,
                 event_sink,
                 &seed_backup,
@@ -328,6 +335,7 @@ impl MobileMessagingRuntime {
         device_id: String,
         database_key: &[u8; 32],
         actor_identity_seed: [u8; 32],
+        actor_profile_version: u64,
         access_token: String,
         event_sink: ProjectionEventSink,
         seed_backup: &dyn DeviceSigningSeedBackup,
@@ -369,6 +377,7 @@ impl MobileMessagingRuntime {
             device_id,
             database_key,
             actor_identity_seed,
+            actor_profile_version,
             access_token,
             seed_backup,
             prekey_backup,
@@ -478,6 +487,7 @@ impl MobileMessagingRuntime {
                 station_origin,
                 actor_ptid,
                 device_id,
+                actor_profile_version,
                 access_token,
             );
             if let Err(rollback_error) = rollback {
@@ -496,6 +506,7 @@ impl MobileMessagingRuntime {
             station_origin,
             actor_ptid,
             device_id,
+            actor_profile_version,
             access_token,
         )
     }
@@ -1293,6 +1304,7 @@ mod tests {
                 "mobile-device-1".to_string(),
                 &[7; 32],
                 [8; 32],
+                1,
                 "token-1".to_string(),
                 discard_events(),
                 &crate::messaging::engine::NoopSeedBackup,
@@ -1312,6 +1324,7 @@ mod tests {
                 "mobile-device-1".to_string(),
                 &[7; 32],
                 [8; 32],
+                1,
                 "token-2".to_string(),
                 discard_events(),
                 &crate::messaging::engine::NoopSeedBackup,
@@ -1331,6 +1344,7 @@ mod tests {
                 "mobile-device-1".to_string(),
                 &[7; 32],
                 [8; 32],
+                1,
                 "token-3".to_string(),
                 discard_events(),
                 &crate::messaging::engine::NoopSeedBackup,
@@ -1355,6 +1369,7 @@ mod tests {
                 "mobile-device-2".to_string(),
                 &[9; 32],
                 [10; 32],
+                1,
                 "token-4".to_string(),
                 discard_events(),
                 &crate::messaging::engine::NoopSeedBackup,
@@ -1384,6 +1399,7 @@ mod tests {
             "mobile-device-1".to_string(),
             &key,
             [12; 32],
+            1,
             "token-1".to_string(),
             &crate::messaging::engine::NoopSeedBackup,
             crate::messaging::engine::noop_prekey_backup(),
@@ -1402,6 +1418,7 @@ mod tests {
             "mobile-device-1".to_string(),
             &key,
             [12; 32],
+            1,
             "token-2".to_string(),
             &crate::messaging::engine::NoopSeedBackup,
             crate::messaging::engine::noop_prekey_backup(),

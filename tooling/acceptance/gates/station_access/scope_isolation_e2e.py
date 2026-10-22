@@ -8,7 +8,7 @@ import os
 from collections.abc import Mapping
 from typing import Any
 
-from tooling.acceptance.core import AcceptanceGate, GateError, REPO_ROOT
+from tooling.acceptance.core import AcceptanceGate, GateError
 from tooling.acceptance.gates.chat.mixed_native_runtime import (
     MixedNativeRuntime,
 )
@@ -39,15 +39,8 @@ class StationAccessScopeIsolationGate(AcceptanceGate):
     phase = "SAL-01"
     bom = ("SAL-G02",)
     spec = ("SAL-J02", "SAL-J03", "SAL-C03")
-    report_path = (
-        REPO_ROOT
-        / "tooling"
-        / "acceptance"
-        / "reports"
-        / f"{GATE_ID}.json"
-    )
-
-    evidence_dir = report_path.parent / f"{GATE_ID}-evidence"
+    report_path = None
+    evidence_dir = None
 
     def __init__(
         self,

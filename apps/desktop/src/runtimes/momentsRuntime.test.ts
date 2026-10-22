@@ -57,12 +57,20 @@ const mocks = vi.hoisted(() => {
     loadFollowing: vi.fn<() => Promise<void>>(),
     reset: vi.fn(),
   };
+  const socialChat = {
+    currentUserPtid: null as string | null,
+    currentUserProfile: null as { displayName: string } | null,
+    peerProfiles: {} as Record<string, unknown | null>,
+    loadCurrentUserProfile: vi.fn<() => Promise<void>>(),
+    loadPeerProfile: vi.fn<(_actorPtid: string, _force?: boolean) => Promise<void>>(),
+  };
   return {
     moments,
     privateMoments,
     privateComments,
     discovery,
     relationships,
+    socialChat,
     sessionState: {
       authenticated: true,
       currentUser: { actorPtid: 'ptid:alice' },
@@ -131,6 +139,12 @@ vi.mock('../store/federation', () => ({
         mocks.federationListener = undefined;
       };
     }),
+  },
+}));
+
+vi.mock('../store/socialChat', () => ({
+  useSocialChatStore: {
+    getState: () => mocks.socialChat,
   },
 }));
 
@@ -210,6 +224,16 @@ beforeEach(() => {
   mocks.relationships.loadRelationship.mockResolvedValue(undefined);
   mocks.relationships.loadFollowers.mockResolvedValue(undefined);
   mocks.relationships.loadFollowing.mockResolvedValue(undefined);
+  mocks.socialChat.currentUserPtid = null;
+  mocks.socialChat.currentUserProfile = null;
+  mocks.socialChat.peerProfiles = {};
+  mocks.socialChat.loadCurrentUserProfile.mockImplementation(async () => {
+    mocks.socialChat.currentUserPtid = 'ptid:alice';
+    mocks.socialChat.currentUserProfile = { displayName: 'Alice' };
+  });
+  mocks.socialChat.loadPeerProfile.mockImplementation(async (actorPtid) => {
+    mocks.socialChat.peerProfiles[actorPtid] = { display_name: 'Bob' };
+  });
 });
 
 afterEach(() => {
@@ -218,6 +242,26 @@ afterEach(() => {
 });
 
 describe('momentsRuntime identity fence', () => {
+  it('hydrates visible public and private Moment authors in the runtime', async () => {
+    mocks.moments.postsById = {
+      public: {
+        authorPtid: 'ptid:alice',
+      },
+      private: {
+        author: { id: 'ptid:bob' },
+      },
+    };
+
+    momentsRuntime.install();
+    await flushRuntime();
+
+    expect(mocks.socialChat.loadCurrentUserProfile).toHaveBeenCalled();
+    expect(mocks.socialChat.loadPeerProfile).toHaveBeenCalledWith(
+      'ptid:bob',
+      false,
+    );
+  });
+
   it('loads an imported private Moment while the Moments page is unopened', async () => {
     momentsRuntime.install();
     await flushRuntime();
@@ -591,6 +635,34 @@ describe('momentsRuntime identity fence', () => {
       sessionEpoch: 1,
       stationIdentity: 'station:unresolved',
     });
+  });
+
+  it('keeps public projection active while private bootstrap retries', async () => {
+    mocks.privateMoments.bootstrap.mockRejectedValueOnce(
+      new Error('private trust unavailable'),
+    );
+
+    momentsRuntime.install();
+    await flushRuntime();
+
+    expect(mocks.moments.syncProjection).toHaveBeenCalledWith('bootstrap');
+    expect(captureMomentsRuntimeScope()).toMatchObject({
+      actorPtid: 'ptid:alice',
+      stationIdentity: 'peer:station-a',
+    });
+    expect(mocks.privateComments.bootstrap).not.toHaveBeenCalled();
+    expect(mocks.privateMoments.reconcile).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    intervalCallbacks[0]();
+    await flushRuntime();
+
+    expect(mocks.moments.syncProjection).toHaveBeenCalledWith(
+      'periodic reconcile',
+    );
+    expect(mocks.privateMoments.bootstrap).toHaveBeenCalledOnce();
+    expect(mocks.privateComments.bootstrap).toHaveBeenCalledOnce();
+    expect(mocks.privateMoments.reconcile).toHaveBeenCalledOnce();
   });
 
   it('does not hide an authoritative sync failure during periodic resync', async () => {

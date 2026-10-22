@@ -131,6 +131,7 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
     ) -> None:
         launcher = Mock(log_path=None)
         session = Mock(process_id=42, log_path=None)
+        session.invoke_app_result.return_value = {"ok": True}
         adapter = Mock(spec=MacOSNativeDesktopAdapter)
         adapter.capture_screenshot.side_effect = (
             lambda path: path.write_bytes(b"screenshot")
@@ -233,6 +234,119 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             "acceptance_request_activation"
         )
         session.stop.assert_called_once_with()
+
+    def test_owned_point_wait_reactivates_until_exact_process_owns_point(
+        self,
+    ) -> None:
+        process_id = 42
+        session = Mock()
+        session.invoke_app_result.return_value = {"ok": True}
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        foreign_stack = NativeWindowStack(
+            windows=(
+                NativeWindowSnapshot(
+                    index=0,
+                    owner_pid=41,
+                    owner_name="other",
+                    window_name="Other",
+                    layer=0,
+                    alpha=1.0,
+                    bounds=NativeWindowBounds(
+                        left=0,
+                        top=0,
+                        width=1000,
+                        height=800,
+                    ),
+                ),
+            ),
+        )
+        owned_stack = NativeWindowStack(
+            windows=(
+                NativeWindowSnapshot(
+                    index=0,
+                    owner_pid=process_id,
+                    owner_name="peers-touch-desktop",
+                    window_name="Peers",
+                    layer=0,
+                    alpha=1.0,
+                    bounds=NativeWindowBounds(
+                        left=0,
+                        top=0,
+                        width=1000,
+                        height=800,
+                    ),
+                ),
+            ),
+        )
+        foreign_probe = (
+            (500.0, 400.0),
+            {"x": 500.0, "y": 400.0},
+            foreign_stack,
+            True,
+            ((500.0, 400.0),),
+        )
+        owned_probe = (
+            (500.0, 400.0),
+            {"x": 500.0, "y": 400.0},
+            owned_stack,
+            True,
+            ((500.0, 400.0),),
+        )
+
+        with patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_probe_owned_point",
+            side_effect=(foreign_probe, owned_probe),
+        ):
+            result = (
+                NativeDesktopMacOSProvisioner._await_process_owned_point(
+                    session,
+                    adapter,
+                    process_id,
+                    {
+                        "left": 0,
+                        "top": 0,
+                        "width": 1000,
+                        "height": 800,
+                    },
+                    timeout_seconds=1,
+                    interval_seconds=0,
+                )
+            )
+
+        self.assertEqual(result, owned_probe)
+        self.assertEqual(session.invoke_app_result.call_count, 2)
+        session.invoke_app_result.assert_called_with(
+            "acceptance_request_activation"
+        )
+
+    def test_owned_point_wait_rejects_failed_process_activation(self) -> None:
+        session = Mock()
+        session.invoke_app_result.return_value = {"ok": False}
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+
+        with patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_probe_owned_point",
+        ) as point_probe, self.assertRaisesRegex(
+            BlockedError,
+            "rejected process-owned activation",
+        ):
+            NativeDesktopMacOSProvisioner._await_process_owned_point(
+                session,
+                adapter,
+                42,
+                {
+                    "left": 0,
+                    "top": 0,
+                    "width": 1000,
+                    "height": 800,
+                },
+                timeout_seconds=0,
+                interval_seconds=0,
+            )
+
+        point_probe.assert_not_called()
 
     def test_semantic_probe_uses_webdriver_without_native_input(self) -> None:
         events: list[str] = []
@@ -827,7 +941,10 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         )
         completed = Mock(returncode=0, stdout="pressed\n", stderr="")
 
-        with patch(
+        with patch.object(
+            adapter,
+            "activate_process",
+        ) as activate, patch(
             "tooling.acceptance.drivers.native.macos.subprocess.run",
             return_value=completed,
         ) as run:
@@ -836,10 +953,54 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             )
 
         command = run.call_args.args[0]
+        activate.assert_called_once_with(42)
         self.assertEqual(command[:2], ("osascript", "-e"))
         self.assertIn("unix id is 42", command[2])
         self.assertIn('"action-button-1"', command[2])
         self.assertNotIn('button "Allow"', command[2])
+        self.assertNotIn("repeat 40 times", command[2])
+
+    def test_media_permission_survives_transient_frontmost_rejection(
+        self,
+    ) -> None:
+        adapter = MacOSNativeDesktopAdapter(
+            NativeInputMode.EXCLUSIVE_NATIVE_INPUT
+        )
+        completed = Mock(returncode=0, stdout="pressed\n", stderr="")
+
+        with patch.object(
+            adapter,
+            "activate_process",
+            side_effect=DriverError(
+                "Native actor process 42 did not become frontmost"
+            ),
+        ), patch(
+            "tooling.acceptance.drivers.native.macos.subprocess.run",
+            return_value=completed,
+        ):
+            self.assertTrue(
+                adapter.accept_media_capture_permission_to_process(42)
+            )
+
+    def test_media_permission_timeout_is_a_retryable_miss(self) -> None:
+        adapter = MacOSNativeDesktopAdapter(
+            NativeInputMode.EXCLUSIVE_NATIVE_INPUT
+        )
+
+        with patch.object(
+            adapter,
+            "activate_process",
+        ) as activate, patch(
+            "tooling.acceptance.drivers.native.macos.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(
+                ("osascript", "-e", "script"),
+                2,
+            ),
+        ):
+            self.assertFalse(
+                adapter.accept_media_capture_permission_to_process(42)
+            )
+        activate.assert_called_once_with(42)
 
     def test_default_adapter_blocks_global_input_before_activation(self) -> None:
         adapter = MacOSNativeDesktopAdapter()

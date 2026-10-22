@@ -29,6 +29,7 @@ from .mobile_simulator import (
     MobileSocialIOSSimulatorProvisioner,
     MobileSocialSimulatorProvisioner,
     MobileStationLifecycleSimulatorProvisioner,
+    SocialCrossStationMobileDesktopProvisioner,
     StationAccessNativeProvisioner,
 )
 from .native_desktop_linux import NativeDesktopLinuxProvisioner
@@ -105,6 +106,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     MobileStationLifecycleSimulatorProvisioner.environment_id: (
         MobileStationLifecycleSimulatorProvisioner
+    ),
+    SocialCrossStationMobileDesktopProvisioner.environment_id: (
+        SocialCrossStationMobileDesktopProvisioner
     ),
     StationAccessNativeProvisioner.environment_id: (
         StationAccessNativeProvisioner
@@ -202,12 +206,22 @@ def get_provisioner(
             contract,
             station_profiles=station_profiles,
         )
+    if provisioner_class is MobileStationLifecycleSimulatorProvisioner:
+        if service_profiles:
+            raise ProvisioningError(
+                f"environment {contract.id!r} does not accept service profile bindings"
+            )
+        return provisioner_class(
+            contract,
+            station_profiles=station_profiles,
+        )
     if provisioner_class in {
         ChatMixedNativeProvisioner,
         MobileDirectSimulatorProvisioner,
         MobileRelaySimulatorProvisioner,
         MobileSocialIOSSimulatorProvisioner,
         MobileSocialSimulatorProvisioner,
+        SocialCrossStationMobileDesktopProvisioner,
         StationAccessNativeProvisioner,
     }:
         return provisioner_class(
@@ -254,6 +268,7 @@ __all__ = [
     "MobileSocialIOSSimulatorProvisioner",
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
+    "SocialCrossStationMobileDesktopProvisioner",
     "StationAccessDesktopOAuthNativeProvisioner",
     "StationAccessDualRelayProvisioner",
     "StationAccessNativeProvisioner",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from tooling.acceptance.core import ArtifactRef
 from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
@@ -10,6 +11,7 @@ from tooling.acceptance.gates.mobile.simulator_settings_e2e import (
     GATE_ID,
     IOS_CLIENT,
     PEER_IOS_CLIENT,
+    PROVEN_SCOPE,
     SimulatorSettingsGate,
 )
 
@@ -150,6 +152,15 @@ class _Binding:
                     {"id": "notification", "status": "ready"},
                 ],
             }
+        if action == "recovery.snapshot":
+            return {
+                "hasActiveRecovery": False,
+                "isWriteBlocked": False,
+                "writeAdmission": {"open": True, "reason": None},
+                "states": [],
+            }
+        if action == "social.reconcile":
+            return {"reconciled": True}
         if action == "settings.profile.read":
             return dict(self.profile)
         if action == "settings.profile.update":
@@ -193,6 +204,113 @@ class _Binding:
 
 
 class SimulatorSettingsGateTests(unittest.TestCase):
+    def test_execute_projects_observed_scope_after_success(self) -> None:
+        class Artifacts:
+            run_id = RUN_ID
+            result: dict[str, object] | None = None
+
+            def __enter__(self) -> "Artifacts":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+            def write_json(
+                self,
+                _path: str,
+                value: dict[str, object],
+                *,
+                role: str,
+            ) -> None:
+                if role == "mobile-simulator-settings-result":
+                    self.result = value
+
+            def complete(self, **_kwargs: object) -> None:
+                return None
+
+        binding = _Binding()
+        artifacts = Artifacts()
+        gate = SimulatorSettingsGate(binding_factory=lambda: binding)  # type: ignore[arg-type]
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_settings_e2e.ArtifactSession",
+            return_value=artifacts,
+        ):
+            self.assertEqual(gate.execute(), 0)
+
+        self.assertIsNotNone(artifacts.result)
+        assert artifacts.result is not None
+        self.assertEqual(artifacts.result["observedScope"], list(PROVEN_SCOPE))
+
+    def test_closed_write_admission_reconciles_before_settings_write(
+        self,
+    ) -> None:
+        class AdmissionBinding(_Binding):
+            def __init__(self) -> None:
+                super().__init__()
+                self.snapshots = [
+                    {
+                        "hasActiveRecovery": True,
+                        "isWriteBlocked": True,
+                        "writeAdmission": {
+                            "open": False,
+                            "reason": "runtime_restarting",
+                        },
+                        "states": [{
+                            "kind": "event-overflow-reconcile",
+                        }],
+                    },
+                    {
+                        "hasActiveRecovery": False,
+                        "isWriteBlocked": False,
+                        "writeAdmission": {"open": True, "reason": None},
+                        "states": [],
+                    },
+                ]
+
+            def call_action(
+                self,
+                client_id: str,
+                action: str,
+                payload: object = None,
+            ) -> object:
+                if action == "recovery.snapshot":
+                    self.calls.append((client_id, action, payload))
+                    if len(self.snapshots) > 1:
+                        return self.snapshots.pop(0)
+                    return dict(self.snapshots[0])
+                return super().call_action(client_id, action, payload)
+
+        binding = AdmissionBinding()
+        gate = SimulatorSettingsGate(binding_factory=lambda: binding)  # type: ignore[arg-type]
+
+        snapshot = gate._wait_for_mobile_write_admission(  # type: ignore[arg-type]
+            binding,
+            IOS_CLIENT,
+            timeout_seconds=1,
+            stable_seconds=0,
+        )
+
+        self.assertTrue(snapshot["writeAdmission"]["open"])
+        actions = [call[1] for call in binding.calls]
+        self.assertEqual(
+            actions,
+            [
+                "recovery.snapshot",
+                "social.reconcile",
+                "recovery.snapshot",
+            ],
+        )
+        self.assertEqual(
+            gate.events[-1],
+            {
+                "event": "write-admission-ready",
+                "clientId": IOS_CLIENT,
+                "reconciled": True,
+                "activeRecovery": False,
+            },
+        )
+
     def test_authentication_restarts_one_failed_runtime_generation(self) -> None:
         class RetryBinding(_Binding):
             wait_attempts = 0

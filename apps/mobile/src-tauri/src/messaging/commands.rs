@@ -35,6 +35,7 @@ use super::engine::{
 };
 use super::lifecycle::{MessagingRuntimeStatus, MobileMessagingRuntime};
 use super::recovery::fetch_and_decode_latest;
+use super::transport::load_actor_profile_revision;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -770,6 +771,13 @@ pub fn messaging_activate<R: Runtime>(
     let data_root = app.path().app_data_dir().map_err(|error| {
         MobileError::messaging(format!("resolve mobile messaging data directory: {error}"))
     })?;
+    let actor_profile_revision = load_actor_profile_revision(
+        session.station_origin(),
+        session.access_token(),
+        session.device_id(),
+        session.actor_ptid(),
+    )
+    .map_err(MobileError::messaging)?;
     runtime.activate(
         app,
         &data_root,
@@ -778,6 +786,7 @@ pub fn messaging_activate<R: Runtime>(
         session.station_origin().to_string(),
         session.actor_ptid().to_string(),
         session.device_id().to_string(),
+        actor_profile_revision,
         session.access_token().to_string(),
     )
 }

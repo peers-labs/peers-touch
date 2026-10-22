@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use ed25519_dalek::{Signature, Verifier};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use secure_content_core::envelope::{open_content_key, ContentKey, SealedContentKey};
@@ -29,7 +29,9 @@ use crate::secure_content::receiver::{
 };
 use crate::secure_content::recovery::open_recovery_content_key;
 use crate::secure_content::store::{CommentState, PrivateSocialStore, StoredCommentDraft};
-use crate::secure_content::transport::{NativeSocialTransport, TransportError};
+use crate::secure_content::transport::{
+    federated_private_interaction_signing_bytes, NativeSocialTransport, TransportError,
+};
 use crate::secure_content::NativeSocialSession;
 
 const COMMENT_PAYLOAD_KIND: u32 = social::PrivateMomentKind::Text as u32;
@@ -181,24 +183,35 @@ pub fn submit(
         });
     }
     if stored.request_bytes.is_none() {
-        let plan = transport
-            .prepare_private_comment(
-                &stored.post_id,
-                &social::PreparePrivateCommentRequest {
-                    post_id: stored.post_id.clone(),
-                    comment_content_id: stored.content_id.clone(),
-                    reply_to_comment_id: stored.reply_to_comment_id.clone(),
-                    object_count: 0,
-                    command_id: stored.prepare_command_id.clone(),
-                    actor_signing_key_id: String::new(),
-                    actor_device_signature: Vec::new(),
-                },
-            )
-            .map_err(|error| finish_failure(store, &stored, error))?
+        let mut prepare_request = social::PreparePrivateCommentRequest {
+            post_id: stored.post_id.clone(),
+            comment_content_id: stored.content_id.clone(),
+            reply_to_comment_id: stored.reply_to_comment_id.clone(),
+            object_count: 0,
+            command_id: stored.prepare_command_id.clone(),
+            actor_signing_key_id: session.signing_key_id.clone(),
+            actor_device_signature: Vec::new(),
+        };
+        prepare_request.actor_device_signature =
+            session.sign(&federated_private_interaction_signing_bytes(
+                social::FederatedPrivateInteractionOperation::PrepareComment,
+                &prepare_request.encode_to_vec(),
+            ));
+        let prepare_response = transport
+            .prepare_private_comment(&stored.post_id, &prepare_request)
+            .map_err(|error| finish_failure(store, &stored, error))?;
+        let station_attestation = prepare_response.station_signing_key_attestation;
+        let plan = prepare_response
             .plan
             .ok_or_else(|| "private Comment prepare response omitted its plan".to_string())?;
         let domain_binding = comment_domain_binding(&stored.post_id, &stored.reply_to_comment_id);
-        validate_comment_plan(session, &plan, &stored.content_id, &domain_binding)?;
+        validate_comment_plan(
+            session,
+            &plan,
+            station_attestation.as_ref(),
+            &stored.content_id,
+            &domain_binding,
+        )?;
         let resource = plan
             .resource
             .clone()
@@ -259,7 +272,7 @@ pub fn submit(
             object_descriptor_set_hash(&[])?,
             &root,
         )?;
-        let request = social::SubmitPrivateCommentRequest {
+        let mut request = social::SubmitPrivateCommentRequest {
             plan: Some(plan),
             payload: Some(payload),
             envelopes,
@@ -271,9 +284,14 @@ pub fn submit(
                 intent.draft_revision,
             ),
             post_id: stored.post_id.clone(),
-            actor_signing_key_id: String::new(),
+            actor_signing_key_id: session.signing_key_id.clone(),
             actor_device_signature: Vec::new(),
         };
+        request.actor_device_signature =
+            session.sign(&federated_private_interaction_signing_bytes(
+                social::FederatedPrivateInteractionOperation::SubmitComment,
+                &request.encode_to_vec(),
+            ));
         let request_bytes = request.encode_to_vec();
         let request_sha256: [u8; 32] = Sha256::digest(&request_bytes).into();
         store.persist_comment_request(
@@ -509,8 +527,16 @@ fn decrypt_recovered_comment(
         .as_ref()
         .ok_or_else(|| "private Comment recovery proof is unavailable".to_string())?;
     let (sender, signing_key_id, committed_at) = comment_sender_requirement(post_id, comment)?;
+    let (receiver_verified_key, source_station_peer_id) =
+        receiver_verified_comment_sender_key(comment, &session.scope.station_peer_id);
     let sender_key = transport
-        .sender_signing_key(&sender, &signing_key_id, committed_at)
+        .sender_signing_key(
+            &sender,
+            &signing_key_id,
+            committed_at,
+            receiver_verified_key,
+            source_station_peer_id,
+        )
         .map_err(|error| error.to_string())?;
     let object_hash = object_descriptor_set_hash(&[])?;
     verify_recovery_viewer_envelope(
@@ -737,6 +763,7 @@ fn comment_domain_binding(post_id: &str, reply_to_comment_id: &str) -> Vec<u8> {
 fn validate_comment_plan(
     session: &NativeSocialSession,
     plan: &wire::ContentEncryptionPlan,
+    station_attestation: Option<&wire::StationContentSigningKeyAttestation>,
     content_id: &str,
     domain_binding: &[u8],
 ) -> Result<(), String> {
@@ -759,7 +786,6 @@ fn validate_comment_plan(
         || plan.authorization_snapshot_sha256.len() != 32
         || plan.domain_binding_sha256 != Sha256::digest(domain_binding).as_slice()
         || plan.canonical_plan_sha256.len() != 32
-        || plan.station_signing_key_id != session.trusted_station_signing_key.key_id
         || plan.station_signature.len() != 64
         || plan.required_slots.is_empty()
         || plan.required_slots.len() > 1000
@@ -787,9 +813,12 @@ fn validate_comment_plan(
     }
     let mut signed = plan.clone();
     signed.station_signature.clear();
-    session
-        .trusted_station_signing_key
-        .verifying_key
+    let plan_verifying_key = private_comment_station_verifying_key(
+        session,
+        &plan.station_signing_key_id,
+        station_attestation,
+    )?;
+    plan_verifying_key
         .verify(
             &signed.encode_to_vec(),
             &Signature::from_slice(&plan.station_signature)
@@ -861,6 +890,48 @@ fn comment_sender_requirement(
     Ok((sender.clone(), signing_key_id.to_string(), committed_at))
 }
 
+fn receiver_verified_comment_sender_key<'a>(
+    comment: &'a social::CommentResource,
+    local_station_peer_id: &'a str,
+) -> (
+    Option<&'a actor::VerifiedActorDeviceSigningKey>,
+    Option<&'a str>,
+) {
+    let key = comment
+        .body
+        .as_ref()
+        .and_then(|body| match body {
+            social::comment_resource::Body::PrivateContent(private) => {
+                private.verification.as_ref()
+            }
+            _ => None,
+        })
+        .and_then(|verification| verification.receiver_verified_sender_signing_key.as_ref());
+    let source_station_peer_id = key
+        .map(|verified| verified.home_station_peer_id.as_str())
+        .filter(|station_peer_id| !station_peer_id.is_empty())
+        .or_else(|| {
+            (key.is_none() && !local_station_peer_id.is_empty()).then_some(local_station_peer_id)
+        });
+    (key, source_station_peer_id)
+}
+
+fn private_comment_station_verifying_key(
+    session: &NativeSocialSession,
+    proof_signing_key_id: &str,
+    station_attestation: Option<&wire::StationContentSigningKeyAttestation>,
+) -> Result<VerifyingKey, String> {
+    if proof_signing_key_id == session.trusted_station_signing_key.key_id {
+        return Ok(session.trusted_station_signing_key.verifying_key);
+    }
+    let attestation = station_attestation
+        .ok_or_else(|| "private Comment remote Station attestation is unavailable".to_string())?;
+    if attestation.proof_signing_key_id != proof_signing_key_id {
+        return Err("private Comment remote Station attestation is invalid".to_string());
+    }
+    verify_station_attestation(session, attestation, current_unix_seconds())
+}
+
 fn decrypt_comment(
     session: &NativeSocialSession,
     store: &PrivateSocialStore,
@@ -896,8 +967,16 @@ fn decrypt_comment(
         .ok_or_else(|| "private Comment proof is unavailable".to_string())?;
     let (sender, signing_key_id, committed_at) =
         comment_sender_requirement(expected_post_id, comment)?;
+    let (receiver_verified_key, source_station_peer_id) =
+        receiver_verified_comment_sender_key(comment, &session.scope.station_peer_id);
     let sender_key = transport
-        .sender_signing_key(&sender, &signing_key_id, committed_at)
+        .sender_signing_key(
+            &sender,
+            &signing_key_id,
+            committed_at,
+            receiver_verified_key,
+            source_station_peer_id,
+        )
         .map_err(|error| error.to_string())?;
     let domain_binding = comment_domain_binding(expected_post_id, &metadata.reply_to_comment_id);
     let domain_binding_sha256 = Sha256::digest(&domain_binding);
@@ -912,10 +991,11 @@ fn decrypt_comment(
         Some(&sender_key),
         "private Comment",
     )?;
-    let attestation = verification
-        .station_signing_key_attestation
-        .as_ref()
-        .ok_or_else(|| "private Comment Station attestation is unavailable".to_string())?;
+    let proof_key = private_comment_station_verifying_key(
+        session,
+        &proof.station_signing_key_id,
+        verification.station_signing_key_attestation.as_ref(),
+    )?;
     if resource.owner_domain != wire::SecureContentOwnerDomain::Social as i32
         || resource.content_id != metadata.comment_id
         || resource.generation == 0
@@ -939,7 +1019,6 @@ fn decrypt_comment(
         || proof.object_descriptor_set_sha256 != object_hash
         || proof.mention_routing_sha256 != mention_hash.as_slice()
         || proof.subtype_authority_sha256 != Sha256::digest([]).as_slice()
-        || proof.station_signing_key_id != attestation.proof_signing_key_id
         || proof.station_signature.len() != 64
         || committed_at
             > current_unix_seconds()
@@ -977,7 +1056,6 @@ fn decrypt_comment(
             &signing_key_id,
         )?;
     }
-    let proof_key = verify_station_attestation(session, attestation, current_unix_seconds())?;
     let mut unsigned_proof = proof.clone();
     unsigned_proof.station_signature.clear();
     proof_key
@@ -1110,6 +1188,38 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::SigningKey;
+    use messaging_core::identity::DeviceSigningKey;
+    use zeroize::Zeroizing;
+
+    use crate::secure_content::{PrivateSocialScope, TrustedStationSigningKey};
+
+    fn native_social_session() -> NativeSocialSession {
+        let station_key = SigningKey::from_bytes(&[7; 32]);
+        NativeSocialSession::new(
+            PrivateSocialScope {
+                profile_id: "profile-1".to_string(),
+                station_peer_id: "station-local".to_string(),
+                station_origin: "http://station.test".to_string(),
+                actor_ptid: "ptid:alice".to_string(),
+                device_id: "device-alice".to_string(),
+            },
+            Zeroizing::new("access-token".to_string()),
+            "session-1".to_string(),
+            "sender-key-1".to_string(),
+            1,
+            DeviceSigningKey::from_parts(
+                &[9; 32],
+                Signature::from_bytes(&[0; 64]),
+                "device-alice".to_string(),
+            ),
+            TrustedStationSigningKey {
+                key_id: "station-key-local".to_string(),
+                verifying_key: station_key.verifying_key(),
+            },
+        )
+        .unwrap()
+    }
 
     fn recoverable_comment(post_id: &str, comment_id: &str) -> social::RecoverablePrivateContent {
         social::RecoverablePrivateContent {
@@ -1152,6 +1262,57 @@ mod tests {
         assert!(validate_intent(&intent).is_ok());
         intent.mentions[0].offset = 99;
         assert!(validate_intent(&intent).is_err());
+    }
+
+    #[test]
+    fn comment_sender_key_uses_local_or_receiver_verified_station_binding() {
+        let local = social::CommentResource {
+            body: Some(social::comment_resource::Body::PrivateContent(
+                social::PrivateContentAccess::default(),
+            )),
+            ..Default::default()
+        };
+        let (key, source_station_peer_id) =
+            receiver_verified_comment_sender_key(&local, "station-local");
+        assert!(key.is_none());
+        assert_eq!(source_station_peer_id, Some("station-local"));
+
+        let remote = social::CommentResource {
+            body: Some(social::comment_resource::Body::PrivateContent(
+                social::PrivateContentAccess {
+                    verification: Some(social::PrivateContentVerification {
+                        receiver_verified_sender_signing_key: Some(
+                            actor::VerifiedActorDeviceSigningKey {
+                                home_station_peer_id: "station-remote".to_string(),
+                                ..Default::default()
+                            },
+                        ),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        let (key, source_station_peer_id) =
+            receiver_verified_comment_sender_key(&remote, "station-local");
+        assert!(key.is_some());
+        assert_eq!(source_station_peer_id, Some("station-remote"));
+    }
+
+    #[test]
+    fn local_comment_proof_uses_the_pinned_station_without_attestation() {
+        let session = native_social_session();
+
+        let key =
+            private_comment_station_verifying_key(&session, "station-key-local", None).unwrap();
+
+        assert_eq!(key, session.trusted_station_signing_key.verifying_key);
+        assert!(
+            private_comment_station_verifying_key(&session, "station-key-remote", None)
+                .unwrap_err()
+                .contains("remote Station attestation is unavailable")
+        );
     }
 
     #[test]

@@ -14,13 +14,11 @@ from __future__ import annotations
 import json
 import os
 import time
-from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from tooling.acceptance.core import (
     AcceptanceGate,
     GateError,
-    REPO_ROOT,
 )
 from tooling.acceptance.gates.chat.mixed_native_runtime import (
     MixedNativeRuntime,
@@ -34,10 +32,7 @@ from tooling.acceptance.gates.chat.native_support import (
 
 
 GATE_ID = "chat-lifecycle-call-resolution-e2e"
-REPORT_PATH = (
-    REPO_ROOT / "tooling" / "acceptance" / "reports"
-    / "chat-lifecycle-call-resolution-e2e.json"
-)
+REPORT_PATH = None
 CLIENTS = ("desktop-alice", "desktop-bob", "sim-ios")
 STEP_TIMEOUT = float(
     os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120")
@@ -65,11 +60,7 @@ class CallResolutionGate(AcceptanceGate):
         "call-resolution-concurrent-accept-reject",
     )
     report_path = REPORT_PATH
-    evidence_dir = (
-        REPORT_PATH.parent / "chat-lifecycle-call-resolution-evidence"
-        if REPORT_PATH is not None
-        else None
-    )
+    evidence_dir = None
 
     def __init__(
         self,

@@ -185,8 +185,91 @@ fn mobile_conversation_clear_commits_floor_and_removes_plaintext_projection() {
                 conversation_id, message_id, plaintext, attachment_filenames
              ) VALUES
                 ('conversation-1', 'message-1', 'first plaintext', ''),
-                ('conversation-1', 'message-2', 'second plaintext', '');"
+                ('conversation-1', 'message-2', 'second plaintext', '');
+             INSERT INTO messaging_pending_messages(
+                conversation_id, conversation_kind, message_id,
+                sender_ptid, sender_device_id, plaintext, state,
+                attempt_count, next_attempt_at_unix_ms, last_error_code,
+                created_at_unix_ms
+             ) VALUES
+                ('conversation-1', 1, 'message-1',
+                 'ptid:alice', 'alice-device', 'first plaintext',
+                 'accepted', 1, 0, '', 100),
+                ('conversation-1', 1, 'message-2',
+                 'ptid:alice', 'alice-device', 'second plaintext',
+                 'accepted', 1, 0, '', 200);
+             INSERT INTO messaging_local_commands(
+                command_id, conversation_id, command_bytes, state,
+                created_at_unix_ms
+             ) VALUES
+                ('command-active', 'conversation-1', X'01', 'prepared', 100),
+                ('command-superseded', 'conversation-1', X'02', 'superseded', 200),
+                ('command-failed', 'conversation-1', X'03', 'failed', 200);
+             INSERT INTO messaging_command_attempts(
+                command_id, conversation_id, message_id,
+                delivery_plan_sha256, state, created_at_unix_ms
+             ) VALUES
+                ('command-active', 'conversation-1', 'message-1',
+                 zeroblob(32), 'prepared', 100),
+                ('command-superseded', 'conversation-1', 'message-2',
+                 zeroblob(32), 'superseded', 200),
+                ('command-failed', 'conversation-1', 'message-2',
+                 zeroblob(32), 'failed', 200);
+             INSERT INTO messaging_receipt_outbox(
+                receipt_id, event_id, receipt_bytes, state,
+                created_at_unix_ms
+             ) VALUES
+                ('device-consumed:item-1', 'event-1', X'01', 'pending', 100),
+                ('device-consumed:item-2', 'event-2', X'02', 'rejected', 200);"
         ))
+        .unwrap();
+
+    assert_eq!(
+        clear_conversation(
+            &store,
+            ConversationClearInput {
+                scope: scope.clone(),
+                scope_revision: "scope-pending-receipt".to_string(),
+                conversation_id: "conversation-1".to_string(),
+                physical_bytes_before: fs::metadata(root.join("chat.sqlite3")).unwrap().len(),
+                now_unix_ms: 299,
+            },
+        )
+        .unwrap_err(),
+        messaging_core::storage_governance::conversation_clear::ConversationClearError::ProtectedCandidate(
+            "message-1".to_string(),
+        )
+    );
+    store
+        .execute_storage_test_sql(
+            "UPDATE messaging_receipt_outbox
+             SET state = 'submitted'
+             WHERE receipt_id = 'device-consumed:item-1';",
+        )
+        .unwrap();
+
+    assert_eq!(
+        clear_conversation(
+            &store,
+            ConversationClearInput {
+                scope: scope.clone(),
+                scope_revision: "scope-active-attempt".to_string(),
+                conversation_id: "conversation-1".to_string(),
+                physical_bytes_before: fs::metadata(root.join("chat.sqlite3")).unwrap().len(),
+                now_unix_ms: 299,
+            },
+        )
+        .unwrap_err(),
+        messaging_core::storage_governance::conversation_clear::ConversationClearError::ProtectedCandidate(
+            "message-1".to_string(),
+        )
+    );
+    store
+        .execute_storage_test_sql(
+            "UPDATE messaging_command_attempts
+             SET state = 'committed'
+             WHERE command_id = 'command-active';",
+        )
         .unwrap();
 
     let progress = clear_conversation(

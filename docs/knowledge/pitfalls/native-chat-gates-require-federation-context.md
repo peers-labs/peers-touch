@@ -11,6 +11,7 @@ owns:
   - tooling/acceptance/gates/chat/native_multi_device_runner.py
   - tooling/acceptance/gates/chat/native_recovery_runner.py
   - tooling/acceptance/gates/chat/native_typing_runner.py
+  - tooling/acceptance/fixtures/chat_native_actors.py
   - tooling/development/secure_content/runtime_owner.py
   - tooling/development/secure_content/scenarios/social_expansion.py
 referenced-by:
@@ -47,6 +48,13 @@ membership predates its current Station domain and therefore has an empty
 `station_url`. Treating any active Federation as a usable join authority makes
 the fixture fail before it can establish shared membership.
 
+CSS-09 later joined both Stations to one Federation but waited indefinitely on
+the remote Actor locator. Both DHT routing tables were empty because the
+Fixture relied on ambient seed connectivity. After a manual DHT connection,
+the obsolete unscoped bootstrap resolver still returned
+`standard Relay route is unavailable` even though the production
+Federation-scoped resolver had a valid reviewed Direct route.
+
 ## Root cause
 
 Several Native Chat runners retained the old Harness call shape after Direct
@@ -60,6 +68,14 @@ Device enrollment alone also does not prove that the remote endpoint has
 published an available MLS KeyPackage. Group genesis and membership
 preparation reserve that KeyPackage and fail when the fixture binds the Actor
 before its MLS inventory is ready.
+
+Shared Federation membership also does not establish physical DHT connectivity.
+Cross-Station Fixtures must explicitly connect the participating Station nodes
+and republish local locator records. Profile resolution must then use the
+production Federation-scoped API, whose membership-owned Station URL resolver
+can choose the reviewed Direct route. The unscoped
+`/sub-bootstrap/federation/resolve` diagnostic has no Federation membership
+context and cannot stand in for that product path.
 
 ## Mitigation
 
@@ -80,6 +96,12 @@ before its MLS inventory is ready.
   projection after device enrollment and before binding the remote Actor. The
   projection must identify a non-empty Actor and device, report the endpoint
   active, and expose at least one available MLS KeyPackage.
+- The shared Fixture routing owner reads each Station's advertised DHT address,
+  connects every participating Station pair, republishes each local Actor
+  locator, and waits for cross-Station locator convergence.
+- CSS-09 uses that routing owner before invoking the Native
+  Federation-scoped Actor resolver. It no longer calls the unscoped bootstrap
+  profile resolver.
 - No product default, fallback, or synthetic Federation is introduced.
 
 ### What guards against regression
@@ -101,6 +123,7 @@ Run:
 
 ```bash
 python3 -m unittest \
+  tooling.acceptance.tests.test_provisioning_owners \
   tooling.acceptance.gates.chat.native_runtime_cell_runner_test \
   tooling.development.secure_content.test_runtime_owner \
   tooling.development.secure_content.scenarios.test_social_expansion
@@ -118,9 +141,18 @@ the participating clients' production contexts.
 
 For a cross-Station fixture, also verify that each participating Station lists
 the same active Federation membership before creating the Conversation. Actor
-resolution alone is insufficient. Before Group genesis or membership
-preparation, verify every added endpoint is active and has at least one
-available MLS KeyPackage through the owning Native client.
+resolution alone is insufficient. The Fixture must establish DHT routing,
+republish local locators, and invoke only the Federation-scoped product
+resolver:
+
+```bash
+! rg -n '/sub-bootstrap/federation/resolve' \
+  tooling/development/secure_content/runtime_owner.py
+```
+
+Before Group genesis or membership preparation, verify every added endpoint is
+active and has at least one available MLS KeyPackage through the owning Native
+client.
 
 ## Crosswalks
 

@@ -411,7 +411,8 @@ def _validate_activation(
         or not isinstance(activation.get("aggregatePath"), str)
         or not activation["aggregatePath"]
         or SHA256.fullmatch(str(activation.get("resultDigest") or "")) is None
-        or activation.get("profiles") != ["four", "fiveArm"]
+        or activation.get("profiles")
+        != ["chat-native-disposable", "fiveArm"]
     ):
         raise GateError("CSS-09 activation evidence is invalid")
     return dict(activation)
@@ -436,7 +437,7 @@ def _validate_activation_artifact(
         "source_commit": source_commit,
         "workspace_id": workspace,
         "reset_intent": "SCHEMA_ACTIVATION",
-        "profiles": ["four", "fiveArm"],
+        "profiles": ["chat-native-disposable", "fiveArm"],
         "status": "PASS",
         "claim": "CANONICAL_SCHEMA_ACTIVE_ONLY",
     }
@@ -456,7 +457,7 @@ def _validate_activation_artifact(
             for child in children
             if isinstance(child, Mapping)
         ]
-        != ["four", "fiveArm"]
+        != ["chat-native-disposable", "fiveArm"]
     ):
         raise GateError("CSS-09 activation aggregate children are incomplete")
     return payload
@@ -538,7 +539,7 @@ def _validate_embedded_runtime_manifest(
     if any(manifest.get(key) != value for key, value in expected_identity.items()):
         raise GateError("CSS-09 runtime source/run identity is inconsistent")
     if manifest.get("profileBindings") != {
-        "four": "station-four",
+        "chat-native-disposable": "station-four",
         "fiveArm": "station-five-arm",
     }:
         raise GateError("CSS-09 runtime profile bindings are incomplete")
@@ -564,7 +565,9 @@ def _validate_embedded_runtime_manifest(
             "clientId": f"cross-station-social-{client_id}",
             "actorRole": actor,
             "profileId": (
-                "four" if service_id == "station-four" else "fiveArm"
+                "chat-native-disposable"
+                if service_id == "station-four"
+                else "fiveArm"
             ),
             "serviceId": service_id,
             "launched": client_id in LAUNCHED_CLIENTS,
@@ -1101,11 +1104,12 @@ def validate_acceptance_runtime_manifest(
     profile = manifest.get("profile")
     if (
         not isinstance(profile, Mapping)
-        or profile.get("resolvedName") != "four"
+        or profile.get("resolvedName") != "chat-native-disposable"
         or profile.get("slot") != 13
     ):
         raise GateError(
-            "Acceptance Runtime Manifest is not bound to profile four slot 13"
+            "Acceptance Runtime Manifest is not bound to profile "
+            "chat-native-disposable slot 13"
         )
     services = manifest.get("services")
     if not isinstance(services, Mapping) or set(services) != set(SERVICE_IDS):

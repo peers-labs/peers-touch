@@ -53,6 +53,8 @@ interface MomentCommentsSectionProps {
   readonly onOpenAuthor?: (actorPtid: string, federationId: string) => void;
   readonly reactionMutation?: ReactionMutationState;
   readonly policyState?: MomentPolicyState;
+  readonly reactionPickerOpen?: boolean;
+  readonly onReactionPickerOpenChange?: (open: boolean) => void;
   readonly onClose?: () => void;
 }
 
@@ -70,6 +72,20 @@ export async function retryMomentDetailRuntime(
   } catch {
     return false;
   }
+}
+
+export function resolvePrivateCommentDraftId(
+  currentDraftId: string | null,
+  createDraftId: () => string = () => crypto.randomUUID(),
+): string {
+  return currentDraftId ?? createDraftId();
+}
+
+export function shouldExpandCommentsAfterSubmission(
+  expanded: boolean,
+  currentCommentCount: number,
+): boolean {
+  return expanded || currentCommentCount >= INITIAL_COMMENT_COUNT;
 }
 
 export async function createMomentCommentAndReload(
@@ -97,6 +113,8 @@ export function MomentCommentsSection({
   onReact,
   onOpenAuthor,
   reactionMutation,
+  reactionPickerOpen = false,
+  onReactionPickerOpenChange = () => undefined,
   onClose,
 }: MomentCommentsSectionProps) {
   const { t } = useMobileI18n();
@@ -146,6 +164,7 @@ export function MomentCommentsSection({
   const [replyTarget, setReplyTarget] = useState<CommentReplyTarget | null>(
     null,
   );
+  const [commentDraftId, setCommentDraftId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [sendError, setSendError] = useState(false);
@@ -154,6 +173,7 @@ export function MomentCommentsSection({
     setExpanded(false);
     setReplyTarget(null);
     setCommentText('');
+    setCommentDraftId(null);
     setSendError(false);
   }, [postId]);
 
@@ -187,11 +207,15 @@ export function MomentCommentsSection({
       const replyToCommentId = replyTarget
         ? commentViewId(replyTarget.comment)
         : undefined;
+      const draftId = privateRoute
+        ? resolvePrivateCommentDraftId(commentDraftId)
+        : null;
+      if (privateRoute && !commentDraftId) setCommentDraftId(draftId);
       const accepted = privateRoute
         ? Boolean(
             (
               await intents.submitPrivateComment({
-                draftId: crypto.randomUUID(),
+                draftId: draftId!,
                 draftRevision: 1,
                 postId,
                 replyToCommentId,
@@ -207,7 +231,11 @@ export function MomentCommentsSection({
           );
       if (accepted) {
         setCommentText('');
+        setCommentDraftId(null);
         setReplyTarget(null);
+        setExpanded((current) =>
+          shouldExpandCommentsAfterSubmission(current, comments.length),
+        );
       } else {
         setSendError(true);
       }
@@ -216,7 +244,16 @@ export function MomentCommentsSection({
     } finally {
       setSending(false);
     }
-  }, [commentText, sending, replyTarget, privateRoute, intents, postId]);
+  }, [
+    commentDraftId,
+    commentText,
+    sending,
+    replyTarget,
+    privateRoute,
+    intents,
+    postId,
+    comments.length,
+  ]);
 
   const handleLoadMore = useCallback(() => {
     if (privateRoute) {
@@ -310,6 +347,8 @@ export function MomentCommentsSection({
               onOpenComments={() => undefined}
               onOpenAuthor={onOpenAuthor}
               reactionMutation={reactionMutation}
+              reactionPickerOpen={reactionPickerOpen}
+              onReactionPickerOpenChange={onReactionPickerOpenChange}
             />
             <div className="moments-detail-comments-title">
               <Text strong>{t('mobile.moments.comment.title')}</Text>
@@ -456,6 +495,7 @@ export function MomentCommentsSection({
               <Button
                 size="small"
                 icon={<Send size={14} />}
+                data-acceptance-id="social-comment-retry"
                 onClick={() => void handleSendComment()}
               >
                 {t('common.action.retry')}

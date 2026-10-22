@@ -1,0 +1,35 @@
+{
+  "id": "release-mobile-ios-desktop-operation-analysis",
+  "status": "active",
+  "product_area": "mobile",
+  "owners": [
+    "tooling/acceptance/gates/release/operation_analysis.py",
+    "docs/architecture/engineering/acceptance/reports/0.0.1-mobile-ios-desktop.md"
+  ],
+  "truth_sources": [
+    "current-source Desktop and iOS native Gate evidence",
+    "reviewer-authored structured operation observations",
+    "immutable screenshot and interaction-trace artifact references"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "operator-report",
+      "route": "0.0.1 Desktop and iOS operation analysis"
+    }
+  ],
+  "required_gates": [
+    "release-0.0.1-operation-analysis"
+  ],
+  "acceptance": {
+    "visible": [
+      "all declared Desktop and iOS journey cells have real operation evidence",
+      "facts, direct observations, reviewer judgments, release defects, preserved designs and next-stage UX work remain visibly separated",
+      "the Chinese Markdown and HTML reports present the same evidence-backed conclusions"
+    ]
+  },
+  "negative": [
+    "screenshots, DOM, accessibility trees, Harness calls or API responses alone cannot prove task usability",
+    "missing, stale, unredacted or wrong-source evidence remains UNPROVEN",
+    "an open release defect cannot be relabeled as a non-blocking UX recommendation"
+  ]
+}

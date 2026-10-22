@@ -8,7 +8,9 @@
     "mobile-runtime-lifecycle",
     "mobile-command-recovery",
     "mobile-social-product",
-    "mobile-native-quality"
+    "mobile-social-cross-platform-interoperability",
+    "mobile-native-quality",
+    "release-mobile-ios-desktop-operation-analysis"
   ],
   "validation_gate_id": "mobile-domain-validation"
 }

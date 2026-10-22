@@ -20,6 +20,7 @@ class CrossStationGateDispatcherTest(unittest.TestCase):
                 "social-cross-station-desktop-functional",
                 "social-cross-station-eventbus-contract",
                 "social-cross-station-interaction",
+                "social-cross-station-mobile-desktop-e2e",
                 "social-cross-station-native-e2e",
                 "social-cross-station-prekey",
                 "social-cross-station-revocation-recovery",

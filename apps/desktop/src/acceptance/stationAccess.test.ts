@@ -28,6 +28,14 @@ describe('configureAcceptanceStation', () => {
               route_generation: 1,
               last_verified_at: '2026-10-07T00:00:00Z',
               health: 'available' as const,
+            }, {
+              route_id: 'route-relay-newer',
+              route_type: 'relay' as const,
+              transport: 'libp2p_http_v1',
+              endpoint_origin: url,
+              route_generation: 2,
+              last_verified_at: '2026-10-08T00:00:00Z',
+              health: 'available' as const,
             }],
           }],
         };

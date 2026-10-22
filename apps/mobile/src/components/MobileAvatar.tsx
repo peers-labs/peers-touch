@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Avatar, type AvatarProps } from 'antd';
 
 import { useAvatarAsset } from '../runtimes/avatarAssetRuntime';
@@ -11,7 +11,7 @@ type MobileAvatarProps = Omit<
   AvatarProps,
   'children' | 'onError' | 'shape' | 'src'
 > & {
-  children?: ReactNode;
+  children?: AvatarProps['children'];
   identityKey?: string;
   name?: string;
   src?: string | null;

@@ -128,6 +128,22 @@ then commits the new lifecycle generation. Same-Station route failover preserves
 Access scope, revokes only the prior route lease and applies the request's
 explicit replay policy.
 
+Before submitting a request, Desktop renews the selected route when its signed
+attestation is within 15 seconds of expiry or already expired. Renewal reuses
+canonical endpoint discovery, scoped transport source proof and the existing
+Binding commit path. The refreshed route must retain the pinned Station root,
+logical Station, node and route ID with non-decreasing authorization epoch and
+route generation. A private Relay reuses its stored connection grant; grant
+expiry or revocation remains a typed failure.
+
+Concurrent renewal and explicit selection share the StationRuntime transition
+lock. Renewal rechecks the caller's lifecycle and cancellation before discovery
+and before commit. It advances only route revision, cancels the previous lease
+and preserves Access/Session scope. This is preparation before submission,
+including for commands with `ReplayPolicy::Never`; it never replays a submitted
+command. An unavailable discovery endpoint leaves the binding intact and fails
+before submission.
+
 Station-owned relative resources project as `StationResourceRef` bound to
 `station_peer_id + lifecycle_generation`; they never embed the active route
 origin. Native loaders use the typed Station client. WebView-visible resources

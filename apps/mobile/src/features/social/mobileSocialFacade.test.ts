@@ -130,8 +130,16 @@ beforeEach(() => {
     data: { success: true },
   });
   privateRuntime.invalidatePrivate.mockResolvedValue([]);
+  privateRuntime.snapshot.active = true;
+  privateRuntime.snapshot.stationPeerId = 'station-a';
+  privateRuntime.snapshot.actorPtid = 'ptid:alice';
+  privateRuntime.snapshot.deviceId = 'device-a';
+  privateRuntime.snapshot.lifecycleGeneration = '7';
   privateRuntime.snapshot.projections = [];
   privateRuntime.snapshot.postsById = {};
+  privateRuntime.snapshot.commentDrafts = [];
+  privateRuntime.snapshot.comments = [];
+  privateRuntime.snapshot.reactionCommands = [];
 });
 
 afterEach(() => {
@@ -349,6 +357,58 @@ describe('Mobile Social facade', () => {
     );
     expect(gateway.reactToPost).not.toHaveBeenCalled();
     expect(gateway.unreactToPost).not.toHaveBeenCalled();
+  });
+
+  it('rehydrates a visible private Moment before reacting', async () => {
+    const privatePost = {
+      postId: 'private-rollover-1',
+      contentId: 'private-rollover-1',
+      generation: '1',
+      authorPtid: 'ptid:bob',
+      audienceKind: 'FRIENDS',
+      state: 'CONTENT_READY',
+      content: { kind: 'TEXT', text: 'private' },
+      reactions: [],
+    };
+    privateRuntime.snapshot.postsById = { 'private-rollover-1': privatePost };
+    privateRuntime.snapshot.commentDrafts = [{
+      postId: 'private-rollover-1',
+    }];
+    privateRuntime.readPrivate.mockResolvedValue(privatePost);
+    privateRuntime.setPrivateReaction.mockResolvedValue({
+      command: {
+        commandId: 'reaction-1',
+        postId: 'private-rollover-1',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_COMMITTED',
+        attemptCount: 1,
+        projectionRevision: '2',
+      },
+      reactions: [{ kind: 2, count: '1', reactedByViewer: true }],
+      projectionRevision: '2',
+      exactReplay: false,
+    });
+    facade = createMobileSocialFacade(session, { retry: vi.fn(async () => true) });
+    facade.activate();
+    facade.teardown();
+    privateRuntime.snapshot.active = false;
+    privateRuntime.snapshot.stationPeerId = null;
+    privateRuntime.snapshot.actorPtid = null;
+    privateRuntime.snapshot.postsById = {};
+    privateRuntime.snapshot.commentDrafts = [];
+    facade = createMobileSocialFacade(session, { retry: vi.fn(async () => true) });
+    facade.activate();
+
+    await expect(facade.intents.react('private-rollover-1', 2)).resolves.toBe(true);
+
+    expect(privateRuntime.readPrivate).toHaveBeenCalledWith('private-rollover-1');
+    expect(privateRuntime.setPrivateReaction).toHaveBeenCalledWith(
+      'private-rollover-1',
+      2,
+      true,
+    );
+    expect(gateway.reactToPost).not.toHaveBeenCalled();
   });
 
   it('fences an in-flight completion after teardown', async () => {

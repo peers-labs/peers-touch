@@ -62,19 +62,21 @@ export function useConversationListProjection(
     sessions,
     currentUserPtid,
     peerOnline,
+    peerProfiles,
     messagingConversations,
     conversationSummaries,
   } = useSocialStore(useShallow((s) => ({
     sessions: s.sessions,
     currentUserPtid: s.currentUserPtid,
     peerOnline: s.peerOnline,
+    peerProfiles: s.peerProfiles,
     messagingConversations: s.messagingConversations,
     conversationSummaries: s.conversationSummaries,
   })));
 
   const friendConversations = useMemo(
-    () => projectConversations({ sessions, currentUserPtid, peerOnline }),
-    [currentUserPtid, peerOnline, sessions],
+    () => projectConversations({ sessions, currentUserPtid, peerOnline, peerProfiles }),
+    [currentUserPtid, peerOnline, peerProfiles, sessions],
   );
   const groupConversations = useMemo(
     () => messagingConversations
@@ -148,11 +150,12 @@ export function useThreadProjection(
   });
   const sessions = useSocialStore((s) => s.sessions);
   const peerOnline = useSocialStore((s) => s.peerOnline);
+  const peerProfiles = useSocialStore((s) => s.peerProfiles);
   const messagingConversations = useSocialStore((s) => s.messagingConversations);
 
   const conversations = useMemo(
-    () => projectConversations({ sessions, currentUserPtid, peerOnline }),
-    [currentUserPtid, peerOnline, sessions],
+    () => projectConversations({ sessions, currentUserPtid, peerOnline, peerProfiles }),
+    [currentUserPtid, peerOnline, peerProfiles, sessions],
   );
 
   const activeConversation = conversations.find((c) => c.session.ulid === activeSessionUlid);

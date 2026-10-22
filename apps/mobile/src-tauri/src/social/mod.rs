@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
+#[cfg(feature = "acceptance-harness")]
+use bip39::{Language, Mnemonic};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -38,7 +40,9 @@ use crate::secure_content::private_comment::{
     submit as submit_private_comment, PrivateCommentDraftProjection, PrivateCommentIntent,
     PrivateCommentPage, PrivateCommentProjection, PrivateCommentSubmitResult,
 };
-use crate::secure_content::proto::{secure_content::v1 as wire, social::v1 as social_wire};
+use crate::secure_content::proto::{
+    actor::v1 as actor_wire, secure_content::v1 as wire, social::v1 as social_wire,
+};
 use crate::secure_content::receiver::{
     attachment_for_object, decrypt_text_projection, decrypt_text_projection_with_recovery,
     projection_for_read_failure, purges_private_material, recovery_key_unavailable_projection,
@@ -705,6 +709,8 @@ impl PrivateSocialEngine {
         transport: &NativeSocialTransport,
     ) -> Result<DecryptedPrivateMoment, String> {
         let requirement = sender_key_requirement(post_id, response)?;
+        let (receiver_verified_key, source_station_peer_id) =
+            receiver_verified_sender_key(response, &self.session.scope.station_peer_id);
         let sender_key = requirement
             .signing_key_id
             .as_deref()
@@ -713,6 +719,8 @@ impl PrivateSocialEngine {
                     &requirement.sender,
                     signing_key_id,
                     requirement.committed_at_unix_ms,
+                    receiver_verified_key,
+                    source_station_peer_id,
                 )
             })
             .transpose()
@@ -827,22 +835,31 @@ impl PrivateSocialEngine {
             }
         };
         let sender_key = match requirement.signing_key_id.as_deref() {
-            Some(signing_key_id) => match transport.sender_signing_key(
-                &requirement.sender,
-                signing_key_id,
-                requirement.committed_at_unix_ms,
-            ) {
-                Ok(key) => Some(key),
-                Err(error) => {
-                    self.ensure_current().map_err(MobileError::social)?;
-                    return handle_sender_key_error(
-                        self.store.as_ref(),
-                        self.activation_generation,
-                        post_id,
-                        error,
+            Some(signing_key_id) => {
+                let (receiver_verified_key, source_station_peer_id) =
+                    receiver_verified_sender_key(
+                        &response,
+                        &self.session.scope.station_peer_id,
                     );
+                match transport.sender_signing_key(
+                    &requirement.sender,
+                    signing_key_id,
+                    requirement.committed_at_unix_ms,
+                    receiver_verified_key,
+                    source_station_peer_id,
+                ) {
+                    Ok(key) => Some(key),
+                    Err(error) => {
+                        self.ensure_current().map_err(MobileError::social)?;
+                        return handle_sender_key_error(
+                            self.store.as_ref(),
+                            self.activation_generation,
+                            post_id,
+                            error,
+                        );
+                    }
                 }
-            },
+            }
             None => None,
         };
         self.ensure_current().map_err(MobileError::social)?;
@@ -1227,10 +1244,17 @@ impl PrivateSocialEngine {
                 let binding = envelope.binding.as_ref().ok_or_else(|| {
                     MobileError::social("private Social recovery binding is missing")
                 })?;
+                let (receiver_verified_key, source_station_peer_id) =
+                    receiver_verified_sender_key(
+                        &point,
+                        &self.session.scope.station_peer_id,
+                    );
                 let sender_key = match transport.sender_signing_key(
                     &requirement.sender,
                     &binding.sender_signing_key_id,
                     requirement.committed_at_unix_ms,
+                    receiver_verified_key,
+                    source_station_peer_id,
                 ) {
                     Ok(key) => key,
                     Err(error) => {
@@ -1852,6 +1876,36 @@ pub fn social_private_reconcile<R: Runtime>(
     })
 }
 
+#[cfg(feature = "acceptance-harness")]
+#[tauri::command]
+pub fn social_private_acceptance_prepare_keys(
+    social: State<'_, MobilePrivateSocialRuntime>,
+    input: PrivateSocialAccountInput,
+) -> MobileResult<PrivateSocialWorkerReport> {
+    let engine = social.active_engine_at_generation(
+        &input.station_peer_id,
+        &input.actor_ptid,
+        input.activation_generation,
+    )?;
+    let mut entropy = Zeroizing::new([0_u8; 32]);
+    OsRng.fill_bytes(entropy.as_mut());
+    let mnemonic =
+        Mnemonic::from_entropy_in(Language::English, entropy.as_ref()).map_err(|_| {
+            MobileError::social("private Social Acceptance recovery phrase generation failed")
+        })?;
+    let recovery_phrase = Zeroizing::new(mnemonic.to_string());
+    store_recovery_phrase(
+        engine.store.as_ref(),
+        &input.actor_ptid,
+        initial_recovery_epoch(),
+        recovery_phrase.as_str(),
+    )
+    .map_err(MobileError::social)?;
+    engine
+        .reconcile(input.activation_generation)
+        .map_err(MobileError::social)
+}
+
 #[tauri::command]
 pub fn social_private_snapshot(
     social: State<'_, MobilePrivateSocialRuntime>,
@@ -2009,6 +2063,40 @@ fn handle_transport_read_error(
     Err(MobileError::social(error.to_string()))
 }
 
+fn receiver_verified_sender_key<'a>(
+    response: &'a social_wire::GetMomentResourceResponse,
+    local_station_peer_id: &'a str,
+) -> (
+    Option<&'a actor_wire::VerifiedActorDeviceSigningKey>,
+    Option<&'a str>,
+) {
+    let key = response
+        .resource
+        .as_ref()
+        .and_then(|resource| resource.body.as_ref())
+        .and_then(|body| match body {
+            social_wire::post_resource::Body::PrivateContent(private) => {
+                private.verification.as_ref()
+            }
+            _ => None,
+        })
+        .and_then(|verification| verification.receiver_verified_sender_signing_key.as_ref());
+    let source_station_peer_id = response
+        .explanation
+        .as_ref()
+        .and_then(|explanation| explanation.source.as_ref())
+        .map(|source| source.station_peer_id.as_str())
+        .filter(|station_peer_id| !station_peer_id.is_empty())
+        .or_else(|| {
+            key.map(|verified| verified.home_station_peer_id.as_str())
+                .filter(|station_peer_id| !station_peer_id.is_empty())
+        })
+        .or_else(|| {
+            (key.is_none() && !local_station_peer_id.is_empty()).then_some(local_station_peer_id)
+        });
+    (key, source_station_peer_id)
+}
+
 fn handle_sender_key_error(
     store: &PrivateSocialStore,
     activation_generation: u64,
@@ -2147,6 +2235,55 @@ mod tests {
             private_social_profile_id("station-1", "ptid:alice"),
             private_social_profile_id("station-1", "ptid:bob")
         );
+    }
+
+    #[test]
+    fn missing_receiver_verified_key_uses_the_local_station_profile() {
+        let response = social_wire::GetMomentResourceResponse {
+            resource: Some(social_wire::PostResource {
+                body: Some(social_wire::post_resource::Body::PrivateContent(
+                    social_wire::PrivateContentAccess::default(),
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let (key, source_station_peer_id) =
+            receiver_verified_sender_key(&response, "station-1");
+
+        assert!(key.is_none());
+        assert_eq!(source_station_peer_id, Some("station-1"));
+    }
+
+    #[test]
+    fn receiver_verified_key_preserves_the_remote_home_station() {
+        let response = social_wire::GetMomentResourceResponse {
+            resource: Some(social_wire::PostResource {
+                body: Some(social_wire::post_resource::Body::PrivateContent(
+                    social_wire::PrivateContentAccess {
+                        verification: Some(social_wire::PrivateContentVerification {
+                            receiver_verified_sender_signing_key: Some(
+                                actor_wire::VerifiedActorDeviceSigningKey {
+                                    home_station_peer_id: "station-remote".to_string(),
+                                    ..Default::default()
+                                },
+                            ),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let (key, source_station_peer_id) =
+            receiver_verified_sender_key(&response, "station-local");
+
+        assert!(key.is_some());
+        assert_eq!(source_station_peer_id, Some("station-remote"));
     }
 
     #[test]

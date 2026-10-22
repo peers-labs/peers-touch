@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import re
 import shutil
@@ -17,12 +18,17 @@ from tooling.acceptance.core.attestation import (
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.evidence_store import (
+    current_artifact_ref,
+    write_current_artifact,
+)
 from tooling.acceptance.core.provisioner import (
     load_env_file,
     resolve_deployment_environment_path,
     resolve_reviewed_profile_environment,
 )
 from tooling.acceptance.core.provisioning import (
+    ActorManifest,
     ClientRuntime,
     EnvironmentContract,
     EnvironmentClient,
@@ -48,9 +54,17 @@ _CROSS_STATION_SOCIAL_SERVICE_PROFILES = {
     "station-five-arm": "fiveArm",
 }
 _CROSS_STATION_SOCIAL_GATE_ROLES = {
+    "federation-two-station-lifecycle-e2e": (
+        "alice",
+        "federation_secondary_owner",
+    ),
     "social-cross-station-native-e2e": ("alice", "bob", "eve"),
 }
 _CROSS_STATION_SOCIAL_GATE_CLIENTS = {
+    "federation-two-station-lifecycle-e2e": (
+        "alice",
+        "federation-secondary-owner",
+    ),
     "social-cross-station-native-e2e": ("alice", "bob", "eve", "bob2"),
 }
 PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -356,6 +370,97 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             )
         return targets
 
+    @staticmethod
+    def _persist_station_keyed_actor_manifest(
+        *,
+        manifest: ActorManifest,
+        role_targets: Mapping[str, tuple[str, str]],
+        services: Mapping[str, ServiceAttestation],
+    ) -> dict[str, str]:
+        actors_by_role = {actor.role: actor for actor in manifest.actors}
+        stations: dict[str, dict[str, object]] = {}
+        for role, (endpoint, deployment_environment) in role_targets.items():
+            service_match = next(
+                (
+                    (service_id, service)
+                    for service_id, service in services.items()
+                    if service.endpoint == endpoint
+                    and service.deployment_environment
+                    == deployment_environment
+                ),
+                None,
+            )
+            actor = actors_by_role.get(role)
+            if service_match is None or actor is None:
+                raise BlockedError(
+                    reason=(
+                        f"Federation actor role {role!r} has no exact "
+                        "Station service binding"
+                    ),
+                    resource=f"fixture-binding:{role}",
+                )
+            service_id, service = service_match
+            if (
+                not actor.home_station_peer_id
+                or actor.home_station_peer_id != service.runtime_identity
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"Federation actor role {role!r} Home Station "
+                        "identity does not match its bound service"
+                    ),
+                    resource=f"fixture-binding:{role}",
+                )
+            station = stations.setdefault(
+                service_id,
+                {
+                    "stationPeerId": service.runtime_identity,
+                    "actors": [],
+                },
+            )
+            station_actors = station["actors"]
+            if not isinstance(station_actors, list):
+                raise BlockedError(
+                    reason="Federation actor manifest Station actors invalid",
+                    resource=f"fixture-binding:{service_id}",
+                )
+            station_actors.append(
+                {
+                    "role": actor.role,
+                    "accountRef": actor.account_ref,
+                    "ptid": actor.ptid,
+                    "devicePolicy": actor.device_policy,
+                    "homeStationPeerId": actor.home_station_peer_id,
+                }
+            )
+        payload = {
+            "artifactKind": "cross-station-federation-actor-manifest",
+            "fixtureId": manifest.fixture_id,
+            "environmentId": manifest.environment_id,
+            "runId": manifest.run_id,
+            "createdAt": manifest.created_at,
+            "initialState": manifest.initial_state,
+            "stations": stations,
+            "credentialRefs": list(manifest.credential_refs),
+            "reset": {
+                "authorized": manifest.reset_authorized,
+                "targetVerified": manifest.target_verified,
+            },
+        }
+        relative_path = "runtime/federation-actor-manifest.json"
+        write_current_artifact(
+            relative_path,
+            (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode(
+                "utf-8"
+            ),
+            repo_root=REPO_ROOT,
+        )
+        return current_artifact_ref(
+            relative_path,
+            repo_root=REPO_ROOT,
+            media_type="application/json",
+        ).to_dict()
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
@@ -400,18 +505,26 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             )
             roles = self._actor_roles(gate_id)
             clients = self._clients(gate_id, manifest.run_id, slot)
-            _, _, actor_ref = produce_bound_actor_manifest(
+            role_targets = self._actor_role_targets(
+                roles,
+                clients,
+                self.contract.clients,
+                services,
+            )
+            actor_manifest, _, actor_ref = produce_bound_actor_manifest(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
-                role_targets=self._actor_role_targets(
-                    roles,
-                    clients,
-                    self.contract.clients,
-                    services,
-                ),
+                role_targets=role_targets,
                 credential_ref=credential_refs[0] if credential_refs else "",
                 reset_authorized=reset_authorized,
+                fixture_id=self.fixture_id,
             )
+            if gate_id == "federation-two-station-lifecycle-e2e":
+                actor_ref = self._persist_station_keyed_actor_manifest(
+                    manifest=actor_manifest,
+                    role_targets=role_targets,
+                    services=services,
+                )
             manifest = dataclasses.replace(
                 manifest,
                 actor_manifest_ref=actor_ref,
@@ -476,7 +589,6 @@ class CrossStationSocialNativeProvisioner(
     NativeTauriEmbeddedWebDriverProvisioner
 ):
     environment_id = "cross-station-social-native"
-    required_profile = "four"
     required_slot = 13
     fixture_id = "cross-station-social-actors"
     default_authorization_ref = "env:SOCIAL_CROSS_STATION_ACCEPTANCE_RESET"
@@ -501,13 +613,14 @@ class CrossStationSocialNativeProvisioner(
         profile, profile_path, slot, environment = (
             super()._resolve_active_profile()
         )
-        if profile != self.required_profile or slot != self.required_slot:
+        required_profile = self._required_station_profiles()["station-four"]
+        if profile != required_profile or slot != self.required_slot:
             raise BlockedError(
                 reason=(
-                    "Cross-Station Social requires active profile four "
-                    "at slot 13"
+                    "Cross-Station Social requires active profile "
+                    f"{required_profile} at slot {self.required_slot}"
                 ),
-                resource="profile:four",
+                resource=f"profile:{required_profile}",
             )
         return profile, profile_path, slot, environment
 

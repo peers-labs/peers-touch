@@ -101,6 +101,16 @@ describe('Mobile identity scope hard cut', () => {
     expect(activateStationEntry(first.registry, '12D3KooWOther')).toBe(first.registry);
   });
 
+  it('rejects the removed direct HTTPS transport path', () => {
+    const input = verifiedRouteInput(session.stationPeerId, session.stationUrl);
+    input.route.transport = 'direct_https' as never;
+
+    expect(addStationRoute(emptyStationRegistry(), input)).toEqual({
+      ok: false,
+      error: 'mobile.launch.stationIdentityInvalid',
+    });
+  });
+
   it('deletes pre-cutover Mobile cache state once', () => {
     const storage = new MemoryStorage();
     storage.setItem('peers-touch.client-storage.v1:mobile:https_station:actor:device:session:process:chat.message:x', 'legacy');
@@ -129,10 +139,11 @@ function verifiedRouteInput(
     authorizationEpoch: 1,
     routeId: `direct:${stationPeerId}:${endpointOrigin}`,
     routeType: 'direct',
-    transport: 'direct_https',
+    transport: 'libp2p_http_v1',
     endpointOrigin,
     routeGeneration: 1,
-    addresses: [endpointOrigin],
+    innerTlsSpkiSha256: new Array(32).fill(3),
+    addresses: [`/dns4/station.example/tcp/4001/p2p/${stationPeerId}-node`],
     sourceRef: 'a'.repeat(64),
   };
   return {

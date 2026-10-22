@@ -24,9 +24,6 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     duplicate_acceptance_queue_delivery,
     restart_acceptance_station,
 )
-from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
-    AcceptanceStationSubmitFaultProxy,
-)
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
@@ -331,6 +328,13 @@ class NativeInteractionsGate(AcceptanceGate):
                 ),
                 "journey": "direct-and-group-message-interactions",
                 "steps": self.steps,
+                "conversations": self.conversations,
+                "messageIds": self.message_ids,
+                "commandIds": self.command_ids,
+                "stationReadback": self.station_evidence,
+                "engineReadback": self.engine_evidence,
+                "timeoutRetry": self.timeout_retry_evidence,
+                "stationRestart": self.restart_evidence,
                 "cleanup": self.cleanup_evidence,
             }
         )
@@ -1037,6 +1041,53 @@ class NativeInteractionsGate(AcceptanceGate):
                 STEP_TIMEOUT,
             )
         target_actor = "bob"
+        target_station = station_readback(
+            self.station_url,
+            conversation_id,
+            unavailable_reply_id,
+        )
+        target_authority_sequence = max(
+            (
+                int(event.get("sequence") or 0)
+                for event in target_station.get("authorityEvents") or []
+            ),
+            default=0,
+        )
+        if target_authority_sequence <= 0:
+            raise GateError(
+                f"{claim_kind} actor-hide target has no Authority sequence"
+            )
+        wait_until(
+            lambda: (
+                snapshot
+                if (
+                    (snapshot := self.engine_snapshot(
+                        target_actor,
+                        conversation_id,
+                        unavailable_base_id,
+                    ))
+                    and int(
+                        (snapshot.get("authorityHead") or {}).get(
+                            "eventSequence"
+                        )
+                        or 0
+                    )
+                    >= target_authority_sequence
+                    and len(
+                        str(
+                            (snapshot.get("authorityHead") or {}).get(
+                                "eventHash"
+                            )
+                            or ""
+                        )
+                    )
+                    == 64
+                )
+                else None
+            ),
+            f"{target_actor} {claim_kind} authority head before actor-hide",
+            STEP_TIMEOUT,
+        )
         deleted = async_harness(
             self.clients[target_actor],
             "deleteLocalInteractionMessage",
@@ -1046,10 +1097,25 @@ class NativeInteractionsGate(AcceptanceGate):
                 "messageId": unavailable_base_id,
             },
         )
-        if (deleted or {}).get("present") is not False:
+        if (deleted or {}).get("submitted") is not True:
             raise GateError(
-                f"{target_actor} {claim_kind} local target deletion failed"
+                f"{target_actor} {claim_kind} actor-hide submission failed"
             )
+        wait_until(
+            lambda: (
+                True
+                if self.projection(
+                    target_actor,
+                    kind,
+                    conversation_id,
+                    unavailable_base_id,
+                )
+                is None
+                else None
+            ),
+            f"{target_actor} {claim_kind} actor-hide convergence",
+            STEP_TIMEOUT,
+        )
         wait_until(
             lambda: (
                 snapshot
@@ -1866,46 +1932,33 @@ class NativeInteractionsGate(AcceptanceGate):
             conversation_id,
             message_id,
         )
-        proxy = AcceptanceStationSubmitFaultProxy(self.station_url)
-        proxy.start()
-        proxy_port = proxy.port
         command_id = ""
         pending_engine: dict[str, Any] = {}
         final_engine: dict[str, Any] = {}
-        proxy_evidence: dict[str, Any] = {}
-        override_handle = None
+        fault_evidence: dict[str, Any] = {}
+        fault_armed = False
+        fault_clear_error = ""
+        lifecycle_paused = False
+        lifecycle_resume_error = ""
         try:
-            if self.runtime_binding is None:
-                raise GateError("Native Desktop runtime binding is required")
-            override_handle = self.runtime_binding.create_transport_override(
-                "alice",
-                "station",
-                proxy.url,
+            self.clients["alice"].invoke_app_result(
+                "messaging_acceptance_pause_lifecycle",
+                {
+                    "input": {
+                        "expected_actor_ptid": self.ptids["alice"],
+                    }
+                },
             )
-            self.runtime_binding.apply_transport_override(
-                "alice",
-                "station",
-                override_handle,
-            )
-            proxy.arm_connection_loss()
-
-            def _submit_edit() -> dict[str, Any] | None:
-                return async_harness(
-                    self.clients["alice"],
-                    "editInteractionMessage",
-                    {
-                        "conversationId": conversation_id,
-                        "kind": kind,
-                        "messageId": message_id,
-                        "plaintext": edited_text,
-                    },
-                )
-
-            edit = wait_until(
-                _submit_edit,
-                f"Alice {claim_kind} edit accepted after station switch",
-                STEP_TIMEOUT,
-                0.5,
+            lifecycle_paused = True
+            edit = async_harness(
+                self.clients["alice"],
+                "editInteractionMessage",
+                {
+                    "conversationId": conversation_id,
+                    "kind": kind,
+                    "messageId": message_id,
+                    "plaintext": edited_text,
+                },
             )
             command_id = str(
                 (edit or {}).get("command_id")
@@ -1914,6 +1967,70 @@ class NativeInteractionsGate(AcceptanceGate):
             )
             if not command_id:
                 raise GateError("timeout edit returned no command ID")
+            fault_evidence = self.clients["alice"].invoke_app_result(
+                "messaging_acceptance_command_transport_fault",
+                {
+                    "input": {
+                        "expected_actor_ptid": self.ptids["alice"],
+                        "command_id": command_id,
+                    }
+                },
+            ).get("data") or {}
+            if fault_evidence.get("armedCommandId") != command_id:
+                raise GateError("exact command transport fault was not armed")
+            fault_armed = True
+            self.timeout_retry_evidence[claim_kind] = {
+                "commandId": command_id,
+                "messageId": message_id,
+                "armedFault": dict(fault_evidence),
+                "preparedEngine": self.engine_snapshot(
+                    "alice", conversation_id, message_id, command_id,
+                ),
+            }
+            self.clients["alice"].invoke_app_result(
+                "messaging_acceptance_resume_lifecycle",
+                {
+                    "input": {
+                        "expected_actor_ptid": self.ptids["alice"],
+                    }
+                },
+            )
+            lifecycle_paused = False
+
+            fault_evidence = wait_until(
+                lambda: (
+                    evidence
+                    if (
+                        (evidence := (
+                            self.clients["alice"].invoke_app_result(
+                                "messaging_acceptance_command_transport_fault",
+                                {
+                                    "input": {
+                                        "expected_actor_ptid": self.ptids["alice"],
+                                        "command_id": "",
+                                        "observe_only": True,
+                                    }
+                                },
+                            ).get("data")
+                            or {}
+                        ))
+                        and evidence.get("failedCommandId") == command_id
+                        and int(evidence.get("failureCount") or 0) == 1
+                    )
+                    else None
+                ),
+                f"Alice {claim_kind} exact command transport failure",
+                STEP_TIMEOUT,
+            )
+            self.clients["alice"].invoke_app_result(
+                "messaging_acceptance_pause_lifecycle",
+                {
+                    "input": {
+                        "expected_actor_ptid": self.ptids["alice"],
+                    }
+                },
+            )
+            lifecycle_paused = True
 
             pending_engine = wait_until(
                 lambda: (
@@ -1943,13 +2060,17 @@ class NativeInteractionsGate(AcceptanceGate):
             intent = pending_engine.get("intent") or {}
             outbox = pending_engine.get("outbox") or {}
             command_sha = str(intent.get("commandSha256") or "")
+            transport_error_code = str(
+                outbox.get("lastErrorCode") or ""
+            )
             if (
                 not command_sha
                 or outbox.get("commandSha256") != command_sha
-                or outbox.get("lastErrorCode") != "network"
+                or transport_error_code != "network"
             ):
                 raise GateError(
-                    "timeout retry did not preserve one exact network-failed command"
+                    "timeout retry did not preserve one exact "
+                    "transport-failed command"
                 )
             def _sender_settled() -> dict[str, Any] | None:
                 value = async_harness(
@@ -2013,24 +2134,33 @@ class NativeInteractionsGate(AcceptanceGate):
                 raise GateError(
                     "connection-loss submit reached Authority before retry"
                 )
-            proxy_evidence = proxy.evidence()
-            command_hashes = proxy_evidence.get("commandSha256") or []
+            fault_evidence = self.clients["alice"].invoke_app_result(
+                "messaging_acceptance_command_transport_fault",
+                {
+                    "input": {
+                        "expected_actor_ptid": self.ptids["alice"],
+                        "command_id": "",
+                        "observe_only": False,
+                    }
+                },
+            ).get("data") or {}
+            fault_armed = False
             if (
-                int(proxy_evidence.get("connectionLossCount") or 0) < 1
-                or not command_hashes
-                or any(value != command_sha for value in command_hashes)
+                fault_evidence.get("failedCommandId") != command_id
+                or int(fault_evidence.get("failureCount") or 0) != 1
             ):
                 raise GateError(
-                    "fault proxy did not observe only the exact command bytes"
+                    "command transport fault did not consume the exact command"
                 )
-
-            self.runtime_binding.clear_transport_override(
-                "alice",
-                "station",
-                override_handle,
+            self.clients["alice"].invoke_app_result(
+                "messaging_acceptance_resume_lifecycle",
+                {
+                    "input": {
+                        "expected_actor_ptid": self.ptids["alice"],
+                    }
+                },
             )
-            override_handle = None
-            proxy.disarm()
+            lifecycle_paused = False
 
             def dispatch_until_submitted() -> dict[str, Any] | None:
                 snapshot = self.engine_snapshot(
@@ -2123,40 +2253,61 @@ class NativeInteractionsGate(AcceptanceGate):
                 "finalStation": after_station,
                 "receiverDom": receiver_dom,
                 "receiverVisibleCount": visible_count,
-                "faultProxy": proxy_evidence,
+                "faultTransport": fault_evidence,
             }
             self.command_ids[f"{claim_kind}.timeout-edit"] = command_id
-        finally:
-            try:
-                if (
-                    override_handle is not None
-                    and self.runtime_binding is not None
-                ):
-                    self.runtime_binding.clear_transport_override(
-                        "alice",
-                        "station",
-                        override_handle,
+        except Exception:
+            diagnostics = self.timeout_retry_evidence.setdefault(claim_kind, {})
+            if command_id:
+                try:
+                    diagnostics["failedEngine"] = self.engine_snapshot(
+                        "alice", conversation_id, message_id, command_id,
                     )
-            finally:
-                proxy.disarm()
-                if not proxy_evidence:
-                    proxy_evidence = proxy.evidence()
-                proxy.stop()
-                scenario_evidence = self.timeout_retry_evidence.setdefault(
-                    claim_kind,
-                    {},
-                )
-                scenario_evidence.setdefault(
-                    "faultProxy",
-                    proxy_evidence,
-                )
-                scenario_evidence["proxyPort"] = proxy_port
-                scenario_evidence["proxyPortReleased"] = wait_until(
-                    lambda: self.port_is_free(proxy_port),
-                    f"{claim_kind} Chat submit fault proxy port release",
-                    10,
-                    0.1,
-                )
+                    diagnostics["failedStation"] = station_readback(
+                        self.station_url, conversation_id, message_id,
+                    )
+                except Exception as diagnostic_error:
+                    diagnostics["diagnosticError"] = str(diagnostic_error)
+            raise
+        finally:
+            if fault_armed or not fault_evidence:
+                try:
+                    fault_evidence = self.clients["alice"].invoke_app_result(
+                        "messaging_acceptance_command_transport_fault",
+                        {
+                            "input": {
+                                "expected_actor_ptid": self.ptids["alice"],
+                                "command_id": "",
+                                "observe_only": False,
+                            }
+                        },
+                    ).get("data") or {}
+                except Exception as error:
+                    fault_clear_error = str(error)
+            if lifecycle_paused:
+                try:
+                    self.clients["alice"].invoke_app_result(
+                        "messaging_acceptance_resume_lifecycle",
+                        {
+                            "input": {
+                                "expected_actor_ptid": self.ptids["alice"],
+                            }
+                        },
+                    )
+                except Exception as error:
+                    lifecycle_resume_error = str(error)
+            scenario_evidence = self.timeout_retry_evidence.setdefault(
+                claim_kind,
+                {},
+            )
+            scenario_evidence.setdefault(
+                "faultTransport",
+                fault_evidence,
+            )
+            scenario_evidence["faultClearError"] = fault_clear_error
+            scenario_evidence["lifecycleResumeError"] = (
+                lifecycle_resume_error
+            )
 
     def restart_client(
         self,
@@ -2749,6 +2900,22 @@ class NativeInteractionsGate(AcceptanceGate):
                 self.save_screenshot(client, actor)
                 self.save_dom(client, actor)
                 self.save_app_log(client, actor)
+        except Exception:
+            capture_errors = []
+            for actor, client in self.clients.items():
+                for capture in (
+                    self.save_screenshot,
+                    self.save_dom,
+                    self.save_app_log,
+                ):
+                    try:
+                        capture(client, f"{actor}-failure")
+                    except Exception as capture_error:
+                        capture_errors.append(
+                            f"{actor} {capture.__name__}: {capture_error}"
+                        )
+            self.report.runtime["failureCaptureErrors"] = capture_errors
+            raise
         finally:
             cleanup_preserving_primary_failure(
                 self.cleanup_clients,

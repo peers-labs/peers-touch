@@ -2,6 +2,7 @@ package federation
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"net/http"
@@ -35,14 +36,16 @@ type subServer struct {
 
 	jwtWrapper        server.Wrapper
 	federationWrapper server.Wrapper
+	proposalWrapper   server.Wrapper
 
-	federationSvc  *application.FederationService
-	ledgerSvc      *application.LedgerService
-	projectionSvc  *application.ProjectionService
-	membershipRepo domain.MembershipRepository
-	actorKeySvc    *domain.ActorKeyService
-	syncManager    *LedgerSyncManager
-	govClient      RemoteGovernanceClient
+	federationSvc   *application.FederationService
+	ledgerSvc       *application.LedgerService
+	projectionSvc   *application.ProjectionService
+	membershipRepo  domain.MembershipRepository
+	stationRoleRepo domain.StationRoleRepository
+	actorKeySvc     *domain.ActorKeyService
+	syncManager     *LedgerSyncManager
+	govClient       RemoteGovernanceClient
 
 	deliveryRuntime *federationruntime.Runtime
 	deliveryCancel  context.CancelFunc
@@ -63,6 +66,14 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		Description: "station-to-station federation ledger sync",
 		Policy: scope.Policy{
 			TTLMax:           5 * time.Minute,
+			AudienceRequired: true,
+		},
+	})
+	scope.MustRegister(scope.Scope{
+		Name:        FederationGovernanceProposalScope,
+		Description: "authenticated Station governance proposals",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
 			AudienceRequired: true,
 		},
 	})
@@ -89,6 +100,22 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 			false,
 		),
 	)
+	s.proposalWrapper = server.HTTPWrapperAdapter(
+		httpadapter.RequireFederationToken(
+			FederationGovernanceProposalScope,
+			peerKeys,
+			func(r *http.Request) (string, error) {
+				peerID := localStationPeerID()
+				if peerID == "" {
+					return "", fmt.Errorf(
+						"local Station peer identity unavailable",
+					)
+				}
+				return peerID, nil
+			},
+			false,
+		),
+	)
 
 	if err := infrastructure.MigrateSchema(rds); err != nil {
 		return fmt.Errorf("migrate federation schema: %w", err)
@@ -98,15 +125,17 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if localStationID == "" {
 		return fmt.Errorf("initialize Federation delivery: local Station peer identity unavailable")
 	}
+	fedCache := authfed.Singleton()
 	s.deliveryRuntime, err = federationruntime.NewRuntime(
 		ctx,
 		federationruntime.RuntimeConfig{
 			Database:           rds,
 			LocalStationPeerID: localStationID,
-			KeyCache:           authfed.Singleton(),
+			KeyCache:           fedCache,
 			PeerKeys:           peerKeys,
 			Clock:              delivery.SystemClock{},
 			HTTPClient:         &http.Client{Timeout: 15 * time.Second},
+			StationURLResolver: s,
 			Relay:              federationruntime.LiveRelayAccess{},
 			Dispatcher: delivery.DispatcherConfig{
 				WorkerID:      "federation:" + localStationID,
@@ -130,6 +159,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	hashSvc := domain.NewHashService()
 	sigSvc := domain.NewSignatureService()
 	actorKeySvc := domain.NewActorKeyService(repos.ActorSigningKey)
+	stationKeys := &stationSigningKeyProvider{cache: fedCache}
 	s.actorKeySvc = actorKeySvc
 	replaySvc := domain.NewReplayService(repos.LedgerEvent, hashSvc, sigSvc)
 
@@ -139,7 +169,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.ledgerSvc = application.NewLedgerService(
 		repos.Federation,
 		repos.LedgerEvent,
+		repos.LedgerCommitter,
 		repos.Membership,
+		stationKeys,
 		hashSvc,
 		sigSvc,
 		policyRegistry,
@@ -151,6 +183,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		repos.ActorRole,
 		s.ledgerSvc,
 		actorKeySvc,
+		stationKeys,
 		replaySvc,
 	)
 
@@ -161,6 +194,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		repos.SyncCursor,
 	)
 	s.membershipRepo = repos.Membership
+	s.stationRoleRepo = repos.StationRole
 
 	publisher := NewLedgerEventPublisher(repos.ActorRole)
 	s.ledgerSvc.SetOnAppended(func(ctx context.Context, event *pb.LedgerEvent) {
@@ -169,7 +203,6 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		}
 	})
 
-	fedCache := authfed.Singleton()
 	localStationFn := func() string {
 		return localStationPeerID()
 	}
@@ -183,7 +216,6 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		repos.SyncCursor,
 		repos.Membership,
 		publisher,
-		hashSvc,
 		fetcher,
 		"",
 	)
@@ -191,6 +223,34 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 
 	log.Infof(ctx, "[federation] subserver initialized")
 	return nil
+}
+
+type stationSigningKeyProvider struct {
+	cache *authfed.KeyCache
+}
+
+func (p *stationSigningKeyProvider) Current(
+	ctx context.Context,
+) (*domain.StationSigningKey, error) {
+	if p == nil || p.cache == nil {
+		return nil, fmt.Errorf("Station signing key cache is unavailable")
+	}
+	key, err := p.cache.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if key == nil ||
+		len(key.Pub) != ed25519.PublicKeySize ||
+		len(key.Priv) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("Station signing key is incomplete")
+	}
+	return &domain.StationSigningKey{
+		PublicKey: append(ed25519.PublicKey(nil), key.Pub...),
+		PrivateKey: append(
+			ed25519.PrivateKey(nil),
+			key.Priv...,
+		),
+	}, nil
 }
 
 func localStationPeerID() string {
@@ -281,6 +341,7 @@ func (s *subServer) ValidateActiveStationPair(
 func (s *subServer) Handlers() []server.Handler {
 	jw := s.jwtWrapper
 	fw := s.federationWrapper
+	pw := s.proposalWrapper
 
 	handlers := []server.Handler{
 		server.NewStrictTypedHandler("fed-list-contexts", "/sub-federation/contexts", server.GET, s.handleListFederationContexts, jw),
@@ -294,7 +355,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fed-catalog-search", "/sub-federation/catalog/search", server.POST, s.handleCatalogSearch, jw),
 		server.NewTypedHandler("fed-fetch-head", "/fed/v1/ledger/head", server.POST, s.handleFetchHead, fw),
 		server.NewTypedHandler("fed-fetch-events", "/fed/v1/ledger/events", server.POST, s.handleFetchEvents, fw),
-		server.NewTypedHandler("fed-submit-proposal", "/fed/v1/governance/submit-proposal", server.POST, s.handleSubmitProposal),
+		server.NewTypedHandler("fed-submit-proposal", "/fed/v1/governance/submit-proposal", server.POST, s.handleSubmitProposal, pw),
 	}
 	if s.deliveryRuntime != nil {
 		handlers = append(handlers, s.deliveryRuntime.Handlers()...)
@@ -320,6 +381,49 @@ func (s *subServer) IsActiveMember(
 		return false, err
 	}
 	return membership != nil && membership.Status == "active", nil
+}
+
+func (s *subServer) ResolveActiveStationURL(
+	ctx context.Context,
+	targetStationPeerID string,
+) (string, error) {
+	if s == nil || s.membershipRepo == nil {
+		return "", errors.New("Federation membership repository unavailable")
+	}
+	memberships, err := s.membershipRepo.ListByStation(
+		ctx,
+		strings.TrimSpace(targetStationPeerID),
+	)
+	if err != nil {
+		return "", err
+	}
+	origins := make(map[string]struct{})
+	for _, membership := range memberships {
+		if membership == nil || membership.Status != "active" {
+			continue
+		}
+		if strings.TrimSpace(membership.StationURL) == "" {
+			continue
+		}
+		origin, normalizeErr := federationruntime.CanonicalStationOrigin(
+			membership.StationURL,
+		)
+		if normalizeErr != nil {
+			return "", normalizeErr
+		}
+		origins[origin] = struct{}{}
+	}
+	if len(origins) != 1 {
+		return "", fmt.Errorf(
+			"active Station origin is ambiguous or missing: station=%s origins=%d",
+			targetStationPeerID,
+			len(origins),
+		)
+	}
+	for origin := range origins {
+		return origin, nil
+	}
+	return "", errors.New("active Station origin is unavailable")
 }
 
 func (s *subServer) runDeliveryRuntime(ctx context.Context) {

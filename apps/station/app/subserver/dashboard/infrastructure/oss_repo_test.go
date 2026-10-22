@@ -697,6 +697,31 @@ func TestOSSRepository_RotateFederationLocalKey_FirstRotationGreenfield(t *testi
 	}
 }
 
+func TestOSSRepository_RotateFederationLocalKey_RejectsLedgerSplitBrain(
+	t *testing.T,
+) {
+	db := newOSSTestDB(t)
+	if err := db.Exec(
+		"CREATE TABLE federation (id INTEGER PRIMARY KEY)",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
+
+	if _, err := repo.RotateFederationLocalKey(
+		context.Background(),
+	); err == nil {
+		t.Fatal("key rotation bypassed Federation ledger coordination")
+	}
+	if current := readSlotForTest(
+		t,
+		db,
+		federation.SlotCurrent,
+	); current.Kid != "" {
+		t.Fatalf("rejected rotation wrote key %q", current.Kid)
+	}
+}
+
 func TestOSSRepository_RotateFederationLocalKey_DemotesPrevious(t *testing.T) {
 	db := newOSSTestDB(t)
 	repo := NewOSSRepository(db, testDashboardStationPeerID)

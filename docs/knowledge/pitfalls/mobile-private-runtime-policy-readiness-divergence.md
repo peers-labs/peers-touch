@@ -5,8 +5,13 @@ status: active
 owns:
   - apps/mobile/src-tauri/src/secure_content/
   - apps/mobile/src-tauri/src/station_origin.rs
+  - apps/mobile/src/features/social/mobileSocialFacade.ts
+  - apps/mobile/src/pages/moments/MomentCommentsSection.tsx
   - apps/mobile/src/runtimes/privateMomentsRuntime.ts
   - apps/mobile/src/runtimes/privateMomentsRuntime.test.ts
+  - apps/mobile/src/services/mobileCommands.ts
+  - apps/station/app/subserver/social/application/federated_private_interaction.go
+  - tooling/acceptance/gates/social/cross_station_mobile_desktop_e2e.py
 referenced-by:
   - docs/knowledge/README.md
 related:
@@ -38,6 +43,61 @@ restart while `private-social` remained inactive with no local error.
 
 A direct Native activation probe then returned HTTP `200` with stable code
 `20005` while decoding the actor identity response.
+
+An exact-source Desktop-to-iOS private Moment was later accepted and delivered
+by both Stations, but Mobile could not decrypt it. Sender-profile resolution
+returned HTTP `200` with stable code `20005` because Mobile decoded the strict
+typed `/actor/federation/resolve` response as a `PeersResponse` envelope.
+
+After that decoder was corrected, the same receiver still reported
+`private Social sender Home Station profile is unavailable`. Mobile required
+the sender to be local before loading a Profile and ignored the
+`receiver_verified_sender_signing_key` that the receiver Station had already
+bound to the imported resource.
+
+After cross-Station reads passed, the first Mobile private Comment appeared
+submitted in the UI but never converged. The source Station rejected
+`PREPARE_COMMENT` because Mobile sent an empty actor signing-key ID and device
+signature, while Mobile Reactions already used the required interaction
+signature transcript.
+
+Once prepare signatures were present, the source Station committed the plan
+and the receiver Station returned it, but Mobile still never submitted the
+Comment. Mobile required the source-signed plan key ID to equal its local
+pinned Station key and ignored the receiver Station's localized signing-key
+attestation.
+
+Cross-Station prepare also resolves asynchronously. Its first HTTP attempt can
+return an unknown dependency result while the exact command is in flight. The
+UI retry path generated a fresh draft ID, so it could not replay the resolved
+prepare command and instead consumed another command identity.
+
+After the draft identity was retained, an immediate retry could still precede
+the Federation result. Both attempts then returned pending even though the
+source committed exactly once and the receiver resolved the result shortly
+afterward.
+
+After bounded retry pacing was added, prepare and submit both committed exactly
+once and the receiver resolved both results, but Mobile still retained the old
+`20008`. The receiver localized the source proof-key attestation while
+importing the Comment projection, yet the submit HTTP replay returned the
+unmodified source response.
+
+Once Comment convergence passed, the private Reaction button produced no
+durable command. The visible non-Public Post remained in the facade projection
+while the current Private Runtime read projection was temporarily absent, so
+the generic Reaction intent incorrectly fell through to the Public gateway.
+
+Source-bound UI evidence later showed the Reaction handler did execute, but
+Tauri rejected `deviceId` as an unknown field. The TypeScript adapter reused a
+broad account scope while Rust Reaction inputs deliberately deny unknown
+fields.
+
+After the Reaction wire contract was corrected, bidirectional publication,
+Comment, Reaction, and unauthorized-denial proof all passed. The mixed Gate
+then timed out on revocation even though Mobile had already projected
+`DELETED_OR_REVOKED`; its next point-read correctly failed with
+`mobile.privateSocial.deletedOrRevoked`.
 
 After the wire contract was repaired, the runtime could report `active=true`
 while its endpoint Content PreKeys were still absent. The first private publish
@@ -106,6 +166,58 @@ the `PeersResponse` envelope with an exact `google.protobuf.Any` type URL, so
 the successful HTTP response failed local protobuf decoding before Private
 Social could pin the Station signing key.
 
+Mobile later applied that envelope decoder too broadly. Federation resolve is a
+strict typed handler and returns its declared protobuf response directly, like
+Desktop's canonical client. Treating it as `PeersResponse` made valid
+cross-Station sender identity look malformed.
+
+The sender-key resolver then retained a same-Station-only assumption. For an
+imported private resource, the viewer's Home Station is the authority that
+verifies and projects the retained source-device key. Requiring a local sender
+Profile discarded that explicit cross-Station proof path.
+
+Private Comment prepare and submit also bypassed the shared federated
+interaction signing contract. Same-Station execution did not expose the gap,
+but source-authority dispatch correctly rejected the unsigned cross-Station
+command before mutation.
+
+Federated prepare returns a source-signed plan plus an attestation issued by
+the receiver's pinned Station for that retained source proof key. Verifying the
+plan directly with the local Station key rejected valid remote authority after
+the transport had already completed.
+
+Comment retry identity belongs to the original user action. Generating the
+draft ID inside every send attempt turned a recoverable pending result into a
+new mutation and defeated Station exact-replay semantics.
+
+Exact replay does not make an asynchronous result synchronous. A real UI retry
+must wait for the receiver result path and remain bounded; one immediate retry
+is not evidence that the command failed.
+
+Federated Comment prepare localized its source plan attestation before returning
+the replayed response. Submit omitted the equivalent boundary, so Mobile
+rejected the source Station attestation after the mutation had already
+committed. Because that post-transport verification error did not overwrite
+the stored transport failure, the UI continued to display the stale `20008`.
+
+Reaction routing used Private Runtime state as its only ownership signal.
+That state is authoritative for mutation, but a temporarily missing projection
+cannot reclassify a visible non-Public Post as Public. The facade must recover
+the authoritative private projection instead of changing mutation owners.
+The fallback feed row may also omit audience metadata, so ownership cannot be
+reconstructed from whichever same-ID row happened to win the latest merge.
+
+The Reaction command adapter also passed lifecycle-only fields to a narrower
+Rust mutation contract. Other commands silently ignored those fields, hiding
+the schema drift until strict Reaction deserialization exercised it.
+
+The mixed Gate used the access-open private point-read as both a resource read
+and a terminal revocation observer. Private Runtime intentionally closes that
+operation once a tombstone has entered its projection, so the Gate converted a
+successful terminal state into an Appium transport failure. Reconciliation
+snapshot state, not another content read, owns observation of that terminal
+projection.
+
 Native activation creates and binds the Private Social engine, but endpoint
 Content PreKey provisioning belongs to Native reconciliation. The mobile
 lifecycle published readiness immediately after activation and snapshot
@@ -151,9 +263,9 @@ briefly while Session refresh or Social ingress reconciliation completes.
 
 ### What was done in code
 
-- Private Social transport now consumes the shared `StationOriginPolicy`:
-  development builds admit canonical HTTP origins and release builds remain
-  HTTPS-only.
+- Private Social transport now consumes the shared Station-origin normalizer.
+  Every build accepts the user's canonical HTTP or HTTPS choice; scheme
+  selection does not replace signed Station identity or route verification.
 - Private Social session transitions now use the generation-bound lifecycle
   readiness helper, wait for declared dependencies, and propagate current-scope
   activation failures.
@@ -164,7 +276,51 @@ briefly while Session refresh or Social ingress reconciliation completes.
   `PeersResponse` envelope, and requires the exact `ActorProfile` type URL. The
   public Federation profile route retains its raw protobuf response contract.
 - Remote sender resolution first reads active Federation contexts and sends an
-  explicit `federation_id` on every `/actor/federation/resolve` request.
+  explicit `federation_id` on every `/actor/federation/resolve` request. It
+  decodes that strict typed route as the raw `FederationResolveView`, never as a
+  `PeersResponse` envelope.
+- Private Moment, recovery, and Comment reads validate the receiver Station's
+  bounded `receiver_verified_sender_signing_key` before any local Profile
+  fallback. The key must match the sender endpoint, signing-key ID, commit
+  time, verification source, and expected Home Station when the response
+  exposes one.
+- Private Comment prepare/submit and Reaction/unreaction share one
+  `peers-touch:social:federated-private-interaction:v1` signing transcript.
+  Mobile signs the exact operation bytes with its active device key and the
+  transport rejects empty key IDs or non-64-byte signatures before dispatch.
+- Private Comment plan verification uses the local pinned Station key only for
+  local plans. A remote plan must carry a localized
+  `StationContentSigningKeyAttestation`; Mobile verifies that attestation with
+  the pinned Station key, then verifies the source plan with the attested proof
+  key.
+- The Mobile Comment composer retains one draft ID while an entered comment is
+  pending or failed. The visible retry action reuses that ID and the same
+  prepare command; only committed success or Post change clears it.
+- The mixed Desktop/iOS Gate exercises the visible retry action with bounded
+  `1/2/4` second backoff. Every attempt retains the same draft and command
+  identity, and exhaustion reports only sanitized draft state.
+- The receiver Station localizes the source Comment proof-key attestation in
+  the replayed submit response, just as it already localizes prepare plans.
+  Mobile therefore verifies the committed response against its pinned Home
+  Station without weakening source proof verification.
+- A visible non-Public Post is always owned by Private Social. If its current
+  read projection is absent, the facade rehydrates it through
+  `readPrivateMoment` before mutating and never falls through to the Public
+  Reaction gateway. The facade retains every Private Runtime-proven canonical
+  Post ID for its session lifetime so a same-ID fallback row cannot erase
+  mutation ownership. Ownership hints are account-scoped (same Station and
+  Actor) and may come from Post, Comment draft, Comment, or Reaction command
+  artifacts. The bounded ID-only registry survives facade recreation, while
+  projection content remains device/generation-scoped.
+- React, unreact, and retry adapters serialize only
+  `stationPeerId`, `actorPtid`, `activationGeneration`, and their exact command
+  fields. `deviceId` and `lifecycleGeneration` remain lifecycle inputs and
+  never cross the strict Reaction command boundary.
+- The mixed Desktop/iOS Gate observes `DELETED_OR_REVOKED` and retained
+  `NOT_FOUND_OR_NOT_AUTHORIZED` from the sanitized reconciliation snapshot.
+  It calls the access-open point-read only while no matching terminal
+  projection exists, and still requires receiver-visible feed absence plus
+  restart non-resurrection.
 - Private Social lifecycle bootstrap now completes Native reconciliation before
   publishing the runtime as active. Reconciliation failure fails lifecycle
   readiness and tears down the exact Native generation.
@@ -201,8 +357,8 @@ briefly while Session refresh or Social ingress reconciliation completes.
 
 ### What guards against regression
 
-- `private_social_uses_the_shared_station_origin_policy` verifies development
-  HTTP admission and release HTTP rejection.
+- `private_social_uses_the_shared_user_selected_station_origin_policy` verifies
+  canonical HTTP and HTTPS admission plus malformed-origin rejection.
 - `publishes activation failure through lifecycle readiness` verifies that a
   failed native activation cannot resolve bootstrap as ready.
 - `restarts independently of failed degradable messaging and social runtimes`
@@ -211,6 +367,29 @@ briefly while Session refresh or Social ingress reconciliation completes.
 - `actor_profile_request_decodes_peers_response_envelope` verifies the real
   HTTP request path, Bearer/device headers, canonical envelope, and exact Actor
   Profile payload type.
+- `federation_resolve_decodes_the_strict_typed_raw_response` verifies the
+  context lookup plus Federation resolve request sequence, protobuf media
+  headers, and raw typed response contract.
+- `receiver_verified_remote_sender_key_precedes_profile_resolution` verifies
+  that a valid remote source key is consumed without a local Profile request.
+- `private_comment_transport_rejects_unsigned_interactions` verifies Comment
+  prepare and submit cannot leave Mobile without the shared actor signature.
+- `MomentCommentsSection.test.tsx` verifies that Comment retry reuses one draft
+  identity and keeps a stable retry action selector.
+- `test_cross_station_mobile_desktop_e2e.py` verifies that the mixed Gate waits
+  for Federation result convergence and can repeat the same visible retry
+  action without creating another command identity.
+- `TestFederatedPrivateCommentSubmit` verifies that the replayed submit response
+  carries a receiver-localized proof-key attestation bound to the original
+  source proof key.
+- `mobileSocialFacade.test.ts` verifies that a visible private Post with a
+  temporarily absent runtime projection is rehydrated before Reaction and
+  never reaches the Public gateway.
+- `mobileCommands.test.ts` verifies the exact Tauri payload shape for React,
+  unreact, and retry and rejects accidental lifecycle-field leakage.
+- `test_cross_station_mobile_desktop_e2e.py` verifies that a reconciled terminal
+  revocation projection is accepted without calling the access-open Mobile
+  action.
 - `publishes readiness only after Content PreKey reconciliation` verifies that
   activation cannot become ready before Native provisioning succeeds, and
   `rejects readiness when a configured recovery pool is empty` verifies that
@@ -235,6 +414,10 @@ cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml \
   private_social_uses_the_shared_station_origin_policy
 cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml \
   actor_profile_request_decodes_peers_response_envelope
+cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml \
+  federation_resolve_decodes_the_strict_typed_raw_response
+cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml \
+  receiver_verified_remote_sender_key_precedes_profile_resolution
 pnpm --dir apps/mobile exec vitest run \
   src/runtimes/privateMomentsRuntime.test.ts
 ```
@@ -250,6 +433,9 @@ rg -n "StationOriginPolicy|runRuntimeSessionTransition|ACTOR_PROFILE_TYPE_URL" \
 Private Social must not add a parallel transport policy or swallow a
 current-scope activation failure outside lifecycle readiness. Station routes
 that return `PeersResponse` must not be decoded as their raw payload type.
+Strict typed Station routes must remain raw protobuf and must not be decoded as
+`PeersResponse`; route registration and the canonical Desktop client determine
+which contract applies.
 An `active=true` lifecycle projection without an initial
 `privateSocialReconcile` is also invalid. When a recovery master is configured,
 the report must show positive endpoint and actor-recovery availability before
@@ -269,10 +455,15 @@ production histories and must fail if a required state is absent.
 Native runtime owners must also observe
 `recovery.snapshot.writeAdmission.open=true` after post-login restart and key
 reconciliation before invoking any mutating Fixture action.
+An Acceptance Gate must not probe a known deleted or revoked resource through
+an operation whose production contract rejects terminal access. It may use the
+sanitized runtime snapshot for supporting terminal-state observation only when
+the same scenario still proves the receiver-visible absence and restart
+behavior required by the Feature contract.
 
 ## Crosswalks
 
-- `docs/client/mobile/lifecycle.md` defines debug/release Station-origin policy
+- `docs/client/mobile/lifecycle.md` defines user-selected Station-origin policy
   and generation-bound asynchronous runtime readiness.
 - `SC-D22` requires W9 Mobile product proof to use the real production runtime
   path on the exact source.

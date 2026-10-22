@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ChatStorageErrorCode,
+  ChatStorageOperationKind,
   ChatStorageOperationState,
   ChatStorageResultSchema,
   ChatStorageSnapshotSchema,
@@ -11,6 +12,7 @@ import {
   chatStorageProjectionRuntime,
   chatStorageReleasedBytes,
   chatStorageScopeRevision,
+  isConversationClearProjectionCommitted,
   isChatStorageResultForScope,
   isChatStorageSnapshotForScope,
   shouldRefreshChatStorageForPage,
@@ -88,6 +90,41 @@ describe('chat storage runtime scope fencing', () => {
       result,
     )).toBe(false);
     expect(chatStorageReleasedBytes(result)).toBe(7_500n);
+  });
+
+  it('refreshes a logically committed clear without claiming physical success', () => {
+    for (const state of [
+      ChatStorageOperationState.DELETING_FILES,
+      ChatStorageOperationState.COMPACTING,
+      ChatStorageOperationState.COMPACTION_PENDING,
+      ChatStorageOperationState.PAUSED_SCOPE_INACTIVE,
+      ChatStorageOperationState.SUCCEEDED,
+      ChatStorageOperationState.FAILED_RETRYABLE,
+      ChatStorageOperationState.FAILED_TERMINAL,
+    ]) {
+      const result = create(ChatStorageResultSchema, {
+        operation: {
+          kind: ChatStorageOperationKind.CLEAR_CONVERSATION,
+          state,
+        },
+      });
+      expect(isConversationClearProjectionCommitted(result)).toBe(true);
+    }
+
+    for (const state of [
+      ChatStorageOperationState.UNSPECIFIED,
+      ChatStorageOperationState.PLANNED,
+      ChatStorageOperationState.DELETING_ROWS,
+      ChatStorageOperationState.CANCELLED,
+    ]) {
+      const result = create(ChatStorageResultSchema, {
+        operation: {
+          kind: ChatStorageOperationKind.CLEAR_CONVERSATION,
+          state,
+        },
+      });
+      expect(isConversationClearProjectionCommitted(result)).toBe(false);
+    }
   });
 
   it('accepts a typed retention error without an operation for the current scope', () => {

@@ -11,6 +11,11 @@ CHAT_MIXED_NATIVE_GATE_IDS = frozenset(
         "station-access-session-class-suite-e2e",
     }
 )
+SOCIAL_CROSS_STATION_MIXED_GATE_IDS = frozenset(
+    {
+        "social-cross-station-mobile-desktop-e2e",
+    }
+)
 STATION_ACCESS_NATIVE_GATE_IDS = frozenset(
     {
         "station-access-auth-e2e",
@@ -28,6 +33,7 @@ STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS = frozenset(
         "lifecycle.snapshot",
         "lifecycle.suspend",
         "lifecycle.waitReady",
+        "recovery.snapshot",
         "session.logout",
         "settings.device.read",
         "settings.device.update",
@@ -35,6 +41,7 @@ STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS = frozenset(
         "settings.notifications.update",
         "settings.profile.read",
         "settings.profile.update",
+        "social.reconcile",
     }
 )
 
@@ -70,6 +77,27 @@ CHAT_MIXED_NATIVE_CHILD_HARNESS_ACTIONS = frozenset(
     }
 )
 
+SOCIAL_CROSS_STATION_MIXED_CHILD_HARNESS_ACTIONS = frozenset(
+    {
+        "cleanup",
+        "getRealtimeDevice",
+        "lifecycle.restart",
+        "lifecycle.scope.read",
+        "messaging.reconcile",
+        "moments.private.acceptance.prepareKeys",
+        "moments.private.comment.submit",
+        "moments.private.comments.read",
+        "moments.private.publishText",
+        "moments.private.read",
+        "moments.private.reconcile",
+        "moments.private.snapshot",
+        "navigation.apply",
+        "navigation.snapshot",
+        "recovery.snapshot",
+        "social.reconcile",
+    }
+)
+
 STATION_ACCESS_NATIVE_CHILD_HARNESS_ACTIONS = frozenset(
     {
         "cleanup",
@@ -93,6 +121,8 @@ STATION_ACCESS_NATIVE_CHILD_HARNESS_ACTIONS = frozenset(
 def child_callable_harness_actions(gate_id: str) -> frozenset[str]:
     if gate_id in CHAT_MIXED_NATIVE_GATE_IDS:
         return CHAT_MIXED_NATIVE_CHILD_HARNESS_ACTIONS
+    if gate_id in SOCIAL_CROSS_STATION_MIXED_GATE_IDS:
+        return SOCIAL_CROSS_STATION_MIXED_CHILD_HARNESS_ACTIONS
     if gate_id in STATION_ACCESS_NATIVE_GATE_IDS:
         return STATION_ACCESS_NATIVE_CHILD_HARNESS_ACTIONS
     return STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS

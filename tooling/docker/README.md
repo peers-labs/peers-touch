@@ -108,6 +108,35 @@ GitHub Actions workflow [`deploy-station.yml`](../../.github/workflows/deploy-st
 - Per-env Secrets (`PEERS_AUTH_SECRET`, `PEERS_DB_PASSWORD`) live in
   GitHub Environments named identically to the envs.
 
+## Build cache contract
+
+Station builds require BuildKit. The default Go and Ubuntu references use
+official tags pinned to multi-architecture index digests, shared by amd64 and
+arm64. `builder-base.Dockerfile` pins the same Ubuntu index. Update these
+digests deliberately when updating the SDK or base OS; daemon registry mirrors
+remain responsible for fetching missing content.
+
+The cache belongs to the Docker builder on each target host. Once the pinned
+manifest, config, and layers are present in that builder's content cache,
+BuildKit can resolve the base from local content. A metadata step in the build
+log does not itself mean layers were downloaded. Another builder or host, cache
+pruning, missing content, a changed digest, or an explicit pull can require
+registry access again.
+
+Build commit, label, and time are declared after builder dependencies and after
+all runtime filesystem layers. Changing this metadata therefore preserves the
+dependency-download and runtime package-install layers. Both Go binaries share
+the persistent BuildKit cache at `/root/.cache/go-build`: changed source or
+linker metadata still rebuilds the binaries while reusing compiled dependencies.
+The first build after introducing the cache mount populates this compiler cache.
+
+For a focused check, run the canonical Station deploy twice on the same target
+with a different build time. Confirm the runtime `apt-get` and dependency
+download steps are `CACHED`, compare both Go build durations, and verify the
+deployed `/app-meta/version` still reports the intended commit and new build
+time. `--network=none` only restricts build-step networking and is not proof
+that base-image metadata resolution worked offline.
+
 ## Architecture notes
 
 - **Single Dockerfile**, single image. The `relay` profile and the `station`

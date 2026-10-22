@@ -16,7 +16,7 @@ from tooling.acceptance.core import (
     ProvisioningState,
     ServiceAttestation,
 )
-from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.provisioners import (
     StationAccessRelayRoleProvisioner,
     get_provisioner,
@@ -123,6 +123,77 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             get_provisioner(self.contract),
             StationAccessRelayRoleProvisioner,
         )
+
+    def test_non_active_attachment_is_replaced_with_fresh_invitation(
+        self,
+    ) -> None:
+        provisioner = StationAccessRelayRoleProvisioner(self.contract)
+        manifest = provisioner._new_base_manifest(
+            DESKTOP_RELAY_NATIVE_GATE_ID
+        )
+        invitation = {
+            "relay_peer_id": "relay-peer",
+            "invite_token": "invite",
+        }
+        with (
+            patch.object(
+                provisioner,
+                "_dashboard_token",
+                return_value="dashboard-token",
+            ),
+            patch.object(
+                provisioner,
+                "_attachment_items",
+                return_value=[
+                    {
+                        "relay_peer_id": "relay-peer",
+                        "state": "recovering",
+                        "enabled": True,
+                    }
+                ],
+            ),
+            patch.object(
+                provisioner,
+                "_disable_fixture_relay_for_replacement",
+            ) as disable,
+            patch.object(
+                provisioner,
+                "_wait_attachment_state",
+                return_value={"state": "active"},
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "mint_posix_relay_operator_token",
+                return_value="operator-token",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "read_service_runtime_identity",
+                return_value="station-peer",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_json_request",
+                side_effect=[
+                    (200, {"invitation": invitation}),
+                    (200, {}),
+                ],
+            ) as request,
+        ):
+            provisioner._ensure_fixture_relay(
+                manifest=manifest,
+                station_url="http://station.example",
+                relay_url="https://relay.example:18081",
+                relay_peer_id="relay-peer",
+                relay_config=_config("relay"),
+                trust_anchor=b"certificate",
+            )
+
+        disable.assert_called_once_with(
+            "http://station.example",
+            "relay-peer",
+        )
+        self.assertEqual(request.call_count, 2)
 
     def test_attach_only_provisioning_emits_route_service_without_cleanup(
         self,
@@ -796,6 +867,48 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             "/home/operator/peers-touch/branches/chat/.env",
         )
 
+    def test_profile_managed_legacy_station_requires_explicit_admission(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            environment = Path(directory) / "station.env.example"
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=192.0.2.31",
+                        "PT_DEPLOY_USER=operator",
+                        "PT_DEPLOY_PATH=peers-touch/repo",
+                        "PT_DEPLOY_ROLE=station",
+                        "PT_DEPLOY_PLATFORM=posix",
+                        "PT_DEPLOY_RESTART_CMD='docker compose "
+                        "--env-file $HOME/peers-touch/station.env "
+                        "-p pt-station up -d station'",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_deployment_environment_path",
+                return_value=environment,
+            ):
+                with self.assertRaises(ProvisioningError):
+                    _station_runtime_config(
+                        "station-four",
+                        station_url="http://192.0.2.31:18080",
+                    )
+                config = _station_runtime_config(
+                    "station-four",
+                    station_url="http://192.0.2.31:18080",
+                    allow_profile_managed=True,
+                )
+
+        self.assertEqual(config.compose_project, "pt-station")
+        self.assertEqual(config.compose_service, "station")
+        self.assertEqual(config.public_base_url, "http://192.0.2.31:18080")
+        self.assertEqual(config.data_volume, "pt-station_peers_data")
+
     def test_disposable_station_restart_keeps_env_owned_libp2p_port(
         self,
     ) -> None:
@@ -935,7 +1048,6 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
 
     def test_relay_ca_install_restarts_the_same_station_container(self) -> None:
         provisioner = StationAccessRelayRoleProvisioner(self.contract)
-        provisioner._manifest = SimpleNamespace(run_id="run-1")
         config = _config("station")
         transport = Mock()
         transport.run_argv.return_value = subprocess.CompletedProcess(
@@ -964,6 +1076,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             provisioner._install_station_relay_ca(
                 config,
                 b"certificate",
+                run_id="run-1",
             )
 
         commands = [

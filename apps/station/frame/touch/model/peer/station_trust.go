@@ -2,6 +2,7 @@ package peer
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -242,11 +243,33 @@ func SignStationIdentityResponse(
 	capabilities []string,
 	now time.Time,
 ) (*StationIdentityResponse, error) {
+	return SignStationIdentityResponseWithFederationKey(
+		nodePrivateKey,
+		authorization,
+		canonicalOrigin,
+		challenge,
+		capabilities,
+		nil,
+		now,
+	)
+}
+
+func SignStationIdentityResponseWithFederationKey(
+	nodePrivateKey libp2pcrypto.PrivKey,
+	authorization *StationNodeAuthorization,
+	canonicalOrigin string,
+	challenge []byte,
+	capabilities []string,
+	federationSigningPublicKey ed25519.PublicKey,
+	now time.Time,
+) (*StationIdentityResponse, error) {
 	verified, err := VerifyStationNodeAuthorization(authorization, now)
 	if err != nil ||
 		nodePrivateKey == nil ||
 		nodePrivateKey.Type() != libp2pcrypto.Ed25519 ||
 		len(challenge) != StationIdentityChallengeSize ||
+		(len(federationSigningPublicKey) != 0 &&
+			len(federationSigningPublicKey) != ed25519.PublicKeySize) ||
 		canonicalOrigin == "" {
 		return nil, ErrStationIdentityInvalid
 	}
@@ -274,6 +297,10 @@ func SignStationIdentityResponse(
 		IssuedAtUnixMs:          now.UTC().UnixMilli(),
 		ExpiresAtUnixMs:         now.UTC().Add(stationIdentityResponseLifetime).UnixMilli(),
 		NodeAuthorizationDigest: verified.Digest[:],
+		FederationSigningPublicKey: append(
+			[]byte(nil),
+			federationSigningPublicKey...,
+		),
 	}
 	statementBytes, err := marshalDeterministicBounded(statement)
 	if err != nil {
