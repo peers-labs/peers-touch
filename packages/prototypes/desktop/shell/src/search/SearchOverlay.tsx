@@ -202,11 +202,6 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
   const showSuggestions = !loading && !submitted && query.trim().length > 0;
   const showEmpty = !loading && submitted && results.length === 0;
   const unavailableSources = SOURCE_STATUS[actor].unavailable;
-  let rowCursor = -1;
-  const nextRowIndex = () => {
-    rowCursor += 1;
-    return rowCursor;
-  };
 
   return (
     <div className="search-overlay" role="dialog" aria-modal="true" aria-label="Peers 搜索">
@@ -300,8 +295,7 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
           {!loading && showSuggestions && suggestionItems.length > 0 && (
             <div className="search-group">
               <GroupTitle>建议（本机即时匹配，未提交远端）</GroupTitle>
-              {suggestionItems.map((s) => {
-                const idx = nextRowIndex();
+              {suggestionItems.map((s, idx) => {
                 return (
                   <SuggestionRow
                     key={s.id}
@@ -327,7 +321,6 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
             <ResultsState
               results={results}
               activeIndex={cursorEngaged ? activeIndex : -1}
-              nextRowIndex={nextRowIndex}
               onHover={(i) => { setCursorEngaged(true); setActiveIndex(i); }}
               onOpen={(r) => openResult(r)}
               query={submittedQuery}
@@ -432,20 +425,22 @@ function InitialState({
 function ResultsState({
   results,
   activeIndex,
-  nextRowIndex,
   onHover,
   onOpen,
   query,
 }: {
   results: SearchResult[];
   activeIndex: number;
-  nextRowIndex: () => number;
   onHover: (i: number) => void;
   onOpen: (r: SearchResult) => void;
   query: string;
 }) {
   const groups = KIND_ORDER
-    .map((kind) => ({ kind, items: results.filter((r) => r.kind === kind) }))
+    .map((kind) => ({
+      kind,
+      items: results.map((item, index) => ({ item, index }))
+        .filter(({ item }) => item.kind === kind),
+    }))
     .filter((g) => g.items.length > 0);
   return (
     <>
@@ -455,8 +450,7 @@ function ResultsState({
             {KIND_LABEL[group.kind]}
             <span className="group-count">{group.items.length}</span>
           </GroupTitle>
-          {group.items.map((r) => {
-            const idx = nextRowIndex();
+          {group.items.map(({ item: r, index: idx }) => {
             return (
               <button
                 type="button"
