@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 6cdea08df22b81f0971a97d5318370b4aebc4a8cd31e28fbfd16610b01ba5912
+covered_docs_hash: 35fce5635f69ce8335bc374d7627463e4432d0ee60b53b21d871896790b1d4ed
 
 covered_docs:
   - AGENTS.md
@@ -38,6 +38,26 @@ ordering is total. Immutable historical holdout integrity is separate from
 current reevaluation and reciprocal promotion binding. Prototype/Quality
 consumers and negative regression fixtures cover these refinements; GitHub
 Review keeps its existing stale-proof and independent-judgment requirements.
+
+## 2026-10-22 Comparative Experience Review Integration
+
+Experience Design now includes one comparative subsystem: a frozen Outcome
+Oracle, two identity-neutral and independently reviewed Journey observations,
+deterministic paired differentials, a blind semantic review, sealed identity
+reveal, independent Peers disposition and proposal-only Target Contract
+projection.
+
+`pt-product-design-methodology`, `pt-prototype-design` and `pt-quality-check`
+consume the canonical compare CLI. Positive, negative and boundary calibration
+plus source tests cover stale bindings, author overlap, graph closure,
+deterministic priority, causal overclaim and unauthorized projection.
+Framework incremental value remains `UNPROVEN` until a separate Quality-owned
+sealed blind A/B.
+
+GitHub Review already rejects stale evidence, overlapping authors, missing
+proof and self-approved product claims. Its `SKILL.md` and generic hard-rule
+fixtures do not need CER schema or ranking copies; review should consume the
+Quality evidence projection and preserve the same claim boundary.
 
 ## 2026-10-20 Experience Identity Contract Review
 

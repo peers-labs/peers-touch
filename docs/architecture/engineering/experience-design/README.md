@@ -1,8 +1,8 @@
 # Experience Design Control Plane
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-10-18 | **Updated**: 2026-10-20
+> **Version**: v1.3
+> **Created**: 2026-10-18 | **Updated**: 2026-10-22
 > **Owner**: Developer Experience / Product Design
 > **Module**: `tooling/scripts/experience-design/`
 
@@ -55,6 +55,7 @@ Agent 可以在视觉上遵守 token，却仍然产出重复文案、错误信�
 | [integration.md](./integration.md) | Product、Prototype、UI Identity、Review 与 Quality 接入 |
 | [reasoning-kernel.md](./reasoning-kernel.md) | 下属体验推理内核、source fence 和 Finding 排序 |
 | [review-result.md](./review-result.md) | ReviewResult、Journey 图、恢复、排序和 holdout 模型 |
+| [comparative-experience-review.md](./comparative-experience-review.md) | 同 Journey 竞品因果对比、Outcome Oracle 与 Target Contract |
 | [execution-plans/](./execution-plans/) | 冻结执行计划 |
 
 ## 5. Current State And Downstream Entry
@@ -82,6 +83,24 @@ node tooling/scripts/experience-design/experience-design.mjs check
 schema、确定性 finding、精确 evidence、独立 review receipt、三类 calibration
 和 holdout 完整性；它不证明未见设计可用，也不替代明日真实案例的首次 blind
 评审。
+
+Comparative Experience Review 是当前 active 比较层。它用 identity-neutral
+JourneyObservation、冻结 Outcome Oracle、blind delta、identity reveal 和
+reviewed Target Contract projection 扩展控制面；其 source mechanics 与框架
+incremental-value blind A/B 是不同证据，后者在 fresh proof 前保持 `UNPROVEN`。
+架构 registry 同时登记 `experience.design.compare`。
+
+典型比较入口：
+
+```bash
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-validate <paired-case.json> --package-root <package-root>
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-evaluate <paired-case.json> --package-root <package-root>
+```
+
+完整 blind review、identity reveal、disposition 和 Target Contract 命令见
+[Comparative Experience Review](./comparative-experience-review.md#16-agent-and-cli-workflow)。
 
 普通 Agent 工作流使用稳定作者/评审者 ID、精确摘要绑定和 reviewer
 non-overlap，不要求用户或 Agent 管理签名密钥。内容寻址负责不可变性，独立

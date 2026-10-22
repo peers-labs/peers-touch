@@ -32,7 +32,9 @@ test('Product, Prototype, and Quality are thin canonical consumers', () => {
     [
       'docs/client/common/interaction-design-methodology.md',
       'docs/architecture/engineering/experience-design/data-model.md',
+      'docs/architecture/engineering/experience-design/comparative-experience-review.md',
       'experience-design.mjs validate-sources',
+      'compare-evaluate <paired-case.json>',
     ],
     'Product Design',
   );
@@ -47,6 +49,7 @@ test('Product, Prototype, and Quality are thin canonical consumers', () => {
       'review-admission <review-result.json>',
       'ready-for-independent-review',
       'independent review receipt',
+      'compare-project-target <paired-case.json>',
     ],
     'Prototype Design',
   );
@@ -60,6 +63,7 @@ test('Product, Prototype, and Quality are thin canonical consumers', () => {
       'review-admission <review-result.json>',
       'validate-review <case.json> <result.json> <receipt.json>',
       'ready-for-independent-review',
+      'compare-review-blind <paired-case.json>',
     ],
     'Quality Check',
   );
@@ -81,7 +85,7 @@ test('Product, Prototype, and Quality are thin canonical consumers', () => {
   }
 });
 
-test('module registry exposes one evaluator capability and all consumers', () => {
+test('module registry exposes evaluator and comparative capabilities', () => {
   const registry = JSON.parse(
     read(
       'docs/architecture/engineering/architecture-governance/architecture-modules.json',
@@ -95,6 +99,14 @@ test('module registry exposes one evaluator capability and all consumers', () =>
   assert.ok(capability);
   assert.deepEqual(
     [...capability.consumers].sort(),
+    Object.values(SKILLS).sort(),
+  );
+  const comparative = module.capabilities.find(
+    (item) => item.id === 'experience.design.compare',
+  );
+  assert.ok(comparative);
+  assert.deepEqual(
+    [...comparative.consumers].sort(),
     Object.values(SKILLS).sort(),
   );
   for (const governedPath of [
@@ -117,6 +129,10 @@ test('canonical control-plane entrypoints and sources exist', () => {
     'tooling/scripts/experience-design/review-result-schema.mjs',
     'tooling/scripts/experience-design/validator.mjs',
     'tooling/scripts/experience-design/source-fence.mjs',
+    'tooling/scripts/experience-design/comparative-schema.mjs',
+    'tooling/scripts/experience-design/comparative-evaluator.mjs',
+    'tooling/scripts/experience-design/comparative-review.mjs',
+    'tooling/scripts/experience-design/comparative-calibration.mjs',
   ]) {
     assert.equal(
       fs.lstatSync(path.join(REPO_ROOT, relativePath)).isFile(),

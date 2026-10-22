@@ -165,7 +165,14 @@
         "EDX-RK-D05",
         "EDX-RK-D06",
         "EDX-RK-D07",
-        "EDX-RK-D08"
+        "EDX-RK-D08",
+        "CER-D01",
+        "CER-D02",
+        "CER-D03",
+        "CER-D04",
+        "CER-D05",
+        "CER-D06",
+        "CER-D07"
       ],
       "governedPaths": [
         "docs/architecture/engineering/experience-design",
@@ -194,6 +201,31 @@
           "allowedDependencies": [
             "node.crypto",
             "node.fs",
+            "node.path",
+            "node.url"
+          ],
+          "evidenceGates": [
+            "experience-design-control-plane"
+          ]
+        },
+        {
+          "id": "experience.design.compare",
+          "owner": "experience.design",
+          "contractRoots": [
+            "docs/architecture/engineering/experience-design/comparative-experience-review.md",
+            "docs/architecture/engineering/experience-design/data-model.md",
+            "docs/client/common/interaction-design-methodology.md",
+            "tooling/scripts/experience-design"
+          ],
+          "consumers": [
+            "tooling/skills/pt-product-design-methodology/SKILL.md",
+            "tooling/skills/pt-prototype-design/SKILL.md",
+            "tooling/skills/pt-quality-check/SKILL.md"
+          ],
+          "allowedDependencies": [
+            "node.crypto",
+            "node.fs",
+            "node.os",
             "node.path",
             "node.url"
           ],

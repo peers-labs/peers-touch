@@ -2,7 +2,7 @@
 
 > Status: Canonical client-level interaction methodology.
 > Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-10-18.
+> Updated: 2026-10-22.
 
 ## 1. Purpose
 
@@ -327,3 +327,27 @@ Non-claims: exact product/runtime claims not established
 
 An evaluator cannot approve its own contract or evidence. The acceptance
 reviewer must be different from the author named in the case metadata.
+
+## 15. Comparative Experience Review
+
+When the task compares Peers with another implementation, do not align pages,
+feature names or screenshots directly. Use the active
+[Comparative Experience Review](../../architecture/engineering/experience-design/comparative-experience-review.md):
+
+1. bound one Product Journey and identity-neutral task prompt;
+2. complete benchmark discovery and freeze one Outcome Oracle plus Comparison
+   Context;
+3. capture two evidence-backed Journey observations with aliases `A` and `B`;
+4. independently review each leg, then run paired evaluation;
+5. freeze and independently review BlindedDelta before identity reveal;
+6. reveal which leg is Peers, validate its current EDX binding and perform a
+   separate Product disposition review;
+7. project only accepted adopt/adapt decisions to Target Contract proposals;
+8. return accepted proposals to Product ownership and then re-enter the normal
+   ExperienceCase, Wireflow, prototype and evidence lifecycle.
+
+The reference implementation is evidence, not a Product authority. Missing
+comparability or exact evidence remains `UNPROVEN`. A mechanism is
+intervention-confirmed only after a controlled Peers change closes the Oracle
+gap. Source calibration never proves that the comparative framework has
+incremental value; that claim requires its separate sealed blind A/B.

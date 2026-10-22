@@ -33,3 +33,37 @@ test('control-plane version digest changes with any owned source file', (t) => {
   assert.match(before, /^sha256:[0-9a-f]{64}$/);
   assert.notEqual(after, before);
 });
+
+test('comparative control-plane sources are version-bound', (t) => {
+  const comparativeSources = [
+    'comparative-calibration.mjs',
+    'comparative-evaluator.mjs',
+    'comparative-review.mjs',
+    'comparative-schema.mjs',
+  ];
+  comparativeSources.forEach((source) =>
+    assert.ok(CONTROL_PLANE_SOURCE_FILES.includes(source), source));
+
+  const temporaryRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'experience-comparative-version-'),
+  );
+  t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  for (const relativePath of CONTROL_PLANE_SOURCE_FILES) {
+    fs.copyFileSync(
+      path.join(SCRIPT_DIR, relativePath),
+      path.join(temporaryRoot, relativePath),
+    );
+  }
+  const baseline = controlPlaneVersionDigest(temporaryRoot);
+  for (const relativePath of comparativeSources) {
+    const sourcePath = path.join(temporaryRoot, relativePath);
+    const original = fs.readFileSync(sourcePath);
+    fs.appendFileSync(sourcePath, '\n// comparative source probe\n');
+    assert.notEqual(
+      controlPlaneVersionDigest(temporaryRoot),
+      baseline,
+      relativePath,
+    );
+    fs.writeFileSync(sourcePath, original);
+  }
+});

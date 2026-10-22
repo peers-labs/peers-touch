@@ -169,7 +169,34 @@ contract/rubric conflict、非独立评审或 review/high-fidelity `UNPROVEN`
 - 完整门槛以
   `docs/client/common/ui-identity/craft-quality.md` 为准。
 
-### 3.5 Visual And Dynamic Evidence Gate
+### 3.5 Comparative Target Intervention
+
+当原型用于关闭 CER material delta 时，先读取
+`docs/architecture/engineering/experience-design/comparative-experience-review.md`
+并验证完整 current artifact chain。只有 disposition review 接受的 adopt/adapt
+proposal 才能进入原型：
+
+```bash
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-project-target <paired-case.json> <comparison-evaluation.json> \
+  <blinded-deltas.json> <blind-review.json> <identity-map.json> \
+  <causal-deltas.json> <disposition-review.json> \
+  --package-root <package-root>
+```
+
+Prototype 负责：
+
+- 按 Target Contract proposal 更新 Peers Wireflow / high-fidelity candidate；
+- 保留原 Oracle、Journey、delta 和 target IDs；
+- 用 controlled before/after 证明目标机制是否关闭 Oracle gap；
+- 将 `mechanism-supported` 只有在 exact intervention evidence 成立时提升为
+  `intervention-confirmed`。
+
+Prototype 不重新采集 reference leg、不修改 Oracle、不决定 Product
+disposition，也不复制 benchmark identity。Target projection 仍是 proposal，
+不能绕过 Product contract acceptance 和现有 Experience Case admission。
+
+### 3.6 Visual And Dynamic Evidence Gate
 
 借鉴 LobeHub `ux-audit` 的 L1/L2/L3 分层：原型确认前，凡涉及按钮主次、边距、密度、视觉层级、暗色/亮色、响应式、空/加载/错误态的结论，**不能只从代码或口头判断**，必须有渲染截图证据。
 
@@ -202,7 +229,7 @@ L2 可直接判定的问题：
 - 长文案、长标题、数字、列表是否截断或溢出。
 - Signature feature 是否强化产品论点，是否退化为无关装饰。
 
-### 3.6 布局稳定性（Layout Stability）
+### 3.7 布局稳定性（Layout Stability）
 
 原型交互过程中**禁止出现非预期的布局跳动**——用户切换 Tab、展开/折叠面板、加载内容时，周围元素不得位移或抖动。
 
