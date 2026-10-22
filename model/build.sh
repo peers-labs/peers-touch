@@ -59,6 +59,7 @@ if [ -n "$GOBIN" ] && [ -x "$GOBIN/protoc-gen-go" ]; then
 fi
 STATION_MODULE_PREFIX="github.com/peers-labs/peers-touch/station/"
 APPLET_SERVICE_MODULE_PREFIX="github.com/peers-labs/peers-touch/apps/applets/"
+OAUTH_CLIENT_MODULE_PREFIX="github.com/peers-labs/peers-touch/oauth2-client/"
 
 for file in $GO_PROTO_FILES; do
     GO_PACKAGE_LINE=$(grep 'option[[:space:]]\+go_package' "$file" || true)
@@ -74,6 +75,14 @@ for file in $GO_PROTO_FILES; do
             FILE_NAME=$(basename "$file")
             GO_FILE_NAME="${FILE_NAME%.proto}.pb.go"
             FULL_GO_PATH="$GO_OUT/$REL_GO_DIR/$GO_FILE_NAME"
+            echo "  Generating $file -> $FULL_GO_PATH"
+        elif [[ "$GO_PACKAGE" == "$OAUTH_CLIENT_MODULE_PREFIX"* ]]; then
+            GO_MODULE="github.com/peers-labs/peers-touch/oauth2-client"
+            GO_PROTO_OUT="$PROJECT_ROOT/apps/oauth2-client"
+            REL_GO_DIR="${GO_PACKAGE#$OAUTH_CLIENT_MODULE_PREFIX}"
+            FILE_NAME=$(basename "$file")
+            GO_FILE_NAME="${FILE_NAME%.proto}.pb.go"
+            FULL_GO_PATH="$GO_PROTO_OUT/$REL_GO_DIR/$GO_FILE_NAME"
             echo "  Generating $file -> $FULL_GO_PATH"
         elif [[ "$GO_PACKAGE" =~ ^github.com/peers-labs/peers-touch/apps/applets/([^/]+)/service(/.*)?$ ]]; then
             APPLET_SERVICE="${BASH_REMATCH[1]}"

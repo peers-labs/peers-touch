@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,7 @@ const (
 	credentialKind         = "oauth-credential"
 	refreshOperationKind   = "oauth-refresh-operation"
 	auditKind              = "oauth-audit"
+	operatorHandoffKind    = "oauth-operator-handoff"
 	recordSchema           = 1
 	refreshOperationSchema = 2
 	defaultAdminLimit      = 100
@@ -326,6 +328,103 @@ func (s *Store) RecordAuthorizationFailure(ctx context.Context, failure entity.A
 		}
 		return s.encodeChanges(records)
 	})
+}
+
+func (s *Store) CreateOperatorLoginHandoff(
+	ctx context.Context,
+	handoff entity.OperatorLoginHandoff,
+) error {
+	if !validOperatorHandoff(handoff) {
+		return repository.ErrRecordCorrupt
+	}
+	path := operatorHandoffPath(handoff.CodeFingerprint)
+	return s.repository.Update(
+		ctx,
+		"oauth: create operator handoff",
+		func(snapshot *Snapshot) (map[string][]byte, error) {
+			existing, found, err := s.readOperatorHandoff(ctx, snapshot, path)
+			if err != nil {
+				return nil, err
+			}
+			if found {
+				if sameOperatorHandoff(existing, handoff) {
+					return map[string][]byte{}, nil
+				}
+				return nil, repository.ErrOperatorHandoffExists
+			}
+			return s.encodeChanges(map[string]recordValue{
+				path: {
+					kind:  operatorHandoffKind,
+					value: handoff,
+				},
+			})
+		},
+	)
+}
+
+func (s *Store) ConsumeOperatorLoginHandoff(
+	ctx context.Context,
+	codeFingerprint string,
+	siteID string,
+	audience string,
+	receiverChallenge []byte,
+	now time.Time,
+) (*entity.OperatorLoginHandoff, error) {
+	path := operatorHandoffPath(codeFingerprint)
+	var consumed *entity.OperatorLoginHandoff
+	err := s.repository.Update(
+		ctx,
+		"oauth: consume operator handoff",
+		func(snapshot *Snapshot) (map[string][]byte, error) {
+			handoff, found, err := s.readOperatorHandoff(
+				ctx,
+				snapshot,
+				path,
+			)
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				return nil, repository.ErrOperatorHandoffNotFound
+			}
+			if handoff.ConsumedAt != nil {
+				return nil, repository.ErrOperatorHandoffConsumed
+			}
+			if !now.UTC().Before(handoff.ExpiresAt) {
+				return nil, repository.ErrOperatorHandoffExpired
+			}
+			if handoff.SiteID != siteID ||
+				handoff.Audience != audience ||
+				!bytes.Equal(
+					handoff.ReceiverChallenge,
+					receiverChallenge,
+				) {
+				return nil, repository.ErrOperatorHandoffBinding
+			}
+			consumedAt := now.UTC()
+			handoff.ConsumedAt = &consumedAt
+			changes, err := s.encodeChanges(map[string]recordValue{
+				path: {
+					kind:  operatorHandoffKind,
+					value: handoff,
+				},
+			})
+			if err != nil {
+				return nil, err
+			}
+			copy := handoff
+			copy.ReceiverChallenge = append(
+				[]byte(nil),
+				handoff.ReceiverChallenge...,
+			)
+			consumed = &copy
+			return changes, nil
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return consumed, nil
 }
 
 func (s *Store) LoadCredential(ctx context.Context, identityID string) (*entity.OAuthCredential, error) {
@@ -835,7 +934,7 @@ func (s *Store) RotateEncryption(ctx context.Context, limit int) (entity.Rotatio
 					confirmedRotations++
 					continue
 				}
-				kind, ok := recordKindForPath(path)
+				kind, ok := RecordKindForPath(path)
 				if !ok {
 					result.Failed++
 					return nil, repository.ErrRecordCorrupt
@@ -869,7 +968,7 @@ func (s *Store) RotateEncryption(ctx context.Context, limit int) (entity.Rotatio
 				attempt.Complete = false
 				break
 			}
-			kind, ok := recordKindForPath(path)
+			kind, ok := RecordKindForPath(path)
 			if !ok {
 				continue
 			}
@@ -1043,6 +1142,30 @@ func (s *Store) readRefreshOperation(ctx context.Context, snapshot *Snapshot, pa
 	return &operation, true, nil
 }
 
+func (s *Store) readOperatorHandoff(
+	ctx context.Context,
+	snapshot *Snapshot,
+	path string,
+) (entity.OperatorLoginHandoff, bool, error) {
+	var handoff entity.OperatorLoginHandoff
+	payload, found, err := snapshot.Read(ctx, path)
+	if err != nil || !found {
+		return handoff, found, err
+	}
+	if err := s.decode(
+		operatorHandoffKind,
+		path,
+		payload,
+		&handoff,
+	); err != nil {
+		return handoff, false, err
+	}
+	if !validOperatorHandoff(handoff) {
+		return handoff, false, repository.ErrRecordCorrupt
+	}
+	return handoff, true, nil
+}
+
 func newRefreshClaimID() (string, error) {
 	value := make([]byte, 16)
 	if _, err := rand.Read(value); err != nil {
@@ -1092,7 +1215,12 @@ func refreshOperationPath(identityID, operationFingerprint string) string {
 	return recordRoot + "/refresh-operations/" + identityID + "/" + operationFingerprint + ".json"
 }
 
-func recordKindForPath(path string) (string, bool) {
+func operatorHandoffPath(codeFingerprint string) string {
+	return recordRoot + "/operator-handoffs/" + codeFingerprint + ".json"
+}
+
+// RecordKindForPath returns the authenticated envelope kind for a storage path.
+func RecordKindForPath(path string) (string, bool) {
 	switch {
 	case strings.HasPrefix(path, recordRoot+"/transactions/"):
 		return transactionKind, true
@@ -1102,11 +1230,43 @@ func recordKindForPath(path string) (string, bool) {
 		return credentialKind, true
 	case strings.HasPrefix(path, recordRoot+"/refresh-operations/"):
 		return refreshOperationKind, true
+	case strings.HasPrefix(path, recordRoot+"/operator-handoffs/"):
+		return operatorHandoffKind, true
 	case strings.HasPrefix(path, recordRoot+"/audits/"):
 		return auditKind, true
 	default:
 		return "", false
 	}
+}
+
+func validOperatorHandoff(handoff entity.OperatorLoginHandoff) bool {
+	return handoff.SchemaVersion == recordSchema &&
+		handoff.CodeFingerprint != "" &&
+		handoff.AssertionID != "" &&
+		handoff.SiteID != "" &&
+		handoff.Audience != "" &&
+		handoff.LoginAttemptID != "" &&
+		handoff.ProviderSubject != "" &&
+		len(handoff.ReceiverChallenge) == sha256.Size &&
+		!handoff.CreatedAt.IsZero() &&
+		handoff.ExpiresAt.After(handoff.CreatedAt)
+}
+
+func sameOperatorHandoff(
+	left entity.OperatorLoginHandoff,
+	right entity.OperatorLoginHandoff,
+) bool {
+	return left.SchemaVersion == right.SchemaVersion &&
+		left.CodeFingerprint == right.CodeFingerprint &&
+		left.AssertionID == right.AssertionID &&
+		left.SiteID == right.SiteID &&
+		left.Audience == right.Audience &&
+		left.LoginAttemptID == right.LoginAttemptID &&
+		left.Provider == right.Provider &&
+		left.ProviderSubject == right.ProviderSubject &&
+		bytes.Equal(left.ReceiverChallenge, right.ReceiverChallenge) &&
+		left.CreatedAt.Equal(right.CreatedAt) &&
+		left.ExpiresAt.Equal(right.ExpiresAt)
 }
 
 func auditPath(event entity.AuditEvent) string {

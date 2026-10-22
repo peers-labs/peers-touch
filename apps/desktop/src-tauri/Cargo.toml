@@ -57,6 +57,7 @@ messaging-native-filesystem = { path = "../../../packages/messaging-native-files
 secure-content-core = { path = "../../../packages/secure-content-core" }
 station-trust = { path = "../../../packages/station-trust" }
 station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
+x-config-core = { path = "../../../packages/x-config-core" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 dispatch2 = "0.3.1"

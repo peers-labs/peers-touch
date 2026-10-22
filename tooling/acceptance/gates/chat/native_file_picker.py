@@ -23,6 +23,93 @@ POLL_SECONDS = 0.05
 REVEAL_ATTEMPTS = 4
 
 
+def _click_native_selector(
+    client: TauriSession,
+    runtime_binding: NativeDesktopRuntimeBinding,
+    selector: str,
+) -> dict[str, Any]:
+    process_id = client.process_id
+    if process_id is None:
+        raise GateError("Native click target has no owning process")
+    element = client.find_element(selector, DEFAULT_TIMEOUT_SECONDS)
+    geometry = client.driver.execute_script(
+        """
+        const element = arguments[0];
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        return {
+          connected: element.isConnected,
+          disabled: Boolean(element.disabled),
+          hit: hit === element || element.contains(hit),
+          element: {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+          },
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            devicePixelRatio: window.devicePixelRatio || 1,
+          },
+        };
+        """,
+        element,
+    )
+    if (
+        not isinstance(geometry, dict)
+        or not geometry.get("connected")
+        or geometry.get("disabled")
+        or not geometry.get("hit")
+    ):
+        raise GateError(
+            f"Native click target is unavailable: {selector} {geometry}"
+        )
+    ratio = float(geometry["viewport"]["devicePixelRatio"])
+    if ratio <= 0:
+        raise GateError("Native click target returned an invalid window scale")
+    driver_window = client.driver.get_window_rect()
+    native_window = {
+        "left": float(driver_window["x"]) / ratio,
+        "top": float(driver_window["y"]) / ratio,
+        "width": float(driver_window["width"]) / ratio,
+        "height": float(driver_window["height"]) / ratio,
+    }
+    adapter = runtime_binding.native_adapter
+    origin = adapter.content_origin(process_id)
+    if origin is None:
+        origin = (
+            native_window["left"] + max(
+                0.0,
+                (
+                    native_window["width"]
+                    - float(geometry["viewport"]["width"])
+                ) / 2,
+            ),
+            native_window["top"] + max(
+                0.0,
+                native_window["height"]
+                - float(geometry["viewport"]["height"]),
+            ),
+        )
+    point = (
+        origin[0]
+        + float(geometry["element"]["left"])
+        + float(geometry["element"]["width"]) / 2,
+        origin[1]
+        + float(geometry["element"]["top"])
+        + float(geometry["element"]["height"]) / 2,
+    )
+    adapter.post_mouse_to_process(
+        process_id,
+        (MouseAction.MOVE, MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+        point,
+    )
+    return {"selector": selector, "point": {"x": point[0], "y": point[1]}}
+
+
 def wait_for_actionable_file_trigger(
     *,
     actor: str,

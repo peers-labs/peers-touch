@@ -80,6 +80,14 @@
       "capabilities": "tooling/acceptance/capabilities/oauth-login-broker.yaml",
       "coverage": "managed_domain",
       "notes": "Durable serverless OAuth broker with encrypted GitHub-backed records, provider refresh, key rotation, and authenticated read-only operator surfaces."
+    },
+    {
+      "id": "x-config",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/x-config.yaml",
+      "capabilities": "tooling/acceptance/capabilities/x-config.yaml",
+      "coverage": "managed_domain",
+      "notes": "X Config managed domain. Current contract proof covers Broker-bound operator identity and Home SQLite session lifecycle; live Home restart/timing, signed publication, console, cleanup, and native client projection remain separate closures."
     }
   ]
 }

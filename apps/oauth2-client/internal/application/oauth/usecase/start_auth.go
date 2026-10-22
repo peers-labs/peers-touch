@@ -51,11 +51,21 @@ func (u StartAuthUseCase) Execute(ctx context.Context, input StartAuthInput) (st
 		return "", err
 	}
 	now := u.Clock.Now()
+	returnTo := sanitizeReturnTo(input.ReturnTo, site.AllowedReturnTo)
+	if site.OperatorLogin != nil {
+		returnTo = sanitizeOperatorReturnTo(
+			input.ReturnTo,
+			site.OperatorLogin.CallbackURL,
+		)
+		if returnTo == "" {
+			return "", repository.ErrOperatorHandoffBinding
+		}
+	}
 	session := entity.AuthSession{
 		State:     state,
 		SiteID:    input.SiteID,
 		Provider:  input.Provider,
-		ReturnTo:  sanitizeReturnTo(input.ReturnTo, site.AllowedReturnTo),
+		ReturnTo:  returnTo,
 		Verifier:  verifier,
 		CreatedAt: now,
 		ExpiresAt: now.Add(10 * time.Minute),
@@ -64,6 +74,17 @@ func (u StartAuthUseCase) Execute(ctx context.Context, input StartAuthInput) (st
 		return "", err
 	}
 	return gw.AuthorizeURL(state, verifier, providerCfg)
+}
+
+func sanitizeOperatorReturnTo(raw string, callbackURL string) string {
+	if _, _, err := operatorReceiverBinding(raw, callbackURL); err != nil {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return parsed.String()
 }
 
 func randomURLSafe(size int) (string, error) {

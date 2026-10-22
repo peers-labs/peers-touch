@@ -1,6 +1,87 @@
 {
   "version": 1,
   "gates": {
+    "x-config-home-operator-login-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.x_config.home_operator_login"],
+      "timeout_seconds": 2400,
+      "environment": "x-config-home-runtime",
+      "provisioner": "x-config-home-runtime",
+      "ephemeralCapabilities": ["x-config-home-runtime"],
+      "tier": "env-evidence",
+      "description": "Attach to the exact Home X Config release and prove the real allowlisted provider session, local SQLite restart continuity, replay and CSRF denial, durable logout semantics, absence of admin-auth Git mutations, and segmented warm timing."
+    },
+    "x-config-home-publication-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.x_config.home_publication"],
+      "timeout_seconds": 2400,
+      "environment": "x-config-home-runtime",
+      "provisioner": "x-config-home-runtime",
+      "ephemeralCapabilities": ["x-config-home-runtime"],
+      "tier": "env-evidence",
+      "description": "Reuse the exact Home release and authenticated operator fixture to save and publish a reviewed catalog, verify GitHub CAS paths and exact latest/immutable bytes through x-config-core, then prove durable revocation and terminal Suite cleanup."
+    },
+    "x-config-api-aggregate-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.x_config.aggregate",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Aggregate the required API closure Gates exclusively from validated durable Evidence Store latest manifests matching the current source; missing, stale, incomplete and unproven dependencies keep closure unproven."
+    },
+    "x-config-operator-login-contract": {
+      "command": "sh -c 'go test ./packages/github-repository/... -count=1 && cd apps/oauth2-client && go test ./internal/application/oauth/usecase ./internal/infrastructure/persistence/memory ./internal/infrastructure/persistence/github ./internal/interfaces/http/handler -count=1 && cd ../x-config && go test ./internal/application/operatorauth ./internal/bootstrap ./internal/infrastructure/operatorstore ./internal/integration ./internal/interfaces/http -count=1 && cd ../.. && test ! -e apps/oauth2-client/internal/infrastructure/persistence/github/app_auth.go && test ! -e apps/oauth2-client/internal/infrastructure/persistence/github/git_data.go && test ! -e apps/x-config/internal/infrastructure/operatorstore/github.go'",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the unchanged audience- and receiver-bound Broker contract plus Home SQLite attempt/assertion/session atomicity, restart durability, replay denial, provider-subject allowlisting, HTTP-only cookies, CSRF, revocation, lock/corruption failure, and removal of the X Config Git-backed operator store."
+    },
+    "x-config-snapshot-core-contract": {
+      "command": "sh -c './model/build.sh >/tmp/x-config-model-build.log && CARGO_TARGET_DIR=${TMPDIR:-/tmp}/peers-x-config-core-target cargo test --manifest-path packages/x-config-core/Cargo.toml --locked'",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate generated bounded snapshot contracts, exact-byte domain-separated signatures, endpoint consent, rollback and equal-sequence rejection, immutable cache generations, secure-watermark persistence failure recovery, and typed release projection."
+    },
+    "x-config-snapshot-publication-contract": {
+      "command": "go test ./apps/x-config/internal/application/admin ./apps/x-config/internal/infrastructure/catalogrepo ./apps/x-config/internal/interfaces/http ./apps/x-config/internal/publication -run 'Publication|Publish|Snapshot|Catalog' -count=1",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate exact-draft acknowledgement, repository-head CAS, monotonic sequence allocation, deterministic signing, atomic publication metadata/envelope persistence, latest/immutable readback, and stale-writer rejection."
+    },
+    "x-config-admin-api-contract": {
+      "command": "go test ./apps/x-config/internal/application/admin ./apps/x-config/internal/infrastructure/catalogrepo ./apps/x-config/internal/infrastructure/endpointvalidator ./apps/x-config/internal/interfaces/http -run 'Admin|Validator|Catalog|Draft|Publication|Restore' -count=1",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate typed catalog validation, public-target SSRF rejection, Git CAS conflict behavior, exact diff acknowledgement, direct publication history, restore-as-new, operator session, public snapshot and CSRF enforcement."
+    },
+    "x-config-console-admin-e2e": {
+      "command": "pnpm --dir apps/x-config/console run check && pnpm --dir apps/x-config/console run test && pnpm --dir apps/x-config/console run test:e2e",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Render the confirmed X Config console hierarchy at desktop and narrow widths with typed forms, source revision strip, immediate publication boundary, history, and stable no-overflow layout."
+    },
+    "x-config-desktop-adapter-contract": {
+      "command": "sh -c 'pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json && pnpm --dir apps/desktop exec vitest run src/components/common/StationPicker.test.tsx src/services/xConfig.test.ts && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml x_config --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_discovery --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_registry --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_binding --locked'",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate Desktop last-known-good startup, secure rollback watermark, bounded refresh, app-scoped projection ownership, distinct verified and suggested Station rows, and canonical signed discovery before registry mutation without claiming installed UI proof."
+    },
+    "x-config-mobile-adapter-contract": {
+      "command": "sh -c 'pnpm --dir apps/mobile exec tsc --noEmit -p tsconfig.json && pnpm --dir apps/mobile exec vitest run src/features/station/StationSelector.test.ts src/features/station/xConfig.test.ts && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml x_config --locked && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml station_route --locked'",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate Mobile secure watermark and cache adapters, optional lifecycle projection refresh, distinct verified and suggested Station rows, stale non-actionable state, and canonical route discovery before registry persistence without claiming device UI proof."
+    },
+    "x-config-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain x-config",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate X Config feature, capability, Registry, Gate, and managed-domain graph."
+    },
     "agent-chat-profile-native": {
       "requiredRuntimeCells": ["desktop-linux-native"],
       "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "profile"],

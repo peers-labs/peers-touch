@@ -40,6 +40,7 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 | `agent-tool` | Station-authored ToolCall proposal, approval-decision, and result projections; user decision-intent submission through Desktop Rust |
 | `home` | Station-authored Home projection bootstrap, actor-scoped reset, exact recent-conversation handoff, and periodic reconciliation |
 | `evaluation` | Station-authored benchmark, dataset, case, run, result, metrics, and recovery projection; actor-scoped reset, event consumption, and periodic reconciliation |
+| `x-config` | App-scoped signed snapshot cache, secure rollback watermark, bounded foreground refresh, non-authoritative Station suggestions, and non-executable release metadata |
 | `notification` store | Notification list, unread counts, notification presentation state |
 | `navigationBadges` | Cross-surface unread and badge projection |
 | Page components | Rendering, selection, local interaction state only |

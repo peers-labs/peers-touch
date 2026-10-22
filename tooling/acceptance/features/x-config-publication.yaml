@@ -1,0 +1,47 @@
+{
+  "id": "x-config-publication",
+  "status": "active",
+  "product_area": "x-config",
+  "owners": [
+    "apps/x-config/internal/application/admin/**",
+    "apps/x-config/internal/infrastructure/catalogrepo/**",
+    "apps/x-config/internal/publication/**",
+    "apps/x-config/internal/interfaces/http/public_handler.go"
+  ],
+  "truth_sources": [
+    "reviewed catalog revision",
+    "repository-head compare-and-swap",
+    "atomically persisted publication metadata and signed envelope"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "public-http",
+      "surface": "latest and immutable signed protobuf snapshots"
+    }
+  ],
+  "required_gates": [
+    "x-config-snapshot-publication-contract",
+    "x-config-home-publication-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "publication binds the exact acknowledged draft revision and digest",
+      "repository CAS allocates one strictly higher sequence",
+      "issued and expiry timestamps are canonical millisecond protobuf timestamps accepted by the shared Rust client",
+      "statement and envelope bytes are deterministic and signed with the configured key",
+      "current metadata, immutable metadata and envelope bytes commit atomically",
+      "latest and immutable reads return persisted exact bytes and declared cache headers",
+      "the exact Home release publishes through the reviewed GitHub namespace and the shared client kernel verifies the live bytes"
+    ],
+    "visible": [
+      "successful publication appears in history immediately",
+      "repository conflict preserves the draft and publishes nothing",
+      "restore-as-new never lowers sequence"
+    ]
+  },
+  "negative": [
+    "browser never receives repository or signing credentials",
+    "failed signing or persistence does not expose a publication",
+    "metadata/envelope mismatch is unavailable rather than synthesized"
+  ]
+}

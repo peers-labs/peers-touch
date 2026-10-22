@@ -1,8 +1,8 @@
 # OAuth Login Broker - Design Decisions
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-30 | **Updated**: 2026-10-01
+> **Version**: v1.4
+> **Created**: 2026-09-30 | **Updated**: 2026-10-18
 > **Owner**: Identity and Access
 
 ---
@@ -28,6 +28,7 @@
 | OLB-D15 | Refresh is claimed durably before provider rotation | accepted |
 | OLB-D16 | Native bridge assertions are purpose-bound and one-time | accepted |
 | OLB-D17 | Broker login reuses the Station OAuth candidate lifecycle | accepted |
+| OLB-D18 | Operator login uses an audience-bound one-time handoff | accepted |
 
 ## OLB-D01: Durable Store Is Mandatory On Vercel
 
@@ -654,3 +655,45 @@ Station performs the same transactional expiration at startup and on a
 periodic sweep, so cleanup does not depend on a later OAuth request. Expiry
 revokes any unacknowledged candidate session before deleting its recoverable
 envelope.
+
+## OLB-D18: Operator Login Uses An Audience-Bound One-Time Handoff
+
+**Status**: accepted
+**Date**: 2026-10-18
+
+### Context
+
+X Config needs browser operator authentication, while existing broker
+assertions are purpose-bound to Station account login or connector linking.
+Reusing either assertion, provider credential, or Station bridge secret would
+collapse audiences and authorization.
+
+### Decision
+
+The OAuth owner adds generated `operator_login` assertions with a registered
+service audience, provider subject, receiver challenge, short expiry, and
+durably one-time handoff code. X Config redeems the code server-to-server,
+verifies exact purpose/audience/signature/receiver binding, consumes the
+assertion ID through its own CAS store, checks a reviewed provider-subject
+allowlist, and issues a short-lived HTTP-only session with CSRF binding and
+durable revocation. Operator login authorizes draft editing and publication
+requests only.
+
+### Rationale
+
+The Broker continues to own provider callbacks, state, PKCE, and identity
+normalization while the receiving service owns its session and application
+authorization.
+
+### Alternatives Considered
+
+Reusing Station login assertions permits cross-audience replay. Implementing a
+second OAuth callback in X Config duplicates provider and durable-state
+security. Passing assertions in URLs leaks signed identity material.
+
+### Consequences
+
+The Broker and X Config use separate keys and storage namespaces.
+Cross-instance replay, wrong audience/purpose/receiver, CSRF, expiry,
+revocation, exact callback, and secret-redaction behavior require explicit
+proof; existing account-login and connector-link flows remain unchanged.
