@@ -31,6 +31,20 @@ type membershipReaderStub struct {
 	calls  [][2]string
 }
 
+type stationURLResolverStub struct {
+	origin string
+	err    error
+	calls  []string
+}
+
+func (s *stationURLResolverStub) ResolveActiveStationURL(
+	_ context.Context,
+	stationPeerID string,
+) (string, error) {
+	s.calls = append(s.calls, stationPeerID)
+	return s.origin, s.err
+}
+
 func (s *membershipReaderStub) IsActiveMember(
 	_ context.Context,
 	federationID string,
@@ -321,5 +335,74 @@ func TestResolveRemoteUsesProtobufAndBindsProfileToLocator(t *testing.T) {
 	if resolved.Envelope.GetProfile().GetPeersTouch().GetNetworkId() !=
 		envelope.GetProfile().GetPeersTouch().GetNetworkId() {
 		t.Fatalf("resolved envelope = %+v", resolved.Envelope)
+	}
+}
+
+func TestResolveRemoteUsesDirectStationRouteWhenRelayIsUnavailable(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	key, err := authfed.MintLocalKey(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body []byte
+	server := httptest.NewServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		if request.URL.Path != "/actor/federation/profile" {
+			t.Fatalf("path = %q", request.URL.Path)
+		}
+		writer.Header().Set("Content-Type", "application/protobuf")
+		_, _ = writer.Write(body)
+	}))
+	defer server.Close()
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle := "@bob@" + parsed.Host
+	envelope, encoded, err := fedprofile.Sign(fedprofile.SignInput{
+		Handle:            handle,
+		HomeStationPeerID: "station-remote",
+		HomeStationDomain: parsed.Host,
+		Profile: &modelpb.ActorProfile{
+			PeersTouch: &modelpb.PeersTouchInfo{NetworkId: "ptid:bob"},
+		},
+		Now:      now,
+		LocalKey: key,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = encoded
+	nativefed.ClearRelayAccess()
+	t.Cleanup(nativefed.ClearRelayAccess)
+	routes := &stationURLResolverStub{origin: server.URL}
+	resolver := New(Config{
+		Now:                func() time.Time { return now },
+		HTTPClient:         server.Client(),
+		StationURLResolver: routes,
+	})
+
+	resolved, err := resolver.resolveRemote(
+		context.Background(),
+		handle,
+		&locatorpb.ActorLocatorRecord{
+			FederatedHandle:   handle,
+			HomeStationPeerId: "station-remote",
+			HomeStationDomain: parsed.Host,
+			SigningKeyKid:     key.Kid,
+			SigningKeyPem:     key.PubPEM,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Envelope.GetProfile().GetPeersTouch().GetNetworkId() !=
+		envelope.GetProfile().GetPeersTouch().GetNetworkId() {
+		t.Fatalf("resolved envelope = %+v", resolved.Envelope)
+	}
+	if len(routes.calls) != 1 || routes.calls[0] != "station-remote" {
+		t.Fatalf("route calls = %v", routes.calls)
 	}
 }

@@ -136,6 +136,54 @@ capabilities:
     forbidden_aliases: []
     superseded_symbols: []
 
+  - id: access.relay_attachment.list
+    domain_owner: station.dashboard_access
+    truth_owner: station.relay_attachment
+    exposure: internal
+    canonical_route: { method: GET, path: /dashboard/api/relay/attachments }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: [station_relay_attachment]
+    allowed_dependencies: [relay.attachment.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.relay_attachment.import
+    domain_owner: station.dashboard_access
+    truth_owner: station.relay_attachment
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/relay/attachments }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: [station_relay_attachment]
+    allowed_dependencies: [relay.invitation.consume, relay.attachment.reconcile]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.relay_attachment.delete
+    domain_owner: station.dashboard_access
+    truth_owner: station.relay_attachment
+    exposure: internal
+    canonical_route: { method: DELETE, path: /dashboard/api/relay/attachments/:id }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: [station_relay_attachment]
+    allowed_dependencies: [relay.attachment.retire]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.relay_attachment.retry
+    domain_owner: station.dashboard_access
+    truth_owner: station.relay_attachment
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/relay/attachments/:id/retry }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: [station_relay_attachment]
+    allowed_dependencies: [relay.attachment.reconcile]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: station.identity.verify
     domain_owner: station.bootstrap_identity
     truth_owner: station.identity

@@ -24,6 +24,7 @@ STATIC_MODULES = (
 ALL_MODULES = (
     *STATIC_MODULES,
     "cross_station_desktop_functional",
+    "cross_station_mobile_desktop_e2e",
     "cross_station_native_e2e",
 )
 MODULE_PREFIX = "tooling.acceptance.gates.social."

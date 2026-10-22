@@ -6,6 +6,7 @@ import {
   restoreStationRouteBinding,
   type NativeStationRouteCandidate,
   type StationEndpointDiscovery,
+  type StationRouteType,
   type VerifiedStationIdentity,
 } from '../../services/mobileCommands';
 
@@ -66,10 +67,25 @@ export async function probeStation(url: string): Promise<StationProbeResult> {
 
 export async function verifyStationIdentity(url: string): Promise<ConnectedStationIdentity> {
   const discovery = await discoverStationConnection(url);
-  if (discovery.routes.length !== 1) {
+  return activateSingleDiscoveredRoute(discovery.routes);
+}
+
+export async function verifyStationRouteIdentity(
+  url: string,
+  routeType: StationRouteType,
+): Promise<ConnectedStationIdentity> {
+  const discovery = await discoverStationConnection(url);
+  const routes = discovery.routes.filter((route) => route.routeType === routeType);
+  return activateSingleDiscoveredRoute(routes);
+}
+
+function activateSingleDiscoveredRoute(
+  routes: NativeStationRouteCandidate[],
+): Promise<ConnectedStationIdentity> {
+  if (routes.length !== 1) {
     throw new Error('mobile.launch.stationRouteSelectionRequired');
   }
-  return activateAndVerifyStationRoute(discovery.routes[0], 1);
+  return activateAndVerifyStationRoute(routes[0], 1);
 }
 
 export async function discoverStationConnection(

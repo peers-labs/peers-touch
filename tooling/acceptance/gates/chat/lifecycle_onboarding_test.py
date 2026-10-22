@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from tooling.acceptance.core import REPO_ROOT
@@ -75,6 +76,68 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
             ("arguments[0].click();", close_button),
         )
         self.assertTrue(close_button.clicked)
+
+    def test_find_people_input_uses_semantic_webdriver_input(self) -> None:
+        class Input:
+            tag_name = "input"
+
+        class Client:
+            selector = None
+            replacement = None
+            readiness = None
+
+            def find_element(inner_self, selector: str, timeout: int) -> Input:
+                inner_self.selector = (selector, timeout)
+                return input_element
+
+            def semantic_replace_text(
+                inner_self,
+                target: Input,
+                value: str,
+            ) -> None:
+                inner_self.replacement = (target, value)
+
+            def execute_script(
+                inner_self,
+                script: str,
+                target: Input,
+                value: str,
+                search_selector: str,
+            ) -> bool:
+                inner_self.readiness = (
+                    script,
+                    target,
+                    value,
+                    search_selector,
+                )
+                return True
+
+        input_element = Input()
+        client = Client()
+
+        LifecycleOnboardingGate._set_input(
+            client,
+            SELECTORS["find_people_input"],
+            "@bob@station.example",
+        )
+
+        self.assertEqual(
+            client.selector,
+            (SELECTORS["find_people_input"], 10),
+        )
+        self.assertEqual(
+            client.replacement,
+            (input_element, "@bob@station.example"),
+        )
+        self.assertEqual(
+            client.readiness[1:],
+            (
+                input_element,
+                "@bob@station.example",
+                SELECTORS["find_people_search"],
+            ),
+        )
+        self.assertIn("ant-btn-loading", client.readiness[0])
 
     def test_request_matching_uses_exact_actor_pair_and_state(self) -> None:
         snapshot = {
@@ -172,8 +235,8 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
             ["outgoing", "incoming"],
         )
 
-    def test_onboarding_is_a_current_profile_gate_variant(self) -> None:
-        self.assertTrue(is_current_profile_gate(GATE_ID))
+    def test_onboarding_is_a_canonical_worktree_release_gate(self) -> None:
+        self.assertFalse(is_current_profile_gate(GATE_ID))
         self.assertEqual(
             journey_for_gate(GATE_ID),
             "onboarding-first-message",
@@ -230,11 +293,33 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
         for contract in (
             "prove_additional_journey_assertions",
             "_restart_and_resume_account",
+            "federation_scoped_search_identity",
+            "predicate is None or predicate(result)",
+            "semantic_replace_text",
+            "ant-btn-loading",
             "data-login-email",
             "data-login-password",
             'input[inputmode="numeric"]',
         ):
             self.assertIn(contract, source)
+        self.assertNotIn("station_scoped_search_identity", source)
+        self.assertNotIn('data-chat-find-people-scope=\\"station\\"', source)
+        visible_request = source[
+            source.index("    def _send_visible_request("):
+            source.index("    def _retry_visible_request(")
+        ]
+        self.assertLess(
+            visible_request.index("self._select_federation_scope("),
+            visible_request.index("exact = self._search_result("),
+        )
+        retry_request = source[
+            source.index("    def _retry_visible_request("):
+            source.index("    def _open_request_section(")
+        ]
+        self.assertLess(
+            retry_request.index("self._select_federation_scope("),
+            retry_request.index("result = self._search_result("),
+        )
         shared_runner = (
             REPO_ROOT
             / "tooling/acceptance/gates/chat/native_two_client_runner.py"
@@ -244,18 +329,17 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
             shared_runner,
         )
 
-    def test_find_people_uses_canonical_pending_and_station_scope(self) -> None:
+    def test_find_people_uses_canonical_pending_and_federation_scope(self) -> None:
         source = (
             REPO_ROOT
             / "apps/desktop/src/components/chat/FindPeopleModal.tsx"
         ).read_text(encoding="utf-8")
         self.assertNotIn("sentIds", source)
         self.assertIn("pendingReceiverIds.has(receiverPtid)", source)
-        self.assertIn(
-            "station_id: searchScope === 'station' ? selectedStationId : undefined",
-            source,
-        )
-        self.assertIn('data-chat-find-people-scope="station"', source)
+        self.assertIn('data-chat-find-people-scope="all"', source)
+        self.assertIn('data-chat-find-people-scope="federation"', source)
+        self.assertNotIn('data-chat-find-people-scope="station"', source)
+        self.assertNotIn("federationListMemberStations", source)
         self.assertIn("data-chat-find-people-ptid", source)
         self.assertIn("data-chat-find-people-request-error", source)
         self.assertIn("requestIdentityUnavailable", source)
@@ -302,7 +386,25 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
             REPO_ROOT
             / "tooling/acceptance/provisioners/native_tauri_current_profile.py"
         ).read_text(encoding="utf-8")
-        self.assertIn(GATE_ID, provisioner)
+        self.assertNotIn(GATE_ID, provisioner)
+        home_station = (
+            REPO_ROOT
+            / "tooling/acceptance/provisioners/home_station.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(GATE_ID, home_station)
+        gate = json.loads(
+            (
+                REPO_ROOT / "tooling/acceptance/gates.yaml"
+            ).read_text(encoding="utf-8")
+        )["gates"][GATE_ID]
+        self.assertEqual(
+            gate["environment"],
+            "native-tauri-embedded-webdriver",
+        )
+        self.assertEqual(
+            gate["requiredRuntimeCells"],
+            ["desktop-macos-native"],
+        )
 
 
 if __name__ == "__main__":

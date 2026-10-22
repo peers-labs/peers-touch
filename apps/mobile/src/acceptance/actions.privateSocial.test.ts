@@ -8,6 +8,7 @@ const privateMomentMocks = vi.hoisted(() => ({
   submitComment: vi.fn(),
   readComments: vi.fn(),
   recoverMoment: vi.fn(),
+  snapshot: vi.fn(),
 }));
 
 vi.mock('../runtimes/privateMomentsRuntime', () => ({
@@ -17,12 +18,7 @@ vi.mock('../runtimes/privateMomentsRuntime', () => ({
   readPrivateMoment: privateMomentMocks.readMoment,
   recoverPrivateMoment: privateMomentMocks.recoverMoment,
   publishPrivateTextMoment: privateMomentMocks.publish,
-  readPrivateMomentsSnapshot: vi.fn(() => ({
-    projections: [],
-    postsById: {},
-    publishStateHistory: ['AUDIENCE_REQUIRED'],
-    readStateHistoryByPostId: {},
-  })),
+  readPrivateMomentsSnapshot: privateMomentMocks.snapshot,
   readPrivateTextMoment: vi.fn(),
   reconcilePrivateMoments: vi.fn(),
   submitPrivateComment: privateMomentMocks.submitComment,
@@ -53,6 +49,9 @@ const submitPrivateCommentAction = mobileAcceptanceActions[
 const readPrivateCommentsAction = mobileAcceptanceActions[
   'moments.private.comments.read'
 ] as unknown as (input: unknown) => Promise<unknown>;
+const readPrivateSnapshotAction = mobileAcceptanceActions[
+  'moments.private.snapshot'
+] as unknown as () => Promise<unknown>;
 
 function publishInput(audience: Record<string, unknown>) {
   return {
@@ -66,6 +65,20 @@ function publishInput(audience: Record<string, unknown>) {
 describe('Mobile Acceptance private Social audience', () => {
   beforeEach(() => {
     for (const mock of Object.values(privateMomentMocks)) mock.mockReset();
+    privateMomentMocks.snapshot.mockReturnValue({
+      active: true,
+      reconciling: false,
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      projections: [],
+      postsById: {},
+      commentDrafts: [],
+      reactionCommands: [],
+      publishStateHistory: ['AUDIENCE_REQUIRED'],
+      readStateHistoryByPostId: {},
+      lastReport: null,
+      errorMessage: null,
+    });
     privateMomentMocks.publish.mockImplementation(async (intent) => ({
       draftId: intent.draftId,
       draftRevision: intent.draftRevision,
@@ -188,6 +201,86 @@ describe('Mobile Acceptance private Social audience', () => {
       contentKind: 'TEXT',
     });
     expect(JSON.stringify(result)).not.toContain('recovered private text');
+  });
+
+  it('exposes sanitized private Comment draft failures', async () => {
+    privateMomentMocks.snapshot.mockReturnValue({
+      active: true,
+      reconciling: false,
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      projections: [],
+      postsById: {},
+      commentDrafts: [{
+        draftId: 'private-comment-draft',
+        draftRevision: 1,
+        postId: 'post-1',
+        replyToCommentId: '',
+        text: 'private comment body',
+        mentions: [],
+        state: 'COMMENT_FAILED',
+        errorCode: 'COMMENT_PLAN_INVALID',
+      }],
+      reactionCommands: [],
+      publishStateHistory: [],
+      readStateHistoryByPostId: {},
+      lastReport: null,
+      errorMessage: null,
+    });
+
+    const result = await readPrivateSnapshotAction();
+
+    expect(result).toMatchObject({
+      commentDrafts: [{
+        postId: 'post-1',
+        state: 'COMMENT_FAILED',
+        errorCode: 'COMMENT_PLAN_INVALID',
+      }],
+    });
+    expect(JSON.stringify(result)).not.toMatch(
+      /private-comment-draft|private comment body/,
+    );
+  });
+
+  it('exposes sanitized private Reaction command state', async () => {
+    privateMomentMocks.snapshot.mockReturnValue({
+      active: true,
+      reconciling: false,
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      projections: [],
+      postsById: {},
+      commentDrafts: [],
+      reactionCommands: [{
+        commandId: 'private-reaction-command',
+        postId: 'post-1',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_UNKNOWN_OUTCOME',
+        attemptCount: 1,
+        projectionRevision: '0',
+        errorCode: 'SOCIAL_20008',
+      }],
+      publishStateHistory: [],
+      readStateHistoryByPostId: {},
+      lastReport: null,
+      errorMessage: null,
+    });
+
+    const result = await readPrivateSnapshotAction();
+
+    expect(result).toMatchObject({
+      reactionCommands: [{
+        postId: 'post-1',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_UNKNOWN_OUTCOME',
+        attemptCount: 1,
+        projectionRevision: '0',
+        errorCode: 'SOCIAL_20008',
+      }],
+    });
+    expect(JSON.stringify(result)).not.toContain('private-reaction-command');
   });
 
   it('exposes bounded generic subtype, media, and Comment actions without plaintext', async () => {

@@ -78,6 +78,13 @@ func (*federatedContentPreKeyMembershipRepo) ListByFederation(
 	return nil, nil
 }
 
+func (*federatedContentPreKeyMembershipRepo) ListByStation(
+	context.Context,
+	string,
+) ([]*domain.MembershipRecord, error) {
+	return nil, nil
+}
+
 func (*federatedContentPreKeyMembershipRepo) UpdateStatus(
 	context.Context,
 	string,

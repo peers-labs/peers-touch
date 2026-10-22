@@ -111,7 +111,7 @@ export const demoMoments: Moment[] = [
   {
     id: 'mo1', name: 'Carol Li', avatar: 'CL', avatarUrl: demoAvatarUrls.carol, avatarGradient: GRADIENTS[3], time: '2 hours ago',
     text: 'Just shipped the new onboarding flow. The team did an amazing job tightening up every interaction.',
-    likes: 24, myReaction: 'love',
+    likes: 24, myReactions: ['love'],
     reactionCounts: { love: 24 },
     comments: [
       { id: 'c1', name: 'Alice Chen', avatar: 'AC', avatarUrl: demoAvatarUrls.alice, avatarGradient: GRADIENTS[0], text: 'Looks great! The flow is so smooth now.', time: '1h' },
@@ -146,7 +146,7 @@ export const demoMoments: Moment[] = [
   {
     id: 'mo5', name: 'Design Systems', avatar: 'DS', avatarGradient: GRADIENTS[6], time: '3 days ago',
     text: 'Token documentation is live. Components are now fully themeable through the new token pipeline.',
-    likes: 42, myReaction: 'love',
+    likes: 42, myReactions: ['love'],
     reactionCounts: { love: 42 },
     images: [GRADIENTS[1], GRADIENTS[3]],
     comments: [

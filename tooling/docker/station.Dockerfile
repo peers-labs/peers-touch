@@ -1,8 +1,8 @@
 # Station Dockerfile — multi-stage build
 # Build: from project root, e.g. docker build -f tooling/docker/station.Dockerfile .
 
-ARG BUILDER_IMAGE=golang:1.24.6
-ARG BASE_IMAGE=ubuntu:22.04
+ARG BUILDER_IMAGE=golang:1.24.6@sha256:8d9e57c5a6f2bede16fe674c16149eee20db6907129e02c4ad91ce5a697a4012
+ARG BASE_IMAGE=ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
 ARG GO_VERSION=1.24.6
 
 # ─── Stage 1: Builder ─────────────────────────────────────────────────────────
@@ -65,13 +65,15 @@ WORKDIR /src/station/app
 ARG BUILD_COMMIT=unknown
 ARG BUILD_LABEL=dev
 ARG BUILD_TIME=unknown
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildCommit=${BUILD_COMMIT} \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildLabel=${BUILD_LABEL} \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildTime=${BUILD_TIME}" \
     -o /out/peers-touch-station .
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildCommit=${BUILD_COMMIT} \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildLabel=secure-content-maintenance \
@@ -83,13 +85,6 @@ FROM ${BASE_IMAGE} AS runtime-base
 
 ARG TARGETARCH
 ARG LARK_CLI_VERSION=1.0.95
-
-ARG BUILD_COMMIT=unknown
-ARG BUILD_LABEL=dev
-ARG BUILD_TIME=unknown
-LABEL org.opencontainers.image.revision="${BUILD_COMMIT}" \
-      org.opencontainers.image.version="${BUILD_LABEL}" \
-      org.opencontainers.image.created="${BUILD_TIME}"
 
 RUN sed -i \
       -e 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
@@ -142,3 +137,11 @@ EXPOSE 18080 4001
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["./peers-touch-station", "--config", "./conf/peers.yml"]
+
+# Keep changing build metadata after all stable runtime layers.
+ARG BUILD_COMMIT=unknown
+ARG BUILD_LABEL=dev
+ARG BUILD_TIME=unknown
+LABEL org.opencontainers.image.revision="${BUILD_COMMIT}" \
+      org.opencontainers.image.version="${BUILD_LABEL}" \
+      org.opencontainers.image.created="${BUILD_TIME}"

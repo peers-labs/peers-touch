@@ -5,6 +5,8 @@ import { ArrowLeft, Trash2, UserPlus, X } from 'lucide-react';
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileDetailRoute } from '../../app/navigation';
 import { MobileNotice } from '../../components/MobileNotice';
+import { SocialActorAvatar } from '../../features/social/SocialActorAvatar';
+import { actorDisplayName } from '../../features/social/socialProjection';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
 import { useSocialStore } from '../../features/social/socialStore';
 import { requestSocialPeerProfile } from '../../features/social/socialRuntime';
@@ -186,9 +188,17 @@ export function SocialCircleDetailPage({
                     data-acceptance-id="social-circle-member"
                     data-actor-ptid={member.actorPtid}
                   >
+                    <SocialActorAvatar
+                      actorPtid={member.actorPtid}
+                      avatar={profile?.avatar}
+                      displayName={profile?.displayName}
+                      username={profile?.username}
+                      size={40}
+                    />
                     <span className="circle-row-copy">
                       <Text strong ellipsis>
-                        {profile?.displayName || member.actorPtid}
+                        {actorDisplayName(profile?.displayName || profile?.username, member.actorPtid)
+                          || t('mobile.contacts.unknownUser')}
                       </Text>
                       <Text type="secondary" ellipsis>{member.actorPtid}</Text>
                     </span>

@@ -44,8 +44,8 @@ CLIENT_ID = "alice-android"
 SCENARIO_IDS = (
     "rc02-home-explore",
     "rc02-search-profile",
-    "rc02-circles-publish",
     "rc02-thread-reaction",
+    "rc02-circles-publish",
     "rc02-recovery-lifecycle",
     "rc02-native-quality",
 )
@@ -398,21 +398,19 @@ class AndroidSocialGate(AcceptanceGate):
                 ),
             ),
             (
-                "rc02-circles-publish",
-                lambda: self._run_ios_circles_publish(
-                    scoped["alice"],
+                "rc02-thread-reaction",
+                lambda: self._run_ios_thread_reaction(
                     scoped["bob"],
-                    actors["alice"],
-                    actors["bob"],
-                    journey,
                     journey_id,
                     state,
                 ),
             ),
             (
-                "rc02-thread-reaction",
-                lambda: self._run_ios_thread_reaction(
+                "rc02-circles-publish",
+                lambda: self._run_ios_circles_publish(
+                    scoped["alice"],
                     scoped["bob"],
+                    actors["bob"],
                     journey_id,
                     state,
                 ),
@@ -814,13 +812,13 @@ class AndroidSocialGate(AcceptanceGate):
         self._set_ui_value(
             session,
             '[data-acceptance-id="social-search-input"] input',
-            receiver.federated_handle,
+            receiver.role,
             "Android Social Search query",
         )
         self._click_ui(
             session,
             '[data-acceptance-id="social-search-input"] '
-            ".ant-input-search-button",
+            ".ant-input-search-btn",
             "Android Social Search submit",
         )
         result_selector = (
@@ -851,28 +849,10 @@ class AndroidSocialGate(AcceptanceGate):
         self,
         sender_session: _ActorScopedSession,
         receiver_session: _ActorScopedSession,
-        sender: MessagingActor,
         receiver: MessagingActor,
-        journey: MobileMessagingJourney,
         journey_id: str,
         state: dict[str, Any],
     ) -> dict[str, Any]:
-        conversation_id = journey._create_direct(
-            sender_session,
-            receiver_session,
-            sender,
-            receiver,
-        )
-        group_id = f"mps11a-group-{journey_id}"
-        sender_session.call_action(
-            "messaging.createGroup",
-            {
-                "conversationId": group_id,
-                "name": f"MPS11A {journey_id}",
-                "memberPtids": [sender.ptid, receiver.ptid],
-                "federationId": sender.federation_id,
-            },
-        )
         sender_session.call_action(
             "navigation.apply",
             {"kind": "primary", "routeId": "tab:moments"},
@@ -925,13 +905,13 @@ class AndroidSocialGate(AcceptanceGate):
         self._set_ui_value(
             sender_session,
             '[data-acceptance-id="social-circle-member-search"] input',
-            receiver.federated_handle,
+            receiver.role,
             "Android Circle member search",
         )
         self._click_ui(
             sender_session,
             '[data-acceptance-id="social-circle-member-search"] '
-            ".ant-input-search-button",
+            ".ant-input-search-btn",
             "Android Circle member search submit",
         )
         candidate_selector = (
@@ -1022,8 +1002,6 @@ class AndroidSocialGate(AcceptanceGate):
                 "privatePostId": private_post_id,
                 "privatePostText": private_text,
                 "circleId": circle_id,
-                "groupId": group_id,
-                "conversationId": conversation_id,
             }
         )
         receiver_session.call_action("moments.private.reconcile")
@@ -1046,9 +1024,7 @@ class AndroidSocialGate(AcceptanceGate):
         return {
             "uiAction": f"android-circle-create-publish:{circle_id}",
             "receiverAssertion": f"private-post:{private_post_id}",
-            "supportingObservation": (
-                f"circle-member:{receiver.ptid};group:{group_id}"
-            ),
+            "supportingObservation": f"circle-member:{receiver.ptid}",
             "circleId": circle_id,
             "privatePostId": private_post_id,
             "receiverState": receiver_read["state"],
@@ -1061,18 +1037,15 @@ class AndroidSocialGate(AcceptanceGate):
         state: Mapping[str, Any],
     ) -> dict[str, Any]:
         post_id = self._text(
-            state.get("privatePostId"),
-            "Android private post state",
+            state.get("publicPostId"),
+            "Android public post state",
         )
         for index in range(11):
             session.call_action(
-                "moments.private.comment.submit",
+                "moments.comment",
                 {
-                    "draftId": f"mps11a-{journey_id}-comment-{index}",
-                    "draftRevision": 1,
                     "postId": post_id,
-                    "text": f"MPS11A comment {index}",
-                    "mentions": [],
+                    "content": f"MPS11A comment {index}",
                 },
             )
         session.call_action(
@@ -1115,18 +1088,19 @@ class AndroidSocialGate(AcceptanceGate):
             f"MPS11A UI comment {journey_id}",
             "Android inline comment readback",
         )
+        self._click_ui_for_post(
+            session,
+            post_id,
+            "social-reaction-open",
+            "Android Reaction picker",
+        )
         for reaction_kind in range(1, 6):
-            self._click_ui_for_post(
-                session,
-                post_id,
-                "social-reaction-open",
-                "Android Reaction picker",
-            )
             self._click_ui(
                 session,
                 (
-                    '[data-acceptance-id="social-reaction-choice"]'
-                    f'[data-reaction-kind="{reaction_kind}"]'
+                    '[data-reaction-picker] '
+                    '[data-reaction-picker-item]'
+                    f':nth-child({reaction_kind})'
                 ),
                 f"Android Reaction kind {reaction_kind}",
             )
@@ -1162,12 +1136,43 @@ class AndroidSocialGate(AcceptanceGate):
             draft_text,
             "Android recovery draft",
         )
+        self._wait_ui_attribute(
+            alice,
+            '[data-acceptance-id="social-composer"]',
+            "data-draft-persisted",
+            "true",
+            "Android persisted Recovery draft",
+        )
         restart = self._mapping(
             alice.call_action("lifecycle.restart"),
             "Android lifecycle restart",
         )
         if restart != {"requested": True, "scope": "webview"}:
             raise GateError("Android lifecycle restart was not acknowledged")
+        self._click_ui(
+            alice,
+            '[data-acceptance-id="recovery-draft-restore-action"]',
+            "Restore persisted Android Moment draft",
+        )
+        self._wait_ui_absent(
+            alice,
+            '[data-acceptance-id="recovery-draft-restore"]',
+            "Dismiss restored Android Moment draft prompt",
+        )
+        alice.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._wait_ui(
+            alice,
+            '[data-acceptance-id="social-moments-page"]',
+            "Return to Android Moments after draft restoration",
+        )
+        self._click_ui(
+            alice,
+            '[data-acceptance-id="social-composer-open"]',
+            "Reopen Android composer after draft restoration",
+        )
         self._wait_ui_text(
             alice,
             '[data-acceptance-id="social-composer"]',
@@ -1316,6 +1321,18 @@ class AndroidSocialGate(AcceptanceGate):
         return self._wait_social_ui(
             lambda: session.social_ui("query", {"selector": selector}),
             lambda value: value.get("exists") is True,
+            label,
+        )
+
+    def _wait_ui_absent(
+        self,
+        session: _ActorScopedSession,
+        selector: str,
+        label: str,
+    ) -> dict[str, Any]:
+        return self._wait_social_ui(
+            lambda: session.social_ui("query", {"selector": selector}),
+            lambda value: value.get("exists") is False,
             label,
         )
 

@@ -58,9 +58,13 @@ function useAuthenticatedRuntimes(
       return;
     }
     let cancelled = false;
-    let cancelIdle: (() => void) | null = null;
+    let cancelDeferredProjections: (() => void) | null = null;
+    let cancelIdleRuntimes: (() => void) | null = null;
     setCriticalActorPtid(null);
     markPhaseStart('runtime:critical');
+    cancelDeferredProjections = scheduleIdle(() => {
+      void installDeferredAppRuntimeProjections(actorPtid);
+    });
     void installAuthenticatedCriticalRuntimes(actorPtid).then(() => {
       if (cancelled) return;
       setCriticalActorPtid(actorPtid);
@@ -68,14 +72,14 @@ function useAuthenticatedRuntimes(
         actorPtid,
         critical: CRITICAL_SESSION_RUNTIME_IDS,
       });
-      cancelIdle = scheduleIdle(() => {
-        void installDeferredAppRuntimeProjections(actorPtid);
+      cancelIdleRuntimes = scheduleIdle(() => {
         void installIdleRuntimes(actorPtid, CRITICAL_SESSION_RUNTIME_IDS);
       });
     });
     return () => {
       cancelled = true;
-      cancelIdle?.();
+      cancelDeferredProjections?.();
+      cancelIdleRuntimes?.();
       tearDownSessionRuntimes();
     };
   }, [actorPtid, lifecycle.authenticated, setCriticalActorPtid]);

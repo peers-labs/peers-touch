@@ -13,9 +13,10 @@ import {
   type AccessDecision,
 } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
-import { verifyStationIdentity } from '../features/station/stationConnection';
+import { verifyBoundStationRoute } from '../features/station/stationConnection';
 import {
   activeStationEntry,
+  activeStationRoute,
   requireMatchingStationIdentity,
   type MobileStationEntry,
 } from '../features/station/stationRegistry';
@@ -197,7 +198,7 @@ export async function restoreAndRevalidateAccessRuntime(): Promise<void> {
       return;
     }
 
-    const verifiedStation = await verifyStationIdentity(station.url);
+    const verifiedStation = await verifyActiveStationRoute(station);
     if (verifiedStation.stationPeerId !== station.stationPeerId) {
       getRecoveryProjection().reportSessionMismatch(
         station.stationPeerId,
@@ -232,6 +233,24 @@ export async function restoreAndRevalidateAccessRuntime(): Promise<void> {
     state.setLoading(false);
     publishFromStore();
   }
+}
+
+async function verifyActiveStationRoute(
+  station: MobileStationEntry,
+  verifyRoute = verifyBoundStationRoute,
+) {
+  const route = activeStationRoute(station);
+  if (!route) {
+    throw new Error('mobile.launch.stationRouteUnavailable');
+  }
+  return verifyRoute({
+    stationPeerId: station.stationPeerId,
+    routeId: route.routeId,
+    routeGeneration: route.routeGeneration,
+    routeRevision: station.routeRevision ?? 1,
+    sourceRef: route.sourceRef,
+    endpointOrigin: route.endpointOrigin,
+  });
 }
 
 export function fenceAccessRuntimeProjection(): void {
@@ -387,4 +406,5 @@ export const accessRuntimeTestContract = {
   isRevokedSessionError,
   sanitizeAccessDecision,
   startAccessAttemptWithInvalidSessionRecovery,
+  verifyActiveStationRoute,
 };

@@ -11,6 +11,7 @@ import { usePrivateMomentsStore } from '../store/privateMoments';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
 import { useFederationStore } from '../store/federation';
+import { useSocialChatStore } from '../store/socialChat';
 import {
   Audience_Kind,
   type Post,
@@ -48,6 +49,7 @@ let stationIdentityHint: string | null = null;
 let projectionQueue: Promise<void> = Promise.resolve();
 let realtimeWasDisconnected = false;
 let lastReconnectRefreshAt = 0;
+let privateProjectionReady = false;
 const pendingMomentEventKeys = new Set<string>();
 const completedMomentEventKeys = new Set<string>();
 
@@ -77,6 +79,36 @@ function privatePostIds(): string[] {
     .filter(isPrivateMomentPost)
     .map((post) => post.id)
     .filter(Boolean);
+}
+
+async function hydrateVisibleMomentAuthors(
+  scope: MomentsRuntimeScope,
+): Promise<void> {
+  const authorPtids = [...new Set(
+    Object.values(useMomentsStore.getState().postsById)
+      .map((post) => (post.authorPtid || post.author?.id || '').trim())
+      .filter(Boolean),
+  )];
+  const social = useSocialChatStore.getState();
+  const tasks: Promise<void>[] = [];
+  if (
+    authorPtids.includes(scope.actorPtid)
+    && (
+      social.currentUserPtid !== scope.actorPtid
+      || !social.currentUserProfile
+    )
+  ) {
+    tasks.push(social.loadCurrentUserProfile());
+  }
+  for (const actorPtid of authorPtids) {
+    if (actorPtid === scope.actorPtid) continue;
+    tasks.push(social.loadPeerProfile(
+      actorPtid,
+      social.peerProfiles[actorPtid] === null,
+    ));
+  }
+  await Promise.allSettled(tasks);
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
 }
 
 function runDetached(label: string, task: Promise<void>): void {
@@ -126,6 +158,7 @@ function invalidateScope(): number {
   activeScope = null;
   realtimeWasDisconnected = false;
   lastReconnectRefreshAt = 0;
+  privateProjectionReady = false;
   pendingMomentEventKeys.clear();
   completedMomentEventKeys.clear();
   resetProjection(generation);
@@ -321,12 +354,20 @@ async function refreshMomentsProjectionNow(
   ])];
   await moments.syncProjection(label);
   if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+  await hydrateVisibleMomentAuthors(scope);
   await Promise.allSettled([
     discovery.loadMe(),
     moments.listMyCircles(),
   ]);
   if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
   await preloadCircleMembers(scope);
+  if (!await ensurePrivateProjectionReady(scope, label)) {
+    log.info('momentsRuntime', 'moments projection refresh completed', {
+      label,
+      privateProjection: 'unavailable',
+    });
+    return;
+  }
   const currentPrivatePostIds = privatePostIds();
   const privatePostIdsToReconcile = [...new Set([
     ...previousPrivatePostIds,
@@ -341,6 +382,7 @@ async function refreshMomentsProjectionNow(
   moments.hydratePrivateMoments(
     Object.values(usePrivateMomentsStore.getState().postsById),
   );
+  await hydrateVisibleMomentAuthors(scope);
   await usePrivateCommentsStore.getState().reconcile(
     privatePostIdsToReconcile,
     label,
@@ -349,6 +391,28 @@ async function refreshMomentsProjectionNow(
   if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
 
   log.info('momentsRuntime', 'moments projection refresh completed', { label });
+}
+
+async function ensurePrivateProjectionReady(
+  scope: MomentsRuntimeScope,
+  label: string,
+): Promise<boolean> {
+  if (privateProjectionReady) return true;
+  try {
+    await usePrivateMomentsStore.getState().bootstrap(scope.generation);
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+    await usePrivateCommentsStore.getState().bootstrap(scope.generation);
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+    privateProjectionReady = true;
+    return true;
+  } catch (error) {
+    if (error instanceof MomentsRuntimeScopeChangedError) throw error;
+    log.warn('momentsRuntime', 'private Moments projection unavailable', {
+      error: String(error),
+      label,
+    });
+    return false;
+  }
 }
 
 async function ensureMomentDetailProjectionNow(
@@ -606,12 +670,7 @@ async function bootstrapForScope(scope: MomentsRuntimeScope): Promise<void> {
     scope.generation,
   );
   try {
-    await usePrivateMomentsStore.getState().bootstrap(scope.generation);
-    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
-    await Promise.all([
-      usePrivateCommentsStore.getState().bootstrap(scope.generation),
-      refreshMomentsProjectionNow(scope, 'bootstrap'),
-    ]);
+    await refreshMomentsProjectionNow(scope, 'bootstrap');
   } catch (error) {
     if (isCurrentScope(scope)) {
       activeScope = null;

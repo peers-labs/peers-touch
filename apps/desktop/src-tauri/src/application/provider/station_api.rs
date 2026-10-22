@@ -83,7 +83,10 @@ impl From<StationClientError> for StationApiError {
             station_client::StationClientErrorKind::HttpStatus(401) => {
                 StationApiError::Unauthorized
             }
-            station_client::StationClientErrorKind::Network => StationApiError::Network(e.message),
+            station_client::StationClientErrorKind::Network
+            | station_client::StationClientErrorKind::Unavailable => {
+                StationApiError::Network(e.message)
+            }
             _ => StationApiError::Internal(e.message),
         }
     }

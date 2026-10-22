@@ -12,6 +12,7 @@ import {
 } from './useActiveSocialChatStore';
 import { singleFederationId } from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { actorDisplayName } from '../../store/socialProfileProjection';
 import { FederatedHandle } from '../FederatedHandle';
 import {
   catalogEntryToSearchResult,
@@ -27,6 +28,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
 }
+
+type SearchScope = 'all' | 'federation';
 
 const FEDERATED_HANDLE_RE = /^@?([a-zA-Z0-9._-]+)(?:@([a-zA-Z0-9.-]+(?::\d+)?))?$/;
 
@@ -102,6 +105,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const [results, setResults] = useState<ActorSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [searchScope, setSearchScope] = useState<SearchScope>('all');
   const [selectedFederationId, setSelectedFederationId] = useState<string>('');
   const [searchError, setSearchError] = useState('');
   const [requestErrors, setRequestErrors] = useState<Record<string, string>>({});
@@ -135,7 +139,9 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
   const parsed = useMemo(() => parseHandleInput(searchText), [searchText]);
   const activeFederationId = selectedFederationId || defaultFederationId;
-  const blockedByGate = !activeFederationId;
+  const blockedByGate = parsed.isFederated
+    && parsed.hasHost
+    && !activeFederationId;
 
   const handleSearch = async () => {
     const trimmed = searchText.trim();
@@ -143,23 +149,41 @@ export function FindPeopleModal({ open, onClose }: Props) {
     setSearchError('');
     setSearching(true);
     try {
-      if (!activeFederationId) {
-        setSearchError(t('chat.social.findPeople.catalogNoFederation'));
-        return;
-      }
       if (parsed.isFederated && parsed.hasHost) {
+        if (!activeFederationId) {
+          setSearchError(t('chat.social.findPeople.catalogNoFederation'));
+          return;
+        }
         const view = await api.federationResolve(activeFederationId, parsed.canonical);
         const item = resolvedProfileToSearchResult(view);
         setResults(item ? [item] : []);
         return;
       }
-      const resp = await api.federationCatalogSearch({
-        federation_id: activeFederationId,
-        prefix: parsed.localPart || trimmed.replace(/^@/, ''),
-        page_size: 20,
-      });
-      rememberCatalogEntries(resp.entries ?? []);
-      setResults((resp.entries || []).map(catalogEntryToSearchResult));
+      const query = parsed.localPart || trimmed.replace(/^@/, '');
+      if (searchScope !== 'all') {
+        if (!activeFederationId) {
+          setSearchError(t('chat.social.findPeople.catalogNoFederation'));
+          return;
+        }
+        const response = await api.federationCatalogSearch({
+          federation_id: activeFederationId,
+          prefix: query,
+          page_size: 20,
+        });
+        rememberCatalogEntries(response.entries ?? []);
+        setResults((response.entries ?? []).map(catalogEntryToSearchResult));
+        return;
+      }
+      const response = await api.actorSearchActors(query);
+      setResults(
+        response.items.map((actor) => ({
+          id: String(actor.actorPtid ?? ''),
+          username: String(actor.username ?? ''),
+          displayName: String(actor.displayName ?? ''),
+          avatar: String(actor.avatar ?? ''),
+          homeStationPeerId: String(actor.homeStationPeerId ?? ''),
+        })),
+      );
     } catch (e: unknown) {
       const fallback = parsed.isFederated && parsed.hasHost
         ? t('chat.social.findPeople.resolveFailed', { handle: parsed.canonical })
@@ -223,14 +247,19 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const handleClose = () => {
     setSearchText('');
     setResults([]);
+    setSearchScope('all');
     setSelectedFederationId('');
     setSearchError('');
     setRequestErrors({});
     onClose();
   };
 
-  const handleScopeChange = (federationId: string) => {
-    setSelectedFederationId(federationId);
+  const handleScopeChange = (
+    scope: SearchScope,
+    federationId = '',
+  ) => {
+    setSearchScope(scope);
+    setSelectedFederationId(scope === 'federation' ? federationId : '');
     setSearchError('');
     setResults([]);
   };
@@ -291,10 +320,27 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
         {/* Scope chips */}
         <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <Tag.CheckableTag
+            data-chat-find-people-scope="all"
+            checked={searchScope === 'all'}
+            onChange={() => void handleScopeChange('all')}
+            style={searchScope === 'all' ? {
+              background: token.colorPrimaryBg,
+              color: token.colorPrimary,
+              borderColor: token.colorPrimary,
+            } : {
+              background: 'transparent',
+              color: token.colorTextSecondary,
+              borderColor: token.colorBorder,
+            }}
+          >
+            {t('chat.social.findPeople.scopeAll')}
+          </Tag.CheckableTag>
+
           {federationOptions.map((fed) => {
-            const isActive = activeFederationId === fed.federationId;
+            const isActive = searchScope === 'federation'
+              && selectedFederationId === fed.federationId;
             const presentation = findPeopleScopePresentation(
-              'federation',
               fed.federationName,
               fed.federationId,
             );
@@ -309,8 +355,14 @@ export function FindPeopleModal({ open, onClose }: Props) {
                   data-chat-find-people-federation-id={fed.federationId}
                   checked={isActive}
                   onChange={(checked) => {
-                    if (checked) handleScopeChange(fed.federationId);
-                    else handleScopeChange('');
+                    if (checked) {
+                      void handleScopeChange(
+                        'federation',
+                        fed.federationId,
+                      );
+                    } else {
+                      void handleScopeChange('all');
+                    }
                   }}
                   style={isActive ? {
                     background: token.colorPrimaryBg,
@@ -395,13 +447,15 @@ export function FindPeopleModal({ open, onClose }: Props) {
                 >
                   <UserSquareAvatar
                     remoteUrl={r.avatar}
-                    name={r.displayName || r.username}
+                    name={actorDisplayName(r.displayName)
+                      || actorDisplayName(r.username, t('chat.social.detail.unknownMember'))}
                     size={36}
                   />
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Flexbox horizontal align="center" gap={6}>
                       <Text ellipsis style={{ fontSize: 13 }}>
-                        {r.displayName || r.username}
+                        {actorDisplayName(r.displayName)
+                          || actorDisplayName(r.username, t('chat.social.detail.unknownMember'))}
                       </Text>
                       {r.federation && (
                         <Tag

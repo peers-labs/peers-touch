@@ -1,0 +1,152 @@
+{
+  "id": "social-cross-station-mobile-desktop",
+  "base_environment": "mobile-simulator",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "source_identity": {
+    "commit_required": true,
+    "workspace_digest_required": true
+  },
+  "services": {
+    "station-primary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_PRIMARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "station-secondary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_SECONDARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "social-cross-station-mobile-desktop-actors",
+      "authorization_required": true,
+      "authorization_ref": "station.reset:social-cross-station-mobile-desktop-actors",
+      "target_assertion": "both Stations are approved disposable targets",
+      "initial_assertion": "Alice, Bob, and Eve have canonical identities, shared Federation membership, and prepared cross-Station friendship"
+    }
+  ],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "desktop-alice",
+      "actor": "alice",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-primary",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "desktop-bob",
+      "actor": "bob",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-secondary",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "sim-ios",
+      "actor": "bob",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-secondary",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "sim-ios-peer",
+      "actor": "eve",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-secondary",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "default_client_ids": [
+    "desktop-alice",
+    "desktop-bob",
+    "sim-ios",
+    "sim-ios-peer"
+  ],
+  "harness": {
+    "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
+    "required_actions": [
+      "cleanup",
+      "getRealtimeDevice",
+      "lifecycle.restart",
+      "lifecycle.scope.read",
+      "messaging.reconcile",
+      "moments.private.acceptance.prepareKeys",
+      "moments.private.comment.submit",
+      "moments.private.comments.read",
+      "moments.private.publishText",
+      "moments.private.read",
+      "moments.private.reconcile",
+      "moments.private.snapshot",
+      "navigation.apply",
+      "navigation.snapshot",
+      "recovery.snapshot",
+      "social.reconcile"
+    ],
+    "policy": "Social production actions plus parent-owned semantic DOM operations; topology and Appium authority remain parent-owned"
+  },
+  "proof_scope": {
+    "proves": [
+      "SOC-SEC-RC09 iOS subset and SOC-SEC-AS25",
+      "bidirectional Desktop and iOS private Moment delivery across two Stations",
+      "canonical Post identity, comments, reactions, unauthorized denial, restart convergence, and receiver-visible surfaces"
+    ],
+    "does_not_prove": [
+      "Android interoperability",
+      "iOS to Android interoperability",
+      "cross-Federation private delivery",
+      "physical-device interruption behavior"
+    ]
+  },
+  "cleanup": {
+    "resources": [
+      "desktop-processes",
+      "desktop-ports",
+      "desktop-storage",
+      "appium-sessions",
+      "appium-process",
+      "app-installations",
+      "simulator-ports",
+      "simulator-storage",
+      "simulator-boot",
+      "actor-fixture",
+      "profile-leases",
+      "deployment-leases"
+    ],
+    "deterministic": true
+  }
+}

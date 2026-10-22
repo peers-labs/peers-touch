@@ -189,6 +189,16 @@ func TestFederatedPrivateCommentSubmit(t *testing.T) {
 		response.GetComment().GetMetadata().GetAuthor().GetPtid() != "ptid:bob" {
 		t.Fatalf("remote submit response = %+v", response)
 	}
+	responseVerification := response.GetComment().
+		GetPrivateContent().
+		GetVerification()
+	if responseVerification.GetStationSigningKeyAttestation().
+		GetStationPeerId() != "station-remote" ||
+		responseVerification.GetStationSigningKeyAttestation().
+			GetProofSigningKeyId() !=
+			responseVerification.GetCommitProof().GetStationSigningKeyId() {
+		t.Fatalf("localized Comment proof attestation = %+v", response)
+	}
 	assertPrivateContentCount(
 		t,
 		fixture.source.database,

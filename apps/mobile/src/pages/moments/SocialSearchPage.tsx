@@ -12,6 +12,7 @@ import {
 } from '../../app/navigation/scrollRestoration';
 import { MobileNotice } from '../../components/MobileNotice';
 import { SocialActorAvatar } from '../../features/social/SocialActorAvatar';
+import { actorDisplayName } from '../../features/social/socialProjection';
 import { classifyPeopleSearchFeedback } from '../../features/social/contactInteractionState';
 import { useSocialStore } from '../../features/social/socialStore';
 
@@ -190,7 +191,8 @@ export function SocialSearchPage({
                 <span className="people-result-copy">
                   <span className="people-result-title">
                     <Text strong ellipsis>
-                      {result.displayName || result.username || result.ptid}
+                      {actorDisplayName(result.displayName || result.username, result.ptid)
+                        || t('mobile.contacts.unknownUser')}
                     </Text>
                     {result.federation ? (
                       <Tag color="success" icon={<ShieldCheck size={11} />}>

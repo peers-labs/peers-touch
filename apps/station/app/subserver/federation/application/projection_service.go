@@ -106,6 +106,7 @@ func (s *ProjectionService) ListFederations(ctx context.Context, stationPeerID, 
 			Status:                 fed.Status,
 			PolicyType:             fed.PolicyType,
 			HeadSeq:                fed.HeadSeq,
+			HeadHash:               append([]byte(nil), fed.HeadHash...),
 			SequencerStationPeerId: fed.SequencerStationPeerID,
 			MemberStationCount:     uint32(len(members)),
 		}

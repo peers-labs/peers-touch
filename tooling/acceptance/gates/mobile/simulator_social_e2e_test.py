@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import unittest
 from unittest.mock import Mock, patch
 
@@ -56,6 +57,290 @@ class Artifacts:
 
 
 class SimulatorSocialGateTests(unittest.TestCase):
+    def test_search_selects_bound_federation_before_submitting(self) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+        session = Mock()
+        receiver = self._actor("sim-ios-peer", "bob")
+        selected = False
+
+        def select_radio(
+            _session: object,
+            control_selector: str,
+            selector: str,
+            enabled_selector: str,
+            _label: str,
+        ) -> int:
+            nonlocal selected
+            self.assertIn("label.ant-radio-wrapper:has(", control_selector)
+            self.assertIn(f'value="{receiver.federation_id}"', selector)
+            self.assertIn(".ant-input-search-btn", enabled_selector)
+            selected = True
+            return 7
+
+        def click(_session: object, selector: str, _label: str) -> None:
+            if ".ant-input-search-btn" in selector:
+                self.assertTrue(selected, "search cannot submit without a Federation")
+
+        def set_value(
+            _session: object,
+            selector: str,
+            value: str,
+            _label: str,
+        ) -> None:
+            if "social-search-input" in selector:
+                self.assertEqual(value, receiver.role)
+
+        with (
+            patch.object(gate, "_wait_ui"),
+            patch.object(gate, "_set_ui_value", side_effect=set_value),
+            patch.object(gate, "_select_radio", side_effect=select_radio),
+            patch.object(gate, "_click_ui", side_effect=click),
+        ):
+            result = gate._run_ios_search_profile(session, receiver)
+        self.assertTrue(selected)
+        self.assertEqual(result["receiverAssertion"], f"profile-visible:{receiver.ptid}")
+
+    def test_select_radio_operates_visible_control_and_waits_for_checked(self) -> None:
+        session = Mock()
+        session.execute_script.side_effect = [None, {"index": 3}]
+        session.find_element.return_value = "radio-element"
+
+        index = SimulatorSocialGate._select_radio(
+            session,
+            'label.ant-radio-wrapper:has(input[value="federation-1"])',
+            'input[type="radio"][value="federation-1"]',
+            ".search-submit",
+            "Federation",
+        )
+
+        session.find_element.assert_called_once_with(
+            "css selector",
+            'label.ant-radio-wrapper:has(input[value="federation-1"])',
+        )
+        session.click_element.assert_called_once_with("radio-element")
+        self.assertEqual(session.execute_script.call_count, 2)
+        script = session.execute_script.call_args_list[0].args[0]
+        self.assertIn("input?.checked !== true", script)
+        self.assertIn("enabled?.disabled !== false", script)
+        self.assertEqual(index, 3)
+
+    def test_select_antd_option_opens_current_root_control(self) -> None:
+        session = Mock()
+        session.find_element.return_value = "select-element"
+        session.execute_script.return_value = True
+        gate = SimulatorSocialGate("ios-social-parity")
+
+        gate._select_antd_option(
+            session,
+            '[data-acceptance-id="picker"] .ant-select',
+            3,
+            "Federation",
+        )
+
+        session.find_element.assert_called_once_with(
+            "css selector",
+            '[data-acceptance-id="picker"] .ant-select',
+        )
+        session.click_element.assert_called_once_with("select-element")
+        self.assertEqual(session.execute_script.call_args.args[1], 3)
+
+    def test_post_action_uses_webdriver_element_click(self) -> None:
+        session = Mock()
+        session.find_element.return_value = "post-action"
+
+        SimulatorSocialGate._click_ui_for_post(
+            session,
+            "01M59ASBXMEH91RATX66HFYMEZ",
+            "social-thread-open",
+            "Moment thread",
+        )
+
+        session.find_element.assert_called_once_with(
+            "css selector",
+            (
+                '[data-acceptance-id="social-moment-card"]'
+                '[data-post-id="01M59ASBXMEH91RATX66HFYMEZ"] '
+                '[data-acceptance-id="social-thread-open"]'
+            ),
+        )
+        session.click_element.assert_called_once_with("post-action")
+        session.execute_script.assert_not_called()
+
+    def test_ios_reuses_the_open_product_reaction_picker(self) -> None:
+        source = inspect.getsource(
+            SimulatorSocialGate._run_ios_thread_reaction
+        )
+
+        self.assertLess(
+            IOS_SOCIAL_PARITY_SCENARIOS.index("rc01-thread-reaction"),
+            IOS_SOCIAL_PARITY_SCENARIOS.index("rc01-circles-publish"),
+        )
+        self.assertEqual(source.count('"social-reaction-open"'), 1)
+        self.assertIn('state.get("publicPostId")', source)
+        self.assertIn('"moments.comment"', source)
+        self.assertIn("data-reaction-picker-item", source)
+        self.assertNotIn("moments.private.comment.submit", source)
+        self.assertNotIn("social-reaction-choice", source)
+
+    def test_moment_thread_diagnostic_exposes_only_structural_counts(self) -> None:
+        session = Mock()
+        session.execute_script.return_value = {
+            "momentsPages": 1,
+            "cards": 1,
+            "actions": 1,
+            "threads": 0,
+            "rootError": "TypeError: render failed",
+        }
+
+        state = SimulatorSocialGate._moment_thread_state(
+            session,
+            "01M59ASBXMEH91RATX66HFYMEZ",
+        )
+
+        self.assertEqual(
+            state,
+            {
+                "momentsPages": 1,
+                "cards": 1,
+                "actions": 1,
+                "threads": 0,
+                "rootError": "TypeError: render failed",
+            },
+        )
+        self.assertNotIn(
+            "01M59ASBXMEH91RATX66HFYMEZ",
+            str(state),
+        )
+
+    def test_circle_audience_selects_the_created_circle_row(self) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+        sender_session = Mock()
+        sender_session.call_action.return_value = {"publish": []}
+        receiver_session = Mock()
+        receiver = self._actor("sim-ios-peer", "bob")
+
+        with (
+            patch.object(gate, "_wait_ui"),
+            patch.object(gate, "_set_ui_value"),
+            patch.object(gate, "_select_antd_option"),
+            patch.object(
+                gate,
+                "_wait_ui_attribute_value",
+                return_value="circle-42",
+            ),
+            patch.object(gate, "_wait_ui_text"),
+            patch.object(
+                gate,
+                "_wait_ui_attribute",
+                side_effect=RuntimeError("stop after circle target"),
+            ),
+            patch.object(gate, "_click_ui") as click,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "stop after circle target"):
+                gate._run_ios_circles_publish(
+                    sender_session,
+                    receiver_session,
+                    receiver,
+                    "journey-1",
+                    {},
+                )
+
+        clicked_selectors = [call.args[1] for call in click.call_args_list]
+        self.assertIn(
+            (
+                '[data-acceptance-id="social-audience-circle"]'
+                '[data-circle-id="circle-42"]'
+            ),
+            clicked_selectors,
+        )
+        self.assertNotIn(
+            '[data-acceptance-id="social-audience-target-done"]',
+            clicked_selectors,
+        )
+
+    def test_private_key_fixture_prepares_and_reconciles_each_inventory(self) -> None:
+        session = Mock(client_id="sim-ios")
+        session.call_action.side_effect = [
+            {
+                "endpointPrekeysAvailable": 100,
+                "recoveryPrekeysAvailable": 16,
+            },
+            {
+                "report": {
+                    "endpointPrekeysAvailable": 100,
+                    "recoveryPrekeysAvailable": 16,
+                },
+            },
+        ]
+
+        inventory = SimulatorSocialGate._prepare_private_keys(session)
+
+        self.assertEqual(
+            [item.args[0] for item in session.call_action.call_args_list],
+            [
+                "moments.private.acceptance.prepareKeys",
+                "moments.private.reconcile",
+            ],
+        )
+        self.assertEqual(
+            inventory,
+            {
+                "endpointPrekeysAvailable": 100,
+                "recoveryPrekeysAvailable": 16,
+            },
+        )
+
+    def test_identity_preparation_reuses_one_channel_for_all_actors(self) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+        client = Mock()
+        client.invoke.return_value = {"prepared": True}
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_social_e2e."
+            "EphemeralGateClient.from_environment",
+            return_value=client,
+        ) as bind:
+            for client_id, role in (
+                ("sim-ios", "alice"),
+                ("sim-ios-peer", "bob"),
+                ("sim-ios", "eve"),
+            ):
+                session = Mock(client_id=client_id, session_id="owned-session")
+                gate._prepare_actor_identity(session, role)
+        bind.assert_called_once_with()
+        self.assertEqual(
+            [call.args[2]["role"] for call in client.invoke.call_args_list],
+            ["alice", "bob", "eve"],
+        )
+        client.close.assert_not_called()
+
+    def test_capability_channel_closes_after_failed_journey_cleanup(self) -> None:
+        artifacts = Artifacts()
+        gate = SimulatorSocialGate("ios-social-parity")
+        client = Mock()
+        gate.capability_client = client
+        order = []
+        client.close.side_effect = lambda: order.append("channel")
+        with (
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "ArtifactSession", return_value=artifacts,
+            ),
+            patch.object(gate, "_load_social_manifest", return_value={}),
+            patch.object(
+                gate, "_run_social_journey", side_effect=GateError("journey failed"),
+            ),
+            patch.object(gate, "_capture_runtime_failure", return_value=[]),
+            patch.object(
+                gate, "_cleanup_sessions",
+                side_effect=lambda _: order.append("sessions"),
+            ),
+        ):
+            self.assertEqual(gate.execute(), 1)
+        self.assertEqual(order, ["sessions", "channel"])
+        client.close.assert_called_once_with()
+        self.assertIsNone(gate.capability_client)
+        self.assertEqual(gate.cleanup[-1]["status"], "passed")
+
     @staticmethod
     def _actor(client_id: str, role: str) -> MessagingActor:
         return MessagingActor(
@@ -92,6 +377,124 @@ class SimulatorSocialGateTests(unittest.TestCase):
             )
 
         self.assertEqual(artifacts.write_bytes.call_count, 2)
+
+    def test_failure_diagnostics_exclude_actor_and_cursor_state(self) -> None:
+        artifacts = Mock()
+        artifacts.write_json.return_value.to_dict.return_value = {
+            "path": "failure-runtime.json",
+        }
+        session = Mock(client_id="sim-ios")
+        session.call_action.side_effect = [
+            {
+                "phase": "ACTIVE",
+                "generation": 3,
+                "runtimes": [
+                    {"id": "messaging", "status": "failed"},
+                ],
+                "runtimeErrors": [
+                    {
+                        "runtimeId": "messaging",
+                        "error": "ACTOR_IDENTITY_CONTINUITY_CONFLICT",
+                    },
+                ],
+                "activeActorPtid": "private-actor",
+            },
+            {
+                "active": False,
+                "activeSessionUlid": "private-session",
+                "friendRequests": [{"senderPtid": "private-actor"}],
+                "ingress": {
+                    "lifecycle": "active",
+                    "writeAdmissionOpen": False,
+                    "streamCursor": "private-cursor",
+                },
+            },
+            {
+                "actorPtid": "private-actor",
+                "publish": [
+                    {
+                        "draftId": "private-draft",
+                        "audienceKind": "CIRCLE",
+                        "state": "PUBLISH_FAILED",
+                        "errorCode": "SOCIAL_20008",
+                    },
+                ],
+                "publishStateHistory": [
+                    "CHECKING_PRIVATE_READINESS",
+                    "PUBLISH_FAILED",
+                ],
+                "report": {
+                    "submissionsProcessed": 0,
+                    "submissionsUnknown": 0,
+                    "submissionsTerminal": 1,
+                },
+                "errorPresent": True,
+            },
+        ]
+        gate = SimulatorSocialGate("ios-social-parity")
+        gate.sessions.append(session)
+
+        result = gate._capture_runtime_failure(artifacts)
+
+        self.assertEqual(result[0]["clientId"], "sim-ios")
+        value = artifacts.write_json.call_args.args[1]
+        self.assertNotIn("activeActorPtid", value["lifecycle"])
+        self.assertNotIn("activeSessionUlid", value["social"])
+        self.assertNotIn("friendRequests", value["social"])
+        self.assertNotIn("streamCursor", value["social"]["ingress"])
+        self.assertNotIn("actorPtid", value["privateSocial"])
+        self.assertNotIn("draftId", value["privateSocial"]["publish"][0])
+        self.assertEqual(
+            value["privateSocial"]["publish"][0],
+            {
+                "audienceKind": "CIRCLE",
+                "state": "PUBLISH_FAILED",
+                "errorCode": "SOCIAL_20008",
+            },
+        )
+        self.assertEqual(
+            value["lifecycle"]["runtimeErrors"][0]["error"],
+            "ACTOR_IDENTITY_CONTINUITY_CONFLICT",
+        )
+
+    def test_each_client_failure_has_one_distinct_evidence_role(self) -> None:
+        artifacts = Mock()
+        gate = SimulatorSocialGate("ios-social-parity")
+        for client_id in ("sim-ios", "sim-ios-peer"):
+            session = Mock(client_id=client_id)
+            session.call_action.side_effect = [
+                {"phase": "ACTIVE", "runtimes": [], "runtimeErrors": []},
+                {"active": False, "ingress": None},
+                {
+                    "publish": [],
+                    "publishStateHistory": [],
+                    "report": None,
+                    "errorPresent": False,
+                },
+            ]
+            gate.sessions.append(session)
+
+        diagnostics = gate._capture_runtime_failure(artifacts)
+
+        roles = [
+            call.kwargs["role"]
+            for call in artifacts.write_json.call_args_list
+        ]
+        self.assertEqual(len(set(roles)), 2)
+        self.assertTrue(all("artifact" in item for item in diagnostics))
+
+    def test_failure_diagnostic_error_remains_supporting_only(self) -> None:
+        artifacts = Mock()
+        session = Mock(client_id="sim-ios")
+        session.call_action.side_effect = DriverError("session closed")
+        gate = SimulatorSocialGate("ios-social-parity")
+        gate.sessions.append(session)
+
+        self.assertEqual(
+            gate._capture_runtime_failure(artifacts),
+            [{"clientId": "sim-ios", "captureErrorType": "DriverError"}],
+        )
+        artifacts.write_json.assert_not_called()
 
     def test_canonical_simulator_gate_claims_declared_proof(self) -> None:
         artifacts = Artifacts()
@@ -239,7 +642,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
             .additional_fixture_roles_by_gate["mobile-social-ios-native"],
             ("eve",),
         )
-        self.assertFalse(
+        self.assertTrue(
             MobileSocialIOSSimulatorProvisioner.requires_actor_reset,
         )
         self.assertEqual(
@@ -320,6 +723,14 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 "_run_ios_native_quality",
                 return_value=result,
             ),
+            patch.object(
+                gate,
+                "_prepare_private_keys",
+                return_value={
+                    "endpointPrekeysAvailable": 100,
+                    "recoveryPrekeysAvailable": 16,
+                },
+            ),
         ):
             suite = gate._run_ios_social_parity_suite(
                 manifest={"runId": "fixture-epoch"},
@@ -352,6 +763,47 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["provisioningRuns"], 1)
         self.assertEqual(report["metrics"]["clientLaunches"], 2)
         self.assertEqual(report["metrics"]["completedScenarios"], 6)
+
+    def test_explore_sort_requires_the_visible_sheet_before_selection(self) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+        sender = Mock()
+        sender.call_action.return_value = {"postId": "public-post"}
+        receiver = Mock()
+        sort_sheet_open = False
+        hot_selected = False
+
+        def click_visible(_script: str, selector: str) -> bool:
+            nonlocal sort_sheet_open, hot_selected
+            if selector.endswith('social-explore-sort-open"]'):
+                sort_sheet_open = True
+            elif selector.endswith('social-explore-sort-hot"]'):
+                if not sort_sheet_open:
+                    raise GateError("sort option is not on the visible surface")
+                hot_selected = True
+                sort_sheet_open = False
+            return True
+
+        receiver.execute_script.side_effect = click_visible
+        with (
+            patch.object(gate, "_wait_ui"),
+            patch.object(gate, "_wait_ui_attribute"),
+            patch.object(gate, "_wait_for_moment", return_value={"found": True}),
+            patch.object(gate, "_wait_post_visible"),
+        ):
+            result = gate._run_ios_home_explore(
+                sender,
+                receiver,
+                self._actor("sim-ios", "alice"),
+                "journey",
+                {},
+            )
+
+        self.assertTrue(hot_selected)
+        self.assertFalse(sort_sheet_open)
+        self.assertEqual(
+            result["receiverAssertion"],
+            "receiver-post:public-post",
+        )
 
     def test_missing_runtime_manifest_blocks_before_journey(self) -> None:
         artifacts = Artifacts()
@@ -521,6 +973,24 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         self.assertEqual(result["visibleState"], "draft-restore-pending")
         self.assertEqual(result["actions"], ["restore", "discard"])
+
+    def test_ios_waits_for_durable_moment_draft_before_restart(self) -> None:
+        source = inspect.getsource(
+            SimulatorSocialGate._run_ios_recovery_lifecycle
+        )
+
+        self.assertIn('"data-draft-persisted"', source)
+        self.assertIn('"true"', source)
+        restart = source.index('"lifecycle.restart"')
+        restore = source.index('"recovery-draft-restore-action"')
+        renavigate = source.index('"navigation.apply"', restore)
+        reopen = source.index('"social-composer-open"', restore)
+        restored_text = source.index('"Restored Moment draft"')
+        self.assertLess(restart, restore)
+        self.assertLess(restore, renavigate)
+        self.assertLess(renavigate, reopen)
+        self.assertLess(reopen, restored_text)
+        self.assertNotIn("time.sleep", source)
 
     def test_storage_cache_cleanup_requires_physical_release_and_preserves_draft(
         self,

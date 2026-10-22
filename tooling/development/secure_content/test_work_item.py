@@ -84,9 +84,9 @@ class WorkItemProjectionTest(unittest.TestCase):
             (
                 "CSS-SCHEMA-FOUR",
                 "cross-station-social-schema-four",
-                "four",
-                "station-four",
-                "station-four-social-private",
+                "chat-native-disposable",
+                "chat-native-disposable-station",
+                "chat-native-disposable-social-private",
             ),
             (
                 "CSS-SCHEMA-FIVEARM",

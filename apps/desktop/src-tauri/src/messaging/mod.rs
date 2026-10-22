@@ -5,6 +5,7 @@ mod consumer;
 mod conversation_state;
 mod direct;
 mod direct_session;
+mod device_identity_backup;
 mod drain;
 mod engine;
 mod group_genesis;
@@ -97,8 +98,8 @@ pub use drain::{
 pub(crate) use engine::now_unix_ms;
 pub use engine::{
     EngineEndpoint, EngineRegistry, LocalAttachmentIntent, MessagingEngine,
-    MessagingProjectionChange, MessagingProjectionNotifier, MetadataInteraction,
-    PreparedGroupConversation, RetryMessageOutcome, SubmitMessageOutcome,
+    MessagingProfileReadiness, MessagingProjectionChange, MessagingProjectionNotifier,
+    MetadataInteraction, PreparedGroupConversation, RetryMessageOutcome, SubmitMessageOutcome,
 };
 pub use group_genesis::StationGroupGenesisTransport;
 pub use inbox::{InboxWorker, QueueAcknowledger};
@@ -146,5 +147,10 @@ pub use store::{
 pub use transport::{
     StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,
     StationQueueTransport,
+};
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+pub use transport::{
+    get_acceptance_command_transport_fault, set_acceptance_command_transport_fault,
+    AcceptanceCommandTransportFaultSnapshot,
 };
 pub use verification::verify_device_event_delivery;

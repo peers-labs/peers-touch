@@ -26,6 +26,7 @@ import { markOverlayIntent, markOverlayVisible } from '../../kernel/frontendRunt
 import { OverlayCommitProfiler } from '../../kernel/OverlayCommitProfiler';
 import { useNavigationBadgeStore } from '../../store/navigationBadges';
 import {
+  actorDisplayName,
   projectGroupAvatarSlots,
   resolveActorIdentity,
 } from '../../store/socialProfileProjection';
@@ -60,16 +61,29 @@ function ConversationListError({
   onRetry,
 }: {
   compact?: boolean;
-  onRetry: () => void;
+  onRetry: () => Promise<void>;
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation(['chat', 'common']);
+  const [retrying, setRetrying] = useState(false);
+
+  const handleRetry = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await onRetry();
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   return (
     <Flexbox
       data-chat-session-list-error
       data-chat-session-list-error-mode={compact ? 'stale' : 'blocking'}
-      role="alert"
+      horizontal={compact}
+      role={compact ? 'status' : 'alert'}
+      aria-busy={retrying}
       align="center"
       justify="center"
       gap={8}
@@ -77,19 +91,27 @@ function ConversationListError({
         boxSizing: 'border-box',
         minWidth: 0,
         width: '100%',
-        padding: compact ? '12px' : '24px 16px',
-        background: compact ? token.colorErrorBg : 'transparent',
-        borderBottom: compact ? `1px solid ${token.colorErrorBorder}` : undefined,
-        textAlign: 'center',
+        minHeight: compact ? 32 : undefined,
+        flexShrink: 0,
+        marginTop: compact ? 8 : undefined,
+        padding: compact ? '0 12px' : '24px 16px',
+        textAlign: compact ? 'left' : 'center',
       }}
     >
-      <CircleAlert size={compact ? 16 : 24} color={token.colorError} aria-hidden />
+      <CircleAlert
+        size={compact ? 14 : 24}
+        color={compact ? token.colorWarning : token.colorError}
+        style={{ flexShrink: 0 }}
+        aria-hidden
+      />
       <Text
-        strong
+        strong={!compact}
         style={{
           display: 'block',
+          flex: compact ? 1 : undefined,
           minWidth: 0,
           maxWidth: '100%',
+          color: compact ? token.colorTextSecondary : undefined,
           fontSize: 12,
           lineHeight: 1.5,
           whiteSpace: 'normal',
@@ -97,13 +119,21 @@ function ConversationListError({
           wordBreak: 'normal',
         }}
       >
-        {t('chat.social.sessionList.loadFailed')}
+        {retrying
+          ? t('common.state.loading', { ns: 'common' })
+          : t(compact
+            ? 'chat.social.sessionList.refreshFailed'
+            : 'chat.social.sessionList.loadFailed')}
       </Text>
       <Button
         data-chat-session-list-retry
         size="small"
+        type={compact ? 'text' : 'default'}
+        loading={retrying}
+        disabled={retrying}
         icon={<RefreshCw size={12} />}
-        onClick={onRetry}
+        style={{ flexShrink: 0 }}
+        onClick={handleRetry}
       >
         {t('common.action.retry', { ns: 'common' })}
       </Button>
@@ -183,7 +213,6 @@ export function ChatSessionList({
     markGroupRead,
     hideConversation,
     loadSessions,
-    loadGroups,
   } = useActiveSocialChatSlice((state) => ({
     sessions: state.sessions,
     groups: state.groups,
@@ -209,7 +238,6 @@ export function ChatSessionList({
     markGroupRead: state.markGroupRead,
     hideConversation: state.hideConversation,
     loadSessions: state.loadSessions,
-    loadGroups: state.loadGroups,
   }));
   const { actorStationEntries, federations } = useActiveChatFederationSlice((state) => ({
     actorStationEntries: state.actorStationEntries,
@@ -497,10 +525,13 @@ export function ChatSessionList({
     return activeTab === 'group' && c.id === activeGroupUlid;
   };
 
-  const handleRetry = useCallback(() => {
-    loadSessions();
-    loadGroups();
-  }, [loadSessions, loadGroups]);
+  const handleRetry = useCallback(async () => {
+    try {
+      await loadSessions();
+    } catch {
+      // The store records and logs the failure; loadError keeps retry available.
+    }
+  }, [loadSessions]);
 
   return (
     <>
@@ -591,10 +622,20 @@ export function ChatSessionList({
                   text = p.content;
                 }
                 if (c.kind === 'group' && p.senderPtid) {
-                  const profile = peerProfiles[p.senderPtid];
+                  const member = groupMembers[c.id]?.find(
+                    (item) => item.ptid === p.senderPtid,
+                  );
+                  const sender = resolveActorIdentity({
+                    ptid: p.senderPtid,
+                    currentUserPtid,
+                    currentUserProfile,
+                    peerProfiles,
+                    sessions,
+                    nickname: member?.nickname,
+                  });
                   const senderShort = p.senderPtid === currentUserPtid
                     ? t('chat.social.preview.you')
-                    : profile?.display_name?.trim() || profile?.username?.trim() || p.senderPtid.slice(0, 8) + '…';
+                    : actorDisplayName(sender.displayName, t('chat.social.detail.unknownMember'));
                   subtitle = `${senderShort}: ${text}`;
                 } else {
                   subtitle = text;

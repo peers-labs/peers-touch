@@ -14,6 +14,7 @@ from tooling.acceptance.drivers.native import (
 )
 from tooling.acceptance.gates.chat.native_file_picker import (
     select_native_file,
+    wait_for_actionable_file_trigger,
 )
 
 
@@ -460,6 +461,32 @@ class NativeFilePickerTest(unittest.TestCase):
             (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
             (500.0, 500.0),
         )
+
+    def test_waits_past_hidden_dynamic_surface_instance(self) -> None:
+        hidden = Mock()
+        hidden.is_displayed.return_value = False
+        actionable = Mock()
+        actionable.is_displayed.return_value = True
+        actionable.is_enabled.return_value = True
+        client = SimpleNamespace(
+            driver=Mock(),
+            find_elements=Mock(
+                side_effect=(
+                    [hidden],
+                    [hidden, actionable],
+                )
+            ),
+        )
+
+        selected = wait_for_actionable_file_trigger(
+            actor="alice",
+            client=client,
+            selector="[data-file-trigger]",
+            timeout_seconds=1,
+        )
+
+        self.assertIs(selected, actionable)
+        self.assertGreaterEqual(client.find_elements.call_count, 2)
 
 
 if __name__ == "__main__":

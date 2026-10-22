@@ -185,7 +185,7 @@ export function socialAudienceTargetFromAudience(
 }
 
 export function isPublicSocialAudience(audience: Audience): boolean {
-  return normalizeSocialAudience(audience).kind === Audience_Kind.PUBLIC;
+  return audience.kind === Audience_Kind.PUBLIC;
 }
 
 export function toPrivateSocialAudience(

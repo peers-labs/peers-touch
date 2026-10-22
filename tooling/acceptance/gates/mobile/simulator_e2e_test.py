@@ -24,6 +24,7 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
     PHYSICAL_PROVIDER_SCOPE,
     PROVEN_SCOPE,
     READ_FINALIZE_EVIDENCE_SCRIPT,
+    SIMULATOR_APPIUM_IDLE_TIMEOUT_SECONDS,
     SimulatorAppiumSession,
     SimulatorBuildTarget,
     SimulatorCallbackRoutingGate,
@@ -1047,6 +1048,10 @@ class SimulatorAppiumCapabilityTests(unittest.TestCase):
                     )
                     self.assertTrue(capabilities["appium:noReset"])
                     self.assertFalse(capabilities["appium:fullReset"])
+                    self.assertEqual(
+                        capabilities["appium:newCommandTimeout"],
+                        SIMULATOR_APPIUM_IDLE_TIMEOUT_SECONDS,
+                    )
                     self.assertEqual(
                         capabilities["appium:udid"],
                         (

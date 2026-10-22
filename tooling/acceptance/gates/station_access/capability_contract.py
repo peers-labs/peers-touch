@@ -379,8 +379,9 @@ def _validate_proto_contracts() -> None:
             "bytes root_signature = 3;",
             "message StationIdentityResponse",
             "bytes statement_bytes = 1;",
-            "bytes node_signature = 2;",
-            "StationNodeAuthorization node_authorization = 3;",
+            "reserved 2, 3;",
+            "bytes node_signature = 4;",
+            "StationNodeAuthorization node_authorization = 5;",
         ),
         "Station identity Proto contract",
     )

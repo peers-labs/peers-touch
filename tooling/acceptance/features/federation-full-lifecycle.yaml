@@ -3,200 +3,89 @@
   "status": "active",
   "product_area": "federation",
   "owners": [
+    "model/domain/federation/**",
     "apps/station/app/subserver/federation/**",
-    "apps/desktop/src-tauri/src/application/federation/**",
     "apps/desktop/src/components/settings/FederationTab.tsx",
-    "apps/desktop/src/components/chat/FindPeopleModal.tsx",
-    "apps/desktop/src/store/federation.ts"
+    "apps/desktop/src/store/federation.ts",
+    "apps/desktop/src/runtimes/federationRuntime.ts",
+    "apps/desktop/src/acceptance/moments/harness.ts",
+    "apps/desktop/src-tauri/src/acceptance/federation_fixture.rs",
+    "tooling/acceptance/environments/cross-station-social-native.yaml",
+    "tooling/acceptance/fixtures/chat_native_actors.py",
+    "tooling/acceptance/gates/chat/mixed_native_runtime.py",
+    "tooling/acceptance/provisioners/native_tauri_embedded_webdriver.py",
+    "tooling/acceptance/gates/federation/**"
   ],
   "truth_sources": [
-    "model/domain/federation/federation_projection_service.proto",
-    "model/domain/federation/federation_governance_service.proto",
-    "model/domain/federation/federation_ledger.proto"
+    "federation_ledger_events",
+    "federation_station_membership",
+    "federation_actor_role",
+    "station_role_assignment"
   ],
-  "required_gates": ["station-build", "desktop-typecheck"],
+  "required_gates": [
+    "station-federation-unit",
+    "station-access-federation-boundary-e2e",
+    "federation-two-station-lifecycle-e2e"
+  ],
   "profiles": {
-    "station_a": {
-      "url": "http://192.0.2.30:18080",
-      "profile": "three",
-      "description": "Station A — sequencer for federation creation tests"
+    "station-primary": {
+      "profile": "four",
+      "service_id": "station-four"
     },
-    "station_c": {
-      "url": "http://192.0.2.10:18080",
-      "profile": "remote-c",
-      "description": "Station C — joining station for cross-station tests"
+    "station-secondary": {
+      "profile": "fiveArm",
+      "service_id": "station-five-arm"
     }
   },
   "preconditions": [
-    "Both stations deployed with identical code (same git commit)",
-    "Both stations healthy (GET /api/oauth/providers returns 200)",
-    "At least one user authenticated on each station",
-    "Two source-bound Native Desktop clients running against their assigned stations with isolated profiles"
+    "profiles four and fiveArm attest distinct Station identities at the candidate source",
+    "the sequencer genesis Station signing key matches the challenge-signed Station identity statement",
+    "the suite does not rotate the Station Federation signing key",
+    "the initial Station owner fixture is bound independently to station-four and station-five-arm",
+    "the reusable Suite Runtime owns both Native Desktop clients and the reset fixture"
   ],
   "acceptance": {
-    "T1_create_federation": {
-      "actor": "User A on Station A",
-      "steps": [
-        "Open Settings > Federation tab",
-        "Click 'Create Federation'",
-        "Enter name: 'E2E-Test-Fed' (valid: letters, numbers, hyphens, spaces)",
-        "Enter description: 'Acceptance test federation'",
-        "Click 'Create'"
-      ],
-      "expected": [
-        "Success toast: federation created",
-        "Federation appears in 'My Federations' list with status 'active'",
-        "Federation has a copy-invite-link button",
-        "Station A is listed as founder/member"
-      ],
-      "verify_api": "GET /sub-federation/federations returns the new federation"
-    },
-    "T2_create_federation_validation": {
-      "actor": "User A on Station A",
-      "steps": [
-        "Try creating federation with empty name",
-        "Try creating federation with special chars: '@#$%'",
-        "Try creating federation with duplicate name 'E2E-Test-Fed'",
-        "Try creating federation with name > 64 chars"
-      ],
-      "expected": [
-        "Empty name: error message shown, no API call",
-        "Special chars: error 'Name must be 2-64 characters: letters, numbers, spaces, and hyphens only'",
-        "Duplicate: error 'A federation with this name already exists'",
-        "Too long: blocked by maxLength on input"
-      ]
-    },
-    "T3_copy_invite_link": {
-      "actor": "User A on Station A",
-      "steps": [
-        "In 'My Federations' list, click the invite link icon for 'E2E-Test-Fed'",
-        "Paste clipboard content"
-      ],
-      "expected": [
-        "Clipboard contains: peers-touch://federation/join?id=fed_XXXXX&name=E2E-Test-Fed&endpoint=...",
-        "Success toast: 'Copied'"
-      ]
-    },
-    "T4_cross_station_join": {
-      "actor": "User B on Station C",
-      "steps": [
-        "Open Settings > Federation tab",
-        "Click 'Join Federation'",
-        "Paste the invite link from T3 into the invite link field",
-        "Verify Federation endpoint and ID auto-populate",
-        "Click 'Request to join'"
-      ],
-      "expected": [
-        "Success toast: joined federation",
-        "Federation 'E2E-Test-Fed' appears in 'My Federations' list on Station C",
-        "Station C logs show: submitting join proposal to remote sequencer",
-        "Station A logs show: POST /fed/v1/governance/submit-proposal 200"
-      ],
-      "verify_api": "GET /sub-federation/federations on Station C returns the joined federation"
-    },
-    "T5_cross_station_join_without_invite": {
-      "actor": "User B on Station C",
-      "steps": [
-        "Click 'Join Federation'",
-        "Manually enter Federation endpoint: 192.0.2.30:18080",
-        "Manually enter Federation ID from T1",
-        "Click 'Request to join'"
-      ],
-      "expected": [
-        "If already member: appropriate error or no-op",
-        "If new federation: success join"
-      ]
-    },
-    "T6_catalog_search_cross_station": {
-      "actor": "User B on Station C",
-      "steps": [
-        "Open Chat sidebar",
-        "Click 'Find People' (search icon)",
-        "Select the 'E2E-Test-Fed' federation scope chip",
-        "Type '@' + User A's username prefix",
-        "Wait for catalog search results"
-      ],
-      "expected": [
-        "User A appears in search results with federated handle @user@station-a-domain",
-        "Result shows home station info",
-        "Clicking 'Send Request' attempts friend request (may fail if friend_chat subserver not deployed)"
-      ],
-      "verify_api": "POST /sub-federation/catalog/search with federation_id returns User A"
-    },
-    "T7_federated_handle_resolve": {
-      "actor": "User B on Station C",
-      "steps": [
-        "In 'Find People', select 'All' scope",
-        "Type full federated handle: @userA@192.0.2.30:18080",
-        "Press Enter to search"
-      ],
-      "expected": [
-        "Resolve request sent to federation runtime",
-        "User A profile appears with federation badge (globe icon)",
-        "Shows home station domain and handle"
-      ]
-    },
-    "T8_leave_federation": {
-      "actor": "User B on Station C",
-      "steps": [
-        "Open Settings > Federation tab",
-        "In 'My Federations', click 'Leave' on 'E2E-Test-Fed'",
-        "Confirm in the modal dialog"
-      ],
-      "expected": [
-        "Success toast: left federation",
-        "Federation removed from 'My Federations' list",
-        "Station A ledger contains STATION_LEFT event"
-      ]
-    },
-    "T9_settings_ui_basic_info": {
-      "actor": "Any authenticated user",
-      "steps": [
-        "Open Settings > Federation tab",
-        "Observe 'Basic Info' section"
-      ],
-      "expected": [
-        "Shows federated handle (@user@station)",
-        "Shows home station domain",
-        "Shows locator sequence number",
-        "Health status line shows Ready/Joining + peers count + seeds count",
-        "Actor Discovery dropdown shows current visibility (hidden/by_handle/indexed)"
-      ]
-    },
-    "T10_visibility_change": {
-      "actor": "Any authenticated user",
-      "steps": [
-        "In Basic Info, change Actor Discovery from current to 'Indexed'",
-        "Observe UI update"
-      ],
-      "expected": [
-        "Select updates immediately (optimistic)",
-        "Hint text updates to match new visibility level",
-        "No error toast (API call succeeds)",
-        "On page reload, visibility persists"
-      ]
-    },
-    "T11_list_member_stations": {
-      "actor": "User A on Station A (after T4 join)",
-      "steps": [
-        "Use API: GET /sub-federation/federations/{fed_id}/stations"
-      ],
-      "expected": [
-        "Returns at least 2 stations (Station A as founder, Station C as member)",
-        "Each entry has station_peer_id, name, role, status"
-      ]
-    }
+    "create-and-validate": [
+      "the owner creates one single_admin Federation through the Station governance API",
+      "the resulting owner projection is active and exposes can_archive",
+      "invalid Federation identity and endpoint inputs fail with a typed result"
+    ],
+    "invite-and-cross-station-join": [
+      "station-five-arm submits a join proposal to the station-four sequencer",
+      "the accepted bootstrap ledger materializes the same Federation identity on both Stations",
+      "a repeated active join is idempotent and does not advance the ledger head"
+    ],
+    "member-and-role-projection": [
+      "both Stations converge the active station-four and station-five-arm member set",
+      "the owner and member projections preserve their distinct roles and capabilities",
+      "both Native Desktop clients render the same active Federation context"
+    ],
+    "non-owner-leave": [
+      "a non-owner Station submits leave through the sequencer governance path",
+      "the sequencer appends STATION_LEFT and both membership projections converge to left",
+      "the leaving client no longer renders the Federation as an active context"
+    ],
+    "rejoin-and-restart": [
+      "the left Station can rejoin from the authoritative ledger without replacing local history",
+      "both Stations converge the new head and active member set",
+      "a Native process restart restores the same active Federation context"
+    ],
+    "owner-delete": [
+      "a non-owner cannot archive the Federation",
+      "the active sequencer cannot leave without a handover",
+      "only the creator on the sequencer Station archives the Federation",
+      "both Stations converge archived status and ordinary clients remove the active context"
+    ],
+    "cleanup": [
+      "the lifecycle finishes archived with no reusable active membership",
+      "both clients, ports, storage roots, profile leases, and deployment leases are released"
+    ]
   },
   "negative": [
-    "Joining a federation that doesn't exist returns clear error, not 500",
-    "Joining with invalid endpoint (unreachable host) returns timeout error within 10s",
-    "Creating duplicate federation name is blocked client-side before API call",
-    "Unauthenticated requests to /sub-federation/* return 401",
-    "submit-proposal with non-existent federation_id returns 'federation not found'"
-  ],
-  "known_limitations": [
-    "friend_chat subserver not deployed — friend request from FindPeople will fail with 404",
-    "Federation token minting for ledger sync requires pre-shared peer keys — first sync may fail until keys exchanged",
-    "Single-admin policy auto-approves all joins — no pending/rejected state in v1"
+    "Relay reachability is not accepted as Federation membership",
+    "ordinary-client command and route inventories expose no create, join, leave, archive, or member-administration capability",
+    "a follower Station never appends a formal governance event directly",
+    "a stale or divergent bootstrap chain is rejected instead of overwriting local ledger history",
+    "an archived Federation never remains in the ordinary-client active context list"
   ]
 }

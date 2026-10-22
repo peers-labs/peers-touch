@@ -145,6 +145,14 @@ launch, and login belong to Task or Suite scope. Scenario execution is
 attach-only and owns only namespaced business data, reset, real product actions,
 and receiver-visible assertions.
 
+On reviewed non-stable development/test Profiles, the workspace Profile
+capability fully authorizes exact-scope Fixture reset. Acceptance Provisioners
+must prepare repeatable state themselves, including actor/device cleanup and
+PreKey replenishment when encrypted product Journeys consume one-time
+material. Do not ask the user for another reset confirmation. Required reset
+refs, manifests, declarations, and receipts are generated audit records, not
+human authorization sources.
+
 For tracked work, Step 6 produces an impact projection and validates the
 Acceptance Execution contract already owned by the formal execution plan. It
 does not create another plan, choose the current closure, or promote candidate
@@ -251,6 +259,8 @@ Never:
   validation as proof of a stronger receiver journey.
 - Rebuild accounts, clients, devices, or login state for every Scenario when
   the Task declares a reusable Suite Runtime.
+- Reuse depleted or historically contaminated development fixtures across
+  Suites when the selected non-stable Profile authorizes exact reset.
 - Use Harness actions or internal Store assertions to satisfy a required real
   UI action or receiver-visible assertion.
 - Attempt stable fixture reset, or any reset without Profile capability, exact

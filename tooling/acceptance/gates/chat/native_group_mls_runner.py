@@ -7,6 +7,7 @@ import json
 import os
 import random
 import time
+import urllib.parse
 from typing import Any, Callable
 
 from tooling.acceptance.core import (
@@ -17,6 +18,7 @@ from tooling.acceptance.core import (
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.fixtures.chat_native_actors import _bootstrap_request
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
@@ -201,6 +203,7 @@ class NativeGroupMlsGate(AcceptanceGate):
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
+        self.profile_names_to_restore: dict[str, str] = {}
         self.report.station_url = self.station_url
         self.report.runtime.update(
             {
@@ -234,6 +237,14 @@ class NativeGroupMlsGate(AcceptanceGate):
                     "error": str(error),
                 }
             )
+            for actor, session in self.clients.items():
+                try:
+                    self.save_screenshot(session, f"{actor}-failure-{name}")
+                    self.save_dom(session, f"{actor}-failure-{name}")
+                except Exception as capture_error:
+                    self.report.runtime.setdefault("failureCaptureErrors", []).append(
+                        {"actor": actor, "error": str(capture_error)}
+                    )
             raise
         self.steps.append(
             {
@@ -363,6 +374,13 @@ class NativeGroupMlsGate(AcceptanceGate):
                     client.stop()
             return {}
         cleanup_errors: list[dict[str, str]] = []
+        for actor, original_name in getattr(self, "profile_names_to_restore", {}).items():
+            try:
+                self.update_fixture_display_name(actor, original_name)
+            except Exception as error:
+                cleanup_errors.append(
+                    {"resource": f"profile:{actor}", "error": str(error)}
+                )
         for client in reversed(self.runtime_instances):
             try:
                 self.stop_authenticated_client(client)
@@ -421,6 +439,55 @@ class NativeGroupMlsGate(AcceptanceGate):
                 f"{json.dumps(cleanup, sort_keys=True)}"
             )
         return cleanup
+
+    def read_fixture_profile(self, actor: str) -> dict[str, Any]:
+        result = self.clients[actor].invoke_app_result("profile_get", timeout=30)
+        data = result.get("data") if isinstance(result, dict) else None
+        if not result.get("ok") or not isinstance(data, dict):
+            raise GateError(f"{actor} fixture Profile read failed")
+        profile = json.loads(str(data.get("status") or "{}"))
+        if not isinstance(profile, dict) or int(profile.get("profile_revision") or 0) <= 0:
+            raise GateError(f"{actor} fixture Profile revision is missing")
+        return profile
+
+    def update_fixture_display_name(self, actor: str, name: str) -> None:
+        profile = self.read_fixture_profile(actor)
+        result = self.clients[actor].invoke_app_result(
+            "profile_update",
+            {"input": {
+                "display_name": name,
+                "observed_revision": int(profile["profile_revision"]),
+            }},
+            timeout=30,
+        )
+        if not result.get("ok"):
+            raise GateError(f"{actor} fixture Profile update failed")
+        updated = self.read_fixture_profile(actor)
+        if updated.get("display_name") != name:
+            raise GateError(f"{actor} fixture Profile name did not converge")
+        station_url = str(runtime_station_service(self.manifest, actor)["endpoint"])
+        query = urllib.parse.urlencode({"actor_ptid": self.ptids[actor]})
+        _bootstrap_request(
+            station_url,
+            f"/sub-bootstrap/locator/publish?{query}",
+            method="POST",
+        )
+
+    def prepare_same_name_fixture(self) -> None:
+        alice = self.read_fixture_profile("alice")
+        charlie = self.read_fixture_profile("charlie")
+        name = str(alice.get("display_name") or "").strip()
+        if not name:
+            raise GateError("Alice fixture display name is missing")
+        self.profile_names_to_restore["charlie"] = str(charlie.get("display_name") or "")
+        self.update_fixture_display_name("charlie", name)
+        for actor in ACTORS:
+            peer = self.ptids["charlie"] if actor != "charlie" else self.ptids["alice"]
+            async_harness(
+                self.clients[actor],
+                "refreshOnboardingProjection",
+                {"peerPtid": peer},
+            )
 
     def open_create_group_modal(self, actor: str) -> TauriSession:
         client = self.clients[actor]
@@ -520,6 +587,9 @@ class NativeGroupMlsGate(AcceptanceGate):
                 SELECTORS["create_group"],
                 SELECTORS["create_group_contact"],
             )
+            self.report.runtime.setdefault("createGroupIdentityObservations", {})[
+                actor
+            ] = value
             if not isinstance(value, dict) or value.get("state") != "ready":
                 return None
             rows = value.get("rows")
@@ -1348,6 +1418,7 @@ class NativeGroupMlsGate(AcceptanceGate):
                 and len({client.port for client in self.clients.values()}) == 3
                 and len({client.storage_root for client in self.clients.values()}) == 3,
             )
+            self.step("fixture.same_name", self.prepare_same_name_fixture)
             friendship = self.step(
                 "friendship.default_projection",
                 self.verify_default_friend_projection,

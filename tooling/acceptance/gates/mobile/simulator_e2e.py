@@ -61,6 +61,7 @@ REQUIRED_HARNESS_ACTIONS = (
 IOS_NATIVE_PREFLIGHT_TIMEOUT_SECONDS = 15.0
 IOS_WEBVIEW_PREFLIGHT_TIMEOUT_SECONDS = 30.0
 IOS_WEBVIEW_CONNECT_ATTEMPT_TIMEOUT_MS = 5000
+SIMULATOR_APPIUM_IDLE_TIMEOUT_SECONDS = 600
 MAX_APPIUM_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_APPIUM_ERROR_RESPONSE_BYTES = 1024 * 1024
 MAX_MOBILE_PAGE_SOURCE_BYTES = 32 * 1024 * 1024
@@ -402,7 +403,7 @@ class SimulatorAppiumSession:
             "appium:udid": self.device.identifier,
             "appium:app": str(self.build.artifact),
             "appium:autoWebview": False,
-            "appium:newCommandTimeout": 180,
+            "appium:newCommandTimeout": SIMULATOR_APPIUM_IDLE_TIMEOUT_SECONDS,
             "appium:noReset": True,
             "appium:fullReset": False,
         }

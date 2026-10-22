@@ -1583,10 +1583,6 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         requested_input_mode = os.environ.get(
             "PT_ACCEPTANCE_DESKTOP_INPUT_MODE"
         )
-        if not requested_input_mode and not self._use_make:
-            requested_input_mode = (
-                NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value
-            )
         self._native_adapter = MacOSNativeDesktopAdapter(
             admit_local_native_input_mode(
                 requested_input_mode,

@@ -30,6 +30,7 @@ from tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e impor
     VISUAL_REVIEW_GATE_ID,
     SimulatorWholeProductUsabilityGate,
     _is_proven_manifest_result,
+    _validate_interaction_artifact,
     _validate_lifecycle_readiness,
     audit_visible_text,
     expected_result,
@@ -56,7 +57,6 @@ REQUIRED_SURFACE_IDS = {
     "shell": frozenset(
         """
         shell.chat-tab shell.moments-tab shell.contacts-tab shell.settings-tab
-        shell.degraded-module-notice
         """.split()
     ),
     "recovery": frozenset(
@@ -64,8 +64,7 @@ REQUIRED_SURFACE_IDS = {
         recovery.session-valid-restore recovery.session-revoked
         recovery.session-mismatch recovery.draft-restore
         recovery.draft-restore-failed recovery.capacity recovery.command
-        recovery.deferred-capability recovery.event-overflow
-        recovery.projection-stale recovery.write-revocation recovery.scope-exit
+        recovery.write-revocation recovery.scope-exit
         recovery.reset-incomplete recovery.device-local
         recovery.legacy-reliability recovery.legacy-read-only
         """.split()
@@ -380,6 +379,7 @@ def valid_surface_evidence(
                 ],
                 "occlusions": [],
                 "blockingSurfaces": [],
+                "stationLayout": {},
             }
             cells[cell_id] = {
                 "status": "PASS",
@@ -648,7 +648,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertEqual(result["orientation"], "landscape")
         self.assertGreater(result["width"], result["height"])
 
-    def test_shell_driver_uses_navigation_and_stable_degraded_fixture(self) -> None:
+    def test_shell_driver_uses_product_navigation(self) -> None:
         inventory = load_surface_inventory()
         entries = {
             entry["id"]: entry
@@ -666,17 +666,8 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             session.clicked,
             ['[data-route-id="tab:contacts"]'],
         )
-        degraded = gate._enter_surface(
-            session,
-            entries["shell.degraded-module-notice"],
-        )
-        self.assertEqual(degraded["kind"], "system")
-        self.assertEqual(
-            session.recovery_surface_id,
-            "recovery.deferred-capability",
-        )
-        self.assertEqual(session.route_id, "tab:chat")
-        self.assertEqual(session.navigation_actions, ["tab:chat"])
+        self.assertEqual(session.route_id, "tab:contacts")
+        self.assertEqual(session.navigation_actions, [])
         self.assertEqual(session.lifecycle_actions, [])
 
     def test_entry_driver_projects_states_and_uses_real_station_controls(self) -> None:
@@ -714,7 +705,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             session.clicked,
         )
 
-    def test_recovery_driver_projects_each_declared_surface(self) -> None:
+    def test_recovery_driver_projects_declared_user_surface(self) -> None:
         inventory = load_surface_inventory()
         entries = {
             entry["id"]: entry
@@ -727,14 +718,14 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
 
         action = gate._enter_recovery_surface(
             session,
-            entries["recovery.projection-stale"],
+            entries["recovery.write-revocation"],
         )
 
         self.assertEqual(action["kind"], "system")
-        self.assertEqual(action["target"], "fixture-stale-projection")
+        self.assertEqual(action["target"], "fixture-write-revocation")
         self.assertEqual(
             session.recovery_surface_id,
-            "recovery.projection-stale",
+            "recovery.write-revocation",
         )
 
     def test_chat_driver_projects_declared_surfaces_and_focuses_composer(
@@ -940,8 +931,84 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             SURFACE_AUDIT_SCRIPT,
         )
         self.assertIn("stationLayout:", SURFACE_AUDIT_SCRIPT)
+        self.assertIn("launchCard: rectFor('.launch-panel')", SURFACE_AUDIT_SCRIPT)
         self.assertIn("placeholder: stationPlaceholder", SURFACE_AUDIT_SCRIPT)
         self.assertIn("stationStatusClasses:", SURFACE_AUDIT_SCRIPT)
+        self.assertIn(
+            "document.querySelector('.launch-brand-logo')",
+            SURFACE_AUDIT_SCRIPT,
+        )
+        self.assertNotIn(
+            "document.querySelector('.launch-hero-logo')",
+            SURFACE_AUDIT_SCRIPT,
+        )
+
+    def test_interaction_artifact_requires_captured_station_layout(self) -> None:
+        inventory = load_surface_inventory()
+        entry = selected_surface_entries(inventory, "shell")[0]
+        cell_id = "portrait-normal"
+        viewport = {
+            "width": 393,
+            "height": 852,
+            "orientation": "portrait",
+            "textSize": "normal",
+        }
+        payload = {
+            "artifactKind": "mobile-surface-interaction-trace",
+            "gateId": GATE_ID,
+            "runId": "run-1",
+            "surfaceId": entry["id"],
+            "cellId": cell_id,
+            "entryAction": entry["entryAction"],
+            "surfaceSelector": entry["surfaceSelector"],
+            "expectedResult": expected_result(inventory, entry),
+            "viewport": viewport,
+            "surfaceElement": {
+                "selector": entry["surfaceSelector"],
+                "width": 393,
+                "height": 852,
+                "visible": True,
+                "inViewport": True,
+            },
+            "uiAction": {
+                "kind": "native-touch",
+                "target": entry["entryAction"],
+                "performed": True,
+            },
+            "controls": [{
+                "label": "Continue",
+                "width": 44,
+                "height": 44,
+                "visible": True,
+                "inViewport": True,
+            }],
+            "occlusions": [],
+            "blockingSurfaces": [],
+            "stationLayout": {},
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            artifact = Path(temp_dir) / "interaction.json"
+            artifact.write_text(json.dumps(payload), encoding="utf-8")
+            _validate_interaction_artifact(
+                artifact,
+                inventory=inventory,
+                entry=entry,
+                cell_id=cell_id,
+                viewport=viewport,
+                run_id="run-1",
+            )
+
+            del payload["stationLayout"]
+            artifact.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(GateError, "invalid shape"):
+                _validate_interaction_artifact(
+                    artifact,
+                    inventory=inventory,
+                    entry=entry,
+                    cell_id=cell_id,
+                    viewport=viewport,
+                    run_id="run-1",
+                )
 
     def test_station_entry_layout_requires_human_usable_geometry_and_states(
         self,
@@ -972,6 +1039,11 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         validate_station_entry_layout(
             "entry.station-address",
             observation,
+            viewport,
+        )
+        validate_station_entry_layout(
+            "entry.station-address",
+            {"stationLayout": {**layout, "helper": None}},
             viewport,
         )
         validate_station_entry_layout(
@@ -1047,10 +1119,6 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         shell = (
             REPO_ROOT / "apps/mobile/src/components/MobileShell.tsx"
         ).read_text(encoding="utf-8")
-        notice = (
-            REPO_ROOT
-            / "apps/mobile/src/components/recovery/DeferredCapabilityNotice.tsx"
-        ).read_text(encoding="utf-8")
         settings = (
             REPO_ROOT / "apps/mobile/src/pages/SettingsPage.tsx"
         ).read_text(encoding="utf-8")
@@ -1063,14 +1131,10 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             shell,
         )
         self.assertIn("data-route-id={descriptor.routeId}", shell)
-        self.assertIn(
-            'data-product-surface="shell.degraded-module-notice"',
-            notice,
-        )
         self.assertNotIn("ptidDisplay", settings)
         self.assertIn("settings-profile-subtitle", settings)
         self.assertIn(
-            "renderedLaunchState === 'shell' || renderedLaunchState === 'resume'",
+            "renderedLaunchState === 'background'",
             app,
         )
 
@@ -1334,7 +1398,6 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
                 "tab:chat",
                 "tab:chat",
                 "tab:chat",
-                "tab:chat",
                 "tab:contacts",
                 "tab:moments",
                 "tab:settings",
@@ -1349,36 +1412,28 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
 
     def test_landscape_moments_composer_preserves_top_safe_area(self) -> None:
-        styles = (
-            REPO_ROOT
-            / "apps"
-            / "mobile"
-            / "src"
-            / "styles.css"
+        composer_styles = (
+            REPO_ROOT / "apps/mobile/src/pages/moments/MomentComposer.css"
         ).read_text(encoding="utf-8")
-        landscape_rule = re.search(
-            r"@media \(orientation: landscape\) \{\s*"
-            r"\.moments-composer-backdrop \.moments-composer-card,\s*"
-            r"\.moments-fixture-composer \{(?P<body>.*?)\n  \}",
-            styles,
-            flags=re.DOTALL,
-        )
+        fixture_styles = (
+            REPO_ROOT / "apps/mobile/src/pages/moments/Moments.css"
+        ).read_text(encoding="utf-8")
 
-        self.assertIsNotNone(landscape_rule)
         self.assertIn(
             "max-height: calc(100dvh - var(--safe-area-top));",
-            landscape_rule.group("body"),
+            composer_styles,
         )
-        composer_header_rule = re.search(
-            r"\.moments-composer-header,\s*"
-            r"\.moments-fixture-sheet-header \{(?P<body>.*?)\n\}",
-            styles,
-            flags=re.DOTALL,
-        )
-        self.assertIsNotNone(composer_header_rule)
         self.assertIn(
-            "position: sticky;",
-            composer_header_rule.group("body"),
+            "max-height: calc(100dvh - var(--safe-area-top));",
+            fixture_styles,
+        )
+        self.assertRegex(
+            composer_styles,
+            r"\.moment-composer-header\s*\{[^}]*position:\s*sticky;",
+        )
+        self.assertRegex(
+            fixture_styles,
+            r"\.moments-fixture-sheet-header\s*\{[^}]*position:\s*sticky;",
         )
 
     def test_all_surface_report_names_final_frontier_scope(self) -> None:

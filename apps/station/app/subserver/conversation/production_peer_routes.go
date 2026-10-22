@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
@@ -78,7 +79,25 @@ func (s *subServer) handleFederatedCommandPrepare(
 	if err := productionDecodePeerRequest(request, input); err != nil {
 		return err
 	}
-	claims := httpadapter.GetVerifiedClaims(ctx)
+	preparation, err := s.prepareFederatedCommand(
+		ctx,
+		httpadapter.GetVerifiedClaims(ctx),
+		input,
+	)
+	if err != nil {
+		return err
+	}
+	return productionWritePeerResponse(response, preparation)
+}
+
+func (s *subServer) prepareFederatedCommand(
+	ctx context.Context,
+	claims *authfed.VerifiedClaims,
+	input *chatmodel.PrepareFederatedConversationCommandRequest,
+) (*chatmodel.PrepareFederatedConversationCommandResponse, error) {
+	if input.GetMembershipRequest() != nil {
+		return s.prepareFederatedMembership(ctx, claims, input)
+	}
 	nested := input.GetRequest()
 	if claims == nil ||
 		nested == nil ||
@@ -96,7 +115,7 @@ func (s *subServer) handleFederatedCommandPrepare(
 			claims.Issuer ||
 		claims.Custom[federationruntime.ClaimTargetStationPeerID] !=
 			claims.Audience {
-		return server.Forbidden(
+		return nil, server.Forbidden(
 			"Federation claims do not match the Conversation preparation request",
 		)
 	}
@@ -104,18 +123,18 @@ func (s *subServer) handleFederatedCommandPrepare(
 		nested.GetConversationId(),
 	)
 	if err != nil {
-		return mapProductionConversationError(ctx, err)
+		return nil, mapProductionConversationError(ctx, err)
 	}
 	sender, err := valueobject.NewEndpoint(
 		nested.GetSender().GetActor().GetPtid(),
 		nested.GetSender().GetDeviceId(),
 	)
 	if err != nil {
-		return mapProductionConversationError(ctx, err)
+		return nil, mapProductionConversationError(ctx, err)
 	}
 	sourceHomeStation, err := valueobject.NewStationID(claims.Issuer)
 	if err != nil {
-		return mapProductionConversationError(ctx, err)
+		return nil, mapProductionConversationError(ctx, err)
 	}
 	verifiedRoutes, err := s.composition.productionCommandRoutes(
 		ctx,
@@ -124,7 +143,7 @@ func (s *subServer) handleFederatedCommandPrepare(
 		sender.Actor,
 	)
 	if err != nil {
-		return mapProductionConversationError(ctx, err)
+		return nil, mapProductionConversationError(ctx, err)
 	}
 	prepareRequest, err := productionPrepareCommandRequest(
 		conversationID,
@@ -134,24 +153,81 @@ func (s *subServer) handleFederatedCommandPrepare(
 		nested.GetCommandKind(),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	preparation, err := s.composition.CommandService.PrepareCommand(
 		ctx,
 		prepareRequest,
 	)
 	if err != nil {
-		return mapProductionConversationError(ctx, err)
+		return nil, mapProductionConversationError(ctx, err)
 	}
 
-	return productionWritePeerResponse(
-		response,
-		&chatmodel.PrepareFederatedConversationCommandResponse{
-			Preparation: &chatmodel.PrepareFederatedConversationCommandResponse_Plan{
-				Plan: productionCommandPreparation(conversationID, preparation),
-			},
+	return &chatmodel.PrepareFederatedConversationCommandResponse{
+		Preparation: &chatmodel.PrepareFederatedConversationCommandResponse_Plan{
+			Plan: productionCommandPreparation(conversationID, preparation),
 		},
+	}, nil
+}
+
+func (s *subServer) prepareFederatedMembership(
+	ctx context.Context,
+	claims *authfed.VerifiedClaims,
+	input *chatmodel.PrepareFederatedConversationCommandRequest,
+) (*chatmodel.PrepareFederatedConversationCommandResponse, error) {
+	nested := input.GetMembershipRequest()
+	if claims == nil ||
+		nested == nil ||
+		nested.GetSender() == nil ||
+		nested.GetSender().GetActor() == nil ||
+		input.GetSourceHomeStationPeerId() != claims.Issuer ||
+		claims.Audience != string(s.localStation) ||
+		claims.Subject != nested.GetSender().GetActor().GetPtid() ||
+		claims.Custom[federationruntime.ClaimConversationID] != nested.GetConversationId() ||
+		claims.Custom[federationruntime.ClaimActorPTID] != nested.GetSender().GetActor().GetPtid() ||
+		claims.Custom[federationruntime.ClaimDeviceID] != nested.GetSender().GetDeviceId() ||
+		claims.Custom[federationruntime.ClaimSourceStationPeerID] != claims.Issuer ||
+		claims.Custom[federationruntime.ClaimTargetStationPeerID] != claims.Audience {
+		return nil, server.Forbidden(
+			"Federation claims do not match the Conversation membership preparation request",
+		)
+	}
+	conversationID, err := valueobject.NewConversationID(nested.GetConversationId())
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	requester, err := valueobject.NewEndpoint(
+		nested.GetSender().GetActor().GetPtid(),
+		nested.GetSender().GetDeviceId(),
 	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	view, err := s.composition.QueryService.Get(ctx, conversationID, requester.Actor)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	if view.Source != query.SourceAuthority ||
+		view.Conversation.AuthorityStation != s.localStation ||
+		claims.Custom[federationruntime.ClaimFederationID] != string(view.Conversation.FederationID) ||
+		claims.Custom[federationruntime.ClaimAuthorityEpoch] != strconv.FormatInt(
+			int64(view.Conversation.AuthorityEpoch), 10,
+		) {
+		return nil, server.Forbidden(
+			"Federation membership preparation does not match the Conversation authority",
+		)
+	}
+	plan, err := s.prepareMembershipPlan(
+		ctx, nested, requester, valueobject.StationID(claims.Issuer),
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	return &chatmodel.PrepareFederatedConversationCommandResponse{
+		Preparation: &chatmodel.PrepareFederatedConversationCommandResponse_MembershipPlan{
+			MembershipPlan: plan,
+		},
+	}, nil
 }
 
 func (s *subServer) handleFederatedLeaveIntentSubmit(

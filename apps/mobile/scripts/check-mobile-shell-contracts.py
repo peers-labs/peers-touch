@@ -19,7 +19,9 @@ EXPECTED_CAPABILITIES = {
     "mobile-runtime-lifecycle",
     "mobile-command-recovery",
     "mobile-social-product",
+    "mobile-social-cross-platform-interoperability",
     "mobile-native-quality",
+    "release-mobile-ios-desktop-operation-analysis",
 }
 EXPECTED_FEATURES = {
     "mobile-station-trust",

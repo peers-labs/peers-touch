@@ -13,8 +13,7 @@ import {
 //   - Always the SAME component, regardless of feed / detail /
 //     circle surfaces.
 //   - Never over-sized; typography stays in the 12–13px band.
-//   - Station domain truncates with ellipsis; long handles get a
-//     tooltip, not a line-break.
+//   - Friendly Station labels truncate with ellipsis and use a tooltip.
 //   - Icon + label per segment; the middle dot separator is the
 //     only chrome.
 //
@@ -30,7 +29,7 @@ const { Text } = Typography;
 export interface SocialTrustMetaProps {
   source?: {
     kind?: 'local' | 'remote' | 'unknown';
-    stationDomain?: string;
+    stationLabel?: string;
   };
   reason?: {
     label?: string;
@@ -89,13 +88,16 @@ export function SocialTrustMeta({ source, reason, audience, children }: SocialTr
   const segments: ReactNode[] = [];
 
   if (source) {
-    const label = source.stationDomain
+    const stationLabel = source.stationLabel?.trim() ?? '';
+    const label = stationLabel
       ? source.kind === 'remote'
-        ? t('moments.source.station', { station: source.stationDomain })
-        : source.stationDomain
+        ? t('moments.source.station', { station: stationLabel })
+        : stationLabel
       : source.kind === 'unknown'
         ? t('moments.source.unresolved')
-        : t('moments.source.local');
+        : source.kind === 'remote'
+          ? t('moments.source.remote')
+          : t('moments.source.local');
     segments.push(
       <span
         key="source"
@@ -108,7 +110,7 @@ export function SocialTrustMeta({ source, reason, audience, children }: SocialTr
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}
-        title={source.stationDomain}
+        title={stationLabel || undefined}
       >
         <Globe size={11} color={token.colorTextTertiary} />
         <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>{label}</Text>
@@ -154,6 +156,7 @@ export function SocialTrustMeta({ source, reason, audience, children }: SocialTr
 
   return (
     <div
+      data-acceptance-id="social-trust-meta"
       style={{
         display: 'flex',
         alignItems: 'center',

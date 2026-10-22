@@ -61,15 +61,29 @@ export async function configureAcceptanceStation(
   }
   const expectedRouteOrigin = normalizeStationUrl(probed.canonical_origin);
   const discoveredEntry = probed.entries[0];
+  const expectedRouteType = probed.role === 'direct_station'
+    ? 'direct'
+    : probed.role === 'relay'
+      ? 'relay'
+      : null;
   const availableRoutes = discoveredEntry?.routes.filter(
     (route) => route.health === 'available',
   ) ?? [];
+  const roleRoutes = availableRoutes.filter(
+    (route) => route.route_type === expectedRouteType,
+  );
   const discoveredRoute = freshestRoute(
-    availableRoutes.filter(
-      (route) => normalizeStationUrl(route.endpoint_origin) === expectedRouteOrigin,
+    roleRoutes.filter(
+      (route) =>
+        normalizeStationUrl(route.endpoint_origin) === expectedRouteOrigin,
     ),
-  ) ?? (availableRoutes.length === 1 ? availableRoutes[0] : undefined);
-  if (!discoveredEntry || !discoveredRoute || !expectedRouteOrigin) {
+  ) ?? (roleRoutes.length === 1 ? roleRoutes[0] : undefined);
+  if (
+    !discoveredEntry
+    || !discoveredRoute
+    || !expectedRouteOrigin
+    || !expectedRouteType
+  ) {
     throw new Error('acceptance.stationAccess.stationRouteRequired');
   }
   const selected = await stationApi.stationSetActive(

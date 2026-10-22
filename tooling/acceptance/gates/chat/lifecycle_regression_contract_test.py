@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from tooling.acceptance.core import REPO_ROOT
@@ -77,6 +78,32 @@ REGRESSION_OWNERS = {
 
 
 class LifecycleRegressionContractTest(unittest.TestCase):
+    def test_release_lifecycle_gates_use_canonical_worktree_runtime(self) -> None:
+        gates = json.loads(
+            (REPO_ROOT / "tooling/acceptance/gates.yaml").read_text(
+                encoding="utf-8"
+            )
+        )["gates"]
+        for gate_id in (
+            "chat-lifecycle-onboarding-e2e",
+            "chat-lifecycle-direct-e2e",
+            "chat-lifecycle-rich-voice-e2e",
+        ):
+            with self.subTest(gate_id=gate_id):
+                gate = gates[gate_id]
+                self.assertEqual(
+                    gate["environment"],
+                    "native-tauri-embedded-webdriver",
+                )
+                self.assertEqual(
+                    gate["provisioner"],
+                    "native-tauri-embedded-webdriver",
+                )
+                self.assertEqual(
+                    gate["requiredRuntimeCells"],
+                    ["desktop-macos-native"],
+                )
+
     def test_direct_presence_label_follows_station_snapshot_truth(self) -> None:
         actor_ptid = "ptid:example:alice"
 

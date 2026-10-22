@@ -270,16 +270,17 @@ func (x *StationNodeAuthorization) GetRootSignature() []byte {
 // StationIdentityStatement is the deterministic challenge-bound payload signed
 // by the authorized node key. Capabilities are sorted by UTF-8 bytes.
 type StationIdentityStatement struct {
-	state                   protoimpl.MessageState `protogen:"open.v1"`
-	Challenge               []byte                 `protobuf:"bytes,1,opt,name=challenge,proto3" json:"challenge,omitempty"`
-	StationPeerId           string                 `protobuf:"bytes,2,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
-	CanonicalOrigin         string                 `protobuf:"bytes,3,opt,name=canonical_origin,json=canonicalOrigin,proto3" json:"canonical_origin,omitempty"`
-	Capabilities            []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	IssuedAtUnixMs          int64                  `protobuf:"varint,5,opt,name=issued_at_unix_ms,json=issuedAtUnixMs,proto3" json:"issued_at_unix_ms,omitempty"`
-	ExpiresAtUnixMs         int64                  `protobuf:"varint,6,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
-	NodeAuthorizationDigest []byte                 `protobuf:"bytes,7,opt,name=node_authorization_digest,json=nodeAuthorizationDigest,proto3" json:"node_authorization_digest,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	state                      protoimpl.MessageState `protogen:"open.v1"`
+	Challenge                  []byte                 `protobuf:"bytes,1,opt,name=challenge,proto3" json:"challenge,omitempty"`
+	StationPeerId              string                 `protobuf:"bytes,2,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	CanonicalOrigin            string                 `protobuf:"bytes,3,opt,name=canonical_origin,json=canonicalOrigin,proto3" json:"canonical_origin,omitempty"`
+	Capabilities               []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	IssuedAtUnixMs             int64                  `protobuf:"varint,5,opt,name=issued_at_unix_ms,json=issuedAtUnixMs,proto3" json:"issued_at_unix_ms,omitempty"`
+	ExpiresAtUnixMs            int64                  `protobuf:"varint,6,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	NodeAuthorizationDigest    []byte                 `protobuf:"bytes,7,opt,name=node_authorization_digest,json=nodeAuthorizationDigest,proto3" json:"node_authorization_digest,omitempty"`
+	FederationSigningPublicKey []byte                 `protobuf:"bytes,8,opt,name=federation_signing_public_key,json=federationSigningPublicKey,proto3" json:"federation_signing_public_key,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *StationIdentityStatement) Reset() {
@@ -357,6 +358,13 @@ func (x *StationIdentityStatement) GetExpiresAtUnixMs() int64 {
 func (x *StationIdentityStatement) GetNodeAuthorizationDigest() []byte {
 	if x != nil {
 		return x.NodeAuthorizationDigest
+	}
+	return nil
+}
+
+func (x *StationIdentityStatement) GetFederationSigningPublicKey() []byte {
+	if x != nil {
+		return x.FederationSigningPublicKey
 	}
 	return nil
 }
@@ -442,7 +450,7 @@ const file_domain_peer_station_identity_proto_rawDesc = "" +
 	"\x18StationNodeAuthorization\x12'\n" +
 	"\x0fstatement_bytes\x18\x01 \x01(\fR\x0estatementBytes\x125\n" +
 	"\x17station_root_public_key\x18\x02 \x01(\fR\x14stationRootPublicKey\x12%\n" +
-	"\x0eroot_signature\x18\x03 \x01(\fR\rrootSignature\"\xc3\x02\n" +
+	"\x0eroot_signature\x18\x03 \x01(\fR\rrootSignature\"\x86\x03\n" +
 	"\x18StationIdentityStatement\x12\x1c\n" +
 	"\tchallenge\x18\x01 \x01(\fR\tchallenge\x12&\n" +
 	"\x0fstation_peer_id\x18\x02 \x01(\tR\rstationPeerId\x12)\n" +
@@ -450,7 +458,8 @@ const file_domain_peer_station_identity_proto_rawDesc = "" +
 	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\x12)\n" +
 	"\x11issued_at_unix_ms\x18\x05 \x01(\x03R\x0eissuedAtUnixMs\x12+\n" +
 	"\x12expires_at_unix_ms\x18\x06 \x01(\x03R\x0fexpiresAtUnixMs\x12:\n" +
-	"\x19node_authorization_digest\x18\a \x01(\fR\x17nodeAuthorizationDigest\"\xd9\x01\n" +
+	"\x19node_authorization_digest\x18\a \x01(\fR\x17nodeAuthorizationDigest\x12A\n" +
+	"\x1dfederation_signing_public_key\x18\b \x01(\fR\x1afederationSigningPublicKey\"\xd9\x01\n" +
 	"\x17StationIdentityResponse\x12'\n" +
 	"\x0fstatement_bytes\x18\x01 \x01(\fR\x0estatementBytes\x12%\n" +
 	"\x0enode_signature\x18\x04 \x01(\fR\rnodeSignature\x12b\n" +

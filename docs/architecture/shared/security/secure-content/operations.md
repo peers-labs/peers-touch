@@ -115,6 +115,36 @@ Station, revocation, or historical-recovery handles return
 `FIXTURE_CAPABILITY_UNAVAILABLE`. A scenario cannot repair that blocker by
 creating state or mutating owner persistence directly.
 
+CSS-09 prepares one namespaced Federation through the existing Station owner
+on each reviewed disposable Station. The owner uses the canonical governance
+API for creation and joining, retains its access material only in memory, and
+registers archival cleanup before attempting the remote join. Alice and Bob
+consume that explicit Federation through their ordinary client projections;
+their Social sessions never create, join, or administer it. Fixture archival
+must complete before the Suite publishes its result.
+
+iOS Social parity uses the retained preset Actor Identity Fixture across fresh
+Simulator installations. The parent owns `mobile.social.actor-identity`, verifies
+the Appium session belongs to the provisioned Simulator, resolves the selected
+actor against Station identity authority, and invokes the existing Native
+identity preparation action before login. The child receives only a preparation
+acknowledgement. Alice, Bob and Eve account transitions use the same owner;
+missing or mismatched retained material fails closed without replacing Station
+identity. A reset of existing identity requires separate explicit authorization
+and an account-scoped maintenance operation.
+
+Mobile post-login runtime admission must inspect the lifecycle owner's runtime
+availability as well as the authenticated scope. A `failed` dependency is an
+immediate functional failure; waiting for Social activation must not replace
+that failure with a generic convergence timeout. Pending readiness and closed
+write admission remain bounded waits.
+
+Before client cleanup, the Social Gate retains a redacted lifecycle diagnostic
+and the public Social activation/ingress state in Evidence Store. Capture
+failure is supporting diagnostic failure and must not replace the primary
+functional error. Actor/session identifiers, friend requests and stream
+cursors are excluded from this diagnostic projection.
+
 ## 3. Object State Machine
 
 ```text
@@ -524,6 +554,14 @@ from the attestation's canonical profile and deployment environment through
 the reviewed remote deploy transport. Profile-name, endpoint, caller-supplied
 command, and environment-variable command inference are forbidden. The
 read-only operation cannot carry or inherit a destructive reset declaration.
+
+Native Desktop clients consume the reviewed Profile's canonical
+`PT_STATION_URL` for Station discovery, route verification, and Session
+binding. A maintenance SSH tunnel is only an owner-side transport for
+attestation, Fixture setup, and diagnostics. Its loopback endpoint must never
+replace the signed Station origin supplied to a client. Endpoint discovery
+continues to reject any request origin that differs from the signed canonical
+origin.
 
 ## 12. Operational Evidence
 

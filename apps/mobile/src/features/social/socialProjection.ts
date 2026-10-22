@@ -21,6 +21,7 @@ import type {
   SocialConversation,
   SocialNotification,
   TypingEntry,
+  PeerProfile,
 } from './socialTypes';
 
 const FRIEND_REQUEST_STATUS_PENDING = 1;
@@ -38,32 +39,23 @@ export interface SocialContact {
 
 export function actorDisplayName(
   displayName: string | undefined,
-  actorPtid: string,
+  _actorPtid: string,
 ): string {
   const candidate = displayName?.trim() ?? '';
-  if (candidate && !candidate.startsWith('ptid:')) return candidate;
+  if (candidate
+    && !/^(null|undefined)$/i.test(candidate)
+    && !/^(ptid:|did:|https?:\/\/)/i.test(candidate)
+    && !/^@?\S+@\S+$/.test(candidate)
+  ) return candidate;
 
-  const parts = actorPtid.split(':').filter(Boolean);
-  const handle = parts[0] === 'ptid' && parts[2] === 'actor'
-    ? parts.at(-2) ?? ''
-    : parts.length === 2 && parts[0] === 'ptid'
-      ? parts[1]
-      : '';
-  if (handle && !/^[a-f0-9]{32,}$/i.test(handle)) {
-    return `${handle.slice(0, 1).toUpperCase()}${handle.slice(1)}`;
-  }
-
-  const fallback = candidate || actorPtid.trim();
-  if (!fallback) return '';
-  return fallback.length > 22
-    ? `${fallback.slice(0, 10)}...${fallback.slice(-6)}`
-    : fallback;
+  return '';
 }
 
 export function projectAcceptedContacts(
   requests: readonly FriendRequest[],
   currentUserPtid: string | null,
   peerOnline: Readonly<Record<string, boolean>>,
+  peerProfiles: Readonly<Record<string, PeerProfile | null>> = {},
 ): SocialContact[] {
   if (!currentUserPtid) return [];
   const contacts = new Map<string, SocialContact>();
@@ -74,16 +66,18 @@ export function projectAcceptedContacts(
     const peerPtid: string = outgoing ? request.receiverPtid : request.senderPtid;
     if (!peerPtid || peerPtid === currentUserPtid) continue;
     const existing = contacts.get(peerPtid);
+    const profile = peerProfiles[peerPtid];
     const federationIds = new Set(existing?.federationIds);
     if (request.federationId.trim()) federationIds.add(request.federationId);
     contacts.set(peerPtid, {
       peerPtid,
       peerName: actorDisplayName(
-        (outgoing ? request.receiverDisplayName : request.senderDisplayName)
+        profile?.displayName || profile?.username
+          || (outgoing ? request.receiverDisplayName : request.senderDisplayName)
           || existing?.peerName,
         peerPtid,
       ),
-      peerAvatar: (outgoing ? request.receiverAvatar : request.senderAvatar)
+      peerAvatar: profile?.avatar || (outgoing ? request.receiverAvatar : request.senderAvatar)
         || existing?.peerAvatar || '',
       peerOnline: peerOnline[peerPtid] ?? false,
       federationIds: [...federationIds],
@@ -96,15 +90,18 @@ export function projectConversations(input: {
   sessions: FriendChatSession[];
   currentUserPtid: string | null;
   peerOnline: Record<string, boolean>;
+  peerProfiles?: Readonly<Record<string, PeerProfile | null>>;
 }): SocialConversation[] {
   return input.sessions
     .map((session) => {
       const peerPtid = peerPtidFromSession(session, input.currentUserPtid);
+      const profile = input.peerProfiles?.[peerPtid];
       return {
         session,
         peerPtid,
-        peerName: peerNameFromSession(session, input.currentUserPtid),
-        peerAvatar: peerAvatarFromSession(session, input.currentUserPtid),
+        peerName: actorDisplayName(profile?.displayName || profile?.username, peerPtid)
+          || peerNameFromSession(session, input.currentUserPtid),
+        peerAvatar: profile?.avatar || peerAvatarFromSession(session, input.currentUserPtid),
         peerOnline: input.peerOnline[peerPtid] ?? false,
         unread: unreadFromSession(session, input.currentUserPtid),
         lastMessage: session.lastMessage,

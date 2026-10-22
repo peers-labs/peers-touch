@@ -382,6 +382,7 @@ export function MomentComposer({
   // Draft management
   const {
     hasDraft,
+    draftPersisted,
     saveDraft,
     persistDraftNow,
     discardDraft,
@@ -879,6 +880,7 @@ export function MomentComposer({
         className="moments-bottom-sheet moments-composer-card moment-composer-surface"
         data-acceptance-id="social-composer"
         data-audience-choice={audienceChoice}
+        data-draft-persisted={draftPersisted}
         role="dialog"
         aria-modal="true"
         aria-label={t('mobile.moments.newPost')}

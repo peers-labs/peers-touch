@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -27,6 +28,9 @@ ENVIRONMENT_ID = "mobile-station-lifecycle-simulator"
 IOS_CLIENT = "sim-ios"
 PEER_IOS_CLIENT = "sim-ios-peer"
 PRIMARY_BINDING = "station-primary"
+POLL_INTERVAL_SECONDS = 0.25
+WRITE_ADMISSION_STABLE_SECONDS = 1.25
+WRITE_ADMISSION_TIMEOUT_SECONDS = 60.0
 PROFILE_FIELDS = (
     "displayName",
     "note",
@@ -41,6 +45,11 @@ OPTIONAL_DIAGNOSTIC_SCOPE = (
     "physical Keychain or AndroidKeyStore characteristics",
     "VoiceOver or TalkBack traversal",
     "OEM scheduler and pinned-hardware performance",
+)
+PROVEN_SCOPE = (
+    "source-bound same-account isolated iOS Simulators",
+    "Profile and Notification owner readback on the second simulator",
+    "device-setting isolation and iOS restart persistence",
 )
 
 
@@ -136,6 +145,9 @@ class SimulatorSettingsGate(AcceptanceGate):
                     "status": status,
                     "completionStatus": completion_status,
                     "proofStatus": proof_status,
+                    "observedScope": (
+                        list(PROVEN_SCOPE) if status == "PASS" else []
+                    ),
                     "cleanup": list(self.cleanup),
                 }
             )
@@ -242,6 +254,7 @@ class SimulatorSettingsGate(AcceptanceGate):
         }
         changed_device = self._changed_device(ios_device)
 
+        self._wait_for_mobile_write_admission(binding, IOS_CLIENT)
         profile_update = self._mapping(
             binding.call_action(
                 IOS_CLIENT,
@@ -255,6 +268,7 @@ class SimulatorSettingsGate(AcceptanceGate):
             actor_ptid,
             changed_profile,
         )
+        self._wait_for_mobile_write_admission(binding, IOS_CLIENT)
         notification_update = self._mapping(
             binding.call_action(
                 IOS_CLIENT,
@@ -504,11 +518,17 @@ class SimulatorSettingsGate(AcceptanceGate):
             if payload is None or client_id not in self._active_clients:
                 continue
             try:
+                if action in {
+                    "settings.profile.update",
+                    "settings.notifications.update",
+                }:
+                    self._wait_for_mobile_write_admission(binding, client_id)
                 binding.call_action(client_id, action, payload)
             except Exception as error:
                 if action == "settings.profile.update":
                     try:
                         binding.call_action(client_id, "settings.profile.read")
+                        self._wait_for_mobile_write_admission(binding, client_id)
                         binding.call_action(client_id, action, payload)
                     except Exception as retry_error:
                         error = retry_error
@@ -591,6 +611,89 @@ class SimulatorSettingsGate(AcceptanceGate):
                 }
             )
         return "; ".join(failures) if failures else None
+
+    def _wait_for_mobile_write_admission(
+        self,
+        binding: MobileSimulatorRuntimeBinding,
+        client_id: str,
+        *,
+        timeout_seconds: float = WRITE_ADMISSION_TIMEOUT_SECONDS,
+        stable_seconds: float = WRITE_ADMISSION_STABLE_SECONDS,
+    ) -> dict[str, Any]:
+        initial = self._mapping(
+            binding.call_action(client_id, "recovery.snapshot"),
+            f"{client_id} recovery snapshot",
+        )
+        if self._mobile_write_admission_open(initial):
+            self._record_write_admission(client_id, initial, reconciled=False)
+            return initial
+
+        binding.call_action(client_id, "social.reconcile")
+        deadline = time.monotonic() + timeout_seconds
+        stable_since: float | None = None
+        last_snapshot = initial
+        while time.monotonic() < deadline:
+            snapshot = self._mapping(
+                binding.call_action(client_id, "recovery.snapshot"),
+                f"{client_id} recovery snapshot",
+            )
+            last_snapshot = snapshot
+            if self._mobile_write_admission_open(snapshot):
+                now = time.monotonic()
+                if stable_since is None:
+                    stable_since = now
+                if now - stable_since >= stable_seconds:
+                    self._record_write_admission(
+                        client_id,
+                        snapshot,
+                        reconciled=True,
+                    )
+                    return snapshot
+            else:
+                stable_since = None
+            time.sleep(POLL_INTERVAL_SECONDS)
+        admission = last_snapshot.get("writeAdmission")
+        reason = (
+            admission.get("reason")
+            if isinstance(admission, Mapping)
+            else "invalid-snapshot"
+        )
+        raise GateError(
+            f"{client_id} Mobile write admission remained closed: {reason}"
+        )
+
+    @staticmethod
+    def _mobile_write_admission_open(snapshot: Mapping[str, Any]) -> bool:
+        write_admission = snapshot.get("writeAdmission")
+        states = snapshot.get("states")
+        has_pending_reconcile = (
+            isinstance(states, list)
+            and any(
+                isinstance(state, Mapping)
+                and state.get("kind") == "event-overflow-reconcile"
+                for state in states
+            )
+        )
+        return (
+            snapshot.get("isWriteBlocked") is False
+            and isinstance(write_admission, Mapping)
+            and write_admission.get("open") is True
+            and not has_pending_reconcile
+        )
+
+    def _record_write_admission(
+        self,
+        client_id: str,
+        snapshot: Mapping[str, Any],
+        *,
+        reconciled: bool,
+    ) -> None:
+        self._record(
+            "write-admission-ready",
+            client_id,
+            reconciled=reconciled,
+            activeRecovery=bool(snapshot.get("hasActiveRecovery")),
+        )
 
     @staticmethod
     def _changed_profile(
@@ -703,15 +806,7 @@ class SimulatorSettingsGate(AcceptanceGate):
             "phase": "W6C Simulator Profile And Settings",
             "bom": ["W5", "W5-OWNER", "W6C"],
             "spec": ["MS-AG02", "MS-AG05", "MS-AG06", "MS-AG10"],
-            "observedScope": (
-                [
-                    "source-bound same-account isolated iOS Simulators",
-                    "Profile and Notification owner readback on the second simulator",
-                    "device-setting isolation and iOS restart persistence",
-                ]
-                if status == "PASS"
-                else []
-            ),
+            "observedScope": list(PROVEN_SCOPE) if status == "PASS" else [],
             "unprovenScope": list(OPTIONAL_DIAGNOSTIC_SCOPE),
             "physicalDeviceClaimed": False,
             "stationMocksUsed": False,

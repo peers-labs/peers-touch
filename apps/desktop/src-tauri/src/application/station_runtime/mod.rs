@@ -1,6 +1,7 @@
 pub mod client;
 pub mod resource;
 pub mod route_lease;
+mod route_refresh;
 
 use crate::application::station_binding::{
     StationBindingError, StationBindingHooks, StationBindingService, StationBindingState,
@@ -335,6 +336,7 @@ impl StationRequestExecutor for RuntimeRequestExecutor {
                 false,
             ));
         }
+        self.renew_route_before_submission(&request)?;
         let replay = request.replay_copy();
         let replay_policy = request.replay_policy.clone();
         let route_policy = request.route_policy;
@@ -817,43 +819,7 @@ impl StationRuntime {
                 true,
             )
         })?;
-        let mut result = self.binding.store_verified_routes(&self.registry, routes)?;
-        let current = self.binding.state();
-        if let (Some(station_peer_id), Some(route_id)) = (
-            current.station_peer_id.as_deref(),
-            current.active_route_id.as_deref(),
-        ) {
-            if let Some(entry) = result
-                .iter()
-                .find(|entry| entry.station_peer_id == station_peer_id)
-            {
-                let refreshed = entry
-                    .selection_view(route_id)
-                    .filter(|candidate| !entry.has_same_active_contract(candidate));
-                if refreshed.is_some() {
-                    let hooks = RuntimeBindingHooks {
-                        transport: &self.transport,
-                        before_commit: None,
-                    };
-                    self.binding.switch_with_hooks(
-                        &self.registry,
-                        station_peer_id,
-                        Some(route_id),
-                        &hooks,
-                    )?;
-                    if let Some(committed) = self.registry.entry(station_peer_id) {
-                        if let Some(slot) = result
-                            .iter_mut()
-                            .find(|entry| entry.station_peer_id == station_peer_id)
-                        {
-                            *slot = committed;
-                        }
-                    }
-                }
-            }
-        }
-        retire_inactive_transport(&self.binding, &self.transport);
-        Ok(result)
+        commit_verified_route_refresh(&self.registry, &self.binding, &self.transport, routes)
     }
 
     pub fn shutdown(&self) -> Result<(), String> {
@@ -868,6 +834,46 @@ impl StationRuntime {
             .shutdown(Duration::from_secs(5))
             .map_err(|error| error.to_string())
     }
+}
+
+fn commit_verified_route_refresh(
+    registry: &StationRegistry,
+    binding: &StationBindingService,
+    transport: &StationTransportHandle,
+    routes: &[crate::infrastructure::station_discovery::VerifiedStationRoute],
+) -> Result<Vec<StationEntry>, StationBindingError> {
+    let mut result = binding.store_verified_routes(registry, routes)?;
+    let current = binding.state();
+    if let (Some(station_peer_id), Some(route_id)) = (
+        current.station_peer_id.as_deref(),
+        current.active_route_id.as_deref(),
+    ) {
+        if let Some(entry) = result
+            .iter()
+            .find(|entry| entry.station_peer_id == station_peer_id)
+        {
+            let refreshed = entry
+                .selection_view(route_id)
+                .filter(|candidate| !entry.has_same_active_contract(candidate));
+            if refreshed.is_some() {
+                let hooks = RuntimeBindingHooks {
+                    transport,
+                    before_commit: None,
+                };
+                binding.switch_with_hooks(registry, station_peer_id, Some(route_id), &hooks)?;
+                if let Some(committed) = registry.entry(station_peer_id) {
+                    if let Some(slot) = result
+                        .iter_mut()
+                        .find(|entry| entry.station_peer_id == station_peer_id)
+                    {
+                        *slot = committed;
+                    }
+                }
+            }
+        }
+    }
+    retire_inactive_transport(binding, transport);
+    Ok(result)
 }
 
 impl Drop for StationRuntime {
@@ -1026,6 +1032,153 @@ mod tests {
             attestation_bytes: Some(vec![8, 9]),
             connection_grant: None,
             expires_at_unix_ms: Some(i64::MAX),
+        }
+    }
+
+    fn renewal_executor(runtime: &StationRuntime) -> RuntimeRequestExecutor {
+        RuntimeRequestExecutor {
+            registry: runtime.registry.clone(),
+            binding: runtime.binding.clone(),
+            transport: runtime.transport.clone(),
+            stopped: runtime.stopped.clone(),
+            transition: runtime.transition.clone(),
+            diagnostics: runtime.diagnostics.clone(),
+        }
+    }
+
+    fn renewal_request(runtime: &StationRuntime) -> StationRequest {
+        StationRequest {
+            method: Method::POST,
+            path_and_query: "/conversation/commands".to_string(),
+            headers: Default::default(),
+            body: StationRequestBody::Empty,
+            timeout: Duration::from_secs(10),
+            admission_timeout: Duration::from_secs(1),
+            traffic_class: TrafficClass::Interactive,
+            route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: StationRoutePolicy::Auto,
+            replay_policy: ReplayPolicy::Never,
+            cancellation: CancellationToken::new(),
+            expected_scope: renewal_executor(runtime).active_scope(),
+        }
+    }
+
+    fn renewal_endpoint(
+        route: VerifiedStationRoute,
+    ) -> crate::infrastructure::station_discovery::VerifiedEndpoint {
+        crate::infrastructure::station_discovery::VerifiedEndpoint {
+            role: crate::infrastructure::station_discovery::VerifiedEndpointRole::DirectStation,
+            endpoint_peer_id: route.node_peer_id.clone(),
+            canonical_origin: route.endpoint_origin.clone(),
+            endpoint_public_key: vec![],
+            routes: vec![route],
+        }
+    }
+
+    #[test]
+    fn bounded_route_renewal_preserves_scope_before_never_replayed_command() {
+        for expired in [false, true] {
+            let runtime = StationRuntime::start(&temp_dir(if expired {
+                "expired-route-renewal"
+            } else {
+                "near-expiry-route-renewal"
+            }))
+            .unwrap();
+            let mut route = direct_route("route-a", "http://127.0.0.1:4101".to_string());
+            route.expires_at_unix_ms = Some(current_unix_ms() + 1_000);
+            runtime
+                .store_verified_routes(std::slice::from_ref(&route))
+                .unwrap();
+            runtime
+                .switch_station_with_teardown("station-one", Some("route-a"), &|_| Ok(()))
+                .unwrap();
+            runtime.binding().mark_bound().unwrap();
+            let previous = runtime
+                .binding()
+                .route_lease(TrafficClass::Interactive)
+                .unwrap();
+            let before = runtime.binding().state();
+            if expired {
+                std::thread::sleep(Duration::from_millis(1_100));
+                assert!(runtime
+                    .binding()
+                    .route_lease(TrafficClass::Interactive)
+                    .is_err());
+            }
+            let request = renewal_request(&runtime);
+            route.expires_at_unix_ms = Some(i64::MAX);
+            renewal_executor(&runtime)
+                .renew_route_with(&request, |_, _| Ok(renewal_endpoint(route)))
+                .unwrap();
+            let after = runtime.binding().state();
+            assert_eq!(before.phase, after.phase);
+            assert_eq!(before.station_peer_id, after.station_peer_id);
+            assert_eq!(before.lifecycle_generation, after.lifecycle_generation);
+            assert_eq!(after.route_revision, before.route_revision + 1);
+            assert!(previous.is_cancelled());
+            assert!(!request.cancellation.is_cancelled());
+            assert!(runtime
+                .binding()
+                .route_lease(TrafficClass::Interactive)
+                .is_ok());
+            assert!(runtime.diagnostics().attempts.is_empty());
+            renewal_executor(&runtime)
+                .renew_route_with(&request, |_, _| panic!("current proof must be reused"))
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn route_renewal_rejects_identity_changes_and_cancelled_results_without_commit() {
+        for case in [
+            "station", "root", "node", "route", "epoch", "cancel", "stale", "policy",
+        ] {
+            let runtime =
+                StationRuntime::start(&temp_dir(&format!("renewal-reject-{case}"))).unwrap();
+            let mut route = direct_route("route-a", "http://127.0.0.1:4101".to_string());
+            route.expires_at_unix_ms = Some(current_unix_ms() + 10_000);
+            runtime
+                .store_verified_routes(std::slice::from_ref(&route))
+                .unwrap();
+            runtime
+                .switch_station_with_teardown("station-one", Some("route-a"), &|_| Ok(()))
+                .unwrap();
+            runtime.binding().mark_bound().unwrap();
+            let mut request = renewal_request(&runtime);
+            let before = runtime.binding().state();
+            route.expires_at_unix_ms = Some(i64::MAX);
+            match case {
+                "station" => route.station_peer_id = "station-other".to_string(),
+                "root" => route.station_root_public_key = vec![9, 9],
+                "node" => route.node_peer_id = "node-other".to_string(),
+                "route" => route.route_id = "route-other".to_string(),
+                "epoch" => route.authorization_epoch = 0,
+                "policy" => request.route_policy = StationRoutePolicy::RelayOnly,
+                "stale" => {
+                    request
+                        .expected_scope
+                        .as_mut()
+                        .unwrap()
+                        .lifecycle_generation += 1
+                }
+                _ => {}
+            }
+            let result = renewal_executor(&runtime).renew_route_with(&request, |_, _| {
+                if matches!(case, "stale" | "policy") {
+                    panic!("stale or policy-conflicting routes must not trigger discovery");
+                }
+                if case == "cancel" {
+                    request.cancellation.cancel();
+                }
+                Ok(renewal_endpoint(route))
+            });
+            if case == "policy" {
+                assert!(result.is_ok());
+            } else {
+                assert!(result.is_err(), "{case}");
+            }
+            assert_eq!(before, runtime.binding().state());
+            assert!(runtime.diagnostics().attempts.is_empty());
         }
     }
 
@@ -1188,10 +1341,10 @@ mod tests {
             Ok(_) => panic!("replacement transport failure must remain visible"),
         };
 
-        assert!(matches!(
-            error.kind,
-            client::StationClientErrorKind::Network
-        ));
+        assert!(
+            matches!(error.kind, client::StationClientErrorKind::Unavailable),
+            "{error:?}"
+        );
         assert!(!cancellation.is_cancelled());
         assert_eq!(
             runtime.binding().state().active_route_id.as_deref(),

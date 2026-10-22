@@ -7,18 +7,22 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
+	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator"
 	locatorpb "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator/pb"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
 	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
 	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"google.golang.org/protobuf/encoding/protojson"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -127,6 +131,52 @@ func TestVerifiedProfileDeviceKeyHydratorUsesPTIDAndPinnedHomeStation(t *testing
 		!bytes.Equal(resolvedKeys[0].GetEd25519PublicKey(), devicePublicKey) {
 		t.Fatalf("resolved verified device keys = %+v", resolvedKeys)
 	}
+
+	profileLocator.err = actoridentitydomain.NewError(
+		actoridentitydomain.ErrorCodeIdentityUnavailable,
+		"actor_identity.resolve_profile_locator",
+		"dht_route",
+		"is not ready",
+	)
+	resolvedKeys, err = hydrator.Hydrate(
+		context.Background(),
+		testRemoteActorPTID,
+		testRemoteStationID,
+	)
+	if err != nil {
+		t.Fatalf("pinned Home Station profile fallback failed: %v", err)
+	}
+	if profileLocator.calls != 2 || profileFetcher.calls != 2 {
+		t.Fatalf(
+			"fallback locator/fetcher calls = %d/%d, want 2/2",
+			profileLocator.calls,
+			profileFetcher.calls,
+		)
+	}
+	if len(resolvedKeys) != 1 ||
+		!bytes.Equal(resolvedKeys[0].GetEd25519PublicKey(), devicePublicKey) {
+		t.Fatalf("fallback verified device keys = %+v", resolvedKeys)
+	}
+
+	profileLocator.err = errors.New("unexpected locator failure")
+	_, err = hydrator.Hydrate(
+		context.Background(),
+		testRemoteActorPTID,
+		testRemoteStationID,
+	)
+	if !actoridentitydomain.IsCode(
+		err,
+		actoridentitydomain.ErrorCodeIdentityUnavailable,
+	) {
+		t.Fatalf("unexpected locator error = %v", err)
+	}
+	if profileLocator.calls != 3 || profileFetcher.calls != 2 {
+		t.Fatalf(
+			"unexpected locator failure calls = %d/%d, want 3/2",
+			profileLocator.calls,
+			profileFetcher.calls,
+		)
+	}
 }
 
 func TestVerifiedProfileDeviceKeyHydratorKeepsMissingRouteRetryable(t *testing.T) {
@@ -157,6 +207,55 @@ func TestVerifiedProfileDeviceKeyHydratorKeepsMissingRouteRetryable(t *testing.T
 			profileLocator.calls,
 			profileFetcher.calls,
 		)
+	}
+}
+
+func TestRoutedActorProfileFetcherUsesDirectMembershipOrigin(t *testing.T) {
+	db := openVerifiedProfileTestDB(t)
+	envelope := &profilepb.ActorProfileEnvelope{
+		FederatedHandle:   testRemoteHandle,
+		HomeStationPeerId: testRemoteStationID,
+		HomeStationDomain: "station-a.example",
+		Profile: &model.ActorProfile{
+			PeersTouch: &model.PeersTouchInfo{NetworkId: testRemoteActorPTID},
+		},
+	}
+	body, err := protojson.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		if request.URL.Path != "/actor/federation/profile" ||
+			request.URL.Query().Get("handle") != testRemoteHandle {
+			t.Fatalf("request URL = %s", request.URL.String())
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(body)
+	}))
+	defer server.Close()
+	seedRemoteStationRoute(t, db, server.URL)
+	nativefed.ClearRelayAccess()
+	t.Cleanup(nativefed.ClearRelayAccess)
+	fetcher := routedActorProfileFetcher{
+		db:      db,
+		client:  server.Client(),
+		timeout: time.Second,
+	}
+
+	resolved, err := fetcher.Fetch(
+		context.Background(),
+		testRemoteHandle,
+		testRemoteStationID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.GetProfile().GetPeersTouch().GetNetworkId() !=
+		testRemoteActorPTID {
+		t.Fatalf("resolved profile = %+v", resolved.GetProfile())
 	}
 }
 

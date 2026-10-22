@@ -3,6 +3,7 @@
   "status": "active",
   "product_area": "chat",
   "owners": [
+    "apps/desktop/src-tauri/src/interface/tauri_commands/realtime.rs",
     "apps/desktop/src/modules/p2p/callP2p.ts",
     "apps/desktop/src/components/chat/CallSurface.tsx",
     "apps/desktop/src/acceptance/chat/harness.ts",

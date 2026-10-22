@@ -199,7 +199,7 @@ export default function Login() {
               </div>
               <h1 className="text-2xl font-bold text-slate-900 mb-1">Welcome back,</h1>
               <h2 className="text-xl font-bold text-slate-800 mb-2">printfcoder</h2>
-              <p className="text-sm text-slate-500">printfcoder@gmail.com</p>
+              <p className="text-sm text-slate-500">user@example.com</p>
             </div>
 
             {/* Actions */}
