@@ -272,6 +272,10 @@ class EnvironmentContractTests(unittest.TestCase):
             {
                 "alice": ("alice", "station-four"),
                 "bob": ("bob", "station-five-arm"),
+                "federation-secondary-owner": (
+                    "federation_secondary_owner",
+                    "station-five-arm",
+                ),
                 "eve": ("eve", "station-five-arm"),
                 "bob2": ("bob", "station-five-arm"),
             },
@@ -293,6 +297,12 @@ class EnvironmentContractTests(unittest.TestCase):
             ("alice", "bob", "eve"),
             provisioner._actor_roles("social-cross-station-native-e2e"),
         )
+        self.assertEqual(
+            ("alice", "federation_secondary_owner"),
+            provisioner._actor_roles(
+                "federation-two-station-lifecycle-e2e",
+            ),
+        )
         with mock.patch.object(
             NativeTauriEmbeddedWebDriverProvisioner,
             "_resolve_active_profile",
@@ -302,13 +312,89 @@ class EnvironmentContractTests(unittest.TestCase):
                 ("four", Path("/tmp/four.env"), 13, {}),
                 provisioner._resolve_active_profile(),
             )
+        explicit_provisioner = get_provisioner(
+            contract,
+            service_profiles={
+                "station-four": "chat-native-disposable",
+                "station-five-arm": "fiveArm",
+            },
+        )
         with mock.patch.object(
-            CrossStationSocialNativeProvisioner.__mro__[1],
+            NativeTauriEmbeddedWebDriverProvisioner,
             "_resolve_active_profile",
-            return_value=("four", Path("/tmp/four.env"), 12, {}),
+            return_value=(
+                "chat-native-disposable",
+                Path("/tmp/chat-native-disposable.env"),
+                13,
+                {},
+            ),
         ):
-            with self.assertRaises(BlockedError):
-                provisioner._resolve_active_profile()
+            self.assertEqual(
+                (
+                    "chat-native-disposable",
+                    Path("/tmp/chat-native-disposable.env"),
+                    13,
+                    {},
+                ),
+                explicit_provisioner._resolve_active_profile(),
+            )
+        with mock.patch.object(
+            NativeTauriEmbeddedWebDriverProvisioner,
+            "_resolve_active_profile",
+            return_value=("four", Path("/tmp/four.env"), 13, {}),
+        ):
+            with self.assertRaises(BlockedError) as error:
+                explicit_provisioner._resolve_active_profile()
+            self.assertEqual(
+                "profile:chat-native-disposable",
+                error.exception.resource,
+            )
+            self.assertIn(
+                "active profile chat-native-disposable at slot 13",
+                error.exception.reason,
+            )
+        with mock.patch.object(
+            NativeTauriEmbeddedWebDriverProvisioner,
+            "_resolve_active_profile",
+            return_value=(
+                "chat-native-disposable",
+                Path("/tmp/chat-native-disposable.env"),
+                12,
+                {},
+            ),
+        ):
+            with self.assertRaises(BlockedError) as error:
+                explicit_provisioner._resolve_active_profile()
+            self.assertEqual(
+                "profile:chat-native-disposable",
+                error.exception.resource,
+            )
+            self.assertIn(
+                "active profile chat-native-disposable at slot 13",
+                error.exception.reason,
+            )
+
+    def test_station_access_fixture_binds_canonical_reset_authority(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "station-access-native.yaml"
+        )
+
+        self.assertEqual(len(contract.fixtures), 1)
+        self.assertEqual(
+            contract.fixtures[0].authorization_ref,
+            "station.reset:station-access-reset-actors",
+        )
+
+    def test_station_access_fixture_binds_canonical_reset_authority(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "station-access-native.yaml"
+        )
+
+        self.assertEqual(len(contract.fixtures), 1)
+        self.assertEqual(
+            contract.fixtures[0].authorization_ref,
+            "station.reset:station-access-reset-actors",
+        )
 
     def test_load_native_tauri_current_profile_contract(self):
         contract = EnvironmentContract.from_yaml(

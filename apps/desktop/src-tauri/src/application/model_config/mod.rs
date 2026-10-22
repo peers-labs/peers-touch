@@ -1,32 +1,31 @@
 use crate::contracts::{ModelConfigKeyInput, ModelConfigSetInput, ProviderIdInputV2, StubPayload};
 use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::storage::{app_file_path, write_string_atomic, StorageKind};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-#[derive(Default)]
-struct ModelConfigStore {
-    config: HashMap<String, Value>,
+static MODEL_CONFIG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn model_config_lock() -> &'static Mutex<()> {
+    MODEL_CONFIG_LOCK.get_or_init(|| Mutex::new(()))
 }
 
-impl ModelConfigStore {
-    fn seeded() -> Self {
-        let mut config = HashMap::new();
-        config.insert(
-            "default".to_string(),
-            json!({
-                "provider":"openai",
-                "model":"gpt-4o-mini"
-            }),
-        );
-        Self { config }
+fn load_config() -> Result<HashMap<String, Value>, ()> {
+    let path =
+        app_file_path("desktop", StorageKind::Config, &["model-registry.json"]).map_err(|_| ())?;
+    match std::fs::read_to_string(path) {
+        Ok(raw) => serde_json::from_str(&raw).map_err(|_| ()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(HashMap::new()),
+        Err(_) => Err(()),
     }
 }
 
-static MODEL_CONFIG_STORE: OnceLock<Mutex<ModelConfigStore>> = OnceLock::new();
-
-fn model_config_store() -> &'static Mutex<ModelConfigStore> {
-    MODEL_CONFIG_STORE.get_or_init(|| Mutex::new(ModelConfigStore::seeded()))
+fn save_config(config: &HashMap<String, Value>) -> Result<(), ()> {
+    let path =
+        app_file_path("desktop", StorageKind::Config, &["model-registry.json"]).map_err(|_| ())?;
+    let payload = serde_json::to_string(config).map_err(|_| ())?;
+    write_string_atomic(&path, &payload).map_err(|_| ())
 }
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
@@ -49,11 +48,15 @@ fn internal_error() -> AppResult<StubPayload> {
 }
 
 pub fn model_config_list() -> AppResult<StubPayload> {
-    let guard = match model_config_store().lock() {
+    let _guard = match model_config_lock().lock() {
         Ok(guard) => guard,
         Err(_) => return internal_error(),
     };
-    success_payload("model_config_list", json!({ "config": guard.config }))
+    let config = match load_config() {
+        Ok(config) => config,
+        Err(_) => return internal_error(),
+    };
+    success_payload("model_config_list", json!({ "config": config }))
 }
 
 pub fn model_config_get(input: ModelConfigKeyInput) -> AppResult<StubPayload> {
@@ -61,11 +64,15 @@ pub fn model_config_get(input: ModelConfigKeyInput) -> AppResult<StubPayload> {
     if key.is_empty() {
         return invalid_argument("key is required");
     }
-    let guard = match model_config_store().lock() {
+    let _guard = match model_config_lock().lock() {
         Ok(guard) => guard,
         Err(_) => return internal_error(),
     };
-    let value = guard.config.get(key).cloned();
+    let config = match load_config() {
+        Ok(config) => config,
+        Err(_) => return internal_error(),
+    };
+    let value = config.get(key).cloned();
     success_payload(
         "model_config_get",
         json!({ "key": key, "ref": value, "resolved": value }),
@@ -77,15 +84,36 @@ pub fn model_config_set(input: ModelConfigSetInput) -> AppResult<StubPayload> {
     if key.is_empty() {
         return invalid_argument("key is required");
     }
-    let mut guard = match model_config_store().lock() {
+    let _guard = match model_config_lock().lock() {
         Ok(guard) => guard,
         Err(_) => return internal_error(),
     };
+    let mut config = match load_config() {
+        Ok(config) => config,
+        Err(_) => return internal_error(),
+    };
     if let Some(value) = input.r#ref {
-        guard.config.insert(key.clone(), value.clone());
+        if !value
+            .get("provider")
+            .and_then(Value::as_str)
+            .is_some_and(|v| !v.trim().is_empty())
+            || !value
+                .get("model")
+                .and_then(Value::as_str)
+                .is_some_and(|v| !v.trim().is_empty())
+        {
+            return invalid_argument("Provider and model are required");
+        }
+        config.insert(key.clone(), value.clone());
+        if save_config(&config).is_err() {
+            return internal_error();
+        }
         return success_payload("model_config_set", json!({ "key": key, "ref": value }));
     }
-    guard.config.remove(&key);
+    config.remove(&key);
+    if save_config(&config).is_err() {
+        return internal_error();
+    }
     success_payload(
         "model_config_set",
         json!({ "key": key, "ref": Value::Null }),
@@ -97,11 +125,18 @@ pub fn model_config_delete(input: ModelConfigKeyInput) -> AppResult<StubPayload>
     if key.is_empty() {
         return invalid_argument("key is required");
     }
-    let mut guard = match model_config_store().lock() {
+    let _guard = match model_config_lock().lock() {
         Ok(guard) => guard,
         Err(_) => return internal_error(),
     };
-    let deleted = guard.config.remove(&key).is_some();
+    let mut config = match load_config() {
+        Ok(config) => config,
+        Err(_) => return internal_error(),
+    };
+    let deleted = config.remove(&key).is_some();
+    if save_config(&config).is_err() {
+        return internal_error();
+    }
     success_payload("model_config_delete", json!({ "ok": deleted }))
 }
 
@@ -110,12 +145,16 @@ pub fn model_config_provider_references(input: ProviderIdInputV2) -> AppResult<S
     if provider_id.is_empty() {
         return invalid_argument("provider_id is required");
     }
-    let guard = match model_config_store().lock() {
+    let _guard = match model_config_lock().lock() {
         Ok(guard) => guard,
         Err(_) => return internal_error(),
     };
+    let config = match load_config() {
+        Ok(config) => config,
+        Err(_) => return internal_error(),
+    };
     let mut references: Vec<Value> = Vec::new();
-    for (key, val) in guard.config.iter() {
+    for (key, val) in config.iter() {
         let p = val.get("provider").and_then(|v| v.as_str()).unwrap_or("");
         if p == provider_id {
             let model = val.get("model").and_then(|v| v.as_str()).unwrap_or("");

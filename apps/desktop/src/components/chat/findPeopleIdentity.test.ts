@@ -10,16 +10,11 @@ import {
 } from './findPeopleIdentity';
 
 describe('Find People identity projection', () => {
-  it('keeps same-name Federation and Station scopes semantically distinct', () => {
-    expect(findPeopleScopePresentation('federation', 'local', 'fed-local')).toEqual({
+  it('presents the selected Federation context without Station topology', () => {
+    expect(findPeopleScopePresentation('local', 'fed-local')).toEqual({
       name: 'local',
       labelKey: 'chat.social.findPeople.scopeFederationNamed',
       tooltipKey: 'chat.social.findPeople.scopeFederationTooltip',
-    });
-    expect(findPeopleScopePresentation('station', 'local', 'station-local')).toEqual({
-      name: 'local',
-      labelKey: 'chat.social.findPeople.scopeStationNamed',
-      tooltipKey: 'chat.social.findPeople.scopeStationTooltip',
     });
   });
 

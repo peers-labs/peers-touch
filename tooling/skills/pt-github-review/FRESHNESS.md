@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-20
-covered_docs_hash: 85bcf1919adbc34e5685231bfef13794f899eb7d95fe5b817c34fb6b135709c0
+last_verified_at: 2026-10-22
+covered_docs_hash: 6cdea08df22b81f0971a97d5318370b4aebc4a8cd31e28fbfd16610b01ba5912
 
 covered_docs:
   - AGENTS.md
@@ -15,7 +15,7 @@ covered_docs:
   - docs/architecture/engineering/development-workflow
   - docs/architecture/engineering/local-dev
   - docs/global/local-dev-environment.md
-  - docs/global/architecture.md
+  - docs/architecture/architecture.md
   - docs/client/desktop/base.md
   - docs/client/desktop/runtime-projections.md
   - docs/client/mobile/base.md
@@ -68,6 +68,142 @@ consume the canonical CLI. GitHub Review continues to own final merge judgment
 and already treats missing, stale or unproven evidence as a hold, so its
 `SKILL.md` does not copy the Experience schema or ranking policy.
 
+## Mobile Origin Contract Review
+
+The Mobile lifecycle contract follows the shared origin normalizer: every
+build accepts canonical user-selected HTTP(S), while malformed origins and
+identity substitution remain rejected. Acceptance binds the reviewed Profile
+through the existing Station-add flow; no launch-time development-origin
+environment variable is consumed by the app.
+
+This reconciles the current implementation and accepted transport choice with
+the upstream removal of phantom configuration. It does not change review
+severity or evidence policy; no new Skill, fixture, or knowledge rule is needed.
+
+## User-Accepted Execution Closure Review
+
+The release report now records the user's accepted Chat / Social execution
+closure and PR authorization separately from full release Acceptance.
+Deferred Gates retain their source-bound status, and full client and aggregate
+proof remain `UNPROVEN`. Normal authenticated setup is reused without treating
+that setup as proof of revocation, permission denial, or Session isolation.
+
+The report changes no Gate contract, evidence rule, or review severity. The
+existing exact-source and explicit-scope rules already cover this distinction;
+no `SKILL.md`, fixture, or knowledge update is required.
+
+The generated coverage report is synchronized with the current registry's
+Federation lifecycle, mixed private Social, and release analysis wiring.
+Its Proven counts remain zero. This updates a derived wiring inventory,
+without claiming product proof or changing review policy.
+
+## Release Operation Evidence Review
+
+The release report and recovery contracts now require eighteen native operation
+cells with immutable Journey, platform, step, screenshot, and receiver bindings.
+The aggregate validates each cell against the current candidate and accepts
+only completion results from its own execution.
+
+These rules strengthen the existing review requirement for exact-source,
+receiver-visible proof. The current review Skill already rejects stale,
+Harness-only, and incomplete evidence. No new review procedure is required;
+the release operation and aggregate regressions enforce the concrete binding.
+## 2026-10-20 Architecture Diagram Final Review
+
+Canonical diagrams now use viewpoint-specific schema v3 layouts instead of one
+universal card scene. Dynamic routes use explicit `alt` / `else` branches;
+runtime topology keeps per-install transports and Relay deployment separate;
+Authority Map separates Frame / Touch Session authority from App domains; and
+sequence flows preserve Frame mediation and receiver-visible completion.
+
+The renderer rejects clipped routes, duplicate authority assignments,
+overlapping or crossing topology tracks, node/label collisions, and overlong
+sequence or matrix text. Focused negative tests and raster review cover these
+failures. The existing `architecture-viewpoint` rule already owns these
+judgments, so `SKILL.md`, generic review fixtures, and operational knowledge do
+not need another rule.
+
+## 2026-10-20 Architecture Diagram Index Review
+
+The project architecture now lives under `docs/architecture/architecture.md`.
+Canonical project diagrams and new or redrawn module diagrams use module-local
+Diagram specs, stable IDs, one explicit viewpoint, one arrow meaning, and one
+shared SVG renderer. The scene schema expresses boundaries, peer groups, real
+nodes, and reviewed orthogonal routes instead of a generic card stack.
+Markdown embeds only finished SVG assets. The module index is projected from
+the existing architecture registry, while diagram reverse references are
+projected from actual SVG links.
+
+`SKILL.md` now blocks stale canonical SVGs, indexes, missing Diagram specs, and
+mixed viewpoint semantics. It also requires rasterized visual review for
+hierarchy, text fit, connector routing, and overlap. `diagram-render.test.mjs`,
+`document-index.test.mjs`, and both generators' `--check` modes cover visual
+asset, module-index, and reverse-reference drift.
+No operational knowledge entry is required because this is a documentation
+governance contract rather than a runtime invariant or recurring production
+pitfall.
+
+## 2026-10-20 Architecture Viewpoint Review
+
+The global architecture now distinguishes Client ↔ Station runtime topology
+from the Model contract substrate. Proto-first remains a contract authoring
+rule and no longer implies that Model is a runtime intermediary or visually
+dominant layer.
+
+`SKILL.md` gained the blocking `architecture-viewpoint` rule and explicit
+cross-client checks for Runtime Topology, Reuse Topology, Authority Map, and
+Deployment Topology. The architecture methodology and document standard now
+require one arrow meaning per diagram and separate build/data-flow views.
+No generic bug fixture is required because this is a documentation-semantic
+review rule rather than a source-code defect pattern.
+
+## 2026-10-17 Outcome Comparison Review
+
+The current unversioned complex Plan contract binds a human-readable planned
+outcome comparison covering user experience, product capability, architecture,
+technology, and quality/operations. Execution may update only evidence-bound
+actual results; Completion Review binds the full report digest.
+
+`SKILL.md` gained an Outcome Comparison checklist for baseline honesty,
+concrete Journeys, Task/Gate coverage, planned-section immutability, source-
+bound actual results, and report-digest completion evidence. `planctl` fixtures
+cover planned drift, actual-result updates, existing Plan readability, and
+rejection of synthetic `schemaVersion` fields; no separate review fixture is
+required because these are deterministic Plan contract failures.
+
+## 2026-10-17 Cross-Client Reuse Review
+
+The accepted Cross-Client Runtime architecture now defines two client forms,
+three release targets, a reuse-first placement ladder, second-consumer
+extraction, headless-first UI sharing, and machine-registered bounded semantic
+divergence. Active Mobile coding guides and Proto tooling now use the shared
+Tauri Mobile TypeScript/Rust path instead of independent Kotlin/Swift product
+trees.
+
+`SKILL.md` gained a dedicated Cross-Client Reuse checklist so review evaluates
+semantic duplication that manifest inventory cannot detect, distinguishes
+ordinary Presentation Policy/Host adapters from true divergence, requires
+`reuseDivergences` for the latter, and keeps platform proof cells independent.
+Architecture-governance tests cover shared pnpm/Cargo dependency discovery and
+divergence record integrity; no generic bug fixture is required.
+
+## 2026-10-17 Release Acceptance Index Review
+
+The Acceptance README now links the frozen 0.0.1 Mobile iOS and Desktop
+release plan. The plan itself remains excluded from the freshness digest and
+does not change review severity, evidence policy, or implementation ownership.
+No `SKILL.md`, fixture, or knowledge update is required.
+
+## 2026-10-16 Bot Module Governance Review
+
+The existing Bot product architecture is now registered as an active module
+with machine-readable ownership, required-document metadata, and accepted
+ADR-lite decisions. This closes fail-closed architecture discovery without
+changing review severity or introducing a new product rule. The current
+GitHub Review Skill already rejects unregistered active modules and consumes
+the shared architecture validator, so no `SKILL.md`, generic review fixture,
+or knowledge entry is required.
+
 ## 2026-10-16 Acceptance Scheduling Review
 
 Development verification now uses one mutually exclusive mode per pass:
@@ -79,16 +215,6 @@ The existing D-20 review boundary already owns this judgment, so
 `pt-github-review/SKILL.md` does not need another rule. The Acceptance Infra
 boundary test now pins the four modes and rejects the duplicate command shape;
 no business Gate fixture or knowledge entry is required.
-
-## 2026-10-16 Bot Module Governance Review
-
-The existing Bot product architecture is now registered as an active module
-with machine-readable ownership, required-document metadata, and accepted
-ADR-lite decisions. This closes fail-closed architecture discovery without
-changing review severity or introducing a new product rule. The current
-GitHub Review Skill already rejects unregistered active modules and consumes
-the shared architecture validator, so no `SKILL.md`, generic review fixture,
-or knowledge entry is required.
 
 ## 2026-10-15 Development Operation Authority Review
 

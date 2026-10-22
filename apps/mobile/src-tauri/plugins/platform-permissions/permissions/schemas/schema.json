@@ -367,6 +367,30 @@
           "markdownDescription": "Denies the drainScheduledCallbacks command without any pre-configured scope."
         },
         {
+          "description": "Enables the executeSystemAction command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-executeSystemAction",
+          "markdownDescription": "Enables the executeSystemAction command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the executeSystemAction command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-executeSystemAction",
+          "markdownDescription": "Denies the executeSystemAction command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the observeCapability command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-observeCapability",
+          "markdownDescription": "Enables the observeCapability command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the observeCapability command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-observeCapability",
+          "markdownDescription": "Denies the observeCapability command without any pre-configured scope."
+        },
+        {
           "description": "Enables the pickMedia command without any pre-configured scope.",
           "type": "string",
           "const": "allow-pickMedia",

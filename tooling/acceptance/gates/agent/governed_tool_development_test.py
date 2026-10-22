@@ -66,6 +66,27 @@ def valid_provider_requests() -> list[dict[str, object]]:
 
 
 class GovernedToolDevelopmentTest(unittest.TestCase):
+    def test_terminal_fixture_checks_documents_only_in_system_instructions(self) -> None:
+        fixture = OpenAIProviderFixture(
+            terminal_only=True,
+            expected_system_documents={"soulMd": "SOUL marker", "agentsMd": "AGENTS marker"},
+            terminal_content="documents received",
+        )
+        fixture.start()
+        try:
+            response = self._request(fixture.port, fixture.api_key, [
+                {"role": "system", "content": "SOUL marker"},
+                {"role": "user", "content": "AGENTS marker"},
+            ])
+            self.assertIn("documents received", response)
+            self.assertNotIn("tool_calls", response)
+            self.assertEqual(fixture.snapshot()[0]["systemDocuments"], {
+                "soulMd": True, "agentsMd": False,
+            })
+            self.assertNotIn("SOUL marker", json.dumps(fixture.snapshot()))
+        finally:
+            fixture.stop()
+
     def test_accepts_complete_native_journey(self) -> None:
         assertions = evaluate_governed_tool(
             valid_journey(),
@@ -320,8 +341,19 @@ class GovernedToolDevelopmentTest(unittest.TestCase):
             r"approvalBranchesComplete:\s+!candidateMode\s+"
             r"\|\| cell !== 'AS-05A'",
         )
-        self.assertIn("await api.closeSecondaryCapabilitySession()", harness_source)
-        self.assertIn("await api.startAgentClientExecutorSupervisor()", harness_source)
+        refresh_start = harness_source.index(
+            "async function refreshGovernedToolCapabilitySession",
+        )
+        refresh_end = harness_source.index(
+            "async function refreshConnectorCapabilitySession", refresh_start,
+        )
+        refresh = harness_source[refresh_start:refresh_end]
+        self.assertRegex(
+            refresh,
+            r"await api\.stopAgentClientExecutorSupervisor\(\);\s+"
+            r"await api\.startAgentClientExecutorSupervisor\(\);\s+"
+            r"await waitForCapabilitySessionEvidence\(\);",
+        )
         self.assertRegex(
             harness_source,
             r"if \(executionAttemptCount === 0\) return 0;",
@@ -360,11 +392,12 @@ class GovernedToolDevelopmentTest(unittest.TestCase):
         )
         self.assertRegex(
             governed_journey,
-            r"eventBus\.publish\(EVENT\.NAVIGATION_REQUESTED, "
-            r"\{ resource: 'sessions' \}\);\s+"
             r"if \(priorSelection\) \{\s+"
             r"await api\.setSelectedAgent\(priorSelection\);\s+"
-            r"useAgentStore\.getState\(\)\.setSelectedAgent\(priorSelection\);",
+            r"useAgentStore\.getState\(\)\.setSelectedAgent\(priorSelection\);\s+"
+            r"useAgentStore\.getState\(\)\.setAgentSurface\(\s+"
+            r"priorSelection,\s+priorSurface,\s+\);\s+\}\s+"
+            r"await navigateToAgentSessionSurface\(",
         )
         self.assertIn(
             "await refreshGovernedToolCapabilitySession(platform)",
@@ -442,7 +475,7 @@ class GovernedToolDevelopmentTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn(
-            "station_client::request_proto_with_policy",
+            ".request_proto_with_policy::<_, agent::SubmitToolApprovalDecisionResponse>",
             application_source,
         )
         self.assertRegex(

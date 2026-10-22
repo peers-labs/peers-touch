@@ -33,6 +33,8 @@ import {
 } from '../../store/privateComments';
 import { usePrivateMomentsStore } from '../../store/privateMoments';
 import { useSessionStore } from '../../store/session';
+import { useFederationStore } from '../../store/federation';
+import { federationRuntime } from '../../runtimes/federationRuntime';
 import { registerAcceptanceHarness } from '../registry';
 
 declare const __PT_SOURCE_COMMIT__: string;
@@ -163,6 +165,15 @@ interface JoinAcceptanceFederationInput extends FederationBindingInput {
   federationEndpoint: string;
 }
 
+interface CreateAcceptanceFederationInput {
+  name: string;
+  description: string;
+}
+
+interface LeaveAcceptanceFederationInput extends FederationBindingInput {
+  reason: string;
+}
+
 interface RuntimeIdentityResult {
   ok: boolean;
   data?: {
@@ -178,7 +189,7 @@ interface RuntimeIdentityResult {
 interface AcceptanceCommandResult<T> {
   ok: boolean;
   data?: T;
-  error?: { message?: string };
+  error?: { code?: string; message?: string };
 }
 
 interface FederationFixtureStation {
@@ -192,7 +203,21 @@ interface FederationFixtureContext {
   federationId: string;
   name: string;
   status: string;
+  policyType: string;
+  headSeq: number;
+  headHash: number[];
   sequencerStationPeerId: string;
+  myRole: string;
+  capability?: {
+    canInvite: boolean;
+    canApproveJoin: boolean;
+    canUpdatePolicy: boolean;
+    canViewLedger: boolean;
+    canRemoveStation: boolean;
+    canGrantAdmin: boolean;
+    canLeave: boolean;
+    canArchive: boolean;
+  };
   members: FederationFixtureStation[];
 }
 
@@ -213,7 +238,9 @@ async function invokeFederationFixture<T>(
     input === undefined ? undefined : { input },
   );
   if (!result.ok || result.data === undefined) {
-    throw new Error(result.error?.message || `${command} failed`);
+    const message = result.error?.message || `${command} failed`;
+    const code = result.error?.code?.trim();
+    throw new Error(code ? `${code}:${message}` : message);
   }
   return result.data;
 }
@@ -471,6 +498,12 @@ async function privateProjectionEvidence(
     media: content?.kind === 'IMAGE' || content?.kind === 'VIDEO'
       ? await Promise.all(content.media.map(mediaEvidence))
       : [],
+    reactions: (projection.reactions ?? []).map((reaction) => ({
+      kind: reaction.kind,
+      count: Number(reaction.count),
+      reactedByViewer: reaction.reactedByViewer,
+    })),
+    reactionsHydrated: projection.reactionsHydrated ?? false,
     mentionCount: mentions.length,
     mentionedActorPtidsSha256: await Promise.all(
       mentions.map((mention) => sha256(mention.actorPtid)),
@@ -866,6 +899,60 @@ export function installAcceptanceHarness(): void {
       return { federationId, homeStationPeerId };
     },
 
+    async federationFixtureSnapshot() {
+      return readFederationFixtureSnapshot();
+    },
+
+    async reconcileFederationProjection() {
+      const authoritative = await api.federationListContexts();
+      await federationRuntime.reconcile?.('acceptance-federation-lifecycle');
+      const projected = useFederationStore.getState().federations;
+      const authoritativeProjection = authoritative.contexts
+        .map((context) => ({
+          federationId: context.federationId.trim(),
+          name: context.name.trim(),
+          status: context.status.trim(),
+        }))
+        .sort((left, right) =>
+          left.federationId.localeCompare(right.federationId));
+      const currentProjection = projected
+        .map((context) => ({
+          federationId: context.federationId.trim(),
+          name: context.name.trim(),
+          status: context.status.trim(),
+        }))
+        .sort((left, right) =>
+          left.federationId.localeCompare(right.federationId));
+      if (
+        JSON.stringify(currentProjection)
+        !== JSON.stringify(authoritativeProjection)
+      ) {
+        throw new Error('moments.acceptance.federationReconcileIncomplete');
+      }
+      return {
+        reconciled: true,
+        contextCount: currentProjection.length,
+      };
+    },
+
+    async createAcceptanceFederation(input: CreateAcceptanceFederationInput) {
+      const name = input.name?.trim();
+      if (!name) {
+        throw new Error('moments.acceptance.federationNameMissing');
+      }
+      const response = await invokeFederationFixture<{
+        federationId: string;
+      }>('acceptance_federation_fixture_create', {
+        name,
+        description: input.description?.trim() ?? '',
+      });
+      const federationId = response.federationId.trim();
+      if (!federationId) {
+        throw new Error('moments.acceptance.federationCreateIncomplete');
+      }
+      return { federationId };
+    },
+
     async federationJoinAuthority() {
       let federationProjection = await readFederationFixtureSnapshot();
       const homeStationPeerId = federationProjection.homeStationPeerId.trim();
@@ -972,6 +1059,41 @@ export function installAcceptanceHarness(): void {
         status,
         proposalId: response.proposalId.trim(),
       };
+    },
+
+    async leaveAcceptanceFederation(input: LeaveAcceptanceFederationInput) {
+      const federationId = input.federationId?.trim();
+      if (!federationId) {
+        throw new Error('moments.acceptance.federationIdMissing');
+      }
+      const response = await invokeFederationFixture<{
+        federationId: string;
+        success: boolean;
+      }>('acceptance_federation_fixture_leave', {
+        federation_id: federationId,
+        reason: input.reason?.trim() ?? '',
+      });
+      if (response.success !== true) {
+        throw new Error('moments.acceptance.federationLeaveIncomplete');
+      }
+      return { federationId, success: true };
+    },
+
+    async deleteAcceptanceFederation(input: FederationBindingInput) {
+      const federationId = input.federationId?.trim();
+      if (!federationId) {
+        throw new Error('moments.acceptance.federationIdMissing');
+      }
+      const response = await invokeFederationFixture<{
+        federationId: string;
+        success: boolean;
+      }>('acceptance_federation_fixture_delete', {
+        federation_id: federationId,
+      });
+      if (response.success !== true) {
+        throw new Error('moments.acceptance.federationDeleteIncomplete');
+      }
+      return { federationId, success: true };
     },
 
     async sendFriendRequest(input: {

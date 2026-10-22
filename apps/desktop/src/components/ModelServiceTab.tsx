@@ -22,11 +22,6 @@ const { Title, Text } = Typography;
 
 const SLOT_KEYS: (keyof ModelServiceConfig)[] = [
   'default',
-  'topicNaming',
-  'translation',
-  'historyCompress',
-  'cronDefault',
-  'agentRouter',
 ];
 
 export function ModelServiceTab() {
@@ -39,7 +34,6 @@ export function ModelServiceTab() {
   const modelsLoading = useAgentStore((state) => state.loading);
 
   useEffect(() => {
-    setLoading(true);
     api.listModelConfig()
       .then((cfgMap) => {
         setConfig(cfgMap as ModelServiceConfig);
@@ -50,6 +44,10 @@ export function ModelServiceTab() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+  }, []);
+
   const handleSlotChange = useCallback((key: keyof ModelServiceConfig, ref: ModelRef) => {
     setConfig((prev) => {
       const next = { ...prev, [key]: ref };
@@ -58,12 +56,14 @@ export function ModelServiceTab() {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         const body = ref.provider || ref.model ? ref : null;
-        api.setModelConfig(key, body).catch(() => toast.error(t('provider.modelService.failedToSave')));
+        api.setModelConfig(key, body)
+          .then(() => useAgentStore.getState().loadModels())
+          .catch(() => toast.error(t('provider.modelService.failedToSave')));
       }, 500);
 
       return next;
     });
-  }, []);
+  }, [t]);
 
   if (loading || (modelsLoading && models.length === 0)) {
     return (
@@ -126,10 +126,10 @@ export function ModelServiceTab() {
                 </Flexbox>
 
                 <ModelSelect
-                  value={ref?.model}
-                  onChange={(v) => {
-                    const m = models.find((m) => m.id === v);
-                    if (m) handleSlotChange(slotKey, { provider: m.provider_id, model: m.id });
+                  className="pt-model-service-default-select"
+                  value={ref}
+                  onChange={(next) => {
+                    if (next) handleSlotChange(slotKey, next);
                   }}
                   models={models}
                   showWarning={!!isInvalid}

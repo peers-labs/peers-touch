@@ -39,6 +39,9 @@ export function AgentIconTile({
 }) {
   const { token } = theme.useToken();
   const emoji = agent?.avatar && EMOJI_RE.test(agent.avatar) ? agent.avatar : null;
+  const image = agent?.avatar && /^(data:image\/(?:png|jpeg|webp|gif);base64,|https?:\/\/)/i.test(agent.avatar)
+    ? agent.avatar
+    : null;
   const Icon = getAgentIcon(agent);
   const color = selected ? token.colorPrimary : token.colorTextSecondary;
 
@@ -59,9 +62,16 @@ export function AgentIconTile({
         cursor: onClick ? 'pointer' : undefined,
         fontSize: Math.max(14, Math.round(size * 0.5)),
         lineHeight: 1,
+        overflow: 'hidden',
       }}
     >
-      {emoji || <Icon size={Math.max(14, Math.round(size * 0.5))} />}
+      {image ? (
+        <img
+          src={image}
+          alt={agent?.title || agent?.name || ''}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : emoji || <Icon size={Math.max(14, Math.round(size * 0.5))} />}
     </span>
   );
 }

@@ -193,6 +193,42 @@ class MobileMessagingJourney:
             "totalElapsedMs": total_elapsed_ms,
         }
 
+    def wait_for_authenticated_runtime(
+        self,
+        session: MessagingJourneySession,
+        actor: MessagingActor,
+    ) -> int:
+        return self._await_authenticated_runtime_scope(session, actor)
+
+    def wait_for_conversation(
+        self,
+        session: MessagingJourneySession,
+        conversation_id: str,
+        *,
+        kind: int,
+    ) -> int:
+        return self._await_conversation(
+            session,
+            conversation_id,
+            kind=kind,
+        )
+
+    def wait_for_message(
+        self,
+        session: MessagingJourneySession,
+        conversation_id: str,
+        message_id: str,
+        predicate: Callable[[Mapping[str, Any]], bool],
+        label: str,
+    ) -> tuple[dict[str, Any], int]:
+        return self._await_message(
+            session,
+            conversation_id,
+            message_id,
+            predicate,
+            label,
+        )
+
     def run_chat_contacts(
         self,
         *,
@@ -259,10 +295,15 @@ class MobileMessagingJourney:
     ) -> str:
         if sender.federation_id != receiver.federation_id:
             raise GateError("Mobile actors do not share one explicit Federation")
+        query = (
+            receiver.role
+            if sender.station_peer_id == receiver.station_peer_id
+            else receiver.federated_handle
+        )
         results = sender_session.call_action(
             "social.people.search",
             {
-                "query": receiver.federated_handle,
+                "query": query,
                 "federationId": sender.federation_id,
             },
         )
@@ -302,70 +343,40 @@ class MobileMessagingJourney:
             raise GateError(
                 f"{sender.client_id} resolved the receiver in the wrong Federation"
             )
-        sender_session.call_action(
-            "social.request.send",
-            {
-                "receiverPtid": receiver.ptid,
-                "receiverHomeStationPeerId": receiver_home_station_peer_id,
-                "federationId": federation_id,
-                "message": "mobile acceptance",
-            },
-        )
-        request: dict[str, Any] = {}
-
-        def request_visible() -> bool:
-            nonlocal request
-            receiver_session.call_action("social.reconcile")
-            projection = self._mapping(
-                receiver_session.call_action("social.projection.read"),
-                "Receiver Social projection",
-            )
-            requests = projection.get("friendRequests")
-            if not isinstance(requests, list):
-                return False
-            for value in requests:
-                if not isinstance(value, Mapping):
-                    continue
-                if (
-                    value.get("senderPtid") == sender.ptid
-                    and value.get("receiverPtid") == receiver.ptid
-                ):
-                    request = dict(value)
-                    return True
-            return False
-
-        self._await_condition(
-            request_visible,
-            f"{receiver.client_id} friend request",
-        )
-        request_id = self._text(request.get("requestId"), "Friend request ID")
-        receiver_session.call_action(
-            "social.request.accept",
-            {"requestId": request_id},
-        )
-        self._await_condition(
-            lambda: self._accepted_relationship_visible(
-                sender_session,
-                request_id=request_id,
-                sender_ptid=sender.ptid,
-                receiver_ptid=receiver.ptid,
-                federation_id=federation_id,
-            ),
-            f"{sender.client_id} accepted relationship",
+        self._ensure_accepted_relationship(
+            sender_session,
+            receiver_session,
+            sender=sender,
+            receiver=receiver,
+            receiver_home_station_peer_id=receiver_home_station_peer_id,
+            federation_id=federation_id,
         )
         self._await_write_admission(
             sender_session,
             f"{sender.client_id} contact Direct write admission",
         )
-        conversation = self._mapping(
-            sender_session.call_action(
-                "social.contact.open",
-                {
-                    "peerPtid": receiver.ptid,
-                    "federationId": federation_id,
-                },
-            ),
-            "Contact Direct creation",
+        conversation: dict[str, Any] = {}
+
+        def contact_ready() -> bool:
+            nonlocal conversation
+            try:
+                value = sender_session.call_action(
+                    "social.contact.open",
+                    {
+                        "peerPtid": receiver.ptid,
+                        "federationId": federation_id,
+                    },
+                )
+            except DriverError as error:
+                if "mobile.contacts.conversationPreparing" in str(error):
+                    return False
+                raise
+            conversation = self._mapping(value, "Contact Direct creation")
+            return bool(conversation.get("conversationId"))
+
+        self._await_condition(
+            contact_ready,
+            f"{sender.client_id} contact Direct conversation",
         )
         conversation_id = self._text(
             conversation.get("conversationId"),
@@ -374,6 +385,107 @@ class MobileMessagingJourney:
         self._await_conversation(sender_session, conversation_id, kind=1)
         self._await_conversation(receiver_session, conversation_id, kind=1)
         return conversation_id
+
+    def _ensure_accepted_relationship(
+        self,
+        sender_session: MessagingJourneySession,
+        receiver_session: MessagingJourneySession,
+        *,
+        sender: MessagingActor,
+        receiver: MessagingActor,
+        receiver_home_station_peer_id: str,
+        federation_id: str,
+    ) -> None:
+        request_id = self._accepted_relationship_request_id(
+            sender_session,
+            sender_ptid=sender.ptid,
+            receiver_ptid=receiver.ptid,
+            federation_id=federation_id,
+        )
+        if request_id is None:
+            sender_session.call_action(
+                "social.request.send",
+                {
+                    "receiverPtid": receiver.ptid,
+                    "receiverHomeStationPeerId": receiver_home_station_peer_id,
+                    "federationId": federation_id,
+                    "message": "mobile acceptance",
+                },
+            )
+            request: dict[str, Any] = {}
+
+            def request_visible() -> bool:
+                nonlocal request
+                receiver_session.call_action("social.reconcile")
+                projection = self._mapping(
+                    receiver_session.call_action("social.projection.read"),
+                    "Receiver Social projection",
+                )
+                requests = projection.get("friendRequests")
+                if not isinstance(requests, list):
+                    return False
+                for value in requests:
+                    if not isinstance(value, Mapping):
+                        continue
+                    if (
+                        value.get("senderPtid") == sender.ptid
+                        and value.get("receiverPtid") == receiver.ptid
+                    ):
+                        request = dict(value)
+                        return True
+                return False
+
+            self._await_condition(
+                request_visible,
+                f"{receiver.client_id} friend request",
+            )
+            request_id = self._text(
+                request.get("requestId"),
+                "Friend request ID",
+            )
+            receiver_session.call_action(
+                "social.request.accept",
+                {"requestId": request_id},
+            )
+            self._await_condition(
+                lambda: self._accepted_relationship_visible(
+                    sender_session,
+                    request_id=request_id,
+                    sender_ptid=sender.ptid,
+                    receiver_ptid=receiver.ptid,
+                    federation_id=federation_id,
+                ),
+                f"{sender.client_id} accepted relationship",
+            )
+
+    def _accepted_relationship_request_id(
+        self,
+        session: MessagingJourneySession,
+        *,
+        sender_ptid: str,
+        receiver_ptid: str,
+        federation_id: str,
+    ) -> str | None:
+        session.call_action("social.reconcile")
+        projection = self._mapping(
+            session.call_action("social.projection.read"),
+            "Accepted relationship projection",
+        )
+        requests = projection.get("friendRequests")
+        if not isinstance(requests, list):
+            return None
+        for value in requests:
+            if (
+                isinstance(value, Mapping)
+                and value.get("senderPtid") == sender_ptid
+                and value.get("receiverPtid") == receiver_ptid
+                and value.get("federationId") == federation_id
+                and value.get("status") == FRIEND_REQUEST_STATUS_ACCEPTED
+            ):
+                request_id = value.get("requestId")
+                if isinstance(request_id, str) and request_id.strip():
+                    return request_id
+        return None
 
     def _accepted_relationship_visible(
         self,
@@ -788,13 +900,48 @@ class MobileMessagingJourney:
             raise
         ingress = projection.get("ingress")
 
-        return (
+        active = (
             projection.get("active") is True
             and isinstance(ingress, Mapping)
             and ingress.get("lifecycle") == "active"
             and ingress.get("writeAdmissionOpen") is True
             and ingress.get("staleDomains") == []
         )
+        if not active:
+            MobileMessagingJourney._require_recoverable_runtime(
+                session,
+                client_id,
+            )
+        return active
+
+    @staticmethod
+    def _require_recoverable_runtime(
+        session: MessagingJourneySession,
+        client_id: str,
+    ) -> None:
+        try:
+            snapshot = MobileMessagingJourney._mapping(
+                session.call_action("lifecycle.snapshot"),
+                f"{client_id} lifecycle readiness",
+            )
+        except DriverError as error:
+            if MobileMessagingJourney._action_unavailable(
+                error,
+                "lifecycle.snapshot",
+            ):
+                return
+            raise
+        runtimes = snapshot.get("runtimes")
+        if not isinstance(runtimes, list):
+            raise GateError(f"{client_id} lifecycle runtimes must be a list")
+        for runtime in runtimes:
+            if not isinstance(runtime, Mapping):
+                raise GateError(f"{client_id} lifecycle runtime must be an object")
+            if runtime.get("status") == "failed":
+                raise GateError(
+                    f"{client_id} runtime {runtime.get('id')} failed "
+                    f"({runtime.get('errorKey')})"
+                )
 
     @staticmethod
     def _action_unavailable(error: DriverError, action: str) -> bool:

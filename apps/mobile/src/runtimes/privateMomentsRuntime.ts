@@ -39,7 +39,7 @@ import {
   type PrivateSocialInvalidation,
   type PrivateSocialMomentIntent,
   type PrivateSocialTextIntent,
-  type PrivateSocialWorkerReport,
+  type PrivateSocialReconciliationReport,
 } from '../services/mobileCommands';
 import { readableErrorMessage } from '../utils/errorMessage';
 import { runRuntimeSessionTransition } from './runtimeSessionTransition';
@@ -94,7 +94,7 @@ export interface PrivateMomentsRuntimeSnapshot {
   readonly commentThreadsByPostId: Readonly<Record<string, PrivateCommentThreadProjection>>;
   readonly publishStateHistory: readonly PrivateSocialVisiblePublishState[];
   readonly readStateHistoryByPostId: Readonly<Record<string, readonly PrivateSocialVisibleReadState[]>>;
-  readonly lastReport: PrivateSocialWorkerReport | null;
+  readonly lastReport: PrivateSocialReconciliationReport | null;
   readonly errorMessage: string | null;
 }
 
@@ -561,7 +561,7 @@ export async function retryPrivateMomentReaction(
   return result;
 }
 
-export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerReport | null> {
+export async function reconcilePrivateMoments(): Promise<PrivateSocialReconciliationReport | null> {
   const scope = activeScope;
   if (!scope || !isCurrentScope(scope)) return null;
   setSnapshot({ ...snapshot, reconciling: true, errorMessage: null });
@@ -998,7 +998,7 @@ async function synchronizeSession(
   }
 }
 
-function requirePrivateSocialPreKeyReadiness(report: PrivateSocialWorkerReport): void {
+function requirePrivateSocialPreKeyReadiness(report: PrivateSocialReconciliationReport): void {
   if (
     !Number.isSafeInteger(report.endpointPrekeysAvailable)
     || report.endpointPrekeysAvailable <= 0

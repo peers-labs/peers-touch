@@ -66,6 +66,39 @@ func (h *CapabilityAuthorityHandlers) HandleListBindings(
 	return &model.ListAgentCapabilityBindingsResponse{Bindings: bindings}, nil
 }
 
+func (h *CapabilityAuthorityHandlers) HandleCommandSnapshot(
+	ctx context.Context,
+	req *model.GetAgentCommandCapabilitySnapshotRequest,
+) (*model.GetAgentCommandCapabilitySnapshotResponse, error) {
+	ptid := subjectActorID(ctx)
+	readiness, err := h.readiness.Get(
+		ctx,
+		ptid,
+		&model.GetCapabilityReadinessRequest{
+			AgentId:                   req.GetAgentId(),
+			RuntimeSnapshotId:         req.GetRuntimeSnapshotId(),
+			ClientCapabilitySessionId: req.ClientCapabilitySessionId,
+			ProviderId:                req.GetProviderId(),
+			ModelId:                   req.GetModelId(),
+		},
+	)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	snapshot, err := h.authority.BuildCommandCapabilitySnapshot(
+		ctx,
+		ptid,
+		req.GetAgentId(),
+		readiness,
+	)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.GetAgentCommandCapabilitySnapshotResponse{
+		Snapshot: snapshot,
+	}, nil
+}
+
 func (h *CapabilityAuthorityHandlers) HandleUpsertBinding(
 	ctx context.Context,
 	req *model.UpsertAgentCapabilityBindingRequest,

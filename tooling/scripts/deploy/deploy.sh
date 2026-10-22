@@ -10,6 +10,7 @@
 #
 # Usage:
 #   deploy.sh <env-name> [BRANCH=main]
+#   deploy.sh repair <env-name>
 #   deploy.sh status <env-name>
 #   deploy.sh logs <env-name>
 #   deploy.sh stop <env-name>
@@ -26,7 +27,7 @@ POSIX_RELAY_RUNTIME_SCRIPT="$SCRIPT_DIR/posix_relay_runtime.py"
 cmd="${1:-}"
 env_name="${2:-$cmd}"
 
-if [[ "$cmd" == "status" || "$cmd" == "logs" || "$cmd" == "stop" || "$cmd" == "resolve" ]]; then
+if [[ "$cmd" == "repair" || "$cmd" == "status" || "$cmd" == "logs" || "$cmd" == "stop" || "$cmd" == "resolve" ]]; then
   env_name="${2:-}"
   if [[ -z "$env_name" ]]; then
     echo "[ERROR] Usage: deploy.sh $cmd <env-name>"
@@ -196,6 +197,10 @@ if [[ "$cmd" != "status" && "$cmd" != "logs" ]]; then
 fi
 
 if [[ "${PT_DEPLOY_PLATFORM:-posix}" == "windows" ]]; then
+  if [[ "$cmd" == "repair" ]]; then
+    echo "[ERROR] Reviewed repair commands are currently supported on POSIX targets only." >&2
+    exit 1
+  fi
   windows_action="$cmd"
   if [[ "$windows_action" != "status" && "$windows_action" != "logs" && "$windows_action" != "stop" ]]; then
     windows_action="deploy"
@@ -292,6 +297,15 @@ remote_cli_runtime_env_prefix() {
 }
 
 case "$cmd" in
+  repair)
+    if [[ -z "${PT_DEPLOY_REPAIR_CMD:-}" ]]; then
+      echo "[ERROR] Deploy environment '$env_name' has no reviewed repair command." >&2
+      exit 1
+    fi
+    echo "[$env_name] Running reviewed non-reset repair on $SSH_TARGET ..."
+    ssh_run "cd \$HOME/$PT_DEPLOY_PATH && $PT_DEPLOY_REPAIR_CMD"
+    ;;
+
   status)
     echo "[$env_name] Checking status on $SSH_TARGET ..."
     ssh_run "cd \$HOME/$PT_DEPLOY_PATH && git log --oneline -1 2>/dev/null || echo 'no git repo'"

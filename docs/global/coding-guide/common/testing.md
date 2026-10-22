@@ -370,122 +370,45 @@ src-tauri/
 
 ---
 
-## 5. Mobile Android
+## 5. Mobile
 
-### 5.1 运行测试
-
-```bash
-cd apps/mobile/android
-
-# 单元测试
-./gradlew test
-
-# 指定模块
-./gradlew :app:testDebugUnitTest
-
-# 仪器测试 (需要设备/模拟器)
-./gradlew connectedAndroidTest
-```
-
-### 5.2 框架
-
-- 单元测试: JUnit 5 + Mockito
-- UI 测试: Compose Testing (`composeTestRule`)
-- 断言: JUnit `assertEquals` / Truth
-
-### 5.3 示例
-
-```kotlin
-class StationApiClientTest {
-    @Test
-    fun `pullEvents returns events list`() {
-        val client = StationApiClient(baseUrl = "http://localhost:8420")
-        val request = PullEventsRequest.newBuilder()
-            .setLimit(10)
-            .build()
-
-        val response = runBlocking { client.pullEvents(request) }
-
-        assertNotNull(response)
-        assertTrue(response.eventsList.size <= 10)
-    }
-}
-```
-
-Compose UI 测试:
-
-```kotlin
-class ChatScreenTest {
-    @get:Rule
-    val composeTestRule = createComposeRule()
-
-    @Test
-    fun `message list displays messages`() {
-        composeTestRule.setContent {
-            ChatScreen(viewModel = fakeChatViewModel())
-        }
-
-        composeTestRule.onNodeWithText("Hello").assertIsDisplayed()
-    }
-}
-```
-
----
-
-## 6. Mobile iOS
-
-### 6.1 运行测试
+### 5.1 Shared Source
 
 ```bash
-cd apps/mobile/ios
-
-# 使用 xcodebuild
-xcodebuild test \
-  -workspace PeersTouch.xcworkspace \
-  -scheme PeersTouch \
-  -destination 'platform=iOS Simulator,name=iPhone 15'
-
-# 或在 Xcode 中 Cmd+U
+pnpm mobile:check
 ```
 
-### 6.2 框架
+Shared source tests cover TypeScript and Rust semantics. They do not prove an
+Android or iOS release target.
 
-- 单元测试: XCTest
-- UI 测试: XCUITest
-- SwiftUI 预览: `#Preview` 宏
+### 5.2 Android
 
-### 6.3 示例
+Android tests run against the Tauri host under
+`apps/mobile/src-tauri/gen/android/` and capability adapters under
+`apps/mobile/src-tauri/plugins/*/android/`.
 
-```swift
-import XCTest
-@testable import PeersTouch
+Use registered Acceptance Gates for exact-source build and runtime proof.
+Emulator cells cover deterministic host behavior. Physical cells are required
+for FCM, Keystore hardware, OEM background work, media providers, TalkBack, and
+pinned-device performance.
 
-class StationAPIClientTests: XCTestCase {
+### 5.3 iOS
 
-    func testPullEvents_returnsEvents() async throws {
-        let client = StationAPIClient(baseURL: URL(string: "http://localhost:8420")!)
-        var request = PeersTouch_Model_Events_V1_PullEventsRequest()
-        request.limit = 10
+iOS tests run against the Tauri host under
+`apps/mobile/src-tauri/gen/apple/` and capability adapters under
+`apps/mobile/src-tauri/plugins/*/ios/`.
 
-        let response = try await client.pullEvents(request)
+Use registered Acceptance Gates for exact-source build and runtime proof.
+Simulator cells cover deterministic host behavior. Physical cells are required
+for APNs, secure hardware, BGTaskScheduler, media providers, VoiceOver, and
+pinned-device performance.
 
-        XCTAssertTrue(response.events.count <= 10)
-    }
+### 5.4 Platform Matrix
 
-    func testPullEvents_requiresAuth() async {
-        let client = StationAPIClient(baseURL: URL(string: "http://localhost:8420")!)
-        var request = PeersTouch_Model_Events_V1_PullEventsRequest()
-        request.limit = 10
-
-        do {
-            _ = try await client.pullEvents(request, token: nil)
-            XCTFail("Should throw unauthorized error")
-        } catch {
-            // Expected: 401 Unauthorized
-        }
-    }
-}
-```
+- Android and iOS artifacts remain separate.
+- One platform never proves the other.
+- Portable-core tests never prove host integration.
+- Missing required platform evidence is `UNPROVEN`.
 
 ---
 
@@ -558,11 +481,11 @@ cd apps/desktop && npm run test
 # Desktop Rust
 cd apps/desktop/src-tauri && cargo test
 
-# Mobile Android (需要 CI 环境配置 Android SDK)
-cd apps/mobile/android && ./gradlew test
+# Shared Mobile source
+pnpm mobile:check
 
-# Mobile iOS (需要 macOS CI)
-cd apps/mobile/ios && xcodebuild test -workspace PeersTouch.xcworkspace -scheme PeersTouch -destination 'platform=iOS Simulator,name=iPhone 15'
+# Android/iOS native proof
+# Run the registered capability-specific Acceptance Gates.
 ```
 
 ---

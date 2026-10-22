@@ -158,6 +158,10 @@ Owner 确认；确认前不得作为新的 Desktop Chat 落地参照。
 
 ## 已知差异 / 待补
 
+- `UNSYNCED`：真实 Desktop 的 Find People 已提供 All / Federation /
+  Station 三级搜索范围，Station 列表来自 Federation 成员目录；当前原型只覆盖
+  All / Federation。下一步由 Chat / Social Owner 补齐 Station scope 及其
+  loading / failure 状态后重新完成 L2/L3 确认。
 - 原型使用 mock 数据，不接 Station、Desktop Rust、实时同步或真实端到端加密。
 - `UNSYNCED`：真实 Desktop 在 X3DH 进行中显示 `Establishing secure channel…`，
   且只在 DM/MLS 会话真实 ready 后显示锁图标；当前原型仅覆盖稳定加密态。

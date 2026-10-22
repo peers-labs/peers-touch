@@ -42,10 +42,21 @@ class RuntimeCellState(str, Enum):
     REAPING = "REAPING"
 
 
-class RuntimeCellLifecycle(Protocol):
-    """Acquire and release one Gate-bound Native Desktop runtime cell."""
+class RuntimeCellEvidence(Protocol):
+    """Serializable evidence projection; resource authority stays with its owner."""
 
-    def ready(self, gate_id: str) -> "RuntimeCellManifest": ...
+    def to_dict(self) -> dict[str, Any]: ...
+
+
+class RuntimeCellLifecycle(Protocol):
+    """Acquire or attach one Gate-bound platform runtime without duplicating leases."""
+
+    def ready(
+        self,
+        gate_id: str,
+        *,
+        artifact_kind: str = "acceptance-binary",
+    ) -> RuntimeCellEvidence: ...
 
     def status(self) -> dict[str, Any]: ...
 
@@ -525,6 +536,7 @@ class CellSourceIdentity:
     remote_source_digest: str
     remote_checkout_clean: bool
     binary_sha256: str
+    artifact_kind: str = "acceptance-binary"
 
 
 @dataclass(frozen=True)
@@ -668,6 +680,13 @@ class RuntimeCellManifest:
         ):
             raise ProvisioningError(
                 f"runtime cell {self.cell_id}: binary SHA-256 is missing or invalid"
+            )
+        if self.source.artifact_kind not in (
+            "acceptance-binary",
+            "installed-appimage",
+        ):
+            raise ProvisioningError(
+                f"runtime cell {self.cell_id}: source artifact kind is invalid"
             )
         if (
             contract.source.clean_commit_required_for_proof
@@ -845,6 +864,7 @@ class RuntimeCellManifest:
                     "remoteSourceDigest": self.source.remote_source_digest,
                     "remoteCheckoutClean": self.source.remote_checkout_clean,
                     "binarySha256": self.source.binary_sha256,
+                    "artifactKind": self.source.artifact_kind,
                 },
                 "nativeAdapter": {
                     "inputMode": self.native_adapter.input_mode,

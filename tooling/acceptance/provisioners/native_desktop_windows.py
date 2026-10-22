@@ -450,7 +450,17 @@ class NativeDesktopWindowsProvisioner:
     def ready(
         self,
         gate_id: str = "runtime-cell-preflight",
+        *,
+        artifact_kind: str = "acceptance-binary",
     ) -> RuntimeCellManifest:
+        if artifact_kind != "acceptance-binary":
+            raise BlockedError(
+                reason=(
+                    f"Windows runtime cell does not support artifact kind "
+                    f"{artifact_kind!r}"
+                ),
+                resource=f"runtime-cell-artifact:{self.contract.cell_id}",
+            )
         if self.state_path.exists():
             raise BlockedError(
                 reason=(
@@ -1225,9 +1235,6 @@ class NativeDesktopWindowsProvisioner:
             self.profile.deploy_environment,
             source_root=self.source_root,
             environments_dir=self.deploy_root,
-            central_environment_path=(
-                REPO_ROOT / ".local" / "deploy" / "git-server.env"
-            ),
             require_clean=self.contract.source.clean_commit_required_for_proof,
             remote_platform=RemotePlatform.WINDOWS,
         )

@@ -37,6 +37,10 @@ GATE_MODULES = {
     "social-cross-station-native-e2e": (
         "tooling.acceptance.gates.social.cross_station_native_e2e"
     ),
+    "social-cross-station-mobile-desktop-e2e": (
+        "tooling.acceptance.gates.social."
+        "cross_station_mobile_desktop_e2e"
+    ),
     "browser-social-zero-registration": (
         "tooling.acceptance.gates.social.browser_zero_registration"
     ),

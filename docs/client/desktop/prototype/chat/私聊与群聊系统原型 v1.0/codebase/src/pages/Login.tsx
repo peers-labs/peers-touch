@@ -97,7 +97,7 @@ export default function Login() {
                       </span>
                     </div>
                     <p className="text-sm text-slate-500 truncate mb-3">
-                      GitHub · developer@example.com
+                      GitHub · user@example.com
                     </p>
 
                     {/* Timestamps */}

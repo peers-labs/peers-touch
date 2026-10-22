@@ -15,12 +15,9 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { ArrowLeft, CornerUpLeft, Flag, FolderOpen, Mic, MoreHorizontal, Phone, Plus, RotateCcw, Scissors, Search, Send, Smile, Square, Video, X } from 'lucide-react';
 import { useShallow } from 'zustand/shallow';
 import {
-  CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD,
   canSubmitChatComposerDraft,
   canEditChatMessage,
   chatMediaKindForAttachment,
-  chatVisualCssVars,
-  chatVisualLayoutForSurface,
   formatChatAttachmentSize,
   isRecalledChatMessage,
   shouldSendComposerEnter,
@@ -166,13 +163,21 @@ import {
   chatInputPanelState,
   useChatBottomOcclusion,
 } from './chat/chatBottomOcclusion';
+import {
+  MOBILE_CHAT_COMPOSER_CAPABILITIES_THREAD,
+  mobileChatLayoutForSurface,
+  mobileChatVisualCssVars,
+} from './chat/chatPresentationPolicy';
 
 const { Text } = Typography;
 const TYPING_TRUE_INTERVAL_MS = 3000;
 const TYPING_FALSE_DELAY_MS = 4000;
 const EMPTY_MESSAGES: SocialMessage[] = [];
-const MOBILE_THREAD_COMPOSER_CAPABILITIES = CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD;
-const MOBILE_THREAD_VISUAL_VARS = chatVisualCssVars(chatVisualLayoutForSurface('mobile-thread')) as CSSProperties;
+const MOBILE_THREAD_COMPOSER_CAPABILITIES =
+  MOBILE_CHAT_COMPOSER_CAPABILITIES_THREAD;
+const MOBILE_THREAD_VISUAL_VARS = mobileChatVisualCssVars(
+  mobileChatLayoutForSurface('mobile-thread'),
+) as CSSProperties;
 const MOBILE_COMPOSER_EMOJIS = ['😀', '😊', '😂', '😍', '👍', '🙏', '🎉', '🔥', '❤️', '✨', '😭', '🤔'] as const;
 /** Maximum messages mounted in one traversable window. */
 const MESSAGE_WINDOW_SIZE = 200;

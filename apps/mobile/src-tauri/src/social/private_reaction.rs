@@ -16,14 +16,12 @@ use crate::secure_content::store::{
     PrivateSocialStore, ReactionCommandState, StoredReactionCommand,
 };
 use crate::secure_content::transport::{
-    NativeSocialTransport, TransportDisposition, TransportError,
+    federated_private_interaction_signing_bytes, NativeSocialTransport, TransportDisposition,
+    TransportError,
 };
 use crate::secure_content::NativeSocialSession;
 
 use super::{MobilePrivateSocialRuntime, PrivateSocialEngine};
-
-const FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN: &[u8] =
-    b"peers-touch:social:federated-private-interaction:v1\0";
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -453,10 +451,12 @@ impl PrivateReactionOrchestrator {
                     actor_signing_key_id: self.session.signing_key_id.clone(),
                     actor_device_signature: Vec::new(),
                 };
-                request.actor_device_signature = self.session.sign(&reaction_signing_bytes(
-                    operation.wire(),
-                    &request.encode_to_vec(),
-                ));
+                request.actor_device_signature =
+                    self.session
+                        .sign(&federated_private_interaction_signing_bytes(
+                            operation.wire(),
+                            &request.encode_to_vec(),
+                        ));
                 Ok(request.encode_to_vec())
             }
             PrivateReactionOperation::Unreact => {
@@ -467,10 +467,12 @@ impl PrivateReactionOrchestrator {
                     actor_signing_key_id: self.session.signing_key_id.clone(),
                     actor_device_signature: Vec::new(),
                 };
-                request.actor_device_signature = self.session.sign(&reaction_signing_bytes(
-                    operation.wire(),
-                    &request.encode_to_vec(),
-                ));
+                request.actor_device_signature =
+                    self.session
+                        .sign(&federated_private_interaction_signing_bytes(
+                            operation.wire(),
+                            &request.encode_to_vec(),
+                        ));
                 Ok(request.encode_to_vec())
             }
         }
@@ -588,21 +590,6 @@ fn validate_mutation(post_id: &str, kind: i32) -> Result<(), String> {
     Ok(())
 }
 
-fn reaction_signing_bytes(
-    operation: social::FederatedPrivateInteractionOperation,
-    canonical_operation: &[u8],
-) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(
-        FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN.len()
-            + std::mem::size_of::<u32>()
-            + canonical_operation.len(),
-    );
-    bytes.extend_from_slice(FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN);
-    bytes.extend_from_slice(&(operation as u32).to_be_bytes());
-    bytes.extend_from_slice(canonical_operation);
-    bytes
-}
-
 fn reaction_state_matches(
     command: &StoredReactionCommand,
     reactions: &[PrivateReactionSummaryProjection],
@@ -687,7 +674,7 @@ mod tests {
             actor_signing_key_id: "device-key-1".to_string(),
             actor_device_signature: Vec::new(),
         };
-        let bytes = reaction_signing_bytes(
+        let bytes = federated_private_interaction_signing_bytes(
             social::FederatedPrivateInteractionOperation::React,
             &request.encode_to_vec(),
         );
@@ -697,7 +684,7 @@ mod tests {
         assert!(key
             .verifying_key()
             .verify(
-                &reaction_signing_bytes(
+                &federated_private_interaction_signing_bytes(
                     social::FederatedPrivateInteractionOperation::Unreact,
                     &request.encode_to_vec(),
                 ),

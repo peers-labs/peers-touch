@@ -1,44 +1,48 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  closeAgentCreateFlow,
-  getAgentCreateRequest,
-  openAgentCreateFlow,
-  subscribeAgentCreateFlow,
-} from './agentCreateFlow';
+const createAgent = vi.hoisted(() => vi.fn());
+const toastError = vi.hoisted(() => vi.fn());
+vi.mock('@lobehub/ui', () => ({ toast: { error: toastError } }));
+vi.mock('../../../store/agent', () => ({
+  useAgentStore: {
+    getState: () => ({
+      agents: [{ name: 'new-agent' }, { name: 'new-agent-2' }],
+      createAgent,
+    }),
+  },
+}));
+vi.mock('../../../i18n', () => ({ default: { t: () => 'New Agent' } }));
 
-describe('agentCreateFlow', () => {
-  afterEach(() => {
-    const request = getAgentCreateRequest();
-    if (request) closeAgentCreateFlow(request.id);
-  });
+import { openAgentCreateFlow } from './agentCreateFlow';
 
-  it('opens without creating or selecting an Agent', () => {
+describe('shared Agent creation', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('creates identity once and enters the authoritative Profile after acceptance', async () => {
+    let resolve!: (agent: { name: string }) => void;
+    createAgent.mockReturnValueOnce(new Promise((accept) => { resolve = accept; }));
     const openProfile = vi.fn();
-    const listener = vi.fn();
-    const unsubscribe = subscribeAgentCreateFlow(listener);
-
     openAgentCreateFlow(openProfile);
-
-    expect(getAgentCreateRequest()).toMatchObject({ openProfile });
+    openAgentCreateFlow(openProfile);
+    expect(createAgent).toHaveBeenCalledTimes(1);
+    expect(createAgent).toHaveBeenCalledWith({
+      name: 'new-agent-3', title: 'New Agent', description: '',
+      avatar: '🤖', visibility: 'private', workspaceMode: 'agent',
+    });
     expect(openProfile).not.toHaveBeenCalled();
-    expect(listener).toHaveBeenCalledOnce();
-    unsubscribe();
+    resolve({ name: 'station-owned-name' });
+    await vi.waitFor(() => expect(openProfile).toHaveBeenCalledWith('station-owned-name'));
   });
 
-  it('ignores duplicate opens and closes only the active request', () => {
-    const first = vi.fn();
-    const second = vi.fn();
-
-    openAgentCreateFlow(first);
-    const request = getAgentCreateRequest();
-    openAgentCreateFlow(second);
-    closeAgentCreateFlow((request?.id ?? 0) + 1);
-
-    expect(getAgentCreateRequest()).toBe(request);
-    closeAgentCreateFlow(request?.id ?? 0);
-    expect(getAgentCreateRequest()).toBeNull();
-    expect(first).not.toHaveBeenCalled();
-    expect(second).not.toHaveBeenCalled();
+  it('reports rejection and permits a subsequent creation', async () => {
+    const creationError = new Error('station unavailable');
+    createAgent.mockRejectedValueOnce(creationError);
+    const openProfile = vi.fn();
+    openAgentCreateFlow(openProfile);
+    await vi.waitFor(() => expect(toastError).toHaveBeenCalledWith('station unavailable'));
+    expect(openProfile).not.toHaveBeenCalled();
+    createAgent.mockResolvedValueOnce({ name: 'recovered-agent' });
+    openAgentCreateFlow(openProfile);
+    await vi.waitFor(() => expect(openProfile).toHaveBeenCalledWith('recovered-agent'));
   });
 });

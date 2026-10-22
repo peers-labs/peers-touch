@@ -1,6 +1,6 @@
 ---
-name: "pt-architecture-design-methodology"
-description: "Designs evidence-backed architecture boundaries, ownership, contracts, topology, failure semantics, and decisions. Invoke before execution planning whenever the target architecture is not yet accepted."
+name: pt-architecture-design-methodology
+description: Designs evidence-backed architecture boundaries, ownership, contracts, topology, failure semantics, and decisions. Invoke before execution planning whenever the target architecture is not yet accepted.
 stage: "DESIGN"
 requires: ["accepted product contract for product-facing work, or a verified infrastructure problem statement"]
 produces: ["accepted architecture docs (design.md, decisions.md, data-model.md)"]
@@ -54,7 +54,7 @@ Read these before designing:
 - Accepted outputs from `pt-product-design-methodology` for product-facing work.
 - `docs/README.md`
 - `docs/global/architecture-document-standard.md`
-- `docs/global/architecture.md`
+- `docs/architecture/architecture.md`
 - `docs/global/first-principles.md`
 - `docs/knowledge/playbooks/documenting-large-requirements.md`
 - The nearest domain and platform sources for every path in scope.
@@ -183,8 +183,9 @@ Do not introduce phases or task sequencing here.
 Default repository ownership:
 
 - Station owns cross-end business truth.
-- Model owns shared contract semantics.
 - Each client owns device-local UI state and runtime orchestration.
+- Model owns shared contract semantics as a substrate consumed by runtimes; it
+  is not a runtime tier or request intermediary.
 
 Output:
 
@@ -206,6 +207,44 @@ Output:
 - Forbidden calls and dependencies.
 
 Architecture is incomplete without forbidden relationships.
+
+### Step 5a. Declare Diagram Viewpoints
+
+Every architecture diagram must declare one primary viewpoint:
+
+- `System Context`: people, the product system, external systems, and online
+  relationships.
+- `Logical Layer`: peer modules, runtime responsibilities, upstream/downstream
+  boundaries, and one primary request path.
+- `Module Map`: stable modules, ownership boundaries, and containment.
+- `Runtime Topology`: processes, services, live instances, and calls.
+- `Reuse Topology`: module composition, shared assets, and specialization
+  boundaries.
+- `Authority Map`: state and decision mutation owners.
+- `Deployment Topology`: release artifacts, nodes, networks, and placement.
+- `Dynamic Flow`: one Journey or state machine in strict temporal order.
+- `Control Plane`: cross-cutting controls over a separately defined data plane.
+
+Use one arrow meaning per diagram and state it explicitly. Prefer containment,
+bands, and grouped modules over many point-to-point connectors. Split the view
+when arrows would mix calls, dependencies, generation, authority, or delivery.
+
+Contract authoring order, reuse classification order, and execution sequence
+must not be rendered as runtime hierarchy. `proto-first` means define shared
+wire semantics before consumers; it does not mean `proto-on-top`. In runtime
+views, omit Model from the live node path and document it separately as the
+contract substrate consumed by Client and Station.
+
+Canonical project diagrams and any new or redrawn module diagrams use a
+module-local `*.diagram.json` spec rendered by
+`tooling/scripts/architecture/diagram-render.mjs` into a standalone SVG.
+Markdown embeds only the finished SVG; it must not expose renderer syntax,
+machine metadata, or hidden anchors. Link consumers to the exact SVG asset so
+`document-index.mjs` can derive reverse references. The diagram spec is a view
+projection of accepted architecture, never a second module or capability
+model. The renderer's scene graph must be visually inspected after SVG
+generation; schema validity alone cannot prove readable hierarchy, text fit,
+or connector routing.
 
 ### Step 6. Define Contracts And Operational Semantics
 
@@ -242,7 +281,8 @@ Every component definition must include:
 - What it must not know, import, or execute.
 
 Every `design.md` includes core principles, a system diagram, contracts,
-component relationships, and endpoints/APIs when applicable.
+component relationships, and endpoints/APIs when applicable. Its diagrams
+follow Step 5a and do not overload one view with multiple relationship types.
 
 ### Step 8. Define Quality Outcomes And Architecture Gates
 
@@ -375,3 +415,7 @@ Never:
 - Turn a proposal into a repository rule without acceptance.
 - Delegate routine architecture review to the user when project Review Skills
   can evaluate and remediate the proposal.
+- Mix runtime, reuse, authority, deployment, and contract-generation arrows in
+  one unlabeled diagram.
+- Place Model above Client or Station merely because the project is
+  proto-first.

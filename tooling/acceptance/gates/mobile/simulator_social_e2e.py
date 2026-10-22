@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import os
+import secrets
+import signal
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +21,7 @@ from tooling.acceptance.core import (
     ArtifactRef,
     ArtifactSession,
     DriverError,
+    EphemeralGateClient,
     GateError,
     ProvisioningError,
     REPO_ROOT,
@@ -59,8 +64,8 @@ SCENARIO_GATES = {
 IOS_SOCIAL_PARITY_SCENARIOS = (
     "rc01-home-explore",
     "rc01-search-profile",
-    "rc01-circles-publish",
     "rc01-thread-reaction",
+    "rc01-circles-publish",
     "rc01-recovery-lifecycle",
     "rc01-native-quality",
 )
@@ -153,6 +158,17 @@ OPTIONAL_DIAGNOSTIC_SCOPE = (
     "VoiceOver or TalkBack traversal",
     "OEM scheduler, picker, and pinned-hardware performance",
 )
+RECOVERY_RELAUNCH_ACTIONS = (
+    "build.identity",
+    "lifecycle.waitReady",
+    "lifecycle.scope.read",
+    "messaging.projection.read",
+    "reliability.draft.read",
+    "station.route.snapshot",
+)
+MOBILE_STATION_OUTAGE_CAPABILITY_ID = "mobile.station-outage"
+ROUTE_RENEWAL_TIMEOUT_SECONDS = 420.0
+STATION_RESTART_TIMEOUT_SECONDS = 180.0
 
 
 class SimulatorSocialGate(SimulatorCallbackRoutingGate):
@@ -172,6 +188,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             else ENVIRONMENT_ID
         )
         self.suite_runtime_ledger: SuiteRuntimeLedger | None = None
+        self.capability_client: EphemeralGateClient | None = None
 
     def execute(self) -> int:
         with ArtifactSession(
@@ -209,8 +226,30 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                         "errorType": type(error).__name__,
                     }
                 )
+                result["runtimeDiagnostics"] = self._capture_runtime_failure(
+                    artifacts,
+                )
             finally:
                 self._cleanup_sessions(artifacts)
+                if self.capability_client is not None:
+                    try:
+                        self.capability_client.close()
+                    except Exception as error:
+                        self.cleanup.append(
+                            {
+                                "resource": "ephemeral-capability-client",
+                                "status": "failed",
+                                "errorType": type(error).__name__,
+                            }
+                        )
+                    else:
+                        self.cleanup.append(
+                            {
+                                "resource": "ephemeral-capability-client",
+                                "status": "passed",
+                            }
+                        )
+                    self.capability_client = None
 
             cleanup_failed = any(
                 item["status"] == "failed" for item in self.cleanup
@@ -299,6 +338,104 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         stream.write(f"{status}: {self.gate_id}\n")
         return exit_code
 
+    def _capture_runtime_failure(
+        self,
+        artifacts: ArtifactSession,
+    ) -> list[dict[str, Any]]:
+        diagnostics: list[dict[str, Any]] = []
+        for session in self.sessions:
+            client_id = session.client_id
+            try:
+                lifecycle = self._mapping(
+                    session.call_action(
+                        "lifecycle.waitReady",
+                        {"includeDiagnostics": True},
+                    ),
+                    f"{client_id} failed lifecycle",
+                )
+                social = self._mapping(
+                    session.call_action("social.projection.read"),
+                    f"{client_id} failed Social projection",
+                )
+                private_social = self._mapping(
+                    session.call_action("moments.private.snapshot"),
+                    f"{client_id} failed private Social projection",
+                )
+                ingress = social.get("ingress")
+                public_ingress = (
+                    {
+                        key: ingress.get(key)
+                        for key in (
+                            "lifecycle",
+                            "writeAdmissionOpen",
+                            "staleDomains",
+                            "dataQueueDepth",
+                            "controlQueueDepth",
+                        )
+                    }
+                    if isinstance(ingress, Mapping)
+                    else None
+                )
+                value = {
+                    "clientId": client_id,
+                    "lifecycle": {
+                        key: lifecycle.get(key)
+                        for key in (
+                            "phase",
+                            "launchState",
+                            "generation",
+                            "errorKey",
+                            "runtimes",
+                            "runtimeErrors",
+                        )
+                    },
+                    "social": {
+                        "active": social.get("active"),
+                        "lastReconcileAt": social.get("lastReconcileAt"),
+                        "ingress": public_ingress,
+                    },
+                    "privateSocial": {
+                        "publish": [
+                            {
+                                key: item.get(key)
+                                for key in (
+                                    "audienceKind",
+                                    "state",
+                                    "errorCode",
+                                )
+                                if item.get(key) is not None
+                            }
+                            for item in private_social.get("publish", [])
+                            if isinstance(item, Mapping)
+                        ],
+                        "publishStateHistory": private_social.get(
+                            "publishStateHistory",
+                        ),
+                        "report": private_social.get("report"),
+                        "errorPresent": private_social.get("errorPresent"),
+                    },
+                }
+                reference = artifacts.write_json(
+                    f"mobile-simulator-social/{self.scenario}/"
+                    f"{client_id}/failure-runtime.json",
+                    json.loads(redact_text(json.dumps(value))),
+                    role=f"mobile-simulator-social-failure-runtime:{client_id}",
+                )
+                diagnostics.append(
+                    {
+                        "clientId": client_id,
+                        "artifact": reference.to_dict(),
+                    }
+                )
+            except Exception as error:
+                diagnostics.append(
+                    {
+                        "clientId": client_id,
+                        "captureErrorType": type(error).__name__,
+                    }
+                )
+        return diagnostics
+
     def _finalize_suite_runtime(
         self,
         *,
@@ -354,6 +491,21 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         self._reject_credentials(manifest, resources)
         runtime_identity = _validate_runtime_identity(resources)
+        applications = self._required_object(
+            resources,
+            "applications",
+            f"{self.environment_id} resources",
+        )
+        ios_application = self._required_object(
+            applications,
+            "ios",
+            f"{self.environment_id} iOS application",
+        )
+        expected_build_identity = self._required_object(
+            ios_application,
+            "buildIdentity",
+            f"{self.environment_id} iOS application",
+        )
         appium = self._required_object(
             resources,
             "appium",
@@ -373,8 +525,31 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             )
             for spec in specs
         }
+        build_identity = (
+            {
+                client_id: self._verify_build_identity(
+                    session,
+                    expected_build_identity,
+                    f"{client_id} initial build identity",
+                )
+                for client_id, session in sessions.items()
+            }
+            if self.scenario == "recovery"
+            else {}
+        )
         actors = self._load_actors(artifacts, manifest)
+        actor_identity_preparation = {
+            client_id: self._prepare_fresh_actor_identity(
+                sessions[client_id],
+                actor,
+            )
+            for client_id, actor in actors.items()
+            if client_id in sessions
+        }
         journey = MobileMessagingJourney(timeout_seconds=30)
+        if self.scenario == "ios-social-parity":
+            for client_id, session in sessions.items():
+                self._prepare_actor_identity(session, actors[client_id].role)
         authentication = {
             client_id: journey.authenticate(
                 sessions[client_id],
@@ -401,7 +576,9 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 receiver_session=sessions["sim-ios-peer"],
                 sender=sender,
                 receiver=receiver,
+                journey=journey,
                 journey_id=artifacts.run_id[-12:],
+                expected_build_identity=expected_build_identity,
             )
         elif self.scenario == "chat-contacts":
             journey_result = journey.run_chat_contacts(
@@ -417,7 +594,9 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 receiver_session=sessions["sim-ios-peer"],
                 sender=sender,
                 receiver=receiver,
+                journey=journey,
                 journey_id=artifacts.run_id[-12:],
+                expected_build_identity=expected_build_identity,
             )
         elif self.scenario == "recovery-ui":
             journey_result = self._run_recovery_ui_journey(
@@ -468,9 +647,54 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             **self._result_base("PASS"),
             "source": source_identity,
             "runtime": runtime_identity,
+            "buildIdentity": build_identity,
+            "actorIdentityPreparation": actor_identity_preparation,
             "authentication": authentication,
             "journey": journey_result,
             "captures": captures,
+        }
+
+    @staticmethod
+    def _prepare_fresh_actor_identity(
+        session: Any,
+        actor: MessagingActor,
+    ) -> dict[str, Any]:
+        if (
+            not actor.station_peer_id.strip()
+            or not actor.ptid.startswith("ptid:")
+        ):
+            raise GateError(
+                f"{actor.client_id} fresh Actor identity scope is invalid"
+            )
+        user_scope = f"{actor.station_peer_id}|{actor.ptid}"
+        digest = hashlib.sha256(
+            user_scope.encode("utf-8")
+            + b"\x1f"
+            + actor.ptid.encode("utf-8")
+        ).digest()[:16].hex()
+        seed = bytearray(secrets.token_bytes(32))
+        seed_base64 = base64.b64encode(seed).decode("ascii")
+        try:
+            prepared = session.call_action(
+                "runtime.prepareActorIdentity",
+                {
+                    "storageKey": (
+                        f"mobile-crypto-identity.v1.identity.{digest}"
+                    ),
+                    "seedBase64": seed_base64,
+                },
+            )
+        finally:
+            seed[:] = b"\x00" * len(seed)
+            seed_base64 = ""
+        if prepared != {"prepared": True}:
+            raise GateError(
+                f"{actor.client_id} fresh Actor identity was not prepared"
+            )
+        return {
+            "clientId": actor.client_id,
+            "devicePolicy": "fresh",
+            "prepared": True,
         }
 
     def _start_social_session(
@@ -685,6 +909,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 SuiteRuntimeAction.LOGIN,
                 resource_id=f"login:{client_id}",
             )
+        private_key_inventories = {
+            client_id: self._prepare_private_keys(sessions[client_id])
+            for client_id in ("sim-ios", "sim-ios-peer")
+        }
 
         state: dict[str, Any] = {}
         scenario_runners = (
@@ -706,21 +934,19 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 ),
             ),
             (
-                "rc01-circles-publish",
-                lambda: self._run_ios_circles_publish(
-                    sender_session,
+                "rc01-thread-reaction",
+                lambda: self._run_ios_thread_reaction(
                     receiver_session,
-                    sender,
-                    receiver,
-                    journey,
                     journey_id,
                     state,
                 ),
             ),
             (
-                "rc01-thread-reaction",
-                lambda: self._run_ios_thread_reaction(
+                "rc01-circles-publish",
+                lambda: self._run_ios_circles_publish(
+                    sender_session,
                     receiver_session,
+                    receiver,
                     journey_id,
                     state,
                 ),
@@ -783,6 +1009,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 "bob": receiver.ptid,
                 "eve": eve.ptid,
             },
+            "privateKeyInventories": private_key_inventories,
             "scenarios": results,
             "unprovenScope": [
                 "Android",
@@ -838,6 +1065,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         self._click_ui(
             receiver_session,
+            '[data-acceptance-id="social-explore-sort-open"]',
+            "Explore sort sheet",
+        )
+        self._click_ui(
+            receiver_session,
             '[data-acceptance-id="social-explore-sort-hot"]',
             "Explore hot sort",
         )
@@ -890,16 +1122,33 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-search-page"]',
             "Social Search page",
         )
+        federation_selector = (
+            '[data-acceptance-id="social-search-page"] '
+            f'input[type="radio"][value="{receiver.federation_id}"]'
+        )
+        federation_control_selector = (
+            '[data-acceptance-id="social-search-page"] '
+            "label.ant-radio-wrapper:has("
+            f'input[type="radio"][value="{receiver.federation_id}"])'
+        )
+        self._select_radio(
+            session,
+            federation_control_selector,
+            federation_selector,
+            '[data-acceptance-id="social-search-input"] '
+            ".ant-input-search-btn",
+            "Social Search Federation",
+        )
         self._set_ui_value(
             session,
             '[data-acceptance-id="social-search-input"] input',
-            receiver.federated_handle,
+            receiver.role,
             "Social Search query",
         )
         self._click_ui(
             session,
             '[data-acceptance-id="social-search-input"] '
-            ".ant-input-search-button",
+            ".ant-input-search-btn",
             "Social Search submit",
         )
         result_selector = (
@@ -930,29 +1179,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         self,
         sender_session: Any,
         receiver_session: Any,
-        sender: MessagingActor,
         receiver: MessagingActor,
-        journey: MobileMessagingJourney,
         journey_id: str,
         state: dict[str, Any],
     ) -> dict[str, Any]:
-        conversation_id = journey._create_direct(
-            sender_session,
-            receiver_session,
-            sender,
-            receiver,
-        )
-        group_id = f"mps09-group-{journey_id}"
-        sender_session.call_action(
-            "messaging.createGroup",
-            {
-                "conversationId": group_id,
-                "name": f"MPS09 {journey_id}",
-                "memberPtids": [sender.ptid, receiver.ptid],
-                "federationId": sender.federation_id,
-            },
-        )
-
         sender_session.call_action(
             "navigation.apply",
             {"kind": "primary", "routeId": "tab:moments"},
@@ -1012,16 +1242,22 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-circle-member-picker"]',
             "Circle member picker",
         )
+        self._select_antd_option(
+            sender_session,
+            '[data-acceptance-id="social-circle-member-picker"] .ant-select',
+            0,
+            "Circle member Federation",
+        )
         self._set_ui_value(
             sender_session,
             '[data-acceptance-id="social-circle-member-search"] input',
-            receiver.federated_handle,
+            receiver.role,
             "Circle member search",
         )
         self._click_ui(
             sender_session,
             '[data-acceptance-id="social-circle-member-search"] '
-            ".ant-input-search-button",
+            ".ant-input-search-btn",
             "Circle member search submit",
         )
         candidate_selector = (
@@ -1096,7 +1332,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         self._click_ui(
             sender_session,
-            '[data-acceptance-id="social-audience-target-done"]',
+            (
+                '[data-acceptance-id="social-audience-circle"]'
+                f'[data-circle-id="{circle_id}"]'
+            ),
             "Circle target",
         )
         self._wait_ui_attribute(
@@ -1130,8 +1369,6 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "privatePostId": private_post_id,
             "privatePostText": private_text,
             "circleId": circle_id,
-            "groupId": group_id,
-            "conversationId": conversation_id,
         })
         receiver_session.call_action("moments.private.reconcile")
         receiver_read = self._mapping(
@@ -1157,9 +1394,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         return {
             "uiAction": f"circle-create-publish:{circle_id}",
             "receiverAssertion": f"private-post:{private_post_id}",
-            "supportingObservation": (
-                f"circle-member:{receiver.ptid};group:{group_id}"
-            ),
+            "supportingObservation": f"circle-member:{receiver.ptid}",
             "circleId": circle_id,
             "privatePostId": private_post_id,
             "receiverState": receiver_read["state"],
@@ -1172,18 +1407,15 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         state: Mapping[str, Any],
     ) -> dict[str, Any]:
         post_id = self._text(
-            state.get("privatePostId"),
-            "MPS-09 private post state",
+            state.get("publicPostId"),
+            "MPS-09 public post state",
         )
         for index in range(11):
             session.call_action(
-                "moments.private.comment.submit",
+                "moments.comment",
                 {
-                    "draftId": f"mps09-{journey_id}-comment-{index}",
-                    "draftRevision": 1,
                     "postId": post_id,
-                    "text": f"MPS09 comment {index}",
-                    "mentions": [],
+                    "content": f"MPS09 comment {index}",
                 },
             )
         session.call_action(
@@ -1201,7 +1433,24 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-moment-thread"]'
             f'[data-post-id="{post_id}"]'
         )
-        self._wait_ui(session, thread_selector, "Moment thread")
+        try:
+            self._wait_ui(session, thread_selector, "Moment thread")
+        except GateError as error:
+            thread_state = self._moment_thread_state(session, post_id)
+            navigation = self._mapping(
+                session.call_action("navigation.snapshot"),
+                "Moment thread navigation",
+            )
+            raise GateError(
+                "Moment thread did not converge "
+                f"(momentsPages={thread_state['momentsPages']}, "
+                f"cards={thread_state['cards']}, "
+                f"actions={thread_state['actions']}, "
+                f"threads={thread_state['threads']}, "
+                f"primaryRoute={navigation.get('primaryRouteId')}, "
+                f"detailCount={len(navigation.get('detailKeys', []))}, "
+                f"rootError={thread_state['rootError'] or 'none'})"
+            ) from error
         self._wait_ui_attribute(
             session,
             f"{thread_selector} [data-comment-total]",
@@ -1226,18 +1475,19 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             f"MPS09 UI comment {journey_id}",
             "Inline comment readback",
         )
+        self._click_ui_for_post(
+            session,
+            post_id,
+            "social-reaction-open",
+            "Reaction picker",
+        )
         for reaction_kind in range(1, 6):
-            self._click_ui_for_post(
-                session,
-                post_id,
-                "social-reaction-open",
-                "Reaction picker",
-            )
             self._click_ui(
                 session,
                 (
-                    '[data-acceptance-id="social-reaction-choice"]'
-                    f'[data-reaction-kind="{reaction_kind}"]'
+                    '[data-reaction-picker] '
+                    '[data-reaction-picker-item]'
+                    f':nth-child({reaction_kind})'
                 ),
                 f"Reaction kind {reaction_kind}",
             )
@@ -1273,13 +1523,43 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             draft_text,
             "Recovery draft",
         )
-        time.sleep(0.5)
+        self._wait_ui_attribute(
+            session,
+            '[data-acceptance-id="social-composer"]',
+            "data-draft-persisted",
+            "true",
+            "Persisted Recovery draft",
+        )
         restart = self._mapping(
             session.call_action("lifecycle.restart"),
             "MPS-09 lifecycle restart",
         )
         if restart != {"requested": True, "scope": "webview"}:
             raise GateError("MPS-09 lifecycle restart was not acknowledged")
+        self._click_ui(
+            session,
+            '[data-acceptance-id="recovery-draft-restore-action"]',
+            "Restore persisted Moment draft",
+        )
+        self._wait_ui_absent(
+            session,
+            '[data-acceptance-id="recovery-draft-restore"]',
+            "Dismiss restored Moment draft prompt",
+        )
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._wait_ui(
+            session,
+            '[data-acceptance-id="social-moments-page"]',
+            "Return to Moments after draft restoration",
+        )
+        self._click_ui(
+            session,
+            '[data-acceptance-id="social-composer-open"]',
+            "Reopen composer after draft restoration",
+        )
         self._wait_ui_text(
             session,
             '[data-acceptance-id="social-composer"]',
@@ -1290,6 +1570,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "session.logout",
             {"draftDisposition": "discard"},
         )
+        self._prepare_actor_identity(session, eve.role)
         journey.authenticate(
             session,
             eve,
@@ -1399,6 +1680,65 @@ return {
             "screenshotBytes": len(screenshot),
         }
 
+    def _prepare_actor_identity(self, session: Any, role: str) -> None:
+        if self.capability_client is None:
+            self.capability_client = EphemeralGateClient.from_environment()
+        client = self.capability_client
+        if client is None:
+            raise SimulatorGateBlocked(
+                "iOS Social Actor Identity capability is unavailable",
+                "mobile.social.actor-identity",
+            )
+        result = client.invoke(
+            "mobile.social.actor-identity",
+            "prepare",
+            {
+                "clientId": session.client_id,
+                "sessionId": session.session_id,
+                "role": role,
+            },
+            timeout_seconds=180,
+        )
+        if result != {"prepared": True}:
+            raise GateError("iOS Social Actor Identity was not prepared")
+
+    @staticmethod
+    def _prepare_private_keys(session: Any) -> dict[str, int]:
+        prepared = SimulatorSocialGate._mapping(
+            session.call_action("moments.private.acceptance.prepareKeys"),
+            f"{session.client_id} private Content PreKey preparation",
+        )
+        reconciled = SimulatorSocialGate._mapping(
+            session.call_action("moments.private.reconcile"),
+            f"{session.client_id} private Content PreKey reconciliation",
+        )
+        report = reconciled.get("report")
+        if not isinstance(report, Mapping):
+            raise GateError(
+                f"{session.client_id} private Content PreKey report is missing"
+            )
+        inventory: dict[str, int] = {}
+        for key in (
+            "endpointPrekeysAvailable",
+            "recoveryPrekeysAvailable",
+        ):
+            prepared_value = prepared.get(key)
+            reconciled_value = report.get(key)
+            if (
+                not isinstance(prepared_value, int)
+                or isinstance(prepared_value, bool)
+                or prepared_value <= 0
+                or not isinstance(reconciled_value, int)
+                or isinstance(reconciled_value, bool)
+                or reconciled_value <= 0
+            ):
+                raise GateError(
+                    f"{session.client_id} private Content PreKey inventory "
+                    "is unavailable"
+                )
+            inventory[key] = reconciled_value
+        return inventory
+
     @staticmethod
     def _wait_ui(
         session: Any,
@@ -1422,6 +1762,22 @@ return {
         return SimulatorSocialGate._wait_for_value(read, label)
 
     @staticmethod
+    def _wait_ui_absent(
+        session: Any,
+        selector: str,
+        label: str,
+    ) -> None:
+        SimulatorSocialGate._wait_for_value(
+            lambda: True
+            if session.execute_script(
+                "return document.querySelector(arguments[0]) === null;",
+                selector,
+            ) is True
+            else None,
+            label,
+        )
+
+    @staticmethod
     def _click_ui(
         session: Any,
         selector: str,
@@ -1443,34 +1799,117 @@ return true;
         SimulatorSocialGate._wait_for_value(click, label)
 
     @staticmethod
+    def _select_radio(
+        session: Any,
+        control_selector: str,
+        selector: str,
+        enabled_selector: str,
+        label: str,
+    ) -> int:
+        element_ref = session.find_element("css selector", control_selector)
+        session.click_element(element_ref)
+
+        def selected() -> Mapping[str, object] | None:
+            value = session.execute_script(
+                """
+const input = document.querySelector(arguments[0]);
+const enabled = document.querySelector(arguments[1]);
+if (input?.checked !== true || enabled?.disabled !== false) return null;
+const inputs = Array.from(document.querySelectorAll(
+  '[data-acceptance-id="social-search-page"] input[type="radio"]'
+));
+const index = inputs.indexOf(input);
+return index >= 0 ? {index} : null;
+""",
+                selector,
+                enabled_selector,
+            )
+            return value if isinstance(value, Mapping) else None
+
+        result = SimulatorSocialGate._wait_for_value(selected, label)
+        index = result.get("index") if isinstance(result, Mapping) else None
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            raise GateError(f"{label} returned an invalid option index")
+        return index
+
+    @staticmethod
     def _click_ui_for_post(
         session: Any,
         post_id: str,
         acceptance_id: str,
         label: str,
     ) -> None:
+        if any(
+            character in post_id or character in acceptance_id
+            for character in ('"', "\\")
+        ):
+            raise GateError(f"{label} has an invalid selector identity")
+        selector = (
+            '[data-acceptance-id="social-moment-card"]'
+            f'[data-post-id="{post_id}"] '
+            f'[data-acceptance-id="{acceptance_id}"]'
+        )
+
         def click() -> bool | None:
-            value = session.execute_script(
-                """
-const postId = arguments[0];
-const acceptanceId = arguments[1];
-const card = Array.from(document.querySelectorAll(
-  '[data-acceptance-id="social-moment-card"]'
-)).find((node) => node.getAttribute('data-post-id') === postId);
-const target = card?.querySelector(
-  `[data-acceptance-id="${acceptanceId}"]`
-);
-if (!target || target.disabled) return null;
-target.scrollIntoView({block: 'center', inline: 'nearest'});
-target.click();
-return true;
-""",
-                post_id,
-                acceptance_id,
-            )
-            return True if value is True else None
+            try:
+                element_ref = session.find_element("css selector", selector)
+                session.click_element(element_ref)
+                return True
+            except DriverError:
+                return None
 
         SimulatorSocialGate._wait_for_value(click, label)
+
+    @staticmethod
+    def _moment_thread_state(
+        session: Any,
+        post_id: str,
+    ) -> dict[str, int | str]:
+        value = session.execute_script(
+            """
+const postId = arguments[0];
+const cards = Array.from(document.querySelectorAll(
+  '[data-acceptance-id="social-moment-card"]'
+)).filter((node) => node.getAttribute('data-post-id') === postId);
+return {
+  momentsPages: document.querySelectorAll(
+    '[data-acceptance-id="social-moments-page"]'
+  ).length,
+  cards: cards.length,
+  actions: cards.reduce(
+    (count, card) => count + card.querySelectorAll(
+      '[data-acceptance-id="social-thread-open"]'
+    ).length,
+    0
+  ),
+  threads: document.querySelectorAll(
+    `[data-acceptance-id="social-moment-thread"][data-post-id="${postId}"]`
+  ).length,
+  rootError: (
+    document.querySelector('[data-acceptance-root-error-stack]')
+      ?.textContent || ''
+  ).split('\\n')[0].slice(0, 256),
+};
+""",
+            post_id,
+        )
+        if not isinstance(value, Mapping) or any(
+            not isinstance(value.get(key), int)
+            or isinstance(value.get(key), bool)
+            or int(value[key]) < 0
+            for key in ("momentsPages", "cards", "actions", "threads")
+        ):
+            raise GateError("Moment thread diagnostic is invalid")
+        root_error = value.get("rootError")
+        if not isinstance(root_error, str):
+            raise GateError("Moment thread error diagnostic is invalid")
+        return {
+            **{
+                key: int(value[key])
+                for key in ("momentsPages", "cards", "actions", "threads")
+            },
+            "rootError": redact_text(root_error),
+        }
 
     @staticmethod
     def _set_ui_value(
@@ -1509,11 +1948,8 @@ return node.value === value;
         option_index: int,
         label: str,
     ) -> None:
-        SimulatorSocialGate._click_ui(
-            session,
-            f"{selector} .ant-select-selector",
-            f"{label} selector",
-        )
+        element_ref = session.find_element("css selector", selector)
+        session.click_element(element_ref)
 
         def select() -> bool | None:
             selected = session.execute_script(
@@ -3330,15 +3766,19 @@ return {
         receiver_session: Any,
         sender: MessagingActor,
         receiver: MessagingActor,
+        journey: MobileMessagingJourney,
         journey_id: str,
+        expected_build_identity: Mapping[str, Any],
     ) -> dict[str, Any]:
-        chat_draft = sender_session.call_action(
-            "reliability.draft.write",
-            {
-                "kind": "chat",
-                "targetId": f"recovery-{journey_id}-chat",
-                "text": f"recovery-{journey_id}-chat-draft",
-            },
+        initial_device = self._wait_for_enrolled_device(
+            sender_session,
+            sender,
+            "initial recovery device enrollment",
+        )
+        initial_receiver_device = self._wait_for_enrolled_device(
+            receiver_session,
+            receiver,
+            "initial recovery receiver device enrollment",
         )
         moment_draft = sender_session.call_action(
             "reliability.draft.write",
@@ -3349,16 +3789,6 @@ return {
                 "audienceKind": 1,
             },
         )
-        before = self._reliability_snapshot(
-            sender_session.call_action("reliability.snapshot"),
-            "recovery snapshot before restart",
-        )
-        self._require_drafts(before, (chat_draft, moment_draft))
-        restart = sender_session.call_action("lifecycle.restart")
-        if restart != {"requested": True, "scope": "webview"}:
-            raise GateError("recovery lifecycle restart was not acknowledged")
-        restored = sender_session.call_action("reliability.draft.read", {})
-        self._require_drafts({"drafts": restored}, (chat_draft, moment_draft))
 
         sender_session.call_action(
             "reliability.fixture.configure",
@@ -3412,10 +3842,57 @@ return {
                 payload_sha256,
                 {"unknown-outcome", "reconciling"},
             )
-            recovery_ui = self._wait_for_recovery_kind(
+            normal_restart = self._restart_ios_application(
                 sender_session,
-                "command-recovery",
+                force_kill=False,
             )
+            normal_restart_readiness = self._require_runtime_graph_ready(
+                sender_session,
+                "normal process restart",
+            )
+            normal_restart_build_identity = self._verify_build_identity(
+                sender_session,
+                expected_build_identity,
+                "normal process restart build identity",
+            )
+            journey.wait_for_authenticated_runtime(
+                sender_session,
+                sender,
+            )
+            self._wait_for_enrolled_device(
+                sender_session,
+                sender,
+                "normal restart device enrollment",
+            )
+            restored_unresolved = self._wait_for_reliability_snapshot(
+                sender_session,
+                "unresolved recovery snapshot after normal process restart",
+            )
+            self._require_drafts(restored_unresolved, (moment_draft,))
+            restored_command = next(
+                (
+                    item
+                    for item in restored_unresolved["commands"]
+                    if isinstance(item, Mapping)
+                    and item.get("commandId") == command_id
+                ),
+                None,
+            )
+            if restored_command is None:
+                command_recovery_mode = "automatic"
+                recovery_ui = {"automaticRecovery": True}
+            else:
+                self._require_command(
+                    restored_unresolved,
+                    command_id,
+                    payload_sha256,
+                    {"unknown-outcome", "reconciling"},
+                )
+                command_recovery_mode = "manual"
+                recovery_ui = self._wait_for_recovery_kind(
+                    sender_session,
+                    "command-recovery",
+                )
         finally:
             sender_session.call_action(
                 "reliability.fixture.configure",
@@ -3427,17 +3904,21 @@ return {
             "recovery reconcile",
         )
         commands = reconciled.get("commands")
-        if (
-            not isinstance(commands, list)
-            or not any(
+        applied_checkpoints = reconciled.get("appliedCheckpoints")
+        if not isinstance(commands, list) or not isinstance(
+            applied_checkpoints,
+            int,
+        ):
+            raise GateError("recovery reconciliation result is incomplete")
+        if command_recovery_mode == "manual" and (
+            not any(
                 isinstance(item, Mapping)
                 and item.get("commandId") == command_id
                 and item.get("payloadSha256") == payload_sha256
                 and item.get("checkpointReady") is True
                 for item in commands
             )
-            or not isinstance(reconciled.get("appliedCheckpoints"), int)
-            or int(reconciled["appliedCheckpoints"]) < 1
+            or applied_checkpoints < 1
         ):
             raise GateError("recovery checkpoint was not applied")
         relationship = self._wait_for_friend_request(
@@ -3446,14 +3927,206 @@ return {
             sender_ptid=sender.ptid,
             receiver_ptid=receiver.ptid,
         )
-        retained = self._reliability_snapshot(
-            sender_session.call_action(
-                "reliability.draft.action",
-                {"action": "restore"},
-            ),
-            "restored draft snapshot",
+        receiver_session.call_action(
+            "social.request.accept",
+            {"requestId": request_id},
         )
-        self._require_drafts(retained, (chat_draft, moment_draft))
+        self._wait_for_accepted_relationship(
+            sender_session,
+            request_id=request_id,
+            sender_ptid=sender.ptid,
+            receiver_ptid=receiver.ptid,
+        )
+        normal_restart_write_admission = self._wait_for_write_admission(
+            sender_session,
+            "normal process restart write admission",
+        )
+        conversation = self._mapping(
+            sender_session.call_action(
+                "social.contact.open",
+                {
+                    "peerPtid": receiver.ptid,
+                    "federationId": sender.federation_id,
+                },
+            ),
+            "recovery Direct conversation",
+        )
+        conversation_id = self._text(
+            conversation.get("conversationId"),
+            "recovery Direct conversation ID",
+        )
+        journey.wait_for_conversation(
+            sender_session,
+            conversation_id,
+            kind=1,
+        )
+        journey.wait_for_conversation(
+            receiver_session,
+            conversation_id,
+            kind=1,
+        )
+
+        baseline_text = f"recovery-history-{journey_id}"
+        baseline_submission = self._mapping(
+            sender_session.call_action(
+                "messaging.send",
+                {
+                    "conversationId": conversation_id,
+                    "plaintext": baseline_text,
+                },
+            ),
+            "recovery baseline message",
+        )
+        baseline_message_id = self._text(
+            baseline_submission.get("messageId"),
+            "recovery baseline message ID",
+        )
+        journey.wait_for_message(
+            receiver_session,
+            conversation_id,
+            baseline_message_id,
+            lambda message: message.get("plaintext") == baseline_text,
+            "recovery baseline receiver delivery",
+        )
+
+        self._open_chat_conversation(sender_session, conversation_id)
+        chat_draft_text = f"recovery-composer-{journey_id}"
+        self._write_chat_composer_draft(
+            sender_session,
+            chat_draft_text,
+        )
+        chat_drafts = self._wait_for_value(
+            lambda: self._read_chat_drafts(
+                sender_session,
+                conversation_id,
+            ),
+            "persisted Chat composer draft",
+        )
+        chat_draft = chat_drafts[0]
+
+        forced_restart = self._restart_ios_application(
+            sender_session,
+            force_kill=True,
+        )
+        forced_restart_readiness = self._require_runtime_graph_ready(
+            sender_session,
+            "SIGKILL process restart",
+        )
+        forced_restart_build_identity = self._verify_build_identity(
+            sender_session,
+            expected_build_identity,
+            "SIGKILL process restart build identity",
+        )
+        journey.wait_for_authenticated_runtime(
+            sender_session,
+            sender,
+        )
+        self._wait_for_enrolled_device(
+            sender_session,
+            sender,
+            "SIGKILL device enrollment",
+        )
+        forced_restart_write_admission = self._wait_for_write_admission(
+            sender_session,
+            "SIGKILL write admission",
+        )
+        self._open_chat_conversation(sender_session, conversation_id)
+        forced_restart_ui = self._wait_for_chat_ui_state(
+            sender_session,
+            message_id=baseline_message_id,
+            message_text=baseline_text,
+            draft_text=chat_draft_text,
+            label="Chat UI after SIGKILL",
+        )
+        forced_restart_snapshot = self._wait_for_reliability_snapshot(
+            sender_session,
+            "reliability snapshot after SIGKILL",
+        )
+        self._require_drafts(
+            forced_restart_snapshot,
+            (chat_draft, moment_draft),
+        )
+
+        route_renewal = self._await_route_attestation_renewal(
+            sender_session,
+            keepalive_session=receiver_session,
+            keepalive_actor=receiver,
+        )
+        outage_ui: dict[str, Any] = {}
+
+        def observe_outage() -> None:
+            try:
+                sender_session.call_action("messaging.reconcile")
+            except DriverError:
+                pass
+            outage_ui.update(
+                self._wait_for_route_retry_surface(sender_session)
+            )
+
+        station_restart = self._restart_source_bound_station(
+            during_outage=observe_outage,
+        )
+        retry_element = self._wait_for_value(
+            lambda: self._find_element_or_none(
+                sender_session,
+                '[data-acceptance-id="mobile-route-retry"]',
+            ),
+            "Mobile route Retry control",
+        )
+        sender_session.click_element(retry_element)
+        journey.wait_for_authenticated_runtime(
+            sender_session,
+            sender,
+        )
+        self._wait_for_enrolled_device(
+            sender_session,
+            sender,
+            "Station restart device enrollment",
+        )
+        station_restart_write_admission = self._wait_for_write_admission(
+            sender_session,
+            "Station restart write admission",
+        )
+        self._open_chat_conversation(sender_session, conversation_id)
+        station_restart_ui = self._wait_for_chat_ui_state(
+            sender_session,
+            message_id=baseline_message_id,
+            message_text=baseline_text,
+            draft_text=chat_draft_text,
+            label="Chat UI after Station restart",
+        )
+        station_restart_snapshot = self._wait_for_reliability_snapshot(
+            sender_session,
+            "reliability snapshot after Station restart",
+        )
+        self._require_drafts(
+            station_restart_snapshot,
+            (chat_draft, moment_draft),
+        )
+
+        recovered_text = f"recovery-receiver-{journey_id}"
+        recovered_submission = self._mapping(
+            sender_session.call_action(
+                "messaging.send",
+                {
+                    "conversationId": conversation_id,
+                    "plaintext": recovered_text,
+                },
+            ),
+            "post-recovery message",
+        )
+        recovered_message_id = self._text(
+            recovered_submission.get("messageId"),
+            "post-recovery message ID",
+        )
+        receiver_message, receiver_elapsed_ms = journey.wait_for_message(
+            receiver_session,
+            conversation_id,
+            recovered_message_id,
+            lambda message: message.get("plaintext") == recovered_text,
+            "post-recovery receiver delivery",
+        )
+
         discarded = self._reliability_snapshot(
             sender_session.call_action(
                 "reliability.draft.action",
@@ -3469,11 +4142,517 @@ return {
             "requestId": request_id,
             "payloadSha256": payload_sha256,
             "checkpointApplied": True,
+            "commandRecoveryMode": command_recovery_mode,
             "receiverReadback": relationship,
+            "conversationId": conversation_id,
+            "baselineMessageId": baseline_message_id,
+            "postRecoveryMessageId": recovered_message_id,
+            "postRecoveryReceiverReadback": receiver_message,
+            "postRecoveryReceiverElapsedMs": receiver_elapsed_ms,
+            "initialDevice": initial_device,
+            "initialReceiverDevice": initial_receiver_device,
+            "normalProcessRestart": normal_restart,
+            "normalProcessRestartReadiness": normal_restart_readiness,
+            "normalProcessRestartWriteAdmission": (
+                normal_restart_write_admission
+            ),
+            "normalProcessRestartBuildIdentity": (
+                normal_restart_build_identity
+            ),
+            "forcedProcessRestart": forced_restart,
+            "forcedProcessRestartReadiness": forced_restart_readiness,
+            "forcedProcessRestartWriteAdmission": (
+                forced_restart_write_admission
+            ),
+            "forcedProcessRestartBuildIdentity": (
+                forced_restart_build_identity
+            ),
+            "forcedProcessRestartUi": forced_restart_ui,
+            "routeAttestationRenewal": route_renewal,
+            "stationOutageUi": outage_ui,
+            "stationRestart": station_restart,
+            "stationRestartWriteAdmission": station_restart_write_admission,
+            "stationRestartUi": station_restart_ui,
             "draftRestartReadback": True,
+            "historyRestartReadback": True,
             "draftDiscarded": True,
             "recoveryProjection": recovery_ui,
         }
+
+    @staticmethod
+    def _verify_build_identity(
+        session: Any,
+        expected: Mapping[str, Any],
+        label: str,
+    ) -> dict[str, Any]:
+        value = SimulatorSocialGate._mapping(
+            session.call_action("build.identity"),
+            label,
+        )
+        identity = SimulatorSocialGate._mapping(
+            value.get("identity"),
+            f"{label} payload",
+        )
+        digest = value.get("embeddedIdentitySha256")
+        if identity != dict(expected) or not (
+            isinstance(digest, str)
+            and len(digest) == 71
+            and digest.startswith("sha256:")
+            and all(character in "0123456789abcdef" for character in digest[7:])
+        ):
+            raise GateError(f"{label} does not match the provisioned build")
+        return value
+
+    @staticmethod
+    def _restart_ios_application(
+        session: Any,
+        *,
+        force_kill: bool,
+    ) -> dict[str, Any]:
+        if session.platform != "ios":
+            raise GateError("Mobile process recovery requires an iOS Simulator")
+        session.switch_to_native()
+        before = SimulatorSocialGate._mapping(
+            session.execute_script("mobile: activeAppInfo"),
+            "iOS process identity before restart",
+        )
+        before_pid = before.get("pid")
+        if not isinstance(before_pid, int) or before_pid <= 0:
+            raise GateError("iOS process identity before restart is unavailable")
+        if force_kill:
+            try:
+                os.kill(before_pid, signal.SIGKILL)
+            except OSError as error:
+                raise GateError(
+                    f"iOS Simulator SIGKILL failed: "
+                    f"{redact_text(str(error))}"
+                ) from error
+        else:
+            session.execute_script(
+                "mobile: terminateApp",
+                {"bundleId": session.build.application_id},
+            )
+        time.sleep(1)
+        session.execute_script(
+            "mobile: activateApp",
+            {"bundleId": session.build.application_id},
+        )
+        session.reconnect_after_runtime_relaunch()
+        session.wait_for_ready()
+        session.switch_to_native()
+        after = SimulatorSocialGate._mapping(
+            session.execute_script("mobile: activeAppInfo"),
+            "iOS process identity after restart",
+        )
+        after_pid = after.get("pid")
+        if (
+            not isinstance(after_pid, int)
+            or after_pid <= 0
+            or after_pid == before_pid
+        ):
+            raise GateError("iOS process identity did not change after restart")
+        session.switch_to_app_webview()
+        session.require_harness(list(RECOVERY_RELAUNCH_ACTIONS))
+        return {
+            "mode": "sigkill" if force_kill else "terminate",
+            "signal": "SIGKILL" if force_kill else None,
+            "beforePid": before_pid,
+            "afterPid": after_pid,
+            "restored": True,
+        }
+
+    @staticmethod
+    def _open_chat_conversation(
+        session: Any,
+        conversation_id: str,
+    ) -> None:
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:chat"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:chat-conversation",
+                    "sessionUlid": conversation_id,
+                },
+            },
+        )
+
+    def _write_chat_composer_draft(
+        self,
+        session: Any,
+        text: str,
+    ) -> None:
+        result = self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const input = document.querySelector('input.message-composer-input');
+if (!(input instanceof HTMLInputElement)) return null;
+const setter = Object.getOwnPropertyDescriptor(
+  HTMLInputElement.prototype,
+  'value'
+)?.set;
+if (!setter) return null;
+setter.call(input, arguments[0]);
+input.dispatchEvent(new Event('input', { bubbles: true }));
+return input.value;
+""",
+                text,
+            ),
+            "Chat composer input",
+        )
+        if result != text:
+            raise GateError("Chat composer did not retain the entered draft")
+
+    @staticmethod
+    def _read_chat_drafts(
+        session: Any,
+        conversation_id: str,
+    ) -> list[dict[str, Any]] | None:
+        value = session.call_action(
+            "reliability.draft.read",
+            {"kind": "chat", "targetId": conversation_id},
+        )
+        if not isinstance(value, list):
+            raise GateError("Chat draft readback must return a list")
+        drafts = [
+            dict(item) for item in value if isinstance(item, Mapping)
+        ]
+        return drafts if len(drafts) == 1 else None
+
+    def _wait_for_chat_ui_state(
+        self,
+        session: Any,
+        *,
+        message_id: str,
+        message_text: str,
+        draft_text: str,
+        label: str,
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            value = session.execute_script(
+                """
+const message = document.querySelector(
+  `[data-message-ulid="${CSS.escape(arguments[0])}"] .message-text`
+);
+const composer = document.querySelector('input.message-composer-input');
+return {
+  messageVisible: Boolean(message && message.textContent === arguments[1]),
+  draftVisible: Boolean(
+    composer instanceof HTMLInputElement
+      && composer.value === arguments[2]
+  ),
+};
+""",
+                message_id,
+                message_text,
+                draft_text,
+            )
+            if (
+                isinstance(value, Mapping)
+                and value.get("messageVisible") is True
+                and value.get("draftVisible") is True
+            ):
+                return dict(value)
+            return None
+
+        return self._wait_for_value(read, label)
+
+    def _await_route_attestation_renewal(
+        self,
+        session: Any,
+        *,
+        keepalive_session: Any | None = None,
+        keepalive_actor: MessagingActor | None = None,
+    ) -> dict[str, Any]:
+        if (keepalive_session is None) != (keepalive_actor is None):
+            raise GateError(
+                "route renewal keepalive requires both session and Actor"
+            )
+        before = self._active_route_identity(
+            session.call_action("station.route.snapshot"),
+        )
+        initial_expiry = before["attestationExpiresAtUnixMs"]
+        if initial_expiry <= int(time.time() * 1000):
+            raise GateError("active Station route attestation is already expired")
+        started = time.monotonic()
+        deadline = started + ROUTE_RENEWAL_TIMEOUT_SECONDS
+        next_keepalive = started + 60.0
+        latest = before
+        while time.monotonic() < deadline:
+            if (
+                keepalive_session is not None
+                and keepalive_actor is not None
+                and time.monotonic() >= next_keepalive
+            ):
+                keepalive = self._mapping(
+                    keepalive_session.call_action("getRealtimeDevice"),
+                    "route renewal receiver keepalive",
+                )
+                if (
+                    keepalive.get("active") is not True
+                    or keepalive.get("actorPtid") != keepalive_actor.ptid
+                ):
+                    raise GateError(
+                        "route renewal receiver runtime became unavailable"
+                    )
+                next_keepalive = time.monotonic() + 60.0
+            latest = self._active_route_identity(
+                session.call_action("station.route.snapshot"),
+            )
+            if (
+                latest["stationPeerId"] != before["stationPeerId"]
+                or latest["routeId"] != before["routeId"]
+                or latest["routeGeneration"] != before["routeGeneration"]
+            ):
+                raise GateError(
+                    "Station route identity changed during attestation renewal"
+                )
+            now_ms = int(time.time() * 1000)
+            if (
+                now_ms > initial_expiry
+                and latest["attestationExpiresAtUnixMs"] > initial_expiry
+                and latest["routeRevision"] > before["routeRevision"]
+                and latest["health"] == "available"
+            ):
+                return {
+                    "stationPeerId": before["stationPeerId"],
+                    "routeId": before["routeId"],
+                    "routeGeneration": before["routeGeneration"],
+                    "beforeRouteRevision": before["routeRevision"],
+                    "afterRouteRevision": latest["routeRevision"],
+                    "beforeExpiresAtUnixMs": initial_expiry,
+                    "afterExpiresAtUnixMs": (
+                        latest["attestationExpiresAtUnixMs"]
+                    ),
+                    "elapsedMs": int((time.monotonic() - started) * 1000),
+                    "crossedPriorExpiry": True,
+                }
+            time.sleep(1)
+        raise GateError(
+            "Station route attestation did not renew across its prior expiry"
+        )
+
+    @staticmethod
+    def _active_route_identity(value: Any) -> dict[str, Any]:
+        snapshot = SimulatorSocialGate._mapping(
+            value,
+            "Station route snapshot",
+        )
+        station_peer_id = SimulatorSocialGate._text(
+            snapshot.get("activeStationPeerId"),
+            "active Station peer ID",
+        )
+        entries = snapshot.get("entries")
+        entry = next(
+            (
+                item
+                for item in entries
+                if isinstance(item, Mapping)
+                and item.get("stationPeerId") == station_peer_id
+            ),
+            None,
+        ) if isinstance(entries, list) else None
+        if not isinstance(entry, Mapping):
+            raise GateError("active Station route entry is unavailable")
+        route_id = SimulatorSocialGate._text(
+            entry.get("activeRouteId"),
+            "active Station route ID",
+        )
+        routes = entry.get("routes")
+        route = next(
+            (
+                item
+                for item in routes
+                if isinstance(item, Mapping)
+                and item.get("routeId") == route_id
+            ),
+            None,
+        ) if isinstance(routes, list) else None
+        if not isinstance(route, Mapping):
+            raise GateError("active Station route is unavailable")
+        route_generation = route.get("routeGeneration")
+        route_revision = entry.get("routeRevision")
+        expiry = route.get("attestationExpiresAtUnixMs")
+        if (
+            not isinstance(route_generation, int)
+            or route_generation <= 0
+            or not isinstance(route_revision, int)
+            or route_revision <= 0
+            or not isinstance(expiry, int)
+            or expiry <= 0
+        ):
+            raise GateError("active Station route identity is incomplete")
+        return {
+            "stationPeerId": station_peer_id,
+            "routeId": route_id,
+            "routeGeneration": route_generation,
+            "routeRevision": route_revision,
+            "attestationExpiresAtUnixMs": expiry,
+            "health": route.get("health"),
+        }
+
+    def _wait_for_route_retry_surface(
+        self,
+        session: Any,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + 30.0
+        last: dict[str, Any] = {}
+        while time.monotonic() < deadline:
+            value = session.execute_script(
+                """
+const unavailable = document.querySelector(
+  '[data-acceptance-id="mobile-route-unavailable"]'
+);
+const retry = document.querySelector(
+  '[data-acceptance-id="mobile-route-retry"]'
+);
+return {
+  unavailable: Boolean(unavailable),
+  retryVisible: Boolean(retry),
+  routeState: unavailable?.getAttribute('data-route-state') || '',
+  runtimeStatus: unavailable?.getAttribute('data-runtime-status') || '',
+};
+"""
+            )
+            last = dict(value) if isinstance(value, Mapping) else {}
+            if (
+                last.get("unavailable") is True
+                and last.get("retryVisible") is True
+            ):
+                return last
+            time.sleep(0.25)
+        runtime_states: list[str] = []
+        phase = "<unavailable>"
+        try:
+            readiness = self._mapping(
+                session.call_action(
+                    "lifecycle.waitReady",
+                    {"includeDiagnostics": True},
+                ),
+                "Station outage lifecycle readiness",
+            )
+            phase = str(readiness.get("phase") or "<missing>")
+            runtimes = readiness.get("runtimes")
+            if isinstance(runtimes, list):
+                runtime_states = sorted(
+                    f"{runtime.get('id')}={runtime.get('status')}"
+                    for runtime in runtimes
+                    if isinstance(runtime, Mapping)
+                    and isinstance(runtime.get("id"), str)
+                )
+        except (DriverError, GateError):
+            pass
+        raise GateError(
+            "Mobile route recovery surface during Station outage did not "
+            "converge: "
+            f"unavailable={last.get('unavailable')}, "
+            f"retryVisible={last.get('retryVisible')}, "
+            f"routeState={last.get('routeState')}, "
+            f"runtimeStatus={last.get('runtimeStatus')}, "
+            f"phase={phase}, "
+            f"runtimes={','.join(runtime_states) or '<none>'}"
+        )
+
+    @staticmethod
+    def _find_element_or_none(
+        session: Any,
+        selector: str,
+    ) -> str | None:
+        try:
+            return session.find_element("css selector", selector)
+        except DriverError:
+            return None
+
+    @staticmethod
+    def _restart_source_bound_station(
+        *,
+        during_outage: Callable[[], None],
+    ) -> dict[str, Any]:
+        client = EphemeralGateClient.from_environment()
+        if client is None:
+            raise GateError(
+                "Mobile Station outage capability is unavailable"
+            )
+        callback_error: BaseException | None = None
+        try:
+            stopped = client.invoke(
+                MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+                "stop",
+                {},
+                timeout_seconds=30,
+            )
+            try:
+                during_outage()
+            except BaseException as error:
+                callback_error = error
+            restored = client.invoke(
+                MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+                "start",
+                {},
+                timeout_seconds=STATION_RESTART_TIMEOUT_SECONDS,
+            )
+        except (ProvisioningError, OSError) as error:
+            raise GateError(
+                f"Station outage capability failed: "
+                f"{redact_text(str(error))}"
+            ) from error
+        finally:
+            client.close()
+        if (
+            stopped.get("stopped") is not True
+            or restored.get("restored") is not True
+            or stopped.get("containerId") != restored.get("containerId")
+            or stopped.get("sourceCommit") != restored.get("sourceCommit")
+            or stopped.get("buildCommit") != restored.get("buildCommit")
+        ):
+            raise GateError(
+                "Station outage capability returned inconsistent evidence"
+            )
+        if callback_error is not None:
+            raise callback_error
+        return {
+            **dict(restored),
+            "outageObserved": True,
+            "stopped": True,
+        }
+
+    def _wait_for_accepted_relationship(
+        self,
+        session: Any,
+        *,
+        request_id: str,
+        sender_ptid: str,
+        receiver_ptid: str,
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            projection = self._mapping(
+                session.call_action("social.reconcile"),
+                "accepted relationship projection",
+            )
+            requests = projection.get("friendRequests")
+            if not isinstance(requests, list):
+                return None
+            return next(
+                (
+                    dict(item)
+                    for item in requests
+                    if isinstance(item, Mapping)
+                    and item.get("requestId") == request_id
+                    and item.get("senderPtid") == sender_ptid
+                    and item.get("receiverPtid") == receiver_ptid
+                    and item.get("status") == 2
+                ),
+                None,
+            )
+
+        return self._wait_for_value(
+            read,
+            "accepted recovery relationship",
+        )
 
     def _run_recovery_ui_journey(
         self,
@@ -3748,6 +4927,179 @@ return {
             raise GateError(f"{label} is incomplete")
         return snapshot
 
+    def _wait_for_reliability_snapshot(
+        self,
+        session: Any,
+        label: str,
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            try:
+                value = session.call_action("reliability.snapshot")
+            except DriverError as error:
+                if "reliabilityScopeUnavailable" in str(error):
+                    return None
+                raise
+            return self._reliability_snapshot(value, label)
+
+        return self._wait_for_value(read, label)
+
+    def _wait_for_write_admission(
+        self,
+        session: Any,
+        label: str,
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            snapshot = self._mapping(
+                session.call_action("recovery.snapshot"),
+                label,
+            )
+            admission = snapshot.get("writeAdmission")
+            return (
+                dict(admission)
+                if isinstance(admission, Mapping)
+                and admission.get("open") is True
+                and admission.get("reason") is None
+                else None
+            )
+
+        return self._wait_for_value(read, label)
+
+    def _require_runtime_graph_ready(
+        self,
+        session: Any,
+        label: str,
+    ) -> dict[str, Any]:
+        readiness = self._mapping(
+            session.call_action(
+                "lifecycle.waitReady",
+                {"includeDiagnostics": True},
+            ),
+            f"{label} lifecycle readiness",
+        )
+        runtimes = readiness.get("runtimes")
+        if readiness.get("phase") != "ACTIVE" or not isinstance(
+            runtimes,
+            list,
+        ):
+            raise GateError(f"{label} runtime graph did not become active")
+        raw_runtime_errors = readiness.get("runtimeErrors")
+        runtime_errors = {
+            str(error["runtimeId"]): redact_text(
+                str(error.get("error") or "")
+            )[-500:]
+            for error in raw_runtime_errors
+            if isinstance(error, Mapping)
+            and isinstance(error.get("runtimeId"), str)
+        } if isinstance(raw_runtime_errors, list) else {}
+        failed = sorted(
+            (
+                str(runtime["id"]),
+                str(runtime.get("errorKey") or ""),
+                runtime_errors.get(str(runtime["id"]), ""),
+            )
+            for runtime in runtimes
+            if isinstance(runtime, Mapping)
+            and runtime.get("status") != "ready"
+            and isinstance(runtime.get("id"), str)
+        )
+        if failed:
+            details = ",".join(
+                runtime_id
+                + (f"[{error_key}]" if error_key else "")
+                + (f":{error}" if error else "")
+                for runtime_id, error_key, error in failed
+            )
+            raise GateError(
+                f"{label} runtime graph failed: {details}"
+            )
+        return {
+            "generation": readiness.get("generation"),
+            "phase": readiness.get("phase"),
+            "readyRuntimeIds": sorted(
+                str(runtime["id"])
+                for runtime in runtimes
+                if isinstance(runtime, Mapping)
+                and runtime.get("status") == "ready"
+                and isinstance(runtime.get("id"), str)
+            ),
+        }
+
+    def _wait_for_enrolled_device(
+        self,
+        session: Any,
+        actor: MessagingActor,
+        label: str,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + 30.0
+        last = {
+            "active": False,
+            "actorMatch": False,
+            "devicePresent": False,
+        }
+        while time.monotonic() < deadline:
+            try:
+                value = self._mapping(
+                    session.call_action("getRealtimeDevice"),
+                    label,
+                )
+            except DriverError as error:
+                if "getRealtimeDevice" in str(error):
+                    time.sleep(0.25)
+                    continue
+                raise
+            last = {
+                "active": value.get("active") is True,
+                "actorMatch": value.get("actorPtid") == actor.ptid,
+                "devicePresent": (
+                    isinstance(value.get("deviceId"), str)
+                    and bool(value["deviceId"].strip())
+                ),
+            }
+            if all(last.values()):
+                return value
+            time.sleep(0.25)
+        recovery_states: list[str] = []
+        try:
+            recovery = self._mapping(
+                session.call_action("recovery.snapshot"),
+                f"{label} recovery projection",
+            )
+            states = recovery.get("states")
+            if isinstance(states, list):
+                for item in states:
+                    if not isinstance(item, Mapping) or not isinstance(
+                        item.get("kind"),
+                        str,
+                    ):
+                        continue
+                    kind = str(item["kind"])
+                    detail = item.get("detail")
+                    runtime_ids = (
+                        detail.get("runtimeIds")
+                        if isinstance(detail, Mapping)
+                        else None
+                    )
+                    if isinstance(runtime_ids, list):
+                        safe_runtime_ids = sorted(
+                            str(runtime_id)
+                            for runtime_id in runtime_ids
+                            if isinstance(runtime_id, str)
+                            and runtime_id.strip()
+                        )
+                        if safe_runtime_ids:
+                            kind += f"({','.join(safe_runtime_ids)})"
+                    recovery_states.append(kind)
+                recovery_states.sort()
+        except (DriverError, GateError):
+            pass
+        raise GateError(
+            f"{label} did not converge: "
+            f"active={last['active']}, "
+            f"actorMatch={last['actorMatch']}, "
+            f"devicePresent={last['devicePresent']}, "
+            f"recoveryStates={','.join(recovery_states) or '<none>'}"
+        )
+
     @staticmethod
     def _require_drafts(
         snapshot: Mapping[str, Any],
@@ -3787,14 +5139,36 @@ return {
         allowed_states: set[str],
     ) -> None:
         commands = snapshot.get("commands")
-        if not isinstance(commands, list) or not any(
-            isinstance(item, Mapping)
-            and item.get("commandId") == command_id
-            and item.get("payloadSha256") == payload_sha256
-            and item.get("state") in allowed_states
+        if not isinstance(commands, list):
+            raise GateError("recovery command projection is unavailable")
+        matching_id = [
+            item
             for item in commands
+            if isinstance(item, Mapping)
+            and item.get("commandId") == command_id
+        ]
+        if not matching_id:
+            raise GateError("recovery command is missing from durable snapshot")
+        matching_payload = [
+            item
+            for item in matching_id
+            if item.get("payloadSha256") == payload_sha256
+        ]
+        if not matching_payload:
+            raise GateError("recovery command payload identity changed")
+        observed_states = sorted({
+            str(item.get("state"))
+            for item in matching_payload
+            if isinstance(item.get("state"), str)
+        })
+        if not any(
+            item.get("state") in allowed_states
+            for item in matching_payload
         ):
-            raise GateError("recovery command identity changed")
+            raise GateError(
+                "recovery command state left the expected recovery set: "
+                + ",".join(observed_states or ["<missing>"])
+            )
 
     @staticmethod
     def _reaction_active(

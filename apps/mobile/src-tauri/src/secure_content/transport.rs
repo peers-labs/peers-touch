@@ -21,18 +21,18 @@ use crate::secure_content::proto::{
     federation::v1 as federation, secure_content::v1 as wire, social::v1 as social,
 };
 use crate::secure_content::{NativeSocialSession, PrivateSocialScope, TrustedStationSigningKey};
-use crate::station_origin::{normalize_station_origin, StationOriginError, StationOriginPolicy};
+use crate::station_origin::normalize_station_origin;
 
 const MAX_PROTO_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const CLIENT_SIGNING_DOMAIN: &[u8] = b"peers-touch:secure-content:client-command:v1\0";
+const FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN: &[u8] =
+    b"peers-touch:social:federated-private-interaction:v1\0";
 const PUBLISH_CAPABILITY: &str = "key_exchange.content_prekey.publish";
 const INVENTORY_CAPABILITY: &str = "key_exchange.content_prekey.inventory";
 const PROFILE_MAX_LIFETIME_MS: i64 = 60 * 60 * 1_000;
 const PROFILE_CLOCK_SKEW_MS: i64 = 30_000;
 const FEDERATION_KEY_ID_LENGTH: usize = 26;
 const ACTOR_PROFILE_TYPE_URL: &str = "type.googleapis.com/peers_touch.model.actor.v1.ActorProfile";
-const FEDERATION_RESOLVE_TYPE_URL: &str =
-    "type.googleapis.com/peers_touch.model.federation.v1.FederationResolveView";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransportDisposition {
@@ -161,8 +161,8 @@ impl NativeSocialTransport {
         let request_sha256 = Sha256::digest(&canonical_proof_free).into();
         request.proof =
             Some(self.client_proof(PUBLISH_CAPABILITY, &request.command_id, request_sha256)?);
-        let request_bytes =
-            canonical_publication_bytes(&request).map_err(|_| local_error(20002))?;
+        let request_bytes = canonicalize_publish_content_prekeys_request(&request.encode_to_vec())
+            .map_err(|_| local_error(20002))?;
         self.post_proto_bytes(
             "/key-exchange/content-prekeys/publish",
             &request_bytes,
@@ -250,6 +250,26 @@ impl NativeSocialTransport {
         )
     }
 
+    pub fn cancel_private_object_upload(
+        &self,
+        upload_id: &str,
+        generation: u64,
+        command_id: &str,
+    ) -> Result<wire::CancelEncryptedObjectUploadResponse, TransportError> {
+        if upload_id.trim().is_empty() || generation == 0 || command_id.trim().is_empty() {
+            return Err(local_error(20002));
+        }
+        self.post_proto(
+            &format!("/api/v1/social/moments/objects/uploads/{upload_id}/cancel"),
+            &wire::CancelEncryptedObjectUploadRequest {
+                upload_id: upload_id.to_string(),
+                generation,
+                command_id: command_id.to_string(),
+            },
+            CommitSemantics::MayCommit,
+        )
+    }
+
     pub fn download_private_object_chunk(
         &self,
         object_id: &str,
@@ -293,6 +313,13 @@ impl NativeSocialTransport {
         post_id: &str,
         request: &social::PreparePrivateCommentRequest,
     ) -> Result<social::PreparePrivateCommentResponse, TransportError> {
+        if request.post_id != post_id
+            || request.command_id.trim().is_empty()
+            || request.actor_signing_key_id.trim().is_empty()
+            || request.actor_device_signature.len() != 64
+        {
+            return Err(local_error(20002));
+        }
         self.post_proto(
             &format!("/api/v1/social/moments/{post_id}/comments/prepare-private"),
             request,
@@ -305,6 +332,13 @@ impl NativeSocialTransport {
         post_id: &str,
         request: &social::SubmitPrivateCommentRequest,
     ) -> Result<social::SubmitPrivateCommentResponse, TransportError> {
+        if request.post_id != post_id
+            || request.command_id.trim().is_empty()
+            || request.actor_signing_key_id.trim().is_empty()
+            || request.actor_device_signature.len() != 64
+        {
+            return Err(local_error(20002));
+        }
         self.post_proto(
             &format!("/api/v1/social/moments/{post_id}/comments/submit-private"),
             request,
@@ -356,6 +390,24 @@ impl NativeSocialTransport {
         )
     }
 
+    pub fn get_private_comment(
+        &self,
+        post_id: &str,
+        comment_id: &str,
+    ) -> Result<social::GetMomentCommentResourceResponse, TransportError> {
+        if post_id.trim().is_empty()
+            || post_id != post_id.trim()
+            || comment_id.trim().is_empty()
+            || comment_id != comment_id.trim()
+        {
+            return Err(local_error(20002));
+        }
+        self.get_proto(
+            &format!("/api/v1/social/moments/{post_id}/comments/{comment_id}"),
+            None,
+        )
+    }
+
     pub fn list_moment_comments(
         &self,
         post_id: &str,
@@ -393,6 +445,8 @@ impl NativeSocialTransport {
         sender: &actor::ActorDeviceRef,
         signing_key_id: &str,
         committed_at_unix_ms: i64,
+        receiver_verified_key: Option<&actor::VerifiedActorDeviceSigningKey>,
+        expected_home_station_peer_id: Option<&str>,
     ) -> Result<VerifyingKey, SenderSigningKeyError> {
         let sender_actor = sender.actor.as_ref().ok_or_else(|| {
             SenderSigningKeyError::integrity("private Social sender actor is unavailable")
@@ -403,22 +457,33 @@ impl NativeSocialTransport {
         {
             return Ok(*self.session.device_signing_key.verifying_key());
         }
+        if let Some(key) = receiver_verified_key {
+            return verify_receiver_verified_sender_signing_key(
+                key,
+                sender,
+                signing_key_id,
+                committed_at_unix_ms,
+                expected_home_station_peer_id,
+            );
+        }
         let handle =
             sender_federated_handle(sender_actor).map_err(SenderSigningKeyError::integrity)?;
-        let resolved = self
-            .get_actor_federation_resolve(&handle)
-            .map_err(|error| {
-                SenderSigningKeyError::retryable(format!(
-                    "resolve private Social sender profile: {error}"
-                ))
-            })?;
-        require_local_sender_resolve(
-            &resolved,
-            &handle,
-            sender_actor,
-            &self.session.scope.station_peer_id,
-            &self.session.trusted_station_signing_key.key_id,
-        )?;
+        if expected_home_station_peer_id != Some(self.session.scope.station_peer_id.as_str()) {
+            let resolved = self
+                .get_actor_federation_resolve(&handle)
+                .map_err(|error| {
+                    SenderSigningKeyError::retryable(format!(
+                        "resolve private Social sender profile: {error}"
+                    ))
+                })?;
+            require_local_sender_resolve(
+                &resolved,
+                &handle,
+                sender_actor,
+                &self.session.scope.station_peer_id,
+                &self.session.trusted_station_signing_key.key_id,
+            )?;
+        }
         let profile = self
             .get_actor_federation_profile(&handle)
             .map_err(|error| {
@@ -449,13 +514,12 @@ impl NativeSocialTransport {
             if context.status != "active" || context.federation_id.trim().is_empty() {
                 continue;
             }
-            match self.get_peers_proto::<federation::FederationResolveView>(
+            match self.get_proto::<federation::FederationResolveView>(
                 "/actor/federation/resolve",
                 Some(&[
                     ("federation_id", context.federation_id.clone()),
                     ("handle", handle.to_string()),
                 ]),
-                FEDERATION_RESOLVE_TYPE_URL,
             ) {
                 Ok(view) if view.federation_id == context.federation_id => return Ok(view),
                 Ok(_) => last_error = Some(local_error(20005)),
@@ -577,30 +641,6 @@ impl NativeSocialTransport {
         )
     }
 
-    fn get_peers_proto<Resp>(
-        &self,
-        path: &str,
-        query: Option<&[(&str, String)]>,
-        expected_type_url: &str,
-    ) -> Result<Resp, TransportError>
-    where
-        Resp: Message + Default,
-    {
-        let request = with_proto_content_negotiation(
-            self.client
-                .request(
-                    reqwest::Method::GET,
-                    endpoint_url(&self.session.scope.station_origin, path, query)?,
-                )
-                .header(
-                    AUTHORIZATION,
-                    format!("Bearer {}", self.session.access_token()),
-                )
-                .header("X-Device-ID", &self.session.scope.device_id),
-        );
-        decode_peers_proto_response(request.send().map_err(network_error)?, expected_type_url)
-    }
-
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::blocking::RequestBuilder {
         self.client
             .request(
@@ -637,12 +677,7 @@ pub fn resolve_trusted_station_signing_key(
     // Station's home peer id is re-proven independently by the signed profile
     // envelope below, so an empty value in this legacy profile projection does
     // not invalidate the identity.
-    if profile
-        .r#ref
-        .as_ref()
-        .map(|actor| actor.ptid.as_str())
-        != Some(scope.actor_ptid.as_str())
-    {
+    if profile.r#ref.as_ref().map(|actor| actor.ptid.as_str()) != Some(scope.actor_ptid.as_str()) {
         return Err("private Social Actor profile identity is inconsistent".to_string());
     }
     // Resolve the canonical handle: prefer the profile projection, then fall
@@ -690,23 +725,19 @@ pub fn jwt_session_id(token: &str) -> Result<String, String> {
         .ok_or_else(|| "private Social session token has no validated session ID".to_string())
 }
 
-pub fn canonical_publication_bytes(
-    request: &wire::PublishContentPreKeysRequest,
-) -> Result<Vec<u8>, String> {
-    canonicalize_publish_content_prekeys_request(&request.encode_to_vec())
-        .map_err(|error| format!("canonicalize Content PreKey publication: {error}"))
-}
-
-pub fn publication_command_id(
-    request: &wire::PublishContentPreKeysRequest,
-) -> Result<String, String> {
-    let mut request = request.clone();
-    request.command_id.clear();
-    request.proof = None;
-    Ok(format!(
-        "cpk-pub-v1-{}",
-        hex(&Sha256::digest(canonical_publication_bytes(&request)?))
-    ))
+pub(crate) fn federated_private_interaction_signing_bytes(
+    operation: social::FederatedPrivateInteractionOperation,
+    canonical_operation: &[u8],
+) -> Vec<u8> {
+    let mut signing_bytes = Vec::with_capacity(
+        FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN.len()
+            + std::mem::size_of::<u32>()
+            + canonical_operation.len(),
+    );
+    signing_bytes.extend_from_slice(FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN);
+    signing_bytes.extend_from_slice(&(operation as u32).to_be_bytes());
+    signing_bytes.extend_from_slice(canonical_operation);
+    signing_bytes
 }
 
 fn content_prekey_target(
@@ -895,6 +926,58 @@ fn verify_profile_actor_device_signing_key(
     .map_err(|_| SenderSigningKeyError::integrity("private Social sender signing key is invalid"))
 }
 
+fn verify_receiver_verified_sender_signing_key(
+    key: &actor::VerifiedActorDeviceSigningKey,
+    expected_sender: &actor::ActorDeviceRef,
+    expected_signing_key_id: &str,
+    committed_at_unix_ms: i64,
+    expected_home_station_peer_id: Option<&str>,
+) -> Result<VerifyingKey, SenderSigningKeyError> {
+    let expected_actor_ptid = expected_sender
+        .actor
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        .unwrap_or_default();
+    if expected_actor_ptid.is_empty()
+        || expected_sender.device_id.is_empty()
+        || expected_signing_key_id.is_empty()
+        || committed_at_unix_ms <= 0
+        || key.actor_ptid != expected_actor_ptid
+        || key.actor_device_id != expected_sender.device_id
+        || key.home_station_peer_id.trim().is_empty()
+        || expected_home_station_peer_id
+            .is_some_and(|expected| expected != key.home_station_peer_id)
+        || key.signing_key_id != expected_signing_key_id
+        || key.ed25519_public_key.len() != 32
+        || key.profile_version == 0
+        || key.valid_from_unix_ms <= 0
+        || key.valid_from_unix_ms > committed_at_unix_ms
+        || (key.revoked_at_unix_ms != 0
+            && (key.revoked_at_unix_ms <= key.valid_from_unix_ms
+                || committed_at_unix_ms >= key.revoked_at_unix_ms))
+        || !matches!(
+            actor::ActorSigningKeyVerificationSource::try_from(key.verification_source).ok(),
+            Some(actor::ActorSigningKeyVerificationSource::LocalDeviceRegistration)
+                | Some(actor::ActorSigningKeyVerificationSource::VerifiedProfile)
+                | Some(actor::ActorSigningKeyVerificationSource::VerifiedLocator)
+        )
+    {
+        return Err(SenderSigningKeyError::integrity(
+            "receiver-verified private Social sender signing key is invalid",
+        ));
+    }
+    VerifyingKey::from_bytes(key.ed25519_public_key.as_slice().try_into().map_err(|_| {
+        SenderSigningKeyError::integrity(
+            "receiver-verified private Social sender signing key is invalid",
+        )
+    })?)
+    .map_err(|_| {
+        SenderSigningKeyError::integrity(
+            "receiver-verified private Social sender signing key is invalid",
+        )
+    })
+}
+
 fn validate_sender_resolve_view(
     view: &federation::FederationResolveView,
     expected_handle: &str,
@@ -1027,24 +1110,9 @@ fn base32_no_pad(bytes: &[u8]) -> String {
 }
 
 fn require_authenticated_transport(station_origin: &str) -> Result<(), String> {
-    require_authenticated_transport_with_policy(
-        station_origin,
-        StationOriginPolicy::current_build(),
-    )
-}
-
-fn require_authenticated_transport_with_policy(
-    station_origin: &str,
-    policy: StationOriginPolicy,
-) -> Result<(), String> {
-    normalize_station_origin(station_origin, policy)
+    normalize_station_origin(station_origin)
         .map(|_| ())
-        .map_err(|error| match error {
-            StationOriginError::Insecure => {
-                "private Social first-use trust requires HTTPS".to_string()
-            }
-            _ => "private Social Station origin is not canonical".to_string(),
-        })
+        .map_err(|_| "private Social Station origin is not canonical".to_string())
 }
 
 fn http_client() -> Result<Client, String> {
@@ -1266,6 +1334,8 @@ mod tests {
 
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
+    use messaging_core::identity::DeviceSigningKey;
+    use zeroize::Zeroizing;
 
     #[test]
     fn private_social_proto_requests_declare_request_and_response_media_types() {
@@ -1317,6 +1387,67 @@ mod tests {
             String::from_utf8(request).expect("request is HTTP text")
         });
         (origin, handle)
+    }
+
+    fn spawn_raw_proto_responses(
+        bodies: Vec<Vec<u8>>,
+    ) -> (String, thread::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test Station");
+        let origin = format!(
+            "http://{}",
+            listener.local_addr().expect("test Station address")
+        );
+        let handle = thread::spawn(move || {
+            bodies
+                .into_iter()
+                .map(|body| {
+                    let (mut stream, _) = listener.accept().expect("accept typed request");
+                    let mut request = vec![0_u8; 8_192];
+                    let read = stream.read(&mut request).expect("read typed request");
+                    request.truncate(read);
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .expect("write response headers");
+                    stream.write_all(&body).expect("write response body");
+                    String::from_utf8(request).expect("request is HTTP text")
+                })
+                .collect()
+        });
+        (origin, handle)
+    }
+
+    fn native_social_session(
+        station_origin: String,
+        station_key: &SigningKey,
+    ) -> Arc<NativeSocialSession> {
+        Arc::new(
+            NativeSocialSession::new(
+                PrivateSocialScope {
+                    profile_id: "profile-1".to_string(),
+                    station_peer_id: "station-1".to_string(),
+                    station_origin,
+                    actor_ptid: "ptid:alice".to_string(),
+                    device_id: "device-alice".to_string(),
+                },
+                Zeroizing::new("access-token".to_string()),
+                "session-1".to_string(),
+                "sender-key-1".to_string(),
+                1,
+                DeviceSigningKey::from_parts(
+                    &[9; 32],
+                    Signature::from_bytes(&[0; 64]),
+                    "device-alice".to_string(),
+                ),
+                TrustedStationSigningKey {
+                    key_id: federation_signing_key_id(&station_key.verifying_key()).unwrap(),
+                    verifying_key: station_key.verifying_key(),
+                },
+            )
+            .unwrap(),
+        )
     }
 
     fn signed_sender_profile(
@@ -1404,27 +1535,10 @@ mod tests {
     }
 
     #[test]
-    fn private_social_uses_the_shared_station_origin_policy() {
-        assert!(require_authenticated_transport_with_policy(
-            "https://station.test",
-            StationOriginPolicy::HttpsOnly,
-        )
-        .is_ok());
-        assert!(require_authenticated_transport_with_policy(
-            "http://station.test:18080",
-            StationOriginPolicy::Development,
-        )
-        .is_ok());
-        assert!(require_authenticated_transport_with_policy(
-            "http://station.test:18080",
-            StationOriginPolicy::HttpsOnly,
-        )
-        .is_err());
-        assert!(require_authenticated_transport_with_policy(
-            "http://station.test/path",
-            StationOriginPolicy::Development,
-        )
-        .is_err());
+    fn private_social_uses_the_shared_user_selected_station_origin_policy() {
+        assert!(require_authenticated_transport("https://station.test").is_ok());
+        assert!(require_authenticated_transport("http://station.test:18080").is_ok());
+        assert!(require_authenticated_transport("http://station.test/path").is_err());
     }
 
     #[test]
@@ -1472,7 +1586,8 @@ mod tests {
                 signature: vec![5; 64],
             }),
         };
-        let canonical = canonical_publication_bytes(&request).unwrap();
+        let canonical =
+            canonicalize_publish_content_prekeys_request(&request.encode_to_vec()).unwrap();
         assert_ne!(request.encode_to_vec(), canonical);
         assert_eq!(
             hex(&canonical),
@@ -1481,10 +1596,6 @@ mod tests {
                 "/../../../model/domain/secure_content/testdata/content_prekey_publication.hex"
             ))
             .trim()
-        );
-        assert_eq!(
-            publication_command_id(&request).unwrap(),
-            "cpk-pub-v1-5ca0fee4658c8956feeca6d8a9272e70ce8c6127e41cd81a2961dbf1a4dd0d8c"
         );
     }
 
@@ -1587,35 +1698,164 @@ mod tests {
     }
 
     #[test]
-    fn federation_resolve_envelope_requires_exact_type() {
+    fn federation_resolve_decodes_the_strict_typed_raw_response() {
+        let contexts = federation::ListFederationContextsResponse {
+            contexts: vec![federation::FederationContext {
+                federation_id: "federation-1".to_string(),
+                name: "Federation 1".to_string(),
+                status: "active".to_string(),
+            }],
+        };
         let view = federation::FederationResolveView {
             federated_handle: "@bob@station.test".to_string(),
             home_station_peer_id: "station-1".to_string(),
+            federation_id: "federation-1".to_string(),
             ..Default::default()
         };
-        let response = common::PeersResponse {
-            code: "200".to_string(),
-            msg: "federation resolve verified".to_string(),
-            data: Some(prost_types::Any {
-                type_url: FEDERATION_RESOLVE_TYPE_URL.to_string(),
-                value: view.encode_to_vec(),
-            }),
-        };
+        let (station_origin, requests) =
+            spawn_raw_proto_responses(vec![contexts.encode_to_vec(), view.encode_to_vec()]);
+        let station_key = SigningKey::from_bytes(&[7; 32]);
+        let session = native_social_session(station_origin, &station_key);
+        let transport = NativeSocialTransport::new(session).unwrap();
 
-        let decoded = decode_peers_payload::<federation::FederationResolveView>(
-            &response.encode_to_vec(),
-            FEDERATION_RESOLVE_TYPE_URL,
-        )
-        .unwrap();
+        let decoded = transport
+            .get_actor_federation_resolve("@bob@station.test")
+            .unwrap();
         assert_eq!(decoded, view);
 
-        let mut wrong_type = response;
-        wrong_type.data.as_mut().unwrap().type_url = ACTOR_PROFILE_TYPE_URL.to_string();
-        assert!(decode_peers_payload::<federation::FederationResolveView>(
-            &wrong_type.encode_to_vec(),
-            FEDERATION_RESOLVE_TYPE_URL,
-        )
-        .is_err());
+        let requests = requests.join().expect("join test Station");
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0]
+            .to_lowercase()
+            .starts_with("get /sub-federation/contexts http/1.1"));
+        assert!(requests[1].to_lowercase().starts_with(
+            "get /actor/federation/resolve?federation_id=federation-1&handle=%40bob%40station.test http/1.1"
+        ));
+        assert!(requests.iter().all(|request| {
+            let request = request.to_lowercase();
+            request.contains("authorization: bearer access-token")
+                && request.contains("x-device-id: device-alice")
+                && request.contains("content-type: application/protobuf")
+                && request.contains("accept: application/protobuf")
+        }));
+    }
+
+    #[test]
+    fn receiver_verified_remote_sender_key_precedes_profile_resolution() {
+        let station_key = SigningKey::from_bytes(&[7; 32]);
+        let sender_key = SigningKey::from_bytes(&[8; 32]);
+        let transport = NativeSocialTransport::new(native_social_session(
+            "http://127.0.0.1:9".to_string(),
+            &station_key,
+        ))
+        .unwrap();
+        let sender = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: "ptid:bob".to_string(),
+                acct: "@bob@station.remote".to_string(),
+                kind: actor::ActorKind::Person as i32,
+            }),
+            device_id: "device-bob".to_string(),
+        };
+        let verified = actor::VerifiedActorDeviceSigningKey {
+            actor_ptid: "ptid:bob".to_string(),
+            actor_device_id: "device-bob".to_string(),
+            home_station_peer_id: "station-remote".to_string(),
+            signing_key_id: "sender-key-bob".to_string(),
+            ed25519_public_key: sender_key.verifying_key().to_bytes().to_vec(),
+            profile_version: 1,
+            verification_source: actor::ActorSigningKeyVerificationSource::VerifiedProfile as i32,
+            valid_from_unix_ms: 1_000,
+            revoked_at_unix_ms: 0,
+        };
+
+        let resolved = transport
+            .sender_signing_key(
+                &sender,
+                "sender-key-bob",
+                2_000,
+                Some(&verified),
+                Some("station-remote"),
+            )
+            .unwrap();
+        assert_eq!(resolved, sender_key.verifying_key());
+
+        let error = transport
+            .sender_signing_key(
+                &sender,
+                "sender-key-bob",
+                2_000,
+                Some(&verified),
+                Some("station-other"),
+            )
+            .unwrap_err();
+        assert_eq!(error.kind, SenderSigningKeyErrorKind::Integrity);
+    }
+
+    #[test]
+    fn same_station_sender_key_uses_pinned_profile_without_federation_resolution() {
+        let now = now_unix_ms();
+        let station_key = SigningKey::from_bytes(&[7; 32]);
+        let sender_key = SigningKey::from_bytes(&[8; 32]);
+        let sender = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: "ptid:bob".to_string(),
+                acct: "@bob@station.test".to_string(),
+                kind: actor::ActorKind::Person as i32,
+            }),
+            device_id: "device-bob".to_string(),
+        };
+        let profile = signed_sender_profile(&station_key, &sender_key, now);
+        let (station_origin, requests) = spawn_raw_proto_responses(vec![profile.encode_to_vec()]);
+        let transport =
+            NativeSocialTransport::new(native_social_session(station_origin, &station_key))
+                .unwrap();
+
+        let resolved = transport
+            .sender_signing_key(&sender, "sender-key-1", now, None, Some("station-1"))
+            .unwrap();
+
+        assert_eq!(resolved, sender_key.verifying_key());
+        let requests = requests.join().expect("join test Station");
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0]
+            .to_lowercase()
+            .starts_with("get /actor/federation/profile?handle=%40bob%40station.test http/1.1"));
+    }
+
+    #[test]
+    fn private_comment_transport_rejects_unsigned_interactions() {
+        let station_key = SigningKey::from_bytes(&[7; 32]);
+        let transport = NativeSocialTransport::new(native_social_session(
+            "http://127.0.0.1:9".to_string(),
+            &station_key,
+        ))
+        .unwrap();
+        let prepare = social::PreparePrivateCommentRequest {
+            post_id: "post-1".to_string(),
+            command_id: "prepare-1".to_string(),
+            ..Default::default()
+        };
+        let submit = social::SubmitPrivateCommentRequest {
+            post_id: "post-1".to_string(),
+            command_id: "submit-1".to_string(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            transport
+                .prepare_private_comment("post-1", &prepare)
+                .unwrap_err()
+                .stable_code,
+            20002,
+        );
+        assert_eq!(
+            transport
+                .submit_private_comment("post-1", &submit)
+                .unwrap_err()
+                .stable_code,
+            20002,
+        );
     }
 
     #[test]

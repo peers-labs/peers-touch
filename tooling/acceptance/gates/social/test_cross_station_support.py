@@ -223,7 +223,7 @@ class SuiteResultValidationTest(unittest.TestCase):
                     "clientId": f"cross-station-social-{client_id}",
                     "actorRole": actor,
                     "profileId": (
-                        "four"
+                        "chat-native-disposable"
                         if service_id == "station-four"
                         else "fiveArm"
                     ),
@@ -242,7 +242,7 @@ class SuiteResultValidationTest(unittest.TestCase):
             "controlCommit": CONTROL_COMMIT,
             "worktreeSetDigest": WORKTREE_SET_DIGEST,
             "profileBindings": {
-                "four": "station-four",
+                "chat-native-disposable": "station-four",
                 "fiveArm": "station-five-arm",
             },
             "serviceRuntimeIdentityDigests": service_identities,
@@ -281,11 +281,11 @@ class SuiteResultValidationTest(unittest.TestCase):
             "source_commit": SOURCE_COMMIT,
             "workspace_id": WORKSPACE_ID,
             "reset_intent": "SCHEMA_ACTIVATION",
-            "profiles": ["four", "fiveArm"],
+            "profiles": ["chat-native-disposable", "fiveArm"],
             "source_freeze_ref": "source-freeze.json",
             "source_freeze_digest": "5" * 64,
             "children": [
-                {"profile_id": "four"},
+                {"profile_id": "chat-native-disposable"},
                 {"profile_id": "fiveArm"},
             ],
             "status": "PASS",
@@ -341,7 +341,7 @@ class SuiteResultValidationTest(unittest.TestCase):
             "activation": {
                 "aggregatePath": str(activation_path),
                 "resultDigest": activation["result_digest"],
-                "profiles": ["four", "fiveArm"],
+                "profiles": ["chat-native-disposable", "fiveArm"],
             },
             "runtimeManifest": self._runtime_manifest(
                 str(suite_report["reportDigest"])
@@ -504,8 +504,8 @@ class AcceptanceRuntimeManifestTest(unittest.TestCase):
                 "workspaceDigest": "clean",
             },
             "profile": {
-                "requestedName": "four",
-                "resolvedName": "four",
+                "requestedName": "chat-native-disposable",
+                "resolvedName": "chat-native-disposable",
                 "slot": 13,
             },
             "services": services,

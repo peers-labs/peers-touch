@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -230,6 +231,157 @@ func resolveMigrationActorPTID(tx *gorm.DB, actorID uint64) (string, error) {
 		return "", fmt.Errorf("actor ID %d resolves to an empty PTID", actorID)
 	}
 	return normalizedPTID, nil
+}
+
+var legacyAgentDefinitionPromptKeys = map[string]struct{}{
+	"agentConfigPrompt":   {},
+	"agent_config_prompt": {},
+	"agents":              {},
+	"agentsMd":            {},
+	"agents_md":           {},
+	"identity":            {},
+	"soul":                {},
+	"soulMd":              {},
+	"soul_md":             {},
+	"systemPrompt":        {},
+	"system_prompt":       {},
+}
+
+type legacySkillEnablementRow struct {
+	Enabled bool `gorm:"column:enabled"`
+}
+
+func (legacySkillEnablementRow) TableName() string { return "agent_skills" }
+
+// MigrateAgentDefinitions hard-cuts legacy prompt aliases out of config_json
+// after atomically copying them into typed AgentDefinition columns.
+func MigrateAgentDefinitions(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("agent definition migration requires database")
+	}
+	if !db.Migrator().HasTable(&Agent{}) {
+		return nil
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, field := range []string{"IdentityPrompt", "AgentConfigPrompt"} {
+			if !tx.Migrator().HasColumn(&Agent{}, field) {
+				if err := tx.Migrator().AddColumn(&Agent{}, field); err != nil {
+					return fmt.Errorf("add typed AgentDefinition field %s: %w", field, err)
+				}
+			}
+		}
+
+		var agents []Agent
+		if err := tx.Order("id").Find(&agents).Error; err != nil {
+			return fmt.Errorf("read Agent definitions: %w", err)
+		}
+		for i := range agents {
+			identity, agentConfig, configJSON, changed, err :=
+				migrateAgentDefinitionConfig(&agents[i])
+			if err != nil {
+				return fmt.Errorf("migrate Agent definition %s: %w", agents[i].ID, err)
+			}
+			if !changed {
+				continue
+			}
+			if err := tx.Table("agents").Where("id = ?", agents[i].ID).Updates(map[string]interface{}{
+				"identity_prompt":     identity,
+				"agent_config_prompt": agentConfig,
+				"config_json":         configJSON,
+			}).Error; err != nil {
+				return fmt.Errorf("write Agent definition %s: %w", agents[i].ID, err)
+			}
+		}
+		return nil
+	})
+}
+
+func migrateAgentDefinitionConfig(agent *Agent) (string, string, string, bool, error) {
+	if agent == nil {
+		return "", "", "", false, fmt.Errorf("Agent row is required")
+	}
+	raw := strings.TrimSpace(agent.ConfigJSON)
+	if raw == "" {
+		return agent.IdentityPrompt, agent.AgentConfigPrompt, agent.ConfigJSON, false, nil
+	}
+	var config map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &config); err != nil || config == nil {
+		return "", "", "", false, fmt.Errorf("config_json must be a JSON object")
+	}
+
+	identity, identityFound, err := firstLegacyPromptString(
+		config,
+		"soulMd", "identity", "soul_md", "soul", "systemPrompt", "system_prompt",
+	)
+	if err != nil {
+		return "", "", "", false, err
+	}
+	agentConfig, agentConfigFound, err := firstLegacyPromptString(
+		config,
+		"agentsMd", "agentConfigPrompt", "agent_config_prompt", "agents_md", "agents",
+	)
+	if err != nil {
+		return "", "", "", false, err
+	}
+	for key := range legacyAgentDefinitionPromptKeys {
+		delete(config, key)
+	}
+	normalized, err := json.Marshal(config)
+	if err != nil {
+		return "", "", "", false, fmt.Errorf("encode config_json: %w", err)
+	}
+	if !identityFound {
+		identity = agent.IdentityPrompt
+	}
+	if !agentConfigFound {
+		agentConfig = agent.AgentConfigPrompt
+	}
+	return identity, agentConfig, string(normalized),
+		identityFound || agentConfigFound || string(normalized) != agent.ConfigJSON, nil
+}
+
+func firstLegacyPromptString(
+	config map[string]json.RawMessage,
+	keys ...string,
+) (string, bool, error) {
+	for _, key := range keys {
+		raw, ok := config[key]
+		if !ok {
+			continue
+		}
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return "", false, fmt.Errorf("config_json field %s must be a string", key)
+		}
+		return value, true, nil
+	}
+	return "", false, nil
+}
+
+// PurgeLegacySkillEnablement removes the superseded Skill.enabled and
+// agent_skill_bindings authorities after their values have been backfilled into
+// AgentCapabilityBinding.
+func PurgeLegacySkillEnablement(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("legacy Skill enablement cleanup requires database")
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&legacySkillEnablementRow{}) &&
+			tx.Migrator().HasColumn(&legacySkillEnablementRow{}, "Enabled") {
+			if err := tx.Exec(
+				"ALTER TABLE agent_skills DROP COLUMN enabled",
+			).Error; err != nil {
+				return fmt.Errorf("drop agent_skills.enabled: %w", err)
+			}
+		}
+		if tx.Migrator().HasTable(&AgentSkillBinding{}) {
+			if err := tx.Migrator().DropTable(&AgentSkillBinding{}); err != nil {
+				return fmt.Errorf("drop agent_skill_bindings: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 // MigrateAgentMessages prepares historical rows before AutoMigrate applies the

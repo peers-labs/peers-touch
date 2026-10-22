@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
+import { MobileAvatar } from '../MobileAvatar';
+import { useSocialActorIdentity } from '../../features/social/useSocialActorIdentity';
 import {
   mobileCallManager,
   type CallSnapshot,
@@ -20,6 +22,9 @@ export function MobileCallSurface() {
   const [snapshot, setSnapshot] = useState<CallSnapshot | null>(
     mobileCallManager.getSnapshot(),
   );
+  const peerIdentity = useSocialActorIdentity({
+    actorPtid: snapshot?.peerPtid ?? '',
+  });
   const [error, setError] = useState('');
   const localVideo = useRef<HTMLVideoElement>(null);
   const remoteVideo = useRef<HTMLVideoElement>(null);
@@ -62,14 +67,25 @@ export function MobileCallSurface() {
           <video ref={localVideo} className="mobile-call-local-video" autoPlay muted playsInline />
         </div>
       ) : (
-        <div className="mobile-call-avatar" aria-hidden="true">
-          <Phone size={34} />
-        </div>
+        <MobileAvatar
+          identityKey={peerIdentity.actorPtid}
+          name={peerIdentity.displayName || t('mobile.contacts.unknownUser')}
+          src={peerIdentity.avatar}
+          size={72}
+        />
       )}
       <audio ref={remoteAudio} autoPlay />
 
       <div className="mobile-call-copy">
-        <strong>{snapshot.peerPtid}</strong>
+        {snapshot.mediaKind === 'video' && active ? (
+          <MobileAvatar
+            identityKey={peerIdentity.actorPtid}
+            name={peerIdentity.displayName || t('mobile.contacts.unknownUser')}
+            src={peerIdentity.avatar}
+            size={40}
+          />
+        ) : null}
+        <strong>{peerIdentity.displayName || t('mobile.contacts.unknownUser')}</strong>
         <span>
           {t(`mobile.call.state.${snapshot.state}`)}
         </span>

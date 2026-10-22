@@ -80,7 +80,7 @@ memory 相关问题补齐
 
 ---
 
-## 4. [docs/global/architecture.md](../../../docs/global/architecture.md)
+## 4. [docs/architecture/architecture.md](../../../docs/architecture/architecture.md)
 
 此文件**完全不包含任何关于 memory 的内容**。该文件描述的是 Peers-Touch 的三层架构总览（Client Layer、Model Layer、Station Layer），涵盖数据流模式、安全架构、网络拓扑和部署架构等，但没有提及 memory 模块或内存管理相关概念。
 
@@ -101,7 +101,7 @@ memory 相关问题补齐
 | `mobile/base.md` | Memory 作为独立业务模块存在于 Android/iOS 项目结构中；记忆条目在 Station ↔ Mobile/Desktop 间双向同步；用途是 AI 上下文增强 |
 | `desktop/global-context-kernel.md` | Memory 模块内的文件上传路径将纳入 GlobalContext Kernel 的统一任务编排 |
 | `station-desktop-scope-boundary.md` | Memory 的真源在 Station，Desktop 仅做管理台交互；当前语义需复核 |
-| `global/architecture.md` | 无 memory 相关内容 |
+| `architecture/architecture.md` | 无 memory 相关内容 |
 | `global/domain-model.md` | 无 memory 相关内容 |
 
 两个文件都包含 Memory 相关的结构体定义。让我查看它们的完整内容。
@@ -745,7 +745,7 @@ pub struct MemoryPersonaInput {
 | [mobile/base.md](../../../docs/client/mobile/base.md) | Memory 作为业务功能模块出现在 `features/memory/` 目录，描述为"用户记忆条目管理（AI 上下文增强）"，同步方向 Station ↔ Mobile/Desktop |
 | [station-desktop-scope-boundary.md](../../architecture/platform/station-desktop-boundary.md) | Memory 真源（SoT）在 Station，Desktop 仅做管理台交互，"大体有实现，语义需复核" |
 | [global-context-kernel.md](../../../docs/client/desktop/global-context-kernel.md) | 仅提到 Memory 模块的文件上传路径需纳入全局任务编排 |
-| `global/architecture.md` | ❌ 无 memory 相关 |
+| `architecture/architecture.md` | ❌ 无 memory 相关 |
 | `global/domain-model.md` | ❌ 无 memory proto 定义 |
 
 **缺失项**：
@@ -905,7 +905,7 @@ Now let me look at the existing AI chat subserver for patterns:
 
 | 文件路径 | 说明 |
 |---|---|
-| [architecture.md](../../../docs/global/architecture.md) | 全局架构 |
+| [architecture.md](../../../docs/architecture/architecture.md) | 全局架构 |
 | [coding-standards.md](../../../docs/global/coding-standards.md) | 编码标准 |
 | [domain-model.md](../../../docs/global/domain-model.md) | 领域模型 |
 | [first-principles.md](../../../docs/global/first-principles.md) | 第一性原理 |

@@ -116,6 +116,7 @@ type CompleteUploadRequest struct {
 type FileService interface {
 	SaveFile(ctx context.Context, attr UploadAttribution, file multipart.File, header *multipart.FileHeader) (*ossmodel.FileMeta, error)
 	GetFileMeta(ctx context.Context, key string) (*ossmodel.FileMeta, error)
+	ReadOwnedFile(ctx context.Context, ownerActorID, key string, maxBytes uint64) (*ossmodel.FileMeta, []byte, error)
 	PrepareUpload(ctx context.Context, presigner storage.PresignedBackend, attr UploadAttribution, req PrepareUploadRequest, ttl time.Duration) (PrepareUploadResult, error)
 	CompleteUpload(ctx context.Context, presigner storage.PresignedBackend, attr UploadAttribution, req CompleteUploadRequest) (*ossmodel.FileMeta, error)
 

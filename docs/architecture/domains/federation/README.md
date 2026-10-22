@@ -87,7 +87,7 @@ Node Connectivity 提供无业务 authority 的共享传输能力，但不属于
 - [identity/federation-catalog.md](../identity/federation-catalog.md) — 跨站 actor 目录与发现能力。
 - [identity/unified-actor-system.md](../identity/unified-actor-system.md) — actor identity 模型。
 - [boundaries/station-desktop-scope-boundary.md](../../platform/station-desktop-boundary.md) — Station 与 Desktop 边界。
-- [global/architecture.md](../../../global/architecture.md) — 项目整体架构。
+- [architecture.md](../../architecture.md) — 项目整体架构。
 - [station/base.md](../../../station/base.md) — Station app/frame 分层与 subserver 边界。
 - [global/domain-model.md](../../../global/domain-model.md) — Proto-First 契约规则。
 - [Node Connectivity](../../platform/runtime/node-connectivity/README.md) — 跨 Station 连通性与 Relay transport。

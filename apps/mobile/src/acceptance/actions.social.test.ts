@@ -66,6 +66,11 @@ describe('Mobile Acceptance social actions', () => {
   });
 
   it('uses the explicit Federation context for a people search', async () => {
+    socialMocks.readFederationContexts.mockResolvedValue([{
+      federationId: 'federation-1',
+      name: 'Primary',
+      status: 'active',
+    }]);
     socialMocks.searchSocialPeople.mockResolvedValue([{
       id: 'ptid:bob',
       ptid: 'ptid:bob',
@@ -86,6 +91,22 @@ describe('Mobile Acceptance social actions', () => {
     }]);
     expect(socialMocks.searchSocialPeople)
       .toHaveBeenCalledExactlyOnceWith('bob', 'federation-1');
+  });
+
+  it('rejects a Federation context that product readback did not observe', async () => {
+    socialMocks.readFederationContexts.mockResolvedValue([{
+      federationId: 'federation-2',
+      name: 'Secondary',
+      status: 'active',
+    }]);
+
+    await expect(
+      mobileAcceptanceActions['social.people.search']({
+        query: 'bob',
+        federationId: 'federation-1',
+      }),
+    ).rejects.toThrow('acceptance.mobile.federationContextNotObserved');
+    expect(socialMocks.searchSocialPeople).not.toHaveBeenCalled();
   });
 
   it('reads Federation contexts through the active Social runtime', async () => {

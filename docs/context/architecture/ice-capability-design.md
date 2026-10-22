@@ -1925,7 +1925,7 @@ client/common/peers_touch_base/lib/network/
 - [Pion WebRTC](https://github.com/pion/webrtc) - Go WebRTC implementation
 
 ### Related Documents
-- `docs/global/architecture.md` - Overall architecture
+- `docs/architecture/architecture.md` - Overall architecture
 - `docs/station/base.md` - Station architecture
 - `docs/context/architecture/friend-chat-architecture.md` - Friend chat design
 

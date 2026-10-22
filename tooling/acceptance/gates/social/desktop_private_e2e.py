@@ -36,10 +36,10 @@ SOURCE_COMMANDS = (
                 "TestPrivateContentServicePrepareSubmitComment|"
                 "TestContentPreKeyDifferentPlansConsumeDistinctKeys)$"
             ),
-            "./app/subserver/social/application",
-            "./app/subserver/key_exchange",
+            "./subserver/social/application",
+            "./subserver/key_exchange",
         ),
-        cwd="apps/station",
+        cwd="apps/station/app",
         timeout_seconds=900,
     ),
 )

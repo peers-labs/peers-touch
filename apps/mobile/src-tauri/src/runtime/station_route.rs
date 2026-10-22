@@ -22,7 +22,11 @@ use station_libp2p_http::{
     Route as StandardRoute, TrafficClass, TransportHandle as StandardTransportHandle,
     TransportOwner as StandardTransportOwner,
 };
-use station_trust::{verify_node_authorization_bytes, verify_station_route_attestation_bytes};
+use station_trust::{
+    endpoint_tls_client_config, proto::PublicEndpointConnectionMaterial,
+    verify_node_authorization_bytes, verify_public_connection_material,
+    verify_station_route_attestation_bytes, VerifiedPublicEndpointConnectionMaterial,
+};
 use tauri::State;
 
 use crate::commands::station::{
@@ -31,7 +35,7 @@ use crate::commands::station::{
 };
 use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
-use crate::station_origin::{normalize_station_origin, StationOriginPolicy};
+use crate::station_origin::normalize_station_origin;
 
 mod peer_proto {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
@@ -55,6 +59,7 @@ const CLOCK_SKEW_MS: i64 = 60_000;
 const MAX_DISCOVERY_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_PROXY_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 const ROUTE_SOURCE_KEY_PREFIX: &str = "peers-touch.mobile.station-route-source.v1.";
+const PUBLIC_CONNECTION_MATERIAL_PREFIX: &str = "ptm1:";
 
 static ROUTES: LazyLock<RouteRuntime> = LazyLock::new(RouteRuntime::default);
 
@@ -114,7 +119,7 @@ struct CachedRoute {
     source_input: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct ActiveRoute {
     candidate: StationRouteCandidate,
     route_revision: u64,
@@ -158,6 +163,13 @@ pub struct StationRouteBindingProjection {
     pub route_generation: u64,
     pub route_revision: u64,
     pub transport_origin: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StationRouteRefreshProjection {
+    pub binding: StationRouteBindingProjection,
+    pub route: StationRouteCandidate,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -247,13 +259,89 @@ impl RouteRuntime {
             .ok_or_else(|| route_error("routeNotActive"))
     }
 
+    fn renew_expired_route_with(
+        &self,
+        discover: impl FnOnce(&str) -> MobileResult<VerifiedDiscovery>,
+    ) -> MobileResult<ActiveRoute> {
+        let snapshot = self.active_snapshot()?;
+        if ensure_route_current(&snapshot.candidate).is_ok() {
+            return Ok(snapshot);
+        }
+        let cached = self.cached(
+            &snapshot.candidate.station_peer_id,
+            &snapshot.candidate.route_id,
+        )?;
+        if cached.candidate != snapshot.candidate {
+            return Err(route_error("routeChanged"));
+        }
+        let discovery = discover(&cached.source_input)?;
+        let renewed = discovery
+            .projection
+            .routes
+            .iter()
+            .find(|candidate| {
+                candidate.station_peer_id == snapshot.candidate.station_peer_id
+                    && candidate.station_root_public_key
+                        == snapshot.candidate.station_root_public_key
+                    && candidate.node_peer_id == snapshot.candidate.node_peer_id
+                    && candidate.route_id == snapshot.candidate.route_id
+                    && candidate.route_type == snapshot.candidate.route_type
+                    && candidate.transport == snapshot.candidate.transport
+                    && candidate.route_generation >= snapshot.candidate.route_generation
+                    && candidate.endpoint_origin == snapshot.candidate.endpoint_origin
+                    && candidate.relay_peer_id == snapshot.candidate.relay_peer_id
+                    && candidate.source_ref == snapshot.candidate.source_ref
+                    && candidate.authorization_epoch >= snapshot.candidate.authorization_epoch
+            })
+            .ok_or_else(|| route_error("routeGenerationRevoked"))?;
+        ensure_route_current(renewed)?;
+        // Discovery performs trust verification outside locks. Commit only to
+        // the exact route snapshot that requested renewal.
+        let mut routes = self
+            .discovered
+            .write()
+            .map_err(|_| route_error("runtimeLock"))?;
+        let mut active = self
+            .active
+            .write()
+            .map_err(|_| route_error("runtimeLock"))?;
+        if active.as_ref() != Some(&snapshot) {
+            return Err(route_error("routeChanged"));
+        }
+        self.retire_standard_route(&snapshot)?;
+        let refreshed = ActiveRoute {
+            candidate: renewed.clone(),
+            route_revision: snapshot.route_revision,
+        };
+        routes.insert(
+            (renewed.station_peer_id.clone(), renewed.route_id.clone()),
+            CachedRoute {
+                candidate: renewed.clone(),
+                source_input: cached.source_input,
+            },
+        );
+        *active = Some(refreshed.clone());
+        Ok(refreshed)
+    }
+
+    fn retire_standard_route(&self, route: &ActiveRoute) -> MobileResult<()> {
+        let route = standard_route(route)?;
+        let transport = self
+            .standard_transport
+            .lock()
+            .map_err(|_| route_error("runtimeLock"))?;
+        if let Some(transport) = transport.as_ref() {
+            transport
+                .handle
+                .close_route(&route)
+                .map_err(|_| route_error("standardRouteClose"))?;
+        }
+        Ok(())
+    }
+
     fn assert_current(&self, snapshot: &ActiveRoute) -> MobileResult<()> {
         let current = self.active_snapshot()?;
-        if current.candidate.station_peer_id != snapshot.candidate.station_peer_id
-            || current.candidate.route_id != snapshot.candidate.route_id
-            || current.candidate.route_generation != snapshot.candidate.route_generation
-            || current.route_revision != snapshot.route_revision
-        {
+        if current != *snapshot {
             return Err(route_error("routeChanged"));
         }
         ensure_route_current(&current.candidate)
@@ -370,9 +458,10 @@ impl RouteRuntime {
 
 #[tauri::command]
 pub async fn station_endpoint_discover(input: String) -> MobileResult<StationEndpointDiscovery> {
-    let discovery = tauri::async_runtime::spawn_blocking(move || discover_station_input(&input))
-        .await
-        .map_err(|_| discovery_error("runtimeUnavailable"))??;
+    let discovery =
+        tauri::async_runtime::spawn_blocking(move || discover_station_input(&input, false))
+            .await
+            .map_err(|_| discovery_error("runtimeUnavailable"))??;
     ROUTES.register(&discovery)?;
     Ok(discovery.projection)
 }
@@ -408,9 +497,10 @@ pub async fn station_route_restore(
             .get(&route_source_key(&source_ref))?
             .ok_or_else(|| route_error("routeSourceMissing"))?
     };
-    let discovery = tauri::async_runtime::spawn_blocking(move || discover_station_input(&source))
-        .await
-        .map_err(|_| discovery_error("runtimeUnavailable"))??;
+    let discovery =
+        tauri::async_runtime::spawn_blocking(move || discover_station_input(&source, true))
+            .await
+            .map_err(|_| discovery_error("runtimeUnavailable"))??;
     let exact = discovery.projection.routes.iter().any(|route| {
         route.station_peer_id == station_peer_id
             && route.route_id == route_id
@@ -452,6 +542,31 @@ pub fn station_route_snapshot() -> MobileResult<Option<StationRouteBindingProjec
 }
 
 #[tauri::command]
+pub async fn station_route_refresh(
+    input: StationRouteSelectionInput,
+) -> MobileResult<StationRouteRefreshProjection> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let previous = ROUTES.active_snapshot()?;
+        if previous.candidate.station_peer_id != input.station_peer_id
+            || previous.candidate.route_id != input.route_id
+            || previous.route_revision != input.route_revision
+        {
+            return Err(route_error("routeChanged"));
+        }
+        // Returns the current route when it is still fresh; otherwise renews
+        // the cached route with optimistic concurrency against `previous`.
+        let refreshed = ROUTES
+            .renew_expired_route_with(|source| discover_station_input(source, true))?;
+        Ok(StationRouteRefreshProjection {
+            binding: binding_projection(&refreshed, ROUTES.ensure_proxy()?),
+            route: refreshed.candidate,
+        })
+    })
+    .await
+    .map_err(|_| route_error("runtimeUnavailable"))?
+}
+
+#[tauri::command]
 pub async fn station_identity_fetch() -> MobileResult<VerifiedStationIdentity> {
     tauri::async_runtime::spawn_blocking(fetch_station_identity)
         .await
@@ -472,8 +587,32 @@ pub(crate) fn active_transport_origin(
     ROUTES.ensure_proxy()
 }
 
-fn discover_station_input(input: &str) -> MobileResult<VerifiedDiscovery> {
-    let parsed = parse_input(input)?;
+pub(crate) fn discover_public_material(
+    material: &PublicEndpointConnectionMaterial,
+) -> MobileResult<StationEndpointDiscovery> {
+    let expected = verify_public_connection_material(material, true, unix_ms() as i64)
+        .map_err(|_| discovery_error("publicMaterialInvalid"))?;
+    let source_input = encode_public_connection_material(material);
+    let parsed = ParsedInput {
+        origin: expected.canonical_discovery_origin.clone(),
+        connection_grant: None,
+        relay_peer_id: None,
+        expected: Some(expected),
+    };
+    let discovery = discover_parsed(parsed, source_input)?;
+    ROUTES.register(&discovery)?;
+    Ok(discovery.projection)
+}
+
+fn discover_station_input(
+    input: &str,
+    allow_public_material: bool,
+) -> MobileResult<VerifiedDiscovery> {
+    let parsed = parse_input(input, allow_public_material)?;
+    discover_parsed(parsed, input.trim().to_string())
+}
+
+fn discover_parsed(parsed: ParsedInput, source_input: String) -> MobileResult<VerifiedDiscovery> {
     let mut challenge = [0_u8; CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
     let source_proof = match (
@@ -516,7 +655,13 @@ fn discover_station_input(input: &str) -> MobileResult<VerifiedDiscovery> {
     let mut client = Client::builder()
         .timeout(Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::none());
-    if let Some(certificate) = acceptance_relay_discovery_certificate()? {
+    if let Some(expected) = parsed.expected.as_ref() {
+        if let Some(config) = endpoint_tls_client_config(&expected.tls_trust)
+            .map_err(|_| discovery_error("publicTlsInvalid"))?
+        {
+            client = client.use_preconfigured_tls(config);
+        }
+    } else if let Some(certificate) = acceptance_relay_discovery_certificate()? {
         client = client.add_root_certificate(certificate);
     }
     let response = client
@@ -545,10 +690,11 @@ fn discover_station_input(input: &str) -> MobileResult<VerifiedDiscovery> {
         &challenge,
         response,
         unix_ms() as i64,
+        parsed.expected.as_ref(),
     )?;
     Ok(VerifiedDiscovery {
         projection,
-        source_input: input.trim().to_string(),
+        source_input,
     })
 }
 
@@ -558,6 +704,7 @@ fn verify_discovery_response(
     challenge: &[u8],
     response: AccessEndpointResponse,
     now_unix_ms: i64,
+    expected: Option<&VerifiedPublicEndpointConnectionMaterial>,
 ) -> MobileResult<StationEndpointDiscovery> {
     let statement =
         peer_proto::AccessEndpointStatement::decode(response.endpoint_statement_bytes.as_slice())
@@ -567,7 +714,7 @@ fn verify_discovery_response(
     let canonical_origin = normalize_origin(&statement.canonical_origin)?;
     if statement.encode_to_vec() != response.endpoint_statement_bytes
         || statement.challenge != challenge
-        || !endpoint_origin_is_valid(role, requested_origin, &canonical_origin)
+        || !endpoint_origin_is_valid(role, requested_origin, &canonical_origin, expected)
         || !statement
             .protocol_versions
             .contains(&ACCESS_PROTOCOL_VERSION)
@@ -584,7 +731,6 @@ fn verify_discovery_response(
         &response.endpoint_statement_bytes,
         &statement.endpoint_peer_id,
     )?;
-
     let (role, routes) = match role {
         AccessEndpointRole::DirectStation => {
             if response.outcome != AccessEndpointOutcome::Ready as i32 || connection_grant.is_some()
@@ -668,24 +814,70 @@ fn verify_discovery_response(
         _ => return Err(discovery_error("roleUnsupported")),
     };
 
-    Ok(StationEndpointDiscovery {
+    let projection = StationEndpointDiscovery {
         role,
         endpoint_peer_id: statement.endpoint_peer_id,
         canonical_origin,
         routes,
-    })
+    };
+    if let Some(expected) = expected {
+        validate_public_discovery_identity(&projection, expected)?;
+    }
+    Ok(projection)
 }
 
 fn endpoint_origin_is_valid(
     role: AccessEndpointRole,
     requested_origin: &str,
     canonical_origin: &str,
+    expected: Option<&VerifiedPublicEndpointConnectionMaterial>,
 ) -> bool {
+    if let Some(expected) = expected {
+        return role as i32 == expected.expected_endpoint_role as i32
+            && canonical_origin == expected.canonical_discovery_origin;
+    }
     match role {
         AccessEndpointRole::DirectStation => canonical_origin == requested_origin,
         AccessEndpointRole::Relay => canonical_origin.starts_with("https://"),
         _ => false,
     }
+}
+
+fn validate_public_discovery_identity(
+    discovery: &StationEndpointDiscovery,
+    expected: &VerifiedPublicEndpointConnectionMaterial,
+) -> MobileResult<()> {
+    if discovery.canonical_origin != expected.canonical_discovery_origin {
+        return Err(discovery_error("publicIdentityMismatch"));
+    }
+    match expected.expected_endpoint_role {
+        station_trust::proto::AccessEndpointRole::Relay => {
+            if discovery.role != VerifiedEndpointRole::Relay
+                || discovery.endpoint_peer_id != expected.expected_endpoint_identity
+            {
+                return Err(discovery_error("publicIdentityMismatch"));
+            }
+        }
+        station_trust::proto::AccessEndpointRole::DirectStation => {
+            let expected_root = expected
+                .station_root_public_key
+                .as_deref()
+                .ok_or_else(|| discovery_error("publicStationRootMissing"))?;
+            if discovery.role != VerifiedEndpointRole::DirectStation
+                || discovery.routes.is_empty()
+                || discovery.routes.iter().any(|route| {
+                    route.station_peer_id != expected.expected_endpoint_identity
+                        || route.station_root_public_key != expected_root
+                })
+            {
+                return Err(discovery_error("publicStationRootMismatch"));
+            }
+        }
+        station_trust::proto::AccessEndpointRole::Unspecified => {
+            return Err(discovery_error("publicRoleInvalid"));
+        }
+    }
+    Ok(())
 }
 
 fn verify_relay_outcome(response: &AccessEndpointResponse) -> MobileResult<()> {
@@ -770,10 +962,32 @@ struct ParsedInput {
     origin: String,
     connection_grant: Option<Vec<u8>>,
     relay_peer_id: Option<String>,
+    expected: Option<VerifiedPublicEndpointConnectionMaterial>,
 }
 
-fn parse_input(input: &str) -> MobileResult<ParsedInput> {
+fn parse_input(input: &str, allow_public_material: bool) -> MobileResult<ParsedInput> {
     let value = input.trim();
+    if let Some(encoded) = value.strip_prefix(PUBLIC_CONNECTION_MATERIAL_PREFIX) {
+        if !allow_public_material {
+            return Err(discovery_error("publicMaterialSourceForbidden"));
+        }
+        let raw = URL_SAFE_NO_PAD
+            .decode(encoded)
+            .map_err(|_| discovery_error("publicMaterialInvalid"))?;
+        let material = PublicEndpointConnectionMaterial::decode(raw.as_slice())
+            .map_err(|_| discovery_error("publicMaterialInvalid"))?;
+        if material.encode_to_vec() != raw {
+            return Err(discovery_error("publicMaterialInvalid"));
+        }
+        let expected = verify_public_connection_material(&material, true, unix_ms() as i64)
+            .map_err(|_| discovery_error("publicMaterialInvalid"))?;
+        return Ok(ParsedInput {
+            origin: expected.canonical_discovery_origin.clone(),
+            connection_grant: None,
+            relay_peer_id: None,
+            expected: Some(expected),
+        });
+    }
     let encoded = value
         .strip_prefix("ptc1:")
         .or_else(|| value.strip_prefix("peers-touch://connect#"));
@@ -804,18 +1018,26 @@ fn parse_input(input: &str) -> MobileResult<ParsedInput> {
             origin: normalize_origin(&envelope.relay_origin)?,
             connection_grant: Some(grant.encode_to_vec()),
             relay_peer_id: Some(grant_statement.relay_peer_id),
+            expected: None,
         });
     }
     Ok(ParsedInput {
         origin: normalize_origin(value)?,
         connection_grant: None,
         relay_peer_id: None,
+        expected: None,
     })
 }
 
+fn encode_public_connection_material(material: &PublicEndpointConnectionMaterial) -> String {
+    format!(
+        "{PUBLIC_CONNECTION_MATERIAL_PREFIX}{}",
+        URL_SAFE_NO_PAD.encode(material.encode_to_vec())
+    )
+}
+
 fn normalize_origin(value: &str) -> MobileResult<String> {
-    normalize_station_origin(value, StationOriginPolicy::current_build())
-        .map_err(|_| discovery_error("originInvalid"))
+    normalize_station_origin(value).map_err(|_| discovery_error("originInvalid"))
 }
 
 fn route_source_ref(station_peer_id: &str, route_id: &str) -> String {
@@ -878,8 +1100,7 @@ fn binding_projection(
 }
 
 fn fetch_station_identity() -> MobileResult<VerifiedStationIdentity> {
-    let route = ROUTES.active_snapshot()?;
-    ensure_route_current(&route.candidate)?;
+    let route = ROUTES.renew_expired_route_with(|source| discover_station_input(source, true))?;
     let mut challenge = [0_u8; CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
     let request = StationIdentityRequest {
@@ -981,8 +1202,7 @@ fn serve_proxy(listener: TcpListener) {
 }
 
 fn serve_proxy_connection(mut connection: TcpStream) -> MobileResult<()> {
-    let route = ROUTES.active_snapshot()?;
-    ensure_route_current(&route.candidate)?;
+    let route = ROUTES.renew_expired_route_with(|source| discover_station_input(source, true))?;
     let timeout = Duration::from_secs(305);
     connection
         .set_read_timeout(Some(timeout))
@@ -1281,21 +1501,25 @@ mod tests {
             AccessEndpointRole::DirectStation,
             "https://station.example",
             "https://station.example",
+            None,
         ));
         assert!(!endpoint_origin_is_valid(
             AccessEndpointRole::DirectStation,
             "https://station.example",
             "https://other.example",
+            None,
         ));
         assert!(endpoint_origin_is_valid(
             AccessEndpointRole::Relay,
             "http://relay.example:18081",
             "https://relay.example:18443",
+            None,
         ));
         assert!(!endpoint_origin_is_valid(
             AccessEndpointRole::Relay,
             "http://relay.example:18081",
             "http://relay.example:18443",
+            None,
         ));
     }
 
@@ -1320,7 +1544,7 @@ mod tests {
             }),
         };
         let encoded = format!("ptc1:{}", URL_SAFE_NO_PAD.encode(envelope.encode_to_vec()));
-        let parsed = parse_input(&encoded).expect("connection material");
+        let parsed = parse_input(&encoded, false).expect("connection material");
         assert_eq!(parsed.origin, "https://relay.example:443");
         assert!(parsed.connection_grant.is_some());
         assert_eq!(parsed.relay_peer_id.as_deref(), Some("relay-peer"));
@@ -1380,6 +1604,133 @@ mod tests {
         route.candidate.addresses =
             vec!["/dns4/relay.example/tcp/4001/p2p/relay-a/p2p-circuit/p2p/node-a".to_string()];
         assert!(standard_route(&route).is_err());
+    }
+
+    #[test]
+    fn expired_route_renews_exact_binding_without_changing_revision() {
+        let (runtime, original) = expired_route_runtime();
+        let refreshed = runtime
+            .renew_expired_route_with(|source| {
+                assert_eq!(source, "https://station.example");
+                let mut candidate = original.candidate.clone();
+                candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
+                candidate.attestation_bytes = Some(vec![8]);
+                Ok(route_discovery(candidate))
+            })
+            .unwrap();
+        assert_eq!(refreshed.route_revision, original.route_revision);
+        assert_eq!(refreshed.candidate.route_id, original.candidate.route_id);
+        assert_eq!(refreshed.candidate.attestation_bytes, Some(vec![8]));
+        assert_eq!(runtime.active_snapshot().unwrap(), refreshed);
+        assert!(runtime
+            .renew_expired_route_with(|_| panic!("fresh route rediscovered"))
+            .is_ok());
+    }
+
+    #[test]
+    fn expired_route_accepts_monotonic_authorization_rotation() {
+        let (runtime, original) = expired_route_runtime();
+        let refreshed = runtime
+            .renew_expired_route_with(|_| {
+                let mut candidate = original.candidate.clone();
+                candidate.authorization_epoch += 1;
+                candidate.route_generation += 1;
+                candidate.node_authorization_digest = vec![9; 32];
+                candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
+                candidate.attestation_bytes = Some(vec![8]);
+                Ok(route_discovery(candidate))
+            })
+            .unwrap();
+        assert_eq!(
+            refreshed.candidate.authorization_epoch,
+            original.candidate.authorization_epoch + 1
+        );
+        assert_eq!(
+            refreshed.candidate.route_generation,
+            original.candidate.route_generation + 1
+        );
+        assert_eq!(refreshed.route_revision, original.route_revision);
+    }
+
+    #[test]
+    fn route_renewal_rejects_revocation_and_concurrent_selection() {
+        for mutation in 0..7 {
+            let (runtime, original) = expired_route_runtime();
+            let result = runtime.renew_expired_route_with(|_| {
+                let mut candidate = original.candidate.clone();
+                candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
+                match mutation {
+                    0 => candidate.route_generation -= 1,
+                    1 => candidate.station_peer_id = "other-station".to_string(),
+                    2 => candidate.node_peer_id = "other-node".to_string(),
+                    3 => candidate.endpoint_origin = "https://other.example".to_string(),
+                    4 => candidate.authorization_epoch -= 1,
+                    5 => candidate.station_root_public_key = vec![9],
+                    _ => {
+                        runtime
+                            .active
+                            .write()
+                            .unwrap()
+                            .as_mut()
+                            .unwrap()
+                            .route_revision += 1
+                    }
+                }
+                Ok(route_discovery(candidate))
+            });
+            assert!(result.is_err(), "renewal accepted mutation {mutation}");
+            assert_eq!(
+                runtime
+                    .active_snapshot()
+                    .unwrap()
+                    .candidate
+                    .attestation_expires_at_unix_ms,
+                Some(1)
+            );
+        }
+    }
+
+    fn route_discovery(candidate: StationRouteCandidate) -> VerifiedDiscovery {
+        VerifiedDiscovery {
+            projection: StationEndpointDiscovery {
+                role: VerifiedEndpointRole::DirectStation,
+                endpoint_peer_id: candidate.station_peer_id.clone(),
+                canonical_origin: candidate.endpoint_origin.clone(),
+                routes: vec![candidate],
+            },
+            source_input: "https://station.example".to_string(),
+        }
+    }
+
+    fn expired_route_runtime() -> (RouteRuntime, ActiveRoute) {
+        let candidate = StationRouteCandidate {
+            station_peer_id: "station-a".to_string(),
+            node_peer_id: "node-a".to_string(),
+            station_root_public_key: vec![1],
+            node_authorization_digest: vec![2; 32],
+            authorization_epoch: 2,
+            route_id: "direct-a".to_string(),
+            route_type: StationRouteType::Direct,
+            transport: "libp2p_http_v1".to_string(),
+            endpoint_origin: "https://station.example".to_string(),
+            relay_peer_id: None,
+            route_generation: 2,
+            inner_tls_spki_sha256: Some(vec![3; 32]),
+            addresses: vec!["/dns4/station.example/tcp/4001/p2p/node-a".to_string()],
+            attestation_bytes: Some(vec![4]),
+            attestation_expires_at_unix_ms: Some(1),
+            source_ref: "source-a".to_string(),
+        };
+        let runtime = RouteRuntime::default();
+        runtime
+            .register(&route_discovery(candidate.clone()))
+            .unwrap();
+        let active = ActiveRoute {
+            candidate,
+            route_revision: 7,
+        };
+        *runtime.active.write().unwrap() = Some(active.clone());
+        (runtime, active)
     }
 
     #[test]

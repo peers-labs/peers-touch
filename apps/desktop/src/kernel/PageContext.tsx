@@ -1,7 +1,7 @@
 // PageContext provider — broadcasts the shared
 // router/navigation/applet-pins tuple to all descriptor factories.
 //
-// `useHashRouter`, `useNavigation`, and `useAppletPins` are stateful
+// `useHashRouter` and `useNavigation` are stateful
 // hooks; calling them per-page would create divergent copies. They are
 // invoked once in `<ReadyView />` and the resulting tuple is shared
 // here so each descriptor's container can call `usePageContext()`

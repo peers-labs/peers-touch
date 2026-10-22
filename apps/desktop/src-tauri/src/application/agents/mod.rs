@@ -262,6 +262,14 @@ fn station_agent_to_desktop(agent: Value) -> Value {
         "description".to_string(),
         field("description", "description"),
     );
+    desktop.insert(
+        "soulMd".to_string(),
+        field("identity_prompt", "identityPrompt"),
+    );
+    desktop.insert(
+        "agentsMd".to_string(),
+        field("agent_config_prompt", "agentConfigPrompt"),
+    );
     desktop.insert("provider".to_string(), field("provider_id", "providerId"));
     desktop.insert("model".to_string(), field("model_name", "modelName"));
     desktop.insert("effort".to_string(), field("effort", "effort"));
@@ -289,6 +297,9 @@ fn desktop_agent_config(data: &Value) -> String {
         "name",
         "title",
         "description",
+        "systemPrompt",
+        "soulMd",
+        "agentsMd",
         "provider",
         "model",
         "effort",
@@ -321,6 +332,8 @@ fn station_agent_body(data: &Value, agent_id: Option<&str>) -> Value {
         "effort": string_value("effort"),
         "thinking_mode": string_value("thinkingMode"),
         "visibility": visibility,
+        "identity_prompt": string_value("soulMd"),
+        "agent_config_prompt": string_value("agentsMd"),
         "config_json": desktop_agent_config(data),
         "version": data.get("version").and_then(Value::as_i64).unwrap_or(0),
     });
@@ -385,21 +398,7 @@ fn replace_station_projection(actor_ptid: &str, agents: &[Value]) -> Result<(), 
         .entry(key)
         .or_insert_with(|| AgentStore::load(actor_ptid));
     store.agents = records;
-    if !store
-        .agents
-        .iter()
-        .any(|item| agent_name(item) == store.selected_agent)
-    {
-        store.selected_agent = store.agents.first().map(agent_name).unwrap_or_default();
-    }
-    if !store
-        .agents
-        .iter()
-        .any(|item| agent_name(item) == store.default_agent)
-    {
-        store.default_agent = store.selected_agent.clone();
-    }
-    mark_default_agent(&mut store.agents, &store.default_agent);
+    reconcile_agent_store_selection(store);
     sort_agent_records(&mut store.agents);
     persist_store(actor_ptid, store)
 }
@@ -587,6 +586,18 @@ fn resolve_default_agent(agents: &[AgentRecord], stored_default: &str) -> String
         .map(agent_name)
         .or_else(|| agents.first().map(agent_name))
         .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string())
+}
+
+fn reconcile_agent_store_selection(store: &mut AgentStore) {
+    store.default_agent = resolve_default_agent(&store.agents, &store.default_agent);
+    if !store
+        .agents
+        .iter()
+        .any(|item| agent_name(item) == store.selected_agent)
+    {
+        store.selected_agent = store.default_agent.clone();
+    }
+    mark_default_agent(&mut store.agents, &store.default_agent);
 }
 
 fn mark_default_agent(agents: &mut [AgentRecord], default_agent: &str) {
@@ -964,33 +975,9 @@ mod tests {
 
     fn local_agents_delete(actor_ptid: &str, input: AgentIdInput) -> AppResult<StubPayload> {
         with_agent_mutation(actor_ptid, |store| {
-            let deleted_selected = store
-                .agents
-                .iter()
-                .find(|item| item.id == input.id)
-                .map(|item| agent_name(item) == store.selected_agent)
-                .unwrap_or(false);
             let before = store.agents.len();
             store.agents.retain(|item| item.id != input.id);
-            if deleted_selected {
-                store.selected_agent = store
-                    .agents
-                    .first()
-                    .map(agent_name)
-                    .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
-            }
-            if !store
-                .agents
-                .iter()
-                .any(|item| agent_name(item) == store.default_agent)
-            {
-                let fallback = store
-                    .agents
-                    .first()
-                    .map(agent_name)
-                    .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
-                set_default_agent(store, fallback);
-            }
+            reconcile_agent_store_selection(store);
             success_payload(
                 "agents_delete",
                 json!({ "ok": before != store.agents.len() }),
@@ -1034,6 +1021,8 @@ mod tests {
             "thinking_mode": "disabled",
             "visibility": "AGENT_VISIBILITY_PRIVATE",
             "version": "2",
+            "identity_prompt": "You are precise.",
+            "agent_config_prompt": "Use workspace conventions.",
             "config_json": "{\"openingMessage\":\"Ready\"}"
         }));
 
@@ -1042,6 +1031,8 @@ mod tests {
         assert_eq!(mapped["model"], "ep-model");
         assert_eq!(mapped["effort"], "medium");
         assert_eq!(mapped["thinkingMode"], "disabled");
+        assert_eq!(mapped["soulMd"], "You are precise.");
+        assert_eq!(mapped["agentsMd"], "Use workspace conventions.");
         assert_eq!(mapped["visibility"], "private");
         assert_eq!(mapped["version"], 2);
         assert_eq!(mapped["openingMessage"], "Ready");
@@ -1051,6 +1042,9 @@ mod tests {
         assert_eq!(body["visibility"], "private");
         assert_eq!(body["version"], 2);
         assert_eq!(body["thinking_mode"], "disabled");
+        assert_eq!(body["identity_prompt"], "You are precise.");
+        assert_eq!(body["agent_config_prompt"], "Use workspace conventions.");
+        assert_eq!(body["config_json"], "{\"openingMessage\":\"Ready\"}");
     }
 
     #[test]
@@ -1281,6 +1275,53 @@ mod tests {
             assert_eq!(
                 value["agent"].get("isDefault").and_then(Value::as_bool),
                 Some(true)
+            );
+        });
+    }
+
+    #[test]
+    fn deleting_selected_agent_restores_the_default_agent() {
+        with_temp_storage_root(|| {
+            let actor = "ptid:person:agent-selected-delete";
+            let created = agents_create(
+                actor,
+                AgentCreateInput {
+                    data: json!({ "name": "coder", "title": "Coder" }),
+                },
+            );
+            assert!(created.ok, "create selected agent");
+            let created_json: Value =
+                serde_json::from_str(&created.data.expect("created payload").status)
+                    .expect("created json");
+            let coder_id = created_json
+                .get("id")
+                .and_then(Value::as_str)
+                .expect("coder id")
+                .to_string();
+
+            assert!(
+                agents_set_selected(
+                    actor,
+                    AgentSelectInput {
+                        name: "coder".to_string(),
+                    },
+                )
+                .ok,
+                "select disposable agent"
+            );
+            assert!(
+                agents_delete(actor, AgentIdInput { id: coder_id }).ok,
+                "delete selected agent"
+            );
+
+            let selected = agents_get_selected(actor);
+            assert!(selected.ok, "selected fallback exists");
+            let selected_json: Value =
+                serde_json::from_str(&selected.data.expect("selected payload").status)
+                    .expect("selected json");
+            assert_eq!(
+                selected_json.get("selectedAgent").and_then(Value::as_str),
+                Some(DEFAULT_AGENT_NAME)
             );
         });
     }

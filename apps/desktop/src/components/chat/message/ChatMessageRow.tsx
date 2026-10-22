@@ -10,18 +10,19 @@ import {
   Pin,
   RotateCcw,
 } from 'lucide-react';
-import {
-  chatMessageRowMaxWidth,
-  chatVisualLayoutForSurface,
-} from '@peers-touch/client-chat-core';
 
 import { UserSquareAvatar } from '../../common/UserSquareAvatar';
+import {
+  desktopChatLayoutForSurface,
+  desktopChatMessageRowMaxWidth,
+} from '../chatPresentationPolicy';
 import {
   CHAT_MESSAGE_METADATA_RAIL_HEIGHT,
   CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
 } from '../chatGeometry';
 import { MessageStatus } from '../../../gen/proto/domain/chat/chat_pb';
 import type { DesktopIMSenderProfileProjection } from '../../../store/socialProjection';
+import { actorDisplayName } from '../../../store/socialProfileProjection';
 import { ChatMessageContent } from './ChatMessageContent';
 import {
   isEncryptedPlaceholder,
@@ -417,7 +418,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const isOwn = isOwnMessage(message, currentUserPtid);
   const isGroup = !isFriendMessage(message);
   const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderPtid);
-  const senderName = senderProfile.name;
+  const senderName = actorDisplayName(senderProfile.name, t('chat.social.detail.unknownMember'));
   const senderAvatar = senderProfile.avatar;
   const replyToUlid = messageReplyToUlid(message);
   const encryptedPlaceholder = isEncryptedPlaceholder(message);
@@ -432,7 +433,9 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     && attachments.every(isVisualMessageAttachment);
   const threadRootUlid = messageThreadRootUlid(message) || message.ulid;
   const compact = density === 'compact';
-  const layout = chatVisualLayoutForSurface(compact ? 'desktop-thread' : 'desktop-main');
+  const layout = desktopChatLayoutForSurface(
+    compact ? 'desktop-thread' : 'desktop-main',
+  );
   const avatarSize = layout.avatarSize;
   const avatarGap = layout.avatarGap;
   const messageActionAnchorRef = useRef<HTMLDivElement>(null);
@@ -518,7 +521,10 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       justify={isOwn ? 'flex-end' : 'flex-start'}
       style={{
         alignSelf: isOwn ? 'flex-end' : 'flex-start',
-        maxWidth: chatMessageRowMaxWidth(layout, { own: isOwn, groupPeer: isGroup }),
+        maxWidth: desktopChatMessageRowMaxWidth(layout, {
+          own: isOwn,
+          groupPeer: isGroup,
+        }),
         width: 'fit-content',
         position: 'relative',
         marginTop: timelineGap ? (compact ? 6 : 8) : 0,

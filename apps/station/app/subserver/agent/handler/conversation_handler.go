@@ -55,7 +55,8 @@ type conversationUpdateRequest struct {
 	ConversationID        string            `json:"conversation_id"`
 	Title                 string            `json:"title"`
 	Description           string            `json:"description"`
-	ModelName             string            `json:"model_name"`
+	ModelName             *string           `json:"model_name"`
+	ProviderID            *string           `json:"provider_id"`
 	Meta                  map[string]string `json:"meta"`
 	ExpectedVersion       uint64            `json:"expected_version"`
 	ActiveBranchMessageID *string           `json:"active_branch_message_id"`
@@ -191,6 +192,7 @@ func (h *ConversationHandlers) HandleUpdateConversation(ctx context.Context, req
 		input.Title,
 		input.Description,
 		input.ModelName,
+		input.ProviderID,
 		input.Meta,
 		input.ActiveBranchMessageID,
 	)
@@ -216,18 +218,22 @@ func (h *ConversationHandlers) HandleArchiveConversation(ctx context.Context, re
 		return nil
 	}
 	expectedVersion := input.ExpectedVersion
-	if input.Permanent && h.externalRuntime != nil {
-		var err error
-		expectedVersion, err = h.externalRuntime.PrepareConversationDeletion(
+	if input.Permanent {
+		err := h.convService.DeleteConversations(
 			ctx,
 			subjectActorID(ctx),
-			input.ConversationID,
-			expectedVersion,
+			[]service.ConversationDeletionTarget{{
+				ConversationID:  input.ConversationID,
+				ExpectedVersion: expectedVersion,
+			}},
+			h.externalRuntime,
 		)
 		if err != nil {
 			writeJSON(resp, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
 			return nil
 		}
+		writeJSON(resp, http.StatusOK, map[string]any{"ok": true})
+		return nil
 	}
 	if err := h.convService.ArchiveConversation(
 		ctx,
@@ -237,6 +243,22 @@ func (h *ConversationHandlers) HandleArchiveConversation(ctx context.Context, re
 		expectedVersion,
 	); err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
+		return nil
+	}
+	writeJSON(resp, http.StatusOK, map[string]any{"ok": true})
+	return nil
+}
+
+func (h *ConversationHandlers) HandleDeleteConversations(ctx context.Context, req server.Request, resp server.Response) error {
+	var input struct {
+		Targets []service.ConversationDeletionTarget `json:"targets"`
+	}
+	if err := json.Unmarshal(req.Body(), &input); err != nil {
+		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+		return nil
+	}
+	if err := h.convService.DeleteConversations(ctx, subjectActorID(ctx), input.Targets, h.externalRuntime); err != nil {
+		writeJSON(resp, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
 		return nil
 	}
 	writeJSON(resp, http.StatusOK, map[string]any{"ok": true})
@@ -538,6 +560,7 @@ func conversationToJSON(c *domain.Conversation) map[string]any {
 		"model_name":               c.ModelName,
 		"status":                   string(c.Status),
 		"parent_id":                c.ParentID,
+		"meta":                     c.Meta,
 		"active_branch_message_id": c.ActiveBranchMessageID,
 		"runtime_binding":          conversationRuntimeBindingToJSON(c.RuntimeBinding),
 		"queued_turn_count":        c.QueuedTurnCount,

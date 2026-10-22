@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -12,6 +14,8 @@ from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
 )
 from tooling.acceptance.gates.mobile.simulator_station_lifecycle_e2e import (
     IOS_CLIENT,
+    MAX_ROUTE_EXPIRY_WAIT_SECONDS,
+    MIN_ROUTE_EXPIRY_WAIT_SECONDS,
     PEER_IOS_CLIENT,
     PRIMARY_BINDING,
     SECONDARY_BINDING,
@@ -179,6 +183,19 @@ class FakeBinding:
             return {"snapshot": self._scope(client_id)}
         if action == "lifecycle.scope.read":
             return self._scope(client_id)
+        if action == "lifecycle.waitReady":
+            return {
+                "phase": "ACTIVE",
+                "generation": state["generation"],
+                "runtimes": [
+                    {
+                        "id": "messaging",
+                        "status": "ready",
+                        "errorKey": None,
+                    },
+                ],
+                "runtimeErrors": [],
+            }
         if action == "session.logout":
             state["generation"] += 1
             state["actor"] = None
@@ -261,6 +278,42 @@ class FakeBinding:
         }
 
 
+class DelayedAuthenticatedScopeBinding(FakeBinding):
+    def __init__(self) -> None:
+        super().__init__()
+        self.partial_scope_reads = 0
+        self._deferred_client: str | None = None
+        self._injected = False
+
+    def call_action(
+        self,
+        client_id: str,
+        action: str,
+        payload: dict[str, Any] | None = None,
+    ) -> Any:
+        value = super().call_action(client_id, action, payload)
+        body = dict(payload or {})
+        if (
+            action == "access.submit"
+            and body.get("kind") == "login"
+            and client_id == IOS_CLIENT
+            and self.clients[client_id]["station"]
+            == STATION_PEERS[SECONDARY_BINDING]
+            and not self._injected
+        ):
+            self._deferred_client = client_id
+            self._injected = True
+        elif (
+            action == "lifecycle.scope.read"
+            and self._deferred_client == client_id
+        ):
+            value = dict(value)
+            value["runtimeStationPeerId"] = None
+            self._deferred_client = None
+            self.partial_scope_reads += 1
+        return value
+
+
 class FakeArtifacts:
     def __init__(self) -> None:
         self.writes: list[tuple[str, object, str | None]] = []
@@ -283,6 +336,19 @@ class FakeArtifacts:
 
     def complete(self, **values: object) -> None:
         self.completed = values
+
+
+class FakeExpiryClock:
+    def __init__(self) -> None:
+        self.now = 100.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += MAX_ROUTE_EXPIRY_WAIT_SECONDS
 
 
 class SimulatorStationLifecycleGateTests(unittest.TestCase):
@@ -360,12 +426,105 @@ class SimulatorStationLifecycleGateTests(unittest.TestCase):
             binding.calls,
         )
         self.assertIn(("session.logout", IOS_CLIENT, {}), binding.calls)
+        login_count = sum(
+            operation == "access.submit"
+            and isinstance(payload, dict)
+            and payload.get("kind") == "login"
+            for operation, _client_id, payload in binding.calls
+        )
+        readiness_count = sum(
+            operation == "lifecycle.waitReady"
+            for operation, _client_id, _payload in binding.calls
+        )
+        self.assertEqual(readiness_count, login_count)
+
+    def test_route_expiry_wait_resumes_session_and_selects_secondary(self) -> None:
+        binding = FakeBinding()
+        clock = FakeExpiryClock()
+        gate = SimulatorStationLifecycleGate(
+            binding_factory=lambda: binding,  # type: ignore[arg-type]
+            route_expiry_wait_seconds=MIN_ROUTE_EXPIRY_WAIT_SECONDS,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+
+        result = gate._run_journey(binding)  # type: ignore[arg-type]
+
+        lifecycle_actions = [
+            operation
+            for operation, client_id, _payload in binding.calls
+            if client_id == IOS_CLIENT
+            and operation in {"lifecycle.suspend", "lifecycle.resume"}
+        ]
+        self.assertEqual(
+            lifecycle_actions[:2],
+            ["lifecycle.suspend", "lifecycle.resume"],
+        )
+        self.assertEqual(clock.sleeps, [0.25])
+        self.assertEqual(
+            result["routeExpiry"],
+            {
+                "waitSeconds": MIN_ROUTE_EXPIRY_WAIT_SECONDS,
+                "sameSessionResumed": True,
+                "secondaryBindingSelected": True,
+            },
+        )
+        expiry_events = [
+            event
+            for event in gate.events
+            if event["event"].startswith("expired-")
+        ]
+        self.assertEqual(
+            [event["event"] for event in expiry_events],
+            [
+                "expired-route-resumed-with-same-session",
+                "expired-secondary-route-selected",
+            ],
+        )
+        self.assertTrue(
+            all(
+                event["waitSeconds"] == MIN_ROUTE_EXPIRY_WAIT_SECONDS
+                for event in expiry_events
+            )
+        )
+
+    def test_route_expiry_wait_is_bounded(self) -> None:
+        for wait_seconds in (
+            MIN_ROUTE_EXPIRY_WAIT_SECONDS - 1,
+            MAX_ROUTE_EXPIRY_WAIT_SECONDS + 1,
+        ):
+            with self.subTest(wait_seconds=wait_seconds):
+                with self.assertRaisesRegex(
+                    GateError,
+                    "must wait 310-360 seconds",
+                ):
+                    SimulatorStationLifecycleGate(
+                        route_expiry_wait_seconds=wait_seconds
+                    )
+
+    def test_catalog_requires_route_expiry_observation(self) -> None:
+        catalog_path = Path(__file__).resolve().parents[2] / "gates.yaml"
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            catalog["gates"][
+                "mobile-simulator-station-lifecycle-e2e"
+            ]["argv"][-2:],
+            [
+                "--route-expiry-wait-seconds",
+                str(MIN_ROUTE_EXPIRY_WAIT_SECONDS),
+            ],
+        )
 
     def test_execute_claims_only_declared_simulator_slice(self) -> None:
         binding = FakeBinding()
         artifacts = FakeArtifacts()
+        clock = FakeExpiryClock()
         gate = SimulatorStationLifecycleGate(
             binding_factory=lambda: binding,  # type: ignore[arg-type]
+            route_expiry_wait_seconds=MIN_ROUTE_EXPIRY_WAIT_SECONDS,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
         )
         with patch(
             "tooling.acceptance.gates.mobile."
@@ -397,6 +556,52 @@ class SimulatorStationLifecycleGateTests(unittest.TestCase):
         )
         self.assertFalse(result["physicalDeviceClaimed"])
         self.assertTrue(binding.closed)
+
+    def test_zero_wait_is_diagnostic_not_formal_proof(self) -> None:
+        binding = FakeBinding()
+        artifacts = FakeArtifacts()
+        gate = SimulatorStationLifecycleGate(
+            binding_factory=lambda: binding,  # type: ignore[arg-type]
+        )
+        with patch(
+            "tooling.acceptance.gates.mobile."
+            "simulator_station_lifecycle_e2e.ArtifactSession",
+            return_value=artifacts,
+        ):
+            exit_code = gate.execute()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(artifacts.completed["status"], "PASS")
+        self.assertEqual(artifacts.completed["completion_status"], "PARTIAL")
+        self.assertEqual(artifacts.completed["proof_status"], "UNPROVEN")
+        result = next(
+            value
+            for path, value, _role in artifacts.writes
+            if path.endswith("/result.json")
+        )
+        self.assertNotIn(
+            "expired-route same-session resume and secondary Station selection",
+            result["observedScope"],
+        )
+        self.assertIn(
+            "expired-route same-session resume and secondary Station selection",
+            result["unprovenScope"],
+        )
+
+    def test_journey_waits_for_complete_authenticated_scope(self) -> None:
+        binding = DelayedAuthenticatedScopeBinding()
+        gate = SimulatorStationLifecycleGate(
+            binding_factory=lambda: binding,  # type: ignore[arg-type]
+        )
+
+        with patch(
+            "tooling.acceptance.gates.mobile."
+            "simulator_station_lifecycle_e2e.time.sleep",
+        ):
+            result = gate._run_journey(binding)  # type: ignore[arg-type]
+
+        self.assertEqual(binding.partial_scope_reads, 1)
+        self.assertEqual(len(result["switches"]), SWITCH_COUNT)
 
     def test_old_scope_presence_fails_closed(self) -> None:
         scope = FakeBinding()

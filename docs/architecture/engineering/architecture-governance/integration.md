@@ -1,8 +1,8 @@
 # 架构模块治理 - 集成
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-27 | **Updated**: 2026-10-05
+> **Version**: v1.4
+> **Created**: 2026-09-27 | **Updated**: 2026-10-20
 > **Owner**: Architecture Team
 
 ---
@@ -17,6 +17,7 @@
 | 编辑前知识 | Skill 约定人工执行 | PreToolUse 读取 knowledge 与架构源并生成 receipt |
 | Review | knowledge path 匹配 | changed paths 同时校验 knowledge 与模块契约 |
 | 接口治理 | 专用 registry 各自运行 | 模块声明引用专用 registry 的当前 capability ID |
+| 跨客户端复用 | package/Cargo manifest 隐式共享 | 推导共同 direct dependency 并要求 capability 登记 |
 
 ## 2. 接入边界
 
@@ -65,6 +66,59 @@ Station Access Lifecycle 作为首个回填模块：
 `agent-integration-control.py` 与 `agent-integration-audit.py` 把共享 parser
 纳入 canonical integration catalog。安装回执因此绑定 Hook、Kernel 和 parser
 的同一源码摘要；宿主 adapter 仍只转换输入输出，不解析 registry 或修改回执。
+
+### 2.7 Cross-Client Reuse
+
+当 registry 包含 `cross-client-runtime`：
+
+- 读取 Desktop/Mobile pnpm manifest 的共同 workspace dependencies；
+- 通过 pnpm 自身 resolver 解析 `pnpm-workspace.yaml` package identity；
+- 通过 `cargo metadata` 读取 Desktop/Mobile 的共同 normal path
+  dependencies；
+- 将每个 manifest 及其 Desktop/Mobile consumer 映射到同一 capability；
+- 要求每个共同 dependency 只有一个匹配 capability，并按 Cargo portable core
+  或 shared platform adapter、`packages/client-*`、`packages/ui/*` 校验
+  `reuseLayer`；
+- validation result 输出 capability ID、owner、canonical roots、allowed
+  dependencies、evidence Gates 与 reuse layer，形成可审计的共享能力清单；
+- 未登记共享依赖返回 `ARCHITECTURE_REUSE_UNREGISTERED`。
+
+Shared package capability 的 `contractRoots` 同时登记 package manifest 与
+当前语义 Owner 源文件。Desktop/Mobile manifest 证明直接消费关系；具体
+Presentation Policy 通过独立 `presentation-policy` capability 登记并显式依赖
+对应 headless capability。当前 Chat 分别登记
+`client.chat.presentation.desktop` 与
+`client.chat.presentation.mobile`，不把 Form 分叉误记为 reuse divergence。
+
+共同 dependency 有多个 owner、缺少分类或分类与 manifest 类型不一致时返回
+`ARCHITECTURE_REUSE_INVALID`。Model contract、Desktop/Mobile Presentation
+Policy 与 Android/iOS adapter 仍由其上游架构边界治理；dependency inventory
+不会把这些 authority 转给共享 package。
+
+语义相似但没有共同 manifest 的重复实现由 Cross-Client Runtime 的
+`CCR-G10..CCR-G12` review contract 处理，validator 不使用高误报的文本或文件名
+启发式判断。已接受的例外必须写入 registry `reuseDivergences`，并引用当前
+capability、accepted decision、实现路径、consumer、evidence Gate 与 review
+trigger；路径必须由 registered architecture module 治理，Gate 必须存在于
+Acceptance registry，悬空记录返回 `ARCHITECTURE_REUSE_INVALID`。
+
+### 2.8 Architecture Document Index
+
+`document-index.mjs` 读取现有 `architecture-modules.json`，生成
+`docs/architecture/README.md` 的 active module 索引。它不解析代码来发明模块，
+也不维护第二份 module manifest。
+
+canonical 图在所属模块目录用 `*.diagram.json` 声明稳定 Diagram ID、module、
+viewpoint、layout、layout-specific scene 与单一箭头语义。`diagram-render.mjs`
+按 C4 上下文、逻辑分层、运行拓扑、复用带、权威矩阵、时序泳道和控制闭环分别
+生成独立 SVG，并校验边界、节点重叠、节点引用、文本容量、正交路径和标签遮挡。
+`document-index.mjs` 扫描真实 Markdown SVG link，输出
+`docs/architecture/references.md`。只有链接或嵌入具体 SVG 资产的引用进入反向
+索引；仅链接文档不冒充图引用。
+
+`diagram-render.mjs --check` 与 `document-index.mjs --check` 对已提交生成内容做
+精确比较。生成后还必须把 SVG 转成位图做人工视觉检查；schema 通过不能代替层次、
+文字和连线路由检查。Registry、Diagram spec、SVG 或引用变化后未重新生成会失败。
 
 ## 3. Rollout
 

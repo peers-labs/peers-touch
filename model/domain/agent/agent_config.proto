@@ -26,6 +26,8 @@ message SubmitToolApprovalDecisionRequest {
   bool approved = 5;
   string idempotency_key = 6;
   string payload_hash = 7;
+  // Required only when approving the ask_user clarification tool.
+  string answer = 8;
 }
 
 enum ToolApprovalDecisionErrorCode {

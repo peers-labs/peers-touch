@@ -25,9 +25,12 @@ describe('lifecycle terminal-mutation recovery wiring', () => {
     expect(handler).toContain(
       'resolution.terminalStatus !== message.terminalStatus',
     );
+    expect(handler).toContain("'[data-pt-agent-message-id]'");
     expect(handler).toContain(
-      'openTurnDetails(message.id, resolution.turnId)',
+      'candidate.dataset.ptAgentMessageId === message.id',
     );
+    expect(handler).toContain('result.focus({ preventScroll: true })');
+    expect(handler).not.toContain('openTurnDetails(');
     expect(action).toContain('handleOpenResult()');
     expect(source).toContain("'open-result'");
     expect(source).toContain(

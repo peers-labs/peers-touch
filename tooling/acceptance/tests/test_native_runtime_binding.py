@@ -28,6 +28,7 @@ from tooling.acceptance.drivers.native.runtime import (
     LinuxNativeDesktopRuntimeBinding,
     LocalMacOSRuntimeBinding,
     NativeLaunchOptions,
+    NativeStorageFixture,
     WindowsNativeDesktopRuntimeBinding,
     _route_matches_bound_service,
     resolve_native_desktop_runtime,
@@ -105,6 +106,11 @@ class SyntheticRemoteNativeLifecycle:
         self.calls.append(("stage_actor_file", (actor, source)))
         return self.staged_path
 
+    def import_actor_storage_file(
+        self, actor: str, source: Path, relative_path: str, sha256: str,
+    ) -> None:
+        self.calls.append(("import_actor_storage_file", (actor, source, relative_path, sha256)))
+
     def actor_file_sha256(self, actor: str, path: str) -> str:
         self.calls.append(("actor_file_sha256", (actor, path)))
         return "b" * 64
@@ -135,6 +141,10 @@ class SyntheticRemoteNativeLifecycle:
         if operation == "read_clipboard":
             return {
                 "content": base64.b64encode(b"clipboard").decode("ascii"),
+            }
+        if operation == "verify_focused_text":
+            return {
+                "verified": payload["expected"] == self.staged_path,
             }
         if operation in {
             "activate_process",
@@ -181,6 +191,23 @@ class NativeDesktopAdapterInputTest(unittest.TestCase):
                 "PT_ACCEPTANCE_NATIVE_DEV": "1",
                 "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "semantic-nonintrusive",
             },
+        ):
+            binding = LocalMacOSRuntimeBinding()
+
+        self.assertEqual(
+            binding.input_mode,
+            NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        )
+
+    def test_local_macos_acceptance_binding_defaults_to_semantic_input(
+        self,
+    ) -> None:
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "tooling.acceptance.drivers.native.runtime.sys.platform",
+            "darwin",
+        ), patch(
+            "tooling.acceptance.drivers.native.runtime.find_app_binary",
+            return_value="/tmp/peers-touch-desktop",
         ):
             binding = LocalMacOSRuntimeBinding()
 
@@ -254,6 +281,64 @@ class NativeDesktopAdapterInputTest(unittest.TestCase):
 
 
 class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
+    def test_storage_fixture_rejects_escape_and_changed_content(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "fixture"
+            source.write_bytes(b"synthetic")
+            digest = hashlib.sha256(b"synthetic").hexdigest()
+            for destination in ("../escape", "/absolute", "a/../b", "a//b", "a\\b"):
+                with self.subTest(destination=destination), self.assertRaises(DriverError):
+                    NativeStorageFixture(source, destination, digest).validate()
+            fixture = NativeStorageFixture(source, "data/fixture", digest)
+            fixture.validate()
+            source.write_bytes(b"changed")
+            with self.assertRaises(DriverError):
+                fixture.validate()
+
+    def test_remote_storage_fixture_delegates_to_cell_owner(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle("/fixtures/example")
+        binding = LinuxNativeDesktopRuntimeBinding("chat-native", "source-commit", lifecycle)
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "fixture"
+            source.write_bytes(b"synthetic")
+            fixture = NativeStorageFixture(
+                source, "data/fixture", hashlib.sha256(b"synthetic").hexdigest(),
+            )
+            binding._import_storage_fixture("alice", {}, fixture)
+            self.assertEqual(
+                lifecycle.calls[-1],
+                ("import_actor_storage_file", ("alice", source, "data/fixture", fixture.sha256)),
+            )
+
+    def test_storage_fixture_import_precedes_launch_and_restore_rejects_import(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle("/fixtures/example")
+        binding = LinuxNativeDesktopRuntimeBinding("chat-native", "source-commit", lifecycle)
+        binding.set_runtime_manifest(self.runtime_manifest())
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "fixture"
+            source.write_bytes(b"synthetic")
+            fixture = NativeStorageFixture(
+                source, "data/fixture", hashlib.sha256(b"synthetic").hexdigest(),
+            )
+            with self.assertRaises(DriverError):
+                binding.create_bound_session(
+                    "alice", NativeLaunchOptions(restore_session=True, storage_fixtures=(fixture,)),
+                )
+            self.assertFalse(any(name == "launch_actor" for name, _ in lifecycle.calls))
+            with (
+                patch.object(TauriSession, "start"),
+                patch.object(TauriSession, "wait_for_acceptance_harness"),
+                patch.object(binding, "_configure_session_station"),
+                patch.object(binding, "_observe_live_service_identity", return_value="station-peer-four"),
+                patch(
+                    "tooling.acceptance.drivers.native.runtime.persist_client_binding_observation",
+                    return_value=(object(), {}),
+                ),
+            ):
+                binding.create_bound_session("alice", NativeLaunchOptions(storage_fixtures=(fixture,)))
+            operations = [name for name, _ in lifecycle.calls]
+            self.assertLess(operations.index("import_actor_storage_file"), operations.index("launch_actor"))
+
     @staticmethod
     def runtime_manifest() -> dict[str, object]:
         return {
@@ -900,6 +985,47 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             self.assertEqual(screenshot.read_bytes(), b"bitmap")
         self.assertEqual(binding.native_adapter.read_clipboard(), b"clipboard")
 
+    def test_linux_binding_delegates_focused_text_verification(self) -> None:
+        staged_path = "/workspace/run/actors/alice/fixture.png"
+        lifecycle = SyntheticRemoteNativeLifecycle(staged_path)
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+
+        verified = binding.native_adapter.verify_focused_text(
+            staged_path,
+            timeout_seconds=10,
+        )
+
+        self.assertTrue(verified)
+        self.assertEqual(
+            lifecycle.calls[-1],
+            (
+                "execute_adapter",
+                (
+                    "verify_focused_text",
+                    {
+                        "expected": staged_path,
+                        "timeoutSeconds": 10,
+                    },
+                ),
+            ),
+        )
+        remote_control = (
+            Path(__file__).resolve().parents[1]
+            / "images/desktop-linux/remote_control.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            '"verify_focused_text",',
+            remote_control,
+        )
+        self.assertIn(
+            'elif operation == "verify_focused_text":',
+            remote_control,
+        )
+
     def test_windows_binding_accepts_drive_absolute_remote_paths(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle(
             r"C:\acceptance\actors\alice\fixture.png"
@@ -1123,6 +1249,39 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(
             launch_environment["PT_STATION_HEALTH_URL"],
             "http://station.example/sub-oss/healthz",
+        )
+
+    def test_prelaunch_transport_override_keeps_original_peer_identity(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native", "source-commit", lifecycle,
+        )
+        binding.set_runtime_manifest(self.runtime_manifest())
+        binding.create_transport_override(
+            "alice", "station", "http://127.0.0.1:39000",
+        )
+        with (
+            patch.object(TauriSession, "start"),
+            patch.object(TauriSession, "wait_for_acceptance_harness"),
+            patch.object(binding, "_configure_session_station") as configure,
+            patch.object(
+                binding, "_observe_live_service_identity",
+                return_value="station-peer-four",
+            ),
+            patch(
+                "tooling.acceptance.drivers.native.runtime.persist_client_binding_observation",
+                return_value=(Mock(), {"artifactKind": "acceptance-artifact-ref"}),
+            ) as persist,
+        ):
+            session = binding.create_bound_session("alice")
+        configure.assert_called_once_with(
+            session, "http://127.0.0.1:40123/proxy", "station-four", "station-peer-four",
+        )
+        self.assertEqual(
+            persist.call_args.kwargs["observed_runtime_identity"], "station-peer-four",
+        )
+        self.assertEqual(
+            lifecycle.calls[-1][1][2]["PT_STATION_URL"], "http://127.0.0.1:40123/proxy",
         )
 
     def test_relay_binding_stages_attested_tls_anchor_before_launch(

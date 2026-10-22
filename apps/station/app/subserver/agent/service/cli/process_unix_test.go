@@ -36,8 +36,8 @@ wait "$child_pid"
 	result := make(chan error, 1)
 	go func() {
 		_, err := executor.Execute(ctx, &ExecuteRequest{
-			ActorPTID:  "actor-1",
-			CliCommand: commandPath + " " + childPIDPath,
+			ActorPTID: "actor-1",
+			Command:   []string{commandPath, childPIDPath},
 			Messages: []domain.Message{
 				{Role: domain.MessageRoleUser, Content: "hello"},
 			},
@@ -99,8 +99,8 @@ printf '%s\n' '{"type":"done","content":"complete"}'
 	executor.TerminationGrace = 20 * time.Millisecond
 
 	result, err := executor.Execute(context.Background(), &ExecuteRequest{
-		ActorPTID:  "actor-1",
-		CliCommand: commandPath + " " + childPIDPath,
+		ActorPTID: "actor-1",
+		Command:   []string{commandPath, childPIDPath},
 		Messages: []domain.Message{
 			{Role: domain.MessageRoleUser, Content: "hello"},
 		},

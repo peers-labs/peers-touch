@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Callable, Iterable, Mapping, Sequence
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.evidence_store import (
@@ -27,8 +27,11 @@ from tooling.acceptance.core.provisioning import (
 )
 from tooling.acceptance.fixtures.chat_native_reset import (
     FixtureActorRecord,
+    RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
+    RESET_PROFILE_AUTHORIZATION_ENV,
     acceptance_station_environment,
     fixture_federation_id,
+    machine_lease_reset_profile,
     read_fixture_actor,
     seed_bound_contact,
     seed_federation_context,
@@ -41,6 +44,7 @@ ACTOR_ACCOUNTS = {
     "bob": "bob@p.t",
     "charlie": "carol@p.t",
     "eve": "carol@p.t",
+    "federation_secondary_owner": "alice@p.t",
 }
 
 ACTOR_FIXTURE = REPO_ROOT / "apps" / "station" / "app" / "conf" / "actor.yml"
@@ -50,12 +54,23 @@ RESET_TERMINATION_RESERVE_SECONDS = 1.0
 RESET_POLL_INTERVAL_SECONDS = 0.05
 EXISTING_ACTOR_PROFILE_TIMEOUT_SECONDS = 30.0
 EXISTING_ACTOR_PROFILE_MAX_BYTES = 1024 * 1024
+FEDERATION_ROUTING_TIMEOUT_SECONDS = 30.0
+FEDERATION_ROUTING_MAX_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True)
 class ResolvedActorIdentity(ActorIdentity):
+    display_name: str = ""
     federated_handle: str = ""
     home_station_peer_id: str = ""
+
+
+@dataclass(frozen=True)
+class FederationRoutingActor:
+    ptid: str
+    federated_handle: str
+    home_station_peer_id: str
+    locator_seq: int = 0
 
 
 def fixture_password(path: Path = ACTOR_FIXTURE) -> str:
@@ -152,6 +167,22 @@ def reset_fixture(
     operation_deadline = effective_deadline - termination_reserve
     try:
         child_environment = os.environ.copy()
+        if not child_environment.get(RESET_PROFILE_AUTHORIZATION_ENV) and not child_environment.get(
+            RESET_ENVIRONMENTS_AUTHORIZATION_ENV
+        ):
+            lease_profile = machine_lease_reset_profile()
+            if lease_profile:
+                child_environment[
+                    RESET_PROFILE_AUTHORIZATION_ENV
+                ] = lease_profile
+        for key in (
+            "PT_MACHINE_LEASE_KIND",
+            "PT_MACHINE_LEASE_RESOURCE_ID",
+            "PT_MACHINE_LEASE_RESET_SCOPE",
+            "PT_MACHINE_LEASE_FD",
+            "PT_MACHINE_LEASE_ID",
+        ):
+            child_environment.pop(key, None)
         if reset_authorized is not None:
             if reset_authorized:
                 child_environment["CHAT_ACCEPTANCE_RESET"] = "1"
@@ -318,6 +349,7 @@ def resolve_actor_identity(
         role=role,
         account_ref=f"station-account:{account}",
         ptid=record.ptid,
+        display_name=record.name.strip(),
         federated_handle=record.federated_handle,
         home_station_peer_id=record.home_station_peer_id,
     )
@@ -404,11 +436,17 @@ def resolve_existing_actor_identity(
         if isinstance(profile, Mapping)
         else ""
     )
+    display_name = (
+        str(profile.get("display_name") or "").strip()
+        if isinstance(profile, Mapping)
+        else ""
+    )
     if (
         not ptid.startswith("ptid:")
         or not federated_handle
         or not home_station_peer_id
         or resolved_username != username
+        or not display_name
     ):
         raise BlockedError(
             reason=(
@@ -421,9 +459,169 @@ def resolve_existing_actor_identity(
         role=role,
         account_ref=f"station-account:{account}",
         ptid=ptid,
+        display_name=display_name,
         federated_handle=federated_handle,
         home_station_peer_id=home_station_peer_id,
     )
+
+
+def _bootstrap_request(
+    station_url: str,
+    path: str,
+    *,
+    method: str = "GET",
+) -> Mapping[str, object]:
+    endpoint = f"{station_url.rstrip('/')}{path}"
+    request = urllib.request.Request(
+        endpoint,
+        headers={"Accept": "application/json"},
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=FEDERATION_ROUTING_TIMEOUT_SECONDS,
+        ) as response:
+            encoded = response.read(FEDERATION_ROUTING_MAX_BYTES + 1)
+        if len(encoded) > FEDERATION_ROUTING_MAX_BYTES:
+            raise ValueError("response exceeded the byte limit")
+        payload = json.loads(encoded.decode("utf-8"))
+    except (
+        urllib.error.URLError,
+        OSError,
+        TimeoutError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as error:
+        raise BlockedError(
+            reason=f"Chat fixture Federation routing request failed: {error}",
+            resource=f"fixture-federation-routing:{station_url}",
+        ) from error
+    if not isinstance(payload, Mapping):
+        raise BlockedError(
+            reason="Chat fixture Federation routing response is invalid",
+            resource=f"fixture-federation-routing:{station_url}",
+        )
+    data = payload.get("data")
+    return data if isinstance(data, Mapping) else payload
+
+
+def prepare_bound_federation_routing(
+    role_targets: Mapping[str, tuple[str, str]],
+    records: Mapping[str, FixtureActorRecord],
+) -> None:
+    stations: dict[str, list[FederationRoutingActor]] = {}
+    for role, (station_url, _) in role_targets.items():
+        record = records.get(role)
+        if record is None:
+            raise BlockedError(
+                reason=f"Chat fixture actor role is unresolved: {role}",
+                resource=f"fixture-federation-routing:{role}",
+            )
+        stations.setdefault(station_url.rstrip("/"), []).append(
+            FederationRoutingActor(
+                ptid=record.ptid,
+                federated_handle=record.federated_handle,
+                home_station_peer_id=record.home_station_peer_id,
+                locator_seq=record.locator_seq,
+            )
+        )
+    prepare_federation_routing(stations, request=_bootstrap_request)
+
+
+def prepare_federation_routing(
+    stations: Mapping[str, Sequence[FederationRoutingActor]],
+    *,
+    request: Callable[..., Mapping[str, object]] = _bootstrap_request,
+    timeout_seconds: float = FEDERATION_ROUTING_TIMEOUT_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    if len(stations) < 2:
+        return
+
+    dial_addresses: dict[str, str] = {}
+    for station_url in stations:
+        info = request(station_url, "/sub-bootstrap/info")
+        addresses = info.get("dial_addrs")
+        if not isinstance(addresses, list):
+            addresses = info.get("dialAddrs")
+        dial_address = next(
+            (
+                str(value)
+                for value in (addresses or [])
+                if isinstance(value, str) and "/p2p/" in value
+            ),
+            "",
+        )
+        if not dial_address:
+            raise BlockedError(
+                reason="Station exposes no dialable Federation DHT address",
+                resource=f"fixture-federation-routing:{station_url}",
+            )
+        dial_addresses[station_url] = dial_address
+
+    for source_url in stations:
+        for target_url, multiaddr in dial_addresses.items():
+            if source_url == target_url:
+                continue
+            query = urllib.parse.urlencode({"multiaddr": multiaddr})
+            request(
+                source_url,
+                f"/sub-bootstrap/connect?{query}",
+            )
+
+    for station_url, actors in stations.items():
+        for actor in actors:
+            query = urllib.parse.urlencode({"actor_ptid": actor.ptid})
+            request(
+                station_url,
+                f"/sub-bootstrap/locator/publish?{query}",
+                method="POST",
+            )
+
+    deadline = monotonic() + timeout_seconds
+    pending = {
+        (observer_url, actor.federated_handle): actor
+        for observer_url in stations
+        for actor_url, actors in stations.items()
+        if observer_url != actor_url
+        for actor in actors
+    }
+    while pending and monotonic() < deadline:
+        for key, actor in tuple(pending.items()):
+            observer_url, handle = key
+            query = urllib.parse.urlencode({"handle": handle})
+            try:
+                locator = request(
+                    observer_url,
+                    f"/sub-bootstrap/locator/lookup?{query}",
+                )
+            except BlockedError:
+                continue
+            if (
+                str(locator.get("federated_handle") or "").lstrip("@")
+                == handle.lstrip("@")
+                and str(locator.get("home_station_peer_id") or "")
+                == actor.home_station_peer_id
+                and int(locator.get("seq") or 0) > actor.locator_seq
+            ):
+                pending.pop(key)
+        if pending:
+            sleep(0.25)
+    if pending:
+        unresolved = ", ".join(
+            f"{observer} -> {handle}"
+            for observer, handle in sorted(pending)
+        )
+        raise BlockedError(
+            reason=(
+                "Cross-Station Federation locator convergence timed out: "
+                f"{unresolved}"
+            ),
+            resource="fixture-federation-routing:locator-convergence",
+        )
 
 
 def prepare_bound_friendships(
@@ -461,6 +659,7 @@ def prepare_bound_friendships(
                 records[peer_role],
                 federation_members,
             )
+    prepare_bound_federation_routing(role_targets, records)
 
 
 def prepare_federation_contexts(

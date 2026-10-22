@@ -1,0 +1,290 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "project.system-context",
+  "module": "project",
+  "viewpoint": "system-context",
+  "layout": "context",
+  "output": "system-context.svg",
+  "title": "Peers-Touch 系统上下文",
+  "canvas": {
+    "width": 1600,
+    "height": 760
+  },
+  "edgeMeaning": "箭头表示在线交互发起方向",
+  "scene": {
+    "systemBoundary": {
+      "title": "PEERS-TOUCH PRODUCT SYSTEM",
+      "x": 380,
+      "y": 110,
+      "width": 760,
+      "height": 600
+    },
+    "elements": [
+      {
+        "id": "user",
+        "role": "actor",
+        "x": 60,
+        "y": 170,
+        "width": 250,
+        "height": 88,
+        "title": "用户",
+        "caption": "Chat · Social · Agent",
+        "tone": "neutral"
+      },
+      {
+        "id": "operator",
+        "role": "actor",
+        "x": 60,
+        "y": 420,
+        "width": 250,
+        "height": 88,
+        "title": "基础设施运维者",
+        "caption": "deploy · configure",
+        "tone": "muted"
+      },
+      {
+        "id": "clients",
+        "role": "system",
+        "x": 520,
+        "y": 170,
+        "width": 500,
+        "height": 88,
+        "title": "Desktop / Mobile Clients",
+        "caption": "Tauri native applications",
+        "tone": "secondary"
+      },
+      {
+        "id": "relay",
+        "role": "system",
+        "x": 440,
+        "y": 385,
+        "width": 220,
+        "height": 100,
+        "title": "Relay Role",
+        "caption": "Circuit v2 only",
+        "tone": "external"
+      },
+      {
+        "id": "station",
+        "role": "system",
+        "x": 760,
+        "y": 370,
+        "width": 330,
+        "height": 130,
+        "title": "Station Role",
+        "caption": "business authority · durable state",
+        "tone": "primary"
+      },
+      {
+        "id": "oauth",
+        "role": "external",
+        "x": 1240,
+        "y": 170,
+        "width": 290,
+        "height": 80,
+        "title": "OAuth Login Broker",
+        "caption": "external service",
+        "tone": "external"
+      },
+      {
+        "id": "livekit",
+        "role": "external",
+        "x": 1240,
+        "y": 300,
+        "width": 290,
+        "height": 80,
+        "title": "LiveKit",
+        "caption": "optional media SFU",
+        "tone": "external"
+      },
+      {
+        "id": "object-storage",
+        "role": "external",
+        "x": 1240,
+        "y": 580,
+        "width": 290,
+        "height": 80,
+        "title": "S3-compatible Storage",
+        "caption": "optional object backing",
+        "tone": "external"
+      }
+    ],
+    "relations": [
+      {
+        "from": "user",
+        "to": "clients",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": "uses",
+        "style": "primary",
+        "via": []
+      },
+      {
+        "from": "clients",
+        "to": "station",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": "business API",
+        "style": "primary",
+        "via": [
+          {
+            "x": 770,
+            "y": 320
+          },
+          {
+            "x": 925,
+            "y": 320
+          }
+        ]
+      },
+      {
+        "from": "clients",
+        "to": "relay",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": "optional route",
+        "style": "secondary",
+        "via": [
+          {
+            "x": 770,
+            "y": 300
+          },
+          {
+            "x": 550,
+            "y": 300
+          }
+        ]
+      },
+      {
+        "from": "relay",
+        "to": "station",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": null,
+        "style": "secondary",
+        "via": []
+      },
+      {
+        "from": "operator",
+        "to": "relay",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": "operates",
+        "style": "return",
+        "via": [
+          {
+            "x": 350,
+            "y": 464
+          },
+          {
+            "x": 350,
+            "y": 435
+          }
+        ]
+      },
+      {
+        "from": "clients",
+        "to": "oauth",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": "login",
+        "style": "secondary",
+        "via": [
+          {
+            "x": 1180,
+            "y": 214
+          },
+          {
+            "x": 1180,
+            "y": 210
+          }
+        ]
+      },
+      {
+        "from": "clients",
+        "to": "livekit",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": "Desktop media",
+        "style": "secondary",
+        "via": [
+          {
+            "x": 1100,
+            "y": 214
+          },
+          {
+            "x": 1100,
+            "y": 340
+          }
+        ]
+      },
+      {
+        "from": "station",
+        "to": "livekit",
+        "fromAnchor": "right",
+        "toAnchor": "bottom",
+        "label": "room control",
+        "style": "event",
+        "via": [
+          {
+            "x": 1150,
+            "y": 435
+          },
+          {
+            "x": 1150,
+            "y": 400
+          },
+          {
+            "x": 1385,
+            "y": 400
+          }
+        ]
+      },
+      {
+        "from": "livekit",
+        "to": "station",
+        "fromAnchor": "right",
+        "toAnchor": "right",
+        "label": "signed webhook",
+        "style": "return",
+        "via": [
+          {
+            "x": 1560,
+            "y": 340
+          },
+          {
+            "x": 1560,
+            "y": 520
+          },
+          {
+            "x": 1090,
+            "y": 520
+          }
+        ]
+      },
+      {
+        "from": "station",
+        "to": "object-storage",
+        "fromAnchor": "bottom",
+        "toAnchor": "left",
+        "label": "objects",
+        "style": "event",
+        "via": [
+          {
+            "x": 925,
+            "y": 550
+          },
+          {
+            "x": 1200,
+            "y": 550
+          },
+          {
+            "x": 1200,
+            "y": 620
+          }
+        ]
+      }
+    ]
+  }
+}

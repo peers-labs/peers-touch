@@ -154,7 +154,8 @@ impl SecureContentTransport {
         let request_hash: [u8; 32] = Sha256::digest(&canonical_proof_free).into();
         request.proof =
             Some(self.client_proof(PUBLISH_CAPABILITY, &request.command_id, request_hash)?);
-        let request_bytes = canonical_publication_bytes(&request).map_err(invalid_local_request)?;
+        let request_bytes = canonicalize_publish_content_prekeys_request(&request.encode_to_vec())
+            .map_err(|error| invalid_local_request(error.to_string()))?;
         self.post_proto_bytes_with_retry_after(
             "/key-exchange/content-prekeys/publish",
             &request_bytes,
@@ -521,7 +522,7 @@ fn execute_station_request<'a>(
         timeout,
         admission_timeout: SECURE_CONTENT_ADMISSION_TIMEOUT,
         traffic_class,
-        route_security: StationRouteSecurity::TlsOrLoopback,
+        route_security: StationRouteSecurity::HttpOrHttps,
         route_policy: crate::application::station_runtime::client::StationRoutePolicy::Auto,
         replay_policy,
         cancellation: session.request_cancellation(),
@@ -565,6 +566,7 @@ fn station_client_error(
         StationClientErrorKind::AmbiguousOutcome => NativeErrorDisposition::UnknownCommit,
         StationClientErrorKind::Overloaded
         | StationClientErrorKind::Network
+        | StationClientErrorKind::Unavailable
         | StationClientErrorKind::Cancelled
         | StationClientErrorKind::StaleRoute => match semantics {
             RequestCommitSemantics::ReadOnly => NativeErrorDisposition::Retryable,
@@ -597,25 +599,6 @@ pub fn jwt_session_id(token: &str) -> Result<String, String> {
         .filter(|value| !value.trim().is_empty() && value.trim() == *value)
         .map(ToOwned::to_owned)
         .ok_or_else(|| "secure content session token has no validated session ID".to_string())
-}
-
-pub fn canonical_publication_bytes(
-    request: &wire::PublishContentPreKeysRequest,
-) -> Result<Vec<u8>, String> {
-    canonicalize_publish_content_prekeys_request(&request.encode_to_vec())
-        .map_err(|error| format!("canonicalize Content PreKey publication: {error}"))
-}
-
-pub fn publication_command_id(
-    request: &wire::PublishContentPreKeysRequest,
-) -> Result<String, String> {
-    let mut payload = request.clone();
-    payload.command_id.clear();
-    payload.proof = None;
-    Ok(format!(
-        "cpk-pub-v1-{}",
-        hex::encode(Sha256::digest(canonical_publication_bytes(&payload)?))
-    ))
 }
 
 pub fn content_prekey_target(
@@ -1395,7 +1378,7 @@ mod tests {
             );
         }
 
-        fn switch_to_remote_plaintext(&self) {
+        fn switch_to_remote_http(&self) {
             self.state.lock().unwrap().1 = 2;
         }
     }
@@ -1515,15 +1498,17 @@ mod tests {
     }
 
     #[test]
-    fn secure_content_rejects_remote_plaintext_route_before_dispatch() {
+    fn secure_content_accepts_user_selected_remote_http_route() {
         let executor = Arc::new(SwitchingStationExecutor::new());
         let transport = SecureContentTransport::new(transport_session(executor.clone())).unwrap();
 
-        executor.switch_to_remote_plaintext();
-        let error = transport.get_private_moment("post-1").unwrap_err();
+        executor.switch_to_remote_http();
+        transport.get_private_moment("post-1").unwrap();
 
-        assert_eq!(error.disposition, NativeErrorDisposition::Terminal);
-        assert!(executor.requests.lock().unwrap().is_empty());
+        assert_eq!(
+            executor.requests.lock().unwrap().as_slice(),
+            [(2, "/api/v1/social/moments/post-1".to_string())]
+        );
     }
 
     #[test]
@@ -1634,7 +1619,8 @@ mod tests {
                 signature: vec![5; 64],
             }),
         };
-        let canonical = canonical_publication_bytes(&request).unwrap();
+        let canonical =
+            canonicalize_publish_content_prekeys_request(&request.encode_to_vec()).unwrap();
         assert_ne!(request.encode_to_vec(), canonical);
         assert_eq!(
             hex::encode(canonical),
@@ -1643,10 +1629,6 @@ mod tests {
                 "/../../../model/domain/secure_content/testdata/content_prekey_publication.hex"
             ))
             .trim()
-        );
-        assert_eq!(
-            publication_command_id(&request).unwrap(),
-            "cpk-pub-v1-5ca0fee4658c8956feeca6d8a9272e70ce8c6127e41cd81a2961dbf1a4dd0d8c"
         );
     }
 
@@ -1776,31 +1758,6 @@ mod tests {
         });
         assert_eq!(mismatched.code, ObjectTransferErrorCode::RetryLater);
         assert!(mismatched.retryable);
-    }
-
-    #[test]
-    fn secure_content_publication_command_id_ignores_command_and_proof_fields() {
-        let mut request = wire::PublishContentPreKeysRequest {
-            publisher: Some(actor::ActorDeviceRef {
-                actor: Some(actor::ActorRef {
-                    ptid: "ptid:alice".to_string(),
-                    kind: actor::ActorKind::Person as i32,
-                    ..Default::default()
-                }),
-                device_id: "device-1".to_string(),
-            }),
-            publisher_signing_key_id: "signing-1".to_string(),
-            publisher_profile_version: 1,
-            expected_pool_epoch: 0,
-            prekeys: Vec::new(),
-            command_id: String::new(),
-            proof: None,
-        };
-        let expected = publication_command_id(&request).unwrap();
-        request.command_id = "ignored".to_string();
-        request.proof = Some(wire::ContentPreKeyClientProof::default());
-        assert_eq!(publication_command_id(&request).unwrap(), expected);
-        assert!(expected.starts_with("cpk-pub-v1-"));
     }
 
     #[test]

@@ -138,8 +138,8 @@ function ContactsPageInner({
   const peerOnline = useSocialStore((s) => s.peerOnline);
 
   const contacts = useMemo(
-    () => projectAcceptedContacts(friendRequests, currentUserPtid, peerOnline),
-    [currentUserPtid, friendRequests, peerOnline],
+    () => projectAcceptedContacts(friendRequests, currentUserPtid, peerOnline, peerProfiles),
+    [currentUserPtid, friendRequests, peerOnline, peerProfiles],
   );
   const inboundRequests = useMemo(
     () => projectPendingInboundRequests(friendRequests, currentUserPtid),
@@ -588,16 +588,16 @@ function ContactsPageInner({
                 <BoundedList surfaceKey={`contacts:friends:${contactQuery}`} items={windowedContacts} itemKey={(contact) => contact.peerPtid} size={CONTACT_WINDOW_SIZE}>
                 {(rows) => rows.map((contact, index) => (
                   <div key={contact.peerPtid} data-scroll-anchor-id={contact.peerPtid}>
-                    {index === 0 || contact.peerName[0]?.toUpperCase() !== rows[index - 1].peerName[0]?.toUpperCase()
-                      ? <div className="contact-letter">{contact.peerName[0]?.toUpperCase() || '?'}</div>
+                    {index === 0 || displayPeerName(contact.peerName, contact.peerPtid, t)[0]?.toUpperCase() !== displayPeerName(rows[index - 1].peerName, rows[index - 1].peerPtid, t)[0]?.toUpperCase()
+                      ? <div className="contact-letter">{displayPeerName(contact.peerName, contact.peerPtid, t)[0]?.toUpperCase() || '?'}</div>
                       : null}
                       <div className="contact-item-row" data-focus-id={contact.peerPtid} tabIndex={0} role="button" onClick={() => onOpenContact(contact.peerPtid)} onKeyDown={(event) => { if (event.key === 'Enter') onOpenContact(contact.peerPtid); }}>
                         <span className="conversation-avatar-frame">
-                          <MobileAvatar src={contact.peerAvatar} size={44}>{contact.peerName.slice(0, 1)}</MobileAvatar>
+                          <MobileAvatar src={contact.peerAvatar} size={44}>{displayPeerName(contact.peerName, contact.peerPtid, t).slice(0, 1)}</MobileAvatar>
                           {contact.peerOnline ? <span className="conversation-online-dot" aria-hidden="true" /> : null}
                         </span>
                         <div className="contact-info">
-                          <Text strong>{contact.peerName}</Text>
+                          <Text strong>{displayPeerName(contact.peerName, contact.peerPtid, t)}</Text>
                           <Text type="secondary">{contact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}</Text>
                         </div>
                       </div>
@@ -724,10 +724,14 @@ function ContactsPageInner({
                     : '';
                   return (
                     <div className="people-result-card" key={receiverPtid || result.username}>
-                      <MobileAvatar src={result.avatar} size={44}>{(result.displayName || result.username || receiverPtid).slice(0, 1)}</MobileAvatar>
+                      <MobileAvatar src={result.avatar} size={44}>{displayPeerName(
+                        result.displayName || result.username, receiverPtid, t,
+                      ).slice(0, 1)}</MobileAvatar>
                       <div className="people-result-copy">
                         <div className="people-result-title">
-                          <Text strong ellipsis>{result.displayName || result.username || receiverPtid}</Text>
+                          <Text strong ellipsis>{displayPeerName(
+                            result.displayName || result.username, receiverPtid, t,
+                          )}</Text>
                           {result.federation ? (
                             <Tag color="success" icon={<ShieldCheck size={11} />}>{t('mobile.contacts.verified')}</Tag>
                           ) : null}
@@ -857,10 +861,10 @@ function ContactsPageInner({
                       <List.Item.Meta
                         avatar={(
                           <MobileAvatar src={contact.peerAvatar}>
-                            {contact.peerName.slice(0, 1)}
+                            {displayPeerName(contact.peerName, contact.peerPtid, t).slice(0, 1)}
                           </MobileAvatar>
                         )}
-                        title={<Text strong>{contact.peerName}</Text>}
+                        title={<Text strong>{displayPeerName(contact.peerName, contact.peerPtid, t)}</Text>}
                         description={(
                           <Text type="secondary">
                             {contact.peerOnline
@@ -870,7 +874,7 @@ function ContactsPageInner({
                         )}
                       />
                       <Checkbox
-                        aria-label={contact.peerName}
+                        aria-label={displayPeerName(contact.peerName, contact.peerPtid, t)}
                         checked={selectedGroupMemberPtids.includes(contact.peerPtid)}
                         disabled={creatingGroup}
                         onChange={(event) => toggleInitialGroupMember(

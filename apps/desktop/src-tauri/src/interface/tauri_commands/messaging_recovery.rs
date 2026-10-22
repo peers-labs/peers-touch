@@ -328,6 +328,16 @@ pub fn messaging_recovery_restore_latest(
     window: Window,
 ) -> AppResult<StubPayload> {
     let recovery_phrase = Zeroizing::new(recovery_phrase);
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity recovery",
+                None,
+            )
+        }
+    };
     let session = match require_session(&state, &window) {
         Ok(session) => session,
         Err(error) => return error,
@@ -340,14 +350,7 @@ pub fn messaging_recovery_restore_latest(
         );
     }
     let engine = match state.messaging_engines.get(&session.account_id) {
-        Ok(Some(engine)) => engine,
-        Ok(None) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                "messaging recovery requires an active profile engine",
-                None,
-            )
-        }
+        Ok(engine) => engine,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
     let revision = match latest_revision(state.station.client(), &session) {
@@ -382,17 +385,25 @@ pub fn messaging_recovery_restore_latest(
         );
     }
     let archive = decoded.archive;
-    let reconciliation =
-        match engine.reconcile_recovery_archive_redactions(&session.token, &archive) {
-            Ok(reconciliation) => reconciliation,
-            Err(error) => {
-                return AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("failed to reconcile recovery redactions: {error}"),
-                    None,
-                )
-            }
-        };
+    let reconciliation = match engine.as_ref() {
+        Some(engine) => engine.reconcile_recovery_archive_redactions(&session.token, &archive),
+        None => MessagingEngine::reconcile_recovery_archive_redactions_for_profile(
+            state.station.client(),
+            &session.ptid,
+            &session.token,
+            &archive,
+        ),
+    };
+    let reconciliation = match reconciliation {
+        Ok(reconciliation) => reconciliation,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("failed to reconcile recovery redactions: {error}"),
+                None,
+            )
+        }
+    };
     drop(engine);
     if let Err(error) = state.secure_content.teardown_actor(&session.actor_ptid) {
         return AppResult::fail(
@@ -422,6 +433,7 @@ pub fn messaging_recovery_restore_latest(
     }
     let enrollment = match state.messaging_engines.restore_profile(
         &session.account_id,
+        &session.token,
         &archive,
         &reconciliation,
     ) {

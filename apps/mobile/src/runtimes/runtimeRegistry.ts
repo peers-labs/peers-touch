@@ -34,6 +34,10 @@ import {
   activeStationEntry,
 } from '../features/station/stationRegistry';
 import {
+  loadXConfigProjection,
+  refreshXConfigProjection,
+} from '../features/station/xConfig';
+import {
   startSocialRuntime,
   type SocialRuntimeController,
 } from '../features/social/socialRuntime';
@@ -75,7 +79,6 @@ import {
   reconcileReliableSocialRelationships,
   reliabilityCommandRecoveryActions,
   registerReliabilityReconciliationWake,
-  rebindReliabilityGeneration,
   suspendReliabilityRuntime,
   type CommandProjection,
 } from './commandRuntime';
@@ -86,6 +89,9 @@ import {
 import {
   bootstrapStationRuntime,
   readStationRegistryProjection,
+  refreshActiveStationRoute,
+  startStationRouteRenewal,
+  stopStationRouteRenewal,
 } from './stationRuntime';
 
 // --- Secure Storage Runtime Descriptor ---
@@ -121,6 +127,45 @@ function createSecureStorageDescriptor(): MobileRuntimeDescriptor {
   };
 }
 
+function createXConfigRuntimeDescriptor(): MobileRuntimeDescriptor {
+  const refresh = () => {
+    void refreshXConfigProjection(false).catch((error) => {
+      reportRuntimeDescriptorError('x-config', error);
+    });
+  };
+
+  return {
+    id: 'x-config',
+    title: 'X Config Runtime',
+    responsibility:
+      'Owns the signed public suggestion and release projection without mutating verified Station state.',
+    dependsOn: ['secure-storage'],
+
+    async bootstrap(): Promise<void> {
+      await loadXConfigProjection().catch((error) => {
+        reportRuntimeDescriptorError('x-config', error);
+      });
+      refresh();
+    },
+
+    async suspend(): Promise<void> {
+      // Cached projection remains readable while the app is suspended.
+    },
+
+    async resume(): Promise<void> {
+      refresh();
+    },
+
+    async teardown(): Promise<RuntimeOperationResult> {
+      return {
+        runtimeId: 'x-config',
+        success: true,
+        durationMs: 0,
+      };
+    },
+  };
+}
+
 // --- Station Runtime Descriptor ---
 
 function createStationRuntimeDescriptor(): MobileRuntimeDescriptor {
@@ -133,17 +178,21 @@ function createStationRuntimeDescriptor(): MobileRuntimeDescriptor {
 
     async bootstrap(): Promise<void> {
       await bootstrapStationRuntime();
+      startStationRouteRenewal();
     },
 
     async suspend(): Promise<void> {
-      // The app-scoped registry has no active resource to suspend.
+      stopStationRouteRenewal();
     },
 
     async resume(): Promise<void> {
       await bootstrapStationRuntime();
+      await refreshActiveStationRoute();
+      startStationRouteRenewal();
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
+      stopStationRouteRenewal();
       return {
         runtimeId: 'station',
         success: true,
@@ -547,22 +596,16 @@ function createCommandRuntimeDescriptor(): MobileRuntimeDescriptor {
 
     async resume(context): Promise<void> {
       runtimeContext = context;
+      await transition;
       suspended = false;
       const session = admittedRuntimeSession(useAuthStore.getState());
-      await enqueueSession(session, async (activeSession, isCurrent) => {
-        if (!activeSession) return;
-        const generation = await fetchLifecycleGeneration();
-        if (!isCurrent()) return;
-        await rebindReliabilityGeneration(
-          activeSession.stationPeerId, activeSession.actorRef.ptid, generation,
-        );
-        if (!isCurrent()) return;
-        await reconcileActive(activeSession, generation, isCurrent);
-        if (!isCurrent()) return;
-        await openReliabilityAdmission(
-          activeSession.stationPeerId, activeSession.actorRef.ptid, generation,
-        );
-      });
+      if (!session) {
+        clearRetryTimer();
+        const current = await readReliabilityRuntimeStatus();
+        if (current.active) await closeReliabilityScope('retain');
+        return;
+      }
+      await enqueueSession(session);
     },
 
     async teardown(context): Promise<RuntimeOperationResult> {
@@ -685,6 +728,7 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
   return [
     createDeviceSettingsRuntimeDescriptor(),
     createSecureStorageDescriptor(),
+    createXConfigRuntimeDescriptor(),
     createStationRuntimeDescriptor(),
     createAuthRuntimeDescriptor(),
     createAccessRuntimeDescriptor(),

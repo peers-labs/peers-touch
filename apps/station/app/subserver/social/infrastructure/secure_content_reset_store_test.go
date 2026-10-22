@@ -500,6 +500,19 @@ func TestAddRawObjectReferenceRejectsConflictingSourceDigests(t *testing.T) {
 	}
 }
 
+func TestExtractLegacyAttachmentKeysIsolatesFallbackDecodeState(t *testing.T) {
+	keys, err := extractLegacyAttachmentKeys(
+		"IMAGE",
+		`[{"id":"oss://self/public/image.bin","url":"oss://self/public/image.bin","size_bytes":42,"media_encryption":{"encrypted":true}}]`,
+	)
+	if err != nil {
+		t.Fatalf("extractLegacyAttachmentKeys() error = %v", err)
+	}
+	if len(keys) != 1 || keys[0] != "public/image.bin" {
+		t.Fatalf("extractLegacyAttachmentKeys() = %#v", keys)
+	}
+}
+
 func TestGORMSecureContentResetStoreSourceReplacement(t *testing.T) {
 	t.Run("atomically supersedes a different-source PREPARED journal", func(t *testing.T) {
 		_, store := openSecureContentResetStore(t)
@@ -1502,6 +1515,50 @@ CREATE TABLE social_reactions (
 	}
 	if !strings.Contains(err.Error(), "social_reactions.post_id") {
 		t.Fatalf("schema validation error does not identify reaction post_id: %v", err)
+	}
+}
+
+func TestCanonicalIndexPartialShapeIsPreActivationOnly(t *testing.T) {
+	canonical := canonicalIndexExpectation{
+		Columns: []string{"content_id"},
+		Unique:  true,
+	}
+	partial := canonicalIndexExpectation{
+		Columns: []string{"content_id"},
+		Unique:  true,
+		Partial: true,
+	}
+	allowed := map[string]canonicalIndexExpectation{
+		"uidx_social_private_post_content": partial,
+	}
+
+	if canonicalIndexMatches(
+		"uidx_social_private_post_content",
+		partial,
+		canonical,
+		nil,
+	) {
+		t.Fatal("post-audit must reject the partial pre-activation index")
+	}
+	if !canonicalIndexMatches(
+		"uidx_social_private_post_content",
+		partial,
+		canonical,
+		allowed,
+	) {
+		t.Fatal("pre-activation must accept the reviewed partial index")
+	}
+	if canonicalIndexMatches(
+		"uidx_social_private_post_content",
+		canonicalIndexExpectation{
+			Columns: []string{"post_id"},
+			Unique:  true,
+			Partial: true,
+		},
+		canonical,
+		allowed,
+	) {
+		t.Fatal("pre-activation must reject a partial index on the wrong column")
 	}
 }
 

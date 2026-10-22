@@ -2,13 +2,10 @@ package federation
 
 import (
 	"context"
-	"crypto/ed25519"
 	"fmt"
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/application"
-	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
-	"google.golang.org/protobuf/proto"
 )
 
 type testnetSeedConfig struct {
@@ -24,7 +21,7 @@ type seedStation struct {
 	FederatedHandle string
 }
 
-func seedTestnet(t *testing.T, ctx context.Context, cfg *testnetSeedConfig, fedSvc *application.FederationService, ledgerSvc *application.LedgerService) error {
+func seedTestnet(t *testing.T, ctx context.Context, cfg *testnetSeedConfig, fedSvc *application.FederationService, _ *application.LedgerService) error {
 	t.Helper()
 	if len(cfg.Stations) == 0 {
 		return fmt.Errorf("at least one station required for seed")
@@ -50,39 +47,13 @@ func seedTestnet(t *testing.T, ctx context.Context, cfg *testnetSeedConfig, fedS
 
 	for i := 1; i < len(cfg.Stations); i++ {
 		station := cfg.Stations[i]
-
-		payload := &pb.StationJoinApprovedPayload{
-			ApprovedStationPeerId:          station.PeerID,
-			ApprovedByActorPtid:            creator.ActorPTID,
-			ApprovedByActorFederatedHandle: creator.FederatedHandle,
-			Role:                           "member_station",
-			ApprovedStationUrl:             station.URL,
-			ApprovedStationName:            station.Name,
-		}
-		payloadBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("seed: marshal join payload for %s: %w", station.PeerID, err)
-		}
-
-		_, actorPriv, err := ed25519.GenerateKey(nil)
-		if err != nil {
-			return fmt.Errorf("seed: generate actor key: %w", err)
-		}
-		_, stationPriv, err := ed25519.GenerateKey(nil)
-		if err != nil {
-			return fmt.Errorf("seed: generate station key: %w", err)
-		}
-
-		_, err = ledgerSvc.AppendEvent(ctx, &application.AppendEventInput{
-			FederationID:         fed.FederationID,
-			EventType:            pb.EventType_STATION_JOIN_APPROVED,
-			PayloadBytes:         payloadBytes,
-			ActorPTID:            creator.ActorPTID,
-			ActorFederatedHandle: creator.FederatedHandle,
-			StationPeerID:        creator.PeerID,
-			ActorPrivateKey:      actorPriv,
-			StationPrivateKey:    stationPriv,
-		})
+		_, err = fedSvc.ApproveJoinAsSequencer(
+			ctx,
+			fed.FederationID,
+			station.PeerID,
+			station.Name,
+			station.URL,
+		)
 		if err != nil {
 			return fmt.Errorf("seed: join station %s: %w", station.PeerID, err)
 		}

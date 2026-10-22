@@ -20,10 +20,11 @@ use tauri::{State, Window};
 #[cfg(feature = "acceptance-webdriver")]
 use crate::application::station_binding::{StationBindingPhase, StationBindingState};
 use crate::error::{AppResult, ErrorCode};
+use crate::messaging::MessagingProfileReadiness;
 use crate::model::actor::ActorProfile;
 use crate::secure_content::adapter::jwt_session_id;
+use crate::secure_content::prekey_runtime::maintain_content_prekeys;
 use crate::secure_content::station_trust::resolve_station_signing_key;
-use crate::secure_content::worker::maintain_content_prekeys;
 use crate::secure_content::{SecureContentLease, SecureContentSession, SecureContentSessionKey};
 use crate::state::AppState;
 
@@ -431,6 +432,31 @@ pub fn social_private_moment_read(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
+    let active = match state.sessions.get(window.label()) {
+        Some(active) if active.actor.ptid == input.actor_ptid && !active.jwt.trim().is_empty() => {
+            active
+        }
+        _ => {
+            return native_failure(
+                "secure content actor does not match the authenticated window".to_string(),
+                "AUTHENTICATION_REQUIRED",
+            )
+        }
+    };
+    let readiness = match state
+        .messaging_engines
+        .profile_readiness(&active.account_id)
+    {
+        Ok(readiness) => readiness,
+        Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
+    };
+    match profile_requires_recovery(&readiness, &input.actor_ptid) {
+        Ok(true) => {
+            return AppResult::success(json!(pending_device_recovery_projection(&input.post_id)))
+        }
+        Ok(false) => {}
+        Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
+    }
     let lease = match lease_for_window(
         state.inner(),
         &window,
@@ -467,6 +493,27 @@ pub fn social_private_moment_read(
     {
         Ok(projection) => AppResult::success(json!(projection)),
         Err(error) => native_failure(error, "NOT_FOUND_OR_NOT_AUTHORIZED"),
+    }
+}
+
+fn profile_requires_recovery(
+    readiness: &MessagingProfileReadiness,
+    actor_ptid: &str,
+) -> Result<bool, String> {
+    match readiness {
+        MessagingProfileReadiness::RecoveryRequired {
+            actor_ptid: expected_actor_ptid,
+        } if expected_actor_ptid == actor_ptid => Ok(true),
+        MessagingProfileReadiness::RecoveryRequired { .. } => {
+            Err("messaging recovery readiness actor mismatch".to_string())
+        }
+        MessagingProfileReadiness::Active {
+            actor_ptid: active_actor_ptid,
+        } if active_actor_ptid == actor_ptid => Ok(false),
+        MessagingProfileReadiness::Active { .. } => {
+            Err("messaging active readiness actor mismatch".to_string())
+        }
+        MessagingProfileReadiness::Inactive => Ok(false),
     }
 }
 
@@ -1031,6 +1078,41 @@ mod private_reaction_failure_tests {
         assert_eq!(details["state"], "REACTION_RETRYING");
         assert_eq!(details["native_error_code"], "REACTION_RETRY_NOT_READY");
         assert_eq!(details["retryable"], true);
+    }
+}
+
+#[cfg(test)]
+mod profile_recovery_readiness_tests {
+    use super::profile_requires_recovery;
+    use crate::messaging::MessagingProfileReadiness;
+
+    #[test]
+    fn recovery_required_readiness_is_actor_bound() {
+        assert!(profile_requires_recovery(
+            &MessagingProfileReadiness::RecoveryRequired {
+                actor_ptid: "ptid:alice".to_string(),
+            },
+            "ptid:alice",
+        )
+        .unwrap());
+        assert!(profile_requires_recovery(
+            &MessagingProfileReadiness::RecoveryRequired {
+                actor_ptid: "ptid:bob".to_string(),
+            },
+            "ptid:alice",
+        )
+        .is_err());
+        assert!(
+            !profile_requires_recovery(&MessagingProfileReadiness::Inactive, "ptid:alice",)
+                .unwrap()
+        );
+        assert!(profile_requires_recovery(
+            &MessagingProfileReadiness::Active {
+                actor_ptid: "ptid:bob".to_string(),
+            },
+            "ptid:alice",
+        )
+        .is_err());
     }
 }
 

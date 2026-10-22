@@ -10,6 +10,7 @@ import {
 import { useMobileI18n } from '../../app/mobileI18n';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
 import { useSocialStore } from '../../features/social/socialStore';
+import { actorDisplayName } from '../../features/social/socialProjection';
 import type { SocialAudienceChoice } from '../../features/social/socialAudience';
 
 export type MomentAudienceTargetChoice = Extract<
@@ -238,7 +239,8 @@ export function MomentAudienceTargetPicker({
             ? people.map((person) => {
                 const checked = selected.has(person.ptid);
                 const label =
-                  person.displayName || person.username || person.ptid;
+                  actorDisplayName(person.displayName || person.username, person.ptid)
+                  || t('mobile.contacts.unknownUser');
                 return (
                   <button
                     type="button"

@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "lark-channel-production-contract",
+      "domain": "channel",
+      "direction": "acceptance_validates_product",
+      "features": ["lark-channel-production-contract"],
+      "required_gates": [
+        "lark-channel-source",
+        "station-api-ownership",
+        "lark-01-e2e",
+        "lark-02-e2e",
+        "lark-03-e2e",
+        "lark-04-e2e",
+        "lark-05-e2e",
+        "lark-06-e2e",
+        "lark-07-e2e",
+        "lark-08-e2e",
+        "lark-09-e2e",
+        "lark-10-e2e",
+        "lark-11-e2e",
+        "lark-12-e2e",
+        "lark-13-e2e",
+        "lark-14-e2e",
+        "lark-15-e2e",
+        "lark-16-e2e",
+        "lark-17-e2e",
+        "lark-18a-e2e",
+        "lark-18b-e2e",
+        "lark-18c-e2e",
+        "lark-19-e2e",
+        "lark-20-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/channel/service/requester_authorization.go",
+        "apps/desktop/src/components/settings/channels/ChannelManagementPanels.tsx",
+        "model/domain/channel/channel.proto"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "channel_bindings",
+          "channel_requester_authorizations",
+          "channel_inbound_events",
+          "channel_delivery_intents",
+          "agent_tool_calls"
+        ],
+        "surfaces": [
+          "Desktop Settings > Channels > Lark",
+          "Lark chat receiver",
+          "Lark requester workspace"
+        ],
+        "proven_by": [
+          "lark-channel-source",
+          "station-api-ownership",
+          "lark-01-e2e",
+          "lark-02-e2e",
+          "lark-03-e2e",
+          "lark-04-e2e",
+          "lark-05-e2e",
+          "lark-06-e2e",
+          "lark-07-e2e",
+          "lark-08-e2e",
+          "lark-09-e2e",
+          "lark-10-e2e",
+          "lark-11-e2e",
+          "lark-12-e2e",
+          "lark-13-e2e",
+          "lark-14-e2e",
+          "lark-15-e2e",
+          "lark-16-e2e",
+          "lark-17-e2e",
+          "lark-18a-e2e",
+          "lark-18b-e2e",
+          "lark-18c-e2e",
+          "lark-19-e2e",
+          "lark-20-e2e"
+        ],
+        "proven_scope": [
+          "Channel and Agent focused tests prove requester and tenant isolation, restart recovery, additive scope preservation, managed CLI storage isolation, tool argv mapping, and write approval policy",
+          "targeted Desktop TypeScript and ESLint checks prove the Channel projection and settings surface compile as one contract",
+          "Station API ownership binds all /channel routes to unique Proto contracts and the Channel resource owner",
+          "when every dedicated live Gate passes, LARK-J01 through LARK-J20 prove exact-source receiver outcomes, negative controls, Suite reuse, and cleanup"
+        ],
+        "unproven_scope": [
+          "LARK-J01 through LARK-J20 live receiver-visible journeys against current source",
+          "real requester OAuth completion and revoke against the deployed Station",
+          "real Lark message, media, card, group, automation, document, Drive, Wiki, contact, and generic extension outcomes",
+          "native Desktop visual and keyboard evidence for wide and narrow windows",
+          "current-source remote deployment because the approved remote deploy path consumes Git HEAD and this work is intentionally uncommitted"
+        ]
+      }
+    }
+  ]
+}

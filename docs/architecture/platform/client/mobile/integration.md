@@ -1,327 +1,223 @@
-# Mobile Shell — 集成与 Gap 分析
+# Mobile Shell - Integration
 
-> **Status**: active; owner-contract closure amendment accepted
-> **Version**: v1.3
-> **Created**: 2026-08-27 | **Updated**: 2026-10-07
+> **Status**: active
+> **Version**: v2.0
+> **Created**: 2026-08-27 | **Updated**: 2026-10-17
 > **Owner**: Mobile Architecture Team
-> **Module**: `apps/mobile/`
 
 ---
 
-## 1. Current-State Gap Matrix
+## 1. Integration Map
 
-| Area | Current implementation | Prototype target | Disposition |
-|---|---|---|---|
-| Station selection | Real registry, add/remove/select, Rust probe, auto-check | Same flow | retain; move lifecycle ownership out of `App.tsx` |
-| Station handshake | MS-P07 signed host-key handshake and Mobile Rust verification are implemented | Stable identity and capability binding | retain; required simulator mismatch evidence remains pending |
-| Access gates | Real Station-driven login/invite/blocked flow plus Rust-owned OAuth/session transport; generic schema submission is absent | Email plus OAuth tabs | retain existing flows; add schema-bound generic submission before enabling terms/device/custom gates |
-| Identity | Mobile-facing auth/OAuth contracts use PTID-bearing `ActorRef`; legacy bridge fields are reserved | PTID-only across every Mobile boundary | retain hard cut and reject missing PTID |
-| OAuth | MS-P02/MS-P03, MS-D12 and MS-D13 are implemented; deterministic simulator proof is pending and physical provider proof is optional | GitHub/Google redirect/callback | run the simulator Gate; retain `native-oauth-proof/` only for optional diagnostics |
-| Shell tabs | Descriptor-owned Chat/Moments/Contacts/Me active-only switch, all planned detail routes, and selected-only Contacts overlays | Chats/Moments/Contacts/Me plus details | retain; collect visible native focus/no-leak evidence |
-| Friend chat | Real list/thread, E2EE, receipts, typing, attachments, search, edit/recall/delete/settings | Rich thread | retain and split oversized page into boundaries |
-| Group chat | Canonical Conversation projection, E2EE, membership/admin/settings, AO-D10 member authority, and Messaging-owned pending/failure convergence | Rich group thread | retain; complete simulator runtime proof |
-| Reactions/pins/forward/thread | Retract/reaction/pin/thread foundations exist; user forward and actor-hide/moderation semantics are incomplete | Fully interactive | keep unsupported actions unavailable until distinct Conversation contracts and readback exist |
-| Contacts | Real requests, search, federated resolve, profiles, and canonical Social block/list/status callers | Grouped contacts/details | retain Social authority; complete same/cross-Station runtime proof |
-| Moments | Runtime-backed feed, publish, reactions, comments, replies, typed feed/detail outcomes, Rust-owned native media staging, and descriptor detail route | Feed, reactions, comments, replies | retain Social/Secure Content authority; complete simulator picker and multi-actor proof |
-| Me/Profile | Actor-profile privacy, Notification preferences, device settings, Station, language, and canonical Social blocked-user surfaces | Profile stats and grouped settings | preserve split ownership; remove the placeholder account-preference section and hard-cut shared Profile/Notification CAS |
-| Notifications | Real runtime/store and notification center | Badge behavior | retain; make descriptor/runtime ownership explicit |
-| Shared Social ingress | One session-scoped supervisor routes Social, Moments, notification, and profile invalidation; Chat frames become Messaging wake intents | One runtime-owned freshness path per domain | retain; execute authorized two-Station simulator convergence Gates |
-| Runtime registry | Executable descriptors with topological bootstrap and reverse suspend/teardown | Lifecycle-aware shell | retain; complete remaining environment evidence |
-| Auth/session runtime | Station-scoped credential acquisition and admitted session lifecycle have separate owners | Pre-session auth plus post-grant session ownership | retain; complete required simulator access proof |
-| Unknown writes | Per-domain idempotency exists unevenly; no uniform persistent result convergence | Restart-safe exact-scope resolution | add durable command ledger and Station result/readback adapters |
-| Teardown | Kernel generation fencing and Messaging/Social reverse teardown are implemented; reset-authorized simulator proof remains incomplete | Externally atomic Station/actor transition | retain owners; complete required simulator evidence |
-| Native capabilities | Secure storage, permission, lifecycle, network, PTID/device-bound push registration, scheduled completion, and Rust-owned picker staging are source-complete | OAuth/push/deep-link/resume/media | retain generation-fenced native contracts; independent iOS/Android runtime proof remains |
-| Authenticated business transport | Messaging Rust transport exists; ordinary Web gateways attach bearer tokens | No user-visible difference | move all authenticated operations behind a typed Rust allowlist and remove Web credential access |
-| i18n/UI identity | Production mostly uses locale keys; prototype is reference | Full localized UI | retain contracts; never copy prototype literals |
+```text
+Mobile presentation
+  -> lifecycle/navigation/runtime projections
+  -> typed gateways and platform services
+  -> Mobile Rust runtime
+       -> portable Rust cores
+       -> Station transport and generated Model contracts
+       -> typed Android/iOS plugins
+```
 
-## 2. Architectural Refactors
+Cross-client composition is governed by
+[Cross-Client Runtime](../cross-client-runtime/README.md).
 
-- `App.tsx`: from transition owner to lifecycle projection renderer.
-- `MobileShell.tsx`: descriptor-driven primary/detail/overlay navigation with
-  badge selectors; broad badge aggregation remains a follow-up selector audit.
-- `runtimeRegistry.ts`: executable lifecycle registry; the Social descriptor
-  owns the shared ingress, Messaging owns Direct/Group freshness, and Chat
-  Storage is subordinate to Messaging.
-- Auth/session helpers: split credential acquisition into `authRuntime`; activate
-  `sessionRuntime` only after the access chain returns a PTID-bearing session.
-- Add `commandRuntime` over one Rust-owned encrypted command ledger; domain
-  runtimes retain mutation semantics and authoritative readback.
-- `authSession.ts`: PTID-bearing generated session projection is landed; retain
-  the hard cut and zero-reference checks.
-- `socialApi.ts`: quarantine JSON decoding inside gateways during per-domain
-  generated-Proto cutover; remove the adapter after parity evidence.
-- `ChatPage.tsx`: split list, thread, composer, conversation sheet, message action,
-  and group administration boundaries without moving freshness into components.
-- `MomentsPage.tsx`: composer and Station-backed feed/detail projection are
-  separated; native receiver proof remains.
-- `SettingsPage.tsx`: Me shell uses selected-only detail surfaces and saves
-  only the selected Profile, Notification, Social, or device owner.
-- `socialProjectionRuntime.ts`: session-scoped composition owner for Social,
-  Moments, notification, and profile freshness. It maps Chat events to
-  Messaging wake intents and never refreshes Conversation state itself.
+## 2. Current Source Facts
 
-## 3. Cross-Layer Work
+### Shared Mobile runtime
 
-Station cooperation already landed:
+- `apps/mobile/src/` is the shared Mobile presentation/runtime tree.
+- `apps/mobile/src-tauri/src/` is the shared Mobile Rust runtime.
+- Desktop and Mobile both consume `messaging-core`,
+  `secure-content-core`, `station-libp2p-http`, and `station-trust`.
+- Generated TypeScript contracts exist under `apps/mobile/src/gen/proto/`.
+- Android and iOS host projects exist under `src-tauri/gen/`.
 
-- signed Station identity/capability handshake with stable `station_peer_id`;
-- PTID-only Mobile-facing auth/session contracts;
-- OAuth start/status/complete/cancel/acknowledge, binding, PKCE, nonce, expiry,
-  replay protection and transactional session finalization.
+### Native plugins
 
-Station cooperation still required:
+Current plugin source:
 
-- W2-E2 Station-internal negative Fixture adapter and authoritative proof
-  snapshot from `native-oauth-proof/`;
-- Generic schema-bound Access Gate action submission and final decision
-  readback.
-- Social block/unblock/list/status source is implemented; same-Station
-  simulator runtime convergence remains in `W5-PROOF`, while cross-Station
-  convergence is deferred beyond the current Mobile Plan.
-- Conversation actor-hide, moderation-remove, user-forward contracts, and
-  authoritative readback. Existing retract/member-authority contracts are
-  reused.
-- Moments filtered-empty/detail policy outcomes. Existing publish,
-  reaction/comment/reply contracts remain owner inputs.
-- Generated Profile CAS and atomic Notification preference batch mutations,
-  including canonical conflict snapshots and Desktop/Mobile cutover.
-- Command result/readback, idempotency, and typed errors for retryable writes.
-- Generated durable-command envelope for the Web/Rust persistence boundary.
+- `platform-permissions`: Android and iOS permission, capability observation,
+  typed system action, push callback, background scheduling, and media-picker
+  adapters;
+- `secure-input`: Android and iOS adapters;
+- `secure-storage`: Android adapter only.
 
-Pure client work:
+The combined `platform-permissions` plugin provides native adapter source, but
+provider/service configuration, killed-process behavior, host registration,
+and source-bound runtime proof remain separate completion requirements.
 
-- Lifecycle and navigation kernels.
-- Page descriptors, overlay host, safe-area/keyboard model.
-- Projection selectors, virtualization, route/focus/scroll restoration.
-- Device-local settings and local-only message flags.
-- `commandRuntime` admission, ordering, fairness, and exact Station/PTID scoping.
-- Chat/Moments draft editing state and typed persistence intents.
+### Platform selection
 
-Native/Rust work:
+The shared Rust runtime derives `android` or `ios` from the compile target and
+exposes it through `mobile_health`. The TypeScript platform port reads that
+native diagnostic; it does not infer the target from user agent, media query,
+environment variable, or a static iOS label. Embedded Acceptance build identity
+is rejected when its platform differs from the compiled target.
 
-- Secure session and OAuth state/PKCE material.
-- Provider browser launch and deep-link callback. Mobile Rust validates and
-  completes the callback; raw callback data and secrets never cross into Web.
-- Device/generation-bound attempt recovery and encrypted credential-envelope
-  delivery/acknowledgement.
-- Authenticated Station transport for every generated Mobile business
-  operation; Web never receives bearer or refresh credentials.
-- Push-token registration, receipt/tap, scheduled wakeup, resume, network,
-  media-picker staging and permission event ports.
-- Typed capability errors and native acceptance hooks.
-- Generation propagation and stale native-event rejection.
-- Encrypted transactional command-ledger persistence and crash recovery.
-- Encrypted Station/PTID-scoped draft persistence and atomic recovery.
+The shared contract is located at:
 
-## 4. Retain And Delete
+- Rust: `apps/mobile/src-tauri/src/platform/ios.rs` (the retained generated-host
+  source path now contains the target-neutral contract)
+- TypeScript:
+  `apps/mobile/src/services/platform/platformContracts.ts`
 
-Retain:
+It freezes release target, runtime port, capability fact, admission projection,
+and system-action shapes. UCA-02 and UCA-03 bind those contracts to Kotlin and
+Swift. Their runtime claims remain fail-closed until physical Host evidence is
+current.
 
-- Canonical Conversation Proto, the Messaging runtime, the Social projection
-  facade, and Messaging-owned group command outcome state.
-- Station registry semantics, access gate renderer, encrypted media/E2EE paths.
-- Active-only primary tab policy until evidence changes it.
+### Provider and host configuration
 
-Delete after cutover:
+- The iOS target declares `aps-environment`, `fetch`, and
+  `remote-notification`; source and unsigned Simulator compilation do not prove
+  signed entitlement delivery or APNs provider callbacks.
+- No `GoogleService-Info.plist` or `google-services.json` is present in the
+  generated hosts.
+- Android has a `FirebaseMessagingService`, token/receipt/tap normalization,
+  and explicit provider-unavailable state, but no real FCM application
+  configuration.
+- Android `ReconcileWorker` writes a durable wake marker. The next
+  current-generation Host activation materializes it for Rust reconciliation;
+  the Worker does not depend on Activity or plugin instance.
+- iOS normalizes APNs token success/failure, foreground receipt, tap, and
+  remote-notification background callbacks. Provider credentials and signed
+  physical-device proof remain absent.
 
-- Component-owned top-level lifecycle transitions.
-- Static-only runtime descriptor status catalog.
-- Mixed pre-session authentication and post-session lifecycle ownership.
-- Route identity encoded solely by `activeSessionUlid`/`activeGroupUlid`.
-- Any production domain type that duplicates a generated proto-owned concept.
-- Numeric or aliased actor identity in Mobile service/store/route contracts.
-- Per-domain JSON compatibility adapters after Proto parity is proven.
-- Direct authenticated Web `fetch`, `MobileAuthSession.accessToken`, and
-  caller-selected credential-bearing URLs.
-- Any retired feature-specific Chat business caller.
-- Any alias, fallback, or dual-write path that preserves those retired owners.
+Physical Host Suite configuration is resolved by the parent Provisioner before
+resource acquisition. Set `PT_ANDROID_FCM_PROVIDER_CONFIG` or
+`PT_IOS_APNS_PROVIDER_CONFIG` to an absolute private JSON file (owner access
+only; no symlink components). Referenced provider private-key files follow the
+same policy. No real credential file belongs in the repository.
 
-Deletion is part of the same domain cutover that proves parity. A second
-permanent source of truth or indefinite compatibility shim is not an accepted
-target state.
+The Android JSON has exactly `schemaVersion: 1`,
+`applicationId: "com.peers.touch.mobile"`, `googleServices` and `serviceAccount`.
+The latter two values are absolute paths to the Firebase Android application
+configuration and service-account JSON. Their project IDs must agree, the
+application must match the bundle ID, and the account must carry a valid RSA
+private key. Validated application resources enter the controlled Gradle
+environment and its digest; provider signing credentials remain parent-only.
 
-## 5. Cross-Architecture Alignment
+The iOS JSON has exactly `schemaVersion: 1`,
+`applicationId: "com.peers.touch.mobile"`, `teamId`, `keyId`,
+`environment: "development"` and `privateKey`. Team and key IDs are ten
+uppercase alphanumeric characters; `privateKey` references the private APNs
+P-256 key. The actual signed application team, signature/profile APNs
+environment and background modes are checked during the controlled build.
+Configuration admission does not prove registration or delivery; those remain
+physical runtime obligations.
 
-| Mobile concept | Governing source | Mobile-only refinement |
-|---|---|---|
-| PTID actor boundary | `architecture/domains/identity/unified-actor-system.md` + identity invariant | Mobile session/cache/route enforcement |
-| Signed Station identity | `architecture/platform/runtime/service-coordination.md` | First-add pin and replacement UX |
-| Access/OAuth chain | `architecture/platform/station/access/station-access-gate-architecture.md` | Native browser/deep-link adapter and secure attempt material |
-| Runtime graph | `architecture/platform/client/frontend-runtime/` | hard `dependsOn`, degradable `uses`, suspend/resume |
-| Work admission | Frontend Runtime `InteractionAdmission` | `commandRuntime` and Rust encrypted ledger |
-| Social and Chat projection | `architecture/domains/social/runtime/` + Conversation lifecycle | Social owns relationship/presence/profile/notification invalidation; Messaging owns Direct/Group conversation, messages, settings, E2EE, and command outcomes |
-| Offline/reconcile semantics | `client/mobile/sync-protocol.md` | Mobile lifecycle and native wakeup |
-| Surface lifetime | UI Identity component-tree registry | active-only tabs and descriptor detail routes |
-| Member authority | AO-D10 Conversation member authority | Mobile Group action availability and readback |
-| Relationship/block | Social relationship authority | blocked-list and contact action projection |
-| Message actions | Conversation + Device Messaging Engine | Mobile labels, confirmation, and local presentation |
-| Moments policy/media | Social + Secure Content | filtered-state rendering and native staging handles |
-| Push delivery | Notification architecture | native token bridge, stale mark, and post-tap reconcile |
+These are implementation gaps, not degraded success states.
 
-No row above may gain a second semantic or persistence owner in Mobile.
+## 3. Capability Status
 
-## 6. W2 Cutover
-
-> **Status**: accepted on 2026-08-28.
-
-Retain:
-
-- Station-owned provider exchange and Access Gate policy.
-- Mobile Rust secure storage.
-- Web `authRuntime` as a projection and intent surface.
-
-Replace:
-
-- Web-driven OAuth completion with one Rust-owned coordinator.
-- repeated activated-session token minting with one candidate-keyed encrypted
-  credential envelope and acknowledgement.
-- split Access Gate/session writes with one Station authorization finalizer.
-- caller-supplied actor identity on the Station authorization surface with
-  authenticated-subject plus explicit-consent derivation.
-- ad hoc iOS browser glue and Android unsupported fallback with official Tauri
-  opener/deep-link adapters.
-
-Delete in the same cutover:
-
-- Web-visible PKCE verifier, nonce, authorization code, raw callback, bearer
-  token, and refresh token fields;
-- status paths that mint a fresh credential;
-- any OAuth fallback to `auth.login` when `auth.oauth` is absent;
-- module-global-only attempt recovery;
-- Android unsupported browser and secure-storage branches.
-
-The simulator Acceptance environment adds Appium, XCUITest, UiAutomator2,
-acceptance-build injection, isolated iOS/Android client roles, and deterministic
-cleanup. It is the required MS-AG03 proof surface under MS-D26.
-
-Optional W2-E2 physical-diagnostic ownership and evidence are retained in
-[`native-oauth-proof/`](./native-oauth-proof/README.md). MOP-D01..MOP-D04 were
-accepted on 2026-08-29; the historical focused execution plan no longer owns
-required completion.
-
-## 7. W4 Reliability V2 Cutover
-
-> **Status**: accepted and source-complete under MS-D15 on 2026-09-11. The
-> Station Social command-result lookup and Mobile schema, resolver, lifecycle,
-> migration, and recovery Harness are implemented. Required simulator proof
-> remains `UNPROVEN`; physical native proof is optional diagnostics.
-
-| Current boundary | Accepted target | Owner / hard dependency |
-|---|---|---|
-| Web supplies `command_type + payload_json` | generated v2 oneof; Rust persists exact deterministic bytes | Model + Mobile Rust |
-| Generic ledger allocates an ID before the signing owner allocates another | Device Messaging Engine identity returns immutable Friend Request bytes/ID/hash; domain command ID is the only ledger, transport, result, and projection identity | Mobile Rust admission + existing signing owner |
-| Friend Request result lookup is generated and Station-owned | Mobile resolver consumes matching command ID, payload hash, Station-owned state, and terminal result | Mobile Rust admission |
-| Block and Moment requests have no stable command/result contract | online-only or draft-only until an accepted resolver contract exists | owning Model/Station domain |
-| Moment UI swallows best-effort ledger failure and still dispatches | no best-effort durability claim; admitted writes fail closed | Mobile domain runtime |
-| Store keys derive from caller/session material crossing Web/Rust | versioned device-only install KEK wraps random Station/PTID scope DEKs; HKDF separates command/draft keys | Mobile Rust secure storage |
-| V1 rows have no Station/PTID provenance | crash-recoverable manifest quarantines main/WAL/SHM files; no inference, replay, restore, or v2 capacity accounting | Mobile Rust migration owner |
-| Committed rows remain until a generic purge call | authoritative outcome plus local projection checkpoint atomically removes the row | domain resolver + projection owner |
-
-Retain:
-
-- MS-D08's single Rust-owned ledger, Station truth, and readback-before-replay
-  rule.
-- The accepted per-scope capacity, payload, ordering-key, and four-key fairness
-  bounds.
-- The independent Chat/Moments draft store and explicit recovery UI.
-- Device Messaging Engine as the only durable owner for Chat and Group.
-
-Replace:
-
-- TypeScript `CommandEnvelope`, `payloadJson`, caller-supplied encryption
-  secret, and manual mark-committed/failed APIs with generated typed intents
-  and resolver-owned state transitions.
-- The session-secret key derivation with native install/scope key ownership.
-- Global v1 files with exact Station/PTID v2 partitions.
-- Local-status "readback" with domain-authoritative result/readback.
-- Automatic draft cleanup with the accepted explicit retain/discard decision;
-  unresolved commands always stay exact-scope quarantined, and lifecycle
-  remains outside the next Shell until the independent draft choice commits.
-
-Delete from the production target:
-
-- every best-effort `InteractionAdmission` call that can be ignored while the
-  write continues;
-- every ledger command whose persisted ID or bytes differ from the dispatched
-  generated command;
-- Chat/Group categories or payloads in the generic ledger;
-- any attempt to expose quarantined v1 content under the current session;
-- browser events that claim retain/discard without invoking the Rust owner.
-
-The Friend Request oneof member is active only through the unified Mobile
-preparation, persistence, dispatch, readback, and projection-checkpoint path
-using the same signed command. Adding another generated Mobile member without
-its owner-provided result contract and exhaustive resolver remains forbidden.
-
-The W4 owner may consume a typed signing port from the Device Messaging Engine
-identity owner. It must not import, copy, rotate, or persist actor-device
-private keys or enrollment state.
-
-## 8. Risks
-
-- Current social API still contains JSON compatibility envelopes alongside proto.
-- `ChatPage.tsx` is a high-coupling surface and must be decomposed by responsibility.
-- Background/resume and secure-storage behavior is not yet proven on both platforms.
-- Prototype includes capabilities beyond current authoritative Station wiring.
-- Existing dirty prototype changes must remain isolated from architecture edits.
-- Legacy OAuth bridge message names remain, but numeric actor fields are
-  reserved and Mobile hard-cut scans must prevent their reintroduction.
-- The Mobile Shell Acceptance plan and simulator Gates are registered. W2-E2
-  physical OAuth claims remain optional diagnostics under MS-D26.
-- MS-D15 source is complete and the Station Social authenticated command-ID/hash
-  result lookup is integrated with Mobile v2 schema, keys, migration, resolver,
-  lifecycle, and recovery Harness. Required simulator restart proof remains
-  `UNPROVEN`; Moment, block, and settings writes remain outside the admitted v2
-  membership.
-- Retained legacy v1 data cannot be safely attributed to an actor. Any attempt
-  to preserve availability by guessing scope would violate the identity and
-  single-owner contracts.
-
-## 9. Accepted Owner-Contract Cutover Matrix
-
-> **Status**: accepted on 2026-09-18. This is an architecture dependency
-> matrix, not an execution order.
-
-| Boundary | Retain | Required replacement | Delete at the same cutover | Completion evidence |
+| Capability | Shared contract/runtime | Android host | iOS host | Readiness |
 |---|---|---|---|---|
-| Access Gate | Station decision chain, typed built-ins, Rust OAuth coordinator | schema-bound generic action envelope and Station validation/finalization | client-selected submit routes and unknown-gate fallback | descriptor/submission hash match, stale-schema rejection, final decision readback |
-| Group member authority | AO-D10 commands, Conversation event/snapshot | Mobile Group consumer and generated error mapping | retired member-update and ownership-transfer callers | exact command replay, stale epoch recovery, owner uniqueness, Mobile projection |
-| Social block | Canonical generated block/unblock/list/status, result lookup, durable Mobile resolver, ordered event, and Federation deny projection | retain the same owner contract | retired Chat-owned Social callers and any compatibility alias are absent | source complete; same-Station runtime proof remains in the current Plan, while cross-Station/Relay proof is deferred and unproven |
-| Chat actions | Conversation command resolver, Engine encryption/object plane | actor-hide, moderation remove, and user-forward intents | legacy delete/forward semantics and optimistic shared completion | exact command/event readback, restart, recipient visibility, role denial |
-| Moments | Social audience/block policy, Secure Content encryption/grants | page/detail policy outcomes and Rust media staging | client-derived visibility and Web/native path transfer | filtered-empty versus empty, hidden/deleted, cancel/restart/limited-photo |
-| Settings | Station policy as read-only, device-local Station registry, Actor Profile privacy, Notification preferences, Social blocked users, device settings | dedicated Profile revision; aggregate atomic Notification revision; selected-owner save | generic account owner/placeholder, unrevisioned Profile mutation, single-category Notification mutation, false empty blocked-list projection | typed applied/unchanged/conflict snapshots, lost-response reconcile, restart, second-device behavior |
-| Business transport | Rust secure session store and generated gateways | typed Rust operation allowlist with origin/generation fencing | Web bearer/cookie attachment and arbitrary proxy paths | token non-observability, redirect/mismatch rejection, refresh fencing |
-| Push/background | Notification PTID/device registration truth and Rust lifecycle generation | typed APNs/FCM/UnifiedPush binding, authenticated device equality, encrypted credential storage, idempotent register/unregister/readback, generation/sequence-fenced receipt/tap reconcile, one OS work identifier, exactly-once completion | `actor_id`, Web-visible provider credentials, preview/private payload content, native direct Station calls, or business mutation/navigation before reconcile | Model/Station/Rust/native source checks plus independent physical receipt/tap/expiration proof |
+| Platform identification | compile-target Rust identity plus native TypeScript diagnostic | source-complete | source-complete | Host runtime proof remains `UNPROVEN` |
+| Platform permission facts | typed plugin contract | source present | source present | runtime evidence required per OS |
+| Secure input | typed plugin contract | source present | source present | runtime evidence required per OS |
+| Secure storage | Rust contract | native plugin source present | Rust Keychain source present | physical secure-storage evidence required per OS |
+| Push registration/delivery | architecture/model contracts and native callback adapters | FCM service source complete; provider config absent | APNs success/failure/background source and entitlement complete; provider/runtime proof absent | Android/iOS `UNPROVEN` |
+| Background wakeup | Rust/native contracts and scheduler adapters | durable WorkManager handoff source complete | BGTask registration/expiration/reschedule source complete | Android/iOS physical evidence `UNPROVEN` |
+| Media picker/staging | Rust staging and native picker source | full-resolution camera/picker stream source complete | full-resolution picker/camera source present | Android/iOS runtime evidence `UNPROVEN` |
+| System action/capability fact | shared Rust/TypeScript typed contracts | Kotlin adapter source complete | Swift adapter source complete | physical evidence `UNPROVEN` |
+| OAuth deterministic callback | Rust/Station contracts | Gate missing | simulator Gate exists | Android `UNPROVEN` |
+| Whole-product usability | shared surface inventory | Gate missing | simulator Gate exists | whole-Mobile `UNPROVEN` |
+| Social native parity | shared product/runtime contract | physical Gate registered | iOS simulator Gate registered | verdict follows latest source-bound results |
 
-## 10. Semantic Reference Audit
+## 4. Model and Station Integration
 
-The final hard-cut audit uses semantic classification rather than a blind
-literal search:
+- Shared domain semantics come from `model/domain/`.
+- Mobile-local view state does not become a parallel contract.
+- Station confirms shared business outcomes.
+- Unknown writes use typed command identity and owner readback.
+- Station, PTID, device, credential, and lifecycle generation scope every
+  durable Mobile operation.
 
-1. Enumerate every production call, route constant, generated binding, test,
-   fixture, comment, and document that refers to Friend Chat, Group Chat, or
-   equivalent legacy semantics.
-2. Classify each reference as executable production, generated compatibility
-   commentary, test/fixture input, or historical documentation.
-3. Require zero executable production references for the six protected
-   operations and zero alias/fallback/dual-write equivalents.
-4. Keep non-executable references only when they state the canonical owner or
-   historical purpose.
-5. Re-run the inventory after generation/build steps so generated output cannot
-   reintroduce a retired path.
+## 5. Portable Core Integration
 
-The hard-cut result is invalid if user-visible behavior was deleted before its
-owner contract, if a compatibility adapter still routes to a retired owner, or
-if a local projection is presented as authoritative replacement truth.
+Mobile Rust composes portable cores through Cargo dependencies.
 
-## 11. Architecture Review Boundary
+Every core integration requires:
 
-This v1.1 amendment is review-complete as one package covering
-`MS-D16..MS-D24`; its approval authorizes subsequent execution-plan recovery,
-not source implementation. `MS-D25` was accepted separately to record the
-completed W6B owner-composed source closure without promoting optional physical
-diagnostics into required proof.
-The Plan Package must then migrate to schema v2,
-preserve `mobile-shell-20260827` identity and migration lineage, establish one
-immutable workspace binding, and register matching active work and Development
-Session before any EXECUTE action.
+- semantic owner;
+- explicit port bindings;
+- local-store schema/migration owner;
+- Model contract inputs;
+- Station interaction boundary;
+- Android and iOS host evidence where behavior reaches the host.
+
+Core unit tests do not prove WebView, Tauri command, plugin, permission,
+packaging, or provider behavior.
+
+## 6. Native Capability Integration
+
+Canonical flow:
+
+```text
+OS API/callback
+  -> native plugin adapter
+  -> typed Rust boundary
+  -> capability fact or operation result
+  -> runtime admission/reconciliation
+  -> presentation projection
+```
+
+Required properties:
+
+- target-aware plugin registration;
+- typed request/result/error/event;
+- lifecycle generation and request identity;
+- cancellation, timeout, late-callback, and duplicate behavior;
+- no secrets or native paths in Web state;
+- cleanup to resource baseline;
+- independent Android/iOS proof.
+
+## 7. Reliability Integration
+
+Device-local ledgers and drafts remain client-local authority. They:
+
+- preserve exact Station/PTID/device scope;
+- use bounded admission;
+- retain unknown outcomes;
+- never auto-replay non-idempotent writes without owner semantics;
+- reconcile through Station readback;
+- are fenced and cleared/quarantined on scope change according to owner policy.
+
+## 8. Acceptance Integration
+
+Current Gate facts:
+
+- `mobile-native-build` builds the iOS Simulator application; its generic name
+  does not prove Android.
+- most Mobile Shell runtime Gates use iOS Simulator environments;
+- `mobile-social-android-native` is a physical Android Social Gate;
+- `mobile-social-ios-native` is an iOS Social Gate.
+- unified-client Android/iOS, Messaging, Secure Content, owner-zero and shared
+  semantics Gate identities are registered fail-closed; only the final
+  aggregate implementation exists at UCA-01.
+
+Required next architecture closures:
+
+1. provision dedicated source-bound Android/iOS physical Host Suites and then
+   replace the fail-closed Gate catalog entries;
+2. bind real FCM/APNs provider configuration and signed identities to those
+   Suites without committing credentials;
+3. prove build, install, launch, callback, denial, background, media,
+   system-action, receiver-visible, and cleanup cells;
+4. run whole-product and capability matrices on Android and iOS;
+5. keep all missing cells `UNPROVEN`.
+
+## 9. Hard-Cut Rule
+
+When capability ownership changes:
+
+- one active producer;
+- one runtime owner;
+- one projection/readback path;
+- no dual write or fallback alias;
+- old executable path deleted in the same change;
+- external persisted/wire compatibility handled through explicit migrations.
+
+Git carries obsolete architecture descriptions. Active documents describe only
+the current contract and current gaps.

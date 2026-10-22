@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>Peers</string>
+  <key>CFBundleDisplayName</key>
+  <string>Peers</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.peers.touch.desktop.dev2</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Peers uses your camera when you start a video call.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Peers uses your microphone for calls and voice messages.</string>
+</dict>
+</plist>

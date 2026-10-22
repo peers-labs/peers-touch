@@ -10,6 +10,10 @@ use secure_content_core::object::{
     ObjectCryptoMaterial, ObjectTransferDirection, ObjectTransferErrorCode, ObjectTransferFailure,
     ObjectTransferProgress,
 };
+use secure_content_core::operation::{
+    decide_committed_readback, decide_unknown_outcome, DispatchCause, OperationCompletion,
+    OperationState, ReadbackDecision, ReadbackObservation,
+};
 use secure_content_core::payload::{
     derive_payload_key, encrypt_payload, PayloadKeyContext, PAYLOAD_FORMAT_VERSION,
 };
@@ -19,17 +23,17 @@ use sha2::{Digest, Sha256};
 
 use crate::model::{actor, secure_content as wire, social};
 use crate::secure_content::adapter::{NativeErrorDisposition, SecureContentTransport};
+use crate::secure_content::object_runtime::{
+    media_type, new_download_record, new_download_worker, new_object_worker, new_upload_record,
+    secure_cache_root, secure_ciphertext_checkpoint_path, secure_media_cache_path,
+    FilesystemObjectBlob,
+};
 use crate::secure_content::recovery::open_recovery_content_key;
 use crate::secure_content::station_trust::{
     current_session_sender_signing_key, verify_profile_actor_device_signing_key,
 };
 use crate::secure_content::store::{
-    PublicationState, StoredMomentCommand, StoredMomentDraft, StoredObjectTransfer,
-};
-use crate::secure_content::worker::{
-    media_type, new_download_record, new_download_worker, new_object_worker, new_upload_record,
-    secure_cache_root, secure_ciphertext_checkpoint_path, secure_media_cache_path,
-    FilesystemObjectBlob,
+    AcquiredMomentCommand, StoredMomentCommand, StoredMomentDraft, StoredObjectTransfer,
 };
 use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 
@@ -742,8 +746,12 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             request_sha256: Sha256::digest(&request_bytes).into(),
             request_bytes,
             root_key: root.to_bytes(),
-            state: PublicationState::PendingPublication,
+            state: OperationState::Pending,
+            lease_generation: 0,
             session_generation: self.lease.session.key.session_generation,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: now_unix_ms(),
             post_id: None,
         };
         self.lease
@@ -1121,12 +1129,8 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     envelope.principal_epoch,
                     &sender_signing_key,
                 )?;
-                let root = open_recovery_content_key(
-                    self.lease.store.as_ref(),
-                    &self.lease.session.key.actor_ptid,
-                    envelope,
-                )
-                .map_err(|error| PrivateRecoveryAttemptError::KeyUnavailable(error))?;
+                let root = open_recovery_content_key(&self.lease, envelope)
+                    .map_err(PrivateRecoveryAttemptError::KeyUnavailable)?;
                 let decrypted = decrypt_projection_from_response(
                     self.lease.session.as_ref(),
                     self.lease.store.as_ref(),
@@ -1426,12 +1430,28 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             Some(command)
                 if matches!(
                     command.state,
-                    PublicationState::PendingPublication | PublicationState::UnknownCommit
+                    OperationState::Pending
+                        | OperationState::UnknownOutcome
+                        | OperationState::CommittedPendingReadback
                 ) =>
             {
                 self.replay_submit(command).map(Some)
             }
-            Some(command) if command.state == PublicationState::InFlight => {
+            Some(command)
+                if command.state == OperationState::RetryWait
+                    && command.next_attempt_at_unix_ms <= now_unix_ms() =>
+            {
+                self.replay_submit(command).map(Some)
+            }
+            Some(command) if command.state == OperationState::RetryWait => {
+                Ok(Some(PrivateMomentPublishResult {
+                    state: "UNKNOWN_COMMIT".to_string(),
+                    draft_id: command.draft_id,
+                    post_id: command.post_id,
+                    projection: None,
+                }))
+            }
+            Some(command) if command.state == OperationState::InFlight => {
                 Ok(Some(PrivateMomentPublishResult {
                     state: "UNKNOWN_COMMIT".to_string(),
                     draft_id: command.draft_id,
@@ -1439,7 +1459,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     projection: None,
                 }))
             }
-            Some(command) if command.state == PublicationState::Published => {
+            Some(command) if command.state == OperationState::Committed => {
                 let post_id = command
                     .post_id
                     .ok_or_else(|| "published private Moment has no post ID".to_string())?;
@@ -1477,66 +1497,133 @@ impl<'a> PrivateMomentOrchestrator<'a> {
 
     fn replay_submit(
         &self,
-        command: StoredMomentCommand,
+        mut command: StoredMomentCommand,
     ) -> Result<PrivateMomentPublishResult, String> {
-        let reconciles_unknown_commit = command.state == PublicationState::UnknownCommit;
-        let command = self.lease.store.acquire_moment_command(
+        if matches!(
+            command.state,
+            OperationState::UnknownOutcome | OperationState::CommittedPendingReadback
+        ) {
+            if let Some(result) = self.reconcile_moment_readback(&command)? {
+                return Ok(result);
+            }
+            command = self
+                .lease
+                .store
+                .moment_command(&command.draft_id, command.draft_revision)?
+                .ok_or_else(|| "private Moment command disappeared after readback".to_string())?;
+        }
+        let cause = match command.state {
+            OperationState::Prepared => DispatchCause::ExplicitUserAction,
+            OperationState::Pending => DispatchCause::InitialReconciliation,
+            OperationState::UnknownOutcome => DispatchCause::ReadbackAuthorizedRetry,
+            OperationState::RetryWait => DispatchCause::RetryDeadlineReached,
+            _ => return Err("private Moment command is not dispatchable".to_string()),
+        };
+        let acquired = self.lease.store.acquire_moment_command(
             &command.draft_id,
             command.draft_revision,
             self.lease.session.key.session_generation,
+            cause,
         )?;
-        self.submit_command(command, reconciles_unknown_commit)
+        self.submit_command(acquired)
     }
 
     fn submit_command(
         &self,
-        command: StoredMomentCommand,
-        reconciles_unknown_commit: bool,
+        acquired: AcquiredMomentCommand,
     ) -> Result<PrivateMomentPublishResult, String> {
+        let command = &acquired.command;
         let request =
             match social::SubmitPrivateMomentRequest::decode(command.request_bytes.as_slice()) {
                 Ok(request) => request,
                 Err(_) => {
-                    self.lease.store.mark_moment_terminal(
-                        &command.draft_id,
-                        command.draft_revision,
-                        command.session_generation,
-                    )?;
-                    self.lease.store.delete_moment_draft(&command.content_id)?;
-                    for transfer_id in self
-                        .lease
-                        .store
-                        .upload_transfer_ids_for_content(&command.content_id)?
-                    {
-                        self.purge_abandoned_upload(&transfer_id)?;
+                    if !self.lease.store.complete_moment_command(
+                        &acquired,
+                        OperationCompletion::Terminal,
+                        None,
+                    )? {
+                        return Err(
+                            "private Moment terminal transition lost its operation fence"
+                                .to_string(),
+                        );
                     }
+                    self.cleanup_terminal_moment(command)?;
                     return Err("stored private Moment submit request is malformed".to_string());
                 }
             };
         match self.transport.submit_private_moment(&request) {
+            Ok(_) => {
+                if !self.lease.store.complete_moment_command(
+                    &acquired,
+                    OperationCompletion::CommittedPendingReadback,
+                    Some(&command.content_id),
+                )? {
+                    return Err(
+                        "private Moment commit transition lost its operation fence".to_string()
+                    );
+                }
+                let committed = self
+                    .lease
+                    .store
+                    .moment_command(&command.draft_id, command.draft_revision)?
+                    .ok_or_else(|| "committed private Moment command disappeared".to_string())?;
+                self.reconcile_moment_readback(&committed)?
+                    .ok_or_else(|| "committed private Moment cannot retry submit".to_string())
+            }
+            Err(error) => {
+                let completion = match error.disposition {
+                    NativeErrorDisposition::Retryable => OperationCompletion::RetryAt(
+                        operation_retry_deadline(error.retry_after_seconds),
+                    ),
+                    NativeErrorDisposition::UnknownCommit => OperationCompletion::UnknownOutcome,
+                    NativeErrorDisposition::Terminal
+                        if acquired.lease.reconciles_unknown_outcome
+                            && matches!(error.http_status, Some(401 | 403)) =>
+                    {
+                        OperationCompletion::UnknownOutcome
+                    }
+                    NativeErrorDisposition::Terminal | NativeErrorDisposition::PoolNotFound => {
+                        OperationCompletion::Terminal
+                    }
+                };
+                if !self
+                    .lease
+                    .store
+                    .complete_moment_command(&acquired, completion, None)?
+                {
+                    return Err(
+                        "private Moment failure transition lost its operation fence".to_string()
+                    );
+                }
+                if completion == OperationCompletion::Terminal {
+                    self.cleanup_terminal_moment(command)?;
+                    return Err(error.to_string());
+                }
+                Ok(PrivateMomentPublishResult {
+                    state: "UNKNOWN_COMMIT".to_string(),
+                    draft_id: command.draft_id.clone(),
+                    post_id: command.post_id.clone(),
+                    projection: None,
+                })
+            }
+        }
+    }
+
+    fn reconcile_moment_readback(
+        &self,
+        command: &StoredMomentCommand,
+    ) -> Result<Option<PrivateMomentPublishResult>, String> {
+        let readback = self.transport.get_private_moment(&command.content_id);
+        let mut verified_projection = None;
+        let observation = match readback {
             Ok(response) => {
-                let observed_post_id = response
-                    .post
-                    .as_ref()
-                    .and_then(|post| post.metadata.as_ref())
-                    .map(|metadata| metadata.post_id.clone())
-                    .filter(|post_id| !post_id.is_empty() && *post_id == command.content_id);
                 let verified = (|| -> Result<PrivateMomentProjection, String> {
-                    self.ensure_current()?;
-                    let post_id = observed_post_id.as_ref().ok_or_else(|| {
-                        "private Moment submit response changed the resource identity".to_string()
-                    })?;
-                    let response = self
-                        .transport
-                        .get_private_moment(post_id)
-                        .map_err(|error| error.to_string())?;
                     self.ensure_current()?;
                     let sender_signing_key =
                         self.sender_signing_key(&command.content_id, &response)?;
                     let sender_signing_key = sender_signing_key.ok_or_else(|| {
                         "private Moment publish sender signing key is unavailable".to_string()
                     })?;
-                    self.ensure_current()?;
                     let decrypted = decrypt_projection_from_response(
                         self.lease.session.as_ref(),
                         self.lease.store.as_ref(),
@@ -1549,79 +1636,87 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     .map_err(|error| error.message)?;
                     self.verify_repost_source_current(&response, &decrypted)?;
                     self.persist_decrypted_projection(&decrypted)?;
-                    self.cleanup_published_upload_files(&command.content_id)?;
-                    if !self.lease.store.mark_moment_published(
-                        &command.draft_id,
-                        command.draft_revision,
-                        command.session_generation,
-                        &decrypted.projection.post_id,
-                    )? {
-                        return Err(
-                            "private Moment completion lost its generation fence".to_string()
-                        );
-                    }
                     Ok(decrypted.projection)
                 })();
                 match verified {
-                    Ok(projection) => Ok(PrivateMomentPublishResult {
-                        state: private_moment_publish_state(&projection),
-                        draft_id: command.draft_id,
-                        post_id: Some(projection.post_id.clone()),
-                        projection: Some(projection),
-                    }),
-                    Err(_) => {
-                        self.lease.store.mark_moment_unknown(
-                            &command.draft_id,
-                            command.draft_revision,
-                            command.session_generation,
-                        )?;
-                        Ok(PrivateMomentPublishResult {
-                            state: "UNKNOWN_COMMIT".to_string(),
-                            draft_id: command.draft_id,
-                            post_id: observed_post_id,
-                            projection: None,
-                        })
+                    Ok(projection) => {
+                        verified_projection = Some(projection);
+                        ReadbackObservation::Committed {
+                            receipt_sha256: Sha256::digest(response.encode_to_vec()).into(),
+                        }
                     }
+                    Err(detail) => ReadbackObservation::Invalid { detail },
                 }
             }
-            Err(error)
-                if matches!(
-                    error.disposition,
-                    NativeErrorDisposition::Retryable | NativeErrorDisposition::UnknownCommit
-                ) || preserves_unknown_moment_after_auth_rejection(
-                    reconciles_unknown_commit,
-                    &error,
-                ) =>
-            {
-                self.lease.store.mark_moment_unknown(
-                    &command.draft_id,
-                    command.draft_revision,
-                    command.session_generation,
-                )?;
-                Ok(PrivateMomentPublishResult {
+            Err(error) if error.http_status == Some(404) => {
+                ReadbackObservation::AuthoritativeAbsent
+            }
+            Err(error) => ReadbackObservation::Unavailable {
+                retry_after_unix_ms: error
+                    .retry_after_seconds
+                    .map(|seconds| operation_retry_deadline(Some(seconds))),
+            },
+        };
+        let operation = command.operation_record()?;
+        let decision = match command.state {
+            OperationState::UnknownOutcome => decide_unknown_outcome(&operation, observation),
+            OperationState::CommittedPendingReadback => {
+                decide_committed_readback(&operation, observation)
+            }
+            _ => return Err("private Moment readback requires unresolved operation".to_string()),
+        }
+        .map_err(|error| error.to_string())?;
+        let post_id = verified_projection
+            .as_ref()
+            .map(|projection| projection.post_id.as_str())
+            .or(command.post_id.as_deref());
+        if !self
+            .lease
+            .store
+            .apply_moment_readback(command, &decision, post_id)?
+        {
+            return Err("private Moment readback lost its operation fence".to_string());
+        }
+        match decision {
+            ReadbackDecision::RetryExactCommand => Ok(None),
+            ReadbackDecision::CommitFromReadback { .. } => {
+                let projection = verified_projection.ok_or_else(|| {
+                    "private Moment committed readback omitted its projection".to_string()
+                })?;
+                self.cleanup_published_upload_files(&command.content_id)?;
+                Ok(Some(PrivateMomentPublishResult {
+                    state: private_moment_publish_state(&projection),
+                    draft_id: command.draft_id.clone(),
+                    post_id: Some(projection.post_id.clone()),
+                    projection: Some(projection),
+                }))
+            }
+            ReadbackDecision::KeepUnknown { .. }
+            | ReadbackDecision::KeepCommittedPendingReadback { .. } => {
+                Ok(Some(PrivateMomentPublishResult {
                     state: "UNKNOWN_COMMIT".to_string(),
-                    draft_id: command.draft_id,
-                    post_id: None,
+                    draft_id: command.draft_id.clone(),
+                    post_id: command.post_id.clone(),
                     projection: None,
-                })
+                }))
             }
-            Err(error) => {
-                self.lease.store.mark_moment_terminal(
-                    &command.draft_id,
-                    command.draft_revision,
-                    command.session_generation,
-                )?;
-                self.lease.store.delete_moment_draft(&command.content_id)?;
-                for transfer_id in self
-                    .lease
-                    .store
-                    .upload_transfer_ids_for_content(&command.content_id)?
-                {
-                    self.purge_abandoned_upload(&transfer_id)?;
-                }
-                Err(error.to_string())
+            ReadbackDecision::TerminalIntegrityFailure { detail } => {
+                self.cleanup_terminal_moment(command)?;
+                Err(detail)
             }
         }
+    }
+
+    fn cleanup_terminal_moment(&self, command: &StoredMomentCommand) -> Result<(), String> {
+        self.lease.store.delete_moment_draft(&command.content_id)?;
+        for transfer_id in self
+            .lease
+            .store
+            .upload_transfer_ids_for_content(&command.content_id)?
+        {
+            self.purge_abandoned_upload(&transfer_id)?;
+        }
+        Ok(())
     }
 
     fn sender_signing_key(
@@ -2279,13 +2374,13 @@ fn classify_recovery_attempt(
     }
 }
 
-fn preserves_unknown_moment_after_auth_rejection(
-    reconciles_unknown_commit: bool,
-    error: &crate::secure_content::adapter::NativeTransportError,
-) -> bool {
-    reconciles_unknown_commit
-        && error.disposition == NativeErrorDisposition::Terminal
-        && matches!(error.http_status, Some(401 | 403))
+fn operation_retry_deadline(retry_after_seconds: Option<u64>) -> i64 {
+    let delay_ms = retry_after_seconds
+        .and_then(|seconds| seconds.checked_mul(1_000))
+        .and_then(|millis| i64::try_from(millis).ok())
+        .unwrap_or(1_000)
+        .max(1_000);
+    now_unix_ms().saturating_add(delay_ms)
 }
 
 fn private_read_projection(
@@ -3275,8 +3370,12 @@ mod tests {
                 request_sha256: Sha256::digest(&request_bytes).into(),
                 request_bytes,
                 root_key: [2; 32],
-                state: PublicationState::PendingPublication,
+                state: OperationState::Pending,
+                lease_generation: 0,
                 session_generation: lease.session.key.session_generation,
+                attempt_count: 0,
+                next_attempt_at_unix_ms: 0,
+                updated_at_unix_ms: now_unix_ms(),
                 post_id: None,
             })
             .unwrap();
@@ -3299,7 +3398,7 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .state,
-            PublicationState::PendingPublication,
+            OperationState::Pending,
         );
     }
 
@@ -3470,7 +3569,7 @@ mod tests {
     }
 
     #[test]
-    fn secure_content_unknown_moment_auth_rejection_stays_reconcilable() {
+    fn secure_content_operation_retry_deadline_is_strictly_future() {
         let rejected = crate::secure_content::adapter::NativeTransportError {
             http_status: Some(401),
             stable_code: 20001,
@@ -3478,12 +3577,9 @@ mod tests {
             disposition: NativeErrorDisposition::Terminal,
             message: "UNAUTHORIZED".to_string(),
         };
-        assert!(preserves_unknown_moment_after_auth_rejection(
-            true, &rejected
-        ));
-        assert!(!preserves_unknown_moment_after_auth_rejection(
-            false, &rejected
-        ));
+        let before = now_unix_ms();
+        assert!(operation_retry_deadline(None) > before);
+        assert!(operation_retry_deadline(Some(0)) > before);
         assert!(!requires_private_resource_purge(&rejected));
     }
 

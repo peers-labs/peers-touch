@@ -1,7 +1,8 @@
 use crate::application::provider as application_provider;
 use crate::application::session_resolver;
 use crate::contracts::{
-    ProviderCheckInput, ProviderCreateInput, ProviderIdInput, ProviderUpdateInput, StubPayload,
+    ProviderCheckInput, ProviderCreateInput, ProviderIdInput, ProviderModelDiscoverInput,
+    ProviderUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
@@ -81,7 +82,7 @@ pub fn provider_check(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::provider_check(&scope, &token, input)
+    application_provider::provider_check(state.station.client(), &scope, &token, input)
 }
 
 #[tauri::command]
@@ -139,15 +140,9 @@ pub fn provider_list_available_models(
     application_provider::provider_list_available_models(state.station.client(), &scope, &token)
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ModelFetchRemoteInput {
-    pub provider_id: String,
-    pub data: Option<serde_json::Value>,
-}
-
 #[tauri::command]
-pub fn model_fetch_remote(
-    input: ModelFetchRemoteInput,
+pub fn model_discover(
+    input: ProviderModelDiscoverInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
@@ -155,12 +150,7 @@ pub fn model_fetch_remote(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::model_fetch_remote(
-        state.station.client(),
-        &scope,
-        &token,
-        &input.provider_id,
-    )
+    application_provider::model_discover(state.station.client(), &scope, &token, &input.provider_id)
 }
 
 #[derive(Debug, Deserialize)]

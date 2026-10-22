@@ -289,7 +289,11 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("projectMutualFriends(followers, following)", relationships)
-        self.assertIn("loadMutualFriends(actorPtid, true)", realtime)
+        self.assertIn(
+            "loadMutualFriends(actorPtid, refresh)",
+            realtime,
+        )
+        self.assertIn("refreshFriendshipProjection(true)", realtime)
         self.assertIn("EVENT.RELATIONSHIP_CHANGED", realtime)
         self.assertIn("data-chat-find-people-result", find_people)
         self.assertIn("data-chat-friend-state", find_people)

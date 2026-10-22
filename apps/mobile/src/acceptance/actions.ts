@@ -22,7 +22,10 @@ import {
   type MobilePrimaryRouteId,
   type MobileSettingDetailId,
 } from '../app/navigation';
-import { verifyStationIdentity } from '../features/station/stationConnection';
+import {
+  verifyStationIdentity,
+  verifyStationRouteIdentity,
+} from '../features/station/stationConnection';
 import {
   activeStationEntry,
   activateStationEntry,
@@ -61,6 +64,7 @@ import {
   readStationRegistryProjection,
   replaceStationRegistryProjection,
   selectStationRouteRuntime,
+  verifyStationEntryRuntime,
 } from '../runtimes/stationRuntime';
 import {
   checkAllPermissions,
@@ -70,7 +74,7 @@ import {
   requestPermission,
   type PermissionKind,
 } from '../runtimes/nativeLifecycleBridge';
-import { reconcileActiveMessagingSession } from '../runtimes/messagingRuntime';
+import { wakeActiveMessagingSession } from '../runtimes/messagingRuntime';
 import { dispatchOpenContactChat } from '../features/social/contactCommands';
 import { mobileCallManager } from '../features/call/callState';
 import {
@@ -264,7 +268,10 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'station.add': async (input) => {
     const requestedUrl = requireString(input?.url, 'station.add.url');
-    const verified = await verifyStationIdentity(requestedUrl);
+    const routeType = input?.routeType;
+    const verified = routeType
+      ? await verifyStationRouteIdentity(requestedUrl, routeType)
+      : await verifyStationIdentity(requestedUrl);
     const current = await readStationRegistryProjection();
     const next = addVerifiedStation(current, verified);
     if (current.activeStationPeerId !== verified.stationPeerId) {
@@ -327,10 +334,17 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       'station.select.stationPeerId',
     );
     const current = await readStationRegistryProjection();
-    if (!current.entries.some((entry) => entry.stationPeerId === stationPeerId)) {
+    const station = current.entries.find(
+      (entry) => entry.stationPeerId === stationPeerId,
+    );
+    if (!station) {
       throw new Error('acceptance.mobile.stationNotFound');
     }
-    const next = activateStationEntry(current, stationPeerId);
+    const identity = await verifyStationEntryRuntime(station);
+    const next = activateStationEntry(current, stationPeerId, {
+      checkedAt: identity.verifiedAt,
+      online: true,
+    });
     const sessionRevocation = current.activeStationPeerId !== next.activeStationPeerId
       ? await getMobileLifecycleKernel().transitionScope(
         'station-replace',
@@ -919,7 +933,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   },
 
   'messaging.reconcile': async () => {
-    return reconcileActiveMessagingSession();
+    return wakeActiveMessagingSession();
   },
 
   'messaging.command.read': async (input) => messagingCommandStatus({
@@ -981,13 +995,26 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       federationId,
       'social.people.search.federationId',
     );
+    const observedContext = (await readFederationContexts()).find(
+      (context) => (
+        context.status === 'active'
+        && context.federationId === contextId
+      ),
+    );
+    if (!observedContext) {
+      throw new Error('acceptance.mobile.federationContextNotObserved');
+    }
     const results = await searchSocialPeople(
       requireString(query, 'social.people.search.query'),
-      contextId,
+      observedContext.federationId,
     );
-    return results.map((result) => ({
+    const observedResults = results.map((result) => ({
+      ...result,
+      federationId: observedContext.federationId,
+    }));
+    return observedResults.map((result) => ({
       ptid: result.ptid,
-      federationId: contextId,
+      federationId: result.federationId,
       homeStationPeerId: result.homeStationPeerId,
     }));
   },
@@ -1140,23 +1167,15 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     }
     const port = getDraftRestorationPort();
     await port.save(envelope);
-    const persisted = await port.load(
+    const persisted = (await port.list(
       account.stationPeerId,
       account.actorPtid,
       envelope.surfaceKind,
-      targetId,
-    );
+    )).find((draft) => draft.targetId === targetId);
     if (!persisted) {
       throw new Error('acceptance.mobile.reliabilityDraftWriteMissing');
     }
-    return publicReliabilityDraft({
-      key: `${persisted.surfaceKind}:${persisted.targetId}`,
-      kind: input.kind === 'chat' ? 'chat' : 'moments',
-      surfaceKind: input.kind,
-      targetId: persisted.targetId,
-      updatedAtMs: now,
-      envelope: persisted,
-    });
+    return publicReliabilityDraft(persisted);
   },
 
   'reliability.draft.read': async (input) => {
@@ -1255,6 +1274,48 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   'social.reconcile': async () => reconcileSocialRuntime(),
 
   'social.projection.read': async () => readSocialRuntimeProjection(),
+
+  'moments.private.acceptance.prepareKeys': async () => {
+    const snapshot = readPrivateMomentsSnapshot();
+    if (
+      !snapshot.active
+      || !snapshot.stationPeerId
+      || !snapshot.actorPtid
+      || !Number.isSafeInteger(snapshot.activationGeneration)
+      || snapshot.activationGeneration <= 0
+    ) {
+      throw new Error(
+        'acceptance.mobile.privateMomentRuntimeUnavailable',
+      );
+    }
+    const report = await invoke<{
+      endpointPrekeysAvailable: number;
+      recoveryPrekeysAvailable: number | null;
+    }>('social_private_acceptance_prepare_keys', {
+      input: {
+        stationPeerId: snapshot.stationPeerId,
+        actorPtid: snapshot.actorPtid,
+        activationGeneration: snapshot.activationGeneration,
+      },
+    });
+    const recoveryPrekeysAvailable =
+      report.recoveryPrekeysAvailable;
+    if (
+      !Number.isSafeInteger(report.endpointPrekeysAvailable)
+      || report.endpointPrekeysAvailable < 1
+      || typeof recoveryPrekeysAvailable !== 'number'
+      || !Number.isSafeInteger(recoveryPrekeysAvailable)
+      || recoveryPrekeysAvailable < 1
+    ) {
+      throw new Error(
+        'acceptance.mobile.privateMomentPrekeysUnavailable',
+      );
+    }
+    return {
+      endpointPrekeysAvailable: report.endpointPrekeysAvailable,
+      recoveryPrekeysAvailable,
+    };
+  },
 
   'moments.private.publish': async (input) => sanitizePrivateMomentPublish(
     await publishPrivateMoment(requirePrivateMomentIntent(input)),
@@ -2291,6 +2352,12 @@ async function sanitizePrivateMomentRead(
       }
       : {}),
     mentionCount: value.mentions?.length ?? 0,
+    reactions: (value.reactions ?? []).map((reaction) => ({
+      kind: reaction.kind,
+      count: reaction.count,
+      reactedByViewer: reaction.reactedByViewer,
+    })),
+    reactionsHydrated: value.reactionsHydrated ?? false,
     ...(value.errorCode ? { errorCode: value.errorCode } : {}),
     ...(value.retryAfterSeconds === undefined
       ? {}
@@ -2340,13 +2407,54 @@ function sanitizePrivateMomentSnapshot(
   return Promise.all([
     Promise.all(value.projections.map(sanitizePrivateMomentPublish)),
     Promise.all(Object.values(value.postsById).map(sanitizePrivateMomentRead)),
-  ]).then(([publish, reads]) => ({
+    Promise.all(value.commentDrafts.map(async (draft) => {
+      const draftIdSha256 = await digestText(draft.draftId);
+      const textSha256 = await digestText(draft.text);
+      if (!draftIdSha256 || !textSha256) {
+        throw new Error('acceptance.mobile.invalidPrivateCommentDraft');
+      }
+      return {
+        draftIdSha256,
+        postId: draft.postId,
+        textSha256,
+        state: draft.state,
+        ...(draft.errorCode ? { errorCode: draft.errorCode } : {}),
+        ...(draft.retryAfterSeconds === undefined
+          ? {}
+          : { retryAfterSeconds: draft.retryAfterSeconds }),
+      };
+    })),
+    Promise.all(value.reactionCommands.map(async (command) => {
+      const commandIdSha256 = await digestText(command.commandId);
+      if (!commandIdSha256) {
+        throw new Error('acceptance.mobile.invalidPrivateReactionCommand');
+      }
+      return {
+        commandIdSha256,
+        postId: command.postId,
+        kind: command.kind,
+        operation: command.operation,
+        state: command.state,
+        attemptCount: command.attemptCount,
+        projectionRevision: command.projectionRevision,
+        ...(command.errorCode ? { errorCode: command.errorCode } : {}),
+        ...(command.retryAfterSeconds === undefined
+          ? {}
+          : { retryAfterSeconds: command.retryAfterSeconds }),
+        ...(command.retryNotBeforeUnixMs === undefined
+          ? {}
+          : { retryNotBeforeUnixMs: command.retryNotBeforeUnixMs }),
+      };
+    })),
+  ]).then(([publish, reads, commentDrafts, reactionCommands]) => ({
     active: value.active,
     reconciling: value.reconciling,
     stationPeerId: value.stationPeerId,
     actorPtid: value.actorPtid,
     publish,
     reads,
+    commentDrafts,
+    reactionCommands,
     publishStateHistory: [...value.publishStateHistory],
     readStateHistoryByPostId: Object.fromEntries(
       Object.entries(value.readStateHistoryByPostId)

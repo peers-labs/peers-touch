@@ -59,6 +59,15 @@ func Callback(w http.ResponseWriter, r *http.Request, providerName string) {
 	c.Handler.CallbackWithProvider(w, r, provider)
 }
 
+func OperatorRedeem(w http.ResponseWriter, r *http.Request) {
+	c, err := Container()
+	if err != nil {
+		http.Error(w, "operator login unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	c.Handler.RedeemOperatorLogin(w, r)
+}
+
 func AdminPage(w http.ResponseWriter, r *http.Request) {
 	c, err := Container()
 	if err != nil {

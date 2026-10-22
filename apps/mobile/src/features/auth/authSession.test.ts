@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ACCESS_GATE_TYPE_AUTH_LOGIN,
+  STATION_ACCESS_ATTEMPT_EXPIRED,
+  STATION_ACCESS_IDENTITY_MISMATCH,
+  STATION_ACCESS_UNKNOWN_GATE,
   advertisedCredentialChoices,
   cancelStationAccessAttempt,
   getStationAccessDecision,
@@ -12,6 +15,8 @@ import {
   normalizeDecision,
   parseGateFields,
   registerOAuthAccessGrantFinalizer,
+  stationAccessError,
+  stationAccessFailureOutcome,
   submitStationInviteCodeGate,
   submitStationLoginGate,
   type AccessGate,
@@ -43,6 +48,20 @@ afterEach(() => {
 });
 
 describe('schema-driven Station access gates', () => {
+  it('preserves a native rejection message and structured error fields', () => {
+    const native = {
+      code: 'MOBILE_STATION_TRANSPORT',
+      message: 'mobile.auth.accessGateStationRejected:401',
+      details: { status: 401 },
+    };
+    expect(stationAccessError(native)).toMatchObject({
+      message: native.message,
+      code: native.code,
+      details: native.details,
+      cause: native,
+    });
+  });
+
   it('normalizes only valid Station-authored field descriptors', () => {
     expect(parseGateFields({
       gateId: 'terms',
@@ -229,7 +248,20 @@ describe('Station-advertised credential actions', () => {
           attemptId: 'attempt-retry',
           currentGateId: 'terms.acceptance',
           accessGrantId: '',
-          gates: [],
+          gates: [{
+            gateId: 'terms.acceptance',
+            gateType: 'ACCESS_GATE_TYPE_TERMS_ACCEPTANCE',
+            state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+            title: '',
+            description: '',
+            blockingReason: '',
+            submitAction: '',
+            inputSchemaJson: '',
+            alternativeActions: [],
+            actionId: 'terms.accept',
+            schemaRevision: 1,
+            schemaDigest: 'b'.repeat(64),
+          }],
           message: '',
         },
       });
@@ -280,6 +312,74 @@ describe('Station-advertised credential actions', () => {
     expect(advertisedCredentialChoices(gate(2))).toEqual({
       emailPassword: false,
       oauth: false,
+    });
+  });
+});
+
+describe('canonical Station access failure outcomes', () => {
+  it('classifies unknown gates, identity mismatch, and attempt expiry', () => {
+    const unsupported = normalizeDecision({
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attempt_id: 'attempt-unsupported',
+      current_gate_id: 'future.gate',
+      gates: [{
+        gate_id: 'future.gate',
+        type: 'ACCESS_GATE_TYPE_FUTURE',
+        state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+      }],
+    });
+    expect(stationAccessFailureOutcome(unsupported, 100)).toBe(
+      STATION_ACCESS_UNKNOWN_GATE,
+    );
+
+    const expired = normalizeDecision({
+      state: 'ACCESS_DECISION_STATE_PENDING',
+      attempt_id: 'attempt-expired',
+      expires_at_unix_ms: 100,
+      gates: [],
+    });
+    expect(stationAccessFailureOutcome(expired, 100)).toBe(
+      STATION_ACCESS_ATTEMPT_EXPIRED,
+    );
+
+    expect(stationAccessError(new Error('station_identity_mismatch'))).toMatchObject({
+      code: STATION_ACCESS_IDENTITY_MISMATCH,
+      message: 'mobile.auth.stationIdentityMismatch',
+    });
+  });
+
+  it('rejects unsupported Station gates before projecting them to the UI', async () => {
+    vi.mocked(accessDecision).mockResolvedValue({
+      decision: {
+        state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+        attemptId: 'attempt-1',
+        currentGateId: 'future.gate',
+        accessGrantId: '',
+        gates: [{
+          gateId: 'future.gate',
+          gateType: 'ACCESS_GATE_TYPE_FUTURE',
+          state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+          title: '',
+          description: '',
+          blockingReason: '',
+          submitAction: '',
+          inputSchemaJson: '',
+          alternativeActions: [],
+          actionId: 'future.action',
+          schemaRevision: 1,
+          schemaDigest: 'a'.repeat(64),
+        }],
+        message: '',
+      },
+    });
+
+    await expect(getStationAccessDecision({
+      stationPeerId: 'station-peer',
+      stationUrl: 'https://station.example',
+      attemptId: 'attempt-1',
+    })).rejects.toMatchObject({
+      code: STATION_ACCESS_UNKNOWN_GATE,
+      message: 'mobile.auth.unknownGate',
     });
   });
 });

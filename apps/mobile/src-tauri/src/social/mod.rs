@@ -7,7 +7,12 @@ use std::sync::{Arc, Mutex};
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
+#[cfg(feature = "acceptance-harness")]
+use bip39::{Language, Mnemonic};
+use prost::Message;
 use rand::{rngs::OsRng, RngCore};
+use secure_content_core::object::ObjectTransferProgress;
+use secure_content_core::operation::OperationState;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -33,12 +38,15 @@ use crate::secure_content::adapter::{
     PrivateMomentIntent, PrivateMomentProjection, PrivatePublishState, PrivateRepostSourceMaterial,
     PrivateTextMomentIntent,
 };
+use crate::secure_content::object_runtime::{new_object_worker, new_upload_record};
 use crate::secure_content::private_comment::{
     draft_projection as private_comment_draft_projection, list as list_private_comments,
     submit as submit_private_comment, PrivateCommentDraftProjection, PrivateCommentIntent,
     PrivateCommentPage, PrivateCommentProjection, PrivateCommentSubmitResult,
 };
-use crate::secure_content::proto::{secure_content::v1 as wire, social::v1 as social_wire};
+use crate::secure_content::proto::{
+    actor::v1 as actor_wire, secure_content::v1 as wire, social::v1 as social_wire,
+};
 use crate::secure_content::receiver::{
     attachment_for_object, decrypt_text_projection, decrypt_text_projection_with_recovery,
     projection_for_read_failure, purges_private_material, recovery_key_unavailable_projection,
@@ -50,12 +58,12 @@ use crate::secure_content::receiver::{
 use crate::secure_content::recovery::{
     store_recovery_phrase, INITIAL_SECURE_CONTENT_RECOVERY_EPOCH,
 };
-use crate::secure_content::store::{DurableState, PrivateSocialStore};
+use crate::secure_content::runtime::{PrivateSocialReconciliationReport, PrivateSocialRuntime};
+use crate::secure_content::store::PrivateSocialStore;
 use crate::secure_content::transport::{
     jwt_session_id, resolve_trusted_station_signing_key, NativeSocialTransport,
     SenderSigningKeyError, SenderSigningKeyErrorKind, TransportError,
 };
-use crate::secure_content::worker::{PrivateSocialWorker, PrivateSocialWorkerReport};
 use crate::secure_content::{NativeSocialSession, PrivateSocialScope};
 
 use private_reaction::{
@@ -67,6 +75,13 @@ pub use private_reaction::{
 };
 
 const DATABASE_KEY_PREFIX: &str = "secure-content.social.v1.sqlcipher";
+
+fn current_unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or_default()
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,7 +147,7 @@ pub struct PrivateSocialReconcileInput {
 #[serde(rename_all = "camelCase")]
 pub struct PrivateSocialReconcileResult {
     #[serde(flatten)]
-    pub report: PrivateSocialWorkerReport,
+    pub report: PrivateSocialReconciliationReport,
     pub invalidated_read_projections: Vec<PrivateMomentReadProjection>,
 }
 
@@ -234,7 +249,7 @@ pub struct PrivateSocialRuntimeStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_id: Option<String>,
     pub activation_generation: u64,
-    pub worker_mode: &'static str,
+    pub reconciliation_mode: &'static str,
 }
 
 impl PrivateSocialRuntimeStatus {
@@ -246,7 +261,7 @@ impl PrivateSocialRuntimeStatus {
             actor_ptid: None,
             device_id: None,
             activation_generation: 0,
-            worker_mode: "on_demand",
+            reconciliation_mode: "on_demand",
         }
     }
 }
@@ -294,7 +309,7 @@ impl Drop for EphemeralRecoveryStore {
 struct PrivateSocialEngine {
     session: Arc<NativeSocialSession>,
     store: Arc<PrivateSocialStore>,
-    worker: PrivateSocialWorker,
+    reconciliation: PrivateSocialRuntime,
     operation_lock: Mutex<()>,
     activation_generation: u64,
     lifecycle_generation: u64,
@@ -310,7 +325,7 @@ impl PrivateSocialEngine {
         let session = Arc::new(session);
         let store = Arc::new(store);
         Ok(Self {
-            worker: PrivateSocialWorker::new(session.clone(), store.clone())?,
+            reconciliation: PrivateSocialRuntime::new(session.clone(), store.clone())?,
             session,
             store,
             operation_lock: Mutex::new(()),
@@ -339,34 +354,31 @@ impl PrivateSocialEngine {
                 return Err("private Social submission replay conflict".to_string());
             }
             return match existing.state {
-                DurableState::Prepared => {
+                OperationState::Prepared => {
                     projection_for_state(&existing, PrivatePublishState::ReadyPrivate, None, None)
                 }
-                DurableState::Pending => projection_for_state(
+                OperationState::Pending => projection_for_state(
                     &existing,
                     PrivatePublishState::Publishing,
                     existing.post_id.clone(),
                     existing.last_error_code,
                 ),
-                DurableState::UnknownOutcome => projection_for_state(
+                OperationState::UnknownOutcome
+                | OperationState::CommittedPendingReadback
+                | OperationState::InFlight
+                | OperationState::RetryWait => projection_for_state(
                     &existing,
                     PrivatePublishState::UnknownOutcome,
                     existing.post_id.clone(),
                     existing.last_error_code,
                 ),
-                DurableState::Committed => projection_for_state(
+                OperationState::Committed => projection_for_state(
                     &existing,
                     PrivatePublishState::Published,
                     existing.post_id.clone(),
                     None,
                 ),
-                DurableState::InFlight => projection_for_state(
-                    &existing,
-                    PrivatePublishState::UnknownOutcome,
-                    existing.post_id.clone(),
-                    existing.last_error_code,
-                ),
-                DurableState::Terminal => projection_for_state(
+                OperationState::Terminal | OperationState::Cancelled => projection_for_state(
                     &existing,
                     PrivatePublishState::PublishFailed,
                     existing.post_id.clone(),
@@ -410,22 +422,26 @@ impl PrivateSocialEngine {
             .submission(draft_id, draft_revision)?
             .ok_or_else(|| "private Social prepared submission is unavailable".to_string())?;
         match existing.state {
-            DurableState::Prepared | DurableState::Pending | DurableState::UnknownOutcome => {
-                self.worker.dispatch_submission(&existing.command_id)
-            }
-            DurableState::Committed => projection_for_state(
+            OperationState::Prepared
+            | OperationState::Pending
+            | OperationState::UnknownOutcome
+            | OperationState::CommittedPendingReadback
+            | OperationState::RetryWait => self
+                .reconciliation
+                .dispatch_submission(&existing.command_id),
+            OperationState::Committed => projection_for_state(
                 &existing,
                 PrivatePublishState::Published,
                 existing.post_id.clone(),
                 None,
             ),
-            DurableState::InFlight => projection_for_state(
+            OperationState::InFlight => projection_for_state(
                 &existing,
                 PrivatePublishState::UnknownOutcome,
                 existing.post_id.clone(),
                 existing.last_error_code,
             ),
-            DurableState::Terminal => projection_for_state(
+            OperationState::Terminal | OperationState::Cancelled => projection_for_state(
                 &existing,
                 PrivatePublishState::PublishFailed,
                 existing.post_id.clone(),
@@ -455,22 +471,26 @@ impl PrivateSocialEngine {
                 return Err("private Social submission replay conflict".to_string());
             }
             let projection = match existing.state {
-                DurableState::Prepared | DurableState::Pending | DurableState::UnknownOutcome => {
-                    self.worker.dispatch_submission(&existing.command_id)
-                }
-                DurableState::Committed => projection_for_state(
+                OperationState::Prepared
+                | OperationState::Pending
+                | OperationState::UnknownOutcome
+                | OperationState::CommittedPendingReadback
+                | OperationState::RetryWait => self
+                    .reconciliation
+                    .dispatch_submission(&existing.command_id),
+                OperationState::Committed => projection_for_state(
                     &existing,
                     PrivatePublishState::Published,
                     existing.post_id.clone(),
                     None,
                 ),
-                DurableState::InFlight => projection_for_state(
+                OperationState::InFlight => projection_for_state(
                     &existing,
                     PrivatePublishState::UnknownOutcome,
                     existing.post_id.clone(),
                     existing.last_error_code,
                 ),
-                DurableState::Terminal => projection_for_state(
+                OperationState::Terminal | OperationState::Cancelled => projection_for_state(
                     &existing,
                     PrivatePublishState::PublishFailed,
                     existing.post_id.clone(),
@@ -509,7 +529,6 @@ impl PrivateSocialEngine {
         for (file, object_id) in intent.files.iter().zip(&plan.object_ids) {
             attachments.push(self.upload_private_attachment(
                 app,
-                &transport,
                 &plan.plan_id,
                 resource,
                 object_id,
@@ -528,7 +547,7 @@ impl PrivateSocialEngine {
         )?;
         self.store.persist_submission(&prepared.command)?;
         let projection = self
-            .worker
+            .reconciliation
             .dispatch_submission(&prepared.command.command_id)?;
         self.consume_published_media_handles(app, intent, &projection)?;
         Ok(projection)
@@ -552,6 +571,8 @@ impl PrivateSocialEngine {
             )
             .map_err(|error| error.to_string())?;
         }
+        self.store
+            .delete_completed_uploads_for_owner(&projection.content_id)?;
         Ok(())
     }
 
@@ -559,7 +580,6 @@ impl PrivateSocialEngine {
     fn upload_private_attachment<R: Runtime>(
         &self,
         app: &AppHandle<R>,
-        transport: &NativeSocialTransport,
         plan_id: &str,
         resource: &wire::SecureResourceRef,
         object_id: &str,
@@ -576,73 +596,47 @@ impl PrivateSocialEngine {
         )
         .map_err(|error| error.to_string())?;
         let result = (|| {
-            let upload_spec = prepared.upload_spec(resource, object_id);
-            let descriptor_commitment_sha256 =
-                prepared.descriptor_commitment_sha256(resource, object_id);
-            let begin = transport
-                .begin_private_object_upload(&wire::BeginEncryptedObjectUploadRequest {
-                    format_version: 1,
-                    plan_id: plan_id.to_string(),
-                    resource: Some(resource.clone()),
-                    object_id: object_id.to_string(),
-                    upload_spec: Some(upload_spec.clone()),
-                    descriptor_commitment_sha256: descriptor_commitment_sha256.to_vec(),
-                    command_id: format!("mobile-object-begin:{object_id}"),
-                })
-                .map_err(|error| error.to_string())?;
-            if begin.upload_id.trim().is_empty() || begin.generation == 0 {
-                return Err("private Social object begin response is incomplete".to_string());
-            }
-            for chunk_index in 0..prepared.chunk_count() {
-                self.ensure_current()?;
-                let ciphertext = prepared
-                    .ciphertext_chunk(chunk_index)
-                    .map_err(|error| error.to_string())?;
-                let chunk_hash = prepared
-                    .chunk_sha256(chunk_index)
-                    .map_err(|error| error.to_string())?;
-                if Sha256::digest(&ciphertext).as_slice() != chunk_hash {
-                    return Err("private Social object chunk changed before upload".to_string());
+            let record = new_upload_record(&prepared, resource, object_id, plan_id)?;
+            let record = self
+                .store
+                .ensure_object_upload_transfer(&record, prepared.mime_type())?;
+            self.ensure_current()?;
+            let worker =
+                new_object_worker(self.session.clone(), self.store.clone(), resource.clone())?;
+            match worker
+                .run_upload_once(&record.transfer_id, current_unix_ms())
+                .map_err(|error| error.to_string())?
+            {
+                ObjectTransferProgress::Complete => {}
+                ObjectTransferProgress::Deferred {
+                    next_attempt_at_unix_ms,
                 }
-                let chunk = transport
-                    .put_private_object_chunk(
-                        &begin.upload_id,
-                        begin.generation,
-                        object_id,
-                        chunk_index,
-                        u64::from(chunk_index).saturating_mul(prepared.chunk_stride()),
-                        &ciphertext,
-                        &chunk_hash,
-                    )
-                    .map_err(|error| error.to_string())?;
-                if chunk.upload_id != begin.upload_id
-                    || chunk.generation != begin.generation
-                    || chunk.chunk_index != chunk_index
-                {
-                    return Err("private Social object chunk response mismatched".to_string());
+                | ObjectTransferProgress::RetryScheduled {
+                    next_attempt_at_unix_ms,
+                } => {
+                    return Err(format!(
+                        "private Social object upload deferred until {next_attempt_at_unix_ms}"
+                    ))
+                }
+                ObjectTransferProgress::Terminal { code } => {
+                    return Err(format!(
+                        "private Social object upload failed: {}",
+                        code.as_str()
+                    ))
                 }
             }
-            let complete = transport
-                .complete_private_object_upload(
-                    &begin.upload_id,
-                    &wire::CompleteEncryptedObjectUploadRequest {
-                        upload_id: begin.upload_id.clone(),
-                        generation: begin.generation,
-                        descriptor_commitment_sha256: descriptor_commitment_sha256.to_vec(),
-                        command_id: format!("mobile-object-complete:{object_id}"),
-                    },
-                )
-                .map_err(|error| error.to_string())?;
-            if complete.state != wire::EncryptedObjectTransferState::CompleteUnattached as i32 {
-                return Err("private Social object completion was not durable".to_string());
-            }
-            let descriptor = complete
-                .descriptor
-                .ok_or_else(|| "private Social object completion omitted descriptor".to_string())?;
+            let descriptor_bytes = self
+                .store
+                .object_descriptor_bytes(&record.transfer_id)?
+                .ok_or_else(|| {
+                    "private Social object completion omitted durable descriptor".to_string()
+                })?;
+            let descriptor =
+                wire::EncryptedObjectDescriptor::decode(descriptor_bytes.as_slice())
+                    .map_err(|_| "private Social object descriptor is malformed".to_string())?;
             if descriptor.resource.as_ref() != Some(resource)
                 || descriptor.object_id != object_id
                 || descriptor.storage_ref.trim().is_empty()
-                || descriptor.commitment.as_ref() != Some(&upload_spec)
             {
                 return Err("private Social object descriptor mismatched".to_string());
             }
@@ -705,6 +699,8 @@ impl PrivateSocialEngine {
         transport: &NativeSocialTransport,
     ) -> Result<DecryptedPrivateMoment, String> {
         let requirement = sender_key_requirement(post_id, response)?;
+        let (receiver_verified_key, source_station_peer_id) =
+            receiver_verified_sender_key(response, &self.session.scope.station_peer_id);
         let sender_key = requirement
             .signing_key_id
             .as_deref()
@@ -713,6 +709,8 @@ impl PrivateSocialEngine {
                     &requirement.sender,
                     signing_key_id,
                     requirement.committed_at_unix_ms,
+                    receiver_verified_key,
+                    source_station_peer_id,
                 )
             })
             .transpose()
@@ -773,7 +771,10 @@ impl PrivateSocialEngine {
         )
     }
 
-    fn reconcile(&self, activation_generation: u64) -> Result<PrivateSocialWorkerReport, String> {
+    fn reconcile(
+        &self,
+        activation_generation: u64,
+    ) -> Result<PrivateSocialReconciliationReport, String> {
         let _operation = self
             .operation_lock
             .lock()
@@ -781,7 +782,7 @@ impl PrivateSocialEngine {
         self.ensure_activation_generation(activation_generation)?;
         self.ensure_current()?;
         reconcile_private_reactions(self)?;
-        self.worker.reconcile()
+        self.reconciliation.reconcile()
     }
 
     fn read_text(
@@ -827,22 +828,28 @@ impl PrivateSocialEngine {
             }
         };
         let sender_key = match requirement.signing_key_id.as_deref() {
-            Some(signing_key_id) => match transport.sender_signing_key(
-                &requirement.sender,
-                signing_key_id,
-                requirement.committed_at_unix_ms,
-            ) {
-                Ok(key) => Some(key),
-                Err(error) => {
-                    self.ensure_current().map_err(MobileError::social)?;
-                    return handle_sender_key_error(
-                        self.store.as_ref(),
-                        self.activation_generation,
-                        post_id,
-                        error,
-                    );
+            Some(signing_key_id) => {
+                let (receiver_verified_key, source_station_peer_id) =
+                    receiver_verified_sender_key(&response, &self.session.scope.station_peer_id);
+                match transport.sender_signing_key(
+                    &requirement.sender,
+                    signing_key_id,
+                    requirement.committed_at_unix_ms,
+                    receiver_verified_key,
+                    source_station_peer_id,
+                ) {
+                    Ok(key) => Some(key),
+                    Err(error) => {
+                        self.ensure_current().map_err(MobileError::social)?;
+                        return handle_sender_key_error(
+                            self.store.as_ref(),
+                            self.activation_generation,
+                            post_id,
+                            error,
+                        );
+                    }
                 }
-            },
+            }
             None => None,
         };
         self.ensure_current().map_err(MobileError::social)?;
@@ -1227,10 +1234,14 @@ impl PrivateSocialEngine {
                 let binding = envelope.binding.as_ref().ok_or_else(|| {
                     MobileError::social("private Social recovery binding is missing")
                 })?;
+                let (receiver_verified_key, source_station_peer_id) =
+                    receiver_verified_sender_key(&point, &self.session.scope.station_peer_id);
                 let sender_key = match transport.sender_signing_key(
                     &requirement.sender,
                     &binding.sender_signing_key_id,
                     requirement.committed_at_unix_ms,
+                    receiver_verified_key,
+                    source_station_peer_id,
                 ) {
                     Ok(key) => key,
                     Err(error) => {
@@ -1841,7 +1852,7 @@ pub fn social_private_reconcile<R: Runtime>(
         .map_err(MobileError::social)?;
     purge_private_moment_media_cache(&app, &input.station_peer_id, &input.actor_ptid)?;
     Ok(PrivateSocialReconcileResult {
-        report: PrivateSocialWorkerReport {
+        report: PrivateSocialReconciliationReport {
             endpoint_prekeys_available: 0,
             recovery_prekeys_available: None,
             submissions_processed: 0,
@@ -1850,6 +1861,36 @@ pub fn social_private_reconcile<R: Runtime>(
         },
         invalidated_read_projections,
     })
+}
+
+#[cfg(feature = "acceptance-harness")]
+#[tauri::command]
+pub fn social_private_acceptance_prepare_keys(
+    social: State<'_, MobilePrivateSocialRuntime>,
+    input: PrivateSocialAccountInput,
+) -> MobileResult<PrivateSocialReconciliationReport> {
+    let engine = social.active_engine_at_generation(
+        &input.station_peer_id,
+        &input.actor_ptid,
+        input.activation_generation,
+    )?;
+    let mut entropy = Zeroizing::new([0_u8; 32]);
+    OsRng.fill_bytes(entropy.as_mut());
+    let mnemonic =
+        Mnemonic::from_entropy_in(Language::English, entropy.as_ref()).map_err(|_| {
+            MobileError::social("private Social Acceptance recovery phrase generation failed")
+        })?;
+    let recovery_phrase = Zeroizing::new(mnemonic.to_string());
+    store_recovery_phrase(
+        engine.store.as_ref(),
+        &input.actor_ptid,
+        initial_recovery_epoch(),
+        recovery_phrase.as_str(),
+    )
+    .map_err(MobileError::social)?;
+    engine
+        .reconcile(input.activation_generation)
+        .map_err(MobileError::social)
 }
 
 #[tauri::command]
@@ -1898,7 +1939,7 @@ fn status_for_engine(engine: &PrivateSocialEngine, generation: u64) -> PrivateSo
         actor_ptid: Some(engine.session.scope.actor_ptid.clone()),
         device_id: Some(engine.session.scope.device_id.clone()),
         activation_generation: generation,
-        worker_mode: "on_demand",
+        reconciliation_mode: "on_demand",
     }
 }
 
@@ -2007,6 +2048,40 @@ fn handle_transport_read_error(
         return Err(MobileError::social_retryable(error.to_string()));
     }
     Err(MobileError::social(error.to_string()))
+}
+
+fn receiver_verified_sender_key<'a>(
+    response: &'a social_wire::GetMomentResourceResponse,
+    local_station_peer_id: &'a str,
+) -> (
+    Option<&'a actor_wire::VerifiedActorDeviceSigningKey>,
+    Option<&'a str>,
+) {
+    let key = response
+        .resource
+        .as_ref()
+        .and_then(|resource| resource.body.as_ref())
+        .and_then(|body| match body {
+            social_wire::post_resource::Body::PrivateContent(private) => {
+                private.verification.as_ref()
+            }
+            _ => None,
+        })
+        .and_then(|verification| verification.receiver_verified_sender_signing_key.as_ref());
+    let source_station_peer_id = response
+        .explanation
+        .as_ref()
+        .and_then(|explanation| explanation.source.as_ref())
+        .map(|source| source.station_peer_id.as_str())
+        .filter(|station_peer_id| !station_peer_id.is_empty())
+        .or_else(|| {
+            key.map(|verified| verified.home_station_peer_id.as_str())
+                .filter(|station_peer_id| !station_peer_id.is_empty())
+        })
+        .or_else(|| {
+            (key.is_none() && !local_station_peer_id.is_empty()).then_some(local_station_peer_id)
+        });
+    (key, source_station_peer_id)
 }
 
 fn handle_sender_key_error(
@@ -2147,6 +2222,54 @@ mod tests {
             private_social_profile_id("station-1", "ptid:alice"),
             private_social_profile_id("station-1", "ptid:bob")
         );
+    }
+
+    #[test]
+    fn missing_receiver_verified_key_uses_the_local_station_profile() {
+        let response = social_wire::GetMomentResourceResponse {
+            resource: Some(social_wire::PostResource {
+                body: Some(social_wire::post_resource::Body::PrivateContent(
+                    social_wire::PrivateContentAccess::default(),
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let (key, source_station_peer_id) = receiver_verified_sender_key(&response, "station-1");
+
+        assert!(key.is_none());
+        assert_eq!(source_station_peer_id, Some("station-1"));
+    }
+
+    #[test]
+    fn receiver_verified_key_preserves_the_remote_home_station() {
+        let response = social_wire::GetMomentResourceResponse {
+            resource: Some(social_wire::PostResource {
+                body: Some(social_wire::post_resource::Body::PrivateContent(
+                    social_wire::PrivateContentAccess {
+                        verification: Some(social_wire::PrivateContentVerification {
+                            receiver_verified_sender_signing_key: Some(
+                                actor_wire::VerifiedActorDeviceSigningKey {
+                                    home_station_peer_id: "station-remote".to_string(),
+                                    ..Default::default()
+                                },
+                            ),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let (key, source_station_peer_id) =
+            receiver_verified_sender_key(&response, "station-local");
+
+        assert!(key.is_some());
+        assert_eq!(source_station_peer_id, Some("station-remote"));
     }
 
     #[test]

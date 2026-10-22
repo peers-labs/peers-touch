@@ -6,6 +6,7 @@ import { FollowButton } from './FollowButton';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
 import { useActiveMomentsFederationSlice } from './useActiveMomentsStore';
+import { actorDisplayName } from '../../store/socialProfileProjection';
 
 const { Title, Text } = Typography;
 
@@ -40,7 +41,7 @@ function actorPtidOf(a: any): string {
   return String(a?.id ?? a?.actorPtid ?? '');
 }
 function actorDisplayOf(a: any): string {
-  return String(a?.displayName ?? a?.username ?? '');
+  return actorDisplayName(a?.displayName) || actorDisplayName(a?.username);
 }
 function actorUsernameOf(a: any): string {
   return String(a?.username ?? '');

@@ -327,12 +327,12 @@ TTL 可按设备等级动态调整：低端设备缩短，高端设备延长。
 │        Mobile App (Android / iOS)                │
 │                                                  │
 │  ┌────────────────────────────────────────────┐ │
-│  │         Applet Kernel (Kotlin/Swift)        │ │
+│  │         Shared Mobile Rust Applet Kernel     │ │
 │  │  lifecycle / session / resource / trace     │ │
 │  └──────────────────┬─────────────────────────┘ │
 │                     │                            │
 │  ┌──────────────────┼─────────────────────────┐ │
-│  │  Applet Container (Fragment/ViewController) │ │
+│  │  Tauri native-plugin LynxView host           │ │
 │  │                                             │ │
 │  │  ┌───────────────────────────────────┐      │ │
 │  │  │  LynxView (Native)               │      │ │

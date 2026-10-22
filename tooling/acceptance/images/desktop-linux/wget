@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mirror="${PT_GITHUB_ASSET_MIRROR:-https://gh-proxy.com}"
+rewritten=()
+for argument in "$@"; do
+  case "$argument" in
+    https://github.com/*|https://raw.githubusercontent.com/*)
+      rewritten+=("${mirror%/}/${argument}")
+      ;;
+    *)
+      rewritten+=("$argument")
+      ;;
+  esac
+done
+
+exec /usr/bin/wget "${rewritten[@]}"

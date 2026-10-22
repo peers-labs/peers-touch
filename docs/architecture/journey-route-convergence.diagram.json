@@ -1,0 +1,142 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "project.journey.route-convergence",
+  "module": "project",
+  "viewpoint": "dynamic-flow",
+  "layout": "sequence",
+  "output": "journey-route-convergence.svg",
+  "title": "Direct / Relay 路由汇合时序",
+  "canvas": {
+    "width": 1600,
+    "height": 900
+  },
+  "edgeMeaning": "箭头表示 Station access 状态推进",
+  "scene": {
+    "participants": [
+      {
+        "id": "client",
+        "title": "Client",
+        "tone": "neutral"
+      },
+      {
+        "id": "discovery",
+        "title": "Discovery",
+        "tone": "secondary"
+      },
+      {
+        "id": "direct",
+        "title": "Direct Route",
+        "tone": "neutral"
+      },
+      {
+        "id": "relay",
+        "title": "Relay Process",
+        "tone": "external"
+      },
+      {
+        "id": "station",
+        "title": "Station Ingress",
+        "tone": "primary"
+      },
+      {
+        "id": "gate",
+        "title": "Access Gate",
+        "tone": "primary"
+      },
+      {
+        "id": "scope",
+        "title": "Client Scope",
+        "tone": "secondary"
+      }
+    ],
+    "messages": [
+      {
+        "from": "client",
+        "to": "discovery",
+        "label": "inspect endpoint",
+        "at": 1,
+        "style": "primary"
+      },
+      {
+        "from": "discovery",
+        "to": "client",
+        "label": "signed route set",
+        "at": 2,
+        "style": "return"
+      },
+      {
+        "from": "client",
+        "to": "direct",
+        "label": "open Station TLS",
+        "at": 3,
+        "style": "primary"
+      },
+      {
+        "from": "direct",
+        "to": "station",
+        "label": "HTTP/2",
+        "at": 4,
+        "style": "primary"
+      },
+      {
+        "from": "client",
+        "to": "relay",
+        "label": "reserve circuit",
+        "at": 5,
+        "style": "secondary"
+      },
+      {
+        "from": "relay",
+        "to": "station",
+        "label": "opaque tunnel",
+        "at": 6,
+        "style": "secondary"
+      },
+      {
+        "from": "station",
+        "to": "client",
+        "label": "station_peer_id proof",
+        "at": 7,
+        "style": "return"
+      },
+      {
+        "from": "client",
+        "to": "gate",
+        "label": "begin access",
+        "at": 8,
+        "style": "primary"
+      },
+      {
+        "from": "gate",
+        "to": "client",
+        "label": "Station session",
+        "at": 9,
+        "style": "return"
+      },
+      {
+        "from": "client",
+        "to": "scope",
+        "label": "activate scope",
+        "at": 10,
+        "style": "event"
+      }
+    ],
+    "fragments": [
+      {
+        "kind": "alt",
+        "label": "DIRECT",
+        "startAt": 3,
+        "endAt": 4,
+        "tone": "primary"
+      },
+      {
+        "kind": "else",
+        "label": "RELAY",
+        "startAt": 5,
+        "endAt": 6,
+        "tone": "secondary"
+      }
+    ]
+  }
+}

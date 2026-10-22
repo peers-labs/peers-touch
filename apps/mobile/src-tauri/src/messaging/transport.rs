@@ -7,13 +7,18 @@ use messaging_core::attachment::{
     PreparedAttachmentUpload,
 };
 use messaging_core::crypto::prekeys::PreKeyTransport;
+use messaging_core::engine::COMMAND_RECONCILIATION_BATCH_LIMIT;
 use messaging_core::identity::{DeviceEnrollmentTransport, DeviceSigningKey};
 use messaging_core::inbox::QueueTransport;
 use messaging_core::mls::key_packages::MlsKeyPackageTransport;
 use messaging_core::mls::membership_transition::MembershipTransitionIntentInput;
-use messaging_core::outbox::{CommandSubmitFailure, CommandTransport, KeyBundleTransport};
+use messaging_core::outbox::{
+    CommandSubmitFailure, CommandTransport, DeliveryReceiptSubmitFailure, DeliveryReceiptTransport,
+    KeyBundleTransport,
+};
+use messaging_core::ports::CommandResultTransport;
 use messaging_core::proto::actor::{
-    ActorDeviceRef, EnrollActorDeviceRequest, EnrollActorDeviceResponse,
+    ActorDeviceRef, ActorProfile, EnrollActorDeviceRequest, EnrollActorDeviceResponse,
 };
 use messaging_core::proto::chat::{
     chat_command, submit_conversation_authority_command_request,
@@ -36,13 +41,16 @@ use messaging_core::proto::chat::{
     PrepareConversationGroupRequest, PrepareConversationGroupResponse,
     PrepareConversationMembershipRequest, PrepareConversationMembershipResponse,
     PutAttachmentChunkRequest, PutAttachmentChunkResponse,
-    SubmitConversationAuthorityCommandRequest, SubmitConversationAuthorityCommandResponse,
-    SubmitConversationDeliveryReceiptRequest, SubmitConversationDeliveryReceiptResponse,
-    SubmitConversationReadCursorRequest, SubmitConversationReadCursorResponse,
-    SubmitConversationTypingRequest, SubmitConversationTypingResponse,
-    TransferConversationOwnershipRequest, TransferConversationOwnershipResponse,
-    UpdateConversationMemberRequest, UpdateConversationMemberResponse,
+    ResolveConversationCommandResultsRequest, ResolveConversationCommandResultsResponse,
+    ResolvedConversationCommandResult, SubmitConversationAuthorityCommandRequest,
+    SubmitConversationAuthorityCommandResponse, SubmitConversationDeliveryReceiptRequest,
+    SubmitConversationDeliveryReceiptResponse, SubmitConversationReadCursorRequest,
+    SubmitConversationReadCursorResponse, SubmitConversationTypingRequest,
+    SubmitConversationTypingResponse, TransferConversationOwnershipRequest,
+    TransferConversationOwnershipResponse, UpdateConversationMemberRequest,
+    UpdateConversationMemberResponse,
 };
+use messaging_core::proto::common::PeersResponse;
 use messaging_core::proto::key_exchange::{
     DirectKeyBundle, FetchDirectKeyBundlesRequest, FetchDirectKeyBundlesResponse,
     UploadDirectKeyBundleRequest, UploadDirectKeyBundleResponse, UploadMlsKeyPackageRequest,
@@ -73,9 +81,11 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const GROUP_CREATION_PATH: &str = "/conversation/group";
 const AUTHORITY_COMMAND_PATH: &str = "/conversation/command";
+const COMMAND_RESULTS_PATH: &str = "/conversation/command/results";
 const COMMAND_PROPOSAL_FORMAT_VERSION: u32 = 1;
 const COMMAND_PROPOSAL_LIFETIME_MS: i64 = 5 * 60 * 1_000;
 const MEMBER_AUTHORITY_ERROR_HEADER: &str = "X-Peers-Error-Code";
+const ACTOR_PROFILE_TYPE_URL: &str = "type.googleapis.com/peers_touch.model.actor.v1.ActorProfile";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MemberAuthorityTransportError {
@@ -752,7 +762,7 @@ impl StationDeliveryReceiptTransport {
 }
 
 impl StationDeliveryReceiptTransport {
-    pub fn submit(&self, receipt: &DeviceConsumptionReceipt) -> Result<(), String> {
+    fn submit_raw(&self, receipt: &DeviceConsumptionReceipt) -> Result<(), StationTransportError> {
         if receipt.conversation_id.trim().is_empty()
             || receipt.event_id.trim().is_empty()
             || receipt.receipt_id.trim().is_empty()
@@ -764,7 +774,7 @@ impl StationDeliveryReceiptTransport {
                 .map(|consumer| consumer.device_id.as_str())
                 != Some(self.device_id.as_str())
         {
-            return Err("mobile messaging delivery receipt endpoint mismatch".to_string());
+            return Err(StationTransportError::Invalid);
         }
         post_proto::<_, SubmitConversationDeliveryReceiptResponse>(
             &self.station_origin,
@@ -776,7 +786,42 @@ impl StationDeliveryReceiptTransport {
             },
         )
         .map(|_| ())
-        .map_err(|error| error.to_string())
+    }
+}
+
+impl DeliveryReceiptTransport for StationDeliveryReceiptTransport {
+    fn submit(
+        &self,
+        receipt: &DeviceConsumptionReceipt,
+    ) -> Result<(), DeliveryReceiptSubmitFailure> {
+        self.submit_raw(receipt)
+            .map_err(classify_delivery_receipt_failure)
+    }
+}
+
+fn classify_delivery_receipt_failure(error: StationTransportError) -> DeliveryReceiptSubmitFailure {
+    let detail = error.to_string();
+    match error {
+        StationTransportError::Deadline | StationTransportError::Network => {
+            DeliveryReceiptSubmitFailure::retryable("transport", detail)
+        }
+        StationTransportError::HttpStatus { status, code, .. }
+            if matches!(status, 400 | 404 | 409 | 410 | 422)
+                || (status == 403
+                    && code.as_deref() == Some("CONVERSATION_INTERACTION_UNAUTHORIZED")) =>
+        {
+            DeliveryReceiptSubmitFailure::terminal(
+                code.filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| format!("http_{status}")),
+                detail,
+            )
+        }
+        StationTransportError::HttpStatus { status, .. } => {
+            DeliveryReceiptSubmitFailure::retryable(format!("http_{status}"), detail)
+        }
+        StationTransportError::Decode | StationTransportError::Invalid => {
+            DeliveryReceiptSubmitFailure::terminal("invalid_response", detail)
+        }
     }
 }
 
@@ -1473,7 +1518,7 @@ impl StationCommandTransport {
                 conversation_id: command.conversation_id.clone(),
             },
         )
-        .map_err(classify_command_error)?;
+        .map_err(classify_remote_public_head_error)?;
         let head = response
             .head
             .ok_or_else(|| CommandSubmitFailure::Terminal {
@@ -1621,6 +1666,36 @@ impl CommandTransport for StationCommandTransport {
     }
 }
 
+impl CommandResultTransport for StationCommandTransport {
+    fn resolve(
+        &self,
+        request: ResolveConversationCommandResultsRequest,
+    ) -> Result<Vec<ResolvedConversationCommandResult>, String> {
+        if request.commands.is_empty()
+            || request.commands.len() > COMMAND_RECONCILIATION_BATCH_LIMIT
+            || request.commands.iter().any(|command| {
+                command.conversation_id.trim().is_empty()
+                    || command.command_id.trim().is_empty()
+                    || command.command_sha256.len() != 32
+            })
+        {
+            return Err("mobile messaging command result request is invalid".to_string());
+        }
+        post_proto::<
+            ResolveConversationCommandResultsRequest,
+            ResolveConversationCommandResultsResponse,
+        >(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            COMMAND_RESULTS_PATH,
+            &request,
+        )
+        .map(|response| response.results)
+        .map_err(|error| error.to_string())
+    }
+}
+
 impl StationCommandTransport {
     fn submit_chat_command(&self, command: &ChatCommand) -> Result<(), CommandSubmitFailure> {
         let sender = command
@@ -1742,7 +1817,7 @@ impl StationCommandTransport {
                     conversation_id: command.conversation_id.clone(),
                 },
             )
-            .map_err(classify_command_error)?;
+            .map_err(classify_remote_public_head_error)?;
             Some(build_remote_member_authority_proposal(
                 command,
                 identity,
@@ -2123,6 +2198,92 @@ where
     Response::decode(bytes.as_ref()).map_err(|_| StationTransportError::Decode)
 }
 
+pub(super) fn load_actor_profile_revision(
+    station_origin: &str,
+    access_token: &str,
+    device_id: &str,
+    expected_actor_ptid: &str,
+) -> Result<u64, String> {
+    let profile = get_peers_proto_no_body::<ActorProfile>(
+        station_origin,
+        access_token,
+        device_id,
+        "/actor/profile",
+        ACTOR_PROFILE_TYPE_URL,
+    )
+    .map_err(|error| format!("mobile messaging actor profile unavailable: {error}"))?;
+    canonical_actor_profile_revision(&profile, expected_actor_ptid)
+}
+
+fn canonical_actor_profile_revision(
+    profile: &ActorProfile,
+    expected_actor_ptid: &str,
+) -> Result<u64, String> {
+    let profile_ptid = profile
+        .r#ref
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        .filter(|ptid| !ptid.is_empty())
+        .or_else(|| {
+            profile
+                .peers_touch
+                .as_ref()
+                .map(|info| info.network_id.as_str())
+                .filter(|ptid| !ptid.is_empty())
+        })
+        .or_else(|| {
+            profile
+                .id
+                .starts_with("ptid:")
+                .then_some(profile.id.as_str())
+        });
+    if profile_ptid != Some(expected_actor_ptid) {
+        return Err("mobile messaging actor profile identity mismatch".to_string());
+    }
+    if profile.profile_revision == 0 {
+        return Err("mobile messaging actor profile revision is unavailable".to_string());
+    }
+    Ok(profile.profile_revision)
+}
+
+fn get_peers_proto_no_body<Response>(
+    station_origin: &str,
+    access_token: &str,
+    device_id: &str,
+    path: &str,
+    expected_type_url: &str,
+) -> Result<Response, StationTransportError>
+where
+    Response: Message + Default,
+{
+    validate_transport_scope(station_origin, access_token, device_id)
+        .map_err(|_| StationTransportError::Invalid)?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .map_err(classify_request_error)?;
+    let response = client
+        .get(format!("{}{path}", station_origin.trim_end_matches('/')))
+        .bearer_auth(access_token)
+        .header("X-Device-ID", device_id)
+        .header(ACCEPT, "application/protobuf")
+        .send()
+        .map_err(classify_request_error)?;
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = response.bytes().map_err(classify_response_error)?;
+    if !status.is_success() {
+        return Err(station_http_error(status.as_u16(), &headers, &bytes));
+    }
+    let envelope =
+        PeersResponse::decode(bytes.as_ref()).map_err(|_| StationTransportError::Decode)?;
+    let payload = envelope.data.ok_or(StationTransportError::Decode)?;
+    if envelope.code != "200" || payload.type_url != expected_type_url {
+        return Err(StationTransportError::Decode);
+    }
+    Response::decode(payload.value.as_slice()).map_err(|_| StationTransportError::Decode)
+}
+
 pub(super) fn post_proto<Request, Response>(
     station_origin: &str,
     access_token: &str,
@@ -2253,6 +2414,17 @@ fn classify_command_error(error: StationTransportError) -> CommandSubmitFailure 
         StationTransportError::Invalid => CommandSubmitFailure::Terminal {
             code: "invalid_request".to_string(),
         },
+    }
+}
+
+fn classify_remote_public_head_error(error: StationTransportError) -> CommandSubmitFailure {
+    match error {
+        // Authority preparation may lead the sender Home Station's follower.
+        // Reprepare the durable command instead of terminalizing the message.
+        StationTransportError::HttpStatus { status: 403, .. } => {
+            CommandSubmitFailure::StaleAuthorityPlan { expired: false }
+        }
+        error => classify_command_error(error),
     }
 }
 
@@ -2393,6 +2565,29 @@ mod tests {
     #[test]
     fn station_requests_use_the_ms_d15_thirty_second_deadline() {
         assert_eq!(REQUEST_TIMEOUT, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn actor_profile_revision_requires_the_authenticated_actor() {
+        let profile = ActorProfile {
+            id: "ptid:alice".to_string(),
+            profile_revision: 8,
+            ..ActorProfile::default()
+        };
+
+        assert_eq!(
+            canonical_actor_profile_revision(&profile, "ptid:alice").unwrap(),
+            8
+        );
+        assert!(canonical_actor_profile_revision(&profile, "ptid:bob").is_err());
+        assert!(canonical_actor_profile_revision(
+            &ActorProfile {
+                id: "ptid:alice".to_string(),
+                ..ActorProfile::default()
+            },
+            "ptid:alice",
+        )
+        .is_err());
     }
 
     #[test]
@@ -2785,6 +2980,32 @@ mod tests {
             classify_command_error(StationTransportError::http_status(403)),
             CommandSubmitFailure::Terminal { .. }
         ));
+        assert_eq!(
+            classify_remote_public_head_error(StationTransportError::http_status(403)),
+            CommandSubmitFailure::StaleAuthorityPlan { expired: false }
+        );
+    }
+
+    #[test]
+    fn receipt_error_classification_preserves_terminal_membership_rejection() {
+        let removed_member = classify_delivery_receipt_failure(StationTransportError::HttpStatus {
+            status: 403,
+            code: Some("CONVERSATION_INTERACTION_UNAUTHORIZED".to_string()),
+            details: Some("actor is not an active Conversation member".to_string()),
+            body: None,
+        });
+        assert!(!removed_member.retryable);
+        assert_eq!(removed_member.code, "CONVERSATION_INTERACTION_UNAUTHORIZED");
+
+        let session_forbidden =
+            classify_delivery_receipt_failure(StationTransportError::HttpStatus {
+                status: 403,
+                code: Some("SESSION_DEVICE_MISMATCH".to_string()),
+                details: None,
+                body: None,
+            });
+        assert!(session_forbidden.retryable);
+        assert!(classify_delivery_receipt_failure(StationTransportError::Network).retryable);
     }
 
     #[test]

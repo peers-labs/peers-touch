@@ -939,11 +939,11 @@ authority cutover：pending/current一旦存在，legacy run、legacy latest及�
 只能作为diagnostic，永不进入D-19 authoritative reader。确认无active D-19-aware run后
 获取gate publish lock，验证operator给出的expected current generation/latest，并捕获
 此刻的current authoritative pointer。随后在仍持有cleanup+publish locks时原子发布不
-超过16 KiB的`activation-pending.json`，绑定target generation、digests、expected
+超过1 MiB的`activation-pending.json`，绑定target generation、digests、expected
 current generation及captured prior pointer/digest。Pending durable时即成为不可逆的
 authority cutoff：Reader与D-19-aware `begin_run`必须fail closed，任何之后写入prior
 namespace的legacy/old-generation latest都只属diagnostic。随后把pending中已经冻结的
-最多一个exact `priorLatestPointer`及其digest写入不超过16 KiB的
+最多一个exact `priorLatestPointer`及其digest写入不超过1 MiB的
 `finalizer-enforcement/generations/<generation>.json` temporary file并fsync，但暂不
 publish。Activation atomic no-replace publishes generation record、fsyncs directory,
 first activation还以atomic no-replace发布pending中冻结的
@@ -1330,6 +1330,14 @@ Typed errors保留safe path role、errno class和remediation，不包含secret v
 都不得触发source-tree fallback。
 
 ## 15. Native Desktop Runtime Cell Contract
+
+`RuntimeCellLifecycle.ready()` returns a structural `RuntimeCellEvidence`
+interface with `to_dict()`. Desktop continues returning `RuntimeCellManifest`.
+Mobile returns `acceptance-mobile-runtime-cell-manifest`, containing cell/Gate/
+evidence-run/provisioning-run identities, exact source, verified build and physical
+lease ArtifactRefs, `attachmentMode: attach-only`, and
+`lifecycleOwner: environment-provisioner`. It does not serialize a device handle
+or redefine Desktop GUI, input, or lease identities.
 
 Runtime Cell Contract 是 repository 内的非敏感平台能力声明。具体 host、username、
 credential value 和远端绝对路径由 Profile/secret source 解析。
@@ -1872,9 +1880,10 @@ identity及全部requirement/config/source/runtime measurement digests的
 FD与matching `DescriptorClaim`保存在process-local capture中，不再按path读取。
 Capture inventory是两个owner集合的并集：Acceptance Infra固定
 `FinalizerBootstrapBaseline`必须且只能列出
-`tooling/acceptance/core/finalization_contracts.py`与
+`tooling/acceptance/core/finalization_contracts.py`、
 `tooling/acceptance/core/finalizer_worker.py`及
-`tooling/acceptance/core/finalization_supervisor.c`；generated finalizer registration
+`tooling/acceptance/core/finalization_supervisor.c`与
+`tooling/acceptance/core/result_contracts.py`；generated finalizer registration
 catalog列出Mobile business validator/contract/schema paths。Protected baseline、
 required-finalizer mapping和registration catalog作为non-executable components捕获。
 所有path/raw hash、bootstrap source digest、`executableIncluded`与complete capture
@@ -2006,6 +2015,11 @@ PreflightLoadedRuntimeImage
   machoUuid: string | null
   codeDirectoryHash: string | null
   sharedCacheUuid: string | null
+
+For `STANDALONE_FILE`, file hash/ref is required and all Darwin shared-cache
+fields are null. For `DARWIN_SHARED_CACHE`, `machoUuid + sharedCacheUuid`
+identify the image inside the signed cache; `codeDirectoryHash` is null because
+the image has no independently addressable code directory outside that cache.
 
 DarwinRuntimeHostBuild
   osFamily: DARWIN
@@ -2183,12 +2197,13 @@ FinalizerBootstrapBaseline
   schemaVersion: 1
   sourceFiles:
     - (tooling/acceptance/core/finalization_contracts.py, fileSha256)
-    - (tooling/acceptance/core/finalizer_worker.py, fileSha256)
     - (tooling/acceptance/core/finalization_supervisor.c, fileSha256)
+    - (tooling/acceptance/core/finalizer_worker.py, fileSha256)
+    - (tooling/acceptance/core/result_contracts.py, fileSha256)
   coreBootstrapSourceDigest
 
 ProtectedSourceArtifact
-  component: PROTECTED_BASELINE | REQUIRED_MAPPING | REGISTRATION_CATALOG | CONTRACT_SCHEMA | ENTRYPOINT_SOURCE | GENERATOR_SOURCE | CORE_CONTRACTS | CORE_WORKER_BOOTSTRAP | SUPERVISOR_SOURCE
+  component: PROTECTED_BASELINE | REQUIRED_MAPPING | REGISTRATION_CATALOG | CONTRACT_SCHEMA | ENTRYPOINT_SOURCE | GENERATOR_SOURCE | CORE_CONTRACTS | CORE_WORKER_BOOTSTRAP | SUPERVISOR_SOURCE | CORE_RESULT_CONTRACTS
   repoRelativePath
   ref: ArtifactRef
   fileSha256
@@ -2249,7 +2264,7 @@ RequiredFinalizerMapping
   finalizerId
 
 CapturedProtectedSource
-  component: PROTECTED_BASELINE | REQUIRED_MAPPING | REGISTRATION_CATALOG | CONTRACT_SCHEMA | ENTRYPOINT_SOURCE | GENERATOR_SOURCE | CORE_CONTRACTS | CORE_WORKER_BOOTSTRAP | SUPERVISOR_SOURCE
+  component: PROTECTED_BASELINE | REQUIRED_MAPPING | REGISTRATION_CATALOG | CONTRACT_SCHEMA | ENTRYPOINT_SOURCE | GENERATOR_SOURCE | CORE_CONTRACTS | CORE_WORKER_BOOTSTRAP | SUPERVISOR_SOURCE | CORE_RESULT_CONTRACTS
   repoRelativePath
   fileSha256
   byteLength
@@ -5790,7 +5805,12 @@ live runtime identity. Every
 `FinalizerAuthorityAuthorization.maintenanceRuntime.runtimeArtifacts[*].authorizationId`
 must equal the enclosing authorization ID. `PersistAuthorityRuntimeRequest.authorizationId`
 must equal that same ID, and its candidate runtime must contain no ref for any
-other authorization. Abort applies the identical equality against
+other authorization. The request carries the complete closed `durabilityProfile`;
+its self digest must equal `expectedDurabilityProfileDigest`, the authorization
+profile, the opened authority-root profile, and the live platform backend before
+mutation. It also carries the matching `ActiveDurabilityEnvironmentObservation`;
+the worker binds its live mount `deviceId`, host build and backend to the opened
+gate-directory descriptor before any write. Abort applies the identical equality against
 `AbortAuthorization.authorizationId`. Each request also repeats
 `expectedDurabilityProfileDigest`; worker mutation is forbidden unless it equals
 the authorization profile, the opened authority-root profile, and the live
@@ -5880,13 +5900,17 @@ BundlePreparationFailed
 CaptureRuntimeRequest
   identity: WorkerRequestIdentity
   runtimePaths: tuple[RuntimePathInput, ...]
+  measurementBasis: RuntimeMeasurementBasis
   fileLimit: 1024
   singleFileByteLimit: 256 MiB
   cumulativeByteLimit: 512 MiB
   timeoutSeconds: 60
 
-`runtimePaths` contains only caller-selected executable/compiler/FILE-stdlib
-inputs. `LOADED_RUNTIME_IMAGE` is forbidden in `RuntimePathInput`; after loading
+`RuntimeMeasurementBasis` binds the reviewed supervisor source/build identity,
+protocol version, complete FILE/BUILTIN/FROZEN stdlib closure and fixed
+four-file Core bootstrap source digest. `runtimePaths` contains only
+supervisor/Python/compiler/FILE-stdlib paths and must match that basis exactly.
+`LOADED_RUNTIME_IMAGE` is forbidden in `RuntimePathInput`; after loading
 the fixed bootstrap/import allowlist, the worker-owned platform loader probe is
 the sole source of loaded-image identities and emits file-backed standalone
 images into `CapturedRuntimeFile` plus shared-cache identities into
@@ -5922,7 +5946,7 @@ MaterializeSnapshotRequest
   gateId
   evidenceRunId
   evaluationTime
-  artifactInventory: tuple[(roleName, discriminator, ArtifactRef), ...]
+  artifactInventory: tuple[ArtifactMaterializationInput, ...]
   runtimeManifestRef: ArtifactRef
   sourceCommit
   workspaceDigest
@@ -5932,6 +5956,20 @@ MaterializeSnapshotRequest
   singleArtifactByteLimit: 1 GiB
   cumulativeHashByteLimit: 8 GiB
   timeoutSeconds: 60
+
+ArtifactMaterializationInput
+  roleName
+  discriminator: string | null
+  ref: ArtifactRef
+  payloadKind: CANONICAL_JSON | BINARY
+  schemaId: string | null
+  schemaDigest: string | null
+
+`CANONICAL_JSON` requires `application/json` plus non-null schema identity;
+`BINARY` forbids schema identity. The Runtime Manifest inventory entry must be
+`CANONICAL_JSON`. This closed input lets the generic materializer construct
+`CanonicalOpaqueJson` without interpreting a business role or inventing schema
+identity.
 
 MaterializeSnapshotCompleted
   identity: WorkerRequestIdentity
@@ -5977,6 +6015,8 @@ PersistAuthorityRuntimeRequest
   gateId
   authorizationId
   candidateRuntime: FinalizerMaintenanceRuntimeIdentity
+  durabilityProfile: ProofAuthorityDurabilityProfile
+  environmentObservation: ActiveDurabilityEnvironmentObservation
   expectedDurabilityProfileDigest
   fileLimit: 1024
   singleFileByteLimit: 256 MiB
@@ -5991,9 +6031,10 @@ InstallPublicationInterlockRequest
   candidateInterlock: FinalizerPublicationInterlock
   expectedPriorLatestPointer: LatestPointer | null
   expectedPriorLatestPointerDigest: string | null
+  environmentObservation: ActiveDurabilityEnvironmentObservation
   expectedMaintenanceRuntimeDigest
   expectedDurabilityProfileDigest
-  byteLimit: 16 KiB
+  byteLimit: 1 MiB
   timeoutSeconds: 60
 
 ActivateEnforcementRequest
@@ -6002,10 +6043,11 @@ ActivateEnforcementRequest
   workspaceId
   gateId
   intent: FinalizerActivationIntent
+  environmentObservation: ActiveDurabilityEnvironmentObservation
   expectedMaintenanceRuntimeDigest
   expectedDurabilityProfileDigest
   entryLimit: 4096
-  byteLimit: 16 KiB
+  byteLimit: 1 MiB
   timeoutSeconds: 60
 
 WriteAbortEventRequest
@@ -6017,6 +6059,7 @@ WriteAbortEventRequest
   authorizationId
   attemptId
   authorization: AbortAuthorization
+  environmentObservation: ActiveDurabilityEnvironmentObservation
   expectedMaintenanceRuntimeDigest
   expectedDurabilityProfileDigest
 
@@ -6029,6 +6072,7 @@ TombstoneRunRequest
   authorizationId
   attemptId
   expectedSnapshotDigest
+  environmentObservation: ActiveDurabilityEnvironmentObservation
   expectedMaintenanceRuntimeDigest
   expectedDurabilityProfileDigest
   deletionPlanEntryLimit: 16384
@@ -6048,6 +6092,7 @@ DeleteTombstoneBatchRequest
   deletionPlanDigest
   continuationEventDigest: string
   continuationToken: string
+  environmentObservation: ActiveDurabilityEnvironmentObservation
   expectedMaintenanceRuntimeDigest
   expectedDurabilityProfileDigest
   entryLimit: 1024
@@ -7289,7 +7334,13 @@ JSON decoder限制nesting depth 32、单object member 4096、单array item 4096�
   tombstone identity，再从plan index继续。Worker从validated gate-directory FD按fixed
   `aborted-runs/<run-id>`定位root。V1 destructive abort deletion只支持Linux
   `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS |
-  RESOLVE_NO_XDEV)`。Darwin和其它没有等价atomic no-mount-crossing primitive的host在
+  RESOLVE_NO_XDEV)`。该syscall仅由已进入
+  `FinalizerMaintenanceRuntimeIdentity`的verified native supervisor binary以
+  maintenance-only helper mode执行；Python mutation owner通过anonymous
+  `AF_UNIX/SOCK_DGRAM + SCM_RIGHTS`接收每个exact relative path的opened FD，逐次复验
+  file type/device/inode/length并消费helper wait status。Helper mode不解析business
+  payload、不接受absolute path、不进入FINALIZER worker，也不扩大business validator
+  capability。Darwin和其它没有等价atomic no-mount-crossing primitive的host在
   authorization、rename和delete前返回`ABORT_SEALED_DELETE_UNSUPPORTED`并保留sealed
   orphan；该结果是CLI-owned `AbortSealedPreflightRejected/NO_MUTATION`，发生在
   supervisor/maintenance request之前，因此不扩展十四个worker result variants。
@@ -7897,7 +7948,7 @@ requiredRoleIdentities, primaryStatus, primaryResultDigest}`；其中
 `sourceFiles`中，并与executable artifact中的business subset逐项相等。
 `coreBootstrapSourceDigest`使用独立
 `pt.acceptance.finalization.core-bootstrap-source.v1`覆盖
-`FinalizerBootstrapBaseline.sourceFiles`的exact three-entry ordered inventory；
+`FinalizerBootstrapBaseline.sourceFiles`的exact four-entry ordered inventory；
 `FinalizerExecutableArtifact`和`FinalizerRuntimeIdentity`必须携带相同值。
 `FinalizerInput.finalizerInputDigest` covers the complete input except itself.
 `context` is the one canonical projection of `invocation`: every duplicated
@@ -8870,3 +8921,39 @@ One immutable report contains:
 `PASS/SUPPORTING` means the lifecycle conforms. It is not
 `FUNCTIONAL_PASS/PROVEN`. Missing scenarios, UI action, receiver assertion, or
 terminal cleanup keep the report `FAIL/UNPROVEN`.
+
+---
+
+## 22. Unified Client Architecture Aggregate
+
+`unified-client-architecture-aggregate` is a source-only business aggregate.
+It owns no Environment or Provisioner. Its input is:
+
+```text
+current source identity
++ bounded UCA-01 source checks
++ authoritative latest manifest for every UCA child Gate
++ suite-runtime ArtifactRef for every multi-scenario Host/runtime Gate
++ outcome-comparison.md exact SHA-256
+```
+
+Each child manifest must be `DURABLE`, belong to the same workspace and Gate,
+match the aggregate source identity exactly, and contain
+`passed + DONE + PROVEN` with successful redaction and secret scan.
+
+Runtime child manifests additionally record a closed lexical `runtimeCells`
+array:
+
+```text
+Android Host -> [mobile-android-native]
+iOS Host     -> [mobile-ios-native]
+Messaging    -> [desktop-macos-native, mobile-android-native, mobile-ios-native]
+Secure       -> [desktop-macos-native, mobile-android-native, mobile-ios-native]
+```
+
+Every runtime child exposes one `suite-runtime` artifact role. The aggregate
+replays the canonical Suite Runtime report and requires exact source digest,
+all declared Scenarios, receiver-visible evidence, budgets, and terminal
+cleanup. Missing child, stale source, wrong cell, missing owner-zero Gate, or
+invalid cleanup remains `UNPROVEN` or `FAIL`; another release target cannot
+supply the missing cell.

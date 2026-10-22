@@ -10,6 +10,20 @@ const socialRuntimeMocks = vi.hoisted(() => ({
   installMobileNativeEventBridge: vi.fn(),
   fencePrivateMomentsRuntimeProjection: vi.fn(),
 }));
+const commandRuntimeMocks = vi.hoisted(() => ({
+  activateReliabilityRuntime: vi.fn(),
+  applyReliabilityProjectionCheckpoints: vi.fn(async () => 0),
+  closeReliabilityScope: vi.fn(async () => undefined),
+  draftsRequiringRestoreDecision: vi.fn(() => []),
+  listReliabilityCommands: vi.fn(async () => []),
+  nextReliabilityRetryDelay: vi.fn(() => null),
+  openReliabilityAdmission: vi.fn(async () => undefined),
+  readReliabilityRuntimeStatus: vi.fn(),
+  reconcileReliableFriendRequests: vi.fn(async () => undefined),
+  reconcileReliableSocialRelationships: vi.fn(async () => undefined),
+  registerReliabilityReconciliationWake: vi.fn(() => () => undefined),
+  suspendReliabilityRuntime: vi.fn(async () => undefined),
+}));
 
 vi.mock('../features/social/socialRuntime', () => ({
   reconcileSocialRuntimeDomains: socialRuntimeMocks.reconcileSocialRuntimeDomains,
@@ -25,6 +39,21 @@ vi.mock('./mobileNativeEventBridge', () => ({
     socialRuntimeMocks.installMobileNativeEventBridge,
 }));
 
+vi.mock('../features/station/xConfig', () => ({
+  loadXConfigProjection: vi.fn(async () => ({
+    channel: 'stable',
+    freshness: 'unavailable',
+    suggestions: [],
+    refreshing: false,
+  })),
+  refreshXConfigProjection: vi.fn(async () => ({
+    channel: 'stable',
+    freshness: 'unavailable',
+    suggestions: [],
+    refreshing: false,
+  })),
+}));
+
 vi.mock('./privateMomentsRuntime', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./privateMomentsRuntime')>();
   return {
@@ -35,34 +64,26 @@ vi.mock('./privateMomentsRuntime', async (importOriginal) => {
 });
 
 vi.mock('./commandRuntime', () => ({
-  activateReliabilityRuntime: vi.fn(),
-  applyReliabilityProjectionCheckpoints: vi.fn(async () => 0),
-  closeReliabilityScope: vi.fn(async () => undefined),
+  activateReliabilityRuntime: commandRuntimeMocks.activateReliabilityRuntime,
+  applyReliabilityProjectionCheckpoints:
+    commandRuntimeMocks.applyReliabilityProjectionCheckpoints,
+  closeReliabilityScope: commandRuntimeMocks.closeReliabilityScope,
+  draftsRequiringRestoreDecision:
+    commandRuntimeMocks.draftsRequiringRestoreDecision,
   getDraftRestorationPort: vi.fn(() => ({ list: vi.fn(async () => []) })),
-  listReliabilityCommands: vi.fn(async () => []),
-  nextReliabilityRetryDelay: vi.fn(() => null),
-  openReliabilityAdmission: vi.fn(async () => undefined),
-  readReliabilityRuntimeStatus: vi.fn(async () => ({
-    active: false,
-    runtimeGeneration: 0,
-    admissionOpen: false,
-    pendingCommands: 0,
-    unknownCommands: 0,
-    draftCount: 0,
-    archivedLegacyFiles: 0,
-    commandCapacity: {
-      recordCount: 0,
-      recordLimit: 512,
-      byteUsage: 0,
-      byteLimit: 16_777_216,
-      exhaustionCauses: [],
-    },
-  })),
-  reconcileReliableFriendRequests: vi.fn(async () => undefined),
+  listReliabilityCommands: commandRuntimeMocks.listReliabilityCommands,
+  nextReliabilityRetryDelay: commandRuntimeMocks.nextReliabilityRetryDelay,
+  openReliabilityAdmission: commandRuntimeMocks.openReliabilityAdmission,
+  readReliabilityRuntimeStatus:
+    commandRuntimeMocks.readReliabilityRuntimeStatus,
+  reconcileReliableFriendRequests:
+    commandRuntimeMocks.reconcileReliableFriendRequests,
+  reconcileReliableSocialRelationships:
+    commandRuntimeMocks.reconcileReliableSocialRelationships,
   reliabilityCommandRecoveryActions: vi.fn(() => []),
-  registerReliabilityReconciliationWake: vi.fn(() => () => undefined),
-  rebindReliabilityGeneration: vi.fn(async () => undefined),
-  suspendReliabilityRuntime: vi.fn(async () => undefined),
+  registerReliabilityReconciliationWake:
+    commandRuntimeMocks.registerReliabilityReconciliationWake,
+  suspendReliabilityRuntime: commandRuntimeMocks.suspendReliabilityRuntime,
 }));
 
 import { ACCESS_DECISION_GRANTED } from '../features/auth/authSession';
@@ -212,6 +233,9 @@ describe('mobile runtime registry', () => {
     const station = descriptors.find(
       (descriptor) => descriptor.id === 'station',
     );
+    const xConfig = descriptors.find(
+      (descriptor) => descriptor.id === 'x-config',
+    );
     const auth = descriptors.find((descriptor) => descriptor.id === 'auth');
     const access = descriptors.find((descriptor) => descriptor.id === 'access');
     const session = descriptors.find((descriptor) => descriptor.id === 'session');
@@ -235,10 +259,16 @@ describe('mobile runtime registry', () => {
       'app-scoped device preference',
     );
     expect(station?.responsibility).toContain('serialized device-local Station registry');
+    expect(xConfig?.dependsOn).toEqual(['secure-storage']);
+    expect(xConfig?.responsibility).toContain('without mutating verified Station state');
     expect(auth?.dependsOn).toContain('station');
     expect(access?.dependsOn).toEqual(['station', 'auth']);
     expect(session?.dependsOn).toEqual(['station', 'auth', 'access']);
-    expect(privateSocial?.dependsOn).toEqual(['session', 'secure-storage']);
+    expect(privateSocial?.dependsOn).toEqual([
+      'session',
+      'secure-storage',
+      'messaging',
+    ]);
     expect(privateSocial?.responsibility).toContain(
       'Native private Social durability',
     );
@@ -316,6 +346,99 @@ describe('mobile runtime registry', () => {
     expect(registrySource).toMatch(
       /reliabilityCommandRecoveryActions\(command\)\.length > 0/,
     );
+  });
+
+  it('reactivates a missing reliability scope during command resume', async () => {
+    vi.stubGlobal('window', {
+      clearTimeout: vi.fn(),
+      dispatchEvent: vi.fn(),
+      setTimeout: vi.fn(),
+    });
+    vi.stubGlobal('CustomEvent', class {
+      constructor(
+        readonly type: string,
+        readonly init: unknown,
+      ) {}
+    });
+    const inactive = reliabilityStatus(false);
+    const active = reliabilityStatus(true);
+    commandRuntimeMocks.readReliabilityRuntimeStatus
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce(active)
+      .mockResolvedValueOnce(active)
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce(active)
+      .mockResolvedValueOnce(active);
+    commandRuntimeMocks.activateReliabilityRuntime.mockResolvedValue(active);
+    useAuthStore.setState({
+      session: mobileSession('ptid:alice', 'session-alice'),
+      accessDecision: grantedDecision(),
+    });
+    const command = createMobileRuntimeDescriptors().find(
+      (descriptor) => descriptor.id === 'command',
+    );
+    expect(command).toBeDefined();
+
+    await command!.bootstrap(runtimeContext());
+    await command!.suspend();
+    await command!.resume(runtimeContext());
+
+    expect(
+      commandRuntimeMocks.activateReliabilityRuntime,
+    ).toHaveBeenCalledTimes(2);
+    expect(
+      commandRuntimeMocks.suspendReliabilityRuntime,
+    ).toHaveBeenCalledOnce();
+    expect(
+      commandRuntimeMocks.openReliabilityAdmission,
+    ).toHaveBeenCalledTimes(2);
+
+    await command!.teardown({ reason: 'app-unmount' });
+  });
+
+  it('closes the retained command scope when resume has no session', async () => {
+    vi.stubGlobal('window', {
+      clearTimeout: vi.fn(),
+      dispatchEvent: vi.fn(),
+      setTimeout: vi.fn(),
+    });
+    vi.stubGlobal('CustomEvent', class {
+      constructor(
+        readonly type: string,
+        readonly init: unknown,
+      ) {}
+    });
+    const inactive = reliabilityStatus(false);
+    const active = reliabilityStatus(true);
+    commandRuntimeMocks.readReliabilityRuntimeStatus
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce(active)
+      .mockResolvedValueOnce(active)
+      .mockResolvedValueOnce(active)
+      .mockResolvedValueOnce(inactive);
+    commandRuntimeMocks.activateReliabilityRuntime.mockResolvedValue(active);
+    useAuthStore.setState({
+      session: mobileSession('ptid:alice', 'session-alice'),
+      accessDecision: grantedDecision(),
+    });
+    const command = createMobileRuntimeDescriptors().find(
+      (descriptor) => descriptor.id === 'command',
+    );
+    expect(command).toBeDefined();
+
+    await command!.bootstrap(runtimeContext());
+    await command!.suspend();
+    useAuthStore.setState({
+      session: null,
+      accessDecision: null,
+    });
+    await command!.resume(runtimeContext());
+
+    expect(
+      commandRuntimeMocks.closeReliabilityScope,
+    ).toHaveBeenCalledExactlyOnceWith('retain');
+
+    await command!.teardown({ reason: 'app-unmount' });
   });
 
   it('projects interrupted reliability reset before any scope can reopen', () => {
@@ -426,5 +549,26 @@ function admissionLifecycle(failedRuntimeId?: string) {
       status: id === failedRuntimeId ? 'failed' : 'ready',
       errorKey: id === failedRuntimeId ? 'mobile.lifecycle.runtimeFailed' : null,
     })),
+  };
+}
+
+function reliabilityStatus(active: boolean) {
+  return {
+    active,
+    stationPeerId: active ? 'station-primary' : undefined,
+    actorPtid: active ? 'ptid:alice' : undefined,
+    runtimeGeneration: active ? 1 : 0,
+    admissionOpen: active,
+    pendingCommands: 0,
+    unknownCommands: 0,
+    draftCount: 0,
+    archivedLegacyFiles: 0,
+    commandCapacity: {
+      recordCount: 0,
+      recordLimit: 512,
+      byteUsage: 0,
+      byteLimit: 16_777_216,
+      exhaustionCauses: [],
+    },
   };
 }

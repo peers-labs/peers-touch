@@ -275,6 +275,68 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
             upstream.close()
             upstream_thread.join(timeout=2)
 
+    def test_direct_route_fault_proxy_can_drop_exactly_one_connection(
+        self,
+    ) -> None:
+        upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        upstream.bind(("127.0.0.1", 0))
+        upstream.listen()
+        upstream.settimeout(0.2)
+        stop = threading.Event()
+
+        def echo() -> None:
+            while not stop.is_set():
+                try:
+                    connection, _ = upstream.accept()
+                except TimeoutError:
+                    continue
+                except OSError:
+                    return
+                with connection:
+                    payload = connection.recv(4096)
+                    if payload:
+                        connection.sendall(payload)
+
+        upstream_thread = threading.Thread(target=echo, daemon=True)
+        upstream_thread.start()
+        host, port = upstream.getsockname()
+        peer_id = "12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL"
+        proxy = DirectRouteFaultProxy(
+            f"/ip4/{host}/tcp/{port}/p2p/{peer_id}"
+        )
+        proxy.start()
+        try:
+            proxy.arm_once()
+            dropped = socket.create_connection(
+                ("127.0.0.1", proxy.port),
+                timeout=2,
+            )
+            dropped.sendall(b"drop-once")
+            try:
+                dropped_payload = dropped.recv(64)
+            except OSError:
+                dropped_payload = b""
+            self.assertEqual(dropped_payload, b"")
+            dropped.close()
+
+            forwarded = socket.create_connection(
+                ("127.0.0.1", proxy.port),
+                timeout=2,
+            )
+            forwarded.sendall(b"forward-after")
+            self.assertEqual(forwarded.recv(64), b"forward-after")
+            forwarded.close()
+
+            evidence = proxy.evidence()
+            self.assertEqual(evidence["failureCount"], 1)
+            self.assertEqual(evidence["dropRemaining"], 0)
+            self.assertGreaterEqual(evidence["forwardedConnections"], 1)
+        finally:
+            proxy.stop()
+            stop.set()
+            upstream.close()
+            upstream_thread.join(timeout=2)
+
     def test_validator_requires_routes_read_and_exact_attachment(self) -> None:
         report = {
             "manifest": {

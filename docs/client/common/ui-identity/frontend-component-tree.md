@@ -262,8 +262,10 @@ Rules:
 
 - The settings page may be alive, but individual provider editors must be lazy sections.
 - Selecting a provider mounts only that provider's configuration schema.
-- CLI providers must have dedicated configuration sections for command, binary path, working directory, environment, model, arguments, timeout, and capability flags when those properties exist.
+- CLI providers must have dedicated configuration sections for registered adapter identity, environment, model, arguments, timeout, and capability flags when those properties exist. Adapter command, executable path, and workspace policy are runtime-owned projections: clients may show them read-only but must not accept arbitrary executable paths or shell templates.
 - Non-CLI providers must not inherit CLI-only fields through a generic all-provider form.
+- Provider and model enabled state has one owner. Settings editors and every model consumer must subscribe to that projection; hidden or stale parallel catalogs are forbidden.
+- A dedicated Models section may own default-model selection, but must not duplicate the Provider-owned catalog tree.
 - Expensive validation, model discovery, or capability probing must run on explicit intent or background runtime projection, not on every settings mount.
 - Switching providers must preserve unsaved draft only for the selected provider or an explicit draft cache, not by keeping every provider form mounted.
 

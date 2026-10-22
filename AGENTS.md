@@ -3,14 +3,15 @@
 > Single authoritative source for all AI coding agents.
 > `docs/.agent/<platform>.md` is the agent entry layer: use it to find the real source documents, hard constraints, and verification commands.
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-10-20
 
 ---
 
 ## 1. Project Identity
 
 **Peers-Touch** — decentralized, federated social network framework.
-Three-tier architecture: **Client → Model → Station**.
+Runtime topology: **Client ↔ Station**. `model/domain/` is the shared protocol
+substrate consumed by both sides, not a runtime tier or request hop.
 
 | App | Path | Stack |
 |-----|------|-------|
@@ -28,10 +29,10 @@ peers-touch/
 │   ├── desktop/           # Tauri + React/TS + Rust
 │   ├── mobile/
 │   │   ├── src/           # mobile-web UI
-│   │   ├── src-tauri/     # mobile-rust capability kernel
-│   │   ├── src-tauri/gen/ # Tauri generated Android/iOS projects
-│   │   ├── android/       # legacy/native plugin source during migration
-│   │   ├── ios/           # legacy/native plugin source during migration
+│   │   └── src-tauri/
+│   │       ├── src/       # shared Mobile Rust runtime
+│   │       ├── plugins/   # typed Android/iOS capability adapters
+│   │       └── gen/       # Tauri Android/iOS release hosts
 │   ├── station/
 │   │   ├── app/           # Business logic + subservers (DDD)
 │   │   └── frame/         # Core framework
@@ -61,7 +62,7 @@ When reading or updating docs, follow the constraint direction below:
 
 1. **Architecture-layer source**
    - Defines allowed system relationships, boundaries, ownership, and source-of-truth decisions.
-   - Examples: `docs/architecture/`, `docs/global/architecture.md`
+   - Examples: `docs/architecture/`, `docs/architecture/architecture.md`
 2. **Platform-layer source**
    - Defines how a specific platform implements those architecture decisions.
    - Examples: `docs/client/desktop/`, `docs/client/mobile/`, `docs/station/`
@@ -166,11 +167,18 @@ Example:
 ### Proto-First
 
 - **ALL** data models defined in `model/domain/*.proto` first. Manual models are forbidden.
-- Never edit generated files (`.pb.go`, `.pb.dart`, prost `.rs`).
-- Inter-app communication: **protobuf only**. JSON forbidden unless interfacing external systems.
+- **Proto-first is contract authoring order, not runtime or visual hierarchy.**
+  Architecture diagrams must not place Model above Client or Station, or
+  between them as a live request hop. Contract generation belongs in a separate
+  build/data-flow diagram.
+- Never edit generated files (`.pb.go`, `_pb.ts`, prost `.rs`).
+- Shared business contracts are **protobuf-first**. Framework serialization
+  edges such as typed Tauri IPC may use JSON envelopes, but JSON must not
+  become a parallel domain contract; external systems follow their own
+  boundary adapters.
 - Proto generation must follow the active platform path:
   - Shared / server-side generation: `./model/build.sh`
-  - Mobile generation: `./tooling/scripts/proto-gen-mobile.sh`
+  - Mobile generation: `./tooling/scripts/proto-gen-mobile.sh web`
 - Do not introduce or expand deprecated Flutter/Dart generation paths.
 
 ### No Debug Statements
@@ -417,7 +425,7 @@ Error code ranges: `10000s` (business), `20000s` (protocol), `30000s` (content).
 | Station | `cd apps/station && gofmt -l . && go test ./...` |
 | Go Style | `./tooling/scripts/check-go-style.sh` |
 | Mobile | `pnpm mobile:check` (target script during Tauri Mobile migration; use `docs/.agent/mobile.md` for current fallback checks) |
-| Proto | `./model/build.sh`, `./tooling/scripts/proto-gen-mobile.sh` |
+| Proto | `./model/build.sh`, `./tooling/scripts/proto-gen-mobile.sh web` |
 
 **Completion criteria**: Implementation complete + focused source checks +
 required exact-source Journeys at `FUNCTIONAL_PASS` + required formal
@@ -709,7 +717,7 @@ When the user invokes `pt-god-view` for status or resume:
 │  Proto source     →  model/domain/<domain>/<name>.proto      │
 │  Docs entry       →  docs/README.md                          │
 │  Proto build      →  ./model/build.sh                        │
-│  Mobile proto     →  ./tooling/scripts/proto-gen-mobile.sh   │
+│  Mobile proto     →  tooling/scripts/proto-gen-mobile.sh web │
 │  Desktop check    →  cd apps/desktop && pnpm run check       │
 │  Station test     →  cd apps/station && go test ./...        │
 ├──────────────────────────────────────────────────────────────┤

@@ -86,12 +86,14 @@ message InstallSkillResponse {
 }
 
 message UpdateSkillRequest {
+  reserved 6;
+  reserved "enabled";
+
   string agent_id = 1;
   string skill_id = 2;
   optional string name = 3;
   optional string description = 4;
   optional string content = 5;
-  optional bool enabled = 6;
 }
 
 message UpdateSkillResponse {

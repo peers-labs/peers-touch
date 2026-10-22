@@ -109,7 +109,7 @@ beforeEach(() => {
   commandMocks.teardown.mockResolvedValue({
     active: false,
     activationGeneration: 0,
-    workerMode: 'on_demand',
+    reconciliationMode: 'on_demand',
   });
   commandMocks.prepareText.mockImplementation(async (intent) => (
     projection(intent.draftId, intent.draftRevision, 'READY_PRIVATE')
@@ -185,7 +185,7 @@ function activeStatus(activationGeneration: number) {
     actorPtid: 'ptid:alice',
     deviceId: 'device-1',
     activationGeneration,
-    workerMode: 'on_demand' as const,
+    reconciliationMode: 'on_demand' as const,
   };
 }
 
@@ -815,9 +815,7 @@ describe('privateMomentsRuntime projection', () => {
   });
 
   it('publishes activation failure through lifecycle readiness', async () => {
-    const activationError = new Error(
-      'private Social first-use trust requires HTTPS',
-    );
+    const activationError = new Error('private Social activation failed');
     const fail = vi.fn();
     const ready = vi.fn();
     commandMocks.activate.mockRejectedValue(activationError);
@@ -839,13 +837,13 @@ describe('privateMomentsRuntime projection', () => {
         ready,
         fail,
       }),
-    })).rejects.toThrow('private Social first-use trust requires HTTPS');
+    })).rejects.toThrow('private Social activation failed');
 
     expect(fail).toHaveBeenCalledWith(activationError);
     expect(ready).not.toHaveBeenCalled();
     expect(readPrivateMomentsSnapshot()).toEqual(expect.objectContaining({
       active: false,
-      errorMessage: 'private Social first-use trust requires HTTPS',
+      errorMessage: 'private Social activation failed',
     }));
   });
 

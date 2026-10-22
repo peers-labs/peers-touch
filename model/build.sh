@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Proto code generation — Go (Station) and TypeScript (desktop).
 # Dart/Flutter generation has been removed (deprecated path).
-# Mobile (Kotlin/Swift) generation: use tooling/scripts/proto-gen-mobile.sh
+# Shared Mobile TypeScript generation: use tooling/scripts/proto-gen-mobile.sh web
 # Desktop Rust generation: handled separately by tauri build pipeline.
 
 PROJECT_ROOT=$(cd "$(dirname "$0")/.."; pwd)
@@ -11,6 +11,17 @@ PROTO_ROOT="$PROJECT_ROOT/model"
 GO_OUT="$PROJECT_ROOT/apps/station"
 TS_OUT="$PROJECT_ROOT/apps/desktop/src/gen/proto"
 PROTOC_GEN_ES="$PROJECT_ROOT/apps/desktop/node_modules/.bin/protoc-gen-es"
+
+GENERATE_GO=true
+case "${1:-}" in
+    "") ;;
+    --typescript-only) GENERATE_GO=false ;;
+    *) echo "Usage: $0 [--typescript-only]" >&2; exit 2 ;;
+esac
+if [ "$#" -gt 1 ]; then
+    echo "Usage: $0 [--typescript-only]" >&2
+    exit 2
+fi
 
 echo "=== Peers Touch Proto Generation ==="
 echo "Project Root: $PROJECT_ROOT"
@@ -35,6 +46,7 @@ PROTO_COUNT=$(echo "$GO_PROTO_FILES" | wc -l | tr -d ' ')
 echo "Found $PROTO_COUNT proto files"
 echo ""
 
+if [ "$GENERATE_GO" = true ]; then
 echo "Running protoc for Go..."
 GOBIN=""
 if command -v go &>/dev/null; then
@@ -47,6 +59,7 @@ if [ -n "$GOBIN" ] && [ -x "$GOBIN/protoc-gen-go" ]; then
 fi
 STATION_MODULE_PREFIX="github.com/peers-labs/peers-touch/station/"
 APPLET_SERVICE_MODULE_PREFIX="github.com/peers-labs/peers-touch/apps/applets/"
+OAUTH_CLIENT_MODULE_PREFIX="github.com/peers-labs/peers-touch/oauth2-client/"
 
 for file in $GO_PROTO_FILES; do
     GO_PACKAGE_LINE=$(grep 'option[[:space:]]\+go_package' "$file" || true)
@@ -62,6 +75,14 @@ for file in $GO_PROTO_FILES; do
             FILE_NAME=$(basename "$file")
             GO_FILE_NAME="${FILE_NAME%.proto}.pb.go"
             FULL_GO_PATH="$GO_OUT/$REL_GO_DIR/$GO_FILE_NAME"
+            echo "  Generating $file -> $FULL_GO_PATH"
+        elif [[ "$GO_PACKAGE" == "$OAUTH_CLIENT_MODULE_PREFIX"* ]]; then
+            GO_MODULE="github.com/peers-labs/peers-touch/oauth2-client"
+            GO_PROTO_OUT="$PROJECT_ROOT/apps/oauth2-client"
+            REL_GO_DIR="${GO_PACKAGE#$OAUTH_CLIENT_MODULE_PREFIX}"
+            FILE_NAME=$(basename "$file")
+            GO_FILE_NAME="${FILE_NAME%.proto}.pb.go"
+            FULL_GO_PATH="$GO_PROTO_OUT/$REL_GO_DIR/$GO_FILE_NAME"
             echo "  Generating $file -> $FULL_GO_PATH"
         elif [[ "$GO_PACKAGE" =~ ^github.com/peers-labs/peers-touch/apps/applets/([^/]+)/service(/.*)?$ ]]; then
             APPLET_SERVICE="${BASH_REMATCH[1]}"
@@ -82,6 +103,7 @@ for file in $GO_PROTO_FILES; do
     mkdir -p "$GO_PROTO_OUT"
     protoc $PROTOC_GEN_GO --go_out="$GO_PROTO_OUT" --go_opt=module="$GO_MODULE" -I"$PROTO_ROOT" "$file"
 done
+fi
 
 echo ""
 echo "Running protoc for TypeScript (desktop)..."
@@ -146,4 +168,4 @@ find "$TS_OUT" -type f -name '*_pb.ts' -print0 |
     done
 
 echo ""
-echo "=== Proto generation complete (Go + TS) ==="
+echo "=== Proto generation complete ==="

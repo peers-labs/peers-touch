@@ -1,10 +1,11 @@
 pub mod adapter;
 #[cfg(feature = "acceptance-webdriver")]
 pub mod barrier;
+pub mod object_runtime;
+pub mod prekey_runtime;
 pub mod recovery;
 pub mod station_trust;
 pub mod store;
-pub mod worker;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -13,6 +14,9 @@ use std::time::Duration;
 
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use secure_content_core::object::ObjectTransferControl;
+use secure_content_core::operation::{OperationErrorCode, OperationFailure};
+use secure_content_core::ports::{ContentKeyMaterial, LifecycleCancellation};
+use secure_content_core::recovery::RecoveryMaster;
 use tauri::Manager;
 use tokio_util::sync::CancellationToken;
 use ulid::Ulid;
@@ -309,6 +313,33 @@ pub struct SecureContentLease {
     pub renderer_generation: u64,
 }
 
+impl ContentKeyMaterial for SecureContentLease {
+    fn recovery_master(
+        &self,
+        actor_ptid: &str,
+        recovery_epoch: u64,
+    ) -> Result<Option<RecoveryMaster>, OperationFailure> {
+        self.store
+            .recovery_master(actor_ptid, recovery_epoch)
+            .map(|master| master.map(RecoveryMaster::from_bytes))
+            .map_err(|detail| {
+                OperationFailure::terminal(OperationErrorCode::StoreUnavailable, detail)
+            })
+    }
+
+    fn sign_device_payload(&self, payload: &[u8]) -> Result<Vec<u8>, OperationFailure> {
+        self.session.sign(payload).map_err(|detail| {
+            OperationFailure::terminal(OperationErrorCode::KeyMaterialUnavailable, detail)
+        })
+    }
+}
+
+impl LifecycleCancellation for SecureContentSession {
+    fn is_cancelled(&self) -> bool {
+        self.cancellation_requested.load(Ordering::Acquire)
+    }
+}
+
 struct ActiveRuntime {
     lease: SecureContentLease,
 }
@@ -474,7 +505,7 @@ impl SecureContentSupervisor {
                 .values()
                 .any(|runtime| runtime.lease.session.key.actor_ptid == session.key.actor_ptid);
             if !actor_has_runtime {
-                worker::clear_stale_plaintext_generations(&session.key.actor_ptid)?;
+                object_runtime::clear_stale_plaintext_generations(&session.key.actor_ptid)?;
             }
         }
         store.recover_orphaned_leases()?;
@@ -575,7 +606,7 @@ impl SecureContentSupervisor {
         path: &std::path::Path,
         media_type: &str,
     ) -> Result<String, String> {
-        let expected_root = std::fs::canonicalize(worker::secure_cache_dir(
+        let expected_root = std::fs::canonicalize(object_runtime::secure_cache_dir(
             &key.actor_ptid,
             key.session_generation,
         )?)
@@ -760,7 +791,7 @@ fn retire_runtime(
     let mut errors = Vec::new();
     runtime.lease.transfer_control.request_shutdown();
     runtime.lease.session.cancel_and_zeroize();
-    let cache_dir = worker::secure_cache_dir(
+    let cache_dir = object_runtime::secure_cache_dir(
         &runtime.lease.session.key.actor_ptid,
         runtime.lease.session.key.session_generation,
     );
@@ -999,7 +1030,7 @@ mod tests {
                 Arc::new(SecureContentStore::in_memory().unwrap()),
             )
             .unwrap();
-        let path = worker::secure_cache_dir(
+        let path = object_runtime::secure_cache_dir(
             &alice.session.key.actor_ptid,
             alice.session.key.session_generation,
         )
@@ -1023,7 +1054,7 @@ mod tests {
             .read_private_media("bob-window", grant_id)
             .is_err());
 
-        let video_path = worker::secure_cache_dir(
+        let video_path = object_runtime::secure_cache_dir(
             &alice.session.key.actor_ptid,
             alice.session.key.session_generation,
         )
@@ -1137,9 +1168,12 @@ mod tests {
                     pool_epoch: 1,
                     request_sha256: Sha256::digest(&request_bytes).into(),
                     request_bytes,
-                    state: store::PublicationState::PendingPublication,
+                    state: secure_content_core::operation::OperationState::Pending,
                     lease_generation: 0,
                     session_generation: 0,
+                    attempt_count: 0,
+                    next_attempt_at_unix_ms: 0,
+                    updated_at_unix_ms: 1,
                 },
                 &[("key-1".to_string(), Some([7; 32]), [8; 32])],
             )
@@ -1155,7 +1189,10 @@ mod tests {
 
         let pending = store.publications_requiring_reconciliation().unwrap();
         assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].state, store::PublicationState::UnknownCommit);
+        assert_eq!(
+            pending[0].state,
+            secure_content_core::operation::OperationState::UnknownOutcome
+        );
         assert!(store.endpoint_prekey("key-1").unwrap().is_some());
     }
 }

@@ -138,6 +138,12 @@ class _FakeRuntime:
 
 
 class StationAccessAuthGateTest(unittest.TestCase):
+    def test_uses_current_evidence_store_run_for_all_artifacts(self) -> None:
+        gate = StationAccessAuthGate(runtime=_FakeRuntime())
+
+        self.assertIsNone(gate.report_path)
+        self.assertIsNone(gate.evidence_dir)
+
     def test_accepts_source_bound_native_scope(self) -> None:
         gate = StationAccessAuthGate(runtime=_FakeRuntime())
         result = gate.run()

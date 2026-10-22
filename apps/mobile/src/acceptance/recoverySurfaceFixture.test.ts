@@ -15,7 +15,7 @@ describe('Recovery surface fixture', () => {
   });
 
   it('accepts exactly the whole-product recovery inventory IDs', () => {
-    expect(RECOVERY_SURFACE_FIXTURE_IDS).toHaveLength(16);
+    expect(RECOVERY_SURFACE_FIXTURE_IDS).toHaveLength(13);
     expect(isRecoverySurfaceFixtureId('recovery.command')).toBe(true);
     expect(isRecoverySurfaceFixtureId('recovery.not-real')).toBe(false);
   });

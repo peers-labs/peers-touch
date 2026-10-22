@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { stationAvailabilityState } from './StationSelector';
+import {
+  stationAvailabilityState,
+  visibleXConfigSuggestions,
+} from './StationSelector';
 
 const source = readFileSync(
   new URL('./StationSelector.tsx', import.meta.url),
@@ -65,12 +68,18 @@ describe('StationSelector reachability states', () => {
     )).toBe('offline');
   });
 
+  it('keeps raw Station authority out of the saved Station row', () => {
+    expect(source).not.toContain(
+      '<Text type="secondary" className="mobile-truncate">{entry.url}</Text>',
+    );
+  });
+
   it('requires a current identity check before enabling Continue', () => {
     expect(appSource).toContain(
-      'identity = await verifyStationEntry(selectedStation)',
+      'identity = await verifyStationEntryRuntime(selectedStation)',
     );
     expect(appSource).toContain(
-      'return verifyBoundStationRoute({',
+      'verifyBoundStationRoute({',
     );
     expect(appSource).toContain(
       'requireMatchingStationIdentity(selectedStation, identity.stationPeerId)',
@@ -85,10 +94,70 @@ describe('StationSelector reachability states', () => {
   });
 });
 
+describe('StationSelector X Config suggestions', () => {
+  it('renders suggestions as a separate non-authoritative state', () => {
+    expect(source).toContain('data-x-config-seed-id');
+    expect(source).toContain('common.stationPicker.suggestions');
+    expect(source).toContain('common.stationPicker.suggestionStale');
+    expect(source).toContain('disabled={!suggestion.actionable || selecting}');
+  });
+
+  it('removes a suggestion only when a verified route owns the same origin', () => {
+    const entries = [{
+      stationPeerId: 'station-a',
+      url: 'https://station.example',
+      label: 'Station A',
+      createdAt: 1,
+      lastUsedAt: 1,
+      routes: [{
+        nodePeerId: 'node-a',
+        nodeAuthorizationDigest: [],
+        authorizationEpoch: 1,
+        routeId: 'direct-a',
+        routeType: 'direct' as const,
+        transport: 'libp2p_http_v1' as const,
+        endpointOrigin: 'https://station.example',
+        routeGeneration: 1,
+        addresses: [],
+        sourceRef: 'source-a',
+        lastVerifiedAt: 1,
+        health: 'available' as const,
+      }],
+    }];
+    const suggestions = [
+      {
+        seedId: 'station-public',
+        kind: 'direct_station' as const,
+        displayName: 'Public Station',
+        canonicalOrigin: 'https://station.example',
+        regions: ['global'],
+        freshness: 'current' as const,
+        actionable: true,
+        sourceSequence: 1,
+      },
+      {
+        seedId: 'relay-public',
+        kind: 'relay' as const,
+        displayName: 'Public Relay',
+        canonicalOrigin: 'https://relay.example',
+        regions: ['global'],
+        freshness: 'current' as const,
+        actionable: true,
+        sourceSequence: 1,
+      },
+    ];
+
+    expect(visibleXConfigSuggestions(entries, suggestions).map((item) => item.seedId))
+      .toEqual(['relay-public']);
+  });
+});
+
 describe('StationSelector layout contract', () => {
   it('uses one URL field with an HTTP placeholder instead of a protocol picker', () => {
     expect(source).toContain("surfaceFixture === 'address'");
     expect(source).toContain("'http://station.local:18280'");
+    expect(source).toContain("surfaceFixture === 'address'");
+    expect(source).toContain("buildStationUrl(stationUrl)?.startsWith('http://')");
     expect(source).toContain('className="station-field-helper warning"');
     expect(source).toContain('className="station-submit"');
     expect(source).not.toContain('<select');
@@ -96,7 +165,12 @@ describe('StationSelector layout contract', () => {
   });
 
   it('anchors the surface and preserves a useful one-line address field', () => {
-    expect(styles).toMatch(/\.launch-content\s*\{[^}]*flex:\s*1;/s);
+    expect(styles).toMatch(
+      /\.launch-content\s*\{[^}]*flex:\s*1;[^}]*justify-content:\s*flex-end;/s,
+    );
+    expect(styles).toMatch(
+      /\.launch-content\s*\{[^}]*padding:\s*24px 22px calc\(var\(--safe-area-bottom\) \+ 12px\);/s,
+    );
     expect(styles).toMatch(/\.launch-panel\s*\{[^}]*flex:\s*0 0 auto;/s);
     expect(styles).toMatch(
       /\.station-address-input\s*\{[^}]*height:\s*44px;[^}]*font-size:\s*16px;/s,

@@ -33,6 +33,7 @@
 | LDCP-D19 | Retire the Peers Dev browser service and keep Workflow Snapshot read-only | accepted |
 | LDCP-D20 | Unregister environments only through coordinated Development close | superseded by DWF-D46 |
 | LDCP-D21 | Let reviewed Profiles authorize development operations and protect only the stable suffix | accepted |
+| LDCP-D22 | Use one Desktop install orchestrator with platform adapters | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -1014,3 +1015,64 @@ target identity, stable protection, source fencing, or resource exclusion.
   separately governed operations. Internal deployment transport ref updates
   are part of Profile-authorized source synchronization, not collaboration
   publication.
+
+## LDCP-D22: One Desktop Install Orchestrator With Platform Adapters
+
+**Status**: accepted
+**Date**: 2026-10-20
+
+### Context
+
+`make desktop-install` embedded macOS bundle resolution, codesign and atomic
+replacement directly in its orchestration. Linux therefore failed as an
+unsupported mode even though Tauri already defines an AppImage build target.
+Copying that orchestration into a Linux branch would create two dependency,
+source-identity, applet, build and rollback owners.
+
+### Decision
+
+- `installDesktop` is the sole orchestrator for dependency preparation,
+  generated sources, applet preparation, frozen source identity, Tauri build,
+  source recheck, platform installation and result projection.
+- A closed platform registry selects `darwin` or `linux`.
+- The macOS adapter owns only `.app` bundle selection, ad-hoc codesign,
+  signature verification and atomic application-directory replacement.
+- The Linux adapter owns only AppImage selection, user-scoped XDG paths,
+  launcher, icon, desktop entry, source receipt, protocol registration and
+  transactional file replacement.
+- Linux replacement stages and fsyncs every target in its destination
+  directory before rename. Verification failure restores all previous files
+  and the previous `peers-touch-dev` association.
+- A running old AppImage process continues from its old inode; no process kill
+  or in-place overwrite is part of install.
+- Missing Linux build prerequisites fail before build with exact
+  `pkg-config` module evidence and package hints. devctl never invokes a system
+  package manager, asks for root or falls back to an unbundled binary.
+- Windows remains a Native development runtime only; no persistent installer
+  is implied.
+
+### Rationale
+
+The invariant is lifecycle ownership, not common syntax. One orchestrator
+prevents dependency, source and build drift, while thin adapters preserve the
+platform-specific artifact and registration contracts.
+
+### Alternatives Considered
+
+- Add a Linux branch inside the macOS installer: rejected because the
+  orchestration remains platform-owned and accumulates split lifecycle logic.
+- Maintain separate macOS and Linux commands: rejected because preparation,
+  source fencing and result semantics would drift.
+- Install missing Linux packages automatically: rejected because package
+  mutation requires host ownership and root outside this command.
+- Reuse the release binary without AppImage packaging: rejected because it
+  bypasses runtime resources, desktop integration and package identity.
+
+### Consequences
+
+- `make desktop-install` is supported on macOS and Linux and fail-closed on
+  other platforms.
+- The Linux default is rootless and XDG-compliant.
+- Adapter unit tests prove path, dependency, inode and rollback semantics;
+  `desktop-linux-install-native-e2e` owns installed-process and deep-link
+  product evidence.

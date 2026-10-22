@@ -583,13 +583,18 @@ def provision_runtime_cell(
     cell_id: str,
     gate_id: str,
     gate_run: Any,
+    provisioner: Any = None,
+    artifact_kind: str = "acceptance-binary",
 ) -> tuple[Any, dict[str, Any], Path]:
     from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 
-    lifecycle = get_runtime_cell_lifecycle(cell_id)
+    lifecycle = get_runtime_cell_lifecycle(cell_id, provisioner=provisioner)
     acquired = False
     try:
-        manifest = lifecycle.ready(gate_id)
+        manifest = lifecycle.ready(
+            gate_id,
+            artifact_kind=artifact_kind,
+        )
         acquired = True
         payload = manifest.to_dict()
         manifest_ref = gate_run.write_json(
@@ -611,6 +616,30 @@ def provision_runtime_cell(
                     f"cleanup also failed: {cleanup_error}"
                 ) from error
         raise
+
+
+def runtime_cell_subprocess_environment(
+    manifest: dict[str, Any] | None,
+) -> dict[str, str]:
+    if manifest is None:
+        return {}
+    adapter = manifest.get("nativeAdapter")
+    if not isinstance(adapter, dict):
+        raise RuntimeError("runtime cell manifest has no native adapter")
+    input_mode = str(adapter.get("inputMode") or "").strip()
+    isolation_by_mode = {
+        "semantic-nonintrusive": "shared-user-session",
+        "exclusive-native-input": "isolated-gui-session",
+    }
+    isolation = isolation_by_mode.get(input_mode)
+    if isolation is None:
+        raise RuntimeError(
+            f"runtime cell manifest has invalid input mode {input_mode!r}"
+        )
+    return {
+        "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": input_mode,
+        "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": isolation,
+    }
 
 
 def provisioning_failure_result(
@@ -893,7 +922,7 @@ def is_supported_context_argv(argv: list[str]) -> bool:
 
 
 def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, Any]:
-    return {
+    gate = {
         "id": gate_id,
         **gate_launch_fields(gate_id, definition),
         "timeout_seconds": definition.get("timeout_seconds", 600),
@@ -904,6 +933,19 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
         "description": definition.get("description", ""),
         "required_by": ["manual"],
     }
+    artifact_kind = definition.get("runtimeCellArtifact")
+    if artifact_kind is not None:
+        if artifact_kind not in ("acceptance-binary", "installed-appimage"):
+            raise SystemExit(
+                f"{gate_id}: runtimeCellArtifact must be acceptance-binary "
+                "or installed-appimage"
+            )
+        if not gate["requiredRuntimeCells"]:
+            raise SystemExit(
+                f"{gate_id}: runtimeCellArtifact requires requiredRuntimeCells"
+            )
+        gate["runtimeCellArtifact"] = artifact_kind
+    return gate
 
 
 def gate_launch_display(gate: dict[str, Any]) -> str:
@@ -983,6 +1025,7 @@ def plan_gate_from_entry(entry: Any, definitions: dict[str, Any]) -> dict[str, A
         "command",
         "argv",
         "ephemeralCapabilities",
+        "runtimeCellArtifact",
     ):
         if field in entry and entry[field] != gate.get(field):
             raise SystemExit(
@@ -2348,6 +2391,11 @@ def main() -> int:
                                 cell_id=runtime_cell,
                                 gate_id=gate_id,
                                 gate_run=gate_run,
+                                provisioner=provisioner,
+                                artifact_kind=str(
+                                    gate.get("runtimeCellArtifact")
+                                    or "acceptance-binary"
+                                ),
                             )
                     except EvidenceError:
                         raise
@@ -2435,6 +2483,11 @@ def main() -> int:
                         gate_env["PT_ACCEPTANCE_RUNTIME_CELL_MANIFEST"] = str(
                             runtime_cell_manifest_path
                         )
+                    gate_env.update(
+                        runtime_cell_subprocess_environment(
+                            runtime_cell_manifest
+                        )
+                    )
                     try:
                         if "argv" in gate:
                             from tooling.acceptance.core import (

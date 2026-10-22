@@ -34,6 +34,13 @@ func redactDiagnosticText(value string) string {
 	return diagnosticWindowsPath.ReplaceAllString(redacted, diagnosticRedactedValue)
 }
 
+func redactDiagnosticToolResult(toolName string, value string) string {
+	if strings.TrimSpace(toolName) == "skill_view" {
+		return diagnosticRedactedValue
+	}
+	return redactDiagnosticText(value)
+}
+
 func redactDiagnosticValue(value interface{}) interface{} {
 	switch typed := value.(type) {
 	case map[string]interface{}:

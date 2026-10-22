@@ -16,6 +16,7 @@ export class ChatService {
       title: conversation.title,
       message_count: 0,
       model_override: conversation.model_name,
+      provider_override: conversation.provider_id,
       created_at: conversation.created_at,
       updated_at: conversation.updated_at,
       pinned: conversation.meta?.pinned === 'true',
@@ -26,8 +27,15 @@ export class ChatService {
   }
 
   async deleteSession(key: string): Promise<{ ok: boolean }> {
-    const conversation = await api.getAgentConversation(key);
-    return api.archiveAgentConversation(key, conversation.version, true);
+    return this.deleteSessions([key]);
+  }
+
+  async deleteSessions(keys: string[]): Promise<{ ok: boolean }> {
+    const conversations = await Promise.all(keys.map((key) => api.getAgentConversation(key)));
+    return api.deleteAgentConversations(conversations.map((conversation) => ({
+      conversation_id: conversation.conversation_id,
+      expected_version: conversation.version,
+    })));
   }
 
   async renameSession(key: string, title: string): Promise<{ ok: boolean; title: string }> {

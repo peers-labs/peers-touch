@@ -35,7 +35,7 @@
 关键入口：
 
 - `global/project-identity.md`
-- `global/architecture.md`
+- `architecture/architecture.md`
 - `global/domain-model.md`
 - `global/workflow.md`
 - `global/coding-guide/`
@@ -102,7 +102,7 @@ IDE / AI 工作材料。
 ### 看项目整体
 
 - `../README.md`
-- `../global/architecture.md`
+- `../architecture/architecture.md`
 
 ### 看 Desktop
 

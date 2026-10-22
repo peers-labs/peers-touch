@@ -66,7 +66,8 @@
         "apps/station/app/subserver/bot/application/registry/service.go",
         "apps/station/app/subserver/bot/infrastructure/publishing_manager.go",
         "packages/messaging-core/src/inbox/service_plaintext.rs",
-        "apps/desktop/src-tauri/src/messaging/service_plaintext.rs",
+        "apps/desktop/src-tauri/src/messaging/engine.rs",
+        "apps/desktop/src-tauri/src/messaging/store.rs",
         "apps/desktop/src/components/chat/message/serviceEventAggregation.ts",
         "apps/desktop/src/store/socialChat.conversationProjection.test.ts",
         "tooling/acceptance/gates/chat/message_publishing_contract_test.py"
@@ -198,11 +199,13 @@
         "tooling/acceptance/provisioners/native_tauri_current_profile.py",
         "tooling/acceptance/gates/chat/native_two_client_runner.py",
         "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py",
-        "apps/desktop/src-tauri/src/messaging/direct.rs",
-        "apps/desktop/src-tauri/src/messaging/drain.rs",
+        "packages/messaging-core/src/inbox/direct.rs",
+        "packages/messaging-core/src/inbox/drain.rs",
+        "packages/messaging-core/src/inbox/receipt.rs",
+        "packages/messaging-core/src/outbox/receipt.rs",
+        "packages/messaging-core/src/outbox/send.rs",
         "apps/desktop/src-tauri/src/messaging/engine.rs",
         "apps/desktop/src-tauri/src/messaging/store.rs",
-        "apps/desktop/src-tauri/src/messaging/receipt.rs",
         "apps/desktop/src/store/socialChat.ts",
         "apps/station/app/subserver/conversation/application/interaction/service.go",
         "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
@@ -312,6 +315,7 @@
         "chat-lifecycle-live-voice-e2e"
       ],
       "synthetic_paths": [
+        "apps/desktop/src-tauri/src/interface/tauri_commands/realtime.rs",
         "apps/desktop/src/modules/p2p/callP2p.ts",
         "apps/desktop/src/components/chat/CallSurface.tsx",
         "apps/desktop/src/acceptance/chat/harness.ts",
@@ -507,10 +511,10 @@
         "proven_scope": [
           "Only successful live runs with complete current source-bound reports prove W8 journeys",
         "CHAT-UR14 through CHAT-UR16 are proven only by a current-source two-Station Native run that observes lease-stable presence, explicit unknown fallback, fixed unread geometry, and stable message metadata geometry",
-          "Current-profile Native onboarding cold-restarts both actors and proves restorable no-PIN sessions reach the authenticated shell without credential or PIN UI",
-          "Current-profile Native onboarding proves local, federated-handle, and Station-scoped discovery, reject-and-retry relationship convergence, one Direct identity, and the first exact plaintext exchange",
-          "CHAT-UR08: Current-profile Native onboarding proves one selectable request-history row per counterparty PTID with current state and total attempt count",
-          "CHAT-UR09: Current-profile Native onboarding proves an authoritative Station-name summary plus expandable copyable raw identity details",
+          "Canonical-worktree Native onboarding cold-restarts both actors and proves restorable no-PIN sessions reach the authenticated shell without credential or PIN UI",
+          "Canonical-worktree Native onboarding proves All and Federation-scoped discovery, reject-and-retry relationship convergence, one Direct identity, and the first exact plaintext exchange",
+          "CHAT-UR08: Canonical-worktree Native onboarding proves one selectable request-history row per counterparty PTID with current state and total attempt count",
+          "CHAT-UR09: Canonical-worktree Native onboarding proves an authoritative Station-name summary plus expandable copyable raw identity details",
           "Current-source Native Direct sends keep the newest row clear of the composer and render seeded peer avatars from bundled image data",
           "Three source-bound Native clients distinguish same-name PTIDs by Federation and Home Station, render one avatar identity per PTID, converge on the UI-created MLS Group, and restore that Group after a member restart",
           "Unavailable-member Group preparation preserves the visible selection and exposes typed inline retry"
@@ -542,7 +546,8 @@
         "apps/station/app/subserver/conversation/application/command/service.go",
         "apps/station/app/subserver/conversation/application/interaction/service.go",
         "apps/station/app/subserver/conversation/interface/http/mapper.go",
-        "apps/desktop/src-tauri/src/messaging/public_event.rs",
+        "packages/messaging-core/src/inbox/public_event.rs",
+        "packages/messaging-core/src/outbox/interaction.rs",
         "apps/desktop/src/store/socialChat.ts",
         "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
       ],
@@ -661,6 +666,95 @@
           "Linux or Windows Desktop mixed-client cells without current source-bound evidence",
           "Android Mobile mixed-client cells without current source-bound evidence",
           "Physical-device behavior"
+        ]
+      }
+    },
+    {
+      "id": "chat-portable-messaging-core",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "unified-client-messaging-core",
+        "unified-client-messaging-runtime"
+      ],
+      "required_gates": [
+        "unified-client-messaging-core-contract",
+        "messaging-owner-hard-cut-zero",
+        "unified-client-messaging-e2e"
+      ],
+      "synthetic_paths": [
+        "packages/messaging-core/src/engine/mod.rs",
+        "packages/messaging-core/src/ports/mod.rs",
+        "packages/messaging-native-filesystem/**",
+        "apps/desktop/src-tauri/src/messaging/**",
+        "apps/mobile/src-tauri/src/messaging/**",
+        "docs/architecture/domains/chat/messaging/integration.md"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "MP-D16",
+          "messaging-core portable engine and port contracts",
+          "UCA-04 owner inventory",
+          "source-bound mixed native Messaging Suite"
+        ],
+        "surfaces": [
+          "messaging-store-v1 source contract",
+          "Desktop macOS native Messaging",
+          "Mobile iOS native Messaging",
+          "Mobile physical Android Messaging"
+        ],
+        "proven_by": [
+          "unified-client-messaging-core-contract",
+          "messaging-owner-hard-cut-zero"
+        ],
+        "proven_scope": [
+          "Host-neutral lifecycle fencing, single-write store policy, command outbox/reconciliation, recovery, receipt, attachment transfer and typed Host ports",
+          "Desktop and Mobile source consumers use the canonical core and shared native filesystem adapter"
+        ],
+        "unproven_scope": [
+          "Desktop, signed iOS and physical Android receiver-visible journeys"
+        ]
+      }
+    },
+    {
+      "id": "chat-shared-client-semantics",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "unified-client-shared-semantics"
+      ],
+      "required_gates": [
+        "unified-client-shared-semantics"
+      ],
+      "synthetic_paths": [
+        "packages/client-chat-core/**",
+        "packages/client-media-security/**",
+        "packages/client-storage/**",
+        "apps/desktop/src/components/chat/chatPresentationPolicy.ts",
+        "apps/mobile/src/pages/chat/chatPresentationPolicy.ts",
+        "tooling/acceptance/gates/unified_client/shared_semantics.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "CCR-D08",
+          "CCR-D09",
+          "CCR-D10",
+          "CCR-D13"
+        ],
+        "surfaces": [
+          "Desktop and Mobile renderer-neutral Chat, media, storage and codec source contracts"
+        ],
+        "proven_by": [
+          "unified-client-shared-semantics"
+        ],
+        "proven_scope": [
+          "One shared TypeScript owner per renderer-neutral semantic",
+          "Desktop and Mobile consume the same headless output",
+          "Desktop/Mobile Presentation Policy remains outside shared packages"
+        ],
+        "unproven_scope": [
+          "Physical Android, signed iOS and Desktop native runtime behavior",
+          "Visual parity, which is intentionally not required across Client Forms"
         ]
       }
     },

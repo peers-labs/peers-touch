@@ -1,0 +1,173 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "project.journey.cross-station",
+  "module": "project",
+  "viewpoint": "dynamic-flow",
+  "layout": "sequence",
+  "output": "journey-cross-station.svg",
+  "title": "跨 Station Durable 投递时序",
+  "canvas": {
+    "width": 1900,
+    "height": 1120
+  },
+  "edgeMeaning": "箭头表示一份 durable payload 的时间顺序",
+  "scene": {
+    "participants": [
+      {
+        "id": "client-a",
+        "title": "Client A",
+        "tone": "neutral"
+      },
+      {
+        "id": "frame-a",
+        "title": "Station A Frame",
+        "tone": "secondary"
+      },
+      {
+        "id": "app-a",
+        "title": "Station A App",
+        "tone": "primary"
+      },
+      {
+        "id": "store-a",
+        "title": "Store A",
+        "tone": "state"
+      },
+      {
+        "id": "frame-b",
+        "title": "Station B Frame",
+        "tone": "secondary"
+      },
+      {
+        "id": "app-b",
+        "title": "Station B App",
+        "tone": "primary"
+      },
+      {
+        "id": "store-b",
+        "title": "Store B",
+        "tone": "state"
+      },
+      {
+        "id": "client-b",
+        "title": "Client B Runtime",
+        "tone": "neutral"
+      },
+      {
+        "id": "receiver-ui",
+        "title": "Receiver UI",
+        "tone": "neutral"
+      }
+    ],
+    "messages": [
+      {
+        "from": "client-a",
+        "to": "frame-a",
+        "label": "submit payload",
+        "at": 1,
+        "style": "primary"
+      },
+      {
+        "from": "frame-a",
+        "to": "app-a",
+        "label": "authorize + dispatch",
+        "at": 2,
+        "style": "primary"
+      },
+      {
+        "from": "app-a",
+        "to": "store-a",
+        "label": "source commit",
+        "at": 3,
+        "style": "event"
+      },
+      {
+        "from": "store-a",
+        "to": "app-a",
+        "label": "delivery intent",
+        "at": 4,
+        "style": "return"
+      },
+      {
+        "from": "app-a",
+        "to": "frame-a",
+        "label": "signed delivery",
+        "at": 5,
+        "style": "secondary"
+      },
+      {
+        "from": "frame-a",
+        "to": "frame-b",
+        "label": "HTTP/2 or Circuit v2",
+        "at": 6,
+        "style": "secondary"
+      },
+      {
+        "from": "frame-b",
+        "to": "app-b",
+        "label": "verify + dispatch",
+        "at": 7,
+        "style": "primary"
+      },
+      {
+        "from": "app-b",
+        "to": "store-b",
+        "label": "dedupe + target commit",
+        "at": 8,
+        "style": "event"
+      },
+      {
+        "from": "store-b",
+        "to": "app-b",
+        "label": "committed",
+        "at": 9,
+        "style": "return"
+      },
+      {
+        "from": "app-b",
+        "to": "frame-b",
+        "label": "commit receipt",
+        "at": 10,
+        "style": "return"
+      },
+      {
+        "from": "frame-b",
+        "to": "frame-a",
+        "label": "signed receipt",
+        "at": 11,
+        "style": "return"
+      },
+      {
+        "from": "app-b",
+        "to": "frame-b",
+        "label": "durable event",
+        "at": 12,
+        "style": "event"
+      },
+      {
+        "from": "frame-b",
+        "to": "client-b",
+        "label": "SSE / recovery",
+        "at": 13,
+        "style": "event"
+      },
+      {
+        "from": "client-b",
+        "to": "receiver-ui",
+        "label": "receiver-visible result",
+        "at": 14,
+        "style": "primary"
+      }
+    ],
+    "fragments": [
+      {
+        "kind": "region",
+        "label": "DURABLE DELIVERY",
+        "startAt": 3,
+        "endAt": 14,
+        "tone": "primary"
+      }
+    ]
+  }
+}

@@ -25,6 +25,7 @@ import { isRecalledChatMessage } from '@peers-touch/client-chat-core';
 import { useMobileI18n } from '../../app/mobileI18n';
 import { BoundedList } from '../../components/BoundedList';
 import { MobileAvatar } from '../../components/MobileAvatar';
+import { actorDisplayName } from '../../features/social/socialProjection';
 import {
   CHAT_BACKGROUND_OPTIONS,
   type ChatBackgroundId,
@@ -909,11 +910,9 @@ function groupMemberDisplayName(
   profile: PeerProfile | null | undefined,
   t: (key: string) => string,
 ): string {
-  return profile?.displayName
-    || profile?.username
-    || profile?.acct
-    || profile?.federatedHandle
-    || t('mobile.group.memberUnavailable');
+  return actorDisplayName(profile?.displayName, '')
+    || actorDisplayName(profile?.username, '')
+    || t('mobile.contacts.unknownUser');
 }
 
 function GroupCommandNotice({

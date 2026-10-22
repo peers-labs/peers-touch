@@ -13,7 +13,7 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Mapping, Protocol, Sequence, cast
 from urllib.parse import urlsplit
 
@@ -101,6 +101,11 @@ class RemoteNativeRuntimeCellLifecycle(RuntimeCellLifecycle, Protocol):
     ) -> str:
         ...
 
+    def import_actor_storage_file(
+        self, actor: str, source: Path, relative_path: str, sha256: str,
+    ) -> None:
+        ...
+
     def actor_file_sha256(
         self,
         actor: str,
@@ -128,10 +133,32 @@ class RemoteNativeRuntimeCellLifecycle(RuntimeCellLifecycle, Protocol):
 
 
 @dataclass(frozen=True)
+class NativeStorageFixture:
+    source: Path
+    relative_path: str
+    sha256: str
+
+    def validate(self) -> None:
+        relative = PurePosixPath(self.relative_path)
+        if (
+            not self.relative_path
+            or relative.is_absolute()
+            or "\\" in self.relative_path
+            or any(part in {"", ".", ".."} for part in self.relative_path.split("/"))
+        ):
+            raise DriverError("Native storage fixture path is invalid")
+        if self.source.is_symlink() or not self.source.is_file():
+            raise DriverError("Native storage fixture source is invalid")
+        if _file_sha256(self.source) != self.sha256:
+            raise DriverError("Native storage fixture source digest mismatch")
+
+
+@dataclass(frozen=True)
 class NativeLaunchOptions:
     window_slot: int = 0
     window_count: int = 1
     restore_session: bool = False
+    storage_fixtures: tuple[NativeStorageFixture, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -243,6 +270,15 @@ class NativeDesktopRuntimeBinding(ABC):
             raise DriverError(
                 f"bound service {station_service_id!r} has no endpoint"
             )
+        overrides = [
+            value for value in self._transport_overrides.values()
+            if value.client_id == client_id and value.binding_role == "station"
+            and value.service_id == station_service_id
+        ]
+        if len(overrides) > 1:
+            raise DriverError("Native launch has multiple Station transport overrides")
+        if overrides:
+            station_url = overrides[0].endpoint
 
         environment = {
             "PT_ACCEPTANCE_WINDOW_SLOT": str(options.window_slot),
@@ -287,6 +323,15 @@ class NativeDesktopRuntimeBinding(ABC):
                 staged_path
             )
 
+        if options.restore_session and options.storage_fixtures:
+            raise DriverError("Native restore cannot import storage fixtures")
+        destinations = [fixture.relative_path for fixture in options.storage_fixtures]
+        if len(set(destinations)) != len(destinations):
+            raise DriverError("Native storage fixture destinations are duplicated")
+        for fixture in options.storage_fixtures:
+            fixture.validate()
+        for fixture in options.storage_fixtures:
+            self._import_storage_fixture(client_id, client_spec, fixture)
         session = self._create_session(
             client_id,
             client_spec,
@@ -461,6 +506,16 @@ class NativeDesktopRuntimeBinding(ABC):
             endpoint_lease_id=endpoint_lease_id,
         )
         return TransportOverrideHandle(token)
+
+    def transport_override_endpoint(
+        self,
+        client_id: str,
+        binding_role: str,
+        handle: TransportOverrideHandle,
+    ) -> str:
+        return self._require_transport_override(
+            client_id, binding_role, handle,
+        ).endpoint
 
     def apply_transport_override(
         self,
@@ -776,6 +831,15 @@ class NativeDesktopRuntimeBinding(ABC):
         )
         expected_url = str(service.get("endpoint") or "").rstrip("/")
         expected_peer_id = str(service.get("runtimeIdentity") or "").strip()
+        overrides = [
+            value for value in self._transport_overrides.values()
+            if value.client_id == client_id and value.binding_role == binding_role
+            and value.service_id == service_id
+        ]
+        if len(overrides) > 1:
+            raise DriverError("Native observation has multiple transport overrides")
+        if overrides:
+            expected_url = overrides[0].endpoint
         deadline = time.monotonic() + 30
         latest: Any = None
         while time.monotonic() < deadline:
@@ -874,6 +938,25 @@ class NativeDesktopRuntimeBinding(ABC):
     @abstractmethod
     def native_adapter(self) -> NativeDesktopAdapter:
         ...
+
+    def _import_storage_fixture(
+        self,
+        client_id: str,
+        client_spec: Mapping[str, Any],
+        fixture: NativeStorageFixture,
+    ) -> None:
+        if client_id in self._sessions_by_client:
+            raise DriverError("Native storage import requires an unlaunched client")
+        root = Path(str(client_spec["storage_root"])).resolve()
+        destination = root / fixture.relative_path
+        if not destination.resolve().is_relative_to(root):
+            raise DriverError("Native storage fixture escapes client storage")
+        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with destination.open("xb") as stream:
+            stream.write(fixture.source.read_bytes())
+        destination.chmod(0o600)
+        if _file_sha256(destination) != fixture.sha256:
+            raise DriverError("Native storage import digest mismatch")
 
     @abstractmethod
     def _create_session(
@@ -1094,6 +1177,27 @@ class RemoteNativeDesktopAdapter(NativeDesktopAdapter):
             )
         )
 
+    def verify_focused_text(
+        self,
+        expected: str,
+        *,
+        timeout_seconds: float,
+    ) -> bool | None:
+        if self._platform != "linux":
+            return super().verify_focused_text(
+                expected,
+                timeout_seconds=timeout_seconds,
+            )
+        return bool(
+            self._execute(
+                "verify_focused_text",
+                {
+                    "expected": expected,
+                    "timeoutSeconds": timeout_seconds,
+                },
+            ).get("verified")
+        )
+
     @staticmethod
     def _control_snapshot(payload: dict[str, Any]) -> NativeControlSnapshot:
         return NativeControlSnapshot(
@@ -1279,6 +1383,17 @@ class RemoteNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
     @property
     def native_adapter(self) -> NativeDesktopAdapter:
         return self._native_adapter
+
+    def _import_storage_fixture(
+        self,
+        client_id: str,
+        client_spec: Mapping[str, Any],
+        fixture: NativeStorageFixture,
+    ) -> None:
+        del client_spec
+        self._cell.import_actor_storage_file(
+            client_id, fixture.source, fixture.relative_path, fixture.sha256,
+        )
 
     def _create_session(
         self,
@@ -1468,10 +1583,6 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         requested_input_mode = os.environ.get(
             "PT_ACCEPTANCE_DESKTOP_INPUT_MODE"
         )
-        if not requested_input_mode and not self._use_make:
-            requested_input_mode = (
-                NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value
-            )
         self._native_adapter = MacOSNativeDesktopAdapter(
             admit_local_native_input_mode(
                 requested_input_mode,

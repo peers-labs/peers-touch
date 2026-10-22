@@ -48,6 +48,7 @@ fn validate_key(key: &str) -> MobileResult<()> {
         || key == "peers-touch.mobile.auth-active-scope.v1"
         || key.starts_with("peers-touch.mobile.reliability.")
         || key.starts_with("peers-touch.mobile.station-route-source.v1.")
+        || key.starts_with("peers-touch.mobile.x-config.")
     {
         return Err(crate::error::MobileError::invalid_input(
             "secure storage key belongs to a Rust-owned namespace",
@@ -72,5 +73,6 @@ mod tests {
         assert!(validate_key("peers-touch.mobile.reliability.install-kek.v1").is_err());
         assert!(validate_key("peers-touch.mobile.reliability.scope-key-inventory.v1").is_err());
         assert!(validate_key("peers-touch.mobile.station-route-source.v1.deadbeef").is_err());
+        assert!(validate_key("peers-touch.mobile.x-config.watermark.v1.stable").is_err());
     }
 }

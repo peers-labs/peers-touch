@@ -10,6 +10,7 @@ from tooling.acceptance.core import (
 )
 
 from .chat_storage_native import ChatStorageNativeProvisioner
+from .x_config_home import XConfigHomeProvisioner
 from .desktop_primary_navigation_native import (
     DesktopPrimaryNavigationNativeProvisioner,
 )
@@ -28,6 +29,7 @@ from .mobile_simulator import (
     MobileSocialIOSSimulatorProvisioner,
     MobileSocialSimulatorProvisioner,
     MobileStationLifecycleSimulatorProvisioner,
+    SocialCrossStationMobileDesktopProvisioner,
     StationAccessNativeProvisioner,
 )
 from .native_desktop_linux import NativeDesktopLinuxProvisioner
@@ -69,6 +71,7 @@ from .station_access_relay_role import StationAccessRelayRoleProvisioner
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
+    XConfigHomeProvisioner.environment_id: XConfigHomeProvisioner,
     ChatMixedNativeProvisioner.environment_id: ChatMixedNativeProvisioner,
     ChatStorageNativeProvisioner.environment_id: ChatStorageNativeProvisioner,
     CrossStationSocialNativeProvisioner.environment_id: (
@@ -103,6 +106,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     MobileStationLifecycleSimulatorProvisioner.environment_id: (
         MobileStationLifecycleSimulatorProvisioner
+    ),
+    SocialCrossStationMobileDesktopProvisioner.environment_id: (
+        SocialCrossStationMobileDesktopProvisioner
     ),
     StationAccessNativeProvisioner.environment_id: (
         StationAccessNativeProvisioner
@@ -200,12 +206,22 @@ def get_provisioner(
             contract,
             station_profiles=station_profiles,
         )
+    if provisioner_class is MobileStationLifecycleSimulatorProvisioner:
+        if service_profiles:
+            raise ProvisioningError(
+                f"environment {contract.id!r} does not accept service profile bindings"
+            )
+        return provisioner_class(
+            contract,
+            station_profiles=station_profiles,
+        )
     if provisioner_class in {
         ChatMixedNativeProvisioner,
         MobileDirectSimulatorProvisioner,
         MobileRelaySimulatorProvisioner,
         MobileSocialIOSSimulatorProvisioner,
         MobileSocialSimulatorProvisioner,
+        SocialCrossStationMobileDesktopProvisioner,
         StationAccessNativeProvisioner,
     }:
         return provisioner_class(
@@ -220,7 +236,13 @@ def get_provisioner(
     return provisioner_class(contract)
 
 
-def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
+def get_runtime_cell_lifecycle(
+    cell_id: str, *, provisioner: EnvironmentProvisioner | None = None,
+) -> RuntimeCellLifecycle:
+    if cell_id in ("mobile-ios-native", "mobile-android-native"):
+        from .mobile_runtime_cell import MobileRuntimeCellLifecycle
+
+        return MobileRuntimeCellLifecycle(cell_id, provisioner=provisioner)
     lifecycle_class = _RUNTIME_CELL_LIFECYCLES.get(cell_id)
     if lifecycle_class is None:
         raise ProvisioningError(
@@ -238,6 +260,7 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 __all__ = [
     "ChatMixedNativeProvisioner",
     "ChatStorageNativeProvisioner",
+    "XConfigHomeProvisioner",
     "CrossStationSocialNativeProvisioner",
     "DesktopPrimaryNavigationNativeProvisioner",
     "DesktopShellNativeProvisioner",
@@ -251,6 +274,7 @@ __all__ = [
     "MobileSocialIOSSimulatorProvisioner",
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
+    "SocialCrossStationMobileDesktopProvisioner",
     "StationAccessDesktopOAuthNativeProvisioner",
     "StationAccessDualRelayProvisioner",
     "StationAccessNativeProvisioner",

@@ -1563,15 +1563,11 @@
 
   /* ── Moments reactions ── */
   .mp-moment-reaction-summary {
-    display: flex; flex: 1 1 auto; align-items: center; gap: 4px;
-    min-width: 0; max-width: 80%; min-height: 36px; overflow: hidden;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+    min-width: 0; min-height: 44px; margin-top: 8px;
   }
-  .mp-moment-reaction-tag {
-    display: inline-flex; align-items: center; gap: 3px;
-    padding: 2px 8px; border-radius: var(--mp-r-pill);
-    background: var(--mp-gray-100); font-size: 11px; font-weight: 600;
-    color: var(--mp-gray-600); white-space: nowrap;
-    &.mine { background: var(--mp-primary-light); color: var(--mp-primary); }
+  .mp-moment-reaction-picker {
+    margin-top: 8px;
   }
   /* ── Moments comments ── */
   .mp-moment-comments {
@@ -3371,7 +3367,7 @@
   }
   .mp-moment-action,
   .mp-moment-comment-send,
-  .mp-moment-reaction-picker-btn {
+  .mp-moment-reaction-open {
     min-width: 44px;
     min-height: 44px;
   }

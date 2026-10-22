@@ -180,7 +180,17 @@ class NativeDesktopMacOSProvisioner:
     def ready(
         self,
         gate_id: str = "runtime-cell-preflight",
+        *,
+        artifact_kind: str = "acceptance-binary",
     ) -> RuntimeCellManifest:
+        if artifact_kind != "acceptance-binary":
+            raise BlockedError(
+                reason=(
+                    f"macOS runtime cell does not support artifact kind "
+                    f"{artifact_kind!r}"
+                ),
+                resource=f"runtime-cell-artifact:{self.contract.cell_id}",
+            )
         if sys.platform != "darwin":
             raise BlockedError(
                 reason="desktop-macos-native requires a macOS orchestrator",
@@ -503,11 +513,11 @@ class NativeDesktopMacOSProvisioner:
                 raise ProvisioningError(
                     "macOS runtime-cell probe process identity is unavailable"
                 )
-            session.invoke_app_result("acceptance_request_activation")
             adapter.position_main_window(process_id, (100.0, 100.0))
             bounds = self._await_window_bounds(process_id)
             point, pointer, stack, input_probe, attempted_points = (
-                self._probe_owned_point(
+                self._await_process_owned_point(
+                    session,
                     adapter,
                     process_id,
                     bounds,
@@ -556,6 +566,9 @@ class NativeDesktopMacOSProvisioner:
                 raise BlockedError(
                     reason=(
                         "macOS Native adapter probes are incomplete: "
+                        f"input={probes.input_probe} "
+                        f"focus={probes.focus_probe} "
+                        f"pointOwnership={probes.point_ownership_probe} "
                         f"pointer={pointer} expectedPoint={point} "
                         f"windowStack={stack.to_dict()} "
                         f"attemptedPoints={attempted_points} "
@@ -573,6 +586,70 @@ class NativeDesktopMacOSProvisioner:
                 log_path = launcher.log_path
             if log_path is not None:
                 log_path.unlink(missing_ok=True)
+
+    @classmethod
+    def _await_process_owned_point(
+        cls,
+        session: TauriSession,
+        adapter: MacOSNativeDesktopAdapter,
+        process_id: int,
+        bounds: dict[str, Any],
+        *,
+        timeout_seconds: float = NATIVE_FOCUS_READY_TIMEOUT_SECONDS,
+        interval_seconds: float = 0.1,
+    ) -> tuple[
+        tuple[float, float],
+        dict[str, Any],
+        NativeWindowStack,
+        bool,
+        tuple[tuple[float, float], ...],
+    ]:
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        last_probe: tuple[
+            tuple[float, float],
+            dict[str, Any],
+            NativeWindowStack,
+            bool,
+            tuple[tuple[float, float], ...],
+        ] | None = None
+        while True:
+            activation = session.invoke_app_result(
+                "acceptance_request_activation"
+            )
+            if activation.get("ok") is not True:
+                raise BlockedError(
+                    reason=(
+                        "macOS runtime-cell probe rejected "
+                        "process-owned activation"
+                    ),
+                    resource="runtime-cell-native-focus",
+                )
+            last_probe = cls._probe_owned_point(
+                adapter,
+                process_id,
+                bounds,
+            )
+            _, _, stack, input_probe, _ = last_probe
+            if (
+                input_probe
+                and not stack.error
+                and stack.point_owned_by(process_id)
+            ):
+                return last_probe
+            if time.monotonic() >= deadline:
+                point, pointer, stack, _, attempted_points = last_probe
+                raise BlockedError(
+                    reason=(
+                        "macOS Native process-owned point did not converge "
+                        f"within {timeout_seconds:.1f}s: "
+                        f"pointer={pointer} expectedPoint={point} "
+                        f"windowStack={stack.to_dict()} "
+                        f"attemptedPoints={attempted_points}"
+                    ),
+                    resource="runtime-cell-native-focus",
+                )
+            if interval_seconds > 0:
+                time.sleep(interval_seconds)
 
     def _probe_semantic_non_interference(
         self,

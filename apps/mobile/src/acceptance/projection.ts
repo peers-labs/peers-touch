@@ -202,6 +202,7 @@ function toPublicStationEntry(
       endpointOrigin: route.endpointOrigin,
       relayPeerId: route.relayPeerId,
       routeGeneration: route.routeGeneration,
+      attestationExpiresAtUnixMs: route.attestationExpiresAtUnixMs,
       health: route.health,
     })),
   };

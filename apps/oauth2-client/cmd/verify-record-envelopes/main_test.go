@@ -59,6 +59,12 @@ func TestVerifyAuthenticatesActiveAndRetainedEnvelopes(t *testing.T) {
 				"oauth-audit",
 				"oauth-data/audits/2026/current.json",
 			),
+			encodedRecord(
+				t,
+				currentCodec,
+				"oauth-operator-handoff",
+				"oauth-data/operator-handoffs/current.json",
+			),
 		},
 	}
 
@@ -66,8 +72,8 @@ func TestVerifyAuthenticatesActiveAndRetainedEnvelopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.RecordCount != 2 ||
-		result.ActiveKeyEnvelopeCount != 1 ||
+	if result.RecordCount != 3 ||
+		result.ActiveKeyEnvelopeCount != 2 ||
 		result.RetainedKeyEnvelopeCount != 1 {
 		t.Fatalf("unexpected result: %#v", result)
 	}

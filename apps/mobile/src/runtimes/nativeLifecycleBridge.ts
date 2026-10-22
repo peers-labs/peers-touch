@@ -142,6 +142,7 @@ export interface NativePushScope {
 export interface NativePushActivationProjection {
   readonly armed: boolean;
   readonly lifecycleGeneration: number;
+  readonly scheduledReconcileRegistered: boolean;
 }
 
 export interface NativePushDrainProjection {

@@ -10,8 +10,8 @@ pub mod provider;
 pub mod startup;
 
 pub use inbound::{
-    MlsApplicationProcessor, MlsRetirementProcessor, MlsSenderTransitionProcessor,
-    MlsTransitionProcessor,
+    MlsApplicationProcessor, MlsItemProcessor, MlsRetirementProcessor,
+    MlsSenderTransitionProcessor, MlsTransitionProcessor,
 };
 
 #[cfg(test)]

@@ -898,10 +898,10 @@ export interface PrivateSocialRuntimeStatus {
   actorPtid?: string;
   deviceId?: string;
   activationGeneration: number;
-  workerMode: 'on_demand';
+  reconciliationMode: 'on_demand';
 }
 
-export interface PrivateSocialWorkerReport {
+export interface PrivateSocialReconciliationReport {
   endpointPrekeysAvailable: number;
   recoveryPrekeysAvailable: number | null;
   submissionsProcessed: number;
@@ -932,7 +932,7 @@ export type PrivateSocialInvalidation =
       entireScope: true;
     };
 
-export interface PrivateSocialReconcileResult extends PrivateSocialWorkerReport {
+export interface PrivateSocialReconcileResult extends PrivateSocialReconciliationReport {
   invalidatedReadProjections: PrivateMomentReadProjection[];
 }
 
@@ -1018,21 +1018,46 @@ export async function privateSocialReact(
   input: PrivateSocialAccountInput & { postId: string; kind: number },
 ): Promise<PrivateReactionMutationResult> {
   requirePrivateSocialMutation(input);
-  return invoke<PrivateReactionMutationResult>('social_private_react', { input });
+  return invoke<PrivateReactionMutationResult>('social_private_react', {
+    input: {
+      ...privateSocialReactionScope(input),
+      postId: input.postId,
+      kind: input.kind,
+    },
+  });
 }
 
 export async function privateSocialUnreact(
   input: PrivateSocialAccountInput & { postId: string; kind: number },
 ): Promise<PrivateReactionMutationResult> {
   requirePrivateSocialMutation(input);
-  return invoke<PrivateReactionMutationResult>('social_private_unreact', { input });
+  return invoke<PrivateReactionMutationResult>('social_private_unreact', {
+    input: {
+      ...privateSocialReactionScope(input),
+      postId: input.postId,
+      kind: input.kind,
+    },
+  });
 }
 
 export async function privateSocialReactionRetry(
   input: PrivateSocialAccountInput & { commandId: string },
 ): Promise<PrivateReactionMutationResult> {
   requirePrivateSocialMutation(input);
-  return invoke<PrivateReactionMutationResult>('social_private_reaction_retry', { input });
+  return invoke<PrivateReactionMutationResult>('social_private_reaction_retry', {
+    input: {
+      ...privateSocialReactionScope(input),
+      commandId: input.commandId,
+    },
+  });
+}
+
+function privateSocialReactionScope(input: PrivateSocialAccountInput) {
+  return {
+    stationPeerId: input.stationPeerId,
+    actorPtid: input.actorPtid,
+    activationGeneration: input.activationGeneration,
+  };
 }
 
 export async function privateSocialReconcile(
@@ -1496,7 +1521,7 @@ export interface NativeStationRouteCandidate {
   authorizationEpoch: number;
   routeId: string;
   routeType: StationRouteType;
-  transport: 'direct_https' | 'libp2p_http_v1';
+  transport: 'libp2p_http_v1';
   endpointOrigin: string;
   relayPeerId?: string;
   routeGeneration: number;
@@ -1525,6 +1550,46 @@ export interface StationRouteBindingProjection {
   transportOrigin: string;
 }
 
+export interface StationRouteRefreshProjection {
+  binding: StationRouteBindingProjection;
+  route: NativeStationRouteCandidate;
+}
+
+export type XConfigFreshness = 'current' | 'stale' | 'embedded' | 'unavailable';
+
+export interface XConfigSuggestion {
+  seedId: string;
+  kind: 'relay' | 'direct_station';
+  displayName: string;
+  canonicalOrigin: string;
+  regions: string[];
+  freshness: Exclude<XConfigFreshness, 'unavailable'>;
+  actionable: boolean;
+  sourceSequence: number;
+}
+
+export interface XConfigRelease {
+  releaseId: string;
+  version: string;
+  manifestUrl: string;
+  manifestSha256Hex: string;
+  releaseSigningKeyId: string;
+  releaseNotesUrl: string;
+}
+
+export interface XConfigProjection {
+  channel: string;
+  sequence?: number;
+  expiresAtUnixMs?: number;
+  freshness: XConfigFreshness;
+  suggestions: XConfigSuggestion[];
+  release?: XConfigRelease;
+  refreshing: boolean;
+  lastRefreshAttemptAtUnixMs?: number;
+  nextRefreshAtUnixMs?: number;
+  lastRefreshError?: string;
+}
+
 export async function discoverStationEndpoint(
   input: string,
 ): Promise<StationEndpointDiscovery> {
@@ -1546,8 +1611,8 @@ export async function restoreStationRouteBinding(input: {
   routeRevision: number;
   sourceRef: string;
   endpointOrigin: string;
-}): Promise<StationRouteBindingProjection> {
-  return invoke<StationRouteBindingProjection>('station_route_restore', { input });
+}): Promise<StationRouteRefreshProjection> {
+  return invoke<StationRouteRefreshProjection>('station_route_restore', { input });
 }
 
 export async function removeStationRouteBinding(input: {
@@ -1562,8 +1627,32 @@ export async function readStationRouteBinding(): Promise<StationRouteBindingProj
   return invoke<StationRouteBindingProjection | null>('station_route_snapshot');
 }
 
+export async function refreshStationRouteBinding(input: {
+  stationPeerId: string;
+  routeId: string;
+  routeRevision: number;
+}): Promise<StationRouteRefreshProjection> {
+  return invoke('station_route_refresh', { input });
+}
+
 export async function fetchActiveStationIdentity(): Promise<VerifiedStationIdentity> {
   return invoke<VerifiedStationIdentity>('station_identity_fetch');
+}
+
+export async function readXConfigProjection(): Promise<XConfigProjection> {
+  return invoke<XConfigProjection>('x_config_projection');
+}
+
+export async function refreshXConfigProjection(
+  force = false,
+): Promise<XConfigProjection> {
+  return invoke<XConfigProjection>('x_config_refresh', { force });
+}
+
+export async function discoverXConfigSuggestion(
+  seedId: string,
+): Promise<StationEndpointDiscovery> {
+  return invoke<StationEndpointDiscovery>('x_config_discover_suggestion', { seedId });
 }
 
 export type MobileOAuthProvider = 'github' | 'google';

@@ -3,6 +3,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+import { MOBILE_REACTION_CHOICES } from '../../components/reactions/reactionChoices';
+
 describe('Moment feed item', () => {
   it('routes every published image through the encrypted media renderer', () => {
     const contentSource = readFileSync(
@@ -66,18 +68,29 @@ describe('Moment feed item', () => {
       new URL('./Moments.css', import.meta.url),
       'utf8',
     );
+    const reactionStyles = readFileSync(
+      new URL('../../components/reactions/reactions.css', import.meta.url),
+      'utf8',
+    );
 
     expect(source).toContain('className="moments-reaction-summary"');
-    expect(source).not.toContain('moments-reaction-picker');
+    expect(source).toContain('<ReactionPicker');
     expect(styles).toMatch(
       /\.moments-actions\s*\{[\s\S]*?min-height:\s*44px;/,
     );
     expect(styles).toMatch(
       /\.moments-reaction-status\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?width:\s*1px;/,
     );
+    expect(reactionStyles).toMatch(
+      /\.mobile-reaction-picker > button\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/,
+    );
   });
 
   it('uses the prototype action cluster and inline comment control geometry', () => {
+    const source = readFileSync(
+      new URL('./MomentFeedItem.tsx', import.meta.url),
+      'utf8',
+    );
     const styles = readFileSync(
       new URL('./Moments.css', import.meta.url),
       'utf8',
@@ -89,7 +102,10 @@ describe('Moment feed item', () => {
     expect(actionGroup).toContain('justify-content: flex-end');
     expect(actionGroup).toContain('margin-left: auto');
     expect(styles).toMatch(
-      /\.moments-reaction-summary\s*\{[\s\S]*?max-width:\s*80%;[\s\S]*?overflow:\s*hidden;/,
+      /\.moments-reaction-summary\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?flex-wrap:\s*wrap;/,
+    );
+    expect(source.indexOf('className="moments-reaction-summary"')).toBeLessThan(
+      source.indexOf('className="moments-actions"'),
     );
     expect(styles).toMatch(
       /\.moments-comments-section--inline[\s\S]*?margin-top:\s*8px;[\s\S]*?padding:\s*6px 0 0;/,
@@ -115,43 +131,40 @@ describe('Moment feed item', () => {
     expect(sendBlock).not.toMatch(/border-radius:\s*(?:50%|999px)/);
   });
 
-  it('uses one direct heart reaction without an emoji picker', () => {
+  it('uses the shared five-reaction picker with page-owned open state', () => {
     const source = readFileSync(
       new URL('./MomentFeedItem.tsx', import.meta.url),
       'utf8',
     );
-    const styles = readFileSync(
-      new URL('./Moments.css', import.meta.url),
+    const pageSource = readFileSync(
+      new URL('../MomentsPage.tsx', import.meta.url),
       'utf8',
     );
 
+    expect(MOBILE_REACTION_CHOICES).toEqual([
+      { kind: 1, emoji: '👍' },
+      { kind: 2, emoji: '❤️' },
+      { kind: 3, emoji: '😄' },
+      { kind: 4, emoji: '😮' },
+      { kind: 5, emoji: '🎉' },
+    ]);
+    expect(source).toContain('data-acceptance-id="social-reaction-open"');
     expect(source).toContain(
-      'const PRIMARY_REACTION_KIND = ReactionKind.REACTION_LOVE',
+      'onReactionPickerOpenChange(!reactionPickerOpen)',
     );
-    expect(source).toContain(
-      'onClick={() => onReact(post.id, PRIMARY_REACTION_KIND)}',
+    expect(source).toContain('selectedEmojis={selectedEmojis}');
+    expect(source).toContain('if (choice) onReact(post.id, choice.kind)');
+    expect(source).not.toContain('const [showReactionPicker');
+    expect(source).not.toMatch(
+      /onToggle=\{\([^)]*\) => \{[\s\S]*?onReactionPickerOpenChange\(false\)/,
     );
-    expect(source).toContain('data-reaction-kind={PRIMARY_REACTION_KIND}');
-    expect(source).not.toContain('REACTION_LONG_PRESS_MS');
-    expect(source).not.toContain('setShowReactionPicker');
-    expect(source).not.toContain('useMomentReactionPreferences');
-    expect(source).not.toContain('data-can-scroll-left');
-    expect(source).not.toContain('onPointerMove=');
-    expect(source).toMatch(
-      /PRIMARY_REACTION_EMOJI[\s\S]*?heartCount/,
+    expect(pageSource).toContain(
+      'const [reactionPickerPostId, setReactionPickerPostId]',
     );
-    expect(source).toContain('className="moments-more"');
-    expect(source.indexOf('className="moments-more"')).toBeLessThan(
-      source.indexOf('className="moments-actions"'),
+    expect(pageSource).toMatch(
+      /reactionPickerOpen=\{\s*reactionPickerPostId === post\.id\s*\}/,
     );
-    expect(source).toContain('className="moments-action-count"');
-    expect(styles).toMatch(
-      /\.moments-action\s*\{[\s\S]*?width:\s*var\(--moments-action-size\);[\s\S]*?height:\s*var\(--moments-action-size\);[\s\S]*?flex:\s*0 0 var\(--moments-action-size\);/,
-    );
-    expect(styles).toMatch(
-      /\.moments-action-count\s*\{[\s\S]*?position:\s*absolute;/,
-    );
-    expect(styles).not.toContain('.moments-reaction-picker');
-    expect(styles).not.toContain('.moments-reaction-rail');
+    expect(source).not.toContain('PRIMARY_REACTION_KIND');
+    expect(source).not.toContain('moments-reaction-tag');
   });
 });

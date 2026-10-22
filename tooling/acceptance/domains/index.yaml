@@ -23,7 +23,7 @@
       "profile": "tooling/acceptance/domains/mobile.yaml",
       "capabilities": "tooling/acceptance/capabilities/mobile.yaml",
       "coverage": "managed_domain",
-      "notes": "Structurally onboarded managed domain. Required product proof uses same-Station iOS Simulator cells; cross-Station/Relay, Android, and physical-device scope remains UNPROVEN."
+      "notes": "Structurally onboarded managed domain. Required product proof uses same-Station iOS Simulator cells and a Desktop-to-iOS cross-Station Social cell; Relay-backed, Android cross-Station, cross-mobile, and physical-device scope remains UNPROVEN."
     },
     {
       "id": "social",
@@ -31,7 +31,7 @@
       "profile": "tooling/acceptance/domains/social.yaml",
       "capabilities": "tooling/acceptance/capabilities/social.yaml",
       "coverage": "managed_domain",
-      "notes": "Private Moments managed domain. Formal proof is bounded to Native Desktop; Mobile parity and positive cross-Station private delivery remain UNPROVEN."
+      "notes": "Private Moments managed domain. Formal proof covers Native Desktop and a required Desktop-to-iOS cross-Station cell; Android cross-platform, cross-mobile, and cross-Federation private delivery remain UNPROVEN."
     },
     {
       "id": "desktop-shell",
@@ -39,7 +39,7 @@
       "profile": "tooling/acceptance/domains/desktop-shell.yaml",
       "capabilities": "tooling/acceptance/capabilities/desktop-shell.yaml",
       "coverage": "managed_domain",
-      "notes": "Native Desktop process, window, menu, tray, focus, package, and cleanup domain. Initial formal proof is bounded to the macOS tray residency journey."
+      "notes": "Native Desktop process, window, menu, tray, focus, package, install, and cleanup domain. Formal proof includes macOS tray residency and the exact-source Linux user-install journey; unsupported Linux host prerequisites remain explicit environment blockers."
     },
     {
       "id": "applet",
@@ -80,6 +80,14 @@
       "capabilities": "tooling/acceptance/capabilities/oauth-login-broker.yaml",
       "coverage": "managed_domain",
       "notes": "Durable serverless OAuth broker with encrypted GitHub-backed records, provider refresh, key rotation, and authenticated read-only operator surfaces."
+    },
+    {
+      "id": "x-config",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/x-config.yaml",
+      "capabilities": "tooling/acceptance/capabilities/x-config.yaml",
+      "coverage": "managed_domain",
+      "notes": "X Config managed domain. Current contract proof covers Broker-bound operator identity and Home SQLite session lifecycle; live Home restart/timing, signed publication, console, cleanup, and native client projection remain separate closures."
     }
   ]
 }

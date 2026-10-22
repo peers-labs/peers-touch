@@ -218,10 +218,10 @@ printf '%s\n' '{"type":"done"}'
 	if catalogProvider == nil {
 		t.Fatal("trae-cli catalog provider is missing")
 	}
-	originalCommand := catalogProvider.CliCommand
-	catalogProvider.CliCommand = commandPath
+	originalCommand := append([]string(nil), catalogProvider.CLIArgv...)
+	catalogProvider.CLIArgv = []string{commandPath}
 	t.Cleanup(func() {
-		catalogProvider.CliCommand = originalCommand
+		catalogProvider.CLIArgv = originalCommand
 	})
 
 	var streamed string
@@ -259,10 +259,10 @@ func TestProviderServiceReturnsTypedCLIBinaryMissing(t *testing.T) {
 	if catalogProvider == nil {
 		t.Fatal("trae-cli catalog provider is missing")
 	}
-	originalCommand := catalogProvider.CliCommand
-	catalogProvider.CliCommand = "peers-touch-cli-that-does-not-exist"
+	originalCommand := append([]string(nil), catalogProvider.CLIArgv...)
+	catalogProvider.CLIArgv = []string{"peers-touch-cli-that-does-not-exist"}
 	t.Cleanup(func() {
-		catalogProvider.CliCommand = originalCommand
+		catalogProvider.CLIArgv = originalCommand
 	})
 	if err := db.Create(&persistence.AgentProvider{
 		ID:          "provider-row",
@@ -323,10 +323,10 @@ printf '%s\n' '{"type":"done","content":"persisted"}'
 	if catalogProvider == nil {
 		t.Fatal("trae-cli catalog provider is missing")
 	}
-	originalCommand := catalogProvider.CliCommand
-	catalogProvider.CliCommand = registeredCommand + " " + expectedOutput
+	originalCommand := append([]string(nil), catalogProvider.CLIArgv...)
+	catalogProvider.CLIArgv = []string{registeredCommand, expectedOutput}
 	t.Cleanup(func() {
-		catalogProvider.CliCommand = originalCommand
+		catalogProvider.CLIArgv = originalCommand
 	})
 	if err := db.Create(&persistence.AgentProvider{
 		ID:          "provider-row",
@@ -379,7 +379,7 @@ func TestProviderCallWithRetryBypassesCredentialLeaseForCLI(t *testing.T) {
 		ShowAPIKey:  &showAPIKey,
 		Protocol:    "cli",
 		RuntimeKind: "cli",
-		CliCommand:  "test-cli",
+		CLIArgv:     []string{"test-cli"},
 		Models: []catalog.CatalogModel{{
 			ID:            "default",
 			DisplayName:   "Default",

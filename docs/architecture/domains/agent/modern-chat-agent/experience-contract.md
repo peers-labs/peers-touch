@@ -1,8 +1,8 @@
 # Modern Chat Agent — Experience Contract
 
 > **Status**: accepted
-> **Version**: v1.1
-> **Created**: 2026-07-30 | **Updated**: 2026-10-01
+> **Version**: v1.2
+> **Created**: 2026-07-30 | **Updated**: 2026-10-20
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -80,6 +80,22 @@ capability ownership.
 
 Existing topics retain the runtime/config snapshot they actually used.
 
+### MCA-J02A: Inspect Commands And Skills
+
+**Capabilities**: P01, P04, P05, P09
+
+1. Typing `/` or activating the command control opens one keyboard-operable
+   Commands & Skills palette.
+2. `/help` explains the deterministic command set locally.
+3. `/tools` and `/skills` show the selected Agent's versioned Station snapshot,
+   including readiness and unavailable state, without starting a model Turn.
+4. `/clear` creates a new empty Topic and leaves the previous Topic and evidence
+   intact.
+5. A stale projection is visibly stale; capability actions are disabled while
+   ordinary text conversation remains available.
+
+Palette visibility never grants capability authority or bypasses Tool approval.
+
 ### MCA-J03: Continue And Organize Work
 
 **Capabilities**: P02, P03, P07
@@ -103,7 +119,11 @@ Topic switch and page switch do not cancel accepted turns.
 4. User can inspect why an item was included or omitted.
 5. User can correct or remove memory without editing chat history.
 
-No attribution is shown when the resource did not affect the turn.
+The message surface shows compact typed badges. A contextual detail surface may
+show inclusion, omission, or truncation reasons, version and readiness facts,
+but never raw Prompt content, credentials, local paths, or debug-only trace.
+No attribution is shown when the resource did not affect the turn, and current
+Agent configuration never rewrites historical attribution.
 
 ### MCA-J05: Approve And Inspect Tool Work
 

@@ -219,6 +219,9 @@ function MomentsPageInner({
   const [selectedThreadPostId, setSelectedThreadPostId] = useState<
     string | null
   >(null);
+  const [reactionPickerPostId, setReactionPickerPostId] = useState<
+    string | null
+  >(null);
   const [mediaSelection, setMediaSelection] =
     useState<MomentMediaSelection | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
@@ -271,6 +274,26 @@ function MomentsPageInner({
     );
   }, [blockingPrivateByPostId, feed.posts]);
   useEffect(() => {
+    setReactionPickerPostId((current) => {
+      if (!current || !feed.posts.some((post) => post.id === current)) {
+        return null;
+      }
+      return !blockingPrivateByPostId.has(current) &&
+        resolveMomentPolicyState(
+          runtimeFeedState?.feedExplanations.get(current),
+        ) === 'visible'
+        ? current
+        : null;
+    });
+  }, [
+    blockingPrivateByPostId,
+    feed.posts,
+    runtimeFeedState?.feedExplanations,
+  ]);
+  useEffect(() => {
+    setReactionPickerPostId(null);
+  }, [privateStateScopeKey]);
+  useEffect(() => {
     if (!mediaSelection) return;
     const postId = mediaSelection.postId;
     if (
@@ -305,7 +328,17 @@ function MomentsPageInner({
     [facade, t],
   );
 
+  const handleReactionPickerOpenChange = useCallback(
+    (postId: string, open: boolean) => {
+      setReactionPickerPostId((current) =>
+        open ? postId : current === postId ? null : current,
+      );
+    },
+    [],
+  );
+
   const handleOpenComments = useCallback((postId: string) => {
+    setReactionPickerPostId(null);
     setSelectedThreadPostId((current) => (current === postId ? null : postId));
   }, []);
 
@@ -318,6 +351,9 @@ function MomentsPageInner({
           throw new Error('mobile.moments.delete.error');
         }
         setSelectedThreadPostId((current) =>
+          current === postId ? null : current,
+        );
+        setReactionPickerPostId((current) =>
           current === postId ? null : current,
         );
         setMediaSelection((current) =>
@@ -390,6 +426,7 @@ function MomentsPageInner({
     ) => {
       const post = feed.posts.find((candidate) => candidate.id === postId);
       if (!post) return;
+      setReactionPickerPostId(null);
       if (post.audience && !isPublicSocialAudience(post.audience)) {
         const readProjection =
           projection?.runtime.privateSocial?.postsById[postId];
@@ -479,6 +516,12 @@ function MomentsPageInner({
             reactionMutation={runtimeFeedState?.reactionMutations.get(
               routeDetailPostId,
             )}
+            reactionPickerOpen={
+              reactionPickerPostId === routeDetailPostId
+            }
+            onReactionPickerOpenChange={(open) =>
+              handleReactionPickerOpenChange(routeDetailPostId, open)
+            }
             policyState={resolveMomentPolicyState(
               runtimeFeedState?.feedExplanations.get(routeDetailPostId),
             )}
@@ -519,11 +562,26 @@ function MomentsPageInner({
       <MomentsScopeHeader
         scope={feedScope}
         exploreSort={facade?.feeds?.explore.sort() ?? TimelineSort.RECENT}
-        onChangeScope={setFeedScope}
-        onOpenSearch={onOpenSearch}
-        onOpenCircles={onOpenCircles}
-        onOpenComposer={() => setShowNewPost(true)}
-        onOpenSort={() => setShowSort(true)}
+        onChangeScope={(scope) => {
+          setReactionPickerPostId(null);
+          setFeedScope(scope);
+        }}
+        onOpenSearch={() => {
+          setReactionPickerPostId(null);
+          onOpenSearch();
+        }}
+        onOpenCircles={() => {
+          setReactionPickerPostId(null);
+          onOpenCircles();
+        }}
+        onOpenComposer={() => {
+          setReactionPickerPostId(null);
+          setShowNewPost(true);
+        }}
+        onOpenSort={() => {
+          setReactionPickerPostId(null);
+          setShowSort(true);
+        }}
       />
 
       {noticeError ? (
@@ -642,6 +700,12 @@ function MomentsPageInner({
                             reactionMutation={runtimeFeedState?.reactionMutations.get(
                               post.id,
                             )}
+                            reactionPickerOpen={
+                              reactionPickerPostId === post.id
+                            }
+                            onReactionPickerOpenChange={(open) =>
+                              handleReactionPickerOpenChange(post.id, open)
+                            }
                             explanation={runtimeFeedState?.feedExplanations.get(
                               post.id,
                             )}

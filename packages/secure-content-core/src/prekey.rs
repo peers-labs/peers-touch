@@ -79,6 +79,13 @@ const PUBLISH_CONTENT_PREKEYS_REQUEST_STATION_WIRE_RULES: &[FieldRule] = &[
     FieldRule::singular(6, WireType::LengthDelimited),
     FieldRule::message(7, CONTENT_PREKEY_CLIENT_PROOF_STATION_WIRE_RULES),
 ];
+const PROOF_FREE_PUBLISH_CONTENT_PREKEYS_REQUEST_STATION_WIRE_RULES: &[FieldRule] = &[
+    FieldRule::message(1, ACTOR_DEVICE_REF_RULES),
+    FieldRule::singular(2, WireType::LengthDelimited),
+    FieldRule::singular(3, WireType::Varint),
+    FieldRule::singular(4, WireType::Varint),
+    FieldRule::repeated_message(5, CONTENT_ONE_TIME_PREKEY_STATION_WIRE_RULES),
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContentPreKeyPublic([u8; CONTENT_PREKEY_SIZE]);
@@ -333,6 +340,15 @@ pub fn canonicalize_publish_content_prekeys_request(
     input: &[u8],
 ) -> Result<Vec<u8>, CanonicalProtobufError> {
     canonicalize_message_in_rule_order(input, PUBLISH_CONTENT_PREKEYS_REQUEST_STATION_WIRE_RULES)
+}
+
+pub fn canonicalize_proof_free_publish_content_prekeys_request(
+    input: &[u8],
+) -> Result<Vec<u8>, CanonicalProtobufError> {
+    canonicalize_message_in_rule_order(
+        input,
+        PROOF_FREE_PUBLISH_CONTENT_PREKEYS_REQUEST_STATION_WIRE_RULES,
+    )
 }
 
 fn validate_actor(

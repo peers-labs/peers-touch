@@ -15,7 +15,8 @@ Use it to answer:
 - Which hard constraints cannot be violated
 - Which verification commands must run before completion
 
-Do **not** use this file as the place to redefine Mobile architecture, dual-platform design, or full coding standards.
+Do **not** use this file as the place to redefine Mobile architecture,
+release-target relationships, or full coding standards.
 
 ---
 
@@ -23,10 +24,10 @@ Do **not** use this file as the place to redefine Mobile architecture, dual-plat
 
 ### Platform Sources
 
+- [Cross-Client Runtime](../architecture/platform/client/cross-client-runtime/README.md)
 - [Mobile Base](../client/mobile/base.md)
 - [Mobile Client Lifecycle](../client/mobile/lifecycle.md)
-- [Native Plugin Layer](../client/mobile/native-dual-platform.md)
-- [Tauri Mobile Mainline Migration Plan](../client/mobile/execution-plans/20260531-tauri-mobile-mainline-migration.md)
+- [Native Plugin Layer](../client/mobile/native-plugin-layer.md)
 
 ### Topic Sources
 
@@ -48,6 +49,8 @@ Do **not** use this file as the place to redefine Mobile architecture, dual-plat
 ## 3. Hard Constraints
 
 - Mobile mainline is Tauri v2 Mobile: shared Web UI + Rust capability kernel + Android/iOS native plugins.
+- Android and iOS are release targets of one Mobile product; they do not own
+  separate product state models.
 - Android Kotlin and iOS Swift are native plugin implementation layers, not the primary UI mainline.
 - Do not reintroduce Flutter as an active implementation path.
 - Proto definitions come from `model/domain/`; do not create manual parallel domain models.
@@ -60,28 +63,19 @@ Do **not** use this file as the place to redefine Mobile architecture, dual-plat
 
 ## 4. Verification Commands
 
-Target Tauri Mobile commands after the shell scripts land:
-
-Tauri Mobile:
+Shared Mobile source gate:
 
 ```bash
 pnpm mobile:check
-pnpm mobile:dev:ios
-pnpm mobile:build:ios
 ```
 
-Native plugin verification is iOS-first for the current spike:
-
-```bash
-cd apps/mobile/src-tauri/gen/apple
-xcodebuild -list -project peers-touch-mobile.xcodeproj
-```
+Android and iOS claims additionally require their own source-bound native
+build/runtime Gate. One platform never proves the other.
 
 Proto generation:
 
 ```bash
-./tooling/scripts/proto-gen-mobile.sh
-./tooling/scripts/proto-gen-mobile.sh
+./tooling/scripts/proto-gen-mobile.sh web
 ```
 
 ---

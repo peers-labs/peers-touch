@@ -152,6 +152,10 @@ leaves。
 inventory、lane cursor、consumption markers、authority heads 与 retired
 checkpoints 从 live SQLCipher store 直接转移到 staging；Direct ratchet、MLS
 group/session/transition、pending command 与 transfer state 仍必须清除。
+没有活动 Engine 不代表新安装。Desktop 在平台安全存储中以 PTID 和安装设备 ID
+保存独立的 DSK 备份，聊天数据库丢失后使用同一签名材料重新签发 certificate。
+恢复在原子替换数据库前完成 Station enrollment 验证；已登记设备缺少 DSK 时
+要求设备授权恢复，不得在原设备 ID 下生成替代签名密钥。失败保留原数据库。
 
 ## MP-D09: 统一 Conversation Framework
 
@@ -170,6 +174,10 @@ command/event/authority sequence 框架；crypto payload 由 Direct/MLS engine �
 
 每个责任域使用原子切换：new owner 完成、所有 consumer 切换、旧 symbol/path 删除、
 tree scan 为零。回滚使用版本控制和部署回滚，不保留双 runtime。
+
+Key Exchange 的 Direct public-key 表迁移由 `CanonicalStore.Migrate` 统一执行。
+旧 `actor_did` 结构只在表为空时原子重建为 `actor_ptid` 结构；非空旧表必须明确
+迁移或经过授权重置，启动不能把旧数据静默转换、删除或继续使用旧主键。
 
 代价：切换 closure 必须更小且证据充分，不能长期分批混跑。
 
@@ -1457,6 +1465,21 @@ feature flag 双跑或平台私有 crypto fork。
 - Desktop 现有 implementation 需要整体迁移，不能长期保留原目录作为第二真源；
 - 两个 Tauri crate 的 Rust dependency/build pipeline 需要统一；
 - native mobile background、push 和 secure-storage adapters 仍需单独验证。
+
+UCA-04A freezes `messaging-store-v1`, the Desktop/Mobile symbol inventory, the
+generation-fenced portable lifecycle and the narrow Host ports before consumer
+cutover. This source-only step deliberately does not start a second production
+worker; UCA-04 remains the sole owner of consumer activation and legacy-owner
+deletion.
+
+UCA-04 completed the source hard cut: Desktop and Mobile production
+composition now calls the same core inbox, outbox, reconciliation, receipt and
+lifecycle policies; former Desktop owner modules and Mobile parallel owner
+symbols are deleted. Physical storage measurement/deletion is implemented once
+in `messaging-native-filesystem`, while `messaging-core` retains only typed
+facts, policy and ports. This source closure does not promote Desktop/iOS/
+physical-Android runtime evidence; missing release-target cells remain
+`UNPROVEN`.
 
 ### Acceptance
 

@@ -5380,6 +5380,8 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                                   thinking_mode text NOT NULL DEFAULT 'auto',
                                   visibility text NOT NULL,
                                   owner_actor_ptid text NOT NULL,
+	                                  identity_prompt text NOT NULL DEFAULT '',
+	                                  agent_config_prompt text NOT NULL DEFAULT '',
                                   config_json text,
                                   version bigint NOT NULL DEFAULT 1,
                                   created_at datetime NOT NULL,

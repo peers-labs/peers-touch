@@ -1,8 +1,8 @@
 # Peers-Touch 架构文档
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-10-05 | **Updated**: 2026-10-06
+> **Version**: v3.0
+> **Created**: 2026-10-05 | **Updated**: 2026-10-20
 > **Owner**: Architecture Team
 
 ---
@@ -18,35 +18,44 @@
 - 具体编码规范，见 `docs/global/coding-guide/`；
 - 历史研究和过程记录，见 `docs/context/` 与各模块的历史执行计划。
 
-项目级三层架构由
-[`docs/global/architecture.md`](../global/architecture.md) 定义；本文件负责把
-该架构映射到当前可发现的正式模块和专题文档。
+项目级系统上下文、逻辑分层、运行时拓扑、权威边界和关键动态链路由
+[`architecture.md`](./architecture.md) 定义；本文件负责把该架构映射到当前
+可发现的正式模块、代码治理范围和图引用。
 
-## 2. 当前代码架构映射
+## 2. 项目架构与模块索引
 
-```text
-Client
-  apps/desktop
-  apps/mobile
-      |
-      | generated contracts / Station APIs
-      v
-Model
-  model/domain
-      |
-      v
-Station
-  apps/station/app    business/domain owners
-  apps/station/frame  framework/transport/infrastructure
-```
+- [系统上下文](./system-context.svg)
+- [逻辑分层架构](./architecture.svg)
+- [项目运行时拓扑](./runtime-topology.svg)
+- [权威与状态真源](./authority-map.svg)
+- [同 Station 业务闭环](./journey-same-station.svg)
+- [Direct / Relay 路由汇合](./journey-route-convergence.svg)
+- [跨 Station Durable 投递](./journey-cross-station.svg)
+- [工程控制面](./engineering-control-plane.svg)
+- [架构图反向引用](./references.md)
 
-| 代码边界 | 架构入口 | 说明 |
-|---|---|---|
-| 全局 Client / Model / Station | [全局架构](../global/architecture.md) | 项目级 Source of Truth 与依赖方向 |
-| Station 与客户端 | [Station/Desktop 边界](./platform/station-desktop-boundary.md) · [Station Access](./platform/station/access/README.md) | 共享业务真源、设备侧编排和接入生命周期 |
-| Desktop 本地运行时 | [Runtime](./platform/client/desktop/runtime.md) · [Frontend Runtime](./platform/client/frontend-runtime/README.md) | Tauri、embedded renderer、本地 BFF 与前端投影 |
-| Mobile | [Mobile](./platform/client/mobile/README.md) | Tauri Mobile、Rust capability kernel 与 native plugins |
-| 公共 API / Proto | [API Ownership](./engineering/api-governance/README.md) · [Model](../global/domain-model.md) | Resource owner、公开路由与跨端契约 |
+模块索引由
+[`architecture-modules.json`](./engineering/architecture-governance/architecture-modules.json)
+生成。Registry 继续作为唯一机器模块清单；本表不建立第二份 module truth。
+
+### Active Module Index
+
+| Module ID | Taxonomy | Owner | Primary architecture | Governed paths |
+|---|---|---|---|---:|
+| `agent` | domains | Peers-Touch Agent Team | [design.md](./domains/agent/design.md) | [8](./engineering/architecture-governance/architecture-modules.json) |
+| `bot` | domains | Peers-Touch Bot Team | [design.md](./domains/bot/design.md) | [6](./engineering/architecture-governance/architecture-modules.json) |
+| `chat-storage-governance` | domains | Device Messaging Engine | [design.md](./domains/chat/storage-governance/design.md) | [18](./engineering/architecture-governance/architecture-modules.json) |
+| `oauth-login-broker` | domains | Identity and Access | [design.md](./domains/identity/oauth-login-broker/design.md) | [2](./engineering/architecture-governance/architecture-modules.json) |
+| `cross-station-social` | domains | Social / Federation | [design.md](./domains/social/cross-station/design.md) | [1](./engineering/architecture-governance/architecture-modules.json) |
+| `api-ownership` | engineering | Architecture Team | [design.md](./engineering/api-governance/design.md) | [1](./engineering/architecture-governance/architecture-modules.json) |
+| `architecture-module-governance` | engineering | Architecture Team | [design.md](./engineering/architecture-governance/design.md) | [20](./engineering/architecture-governance/architecture-modules.json) |
+| `development-workflow` | engineering | Platform Team | [design.md](./engineering/development-workflow/design.md) | [34](./engineering/architecture-governance/architecture-modules.json) |
+| `local-dev-control-plane` | engineering | Platform Team | [design.md](./engineering/local-dev/design.md) | [26](./engineering/architecture-governance/architecture-modules.json) |
+| `cross-client-runtime` | platform | Client Platform Team | [cross-client-runtime.reuse-topology](./platform/client/cross-client-runtime/architecture.svg) | [19](./engineering/architecture-governance/architecture-modules.json) |
+| `mobile-social-parity` | platform | Mobile / Social / Client Architecture | [design.md](./platform/client/mobile/social-parity/design.md) | [9](./engineering/architecture-governance/architecture-modules.json) |
+| `node-connectivity` | platform | Architecture Team | [design.md](./platform/runtime/node-connectivity/design.md) | [12](./engineering/architecture-governance/architecture-modules.json) |
+| `station-access-lifecycle` | platform | Identity and Access | [design.md](./platform/station/access/design.md) | [24](./engineering/architecture-governance/architecture-modules.json) |
+| `secure-content` | shared | Architecture Team | [design.md](./shared/security/secure-content/design.md) | [1](./engineering/architecture-governance/architecture-modules.json) |
 
 ## 3. 物理目录与所有权
 
@@ -55,6 +64,21 @@ README、设计、决策和机器治理声明。
 
 ```text
 docs/architecture/
+├── README.md      # architecture portal and generated module index
+├── architecture.md # project architecture narrative
+├── system-context.diagram.json
+├── system-context.svg
+├── architecture.diagram.json
+├── architecture.svg
+├── runtime-topology.diagram.json
+├── runtime-topology.svg
+├── authority-map.diagram.json
+├── authority-map.svg
+├── journey-*.diagram.json
+├── journey-*.svg
+├── engineering-control-plane.diagram.json
+├── engineering-control-plane.svg
+├── references.md  # generated diagram reverse references
 ├── domains/       # Station business truth and cross-client product contracts
 ├── platform/      # Client / Station / contract / runtime implementation boundaries
 ├── shared/        # Narrow cross-domain capabilities without business authority
@@ -104,8 +128,13 @@ docs/architecture/
 2. 更新最近的模块 README；成为当前真源时再更新本索引和 `docs/README.md`。
 3. active 模块或 taxonomy index 变化时同步
    `engineering/architecture-governance/architecture-modules.json`。
-4. 相对链接必须在仓库内可解析；禁止提交开发者绝对 `file://` 链接。
-5. 标题锚点必须指向当前文件中的真实 heading。
+4. canonical 图使用模块目录内的 `*.diagram.json` 作为视图 spec，由统一 renderer
+   生成独立 SVG；Markdown 只嵌入 SVG，不暴露机器元数据或渲染语法。
+5. 运行 `node tooling/scripts/architecture/diagram-render.mjs` 生成 SVG，再运行
+   `node tooling/scripts/architecture/document-index.mjs` 更新模块索引与反向引用。
+   把 SVG 转成 PNG 目检层次、文字和连线路由；两个命令都必须通过 `--check`
+   模式验证无漂移。
+6. 相对链接必须在仓库内可解析；禁止提交开发者绝对 `file://` 链接。
 
 架构文档格式见
 [`architecture-document-standard.md`](../global/architecture-document-standard.md)。

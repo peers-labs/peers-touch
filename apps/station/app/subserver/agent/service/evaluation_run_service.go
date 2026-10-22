@@ -916,10 +916,9 @@ func (s *EvaluationService) resolveEvaluationTarget(
 		thinkingMode,
 	)
 	snapshot.RuntimeProfileId = runtimeProfileID
-	identity, agentPrompt := frozenEvaluationPrompts(agent.ConfigJSON)
 	return snapshot, frozenEvaluationAgentConfig{
-		Identity:          identity,
-		AgentConfigPrompt: agentPrompt,
+		Identity:          agent.IdentityPrompt,
+		AgentConfigPrompt: agent.AgentConfigPrompt,
 		Effort:            strings.TrimSpace(agent.Effort),
 		ThinkingMode:      string(thinkingMode),
 		ProviderID:        providerID,
@@ -1116,36 +1115,6 @@ func validateEvaluationReadiness(
 		}
 	}
 	return nil
-}
-
-func frozenEvaluationPrompts(configJSON string) (string, string) {
-	var config map[string]interface{}
-	if json.Unmarshal([]byte(configJSON), &config) != nil {
-		return "", ""
-	}
-	read := func(keys ...string) string {
-		for _, key := range keys {
-			if value, ok := config[key].(string); ok &&
-				strings.TrimSpace(value) != "" {
-				return value
-			}
-		}
-		return ""
-	}
-	return read(
-			"identity",
-			"soulMd",
-			"soul_md",
-			"soul",
-			"systemPrompt",
-			"system_prompt",
-		), read(
-			"agentConfigPrompt",
-			"agent_config_prompt",
-			"agentsMd",
-			"agents_md",
-			"agents",
-		)
 }
 
 func evaluationRunModel(
@@ -1480,5 +1449,3 @@ func (s *EvaluationService) signalWorker() {
 func isEvaluationNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
-
-var _ = errcode.AgentInternal

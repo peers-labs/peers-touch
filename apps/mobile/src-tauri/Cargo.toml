@@ -16,11 +16,13 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 base64 = "0.22"
 bip39 = "2"
+x-config-core = { path = "../../../packages/x-config-core" }
 ed25519-dalek = { version = "2", features = ["pem", "rand_core"] }
 hkdf = "0.12"
 hex = "0.4"
 libp2p-identity = { version = "=0.3.0", features = ["ed25519", "peerid"] }
 messaging-core = { path = "../../../packages/messaging-core" }
+messaging-native-filesystem = { path = "../../../packages/messaging-native-filesystem" }
 secure-content-core = { path = "../../../packages/secure-content-core" }
 station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
 station-trust = { path = "../../../packages/station-trust" }

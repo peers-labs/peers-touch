@@ -45,6 +45,10 @@ import {
 import { EntryProgressScreen } from './features/station/EntryProgressScreen';
 import { StationLaunchScreen } from './features/station/StationLaunchScreen';
 import {
+  discoverXConfigSuggestion,
+  useXConfigProjection,
+} from './features/station/xConfig';
+import {
   applyAccessGateRuntimeResult,
   cancelAccessAttemptForActiveStation,
   refreshAccessDecisionForActiveStation,
@@ -85,6 +89,7 @@ import {
   selectStationRouteRuntime,
   updateStationRegistryProjection,
   useStationRegistryProjection,
+  verifyStationEntryRuntime,
 } from './runtimes/stationRuntime';
 import {
   notifyReliabilityCommandChanged,
@@ -133,6 +138,7 @@ function MobileAppRoot() {
 
   const launchState = lifecycle.launchState;
   const stationRegistry = useStationRegistryProjection();
+  const xConfig = useXConfigProjection();
   const [stationError, setStationError] = useState<string | null>(null);
   const [stationChecking, setStationChecking] = useState(false);
   const [verifyingStationUrls, setVerifyingStationUrls] = useState<string[]>([]);
@@ -563,21 +569,6 @@ function MobileAppRoot() {
     await selectStationRouteRuntime(stationPeerId, route.routeId);
   }
 
-  async function verifyStationEntry(
-    station: MobileStationEntry,
-  ): Promise<StationIdentityResult> {
-    const route = activeStationRoute(station);
-    if (!route) throw new Error('mobile.launch.stationRouteUnavailable');
-    return verifyBoundStationRoute({
-      stationPeerId: station.stationPeerId,
-      routeId: route.routeId,
-      routeGeneration: route.routeGeneration,
-      routeRevision: station.routeRevision ?? 1,
-      sourceRef: route.sourceRef,
-      endpointOrigin: route.endpointOrigin,
-    });
-  }
-
   async function login(input: Omit<StationLoginInput, 'stationPeerId' | 'stationUrl'>) {
     if (!activeStation) {
       setAuthError(t('mobile.auth.selectStation'));
@@ -676,7 +667,7 @@ function MobileAppRoot() {
     if (!selectedStation) {
       throw new Error('mobile.auth.activeStationRequired');
     }
-    const verified = await verifyStationEntry(selectedStation);
+    const verified = await verifyStationEntryRuntime(selectedStation);
     requireMatchingStationIdentity(selectedStation, verified.stationPeerId);
     await getMobileLifecycleKernel().restartRuntimeGraph('app-resume');
     getRecoveryProjection().clearDeviceLocalFlag(state.reason);
@@ -694,7 +685,7 @@ function MobileAppRoot() {
     ) {
       throw new Error('mobile.launch.stationIdentityMismatch');
     }
-    const verified = await verifyStationEntry(selectedStation);
+    const verified = await verifyStationEntryRuntime(selectedStation);
     requireMatchingStationIdentity(selectedStation, verified.stationPeerId);
     await getMobileLifecycleKernel().transitionScope(
       'revocation',
@@ -801,7 +792,7 @@ function MobileAppRoot() {
     setAuthError(null);
     let observedStationPeerId: string | null = null;
     try {
-      const verified = await verifyStationEntry(station);
+      const verified = await verifyStationEntryRuntime(station);
       observedStationPeerId = verified.stationPeerId;
       requireMatchingStationIdentity(station, verified.stationPeerId);
       getRecoveryProjection().clearSessionMismatch();
@@ -1055,6 +1046,7 @@ function MobileAppRoot() {
           ? renderedStationRegistry.entries.map((entry) => entry.url)
           : checkedStationUrls
       }
+      suggestions={xConfig.suggestions}
       surfaceFixture={fixtureStationSelectorSurface(entryFixture.surfaceId)}
       onAddStation={async (stationUrl: string) => {
         const stationInput = buildStationAccessInput(stationUrl);
@@ -1072,6 +1064,26 @@ function MobileAppRoot() {
             return true;
           }
           return await addDiscoveredRoute(discovery.routes[0]);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : '';
+          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+          return false;
+        } finally {
+          setStationChecking(false);
+        }
+      }}
+      onSelectSuggestion={async (seedId: string) => {
+        setStationChecking(true);
+        setStationError(null);
+        try {
+          const discovery = await discoverXConfigSuggestion(seedId);
+          if (discovery.routes.length > 1) {
+            setPendingRouteChoice({ routes: discovery.routes });
+            return true;
+          }
+          const route = discovery.routes[0];
+          if (!route) throw new Error('mobile.launch.stationRouteUnavailable');
+          return await addDiscoveredRoute(route);
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
           setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
@@ -1111,7 +1123,7 @@ function MobileAppRoot() {
         setStationError(null);
         let identity: StationIdentityResult;
         try {
-          identity = await verifyStationEntry(selectedStation);
+          identity = await verifyStationEntryRuntime(selectedStation);
           setCheckedStationUrls((urls) => (
             urls.includes(selectedStation.url) ? urls : [...urls, selectedStation.url]
           ));

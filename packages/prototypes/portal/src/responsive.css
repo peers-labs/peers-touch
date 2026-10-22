@@ -5,6 +5,78 @@
   box-sizing: border-box;
 }
 
+.prototype-portal-preview {
+  position: relative;
+}
+
+.prototype-portal-preview-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.prototype-portal-fullscreen-button {
+  display: inline-flex;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #d9dde6;
+  border-radius: 8px;
+  color: #374151;
+  background: #ffffff;
+  font: 600 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.prototype-portal-fullscreen-button:hover {
+  border-color: #8b80e8;
+  color: #4c3fc4;
+  background: #f8f7ff;
+}
+
+.prototype-portal-fullscreen-button:focus-visible {
+  outline: 2px solid #6b5bd6;
+  outline-offset: 2px;
+}
+
+.prototype-preview-fullscreen-open {
+  overflow: hidden;
+}
+
+.prototype-portal-preview.is-fullscreen {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr);
+  width: 100vw;
+  height: 100dvh;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #ffffff;
+}
+
+.prototype-portal-preview.is-fullscreen > div:first-child {
+  height: 48px !important;
+  padding: 0 16px !important;
+}
+
+.prototype-portal-preview.is-fullscreen .prototype-portal-preview-body {
+  width: 100%;
+  height: 100% !important;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.prototype-portal-preview.is-fullscreen .prototype-portal-preview-body.is-remote {
+  overflow: hidden;
+}
+
 @media (max-width: 900px) {
   .prototype-portal .prototype-portal-header {
     height: auto !important;
@@ -55,5 +127,33 @@
   .prototype-portal-heading {
     flex-wrap: wrap;
     gap: 12px;
+  }
+
+  .prototype-portal-preview-title {
+    overflow: hidden;
+  }
+
+  .prototype-portal-preview-title > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 520px) {
+  .prototype-portal-fullscreen-button {
+    width: 32px;
+    padding: 0;
+  }
+
+  .prototype-portal-fullscreen-button > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 }

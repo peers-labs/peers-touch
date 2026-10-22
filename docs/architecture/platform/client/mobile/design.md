@@ -1,8 +1,8 @@
 # Mobile Shell — 架构设计
 
-> **Status**: active; whole-product usability and Mobile call amendments accepted
-> **Version**: v1.5
-> **Created**: 2026-08-27 | **Updated**: 2026-10-12
+> **Status**: active
+> **Version**: v1.6
+> **Created**: 2026-08-27 | **Updated**: 2026-10-16
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -35,7 +35,7 @@
 | Friend Request and Social relationship changes are generated non-Chat command families with stable identity and deterministic result types | verified_fact | `model/domain/social/relationship.proto`, Station Social command stores, Mobile reliability resolvers | high | simulator command/readback/checkpoint proof |
 | Current Moment command requests have no complete durable result/readback contract | verified_fact | `model/domain/social/post.proto`, `comment.proto` | high | owning Model/Station contracts |
 | Legacy session-secret-derived v1 persistence cannot be attributed safely after credential deletion or rotation | verified_fact | MS-D15 migration boundary and canonical v1 quarantine | high | retain fail-closed quarantine; never infer ownership |
-| Generated scope-keyed v2 reliability persistence replaces the retired skeleton | accepted_decision | MS-D15, `data-model.md` §4-§5; Owner approval on 2026-09-11 | accepted | source complete; simulator recovery evidence pending |
+| Generated scope-keyed v2 reliability persistence is the Mobile reliability contract | verified_fact | MS-D15, `data-model.md` §4-§5, current Rust source | high | Android and iOS restart/recovery evidence pending |
 | Prototype defines the confirmed target experience | verified_fact | confirmed core journey plus reviewed recovery/destructive-state screenshots and L3 audit | high | production acceptance is separate |
 | Current production Mobile can pass a narrow Session-class Gate while exposing raw PTIDs, oversized hierarchy, an app-obstructing deferred-capability notice, and a compromised composer | verified_fact | `station-access-session-class-suite-e2e` screenshot `20261007T160348590278Z-5b01a4419595e44a6832808b0ebc46d0/runtime/mobile-simulator/evidence/same-station-chat/sim-ios/screenshot.png` | high | complete foreground route/state inventory and remediation |
 | Mobile hard-cut has zero executable legacy Group/Social callers | verified_fact | production scan over Mobile TypeScript and Rust; current hard-cut gate | high | keep zero-reference checks green |
@@ -43,7 +43,7 @@
 | Social directional block has canonical generated mutation/list/status/result/event contracts and Mobile durable-command cutover | verified_fact | Social relationship authority, shared Federation delivery, `relationship.proto`, Mobile relationship resolver | high | same-Station simulator proof required now; cross-Station/Relay proof deferred |
 | Generic Access Gate descriptors exist but generic schema-bound submission does not | verified_fact | `access_gate.proto`: `input_schema_json` versus fixed login/invite/session submit fields | high | Access Gate owner contract |
 | Mobile Web business gateways currently receive and attach bearer credentials | verified_fact | `services/gateways/gatewayTypes.ts`, `momentsGateway.ts`, `momentMediaGateway.ts` | high | Rust-owned authenticated transport cutover |
-| Native lifecycle, APNs/FCM/UnifiedPush registration ingress, scheduled-work completion, and media-picker staging are source-complete | verified_fact | native platform plugin, Rust push/media bridges, Notification registration service, W7 source checks | high | simulator platform proof; optional physical diagnostics |
+| Native capability source is incomplete and asymmetric across Android/iOS | verified_fact | current `src-tauri/plugins/`, host registration, generated Android/iOS projects, and platform configuration | high | capability-by-platform source closure and native evidence; APNs/FCM/background/provider support remains `UNPROVEN` where source or configuration is absent |
 
 ## 3. System Architecture
 
@@ -247,13 +247,9 @@ The state machine and current Model contract status are normative in
 contract gaps stay explicit. This design does not authorize a protocol version
 bump or new field numbering.
 
-### 7.1 W2 Security Amendment
+### 7.1 OAuth Security Boundary
 
-> **Status**: accepted on 2026-08-28.
-
-The W2 implementation now uses the accepted credential-delivery and activation
-boundary below. MS-D26 requires deterministic simulator proof of that
-implementation; physical provider proof is optional diagnostics:
+OAuth uses the following credential-delivery and activation boundary:
 
 ```text
 mobile-web
@@ -351,20 +347,17 @@ delivery, projection readback, and cleanup. Drivers may invoke production
 actions through this registry but may not mutate stores, bypass Station, or
 inject a successful business result.
 
-Simulator/emulator cells prove build, launch, callback routing, and deterministic
-failure cases. Under MS-D26 they are the required MS-AG03 proof surface.
-Physical iOS and Android devices may additionally exercise real GitHub and
-Google authorization with disposable approved accounts, but that evidence is
-optional diagnostics.
+Simulator/emulator cells prove build, launch, callback routing, and
+deterministic failure cases. Real-provider authorization claims additionally
+require physical Android and iOS evidence with approved disposable accounts.
+Each platform cell remains independent under MS-D26.
 
-### 7.6 Optional W2-E2 Physical Diagnostics
+### 7.6 Physical Provider Evidence
 
-The retained ownership, Fixture, Station proof, provider browser lease and
-physical build provenance contracts for optional diagnostics are defined in
-[`native-oauth-proof/`](./native-oauth-proof/README.md). W2-E2 execution still
-follows its historical focused plan at
-[`execution-plans/20260829-mobile-native-oauth-proof.md`](./execution-plans/20260829-mobile-native-oauth-proof.md);
-it is excluded from required MS-AG03 completion by MS-D26.
+Fixture, Station proof, provider browser lease, and physical build provenance
+contracts are defined in
+[`native-oauth-proof/`](./native-oauth-proof/README.md). Provider delivery is
+`UNPROVEN` on any release target without a current source-bound physical cell.
 
 ## 8. Data And Command Flow
 
@@ -407,13 +400,12 @@ Station result/readback semantics are complete. Other mutations must gain an
 equivalent Model/Station contract before offline replay is enabled.
 For Mobile Shell scope, this narrows the generic automatic replay language in `docs/client/mobile/sync-protocol.md`.
 
-### 8.2 W4 Reliability V2 Boundary
+### 8.2 Reliability V2 Boundary
 
-> **Status**: accepted and source-complete under MS-D15 on 2026-09-11. Station
-> Social exposes the authenticated Friend Request command-result lookup, and
-> Mobile implements the schema, resolver, lifecycle, migration, and recovery
-> Harness. Required simulator proof remains `UNPROVEN`; physical native proof
-> is optional diagnostics.
+Station Social exposes the authenticated Friend Request command-result lookup,
+and Mobile implements the schema, resolver, lifecycle, migration, and recovery
+Harness. Runtime behavior remains `UNPROVEN` for each required platform cell
+until its source-bound Gate passes.
 
 The target owner chain is:
 
@@ -517,14 +509,15 @@ workloads, thresholds, attribution metrics, and evidence paths. Execution
 planning must register the concrete Acceptance plan; missing native evidence
 remains `UNPROVEN`.
 
-MS-AG12 is the release-level
-`mobile-simulator-whole-product-usability-e2e` composition Gate. It derives its inventory from
-pre-shell lifecycle states, navigation descriptors, registered overlays, and
-product-owned recovery projections. It must operate the visible iOS Simulator,
-capture every inventory row, and fail when technical identifiers, untranslated
-copy, module-wide notices, clipping, overlap, occlusion, missing actions, or
-prototype drift make a surface unfit for normal human use. A scenario-specific
-business Gate cannot substitute for this composition Gate.
+MS-AG12 is the release-level whole-product usability Gate family. Android and
+iOS Gates derive the same inventory from pre-shell lifecycle states,
+navigation descriptors, registered overlays, and product-owned recovery
+projections. Each Gate operates the visible native app, captures every
+inventory row, and fails when technical identifiers, untranslated copy,
+module-wide notices, clipping, overlap, occlusion, missing actions, or
+prototype drift make a surface unfit for normal human use. A
+scenario-specific business Gate cannot substitute for either platform
+composition Gate.
 
 If MS-D15 is accepted, MS-AG04/MS-AG09/MS-AG10 must additionally prove:
 
@@ -854,52 +847,41 @@ retired Group and Chat-owned Social callers is zero. Friend/Group-specific
 Proto, gateways, stores, runtimes, routes, tests, fixtures, and generated
 bindings are absent from executable production paths.
 
-A repository-wide semantic audit classifies every remaining textual reference
-as generated compatibility commentary, test/fixture input, historical
-documentation, or active executable use. Only the first three may remain, and
-each must name its owner or historical status. A string-only zero result is not
-proof when aliases or semantic duplicates still exist.
+Repository-wide semantic audits must distinguish active executable use,
+generated compatibility input, tests/fixtures, and non-authoritative context.
+A string-only zero result is not proof when aliases or semantic duplicates
+remain.
 
-## 13. iOS Simulator-Canonical Acceptance
+## 13. Android/iOS Platform Acceptance
 
-MS-D26 makes source-bound iOS Simulator the required Mobile runtime. The
-simulator applications are production Mobile code built with the Acceptance
-Harness enabled; the Harness exposes bounded production actions and sanitized
-projections, never direct Store mutation or fabricated successful results.
-Single-client assertions use one pinned iOS Simulator. Cross-session and
-cross-actor assertions use two isolated iOS Simulators so the receiver boundary
-remains real without requiring Android.
+MS-D26 requires an explicit capability-by-platform matrix. Each Gate binds:
 
-The required environment classes are:
+```text
+capability x release target x runtime mode x source revision
+```
 
-- base dual-iOS simulator for launch, callback, runtime graph, platform,
-  isolation, and cleanup;
-- Station-lifecycle simulator for restore, revocation, Station switching,
-  logout, scope isolation, and sequential same-account Settings readback;
-- Direct simulator for two actors on one source-attested Station, with
-  authoritative domain readback, recovery, Chat, Contacts, and Moments
-  journeys.
+The Acceptance Harness exposes bounded production actions and sanitized
+projections. It never mutates stores directly or fabricates successful
+results.
 
-The two-Station Social simulator and Relay remain a separate topology for
-future cross-Station proof. MS-D27 excludes that topology from
-`mobile-shell-20260827`; it must not block the current plan and same-Station
-evidence must not be relabeled as cross-Station proof.
+Single-client assertions use one isolated client. Cross-session, cross-actor,
+cross-device, and receiver-perspective assertions use distinct clients with
+separate runtime identities, profiles, ports, storage roots, and driver
+sessions.
 
-Required Gates remain scenario-specific. A broad simulator environment does not
-allow one passing journey to prove unrelated product assertions. Every Gate
-records source identity, runtime identity, client roles, receiver-side
-readback, visible evidence where applicable, and deterministic cleanup.
+Required Gates remain scenario-specific. Every Gate records source identity,
+runtime identity, release target, client roles, authoritative readback,
+visible evidence where applicable, and deterministic cleanup.
 
-Android Emulator, `mobile-native-*`, and `mobile-native.yaml` remain optional
-diagnostics surfaces. They may report Android-specific or physical hardware
-behavior but are excluded from Feature `required_gates`, Capability
-`required_gates`, Registry `require` lists, the Mobile Acceptance Plan selected
-Gates, Task closure contracts, and W8/W9 dependencies. Their result cannot
-change required completion state.
+Simulator and emulator evidence is valid only for behavior actually executed
+there. Physical-device evidence is required when a claim depends on real
+provider delivery, secure hardware, OEM scheduling, camera/media providers,
+radio/process lifecycle, assistive technology, or pinned-hardware
+performance.
 
-This section supersedes earlier statements in this document that made physical
-device or live provider evidence a required proof boundary. Those statements
-continue to describe the optional diagnostic scope only.
+One OS, another runtime mode, static source checks, mocks, or stale artifacts
+cannot satisfy a missing platform cell. Missing required evidence is
+`UNPROVEN`.
 
 ## 14. Whole-Product Foreground Usability
 
@@ -917,9 +899,9 @@ changing Station, Model, runtime, or projection authority.
 - A module-degradable failure remains inside the owning module. Only a failure
   that makes the complete authenticated scope unsafe may use a global blocking
   surface.
-- The foreground iOS runner records route/state coverage, screenshot, DOM/AX,
-  interaction trace, viewport/text-size cell, and an agent-reviewed usability
-  verdict for every inventory row.
+- Android and iOS foreground runners record route/state coverage, screenshot,
+  DOM/accessibility tree, interaction trace, viewport/text-size cell, and an
+  agent-reviewed usability verdict for every inventory row.
 - Whole-product readiness requires zero unresolved blocker or major usability
   findings across the complete inventory. Functional command/readback success
   remains necessary but is not sufficient.

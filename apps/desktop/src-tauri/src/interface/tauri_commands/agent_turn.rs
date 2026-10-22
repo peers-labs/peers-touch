@@ -9,11 +9,11 @@ use crate::contracts::{
     AgentSelectActiveBranchInput, AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput,
     AgentTaskStatusInput, AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput,
     AgentThreadCreateInput, AgentThreadListInput, AgentThreadMessagesInput,
-    AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput,
-    AgentTurnQueueCancelInput, AgentTurnQueueListInput, AgentTurnReplayStreamCancelInput,
-    AgentTurnReplayStreamInput, AgentTurnStreamCancelInput, AgentTurnTraceGetInput,
-    AgentTurnTraceListInput, AgentTurnTransportCancelInput, StubPayload, TopicCommentCreateInput,
-    TopicCommentDeleteInput, TopicCommentListInput,
+    AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnAttributionsInput,
+    AgentTurnDiagnosticsInput, AgentTurnQueueCancelInput, AgentTurnQueueListInput,
+    AgentTurnReplayStreamCancelInput, AgentTurnReplayStreamInput, AgentTurnStreamCancelInput,
+    AgentTurnTraceGetInput, AgentTurnTraceListInput, AgentTurnTransportCancelInput, StubPayload,
+    TopicCommentCreateInput, TopicCommentDeleteInput, TopicCommentListInput,
 };
 use crate::error::AppResult;
 use crate::error::ErrorCode;
@@ -251,6 +251,19 @@ pub fn agent_turn_diagnostics_export(
 }
 
 #[tauri::command]
+pub fn agent_turn_attributions_get(
+    input: AgentTurnAttributionsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_turn_attributions_get(state.station.client(), input, &token)
+}
+
+#[tauri::command]
 pub async fn agent_submit_tool_decision(
     input: AgentToolDecisionIntentInput,
     app: tauri::AppHandle,
@@ -346,6 +359,19 @@ pub fn agent_conversation_archive(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     application_agent_turn::agent_conversation_archive(state.station.client(), input, &token)
+}
+
+#[tauri::command]
+pub fn agent_conversation_delete_batch(
+    input: crate::contracts::AgentConversationDeleteBatchInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_conversation_delete_batch(state.station.client(), input, &token)
 }
 
 #[tauri::command]

@@ -69,7 +69,7 @@ StationRouteStatement
   route_id
   route_generation: admission epoch, not heartbeat counter
   kind: DIRECT | CIRCUIT
-  addresses: validated multiaddrs / direct HTTPS origin
+  addresses: validated multiaddrs / user-selected direct HTTP(S) origin
   inner_tls_spki_sha256: bytes[32]
   capabilities_digest: bytes[32]
   visibility: PUBLIC | GRANT_ONLY
@@ -87,7 +87,8 @@ root delegation and node signature, checks capability inclusion, and matches
 the final `/p2p/<node>` and Circuit `/p2p/<relay>/p2p-circuit/` segments.
 Route lifetime is at most five minutes and cannot exceed node authorization.
 Inner TLS uses the authorized node key and ALPN h2; no credential is sent before
-SPKI validation. Direct HTTPS has equivalent signed identity verification.
+SPKI validation. The user-selected discovery origin may be HTTP or HTTPS;
+signed Station/node identity and route verification remain mandatory for both.
 
 Node incarnation belongs to operational readiness and need not change a stable
 node certificate at every restart. Route generation changes only for admission

@@ -43,12 +43,14 @@
     ],
     "surface": [
       "ordinary clients show Federation context and connection status",
+      "Find People offers All and explicit Federation scopes without loading or rendering member Station topology",
       "ordinary clients do not expose Federation governance or Relay topology controls"
     ]
   },
   "negative": [
     "a missing Federation context must block scoped actions instead of selecting a default",
     "ordinary clients must not create, join, leave, delete, or manage Federation membership",
+    "ordinary clients must not expose member Station directories, selectors, or member-topology commands",
     "ordinary clients must not expose Relay token, invite, mount, seed, or forwarding endpoint",
     "operator Federation and Relay APIs must not be removed"
   ]

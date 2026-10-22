@@ -10,8 +10,10 @@ use crate::application::station_runtime::client::{self as station_client, Statio
 use crate::error::{AppResult, ErrorCode};
 use crate::model::actor::ActorProfile;
 use crate::model::federation::v1::{
-    CreateFederationRequest, CreateFederationResponse, JoinFederationRequest,
-    JoinFederationResponse, ListFederationsResponse, ListMemberStationsResponse,
+    CreateFederationRequest, CreateFederationResponse, DeleteFederationRequest,
+    DeleteFederationResponse, JoinFederationRequest, JoinFederationResponse,
+    LeaveFederationRequest, LeaveFederationResponse, ListFederationsResponse,
+    ListMemberStationsResponse,
 };
 use crate::state::AppState;
 
@@ -26,6 +28,17 @@ pub struct FederationFixtureJoinInput {
     federation_endpoint: String,
     federation_id: String,
     message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FederationFixtureLeaveInput {
+    federation_id: String,
+    reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FederationFixtureDeleteInput {
+    federation_id: String,
 }
 
 fn token_or_unauthorized(
@@ -80,7 +93,21 @@ pub(crate) fn fixture_snapshot(
             "federationId": federation_id,
             "name": federation.name,
             "status": federation.status,
+            "policyType": federation.policy_type,
+            "headSeq": federation.head_seq,
+            "headHash": federation.head_hash,
             "sequencerStationPeerId": federation.sequencer_station_peer_id,
+            "myRole": federation.my_role,
+            "capability": federation.capability.map(|capability| json!({
+                "canInvite": capability.can_invite,
+                "canApproveJoin": capability.can_approve_join,
+                "canUpdatePolicy": capability.can_update_policy,
+                "canViewLedger": capability.can_view_ledger,
+                "canRemoveStation": capability.can_remove_station,
+                "canGrantAdmin": capability.can_grant_admin,
+                "canLeave": capability.can_leave,
+                "canArchive": capability.can_archive,
+            })),
             "members": members.stations.into_iter().map(|station| json!({
                 "stationPeerId": station.station_peer_id,
                 "stationName": station.station_name,
@@ -166,6 +193,71 @@ pub(crate) fn join_fixture(
     }
 }
 
+pub(crate) fn leave_fixture(
+    station_client: &StationClient,
+    token: &str,
+    input: FederationFixtureLeaveInput,
+) -> AppResult<Value> {
+    let federation_id = input.federation_id.trim();
+    if federation_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "federation_id is required",
+            None,
+        );
+    }
+    let request = LeaveFederationRequest {
+        federation_id: federation_id.to_string(),
+        reason: input.reason.trim().to_string(),
+    };
+    let route = format!("/sub-federation/federations/{federation_id}/leave");
+    match station_client.request_proto::<LeaveFederationRequest, LeaveFederationResponse>(
+        Method::POST,
+        &route,
+        token,
+        None,
+        Some(&request),
+    ) {
+        Ok(response) => AppResult::success(json!({
+            "federationId": federation_id,
+            "success": response.success,
+        })),
+        Err(error) => station_failure(error, "acceptance Federation fixture leave failed"),
+    }
+}
+
+pub(crate) fn delete_fixture(
+    station_client: &StationClient,
+    token: &str,
+    input: FederationFixtureDeleteInput,
+) -> AppResult<Value> {
+    let federation_id = input.federation_id.trim();
+    if federation_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "federation_id is required",
+            None,
+        );
+    }
+    let request = DeleteFederationRequest {
+        federation_id: federation_id.to_string(),
+    };
+    let route = format!("/sub-federation/federations/{federation_id}/delete");
+    match station_client.request_proto::<DeleteFederationRequest, DeleteFederationResponse>(
+        Method::POST,
+        &route,
+        token,
+        None,
+        Some(&request),
+    ) {
+        Ok(response) => AppResult::success(json!({
+            "federationId": federation_id,
+            "success": response.success,
+        })),
+        Err(error) => station_failure(error, "acceptance Federation fixture delete failed"),
+    }
+}
+
 #[tauri::command]
 pub fn acceptance_federation_fixture_snapshot(
     state: State<'_, Arc<AppState>>,
@@ -202,4 +294,30 @@ pub fn acceptance_federation_fixture_join(
         Err(error) => return error,
     };
     join_fixture(state.station.client(), &token, input)
+}
+
+#[tauri::command]
+pub fn acceptance_federation_fixture_leave(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: FederationFixtureLeaveInput,
+) -> AppResult<Value> {
+    let token = match token_or_unauthorized(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    leave_fixture(state.station.client(), &token, input)
+}
+
+#[tauri::command]
+pub fn acceptance_federation_fixture_delete(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: FederationFixtureDeleteInput,
+) -> AppResult<Value> {
+    let token = match token_or_unauthorized(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    delete_fixture(state.station.client(), &token, input)
 }

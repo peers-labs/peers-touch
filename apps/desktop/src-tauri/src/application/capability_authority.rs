@@ -11,6 +11,7 @@ const BINDING_LIST_PATH: &str = "/sub-agent/agent/capability/binding/list";
 const BINDING_UPSERT_PATH: &str = "/sub-agent/agent/capability/binding/upsert";
 const BINDING_DELETE_PATH: &str = "/sub-agent/agent/capability/binding/delete";
 const READINESS_PATH: &str = "/sub-agent/agent/capability/readiness";
+const COMMAND_SNAPSHOT_PATH: &str = "/sub-agent/agent/capability/command-snapshot";
 #[cfg(feature = "acceptance-webdriver")]
 const ACCEPTANCE_SCENARIO_PREPARE_PATH: &str =
     "/sub-agent/agent/capability/acceptance/scenario/prepare";
@@ -108,6 +109,10 @@ pub struct CapabilityReadinessInput {
     pub runtime_snapshot_id: Option<String>,
     #[serde(default, alias = "client_capability_session_id")]
     pub client_capability_session_id: Option<String>,
+    #[serde(default, alias = "provider_id")]
+    pub provider_id: Option<String>,
+    #[serde(default, alias = "model_id")]
+    pub model_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -203,9 +208,31 @@ pub fn readiness(
             agent_id: input.agent_id.trim().to_string(),
             runtime_snapshot_id: input.runtime_snapshot_id.unwrap_or_default(),
             client_capability_session_id: input.client_capability_session_id,
+            provider_id: input.provider_id.unwrap_or_default(),
+            model_id: input.model_id.unwrap_or_default(),
         },
         token,
         "agent.capabilityReadinessFailed",
+    )
+}
+
+pub fn command_snapshot(
+    station_client: &StationClient,
+    input: CapabilityReadinessInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    request::<_, agent::GetAgentCommandCapabilitySnapshotResponse>(
+        station_client,
+        COMMAND_SNAPSHOT_PATH,
+        &agent::GetAgentCommandCapabilitySnapshotRequest {
+            agent_id: input.agent_id.trim().to_string(),
+            runtime_snapshot_id: input.runtime_snapshot_id.unwrap_or_default(),
+            client_capability_session_id: input.client_capability_session_id,
+            provider_id: input.provider_id.unwrap_or_default(),
+            model_id: input.model_id.unwrap_or_default(),
+        },
+        token,
+        "agent.commandCapabilitySnapshotFailed",
     )
 }
 

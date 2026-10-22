@@ -19,9 +19,6 @@ export const RECOVERY_SURFACE_FIXTURE_IDS = [
   'recovery.draft-restore-failed',
   'recovery.capacity',
   'recovery.command',
-  'recovery.deferred-capability',
-  'recovery.event-overflow',
-  'recovery.projection-stale',
   'recovery.write-revocation',
   'recovery.scope-exit',
   'recovery.reset-incomplete',
@@ -148,40 +145,6 @@ export function recoveryStateForFixture(
       return {
         kind: 'command-recovery',
         commands: [fixtureCommand],
-      };
-    case 'recovery.deferred-capability':
-      return {
-        kind: 'deferred-capability',
-        unavailableRuntimes: [{
-          runtimeId: 'fixture-module',
-          title: 'Unavailable feature',
-          status: 'failed',
-          errorMessage: null,
-        }],
-      };
-    case 'recovery.event-overflow':
-      return {
-        kind: 'event-overflow-reconcile',
-        staleDomains: [{
-          domain: 'social',
-          staleness: {
-            stale: true,
-            reason: 'event-overflow',
-            since: 1,
-          },
-        }],
-      };
-    case 'recovery.projection-stale':
-      return {
-        kind: 'event-overflow-reconcile',
-        staleDomains: [{
-          domain: 'moments',
-          staleness: {
-            stale: true,
-            reason: 'projection-stale',
-            since: 1,
-          },
-        }],
       };
     case 'recovery.write-revocation':
       return {

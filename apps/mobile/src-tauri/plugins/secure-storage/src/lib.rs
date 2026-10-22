@@ -37,9 +37,16 @@ impl std::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Clone)]
 pub struct SecureStorage<R: Runtime> {
     plugin_handle: PluginHandle<R>,
+}
+
+impl<R: Runtime> Clone for SecureStorage<R> {
+    fn clone(&self) -> Self {
+        Self {
+            plugin_handle: self.plugin_handle.clone(),
+        }
+    }
 }
 
 impl<R: Runtime> SecureStorage<R> {

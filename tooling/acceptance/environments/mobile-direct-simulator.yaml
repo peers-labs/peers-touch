@@ -60,9 +60,12 @@
   "harness": {
     "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
     "required_actions": [
+      "build.identity",
+      "runtime.prepareActorIdentity",
       "station.add",
       "access.submit",
       "lifecycle.restart",
+      "lifecycle.waitReady",
       "lifecycle.scope.read",
       "session.logout",
       "navigation.snapshot",
@@ -119,14 +122,16 @@
       "two distinct actors bound to one source-attested Station",
       "same-Station Direct and Group production-action journeys",
       "receiver projection, typing, receipt, interaction, search, attachment, and WebView restart readback",
-      "same-Station unknown-outcome command and exact-scope draft recovery",
+      "same-Station unknown-outcome command, normal process restart, SIGKILL, real Chat composer draft and history recovery",
+      "Station route attestation renewal across the prior expiry with stable Station and route generation",
+      "source-bound Station process outage, visible route Retry, preserved history and draft, and receiver-visible post-recovery send",
       "same-Station Moments publish, feed, reaction, comment, reply, rollback, and draft readback",
       "explicit multi-conversation selection, serial device-local clear, physical reclamation, and restart-stable absence"
     ],
     "does_not_prove": [
       "cross-Station or Relay delivery",
       "physical-device behavior",
-      "native background and foreground lifecycle",
+      "physical native background, foreground, and process-interruption behavior",
       "tab-remount interaction timing"
     ]
   },
@@ -137,6 +142,7 @@
       "ports",
       "storage",
       "simulator-boot",
+      "station-process-state",
       "actor-fixture",
       "profile-leases",
       "deployment-leases"

@@ -278,8 +278,10 @@ type SubmitToolApprovalDecisionRequest struct {
 	Approved         bool                   `protobuf:"varint,5,opt,name=approved,proto3" json:"approved,omitempty"`
 	IdempotencyKey   string                 `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	PayloadHash      string                 `protobuf:"bytes,7,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Required only when approving the ask_user clarification tool.
+	Answer        string `protobuf:"bytes,8,opt,name=answer,proto3" json:"answer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SubmitToolApprovalDecisionRequest) Reset() {
@@ -357,6 +359,13 @@ func (x *SubmitToolApprovalDecisionRequest) GetIdempotencyKey() string {
 func (x *SubmitToolApprovalDecisionRequest) GetPayloadHash() string {
 	if x != nil {
 		return x.PayloadHash
+	}
+	return ""
+}
+
+func (x *SubmitToolApprovalDecisionRequest) GetAnswer() string {
+	if x != nil {
+		return x.Answer
 	}
 	return ""
 }
@@ -492,7 +501,7 @@ const file_domain_agent_agent_config_proto_rawDesc = "" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\">\n" +
 	"\x17GetHiddenModelsResponse\x12#\n" +
-	"\rhidden_models\x18\x01 \x03(\tR\fhiddenModels\"\x9c\x02\n" +
+	"\rhidden_models\x18\x01 \x03(\tR\fhiddenModels\"\xb4\x02\n" +
 	"!SubmitToolApprovalDecisionRequest\x12\x1f\n" +
 	"\vapproval_id\x18\x01 \x01(\tR\n" +
 	"approvalId\x12 \n" +
@@ -503,7 +512,8 @@ const file_domain_agent_agent_config_proto_rawDesc = "" +
 	"\x11expected_revision\x18\x04 \x01(\x04R\x10expectedRevision\x12\x1a\n" +
 	"\bapproved\x18\x05 \x01(\bR\bapproved\x12'\n" +
 	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12!\n" +
-	"\fpayload_hash\x18\a \x01(\tR\vpayloadHash\"\xe2\x03\n" +
+	"\fpayload_hash\x18\a \x01(\tR\vpayloadHash\x12\x16\n" +
+	"\x06answer\x18\b \x01(\tR\x06answer\"\xe2\x03\n" +
 	"\"SubmitToolApprovalDecisionResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12+\n" +
 	"\x11decision_revision\x18\x02 \x01(\x04R\x10decisionRevision\x12\x1f\n" +

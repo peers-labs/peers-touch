@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc --noEmit -p tsconfig.json"
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "pnpm run build && node tests/storage-contract.test.mjs"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
-  CHAT_COMPOSER_CAPABILITIES_DESKTOP_THREAD,
-  CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN,
   applyChatDecryptedContentToList,
   applyChatMessageMutationToList,
   applyChatMessageReceiptToList,
@@ -16,22 +13,18 @@ import {
   buildChatMessageSurfaceItems,
   buildChatThreadSurface,
   buildSocialHostEvent,
-  canSubmitChatComposerDraft,
   chatAttachmentDurationMs,
   chatUnreadForParticipant,
   chatE2eeProjectionCanSend,
   chatE2eeProjectionError,
   chatMediaKindForAttachment,
   chatMediaKindFromMimeFilename,
-  chatMessageRowMaxWidth,
   chatOutboxReadyToDrain,
   chatThreadReplyTargetUlid,
   collectChatThreadPreviewMessages,
   countHiddenEarlierChatThreadReplies,
   chatMessageTypeForAttachments,
   chatMessageTypeForMime,
-  chatVisualCssVars,
-  chatVisualLayoutForSurface,
   countChatThreadReplies,
   clearChatUnreadForParticipant,
   clearChatUnreadCounter,
@@ -61,6 +54,12 @@ import {
   type ChatMessageLike,
   visibleChatConversationUnread,
 } from '@peers-touch/client-chat-core';
+import {
+  DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN,
+  DESKTOP_CHAT_COMPOSER_CAPABILITIES_THREAD,
+  desktopChatLayoutForSurface,
+  desktopChatMessageRowMaxWidth,
+} from './chatPresentationPolicy';
 
 describe('chat composer enter handling', () => {
   it('sends on plain enter', () => {
@@ -130,20 +129,20 @@ describe('chat media contract helpers', () => {
 
 describe('chat composer capability profiles', () => {
   it('keeps desktop main and thread composer capabilities aligned', () => {
-    expect(resolveChatComposerCapabilities(CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN)).toEqual({
+    expect(resolveChatComposerCapabilities(DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN)).toEqual({
       emoji: true,
       file: true,
       screenshot: true,
       voice: true,
     });
-    expect(resolveChatComposerCapabilities(CHAT_COMPOSER_CAPABILITIES_DESKTOP_THREAD)).toEqual({
+    expect(resolveChatComposerCapabilities(DESKTOP_CHAT_COMPOSER_CAPABILITIES_THREAD)).toEqual({
       emoji: true,
       file: true,
       screenshot: true,
       voice: true,
     });
     expect(resolveChatComposerCapabilities(
-      CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
+      DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN,
       { screenshot: false, voice: undefined },
     )).toEqual({
       emoji: true,
@@ -153,29 +152,12 @@ describe('chat composer capability profiles', () => {
     });
   });
 
-  it('enables mobile emoji and file tools after the media E2EE contract lands', () => {
-    expect(resolveChatComposerCapabilities(CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN)).toEqual({
-      emoji: true,
-      file: true,
-      screenshot: false,
-      voice: false,
-    });
-    expect(canSubmitChatComposerDraft({
-      text: '',
-      attachmentCount: 1,
-      capabilities: CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN,
-    })).toBe(true);
-    expect(canSubmitChatComposerDraft({
-      text: 'hello',
-      capabilities: CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN,
-    })).toBe(true);
-  });
 });
 
 describe('chat visual layout contract', () => {
-  it('keeps Desktop main and thread message geometry under one shared contract', () => {
-    const main = chatVisualLayoutForSurface('desktop-main');
-    const thread = chatVisualLayoutForSurface('desktop-thread');
+  it('keeps Desktop main and thread message geometry in Desktop policy', () => {
+    const main = desktopChatLayoutForSurface('desktop-main');
+    const thread = desktopChatLayoutForSurface('desktop-thread');
 
     expect(main.avatarSize).toBe(36);
     expect(main.avatarGap).toBe(8);
@@ -184,25 +166,11 @@ describe('chat visual layout contract', () => {
     expect(main.hoverActionBridgeHeight).toBeGreaterThanOrEqual(18);
     expect(main.hoverActionBridgeInsetX).toBeGreaterThanOrEqual(160);
     expect(main.composerInputExpandedMinHeight).toBe('min(360px, 44vh)');
-    expect(chatMessageRowMaxWidth(main, { own: false, groupPeer: true })).toBe('min(82%, 800px)');
+    expect(desktopChatMessageRowMaxWidth(main, { own: false, groupPeer: true })).toBe('min(82%, 800px)');
 
     expect(thread.avatarSize).toBe(30);
     expect(thread.composerHasAttachmentTools).toBe(true);
-    expect(chatMessageRowMaxWidth(thread, { own: true })).toBe('min(92%, 320px)');
-  });
-
-  it('keeps Mobile composer text-only and aligned with message-avatar geometry', () => {
-    const mobile = chatVisualLayoutForSurface('mobile-main');
-    const cssVars = chatVisualCssVars(mobile);
-
-    expect(mobile.avatarSize).toBe(38);
-    expect(mobile.avatarGap).toBe(7);
-    expect(mobile.composerHasAttachmentTools).toBe(false);
-    expect(mobile.composerShellRadius).toBe(12);
-    expect(cssVars['--chat-message-avatar-size']).toBe('38px');
-    expect(cssVars['--chat-message-bubble-radius-own']).toBe('17px 17px 5px 17px');
-    expect(cssVars['--chat-composer-tool-button-size']).toBe('40px');
-    expect(cssVars['--chat-composer-input-expanded-min-height']).toBe('min(280px, 42vh)');
+    expect(desktopChatMessageRowMaxWidth(thread, { own: true })).toBe('min(92%, 320px)');
   });
 });
 

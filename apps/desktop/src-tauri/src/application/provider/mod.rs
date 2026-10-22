@@ -4,8 +4,6 @@ use crate::contracts::{
 };
 use crate::error::{AppResult, ErrorCode};
 use serde_json::{json, Value};
-use std::collections::HashMap;
-use std::path::PathBuf;
 
 pub(crate) mod remote;
 pub(crate) mod station_api;
@@ -123,6 +121,7 @@ pub fn provider_update(
         id,
         input.enabled,
         input.config_json.as_deref(),
+        input.runtime_config.as_ref(),
         input.version,
     ) {
         Ok(v) => v,
@@ -137,21 +136,19 @@ pub fn provider_update(
 }
 
 pub fn provider_check(
+    station_client: &StationClient,
     _scope: &str,
-    _token: &str,
+    token: &str,
     input: ProviderCheckInput,
 ) -> AppResult<StubPayload> {
     let id = input.id.trim();
     if id.is_empty() {
-        return success_payload(
-            "provider_check",
-            json!({ "ok": false, "error": "id is required" }),
-        );
+        return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
-    success_payload(
-        "provider_check",
-        json!({ "ok": true, "provider_id": id, "note": "reachability check delegated to Station" }),
-    )
+    match station_api::check_provider(station_client, token, id) {
+        Ok(response) => success_payload("provider_check", response),
+        Err(error) => station_error_to_result(error),
+    }
 }
 
 pub fn provider_create(
@@ -160,6 +157,14 @@ pub fn provider_create(
     token: &str,
     input: ProviderCreateInput,
 ) -> AppResult<StubPayload> {
+    let provider_id = input.id.trim();
+    if provider_id.is_empty()
+        || !provider_id.bytes().all(|value| {
+            value.is_ascii_lowercase() || value.is_ascii_digit() || value == b'-' || value == b'_'
+        })
+    {
+        return AppResult::fail(ErrorCode::InvalidArgument, "invalid provider id", None);
+    }
     let name = input.name.trim();
     if name.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "name is required", None);
@@ -175,12 +180,10 @@ pub fn provider_create(
         .and_then(|v| v.get("protocol").and_then(|u| u.as_str()).map(String::from))
         .unwrap_or_else(|| "openai".to_string());
 
-    let provider_id = name.to_lowercase().replace(' ', "-");
-
     let provider = match station_api::create_provider(
         station_client,
         token,
-        &provider_id,
+        provider_id,
         name,
         &base_url,
         &protocol,
@@ -242,221 +245,19 @@ pub fn provider_list_available_models(
     success_payload("provider_list_available_models", resp)
 }
 
-pub fn model_fetch_remote(
+pub fn model_discover(
     station_client: &StationClient,
-    scope: &str,
+    _scope: &str,
     token: &str,
     provider_id: &str,
 ) -> AppResult<StubPayload> {
-    let resp = match station_api::get_provider(station_client, token, provider_id) {
-        Ok(v) => v,
-        Err(_) => {
-            return success_payload("model_fetch_remote", json!({ "ok": true, "models": [] }))
-        }
-    };
-
-    let provider = resp.get("provider").cloned().unwrap_or(json!({}));
-    let runtime_kind = provider
-        .get("runtime_kind")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let models_command = provider
-        .get("models_command")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim();
-
-    if runtime_kind == "cli" && !models_command.is_empty() {
-        let models = execute_cli_models_command(station_client, models_command, scope, provider_id);
-        if models.is_empty() {
-            return success_payload(
-                "model_fetch_remote",
-                json!({
-                    "ok": false,
-                    "models": [],
-                    "error": format!("CLI command returned no models: {}", models_command)
-                }),
-            );
-        }
-        return success_payload(
-            "model_fetch_remote",
-            json!({ "ok": true, "models": models }),
-        );
+    let provider_id = provider_id.trim();
+    if provider_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "provider_id is required", None);
     }
-
-    let models = provider.get("models").cloned().unwrap_or(json!([]));
-    success_payload(
-        "model_fetch_remote",
-        json!({ "ok": true, "models": models }),
-    )
-}
-
-fn execute_cli_models_command(
-    station_client: &StationClient,
-    command: &str,
-    actor_ptid: &str,
-    provider_id: &str,
-) -> Vec<String> {
-    let cred_key = credential_env_key_for_provider(provider_id);
-    let env = build_cli_env(station_client, actor_ptid, provider_id, "", cred_key);
-    let workspace = ensure_actor_workspace(actor_ptid, provider_id);
-    let output = run_cli_subprocess(command, &env, &workspace, None);
-    match output {
-        Some(stdout) => parse_cli_model_list(&stdout),
-        None => vec![],
-    }
-}
-
-fn credential_env_key_for_provider(provider_id: &str) -> Option<&'static str> {
-    match provider_id {
-        "codex-cli" => Some("OPENAI_API_KEY"),
-        "claude-cli" => Some("ANTHROPIC_API_KEY"),
-        _ => None,
-    }
-}
-
-// --- WS-2: Actor Workspace ---
-
-fn ensure_actor_workspace(actor_ptid: &str, provider_id: &str) -> PathBuf {
-    let base = app_data_dir();
-    let workspace = base
-        .join("actors")
-        .join(actor_ptid)
-        .join("cli")
-        .join(provider_id)
-        .join("workspace");
-    if !workspace.exists() {
-        let _ = std::fs::create_dir_all(&workspace);
-    }
-    workspace
-}
-
-fn app_data_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join(".peers-touch")
-}
-
-// --- WS-3: CLI Env Injection ---
-
-fn build_cli_env(
-    station_client: &StationClient,
-    actor_ptid: &str,
-    provider_id: &str,
-    token: &str,
-    credential_env_key: Option<&str>,
-) -> HashMap<String, String> {
-    let workspace = ensure_actor_workspace(actor_ptid, provider_id);
-    let station_url = std::env::var("PEERS_STATION_URL").unwrap_or_default();
-
-    let mut env = HashMap::new();
-    env.insert("PATH".to_string(), enriched_path());
-    env.insert("PEERS_ACTOR_PTID".to_string(), actor_ptid.to_string());
-    env.insert("PEERS_PROVIDER_ID".to_string(), provider_id.to_string());
-    env.insert(
-        "PEERS_WORKSPACE".to_string(),
-        workspace.to_string_lossy().to_string(),
-    );
-    if !station_url.is_empty() {
-        env.insert("PEERS_STATION_URL".to_string(), station_url);
-    }
-    if !token.is_empty() {
-        env.insert("PEERS_AUTH_TOKEN".to_string(), token.to_string());
-    }
-
-    // WS-4: Credential injection
-    if let Some(env_key) = credential_env_key {
-        if !env_key.is_empty() && !token.is_empty() {
-            if let Ok(cred) = station_api::resolve_credential(station_client, token, provider_id) {
-                if !cred.api_key.is_empty() {
-                    env.insert(env_key.to_string(), cred.api_key);
-                }
-            }
-        }
-    }
-
-    env
-}
-
-fn run_cli_subprocess(
-    command: &str,
-    env: &HashMap<String, String>,
-    cwd: &PathBuf,
-    stdin_input: Option<&str>,
-) -> Option<String> {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
-    let parts: Vec<&str> = command.split_whitespace().collect();
-    if parts.is_empty() {
-        return None;
-    }
-
-    let mut cmd = Command::new(parts[0]);
-    cmd.args(&parts[1..])
-        .current_dir(cwd)
-        .envs(env)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    if stdin_input.is_some() {
-        cmd.stdin(Stdio::piped());
-    }
-
-    let mut child = cmd.spawn().ok()?;
-
-    if let Some(input) = stdin_input {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(input.as_bytes());
-        }
-    }
-
-    let output = child.wait_with_output().ok()?;
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        None
-    }
-}
-
-// --- WS-5: Output Format Normalization ---
-
-fn parse_cli_model_list(stdout: &str) -> Vec<String> {
-    let trimmed = stdout.trim();
-    if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        parse_json_models(trimmed)
-    } else {
-        trimmed
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect()
-    }
-}
-
-#[derive(Debug)]
-pub struct CLIResponse {
-    pub content: String,
-    pub model: Option<String>,
-}
-
-pub fn parse_cli_execution_output(stdout: &str) -> CLIResponse {
-    let trimmed = stdout.trim();
-    if trimmed.starts_with('{') {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
-                return CLIResponse {
-                    content: content.to_string(),
-                    model: val
-                        .get("model")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                };
-            }
-        }
-    }
-    CLIResponse {
-        content: trimmed.to_string(),
-        model: None,
+    match station_api::discover_provider_models(station_client, token, provider_id) {
+        Ok(response) => success_payload("model_discover", response),
+        Err(error) => station_error_to_result(error),
     }
 }
 
@@ -472,36 +273,6 @@ pub fn enriched_path() -> String {
     let mut paths: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
     paths.extend(base.split(':'));
     paths.join(":")
-}
-
-fn parse_json_models(json_str: &str) -> Vec<String> {
-    let val: serde_json::Value = match serde_json::from_str(json_str) {
-        Ok(v) => v,
-        Err(_) => return vec![],
-    };
-
-    let models_array = val
-        .get("models")
-        .and_then(|m| m.as_array())
-        .or_else(|| val.as_array());
-
-    match models_array {
-        Some(arr) => arr
-            .iter()
-            .filter_map(|item| {
-                if let Some(s) = item.as_str() {
-                    return Some(s.to_string());
-                }
-                item.get("slug")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| item.get("id").and_then(|v| v.as_str()))
-                    .or_else(|| item.get("name").and_then(|v| v.as_str()))
-                    .or_else(|| item.get("model_id").and_then(|v| v.as_str()))
-                    .map(|s| s.to_string())
-            })
-            .collect(),
-        None => vec![],
-    }
 }
 
 pub fn model_add(

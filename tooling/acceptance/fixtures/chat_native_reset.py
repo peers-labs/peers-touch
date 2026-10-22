@@ -26,11 +26,15 @@ from tooling.acceptance.core.provisioner import (
     resolve_deployment_environment_path,
     resolve_machine_profile_environment,
 )
+from tooling.acceptance.core.reset_authority import (
+    require_station_reset_authority,
+)
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SAFE_RUNTIME_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+SAFE_ACTOR_ROLE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 APPROVED_DISPOSABLE_STATION_PORT = 18132
 PROTECTED_CLEANUP_PORTS = frozenset({4445, 18080})
 LOCAL_SOURCE_RUNTIME = "local-source"
@@ -403,14 +407,26 @@ def _authorized_reset_environment(
     selected_environment: str,
     environment: dict[str, str],
 ) -> tuple[str, dict[str, str]] | None:
-    authorized_profile = os.environ.get(
+    configured_profile = os.environ.get(
         RESET_PROFILE_AUTHORIZATION_ENV,
         "",
     ).strip()
+    lease_profile = (
+        ""
+        if configured_profile
+        else machine_lease_reset_profile()
+    )
+    authorized_profile = configured_profile or lease_profile
     authorized_environments_raw = os.environ.get(
         RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
         "",
     ).strip()
+    lease_profile = (
+        ""
+        if configured_profile or authorized_environments_raw
+        else machine_lease_reset_profile()
+    )
+    authorized_profile = configured_profile or lease_profile
     if authorized_profile and authorized_environments_raw:
         raise RuntimeError(
             "Chat Acceptance reset requires exactly one authorization mode"
@@ -521,6 +537,25 @@ def _authorized_reset_environment(
         "PT_ACCEPTANCE_POSTGRES_VOLUME": f"{compose_project}_pg_data",
     }
     return requested_station, authorized_environment
+
+
+def machine_lease_reset_profile() -> str:
+    if os.environ.get("PT_MACHINE_LEASE_KIND", "").strip() != "station.reset":
+        return ""
+    scope = os.environ.get("PT_MACHINE_LEASE_RESET_SCOPE", "").strip()
+    resource_id = os.environ.get(
+        "PT_MACHINE_LEASE_RESOURCE_ID",
+        "",
+    ).strip()
+    if not scope or scope != resource_id:
+        raise RuntimeError("Chat Acceptance reset lease scope is invalid")
+    require_station_reset_authority(scope)
+    profile = active_profile_environment().get("PT_DEV_PROFILE", "").strip()
+    if not profile or profile.lower().endswith("stable"):
+        raise RuntimeError(
+            "Chat Acceptance reset requires an Agent-resettable Profile"
+        )
+    return profile
 
 
 def acceptance_station_environment(
@@ -2439,7 +2474,7 @@ def reset_local_client_storage(
         REPO_ROOT / ".local" / "acceptance" / "embedded-webdriver"
     )
     for account in accounts:
-        if account not in {"alice", "bob", "charlie"}:
+        if SAFE_ACTOR_ROLE.fullmatch(account) is None:
             raise RuntimeError(f"unsupported native Chat fixture account: {account}")
         storage = storage_root / account / "storage"
         if storage.exists():
@@ -2453,8 +2488,15 @@ def prepare_local_friend_request_lifecycle(
     environment_name: str,
     sender_ptid: str,
     receiver_ptid: str,
+    *,
+    reset_authorized: bool | None = None,
 ) -> None:
-    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
+    authorized = (
+        os.environ.get("CHAT_ACCEPTANCE_RESET") == "1"
+        if reset_authorized is None
+        else reset_authorized
+    )
+    if not authorized:
         raise RuntimeError(
             "CHAT_ACCEPTANCE_RESET=1 is required for destructive Chat reset"
         )
@@ -2522,6 +2564,103 @@ $acceptance$;
 COMMIT;
 """
     _remote_psql(environment, sql)
+
+
+def reset_fixture_follow_edges(
+    station_url: str,
+    environment_name: str,
+    actor_ptids: Iterable[str],
+) -> None:
+    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
+        raise RuntimeError(
+            "CHAT_ACCEPTANCE_RESET=1 is required for Social relationship reset"
+        )
+    ptids = tuple(sorted({
+        ptid.strip()
+        for ptid in actor_ptids
+        if isinstance(ptid, str) and ptid.strip()
+    }))
+    if not ptids or any(not ptid.startswith("ptid:") for ptid in ptids):
+        raise RuntimeError(
+            "Social relationship reset requires canonical Actor PTIDs"
+        )
+    environment = acceptance_station_environment(
+        station_url,
+        environment_name,
+    )
+    verify_disposable_station_runtime(environment)
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
+        database = environment["PT_ACCEPTANCE_LOCAL_DATABASE"]
+        placeholders = ",".join("?" for _ in ptids)
+        with closing(sqlite3.connect(database, timeout=10)) as connection:
+            connection.execute("PRAGMA busy_timeout = 10000")
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                f"""
+DELETE FROM follows
+WHERE follower_id IN (
+  SELECT id FROM touch_actor WHERE ptid IN ({placeholders})
+)
+OR following_id IN (
+  SELECT id FROM touch_actor WHERE ptid IN ({placeholders})
+)
+""",
+                (*ptids, *ptids),
+            )
+            remaining = connection.execute(
+                f"""
+SELECT count(*)
+FROM follows
+WHERE follower_id IN (
+  SELECT id FROM touch_actor WHERE ptid IN ({placeholders})
+)
+OR following_id IN (
+  SELECT id FROM touch_actor WHERE ptid IN ({placeholders})
+)
+""",
+                (*ptids, *ptids),
+            ).fetchone()
+            if remaining is None or int(remaining[0]) != 0:
+                raise RuntimeError(
+                    "Social relationship reset left stale follow edges"
+                )
+            connection.commit()
+        return
+
+    targets = ", ".join(_sql_literal(ptid) for ptid in ptids)
+    _remote_psql(
+        environment,
+        f"""
+BEGIN;
+DELETE FROM follows
+WHERE follower_id IN (
+  SELECT id FROM touch_actor WHERE ptid IN ({targets})
+)
+OR following_id IN (
+  SELECT id FROM touch_actor WHERE ptid IN ({targets})
+);
+DO $acceptance$
+DECLARE
+  remaining_count integer;
+BEGIN
+  SELECT count(*)
+  INTO remaining_count
+  FROM follows
+  WHERE follower_id IN (
+    SELECT id FROM touch_actor WHERE ptid IN ({targets})
+  )
+  OR following_id IN (
+    SELECT id FROM touch_actor WHERE ptid IN ({targets})
+  );
+  IF remaining_count <> 0 THEN
+    RAISE EXCEPTION
+      'Social relationship reset left stale follow edges';
+  END IF;
+END
+$acceptance$;
+COMMIT;
+""",
+    )
 
 
 def reset_station_chat_state(environment_name: str) -> None:

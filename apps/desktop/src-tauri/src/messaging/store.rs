@@ -17,38 +17,56 @@ use messaging_core::attachment::{
     validate_chat_attachment_transfer_record, validate_chat_encrypted_object_descriptor,
     AttachmentTransferRepository,
 };
-pub use messaging_core::contracts::{
-    CommandResultDisposition, CommandResultReceiveCommit, CommandStatusProjection,
-    ConversationMessageProjection,
-};
 use messaging_core::contracts::{
-    CryptoEndpoint as CoreCryptoEndpoint, InteractionMutation as CoreInteractionMutation,
-    InteractionReceiveCommit as CoreInteractionReceiveCommit, MlsApplicationReceiveCommit,
+    ActorReadReceiveCommit as CoreActorReadReceiveCommit,
+    ConversationMutation as CoreConversationMutation,
+    ConversationMutationReceiveCommit as CoreConversationMutationReceiveCommit,
+    ConversationProjection as CoreConversationProjection,
+    ConversationStateReceiveCommit as CoreConversationStateReceiveCommit,
+    CryptoEndpoint as CoreCryptoEndpoint,
+    DeliveryReceiptReceiveCommit as CoreDeliveryReceiptReceiveCommit,
+    DirectEditCommit as CoreDirectEditCommit, DirectReceiveCommit as CoreDirectReceiveCommit,
+    InteractionMutation as CoreInteractionMutation,
+    InteractionReceiveCommit as CoreInteractionReceiveCommit,
+    MemberAuthorityReceiveCommit as CoreMemberAuthorityReceiveCommit, MlsApplicationReceiveCommit,
     MlsConversationProjection, MlsRetirementReceiveCommit as CoreMlsRetirementReceiveCommit,
     MlsSenderTransitionReceiveCommit as CoreMlsSenderTransitionReceiveCommit,
     MlsTransitionReceiveCommit as CoreMlsTransitionReceiveCommit,
     PendingMlsKeyPackage as CorePendingMlsKeyPackage,
     PendingMlsTransitionState as CorePendingMlsTransitionState,
+    PublicEventReceiveCommit as CorePublicEventReceiveCommit,
     ReceiveCommitResult as CoreReceiveCommitResult,
+    ServicePlaintextReceiveCommit as CoreServicePlaintextReceiveCommit,
+    SkippedEndpointReceiveCommit as CoreSkippedEndpointReceiveCommit,
+};
+pub use messaging_core::contracts::{
+    CommandResultDisposition, CommandResultReceiveCommit, CommandStatusProjection,
+    ConversationMessageProjection,
 };
 use messaging_core::crypto::prekeys::{
     PendingPreKeyBundle, PreKeyInventoryRepository, PreKeyRepository,
+};
+use messaging_core::engine::{
+    CommandReconciliation, CommandReconciliationDisposition, SubmittedCommand,
+    COMMAND_RECONCILIATION_BATCH_LIMIT,
 };
 use messaging_core::identity::{
     DeviceEnrollmentRepository, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
 };
 use messaging_core::inbox::CommandResultRepository;
-use messaging_core::outbox::{MetadataInteractionCommit, MetadataInteractionRepository};
+use messaging_core::outbox::{
+    CommandOutboxEntry, DeliveryReceiptOutboxEntry, DeliveryReceiptRepository,
+    MetadataInteractionCommit, MetadataInteractionRepository,
+};
 use messaging_core::proto::chat::{
     ChatRetentionPreset, ChatStorageOperationState, ChatStoragePolicy, ChatStorageScope,
 };
 use messaging_core::proto::{actor_device_ptid, actor_device_ref};
 use messaging_core::storage_governance::cache::{
-    cleanup_file_physical_identity, failed_file_cleanup_item, immutable_file_cleanup_item,
-    parse_storage_operation_state, storage_error_code_name, storage_operation_state_name,
-    CacheCleanupItem, CacheCleanupItemState, CacheCleanupJournalRepository, CacheCleanupOperation,
-    CACHE_SCOPE_KIND,
+    failed_file_cleanup_item, parse_storage_operation_state, storage_error_code_name,
+    storage_operation_state_name, CacheCleanupItem, CacheCleanupItemState,
+    CacheCleanupJournalRepository, CacheCleanupOperation, CACHE_SCOPE_KIND,
 };
 use messaging_core::storage_governance::conversation_clear::{
     ConversationClearCommit, ConversationClearPlan, ConversationClearRepository,
@@ -65,10 +83,15 @@ use messaging_core::storage_governance::retention::{
 use messaging_core::store::{migrate_messaging_schema, MessagingSchemaBackend};
 use messaging_core::store::{
     DirectOutboundEditCommit, DirectOutboundRepository, DirectOutboundSendCommit,
-    DirectOutboundSession, DirectSessionAdvance, MlsInboundRepository, MlsKeyPackageRepository,
-    MlsOutboundEditCommit, MlsOutboundRepository, MlsOutboundSendCommit, MlsStartupRepository,
-    MlsTransitionRepository, MlsTransitionSendCommit,
+    DirectOutboundSession, DirectSessionAdvance, MessagingRepository, MlsInboundRepository,
+    MlsKeyPackageRepository, MlsOutboundEditCommit, MlsOutboundRepository, MlsOutboundSendCommit,
+    MlsStartupRepository, MlsTransitionRepository, MlsTransitionSendCommit,
     PendingSenderProjection as CorePendingSenderProjection,
+};
+#[cfg(test)]
+use messaging_native_filesystem::NativeMessagingFilesystem;
+use messaging_native_filesystem::{
+    cleanup_file_physical_identity, immutable_file_cleanup_item, path_ref,
 };
 use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
@@ -78,25 +101,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use zeroize::Zeroizing;
-
-pub const COMMAND_RECONCILIATION_BATCH_LIMIT: usize = 64;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandOutboxEntry {
-    pub command_id: String,
-    pub conversation_id: String,
-    pub command_bytes: Vec<u8>,
-    pub attempt_count: u32,
-    pub next_attempt_at_unix_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SubmittedCommand {
-    pub command_id: String,
-    pub conversation_id: String,
-    pub command_bytes: Vec<u8>,
-    pub command_sha256: Vec<u8>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SupersededInteractionIntent {
@@ -108,30 +112,6 @@ pub struct SupersededInteractionIntent {
     pub edited_text: Option<String>,
     pub command_bytes: Vec<u8>,
     pub created_at_unix_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CommandReconciliationDisposition {
-    HomePending,
-    Accepted,
-    Failed(String),
-    Superseded(String),
-    NotFound,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandReconciliation {
-    pub command_id: String,
-    pub conversation_id: String,
-    pub command_bytes: Vec<u8>,
-    pub command_sha256: Vec<u8>,
-    pub disposition: CommandReconciliationDisposition,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeliveryReceiptOutboxEntry {
-    pub receipt_id: String,
-    pub receipt_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1134,7 +1114,7 @@ impl MessagingStore {
                         Ok(identity) => (item, identity),
                         Err(error) => (
                             Some(failed_file_cleanup_item(
-                                &path,
+                                &path_ref(&path),
                                 storage_error_code_name(error.code()),
                             )),
                             None,
@@ -1142,7 +1122,7 @@ impl MessagingStore {
                     },
                     Err(error) => (
                         Some(failed_file_cleanup_item(
-                            &path,
+                            &path_ref(&path),
                             storage_error_code_name(error.code()),
                         )),
                         None,
@@ -1719,8 +1699,7 @@ impl MessagingStore {
     pub fn next_command(&self, now_unix_ms: i64) -> Result<Option<CommandOutboxEntry>, String> {
         self.connection()?
             .query_row(
-                "SELECT command_id, conversation_id, command_bytes,
-                        attempt_count, next_attempt_at_unix_ms
+                "SELECT command_id, command_bytes, attempt_count
                  FROM messaging_command_outbox
                  WHERE state IN ('pending', 'retry_wait')
                    AND next_attempt_at_unix_ms <= ?1
@@ -1730,10 +1709,8 @@ impl MessagingStore {
                 |row| {
                     Ok(CommandOutboxEntry {
                         command_id: row.get(0)?,
-                        conversation_id: row.get(1)?,
-                        command_bytes: row.get(2)?,
-                        attempt_count: row.get(3)?,
-                        next_attempt_at_unix_ms: row.get(4)?,
+                        command_bytes: row.get(1)?,
+                        attempt_count: row.get(2)?,
                     })
                 },
             )
@@ -2090,10 +2067,12 @@ impl MessagingStore {
         let interaction_changed = transaction
             .execute(
                 "UPDATE messaging_interaction_intents SET state = 'submitted'
-                 WHERE command_id = ?1 AND state IN ('prepared', 'submitted')",
+                 WHERE command_id = ?1 AND state IN ('prepared', 'retry_wait', 'submitted')",
                 params![command_id],
             )
             .map_err(|error| error.to_string())?;
+        let non_message_changed =
+            transition_non_message_intents(&transaction, command_id, "submitted")?;
         if local_changed != 1
             || outbox_changed != 1
             || attempt_changed != 1
@@ -2102,6 +2081,7 @@ impl MessagingStore {
                 command_id,
                 pending_changed,
                 interaction_changed,
+                non_message_changed,
             )?
         {
             return Err("messaging command submission was not fenced".to_string());
@@ -2178,12 +2158,15 @@ impl MessagingStore {
                 params![command_id],
             )
             .map_err(|error| error.to_string())?;
+        let non_message_changed =
+            transition_non_message_intents(&transaction, command_id, "retry_wait")?;
         if attempt_changed != 1
             || !pending_owner_transition_is_valid(
                 &transaction,
                 command_id,
                 pending_changed,
                 interaction_changed,
+                non_message_changed,
             )?
         {
             return Err("messaging command retry projection was not fenced".to_string());
@@ -2270,6 +2253,8 @@ impl MessagingStore {
                 params![command_id],
             )
             .map_err(|error| error.to_string())?;
+        let non_message_changed =
+            transition_non_message_intents(&transaction, command_id, "failed")?;
         if local_changed != 1
             || outbox_changed != 1
             || attempt_changed != 1
@@ -2278,6 +2263,7 @@ impl MessagingStore {
                 command_id,
                 pending_changed,
                 interaction_changed,
+                non_message_changed,
             )? || (pending_transition_deleted == 1 && membership_intent_changed <= 1))
         {
             return Err("messaging command failure was not fenced".to_string());
@@ -2361,6 +2347,8 @@ impl MessagingStore {
                 params![command_id],
             )
             .map_err(|error| error.to_string())?;
+        let non_message_changed =
+            transition_non_message_intents(&transaction, command_id, "superseded")?;
         if local_changed != 1
             || outbox_changed != 1
             || attempt_changed != 1
@@ -2369,6 +2357,7 @@ impl MessagingStore {
                 command_id,
                 pending_changed,
                 interaction_changed,
+                non_message_changed,
             )? || (pending_transition_deleted == 1 && membership_intent_changed <= 1))
         {
             return Err("messaging command supersede was not fenced".to_string());
@@ -5591,6 +5580,11 @@ impl MessagingStore {
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations
                  WHERE authority_station_id <> ''
+                   AND EXISTS (
+                       SELECT 1 FROM messaging_authority_heads head
+                       WHERE head.conversation_id =
+                             messaging_conversations.conversation_id
+                   )
                  ORDER BY conversation_id",
             )
             .map_err(|error| error.to_string())?;
@@ -7634,21 +7628,43 @@ impl MessagingStore {
         &self,
         input: &ConversationStateReceiveCommit<'_>,
     ) -> Result<ReceiveCommitResult, String> {
+        self.commit_conversation_state_inner(input, None)
+    }
+
+    pub fn commit_member_authority_state(
+        &self,
+        input: &MemberAuthorityReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        self.commit_conversation_state_inner(&input.state, Some(input))
+    }
+
+    fn commit_conversation_state_inner(
+        &self,
+        input: &ConversationStateReceiveCommit<'_>,
+        member_authority: Option<&MemberAuthorityReceiveCommit<'_>>,
+    ) -> Result<ReceiveCommitResult, String> {
         validate_conversation_state_receive(input)?;
         let core = conversation_state_receive_core(input);
         self.commit_receive_core(&core, ReceiveFailPoint::None, |transaction| {
+            if let Some(member) = member_authority {
+                if validate_member_authority_projection_commit(transaction, member)? {
+                    apply_accepted_command_result(transaction, member.command_id)?;
+                }
+            }
             transaction
                 .execute(
                     "INSERT INTO messaging_conversations(
                         conversation_id, authority_station_id, federation_id,
-                        kind, name, owner_ptid,
+                        kind, name, description, avatar_object_id, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                      ON CONFLICT(conversation_id) DO UPDATE SET
                         authority_station_id=excluded.authority_station_id,
                         federation_id=excluded.federation_id,
                         kind=excluded.kind,
                         name=excluded.name,
+                        description=excluded.description,
+                        avatar_object_id=excluded.avatar_object_id,
                         owner_ptid=excluded.owner_ptid,
                         membership_epoch=excluded.membership_epoch,
                         mls_epoch=excluded.mls_epoch,
@@ -7660,6 +7676,8 @@ impl MessagingStore {
                         input.projection.federation_id,
                         input.projection.kind,
                         input.projection.name,
+                        input.projection.description,
+                        input.projection.avatar_object_id,
                         input.projection.owner_ptid,
                         input.projection.membership_epoch,
                         input.projection.mls_epoch,
@@ -7679,14 +7697,112 @@ impl MessagingStore {
                 transaction
                     .execute(
                         "INSERT INTO messaging_conversation_members(
-                            conversation_id, ptid, role, active
-                         ) VALUES (?1, ?2, ?3, 1)
+                            conversation_id, ptid, role, home_station_peer_id,
+                            muted, muted_until_unix_ms, active
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)
                          ON CONFLICT(conversation_id, ptid) DO UPDATE SET
                             role=excluded.role,
+                            home_station_peer_id=excluded.home_station_peer_id,
+                            muted=excluded.muted,
+                            muted_until_unix_ms=excluded.muted_until_unix_ms,
                             active=1",
-                        params![input.conversation_id, member.ptid, member.role],
+                        params![
+                            input.conversation_id,
+                            member.ptid,
+                            member.role,
+                            member.home_station_peer_id,
+                            member.muted,
+                            member.muted_until_unix_ms,
+                        ],
                     )
                     .map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn commit_conversation_mutation_event(
+        &self,
+        input: &ConversationMutationReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        if input.command_id.trim().is_empty() || input.membership_epoch <= 0 || input.mls_epoch < 0
+        {
+            return Err("messaging Conversation mutation event is incomplete".to_string());
+        }
+        let core = ReceiveCommitCore {
+            item_id: input.item_id,
+            event_id: input.event_id,
+            conversation_id: input.conversation_id,
+            lane_sequence: input.lane_sequence,
+            consumer_epoch: input.consumer_epoch,
+            payload_sha256: input.payload_sha256,
+            event_hash: input.event_hash,
+            previous_event_hash: input.previous_event_hash,
+            event_sequence: input.event_sequence,
+            allow_join_checkpoint: false,
+            projection: None,
+            receipt_id: input.receipt_id,
+            receipt_bytes: input.receipt_bytes,
+            consumed_at_unix_ms: input.consumed_at_unix_ms,
+        };
+        self.commit_receive_core(&core, ReceiveFailPoint::None, |transaction| {
+            let local_intent = transaction
+                .query_row(
+                    "SELECT intent.intent_kind, command.command_bytes
+                 FROM messaging_conversation_command_intents intent
+                 JOIN messaging_local_commands command ON command.command_id = intent.command_id
+                 WHERE intent.command_id = ?1",
+                    params![input.command_id],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            if let Some((kind, bytes)) = local_intent.as_ref() {
+                validate_conversation_mutation_readback(input, kind, bytes)?;
+                apply_accepted_command_result(transaction, input.command_id)?;
+            }
+            let changed = match &input.mutation {
+                ConversationMutation::Update {
+                    name,
+                    description,
+                    avatar_object_id,
+                } => {
+                    if name.is_none() && description.is_none() && avatar_object_id.is_none() {
+                        return Err("messaging Conversation update is empty".to_string());
+                    }
+                    transaction.execute(
+                        "UPDATE messaging_conversations
+                         SET name = COALESCE(?2, name),
+                             description = COALESCE(?3, description),
+                             avatar_object_id = COALESCE(?4, avatar_object_id),
+                             membership_epoch = ?5, mls_epoch = ?6, updated_at_unix_ms = ?7
+                         WHERE conversation_id = ?1 AND active = 1",
+                        params![
+                            input.conversation_id,
+                            name,
+                            description,
+                            avatar_object_id,
+                            input.membership_epoch,
+                            input.mls_epoch,
+                            input.consumed_at_unix_ms
+                        ],
+                    )
+                }
+                ConversationMutation::Dissolve => transaction.execute(
+                    "UPDATE messaging_conversations SET active = 0,
+                        membership_epoch = ?2, mls_epoch = ?3, updated_at_unix_ms = ?4
+                     WHERE conversation_id = ?1 AND active = 1",
+                    params![
+                        input.conversation_id,
+                        input.membership_epoch,
+                        input.mls_epoch,
+                        input.consumed_at_unix_ms
+                    ],
+                ),
+            }
+            .map_err(|error| error.to_string())?;
+            if changed != 1 {
+                return Err("messaging Conversation mutation projection is unavailable".to_string());
             }
             Ok(())
         })
@@ -9899,6 +10015,21 @@ impl MessagingStore {
                 .optional()
                 .map_err(|error| error.to_string())?
         };
+        let authority_head = connection
+            .query_row(
+                "SELECT event_sequence, event_hash
+                 FROM messaging_authority_heads
+                 WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| {
+                    Ok(serde_json::json!({
+                        "eventSequence": row.get::<_, i64>(0)?,
+                        "eventHash": hex::encode(row.get::<_, Vec<u8>>(1)?),
+                    }))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
         let direct_sessions = {
             let mut statement = connection
                 .prepare(
@@ -10124,6 +10255,7 @@ impl MessagingStore {
             "projection": projection,
             "intent": intent,
             "outbox": outbox,
+            "authorityHead": authority_head,
             "directSessions": direct_sessions,
             "commandLedger": command_ledger,
             "reactions": reactions,
@@ -10143,6 +10275,528 @@ impl MessagingStore {
     #[cfg(test)]
     pub(super) fn in_memory() -> Result<Self, String> {
         Self::from_connection(Connection::open_in_memory().map_err(|error| error.to_string())?)
+    }
+}
+
+impl MessagingRepository for MessagingStore {
+    fn persist_claimed_item(
+        &self,
+        item_id: &str,
+        event_id: &str,
+        conversation_id: &str,
+        lane_sequence: i64,
+        consumer_epoch: u64,
+        payload_sha256: &[u8],
+        opaque_payload: &[u8],
+        now_unix_ms: i64,
+    ) -> Result<(), String> {
+        MessagingStore::persist_claimed_item(
+            self,
+            item_id,
+            event_id,
+            conversation_id,
+            lane_sequence,
+            consumer_epoch,
+            payload_sha256,
+            opaque_payload,
+            now_unix_ms,
+        )
+    }
+
+    fn consumption_marker_matches(
+        &self,
+        item_id: &str,
+        payload_sha256: &[u8],
+    ) -> Result<bool, String> {
+        MessagingStore::consumption_marker_matches(self, item_id, payload_sha256)
+    }
+
+    fn lane_checkpoint(&self) -> Result<(i64, u64), String> {
+        MessagingStore::lane_checkpoint(self)
+    }
+
+    fn commit_conversation_state(
+        &self,
+        commit: &CoreConversationStateReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let projection = desktop_core_conversation_projection(commit.projection);
+        map_receive_result(MessagingStore::commit_conversation_state(
+            self,
+            &ConversationStateReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                projection: &projection,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_member_authority_state(
+        &self,
+        commit: &CoreMemberAuthorityReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let projection = desktop_core_conversation_projection(commit.state.projection);
+        map_receive_result(MessagingStore::commit_member_authority_state(
+            self,
+            &MemberAuthorityReceiveCommit {
+                state: ConversationStateReceiveCommit {
+                    item_id: commit.state.item_id,
+                    event_id: commit.state.event_id,
+                    conversation_id: commit.state.conversation_id,
+                    event_sequence: commit.state.event_sequence,
+                    lane_sequence: commit.state.lane_sequence,
+                    consumer_epoch: commit.state.consumer_epoch,
+                    payload_sha256: commit.state.payload_sha256,
+                    event_hash: commit.state.event_hash,
+                    previous_event_hash: commit.state.previous_event_hash,
+                    projection: &projection,
+                    receipt_id: commit.state.receipt_id,
+                    receipt_bytes: commit.state.receipt_bytes,
+                    consumed_at_unix_ms: commit.state.consumed_at_unix_ms,
+                },
+                command_id: commit.command_id,
+                operator_ptid: commit.operator_ptid,
+                operator_device_id: commit.operator_device_id,
+                action: commit.action,
+                target_ptid: commit.target_ptid,
+            },
+        )?)
+    }
+
+    fn commit_conversation_mutation_event(
+        &self,
+        commit: &CoreConversationMutationReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let mutation = match &commit.mutation {
+            CoreConversationMutation::Update {
+                name,
+                description,
+                avatar_object_id,
+            } => ConversationMutation::Update {
+                name: *name,
+                description: *description,
+                avatar_object_id: *avatar_object_id,
+            },
+            CoreConversationMutation::Dissolve => ConversationMutation::Dissolve,
+        };
+        map_receive_result(MessagingStore::commit_conversation_mutation_event(
+            self,
+            &ConversationMutationReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                command_id: commit.command_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                membership_epoch: commit.membership_epoch,
+                mls_epoch: commit.mls_epoch,
+                mutation,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn conversation_projections(&self) -> Result<Vec<CoreConversationProjection>, String> {
+        MessagingStore::conversation_projections(self).map(|projections| {
+            projections
+                .into_iter()
+                .map(core_conversation_projection)
+                .collect()
+        })
+    }
+
+    fn commit_public_event(
+        &self,
+        commit: &CorePublicEventReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        map_receive_result(MessagingStore::commit_public_event(
+            self,
+            &PublicEventReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                command_id: commit.command_id,
+                message_id: commit.message_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                sender_ptid: commit.sender_ptid,
+                sender_device_id: commit.sender_device_id,
+                attachments: commit.attachments,
+                reply_to_message_id: commit.reply_to_message_id,
+                thread_root_message_id: commit.thread_root_message_id,
+                committed_at_unix_ms: commit.committed_at_unix_ms,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_interaction_event(
+        &self,
+        commit: &CoreInteractionReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let mutation = match &commit.mutation {
+            CoreInteractionMutation::ObserveOnly => InteractionMutation::ObserveOnly,
+            CoreInteractionMutation::Edit {
+                edited_text,
+                edited_at_unix_ms,
+            } => InteractionMutation::Edit {
+                edited_text,
+                edited_at_unix_ms: *edited_at_unix_ms,
+            },
+            CoreInteractionMutation::Retract => InteractionMutation::Retract,
+            CoreInteractionMutation::HideForActor => InteractionMutation::HideForActor,
+            CoreInteractionMutation::Moderate {
+                moderator_ptid,
+                reason_code,
+                moderated_at_unix_ms,
+            } => InteractionMutation::Moderate {
+                moderator_ptid,
+                reason_code,
+                moderated_at_unix_ms: *moderated_at_unix_ms,
+            },
+            CoreInteractionMutation::Reaction {
+                actor_ptid,
+                reaction,
+                removed,
+                created_at_unix_ms,
+            } => InteractionMutation::Reaction {
+                actor_ptid,
+                reaction,
+                removed: *removed,
+                created_at_unix_ms: *created_at_unix_ms,
+            },
+            CoreInteractionMutation::Pin {
+                actor_ptid,
+                removed,
+                pinned_at_unix_ms,
+            } => InteractionMutation::Pin {
+                actor_ptid,
+                removed: *removed,
+                pinned_at_unix_ms: *pinned_at_unix_ms,
+            },
+        };
+        map_receive_result(MessagingStore::commit_interaction_event(
+            self,
+            &InteractionReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                command_id: commit.command_id,
+                conversation_id: commit.conversation_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                message_id: commit.message_id,
+                mutation,
+                mls_session_state: commit.mls_session_state,
+                membership_epoch: commit.membership_epoch,
+                mls_epoch: commit.mls_epoch,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_delivery_receipt(
+        &self,
+        commit: &CoreDeliveryReceiptReceiveCommit<'_>,
+    ) -> Result<(), String> {
+        MessagingStore::commit_delivery_receipt(
+            self,
+            &DeliveryReceiptReceiveCommit {
+                item_id: commit.item_id,
+                message_id: commit.message_id,
+                conversation_id: commit.conversation_id,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                delivery_state: commit.delivery_state,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )
+        .map(|_| ())
+    }
+
+    fn commit_actor_read_cursor(
+        &self,
+        commit: &CoreActorReadReceiveCommit<'_>,
+    ) -> Result<(), String> {
+        MessagingStore::commit_actor_read_cursor(
+            self,
+            &ActorReadReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                reader_ptid: commit.reader_ptid,
+                last_read_sequence: commit.last_read_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )
+        .map(|_| ())
+    }
+
+    fn next_command(&self, now_unix_ms: i64) -> Result<Option<CommandOutboxEntry>, String> {
+        MessagingStore::next_command(self, now_unix_ms)
+    }
+
+    fn mark_command_submitted(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+    ) -> Result<(), String> {
+        MessagingStore::mark_command_submitted(self, command_id, command_bytes, attempt_count)
+    }
+
+    fn mark_command_retry(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+        next_attempt_at_unix_ms: i64,
+        error_code: &str,
+    ) -> Result<(), String> {
+        MessagingStore::mark_command_retry(
+            self,
+            command_id,
+            command_bytes,
+            attempt_count,
+            next_attempt_at_unix_ms,
+            error_code,
+        )
+    }
+
+    fn mark_command_failed(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+        error_code: &str,
+    ) -> Result<(), String> {
+        MessagingStore::mark_command_failed(
+            self,
+            command_id,
+            command_bytes,
+            attempt_count,
+            error_code,
+        )
+    }
+
+    fn mark_command_superseded(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+    ) -> Result<(), String> {
+        MessagingStore::mark_command_superseded(self, command_id, command_bytes, attempt_count)
+    }
+
+    fn submitted_commands(&self) -> Result<Vec<SubmittedCommand>, String> {
+        MessagingStore::submitted_commands(self)
+    }
+
+    fn apply_command_reconciliations(
+        &self,
+        reconciliations: &[CommandReconciliation],
+        retry_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        MessagingStore::apply_command_reconciliations(self, reconciliations, retry_at_unix_ms)
+    }
+
+    fn authority_head(&self, conversation_id: &str) -> Result<(i64, Vec<u8>), String> {
+        MessagingStore::authority_head(self, conversation_id)
+    }
+
+    fn load_direct_session(&self, session_id: &str) -> Result<Option<DirectSession>, String> {
+        MessagingStore::load_direct_session(self, session_id)
+    }
+
+    fn load_direct_skipped_keys(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<DrSkippedMessageKey>, String> {
+        MessagingStore::load_direct_skipped_keys(self, session_id)
+    }
+
+    fn commit_direct_receive(
+        &self,
+        commit: &CoreDirectReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let projection = MessageProjection {
+            conversation_id: commit.projection.conversation_id.clone(),
+            event_id: commit.projection.event_id.clone(),
+            event_sequence: commit.projection.event_sequence,
+            message_id: commit.projection.message_id.clone(),
+            sender_ptid: commit.projection.sender_ptid.clone(),
+            sender_device_id: commit.projection.sender_device_id.clone(),
+            plaintext: commit.projection.plaintext.clone(),
+            attachments: commit.projection.attachments.clone(),
+            committed_at_unix_ms: commit.projection.committed_at_unix_ms,
+            reply_to_message_id: commit.projection.reply_to_message_id.clone(),
+            thread_root_message_id: commit.projection.thread_root_message_id.clone(),
+            edited_text: None,
+            edited_at_unix_ms: None,
+            retracted: false,
+        };
+        map_receive_result(MessagingStore::commit_direct_receive(
+            self,
+            &DirectReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                session: commit.session,
+                new_skipped: commit.new_skipped,
+                consumed_skipped: commit.consumed_skipped,
+                consumed_one_time_prekey_id: commit.consumed_one_time_prekey_id,
+                projection: &projection,
+                reply_to_message_id: projection.reply_to_message_id.as_deref(),
+                thread_root_message_id: projection.thread_root_message_id.as_deref(),
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_direct_edit(
+        &self,
+        commit: &CoreDirectEditCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        map_receive_result(MessagingStore::commit_direct_edit(
+            self,
+            &DirectEditCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                event_sequence: commit.event_sequence,
+                session: commit.session,
+                new_skipped: commit.new_skipped,
+                consumed_skipped: commit.consumed_skipped,
+                consumed_one_time_prekey_id: commit.consumed_one_time_prekey_id,
+                message_id: commit.message_id,
+                edited_text: commit.edited_text,
+                edited_at_unix_ms: commit.edited_at_unix_ms,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_service_plaintext_receive(
+        &self,
+        commit: &CoreServicePlaintextReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let content_bytes = commit.projection.content.encode_to_vec();
+        let source_context_bytes = commit
+            .projection
+            .source_context
+            .as_ref()
+            .map(Message::encode_to_vec)
+            .unwrap_or_default();
+        map_receive_result(MessagingStore::commit_service_plaintext_receive(
+            self,
+            &ServicePlaintextReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                message_id: &commit.projection.message_id,
+                sender_ptid: &commit.projection.sender_ptid,
+                sender_device_id: &commit.projection.sender_device_id,
+                fallback_text: &commit.projection.fallback_text,
+                service_message: ServiceMessageCommit {
+                    source_namespace: &commit.projection.source_namespace,
+                    content_bytes: &content_bytes,
+                    source_context_bytes: &source_context_bytes,
+                },
+                committed_at_unix_ms: commit.projection.committed_at_unix_ms,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_skipped_endpoint_payload(
+        &self,
+        commit: &CoreSkippedEndpointReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        map_receive_result(MessagingStore::commit_skipped_endpoint_payload(
+            self,
+            &SkippedEndpointReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn load_signed_prekey(&self, id: i32) -> Result<[u8; 32], String> {
+        MessagingStore::load_signed_prekey(self, id)
+    }
+
+    fn load_one_time_prekey(&self, id: i32) -> Result<[u8; 32], String> {
+        MessagingStore::load_one_time_prekey(self, id)
+    }
+
+    fn validate_integrity(&self) -> Result<(), String> {
+        MessagingStore::validate_integrity(self)
+    }
+
+    fn prepare_for_atomic_replace(&self) -> Result<(), String> {
+        MessagingStore::prepare_for_atomic_replace(self)
     }
 }
 
@@ -10267,6 +10921,29 @@ impl PreKeyInventoryRepository for MessagingStore {
 
     fn complete_prekey_replenishment(&self, one_time_prekey_ids: &[i32]) -> Result<(), String> {
         MessagingStore::complete_prekey_replenishment(self, one_time_prekey_ids)
+    }
+}
+
+impl DeliveryReceiptRepository for MessagingStore {
+    fn next_delivery_receipt(&self) -> Result<Option<DeliveryReceiptOutboxEntry>, String> {
+        MessagingStore::next_delivery_receipt(self)
+    }
+
+    fn mark_delivery_receipt_submitted(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+    ) -> Result<(), String> {
+        MessagingStore::mark_delivery_receipt_submitted(self, receipt_id, receipt_bytes)
+    }
+
+    fn mark_delivery_receipt_rejected(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+        error_code: &str,
+    ) -> Result<(), String> {
+        MessagingStore::mark_delivery_receipt_rejected(self, receipt_id, receipt_bytes, error_code)
     }
 }
 
@@ -10859,7 +11536,7 @@ impl MlsInboundRepository for MessagingStore {
     }
 }
 
-fn desktop_conversation_projection(
+pub(super) fn desktop_conversation_projection(
     projection: &MlsConversationProjection,
 ) -> ConversationProjection {
     ConversationProjection {
@@ -10881,6 +11558,66 @@ fn desktop_conversation_projection(
                 muted: member.muted,
                 muted_until_unix_ms: member.muted_until_unix_ms,
             })
+            .collect(),
+        membership_epoch: projection.membership_epoch,
+        mls_epoch: projection.mls_epoch,
+        active: projection.active,
+        updated_at_unix_ms: projection.updated_at_unix_ms,
+    }
+}
+
+fn desktop_core_conversation_projection(
+    projection: &CoreConversationProjection,
+) -> ConversationProjection {
+    ConversationProjection {
+        conversation_id: projection.conversation_id.clone(),
+        authority_station_id: projection.authority_station_id.clone(),
+        federation_id: projection.federation_id.clone(),
+        kind: projection.kind,
+        name: projection.name.clone(),
+        description: projection.description.clone(),
+        avatar_object_id: projection.avatar_object_id.clone(),
+        owner_ptid: projection.owner_ptid.clone(),
+        members: projection
+            .members
+            .iter()
+            .map(|member| ConversationMemberProjection {
+                ptid: member.ptid.clone(),
+                role: member.role,
+                home_station_peer_id: member.home_station_peer_id.clone(),
+                muted: member.muted,
+                muted_until_unix_ms: member.muted_until_unix_ms,
+            })
+            .collect(),
+        membership_epoch: projection.membership_epoch,
+        mls_epoch: projection.mls_epoch,
+        active: projection.active,
+        updated_at_unix_ms: projection.updated_at_unix_ms,
+    }
+}
+
+fn core_conversation_projection(projection: ConversationProjection) -> CoreConversationProjection {
+    CoreConversationProjection {
+        conversation_id: projection.conversation_id,
+        authority_station_id: projection.authority_station_id,
+        federation_id: projection.federation_id,
+        kind: projection.kind,
+        name: projection.name,
+        description: projection.description,
+        avatar_object_id: projection.avatar_object_id,
+        owner_ptid: projection.owner_ptid,
+        members: projection
+            .members
+            .into_iter()
+            .map(
+                |member| messaging_core::contracts::ConversationAuthorityMemberProjection {
+                    ptid: member.ptid,
+                    role: member.role,
+                    home_station_peer_id: member.home_station_peer_id,
+                    muted: member.muted,
+                    muted_until_unix_ms: member.muted_until_unix_ms,
+                },
+            )
             .collect(),
         membership_epoch: projection.membership_epoch,
         mls_epoch: projection.mls_epoch,
@@ -11261,7 +11998,7 @@ fn validate_conversation_projection(
         || projection.federation_id.trim().is_empty()
         || kind == ConversationKind::Unspecified
         || projection.owner_ptid.trim().is_empty()
-        || projection.members.len() < 2
+        || projection.members.is_empty()
         || projection.membership_epoch < 0
         || projection.mls_epoch < 0
         || projection.updated_at_unix_ms <= 0
@@ -11460,11 +12197,152 @@ fn load_command_transition_state(
     })
 }
 
+fn validate_conversation_mutation_readback(
+    input: &ConversationMutationReceiveCommit<'_>,
+    intent_kind: &str,
+    command_bytes: &[u8],
+) -> Result<(), String> {
+    let command = ChatCommand::decode(command_bytes)
+        .map_err(|_| "messaging Conversation command bytes are invalid".to_string())?;
+    if command.encode_to_vec() != command_bytes
+        || command.command_id != input.command_id
+        || command.conversation_id != input.conversation_id
+    {
+        return Err("messaging Conversation command readback binding mismatch".to_string());
+    }
+    let matches = match (&input.mutation, command.payload.as_ref()) {
+        (
+            ConversationMutation::Update {
+                name,
+                description,
+                avatar_object_id,
+            },
+            Some(chat_command::Payload::UpdateConversation(update)),
+        ) => {
+            intent_kind == "update"
+                && update.name.as_deref() == *name
+                && update.description.as_deref() == *description
+                && update.avatar_object_id.as_deref() == *avatar_object_id
+                && update.visibility.is_none()
+        }
+        (ConversationMutation::Dissolve, Some(chat_command::Payload::DissolveConversation(_))) => {
+            intent_kind == "dissolve"
+        }
+        _ => false,
+    };
+    if !matches {
+        return Err("messaging Conversation command readback mismatch".to_string());
+    }
+    Ok(())
+}
+
+fn validate_member_authority_projection_commit(
+    transaction: &Transaction<'_>,
+    input: &MemberAuthorityReceiveCommit<'_>,
+) -> Result<bool, String> {
+    let row = transaction
+        .query_row(
+            "SELECT command.command_bytes, intent.action, intent.target_ptid
+         FROM messaging_local_commands command
+         JOIN messaging_member_authority_intents intent ON intent.command_id = command.command_id
+         WHERE command.command_id = ?1 AND command.conversation_id = ?2
+           AND intent.conversation_id = ?2",
+            params![input.command_id, input.state.conversation_id],
+            |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, i32>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some((bytes, action, target)) = row else {
+        return Ok(false);
+    };
+    let command = crate::model::chat::ConversationMemberAuthorityCommand::decode(bytes.as_slice())
+        .map_err(|_| "messaging member-authority command bytes are invalid".to_string())?;
+    let operator = command.operator.as_ref();
+    let target_projection = input
+        .state
+        .projection
+        .members
+        .iter()
+        .find(|member| member.ptid == input.target_ptid);
+    if command.encode_to_vec() != bytes
+        || command.command_id != input.command_id
+        || command.conversation_id != input.state.conversation_id
+        || operator.map(|value| value.ptid.as_str()) != Some(input.operator_ptid)
+        || operator.map(|value| value.device_id.as_str()) != Some(input.operator_device_id)
+        || command.action != input.action
+        || action != input.action
+        || command.target_ptid != input.target_ptid
+        || target != input.target_ptid
+        || command.authority_station_peer_id != input.state.projection.authority_station_id
+        || command.federation_id != input.state.projection.federation_id
+        || command.authority_sequence.saturating_add(1) != input.state.event_sequence
+        || command.authority_hash != input.state.previous_event_hash
+        || command.observed_membership_epoch.saturating_add(1)
+            != input.state.projection.membership_epoch
+        || command.observed_mls_epoch != input.state.projection.mls_epoch
+        || target_projection.is_none()
+        || command
+            .role
+            .is_some_and(|role| target_projection.unwrap().role != role)
+        || command
+            .muted
+            .is_some_and(|muted| target_projection.unwrap().muted != muted)
+        || command.muted_until.as_ref().is_some_and(|until| {
+            target_projection.unwrap().muted_until_unix_ms
+                != Some(
+                    until
+                        .seconds
+                        .saturating_mul(1_000)
+                        .saturating_add(i64::from(until.nanos) / 1_000_000),
+                )
+        })
+    {
+        return Err("messaging member-authority projection contradicts local intent".to_string());
+    }
+    Ok(true)
+}
+
+fn transition_non_message_intents(
+    transaction: &Transaction<'_>,
+    command_id: &str,
+    next_state: &str,
+) -> Result<usize, String> {
+    let previous_states = match next_state {
+        "submitted" | "retry_wait" => "'prepared', 'retry_wait', 'submitted'",
+        "failed" | "superseded" => "'prepared', 'retry_wait', 'submitted', 'failed', 'superseded'",
+        "committed" => "'prepared', 'retry_wait', 'submitted', 'failed', 'superseded', 'committed'",
+        _ => return Err("messaging non-message intent transition is invalid".to_string()),
+    };
+    let mut changed = 0;
+    for table in [
+        "messaging_conversation_command_intents",
+        "messaging_member_authority_intents",
+    ] {
+        changed += transaction
+            .execute(
+                &format!(
+                    "UPDATE {table} SET state = ?2
+                     WHERE command_id = ?1 AND state IN ({previous_states})"
+                ),
+                params![command_id, next_state],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(changed)
+}
+
 fn pending_owner_transition_is_valid(
     transaction: &Transaction<'_>,
     command_id: &str,
     pending_message_changes: usize,
     interaction_changes: usize,
+    non_message_changes: usize,
 ) -> Result<bool, String> {
     let transition_count = transaction
         .query_row(
@@ -11478,9 +12356,10 @@ fn pending_owner_transition_is_valid(
         (
             pending_message_changes,
             transition_count,
-            interaction_changes
+            interaction_changes,
+            non_message_changes
         ),
-        (1, 0, 0) | (0, 1, 0) | (0, 0, 1)
+        (1, 0, 0, 0) | (0, 1, 0, 0) | (0, 0, 1, 0) | (0, 0, 0, 1)
     ))
 }
 
@@ -11542,6 +12421,7 @@ fn apply_accepted_command_result(
             params![command_id],
         )
         .map_err(|error| error.to_string())?;
+    transition_non_message_intents(transaction, command_id, "committed")?;
     if local_changed != 1 || outbox_changed != 1 || attempt_changed != 1 {
         return Err("messaging accepted command result was not fenced".to_string());
     }
@@ -11596,6 +12476,8 @@ fn apply_not_found_command_result(
             params![command_id],
         )
         .map_err(|error| error.to_string())?;
+    let non_message_changed =
+        transition_non_message_intents(transaction, command_id, "retry_wait")?;
     if outbox_changed != 1
         || attempt_changed != 1
         || !pending_owner_transition_is_valid(
@@ -11603,6 +12485,7 @@ fn apply_not_found_command_result(
             command_id,
             pending_changed,
             interaction_changed,
+            non_message_changed,
         )?
     {
         return Err("messaging command retry reconciliation was not fenced".to_string());
@@ -11626,7 +12509,7 @@ fn apply_terminal_command_result(
             "UPDATE messaging_local_commands
              SET state = ?2
              WHERE command_id = ?1
-               AND state IN ('prepared', 'submitted', ?2)",
+               AND state IN ('prepared', 'submitted', 'failed', 'superseded')",
             params![command_id, terminal_state],
         )
         .map_err(|error| error.to_string())?;
@@ -11635,7 +12518,9 @@ fn apply_terminal_command_result(
             "UPDATE messaging_command_outbox
              SET state = ?2, last_error_code = ?3
              WHERE command_id = ?1
-               AND state IN ('pending', 'retry_wait', 'submitted', ?2)",
+               AND state IN (
+                   'pending', 'retry_wait', 'submitted', 'failed', 'superseded'
+               )",
             params![command_id, terminal_state, error_code],
         )
         .map_err(|error| error.to_string())?;
@@ -11644,7 +12529,9 @@ fn apply_terminal_command_result(
             "UPDATE messaging_command_attempts
              SET state = ?2
              WHERE command_id = ?1
-               AND state IN ('prepared', 'retry_wait', 'submitted', ?2)",
+               AND state IN (
+                   'prepared', 'retry_wait', 'submitted', 'failed', 'superseded'
+               )",
             params![command_id, terminal_state],
         )
         .map_err(|error| error.to_string())?;
@@ -11653,7 +12540,9 @@ fn apply_terminal_command_result(
         .execute(
             "UPDATE messaging_pending_messages AS pending
              SET state = ?2, last_error_code = ?3
-             WHERE state IN ('pending', 'retry_wait', 'submitted')
+             WHERE state IN (
+                 'pending', 'retry_wait', 'submitted', 'draft', 'failed'
+             )
                AND EXISTS (
                    SELECT 1 FROM messaging_command_attempts attempt
                    WHERE attempt.command_id = ?1
@@ -11668,7 +12557,9 @@ fn apply_terminal_command_result(
             "UPDATE messaging_interaction_intents
              SET state = ?2
              WHERE command_id = ?1
-               AND state IN ('prepared', 'retry_wait', 'submitted')",
+               AND state IN (
+                   'prepared', 'retry_wait', 'submitted', 'failed', 'superseded'
+               )",
             params![command_id, terminal_state],
         )
         .map_err(|error| error.to_string())?;
@@ -11676,14 +12567,16 @@ fn apply_terminal_command_result(
         transaction.execute(
             "UPDATE messaging_membership_intents
              SET state = 'superseded', command_id = ''
-             WHERE command_id = ?1 AND state = 'prepared'",
+             WHERE command_id = ?1
+               AND state IN ('prepared', 'failed', 'superseded')",
             params![command_id],
         )
     } else {
         transaction.execute(
             "UPDATE messaging_membership_intents
              SET state = 'failed'
-             WHERE command_id = ?1 AND state = 'prepared'",
+             WHERE command_id = ?1
+               AND state IN ('prepared', 'failed', 'superseded')",
             params![command_id],
         )
     }
@@ -11695,6 +12588,8 @@ fn apply_terminal_command_result(
             params![command_id],
         )
         .map_err(|error| error.to_string())?;
+    let non_message_changed =
+        transition_non_message_intents(transaction, command_id, terminal_state)?;
     if local_changed != 1
         || outbox_changed != 1
         || attempt_changed != 1
@@ -11704,6 +12599,7 @@ fn apply_terminal_command_result(
                 command_id,
                 pending_changed,
                 interaction_changed,
+                non_message_changed,
             )? || (pending_transition_deleted == 1 && membership_changed <= 1)))
     {
         return Err("messaging terminal command result was not fenced".to_string());
@@ -12269,6 +13165,11 @@ fn persist_interaction_command(
 enum InteractionCommandIdentity {
     Edit(String),
     Retract(String),
+    HideForActor(String),
+    Moderate {
+        message_id: String,
+        reason_code: String,
+    },
     Reaction {
         message_id: String,
         reaction: String,
@@ -12303,6 +13204,15 @@ fn decode_interaction_command_identity(
         Some(chat_command::Payload::RetractMessage(retract)) => {
             InteractionCommandIdentity::Retract(retract.message_id.clone())
         }
+        Some(chat_command::Payload::HideMessageForActor(hide)) => {
+            InteractionCommandIdentity::HideForActor(hide.message_id.clone())
+        }
+        Some(chat_command::Payload::ModerateMessage(moderate)) => {
+            InteractionCommandIdentity::Moderate {
+                message_id: moderate.message_id.clone(),
+                reason_code: moderate.reason_code.clone(),
+            }
+        }
         Some(chat_command::Payload::Reaction(reaction)) => InteractionCommandIdentity::Reaction {
             message_id: reaction.message_id.clone(),
             reaction: reaction.reaction.clone(),
@@ -12319,6 +13229,12 @@ fn decode_interaction_command_identity(
     let (interaction_kind, target_message_id) = match &identity {
         InteractionCommandIdentity::Edit(message_id) => ("edit", message_id.as_str()),
         InteractionCommandIdentity::Retract(message_id) => ("retract", message_id.as_str()),
+        InteractionCommandIdentity::HideForActor(message_id) => {
+            ("hide-for-actor", message_id.as_str())
+        }
+        InteractionCommandIdentity::Moderate { message_id, .. } => {
+            ("moderate", message_id.as_str())
+        }
         InteractionCommandIdentity::Reaction {
             message_id, remove, ..
         } => (
@@ -13053,7 +13969,7 @@ fn apply_message_redaction(
     }
     if prepared_cleanup.measurement_failed {
         cleanup_items.push(failed_file_cleanup_item(
-            Path::new("chat-storage-physical-measurement"),
+            "chat-storage-physical-measurement",
             "CHAT_STORAGE_ERROR_CODE_IO_FAILED",
         ));
     }
@@ -13464,15 +14380,18 @@ impl ConversationClearRepository for MessagingStore {
                             SELECT 1 FROM messaging_pending_messages pending
                             WHERE pending.conversation_id = message.conversation_id
                               AND pending.message_id = message.message_id
+                              AND pending.state <> 'accepted'
                             UNION ALL
                             SELECT 1 FROM messaging_command_attempts attempt
                             WHERE attempt.conversation_id = message.conversation_id
                               AND attempt.message_id = message.message_id
-                              AND attempt.state <> 'committed'
+                              AND attempt.state NOT IN (
+                                  'committed', 'failed', 'superseded'
+                              )
                             UNION ALL
                             SELECT 1 FROM messaging_receipt_outbox receipt
                             WHERE receipt.event_id = message.event_id
-                              AND receipt.state <> 'sent'
+                              AND receipt.state = 'pending'
                             UNION ALL
                             SELECT 1 FROM messaging_attachment_drafts draft
                             WHERE draft.conversation_id = message.conversation_id
@@ -13605,15 +14524,18 @@ impl ConversationClearRepository for MessagingStore {
                             SELECT 1 FROM messaging_pending_messages pending
                             WHERE pending.conversation_id = message.conversation_id
                               AND pending.message_id = message.message_id
+                              AND pending.state <> 'accepted'
                             UNION ALL
                             SELECT 1 FROM messaging_command_attempts attempt
                             WHERE attempt.conversation_id = message.conversation_id
                               AND attempt.message_id = message.message_id
-                              AND attempt.state <> 'committed'
+                              AND attempt.state NOT IN (
+                                  'committed', 'failed', 'superseded'
+                              )
                             UNION ALL
                             SELECT 1 FROM messaging_receipt_outbox receipt
                             WHERE receipt.event_id = message.event_id
-                              AND receipt.state <> 'sent'
+                              AND receipt.state = 'pending'
                             UNION ALL
                             SELECT 1 FROM messaging_attachment_drafts draft
                             WHERE draft.conversation_id = message.conversation_id
@@ -13757,6 +14679,12 @@ impl ConversationClearRepository for MessagingStore {
                         AttachmentTransferState::Cancelled as i32,
                         AttachmentTransferState::Terminal as i32,
                     ],
+                ),
+                (
+                    "DELETE FROM messaging_pending_messages
+                     WHERE conversation_id = ?1 AND message_id = ?2
+                       AND state = 'accepted'",
+                    params![plan.conversation_id, message_id],
                 ),
             ] {
                 transaction
@@ -14003,15 +14931,18 @@ impl RetentionRepository for MessagingStore {
                             SELECT 1 FROM messaging_pending_messages pending
                             WHERE pending.conversation_id = message.conversation_id
                               AND pending.message_id = message.message_id
+                              AND pending.state <> 'accepted'
                             UNION ALL
                             SELECT 1 FROM messaging_command_attempts attempt
                             WHERE attempt.conversation_id = message.conversation_id
                               AND attempt.message_id = message.message_id
-                              AND attempt.state <> 'committed'
+                              AND attempt.state NOT IN (
+                                  'committed', 'failed', 'superseded'
+                              )
                             UNION ALL
                             SELECT 1 FROM messaging_receipt_outbox receipt
                             WHERE receipt.event_id = message.event_id
-                              AND receipt.state <> 'sent'
+                              AND receipt.state = 'pending'
                         ) AS reliability_protected,
                         EXISTS(
                             SELECT 1 FROM messaging_attachment_transfers transfer
@@ -14177,17 +15108,20 @@ impl RetentionRepository for MessagingStore {
                                SELECT 1 FROM messaging_pending_messages pending
                                WHERE pending.conversation_id = message.conversation_id
                                  AND pending.message_id = message.message_id
+                                 AND pending.state <> 'accepted'
                            )
                            AND NOT EXISTS(
                                SELECT 1 FROM messaging_command_attempts attempt
                                WHERE attempt.conversation_id = message.conversation_id
                                  AND attempt.message_id = message.message_id
-                                 AND attempt.state <> 'committed'
+                                 AND attempt.state NOT IN (
+                                     'committed', 'failed', 'superseded'
+                                 )
                            )
                            AND NOT EXISTS(
                                SELECT 1 FROM messaging_receipt_outbox receipt
                                WHERE receipt.event_id = message.event_id
-                                 AND receipt.state <> 'sent'
+                                 AND receipt.state = 'pending'
                            )
                            AND NOT EXISTS(
                                SELECT 1 FROM messaging_attachment_transfers transfer
@@ -14267,6 +15201,14 @@ impl RetentionRepository for MessagingStore {
                             AttachmentTransferState::Cancelled as i32,
                             AttachmentTransferState::Terminal as i32,
                         ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                transaction
+                    .execute(
+                        "DELETE FROM messaging_pending_messages
+                         WHERE conversation_id = ?1 AND message_id = ?2
+                           AND state = 'accepted'",
+                        params![boundary.conversation_id, message_id],
                     )
                     .map_err(|error| error.to_string())?;
                 let deleted = transaction
@@ -14624,7 +15566,10 @@ mod tests {
     use crate::domain::crypto::IdentityKeyPair;
     use crate::messaging::attachment_transfer;
     use crate::messaging::private_content::test_attachment_metadata;
-    use crate::model::chat::{AttachmentTransferErrorCode, ReactionIntent};
+    use crate::model::chat::{
+        AttachmentTransferErrorCode, HideMessageForActorIntent, ModerateMessageIntent,
+        ReactionIntent,
+    };
     use messaging_core::identity::{
         generate_device_identity_for_device_from_parts, generate_fresh_device_identity,
     };
@@ -14652,6 +15597,54 @@ mod tests {
             })),
         }
         .encode_to_vec()
+    }
+
+    #[test]
+    fn interaction_command_identity_accepts_actor_hide_and_moderation() {
+        for (interaction_kind, payload, expected) in [
+            (
+                "hide-for-actor",
+                chat_command::Payload::HideMessageForActor(HideMessageForActorIntent {
+                    message_id: "message-1".to_string(),
+                }),
+                InteractionCommandIdentity::HideForActor("message-1".to_string()),
+            ),
+            (
+                "moderate",
+                chat_command::Payload::ModerateMessage(ModerateMessageIntent {
+                    message_id: "message-1".to_string(),
+                    reason_code: "group_policy_violation".to_string(),
+                }),
+                InteractionCommandIdentity::Moderate {
+                    message_id: "message-1".to_string(),
+                    reason_code: "group_policy_violation".to_string(),
+                },
+            ),
+        ] {
+            let command = ChatCommand {
+                command_id: "command-1".to_string(),
+                conversation_id: "conversation-1".to_string(),
+                sender: Some(crate::model::chat::CryptoEndpoint {
+                    ptid: "ptid:alice".to_string(),
+                    device_id: "alice-device".to_string(),
+                }),
+                payload: Some(payload),
+                ..Default::default()
+            };
+
+            assert_eq!(
+                decode_interaction_command_identity(
+                    &command.encode_to_vec(),
+                    "command-1",
+                    "conversation-1",
+                    "message-1",
+                    interaction_kind,
+                )
+                .unwrap()
+                .2,
+                expected,
+            );
+        }
     }
 
     fn direct_conversation_projection() -> ConversationProjection {
@@ -14790,10 +15783,99 @@ mod tests {
                         conversation_id, message_id, plaintext, attachment_filenames
                      ) VALUES
                         ('conversation-1', 'message-1', 'first plaintext', ''),
-                        ('conversation-1', 'message-2', 'second plaintext', '');",
+                        ('conversation-1', 'message-2', 'second plaintext', '');
+                     INSERT INTO messaging_pending_messages(
+                        conversation_id, conversation_kind, message_id,
+                        sender_ptid, sender_device_id, plaintext, state,
+                        attempt_count, next_attempt_at_unix_ms, last_error_code,
+                        created_at_unix_ms
+                     ) VALUES
+                        ('conversation-1', 1, 'message-1',
+                         'ptid:alice', 'alice-device', 'first plaintext',
+                         'accepted', 1, 0, '', 100),
+                        ('conversation-1', 1, 'message-2',
+                         'ptid:alice', 'alice-device', 'second plaintext',
+                         'accepted', 1, 0, '', 200);
+                     INSERT INTO messaging_local_commands(
+                        command_id, conversation_id, command_bytes, state,
+                        created_at_unix_ms
+                     ) VALUES
+                        ('command-active', 'conversation-1', X'01', 'prepared', 100),
+                        ('command-superseded', 'conversation-1', X'02', 'superseded', 200),
+                        ('command-failed', 'conversation-1', X'03', 'failed', 200);
+                     INSERT INTO messaging_command_attempts(
+                        command_id, conversation_id, message_id,
+                        delivery_plan_sha256, state, created_at_unix_ms
+                     ) VALUES
+                        ('command-active', 'conversation-1', 'message-1',
+                         zeroblob(32), 'prepared', 100),
+                        ('command-superseded', 'conversation-1', 'message-2',
+                         zeroblob(32), 'superseded', 200),
+                        ('command-failed', 'conversation-1', 'message-2',
+                         zeroblob(32), 'failed', 200);
+                     INSERT INTO messaging_receipt_outbox(
+                        receipt_id, event_id, receipt_bytes, state,
+                        created_at_unix_ms
+                     ) VALUES
+                        ('device-consumed:item-1', 'event-1', X'01', 'pending', 100),
+                        ('device-consumed:item-2', 'event-2', X'02', 'rejected', 200);",
                 )
                 .unwrap();
         }
+
+        assert_eq!(
+            messaging_core::storage_governance::conversation_clear::clear_conversation(
+                &store,
+                messaging_core::storage_governance::conversation_clear::ConversationClearInput {
+                    scope: scope.clone(),
+                    scope_revision: "scope-pending-receipt".to_string(),
+                    conversation_id: "conversation-1".to_string(),
+                    physical_bytes_before: 4096,
+                    now_unix_ms: 299,
+                },
+            )
+            .unwrap_err(),
+            messaging_core::storage_governance::conversation_clear::ConversationClearError::ProtectedCandidate(
+                "message-1".to_string(),
+            )
+        );
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE messaging_receipt_outbox
+                 SET state = 'submitted'
+                 WHERE receipt_id = 'device-consumed:item-1'",
+                [],
+            )
+            .unwrap();
+
+        assert_eq!(
+            messaging_core::storage_governance::conversation_clear::clear_conversation(
+                &store,
+                messaging_core::storage_governance::conversation_clear::ConversationClearInput {
+                    scope: scope.clone(),
+                    scope_revision: "scope-active-attempt".to_string(),
+                    conversation_id: "conversation-1".to_string(),
+                    physical_bytes_before: 4096,
+                    now_unix_ms: 299,
+                },
+            )
+            .unwrap_err(),
+            messaging_core::storage_governance::conversation_clear::ConversationClearError::ProtectedCandidate(
+                "message-1".to_string(),
+            )
+        );
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE messaging_command_attempts
+                 SET state = 'committed'
+                 WHERE command_id = 'command-active'",
+                [],
+            )
+            .unwrap();
 
         let progress = messaging_core::storage_governance::conversation_clear::clear_conversation(
             &store,
@@ -16736,6 +17818,11 @@ mod tests {
                 kind == "hidden_for_actor"
             );
             assert_eq!(evidence["redactionTombstones"][0]["kind"], kind);
+            assert_eq!(evidence["authorityHead"]["eventSequence"], 2);
+            assert_eq!(
+                evidence["authorityHead"]["eventHash"],
+                hex::encode(redaction_hash),
+            );
             assert_eq!(evidence["searchEntryCount"], 0);
             assert_eq!(evidence["attachmentProjectionCount"], 0);
             assert_eq!(evidence["attachmentTransferCount"], 0);
@@ -16949,8 +18036,9 @@ mod tests {
         std::fs::write(&path, b"replacement").unwrap();
         let changed = messaging_core::storage_governance::cache::execute_cache_cleanup(
             &store,
+            &NativeMessagingFilesystem,
             &operations[0],
-            std::slice::from_ref(&root),
+            &[path_ref(&root)],
             &[],
             21,
         )
@@ -16982,8 +18070,9 @@ mod tests {
             .unwrap();
         let progress = messaging_core::storage_governance::cache::execute_cache_cleanup(
             &store,
+            &NativeMessagingFilesystem,
             &retry,
-            std::slice::from_ref(&root),
+            &[path_ref(&root)],
             &[],
             23,
         )
@@ -17240,6 +18329,450 @@ mod tests {
                 .unwrap();
             assert_eq!(state, "submitted", "table {table}");
         }
+    }
+
+    #[test]
+    fn canonical_terminal_result_overrides_provisional_interaction_terminal_state() {
+        for (provisional, canonical, superseded) in [
+            ("superseded", "failed", false),
+            ("failed", "superseded", true),
+        ] {
+            let store = MessagingStore::in_memory().unwrap();
+            let command_id = format!("{provisional}-to-{canonical}");
+            let command_bytes = reaction_command(&command_id, "thumbs-up");
+            store
+                .persist_interaction_command(&InteractionCommandCommit {
+                    logical_intent_id: &command_id,
+                    replaces_command_id: None,
+                    command_id: &command_id,
+                    conversation_id: "conversation-1",
+                    target_message_id: "message-1",
+                    interaction_kind: "reaction-add",
+                    edited_text: None,
+                    command_bytes: &command_bytes,
+                    delivery_plan_sha256: &[7; 32],
+                    created_at_unix_ms: 10,
+                })
+                .unwrap();
+            if provisional == "superseded" {
+                store
+                    .mark_command_superseded(&command_id, &command_bytes, 0)
+                    .unwrap();
+            } else {
+                store
+                    .mark_command_failed(&command_id, &command_bytes, 0, "provisional")
+                    .unwrap();
+            }
+
+            let mut connection = store.connection().unwrap();
+            let transaction = connection.transaction().unwrap();
+            apply_terminal_command_result(
+                &transaction,
+                &command_id,
+                "canonical",
+                superseded,
+                false,
+            )
+            .unwrap();
+            transaction.commit().unwrap();
+
+            for table in [
+                "messaging_local_commands",
+                "messaging_command_outbox",
+                "messaging_command_attempts",
+                "messaging_interaction_intents",
+            ] {
+                let state: String = connection
+                    .query_row(
+                        &format!("SELECT state FROM {table} WHERE command_id = ?1"),
+                        params![command_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(state, canonical, "table {table}");
+            }
+        }
+    }
+
+    fn prepare_non_message_test_command(store: &MessagingStore, member: bool) -> &'static str {
+        let command_id = if member {
+            "member-command"
+        } else {
+            "conversation-command"
+        };
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_authority_heads(
+                    conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                 ) VALUES ('conversation-1', 1, ?1, 10)",
+                params![vec![7_u8; 32]],
+            )
+            .unwrap();
+        let sender = crate::model::chat::CryptoEndpoint {
+            ptid: "ptid:alice".to_string(),
+            device_id: "alice-device".to_string(),
+        };
+        if member {
+            store
+                .persist_member_authority_command(
+                    &crate::model::chat::ConversationMemberAuthorityCommand {
+                        command_id: command_id.to_string(),
+                        conversation_id: "conversation-1".to_string(),
+                        operator: Some(sender),
+                        target_ptid: "ptid:bob".to_string(),
+                        action: crate::model::chat::ConversationMemberAuthorityAction::UpdateMember
+                            as i32,
+                        authority_station_peer_id: "station-local".to_string(),
+                        federation_id: "federation-1".to_string(),
+                        authority_sequence: 1,
+                        authority_hash: vec![7; 32],
+                        client_timestamp: Some(prost_types::Timestamp {
+                            seconds: 1,
+                            nanos: 0,
+                        }),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        } else {
+            let command = ChatCommand {
+                command_id: command_id.to_string(),
+                conversation_id: "conversation-1".to_string(),
+                sender: Some(sender),
+                authority_station_peer_id: "station-local".to_string(),
+                delivery_plan_sha256: vec![7; 32],
+                payload: Some(chat_command::Payload::UpdateConversation(
+                    crate::model::chat::UpdateConversationIntent {
+                        name: Some("renamed group".to_string()),
+                        ..Default::default()
+                    },
+                )),
+                ..Default::default()
+            };
+            store
+                .persist_conversation_command(&ConversationCommandCommit {
+                    command: &command,
+                    expected_authority_sequence: 1,
+                    expected_authority_hash: &[7; 32],
+                    created_at_unix_ms: 10,
+                })
+                .unwrap();
+        }
+        command_id
+    }
+
+    #[test]
+    fn core_member_authority_adapter_commits_the_exact_local_intent() {
+        let store = MessagingStore::in_memory().unwrap();
+        let command_id = prepare_non_message_test_command(&store, true);
+        let command = store.next_command(1_000).unwrap().unwrap();
+        store
+            .mark_command_submitted(command_id, &command.command_bytes, 0)
+            .unwrap();
+        <MessagingStore as MessagingRepository>::persist_claimed_item(
+            &store,
+            "member-item",
+            "member-event",
+            "conversation-1",
+            1,
+            1,
+            &[3; 32],
+            b"verified-member-delivery",
+            1_000,
+        )
+        .unwrap();
+        let projection = core_conversation_projection(ConversationProjection {
+            conversation_id: "conversation-1".to_string(),
+            authority_station_id: "station-local".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Group as i32,
+            name: "Group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                ConversationMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Owner as i32,
+                    home_station_peer_id: "station-local".to_string(),
+                    muted: false,
+                    muted_until_unix_ms: None,
+                },
+                ConversationMemberProjection {
+                    ptid: "ptid:bob".to_string(),
+                    role: MemberRole::Member as i32,
+                    home_station_peer_id: "station-local".to_string(),
+                    muted: false,
+                    muted_until_unix_ms: None,
+                },
+            ],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            active: true,
+            updated_at_unix_ms: 1_000,
+        });
+        let commit = CoreMemberAuthorityReceiveCommit {
+            state: CoreConversationStateReceiveCommit {
+                item_id: "member-item",
+                event_id: "member-event",
+                conversation_id: "conversation-1",
+                event_sequence: 2,
+                lane_sequence: 1,
+                consumer_epoch: 1,
+                payload_sha256: &[3; 32],
+                event_hash: &[8; 32],
+                previous_event_hash: &[7; 32],
+                projection: &projection,
+                receipt_id: "member-receipt",
+                receipt_bytes: b"member-receipt",
+                consumed_at_unix_ms: 1_000,
+            },
+            command_id,
+            operator_ptid: "ptid:alice",
+            operator_device_id: "alice-device",
+            action: crate::model::chat::ConversationMemberAuthorityAction::UpdateMember as i32,
+            target_ptid: "ptid:bob",
+        };
+
+        assert_eq!(
+            <MessagingStore as MessagingRepository>::commit_member_authority_state(
+                &store, &commit,
+            )
+            .unwrap(),
+            CoreReceiveCommitResult::Committed,
+        );
+        let state: String = store
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM messaging_member_authority_intents
+                 WHERE command_id = ?1",
+                params![command_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(state, "committed");
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
+    }
+
+    #[test]
+    fn conversation_mutation_readback_mismatch_rolls_back_lane_and_local_intent() {
+        let store = MessagingStore::in_memory().unwrap();
+        let command_id = prepare_non_message_test_command(&store, false);
+        store
+            .install_test_conversation_projection("conversation-1", 1, 0)
+            .unwrap();
+        let command = store.next_command(1_000).unwrap().unwrap();
+        store
+            .mark_command_submitted(command_id, &command.command_bytes, 0)
+            .unwrap();
+        store
+            .persist_claimed_item(
+                "mutation-item",
+                "mutation-event",
+                "conversation-1",
+                1,
+                1,
+                &[3; 32],
+                b"verified-delivery",
+                1_000,
+            )
+            .unwrap();
+        let mut commit = ConversationMutationReceiveCommit {
+            item_id: "mutation-item",
+            event_id: "mutation-event",
+            conversation_id: "conversation-1",
+            command_id,
+            event_sequence: 2,
+            lane_sequence: 1,
+            consumer_epoch: 1,
+            payload_sha256: &[3; 32],
+            event_hash: &[8; 32],
+            previous_event_hash: &[7; 32],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            mutation: ConversationMutation::Update {
+                name: Some("contradiction"),
+                description: None,
+                avatar_object_id: None,
+            },
+            receipt_id: "mutation-receipt",
+            receipt_bytes: b"receipt",
+            consumed_at_unix_ms: 1_000,
+        };
+        assert_eq!(
+            store
+                .commit_conversation_mutation_event(&commit)
+                .unwrap_err(),
+            "messaging Conversation command readback mismatch",
+        );
+        assert_eq!(store.lane_checkpoint().unwrap(), (0, 0));
+        assert_eq!(
+            store.authority_head("conversation-1").unwrap(),
+            (1, vec![7; 32])
+        );
+        assert_eq!(
+            store.command_status(command_id).unwrap().unwrap().state,
+            "submitted"
+        );
+        assert_eq!(
+            store.conversation_projections().unwrap()[0].name,
+            "test group"
+        );
+        assert!(!store
+            .consumption_marker_matches("mutation-item", &[3; 32])
+            .unwrap());
+        assert!(store.next_delivery_receipt().unwrap().is_none());
+        commit.mutation = ConversationMutation::Update {
+            name: Some("renamed group"),
+            description: None,
+            avatar_object_id: None,
+        };
+        assert_eq!(
+            store.commit_conversation_mutation_event(&commit).unwrap(),
+            ReceiveCommitResult::Committed,
+        );
+        assert_eq!(
+            store.commit_conversation_mutation_event(&commit).unwrap(),
+            ReceiveCommitResult::AlreadyCommitted,
+        );
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
+        assert_eq!(
+            store.command_status(command_id).unwrap().unwrap().state,
+            "committed"
+        );
+        assert_eq!(
+            store.conversation_projections().unwrap()[0].name,
+            "renamed group"
+        );
+    }
+
+    #[test]
+    fn non_message_command_retry_and_result_settle_the_exact_intent_owner() {
+        for member in [false, true] {
+            let store = MessagingStore::in_memory().unwrap();
+            let command_id = prepare_non_message_test_command(&store, member);
+            let command = store.next_command(1_000).unwrap().unwrap();
+            store
+                .mark_command_retry(command_id, &command.command_bytes, 0, 1_010, "network")
+                .unwrap();
+            let retry = store.next_command(1_010).unwrap().unwrap();
+            assert_eq!(retry.command_bytes, command.command_bytes);
+            store
+                .mark_command_submitted(command_id, &retry.command_bytes, retry.attempt_count)
+                .unwrap();
+            let submitted = store.submitted_commands().unwrap().remove(0);
+            let mut reconciliation = CommandReconciliation {
+                command_id: command_id.to_string(),
+                conversation_id: submitted.conversation_id,
+                command_bytes: submitted.command_bytes,
+                command_sha256: submitted.command_sha256,
+                disposition: CommandReconciliationDisposition::NotFound,
+            };
+            store
+                .apply_command_reconciliations(&[reconciliation.clone()], 1_020)
+                .unwrap();
+            let exact_retry = store.next_command(1_020).unwrap().unwrap();
+            assert_eq!(exact_retry.command_bytes, command.command_bytes);
+            store
+                .mark_command_submitted(
+                    command_id,
+                    &exact_retry.command_bytes,
+                    exact_retry.attempt_count,
+                )
+                .unwrap();
+            reconciliation.disposition = CommandReconciliationDisposition::Accepted;
+            store
+                .apply_command_reconciliations(&[reconciliation], 1_030)
+                .unwrap();
+            let table = if member {
+                "messaging_member_authority_intents"
+            } else {
+                "messaging_conversation_command_intents"
+            };
+            let state: String = store
+                .connection()
+                .unwrap()
+                .query_row(
+                    &format!("SELECT state FROM {table} WHERE command_id = ?1"),
+                    params![command_id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(state, "committed");
+            assert_eq!(
+                store.authority_head("conversation-1").unwrap(),
+                (1, vec![7; 32])
+            );
+            assert_eq!(store.lane_checkpoint().unwrap(), (0, 0));
+        }
+    }
+
+    #[test]
+    fn non_message_command_terminal_transitions_preserve_owner_and_rollback_conflicts() {
+        for member in [false, true] {
+            for superseded in [false, true] {
+                let store = MessagingStore::in_memory().unwrap();
+                let command_id = prepare_non_message_test_command(&store, member);
+                let command = store.next_command(1_000).unwrap().unwrap();
+                if superseded {
+                    store
+                        .mark_command_superseded(command_id, &command.command_bytes, 0)
+                        .unwrap();
+                } else {
+                    store
+                        .mark_command_failed(command_id, &command.command_bytes, 0, "forbidden")
+                        .unwrap();
+                }
+                let table = if member {
+                    "messaging_member_authority_intents"
+                } else {
+                    "messaging_conversation_command_intents"
+                };
+                let state: String = store
+                    .connection()
+                    .unwrap()
+                    .query_row(
+                        &format!("SELECT state FROM {table} WHERE command_id = ?1"),
+                        params![command_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(state, if superseded { "superseded" } else { "failed" });
+            }
+        }
+        let store = MessagingStore::in_memory().unwrap();
+        let command_id = prepare_non_message_test_command(&store, false);
+        let command = store.next_command(1_000).unwrap().unwrap();
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_member_authority_intents(
+                command_id, conversation_id, action, target_ptid, state, created_at_unix_ms
+             ) VALUES (?1, 'conversation-1', 1, 'ptid:bob', 'prepared', 10)",
+                params![command_id],
+            )
+            .unwrap();
+        assert!(store
+            .mark_command_submitted(command_id, &command.command_bytes, 0)
+            .is_err());
+        assert_eq!(
+            store.next_command(1_000).unwrap().unwrap().command_bytes,
+            command.command_bytes
+        );
+        let state: String = store
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM messaging_conversation_command_intents WHERE command_id = ?1",
+                params![command_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(state, "prepared");
     }
 
     #[test]
@@ -17740,6 +19273,34 @@ mod tests {
         );
         assert_eq!(archive.authority_heads[0].event_sequence, 1);
         assert_eq!(archive.authority_heads[0].event_hash, vec![7_u8; 32]);
+    }
+
+    #[test]
+    fn recovery_export_waits_for_authority_head_before_including_hydrated_projection() {
+        let store = MessagingStore::in_memory().unwrap();
+        let projection = direct_conversation_projection();
+        store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap();
+
+        let headless = store
+            .build_recovery_archive("ptid:alice", &[42; 32], 1)
+            .unwrap();
+        assert!(headless.conversations.is_empty());
+        assert!(headless.authority_heads.is_empty());
+
+        store
+            .install_test_authority_head(&projection.conversation_id, 1, &[7; 32])
+            .unwrap();
+        let verified = store
+            .build_recovery_archive("ptid:alice", &[42; 32], 1)
+            .unwrap();
+        assert_eq!(verified.conversations.len(), 1);
+        assert_eq!(
+            verified.conversations[0].conversation_id,
+            projection.conversation_id
+        );
+        assert_eq!(verified.authority_heads.len(), 1);
     }
 
     #[test]
@@ -18812,6 +20373,51 @@ mod tests {
             .unwrap();
         connection
             .execute(
+                "INSERT INTO messaging_pending_messages(
+                    conversation_id, conversation_kind, message_id,
+                    sender_ptid, sender_device_id, plaintext, state,
+                    attempt_count, next_attempt_at_unix_ms, last_error_code,
+                    created_at_unix_ms
+                 ) VALUES(
+                    'conversation-1', 1, 'message-1',
+                    'ptid:alice', 'alice-device', 'message-1',
+                    'accepted', 1, 0, '', 1
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_receipt_outbox(
+                    receipt_id, event_id, receipt_bytes, state,
+                    created_at_unix_ms
+                 ) VALUES(
+                    'device-consumed:item-1', 'event-1', X'01',
+                    'submitted', 1
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO messaging_local_commands(
+                    command_id, conversation_id, command_bytes, state,
+                    created_at_unix_ms
+                 ) VALUES
+                    ('command-superseded', 'conversation-1', X'01', 'superseded', 1),
+                    ('command-failed', 'conversation-1', X'02', 'failed', 1);
+                 INSERT INTO messaging_command_attempts(
+                    command_id, conversation_id, message_id,
+                    delivery_plan_sha256, state, created_at_unix_ms
+                 ) VALUES
+                    ('command-superseded', 'conversation-1', 'message-1',
+                     zeroblob(32), 'superseded', 1),
+                    ('command-failed', 'conversation-1', 'message-1',
+                     zeroblob(32), 'failed', 1);",
+            )
+            .unwrap();
+        connection
+            .execute(
                 "INSERT INTO messaging_authority_heads(
                     conversation_id, event_sequence, event_hash, updated_at_unix_ms
                  ) VALUES('conversation-1', 3, ?1, ?2)",
@@ -18849,6 +20455,11 @@ mod tests {
             .message_projection("conversation-1", "message-3")
             .unwrap()
             .is_some());
+        assert!(store
+            .conversation_message_projections("conversation-1")
+            .unwrap()
+            .iter()
+            .all(|message| message.message_id != "message-1"));
         let connection = store.connection().unwrap();
         let terminal_transfer_count: i64 = connection
             .query_row(

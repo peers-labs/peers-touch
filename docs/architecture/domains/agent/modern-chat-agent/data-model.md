@@ -41,6 +41,19 @@ fields. They are `AgentCapabilityBinding` rows referencing versioned
 `CapabilityManifest` entries. Existing embedded arrays/JSON are migration
 sources only and are deleted after C12 cutover.
 
+`identity_prompt` and `agent_config_prompt` are the only Agent-owned prompt
+fields. `SOUL.md` and `AGENTS.md` are Desktop labels projected onto those
+fields. `name`, `description`, `avatar_ref`, and `config_json` presentation
+metadata never substitute for either prompt layer. Prompt aliases inside
+`config_json` are accepted only by the one-time atomic migration; normal CRUD
+and package import reject them.
+
+Empty prompt strings are intentional values, not fallback signals. CRUD,
+package export/import, restart readback, and optimistic-concurrency updates
+preserve empty and non-empty values exactly. A stale version rejects the entire
+mutation and cannot partially update either typed prompt or erase a client
+draft.
+
 Local selected-Agent and layout preferences are not fields of this entity.
 
 ### 2.1A KnowledgeResourceDescriptor
@@ -379,6 +392,33 @@ schema, and current input.
 
 Content bodies follow their owning storage and access policy. The ledger stores
 hashes/references unless full content is explicitly safe and required.
+
+The ordinary Chat projection is a separate redacted contract:
+
+```protobuf
+message TurnAttributionProjection {
+  string turn_id = 1;
+  string attempt_id = 2;
+  string context_ledger_id = 3;
+  string prompt_version = 4;
+  TurnAttributionState state = 5;
+  string reason_code = 6;
+  repeated TurnAttributionEntry entries = 7;
+}
+```
+
+Station derives entries only from the selected historical attempt's
+`ContextLedger` and exact `ToolCall` lineage. Skill, Knowledge, Attachment and
+Tool versions are resolved from immutable historical IDs; Memory uses the
+persisted segment hash. The projection exposes no body, Prompt, credential,
+local path, raw arguments or debug trace. Missing or malformed lineage produces
+`UNAVAILABLE`; current Agent bindings never participate in projection.
+
+The Composer command plane uses one Station-authored
+`AgentCommandCapabilitySnapshot`. It binds actor, Agent version, exact
+Capability manifest version, binding revision, readiness, creation and expiry.
+Desktop may retain the last accepted snapshot as visibly stale, but cannot
+reconstruct entries from local catalogs or current configuration.
 
 ### 2.10 RuntimeBudget
 

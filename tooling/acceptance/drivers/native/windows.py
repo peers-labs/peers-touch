@@ -88,6 +88,7 @@ _VK_OEM_2 = 0xBF  # "/" key on US layout
 # Map NativeKey to (virtual_key_code, needs_extended_flag)
 _KEY_VK_MAP: dict[NativeKey, tuple[int, bool]] = {
     NativeKey.A: (0x41, False),
+    NativeKey.C: (0x43, False),
     NativeKey.G: (0x47, False),
     NativeKey.L: (0x4C, False),
     NativeKey.SLASH: (_VK_OEM_2, False),

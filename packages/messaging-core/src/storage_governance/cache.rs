@@ -3,14 +3,9 @@ use crate::proto::chat::{
     ChatStorageOperationState, ChatStorageScope,
 };
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
-use std::fs::{self, File};
-use std::io::Read;
-use std::path::{Path, PathBuf};
 use ulid::Ulid;
 
 pub const CACHE_SCOPE_KIND: &str = "cache";
-const CLEANUP_QUARANTINE_PREFIX: &str = ".pt-cleanup-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChatStorageClass {
@@ -90,8 +85,8 @@ pub struct CacheCleanupOperation {
 #[derive(Debug, Clone)]
 pub struct CacheCleanupPlanInput {
     pub scope_revision: String,
-    pub cache_roots: Vec<PathBuf>,
-    pub protected_paths: Vec<PathBuf>,
+    pub cache_roots: Vec<String>,
+    pub protected_paths: Vec<String>,
     pub physical_bytes_before: u64,
     pub now_unix_ms: i64,
 }
@@ -135,6 +130,33 @@ pub trait CacheCleanupJournalRepository {
         last_error_code: Option<&str>,
         updated_at_unix_ms: i64,
     ) -> Result<CacheCleanupOperation, String>;
+}
+
+pub trait CacheCleanupFilesystem: Send + Sync {
+    fn discover(
+        &self,
+        cache_roots: &[String],
+        protected_paths: &[String],
+    ) -> Result<Vec<CacheCleanupItem>, CacheCleanupError>;
+
+    fn protected_target(
+        &self,
+        items: &[CacheCleanupItem],
+        protected_paths: &[String],
+    ) -> Result<Option<String>, CacheCleanupError>;
+
+    fn delete(
+        &self,
+        cache_roots: &[String],
+        protected_paths: &[String],
+        item: &CacheCleanupItem,
+    ) -> Result<(), CacheCleanupError>;
+
+    fn remaining_bytes(
+        &self,
+        items: &[CacheCleanupItem],
+        cache_roots: &[String],
+    ) -> Result<u64, CacheCleanupError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -182,6 +204,7 @@ impl CacheCleanupError {
 
 pub fn prepare_cache_cleanup<R: CacheCleanupJournalRepository>(
     repository: &R,
+    filesystem: &dyn CacheCleanupFilesystem,
     input: CacheCleanupPlanInput,
 ) -> Result<CacheCleanupOperation, CacheCleanupError> {
     validate_plan_input(&input)?;
@@ -192,7 +215,7 @@ pub fn prepare_cache_cleanup<R: CacheCleanupJournalRepository>(
         return Ok(operation);
     }
 
-    let items = discover_cache_cleanup_items(&input.cache_roots, &input.protected_paths)?;
+    let items = filesystem.discover(&input.cache_roots, &input.protected_paths)?;
     let estimated_reclaimable_bytes = items.iter().fold(0_u64, |total, item| {
         total.saturating_add(item.expected_size_bytes)
     });
@@ -215,9 +238,10 @@ pub fn prepare_cache_cleanup<R: CacheCleanupJournalRepository>(
 
 pub fn execute_cache_cleanup<R: CacheCleanupJournalRepository>(
     repository: &R,
+    filesystem: &dyn CacheCleanupFilesystem,
     operation: &CacheCleanupOperation,
-    cache_roots: &[PathBuf],
-    protected_paths: &[PathBuf],
+    cache_roots: &[String],
+    protected_paths: &[String],
     now_unix_ms: i64,
 ) -> Result<CacheCleanupProgress, CacheCleanupError> {
     if operation.scope_revision.trim().is_empty() {
@@ -229,14 +253,18 @@ pub fn execute_cache_cleanup<R: CacheCleanupJournalRepository>(
     let items = repository
         .load_cache_cleanup_items(&operation.operation_id)
         .map_err(CacheCleanupError::Journal)?;
-    let protected = normalize_paths(protected_paths);
-    if let Some(item) = items.iter().find(|item| {
-        matches!(
-            item.state,
-            CacheCleanupItemState::Pending | CacheCleanupItemState::FailedRetryable
-        ) && protected.contains(&normalized_path(Path::new(&item.target_ref)))
-    }) {
-        let error = CacheCleanupError::ProtectedCandidate(item.target_ref.clone());
+    let pending_items = items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item.state,
+                CacheCleanupItemState::Pending | CacheCleanupItemState::FailedRetryable
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if let Some(target_ref) = filesystem.protected_target(&pending_items, protected_paths)? {
+        let error = CacheCleanupError::ProtectedCandidate(target_ref);
         let operation = repository
             .update_cache_cleanup_operation(
                 &operation.operation_id,
@@ -263,18 +291,11 @@ pub fn execute_cache_cleanup<R: CacheCleanupJournalRepository>(
         )
         .map_err(CacheCleanupError::Journal)?;
 
-    let roots = canonical_roots(cache_roots)?;
     let mut first_error = None;
     let mut failed_item_count = 0;
     let mut terminal_failure = false;
-    for item in items {
-        if !matches!(
-            item.state,
-            CacheCleanupItemState::Pending | CacheCleanupItemState::FailedRetryable
-        ) {
-            continue;
-        }
-        match delete_cache_item(&roots, &protected, &item) {
+    for item in pending_items {
+        match filesystem.delete(cache_roots, protected_paths, &item) {
             Ok(()) => repository
                 .update_cache_cleanup_item(
                     &operation.operation_id,
@@ -329,45 +350,14 @@ pub fn execute_cache_cleanup<R: CacheCleanupJournalRepository>(
 
 pub fn measure_cache_cleanup_remaining_bytes<R: CacheCleanupJournalRepository>(
     repository: &R,
+    filesystem: &dyn CacheCleanupFilesystem,
     operation_id: &str,
-    cache_roots: &[PathBuf],
+    cache_roots: &[String],
 ) -> Result<u64, CacheCleanupError> {
-    let roots = canonical_roots(cache_roots)?;
     let items = repository
         .load_cache_cleanup_items(operation_id)
         .map_err(CacheCleanupError::Journal)?;
-    let mut total = 0_u64;
-    let mut seen = HashSet::new();
-    for item in items {
-        if matches!(
-            item.state,
-            CacheCleanupItemState::FailedTerminal | CacheCleanupItemState::SkippedProtected
-        ) {
-            continue;
-        }
-        let target = PathBuf::from(&item.target_ref);
-        let root = cleanup_root(&roots, &target)?;
-        for path in [
-            target.clone(),
-            cleanup_quarantine_path(root, &target, &item)?,
-        ] {
-            match immutable_file_cleanup_item(&path) {
-                Ok(Some(current))
-                    if current.expected_size_bytes == item.expected_size_bytes
-                        && current.expected_digest == item.expected_digest =>
-                {
-                    if let Some(identity) = cleanup_file_physical_identity(&path)? {
-                        if seen.insert(identity) {
-                            total = total.saturating_add(current.expected_size_bytes);
-                        }
-                    }
-                }
-                Ok(Some(_)) | Ok(None) | Err(CacheCleanupError::CandidateChanged(_)) => {}
-                Err(error) => return Err(error),
-            }
-        }
-    }
-    Ok(total)
+    filesystem.remaining_bytes(&items, cache_roots)
 }
 
 pub fn finalize_cache_cleanup<R: CacheCleanupJournalRepository>(
@@ -458,6 +448,20 @@ pub fn finalize_cache_cleanup<R: CacheCleanupJournalRepository>(
     })
 }
 
+pub fn failed_file_cleanup_item(target_ref: &str, error_code: &str) -> CacheCleanupItem {
+    let mut identity = Sha256::new();
+    identity.update(b"peers-touch:failed-cache-cleanup-target:v1");
+    identity.update(target_ref.as_bytes());
+    CacheCleanupItem {
+        item_id: hex::encode(identity.finalize()),
+        target_ref: target_ref.to_string(),
+        expected_size_bytes: 0,
+        expected_digest: [0; 32],
+        state: CacheCleanupItemState::FailedTerminal,
+        last_error_code: Some(error_code.to_string()),
+    }
+}
+
 pub fn cache_cleanup_operation_proto(
     scope: ChatStorageScope,
     operation: &CacheCleanupOperation,
@@ -544,495 +548,10 @@ fn validate_plan_input(input: &CacheCleanupPlanInput) -> Result<(), CacheCleanup
     Ok(())
 }
 
-fn discover_cache_cleanup_items(
-    cache_roots: &[PathBuf],
-    protected_paths: &[PathBuf],
-) -> Result<Vec<CacheCleanupItem>, CacheCleanupError> {
-    let protected = normalize_paths(protected_paths);
-    let mut seen = HashSet::new();
-    let mut items = Vec::new();
-    for root in cache_roots {
-        let metadata = match fs::symlink_metadata(root) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(CacheCleanupError::Io(error.to_string())),
-        };
-        if metadata.file_type().is_symlink() || !metadata.is_dir() {
-            return Err(CacheCleanupError::Io(format!(
-                "cache root is not a managed directory: {}",
-                root.display()
-            )));
-        }
-        let canonical_root =
-            fs::canonicalize(root).map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-        let mut pending = vec![canonical_root];
-        while let Some(directory) = pending.pop() {
-            for child in fs::read_dir(&directory)
-                .map_err(|error| CacheCleanupError::Io(error.to_string()))?
-            {
-                let child = child.map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-                let path = child.path();
-                let metadata = fs::symlink_metadata(&path)
-                    .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-                if metadata.file_type().is_symlink() {
-                    return Err(CacheCleanupError::Io(format!(
-                        "symbolic links are outside the managed cache boundary: {}",
-                        path.display()
-                    )));
-                }
-                if metadata.is_dir() {
-                    if path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| name.starts_with(CLEANUP_QUARANTINE_PREFIX))
-                    {
-                        continue;
-                    }
-                    pending.push(path);
-                    continue;
-                }
-                if !metadata.is_file() {
-                    continue;
-                }
-                let path = normalized_path(&path);
-                if protected.contains(&path) || !seen.insert(path.clone()) {
-                    continue;
-                }
-                let expected_digest = digest_file(&path)?;
-                let expected_size_bytes = metadata.len();
-                items.push(CacheCleanupItem {
-                    item_id: cache_item_id(&path, expected_size_bytes, &expected_digest),
-                    target_ref: path.to_string_lossy().to_string(),
-                    expected_size_bytes,
-                    expected_digest,
-                    state: CacheCleanupItemState::Pending,
-                    last_error_code: None,
-                });
-            }
-        }
-    }
-    items.sort_by(|left, right| left.target_ref.cmp(&right.target_ref));
-    Ok(items)
-}
-
-pub fn immutable_file_cleanup_item(
-    path: &Path,
-) -> Result<Option<CacheCleanupItem>, CacheCleanupError> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(CacheCleanupError::Io(error.to_string())),
-    };
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err(CacheCleanupError::CandidateChanged(
-            path.to_string_lossy().to_string(),
-        ));
-    }
-    let path = normalized_path(path);
-    let expected_digest = digest_file(&path)?;
-    let expected_size_bytes = metadata.len();
-    Ok(Some(CacheCleanupItem {
-        item_id: cache_item_id(&path, expected_size_bytes, &expected_digest),
-        target_ref: path.to_string_lossy().to_string(),
-        expected_size_bytes,
-        expected_digest,
-        state: CacheCleanupItemState::Pending,
-        last_error_code: None,
-    }))
-}
-
-pub fn failed_file_cleanup_item(path: &Path, error_code: &str) -> CacheCleanupItem {
-    let mut identity = Sha256::new();
-    identity.update(b"peers-touch:failed-cache-cleanup-target:v1");
-    identity.update(path.to_string_lossy().as_bytes());
-    CacheCleanupItem {
-        item_id: hex::encode(identity.finalize()),
-        target_ref: path.to_string_lossy().into_owned(),
-        expected_size_bytes: 0,
-        expected_digest: [0; 32],
-        state: CacheCleanupItemState::FailedTerminal,
-        last_error_code: Some(error_code.to_string()),
-    }
-}
-
-pub fn cleanup_file_physical_identity(path: &Path) -> Result<Option<String>, CacheCleanupError> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(CacheCleanupError::Io(error.to_string())),
-    };
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err(CacheCleanupError::CandidateChanged(
-            path.to_string_lossy().into_owned(),
-        ));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        Ok(Some(format!("unix:{}:{}", metadata.dev(), metadata.ino())))
-    }
-    #[cfg(not(unix))]
-    {
-        fs::canonicalize(path)
-            .map(|path| Some(format!("path:{}", path.display())))
-            .map_err(|error| CacheCleanupError::Io(error.to_string()))
-    }
-}
-
-fn delete_cache_item(
-    roots: &[PathBuf],
-    protected: &HashSet<PathBuf>,
-    item: &CacheCleanupItem,
-) -> Result<(), CacheCleanupError> {
-    #[cfg(unix)]
-    {
-        delete_cache_item_unix(roots, protected, item)
-    }
-    #[cfg(not(unix))]
-    {
-        delete_cache_item_portable(roots, protected, item)
-    }
-}
-
-#[cfg(unix)]
-fn delete_cache_item_unix(
-    roots: &[PathBuf],
-    protected: &HashSet<PathBuf>,
-    item: &CacheCleanupItem,
-) -> Result<(), CacheCleanupError> {
-    use rustix::fs::{
-        mkdirat, openat, renameat_with, unlinkat, AtFlags, Mode, OFlags, RenameFlags,
-    };
-
-    let path = PathBuf::from(&item.target_ref);
-    if protected.contains(&normalized_path(&path)) {
-        return Err(CacheCleanupError::ProtectedCandidate(
-            item.target_ref.clone(),
-        ));
-    }
-    let root = cleanup_root(roots, &path)?;
-    let (parent_fd, file_name) = open_managed_parent(root, &path, item)?;
-    let quarantine_name = cleanup_quarantine_directory_name(item)?;
-    let directory_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-    let quarantine_fd = match openat(
-        &parent_fd,
-        quarantine_name.as_str(),
-        directory_flags,
-        Mode::empty(),
-    ) {
-        Ok(fd) => fd,
-        Err(rustix::io::Errno::NOENT) => {
-            mkdirat(
-                &parent_fd,
-                quarantine_name.as_str(),
-                Mode::RUSR | Mode::WUSR | Mode::XUSR,
-            )
-            .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-            openat(
-                &parent_fd,
-                quarantine_name.as_str(),
-                directory_flags,
-                Mode::empty(),
-            )
-            .map_err(|error| CacheCleanupError::Io(error.to_string()))?
-        }
-        Err(_) => return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone())),
-    };
-    let file_flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-
-    match openat(&quarantine_fd, "payload", file_flags, Mode::empty()) {
-        Ok(file) => {
-            validate_cleanup_item_file_handle(File::from(file), item)?;
-            unlinkat(&quarantine_fd, "payload", AtFlags::empty())
-                .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-            unlinkat(&parent_fd, quarantine_name.as_str(), AtFlags::REMOVEDIR)
-                .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-            return Ok(());
-        }
-        Err(rustix::io::Errno::NOENT) => {}
-        Err(_) => return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone())),
-    }
-
-    match renameat_with(
-        &parent_fd,
-        &file_name,
-        &quarantine_fd,
-        "payload",
-        RenameFlags::NOREPLACE,
-    ) {
-        Ok(()) => {}
-        Err(rustix::io::Errno::NOENT) => {
-            unlinkat(&parent_fd, quarantine_name.as_str(), AtFlags::REMOVEDIR)
-                .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-            return Ok(());
-        }
-        Err(error) => return Err(CacheCleanupError::Io(error.to_string())),
-    }
-    let file = openat(&quarantine_fd, "payload", file_flags, Mode::empty())
-        .map_err(|_| CacheCleanupError::CandidateChanged(item.target_ref.clone()))?;
-    if let Err(error) = validate_cleanup_item_file_handle(File::from(file), item) {
-        let _ = renameat_with(
-            &quarantine_fd,
-            "payload",
-            &parent_fd,
-            &file_name,
-            RenameFlags::NOREPLACE,
-        );
-        return Err(error);
-    }
-    unlinkat(&quarantine_fd, "payload", AtFlags::empty())
-        .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-    unlinkat(&parent_fd, quarantine_name.as_str(), AtFlags::REMOVEDIR)
-        .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn open_managed_parent(
-    root: &Path,
-    target: &Path,
-    item: &CacheCleanupItem,
-) -> Result<(rustix::fd::OwnedFd, std::ffi::OsString), CacheCleanupError> {
-    use rustix::fs::{open, openat, Mode, OFlags};
-    use std::path::Component;
-
-    let relative = target
-        .strip_prefix(root)
-        .map_err(|_| CacheCleanupError::CandidateChanged(item.target_ref.clone()))?;
-    let file_name = relative
-        .file_name()
-        .ok_or_else(|| CacheCleanupError::CandidateChanged(item.target_ref.clone()))?
-        .to_os_string();
-    let directory_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-    let mut directory = open("/", directory_flags, Mode::empty())
-        .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-    for component in root.components() {
-        match component {
-            Component::RootDir => {}
-            Component::Normal(name) => {
-                directory = openat(&directory, name, directory_flags, Mode::empty())
-                    .map_err(|_| CacheCleanupError::CandidateChanged(item.target_ref.clone()))?;
-            }
-            _ => return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone())),
-        }
-    }
-    if let Some(parent) = relative.parent() {
-        for component in parent.components() {
-            let Component::Normal(name) = component else {
-                return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone()));
-            };
-            directory = openat(&directory, name, directory_flags, Mode::empty())
-                .map_err(|_| CacheCleanupError::CandidateChanged(item.target_ref.clone()))?;
-        }
-    }
-    Ok((directory, file_name))
-}
-
-#[cfg(not(unix))]
-fn delete_cache_item_portable(
-    roots: &[PathBuf],
-    protected: &HashSet<PathBuf>,
-    item: &CacheCleanupItem,
-) -> Result<(), CacheCleanupError> {
-    let path = PathBuf::from(&item.target_ref);
-    if protected.contains(&normalized_path(&path)) {
-        return Err(CacheCleanupError::ProtectedCandidate(
-            item.target_ref.clone(),
-        ));
-    }
-    let root = cleanup_root(roots, &path)?;
-    let quarantine = cleanup_quarantine_path(root, &path, item)?;
-    ensure_cleanup_quarantine_parent(root, &quarantine, item)?;
-    if quarantine.exists() {
-        validate_cleanup_item_file(&quarantine, item)?;
-        fs::remove_file(&quarantine).map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-        remove_empty_quarantine_parent(&quarantine);
-        return Ok(());
-    }
-    let metadata = match fs::symlink_metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            remove_empty_quarantine_parent(&quarantine);
-            return Ok(());
-        }
-        Err(error) => return Err(CacheCleanupError::Io(error.to_string())),
-    };
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone()));
-    }
-    let canonical =
-        fs::canonicalize(&path).map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-    if !roots.iter().any(|root| canonical.starts_with(root)) {
-        return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone()));
-    }
-    if quarantine.exists() {
-        return Err(CacheCleanupError::Io(
-            "chat cache cleanup quarantine path is occupied".to_string(),
-        ));
-    }
-    fs::rename(&canonical, &quarantine)
-        .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-    if let Err(error) = validate_cleanup_item_file(&quarantine, item) {
-        if !path.exists() {
-            fs::rename(&quarantine, &path)
-                .map_err(|restore_error| CacheCleanupError::Io(restore_error.to_string()))?;
-        }
-        return Err(error);
-    }
-    fs::remove_file(&quarantine).map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-    remove_empty_quarantine_parent(&quarantine);
-    Ok(())
-}
-
-fn cleanup_root<'a>(roots: &'a [PathBuf], path: &Path) -> Result<&'a PathBuf, CacheCleanupError> {
-    roots
-        .iter()
-        .filter(|root| path.starts_with(root))
-        .max_by_key(|root| root.components().count())
-        .ok_or_else(|| CacheCleanupError::CandidateChanged(path.to_string_lossy().to_string()))
-}
-
-fn cleanup_quarantine_path(
-    root: &Path,
-    target: &Path,
-    item: &CacheCleanupItem,
-) -> Result<PathBuf, CacheCleanupError> {
-    let parent = target
-        .parent()
-        .filter(|parent| parent.starts_with(root))
-        .ok_or_else(|| CacheCleanupError::CandidateChanged(item.target_ref.clone()))?;
-    Ok(parent
-        .join(cleanup_quarantine_directory_name(item)?)
-        .join("payload"))
-}
-
-fn cleanup_quarantine_directory_name(item: &CacheCleanupItem) -> Result<String, CacheCleanupError> {
-    if item.item_id.is_empty() || !item.item_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone()));
-    }
-    Ok(format!(
-        "{CLEANUP_QUARANTINE_PREFIX}{}",
-        item.item_id.to_ascii_lowercase()
-    ))
-}
-
-#[cfg(not(unix))]
-fn ensure_cleanup_quarantine_parent(
-    root: &Path,
-    quarantine: &Path,
-    item: &CacheCleanupItem,
-) -> Result<(), CacheCleanupError> {
-    let directory = quarantine
-        .parent()
-        .ok_or_else(|| CacheCleanupError::CandidateChanged(item.target_ref.clone()))?;
-    match fs::symlink_metadata(directory) {
-        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
-        Ok(_) => return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::create_dir(directory).map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-        }
-        Err(error) => return Err(CacheCleanupError::Io(error.to_string())),
-    }
-    let canonical =
-        fs::canonicalize(directory).map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-    if !canonical.starts_with(root) {
-        return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone()));
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn validate_cleanup_item_file(
-    path: &Path,
-    item: &CacheCleanupItem,
-) -> Result<(), CacheCleanupError> {
-    let metadata =
-        fs::symlink_metadata(path).map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-    if metadata.file_type().is_symlink()
-        || !metadata.is_file()
-        || metadata.len() != item.expected_size_bytes
-        || digest_file(path)? != item.expected_digest
-    {
-        return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone()));
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn validate_cleanup_item_file_handle(
-    mut file: File,
-    item: &CacheCleanupItem,
-) -> Result<(), CacheCleanupError> {
-    let metadata = file
-        .metadata()
-        .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-    if !metadata.is_file()
-        || metadata.len() != item.expected_size_bytes
-        || digest_reader(&mut file)? != item.expected_digest
-    {
-        return Err(CacheCleanupError::CandidateChanged(item.target_ref.clone()));
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn remove_empty_quarantine_parent(path: &Path) {
-    if let Some(parent) = path.parent() {
-        let _ = fs::remove_dir(parent);
-    }
-}
-
-fn canonical_roots(roots: &[PathBuf]) -> Result<Vec<PathBuf>, CacheCleanupError> {
-    roots
-        .iter()
-        .filter(|root| root.exists())
-        .map(|root| {
-            fs::canonicalize(root).map_err(|error| CacheCleanupError::Io(error.to_string()))
-        })
-        .collect()
-}
-
-fn normalize_paths(paths: &[PathBuf]) -> HashSet<PathBuf> {
-    paths.iter().map(|path| normalized_path(path)).collect()
-}
-
-fn normalized_path(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
-}
-
-fn digest_file(path: &Path) -> Result<[u8; 32], CacheCleanupError> {
-    let mut file = File::open(path).map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-    digest_reader(&mut file)
-}
-
-fn digest_reader(reader: &mut impl Read) -> Result<[u8; 32], CacheCleanupError> {
-    let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let count = reader
-            .read(&mut buffer)
-            .map_err(|error| CacheCleanupError::Io(error.to_string()))?;
-        if count == 0 {
-            break;
-        }
-        digest.update(&buffer[..count]);
-    }
-    Ok(digest.finalize().into())
-}
-
-fn cache_item_id(path: &Path, size: u64, digest: &[u8; 32]) -> String {
-    let mut identity = Sha256::new();
-    identity.update(path.to_string_lossy().as_bytes());
-    identity.update(size.to_be_bytes());
-    identity.update(digest);
-    hex::encode(identity.finalize())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use std::io::Write;
     use std::sync::Mutex;
 
     #[derive(Default)]
@@ -1133,380 +652,123 @@ mod tests {
         }
     }
 
-    fn root(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("peers-touch-cache-{name}-{}", Ulid::new()))
-    }
+    struct Filesystem;
 
-    fn write(path: &Path, bytes: &[u8]) {
-        fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
-        let mut file = File::create(path).expect("create file");
-        file.write_all(bytes).expect("write file");
+    impl CacheCleanupFilesystem for Filesystem {
+        fn discover(
+            &self,
+            _cache_roots: &[String],
+            _protected_paths: &[String],
+        ) -> Result<Vec<CacheCleanupItem>, CacheCleanupError> {
+            Ok(vec![CacheCleanupItem {
+                item_id: "a1".to_string(),
+                target_ref: "/cache/a".to_string(),
+                expected_size_bytes: 64,
+                expected_digest: [7; 32],
+                state: CacheCleanupItemState::Pending,
+                last_error_code: None,
+            }])
+        }
+
+        fn protected_target(
+            &self,
+            _items: &[CacheCleanupItem],
+            protected_paths: &[String],
+        ) -> Result<Option<String>, CacheCleanupError> {
+            Ok(protected_paths.first().cloned())
+        }
+
+        fn delete(
+            &self,
+            _cache_roots: &[String],
+            _protected_paths: &[String],
+            _item: &CacheCleanupItem,
+        ) -> Result<(), CacheCleanupError> {
+            Ok(())
+        }
+
+        fn remaining_bytes(
+            &self,
+            items: &[CacheCleanupItem],
+            _cache_roots: &[String],
+        ) -> Result<u64, CacheCleanupError> {
+            Ok(items
+                .iter()
+                .filter(|item| item.state != CacheCleanupItemState::Deleted)
+                .map(|item| item.expected_size_bytes)
+                .sum())
+        }
     }
 
     #[test]
-    fn cache_cleanup_preserves_protected_files_and_reports_physical_release() {
-        let root = root("protected");
-        let removable = root.join("removable.bin");
-        let protected = root.join("active.part");
-        write(&removable, &[7; 64]);
-        write(&protected, &[8; 32]);
+    fn cache_cleanup_journal_owns_policy_while_filesystem_executes_actions() {
         let journal = MemoryJournal::default();
         let operation = prepare_cache_cleanup(
             &journal,
+            &Filesystem,
             CacheCleanupPlanInput {
                 scope_revision: "scope-1".to_string(),
-                cache_roots: vec![root.clone()],
-                protected_paths: vec![protected.clone()],
-                physical_bytes_before: 96,
+                cache_roots: vec!["/cache".to_string()],
+                protected_paths: Vec::new(),
+                physical_bytes_before: 64,
                 now_unix_ms: 1,
             },
         )
-        .expect("prepare");
-        assert_eq!(operation.estimated_reclaimable_bytes, 64);
-
+        .unwrap();
         let progress = execute_cache_cleanup(
             &journal,
+            &Filesystem,
             &operation,
-            std::slice::from_ref(&root),
-            std::slice::from_ref(&protected),
+            &["/cache".to_string()],
+            &[],
             2,
         )
-        .expect("execute");
+        .unwrap();
+
         assert_eq!(
             progress.operation.state,
             ChatStorageOperationState::Compacting
         );
-        assert!(!removable.exists());
-        assert!(protected.exists());
-        let completed =
-            finalize_cache_cleanup(&journal, &progress.operation, 32, 3).expect("finish");
+        let completed = finalize_cache_cleanup(&journal, &progress.operation, 0, 3).unwrap();
         assert_eq!(
             completed.operation.state,
             ChatStorageOperationState::Succeeded
         );
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
-    fn interrupted_cleanup_reuses_immutable_items_without_expanding_candidates() {
-        let root = root("resume");
-        let first = root.join("first.bin");
-        write(&first, &[1; 32]);
+    fn late_protection_aborts_before_filesystem_deletion() {
         let journal = MemoryJournal::default();
         let operation = prepare_cache_cleanup(
             &journal,
+            &Filesystem,
             CacheCleanupPlanInput {
                 scope_revision: "scope-2".to_string(),
-                cache_roots: vec![root.clone()],
-                protected_paths: vec![],
-                physical_bytes_before: 32,
+                cache_roots: vec!["/cache".to_string()],
+                protected_paths: Vec::new(),
+                physical_bytes_before: 64,
                 now_unix_ms: 1,
             },
         )
-        .expect("prepare");
-        write(&root.join("created-after-confirmation.bin"), &[2; 48]);
-
-        let resumed = prepare_cache_cleanup(
-            &journal,
-            CacheCleanupPlanInput {
-                scope_revision: "scope-2".to_string(),
-                cache_roots: vec![root.clone()],
-                protected_paths: vec![],
-                physical_bytes_before: 80,
-                now_unix_ms: 2,
-            },
-        )
-        .expect("resume");
-        assert_eq!(resumed.operation_id, operation.operation_id);
-        let progress =
-            execute_cache_cleanup(&journal, &resumed, std::slice::from_ref(&root), &[], 3)
-                .expect("execute");
-
-        assert!(!first.exists());
-        assert!(root.join("created-after-confirmation.bin").exists());
-        assert_eq!(
-            progress.operation.state,
-            ChatStorageOperationState::Compacting
-        );
-        fs::remove_dir_all(root).expect("cleanup");
-    }
-
-    #[test]
-    fn cleanup_resumes_from_the_exact_quarantined_file_after_a_crash() {
-        let root = root("quarantine-resume");
-        let candidate = root.join("candidate.bin");
-        write(&candidate, &[4; 24]);
-        let journal = MemoryJournal::default();
-        let operation = prepare_cache_cleanup(
-            &journal,
-            CacheCleanupPlanInput {
-                scope_revision: "scope-quarantine".to_string(),
-                cache_roots: vec![root.clone()],
-                protected_paths: vec![],
-                physical_bytes_before: 24,
-                now_unix_ms: 1,
-            },
-        )
-        .expect("prepare");
-        let item = journal
-            .load_cache_cleanup_items(&operation.operation_id)
-            .expect("items")
-            .pop()
-            .expect("candidate");
-        let canonical_root = fs::canonicalize(&root).expect("canonical root");
-        let quarantine =
-            cleanup_quarantine_path(&canonical_root, Path::new(&item.target_ref), &item)
-                .expect("quarantine path");
-        fs::create_dir_all(quarantine.parent().expect("quarantine parent"))
-            .expect("create quarantine");
-        fs::rename(&candidate, &quarantine).expect("simulate crash after quarantine");
-        assert_eq!(
-            measure_cache_cleanup_remaining_bytes(
-                &journal,
-                &operation.operation_id,
-                std::slice::from_ref(&root),
-            )
-            .expect("measure quarantined target"),
-            24
-        );
-
-        let progress =
-            execute_cache_cleanup(&journal, &operation, std::slice::from_ref(&root), &[], 2)
-                .expect("resume");
-
-        assert_eq!(
-            progress.operation.state,
-            ChatStorageOperationState::Compacting
-        );
-        assert!(!candidate.exists());
-        assert!(!quarantine.exists());
-        let physical_bytes_after = measure_cache_cleanup_remaining_bytes(
-            &journal,
-            &operation.operation_id,
-            std::slice::from_ref(&root),
-        )
-        .expect("measure deleted target");
-        assert_eq!(physical_bytes_after, 0);
-        let completed =
-            finalize_cache_cleanup(&journal, &progress.operation, physical_bytes_after, 3)
-                .expect("finalize measured cleanup");
-        assert_eq!(
-            completed.operation.state,
-            ChatStorageOperationState::Succeeded
-        );
-        assert_eq!(completed.operation.physical_bytes_after, Some(0));
-        fs::remove_dir_all(root).expect("cleanup");
-    }
-
-    #[test]
-    fn compaction_preserves_terminal_capture_failure_in_the_final_result() {
-        let journal = MemoryJournal::default();
-        let operation = CacheCleanupOperation {
-            operation_id: "terminal-redaction".to_string(),
-            scope_revision: "scope-terminal-redaction".to_string(),
-            state: ChatStorageOperationState::Compacting,
-            estimated_reclaimable_bytes: 8,
-            physical_bytes_before: 32,
-            physical_bytes_after: None,
-            last_error_code: Some("CHAT_STORAGE_ERROR_CODE_IO_FAILED".to_string()),
-            created_at_unix_ms: 1,
-            updated_at_unix_ms: 1,
-        };
-        let item = failed_file_cleanup_item(
-            Path::new("/unavailable/redaction-target"),
-            "CHAT_STORAGE_ERROR_CODE_IO_FAILED",
-        );
-        journal
-            .create_cache_cleanup(&operation, &[item])
-            .expect("journal terminal item");
-
-        let progress =
-            finalize_cache_cleanup(&journal, &operation, 16, 2).expect("finalize after compaction");
-
-        assert_eq!(
-            progress.operation.state,
-            ChatStorageOperationState::FailedTerminal
-        );
-        assert_eq!(progress.failed_item_count, 1);
-        assert!(progress.error.is_some());
-        assert_eq!(progress.operation.physical_bytes_after, Some(16));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn cleanup_rejects_a_symlinked_quarantine_directory() {
-        use std::os::unix::fs::symlink;
-
-        let cache_root = root("quarantine-symlink");
-        let outside = root("quarantine-outside");
-        let candidate = cache_root.join("candidate.bin");
-        write(&candidate, &[5; 24]);
-        fs::create_dir_all(&outside).expect("create outside");
-        let journal = MemoryJournal::default();
-        let operation = prepare_cache_cleanup(
-            &journal,
-            CacheCleanupPlanInput {
-                scope_revision: "scope-quarantine-symlink".to_string(),
-                cache_roots: vec![cache_root.clone()],
-                protected_paths: vec![],
-                physical_bytes_before: 24,
-                now_unix_ms: 1,
-            },
-        )
-        .expect("prepare");
-        let item = journal
-            .load_cache_cleanup_items(&operation.operation_id)
-            .expect("items")
-            .pop()
-            .expect("candidate");
-        let canonical_root = fs::canonicalize(&cache_root).expect("canonical root");
-        let quarantine =
-            cleanup_quarantine_path(&canonical_root, Path::new(&item.target_ref), &item)
-                .expect("quarantine path");
-        symlink(&outside, quarantine.parent().expect("quarantine parent"))
-            .expect("install quarantine symlink");
-
+        .unwrap();
         let progress = execute_cache_cleanup(
             &journal,
+            &Filesystem,
             &operation,
-            std::slice::from_ref(&cache_root),
-            &[],
+            &["/cache".to_string()],
+            &["/cache/a".to_string()],
             2,
         )
-        .expect("closed failure");
+        .unwrap();
 
-        assert_eq!(
-            progress.operation.state,
-            ChatStorageOperationState::FailedTerminal
-        );
-        assert!(matches!(
-            progress.error,
-            Some(CacheCleanupError::CandidateChanged(_))
-        ));
-        assert!(candidate.is_file());
-        assert!(!outside.join("payload").exists());
-        fs::remove_file(quarantine.parent().expect("quarantine parent")).expect("remove symlink");
-        fs::remove_dir_all(cache_root).expect("cleanup root");
-        fs::remove_dir_all(outside).expect("cleanup outside");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn cleanup_rejects_an_intermediate_directory_replaced_by_a_symlink() {
-        use std::os::unix::fs::symlink;
-
-        let cache_root = root("intermediate-symlink");
-        let original_parent = cache_root.join("nested");
-        let retained_parent = cache_root.join("retained-nested");
-        let outside = root("intermediate-outside");
-        let candidate = original_parent.join("candidate.bin");
-        write(&candidate, &[6; 24]);
-        let journal = MemoryJournal::default();
-        let operation = prepare_cache_cleanup(
-            &journal,
-            CacheCleanupPlanInput {
-                scope_revision: "scope-intermediate-symlink".to_string(),
-                cache_roots: vec![cache_root.clone()],
-                protected_paths: vec![],
-                physical_bytes_before: 24,
-                now_unix_ms: 1,
-            },
-        )
-        .expect("prepare");
-        fs::rename(&original_parent, &retained_parent).expect("retain original directory");
-        fs::create_dir_all(&outside).expect("create outside");
-        write(&outside.join("candidate.bin"), &[6; 24]);
-        symlink(&outside, &original_parent).expect("replace intermediate directory");
-
-        let progress = execute_cache_cleanup(
-            &journal,
-            &operation,
-            std::slice::from_ref(&cache_root),
-            &[],
-            2,
-        )
-        .expect("closed failure");
-
-        assert_eq!(
-            progress.operation.state,
-            ChatStorageOperationState::FailedTerminal
-        );
-        assert!(matches!(
-            progress.error,
-            Some(CacheCleanupError::CandidateChanged(_))
-        ));
-        assert!(retained_parent.join("candidate.bin").is_file());
-        assert!(outside.join("candidate.bin").is_file());
-        fs::remove_file(original_parent).expect("remove symlink");
-        fs::remove_dir_all(cache_root).expect("cleanup root");
-        fs::remove_dir_all(outside).expect("cleanup outside");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn remaining_bytes_count_hard_linked_targets_once() {
-        let root = root("hard-link-measurement");
-        let first = root.join("first.bin");
-        let second = root.join("second.bin");
-        write(&first, &[7; 32]);
-        fs::hard_link(&first, &second).expect("create hard link");
-        let journal = MemoryJournal::default();
-        let operation = prepare_cache_cleanup(
-            &journal,
-            CacheCleanupPlanInput {
-                scope_revision: "scope-hard-link".to_string(),
-                cache_roots: vec![root.clone()],
-                protected_paths: vec![],
-                physical_bytes_before: 32,
-                now_unix_ms: 1,
-            },
-        )
-        .expect("prepare");
-
-        assert_eq!(
-            measure_cache_cleanup_remaining_bytes(
-                &journal,
-                &operation.operation_id,
-                std::slice::from_ref(&root),
-            )
-            .expect("measure"),
-            32
-        );
-        fs::remove_dir_all(root).expect("cleanup");
-    }
-
-    #[test]
-    fn candidate_that_becomes_protected_aborts_before_deletion() {
-        let root = root("late-protected");
-        let candidate = root.join("candidate.bin");
-        write(&candidate, &[3; 16]);
-        let journal = MemoryJournal::default();
-        let operation = prepare_cache_cleanup(
-            &journal,
-            CacheCleanupPlanInput {
-                scope_revision: "scope-3".to_string(),
-                cache_roots: vec![root.clone()],
-                protected_paths: vec![],
-                physical_bytes_before: 16,
-                now_unix_ms: 1,
-            },
-        )
-        .expect("prepare");
-
-        let progress = execute_cache_cleanup(
-            &journal,
-            &operation,
-            std::slice::from_ref(&root),
-            std::slice::from_ref(&candidate),
-            2,
-        )
-        .expect("protected result");
         assert_eq!(
             progress.operation.state,
             ChatStorageOperationState::FailedRetryable
         );
-        assert!(candidate.exists());
-        fs::remove_dir_all(root).expect("cleanup");
+        assert!(matches!(
+            progress.error,
+            Some(CacheCleanupError::ProtectedCandidate(_))
+        ));
     }
 
     #[test]

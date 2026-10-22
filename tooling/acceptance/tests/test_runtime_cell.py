@@ -197,9 +197,38 @@ class RuntimeCellManifestTests(unittest.TestCase):
         manifest = _ready_manifest()
         self.assertTrue(manifest.is_ready_for_gate(contract))
         self.assertEqual(manifest.to_dict()["source"]["commit"], "abc123")
+        self.assertEqual(
+            manifest.to_dict()["source"]["artifactKind"],
+            "acceptance-binary",
+        )
         self.assertTrue(
             manifest.to_dict()["nativeAdapter"]["inputProbe"]
         )
+
+    def test_installed_appimage_artifact_kind_is_preserved(self) -> None:
+        from dataclasses import replace
+
+        contract = RuntimeCellContract.from_dict(_valid_linux_contract())
+        manifest = _ready_manifest()
+        source = replace(
+            manifest.source,
+            artifact_kind="installed-appimage",
+        )
+        installed = replace(manifest, source=source)
+        installed.validate(contract)
+        self.assertEqual(
+            installed.to_dict()["source"]["artifactKind"],
+            "installed-appimage",
+        )
+
+    def test_unknown_artifact_kind_fails(self) -> None:
+        from dataclasses import replace
+
+        contract = RuntimeCellContract.from_dict(_valid_linux_contract())
+        manifest = _ready_manifest()
+        source = replace(manifest.source, artifact_kind="unknown")
+        with self.assertRaises(ProvisioningError):
+            replace(manifest, source=source).validate(contract)
 
     def test_missing_image_digest_fails(self) -> None:
         from dataclasses import replace

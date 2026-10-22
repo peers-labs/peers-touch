@@ -1,0 +1,388 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "project.logical-layered-architecture",
+  "module": "project",
+  "viewpoint": "logical-layer",
+  "layout": "layers",
+  "output": "architecture.svg",
+  "title": "Peers-Touch 逻辑分层架构",
+  "canvas": {
+    "width": 1500,
+    "height": 940
+  },
+  "edgeMeaning": "箭头表示主业务请求方向",
+  "scene": {
+    "bands": [
+      {
+        "id": "product-forms",
+        "title": "L1  PRODUCT FORMS",
+        "y": 100,
+        "height": 110,
+        "tone": "muted",
+        "modules": [
+          {
+            "id": "desktop-form",
+            "role": "module",
+            "x": 220,
+            "y": 135,
+            "width": 340,
+            "height": 60,
+            "title": "Desktop Client",
+            "caption": null,
+            "tone": "neutral"
+          },
+          {
+            "id": "mobile-form",
+            "role": "module",
+            "x": 848,
+            "y": 135,
+            "width": 336,
+            "height": 60,
+            "title": "Mobile Client",
+            "caption": "Android / iOS hosts",
+            "tone": "neutral"
+          }
+        ]
+      },
+      {
+        "id": "client-runtime",
+        "title": "L2  CLIENT APPLICATION RUNTIME",
+        "y": 220,
+        "height": 120,
+        "tone": "secondary",
+        "modules": [
+          {
+            "id": "desktop-runtime",
+            "role": "module",
+            "x": 240,
+            "y": 250,
+            "width": 300,
+            "height": 64,
+            "title": "Desktop Tauri Runtime",
+            "caption": null,
+            "tone": "secondary"
+          },
+          {
+            "id": "shared-client-cores",
+            "role": "module",
+            "x": 550,
+            "y": 250,
+            "width": 290,
+            "height": 64,
+            "title": "Shared Client Cores",
+            "caption": "TypeScript + portable Rust",
+            "tone": "muted"
+          },
+          {
+            "id": "mobile-runtime",
+            "role": "module",
+            "x": 866,
+            "y": 250,
+            "width": 300,
+            "height": 64,
+            "title": "Mobile Tauri Runtime",
+            "caption": null,
+            "tone": "secondary"
+          }
+        ]
+      },
+      {
+        "id": "station-access",
+        "title": "L3  STATION ACCESS",
+        "y": 350,
+        "height": 115,
+        "tone": "primary",
+        "modules": [
+          {
+            "id": "station-binding",
+            "role": "module",
+            "x": 300,
+            "y": 385,
+            "width": 770,
+            "height": 60,
+            "title": "Signed Station Binding",
+            "caption": "RouteLease · canonical API / SSE",
+            "tone": "primary"
+          }
+        ]
+      },
+      {
+        "id": "station-frame",
+        "title": "L4  FRAME / TOUCH PLATFORM",
+        "y": 475,
+        "height": 115,
+        "tone": "secondary",
+        "modules": [
+          {
+            "id": "frame-runtime",
+            "role": "module",
+            "x": 220,
+            "y": 510,
+            "width": 560,
+            "height": 60,
+            "title": "Frame Runtime",
+            "caption": "router · events · node transport",
+            "tone": "secondary"
+          },
+          {
+            "id": "identity-access",
+            "role": "module",
+            "x": 800,
+            "y": 510,
+            "width": 370,
+            "height": 60,
+            "title": "Identity / Access",
+            "caption": "Access Gate · Session authority",
+            "tone": "secondary"
+          }
+        ]
+      },
+      {
+        "id": "station-app",
+        "title": "L5  STATION APP DOMAIN OWNERS",
+        "y": 600,
+        "height": 150,
+        "tone": "primary",
+        "modules": [
+          {
+            "id": "conversation-social",
+            "role": "module",
+            "x": 260,
+            "y": 645,
+            "width": 300,
+            "height": 70,
+            "title": "Conversation / Social",
+            "caption": null,
+            "tone": "primary"
+          },
+          {
+            "id": "federation",
+            "role": "module",
+            "x": 590,
+            "y": 645,
+            "width": 260,
+            "height": 70,
+            "title": "Federation",
+            "caption": null,
+            "tone": "neutral"
+          },
+          {
+            "id": "agent-extensions",
+            "role": "module",
+            "x": 880,
+            "y": 645,
+            "width": 290,
+            "height": 70,
+            "title": "Agent / Extensions",
+            "caption": null,
+            "tone": "neutral"
+          }
+        ]
+      },
+      {
+        "id": "persistence",
+        "title": "L6  PERSISTENCE",
+        "y": 760,
+        "height": 120,
+        "tone": "state",
+        "modules": [
+          {
+            "id": "relational-state",
+            "role": "module",
+            "x": 405,
+            "y": 800,
+            "width": 350,
+            "height": 60,
+            "title": "Relational State + Event Log",
+            "caption": null,
+            "tone": "state"
+          },
+          {
+            "id": "object-state",
+            "role": "module",
+            "x": 790,
+            "y": 800,
+            "width": 350,
+            "height": 60,
+            "title": "Object State",
+            "caption": "local filesystem / S3",
+            "tone": "state"
+          }
+        ]
+      }
+    ],
+    "rail": {
+      "id": "contract-substrate",
+      "title": "CONTRACT SUBSTRATE",
+      "x": 1210,
+      "y": 100,
+      "width": 246,
+      "height": 780,
+      "tone": "external",
+      "items": [
+        {
+          "id": "model-proto",
+          "role": "rail-item",
+          "x": 1225,
+          "y": 165,
+          "width": 216,
+          "height": 72,
+          "title": "Model / Proto",
+          "caption": "wire semantics",
+          "tone": "external"
+        },
+        {
+          "id": "client-bindings",
+          "role": "rail-item",
+          "x": 1225,
+          "y": 335,
+          "width": 216,
+          "height": 72,
+          "title": "TS / Rust Bindings",
+          "caption": "generated",
+          "tone": "muted"
+        },
+        {
+          "id": "station-bindings",
+          "role": "rail-item",
+          "x": 1225,
+          "y": 510,
+          "width": 216,
+          "height": 72,
+          "title": "Go Bindings",
+          "caption": "generated",
+          "tone": "muted"
+        }
+      ]
+    },
+    "relations": [
+      {
+        "from": "desktop-form",
+        "to": "desktop-runtime",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "primary",
+        "via": []
+      },
+      {
+        "from": "mobile-form",
+        "to": "mobile-runtime",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "primary",
+        "via": []
+      },
+      {
+        "from": "desktop-runtime",
+        "to": "station-binding",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "primary",
+        "via": [
+          {
+            "x": 390,
+            "y": 360
+          },
+          {
+            "x": 685,
+            "y": 360
+          }
+        ]
+      },
+      {
+        "from": "mobile-runtime",
+        "to": "station-binding",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "primary",
+        "via": [
+          {
+            "x": 1016,
+            "y": 360
+          },
+          {
+            "x": 685,
+            "y": 360
+          }
+        ]
+      },
+      {
+        "from": "station-binding",
+        "to": "frame-runtime",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "primary",
+        "via": [
+          {
+            "x": 685,
+            "y": 480
+          },
+          {
+            "x": 500,
+            "y": 480
+          }
+        ]
+      },
+      {
+        "from": "frame-runtime",
+        "to": "conversation-social",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "primary",
+        "via": [
+          {
+            "x": 500,
+            "y": 615
+          },
+          {
+            "x": 410,
+            "y": 615
+          }
+        ]
+      },
+      {
+        "from": "conversation-social",
+        "to": "relational-state",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "event",
+        "via": [
+          {
+            "x": 410,
+            "y": 750
+          },
+          {
+            "x": 580,
+            "y": 750
+          }
+        ]
+      },
+      {
+        "from": "agent-extensions",
+        "to": "object-state",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "event",
+        "via": [
+          {
+            "x": 1025,
+            "y": 750
+          },
+          {
+            "x": 965,
+            "y": 750
+          }
+        ]
+      }
+    ]
+  }
+}

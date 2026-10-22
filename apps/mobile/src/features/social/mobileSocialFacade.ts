@@ -62,6 +62,8 @@ export interface MobileSocialFacadeDependencies {
 }
 
 const activeFacadeListeners = new Set<() => void>();
+const privatePostOwnershipByAccount = new Map<string, Set<string>>();
+const MAX_PRIVATE_OWNERSHIP_IDS = 512;
 let activeFacade: MobileSocialFacadeController | null = null;
 
 export function readActiveMobileSocialFacade(
@@ -118,6 +120,7 @@ export function createMobileSocialFacade(
   };
   const momentsProjection = createMomentsProjection();
   const listeners = new Set<() => void>();
+  const knownPrivatePostIds = privatePostOwnership(scope);
   let revision = 0;
   let torn = false;
   let currentProjection = buildProjection();
@@ -154,6 +157,14 @@ export function createMobileSocialFacade(
     const scopedPrivateSocial = privateProjectionMatchesScope(privateSocial, scope)
       ? privateSocial
       : null;
+    if (privateOwnershipMatchesAccount(privateSocial, scope)) {
+      [
+        ...Object.keys(privateSocial.postsById),
+        ...privateSocial.commentDrafts.map((draft) => draft.postId),
+        ...privateSocial.comments.map((comment) => comment.postId),
+        ...privateSocial.reactionCommands.map((command) => command.postId),
+      ].forEach((postId) => rememberPrivatePost(knownPrivatePostIds, postId));
+    }
     return createDeepImmutableSocialProjection({
       scope,
       revision,
@@ -274,10 +285,23 @@ export function createMobileSocialFacade(
       react: async (postId, reactionKind) => {
         assertCurrent();
         const privateSnapshot = readPrivateMomentsSnapshot();
-        const privatePost = privateProjectionMatchesScope(privateSnapshot, scope)
+        let privatePost = privateProjectionMatchesScope(privateSnapshot, scope)
           ? privateSnapshot.postsById[postId]
           : undefined;
-        if (privatePost?.state === 'CONTENT_READY') {
+        const visiblePost = currentProjection.home.posts.find(
+          (post) => post.id === postId,
+        ) ?? currentProjection.explore.posts.find((post) => post.id === postId);
+        const requiresPrivateOwner = privatePost !== undefined
+          || knownPrivatePostIds.has(postId)
+          || (
+            visiblePost?.audience !== undefined
+            && !isPublicSocialAudience(visiblePost.audience)
+          );
+        if (requiresPrivateOwner) {
+          if (privatePost?.state !== 'CONTENT_READY') {
+            privatePost = await completeCurrent(() => readPrivateMoment(postId));
+          }
+          if (privatePost.state !== 'CONTENT_READY') return false;
           const active = privatePost.reactions?.some(
             (reaction) => reaction.kind === reactionKind && reaction.reactedByViewer,
           ) ?? false;
@@ -372,4 +396,31 @@ function privateProjectionMatchesScope(
     && projection.actorPtid === scope.actorPtid
     && projection.deviceId === scope.deviceId
     && projection.lifecycleGeneration === scope.lifecycleGeneration;
+}
+
+function privateOwnershipMatchesAccount(
+  projection: ReturnType<typeof readPrivateMomentsSnapshot>,
+  scope: MobileSocialScope,
+): boolean {
+  return projection.stationPeerId === scope.stationPeerId
+    && projection.actorPtid === scope.actorPtid;
+}
+
+function privatePostOwnership(scope: MobileSocialScope): Set<string> {
+  const key = `${scope.stationPeerId}\u001f${scope.actorPtid}`;
+  const existing = privatePostOwnershipByAccount.get(key);
+  if (existing) return existing;
+  const created = new Set<string>();
+  privatePostOwnershipByAccount.set(key, created);
+  return created;
+}
+
+function rememberPrivatePost(ownership: Set<string>, postId: string): void {
+  if (!postId || ownership.has(postId)) return;
+  ownership.add(postId);
+  while (ownership.size > MAX_PRIVATE_OWNERSHIP_IDS) {
+    const oldest = ownership.values().next().value;
+    if (oldest === undefined) break;
+    ownership.delete(oldest);
+  }
 }

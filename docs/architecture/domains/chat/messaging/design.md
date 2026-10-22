@@ -89,6 +89,14 @@ clock、randomness、queue transport 和 projection sink。Desktop/Mobile adapte
 这些 ports，不得复制 Direct、OpenMLS、dedup、cursor、ACK、recovery codec 或 receipt
 state machine。
 
+UCA-04A completed the portable contract with a generation-fenced engine
+lifecycle, `messaging-store-v1` single-write migration policy, authoritative
+submitted-command reconciliation, ambiguous-submit handling, opaque attachment
+blob reuse, event sink and lifecycle-cancellation ports. UCA-04 then atomically
+switched both Host consumers, deleted their former semantic owners and moved
+physical storage I/O into the shared native filesystem adapter. Runtime product
+proof remains release-target-specific.
+
 ## 2. 当前能力与系统架构
 
 本节是当前实现快照，不改变后续章节定义的 accepted target architecture。状态必须同时由
@@ -669,6 +677,15 @@ Engine只接受logical membership intent。它持久化intent、exact attempt by
 OpenMLS state；authority stale时discard尚未merge的pending commit并生成新attempt。
 UI不得读取epoch、枚举devices、claim KeyPackage、组装transition或accept MLS state。
 
+Federation 的 `/federation/conversation/command/prepare` 接收既有
+`PrepareFederatedConversationCommandRequest.preparation` 的两种分支：
+ordinary `request` 返回 `plan`，`membership_request` 返回
+`membership_plan`。Authority 必须绑定已验证的 peer subject、Actor、Device、
+source/target Station、Conversation、Federation 和 authority epoch；
+membership requester 还必须出现在其签名 Home Station endpoint manifest 中。
+两种请求都复用 canonical Command Service；成员计划准备不推进权威事件或 MLS
+状态，代理退出仍须通过持久化 leave intent 和最终 membership command 提交。
+
 ### 6.4 Industry-Aligned Send Uncertainty And Retract
 
 > **Decision status**: accepted (`MP-D28`, Owner accepted industry-aligned scope
@@ -724,6 +741,15 @@ SSE/push wake
 ```
 
 若本地 transaction 未 commit，Station item 保持 unacked，lane 停在该 sequence。
+
+`ConversationUpdated`、`ConversationDissolved` 和
+`MemberAuthorityCommitted` 的 `PUBLIC_EVENT` 也属于此消费路径。
+Desktop 必须校验 marker 与 Authority event 的绑定，原子提交名称、描述、头像、
+Owner、成员角色、Home Station、禁言状态和终止状态。若该设备持有同一
+`command_id` 的本地 intent，事务同时校验 exact command 回读并提交 intent/outbox；
+矛盾回读必须回滚 projection、authority head、receipt 和 lane cursor。
+成员权限事实的校验复用 Messaging Core，不能由页面刷新或 command response 替代。
+合法 Group 可在其他成员退出后仅剩 Owner。
 
 ## 8. Ordering And Dependencies
 

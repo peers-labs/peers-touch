@@ -8,12 +8,13 @@ import {
 import { Input, Button, Tag, Avatar, Tooltip, InputPassword } from '@lobehub/ui';
 import {
   CheckCircle2, Settings2, ExternalLink, Lock, Trash2, Plus,
-  Brain, X, RefreshCw, Wrench, Eye, Sparkles, Pencil,
+  Brain, X, Wrench, Eye, Sparkles, Pencil,
   Image, Globe, Video, Search, RadioTower,
 } from 'lucide-react';
 import { ProviderIcon } from './ProviderIcon';
 import { UpdateProviderModal } from './UpdateProviderModal';
-import { api } from '../../services/desktop_api';
+import { CliProviderDetail } from './CliProviderDetail';
+import { api, type ProviderDetail as ProviderDetailRecord } from '../../services/desktop_api';
 import { useTranslation } from 'react-i18next';
 import { useActiveProviderSlice } from './useActiveSettingsStores';
 
@@ -90,14 +91,55 @@ function formatContextWindow(v: number): string {
 
 export function ProviderDetail() {
   const { t } = useTranslation('provider');
+  const { detail, loading, selectedId } = useActiveProviderSlice((state) => ({
+    detail: state.detail,
+    loading: state.loading,
+    selectedId: state.selectedId,
+  }));
+
+  if (loading && !detail) {
+    return (
+      <Flexbox flex={1} align="center" justify="center">
+        <Spin />
+      </Flexbox>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <Flexbox flex={1} align="center" justify="center">
+        <Text type="secondary">{t('provider.detail.selectProvider')}</Text>
+      </Flexbox>
+    );
+  }
+
+  if (selectedId && detail.id !== selectedId) {
+    return (
+      <Flexbox flex={1} align="center" justify="center">
+        <Spin />
+      </Flexbox>
+    );
+  }
+
+  if (detail.runtime_kind === 'cli') {
+    return <CliProviderDetail key={`${detail.id}:${detail.version}`} detail={detail} />;
+  }
+
+  return (
+    <DirectProviderDetail
+      key={`${detail.id}:${detail.version}`}
+      detail={detail}
+    />
+  );
+}
+
+function DirectProviderDetail({ detail }: { detail: ProviderDetailRecord }) {
+  const { t } = useTranslation('provider');
   const {
-    detail, loading, updateProvider, toggleProvider,
+    updateProvider, toggleProvider,
     checkProvider, deleteProvider, addModel, updateModel, deleteModel,
-    fetchRemoteModels, selectProvider, toggleModel, toggleAllModels,
-    selectedId, readinessById,
+    toggleModel, readinessById,
   } = useActiveProviderSlice((s) => ({
-    detail: s.detail,
-    loading: s.loading,
     updateProvider: s.updateProvider,
     toggleProvider: s.toggleProvider,
     checkProvider: s.checkProvider,
@@ -105,53 +147,28 @@ export function ProviderDetail() {
     addModel: s.addModel,
     updateModel: s.updateModel,
     deleteModel: s.deleteModel,
-    fetchRemoteModels: s.fetchRemoteModels,
-    selectProvider: s.selectProvider,
     toggleModel: s.toggleModel,
-    toggleAllModels: s.toggleAllModels,
-    selectedId: s.selectedId,
     readinessById: s.readinessById,
   }));
-  const [apiKey, setApiKey] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [enabled, setEnabled] = useState(false);
+  const [apiKey, setApiKey] = useState(detail.api_key);
+  const [baseUrl, setBaseUrl] = useState(
+    detail.base_url || detail.default_base_url || '',
+  );
+  const [enabled, setEnabled] = useState(detail.enabled);
   const [checking, setChecking] = useState(false);
   const [checkPass, setCheckPass] = useState(false);
-  const [checkModel, setCheckModel] = useState('');
+  const [checkModel, setCheckModel] = useState(
+    detail.check_model || detail.models[0]?.id || '',
+  );
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
-  const [fetching, setFetching] = useState(false);
   const [modelSearchKeyword, setModelSearchKeyword] = useState('');
   const [editModel, setEditModel] = useState<{ id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; streaming?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null>(null);
   const { token } = theme.useToken();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const keyDirtyRef = useRef(false);
-
-  // Whether the displayed detail matches the currently selected provider.
-  // When switching, detail still holds old provider data until the new one loads.
-  const isStale = detail != null && selectedId != null && detail.id !== selectedId;
-
-  useEffect(() => {
-    if (detail && !isStale) {
-      if (detail.api_key) {
-        setApiKey(detail.api_key);
-        keyDirtyRef.current = false;
-      } else if (!detail.has_api_key) {
-        setApiKey('');
-        keyDirtyRef.current = false;
-      }
-      // When has_api_key=true but api_key='' (server withholds raw secret),
-      // preserve the user's in-progress input (keyDirty) or leave as-is after reload
-      setBaseUrl(detail.base_url || detail.default_base_url || '');
-      setEnabled(detail.enabled);
-      setCheckModel(detail.check_model || detail.models?.[0]?.id || '');
-      setCheckPass(false);
-    }
-  }, [detail, isStale]);
 
   const debouncedSave = useCallback(
     (key: string, url: string) => {
-      if (!detail) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(async () => {
         try {
@@ -170,14 +187,8 @@ export function ProviderDetail() {
     };
   }, []);
 
-  useEffect(() => {
-    keyDirtyRef.current = false;
-    setApiKey('');
-  }, [selectedId]);
-
   const handleApiKeyChange = useCallback(
     (val: string) => {
-      keyDirtyRef.current = true;
       setApiKey(val);
       debouncedSave(val, baseUrl);
     },
@@ -192,7 +203,7 @@ export function ProviderDetail() {
     [apiKey, debouncedSave],
   );
 
-  const allModels = detail?.models || [];
+  const allModels = useMemo(() => detail.models, [detail.models]);
   const filteredModels = useMemo(() => {
     const kw = modelSearchKeyword.trim().toLowerCase();
     if (!kw) return allModels;
@@ -201,22 +212,6 @@ export function ProviderDetail() {
       (m.display_name || '').toLowerCase().includes(kw),
     );
   }, [allModels, modelSearchKeyword]);
-
-  if (loading && !detail) {
-    return (
-      <Flexbox flex={1} align="center" justify="center">
-        <Spin />
-      </Flexbox>
-    );
-  }
-
-  if (!detail) {
-    return (
-      <Flexbox flex={1} align="center" justify="center">
-        <Text type="secondary">{t('provider.detail.selectProvider')}</Text>
-      </Flexbox>
-    );
-  }
 
   const handleCheck = async () => {
     if (!checkModel) {
@@ -230,7 +225,6 @@ export function ProviderDetail() {
       if (result.ok) {
         setCheckPass(true);
         message.success(t('provider.detail.connectionSuccessful'));
-        doFetchModels(true);
       } else {
         message.error(result.error || t('provider.detail.connectionFailed'));
       }
@@ -238,34 +232,6 @@ export function ProviderDetail() {
       message.error(t('provider.detail.connectionCheckFailed'));
     } finally {
       setChecking(false);
-    }
-  };
-
-  const doFetchModels = async (silent = false) => {
-    setFetching(true);
-    try {
-      const result = await fetchRemoteModels(detail.id, apiKey || undefined, baseUrl || undefined);
-      if (result.ok && result.models && result.models.length > 0) {
-        const existingIds = new Set((detail.models || []).map((m) => m.id));
-        const newModels = result.models.filter((id) => !existingIds.has(id));
-        if (newModels.length > 0) {
-          for (const id of newModels) {
-            await addModel(detail.id, { id, display_name: id, type: 'chat', context_window: 128000 });
-          }
-          message.success(t('provider.model.fetchedNew', { count: newModels.length }));
-        } else if (!silent) {
-          message.info(t('provider.model.noNewModels'));
-        }
-        await selectProvider(detail.id);
-      } else if (!silent) {
-        message.error(result.error || t('provider.model.failedToFetch'));
-      }
-    } catch (e: unknown) {
-      if (!silent) {
-        message.error(e instanceof Error ? e.message : t('provider.model.failedToFetch'));
-      }
-    } finally {
-      setFetching(false);
     }
   };
 
@@ -308,9 +274,6 @@ export function ProviderDetail() {
         padding: '16px 24px 24px',
         height: '100%',
         overflow: 'hidden',
-        opacity: isStale ? 0 : 1,
-        transition: 'opacity 0.15s ease-out',
-        pointerEvents: isStale ? 'none' : 'auto',
       }}
     >
       {/* Config Card - fixed height */}
@@ -414,6 +377,7 @@ export function ProviderDetail() {
               </Button>
             )}
             <Switch
+              data-pt-provider-enabled-toggle={detail.id}
               checked={enabled}
               onChange={async (checked, event) => {
                 event?.stopPropagation();
@@ -566,51 +530,8 @@ export function ProviderDetail() {
             </Text>
           </Flexbox>
           <Flexbox horizontal gap={8} align="center" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {filteredModels.length > 0 && (
-              <>
-                <Button
-                  size="small"
-                  icon={<CheckCircle2 size={14} />}
-                  loading={fetching}
-                  onClick={async () => {
-                    try {
-                      await toggleAllModels(detail.id, true);
-                      message.success(t('provider.model.allEnabled'));
-                    } catch (e) {
-                      message.error(t('provider.model.failedToEnableAll'));
-                    }
-                  }}
-                >
-                  {t('provider.model.enableAll')}
-                </Button>
-                <Button
-                  size="small"
-                  icon={<X size={14} />}
-                  loading={fetching}
-                  onClick={async () => {
-                    try {
-                      await toggleAllModels(detail.id, false);
-                      message.success(t('provider.model.allDisabled'));
-                    } catch (e) {
-                      message.error(t('provider.model.failedToDisableAll'));
-                    }
-                  }}
-                >
-                  {t('provider.model.disableAll')}
-                </Button>
-              </>
-            )}
             <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
               {t('provider.model.addModel')}
-            </Button>
-            <Button
-              size="small"
-              type="primary"
-              icon={<RefreshCw size={14} />}
-              loading={fetching}
-              onClick={() => doFetchModels(false)}
-            >
-              {t('provider.model.fetchModels')}
             </Button>
           </Flexbox>
         </Flexbox>
@@ -687,12 +608,14 @@ export function ProviderDetail() {
                       <Tooltip title={t('provider.model.capability.videoRecognition')}><Video size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
                     )}
                     <Switch
+                      data-pt-provider-model-toggle={m.id}
+                      data-pt-provider-model-provider={detail.id}
                       size="small"
                       checked={m.enabled}
                       onChange={async (checked) => {
                         try {
                           await toggleModel(detail.id, m.id, checked);
-                        } catch (e) {
+                        } catch {
                           message.error(t('provider.model.failedToToggle'));
                         }
                       }}
@@ -751,19 +674,9 @@ export function ProviderDetail() {
                   {t('provider.model.empty.desc')}
                 </Text>
               </Flexbox>
-              <Flexbox horizontal gap={12}>
-                <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-                  {t('provider.model.addModel')}
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<RefreshCw size={14} />}
-                  loading={fetching}
-                  onClick={() => doFetchModels(false)}
-                >
-                  {t('provider.model.fetchModels')}
-                </Button>
-              </Flexbox>
+              <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+                {t('provider.model.addModel')}
+              </Button>
             </Flexbox>
           )}
         </div>
@@ -782,17 +695,18 @@ export function ProviderDetail() {
         onAdd={addModel}
       />
 
-      <EditModelModal
-        open={!!editModel}
-        model={editModel}
-        onClose={() => setEditModel(null)}
-        onSave={async (data) => {
-          if (!editModel) return;
-          await updateModel(detail.id, editModel.id, data);
-          message.success(t('provider.model.updated'));
-          setEditModel(null);
-        }}
-      />
+      {editModel ? (
+        <EditModelModal
+          key={editModel.id}
+          model={editModel}
+          onClose={() => setEditModel(null)}
+          onSave={async (data) => {
+            await updateModel(detail.id, editModel.id, data);
+            message.success(t('provider.model.updated'));
+            setEditModel(null);
+          }}
+        />
+      ) : null}
     </Flexbox>
   );
 }
@@ -1000,43 +914,21 @@ function AddModelModal({
 // ── Edit Model Modal ──
 
 function EditModelModal({
-  open,
   model,
   onClose,
   onSave,
 }: {
-  open: boolean;
-  model: { id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; streaming?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null;
+  model: { id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; streaming?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean };
   onClose: () => void;
   onSave: (data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; streaming?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) => Promise<void>;
 }) {
   const { t } = useTranslation('provider');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const [ctxSlider, setCtxSlider] = useState(6);
-  const [ctxValue, setCtxValue] = useState(128000);
+  const initialContext = model.context_window ?? 128000;
+  const [ctxSlider, setCtxSlider] = useState(contextToSlider(initialContext));
+  const [ctxValue, setCtxValue] = useState(initialContext);
   const { token } = theme.useToken();
-
-  useEffect(() => {
-    if (open && model) {
-      const ctx = model.context_window ?? 128000;
-      setCtxValue(ctx);
-      setCtxSlider(contextToSlider(ctx));
-      form.setFieldsValue({
-        display_name: model.display_name || model.id,
-        type: model.type || 'chat',
-        context_window: ctx,
-        enabled: model.enabled ?? true,
-        streaming: model.streaming ?? false,
-        function_call: model.function_call ?? false,
-        vision: model.vision ?? false,
-        reasoning: model.reasoning ?? false,
-        search: model.search ?? false,
-        image_output: model.image_output ?? false,
-        video: model.video ?? false,
-      });
-    }
-  }, [open, model, form]);
 
   const handleSliderChange = (v: number) => {
     setCtxSlider(v);
@@ -1053,7 +945,6 @@ function EditModelModal({
   };
 
   const handleOk = async () => {
-    if (!model) return;
     try {
       const values = await form.validateFields();
       setLoading(true);
@@ -1067,12 +958,10 @@ function EditModelModal({
     }
   };
 
-  if (!model) return null;
-
   return (
     <Modal
       title={t('provider.editModel.title')}
-      open={open}
+      open
       onCancel={onClose}
       footer={null}
       destroyOnHidden
@@ -1080,6 +969,19 @@ function EditModelModal({
     >
       <Form
         form={form}
+        initialValues={{
+          display_name: model.display_name || model.id,
+          type: model.type || 'chat',
+          context_window: initialContext,
+          enabled: model.enabled ?? true,
+          streaming: model.streaming ?? false,
+          function_call: model.function_call ?? false,
+          vision: model.vision ?? false,
+          reasoning: model.reasoning ?? false,
+          search: model.search ?? false,
+          image_output: model.image_output ?? false,
+          video: model.video ?? false,
+        }}
         layout="horizontal"
         labelCol={{ span: 7 }}
         wrapperCol={{ span: 17 }}

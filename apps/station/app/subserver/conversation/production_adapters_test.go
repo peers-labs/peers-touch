@@ -1438,6 +1438,29 @@ func TestFollowerDeviceReceiptRequiresPinnedAuthoritySource(t *testing.T) {
 	}
 }
 
+func TestFollowerGapAllowsWelcomeDeliveryWhileResyncOwnsProjectionCatchup(t *testing.T) {
+	gap := conversationdomain.NewError(
+		conversationdomain.ErrorCodeStaleAuthorityHead,
+		"application.apply_follower_event",
+		"sequence",
+		"authority event gap requires resynchronization",
+	)
+	integrityFailure := conversationdomain.NewError(
+		conversationdomain.ErrorCodeHashChainInvalid,
+		"application.apply_follower_event",
+		"event",
+		"authority event hash is invalid",
+	)
+
+	if !followerGapAllowsDeviceDelivery(nil) ||
+		!followerGapAllowsDeviceDelivery(gap) {
+		t.Fatal("follower gap blocked device delivery")
+	}
+	if followerGapAllowsDeviceDelivery(integrityFailure) {
+		t.Fatal("follower integrity failure allowed device delivery")
+	}
+}
+
 func TestProductionDeliveryReceiptProjectionUsesTransactionBoundRoutes(
 	t *testing.T,
 ) {

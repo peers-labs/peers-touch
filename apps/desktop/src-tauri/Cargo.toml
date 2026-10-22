@@ -53,9 +53,11 @@ futures-lite = "2"
 ulid = "1.1"
 bip39 = { version = "2", features = ["rand"] }
 messaging-core = { path = "../../../packages/messaging-core" }
+messaging-native-filesystem = { path = "../../../packages/messaging-native-filesystem" }
 secure-content-core = { path = "../../../packages/secure-content-core" }
 station-trust = { path = "../../../packages/station-trust" }
 station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
+x-config-core = { path = "../../../packages/x-config-core" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 dispatch2 = "0.3.1"

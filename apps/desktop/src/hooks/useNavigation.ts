@@ -14,10 +14,11 @@ import {
 
 export function useNavigation(router: HashRouter): Navigation {
   const [settingsNav, setSettingsNav] = useState<SettingsNavState>({});
+  const { setPage, setProfilePage } = router;
 
   const navigateTo = useCallback((page: Page) => {
-    router.setPage(page);
-  }, [router.setPage, router.setProfilePage]);
+    setPage(page);
+  }, [setPage]);
 
   const navigateToAgentSurface = useCallback((agentName: string, surface: 'chat' | 'profile') => {
     const agentStore = useAgentStore.getState();
@@ -25,7 +26,7 @@ export function useNavigation(router: HashRouter): Navigation {
     if (surface === 'profile') {
       agentStore.setSelectedAgent(agentName);
       agentStore.setAgentSurface(agentName, 'profile');
-      router.setPage('agent');
+      setPage('agent');
       return;
     }
 
@@ -35,13 +36,13 @@ export function useNavigation(router: HashRouter): Navigation {
       agentStore.setSelectedAgent(agentName);
       agentStore.setAgentSurface(agentName, 'chat');
     }
-    router.setPage('agent');
-  }, [router.setPage, router.setProfilePage]);
+    setPage('agent');
+  }, [setPage]);
 
   const navigateToSettings = useCallback((tab: string, highlightId?: string) => {
     setSettingsNav({ tab, highlightId });
-    router.setPage('settings');
-  }, [router.setPage]);
+    setPage('settings');
+  }, [setPage]);
 
   const handleSearchNavigate = useCallback((url: string) => {
     if (url.startsWith('/chat')) {
@@ -50,21 +51,21 @@ export function useNavigation(router: HashRouter): Navigation {
       if (sessionKey) {
         useChatStore.getState().selectSession(sessionKey);
       }
-      router.setPage('agent');
+      setPage('agent');
     } else if (url.startsWith('/agent-profile/')) {
       const agentName = decodeURIComponent(url.split('/agent-profile/')[1] || '');
-      if (agentName) router.setProfilePage(agentName);
+      if (agentName) setProfilePage(agentName);
     } else if (url.startsWith('/notes/') || url.startsWith('/pages/')) {
-      router.setPage(DEFAULT_READY_PAGE);
+      setPage(DEFAULT_READY_PAGE);
     } else if (url.startsWith('/settings')) {
       const params = new URLSearchParams(url.split('?')[1] || '');
       setSettingsNav({
         tab: params.get('tab') || undefined,
         highlightId: params.get('id') || undefined,
       });
-      router.setPage('settings');
+      setPage('settings');
     }
-  }, [router.setPage]);
+  }, [setPage, setProfilePage]);
 
   useEffect(() => {
     const unsubscribe = eventBus.subscribe(EVENT.NAVIGATION_REQUESTED, (parsed) => {
@@ -73,37 +74,38 @@ export function useNavigation(router: HashRouter): Navigation {
       switch (nav.resource) {
         case 'cron':
           setSettingsNav({ tab: 'cron' });
-          router.setPage('settings');
+          setPage('settings');
           break;
         case 'sessions':
           if (nav.id) {
             useChatStore.getState().selectSession(nav.id);
           }
-          router.setPage('agent');
+          setPage('agent');
           break;
         case 'settings':
           if (nav.id) setSettingsNav({ tab: nav.id });
-          router.setPage('settings');
+          setPage('settings');
           break;
         case 'channels':
           setSettingsNav({ tab: 'channels' });
-          router.setPage('settings');
+          setPage('settings');
           break;
         case 'marketplace':
-          router.setPage('marketplace');
+          setSettingsNav({ tab: 'discover' });
+          setPage('settings');
           break;
         case 'evaluation':
-          router.setPage('evaluation');
+          setPage('evaluation');
           break;
         case 'documents':
-          router.setPage(DEFAULT_READY_PAGE);
+          setPage(DEFAULT_READY_PAGE);
           break;
       }
     });
     return () => {
       unsubscribe();
     };
-  }, [router.setPage]);
+  }, [setPage]);
 
   return { settingsNav, navigateTo, navigateToAgentSurface, navigateToSettings, handleSearchNavigate };
 }

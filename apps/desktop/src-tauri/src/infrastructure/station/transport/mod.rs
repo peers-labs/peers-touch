@@ -356,18 +356,21 @@ impl StationTransportHandle {
     }
 
     #[cfg(feature = "acceptance-webdriver")]
-    pub fn set_acceptance_direct_route_override(
+    pub fn replace_acceptance_direct_route_override(
         &self,
         station_peer_id: &str,
         route_id: &str,
         node_peer_id: &str,
-        dial_multiaddr: &str,
-    ) -> Result<(), StationTransportLifecycleError> {
-        let expected_suffix = format!("/p2p/{node_peer_id}");
-        if !(dial_multiaddr.starts_with("/ip4/127.0.0.1/")
-            || dial_multiaddr.starts_with("/ip6/::1/"))
-            || dial_multiaddr.contains("/p2p-circuit")
-            || !dial_multiaddr.ends_with(&expected_suffix)
+        dial_multiaddr: Option<&str>,
+    ) -> Result<Option<String>, StationTransportLifecycleError> {
+        let valid_override = dial_multiaddr.map_or(true, |dial_multiaddr| {
+            let expected_suffix = format!("/p2p/{node_peer_id}");
+            (dial_multiaddr.starts_with("/ip4/127.0.0.1/")
+                || dial_multiaddr.starts_with("/ip6/::1/"))
+                && !dial_multiaddr.contains("/p2p-circuit")
+                && dial_multiaddr.ends_with(&expected_suffix)
+        });
+        if !valid_override
             || station_peer_id.trim().is_empty()
             || route_id.trim().is_empty()
             || node_peer_id.trim().is_empty()
@@ -376,19 +379,16 @@ impl StationTransportHandle {
                 "Acceptance Direct route override must be a loopback Direct multiaddr".to_string(),
             ));
         }
-        self.shared
-            .direct_route_overrides
-            .lock()
-            .map_err(|_| {
-                StationTransportLifecycleError(
-                    "Acceptance Direct route override lock poisoned".to_string(),
-                )
-            })?
-            .insert(
-                (station_peer_id.to_string(), route_id.to_string()),
-                dial_multiaddr.to_string(),
-            );
-        Ok(())
+        let mut overrides = self.shared.direct_route_overrides.lock().map_err(|_| {
+            StationTransportLifecycleError(
+                "Acceptance Direct route override lock poisoned".to_string(),
+            )
+        })?;
+        let key = (station_peer_id.to_string(), route_id.to_string());
+        Ok(match dial_multiaddr {
+            Some(dial_multiaddr) => overrides.insert(key, dial_multiaddr.to_string()),
+            None => overrides.remove(&key),
+        })
     }
 
     #[cfg(feature = "acceptance-webdriver")]
@@ -408,6 +408,17 @@ impl StationTransportHandle {
     }
 
     pub fn close_route(&self, lease: &RouteLease) {
+        self.close_route_with_direct_override(
+            lease,
+            self.direct_route_override(lease).ok().flatten(),
+        );
+    }
+
+    pub(crate) fn close_route_with_direct_override(
+        &self,
+        lease: &RouteLease,
+        direct_override: Option<String>,
+    ) {
         let Ok(scope) = route_transport_scope(lease) else {
             return;
         };
@@ -422,9 +433,7 @@ impl StationTransportHandle {
             return;
         };
         drop(transports);
-        if let Ok(route) =
-            secure_stream_route(lease, self.direct_route_override(lease).ok().flatten())
-        {
+        if let Ok(route) = secure_stream_route(lease, direct_override) {
             let _ = transport.handle.close_route(&route);
         }
     }
@@ -710,18 +719,19 @@ mod tests {
 
     #[cfg(feature = "acceptance-webdriver")]
     #[test]
-    fn acceptance_direct_override_changes_only_the_physical_endpoint() {
+    fn acceptance_direct_override_replacement_returns_the_previous_endpoint() {
         let owner = StationTransportOwner::start().unwrap();
         let transport = owner.handle();
 
-        transport
-            .set_acceptance_direct_route_override(
+        let previous = transport
+            .replace_acceptance_direct_route_override(
                 "station-one",
                 "direct-one",
                 "one",
-                "/ip4/127.0.0.1/tcp/39000/p2p/one",
+                Some("/ip4/127.0.0.1/tcp/39000/p2p/one"),
             )
             .unwrap();
+        assert_eq!(previous, None);
         assert_eq!(
             transport
                 .shared
@@ -733,7 +743,13 @@ mod tests {
             Some("/ip4/127.0.0.1/tcp/39000/p2p/one"),
         );
 
-        transport.clear_acceptance_direct_route_overrides().unwrap();
+        let previous = transport
+            .replace_acceptance_direct_route_override("station-one", "direct-one", "one", None)
+            .unwrap();
+        assert_eq!(
+            previous.as_deref(),
+            Some("/ip4/127.0.0.1/tcp/39000/p2p/one")
+        );
         assert!(transport
             .shared
             .direct_route_overrides

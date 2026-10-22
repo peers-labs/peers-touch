@@ -1,8 +1,8 @@
 # 架构文档标准
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-04-20 | **Updated**: 2026-10-05
+> **Version**: v1.5
+> **Created**: 2026-04-20 | **Updated**: 2026-10-20
 > **Owner**: Architecture Team
 
 ---
@@ -42,9 +42,31 @@
 
 ### 3.1 目录结构
 
+项目级入口固定为：
+
+```text
+docs/architecture/
+├── README.md                  # 模块索引与导航
+├── architecture.md            # 项目级上下文、分层、拓扑、权威与动态链路
+├── references.md              # 生成的架构图反向引用
+├── domains/
+├── platform/
+├── shared/
+└── engineering/
+```
+
+`references.md` 和 `README.md` 中的模块索引由
+`tooling/scripts/architecture/document-index.mjs` 从现有 module registry、
+`*.diagram.json` 与 Markdown 中的 SVG 资产链接生成，不得手工维护第二份模块
+或引用清单。
+
+模块文档结构固定为：
+
 ```
 architecture/<taxonomy>/<optional-group>/<module>/
 ├── README.md                  # [必选] 入口：Scope + 背景 + 导航
+├── architecture.diagram.json # [条件必选] canonical 主视图 spec
+├── architecture.svg          # [条件必选] 统一 renderer 生成的主视图
 ├── design.md                  # [必选] 架构设计：原则、系统图、核心接口
 ├── decisions.md               # [必选] 设计决策（ADR-lite 格式）
 ├── module-layout.md           # [条件必选] 模块目录结构与文件职责
@@ -66,6 +88,8 @@ architecture/<taxonomy>/<optional-group>/<module>/
 | 文件 | 必选 | 回答什么 | 何时需要 |
 |------|------|---------|---------|
 | `README.md` | **是** | 这个模块是什么、解决什么问题、设计目标、文档导航 | 始终 |
+| `architecture.diagram.json` | 条件必选 | Diagram ID、viewpoint 与统一场景内容 | 新建或重画 canonical 架构图 |
+| `architecture.svg` | 条件必选 | Markdown 可直接嵌入的 canonical 模块图 | 与 diagram spec 同时生成 |
 | `design.md` | **是** | 架构原则、系统架构图、核心接口/契约、组件关系 | 始终 |
 | `decisions.md` | **是** | 每个关键决策的 Decision / Rationale / Alternatives | 始终 |
 | `module-layout.md` | 条件必选 | 目录树 + 文件职责 + 依赖关系 | 声明 ownership、目录布局或重复实现治理 |
@@ -206,7 +230,7 @@ lifecycle 状态。
 
 ## 2. 系统架构
 
-（整体架构图 + 文字说明，用 ASCII art 或 Mermaid）
+（整体架构图 + 文字说明；canonical 图使用统一 renderer 生成的 SVG）
 
 ## 3. 核心接口
 
@@ -225,6 +249,79 @@ lifecycle 状态。
 - 控制在 **100–300 行**
 - 系统架构图是必选的，至少一张
 - 接口定义用代码块，标注语言
+
+#### 架构图视角契约
+
+每张架构图必须显式声明且只回答一个主要视角：
+
+- **System Context**：人、产品系统、外部系统与在线关系；
+- **Logical Layer**：同层模块、运行责任、上下游边界与主请求路径；
+- **Module Map**：稳定模块、模块边界和包含关系；
+- **Runtime Topology**：进程、服务、活跃实例及真实调用；
+- **Reuse Topology**：模块组合、复用边界与专用实现；
+- **Authority Map**：状态、决策与 mutation owner；
+- **Deployment Topology**：发布物、节点、网络与部署位置。
+- **Dynamic Flow**：一个 Journey 或状态机的严格时间顺序；
+- **Control Plane**：对 data plane 施加约束、调度或证据控制的横向机制。
+
+规则：
+
+- 箭头必须只有一种语义，并在图前说明；调用、依赖、生成和权威流不得
+  混用同一组箭头。
+- 优先使用分组、包含关系和水平带表达模块边界；当关系类型超过一种或
+  连线开始交叉时，拆成多张图。
+- 编写顺序、复用分类顺序和执行步骤不是运行时拓扑，不得直接画成上下层级。
+- `proto-first` 表示共享契约先定义，不表示 `proto-on-top`。Model 默认作为
+  Client 与 Station 共同消费的 contract substrate；如需表达生成产物，使用
+  独立的 build/data-flow 图，不得混入 Runtime Topology。
+- canonical 项目图和新建或重画的模块图使用同目录 `*.diagram.json` 描述视图，
+  由 `diagram-render.mjs` 生成独立 SVG。Markdown 只嵌入 SVG，不暴露机器元数据、
+  renderer 语法或隐藏 anchor。
+- canonical spec 使用 viewpoint-specific layout 明确声明稳定 Diagram ID、
+  module、viewpoint、画布、单一箭头语义与该视角需要的结构：
+
+```json
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "cross-client-runtime.reuse-topology",
+  "module": "cross-client-runtime",
+  "viewpoint": "reuse-topology",
+  "layout": "composition",
+  "output": "architecture.svg",
+  "title": "跨端客户端复用拓扑",
+  "canvas": {
+    "width": 1400,
+    "height": 830
+  },
+  "edgeMeaning": null,
+  "scene": {
+    "rows": [],
+    "rail": null,
+    "relations": []
+  }
+}
+```
+
+- `id` 和 SVG 输出路径必须全局唯一。引用方链接或嵌入具体 SVG 资产；
+  `document-index.mjs` 扫描真实 Markdown link graph 生成反向引用。
+- layout 必须匹配 viewpoint：System Context 使用 C4 式系统边界，Logical Layer
+  使用分层带，Runtime Topology 使用部署区和真实实例，Reuse Topology 使用共享带，
+  Authority Map 使用 owner-state 矩阵，Dynamic Flow 使用时序泳道，Control Plane
+  使用带反馈边的控制闭环。
+- Dynamic Flow 的互斥路径必须使用 `alt` / `else` fragment，普通范围使用
+  `region`；不得把备选路径画成连续执行步骤。Reuse Topology 可使用独立 contract
+  rail 表达非运行时契约底座。
+- 图内节点只允许标题和一行短副词；源码路径、证据说明、边界解释和失败语义放在
+  图前后的正文。禁止用段落、注释卡或 badge 堆叠替代结构表达。
+- 所有普通关系线必须正交并使用固定轨道；Dynamic Flow 的消息线必须水平。
+  renderer 必须拒绝斜线、节点重叠、连线穿过无关节点、文字越界和关系标签压住节点。
+- scene 坐标是经过视觉评审的视图投影，不是第二份模块或 capability registry。
+  节点必须能回溯到当前源码、运行实例、外部系统或已接受架构 owner。
+- 生成后必须转成位图逐图检查，确认层次、对称、文本边界、连线路由和留白；
+  schema 通过不能代替视觉检查。
+- `diagram-render.mjs` 是唯一视觉样式 owner。ASCII、Mermaid 与手绘 SVG 只用于
+  非 canonical 辅助说明，不得成为新的主架构图。
 
 ### 5.3 decisions.md
 
@@ -423,7 +520,16 @@ lifecycle 状态。
 
 - **原型不绑定最终运行时，不碰 Lynx / applet 容器 / SDK**：原型只为展示形态。即使功能终态是 applet（Lynx）或 Desktop 页面，原型也只用上表的 web 栈画界面，**不要**为了"贴近运行时"把原型做成 ReactLynx 工程或 applet 容器——那既重又偏离"快速展示终态"的初衷。web 原型可以自由用 DOM、`iframe`、`localStorage` 等浏览器能力。
 - **禁止重复造基础件**：原型复用项目已有的桌面组件体系（LobeUI / antd 组件），不得每个需求各搭一套基础库。
-- **源码集中在统一原型工作区**：所有界面原型工程集中放在 `packages/prototypes/<id>/`（纳入 pnpm workspace），统一一处便于追踪、统一工具链、基础件可跨原型复用。`architecture/<taxonomy>/<module>/prototype/README.md` 只写「原型在哪、怎么跑、对应哪版设计、做到什么程度」，不复制源码。原型经确认门置 `confirmed`、进入落地时，由对应落地工程（如 Applet 落到 `packages/applets/<id>/` 并按其运行时实现、Desktop 页面落到桌面工程）**参照原型重新实现**，总账状态推进到 `landed`——原型本身不要求能直接搬成产物。
+- **源码集中在统一原型工作区**：所有界面原型工程集中放在
+  `packages/prototypes/<site>/<area-or-id>/`（纳入 pnpm workspace），其中一级
+  `<site>` 只允许 `desktop`、`mobile`、`dashboard`、`control`；`control`
+  用于独立部署、被多端消费的云控产品，Station/Relay 运维仍归
+  `dashboard`。统一一处便于追踪、统一工具链、基础件可跨原型复用。
+  `architecture/<taxonomy>/<module>/prototype/README.md` 只写「原型在哪、
+  怎么跑、对应哪版设计、做到什么程度」，不复制源码。原型经确认门置
+  `confirmed`、进入落地时，由对应落地工程（如 Applet 落到
+  `packages/applets/<id>/` 并按其运行时实现、Desktop 页面落到桌面工程）
+  **参照原型重新实现**，总账状态推进到 `landed`——原型本身不要求能直接搬成产物。
 - **从设计推导，不脱节**：原型界面区域要能对回 `design.md` / `functional-modules` 的模块编号；设计变更时原型同步或在 README 标注差异。
 - **可以用 mock 数据**：原型重在形态与交互，可用假数据驱动，不要求接通真实后端。
 - **不替代落地与验收**：原型是设计对齐工具，不是产品代码，不能当作任何运行时的验收证据（如 Desktop L3 须 Lynx bundle 经 Host Gateway，见 applet-runtime 验收门槛）。
@@ -448,7 +554,7 @@ lifecycle 状态。
 
 ## 原型在哪
 
-`packages/prototypes/<id>/`（统一原型工作区；独立 web 工程）
+`packages/prototypes/<site>/<area-or-id>/`（统一原型工作区；独立 web 工程）
 
 ## 落地目标
 
@@ -457,7 +563,7 @@ lifecycle 状态。
 ## 怎么跑
 
 ```bash
-cd packages/prototypes/<id>
+cd packages/prototypes/<site>/<area-or-id>
 pnpm install
 pnpm dev          # Vite，浏览器打开 localhost
 ```

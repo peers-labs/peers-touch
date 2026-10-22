@@ -82,10 +82,14 @@ from tooling.acceptance.fixtures.chat_native_actors import (
 )
 from tooling.acceptance.fixtures.chat_native_reset import (
     fixture_federation_id_from_station_ids,
+    prepare_local_friend_request_lifecycle,
+    reset_fixture_follow_edges,
 )
 from tooling.acceptance.gates.mobile.simulator_harness_contract import (
     CHAT_MIXED_NATIVE_CHILD_HARNESS_ACTIONS,
     CHAT_MIXED_NATIVE_GATE_IDS,
+    SOCIAL_CROSS_STATION_MIXED_CHILD_HARNESS_ACTIONS,
+    SOCIAL_CROSS_STATION_MIXED_GATE_IDS,
     STATION_ACCESS_NATIVE_CHILD_HARNESS_ACTIONS,
     STATION_ACCESS_NATIVE_GATE_IDS,
     STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS,
@@ -107,7 +111,17 @@ from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_service_version,
 )
 from tooling.acceptance.provisioners.posix_service_runtime import (
+    PosixServiceRuntimeConfig,
+    inspect_posix_runtime,
     resolve_posix_relay_trust_anchor,
+)
+from tooling.acceptance.provisioners.preset_actor import (
+    actor_identity_key_name,
+)
+from tooling.acceptance.provisioners.station_access_relay_role import (
+    StationAccessRelayRoleProvisioner,
+    _relay_peer_identity,
+    _station_runtime_config,
 )
 
 
@@ -118,6 +132,9 @@ IOS_LAYOUT_ENVIRONMENT_ID = "mobile-ios-layout-simulator"
 STATION_LIFECYCLE_ENVIRONMENT_ID = "mobile-station-lifecycle-simulator"
 DIRECT_SIMULATOR_ENVIRONMENT_ID = "mobile-direct-simulator"
 CHAT_MIXED_NATIVE_ENVIRONMENT_ID = "chat-mixed-native"
+SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID = (
+    "social-cross-station-mobile-desktop"
+)
 STATION_ACCESS_NATIVE_ENVIRONMENT_ID = "station-access-native"
 MOBILE_RELAY_SIMULATOR_ENVIRONMENT_ID = "mobile-relay-simulator"
 STATION_LIFECYCLE_GATE_ID = "mobile-simulator-station-lifecycle-e2e"
@@ -129,7 +146,11 @@ STATION_BOUND_SIMULATOR_GATE_IDS = frozenset(
     }
 )
 SIMULATOR_APPIUM_CAPABILITY_ID = "mobile.simulator.appium-session"
+MOBILE_STATION_OUTAGE_CAPABILITY_ID = "mobile.station-outage"
+MOBILE_RECOVERY_GATE_ID = "mobile-simulator-recovery-e2e"
 SIMULATOR_CAPABILITY_TIMEOUT_SECONDS = 180.0
+STATION_LIFECYCLE_CAPABILITY_IDLE_TIMEOUT_SECONDS = 600.0
+MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS = 720.0
 SIMULATOR_BINDING_PROOF_MECHANISM = (
     "mobile-simulator-active-station-peer-id"
 )
@@ -193,6 +214,107 @@ MOBILE_ACTOR_IDENTITY_STATE_ROOT = (
     / "acceptance-state"
     / "mobile-actor-identities"
 )
+
+
+def _validated_station_profiles(
+    *,
+    environment_id: str,
+    profile_keys: Mapping[str, tuple[str, str]],
+    station_profiles: Mapping[str, str],
+    require_distinct: bool,
+) -> dict[str, str]:
+    if not station_profiles:
+        return {}
+    expected = set(profile_keys)
+    provided = set(station_profiles)
+    missing = sorted(expected - provided)
+    unexpected = sorted(provided - expected)
+    if missing or unexpected:
+        detail = []
+        if missing:
+            detail.append(f"missing={','.join(missing)}")
+        if unexpected:
+            detail.append(f"unexpected={','.join(unexpected)}")
+        raise BlockedError(
+            reason=(
+                f"{environment_id} Station profiles must be specified at "
+                "run time with --station-profile SERVICE_ID=PROFILE "
+                f"({'; '.join(detail)})"
+            ),
+            resource="station-profile-bindings",
+        )
+    invalid = sorted(
+        profile_name
+        for profile_name in station_profiles.values()
+        if not PROFILE_NAME_PATTERN.fullmatch(profile_name)
+    )
+    if invalid:
+        raise BlockedError(
+            reason=f"Invalid Station profile name: {invalid[0]!r}",
+            resource="station-profile-bindings",
+        )
+    duplicates = (
+        sorted(
+            profile_name
+            for profile_name in set(station_profiles.values())
+            if list(station_profiles.values()).count(profile_name) > 1
+        )
+        if require_distinct
+        else []
+    )
+    if duplicates:
+        raise BlockedError(
+            reason=(
+                "Distinct Mobile Station services require distinct runtime "
+                f"profiles; duplicate={duplicates[0]!r}"
+            ),
+            resource="station-profile-bindings",
+        )
+    return dict(station_profiles)
+
+
+def _inject_reviewed_station_profiles(
+    *,
+    environment_id: str,
+    profile_keys: Mapping[str, tuple[str, str]],
+    station_profiles: Mapping[str, str],
+    require_distinct: bool,
+    profile_env: Mapping[str, str],
+) -> dict[str, str]:
+    selected = _validated_station_profiles(
+        environment_id=environment_id,
+        profile_keys=profile_keys,
+        station_profiles=station_profiles,
+        require_distinct=require_distinct,
+    )
+    merged = dict(profile_env)
+    for service_id, profile_name in selected.items():
+        _, station_env = resolve_reviewed_profile_environment(profile_name)
+        if station_env.get("PT_STATION_MODE", "").strip() != "remote":
+            raise BlockedError(
+                reason=(
+                    f"{environment_id} service {service_id!r} requires a "
+                    "remote Station profile"
+                ),
+                resource=f"service-profile:{service_id}",
+            )
+        station_url = station_env.get("PT_STATION_URL", "").rstrip("/")
+        deployment_environment = station_env.get(
+            "PT_STATION_DEPLOY_ENV",
+            "",
+        ).strip()
+        if not station_url or not deployment_environment:
+            raise BlockedError(
+                reason=(
+                    f"Station profile {profile_name!r} has no complete "
+                    "endpoint/deployment binding"
+                ),
+                resource=f"service-profile:{service_id}",
+            )
+        url_key, deployment_key = profile_keys[service_id]
+        merged[url_key] = station_url
+        merged[deployment_key] = deployment_environment
+    return merged
 
 
 def _resolve_mobile_actor_identity_via_access(
@@ -459,6 +581,8 @@ STATION_LIFECYCLE_HARNESS_ACTIONS = BASE_SIMULATOR_HARNESS_ACTIONS | {
     "settings.notifications.update",
     "settings.device.read",
     "settings.device.update",
+    "recovery.snapshot",
+    "social.reconcile",
 }
 
 
@@ -2130,6 +2254,42 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         self.sleep = sleep
         self.monotonic = monotonic
 
+    def _build_inputs_digest(self, platform: str) -> str:
+        return canonical_build_inputs_digest(self.repo_root, platform)
+
+    def _platform_build_identity(
+        self,
+        manifest: RuntimeManifest,
+        *,
+        platform: str,
+        command_env: Mapping[str, str],
+    ) -> dict[str, Any]:
+        environment = {
+            name: command_env[name]
+            for name in sorted(SELECTED_BUILD_ENVIRONMENT_KEYS)
+            if name in command_env
+        }
+        try:
+            return create_build_identity(
+                build_id=f"{manifest.run_id}-{platform}",
+                platform=platform,
+                source=SourceIdentity(
+                    source_commit=manifest.source_commit,
+                    workspace_state=(
+                        "clean"
+                        if manifest.workspace_digest == "clean"
+                        else "dirty"
+                    ),
+                    workspace_digest=manifest.workspace_digest,
+                ),
+                build_inputs_digest=self._build_inputs_digest(platform),
+                environment_digest=canonical_value_digest(environment),
+            )
+        except MobileNativeBuildError as error:
+            raise ProvisioningError(
+                f"Mobile simulator build identity is invalid: {error}"
+            ) from error
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
@@ -2146,11 +2306,23 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 **os.environ,
                 **spec.build_environment,
             }
+            command_env.pop("PT_MOBILE_BUILD_IDENTITY_JSON", None)
             manifest = self._preflighted(
                 self._manifest,
                 profile_name="mobile-simulator",
                 slot=0,
             )
+            build_identity = self._platform_build_identity(
+                manifest,
+                platform="ios",
+                command_env=command_env,
+            )
+            build_environment = {
+                **command_env,
+                "PT_MOBILE_BUILD_IDENTITY_JSON": canonical_json_bytes(
+                    build_identity
+                ).decode("ascii"),
+            }
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
             self.acquire_profile_lease("mobile-simulator", owner)
 
@@ -2169,13 +2341,16 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 apple_assets_guard.restore,
             )
 
-            ios_device, ios_owned = self._ready_ios_simulator(
+            ios_device = self._create_isolated_ios_simulator(
                 spec,
                 command_env,
+                client_id="sim-ios",
+                device_name=spec.ios_device_name,
             )
-            peer_device, peer_owned = self._ready_ios_simulator(
+            peer_device = self._create_isolated_ios_simulator(
                 spec,
                 command_env,
+                client_id="sim-ios-peer",
                 device_name=spec.ios_peer_device_name,
             )
             if ios_device["udid"] == peer_device["udid"]:
@@ -2218,7 +2393,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 )
                 self._run_checked(
                     command,
-                    env=command_env,
+                    env=build_environment,
                     timeout=1800,
                     resource=f"mobile-simulator:build:{name}",
                 )
@@ -2234,6 +2409,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                     runtime_root,
                 )
             }
+            applications["ios"]["buildIdentity"] = build_identity
             for device in (ios_device, peer_device):
                 self._deploy_ios(
                     device["udid"],
@@ -2250,7 +2426,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                     "destination": (
                         f"platform=iOS Simulator,id={ios_device['udid']}"
                     ),
-                    "ownedBoot": ios_owned,
+                    "ownedBoot": True,
                 },
                 "sim-ios-peer": {
                     "device": peer_device["udid"],
@@ -2259,7 +2435,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                     "destination": (
                         f"platform=iOS Simulator,id={peer_device['udid']}"
                     ),
-                    "ownedBoot": peer_owned,
+                    "ownedBoot": True,
                 },
             }
             clients: list[ClientRuntime] = []
@@ -2379,101 +2555,69 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 resource=blocked.resource,
             )
 
-    def _ready_ios_simulator(
+    def _create_isolated_ios_simulator(
         self,
         spec: MobileSimulatorSpec,
         env: Mapping[str, str],
         *,
-        device_name: str | None = None,
-    ) -> tuple[dict[str, str], bool]:
-        target_device_name = device_name or spec.ios_device_name
-        payload = self._run_json(
-            ("xcrun", "simctl", "list", "--json"),
-            env=env,
-            timeout=30,
-            resource="mobile-simulator:ios-discovery",
+        client_id: str,
+        device_name: str,
+    ) -> dict[str, str]:
+        instance_name = (
+            f"Peers Touch {client_id} {os.getpid()}-{secrets.token_hex(4)}"
         )
-        runtimes = payload.get("runtimes")
-        devices = payload.get("devices")
-        if not isinstance(runtimes, list) or not isinstance(devices, dict):
+        result = self._run_checked(
+            (
+                "xcrun",
+                "simctl",
+                "create",
+                instance_name,
+                device_name,
+                spec.ios_runtime,
+            ),
+            env=env,
+            timeout=60,
+            resource=f"mobile-simulator:ios-create:{client_id}",
+        )
+        udid = result.stdout.strip()
+        if not udid or "\n" in udid:
             raise BlockedError(
-                reason="simctl discovery returned an invalid device inventory",
-                resource="mobile-simulator:ios-discovery",
+                reason="simctl create returned an invalid device identity",
+                resource=f"mobile-simulator:ios-create:{client_id}",
             )
-        matching_runtimes = [
-            runtime
-            for runtime in runtimes
-            if isinstance(runtime, dict)
-            and runtime.get("name") == spec.ios_runtime
-            and runtime.get("isAvailable", True)
-        ]
-        if len(matching_runtimes) != 1:
-            raise BlockedError(
-                reason=(
-                    f"Required iOS Simulator runtime {spec.ios_runtime!r} "
-                    "is unavailable or ambiguous"
-                ),
-                resource="mobile-simulator:ios-runtime",
-            )
-        runtime_id = str(matching_runtimes[0].get("identifier") or "")
-        runtime_devices = devices.get(runtime_id)
-        if not isinstance(runtime_devices, list):
-            raise BlockedError(
-                reason=(
-                    f"Required iOS Simulator runtime {spec.ios_runtime!r} "
-                    "has no devices"
-                ),
-                resource="mobile-simulator:ios-devices",
-            )
-        matches = [
-            device
-            for device in runtime_devices
-            if isinstance(device, dict)
-            and device.get("name") == target_device_name
-            and device.get("isAvailable", True)
-        ]
-        if len(matches) != 1:
-            raise BlockedError(
-                reason=(
-                    f"Required iOS Simulator {target_device_name!r} on "
-                    f"{spec.ios_runtime!r} is unavailable or ambiguous"
-                ),
-                resource="mobile-simulator:ios-device",
-            )
-        udid = str(matches[0].get("udid") or "").strip()
-        state = str(matches[0].get("state") or "").strip()
-        if not udid:
-            raise BlockedError(
-                reason="Selected iOS Simulator has no UDID",
-                resource="mobile-simulator:ios-device",
-            )
-        owned = state != "Booted"
-        if owned:
-            self._run_checked(
-                ("xcrun", "simctl", "boot", udid),
+        self.register_cleanup(
+            f"simulator-delete:{client_id}:{udid}",
+            lambda: self._run_cleanup(
+                ("xcrun", "simctl", "delete", udid),
                 env=env,
-                timeout=60,
-                resource="mobile-simulator:ios-boot",
-            )
-            self.register_cleanup(
-                f"simulator-shutdown:{udid}",
-                lambda: self._run_cleanup(
-                    ("xcrun", "simctl", "shutdown", udid),
-                    env=env,
-                    resource="mobile-simulator:ios-shutdown",
-                ),
-            )
+                resource=f"mobile-simulator:ios-delete:{client_id}",
+            ),
+        )
+        self._run_checked(
+            ("xcrun", "simctl", "boot", udid),
+            env=env,
+            timeout=60,
+            resource=f"mobile-simulator:ios-boot:{client_id}",
+        )
+        self.register_cleanup(
+            f"simulator-shutdown:{client_id}:{udid}",
+            lambda: self._run_cleanup(
+                ("xcrun", "simctl", "shutdown", udid),
+                env=env,
+                resource=f"mobile-simulator:ios-shutdown:{client_id}",
+            ),
+        )
         self._run_checked(
             ("xcrun", "simctl", "bootstatus", udid, "-b"),
             env=env,
             timeout=180,
-            resource="mobile-simulator:ios-ready",
+            resource=f"mobile-simulator:ios-ready:{client_id}",
         )
         return {
             "udid": udid,
-            "name": target_device_name,
+            "name": device_name,
             "runtime": spec.ios_runtime,
-        }, owned
+        }
 
     def _ready_android_emulator(
         self,
@@ -3431,6 +3575,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
         runtime_base: Path | None = None,
         runtime_cache_base: Path | None = None,
         contract_path: Path | None = None,
+        build_environment: Mapping[str, str] | None = None,
         artifact_fetcher: Any | None = None,
         status_reader: Any | None = None,
         sleep: Any = time.sleep,
@@ -3448,6 +3593,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
             sleep=sleep,
             monotonic=monotonic,
         )
+        self.build_environment = dict(build_environment or {})
         selected = tuple(clients)
         if not selected:
             raise ProvisioningError(
@@ -3532,7 +3678,11 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                     resource="mobile-simulator:source-identity",
                 )
             spec = load_mobile_simulator_spec(self.contract_path)
-            command_env = {**os.environ, **spec.build_environment}
+            command_env = {
+                **os.environ,
+                **self.build_environment,
+                **spec.build_environment,
+            }
             command_env.pop("PT_MOBILE_BUILD_IDENTITY_JSON", None)
             platforms = tuple(
                 sorted({client.platform for client in self.selected_clients})
@@ -3974,6 +4124,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                     spec,
                     env,
                     client_id=client.id,
+                    device_name=spec.ios_device_name,
                 )
                 resources[client.id] = {
                     "platform": "ios",
@@ -4010,67 +4161,6 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                 resource="mobile-simulator:device-isolation",
             )
         return resources
-
-    def _create_isolated_ios_simulator(
-        self,
-        spec: MobileSimulatorSpec,
-        env: Mapping[str, str],
-        *,
-        client_id: str,
-    ) -> dict[str, str]:
-        name = f"Peers Touch {client_id} {os.getpid()}"
-        result = self._run_checked(
-            (
-                "xcrun",
-                "simctl",
-                "create",
-                name,
-                spec.ios_device_name,
-                spec.ios_runtime,
-            ),
-            env=env,
-            timeout=60,
-            resource=f"mobile-simulator:ios-create:{client_id}",
-        )
-        udid = result.stdout.strip()
-        if not udid or "\n" in udid:
-            raise BlockedError(
-                reason="simctl create returned an invalid device identity",
-                resource=f"mobile-simulator:ios-create:{client_id}",
-            )
-        self.register_cleanup(
-            f"simulator-delete:{client_id}:{udid}",
-            lambda: self._run_cleanup(
-                ("xcrun", "simctl", "delete", udid),
-                env=env,
-                resource=f"mobile-simulator:ios-delete:{client_id}",
-            ),
-        )
-        self._run_checked(
-            ("xcrun", "simctl", "boot", udid),
-            env=env,
-            timeout=60,
-            resource=f"mobile-simulator:ios-boot:{client_id}",
-        )
-        self.register_cleanup(
-            f"simulator-shutdown:{client_id}:{udid}",
-            lambda: self._run_cleanup(
-                ("xcrun", "simctl", "shutdown", udid),
-                env=env,
-                resource=f"mobile-simulator:ios-shutdown:{client_id}",
-            ),
-        )
-        self._run_checked(
-            ("xcrun", "simctl", "bootstatus", udid, "-b"),
-            env=env,
-            timeout=180,
-            resource=f"mobile-simulator:ios-ready:{client_id}",
-        )
-        return {
-            "udid": udid,
-            "name": name,
-            "runtime": spec.ios_runtime,
-        }
 
     def _start_isolated_android_emulator(
         self,
@@ -4271,9 +4361,10 @@ class MobileIOSLayoutSimulatorProvisioner(MobileSimulatorProvisioner):
 
             device_resources: dict[str, dict[str, str | bool]] = {}
             for client in spec.clients:
-                device, owned = self._ready_ios_simulator(
+                device = self._create_isolated_ios_simulator(
                     base,
                     command_env,
+                    client_id=client.id,
                     device_name=client.device_name,
                 )
                 device_resources[client.id] = {
@@ -4281,7 +4372,7 @@ class MobileIOSLayoutSimulatorProvisioner(MobileSimulatorProvisioner):
                     "udid": device["udid"],
                     "deviceName": device["name"],
                     "runtimeName": device["runtime"],
-                    "ownedBoot": owned,
+                    "ownedBoot": True,
                 }
 
             first_device = device_resources[spec.clients[0].id]
@@ -4761,6 +4852,341 @@ def _project_device_identity_fields(value: object) -> object:
     return value
 
 
+class MobileStationOutageCapabilityHandler(EphemeralCapabilityHandler):
+    """Parent-owned, fail-safe Station process outage for Mobile recovery."""
+
+    _ALLOWED_OPERATIONS = ("stop", "start")
+
+    def __init__(
+        self,
+        *,
+        deployment_environment: str,
+        expected_commit: str,
+    ) -> None:
+        if os.environ.get(
+            "PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART"
+        ) != "1":
+            raise BlockedError(
+                reason=(
+                    "PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART=1 is "
+                    "required for the authorized Mobile Station outage"
+                ),
+                resource="mobile.station-outage:authorization",
+            )
+        self._config = PosixServiceRuntimeConfig.load(
+            deployment_environment,
+            expected_role="station",
+        )
+        self._transport = self._config.transport()
+        self._expected_commit = expected_commit
+        self._before: dict[str, Any] | None = None
+        self._container_id = ""
+        self._stopped = False
+        self._closed = False
+
+    @property
+    def allowed_operations(self) -> tuple[str, ...]:
+        return self._ALLOWED_OPERATIONS
+
+    @property
+    def sensitive_values(self) -> tuple[str, ...]:
+        return ()
+
+    def invoke(
+        self,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> Mapping[str, object]:
+        self._require_active(
+            deadline_monotonic,
+            cancellation,
+            operation,
+        )
+        if payload:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station outage payload must be empty",
+                resource=f"{MOBILE_STATION_OUTAGE_CAPABILITY_ID}:{operation}",
+            )
+        if operation == "stop":
+            return self._stop_station(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        if operation == "start":
+            return self._start_station(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        raise EphemeralCapabilityBlocked(
+            "Mobile Station outage operation is not implemented",
+            resource=f"{MOBILE_STATION_OUTAGE_CAPABILITY_ID}:{operation}",
+        )
+
+    def project_response(
+        self,
+        operation: str,
+        response: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        projected = dict(response)
+        if projected.get("status") != "OK":
+            return projected
+        result = projected.get("result")
+        expected = {
+            "stop": {
+                "stopped",
+                "deploymentEnvironment",
+                "runtimeOwner",
+                "containerId",
+                "beforeProcessIds",
+                "sourceCommit",
+                "buildCommit",
+            },
+            "start": {
+                "restored",
+                "deploymentEnvironment",
+                "runtimeOwner",
+                "containerId",
+                "beforeProcessIds",
+                "afterProcessIds",
+                "sourceCommit",
+                "buildCommit",
+            },
+        }
+        if (
+            not isinstance(result, Mapping)
+            or operation not in expected
+            or set(result) != expected[operation]
+        ):
+            raise ValueError(
+                "Mobile Station outage response has an invalid shape"
+            )
+        return projected
+
+    def quarantine(self, reason: str, *, deadline_monotonic: float) -> bool:
+        del reason
+        if not self._stopped:
+            return True
+        try:
+            self._start_station(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=threading.Event(),
+            )
+        except Exception:
+            return False
+        return True
+
+    def close(self) -> EphemeralHandlerCleanup:
+        if self._closed:
+            return EphemeralHandlerCleanup(
+                closed=not self._stopped,
+                secrets_zeroized=True,
+            )
+        closed = True
+        if self._stopped:
+            try:
+                self._start_station(
+                    deadline_monotonic=(
+                        time.monotonic()
+                        + SIMULATOR_CAPABILITY_TIMEOUT_SECONDS
+                    ),
+                    cancellation=threading.Event(),
+                )
+            except Exception:
+                closed = False
+        self._closed = closed and not self._stopped
+        return EphemeralHandlerCleanup(
+            closed=closed and not self._stopped,
+            secrets_zeroized=True,
+        )
+
+    def _stop_station(
+        self,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> dict[str, object]:
+        if self._stopped:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station outage is already active",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        before = inspect_posix_runtime(
+            self._config,
+            transport=self._transport,
+        )
+        self._require_commit(before, "before restart")
+        container_id = str(before.get("containerId") or "")
+        if not container_id:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station container identity is unavailable",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        self._require_active(
+            deadline_monotonic,
+            cancellation,
+            "stop",
+        )
+        completed = self._transport.run_argv(
+            ["docker", "stop", "--time", "10", container_id],
+            timeout=self._remaining(deadline_monotonic),
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = redact_text(
+                completed.stderr.strip() or completed.stdout.strip()
+            )
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station process stop failed"
+                + (f": {detail[-1000:]}" if detail else ""),
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        self._before = before
+        self._container_id = container_id
+        self._stopped = True
+        return {
+            "stopped": True,
+            "deploymentEnvironment": self._config.environment_name,
+            "runtimeOwner": before.get("runtimeOwner"),
+            "containerId": container_id,
+            "beforeProcessIds": before.get("processIds"),
+            "sourceCommit": before.get("sourceCommit"),
+            "buildCommit": before.get("buildCommit"),
+        }
+
+    def _start_station(
+        self,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> dict[str, object]:
+        if not self._stopped or self._before is None or not self._container_id:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station outage is not active",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        self._require_active(
+            deadline_monotonic,
+            cancellation,
+            "start",
+        )
+        completed = self._transport.run_argv(
+            ["docker", "start", self._container_id],
+            timeout=self._remaining(deadline_monotonic),
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = redact_text(
+                completed.stderr.strip() or completed.stdout.strip()
+            )
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station process restoration failed"
+                + (f": {detail[-1000:]}" if detail else ""),
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        last_error = ""
+        after: dict[str, Any] | None = None
+        while time.monotonic() < deadline_monotonic:
+            self._require_active(
+                deadline_monotonic,
+                cancellation,
+                "start",
+            )
+            try:
+                candidate = inspect_posix_runtime(
+                    self._config,
+                    transport=self._transport,
+                )
+                self._require_commit(candidate, "after restart")
+                after = candidate
+                break
+            except (BlockedError, ProvisioningError, OSError) as error:
+                last_error = redact_text(str(error))
+                cancellation.wait(1)
+        if after is None:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station process did not recover"
+                + (f": {last_error[-1000:]}" if last_error else ""),
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        if after.get("containerId") != self._container_id:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station container identity changed across restart",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        before_pids = self._before.get("processIds")
+        after_pids = after.get("processIds")
+        if (
+            not isinstance(before_pids, list)
+            or not isinstance(after_pids, list)
+            or not before_pids
+            or not after_pids
+            or before_pids == after_pids
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station process identity did not change",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        result = {
+            "restored": True,
+            "deploymentEnvironment": self._config.environment_name,
+            "runtimeOwner": after.get("runtimeOwner"),
+            "containerId": self._container_id,
+            "beforeProcessIds": before_pids,
+            "afterProcessIds": after_pids,
+            "sourceCommit": after.get("sourceCommit"),
+            "buildCommit": after.get("buildCommit"),
+        }
+        self._stopped = False
+        self._before = None
+        self._container_id = ""
+        return result
+
+    def _require_commit(
+        self,
+        status: Mapping[str, Any],
+        phase: str,
+    ) -> None:
+        source_commit = str(status.get("sourceCommit") or "")
+        build_commit = str(status.get("buildCommit") or "")
+        if not (
+            commits_match(source_commit, self._expected_commit)
+            and commits_match(build_commit, self._expected_commit)
+        ):
+            raise EphemeralCapabilityBlocked(
+                f"Mobile Station source identity changed {phase}",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+
+    def _require_active(
+        self,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+        operation: str,
+    ) -> None:
+        if (
+            self._closed
+            or cancellation.is_set()
+            or time.monotonic() >= deadline_monotonic
+        ):
+            raise EphemeralCapabilityBlocked(
+                f"Mobile Station outage {operation} was cancelled or expired",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+
+    @staticmethod
+    def _remaining(deadline_monotonic: float) -> float:
+        remaining = deadline_monotonic - time.monotonic()
+        if remaining <= 0:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station outage deadline expired",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        return min(remaining, 30.0)
+
+
 class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
     """Keep simulator, Appium, build, and Station topology in the parent."""
 
@@ -4768,6 +5194,9 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
         "create_bound_session",
         "capture_page_source",
         "capture_screenshot",
+        "semantic_click",
+        "semantic_observe",
+        "semantic_set_value",
         "select_binding",
         "authenticate_fixture_actor",
         "begin_access_gate",
@@ -4911,12 +5340,17 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 operation,
             )
             capture_id = self._request_capture_id(payload)
+            session.switch_to_native()
+            try:
+                screenshot = session.screenshot_bytes()
+            finally:
+                session.switch_to_app_webview()
             reference = self._artifact_writer.write_bytes(
                 (
                     "runtime/mobile-simulator/evidence/"
                     f"{capture_id}/{client_id}/screenshot.png"
                 ),
-                session.screenshot_bytes(),
+                screenshot,
                 media_type="image/png",
                 role=(
                     "mobile-simulator-screenshot/"
@@ -4926,6 +5360,57 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             return {
                 "clientId": client_id,
                 "screenshot": reference.to_dict(),
+            }
+        if operation == "semantic_click":
+            self._require_exact_fields(
+                payload,
+                {"clientId", "selector"},
+                operation,
+            )
+            return {
+                "clientId": client_id,
+                "observation": self._semantic_click(
+                    session,
+                    self._semantic_text(payload, "selector", limit=2048),
+                ),
+            }
+        if operation == "semantic_observe":
+            self._require_exact_fields(
+                payload,
+                {"clientId", "selector", "expectedText"},
+                operation,
+            )
+            return {
+                "clientId": client_id,
+                "observation": self._semantic_observe(
+                    session,
+                    self._semantic_text(payload, "selector", limit=2048),
+                    self._semantic_text(
+                        payload,
+                        "expectedText",
+                        limit=65536,
+                        allow_empty=True,
+                    ),
+                ),
+            }
+        if operation == "semantic_set_value":
+            self._require_exact_fields(
+                payload,
+                {"clientId", "selector", "value"},
+                operation,
+            )
+            return {
+                "clientId": client_id,
+                "observation": self._semantic_set_value(
+                    session,
+                    self._semantic_text(payload, "selector", limit=2048),
+                    self._semantic_text(
+                        payload,
+                        "value",
+                        limit=65536,
+                        allow_empty=True,
+                    ),
+                ),
             }
         if operation == "select_binding":
             self._require_exact_fields(
@@ -5045,6 +5530,18 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     "clientId",
                     "screenshot",
                 },
+                "semantic_click": {
+                    "clientId",
+                    "observation",
+                },
+                "semantic_observe": {
+                    "clientId",
+                    "observation",
+                },
+                "semantic_set_value": {
+                    "clientId",
+                    "observation",
+                },
                 "select_binding": {
                     "clientId",
                     "bindingRole",
@@ -5075,6 +5572,161 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             self._assert_no_raw_authority(safe_projection)
         return projected
 
+    @staticmethod
+    def _semantic_text(
+        payload: Mapping[str, object],
+        field: str,
+        *,
+        limit: int,
+        allow_empty: bool = False,
+    ) -> str:
+        value = payload.get(field)
+        if (
+            not isinstance(value, str)
+            or (not allow_empty and not value)
+            or len(value.encode("utf-8")) > limit
+        ):
+            raise EphemeralCapabilityBlocked(
+                f"Mobile semantic DOM {field} is invalid",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:semantic-dom",
+            )
+        return value
+
+    @staticmethod
+    def _semantic_click(session: Any, selector: str) -> dict[str, object]:
+        value = session.execute_script(
+            """
+const node = document.querySelector(arguments[0]);
+if (!node) {
+  return {found: false, visible: false, activated: false, tagName: ''};
+}
+const style = window.getComputedStyle(node);
+const rect = node.getBoundingClientRect();
+const visible = style.display !== 'none'
+  && style.visibility !== 'hidden'
+  && rect.width > 0
+  && rect.height > 0;
+const enabled = !Boolean(node.disabled);
+if (visible && enabled) {
+  node.scrollIntoView({block: 'center', inline: 'nearest'});
+  node.click();
+}
+return {
+  found: true,
+  visible,
+  activated: visible && enabled,
+  tagName: node.tagName.toLowerCase(),
+};
+""",
+            selector,
+        )
+        return MobileSimulatorAppiumCapabilityHandler._semantic_observation(
+            value,
+            {"found", "visible", "activated", "tagName"},
+        )
+
+    @staticmethod
+    def _semantic_observe(
+        session: Any,
+        selector: str,
+        expected_text: str,
+    ) -> dict[str, object]:
+        value = session.execute_script(
+            """
+const node = document.querySelector(arguments[0]);
+if (!node) {
+  return {found: false, visible: false, matched: false, tagName: ''};
+}
+const style = window.getComputedStyle(node);
+const rect = node.getBoundingClientRect();
+const visible = style.display !== 'none'
+  && style.visibility !== 'hidden'
+  && rect.width > 0
+  && rect.height > 0;
+const expected = arguments[1];
+return {
+  found: true,
+  visible,
+  matched: expected.length === 0 || (node.textContent || '').includes(expected),
+  tagName: node.tagName.toLowerCase(),
+};
+""",
+            selector,
+            expected_text,
+        )
+        return MobileSimulatorAppiumCapabilityHandler._semantic_observation(
+            value,
+            {"found", "visible", "matched", "tagName"},
+        )
+
+    @staticmethod
+    def _semantic_set_value(
+        session: Any,
+        selector: str,
+        input_value: str,
+    ) -> dict[str, object]:
+        value = session.execute_script(
+            """
+const node = document.querySelector(arguments[0]);
+if (!node) {
+  return {found: false, visible: false, updated: false, tagName: ''};
+}
+const style = window.getComputedStyle(node);
+const rect = node.getBoundingClientRect();
+const visible = style.display !== 'none'
+  && style.visibility !== 'hidden'
+  && rect.width > 0
+  && rect.height > 0;
+const descriptor = Object.getOwnPropertyDescriptor(
+  node.tagName === 'TEXTAREA'
+    ? HTMLTextAreaElement.prototype
+    : HTMLInputElement.prototype,
+  'value',
+);
+if (visible && descriptor?.set) {
+  descriptor.set.call(node, arguments[1]);
+  node.dispatchEvent(new Event('input', {bubbles: true}));
+  node.dispatchEvent(new Event('change', {bubbles: true}));
+}
+return {
+  found: true,
+  visible,
+  updated: visible && node.value === arguments[1],
+  tagName: node.tagName.toLowerCase(),
+};
+""",
+            selector,
+            input_value,
+        )
+        return MobileSimulatorAppiumCapabilityHandler._semantic_observation(
+            value,
+            {"found", "visible", "updated", "tagName"},
+        )
+
+    @staticmethod
+    def _semantic_observation(
+        value: object,
+        expected_fields: set[str],
+    ) -> dict[str, object]:
+        if not isinstance(value, Mapping) or set(value) != expected_fields:
+            raise EphemeralCapabilityBlocked(
+                "Mobile semantic DOM observation has an invalid shape",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:semantic-dom",
+            )
+        tag_name = value.get("tagName")
+        if not isinstance(tag_name, str):
+            raise EphemeralCapabilityBlocked(
+                "Mobile semantic DOM tag identity is invalid",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:semantic-dom",
+            )
+        for field in expected_fields - {"tagName"}:
+            if not isinstance(value.get(field), bool):
+                raise EphemeralCapabilityBlocked(
+                    "Mobile semantic DOM state is invalid",
+                    resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:semantic-dom",
+                )
+        return dict(value)
+
     def _activate_station_route(
         self,
         session: Any,
@@ -5099,7 +5751,10 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                         "Mobile Relay service endpoint is unavailable",
                         resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:relay",
                     )
-                session.call_action("station.add", {"url": endpoint})
+                session.call_action(
+                    "station.add",
+                    {"url": endpoint, "routeType": "relay"},
+                )
                 snapshot = self._station_route_snapshot(session)
         if route_type not in {"direct", "relay"}:
             raise EphemeralCapabilityBlocked(
@@ -5606,13 +6261,9 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             )
             if not identity_root.is_dir():
                 return False
-            identity_key_ref = (
-                f"station_peer_{self._storage_segment(station_peer_id)}/"
-                f"{self._storage_segment(actor_ptid)}"
-            )
-            identity_file = identity_root / (
-                hashlib.sha256(identity_key_ref.encode("utf-8")).hexdigest()
-                + ".key"
+            identity_file = identity_root / actor_identity_key_name(
+                station_peer_id,
+                actor_ptid,
             )
             if not identity_file.is_file():
                 raise EphemeralCapabilityBlocked(
@@ -5854,7 +6505,10 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 )
             remote_revocation = str(projected_revocation)
         else:
-            addition = session.call_action("station.add", {"url": endpoint})
+            addition = session.call_action(
+                "station.add",
+                {"url": endpoint, "routeType": "direct"},
+            )
             added = _json_safe_mapping(
                 addition,
                 label="Mobile Station addition",
@@ -6092,6 +6746,8 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
 
 class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
     environment_id = STATION_LIFECYCLE_ENVIRONMENT_ID
+    station_profile_keys = MOBILE_SOCIAL_STATION_PROFILE_KEYS
+    require_distinct_station_profiles = True
 
     def __init__(
         self,
@@ -6100,6 +6756,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         base_factory: Any = MobileSimulatorProvisioner,
         overlay_path: Path | None = None,
         base_contract_path: Path | None = None,
+        station_profiles: Mapping[str, str] | None = None,
         session_factory: Callable[[str], Any] | None = None,
     ) -> None:
         super().__init__(contract)
@@ -6110,6 +6767,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         self.base_contract_path = base_contract_path or (
             ENVIRONMENTS_DIR / "mobile-simulator.yaml"
         )
+        self._station_profiles = dict(station_profiles or {})
         self.session_factory = session_factory
         self._base_manifest: MobileSimulatorRuntimeManifest | None = None
         self._overlay_spec: MobileStationLifecycleSimulatorSpec | None = None
@@ -6118,6 +6776,26 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             MobileSimulatorAppiumCapabilityHandler | None
         ) = None
         self._appium_cleanup_registered = False
+
+    def _required_station_profiles(self) -> dict[str, str]:
+        return _validated_station_profiles(
+            environment_id=self.environment_id,
+            profile_keys=self.station_profile_keys,
+            station_profiles=self._station_profiles,
+            require_distinct=self.require_distinct_station_profiles,
+        )
+
+    def _inject_station_profile_bindings(
+        self,
+        profile_env: Mapping[str, str],
+    ) -> dict[str, str]:
+        return _inject_reviewed_station_profiles(
+            environment_id=self.environment_id,
+            profile_keys=self.station_profile_keys,
+            station_profiles=self._station_profiles,
+            require_distinct=self.require_distinct_station_profiles,
+            profile_env=profile_env,
+        )
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -6132,9 +6810,13 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 profile_name=self.environment_id,
                 slot=0,
             )
+            runtime_environment = self._inject_station_profile_bindings(
+                os.environ
+            )
             service_bindings = resolve_mobile_service_bindings(
                 self.contract,
                 self.overlay_path,
+                environment=runtime_environment,
             )
 
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
@@ -6323,7 +7005,9 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         )
         context = EphemeralGateLaunchContext(
             required_capabilities=required_capabilities,
-            request_timeout_seconds=SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
+            request_timeout_seconds=(
+                STATION_LIFECYCLE_CAPABILITY_IDLE_TIMEOUT_SECONDS
+            ),
         )
         context.register_capability(
             SIMULATOR_APPIUM_CAPABILITY_ID,
@@ -6622,7 +7306,12 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                             f"application:{platform}"
                         ),
                     ).items()
-                    if key in {"id", "sha256", "callbackScheme"}
+                    if key in {
+                        "id",
+                        "sha256",
+                        "callbackScheme",
+                        "buildIdentity",
+                    }
                 }
                 for platform in available_platforms
             },
@@ -6875,8 +7564,12 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     service_profile_keys: Mapping[str, tuple[str, str]] = {}
     require_distinct_station_profiles = False
     prepare_cross_station_friendships = False
+    cross_station_friendship_gate_ids: frozenset[str] = frozenset()
+    cross_station_friendship_roles: tuple[str, ...] = ()
+    reset_cross_station_follow_edges = False
     requires_actor_reset = True
     derives_fixture_federation_id = True
+    fixture_federation_context_gate_ids: frozenset[str] = frozenset()
     actor_manifest_kind = ""
     actor_manifest_path = ""
     additional_fixture_roles_by_gate: Mapping[str, tuple[str, ...]] = {}
@@ -6906,6 +7599,8 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         self._actor_identity_resolver = actor_identity_resolver
         self._actor_identity_seed_provider = actor_identity_seed_provider
         self._base_manifest: MobileSimulatorRuntimeManifest | None = None
+        self._transport_environment: dict[str, str] = {}
+        self._transport_trust: dict[str, Any] = {}
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -6931,6 +7626,13 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 self.overlay_path,
                 environment=runtime_environment,
             )
+            (
+                self._transport_environment,
+                self._transport_trust,
+            ) = self._resolve_transport_trust(
+                gate_id,
+                service_bindings,
+            )
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
             for deployment_environment in sorted(
                 {
@@ -6955,11 +7657,19 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 manifest.run_id,
                 service_bindings,
             )
+            self._prepare_service_fixtures(
+                gate_id,
+                manifest,
+                service_bindings,
+            )
 
             base_contract = EnvironmentContract.from_yaml(
                 ENVIRONMENTS_DIR / "mobile-simulator.yaml"
             )
-            base = self.base_factory(base_contract)
+            base = self._new_base_provisioner(
+                base_contract,
+                manifest.source_commit,
+            )
             base.bind_evidence_run(self.evidence_run)
             self.register_cleanup("mobile-simulator-base", base.cleanup)
             base_manifest = base.provision(gate_id)
@@ -7035,6 +7745,8 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     overlay["proof_scope"]["does_not_prove"]
                 ),
             }
+            if self._transport_trust:
+                resources["transportTrust"] = dict(self._transport_trust)
             raw_identity_variants = overlay.get(
                 "gate_mobile_identity_sources",
                 {},
@@ -7140,6 +7852,30 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 reason=blocked.reason,
                 resource=blocked.resource,
             )
+
+    def _new_base_provisioner(
+        self,
+        contract: EnvironmentContract,
+        source_commit: str,
+    ) -> MobileSimulatorProvisioner:
+        del source_commit
+        return self.base_factory(contract)
+
+    def _resolve_transport_trust(
+        self,
+        gate_id: str,
+        service_bindings: Mapping[str, MobileServiceBinding],
+    ) -> tuple[dict[str, str], dict[str, Any]]:
+        del gate_id, service_bindings
+        return {}, {}
+
+    def _prepare_service_fixtures(
+        self,
+        gate_id: str,
+        manifest: RuntimeManifest,
+        service_bindings: Mapping[str, MobileServiceBinding],
+    ) -> None:
+        del gate_id, manifest, service_bindings
 
     def _load_overlay(self) -> dict[str, Any]:
         try:
@@ -7345,54 +8081,12 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         )
 
     def _required_station_profiles(self) -> dict[str, str]:
-        if not self._station_profiles:
-            return {}
-        expected = set(self.station_profile_keys)
-        provided = set(self._station_profiles)
-        missing = sorted(expected - provided)
-        unexpected = sorted(provided - expected)
-        if missing or unexpected:
-            detail = []
-            if missing:
-                detail.append(f"missing={','.join(missing)}")
-            if unexpected:
-                detail.append(f"unexpected={','.join(unexpected)}")
-            raise BlockedError(
-                reason=(
-                    f"{self.environment_id} Station profiles must be "
-                    "specified at run time with --station-profile "
-                    f"SERVICE_ID=PROFILE ({'; '.join(detail)})"
-                ),
-                resource="station-profile-bindings",
-            )
-        invalid = sorted(
-            profile_name
-            for profile_name in self._station_profiles.values()
-            if not PROFILE_NAME_PATTERN.fullmatch(profile_name)
+        return _validated_station_profiles(
+            environment_id=self.environment_id,
+            profile_keys=self.station_profile_keys,
+            station_profiles=self._station_profiles,
+            require_distinct=self.require_distinct_station_profiles,
         )
-        if invalid:
-            raise BlockedError(
-                reason=f"Invalid Station profile name: {invalid[0]!r}",
-                resource="station-profile-bindings",
-            )
-        duplicates = (
-            sorted(
-                profile_name
-                for profile_name in set(self._station_profiles.values())
-                if list(self._station_profiles.values()).count(profile_name) > 1
-            )
-            if self.require_distinct_station_profiles
-            else []
-        )
-        if duplicates:
-            raise BlockedError(
-                reason=(
-                    "Distinct Mobile Station services require distinct runtime "
-                    f"profiles; duplicate={duplicates[0]!r}"
-                ),
-                resource="station-profile-bindings",
-            )
-        return dict(self._station_profiles)
 
     def _required_service_profiles(self) -> dict[str, str]:
         if not self._service_profiles:
@@ -7427,36 +8121,13 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         self,
         profile_env: Mapping[str, str],
     ) -> dict[str, str]:
-        merged = dict(profile_env)
-        for service_id, profile_name in self._required_station_profiles().items():
-            _, station_env = resolve_reviewed_profile_environment(profile_name)
-            if station_env.get("PT_STATION_MODE", "").strip() != "remote":
-                raise BlockedError(
-                    reason=(
-                        f"{self.environment_id} service {service_id!r} requires a "
-                        "remote Station profile"
-                    ),
-                    resource=f"service-profile:{service_id}",
-                )
-            station_url = station_env.get("PT_STATION_URL", "").rstrip("/")
-            deployment_environment = station_env.get(
-                "PT_STATION_DEPLOY_ENV",
-                "",
-            ).strip()
-            if not station_url or not deployment_environment:
-                raise BlockedError(
-                    reason=(
-                        f"Station profile {profile_name!r} has no complete "
-                        "endpoint/deployment binding"
-                    ),
-                    resource=f"service-profile:{service_id}",
-                )
-            url_key, deployment_key = self.station_profile_keys[
-                service_id
-            ]
-            merged[url_key] = station_url
-            merged[deployment_key] = deployment_environment
-        return merged
+        return _inject_reviewed_station_profiles(
+            environment_id=self.environment_id,
+            profile_keys=self.station_profile_keys,
+            station_profiles=self._station_profiles,
+            require_distinct=self.require_distinct_station_profiles,
+            profile_env=profile_env,
+        )
 
     def _inject_service_profile_bindings(
         self,
@@ -7503,10 +8174,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     ) -> dict[str, Any]:
         services: dict[str, Any] = {}
         for service_id, binding in service_bindings.items():
-            if not self._station_ready(
-                binding.endpoint,
-                binding.health_endpoint,
-            ):
+            if not self._service_ready(binding):
                 raise BlockedError(
                     reason=f"Required service {service_id!r} is unhealthy",
                     resource=f"service-health:{service_id}",
@@ -7550,6 +8218,44 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 )
             services[service_id] = attestation
         return services
+
+    def _relay_trust_anchor(
+        self,
+        deployment_environment: str,
+    ) -> tuple[bytes, str]:
+        return resolve_posix_relay_trust_anchor(deployment_environment)
+
+    def _service_ready(self, binding: MobileServiceBinding) -> bool:
+        if binding.kind != "relay":
+            return self._station_ready(
+                binding.endpoint,
+                binding.health_endpoint,
+            )
+        try:
+            certificate, _ = self._relay_trust_anchor(
+                binding.deployment_environment
+            )
+            context = ssl.create_default_context(
+                cadata=certificate.decode("ascii")
+            )
+            request = urllib.request.Request(
+                binding.health_endpoint,
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(
+                request,
+                timeout=8,
+                context=context,
+            ) as response:
+                return 200 <= response.status < 300
+        except (
+            OSError,
+            TimeoutError,
+            UnicodeError,
+            ValueError,
+            urllib.error.URLError,
+        ):
+            return False
 
     def _prepare_actor_fixture(
         self,
@@ -7629,26 +8335,97 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             resolved_actors[service_id] = {
                 actor.role: actor for actor in actors
             }
+            friend_request_lifecycle_prepared = False
+            if gate_id == MOBILE_RECOVERY_GATE_ID:
+                actors_by_role = resolved_actors[service_id]
+                alice = actors_by_role.get("alice")
+                bob = actors_by_role.get("bob")
+                if alice is None or bob is None:
+                    raise BlockedError(
+                        reason=(
+                            "Mobile recovery Fixture requires Alice and Bob"
+                        ),
+                        resource=(
+                            f"{self.environment_id}:"
+                            "friend-request-lifecycle"
+                        ),
+                    )
+                prepare_local_friend_request_lifecycle(
+                    binding.deployment_environment,
+                    alice.ptid,
+                    bob.ptid,
+                    reset_authorized=True,
+                )
+                friend_request_lifecycle_prepared = True
             stations[service_id] = {
                 "targetVerified": self.requires_actor_reset,
                 "existingActorsVerified": not self.requires_actor_reset,
+                "friendRequestLifecyclePrepared": (
+                    friend_request_lifecycle_prepared
+                ),
                 "actors": [
                     {
                         "role": actor.role,
                         "accountRef": actor.account_ref,
                         "ptid": actor.ptid,
                         "devicePolicy": actor.device_policy,
+                        "displayName": actor.display_name,
                         "federatedHandle": actor.federated_handle,
                         "homeStationPeerId": actor.home_station_peer_id,
                     }
                     for actor in actors
                 ],
             }
-        if self.prepare_cross_station_friendships:
+        if self.reset_cross_station_follow_edges:
+            actor_ptids = tuple(sorted({
+                actor.ptid
+                for actors in resolved_actors.values()
+                for actor in actors.values()
+            }))
+            for service_id in station_service_ids:
+                binding = service_bindings[service_id]
+                reset_fixture_follow_edges(
+                    binding.endpoint,
+                    binding.deployment_environment,
+                    actor_ptids,
+                )
+                self.register_cleanup(
+                    f"social-follow-fixture:{service_id}",
+                    partial(
+                        reset_fixture_follow_edges,
+                        binding.endpoint,
+                        binding.deployment_environment,
+                        actor_ptids,
+                    ),
+                )
+        if (
+            self.prepare_cross_station_friendships
+            or gate_id in self.cross_station_friendship_gate_ids
+        ):
+            friendship_roles = set(
+                self.cross_station_friendship_roles
+                or (client.actor for client in environment_clients)
+            )
+            available_roles = {
+                client.actor for client in environment_clients
+            }
+            if (
+                len(friendship_roles) < 2
+                or not friendship_roles.issubset(available_roles)
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"{self.environment_id} friendship role selection "
+                        "is invalid"
+                    ),
+                    resource=f"{self.environment_id}:actor-topology",
+                )
             role_targets: dict[str, tuple[str, str]] = {}
             selected_actors: dict[str, Any] = {}
             for client in environment_clients:
                 role = client.actor
+                if role not in friendship_roles:
+                    continue
                 service_id = client.service_bindings["station"].service_id
                 binding = service_bindings[service_id]
                 target = (
@@ -7680,7 +8457,10 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             )
             for client in environment_clients
         )
-        if self.derives_fixture_federation_id:
+        if (
+            self.derives_fixture_federation_id
+            or gate_id in self.fixture_federation_context_gate_ids
+        ):
             federation_id = fixture_federation_id_from_station_ids(
                 actor["homeStationPeerId"] for actor in selected_actor_routes
             )
@@ -7857,6 +8637,7 @@ class MobileSocialSimulatorProvisioner(
             ),
             runtime_source_commit=source_commit,
             repo_root=REPO_ROOT,
+            build_environment=self._transport_environment,
         )
 
     def _resolve_transport_trust(
@@ -7872,7 +8653,7 @@ class MobileSocialSimulatorProvisioner(
                 reason="Mobile Relay Gate has no Relay service binding",
                 resource="mobile-relay:transport-trust",
             )
-        certificate, digest = self.relay_trust_anchor_provider(
+        certificate, digest = self._relay_trust_anchor(
             relay.deployment_environment
         )
         actual_digest = "sha256:" + hashlib.sha256(certificate).hexdigest()
@@ -7904,6 +8685,12 @@ class MobileSocialSimulatorProvisioner(
                 }
             },
         )
+
+    def _relay_trust_anchor(
+        self,
+        deployment_environment: str,
+    ) -> tuple[bytes, str]:
+        return self.relay_trust_anchor_provider(deployment_environment)
 
     def create_gate_launch_context(
         self,
@@ -8012,6 +8799,13 @@ class MobileRelaySimulatorProvisioner(
         actor_identity_seed_provider: (
             Callable[[str, str, str], bytes] | None
         ) = None,
+        relay_attachment_fixture_factory: (
+            Callable[
+                [EnvironmentContract],
+                StationAccessRelayRoleProvisioner,
+            ]
+            | None
+        ) = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -8026,6 +8820,64 @@ class MobileRelaySimulatorProvisioner(
             ),
             **kwargs,
         )
+        self._relay_attachment_fixture_factory = (
+            relay_attachment_fixture_factory
+            or StationAccessRelayRoleProvisioner
+        )
+
+    def _prepare_service_fixtures(
+        self,
+        gate_id: str,
+        manifest: RuntimeManifest,
+        service_bindings: Mapping[str, MobileServiceBinding],
+    ) -> None:
+        if gate_id not in self.ephemeral_gate_ids:
+            return
+        station = service_bindings.get("station-primary")
+        relay = service_bindings.get("relay")
+        if (
+            station is None
+            or station.kind != "station"
+            or relay is None
+            or relay.kind != "relay"
+            or not relay.health_endpoint
+        ):
+            raise BlockedError(
+                reason="Mobile Relay attachment topology is incomplete",
+                resource="mobile-relay:attachment-fixture",
+            )
+        trust_anchor, _ = self._relay_trust_anchor(
+            relay.deployment_environment
+        )
+        fixture = self._relay_attachment_fixture_factory(
+            EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "station-access-relay-role.yaml"
+            )
+        )
+        self.register_cleanup(
+            "mobile-relay-attachment-fixture",
+            fixture.cleanup,
+        )
+        fixture._prepare_native_relay_fixture(
+            manifest=manifest,
+            station_config=_station_runtime_config(
+                station.deployment_environment,
+                station_url=station.endpoint,
+                allow_profile_managed=True,
+            ),
+            station_url=station.endpoint,
+            relay_url=relay.endpoint,
+            relay_peer_id=_relay_peer_identity(
+                relay.endpoint,
+                relay.health_endpoint,
+                trust_anchor,
+            ),
+            relay_config=PosixServiceRuntimeConfig.load(
+                relay.deployment_environment,
+                expected_role="relay",
+            ),
+            trust_anchor=trust_anchor,
+        )
 
 
 class MobileDirectSimulatorProvisioner(
@@ -8036,6 +8888,13 @@ class MobileDirectSimulatorProvisioner(
     station_profile_keys = MOBILE_DIRECT_STATION_PROFILE_KEYS
     actor_manifest_kind = "mobile-direct-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-direct-simulator-actors.json"
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._station_outage_handler: (
+            MobileStationOutageCapabilityHandler | None
+        ) = None
+        self._station_outage_cleanup_registered = False
 
     def _inject_station_profile_bindings(
         self,
@@ -8082,6 +8941,84 @@ class MobileDirectSimulatorProvisioner(
             deployment_key: deployment_environment,
         }
 
+    def create_gate_launch_context(
+        self,
+        *,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext:
+        if (
+            gate_id != MOBILE_RECOVERY_GATE_ID
+            or required_capabilities
+            != (MOBILE_STATION_OUTAGE_CAPABILITY_ID,)
+        ):
+            raise BlockedError(
+                reason=(
+                    "Mobile Direct recovery Gate requires the exact "
+                    "Station outage capability"
+                ),
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        if (
+            not isinstance(self._manifest, MobileSimulatorRuntimeManifest)
+            or not self._manifest.is_ready()
+            or evidence_run_id != self.evidence_run.run_id
+            or provisioning_run_id != self._manifest.run_id
+        ):
+            raise BlockedError(
+                reason="Mobile Direct parent authorities are not ready",
+                resource=f"ephemeral-capabilities:{gate_id}:run-identities",
+            )
+        service = self._manifest.services.get("station")
+        if (
+            service is None
+            or service.service_kind != "station"
+            or service.workspace_digest != "clean"
+            or not service.deployment_environment
+            or not service.live_commit
+        ):
+            raise BlockedError(
+                reason=(
+                    "Mobile Direct Station outage target is not "
+                    "source-attested"
+                ),
+                resource=f"ephemeral-capabilities:{gate_id}:station",
+            )
+        handler = MobileStationOutageCapabilityHandler(
+            deployment_environment=service.deployment_environment,
+            expected_commit=service.live_commit,
+        )
+        context = EphemeralGateLaunchContext(
+            required_capabilities=required_capabilities,
+            request_timeout_seconds=(
+                MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS
+            ),
+        )
+        context.register_capability(
+            MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            handler,
+        )
+        self._station_outage_handler = handler
+        if not self._station_outage_cleanup_registered:
+            self.register_cleanup(
+                "mobile-station-outage",
+                self._cleanup_station_outage,
+            )
+            self._station_outage_cleanup_registered = True
+        return context
+
+    def _cleanup_station_outage(self) -> None:
+        if self._station_outage_handler is None:
+            return
+        result = self._station_outage_handler.close()
+        self._station_outage_handler = None
+        if not result.closed or not result.secrets_zeroized:
+            raise ProvisioningError(
+                "Mobile Station outage cleanup did not restore the target"
+            )
+
 
 class MobileSocialIOSSimulatorProvisioner(
     _MobileTwoActorSimulatorProvisioner
@@ -8089,12 +9026,51 @@ class MobileSocialIOSSimulatorProvisioner(
     environment_id = "mobile-social-ios-simulator"
     overlay_filename = "mobile-social-ios-simulator.yaml"
     station_profile_keys = MOBILE_DIRECT_STATION_PROFILE_KEYS
-    requires_actor_reset = False
+    requires_actor_reset = True
     actor_manifest_kind = "mobile-social-ios-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-social-ios-simulator-actors.json"
     additional_fixture_roles_by_gate = {
         "mobile-social-ios-native": ("eve",),
     }
+
+    def create_gate_launch_context(
+        self,
+        *,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext:
+        from tooling.acceptance.provisioners.mobile_social_identity import (
+            CAPABILITY_ID,
+            MobileSocialIdentityHandler,
+        )
+        if (
+            gate_id != "mobile-social-ios-native"
+            or required_capabilities != (CAPABILITY_ID,)
+            or self._manifest is None or not self._manifest.is_ready()
+            or evidence_run_id != self.evidence_run.run_id
+            or provisioning_run_id != self._manifest.run_id
+        ):
+            raise BlockedError(
+                reason="iOS Social identity preparation requires its ready owner",
+                resource=CAPABILITY_ID,
+            )
+        service = self._manifest.to_dict()["services"]["station"]
+        handler = MobileSocialIdentityHandler(
+            session_factory=lambda client_id: (
+                MobileStationLifecycleSimulatorProvisioner
+                ._new_appium_session(self, client_id)
+            ),
+            station_url=service["endpoint"],
+            station_peer_id=service["runtimeIdentity"],
+        )
+        context = EphemeralGateLaunchContext(
+            required_capabilities=required_capabilities,
+            request_timeout_seconds=180,
+        )
+        context.register_capability(CAPABILITY_ID, handler)
+        return context
 
 
 class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
@@ -8178,6 +9154,23 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
             desktop_clients = self._desktop_clients(
                 manifest.run_id,
                 clients=environment_clients,
+            )
+            actor_manifest_ref = manifest.actor_manifest_ref
+            if not isinstance(actor_manifest_ref, Mapping):
+                raise BlockedError(
+                    reason=(
+                        "Chat mixed-native actor manifest is unavailable"
+                    ),
+                    resource=(
+                        f"{self.environment_id}:actor-identity-fixture"
+                    ),
+                )
+            actor_manifest = self.evidence_run.store.read_json(
+                ArtifactRef.from_dict(actor_manifest_ref)
+            )
+            self._prepare_desktop_actor_identity_fixtures(
+                desktop_clients,
+                actor_manifest,
             )
             mobile_clients = tuple(
                 client
@@ -8350,6 +9343,102 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
             for client in declared
         )
 
+    @staticmethod
+    def _prepare_desktop_actor_identity_fixtures(
+        clients: Sequence[ClientRuntime],
+        actor_manifest: Mapping[str, Any],
+    ) -> None:
+        routes = actor_manifest.get("clients")
+        stations = actor_manifest.get("stations")
+        if not isinstance(routes, list) or not isinstance(stations, Mapping):
+            raise BlockedError(
+                reason="Chat mixed-native actor manifest is invalid",
+                resource="chat-mixed-native:actor-identity-fixture",
+            )
+        seeds: dict[tuple[str, str], bytearray] = {}
+        try:
+            for client in clients:
+                route = next(
+                    (
+                        value
+                        for value in routes
+                        if isinstance(value, Mapping)
+                        and value.get("id") == client.id
+                    ),
+                    None,
+                )
+                station = (
+                    stations.get(route.get("serviceId"))
+                    if isinstance(route, Mapping)
+                    else None
+                )
+                actors = (
+                    station.get("actors")
+                    if isinstance(station, Mapping)
+                    else None
+                )
+                actor = next(
+                    (
+                        value
+                        for value in actors
+                        if isinstance(value, Mapping)
+                        and value.get("role") == client.actor
+                    ),
+                    None,
+                ) if isinstance(actors, list) else None
+                station_peer_id = (
+                    str(actor.get("homeStationPeerId") or "")
+                    if isinstance(actor, Mapping)
+                    else ""
+                )
+                actor_ptid = (
+                    str(actor.get("ptid") or "")
+                    if isinstance(actor, Mapping)
+                    else ""
+                )
+                if not station_peer_id or not actor_ptid.startswith("ptid:"):
+                    raise BlockedError(
+                        reason=(
+                            "Chat mixed-native Desktop actor identity "
+                            f"scope is incomplete: {client.id}"
+                        ),
+                        resource=(
+                            f"chat-mixed-native:actor-identity:"
+                            f"{client.id}"
+                        ),
+                    )
+                seed = seeds.setdefault(
+                    (station_peer_id, actor_ptid),
+                    bytearray(secrets.token_bytes(32)),
+                )
+                identity_root = (
+                    Path(client.storage_root)
+                    / "peers-touch"
+                    / "desktop"
+                    / "data"
+                    / "secure-store"
+                    / "identity-keys"
+                )
+                identity_root.mkdir(parents=True, mode=0o700)
+                identity_root.chmod(0o700)
+                identity_file = identity_root / actor_identity_key_name(
+                    station_peer_id,
+                    actor_ptid,
+                )
+                descriptor = os.open(
+                    identity_file,
+                    os.O_WRONLY
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    0o600,
+                )
+                with os.fdopen(descriptor, "w", encoding="ascii") as target:
+                    target.write(seed.hex())
+        finally:
+            for seed in seeds.values():
+                seed[:] = b"\x00" * len(seed)
+
     def _cleanup_appium_sessions(self) -> None:
         if self._appium_handler is None:
             return
@@ -8393,6 +9482,25 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
         )
 
 
+class SocialCrossStationMobileDesktopProvisioner(
+    ChatMixedNativeProvisioner
+):
+    environment_id = SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID
+    overlay_filename = "social-cross-station-mobile-desktop.yaml"
+    actor_manifest_kind = (
+        "social-cross-station-mobile-desktop-actor-manifest"
+    )
+    actor_manifest_path = (
+        "runtime/social-cross-station-mobile-desktop-actors.json"
+    )
+    cross_station_friendship_roles = ("alice", "bob")
+    reset_cross_station_follow_edges = True
+    gate_ids = SOCIAL_CROSS_STATION_MIXED_GATE_IDS
+    child_harness_actions = (
+        SOCIAL_CROSS_STATION_MIXED_CHILD_HARNESS_ACTIONS
+    )
+
+
 class StationAccessNativeProvisioner(ChatMixedNativeProvisioner):
     environment_id = STATION_ACCESS_NATIVE_ENVIRONMENT_ID
     overlay_filename = "station-access-native.yaml"
@@ -8400,8 +9508,14 @@ class StationAccessNativeProvisioner(ChatMixedNativeProvisioner):
     service_profile_keys = {}
     require_distinct_station_profiles = False
     prepare_cross_station_friendships = False
+    cross_station_friendship_gate_ids = frozenset(
+        {"station-access-federation-boundary-e2e"}
+    )
     requires_actor_reset = True
     derives_fixture_federation_id = False
+    fixture_federation_context_gate_ids = frozenset(
+        {"station-access-federation-boundary-e2e"}
+    )
     actor_manifest_kind = "station-access-native-actor-manifest"
     actor_manifest_path = "runtime/station-access-native-actors.json"
     gate_ids = STATION_ACCESS_NATIVE_GATE_IDS

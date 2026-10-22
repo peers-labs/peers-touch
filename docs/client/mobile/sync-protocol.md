@@ -1,5 +1,8 @@
 # Peers Touch 多端同步协议设计
 
+> **Status**: active
+> **Updated**: 2026-10-17
+>
 > Durable-command ledger、unknown-outcome readback 与 platform
 > `InteractionAdmission` ownership 已随 Mobile PRODUCT/DESIGN package 于
 > 2026-08-27 接受。
@@ -18,7 +21,8 @@
 - 与 Desktop（Tauri + React/TS + Rust）的同步行为保持语义一致，确保三端用户体验对齐。
 
 ### 1.2 非目标
-- 不讨论 Desktop P2P 通信的具体实现（Mobile 不走 P2P，仅走 Station Relay）。
+- 不讨论 Node Connectivity 的 Direct/Circuit 传输实现；Client 只访问自己的逻辑
+  Station，不参与 Station-to-Station Federation。
 - 不替代各平台内部模块级的 UI/交互设计文档。
 - 不讨论 Station 内部的数据库 Schema 与存储引擎选型。
 - 不讨论 Federation（ActivityPub Station 间通信）的同步细节。
@@ -63,9 +67,9 @@
          │  Tauri Desktop      │             │  Tauri Mobile       │
          │  React + Rust       │             │  Web UI + Rust      │
          │                     │             │  Native Plugins     │
-         │  SSE/WS ← Station   │             │  SSE/WS ← Station   │
-         │  HTTP → Station     │             │  HTTP → Station     │
-         │  P2P ↔ Desktop      │             │  Push ← Station     │
+         │  SSE ← Station      │             │  SSE ← Station      │
+         │  API → Station      │             │  API → Station      │
+         │  Direct/Relay route │             │  Direct/Relay route │
          │  Local Cache        │             │  Local Cache/Outbox │
          └─────────────────────┘             └─────────────────────┘
 ```
@@ -79,7 +83,7 @@
 | 端侧缓存为加速 | 端侧缓存存在的目的是减少延迟与流量，不作为业务决策依据 |
 | 明确写语义 | 每个写操作声明幂等性；只有具备稳定 command ID、Station 去重和结果 readback 的操作才能自动重放 |
 | 增量优先 | 优先增量同步，全量同步仅用于首次加载或极端不一致恢复 |
-| Mobile 仅走 Relay | Mobile 端不参与 P2P 网络，所有通信经由 Station 中继 |
+| Client 不参与业务 Peer mesh | Desktop/Mobile 访问自己的逻辑 Station；route 可为 direct 或已授权 Relay Circuit |
 | Mobile 生命周期感知 | 前台使用事件流，后台依赖 push 与系统任务，恢复前台必须 delta sync |
 
 ---
@@ -368,8 +372,11 @@
 - 网络偏好（仅 Wi-Fi 下载大文件）
 
 **存储方式**：
-- Android：`DataStore`（Preferences DataStore）。
-- iOS：`UserDefaults`。
+- `packages/client-storage/` 定义共享 scope、cache envelope、TTL 与失效语义。
+- `apps/mobile/src/` 的 device settings runtime 通过同一 shared adapter
+  持久化非敏感偏好。
+- 只有需要 OS protection 的字段才进入 Rust typed port 与 Android/iOS
+  secure-storage adapter。
 - 不上传 Station，不跨设备同步。
 
 #### 4.5.4 冲突解决
@@ -532,8 +539,10 @@
   写操作进入队列，其他写操作保持草稿或显式不可用。
 
 **检测机制**：
-- Android：`ConnectivityManager` 监听网络变化 + SSE 连接状态。
-- iOS：`NWPathMonitor` 监听网络变化 + SSE 连接状态。
+- Android/iOS host 只上报 typed network/lifecycle capability facts。
+- Mobile Rust transport 报告 Station/SSE 状态。
+- shared Mobile runtime 合并两类事实并生成 `ONLINE` / `DEGRADED` /
+  `OFFLINE` projection。
 
 ### 6.2 本地缓存深度
 
@@ -687,8 +696,9 @@ MobileDurableCommand {
 **平台实现**：
 - `mobile-web` shared event ingress 负责 Proto decode、dedup、cursor/gap 和
   runtime routing。
-- `mobile-rust` 与 Android/iOS native plugins 只负责连接、push、resume 和
-  network wakeup，不直接注册业务 Handler 或修改 projection。
+- `mobile-rust` 是 Station SSE 连接、认证、取消和 chunk delivery owner。
+- Android/iOS native plugins 只提供 push、lifecycle 和 network wakeup/fact，
+  不直接注册业务 Handler、解析 Station event 或修改 projection。
 
 ### 7.3 事件消息格式
 
@@ -771,8 +781,9 @@ Station 推送事件使用 `model/domain/realtime/event.proto` 生成契约。�
 - refresh_token 过期需重新登录。
 
 **安全存储**：
-- Android：`EncryptedSharedPreferences`（AES-256 加密）。
-- iOS：`Keychain`（系统级安全存储）。
+- Mobile Rust secure-storage port 是唯一应用侧 owner。
+- Android secure-storage plugin 与 iOS Keychain adapter 实现该 port。
+- Token 不进入 Web storage、projection、日志或平台独立业务 client。
 
 ### 8.2 传输加密
 
@@ -835,7 +846,7 @@ Station 推送事件使用 `model/domain/realtime/event.proto` 生成契约。�
 | 编号 | 验收项 | 说明 |
 | --- | --- | --- |
 | S-01 | 传输加密 | 所有通信走 TLS 1.3，禁止明文传输 |
-| S-02 | Token 安全存储 | Token 使用平台安全存储（Keychain / EncryptedSharedPreferences） |
+| S-02 | Token 安全存储 | Token 只经 Rust secure-storage port 进入对应 OS adapter |
 | S-03 | 设备注销有效性 | 远程注销后，被注销设备 10 秒内失去 API 访问能力 |
 | S-04 | 端到端加密 | 加密聊天消息 Station 侧不可解密，日志不记录明文 |
 
@@ -846,4 +857,4 @@ Station 推送事件使用 `model/domain/realtime/event.proto` 生成契约。�
 | C-01 | 幂等性 | 同一写操作重复提交不产生副作用 |
 | C-02 | 事件不丢失 | 在线期间事件投递率 ≥ 99.9%（通过 seq 序列号检测） |
 | C-03 | 冲突解决确定性 | 所有冲突场景的解决结果可预测、可复现 |
-| C-04 | Proto 一致性 | Android / iOS / Desktop 三端的 Proto Model 字段完全一致 |
+| C-04 | Proto 一致性 | Model Proto 为真源；Desktop/Mobile 使用生成绑定，native plugin 不维护平行业务 DTO |

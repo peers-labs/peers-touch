@@ -1,8 +1,8 @@
 # Secure Content - Operational Contract
 
 > **Status**: active
-> **Version**: v1.8
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.9
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 
 ---
@@ -68,6 +68,32 @@ command with a fresh proof. Command state and per-key root-commit state remain
 separate. Logout, account/Station switch, vault lock, revocation and shutdown
 stop admission, fence callbacks and zeroize in-memory secrets.
 
+Under accepted `SC-D30`, the portable core owns the mechanism behind that
+contract:
+
+1. plan endpoint/recovery replenishment from typed inventory;
+2. derive `cpk-pub-v1-*` only from canonical proof-free request bytes;
+3. persist the exact command before dispatch through the encrypted-store port;
+4. acquire one session/lease generation and increment the attempt once;
+5. map transport result to a typed committed/retry/unknown/terminal outcome;
+6. after an unknown may-commit result, require owner-supplied authoritative
+   readback before exact-command retry;
+7. reject stale session/lease completion and lifecycle-cancelled continuation.
+
+`Prepared` owner submissions remain outside background reconciliation until the
+explicit user action acquires them. The portable mechanism never calls Social
+or Conversation submit routes itself. Host adapters may implement HTTP,
+SQLCipher, filesystem, and OS lifecycle details but cannot change these
+decisions.
+
+UCA-05 applies this contract to Moment and Comment submissions on Desktop and
+to private Social submissions on Mobile. A successful may-commit response first
+becomes `COMMITTED_PENDING_READBACK`; only verified owner readback commits the
+local projection. `UNKNOWN_OUTCOME` retries only after
+`AuthoritativeAbsent`. Mobile private-object upload persists
+`ObjectTransferRecord` before begin, checkpoints each completed chunk, and
+resumes through `ObjectTransferWorker`; Social no longer owns a chunk loop.
+
 EC5A requires PostgreSQL receipt contention, pool/Actor lock ordering,
 profile-rotation and revocation races. Its runner requires a DSN, parses
 `go test -json`, and rejects missing, renamed, zero-match, skipped or non-pass
@@ -114,6 +140,36 @@ Fixture acquisition occurs before scenario admission. Missing account,
 Station, revocation, or historical-recovery handles return
 `FIXTURE_CAPABILITY_UNAVAILABLE`. A scenario cannot repair that blocker by
 creating state or mutating owner persistence directly.
+
+CSS-09 prepares one namespaced Federation through the existing Station owner
+on each reviewed disposable Station. The owner uses the canonical governance
+API for creation and joining, retains its access material only in memory, and
+registers archival cleanup before attempting the remote join. Alice and Bob
+consume that explicit Federation through their ordinary client projections;
+their Social sessions never create, join, or administer it. Fixture archival
+must complete before the Suite publishes its result.
+
+iOS Social parity uses the retained preset Actor Identity Fixture across fresh
+Simulator installations. The parent owns `mobile.social.actor-identity`, verifies
+the Appium session belongs to the provisioned Simulator, resolves the selected
+actor against Station identity authority, and invokes the existing Native
+identity preparation action before login. The child receives only a preparation
+acknowledgement. Alice, Bob and Eve account transitions use the same owner;
+missing or mismatched retained material fails closed without replacing Station
+identity. A reset of existing identity requires separate explicit authorization
+and an account-scoped maintenance operation.
+
+Mobile post-login runtime admission must inspect the lifecycle owner's runtime
+availability as well as the authenticated scope. A `failed` dependency is an
+immediate functional failure; waiting for Social activation must not replace
+that failure with a generic convergence timeout. Pending readiness and closed
+write admission remain bounded waits.
+
+Before client cleanup, the Social Gate retains a redacted lifecycle diagnostic
+and the public Social activation/ingress state in Evidence Store. Capture
+failure is supporting diagnostic failure and must not replace the primary
+functional error. Actor/session identifiers, friend requests and stream
+cursors are excluded from this diagnostic projection.
 
 ## 3. Object State Machine
 
@@ -524,6 +580,14 @@ from the attestation's canonical profile and deployment environment through
 the reviewed remote deploy transport. Profile-name, endpoint, caller-supplied
 command, and environment-variable command inference are forbidden. The
 read-only operation cannot carry or inherit a destructive reset declaration.
+
+Native Desktop clients consume the reviewed Profile's canonical
+`PT_STATION_URL` for Station discovery, route verification, and Session
+binding. A maintenance SSH tunnel is only an owner-side transport for
+attestation, Fixture setup, and diagnostics. Its loopback endpoint must never
+replace the signed Station origin supplied to a client. Endpoint discovery
+continues to reject any request origin that differs from the signed canonical
+origin.
 
 ## 12. Operational Evidence
 

@@ -14,7 +14,9 @@ Source of truth:
 
 This is non-negotiable.
 
-If a concept is shared across runtimes or crosses the Client / Model / Station boundary, its contract belongs in proto first.
+If a concept is shared across runtimes or crosses a process or device boundary,
+its wire contract belongs in proto first. This authoring rule does not make
+Model a runtime tier between Client and Station.
 
 ---
 
@@ -99,15 +101,21 @@ Desktop consumes generated contracts in two forms:
 
 ### 5.3 Mobile
 
-Mobile consumes generated contracts under app-owned directories:
+Mobile consumes generated contracts through the shared Mobile runtimes:
 
-- Android output under `apps/mobile/android/...`
-- iOS output under `apps/mobile/ios/PeersTouch/Core/Proto/`
+- TypeScript generated files under `apps/mobile/src/gen/proto/`
+- Rust `prost-build` or module-owned Proto bindings under
+  `apps/mobile/src-tauri/`
 
-The exact build implementation may evolve, but the ownership rule does not:
+Android and iOS native plugins consume a shared contract directly only when a
+typed OS capability boundary requires it. They do not maintain separate Mobile
+business-model outputs.
 
-- generated outputs follow active app paths
-- they do not redefine contract truth
+The ownership rule remains:
+
+- generated outputs follow active consumer paths
+- Android and iOS share one Mobile contract meaning
+- generated code never redefines contract truth
 
 ---
 
@@ -116,7 +124,7 @@ The exact build implementation may evolve, but the ownership rule does not:
 Repository policy entry points are:
 
 - shared / server-side generation: `./model/build.sh`
-- mobile generation: `./tooling/scripts/proto-gen-mobile.sh`
+- Mobile Web generation: `./tooling/scripts/proto-gen-mobile.sh web`
 
 Additional platform-specific generation may exist inside a platform build pipeline, such as Desktop Rust build-time generation.
 
@@ -124,7 +132,8 @@ Regardless of entry point:
 
 - the source remains `model/domain/*.proto`
 - generated outputs must follow active platform paths
-- deprecated Flutter/Dart generation paths must not be expanded
+- a native plugin gets a platform binding only when its typed capability
+  boundary requires the shared contract
 
 ---
 
@@ -150,10 +159,10 @@ When changing a proto contract:
 ## 8. Forbidden Patterns
 
 - hand-writing a parallel shared model because generation feels inconvenient
-- editing `.pb.go`, generated Rust model files, generated TS protobuf files, or Mobile generated outputs manually
+- editing `.pb.go`, generated Rust model files, or generated TS protobuf files manually
 - using JSON-only hand-written cross-runtime DTOs where the same concept already belongs in proto
 - letting generated artifacts land outside active app-owned directories
-- expanding deprecated Flutter/Dart shared-generation paths as if they were still primary
+- generating separate Android/iOS business models for one Mobile product
 
 ---
 
@@ -173,7 +182,7 @@ This keeps contract change upstream and implementation change downstream.
 
 ## 10. Related Documents
 
-- `docs/global/architecture.md`
+- `docs/architecture/architecture.md`
 - `docs/client/mobile/base.md`
 - `docs/station/base.md`
 - `docs/station/subserver-standard.md`

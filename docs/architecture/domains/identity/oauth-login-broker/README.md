@@ -64,6 +64,7 @@ so a dedicated service or database can take over without changing OAuth use case
 | [data-model.md](./data-model.md) | Envelopes and persisted records |
 | [module-layout.md](./module-layout.md) | Source ownership and dependency direction |
 | [integration.md](./integration.md) | Existing-route cutover and deployment configuration |
+| [operator login](./operator-login.md) | Accepted audience-bound console login; not a Station account-login assertion |
 | [delivery plan](./execution-plans/20260930-durable-oauth-login-broker/plan.md) | Completed durable broker delivery |
 | [hardening plan](./execution-plans/20260930-oauth-review-hardening/plan.md) | Completed source-backed review closure |
 | [final review remediation](./execution-plans/20260930-oauth-final-review-remediation/plan.md) | Completed broker-local review closure |
@@ -75,7 +76,7 @@ so a dedicated service or database can take over without changing OAuth use case
 
 ## 5. Upstream Sources
 
-- `docs/global/architecture.md`
+- `docs/architecture/architecture.md`
 - `docs/architecture/platform/station/access/`
 - `docs/architecture/platform/client/mobile/`
 - `docs/architecture/platform/station/access/station-access-gate-architecture.md`

@@ -2,6 +2,7 @@ use crate::proto::chat::PrepareConversationCommandResponse;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandSubmitFailure {
+    Ambiguous,
     Retryable {
         code: String,
     },
@@ -119,6 +120,16 @@ impl<T: CommandTransport, S: OutboxStore> CommandOutboxWorker<T, S> {
             return Ok(CommandDispatchProgress::Idle);
         };
         match self.transport.submit(&command.command_bytes) {
+            Err(CommandSubmitFailure::Ambiguous) => {
+                self.store.mark_command_submitted(
+                    &command.command_id,
+                    &command.command_bytes,
+                    command.attempt_count,
+                )?;
+                Ok(CommandDispatchProgress::Submitted {
+                    command_id: command.command_id,
+                })
+            }
             Ok(()) => {
                 self.store.mark_command_submitted(
                     &command.command_id,
@@ -373,6 +384,30 @@ mod tests {
             CommandDispatchProgress::Failed {
                 command_id: "cmd-3".to_string(),
                 code: "forbidden".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn ambiguous_submission_waits_for_authority_reconciliation() {
+        let store = InMemoryOutbox::new();
+        store.insert("cmd-ambiguous", b"exact command");
+        let worker = CommandOutboxWorker::new(
+            store,
+            RecordingTransport {
+                outcomes: Mutex::new(VecDeque::from([Err(CommandSubmitFailure::Ambiguous)])),
+            },
+            CommandRetryPolicy {
+                initial_delay_ms: 10,
+                maximum_delay_ms: 100,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            worker.dispatch_once(100).unwrap(),
+            CommandDispatchProgress::Submitted {
+                command_id: "cmd-ambiguous".to_string(),
             }
         );
     }

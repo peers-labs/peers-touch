@@ -4670,7 +4670,7 @@ func (s *OrchestrationService) updateTaskStatus(ctx context.Context, db *gorm.DB
 }
 
 func (s *OrchestrationService) turnConfigForNode(actorPTID string, task *persistence.CollaborationTask, node *persistence.CollaborationTaskNode, agent *domain.Agent, runtimeProvider collaborationRuntimeProviderOverride) *TurnConfig {
-	agentPrompt, workspaceRoot := agentRuntimeConfig(agent)
+	workspaceRoot := agentWorkspaceRoot(agent)
 	availableTools := []string{}
 	if s.toolRegistry != nil {
 		availableTools = s.toolRegistry.ToolNames()
@@ -4682,8 +4682,8 @@ func (s *OrchestrationService) turnConfigForNode(actorPTID string, task *persist
 		AgentID:           agent.AgentID,
 		ActorID:           actorPTID,
 		ConversationID:    node.ID,
-		Identity:          agent.Name,
-		AgentConfigPrompt: agentPrompt,
+		Identity:          agent.IdentityPrompt,
+		AgentConfigPrompt: agent.AgentConfigPrompt,
 		Platform:          "agent_canvas",
 		AvailableTools:    availableTools,
 		ContextWindowSize: 128000,
@@ -4754,21 +4754,13 @@ func providerSpecForNode(plan *model.TaskProviderPlan, node *persistence.Collabo
 	return nil
 }
 
-func agentRuntimeConfig(agent *domain.Agent) (string, string) {
+func agentWorkspaceRoot(agent *domain.Agent) string {
 	if agent == nil {
-		return "", ""
+		return ""
 	}
 	var config map[string]interface{}
 	_ = json.Unmarshal([]byte(agent.ConfigJSON), &config)
-	systemPrompt := firstConfigString(config, "systemPrompt", "system_prompt", "prompt")
-	soul := firstConfigString(config, "soulMd", "soul_md")
-	agents := firstConfigString(config, "agentsMd", "agents_md")
-	parts := compactStrings([]string{systemPrompt, soul, agents})
-	if len(parts) == 0 {
-		parts = compactStrings([]string{agent.Description})
-	}
-	workspaceRoot := firstConfigString(config, "rootfsPath", "rootfs_path", "workspaceRoot", "workspace_root")
-	return strings.Join(parts, "\n\n"), workspaceRoot
+	return firstConfigString(config, "rootfsPath", "rootfs_path", "workspaceRoot", "workspace_root")
 }
 
 func agentExecutorKind(agent *domain.Agent) model.ExecutorKind {
