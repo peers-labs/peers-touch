@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 0b04345151c2f7de1af45f82d242b1c97c68195e9581156f7b7cae4db3b3c063
+covered_docs_hash: 923c58f651bdc39efd350bc5408b322697aa8eae2d86ba86bc951e745f347b6f
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,16 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Frozen Source Dispatch Review
+
+Budget execution now stops downstream dispatch on the first source drift,
+after preserving the active Gate's result and cleanup. This implements the
+existing fixed-source proof rule; it does not introduce source rollback,
+workspace mutation, a timeout waiver or another authorization gate.
+The real-child regression covers drift before and during execution, terminal
+cleanup, original aggregate identity and untouched downstream mutation.
+No SKILL.md amendment or new knowledge entry is required.
 
 ## Parent Runtime Reset Lease Review
 
