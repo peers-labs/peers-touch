@@ -618,9 +618,20 @@ class EnvironmentProvisioner(ABC):
         try:
             lease.acquire()
         except ProfileLeaseUnavailable as error:
+            resource = f"profile-lease:{error.resource}"
             raise BlockedError(
                 reason=str(error),
-                resource=f"profile-lease:{error.resource}",
+                resource=resource,
+                diagnostic=ResourceDiagnostic.observed(
+                    owner=f"environment-provisioner:{self.environment_id}",
+                    recovery_action=(
+                        "Coordinate with the recorded lease holder and retry "
+                        "the same reviewed Profile after its owner releases it."
+                    ),
+                    resource=resource,
+                    expected={"leaseAcquired": True},
+                    observed={"leaseAcquired": False, "holder": error.owner},
+                ),
             ) from error
         self.register_cleanup(
             f"profile-lease:{lease.resource}",
@@ -638,6 +649,13 @@ class EnvironmentProvisioner(ABC):
             raise BlockedError(
                 reason=str(error),
                 resource="source-lease:invalid-resource",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner=f"environment-provisioner:{self.environment_id}",
+                    recovery_action="Use the reviewed canonical deployment environment name.",
+                    resource="source-lease:invalid-resource",
+                    expected="canonical deployment environment name",
+                    observed={"requestedResource": resource, "error": str(error)},
+                ),
             ) from error
         if environment_name != resource:
             raise BlockedError(
@@ -646,10 +664,18 @@ class EnvironmentProvisioner(ABC):
                     "canonical lease resource"
                 ),
                 resource="source-lease:invalid-resource",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner=f"environment-provisioner:{self.environment_id}",
+                    recovery_action="Use the reviewed canonical deployment environment name.",
+                    resource="source-lease:invalid-resource",
+                    expected={"requestedResource": environment_name},
+                    observed={"requestedResource": resource},
+                ),
             )
-        environment_path = resolve_deployment_environment_path(environment_name)
-        environment = load_env_file(environment_path)
+        environment: dict[str, str] = {}
         try:
+            environment_path = resolve_deployment_environment_path(environment_name)
+            environment = load_env_file(environment_path)
             lease = RemoteGitSourceLease(
                 environment_name,
                 owner,
@@ -665,12 +691,43 @@ class EnvironmentProvisioner(ABC):
             lease.acquire()
         except (
             ValueError,
+            OSError,
             ProvisioningError,
             RemoteGitSourceLeaseUnavailable,
         ) as error:
+            blocked_resource = f"source-lease:{environment_name}"
             raise BlockedError(
                 reason=str(error),
-                resource=f"source-lease:{environment_name}",
+                resource=blocked_resource,
+                diagnostic=ResourceDiagnostic(
+                    owner=f"environment-provisioner:{self.environment_id}",
+                    recovery_action=(
+                        f"Verify deployment environment {environment_name}, "
+                        "its configured SSH endpoint and lease handshake; "
+                        "coordinate any recorded holder's release, then retry "
+                        "the same reviewed Profile. A handshake failure does "
+                        "not establish remote lock ownership or source drift."
+                    ),
+                    resource_checks=[{
+                        "resource": blocked_resource,
+                        "expected": {"leaseAcquired": True},
+                        "state": "OBSERVED",
+                        "observed": {
+                            "leaseAcquired": False,
+                            "environment": environment_name,
+                            "host": environment.get("PT_DEPLOY_HOST", ""),
+                            "port": environment.get("PT_DEPLOY_SSH_PORT", "22"),
+                            "deployPath": environment.get("PT_DEPLOY_PATH", ""),
+                            "errorType": type(error).__name__,
+                            "error": str(error),
+                        },
+                    }, {
+                        "resource": f"deployment-source:{environment_name}",
+                        "expected": "source verification under an acquired lease",
+                        "state": "NOT_EVALUATED",
+                        "reason": "Source lease acquisition failed before source verification.",
+                    }],
+                ),
             ) from error
         self.register_cleanup(
             f"source-lease:{lease.resource}",

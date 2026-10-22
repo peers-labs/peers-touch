@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 13b106bbdbeff8e810394235bcd78ed624f7c247c57664178f0f9bc9e8cf8f60
+covered_docs_hash: de6676fe49940e61fb101c992bfa429e2d2497dfa4200669734c154815db34c8
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,16 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Generic Lease Diagnostic Review
+
+The canonical Provisioner retains Profile holder observations and remote lease
+configuration/acquisition failures through BlockedError. A failed SSH handshake
+does not establish remote lock ownership or source drift; source verification
+remains explicitly unevaluated. A bounded real subprocess timeout verifies the
+producer, cleanup, Runner sealing and Reporter projection without changing proof
+or lease policy. Existing resource diagnostic and lease checks pass. The existing
+diagnostic review contract needs no new Skill rule.
 
 ## Supporting JSON And Action Focus Review
 

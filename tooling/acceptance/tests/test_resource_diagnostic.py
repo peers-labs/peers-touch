@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import tempfile
 import unittest
@@ -20,6 +21,7 @@ from tooling.acceptance.core.launch_context import (
 )
 from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
+from tooling.acceptance.core.lease import RemoteGitSourceLease
 from tooling.acceptance.core.provisioning import CredentialRef, EnvironmentContract
 from tooling.acceptance.provisioners.home_station import HomeStationProvisioner
 
@@ -49,6 +51,72 @@ def diagnostic() -> ResourceDiagnostic:
 
 
 class ResourceDiagnosticTests(unittest.TestCase):
+    def test_actual_remote_lease_handshake_timeout_seals_unknown_source_state(self) -> None:
+        owner = HomeStationProvisioner(EnvironmentContract(id="home-station"))
+        processes = []
+        start_process = subprocess.Popen
+
+        def observe_process(*args, **kwargs):
+            process = start_process(*args, **kwargs)
+            processes.append(process)
+            return process
+
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            environment = {
+                "PT_DEPLOY_HOST": "127.0.0.1", "PT_DEPLOY_USER": "probe",
+                "PT_DEPLOY_PATH": "/probe",
+                "PT_DEPLOY_SSH_PORT": str(listener.getsockname()[1]),
+            }
+            with patch(
+                "tooling.acceptance.core.provisioner.resolve_deployment_environment_path",
+                return_value=Path("/probe.env"),
+            ), patch(
+                "tooling.acceptance.core.provisioner.load_env_file",
+                return_value=environment,
+            ), patch(
+                "tooling.acceptance.core.provisioner.RemoteGitSourceLease",
+                side_effect=lambda *args, **kwargs: RemoteGitSourceLease(
+                    *args, **kwargs, acquire_timeout=0.1,
+                ),
+            ), patch(
+                "tooling.acceptance.core.lease.subprocess.Popen",
+                side_effect=observe_process,
+            ):
+                with self.assertRaises(BlockedError) as caught:
+                    owner.acquire_remote_git_source_lease("handshake-probe", "probe-owner")
+        error = caught.exception
+        details = error.diagnostic.to_dict()
+        self.assertEqual(details["owner"], "environment-provisioner:home-station")
+        self.assertIn("SSH lease handshake timed out", error.reason)
+        observed = details["resourceChecks"][0]["observed"]
+        self.assertFalse(observed["leaseAcquired"])
+        self.assertEqual(observed["host"], "127.0.0.1")
+        self.assertEqual(details["resourceChecks"][1]["state"], "NOT_EVALUATED")
+        self.assertEqual(len(processes), 1)
+        self.assertIsNotNone(processes[0].poll())
+        runner = script_module("acceptance-run")
+        reporter = script_module("acceptance-report")
+        source = {"commit": "handshake-probe", "workspaceDigest": "clean"}
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=REPO_ROOT)
+            with store.begin_run("handshake-probe", source=source) as run:
+                result = runner.runtime_cell_failure_result(
+                    gate_id="handshake-probe", command="handshake-probe",
+                    environment="home-station", tier="local-evidence",
+                    runtime_cell="handshake-probe", error=error, duration_seconds=0,
+                )
+                result["cleanupStatus"] = "passed"
+                result = runner.record_failure_observation(result, run)
+                result = runner.enrich_result_with_run_artifacts(result, run)
+                run.finalize(result=result)
+                delivered = {**result, "runManifest": run.manifest_ref.to_dict()}
+            projected = reporter.result_diagnostic(delivered, source, store)
+            self.assertEqual(projected["missingFields"], [])
+            self.assertEqual(projected["status"], "blocked")
+            self.assertEqual(delivered["proofStatus"], "UNPROVEN")
+
     def test_home_station_preserves_core_credential_diagnostic(self) -> None:
         variable = "PT_DIAGNOSTIC_TEST_CREDENTIAL"
         owner = HomeStationProvisioner(EnvironmentContract(

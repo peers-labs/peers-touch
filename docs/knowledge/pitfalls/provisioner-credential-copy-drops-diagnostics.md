@@ -21,6 +21,8 @@ A concrete Provisioner can return an opaque credential refusal even when Core
 already records the resolver failure and actual environment-variable presence.
 An ordinary command failure can also carry an unusable owner `__main__` when
 its Gate is executed as a script.
+The generic Profile/source lease owner can independently discard its actual
+failure when converting a lease exception to BlockedError.
 
 ## Root cause
 
@@ -35,6 +37,9 @@ different, business-owned credential sources; they must preserve their actual
 observations and the canonical safe-redaction contract.
 Ordinary Gate failure ownership uses the actual `run` implementation file and
 Gate class, so script invocation does not erase the source location.
+Canonical lease conversion records the acquired/failed result and safe
+configured target fields. A remote handshake timeout leaves source verification
+`NOT_EVALUATED`; it does not establish a remote holder or source mismatch.
 
 ## How to detect a recurrence
 
@@ -50,3 +55,6 @@ and the observed absence of the required variable. Review any concrete
 generic CredentialRef loop creates a second owner.
 The actual subprocess script case must retain its absolute source path and
 `ScriptGate` identity through the ordinary command failure report.
+The real subprocess handshake timeout must survive Runner sealing and Reporter
+projection with no missing diagnostic fields, failed lease acquisition and
+unevaluated source verification. Product proof remains `UNPROVEN`.

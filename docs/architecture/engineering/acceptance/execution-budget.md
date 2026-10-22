@@ -393,6 +393,11 @@ channel 保留同一个检查内容，没有诊断时保持缺失。
 Native Tauri Station 的 commit/protocol mismatch 由其 Provisioner 在实际
 attestation 比较处产生诊断，记录 service ID、Profile、部署环境、期望和
 实际身份、端点，以及对该 Profile 的规范部署和读回动作；不能只返回拒绝文本。
+通用 Profile/source lease 失败由 `EnvironmentProvisioner` 记录实际租约
+获取结果、已配置的部署环境/SSH 端点/路径及原始异常。只有文件锁冲突
+实际返回 holder 时才能记录持有者；SSH 握手超时不证明远端锁被占用、
+源码漂移或主机不存在。未获租约时，后续源码验证明确为 `NOT_EVALUATED`。
+恢复动作定位同一个 reviewed Profile，保留规范租约获取与持有者清理边界。
 
 Runner 为准备异常和 deadline 生成本 Gate 的不可变失败 observation，
 并将原始 Manifest、Report 或 observation 的 ArtifactRef 绑定到每项
