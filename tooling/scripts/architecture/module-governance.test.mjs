@@ -174,6 +174,7 @@ test('current repository satisfies the module registry', () => {
     'agent.mcp.dual-runtime',
     'architecture.module.validate',
     'chat.storage.device-governance',
+    'experience.design.compare',
     'experience.design.evaluate',
     'mobile.social.native-parity',
     'oauth.login.broker',

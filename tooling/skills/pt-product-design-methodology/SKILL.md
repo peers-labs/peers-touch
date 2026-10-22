@@ -205,6 +205,39 @@ node tooling/scripts/experience-design/experience-design.mjs validate-sources
 Missing, conflicting, or unattributed Product intent remains
 `PRODUCT_DESIGN_INCOMPLETE`; do not let Prototype Design infer or repair it.
 
+### Step 2C. Run Comparative Experience Review When Claiming A Gap
+
+When benchmark evidence is used to claim that Peers is materially better or
+worse, use
+`docs/architecture/engineering/experience-design/comparative-experience-review.md`.
+Do not compare feature names, pages or screenshots directly.
+
+Product Design owns:
+
+- the bounded Journey and identity-neutral task prompt;
+- the frozen Outcome Oracle and Comparison Context;
+- benchmark behavior disposition candidates;
+- the post-reveal adopt / adapt / reject / defer review;
+- acceptance or rejection of any projected Target Contract proposal.
+
+Evidence owners supply the two Journey observations. CER tooling validates the
+paired package, blind delta, identity reveal and current Peers EDX binding.
+Reference behavior never becomes Peers Product truth automatically.
+
+Canonical entry:
+
+```bash
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-validate <paired-case.json> --package-root <package-root>
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-evaluate <paired-case.json> --package-root <package-root>
+```
+
+Missing comparability or evidence remains `UNPROVEN`. A Target Contract
+proposal is not accepted Product scope until the Product owner reviews it.
+Source calibration does not prove CER incremental value; that remains a
+separate Quality-owned blind A/B.
+
 ### Step 3. Freeze The Product Capability Profile
 
 Assign stable capability IDs and classify each as:

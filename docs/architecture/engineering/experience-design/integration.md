@@ -1,8 +1,8 @@
 # Experience Design Control Plane - Integration
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-10-18 | **Updated**: 2026-10-20
+> **Version**: v1.3
+> **Created**: 2026-10-18 | **Updated**: 2026-10-22
 > **Owner**: Developer Experience / Product Design
 
 ---
@@ -155,7 +155,39 @@ Tomorrow's real Peers/user examples remain outside calibration. Their first
 blind result must be content-addressed and frozen before an independent review
 or any promoted calibration case is created.
 
-## 9. External Calibration Sources
+## 9. Comparative Review Integration
+
+Product Design invokes CER only after a bounded Journey and product thesis
+exist. Benchmark discovery may propose an Oracle amendment, but paired
+evaluation begins only after Product freezes the Outcome Oracle and Comparison
+Context.
+
+Prototype / runtime / browser owners produce evidence. CER tooling only reads
+explicit metadata and artifacts:
+
+```text
+Product: Oracle + Context
+  -> Evidence owner: Observation A/B + ledgers
+  -> CER: Leg validation + paired evaluation
+  -> Independent blind review
+  -> Identity reveal
+  -> Independent Product disposition review
+  -> Target Contract proposal
+  -> Product acceptance
+  -> existing ExperienceCase / Prototype / Quality lifecycle
+```
+
+The reference leg never consumes Peers UI Grammar. The Peers leg binds its
+current EDX case/result/review only after blind review, so CER can classify
+product-contract absence, candidate drift, implementation gap and platform
+adaptation without leaking identity into materiality.
+
+Quality runs CER calibration as part of the canonical source check. Calibration
+proves schema and failure behavior only. Framework incremental value requires a
+separate Quality-owned sealed A/B and remains `UNPROVEN` until that evidence
+exists.
+
+## 10. External Calibration Sources
 
 External evidence informs the design but does not own Peers contracts:
 

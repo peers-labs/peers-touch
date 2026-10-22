@@ -1,8 +1,8 @@
 # Experience Design Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-10-18 | **Updated**: 2026-10-20
+> **Version**: v1.3
+> **Created**: 2026-10-18 | **Updated**: 2026-10-22
 > **Owner**: Developer Experience / Product Design
 
 ---
@@ -847,3 +847,32 @@ draft contract
 
 The tool stores no mutable lifecycle state. Git sources and explicit
 digest-bound artifacts remain authoritative.
+
+## 17. Comparative Experience Review Supplement
+
+The canonical comparative types and lifecycle are defined in
+[comparative-experience-review.md](./comparative-experience-review.md). They
+supplement rather than replace the single-candidate model in this document.
+
+Boundary:
+
+- `ExperienceCase` remains the canonical Peers contract/candidate/evidence
+  aggregate.
+- `JourneyObservation` is the identity-neutral comparison projection and does
+  not contain Peers UI Grammar or product identity.
+- `PairedExperienceCase` binds one frozen Outcome Oracle, one Comparison
+  Context and two independently reviewed blind legs.
+- `ComparisonEvaluation` contains only deterministic assertion differential,
+  observed path cost, earliest divergence and `UNPROVEN` cells.
+- `BlindedDeltaReport` adds authored mechanism, consequence, falsifier and
+  causal level before identity reveal.
+- `IdentityMap` and the current Peers EDX binding are sealed until the blind
+  review is accepted.
+- `CausalDeltaReport` adds Peers direction, owner, delta kind and Product
+  disposition after reveal.
+- `TargetContractDelta` is a reviewed proposal. It does not mutate
+  `ExperienceContract`.
+
+Every comparative artifact uses canonical SHA-256 binding. A changed Oracle,
+Context, observation, leg evaluation/review, pair evaluation, blind review,
+identity map or disposition review invalidates all dependent artifacts.

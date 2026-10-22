@@ -1,8 +1,8 @@
 # Experience Design Control Plane - Module Layout
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-10-18 | **Updated**: 2026-10-20
+> **Version**: v1.3
+> **Created**: 2026-10-18 | **Updated**: 2026-10-22
 > **Owner**: Developer Experience / Product Design
 
 ---
@@ -20,6 +20,7 @@ docs/
 │   ├── review-result.md
 │   ├── review-kernel-integration.md
 │   ├── review-kernel-layout.md
+│   ├── comparative-experience-review.md
 │   ├── module-layout.md
 │   ├── integration.md
 │   ├── rules.json
@@ -43,6 +44,11 @@ tooling/
 │   ├── source-fence.mjs
 │   ├── review-receipt.mjs
 │   ├── holdout.mjs
+│   ├── comparative-schema.mjs
+│   ├── comparative-evaluator.mjs
+│   ├── comparative-review.mjs
+│   ├── comparative-calibration.mjs
+│   ├── comparative-test-fixture.mjs
 │   ├── calibration.mjs
 │   ├── admission.mjs
 │   ├── evaluator.test.mjs
@@ -50,6 +56,11 @@ tooling/
 │   ├── schema.test.mjs
 │   ├── review-receipt.test.mjs
 │   ├── holdout.test.mjs
+│   ├── comparative-schema.test.mjs
+│   ├── comparative-evaluator.test.mjs
+│   ├── comparative-review.test.mjs
+│   ├── comparative-calibration.test.mjs
+│   ├── comparative-cli.test.mjs
 │   ├── source-version.test.mjs
 │   ├── integration.test.mjs
 │   ├── test-fixture.mjs
@@ -62,6 +73,7 @@ tooling/
 │       ├── holdout-results/
 │       ├── evaluator-snapshots/
 │       ├── reviews/
+│       ├── comparative/
 │       └── holdout-ledger/
 └── skills/
     ├── pt-product-design-methodology/SKILL.md
@@ -80,6 +92,7 @@ tooling/
 | `experience-design/reasoning-kernel.md` | Source-fenced Journey, trust, recovery and Finding reasoning |
 | `experience-design/review-result.md` | ReviewResult and promotion data model |
 | `experience-design/review-kernel-*.md` | Reasoning component integration and layout refinements |
+| `experience-design/comparative-experience-review.md` | Paired Oracle、blind delta、identity reveal、disposition 与 Target Contract 真源 |
 | `experience-design/module-layout.md` | Canonical source layout |
 | `experience-design/integration.md` | Consumer boundaries and cutover |
 | `experience-design/rules.json` | Canonical rule severity, disposition, exit and owner |
@@ -97,6 +110,11 @@ tooling/
 | `experience-design.mjs` | CLI parsing and stable output |
 | `review-receipt.mjs` | Digest and reviewer-independence validation |
 | `holdout.mjs` | Content-addressed blind chain and promotion validation |
+| `comparative-schema.mjs` | Closed CER artifact schema, package containment and digest binding |
+| `comparative-evaluator.mjs` | Oracle assertion differential, observed path cost and earliest-divergence evaluation |
+| `comparative-review.mjs` | Blind review, identity reveal, disposition and Target Contract projection validation |
+| `comparative-calibration.mjs` | CER positive/negative/boundary exact calibration |
+| `comparative-test-fixture.mjs` | Test-only valid package and staged review fixture builder |
 | `admission.mjs` | Final independent decision and current SourceFence admission |
 | `calibration.mjs` | Three-class coverage and exact expectation runner |
 | `fixtures/` | Calibrated cases and content-addressed blind holdout records |

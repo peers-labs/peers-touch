@@ -93,6 +93,43 @@ promotion decision before `retired`. Never expose the answer key before
 `scoring`. EDX-B01 through EDX-B06 are training inputs and are permanently
 ineligible for fresh promotion.
 
+4B. When the change claims a benchmark gap or consumes a CER Target Contract,
+read
+`docs/architecture/engineering/experience-design/comparative-experience-review.md`
+and validate the complete current chain:
+
+```bash
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-review-blind <paired-case.json> <comparison-evaluation.json> \
+  <blinded-deltas.json> <blind-review.json> \
+  --package-root <package-root>
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-review-disposition <paired-case.json> <comparison-evaluation.json> \
+  <blinded-deltas.json> <blind-review.json> <identity-map.json> \
+  <causal-deltas.json> <disposition-review.json> \
+  --package-root <package-root>
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-project-target <paired-case.json> <comparison-evaluation.json> \
+  <blinded-deltas.json> <blind-review.json> <identity-map.json> \
+  <causal-deltas.json> <disposition-review.json> \
+  --package-root <package-root>
+```
+
+Report:
+
+- Oracle and Comparison Context digests;
+- A/B leg review decisions and exact `UNPROVEN` assertions;
+- deterministic material-delta priority;
+- blind review and identity leakage status;
+- revealed Peers EDX binding freshness;
+- disposition review and projected Target Contract IDs;
+- intervention-confirmed evidence, when claimed;
+- framework incremental-value status.
+
+Calibration proves source mechanics only. Do not claim CER outperforms the
+control workflow without a Quality-owned sealed blind A/B whose answer key,
+exposure, score and hard-failure result are frozen independently.
+
 5. Read the external Evidence Store artifacts through the canonical operator
    interface:
 
