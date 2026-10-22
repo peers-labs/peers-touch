@@ -17,11 +17,18 @@ import (
 )
 
 type AgentService struct {
-	eventBus domain.EventBus
+	eventBus        domain.EventBus
+	conversations   *ConversationService
+	externalRuntime *ExternalRuntimeService
+}
+
+func (s *AgentService) SetConversationDeletion(conversations *ConversationService, runtime *ExternalRuntimeService) {
+	s.conversations = conversations
+	s.externalRuntime = runtime
 }
 
 func NewAgentService() *AgentService {
-	return &AgentService{}
+	return &AgentService{conversations: NewConversationService()}
 }
 
 func (s *AgentService) SetEventBus(eventBus domain.EventBus) {
@@ -250,59 +257,113 @@ func (s *AgentService) DeleteAgent(ctx context.Context, actorPTID, agentID strin
 	if err != nil {
 		return err
 	}
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		record, err := getOwnedAgentWithDB(
-			ctx,
-			tx.Clauses(clause.Locking{Strength: "UPDATE"}),
-			actorPTID,
-			agentID,
-		)
-		if err != nil {
+	if s.conversations != nil {
+		var rows []persistence.Conversation
+		if err := db.WithContext(ctx).Where("agent_id = ? AND status <> ?",
+			agentID, string(domain.ConversationStatusDeleted)).Order("id ASC").Find(&rows).Error; err != nil {
 			return err
 		}
-		var activeRuns int64
-		if err := tx.Model(&persistence.EvaluationRun{}).
-			Where(
-				"ptid = ? AND target_agent_id = ? AND deleted_at IS NULL AND status IN ?",
-				strings.TrimSpace(actorPTID),
-				record.ID,
-				[]int32{
-					int32(model.EvaluationRunStatus_EVALUATION_RUN_STATUS_DRAFT),
-					int32(model.EvaluationRunStatus_EVALUATION_RUN_STATUS_PENDING),
-					int32(model.EvaluationRunStatus_EVALUATION_RUN_STATUS_RUNNING),
-					int32(model.EvaluationRunStatus_EVALUATION_RUN_STATUS_CANCEL_INTENT_COMMITTED),
-					int32(model.EvaluationRunStatus_EVALUATION_RUN_STATUS_CANCELLING),
-				},
-			).
-			Count(&activeRuns).Error; err != nil {
-			logger.Errorf(
-				ctx,
-				"failed to count active Agent evaluation runs: actor_ptid=%s agent_id=%s err=%v",
-				actorPTID,
-				agentID,
-				err,
-			)
-			return errcode.New(
-				errcode.AgentInternal,
-				http.StatusInternalServerError,
-				"failed to count active Agent evaluation runs",
-				err,
-			)
+		targets := make([]ConversationDeletionTarget, 0, len(rows))
+		for _, row := range rows {
+			if row.ActorPTID != strings.TrimSpace(actorPTID) {
+				return errcode.New(errcode.AgentActiveDependency, http.StatusConflict,
+					"another actor has conversations depending on Agent", nil)
+			}
+			targets = append(targets, ConversationDeletionTarget{ConversationID: row.ID, ExpectedVersion: row.Version})
 		}
-		if activeRuns > 0 {
-			return errcode.New(
-				errcode.AgentActiveDependency,
-				http.StatusConflict,
-				"active evaluation run depends on Agent",
-				nil,
-			)
-		}
-		if err := tx.Delete(record).Error; err != nil {
-			logger.Errorf(ctx, "failed to delete agent: actor_ptid=%s agent_id=%s err=%v", actorPTID, agentID, err)
-			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to delete agent", err)
-		}
-		return nil
-	})
+		return s.conversations.deleteConversations(ctx, actorPTID, targets, s.externalRuntime,
+			func(tx *gorm.DB) error {
+				if err := s.checkAgentDeletion(ctx, tx, actorPTID, agentID); err != nil {
+					return err
+				}
+				var count int64
+				if err := tx.Model(&persistence.Conversation{}).
+					Where("agent_id = ? AND status <> ?", agentID, string(domain.ConversationStatusDeleted)).
+					Count(&count).Error; err != nil {
+					return err
+				}
+				if count != int64(len(targets)) {
+					return errcode.New(errcode.AgentActiveDependency, http.StatusConflict,
+						"Agent conversations changed during deletion", nil)
+				}
+				return nil
+			},
+			func(tx *gorm.DB) error {
+				now := time.Now()
+				if err := tx.Model(&persistence.AgentCapabilityBinding{}).
+					Where("agent_id = ? AND ptid = ? AND tombstoned_at IS NULL", agentID, actorPTID).
+					Updates(map[string]interface{}{"tombstoned_at": now, "updated_at": now,
+						"revision": gorm.Expr("revision + 1")}).Error; err != nil {
+					return err
+				}
+				for _, binding := range []interface{}{&persistence.AgentKnowledgeBinding{}, &persistence.AgentSkillBinding{}} {
+					if err := tx.Where("agent_id = ?", agentID).Delete(binding).Error; err != nil {
+						return err
+					}
+				}
+				workspaces := tx.Model(&persistence.AgentWorkspace{}).Select("id").Where("agent_id = ?", agentID)
+				if err := tx.Where("workspace_id IN (?)", workspaces).
+					Delete(&persistence.AgentWorkspaceFile{}).Error; err != nil {
+					return err
+				}
+				if err := tx.Where("agent_id = ?", agentID).Delete(&persistence.AgentWorkspace{}).Error; err != nil {
+					return err
+				}
+				return tx.Where("id = ? AND owner_actor_ptid = ?", agentID, actorPTID).Delete(&persistence.Agent{}).Error
+			})
+	}
+	return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+		"conversation deletion service is unavailable", nil)
+}
+
+func (s *AgentService) checkAgentDeletion(ctx context.Context, tx *gorm.DB, actorPTID, agentID string) error {
+	record, err := getOwnedAgentWithDB(
+		ctx,
+		tx.Clauses(clause.Locking{Strength: "UPDATE"}),
+		actorPTID,
+		agentID,
+	)
+	if err != nil {
+		return err
+	}
+	var activeRuns int64
+	if err := tx.Model(&persistence.EvaluationRun{}).
+		Where(
+			"ptid = ? AND target_agent_id = ? AND deleted_at IS NULL AND status IN ?",
+			strings.TrimSpace(actorPTID),
+			record.ID,
+			[]int32{
+				int32(model.EvaluationRunStatus_EVALUATION_RUN_STATUS_DRAFT),
+				int32(model.EvaluationRunStatus_EVALUATION_RUN_STATUS_PENDING),
+				int32(model.EvaluationRunStatus_EVALUATION_RUN_STATUS_RUNNING),
+				int32(model.EvaluationRunStatus_EVALUATION_RUN_STATUS_CANCEL_INTENT_COMMITTED),
+				int32(model.EvaluationRunStatus_EVALUATION_RUN_STATUS_CANCELLING),
+			},
+		).
+		Count(&activeRuns).Error; err != nil {
+		logger.Errorf(
+			ctx,
+			"failed to count active Agent evaluation runs: actor_ptid=%s agent_id=%s err=%v",
+			actorPTID,
+			agentID,
+			err,
+		)
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to count active Agent evaluation runs",
+			err,
+		)
+	}
+	if activeRuns > 0 {
+		return errcode.New(
+			errcode.AgentActiveDependency,
+			http.StatusConflict,
+			"active evaluation run depends on Agent",
+			nil,
+		)
+	}
+	return nil
 }
 
 func (s *AgentService) getVisibleAgent(ctx context.Context, actorPTID, agentID string) (*persistence.Agent, error) {

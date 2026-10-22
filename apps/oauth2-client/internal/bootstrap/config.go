@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -30,6 +31,15 @@ type rawSite struct {
 	BridgeSecret    string                         `json:"bridge_secret"`
 	AllowedReturnTo []string                       `json:"allowed_return_to"`
 	Providers       map[string]port.ProviderConfig `json:"providers"`
+	OperatorLogin   *rawOperatorLogin              `json:"operator_login,omitempty"`
+}
+
+type rawOperatorLogin struct {
+	Audience             string `json:"audience"`
+	CallbackURL          string `json:"callback_url"`
+	SigningKeyID         string `json:"signing_key_id"`
+	SigningPrivateKeyB64 string `json:"signing_private_key_b64"`
+	RedeemSecretB64      string `json:"redeem_secret_b64"`
 }
 
 type rawProviderLite struct {
@@ -47,6 +57,7 @@ type rawSiteLite struct {
 	BridgeSecret    string                     `json:"bridge_secret"`
 	AllowedReturnTo []string                   `json:"allowed_return_to"`
 	Providers       map[string]rawProviderLite `json:"providers"`
+	OperatorLogin   *rawOperatorLogin          `json:"operator_login,omitempty"`
 }
 
 type rawFileConfig struct {
@@ -96,6 +107,13 @@ func LoadSiteRegistry() (usecase.SiteRegistry, error) {
 			len(providers) == 0 {
 			continue
 		}
+		operatorLogin, err := buildOperatorLoginConfig(
+			siteID,
+			item.OperatorLogin,
+		)
+		if err != nil {
+			return nil, err
+		}
 		sites[siteID] = usecase.SiteConfig{
 			SiteID:          siteID,
 			SuccessURL:      successURL,
@@ -103,6 +121,7 @@ func LoadSiteRegistry() (usecase.SiteRegistry, error) {
 			AllowedReturnTo: normalizeAllowedReturnTo(item.AllowedReturnTo),
 			BridgeSecret:    firstNonEmpty(strings.TrimSpace(item.BridgeSecret), strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET"))),
 			Providers:       providers,
+			OperatorLogin:   operatorLogin,
 		}
 	}
 	if len(sites) == 0 {
@@ -210,6 +229,13 @@ func buildFromLite(rawSites []rawSiteLite) (usecase.SiteRegistry, error) {
 			len(providers) == 0 {
 			continue
 		}
+		operatorLogin, err := buildOperatorLoginConfig(
+			siteID,
+			s.OperatorLogin,
+		)
+		if err != nil {
+			return nil, err
+		}
 		allowedReturnTo := s.AllowedReturnTo
 		if allowedReturnToOverride != "" {
 			allowedReturnTo = strings.Split(allowedReturnToOverride, ",")
@@ -221,6 +247,7 @@ func buildFromLite(rawSites []rawSiteLite) (usecase.SiteRegistry, error) {
 			AllowedReturnTo: normalizeAllowedReturnTo(allowedReturnTo),
 			BridgeSecret:    firstNonEmpty(strings.TrimSpace(s.BridgeSecret), strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET"))),
 			Providers:       providers,
+			OperatorLogin:   operatorLogin,
 		}
 	}
 	if len(sites) == 0 {
@@ -280,6 +307,10 @@ func loadFromSingleSiteEnv() (usecase.SiteRegistry, error) {
 	if len(providers) == 0 {
 		return nil, errors.New("no_provider_enabled")
 	}
+	operatorLogin, err := buildOperatorLoginConfig(siteID, operatorLoginFromEnv())
+	if err != nil {
+		return nil, err
+	}
 	sites := map[string]usecase.SiteConfig{
 		siteID: {
 			SiteID:          siteID,
@@ -288,6 +319,7 @@ func loadFromSingleSiteEnv() (usecase.SiteRegistry, error) {
 			AllowedReturnTo: normalizeAllowedReturnTo(strings.Split(os.Getenv("OAUTH_ALLOWED_RETURN_TO"), ",")),
 			BridgeSecret:    strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET")),
 			Providers:       providers,
+			OperatorLogin:   operatorLogin,
 		},
 	}
 	if err := validateProductionSites(sites); err != nil {
@@ -386,16 +418,112 @@ func validAbsoluteURL(raw string, providerRedirect bool) bool {
 	return true
 }
 
+func operatorLoginFromEnv() *rawOperatorLogin {
+	value := &rawOperatorLogin{
+		Audience:             strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_AUDIENCE")),
+		CallbackURL:          strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_CALLBACK_URL")),
+		SigningKeyID:         strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_SIGNING_KEY_ID")),
+		SigningPrivateKeyB64: strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_SIGNING_PRIVATE_KEY_B64")),
+		RedeemSecretB64:      strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_REDEEM_SECRET_B64")),
+	}
+	if value.Audience == "" &&
+		value.CallbackURL == "" &&
+		value.SigningKeyID == "" &&
+		value.SigningPrivateKeyB64 == "" &&
+		value.RedeemSecretB64 == "" {
+		return nil
+	}
+	return value
+}
+
+func buildOperatorLoginConfig(
+	siteID string,
+	raw *rawOperatorLogin,
+) (*usecase.OperatorLoginSiteConfig, error) {
+	env := operatorLoginFromEnv()
+	envSiteID := strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_SITE_ID"))
+	if envSiteID != "" && envSiteID != siteID {
+		env = nil
+	}
+	if raw == nil {
+		if envSiteID == "" || envSiteID != siteID {
+			return nil, nil
+		}
+		raw = env
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	audience := strings.TrimSpace(raw.Audience)
+	callbackURL := strings.TrimSpace(raw.CallbackURL)
+	signingKeyID := strings.TrimSpace(raw.SigningKeyID)
+	signingPrivateKeyB64 := strings.TrimSpace(raw.SigningPrivateKeyB64)
+	redeemSecretB64 := strings.TrimSpace(raw.RedeemSecretB64)
+	if env != nil {
+		audience = firstNonEmpty(audience, env.Audience)
+		callbackURL = firstNonEmpty(callbackURL, env.CallbackURL)
+		signingKeyID = firstNonEmpty(signingKeyID, env.SigningKeyID)
+		signingPrivateKeyB64 = firstNonEmpty(
+			signingPrivateKeyB64,
+			env.SigningPrivateKeyB64,
+		)
+		redeemSecretB64 = firstNonEmpty(
+			redeemSecretB64,
+			env.RedeemSecretB64,
+		)
+	}
+	callback, err := url.Parse(callbackURL)
+	if err != nil ||
+		callback.Scheme != "https" ||
+		callback.Host == "" ||
+		callback.User != nil ||
+		callback.RawQuery != "" ||
+		callback.Fragment != "" ||
+		audience == "" ||
+		len(audience) > 128 ||
+		signingKeyID == "" ||
+		len(signingKeyID) > 128 ||
+		strings.TrimSpace(siteID) == "" {
+		return nil, errors.New("invalid_operator_login_configuration")
+	}
+	privateKeyBytes, err := decodeBase64Value(signingPrivateKeyB64, ed25519.SeedSize)
+	if err != nil {
+		return nil, errors.New("invalid_operator_login_signing_key")
+	}
+	var privateKey ed25519.PrivateKey
+	switch len(privateKeyBytes) {
+	case ed25519.SeedSize:
+		privateKey = ed25519.NewKeyFromSeed(privateKeyBytes)
+	case ed25519.PrivateKeySize:
+		privateKey = append(ed25519.PrivateKey(nil), privateKeyBytes...)
+	default:
+		return nil, errors.New("invalid_operator_login_signing_key")
+	}
+	_, err = decodeBase64Value(redeemSecretB64, 32)
+	if err != nil {
+		return nil, errors.New("invalid_operator_login_redeem_secret")
+	}
+	return &usecase.OperatorLoginSiteConfig{
+		Audience:          audience,
+		CallbackURL:       callback.String(),
+		SigningKeyID:      signingKeyID,
+		SigningPrivateKey: privateKey,
+		RedeemSecret:      []byte(redeemSecretB64),
+	}, nil
+}
+
 func validateProductionSites(sites map[string]usecase.SiteConfig) error {
 	if strings.TrimSpace(os.Getenv("VERCEL")) == "" {
 		return nil
 	}
 	for _, site := range sites {
-		if strings.TrimSpace(site.BridgeSecret) == "" {
-			return errors.New("production_bridge_secret_required")
-		}
-		if len(site.AllowedReturnTo) == 0 {
-			return errors.New("production_return_to_allowlist_required")
+		if site.OperatorLogin == nil {
+			if strings.TrimSpace(site.BridgeSecret) == "" {
+				return errors.New("production_bridge_secret_required")
+			}
+			if len(site.AllowedReturnTo) == 0 {
+				return errors.New("production_return_to_allowlist_required")
+			}
 		}
 		for _, provider := range site.Providers {
 			redirect, err := url.Parse(provider.RedirectURI)

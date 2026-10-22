@@ -128,3 +128,5 @@ boundary so browser number precision cannot alter the database identifier.
 
 - [Product state model](./product-state-model.md)
 - [Integration](./integration.md)
+- [Home Relay/corpstable deployment contract](./home-corpstable-integration.md)
+  — accepted application of the existing lifecycle; no runtime or stable-reset claim.

@@ -1,18 +1,17 @@
+import { useEffect, useState } from 'react';
 import { ChatPage } from '../../../pages/ChatPage';
 import { AgentProfilePage } from '../../../pages/AgentProfilePage';
-import { PortalPanel } from '../../portal';
 import { useActiveAgentSlice } from '../useActiveAgentStores';
+import { PortalPanel } from '../../portal';
 
 interface ConversationRailProps {
   narrow: boolean;
-  onOpenProfile: (agentName: string) => void;
   onOpenChat: (agentName: string) => void;
   onOpenOrchestration?: () => void;
 }
 
 export function ConversationRail({
   narrow,
-  onOpenProfile,
   onOpenChat,
   onOpenOrchestration,
 }: ConversationRailProps) {
@@ -20,6 +19,13 @@ export function ConversationRail({
     selectedAgent: state.selectedAgent,
     currentSurface: state.agentSurfaces[state.selectedAgent] || 'chat',
   }));
+  const [profileMounted, setProfileMounted] = useState(
+    currentSurface === 'profile',
+  );
+
+  useEffect(() => {
+    if (currentSurface === 'profile') setProfileMounted(true);
+  }, [currentSurface]);
 
   return (
     <main
@@ -43,22 +49,41 @@ export function ConversationRail({
           flexDirection: 'column',
         }}
       >
-        {currentSurface === 'profile' ? (
-          <AgentProfilePage
-            agentName={selectedAgent}
-            onBack={() => onOpenChat(selectedAgent)}
-            onOpenOrchestration={onOpenOrchestration}
-            embedded
-          />
-        ) : (
-          <ChatPage onOpenProfile={() => onOpenProfile(selectedAgent)} narrow={narrow} />
+        <div
+          data-pt-agent-chat-frame
+          aria-hidden={currentSurface !== 'chat'}
+          style={{
+            display: currentSurface === 'chat' ? 'flex' : 'none',
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            flexDirection: 'column',
+          }}
+        >
+          <ChatPage narrow={narrow} />
+        </div>
+        {(profileMounted || currentSurface === 'profile') && (
+          <div
+            data-pt-agent-profile-frame
+            aria-hidden={currentSurface !== 'profile'}
+            style={{
+              display: currentSurface === 'profile' ? 'flex' : 'none',
+              flex: 1,
+              minWidth: 0,
+              minHeight: 0,
+              flexDirection: 'column',
+            }}
+          >
+            <AgentProfilePage
+              agentName={selectedAgent}
+              onBack={() => onOpenChat(selectedAgent)}
+              onOpenOrchestration={onOpenOrchestration}
+              embedded
+            />
+          </div>
         )}
       </div>
-      {!narrow && currentSurface === 'chat' ? (
-        <aside data-pt-agent-inspector style={{ display: 'contents' }}>
-          <PortalPanel />
-        </aside>
-      ) : null}
+      {currentSurface === 'chat' && <PortalPanel artifactsOnly overlay={narrow} />}
     </main>
   );
 }

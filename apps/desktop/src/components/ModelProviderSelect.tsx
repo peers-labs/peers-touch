@@ -7,10 +7,12 @@ import { Divider, Skeleton, theme } from 'antd';
 import { useAgentStore } from '../store/agent';
 import type { AvailableModel } from '../services/desktop_api';
 import { useTranslation } from 'react-i18next';
+import { availableModelIdentityKey } from '../utils/modelIdentity';
 
 interface ModelProviderSelectProps {
   models?: AvailableModel[];
   selectedModelId?: string;
+  selectedProviderId?: string;
   onSelect: (modelId: string, providerId: string) => void;
   onClose: () => void;
   onNavigateSettings?: () => void;
@@ -25,6 +27,7 @@ function formatContextWindow(v: number): string {
 export function ModelProviderSelect({
   models,
   selectedModelId,
+  selectedProviderId,
   onSelect,
   onClose,
   onNavigateSettings,
@@ -33,11 +36,13 @@ export function ModelProviderSelect({
   const { token } = theme.useToken();
   const availableModels = useAgentStore(s => s.availableModels);
   const defaultModel = useAgentStore(s => s.defaultModel);
+  const defaultProviderId = useAgentStore(s => s.defaultProviderId);
   const modelsLoading = useAgentStore(s => s.loading);
   const [searchQuery, setSearchQuery] = useState('');
 
   const effectiveModels = models ?? availableModels;
   const currentId = selectedModelId ?? defaultModel;
+  const currentProviderId = selectedProviderId ?? defaultProviderId;
   // Show loading skeleton only when using store models (not prop-injected) and loading for the first time
   const showSkeleton = !models && modelsLoading && effectiveModels.length === 0;
 
@@ -119,7 +124,7 @@ export function ModelProviderSelect({
                 </div>
                 {provModels.map((m) => (
                   <div
-                    key={m.id}
+                    key={availableModelIdentityKey(m)}
                     role="button"
                     tabIndex={0}
                     onClick={() => {
@@ -135,20 +140,32 @@ export function ModelProviderSelect({
                       cursor: 'pointer',
                       transition: 'background 0.15s',
                       margin: '0 4px',
-                      background: m.id === currentId ? token.colorPrimaryBg : 'transparent',
+                      background: m.id === currentId && m.provider_id === currentProviderId
+                        ? token.colorPrimaryBg
+                        : 'transparent',
                     }}
                     onMouseEnter={(e) => {
-                      if (m.id !== currentId) e.currentTarget.style.background = token.colorFillTertiary;
+                      if (m.id !== currentId || m.provider_id !== currentProviderId) {
+                        e.currentTarget.style.background = token.colorFillTertiary;
+                      }
                     }}
                     onMouseLeave={(e) => {
-                      if (m.id !== currentId) e.currentTarget.style.background = 'transparent';
+                      if (m.id !== currentId || m.provider_id !== currentProviderId) {
+                        e.currentTarget.style.background = 'transparent';
+                      }
                     }}
                   >
                     <div style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <ProviderIcon providerId={m.provider_id || ''} providerName={m.provider_name} size={20} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.id === currentId ? 500 : 400 }}>
+                      <div style={{
+                        fontSize: 13,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        fontWeight: m.id === currentId && m.provider_id === currentProviderId ? 500 : 400,
+                      }}>
                         {m.display_name || m.id}
                       </div>
                     </div>
@@ -173,7 +190,7 @@ export function ModelProviderSelect({
                           {formatContextWindow(m.context_window)}
                         </span>
                       )}
-                      {m.id === currentId && (
+                      {m.id === currentId && m.provider_id === currentProviderId && (
                         <Check size={14} style={{ color: token.colorPrimary, marginLeft: 2 }} />
                       )}
                     </Flexbox>

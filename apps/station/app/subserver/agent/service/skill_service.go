@@ -38,10 +38,19 @@ const (
 type SkillService struct {
 	guard         *SkillsGuardService
 	growthMetrics *GrowthMetricsService
+	capabilities  *CapabilityAuthorityService
+	db            *gorm.DB
 }
 
 func NewSkillService(guard *SkillsGuardService, growthMetrics *GrowthMetricsService) *SkillService {
 	return &SkillService{guard: guard, growthMetrics: growthMetrics}
+}
+
+func (s *SkillService) SetCapabilityAuthority(authority *CapabilityAuthorityService) {
+	s.capabilities = authority
+	if authority != nil {
+		s.db = authority.db
+	}
 }
 
 func (s *SkillService) recordGrowthEvent(ctx context.Context, agentID, eventType, target, details string) {
@@ -160,13 +169,22 @@ func (s *SkillService) CreateSkill(
 		UpdatedAt:   now,
 	}
 
-	if err := db.WithContext(ctx).Create(&row).Error; err != nil {
+	var registered *model.CapabilityManifest
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&row).Error; err != nil {
+			return err
+		}
+		s.recordVersion(ctx, tx, &row, "create")
+		var err error
+		_, registered, err = s.syncSkillCapabilityTx(
+			tx, nil, &row, "skill_created",
+		)
+		return err
+	}); err != nil {
 		logger.Errorf(ctx, "skill create failed: name=%s, err=%v", name, err)
 		return nil, scanResult, errcode.New(errcode.AgentInternal, 500, "failed to create skill", err)
 	}
-
-	// Record initial version for rollback history.
-	s.recordVersion(ctx, db, &row, "create")
+	s.publishSkillCapabilityChanges(ctx, nil, registered)
 
 	logger.Infof(ctx, "skill created: id=%s, name=%s, verdict=%s, policy=%s",
 		row.ID, name, scanResult.Verdict, policy)
@@ -204,32 +222,13 @@ func (s *SkillService) PatchSkill(ctx context.Context, agentID, name, oldStr, ne
 		return nil, err
 	}
 
-	// Record current version before mutation for rollback history.
-	s.recordVersion(ctx, db, row, "patch")
-
-	now := time.Now()
-	if err := db.WithContext(ctx).
-		Model(&persistence.Skill{}).
-		Where("id = ?", row.ID).
-		Updates(map[string]interface{}{
-			"content":    patched,
-			"version":    row.Version + 1,
-			"updated_at": now,
-		}).Error; err != nil {
-		logger.Errorf(ctx, "skill patch failed: name=%s, err=%v", name, err)
-		return nil, errcode.New(errcode.AgentInternal, 500, "failed to patch skill", err)
+	updated, _, err := s.UpdateSkill(
+		ctx, agentID, row.ID, nil, nil, &patched, nil,
+	)
+	if err != nil {
+		return nil, err
 	}
-
-	row.Content = patched
-	row.Version++
-	row.UpdatedAt = now
-
-	logger.Infof(ctx, "skill patched: name=%s, version=%d", name, row.Version)
-
-	s.recordGrowthEvent(ctx, row.AgentID, EventSkillPatched, name, row.ID)
-
-	m := s.toManifest(row)
-	return &m, nil
+	return updated, nil
 }
 
 // DeleteSkill removes a skill by agent ID and name.
@@ -238,26 +237,11 @@ func (s *SkillService) DeleteSkill(ctx context.Context, agentID, name string) er
 	if err != nil {
 		return err
 	}
-
-	result := db.WithContext(ctx).
-		Where("agent_id = ? AND name = ?", agentID, name).
-		Delete(&persistence.Skill{})
-
-	if result.Error != nil {
-		logger.Errorf(ctx, "skill delete failed: name=%s, err=%v", name, result.Error)
-		return errcode.New(errcode.AgentInternal, 500, "failed to delete skill", result.Error)
+	row, err := s.findByName(ctx, db, agentID, name)
+	if err != nil {
+		return err
 	}
-
-	if result.RowsAffected == 0 {
-		return errcode.New(errcode.AgentNotFound, 404,
-			fmt.Sprintf("skill '%s' not found for agent '%s'", name, agentID), nil)
-	}
-
-	logger.Infof(ctx, "skill deleted: agent_id=%s, name=%s", agentID, name)
-
-	s.recordGrowthEvent(ctx, agentID, EventSkillDeleted, name, "")
-
-	return nil
+	return s.DeleteSkillByID(ctx, agentID, row.ID)
 }
 
 // UpdateSkill mutates durable skill metadata/content by skill ID and preserves
@@ -290,20 +274,35 @@ func (s *SkillService) UpdateSkill(
 		nextDescription = *description
 	}
 	nextContent := row.Content
-	contentChanged := false
 	if content != nil {
 		nextContent = *content
-		contentChanged = nextContent != row.Content
 	}
+	nextEnabled := row.Enabled
+	if enabled != nil {
+		nextEnabled = *enabled
+	}
+	contentChanged := nextContent != row.Content
+	changed := nextName != row.Name ||
+		nextDescription != row.Description ||
+		contentChanged ||
+		nextEnabled != row.Enabled
 
 	if err := s.validateContent(nextDescription, nextContent); err != nil {
 		return nil, nil, err
 	}
+	if !changed {
+		current := s.toManifest(row)
+		return &current, nil, nil
+	}
 
+	now := time.Now()
 	updates := map[string]interface{}{
 		"name":        nextName,
 		"description": nextDescription,
-		"updated_at":  time.Now(),
+		"content":     nextContent,
+		"enabled":     nextEnabled,
+		"version":     row.Version + 1,
+		"updated_at":  now,
 	}
 	var scanResult *domain.ScanResult
 
@@ -318,31 +317,53 @@ func (s *SkillService) UpdateSkill(
 				nil,
 			)
 		}
-		s.recordVersion(ctx, db, row, "update")
 		verdictStr := string(scan.Verdict)
-		updates["content"] = nextContent
 		updates["scan_verdict"] = &verdictStr
-		updates["version"] = row.Version + 1
 		scanResult = scan
 	}
 
-	if enabled != nil {
-		updates["enabled"] = *enabled
+	updated := *row
+	updated.Name = nextName
+	updated.Description = nextDescription
+	updated.Content = nextContent
+	updated.Enabled = nextEnabled
+	updated.Version = row.Version + 1
+	updated.UpdatedAt = now
+	if verdict, ok := updates["scan_verdict"].(*string); ok {
+		updated.ScanVerdict = verdict
 	}
-
-	if err := db.WithContext(ctx).
-		Model(&persistence.Skill{}).
-		Where("id = ? AND agent_id = ?", skillID, agentID).
-		Updates(updates).Error; err != nil {
+	var retired, registered *model.CapabilityManifest
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if contentChanged {
+			s.recordVersion(ctx, tx, row, "update")
+		}
+		result := tx.Model(&persistence.Skill{}).
+			Where(
+				"id = ? AND agent_id = ? AND version = ?",
+				skillID, agentID, row.Version,
+			).
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errcode.New(
+				errcode.AgentVersionConflict, 409,
+				"skill version changed during update", nil,
+			)
+		}
+		var syncErr error
+		retired, registered, syncErr = s.syncSkillCapabilityTx(
+			tx, row, &updated, "skill_revised",
+		)
+		return syncErr
+	})
+	if err != nil {
 		logger.Errorf(ctx, "skill update failed: id=%s, err=%v", skillID, err)
 		return nil, scanResult, errcode.New(errcode.AgentInternal, 500, "failed to update skill", err)
 	}
-
-	updated, err := s.findByID(ctx, db, agentID, skillID)
-	if err != nil {
-		return nil, scanResult, err
-	}
-	m := s.toManifest(updated)
+	s.publishSkillCapabilityChanges(ctx, retired, registered)
+	m := s.toManifest(&updated)
 	s.recordGrowthEvent(ctx, agentID, EventSkillPatched, updated.Name, updated.ID)
 	return &m, scanResult, nil
 }
@@ -362,10 +383,36 @@ func (s *SkillService) DeleteSkillByID(ctx context.Context, agentID, skillID str
 			fmt.Sprintf("skill %s not found for agent %s", skillID, agentID), err)
 	}
 
-	if err := db.WithContext(ctx).Delete(&persistence.Skill{}, "id = ? AND agent_id = ?", skillID, agentID).Error; err != nil {
+	var retired *model.CapabilityManifest
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var syncErr error
+		retired, _, syncErr = s.syncSkillCapabilityTx(
+			tx, &row, nil, "skill_deleted",
+		)
+		if syncErr != nil {
+			return syncErr
+		}
+		result := tx.Delete(
+			&persistence.Skill{},
+			"id = ? AND agent_id = ? AND version = ?",
+			skillID, agentID, row.Version,
+		)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errcode.New(
+				errcode.AgentVersionConflict, 409,
+				"skill version changed during delete", nil,
+			)
+		}
+		return nil
+	})
+	if err != nil {
 		logger.Errorf(ctx, "skill delete failed: id=%s, err=%v", skillID, err)
 		return errcode.New(errcode.AgentInternal, 500, "failed to delete skill", err)
 	}
+	s.publishSkillCapabilityChanges(ctx, retired, nil)
 
 	logger.Infof(ctx, "skill deleted: agent_id=%s id=%s name=%s", agentID, skillID, row.Name)
 	s.recordGrowthEvent(ctx, agentID, EventSkillDeleted, row.Name, row.ID)
@@ -523,12 +570,82 @@ func (s *SkillService) RecordSkillUsage(ctx context.Context, agentID string, ski
 // ── Internal helpers ────────────────────────────────────────────────────────
 
 func (s *SkillService) getDB(ctx context.Context) (*gorm.DB, error) {
+	if s.db != nil {
+		return s.db, nil
+	}
 	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
 	if err != nil {
 		logger.Errorf(ctx, "agent database not available: %v", err)
 		return nil, errcode.New(errcode.AgentInternal, 500, "database unavailable", err)
 	}
 	return db, nil
+}
+
+func (s *SkillService) syncSkillCapabilityTx(
+	tx *gorm.DB,
+	previous *persistence.Skill,
+	current *persistence.Skill,
+	reason string,
+) (*model.CapabilityManifest, *model.CapabilityManifest, error) {
+	if s.capabilities == nil {
+		return nil, nil, nil
+	}
+	var retired *model.CapabilityManifest
+	if previous != nil {
+		retired = capabilitySkillManifestSeed(*previous).manifest
+		result := tx.Model(&persistence.CapabilityManifest{}).
+			Where(
+				"capability_id = ? AND version = ? AND owner_ptid = ? AND retired_at IS NULL",
+				retired.GetCapabilityId(),
+				retired.GetVersion(),
+				retired.GetOwnerPtid(),
+			).
+			Updates(map[string]interface{}{
+				"availability":      int32(model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED),
+				"retired_at":        time.Now().UTC(),
+				"retired_by_ptid":   "station:skill-lifecycle",
+				"retirement_reason": reason,
+			})
+		if result.Error != nil {
+			return nil, nil, capabilityInternal("retire Skill capability manifest", result.Error)
+		}
+	}
+	var registered *model.CapabilityManifest
+	if current != nil {
+		var err error
+		registered, _, err = s.capabilities.registerManifestTx(
+			tx,
+			capabilitySkillManifestSeed(*current).manifest,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return retired, registered, nil
+}
+
+func (s *SkillService) publishSkillCapabilityChanges(
+	ctx context.Context,
+	retired *model.CapabilityManifest,
+	registered *model.CapabilityManifest,
+) {
+	if s.capabilities == nil {
+		return
+	}
+	if retired != nil {
+		s.capabilities.publishManifestInvalidations(
+			ctx,
+			domain.AgentAuthorityInvalidationManifestRetired,
+			retired,
+		)
+	}
+	if registered != nil {
+		s.capabilities.publishManifestInvalidations(
+			ctx,
+			domain.AgentAuthorityInvalidationManifestRegistered,
+			registered,
+		)
+	}
 }
 
 func (s *SkillService) findByName(ctx context.Context, db *gorm.DB, agentID, name string) (*persistence.Skill, error) {
@@ -731,66 +848,27 @@ func (s *SkillService) RollbackSkill(ctx context.Context, agentID, skillID strin
 			fmt.Sprintf("version %d not found for skill %s", targetVersion, skillID), err)
 	}
 
-	// Load current skill.
-	var skill persistence.Skill
-	if err := db.WithContext(ctx).
-		Where("id = ? AND agent_id = ?", skillID, agentID).
-		First(&skill).Error; err != nil {
-		return errcode.New(errcode.AgentNotFound, 404,
-			fmt.Sprintf("skill %s not found for agent %s", skillID, agentID), err)
+	updated, _, err := s.UpdateSkill(
+		ctx, agentID, skillID, nil, nil, &version.Content, nil,
+	)
+	if err != nil {
+		return err
 	}
-
-	// Record current state as a version before rollback.
-	s.recordVersion(ctx, db, &skill, "rollback")
-
-	// Restore content and bump version.
-	now := time.Now()
-	newVersion := skill.Version + 1
-	if err := db.WithContext(ctx).
-		Model(&persistence.Skill{}).
-		Where("id = ?", skill.ID).
-		Updates(map[string]interface{}{
-			"content":    version.Content,
-			"version":    newVersion,
-			"updated_at": now,
-		}).Error; err != nil {
-		return errcode.New(errcode.AgentInternal, 500, "failed to rollback skill", err)
-	}
-
-	logger.Infof(ctx, "skill rolled back: id=%s, from_version=%d to_version=%d, new_version=%d",
-		skillID, skill.Version, targetVersion, newVersion)
-
+	logger.Infof(
+		ctx,
+		"skill rolled back: id=%s target_version=%d new_version=%d",
+		skillID, targetVersion, updated.Version,
+	)
 	return nil
 }
 
 // ToggleSkill enables or disables a skill. Disabled skills are excluded from
 // BuildSkillIndex, effectively deactivating them without deletion.
 func (s *SkillService) ToggleSkill(ctx context.Context, agentID, skillID string, enabled bool) error {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return err
-	}
-
-	result := db.WithContext(ctx).
-		Model(&persistence.Skill{}).
-		Where("id = ? AND agent_id = ?", skillID, agentID).
-		Update("enabled", enabled)
-
-	if result.Error != nil {
-		return errcode.New(errcode.AgentInternal, 500, "failed to toggle skill", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return errcode.New(errcode.AgentNotFound, 404,
-			fmt.Sprintf("skill %s not found for agent %s", skillID, agentID), nil)
-	}
-
-	state := "enabled"
-	if !enabled {
-		state = "disabled"
-	}
-	logger.Infof(ctx, "skill %s: id=%s, agent=%s", state, skillID, agentID)
-
-	return nil
+	_, _, err := s.UpdateSkill(
+		ctx, agentID, skillID, nil, nil, nil, &enabled,
+	)
+	return err
 }
 
 // hasRequiredTools returns true if all required tools are available.

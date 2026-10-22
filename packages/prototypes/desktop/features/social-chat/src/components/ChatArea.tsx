@@ -1231,6 +1231,7 @@ function CallHud({
   onToggleCam: () => void;
   onAudioDevice: (device: string) => void;
   onVideoDevice: (device: string) => void;
+  onHangup: () => void;
   onPeerAccept: () => void;
   onSimWeak: () => void;
 }) {

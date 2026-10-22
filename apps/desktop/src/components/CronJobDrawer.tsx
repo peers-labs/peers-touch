@@ -16,8 +16,17 @@ import { Input, Tag, Button, TextArea } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import { Sparkles, Terminal, Bot, ChevronDown } from 'lucide-react';
 import { ModelSelect } from './ModelSelect';
+import { findUniqueAvailableModelById } from '../utils/modelIdentity';
 import type { ModelRef } from '../services/desktop_api';
-import { api, type CronJob, type CronJobCreate, type Agent, type Channel, type AvailableModel, type ChatTarget } from '../services/desktop_api';
+import {
+  api,
+  type Agent,
+  type AvailableModel,
+  type ChannelBindingInfo,
+  type ChannelChat,
+  type CronJob,
+  type CronJobCreate,
+} from '../services/desktop_api';
 import { useTranslation } from 'react-i18next';
 import { AgentIconTile } from './agent/AgentIconTile';
 
@@ -235,7 +244,7 @@ function parseModelOverride(raw: string, models: AvailableModel[]): ModelRef | u
     const sep = raw.indexOf('/');
     return { provider: raw.slice(0, sep), model: raw.slice(sep + 1) };
   }
-  const found = models.find((m) => m.id === raw);
+  const found = findUniqueAvailableModelById(models, raw);
   return found ? { provider: found.provider_id, model: found.id } : undefined;
 }
 
@@ -250,7 +259,6 @@ function parseModelOverride(raw: string, models: AvailableModel[]): ModelRef | u
    Hidden OpenClaw concepts (kept in backend, not exposed in UI):
    - Session target (main/isolated): always "isolated", no heartbeat system
    - Wake mode: always "now", no heartbeat
-   - Delivery (mode/channel/to): no messaging channels
    - Account ID: no multi-account
    - Session key: auto-generated as "cron:<jobId>"
    - Light context: OpenClaw-specific
@@ -275,11 +283,11 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
   const [execKind, setExecKind] = useState<string>('agent');
   const [cronExpr, setCronExpr] = useState('0 9 * * *');
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channels, setChannels] = useState<ChannelBindingInfo[]>([]);
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [cronDefaultRef, setCronDefaultRef] = useState<ModelRef | null>(null);
   const [modelOverride, setModelOverride] = useState<string>('');
-  const [deliveryTargets, setDeliveryTargets] = useState<ChatTarget[]>([]);
+  const [deliveryTargets, setDeliveryTargets] = useState<ChannelChat[]>([]);
   const [deliveryTargetId, setDeliveryTargetId] = useState<string>('');
   const [deliveryTargetType, setDeliveryTargetType] = useState<string>('');
   const [loadingTargets, setLoadingTargets] = useState(false);
@@ -296,8 +304,8 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
     }
     setLoadingTargets(true);
     try {
-      const res = await api.listChannelChats(channelId);
-      setDeliveryTargets(res.chats || []);
+      const chats = await api.listChannelChats(channelId);
+      setDeliveryTargets(chats);
     } catch {
       setDeliveryTargets([]);
     } finally {
@@ -310,7 +318,7 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
   useEffect(() => {
     if (open) {
       api.listAgents().then(setAgents).catch(() => {});
-      api.listChannels().then(setChannels).catch(() => {});
+      api.listChannelBindings().then(setChannels).catch(() => {});
       api.listAvailableModels().then((r) => setAvailableModels(r.models || [])).catch(() => {});
       api.getModelConfig('cronDefault').then((r) => {
         setCronDefaultRef(r.ref || r.resolved || null);
@@ -701,10 +709,10 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                 >
                   <ModelSelect
                     models={availableModels}
-                    value={modelValue?.model}
-                    onChange={(modelId) => {
-                      const m = availableModels.find((m) => m.id === modelId);
-                      if (m) handleModelChange({ provider: m.provider_id, model: m.id });
+                    value={modelValue}
+                    onChange={(next) => {
+                      if (next) handleModelChange(next);
+                      else setModelOverride('');
                     }}
                     placeholder={t('cron.drawer.field.modelPlaceholder')}
                   />
@@ -783,8 +791,8 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                             placeholder={t('cron.drawer.field.deliveryChannelPlaceholder')}
                             allowClear
                             options={channels.filter((c) => c.enabled).map((c) => ({
-                              value: c.id,
-                              label: `${c.name} (${c.type})`,
+                              value: c.bindingId,
+                              label: `${c.name} (${c.providerKind})`,
                             }))}
                             onChange={(val) => {
                               setDeliveryTargetId('');
@@ -812,12 +820,12 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                             value={deliveryTargetId || undefined}
                             onChange={(val) => {
                               setDeliveryTargetId(val || '');
-                              const target = deliveryTargets.find((t) => t.id === val);
-                              setDeliveryTargetType(target?.type || '');
+                              const target = deliveryTargets.find((t) => t.chatId === val);
+                              setDeliveryTargetType(target?.chatType || '');
                             }}
                             options={deliveryTargets.map((t) => ({
-                              value: t.id,
-                              label: t.type === 'p2p' ? `DM: ${t.name}` : t.name,
+                              value: t.chatId,
+                              label: t.chatType === 'p2p' ? `DM: ${t.name}` : t.name,
                             }))}
                           />
                         </Form.Item>
@@ -827,8 +835,8 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                             placeholder={t('cron.drawer.field.failureChannelPlaceholder')}
                             allowClear
                             options={channels.filter((c) => c.enabled).map((c) => ({
-                              value: c.id,
-                              label: `${c.name} (${c.type})`,
+                              value: c.bindingId,
+                              label: `${c.name} (${c.providerKind})`,
                             }))}
                           />
                         </Form.Item>

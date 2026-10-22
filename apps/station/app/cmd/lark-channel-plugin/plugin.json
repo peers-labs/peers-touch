@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "lark",
+  "name": "Feishu/Lark",
+  "version": "1.0.0",
+  "description": "Official Feishu long-connection channel plugin",
+  "providerKind": "lark",
+  "entry": {
+    "linux/amd64": {"path": "bin/lark-channel-plugin"},
+    "linux/arm64": {"path": "bin/lark-channel-plugin"},
+    "linux/riscv64": {"path": "bin/lark-channel-plugin"}
+  },
+  "capabilities": [
+    "messaging.receive",
+    "messaging.send",
+    "messaging.longconn",
+    "messaging.rich-content",
+    "messaging.resources",
+    "messaging.cards",
+    "messaging.groups"
+  ],
+  "protocol": {"min": 3, "max": 3}
+}

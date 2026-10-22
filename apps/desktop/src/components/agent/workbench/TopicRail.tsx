@@ -1,7 +1,6 @@
 import { ActionIcon } from '@lobehub/ui';
 import { theme } from 'antd';
-import { MessageSquarePlus, UserRound } from 'lucide-react';
-import { useCallback } from 'react';
+import { Hash, MessageSquarePlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../../../store/chat';
 import {
@@ -9,24 +8,23 @@ import {
   useActiveAgentTopicSlice,
   useActiveChatSlice,
 } from '../useActiveAgentStores';
-import { openAgentCreateFlow } from '../create';
 import { AgentSidebar } from '../../AgentSidebar';
 import { PanelToggleDock } from './PanelToggleDock';
 
 interface TopicRailProps {
   collapsed: boolean;
+  fullWidth?: boolean;
   onToggle: () => void;
   onOpenProfile: (agentName: string) => void;
   onOpenChat: (agentName: string) => void;
-  onNavigateMarketplace?: () => void;
 }
 
 export function TopicRail({
   collapsed,
+  fullWidth = false,
   onToggle,
   onOpenProfile,
   onOpenChat,
-  onNavigateMarketplace,
 }: TopicRailProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
@@ -35,7 +33,10 @@ export function TopicRail({
     currentAgent: state.agents.find((agent) => agent.name === state.selectedAgent),
   }));
   const newSession = useActiveChatSlice((state) => state.newSession);
-  const upsertTopics = useActiveAgentTopicSlice((state) => state.upsertTopics);
+  const { upsertTopics, topicCount } = useActiveAgentTopicSlice((state) => ({
+    upsertTopics: state.upsertTopics,
+    topicCount: currentAgent ? (state.topicsByAgentId[currentAgent.id]?.length || 0) : 0,
+  }));
 
   const startNewTopic = () => {
     newSession();
@@ -46,10 +47,6 @@ export function TopicRail({
     if (currentAgent && draft) upsertTopics(currentAgent.id, [draft]);
     onOpenChat(selectedAgent);
   };
-
-  const handleCreateAgent = useCallback(() => {
-    openAgentCreateFlow(onOpenProfile);
-  }, [onOpenProfile]);
 
   if (collapsed) {
     return (
@@ -78,11 +75,14 @@ export function TopicRail({
           size={{ blockSize: 36, size: 16 }}
         />
         <ActionIcon
-          icon={UserRound}
-          title={t('agent.sidebar.agentProfile')}
-          onClick={() => onOpenProfile(selectedAgent)}
+          data-pt-agent-topics-expand
+          icon={Hash}
+          title={t('agent.sidebar.topicsCount', { count: topicCount })}
+          aria-label={t('agent.sidebar.topicsCount', { count: topicCount })}
+          onClick={onToggle}
           size={{ blockSize: 36, size: 16 }}
         />
+        <span style={{ fontSize: 11, color: token.colorTextSecondary }}>{topicCount}</span>
         <PanelToggleDock
           open={false}
           title={t('agent.chat.expandPanel')}
@@ -96,8 +96,8 @@ export function TopicRail({
     <aside
       data-pt-topic-rail="expanded"
       style={{
-        width: 230,
-        minWidth: 230,
+        width: fullWidth ? '100%' : 238,
+        minWidth: fullWidth ? 0 : 238,
         height: '100%',
         position: 'relative',
         borderRight: `1px solid ${token.colorBorderSecondary}`,
@@ -108,18 +108,16 @@ export function TopicRail({
       }}
     >
       <AgentSidebar
-        hideAgentPicker
-        onCreateAgent={handleCreateAgent}
-        onEditAgent={(agent) => onOpenProfile(agent.name)}
         onNavigateProfile={onOpenProfile}
         onNavigateChat={() => onOpenChat(selectedAgent)}
-        onNavigateMarketplace={onNavigateMarketplace}
       />
-      <PanelToggleDock
-        open
-        title={t('agent.chat.collapsePanel')}
-        onClick={onToggle}
-      />
+      {!fullWidth && (
+        <PanelToggleDock
+          open
+          title={t('agent.chat.collapsePanel')}
+          onClick={onToggle}
+        />
+      )}
     </aside>
   );
 }

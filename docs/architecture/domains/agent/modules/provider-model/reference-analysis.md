@@ -3,6 +3,7 @@
 > Step 1b of the architecture design methodology.
 > Source: LobeHub `src/store/aiInfra/`, `src/features/ModelSwitchPanel/`, `src/services/aiModel`, `src/services/aiProvider`
 > Comparison: Peers-Touch `peers-ai-agent/apps/desktop/src/store/provider.ts`, `store/agent.ts`, `components/ModelSelect.tsx`
+> Historical benchmark only. Current Peers contract: `peers-design.md`.
 
 ---
 

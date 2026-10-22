@@ -1559,6 +1559,13 @@ func (s *ToolDispatchService) SubmitDecision(
 		if call.ApprovalID != request.GetApprovalId() {
 			return unauthorizedToolRequest("approval identity mismatch")
 		}
+		if call.ToolName == clarificationToolName {
+			if err := validateClarificationAnswer(call.BoundedArguments, request.GetAnswer(), request.GetApproved()); err != nil {
+				return err
+			}
+		} else if request.GetAnswer() != "" {
+			return invalidToolRequest("only clarification decisions accept an answer")
+		}
 		if call.DecisionRevision != request.GetExpectedRevision() {
 			response = decisionRejection(
 				request,
@@ -1737,6 +1744,9 @@ func (s *ToolDispatchService) SubmitDecision(
 			"updated_at":            now,
 		}
 		var outcomeError *model.ErrorPayload
+		if call.ToolName == clarificationToolName && request.GetApproved() {
+			update["clarification_answer"] = request.GetAnswer()
+		}
 		if !request.GetApproved() {
 			update["ended_at"] = now
 			update["error_code"] = string(errcode.AgentToolApprovalDenied)
@@ -3501,6 +3511,18 @@ func (s *ToolDispatchService) proposeCallTx(
 	}
 	risk := authorization.Risk
 	policy := authorization.Policy
+	// A question always waits for a human, even when ordinary tools are automatic.
+	if call.ToolName == clarificationToolName {
+		if authorization.ExecutionOwner != model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION {
+			return ProposalDecision{}, invalidToolRequest("clarification must be Station-owned")
+		}
+		if err := validateClarificationAnswer(call.Arguments, "", false); err != nil {
+			return ProposalDecision{}, err
+		}
+		if policy != ToolPolicyDeny {
+			policy = ToolPolicyManual
+		}
+	}
 	boundedArguments := authorization.BoundedArguments
 	if boundedArguments == nil {
 		boundedArguments = call.Arguments
@@ -4733,14 +4755,18 @@ func continuationIDForBatch(tx *gorm.DB, batchID string) string {
 }
 
 func decisionPayloadHash(request *model.SubmitToolApprovalDecisionRequest) string {
-	return hashString(fmt.Sprintf(
+	canonical := fmt.Sprintf(
 		"%s\x00%s\x00%s\x00%d\x00%t",
 		request.GetApprovalId(),
 		request.GetToolCallId(),
 		request.GetDecisionId(),
 		request.GetExpectedRevision(),
 		request.GetApproved(),
-	))
+	)
+	if request.GetAnswer() != "" {
+		canonical += "\x00" + request.GetAnswer()
+	}
+	return hashString(canonical)
 }
 
 func policyDecisionPayloadHash(call *persistence.ToolCall) string {

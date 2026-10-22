@@ -1,5 +1,6 @@
 packages:
   - apps/official-site
+  - apps/x-config/console
   - apps/mobile
   - apps/desktop
   - apps/desktop/applets-dev/*

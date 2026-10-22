@@ -120,6 +120,24 @@ export function projectAgentComposerReadiness(
   nowMs = Date.now(),
 ): AgentComposerReadinessProjection {
   const normalizedAgentId = agentId.trim();
+  const enabledBindings = bindings.filter(
+    (binding) => binding.enabled && !binding.tombstonedAt,
+  );
+  if (normalizedAgentId && enabledBindings.length === 0) {
+    return {
+      state: 'ready',
+      compatibility: 'compatible',
+      canSend: true,
+      authority: STATION_CAPABILITY_AUTHORITY,
+      reasonCode: 'no_enabled_capability_bindings',
+      snapshotId: snapshot?.snapshotId.trim() ?? '',
+      runtimeSnapshotId: snapshot?.runtimeSnapshotId.trim() ?? '',
+      modelCapabilitySnapshotId:
+        snapshot?.modelCapabilities?.snapshotId.trim() ?? '',
+      createdAtMs: timestampToMs(snapshot?.createdAt),
+      expiresAtMs: timestampToMs(snapshot?.expiresAt),
+    };
+  }
   if (!snapshot) {
     return unresolvedComposerReadiness('unknown', 'readiness_snapshot_missing');
   }
@@ -161,9 +179,6 @@ export function projectAgentComposerReadiness(
     );
   }
 
-  const enabledBindings = bindings.filter(
-    (binding) => binding.enabled && !binding.tombstonedAt,
-  );
   let projectedState: AgentComposerReadinessState = 'ready';
   let reasonCode = 'capability_ready';
   let authority = STATION_CAPABILITY_AUTHORITY;

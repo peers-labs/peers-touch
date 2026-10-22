@@ -5301,8 +5301,11 @@ type UpdateConversationRequest struct {
 	Meta                  map[string]string      `protobuf:"bytes,5,rep,name=meta,proto3" json:"meta,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	ExpectedVersion       uint64                 `protobuf:"varint,6,opt,name=expected_version,json=expectedVersion,proto3" json:"expected_version,omitempty"`
 	ActiveBranchMessageId *string                `protobuf:"bytes,7,opt,name=active_branch_message_id,json=activeBranchMessageId,proto3,oneof" json:"active_branch_message_id,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// When present, provider_id and model_name replace the Topic override together.
+	// Empty values clear the override and restore Settings default inheritance.
+	ProviderId    *string `protobuf:"bytes,8,opt,name=provider_id,json=providerId,proto3,oneof" json:"provider_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateConversationRequest) Reset() {
@@ -5380,6 +5383,13 @@ func (x *UpdateConversationRequest) GetExpectedVersion() uint64 {
 func (x *UpdateConversationRequest) GetActiveBranchMessageId() string {
 	if x != nil && x.ActiveBranchMessageId != nil {
 		return *x.ActiveBranchMessageId
+	}
+	return ""
+}
+
+func (x *UpdateConversationRequest) GetProviderId() string {
+	if x != nil && x.ProviderId != nil {
+		return *x.ProviderId
 	}
 	return ""
 }
@@ -13844,7 +13854,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\v_model_nameB\x0e\n" +
 	"\f_provider_id\"j\n" +
 	"\x1aCreateConversationResponse\x12L\n" +
-	"\fconversation\x18\x01 \x01(\v2(.peers_touch.model.agent.v1.ConversationR\fconversation\"\xe7\x03\n" +
+	"\fconversation\x18\x01 \x01(\v2(.peers_touch.model.agent.v1.ConversationR\fconversation\"\x9d\x04\n" +
 	"\x19UpdateConversationRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\x05title\x18\x02 \x01(\tH\x00R\x05title\x88\x01\x01\x12%\n" +
@@ -13853,14 +13863,17 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"model_name\x18\x04 \x01(\tH\x02R\tmodelName\x88\x01\x01\x12S\n" +
 	"\x04meta\x18\x05 \x03(\v2?.peers_touch.model.agent.v1.UpdateConversationRequest.MetaEntryR\x04meta\x12)\n" +
 	"\x10expected_version\x18\x06 \x01(\x04R\x0fexpectedVersion\x12<\n" +
-	"\x18active_branch_message_id\x18\a \x01(\tH\x03R\x15activeBranchMessageId\x88\x01\x01\x1a7\n" +
+	"\x18active_branch_message_id\x18\a \x01(\tH\x03R\x15activeBranchMessageId\x88\x01\x01\x12$\n" +
+	"\vprovider_id\x18\b \x01(\tH\x04R\n" +
+	"providerId\x88\x01\x01\x1a7\n" +
 	"\tMetaEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\b\n" +
 	"\x06_titleB\x0e\n" +
 	"\f_descriptionB\r\n" +
 	"\v_model_nameB\x1b\n" +
-	"\x19_active_branch_message_id\"j\n" +
+	"\x19_active_branch_message_idB\x0e\n" +
+	"\f_provider_id\"j\n" +
 	"\x1aUpdateConversationResponse\x12L\n" +
 	"\fconversation\x18\x01 \x01(\v2(.peers_touch.model.agent.v1.ConversationR\fconversation\"\x8e\x01\n" +
 	"\x1aArchiveConversationRequest\x12'\n" +

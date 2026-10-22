@@ -45,6 +45,7 @@ func TestProviderAttemptDeadlineCancelsUpstreamRequest(t *testing.T) {
 					Role:    domain.MessageRoleUser,
 					Content: "wait for the provider deadline",
 				}},
+				nil,
 				"low",
 				domain.ThinkingModeDisabled,
 				32,

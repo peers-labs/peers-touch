@@ -501,6 +501,9 @@ message UpdateConversationRequest {
   map<string, string> meta = 5;
   uint64 expected_version = 6;
   optional string active_branch_message_id = 7;
+  // When present, provider_id and model_name replace the Topic override together.
+  // Empty values clear the override and restore Settings default inheritance.
+  optional string provider_id = 8;
 }
 
 message UpdateConversationResponse {

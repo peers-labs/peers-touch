@@ -74,8 +74,8 @@ func TestAttachmentAdmissionAcceptsActorPrivateObject(t *testing.T) {
 	segments := attachmentContextSegments(attachments)
 	if len(segments) != 1 ||
 		segments[0].Type != model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_ATTACHMENT ||
-		segments[0].Decision != model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED ||
-		segments[0].DecisionReason != "provider_adapter_binary_not_available" ||
+		segments[0].Decision != model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED ||
+		segments[0].DecisionReason != "" ||
 		len(segments[0].SourceRefs) != 1 ||
 		segments[0].SourceRefs[0] != "attachment:attachment-1" ||
 		strings.Contains(segments[0].Content, "cas/01/object") {
@@ -134,6 +134,40 @@ func TestAttachmentAdmissionRejectionIncludesSafeTypedDetails(t *testing.T) {
 	}
 }
 
+func TestAttachmentAdmissionAcceptsExpiryWithinPersistencePrecision(
+	t *testing.T,
+) {
+	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
+	objectExpiry := now.Add(time.Hour).Truncate(time.Microsecond)
+	reader := &attachmentMetadataReaderStub{meta: &ossmodel.FileMeta{
+		Key:        "cas/01/object",
+		Name:       "diagram.png",
+		Size:       int64(len(attachmentTestBody)),
+		Mime:       "image/png",
+		Sha256:     attachmentTestChecksum,
+		OwnerPTID:  "actor-1",
+		Visibility: ossmodel.VisibilityPrivate,
+		ExpiresAt:  &objectExpiry,
+	}, body: attachmentTestBody}
+	admission := NewAttachmentAdmissionService(reader)
+	admission.now = func() time.Time { return now }
+	ref := validAttachment(now)
+	ref.ExpiresAt = timestamppb.New(
+		objectExpiry.Add(attachmentExpiryPrecision - time.Nanosecond),
+	)
+
+	if _, err := admission.Admit(
+		context.Background(),
+		"actor-1",
+		"conversation-1",
+		[]*model.AgentAttachmentRef{ref},
+		attachmentCapabilities(true, true, 4, 1024),
+		nil,
+	); err != nil {
+		t.Fatalf("admit precision-normalized attachment expiry: %v", err)
+	}
+}
+
 func TestAttachmentAdmissionRejectsInvalidAuthorityAndMetadata(t *testing.T) {
 	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
 	future := now.Add(time.Hour)
@@ -159,6 +193,9 @@ func TestAttachmentAdmissionRejectsInvalidAuthorityAndMetadata(t *testing.T) {
 		{name: "expired object", mutateMeta: func(meta *ossmodel.FileMeta) {
 			expired := now.Add(-time.Second)
 			meta.ExpiresAt = &expired
+		}},
+		{name: "reference outlives object", mutateRef: func(ref *model.AgentAttachmentRef) {
+			ref.ExpiresAt = timestamppb.New(future.Add(attachmentExpiryPrecision))
 		}},
 		{name: "checksum mismatch", mutateRef: func(ref *model.AgentAttachmentRef) {
 			ref.Checksum = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

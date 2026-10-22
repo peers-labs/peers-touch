@@ -431,9 +431,6 @@ export function createMockAtelierRuntime(seed: AtelierState = MOCK): AtelierRunt
       const artifact = state.artifacts[input.taskId]?.find((item) => item.id === input.artifactId);
       const bodyKind = artifact?.bodyKind ?? (artifact?.kind === 'diff' ? 'diff' : 'markdown');
       const text =
-        artifact?.markdown ??
-        artifact?.diff ??
-        artifact?.content ??
         artifact?.paths?.join('\n') ??
         'Prototype artifact body is exposed as safe text through Host capability.';
       const bodySize = new TextEncoder().encode(text).length;
@@ -461,7 +458,7 @@ export function createMockAtelierRuntime(seed: AtelierState = MOCK): AtelierRunt
         sandboxRef: input.sandboxRef,
         bodyRef: input.bodyRef,
         kind: input.kind ?? 'metadata',
-        mode: input.mode ?? 'sandbox_manifest',
+        mode: 'sandbox_manifest',
         rendererSessionId: `atelier-preview:${input.taskId}:${input.artifactId}`,
         rendererOwner: 'desktop_host',
         rendererMode: 'host_sandbox_manifest',

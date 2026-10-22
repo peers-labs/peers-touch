@@ -1,65 +1,111 @@
-# Desktop Provider + Model 目标态架构
+# Desktop Provider + Model Target Architecture
 
-## 1. 目标
-- Provider 列表由配置驱动，不再由代码 seed 硬编码。
-- 协议作为一等公民，支持按 provider/model 切换协议适配器。
-- 命令层、应用层、协议层分离，允许独立回归测试。
+## 1. Authority
 
-## 2. 分层模型
+Station is the only Provider and model-catalog authority.
 
-### 2.1 Provider Registry
-- 输入源：
-  - 内置预设：`providers.default.yaml`
-  - 用户覆盖：本地持久化（后续）
-  - 远端同步：Station（后续）
-- 输出：
-  - 统一 ProviderRecord + ModelRecord。
+- `providers.default.yaml` registers built-in Direct and CLI adapters.
+- Actor-scoped Provider records store enabled state, credentials, Direct configuration, and typed CLI runtime overrides.
+- Desktop Rust is a transport adapter. It must not execute Provider CLIs, parse model output, or keep a second model catalog.
+- Desktop Web renders Station projections and submits explicit user intent.
 
-### 2.2 Adapter 三层
-- Protocol Adapter：`openai-compatible` / `anthropic` / `gemini` / `ollama`。
-- Provider Adapter：处理 base_url、鉴权头、模型发现策略、错误映射。
-- Model Adapter：处理模型级特性（reasoning/tool/schema/vision）。
+## 2. Provider Kinds
 
-### 2.3 路由决策
-- 优先级：
-  - model 显式协议
-  - provider 默认协议
-  - 系统 fallback 协议
+### 2.1 Direct
 
-## 3. 当前代码映射
-- Registry 数据源：  
-  [providers.default.yaml](../../../apps/desktop/src-tauri/src/application/provider/providers.default.yaml)
-- Provider 状态层：  
-  [state.rs](../../../apps/desktop/src-tauri/src/application/provider/state.rs)
-- Protocol Adapter 聚合：  
-  [remote.rs](../../../apps/desktop/src-tauri/src/application/provider/remote.rs)
-- Provider 命令入口：  
-  [provider.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/provider.rs)
-- Models 命令入口：  
-  [models.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/models.rs)
+Direct providers own:
 
-## 4. 用户作用域设计
-- ProviderStore 已升级为多作用域注册表（scope -> store），默认 scope 为 `__default__`。
-- 应用层 Provider/Model 接口已统一增加 `scope: Option<&str>` 参数。
-- 当前命令层已从会话解析 `session.actor_id` 作为 scope，未登录时回落 `__default__`。
-- 该设计可以避免同一桌面端多用户共享同一 Provider 配置导致串配置。
+- An explicit, immutable Provider ID independent of the display name.
+- API credential and Base URL.
+- Custom model create, update, enable, and remove.
+- Provider reachability check through Station.
 
-## 5. 能力字段策略
-- 能力矩阵不是前置阻塞项，但必须有统一字段规范：
-  - chat/image/video/embedding/asr/tts
-  - function_call/reasoning/search/vision
-  - json_mode/structured_output/streaming
-- UI 渲染与运行时校验都消费同一能力字段。
+### 2.2 CLI
 
-## 6. 执行计划入口
+CLI providers are registered adapters. Station owns:
 
-本文只定义 Provider / Model 的目标态架构、层次职责、作用域约束与能力字段规范。
+- Structured execution argv and model-discovery argv.
+- Binary availability checks.
+- Isolated workspace policy.
+- Model discovery, parsing, normalization, and runtime catalog replacement.
+- Runtime admission and execution.
 
-实施顺序、迁移阶段与回归计划单独记录在：
+Desktop may edit only capability-declared `ProviderRuntimeConfig` fields:
 
-- `execution-plans/provider-model-registry-alignment.md`
+- `default_model`
+- `startup_args`
+- `environment`
+- `timeout_seconds`
 
-## 7. 验收标准
-- 默认安装可看到多 provider，且能完成 check/fetch。
-- 同一 provider 可按协议切换并保持命令层不变。
-- 命令层回归测试可在隔离靶中单独通过。
+Registered commands and workspace policy are read-only projections. Arbitrary executable paths and shell templates are not client inputs.
+
+## 3. Model Catalog
+
+- Direct model records are actor-scoped persisted configuration.
+- CLI models are a Station-discovered, read-only runtime catalog.
+- Explicit CLI refresh invokes `POST /agent/provider/model/discover`.
+- Discovery replaces the actor-scoped `(actor_ptid, provider_id)` in-memory runtime catalog atomically after successful parsing.
+- Failed discovery preserves the last valid catalog.
+- Provider detail and Agent runtime admission consume the same effective catalog.
+- CLI model CRUD, per-model toggles, and bulk toggles are invalid operations.
+
+Every model reference is the composite identity `(provider_id, model_id)`. A bare model ID may be migrated only when it is unique; ambiguous IDs must never select a Provider by list order.
+
+## 4. Contracts
+
+The canonical wire contract is:
+
+- `model/domain/agent/provider.proto`
+
+Important projections:
+
+- `ProviderRuntimeConfig`
+- `ProviderAdapterCapabilities`
+- `ProviderModelInfo`
+- `CheckProviderRequest/Response`
+- `DiscoverProviderModelsRequest/Response`
+
+Desktop commands proxy these Station endpoints without adding Provider semantics:
+
+- `provider_check`
+- `model_discover`
+- Provider/model CRUD for legal Direct operations
+
+## 5. UI Ownership
+
+Settings uses one mixed Provider list and mounts one selected schema.
+
+- `ProviderDetail.tsx` owns Direct providers.
+- `CliProviderDetail.tsx` owns CLI providers.
+- CLI model rows are read-only and Refresh is shown only when `model_discovery` is true.
+- AI / Models owns only the global default selector.
+- The Desktop default is persisted as a composite reference in the existing
+  config storage (`model-registry.json`) through the atomic file writer.
+  Native restart reloads this file; an unreadable registry fails explicitly.
+  It contains preference references only, while Station owns model metadata.
+- All model selectors use composite identities.
+- The Provider list has one inner vertical scroll owner; the Settings host does not add a second Provider scrollbar.
+
+## 6. Runtime Flow
+
+```text
+Desktop Web intent
+  -> Desktop Rust proxy
+  -> Station Provider handler
+  -> typed Provider service / CLI adapter
+  -> Station runtime model catalog
+  -> Provider detail + runtime admission
+```
+
+The Desktop process never becomes an execution or discovery authority.
+
+## 7. Acceptance
+
+- Provider check is executed by Station.
+- TRAE model refresh returns normalized metadata from `traecli debug models`.
+- A discovery failure does not erase the prior valid catalog.
+- CLI configuration survives enable/disable updates.
+- CLI model mutation is rejected.
+- Direct custom model CRUD remains available.
+- Duplicate IDs such as `codex-cli/default` and `trae-cli/default` remain distinct in Settings defaults, Topic overrides, composer selection, and Cron overrides.
+- Wide and narrow Settings renders show one thin Provider-list scrollbar and no nested scroll owner.

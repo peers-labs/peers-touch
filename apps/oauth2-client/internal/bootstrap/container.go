@@ -58,17 +58,26 @@ func BuildContainer() (*Container, error) {
 		Providers: providers,
 		Clock:     usecase.RealClock{},
 	}
+	fingerprinter := recordcrypto.NewFingerprinter(auditKey)
+	operatorLogin := usecase.OperatorLoginService{
+		Store:         store,
+		Fingerprinter: fingerprinter,
+		Clock:         usecase.RealClock{},
+	}
 	callbackUC := usecase.HandleCallbackUseCase{
 		Sites:         sites,
 		Store:         store,
 		Providers:     providers,
-		Fingerprinter: recordcrypto.NewFingerprinter(auditKey),
+		Fingerprinter: fingerprinter,
+		OperatorLogin: operatorLogin,
 		Clock:         usecase.RealClock{},
 	}
 	return &Container{
 		Handler: &handler.OAuthHandler{
 			StartAuth:      startUC,
 			HandleCallback: callbackUC,
+			OperatorLogin:  operatorLogin,
+			Sites:          sites,
 		},
 		Admin: &handler.AdminHandler{
 			Store: store,

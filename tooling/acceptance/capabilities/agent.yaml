@@ -2,6 +2,39 @@
   "version": 1,
   "capabilities": [
     {
+      "id": "agent-chat-production",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "initial_proof_status": "UNPROVEN",
+      "features": ["agent-chat-production"],
+      "required_gates": [
+        "agent-chat-profile-native", "agent-chat-models-native",
+        "agent-chat-topics-native", "agent-chat-conversation-native",
+        "agent-chat-layout-native", "agent-chat-workspace-native"
+      ],
+      "synthetic_paths": [
+        "tooling/acceptance/gates/agent/chat_operation_contract.py",
+        "tooling/acceptance/features/agent-chat-production.yaml"
+      ],
+      "evidence": {
+        "truth_sources": ["Station Agent, Conversation, Provider, Turn and ToolCall authority", "Desktop actor-scoped drafts and attachments"],
+        "surfaces": ["Native Desktop Agent Chat and global Settings"],
+        "proven_by": [
+          "agent-chat-profile-native", "agent-chat-models-native",
+          "agent-chat-topics-native", "agent-chat-conversation-native",
+          "agent-chat-layout-native", "agent-chat-workspace-native"
+        ],
+        "proven_scope": [
+          "Only operations with current-source Native action, receiver assertion and immutable artifact references"
+        ],
+        "unproven_scope": [
+          "All 121 baseline operations and additional production assertions until their Native Gates execute",
+          "Mobile, macOS and Windows platform-specific behavior",
+          "CUT product scope and broader Agent orchestration, marketplace and Evaluation"
+        ]
+      }
+    },
+    {
       "id": "agent-minimum-usable-chat",
       "domain": "agent",
       "direction": "acceptance_validates_product",
@@ -108,8 +141,8 @@
           "agent-core-lifecycle-native-e2e"
         ],
         "proven_scope": [
-          "Native create, Station-backed list, select, edit, duplicate, default, empty session start, and delete lifecycle",
-          "Repeated-duplicate unique naming, no phantom Station conversation, and deleted-Agent selection absence",
+          "Native repeat-create-to-Profile, Station-backed list, select, edit, empty session start, and delete lifecycle",
+          "Distinct repeat-create naming, Duplicate/Set-default CUT absence, no phantom Station conversation, and deleted-Agent selection absence",
           "Receiver DOM, Station readback, and cleanup evidence for one isolated approved-profile native client"
         ],
         "unproven_scope": [

@@ -1,0 +1,264 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "x-config-api-closure",
+      "domain": "x-config",
+      "direction": "acceptance_validates_product",
+      "features": ["x-config-api-closure"],
+      "required_gates": [
+        "x-config-home-operator-login-e2e",
+        "x-config-home-publication-e2e",
+        "x-config-api-aggregate-e2e"
+      ],
+      "synthetic_paths": [
+        "tooling/acceptance/gates/x_config",
+        "tooling/acceptance/provisioners/x_config_home.py",
+        "packages/x-config-core/examples/verify_production.rs"
+      ],
+      "evidence": {
+        "truth_sources": ["reviewed Home release identity", "Home SQLite operator state", "GitHub-backed publication", "public readback", "durable current-source Gate manifests"],
+        "surfaces": ["Home operator console and API", "signed X Config snapshot"],
+        "proven_by": [
+          "x-config-home-operator-login-e2e",
+          "x-config-home-publication-e2e",
+          "x-config-api-aggregate-e2e"
+        ],
+        "proven_scope": ["exact-source Home operator and publication closure"],
+        "unproven_scope": [
+          "operator-visible browser publication action and receiver-visible Suite lifecycle",
+          "native Desktop and Mobile UI"
+        ]
+      }
+    },
+    {
+      "id": "x-config-operator-auth",
+      "domain": "x-config",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "x-config-operator-login"
+      ],
+      "required_gates": [
+        "x-config-operator-login-contract",
+        "x-config-home-operator-login-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/oauth/operator_login.proto",
+        "packages/github-repository/git_data.go",
+        "apps/oauth2-client/internal/application/oauth/usecase/operator_login.go",
+        "apps/x-config/internal/application/operatorauth/service.go",
+        "apps/x-config/internal/interfaces/http/auth_handler.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "OAuth operator handoff records",
+          "X Config Home SQLite attempt and assertion consumption records",
+          "X Config Home SQLite operator session records"
+        ],
+        "surfaces": [
+          "/api/oauth/operator/redeem",
+          "/api/admin/auth/start",
+          "/api/admin/auth/callback",
+          "/api/admin/auth/session",
+          "/api/admin/auth/logout"
+        ],
+        "proven_by": [
+          "x-config-operator-login-contract",
+          "x-config-home-operator-login-e2e"
+        ],
+        "proven_scope": [
+          "generated Ed25519 operator assertion contract and exact-byte verification",
+          "cross-audience, receiver and one-use handoff rejection",
+          "stable provider-subject allowlist",
+          "HTTP-only operator session, CSRF and durable revocation",
+          "atomic local attempt/assertion/session completion",
+          "SQLite restart, replay, corruption, lock and empty-store failure semantics",
+          "real Home provider login, CSRF denial, restart continuity, durable logout and segmented warm timing"
+        ],
+        "unproven_scope": [
+          "OAuth Broker storage optimization"
+        ]
+      }
+    },
+    {
+      "id": "x-config-snapshot-verification",
+      "domain": "x-config",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "x-config-snapshot-core"
+      ],
+      "required_gates": [
+        "x-config-snapshot-core-contract"
+      ],
+      "synthetic_paths": [
+        "model/domain/x_config/x_config.proto",
+        "packages/x-config-core/src/signature.rs",
+        "packages/x-config-core/src/cache.rs",
+        "packages/x-config-core/src/projection.rs"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "signed snapshot exact bytes",
+          "secure sequence watermark",
+          "last-known-good snapshot cache"
+        ],
+        "surfaces": [
+          "shared Desktop and Mobile snapshot core",
+          "Station suggestion projection",
+          "release descriptor projection"
+        ],
+        "proven_by": [
+          "x-config-snapshot-core-contract"
+        ],
+        "proven_scope": [
+          "signature, schema, channel, time and payload bounds",
+          "endpoint material and Direct Station owner consent",
+          "rollback, replay and equal-sequence conflict rejection",
+          "cache and watermark persistence failures retain the exact prior committed generation across restart",
+          "platform and architecture release filtering"
+        ],
+        "unproven_scope": [
+          "native Desktop and Mobile adapter lifecycle",
+          "production snapshot publication and CDN reads"
+        ]
+      }
+    },
+    {
+      "id": "x-config-trusted-publication",
+      "domain": "x-config",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "x-config-publication"
+      ],
+      "required_gates": [
+        "x-config-snapshot-publication-contract",
+        "x-config-home-publication-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/x-config/internal/application/admin/service.go",
+        "apps/x-config/internal/infrastructure/catalogrepo/github.go",
+        "apps/x-config/internal/interfaces/http/public_handler.go",
+        "apps/x-config/internal/publication/signer.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "acknowledged exact draft",
+          "repository-head compare-and-swap",
+          "atomically persisted publication metadata and envelope"
+        ],
+        "surfaces": [
+          "unified X Config service",
+          "signed snapshot artifact"
+        ],
+        "proven_by": [
+          "x-config-snapshot-publication-contract",
+          "x-config-home-publication-e2e"
+        ],
+        "proven_scope": [
+          "exact-draft acknowledgement and stale-writer rejection",
+          "monotonic sequence allocation",
+          "deterministic statement and envelope signing",
+          "atomic metadata, current pointer and envelope persistence",
+          "latest and immutable public read contracts",
+          "live Home GitHub CAS, signing, exact-byte readback and shared client verification"
+        ],
+        "unproven_scope": [
+          "operator-visible browser publication action",
+          "Production promotion"
+        ]
+      }
+    },
+    {
+      "id": "x-config-admin-workflow",
+      "domain": "x-config",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "x-config-admin-console"
+      ],
+      "required_gates": [
+        "x-config-admin-api-contract",
+        "x-config-console-admin-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/x-config/internal/application/admin/service.go",
+        "apps/x-config/internal/interfaces/http/admin_handler.go",
+        "apps/x-config/console/src/App.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "shared repository catalog revision",
+          "typed validation findings",
+          "direct publication history"
+        ],
+        "surfaces": [
+          "X Config console",
+          "/api/admin/catalog",
+          "/api/admin/publications"
+        ],
+        "proven_by": [
+          "x-config-admin-api-contract",
+          "x-config-console-admin-e2e"
+        ],
+        "proven_scope": [
+          "typed catalog mutation and validation",
+          "Git CAS conflict and restore-as-new",
+          "exact diff acknowledgement and direct publication",
+          "confirmed desktop and narrow console hierarchy"
+        ],
+        "unproven_scope": [
+          "live provider login",
+          "live GitHub storage",
+          "live signing and public readback"
+        ]
+      }
+    },
+    {
+      "id": "x-config-client-adapters",
+      "domain": "x-config",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "x-config-client-adapters"
+      ],
+      "required_gates": [
+        "x-config-desktop-adapter-contract",
+        "x-config-mobile-adapter-contract"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/application/x_config",
+        "apps/desktop/src/runtimes/xConfigRuntime.ts",
+        "apps/desktop/src/components/common/StationPicker.tsx",
+        "apps/mobile/src-tauri/src/runtime/x_config.rs",
+        "apps/mobile/src/runtimes/runtimeRegistry.ts",
+        "apps/mobile/src/features/station/StationSelector.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "shared signed snapshot core",
+          "platform secure watermark and cache",
+          "existing Station signed discovery and verified registry"
+        ],
+        "surfaces": [
+          "Desktop Station Picker suggestion projection",
+          "Mobile Station Selector suggestion projection",
+          "typed release metadata boundary"
+        ],
+        "proven_by": [
+          "x-config-desktop-adapter-contract",
+          "x-config-mobile-adapter-contract"
+        ],
+        "proven_scope": [
+          "bounded optional refresh and last-known-good startup",
+          "platform secure rollback watermark",
+          "separate non-authoritative suggestion projection",
+          "suggestion selection through canonical signed Station discovery",
+          "target-filtered non-executable release metadata"
+        ],
+        "unproven_scope": [
+          "installed Desktop rendering and interaction",
+          "iOS, Android, Simulator or physical-device rendering and interaction",
+          "production snapshot publication and CDN reads"
+        ]
+      }
+    }
+  ]
+}

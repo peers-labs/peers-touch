@@ -10,6 +10,7 @@ import { useAgentStore } from '../../store/agent';
 
 interface PortalHeaderProps {
   activeView: PortalView | null;
+  artifactsOnly?: boolean;
 }
 
 function viewTitle(view: PortalView | null, t: (key: string) => string): string {
@@ -35,7 +36,7 @@ function isWorkingView(view: PortalView | null): WorkingTab | null {
   return null;
 }
 
-export function PortalHeader({ activeView }: PortalHeaderProps) {
+export function PortalHeader({ activeView, artifactsOnly }: PortalHeaderProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('agent');
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
@@ -80,6 +81,16 @@ export function PortalHeader({ activeView }: PortalHeaderProps) {
         style={{ height: 44, padding: '0 12px' }}
       >
         <Flexbox horizontal align="center" gap={6} style={{ flex: 1, minWidth: 0 }}>
+          {artifactsOnly && activeView?.type === 'artifactDetail' && (
+            <ActionIcon
+              data-pt-agent-artifacts-list
+              aria-label={t('agent.portal.artifacts')}
+              icon={FolderOpen}
+              size="small"
+              title={t('agent.portal.artifacts')}
+              onClick={() => usePortalStore.getState().openArtifacts()}
+            />
+          )}
           {canGoBack && (
             <ActionIcon
               data-pt-agent-portal-back
@@ -114,7 +125,7 @@ export function PortalHeader({ activeView }: PortalHeaderProps) {
       </Flexbox>
 
       {/* Working tabs navigation — visible when portal is in working mode or always as quick-access */}
-      <Flexbox
+      {!artifactsOnly && <Flexbox
         horizontal
         align="center"
         gap={2}
@@ -143,7 +154,7 @@ export function PortalHeader({ activeView }: PortalHeaderProps) {
             <span>{label}</span>
           </Flexbox>
         ))}
-      </Flexbox>
+      </Flexbox>}
     </Flexbox>
   );
 }

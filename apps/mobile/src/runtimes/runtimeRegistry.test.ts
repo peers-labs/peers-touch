@@ -39,6 +39,21 @@ vi.mock('./mobileNativeEventBridge', () => ({
     socialRuntimeMocks.installMobileNativeEventBridge,
 }));
 
+vi.mock('../features/station/xConfig', () => ({
+  loadXConfigProjection: vi.fn(async () => ({
+    channel: 'stable',
+    freshness: 'unavailable',
+    suggestions: [],
+    refreshing: false,
+  })),
+  refreshXConfigProjection: vi.fn(async () => ({
+    channel: 'stable',
+    freshness: 'unavailable',
+    suggestions: [],
+    refreshing: false,
+  })),
+}));
+
 vi.mock('./privateMomentsRuntime', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./privateMomentsRuntime')>();
   return {
@@ -218,6 +233,9 @@ describe('mobile runtime registry', () => {
     const station = descriptors.find(
       (descriptor) => descriptor.id === 'station',
     );
+    const xConfig = descriptors.find(
+      (descriptor) => descriptor.id === 'x-config',
+    );
     const auth = descriptors.find((descriptor) => descriptor.id === 'auth');
     const access = descriptors.find((descriptor) => descriptor.id === 'access');
     const session = descriptors.find((descriptor) => descriptor.id === 'session');
@@ -241,6 +259,8 @@ describe('mobile runtime registry', () => {
       'app-scoped device preference',
     );
     expect(station?.responsibility).toContain('serialized device-local Station registry');
+    expect(xConfig?.dependsOn).toEqual(['secure-storage']);
+    expect(xConfig?.responsibility).toContain('without mutating verified Station state');
     expect(auth?.dependsOn).toContain('station');
     expect(access?.dependsOn).toEqual(['station', 'auth']);
     expect(session?.dependsOn).toEqual(['station', 'auth', 'access']);

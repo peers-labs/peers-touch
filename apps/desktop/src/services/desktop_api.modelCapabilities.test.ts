@@ -72,9 +72,12 @@ describe('Desktop provider model capability transport', () => {
         models: [{
           id: 'model-1',
           display_name: 'Model 1',
+          description: 'Primary model',
           type: 'chat',
           enabled: true,
           context_window: 128000,
+          default_reasoning_level: 'medium',
+          supported_reasoning_levels: ['low', 'medium', 'high'],
           capabilities: {
             flags: {
               streaming: true,
@@ -92,11 +95,92 @@ describe('Desktop provider model capability transport', () => {
 
     expect(provider.models[0]).toMatchObject({
       id: 'model-1',
+      description: 'Primary model',
+      default_reasoning_level: 'medium',
+      supported_reasoning_levels: ['low', 'medium', 'high'],
       streaming: true,
       function_call: true,
       vision: false,
       reasoning: true,
       image_output: false,
+    });
+  });
+
+  it('normalizes direct and CLI provider kinds for the mixed Settings list', async () => {
+    resolveStatus({
+      providers: [
+        {
+          id: 'ark',
+          name: 'Ark',
+          runtime_kind: '',
+        },
+        {
+          id: 'ollama',
+          name: 'Ollama',
+          runtime_kind: 'http',
+        },
+        {
+          id: 'trae-cli',
+          name: 'TRAE CLI',
+          runtime_kind: 'cli',
+        },
+      ],
+    });
+
+    const providers = await api.listProviders();
+
+    expect(providers.map(({ id, runtime_kind }) => ({ id, runtime_kind }))).toEqual([
+      { id: 'ark', runtime_kind: 'direct' },
+      { id: 'ollama', runtime_kind: 'direct' },
+      { id: 'trae-cli', runtime_kind: 'cli' },
+    ]);
+  });
+
+  it('projects typed CLI runtime configuration and discovery capability', async () => {
+    resolveStatus({
+      provider: {
+        id: 'trae-cli',
+        name: 'TRAE CLI',
+        enabled: true,
+        runtime_kind: 'cli',
+        cli_command: 'traecli --json exec -',
+        workspace_policy: 'isolated-agent-workspace',
+        runtime_config: {
+          default_model: 'default',
+          startup_args: ['--verbose'],
+          environment: { TRAE_PROFILE: 'work' },
+          timeout_seconds: 180,
+        },
+        default_runtime_config: {
+          default_model: 'default',
+          startup_args: [],
+          environment: {},
+          timeout_seconds: 120,
+        },
+        adapter_capabilities: {
+          model_discovery: true,
+          startup_args: true,
+          environment: true,
+          configurable_timeout: true,
+          runtime_capabilities: ['streaming', 'reasoning'],
+        },
+      },
+    });
+
+    const provider = await api.getProvider('trae-cli');
+
+    expect(provider).toMatchObject({
+      runtime_config: {
+        default_model: 'default',
+        startup_args: ['--verbose'],
+        environment: { TRAE_PROFILE: 'work' },
+        timeout_seconds: 180,
+      },
+      adapter_capabilities: {
+        model_discovery: true,
+        runtime_capabilities: ['streaming', 'reasoning'],
+      },
+      workspace_policy: 'isolated-agent-workspace',
     });
   });
 });

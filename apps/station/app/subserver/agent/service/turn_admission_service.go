@@ -150,6 +150,9 @@ func (s *TurnAdmissionService) AdmitNewConversation(
 		}
 
 		now := s.now()
+		if _, err := getVisibleAgentForConversationTx(tx, actorID, strings.TrimSpace(request.GetAgentId())); err != nil {
+			return err
+		}
 		title := strings.TrimSpace(spec.Title)
 		if title == "" {
 			title = "New Chat"
@@ -406,6 +409,83 @@ func (s *TurnAdmissionService) Admit(
 		return nil, err
 	}
 	return admission, nil
+}
+
+// ResolveAdmission resolves a stable client idempotency key to its current
+// Turn or queued entry. Channel uses it to recover an ACKed provider event
+// after the request process or Station restarts.
+func (s *TurnAdmissionService) ResolveAdmission(
+	ctx context.Context,
+	actorID, conversationID, idempotencyKey string,
+) (*model.TurnAdmission, error) {
+	actorID = strings.TrimSpace(actorID)
+	conversationID = strings.TrimSpace(conversationID)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if actorID == "" || conversationID == "" || idempotencyKey == "" {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"actor, conversation_id and idempotency_key are required",
+			nil,
+		)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var conversation persistence.Conversation
+	if err := db.WithContext(ctx).
+		Where("id = ? AND actor_ptid = ?", conversationID, actorID).
+		First(&conversation).Error; err != nil {
+		return nil, errcode.New(
+			errcode.AgentNotFound, http.StatusNotFound,
+			"conversation not found", err,
+		)
+	}
+	var turn persistence.AgentTurn
+	err = db.WithContext(ctx).
+		Where("conversation_id = ? AND client_idempotency_key = ?",
+			conversationID, idempotencyKey).
+		Order("started_at DESC").First(&turn).Error
+	if err == nil {
+		return &model.TurnAdmission{
+			Status: model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_REPLAYED,
+			TurnId: turn.ID, QueueCapacity: turnQueueCapacity,
+			ConversationVersion: conversation.Version,
+		}, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, admissionInternal("resolve admitted turn", err)
+	}
+	var entry persistence.TurnQueueEntry
+	err = db.WithContext(ctx).
+		Where("conversation_id = ? AND client_idempotency_key = ?",
+			conversationID, idempotencyKey).
+		Order("created_at DESC").First(&entry).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errcode.New(
+				errcode.AgentNotFound, http.StatusNotFound,
+				"turn admission not found", err,
+			)
+		}
+		return nil, admissionInternal("resolve queued turn", err)
+	}
+	if strings.TrimSpace(entry.AdmittedTurnID) != "" {
+		return &model.TurnAdmission{
+			Status:              model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_REPLAYED,
+			TurnId:              entry.AdmittedTurnID,
+			QueueEntry:          queueEntryToProto(&entry, 0),
+			QueueCapacity:       turnQueueCapacity,
+			ConversationVersion: conversation.Version,
+		}, nil
+	}
+	return &model.TurnAdmission{
+		Status:              model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED,
+		QueueEntry:          queueEntryToProto(&entry, 0),
+		QueueCapacity:       turnQueueCapacity,
+		ConversationVersion: conversation.Version,
+	}, nil
 }
 
 func (s *TurnAdmissionService) List(

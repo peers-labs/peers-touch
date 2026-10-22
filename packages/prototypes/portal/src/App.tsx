@@ -1,11 +1,13 @@
-import { useEffect, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react';
-import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
+import { useEffect, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react';
+import { CloudCog, Maximize2, Minimize2, Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
 import { WORKTREE_TARGETS } from './registry/worktrees';
 import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from './registry/types';
 import './responsive.css';
 
-const DEFAULT_SITE: PrototypeSite = normalizeSite(import.meta.env.VITE_PROTOTYPE_SITE);
+const DEFAULT_SITE: PrototypeSite = normalizeSite(
+  new URLSearchParams(window.location.search).get('site') ?? import.meta.env.VITE_PROTOTYPE_SITE,
+);
 
 const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: ReactElement }> = {
   desktop: {
@@ -23,16 +25,24 @@ const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: 
     subtitle: 'Station admin, operations, and dashboard experiences',
     icon: <PanelsTopLeft size={18} />,
   },
+  control: {
+    title: 'Cloud Control Prototypes',
+    subtitle: 'Bootstrap catalog, releases, publication, and recovery',
+    icon: <CloudCog size={18} />,
+  },
 };
 
 function normalizeSite(value: unknown): PrototypeSite {
-  return value === 'mobile' || value === 'dashboard' || value === 'desktop' ? value : 'desktop';
+  return value === 'mobile' || value === 'dashboard' || value === 'control' || value === 'desktop'
+    ? value
+    : 'desktop';
 }
 
 export function PrototypePortal() {
   const [site, setSite] = useState<PrototypeSite>(DEFAULT_SITE);
   const [targetId, setTargetId] = useState(WORKTREE_TARGETS[0]?.id ?? 'current');
   const [selectedPrototypeId, setSelectedPrototypeId] = useState<string | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
   const meta = SITE_META[site];
   const visible = LOCAL_PROTOTYPES.filter((prototype) => prototype.site === site);
   const entryPrototypes = visible.filter(isEntryPrototype);
@@ -56,9 +66,38 @@ export function PrototypePortal() {
     }
   }, [entryPrototypes, selectedPrototypeId]);
 
+  useEffect(() => {
+    if (!fullscreen) return;
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreen(false);
+    };
+    document.body.classList.add('prototype-preview-fullscreen-open');
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.classList.remove('prototype-preview-fullscreen-open');
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [fullscreen]);
+
+  useEffect(() => {
+    setFullscreen(false);
+  }, [site, targetId]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('site') === site) return;
+    url.searchParams.set('site', site);
+    window.history.replaceState(null, '', url);
+  }, [site]);
+
   return (
     <div className="prototype-portal" style={styles.page}>
-      <header className="prototype-portal-header" style={styles.header}>
+      <header
+        className="prototype-portal-header"
+        style={styles.header}
+        inert={fullscreen ? true : undefined}
+        aria-hidden={fullscreen || undefined}
+      >
         <div style={styles.brand}>Peers Touch Prototype Portal</div>
         <div className="prototype-portal-controls" style={styles.headerControls}>
           <label className="prototype-portal-target" style={styles.targetPicker}>
@@ -76,7 +115,12 @@ export function PrototypePortal() {
       </header>
 
       <main className="prototype-portal-main" style={styles.main}>
-        <aside className="prototype-portal-sidebar" style={styles.sidebar}>
+        <aside
+          className="prototype-portal-sidebar"
+          style={styles.sidebar}
+          inert={fullscreen ? true : undefined}
+          aria-hidden={fullscreen || undefined}
+        >
           {(Object.keys(SITE_META) as PrototypeSite[]).map((key) => {
             const item = SITE_META[key];
             const active = key === site;
@@ -99,7 +143,12 @@ export function PrototypePortal() {
         </aside>
 
         <section className="prototype-portal-content" style={styles.content}>
-          <div className="prototype-portal-heading" style={styles.hero}>
+          <div
+            className="prototype-portal-heading"
+            style={styles.hero}
+            inert={fullscreen ? true : undefined}
+            aria-hidden={fullscreen || undefined}
+          >
             <div>
               <h1 style={styles.h1}>{meta.title}</h1>
               <p style={styles.p}>{meta.subtitle}</p>
@@ -108,7 +157,11 @@ export function PrototypePortal() {
           </div>
 
           {localTarget ? (
-            <div style={styles.grid}>
+            <div
+              style={styles.grid}
+              inert={fullscreen ? true : undefined}
+              aria-hidden={fullscreen || undefined}
+            >
               {entryPrototypes.length > 0 ? (
                 entryPrototypes.map((prototype) => (
                   <PrototypeCard
@@ -126,13 +179,26 @@ export function PrototypePortal() {
               )}
             </div>
           ) : (
-            <RemoteTargetCard target={target} site={site} />
+            <div inert={fullscreen ? true : undefined} aria-hidden={fullscreen || undefined}>
+              <RemoteTargetCard target={target} site={site} />
+            </div>
           )}
 
           {localTarget ? (
-            selectedPrototype ? <PrototypePreview prototype={selectedPrototype} /> : null
+            selectedPrototype ? (
+              <PrototypePreview
+                prototype={selectedPrototype}
+                fullscreen={fullscreen}
+                onFullscreenChange={setFullscreen}
+              />
+            ) : null
           ) : (
-            <RemoteWorktreePreview target={target} site={site} />
+            <RemoteWorktreePreview
+              target={target}
+              site={site}
+              fullscreen={fullscreen}
+              onFullscreenChange={setFullscreen}
+            />
           )}
         </section>
       </main>
@@ -179,29 +245,106 @@ function RemoteTargetCard({ target, site }: { target: PrototypeWorktreeTarget; s
   );
 }
 
-function RemoteWorktreePreview({ target, site }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
+function RemoteWorktreePreview({
+  target,
+  site,
+  fullscreen,
+  onFullscreenChange,
+}: {
+  target: PrototypeWorktreeTarget;
+  site: PrototypeSite;
+  fullscreen: boolean;
+  onFullscreenChange: (value: boolean) => void;
+}) {
   const url = target.sites[site];
 
   return (
-    <div style={styles.preview}>
-      <div style={styles.previewHeader}>
-        <span>Remote Preview</span>
-        <span style={styles.previewMeta}>{target.label} / {target.branch}</span>
-      </div>
-      <div style={styles.previewBody}>
-        {url ? (
-          <iframe title={`${target.label} ${site}`} src={url} style={styles.iframe} />
-        ) : (
-          <div style={styles.previewPlaceholder}>
-            No remote URL configured for {site}. Add it to VITE_PROTOTYPE_WORKTREES.
-          </div>
-        )}
-      </div>
-    </div>
+    <PreviewFrame
+      label={`${target.label} / ${target.branch}`}
+      fullscreen={fullscreen}
+      onFullscreenChange={onFullscreenChange}
+      remote
+    >
+      {url ? (
+        <iframe title={`${target.label} ${site}`} src={url} style={styles.iframe} />
+      ) : (
+        <div style={styles.previewPlaceholder}>
+          No remote URL configured for {site}. Add it to VITE_PROTOTYPE_WORKTREES.
+        </div>
+      )}
+    </PreviewFrame>
   );
 }
 
-function PrototypePreview({ prototype }: { prototype: PrototypeManifest }) {
+function PreviewFrame({
+  label,
+  fullscreen,
+  onFullscreenChange,
+  remote = false,
+  children,
+}: {
+  label: string;
+  fullscreen: boolean;
+  onFullscreenChange: (value: boolean) => void;
+  remote?: boolean;
+  children: ReactElement;
+}) {
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const previousFullscreen = useRef(fullscreen);
+
+  useEffect(() => {
+    if (previousFullscreen.current && !fullscreen) {
+      window.requestAnimationFrame(() => toggleRef.current?.focus());
+    }
+    previousFullscreen.current = fullscreen;
+  }, [fullscreen]);
+
+  const toggle = () => onFullscreenChange(!fullscreen);
+
+  return (
+    <section
+      className={`prototype-portal-preview${fullscreen ? ' is-fullscreen' : ''}`}
+      style={styles.preview}
+      aria-label={`${label} 预览`}
+      role={fullscreen ? 'dialog' : undefined}
+      aria-modal={fullscreen || undefined}
+    >
+      <div style={styles.previewHeader}>
+        <div className="prototype-portal-preview-title">
+          <span>{remote ? 'Remote Preview' : 'Live Preview'}</span>
+          <span style={styles.previewMeta}>{label}</span>
+        </div>
+        <button
+          ref={toggleRef}
+          type="button"
+          className="prototype-portal-fullscreen-button"
+          aria-label={fullscreen ? '退出全屏预览' : '全屏预览'}
+          title={fullscreen ? '退出全屏预览（Esc）' : '全屏预览'}
+          onClick={toggle}
+        >
+          {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          <span>{fullscreen ? '退出全屏' : '全屏查看'}</span>
+        </button>
+      </div>
+      <div
+        className={`prototype-portal-preview-body${remote ? ' is-remote' : ' is-local'}`}
+        style={remote ? styles.previewBody : styles.localPreviewBody}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function PrototypePreview({
+  prototype,
+  fullscreen,
+  onFullscreenChange,
+}: {
+  prototype: PrototypeManifest;
+  fullscreen: boolean;
+  onFullscreenChange: (value: boolean) => void;
+}) {
   const [Preview, setPreview] = useState<ComponentType | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -233,21 +376,19 @@ function PrototypePreview({ prototype }: { prototype: PrototypeManifest }) {
   }, [prototype]);
 
   return (
-    <div style={styles.preview}>
-      <div style={styles.previewHeader}>
-        <span>Live Preview</span>
-        <span style={styles.previewMeta}>{prototype.title}</span>
-      </div>
-      <div style={styles.localPreviewBody}>
-        {Preview ? (
-          <Preview />
-        ) : (
-          <div style={styles.previewPlaceholder}>
-            {error ? `Preview unavailable: ${error}` : `Loading ${prototype.title}...`}
-          </div>
-        )}
-      </div>
-    </div>
+    <PreviewFrame
+      label={prototype.title}
+      fullscreen={fullscreen}
+      onFullscreenChange={onFullscreenChange}
+    >
+      {Preview ? (
+        <Preview />
+      ) : (
+        <div style={styles.previewPlaceholder}>
+          {error ? `Preview unavailable: ${error}` : `Loading ${prototype.title}...`}
+        </div>
+      )}
+    </PreviewFrame>
   );
 }
 

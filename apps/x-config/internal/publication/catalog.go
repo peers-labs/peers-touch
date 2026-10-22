@@ -1,0 +1,364 @@
+package publication
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"io"
+	"net/url"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	catalogdomain "github.com/peers-labs/peers-touch/x-config/internal/domain/catalog"
+	xconfig "github.com/peers-labs/peers-touch/station/frame/touch/model/xconfig"
+	peer "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+	"gopkg.in/yaml.v3"
+)
+
+const (
+	CatalogSchemaVersion  = 1
+	SnapshotSchemaVersion = 1
+	MaxCatalogBytes       = 256 * 1024
+	MaxSnapshotLifetime   = 7 * 24 * time.Hour
+	SnapshotClockSkew     = 5 * time.Minute
+)
+
+var (
+	ErrCatalogInvalid = errors.New("x_config_catalog_invalid")
+	semanticVersion   = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
+)
+
+type Catalog = catalogdomain.Catalog
+type CatalogEndpoint = catalogdomain.CatalogEndpoint
+type CatalogRelease = catalogdomain.CatalogRelease
+
+func ParseCatalog(raw []byte) (*Catalog, error) {
+	if len(raw) == 0 || len(raw) > MaxCatalogBytes {
+		return nil, ErrCatalogInvalid
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
+	var catalog Catalog
+	if err := decoder.Decode(&catalog); err != nil {
+		return nil, ErrCatalogInvalid
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, ErrCatalogInvalid
+	}
+	if catalog.SchemaVersion != CatalogSchemaVersion ||
+		!validIdentifier(catalog.Channel, 32) ||
+		len(catalog.Endpoints) > 128 ||
+		len(catalog.Releases) > 64 {
+		return nil, ErrCatalogInvalid
+	}
+	return &catalog, nil
+}
+
+func BuildStatement(
+	catalog *Catalog,
+	sequence uint64,
+	issuedAt time.Time,
+	expiresAt time.Time,
+) (*xconfig.XConfigSnapshotStatement, []byte, error) {
+	if catalog == nil ||
+		sequence == 0 ||
+		!expiresAt.After(issuedAt) ||
+		expiresAt.Sub(issuedAt) > MaxSnapshotLifetime {
+		return nil, nil, ErrCatalogInvalid
+	}
+	endpoints := make([]*xconfig.EndpointSeed, 0, len(catalog.Endpoints))
+	seenEndpoints := make(map[string]struct{}, len(catalog.Endpoints))
+	for _, input := range catalog.Endpoints {
+		endpoint, err := buildEndpoint(input, issuedAt, expiresAt)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, exists := seenEndpoints[endpoint.GetSeedId()]; exists {
+			return nil, nil, ErrCatalogInvalid
+		}
+		seenEndpoints[endpoint.GetSeedId()] = struct{}{}
+		endpoints = append(endpoints, endpoint)
+	}
+	sort.Slice(endpoints, func(left, right int) bool {
+		return endpoints[left].GetSeedId() < endpoints[right].GetSeedId()
+	})
+
+	releases := make([]*xconfig.ReleaseDescriptor, 0, len(catalog.Releases))
+	seenReleases := make(map[string]struct{}, len(catalog.Releases))
+	for _, input := range catalog.Releases {
+		release, err := buildRelease(input, issuedAt, expiresAt)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, exists := seenReleases[release.GetReleaseId()]; exists {
+			return nil, nil, ErrCatalogInvalid
+		}
+		seenReleases[release.GetReleaseId()] = struct{}{}
+		releases = append(releases, release)
+	}
+	sort.Slice(releases, func(left, right int) bool {
+		return releases[left].GetReleaseId() < releases[right].GetReleaseId()
+	})
+	statement := &xconfig.XConfigSnapshotStatement{
+		SchemaVersion: SnapshotSchemaVersion,
+		Channel:       catalog.Channel,
+		Sequence:      sequence,
+		IssuedAt:      timestamppb.New(issuedAt.UTC()),
+		ExpiresAt:     timestamppb.New(expiresAt.UTC()),
+		EndpointSeeds: endpoints,
+		Releases:      releases,
+	}
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(statement)
+	if err != nil || len(raw) == 0 || len(raw) > MaxCatalogBytes {
+		return nil, nil, ErrCatalogInvalid
+	}
+	return statement, raw, nil
+}
+
+func buildEndpoint(
+	input CatalogEndpoint,
+	now time.Time,
+	snapshotExpiresAt time.Time,
+) (*xconfig.EndpointSeed, error) {
+	if !validIdentifier(input.SeedID, 128) ||
+		!validText(input.DisplayName, 128) ||
+		len(input.Regions) > 8 {
+		return nil, ErrCatalogInvalid
+	}
+	regions := append([]string(nil), input.Regions...)
+	sort.Strings(regions)
+	for index, region := range regions {
+		if !validIdentifier(region, 64) ||
+			(index > 0 && regions[index-1] == region) {
+			return nil, ErrCatalogInvalid
+		}
+	}
+	materialBytes, err := decodeBase64Bounded(
+		input.ConnectionMaterialBase64,
+		MaxCatalogBytes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	material := &peer.PublicEndpointConnectionMaterial{}
+	if err := proto.Unmarshal(materialBytes, material); err != nil {
+		return nil, ErrCatalogInvalid
+	}
+	canonicalMaterial, err := proto.MarshalOptions{Deterministic: true}.Marshal(material)
+	if err != nil || !bytes.Equal(canonicalMaterial, materialBytes) {
+		return nil, ErrCatalogInvalid
+	}
+	verifiedMaterial, err := peer.VerifyPublicEndpointConnectionMaterial(
+		material,
+		true,
+		now,
+	)
+	if err != nil {
+		return nil, ErrCatalogInvalid
+	}
+	var kind xconfig.EndpointSeedKind
+	switch input.Kind {
+	case "relay":
+		kind = xconfig.EndpointSeedKind_ENDPOINT_SEED_KIND_RELAY
+		if verifiedMaterial.ExpectedEndpointRole !=
+			peer.AccessEndpointRole_ACCESS_ENDPOINT_ROLE_RELAY ||
+			input.StationAdvertisementBase64 != "" {
+			return nil, ErrCatalogInvalid
+		}
+	case "direct_station":
+		kind = xconfig.EndpointSeedKind_ENDPOINT_SEED_KIND_DIRECT_STATION
+		if verifiedMaterial.ExpectedEndpointRole !=
+			peer.AccessEndpointRole_ACCESS_ENDPOINT_ROLE_DIRECT_STATION {
+			return nil, ErrCatalogInvalid
+		}
+	default:
+		return nil, ErrCatalogInvalid
+	}
+	availableFrom, err := parseOptionalTime(
+		input.AvailableFrom,
+		time.UnixMilli(material.GetIssuedAtUnixMs()).UTC(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	availableUntil, err := parseOptionalTime(
+		input.AvailableUntil,
+		time.UnixMilli(material.GetExpiresAtUnixMs()).UTC(),
+	)
+	if err != nil ||
+		!availableUntil.After(availableFrom) ||
+		availableUntil.After(snapshotExpiresAt) ||
+		availableUntil.After(verifiedMaterial.ExpiresAt) {
+		return nil, ErrCatalogInvalid
+	}
+	seed := &xconfig.EndpointSeed{
+		SeedId:             input.SeedID,
+		Kind:               kind,
+		DisplayName:        input.DisplayName,
+		ConnectionMaterial: material,
+		Regions:            regions,
+		AvailableFrom:      timestamppb.New(availableFrom),
+		AvailableUntil:     timestamppb.New(availableUntil),
+	}
+	if kind == xconfig.EndpointSeedKind_ENDPOINT_SEED_KIND_DIRECT_STATION {
+		advertisementBytes, err := decodeBase64Bounded(
+			input.StationAdvertisementBase64,
+			MaxCatalogBytes,
+		)
+		if err != nil {
+			return nil, err
+		}
+		advertisement := &peer.SignedPublicStationAdvertisement{}
+		if err := proto.Unmarshal(advertisementBytes, advertisement); err != nil {
+			return nil, ErrCatalogInvalid
+		}
+		canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+			advertisement,
+		)
+		if err != nil || !bytes.Equal(canonical, advertisementBytes) {
+			return nil, ErrCatalogInvalid
+		}
+		verified, err := peer.VerifyPublicStationAdvertisement(
+			advertisement,
+			material,
+			now,
+		)
+		if err != nil ||
+			verified.Statement.GetDisplayName() != input.DisplayName ||
+			time.UnixMilli(
+				verified.Statement.GetExpiresAtUnixMs(),
+			).UTC().Before(availableUntil) {
+			return nil, ErrCatalogInvalid
+		}
+		seed.StationAdvertisement = advertisement
+	}
+	return seed, nil
+}
+
+func buildRelease(
+	input CatalogRelease,
+	snapshotIssuedAt time.Time,
+	snapshotExpiresAt time.Time,
+) (*xconfig.ReleaseDescriptor, error) {
+	if !validIdentifier(input.ReleaseID, 128) ||
+		!semanticVersion.MatchString(input.Version) ||
+		!semanticVersion.MatchString(input.MinimumSupportedVersion) ||
+		!validHTTPSURL(input.ManifestURL) ||
+		!validHTTPSURL(input.ReleaseNotesURL) ||
+		!validIdentifier(input.ReleaseSigningKeyID, 128) {
+		return nil, ErrCatalogInvalid
+	}
+	manifestDigest, err := hex.DecodeString(strings.TrimSpace(input.ManifestSHA256))
+	if err != nil || len(manifestDigest) != 32 {
+		return nil, ErrCatalogInvalid
+	}
+	publishedAt, err := time.Parse(time.RFC3339, input.PublishedAt)
+	if err != nil ||
+		publishedAt.After(snapshotIssuedAt.Add(SnapshotClockSkew)) ||
+		publishedAt.After(snapshotExpiresAt) {
+		return nil, ErrCatalogInvalid
+	}
+	platform, ok := mapPlatform(input.Platform)
+	if !ok {
+		return nil, ErrCatalogInvalid
+	}
+	architecture, ok := mapArchitecture(input.Architecture)
+	if !ok {
+		return nil, ErrCatalogInvalid
+	}
+	return &xconfig.ReleaseDescriptor{
+		ReleaseId:               input.ReleaseID,
+		Platform:                platform,
+		Architecture:            architecture,
+		Version:                 input.Version,
+		MinimumSupportedVersion: input.MinimumSupportedVersion,
+		ManifestUrl:             input.ManifestURL,
+		ManifestSha256:          manifestDigest,
+		ReleaseSigningKeyId:     input.ReleaseSigningKeyID,
+		ReleaseNotesUrl:         input.ReleaseNotesURL,
+		PublishedAt:             timestamppb.New(publishedAt.UTC()),
+	}, nil
+}
+
+func decodeBase64Bounded(value string, maximum int) ([]byte, error) {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(value))
+	if err != nil {
+		decoded, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(value))
+	}
+	if err != nil || len(decoded) == 0 || len(decoded) > maximum {
+		return nil, ErrCatalogInvalid
+	}
+	return decoded, nil
+}
+
+func parseOptionalTime(value string, fallback time.Time) (time.Time, error) {
+	if strings.TrimSpace(value) == "" {
+		return fallback, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, ErrCatalogInvalid
+	}
+	return parsed.UTC(), nil
+}
+
+func validIdentifier(value string, maximum int) bool {
+	return validText(value, maximum) &&
+		!strings.ContainsAny(value, " \t\r\n")
+}
+
+func validText(value string, maximum int) bool {
+	return value != "" &&
+		value == strings.TrimSpace(value) &&
+		len(value) <= maximum
+}
+
+func validHTTPSURL(value string) bool {
+	if len(value) > 512 {
+		return false
+	}
+	parsed, err := url.Parse(value)
+	return err == nil &&
+		parsed.Scheme == "https" &&
+		parsed.Host != "" &&
+		parsed.User == nil &&
+		parsed.Fragment == ""
+}
+
+func mapPlatform(value string) (xconfig.ClientPlatform, bool) {
+	switch value {
+	case "macos":
+		return xconfig.ClientPlatform_CLIENT_PLATFORM_MACOS, true
+	case "windows":
+		return xconfig.ClientPlatform_CLIENT_PLATFORM_WINDOWS, true
+	case "linux":
+		return xconfig.ClientPlatform_CLIENT_PLATFORM_LINUX, true
+	case "ios":
+		return xconfig.ClientPlatform_CLIENT_PLATFORM_IOS, true
+	case "android":
+		return xconfig.ClientPlatform_CLIENT_PLATFORM_ANDROID, true
+	default:
+		return xconfig.ClientPlatform_CLIENT_PLATFORM_UNSPECIFIED, false
+	}
+}
+
+func mapArchitecture(
+	value string,
+) (xconfig.ClientArchitecture, bool) {
+	switch value {
+	case "arm64":
+		return xconfig.ClientArchitecture_CLIENT_ARCHITECTURE_ARM64, true
+	case "x86_64":
+		return xconfig.ClientArchitecture_CLIENT_ARCHITECTURE_X86_64, true
+	case "universal":
+		return xconfig.ClientArchitecture_CLIENT_ARCHITECTURE_UNIVERSAL, true
+	default:
+		return xconfig.ClientArchitecture_CLIENT_ARCHITECTURE_UNSPECIFIED, false
+	}
+}

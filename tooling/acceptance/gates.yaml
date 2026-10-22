@@ -1,6 +1,141 @@
 {
   "version": 1,
   "gates": {
+    "x-config-home-operator-login-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.x_config.home_operator_login"],
+      "timeout_seconds": 2400,
+      "environment": "x-config-home-runtime",
+      "provisioner": "x-config-home-runtime",
+      "ephemeralCapabilities": ["x-config-home-runtime"],
+      "tier": "env-evidence",
+      "description": "Attach to the exact Home X Config release and prove the real allowlisted provider session, local SQLite restart continuity, replay and CSRF denial, durable logout semantics, absence of admin-auth Git mutations, and segmented warm timing."
+    },
+    "x-config-home-publication-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.x_config.home_publication"],
+      "timeout_seconds": 2400,
+      "environment": "x-config-home-runtime",
+      "provisioner": "x-config-home-runtime",
+      "ephemeralCapabilities": ["x-config-home-runtime"],
+      "tier": "env-evidence",
+      "description": "Reuse the exact Home release and authenticated operator fixture to save and publish a reviewed catalog, verify GitHub CAS paths and exact latest/immutable bytes through x-config-core, then prove durable revocation and terminal Suite cleanup."
+    },
+    "x-config-api-aggregate-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.x_config.aggregate",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Aggregate the required API closure Gates exclusively from validated durable Evidence Store latest manifests matching the current source; missing, stale, incomplete and unproven dependencies keep closure unproven."
+    },
+    "x-config-operator-login-contract": {
+      "command": "sh -c 'go test ./packages/github-repository/... -count=1 && cd apps/oauth2-client && go test ./internal/application/oauth/usecase ./internal/infrastructure/persistence/memory ./internal/infrastructure/persistence/github ./internal/interfaces/http/handler -count=1 && cd ../x-config && go test ./internal/application/operatorauth ./internal/bootstrap ./internal/infrastructure/operatorstore ./internal/integration ./internal/interfaces/http -count=1 && cd ../.. && test ! -e apps/oauth2-client/internal/infrastructure/persistence/github/app_auth.go && test ! -e apps/oauth2-client/internal/infrastructure/persistence/github/git_data.go && test ! -e apps/x-config/internal/infrastructure/operatorstore/github.go'",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the unchanged audience- and receiver-bound Broker contract plus Home SQLite attempt/assertion/session atomicity, restart durability, replay denial, provider-subject allowlisting, HTTP-only cookies, CSRF, revocation, lock/corruption failure, and removal of the X Config Git-backed operator store."
+    },
+    "x-config-snapshot-core-contract": {
+      "command": "sh -c './model/build.sh >/tmp/x-config-model-build.log && CARGO_TARGET_DIR=${TMPDIR:-/tmp}/peers-x-config-core-target cargo test --manifest-path packages/x-config-core/Cargo.toml --locked'",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate generated bounded snapshot contracts, exact-byte domain-separated signatures, endpoint consent, rollback and equal-sequence rejection, immutable cache generations, secure-watermark persistence failure recovery, and typed release projection."
+    },
+    "x-config-snapshot-publication-contract": {
+      "command": "go test ./apps/x-config/internal/application/admin ./apps/x-config/internal/infrastructure/catalogrepo ./apps/x-config/internal/interfaces/http ./apps/x-config/internal/publication -run 'Publication|Publish|Snapshot|Catalog' -count=1",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate exact-draft acknowledgement, repository-head CAS, monotonic sequence allocation, deterministic signing, atomic publication metadata/envelope persistence, latest/immutable readback, and stale-writer rejection."
+    },
+    "x-config-admin-api-contract": {
+      "command": "go test ./apps/x-config/internal/application/admin ./apps/x-config/internal/infrastructure/catalogrepo ./apps/x-config/internal/infrastructure/endpointvalidator ./apps/x-config/internal/interfaces/http -run 'Admin|Validator|Catalog|Draft|Publication|Restore' -count=1",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate typed catalog validation, public-target SSRF rejection, Git CAS conflict behavior, exact diff acknowledgement, direct publication history, restore-as-new, operator session, public snapshot and CSRF enforcement."
+    },
+    "x-config-console-admin-e2e": {
+      "command": "pnpm --dir apps/x-config/console run check && pnpm --dir apps/x-config/console run test && pnpm --dir apps/x-config/console run test:e2e",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Render the confirmed X Config console hierarchy at desktop and narrow widths with typed forms, source revision strip, immediate publication boundary, history, and stable no-overflow layout."
+    },
+    "x-config-desktop-adapter-contract": {
+      "command": "sh -c 'pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json && pnpm --dir apps/desktop exec vitest run src/components/common/StationPicker.test.tsx src/services/xConfig.test.ts && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml x_config --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_discovery --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_registry --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_binding --locked'",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate Desktop last-known-good startup, secure rollback watermark, bounded refresh, app-scoped projection ownership, distinct verified and suggested Station rows, and canonical signed discovery before registry mutation without claiming installed UI proof."
+    },
+    "x-config-mobile-adapter-contract": {
+      "command": "sh -c 'pnpm --dir apps/mobile exec tsc --noEmit -p tsconfig.json && pnpm --dir apps/mobile exec vitest run src/features/station/StationSelector.test.ts src/features/station/xConfig.test.ts && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml x_config --locked && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml station_route --locked'",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate Mobile secure watermark and cache adapters, optional lifecycle projection refresh, distinct verified and suggested Station rows, stale non-actionable state, and canonical route discovery before registry persistence without claiming device UI proof."
+    },
+    "x-config-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain x-config",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate X Config feature, capability, Registry, Gate, and managed-domain graph."
+    },
+    "agent-chat-profile-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "profile"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "Native Profile creation, document autosave, authoritative readback, restart, prompt consumption and deletion."
+    },
+    "agent-chat-models-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "models"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "Native mixed Provider Settings, Station CLI discovery, shared availability and Topic model ownership."
+    },
+    "agent-chat-topics-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "topics"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "Native Topic management, isolated drafts and atomic deletion."
+    },
+    "agent-chat-conversation-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "conversation"],
+      "timeout_seconds": 2400,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "Native conversation actions, inline clarification and tool continuation, Stop and typed recovery."
+    },
+    "agent-chat-layout-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "layout"],
+      "timeout_seconds": 1200,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "Native wide, compact and narrow navigation, menu anchoring, focus restoration and overflow."
+    },
+    "agent-chat-workspace-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "workspace"],
+      "timeout_seconds": 5400,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "One Native workspace Suite with complete operation coverage and terminal cleanup."
+    },
     "oauth-login-broker-handoff-contract": {
       "command": "sh -c 'cd apps/oauth2-client && go test ./internal/application/oauth/usecase && cd ../station && go test ./app/subserver/oauth ./frame/touch ./frame/touch/auth ./frame/touch/model/db && cd ../desktop && pnpm exec vitest run src/store/oauth2.test.ts && pnpm run check && cargo test --manifest-path src-tauri/Cargo.toml oauth'",
       "timeout_seconds": 1200,
@@ -951,7 +1086,7 @@
       "environment": "chat-mixed-native",
       "provisioner": "chat-mixed-native",
       "tier": "env-evidence",
-      "description": "Prove Desktop↔Mobile same-Station Direct + Group + receipt + typing + attachment convergence."
+      "description": "Prove Desktop\u2194Mobile same-Station Direct + Group + receipt + typing + attachment convergence."
     },
     "chat-lifecycle-mixed-client-cross-station-e2e": {
       "argv": [
@@ -966,7 +1101,7 @@
       "environment": "chat-mixed-native",
       "provisioner": "chat-mixed-native",
       "tier": "env-evidence",
-      "description": "Prove Desktop↔Mobile cross-Station Direct + Group + offline + reconnect + interaction convergence."
+      "description": "Prove Desktop\u2194Mobile cross-Station Direct + Group + offline + reconnect + interaction convergence."
     },
     "chat-lifecycle-mixed-client-multi-device-e2e": {
       "argv": [
@@ -1393,6 +1528,7 @@
       ]
     },
     "agent-core-lifecycle-native-e2e": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
       "argv": [
         "python3",
         "tooling/acceptance/gates/agent/native_agent_runner.py",
@@ -1403,11 +1539,11 @@
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "Run the approved-profile native Agent core lifecycle: create, list, select, edit, duplicate, set default, start an empty session, delete, verify negative states, compare Station readback, and clean up.",
+      "description": "Run the approved-profile native Agent core lifecycle: repeat Create into Profile, list, select, edit, verify retired actions stay absent, start an empty session, recover topics, delete, compare Station readback, and clean up.",
       "runtime_matrix": {
         "id": "agent-core-lifecycle-native-matrix",
-        "version": "2026-09-28.1",
-        "sha256": "9605afef17f67b05dfceb4b44b242ca245512d559cb27cb0ab77d7e94050bdb2",
+        "version": "2026-10-18.1",
+        "sha256": "5a75aba6f5e4fe2bf1b7786498cd947a0c212a0332f0df6c899f781880d16c38",
         "expected_tuple_count": 6,
         "expected_assertion_count": 12
       },
@@ -2347,6 +2483,174 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Prove the executable Workflow Doctor contract, installed integration, current Plan mount, workflow projection, completion review, and executable documentation."
+    },
+    "lark-channel-source": {
+      "command": "sh -c 'python3 -m unittest tooling.acceptance.domains.channel.journey_test && cd apps/station && go test ./app/subserver/channel/... ./app/subserver/agent/service/... && cd ../desktop && pnpm exec tsc -p tsconfig.channel.json --noEmit && ESLINT_USE_FLAT_CONFIG=false pnpm exec eslint src/components/settings/channels src/runtimes/channelRuntime.ts src/services/channelActions.ts src/store/channel.ts src/modules/channels.ts --ext ts,tsx --report-unused-disable-directives --max-warnings 0'",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the Channel-owned Lark connection, requester OAuth isolation and recovery, governed requester tools, unique route contracts, and targeted Desktop projection/settings source."
+    },
+    "lark-01-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J01 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove durable Lark ingress, fast acknowledgement, replay idempotency, restart recovery, and one receiver result on the exact Suite source."
+    },
+    "lark-02-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J02 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove delivery retry and unknown-outcome recovery reuse the completed Turn without another model or side-effect execution."
+    },
+    "lark-03-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J03 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove owner-bound provisioning confirmation, credential reservation recovery, and repeated-confirm idempotency."
+    },
+    "lark-04-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J04 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove non-blocking provisioning progress, one continuous Desktop drawer, cancel, close, reopen, and same-app recovery."
+    },
+    "lark-05-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J05 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove the requested Lark bot name, description, and real avatar are provider-visible and profile failures remain explicit."
+    },
+    "lark-06-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J06 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove capability-scoped permission waiting, explicit degradation, repair, and no duplicate provider application."
+    },
+    "lark-07-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J07 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove a real Lark international account and a validated custom app independently send and receive through their own regional APIs."
+    },
+    "lark-08-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J08 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove multiple Lark bindings keep independent Agent, route, health, default, pause, resume, restart, and deletion state."
+    },
+    "lark-09-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J09 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove a real screenshot reaches attachment admission, model consumption, and a receiver answer containing the image fact."
+    },
+    "lark-10-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J10 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove file, post, quote, merge-forward, source identity, unsupported media, and receiver-openable outbound artifact behavior."
+    },
+    "lark-11-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J11 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove streaming card revisions, rate-limit fallback, and terminal fencing converge without stale overwrite or Turn replay."
+    },
+    "lark-12-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J12 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove ask, approval, rejection, cancellation, retry, feedback, duplicate click, expiry, and revoke actions remain bound to one Turn."
+    },
+    "lark-13-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J13 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove owner, approval, allowlist, and open access use real provider identities and fail closed on identity borrowing."
+    },
+    "lark-14-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J14 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove group mention policy, two-chat and two-thread isolation, route selection, and bot-loop suppression."
+    },
+    "lark-15-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J15 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove bounded authorized group-context backfill and advanced response policy without cross-thread, removed-member, or expired-window leakage."
+    },
+    "lark-16-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J16 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove two requester OAuth grants independently refresh, extend, expire, reconnect, revoke, and remain isolated from bot identity."
+    },
+    "lark-17-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J17 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove requester-scoped document, Drive, Wiki, and contact reads with a real cross-user private-resource denial."
+    },
+    "lark-18a-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J18A --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove approved document create/edit actions produce receiver-readable artifacts while rejection produces no provider-side mutation."
+    },
+    "lark-18b-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J18B --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove approved Drive create, upload, and move operations produce readable results while rejection and revoke leave no side effect."
+    },
+    "lark-18c-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J18C --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove every required reference extension has a source, identity, scope, side-effect contract, execution chain, and independent receiver result."
+    },
+    "lark-19-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J19 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove event, document, schedule, manual, and proactive automations execute once and honor cancel, expiry, fault, and requester revoke."
+    },
+    "lark-20-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J20 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove Channel activity, delivery, plugin recovery, consumer hard cut, redacted export, and task-owned resource release."
+    },
+    "channel-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain channel",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate the Channel managed-domain Feature, Capability, Registry, and Gate graph while keeping unrun live Lark journeys explicit."
     }
   }
 }

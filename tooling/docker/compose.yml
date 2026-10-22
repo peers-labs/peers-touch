@@ -19,12 +19,19 @@
 #   livekit — LiveKit SFU (shared; deploy on one host, all stations point at it)
 #   infra   — postgres only
 
+x-json-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
 
   # ── PostgreSQL (per-project, internal-only by default) ─────────
   postgres:
     image: pgvector/pgvector:pg16
     profiles: [infra]
+    logging: *json-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-peers}
       POSTGRES_PASSWORD: ${PEERS_DB_PASSWORD:?PEERS_DB_PASSWORD is required}
@@ -50,10 +57,13 @@ services:
       context: ../..
       dockerfile: tooling/docker/station.Dockerfile
       args:
+        BUILDER_IMAGE: ${PEERS_STATION_BUILDER_IMAGE:-golang:1.24.6}
+        BASE_IMAGE: ${PEERS_STATION_BASE_IMAGE:-ubuntu:22.04}
         BUILD_COMMIT: ${PEERS_TOUCH_BUILD_COMMIT:-unknown}
         BUILD_LABEL: ${PEERS_TOUCH_BUILD_LABEL:-dev}
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [station]
+    logging: *json-logging
     environment:
       PEERS_NODE_ROLE: station
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
@@ -181,6 +191,7 @@ services:
         BUILD_LABEL: ${PEERS_TOUCH_BUILD_LABEL:-dev}
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [relay]
+    logging: *json-logging
     environment:
       PEERS_NODE_ROLE: relay
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}

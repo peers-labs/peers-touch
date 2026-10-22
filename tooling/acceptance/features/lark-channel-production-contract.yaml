@@ -1,0 +1,77 @@
+{
+  "id": "lark-channel-production-contract",
+  "status": "active",
+  "product_area": "channel",
+  "owners": [
+    "model/domain/channel/**",
+    "apps/station/app/cmd/lark-channel-plugin/**",
+    "apps/station/app/subserver/channel/**",
+    "apps/station/app/subserver/agent/service/channel_turn_executor.go",
+    "apps/station/app/subserver/agent/service/lark_requester_tools.go",
+    "apps/desktop/src/components/settings/channels/**",
+    "apps/desktop/src/runtimes/channelRuntime.ts",
+    "apps/desktop/src/services/channelActions.ts",
+    "apps/desktop/src/store/channel.ts",
+    "tooling/docker/station.Dockerfile",
+    "tooling/docker/compose.yml",
+    "tooling/docker/entrypoint.sh",
+    "tooling/plugins/build-lark-plugin.sh"
+  ],
+  "truth_sources": [
+    "ChannelBinding and ChannelRequesterAuthorization Station records",
+    "Channel inbound admission and delivery journals",
+    "Agent ToolCall approval and result state",
+    "isolated managed lark-cli requester profiles"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop", "route": "Settings > Channels > Lark"},
+    {"type": "lark", "surface": "requester-visible chat and workspace resources"}
+  ],
+  "required_gates": [
+    "lark-channel-source",
+    "station-api-ownership",
+    "lark-01-e2e",
+    "lark-02-e2e",
+    "lark-03-e2e",
+    "lark-04-e2e",
+    "lark-05-e2e",
+    "lark-06-e2e",
+    "lark-07-e2e",
+    "lark-08-e2e",
+    "lark-09-e2e",
+    "lark-10-e2e",
+    "lark-11-e2e",
+    "lark-12-e2e",
+    "lark-13-e2e",
+    "lark-14-e2e",
+    "lark-15-e2e",
+    "lark-16-e2e",
+    "lark-17-e2e",
+    "lark-18a-e2e",
+    "lark-18b-e2e",
+    "lark-18c-e2e",
+    "lark-19-e2e",
+    "lark-20-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "each Lark connection owns independent credentials, routing, automation, requester authorization, and delivery state",
+      "requester authorization is actor, binding, provider user, tenant, and region scoped",
+      "requester OAuth config and encrypted token data are isolated per authorization",
+      "read tools execute as the Channel requester and write tools require governed ToolCall approval",
+      "incremental scope denial preserves the previously effective grant"
+    ],
+    "visible": [
+      "Desktop exposes continuous connect, pending QR, cancel, refresh, additive work-area authorization, and revoke states",
+      "pending and effective authorization domains are projected from Station truth",
+      "LARK-J01 through LARK-J20 bind each product action to exact-source Station evidence and a receiver-visible Lark, workspace, or Native Desktop result",
+      "the live Suite reuses one source-bound runtime per Journey and releases every namespaced task-owned resource"
+    ]
+  },
+  "negative": [
+    "Bot credentials or another requester profile must never satisfy a requester tool call",
+    "a missing sender or tenant must not fall back to the connection owner",
+    "source tests, CLI availability, or scope inventory must not prove a live Lark receiver result",
+    "rejected additive scope must not revoke an existing effective grant"
+  ]
+}

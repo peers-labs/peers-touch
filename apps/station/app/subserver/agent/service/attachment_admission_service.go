@@ -18,6 +18,7 @@ import (
 const (
 	agentAttachmentObjectPrefix = "oss:"
 	agentAttachmentScopePrefix  = "conversation:"
+	attachmentExpiryPrecision   = time.Microsecond
 )
 
 type attachmentObjectReader interface {
@@ -115,7 +116,11 @@ func (s *AttachmentAdmissionService) Admit(
 			return nil, attachmentRejected(attachmentID, "attachment object is unauthorized")
 		}
 		if meta.ExpiresAt != nil {
-			if !meta.ExpiresAt.After(now) || candidate.GetExpiresAt().AsTime().After(*meta.ExpiresAt) {
+			if !meta.ExpiresAt.After(now) ||
+				attachmentReferenceOutlivesObject(
+					candidate.GetExpiresAt().AsTime(),
+					*meta.ExpiresAt,
+				) {
 				return nil, attachmentRejected(attachmentID, "attachment object is expired")
 			}
 		}
@@ -163,6 +168,15 @@ func (s *AttachmentAdmissionService) Admit(
 	return admitted, nil
 }
 
+func attachmentReferenceOutlivesObject(
+	referenceExpiry time.Time,
+	objectExpiry time.Time,
+) bool {
+	return referenceExpiry.Truncate(attachmentExpiryPrecision).After(
+		objectExpiry.Truncate(attachmentExpiryPrecision),
+	)
+}
+
 func attachmentObjectKey(objectRef string) (string, error) {
 	ref := strings.TrimSpace(objectRef)
 	if !strings.HasPrefix(ref, agentAttachmentObjectPrefix) {
@@ -178,7 +192,7 @@ func attachmentObjectKey(objectRef string) (string, error) {
 
 func attachmentMimeAllowed(mimeType string) bool {
 	switch mimeType {
-	case "image/png", "application/pdf":
+	case "image/png", "image/jpeg", "application/pdf", "text/plain":
 		return true
 	default:
 		return false
@@ -189,8 +203,12 @@ func attachmentContentMatches(mimeType string, body []byte) bool {
 	switch mimeType {
 	case "image/png":
 		return bytes.HasPrefix(body, []byte{137, 80, 78, 71, 13, 10, 26, 10})
+	case "image/jpeg":
+		return bytes.HasPrefix(body, []byte{0xff, 0xd8, 0xff})
 	case "application/pdf":
 		return bytes.HasPrefix(body, []byte("%PDF-"))
+	case "text/plain":
+		return true
 	default:
 		return false
 	}
@@ -206,7 +224,10 @@ func attachmentOmissionReason(
 	if mimeType == "application/pdf" && !input.GetFile() {
 		return "selected_model_has_no_file_input"
 	}
-	return "provider_adapter_binary_not_available"
+	if mimeType == "text/plain" && !input.GetFile() {
+		return "selected_model_has_no_file_input"
+	}
+	return ""
 }
 
 func normalizedSHA256(value string) string {
@@ -254,13 +275,17 @@ func attachmentContextSegments(attachments []AdmittedAttachment) []ContextSegmen
 		if attachment == nil {
 			continue
 		}
+		decision := model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED
+		if admitted.OmissionReason != "" {
+			decision = model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED
+		}
 		segments = append(segments, ContextSegment{
 			Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_ATTACHMENT,
 			Content:         attachmentProviderSummary(attachment),
 			SourceRefs:      []string{"attachment:" + attachment.GetAttachmentId()},
 			ContentHash:     normalizedSHA256(attachment.GetChecksum()),
 			EstimatedTokens: 0,
-			Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED,
+			Decision:        decision,
 			DecisionReason:  admitted.OmissionReason,
 		})
 	}

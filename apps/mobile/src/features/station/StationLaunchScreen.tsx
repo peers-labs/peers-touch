@@ -8,6 +8,7 @@ import {
   type StationSelectorSurfaceFixture,
 } from './StationSelector';
 import { activeStationEntry, type StoredStationRegistry } from './stationRegistry';
+import type { XConfigSuggestion } from '../../services/mobileCommands';
 
 export function StationLaunchScreen({
   registry,
@@ -15,8 +16,10 @@ export function StationLaunchScreen({
   checking,
   verifyingUrls,
   checkedUrls,
+  suggestions,
   surfaceFixture,
   onAddStation,
+  onSelectSuggestion,
   onSelectStation,
   onRemoveStation,
   onContinue,
@@ -26,8 +29,10 @@ export function StationLaunchScreen({
   checking: boolean;
   verifyingUrls: string[];
   checkedUrls: string[];
+  suggestions: XConfigSuggestion[];
   surfaceFixture?: StationSelectorSurfaceFixture;
   onAddStation: (stationUrl: string) => boolean | Promise<boolean>;
+  onSelectSuggestion: (seedId: string) => boolean | Promise<boolean>;
   onSelectStation: (stationPeerId: string) => void | Promise<void>;
   onRemoveStation: (stationPeerId: string) => void;
   onContinue: () => void | Promise<void>;
@@ -70,8 +75,10 @@ export function StationLaunchScreen({
             checking={checking}
             verifyingUrls={verifyingUrls}
             checkedUrls={checkedUrls}
+            suggestions={suggestions}
             surfaceFixture={surfaceFixture}
             onAdd={onAddStation}
+            onSelectSuggestion={onSelectSuggestion}
             onSelect={onSelectStation}
             onRemove={onRemoveStation}
           />

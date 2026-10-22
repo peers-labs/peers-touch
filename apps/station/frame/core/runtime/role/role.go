@@ -30,6 +30,7 @@ var pluginSubserverAllowlists = map[Role]map[string]struct{}{
 	Station: {
 		"agent":     {},
 		"bootstrap": {},
+		"channel":   {},
 		"launcher":  {},
 		"oauth":     {},
 		"oss":       {},

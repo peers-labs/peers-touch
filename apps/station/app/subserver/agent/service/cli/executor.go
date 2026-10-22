@@ -91,7 +91,10 @@ type ExecuteRequest struct {
 	Provider       string
 	Model          string
 	Effort         string
-	CliCommand     string
+	Command        []string
+	StartupArgs    []string
+	Environment    map[string]string
+	Timeout        time.Duration
 	SystemPrompt   string
 	Messages       []domain.Message
 	AllowedRoots   []string
@@ -127,18 +130,19 @@ func (e *Executor) Execute(
 	if req == nil {
 		return nil, &ExecutionError{Kind: FailureInvalidCommand}
 	}
-	command, err := NormalizeCommand(req.CliCommand)
-	if err != nil {
+	if len(req.Command) == 0 || strings.TrimSpace(req.Command[0]) == "" {
 		return nil, &ExecutionError{
 			Kind:    FailureInvalidCommand,
-			Program: req.CliCommand,
-			Cause:   err,
+			Program: strings.Join(req.Command, " "),
 		}
 	}
-	if _, err := exec.LookPath(command.Program); err != nil {
+	program := req.Command[0]
+	adapter := adapterName(program)
+	delivery := promptMethod(adapter)
+	if _, err := exec.LookPath(program); err != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureBinaryMissing,
-			Program: command.Program,
+			Program: program,
 			Cause:   err,
 		}
 	}
@@ -148,7 +152,7 @@ func (e *Executor) Execute(
 	if err != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureStart,
-			Program: command.Program,
+			Program: program,
 			Cause:   err,
 		}
 	}
@@ -157,19 +161,23 @@ func (e *Executor) Execute(
 	}()
 
 	prompt := BuildConversationPrompt(req.SystemPrompt, req.Messages)
-	args := append([]string{}, command.Args...)
-	if command.PromptMethod == PromptViaArgument {
+	args := append([]string{}, req.Command[1:]...)
+	args = appendStartupArgs(args, req.StartupArgs, delivery)
+	if delivery == PromptViaArgument {
 		args = append(args, prompt)
 	}
 
-	timeout := e.Timeout
+	timeout := req.Timeout
+	if timeout <= 0 {
+		timeout = e.Timeout
+	}
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	process := exec.Command(command.Program, args...)
+	process := exec.Command(program, args...)
 	process.Dir = workDir
 	configureProcessGroup(process)
 	process.Env = append(restrictedEnv(),
@@ -179,9 +187,12 @@ func (e *Executor) Execute(
 		"PEERS_TOUCH_PROVIDER="+req.Provider,
 		"PEERS_TOUCH_MODEL="+req.Model,
 		"PEERS_TOUCH_EFFORT="+req.Effort,
-		"PEERS_TOUCH_CLI_ADAPTER="+command.AdapterName,
+		"PEERS_TOUCH_CLI_ADAPTER="+adapter,
 		"PEERS_TOUCH_AGENT_WORKSPACE="+workDir,
 	)
+	for key, value := range req.Environment {
+		process.Env = append(process.Env, key+"="+value)
+	}
 	if len(req.AllowedRoots) > 0 {
 		process.Env = append(
 			process.Env,
@@ -193,7 +204,7 @@ func (e *Executor) Execute(
 	if err != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureStart,
-			Program: command.Program,
+			Program: program,
 			Cause:   err,
 		}
 	}
@@ -201,18 +212,18 @@ func (e *Executor) Execute(
 	if err != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureStart,
-			Program: command.Program,
+			Program: program,
 			Cause:   err,
 		}
 	}
 
 	var stdin io.WriteCloser
-	if command.PromptMethod == PromptViaStdin {
+	if delivery == PromptViaStdin {
 		stdin, err = process.StdinPipe()
 		if err != nil {
 			return nil, &ExecutionError{
 				Kind:    FailureStart,
-				Program: command.Program,
+				Program: program,
 				Cause:   err,
 			}
 		}
@@ -221,7 +232,7 @@ func (e *Executor) Execute(
 	if err := process.Start(); err != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureStart,
-			Program: command.Program,
+			Program: program,
 			Cause:   err,
 		}
 	}
@@ -316,28 +327,28 @@ func (e *Executor) Execute(
 	if inputErr != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureStart,
-			Program: command.Program,
+			Program: program,
 			Cause:   inputErr,
 		}
 	}
 	if sinkErr != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureOutput,
-			Program: command.Program,
+			Program: program,
 			Cause:   sinkErr,
 		}
 	}
 	if outputErr != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureOutput,
-			Program: command.Program,
+			Program: program,
 			Cause:   outputErr,
 		}
 	}
 	if streamError != "" {
 		return nil, &ExecutionError{
 			Kind:    FailureExit,
-			Program: command.Program,
+			Program: program,
 			Cause:   errors.New(streamError),
 		}
 	}
@@ -349,14 +360,14 @@ func (e *Executor) Execute(
 		}
 		return nil, &ExecutionError{
 			Kind:    kind,
-			Program: command.Program,
+			Program: program,
 			Cause:   execCtx.Err(),
 		}
 	}
 	if scanErr != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureOutput,
-			Program: command.Program,
+			Program: program,
 			Cause:   scanErr,
 		}
 	}
@@ -372,7 +383,7 @@ func (e *Executor) Execute(
 		}
 		return nil, &ExecutionError{
 			Kind:     FailureExit,
-			Program:  command.Program,
+			Program:  program,
 			ExitCode: exitCode,
 			Cause:    cause,
 		}
@@ -380,14 +391,14 @@ func (e *Executor) Execute(
 	if shutdownErr != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureExit,
-			Program: command.Program,
+			Program: program,
 			Cause:   shutdownErr,
 		}
 	}
 	if strings.TrimSpace(content.String()) == "" {
 		return nil, &ExecutionError{
 			Kind:    FailureEmptyResponse,
-			Program: command.Program,
+			Program: program,
 		}
 	}
 
@@ -481,29 +492,47 @@ type CliVerifyResult struct {
 	InstallHint string
 }
 
-func VerifyCliBinary(cliCommand string) CliVerifyResult {
-	command, err := NormalizeCommand(cliCommand)
-	if err != nil {
+func VerifyCliBinary(command []string) CliVerifyResult {
+	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
 		return CliVerifyResult{
 			Available: false,
-			Error:     err.Error(),
+			Error:     "CLI provider command is invalid",
 		}
 	}
 
-	path, err := exec.LookPath(command.Program)
+	program := command[0]
+	path, err := exec.LookPath(program)
 	if err != nil {
 		return CliVerifyResult{
 			Available:   false,
-			Program:     command.Program,
-			InstallHint: installHint(command.AdapterName),
+			Program:     program,
+			InstallHint: installHint(adapterName(program)),
 		}
 	}
 
 	return CliVerifyResult{
 		Available: true,
-		Program:   command.Program,
+		Program:   program,
 		Path:      path,
 	}
+}
+
+func appendStartupArgs(
+	commandArgs []string,
+	startupArgs []string,
+	delivery PromptDelivery,
+) []string {
+	if len(startupArgs) == 0 {
+		return commandArgs
+	}
+	if delivery == PromptViaStdin &&
+		len(commandArgs) > 0 &&
+		commandArgs[len(commandArgs)-1] == "-" {
+		result := append([]string{}, commandArgs[:len(commandArgs)-1]...)
+		result = append(result, startupArgs...)
+		return append(result, "-")
+	}
+	return append(commandArgs, startupArgs...)
 }
 
 func installHint(adapter string) string {

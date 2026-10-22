@@ -169,6 +169,9 @@ Note: No endpoint returns the actual credential value.
 POST /sub-agent/agent/model/list
 { provider_id }
 → { models: [CachedModel...] }
+Note: Returns the effective Station-owned model view: catalog models merged with
+      actor overrides plus actor-created custom models. A catalog model without
+      an override is returned with version = 0.
 
 POST /sub-agent/agent/model/create
 { provider_id, model_id, display_name, enabled, context_window, capabilities: { flags: { "streaming": true, ... } } }
@@ -182,6 +185,8 @@ POST /sub-agent/agent/model/update
 { provider_id, model_id, version, enabled?, display_name?, context_window?, capabilities?: { flags: {...} } }
 → 200: { model: {..., version: N+1} }
 → 409: { error: "VERSION_CONFLICT", current_version: M }
+Note: Updating a catalog model at version = 0 materializes its first actor
+      override from authoritative catalog metadata and returns version = 1.
 ```
 
 Capability keys are the canonical `RuntimeCapabilitySnapshot` IDs. A present

@@ -22,6 +22,7 @@ from tooling.acceptance.drivers.native.base import (
 
 _KEY_SYMBOLS = {
     NativeKey.A: "a",
+    NativeKey.C: "c",
     NativeKey.G: "g",
     NativeKey.L: "l",
     NativeKey.SLASH: "slash",
@@ -216,6 +217,47 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             f"{focused}"
         )
 
+    def verify_focused_text(
+        self,
+        expected: str,
+        *,
+        timeout_seconds: float,
+    ) -> bool:
+        if timeout_seconds <= 0:
+            raise ValueError("Native focused text timeout must be positive")
+        self.require_exclusive_input("verify focused native text")
+        expected_bytes = expected.encode("utf-8")
+        injected_owner = self._clipboard_selection_owner()
+        if injected_owner <= 0:
+            return False
+
+        deadline = time.monotonic() + timeout_seconds
+        owner_changed = False
+        while time.monotonic() < deadline:
+            self.post_key(
+                NativeKey.A,
+                modifiers=(NativeModifier.PRIMARY,),
+            )
+            selection_deadline = min(deadline, time.monotonic() + 0.5)
+            while time.monotonic() < selection_deadline:
+                if self._read_selection("primary") == expected_bytes:
+                    return True
+                time.sleep(0.02)
+            self.post_key(
+                NativeKey.C,
+                modifiers=(NativeModifier.PRIMARY,),
+            )
+            copy_deadline = min(deadline, time.monotonic() + 0.5)
+            while time.monotonic() < copy_deadline:
+                owner = self._clipboard_selection_owner()
+                owner_changed = owner_changed or (
+                    owner > 0 and owner != injected_owner
+                )
+                if owner_changed and self.read_clipboard() == expected_bytes:
+                    return True
+                time.sleep(0.02)
+        return False
+
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         process_id = self._validated_process_id(process_id)
         display = self._open_display()
@@ -390,11 +432,14 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             )
 
     def read_clipboard(self) -> bytes:
-        if self._clipboard_selection_owner() <= 0:
+        return self._read_selection("clipboard")
+
+    def _read_selection(self, selection: str) -> bytes:
+        if self._selection_owner(selection) <= 0:
             return b""
         completed = self._run(
-            ("xclip", "-selection", "clipboard", "-out"),
-            operation="clipboard read",
+            ("xclip", "-selection", selection, "-out"),
+            operation=f"{selection} selection read",
             text=False,
         )
         return bytes(completed.stdout)
@@ -416,7 +461,7 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
                     "clipboard",
                     "-in",
                     "-loops",
-                    "1",
+                    "0",
                 ),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
@@ -463,14 +508,17 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             ) from error
 
     def _clipboard_selection_owner(self) -> int:
+        return self._selection_owner("clipboard")
+
+    def _selection_owner(self, selection: str) -> int:
         display = self._open_display()
         try:
-            clipboard = display.intern_atom("CLIPBOARD")
-            owner = display.get_selection_owner(clipboard)
+            atom = display.intern_atom(selection.upper())
+            owner = display.get_selection_owner(atom)
             return int(getattr(owner, "id", 0) or 0)
         except Exception as error:
             raise DriverError(
-                f"Linux Native clipboard owner probe failed: {error}"
+                f"Linux Native {selection} selection owner probe failed: {error}"
             ) from error
         finally:
             display.close()
@@ -674,7 +722,14 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
                 for index in range(desktop.childCount)
                 if int(desktop[index].get_process_id()) == process_id
             ]
-            stack = list(reversed(applications))
+            active_windows = [
+                application[index]
+                for application in applications
+                for index in range(application.childCount)
+                if application[index].getState().contains(pyatspi.STATE_ACTIVE)
+            ]
+            stack = list(reversed(active_windows or applications))
+            focused: dict[str, object] = {}
             while stack:
                 node = stack.pop()
                 state = node.getState()
@@ -687,7 +742,7 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
                         value = text.getText(0, text.characterCount)
                     except Exception:
                         pass
-                    return {
+                    focused = {
                         "kind": kind,
                         "title": str(getattr(node, "name", "") or ""),
                         "value": value,
@@ -698,6 +753,7 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
                     stack.extend(reversed([node[index] for index in range(node.childCount)]))
                 except Exception:
                     continue
+            return focused
         except Exception as error:
             return {"error": f"Linux AT-SPI probe failed: {error}"}
         finally:
