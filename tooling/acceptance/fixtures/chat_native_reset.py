@@ -30,6 +30,7 @@ from tooling.acceptance.core.reset_authority import (
     require_station_reset_authority,
 )
 from tooling.acceptance.fixtures.chat_reset_targets import (
+    bound_reset_environment,
     bound_reset_target,
     require_reset_lease,
 )
@@ -587,7 +588,11 @@ def acceptance_station_environment(
     )
     if local_environment is not None:
         return local_environment
-    selected_environment = environment_name or active_deployment_environment()
+    selected_environment = (
+        environment_name
+        or bound_reset_environment(station_url)
+        or active_deployment_environment()
+    )
     environment = deploy_environment(selected_environment)
     explicit_authorization = _authorized_reset_environment(
         station_url,

@@ -206,6 +206,12 @@ Chat Fixture 子进程保留八个租约字段并使用 `pass_fds` 继承真实 
 核对 tracked-clean Profile/部署定义、非 stable policy、deployment environment
 和完整 Station URL。此映射是运行输入，不是第二份授权，也不要求先把每个
 目标设为共享 active Profile。作用域退出后恢复映射，子进程沿用相同映射。
+在已绑定多个 Profile 的 Fixture 中，未显式指定 deployment 的操作先按完整
+Station URL 唯一匹配 reviewed target，再加载该 deployment；不得用 active
+Profile 推断另一个 URL 的归属。显式 deployment 仍须通过原有精确目标校验。
+空 URL、未知 URL、歧义匹配、binding 漂移、stable policy 与缺失 live lease
+均保持拒绝。Chat Fixture target owner 为这些拒绝附上实际 expected/observed
+资源检查与恢复动作；没有执行的检查不得补写为通过。
 
 macOS Runtime Cell 采用 Native Input 合同的 semantic-nonintrusive 默认值，
 在构建和写入 PREPARING 状态之前检查输入隔离。
