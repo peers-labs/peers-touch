@@ -2460,5 +2460,46 @@ class LaunchContextCleanupTests(unittest.TestCase):
             self.assertIsNone(EphemeralGateClient.from_environment())
 
 
+class InheritedDescriptorLauncherTest(unittest.TestCase):
+    def test_ordinary_gate_inherits_real_fd_through_shell(self) -> None:
+        read_fd, write_fd = os.pipe()
+        self.addCleanup(os.close, read_fd)
+        self.addCleanup(os.close, write_fd)
+        completed = GateProcessLauncher(
+            environment={"LEASE_FD": str(read_fd)},
+            pass_fds=(read_fd,),
+        ).run(
+            GateLaunchSpec(
+                argv=(
+                    "sh", "-c",
+                    "exec \"$1\" -c 'import os; os.fstat(int(os.environ[\"LEASE_FD\"]))'",
+                    "gate", sys.executable,
+                ),
+                timeout_seconds=5,
+                required_capabilities=(),
+            ),
+            None,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        os.fstat(read_fd)  # The borrower must not release the parent's descriptor.
+
+    def test_context_gate_rejects_extra_descriptor_before_spawn(self) -> None:
+        binding = MagicMock()
+        with patch.object(subprocess, "Popen") as popen:
+            with self.assertRaisesRegex(
+                EphemeralLaunchContextInvalid, "ambient descriptors",
+            ):
+                GateProcessLauncher(environment={}, pass_fds=(9,)).run(
+                    GateLaunchSpec(
+                        argv=(sys.executable, "-c", "pass"),
+                        timeout_seconds=5,
+                        required_capabilities=("synthetic.echo",),
+                    ),
+                    binding,
+                )
+        popen.assert_not_called()
+        binding.close_parent_copy.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

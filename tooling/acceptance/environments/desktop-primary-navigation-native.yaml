@@ -33,7 +33,7 @@
     {
       "id": "chat-native-actors",
       "authorization_required": true,
-      "authorization_ref": "env:CHAT_ACCEPTANCE_RESET"
+      "authorization_ref": "station.reset:chat-native-actors"
     }
   ],
   "credentials": [

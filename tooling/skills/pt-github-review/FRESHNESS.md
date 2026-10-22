@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 21dee6352fe043dba6a8ba8331b2f5b6be5bbaaba572f61db8a44416ca5c1562
+covered_docs_hash: 8a49d168a4acb54cc70980cfff347472b1e53c5c387a2cf40d95c7ddd025e741
 
 covered_docs:
   - AGENTS.md
@@ -42,6 +42,14 @@ cleanup, original aggregate identity and untouched downstream mutation.
 No SKILL.md amendment or new knowledge entry is required.
 
 ## Parent Runtime Reset Lease Review
+
+Ordinary Gate commands now borrow the verified live descriptor through the
+existing Launcher; extra descriptors remain forbidden for capability-context
+Gates. Chat's concrete Profile map stays business-owned and revalidates each
+non-stable, tracked-clean deployment target. Boolean flags cannot authorize
+mutation. Real shell-child descriptor tests, target mismatch/stable rejection
+tests, and reset-before-local-storage admission retain the existing trust
+boundary, so no review policy amendment or new generic fixture is required.
 
 Acceptance's Fixture reset reference remains scope metadata. The Runner now
 acquires the canonical Machine Dev OS lease before provisioning, revalidates

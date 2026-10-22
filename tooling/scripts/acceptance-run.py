@@ -2550,6 +2550,7 @@ def main() -> int:
             runtime_cell_manifest = None
             runtime_cell_manifest_path = None
             runtime_secrets: tuple[str, ...] = ()
+            authority_environment: dict[str, str] = {}
             output_text = ""
             exit_code: int | None = None
             timed_out = False
@@ -2831,6 +2832,7 @@ def main() -> int:
                         gate_env = gate_run.subprocess_environment(
                             os.environ.copy()
                         )
+                        gate_env.update(authority_environment)
                     gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
                         aggregate_source,
                         sort_keys=True,
@@ -2864,7 +2866,23 @@ def main() -> int:
                         )
                     )
                     try:
-                        if "argv" in gate or execution is not None:
+                        inherited_fds: tuple[int, ...] = ()
+                        if (
+                            not gate.get("ephemeralCapabilities")
+                            and gate_env.get("PT_MACHINE_LEASE_KIND") == "station.reset"
+                        ):
+                            from tooling.acceptance.core.reset_authority import (
+                                require_station_reset_authority,
+                            )
+
+                            with run_environment(gate_env):
+                                execute_stage(
+                                    execution, "fixture-launch-authority",
+                                    require_station_reset_authority,
+                                    gate_env["PT_MACHINE_LEASE_RESET_SCOPE"],
+                                )
+                            inherited_fds = (int(gate_env["PT_MACHINE_LEASE_FD"]),)
+                        if "argv" in gate or execution is not None or inherited_fds:
                             from tooling.acceptance.core import (
                                 GateLaunchSpec,
                                 GateProcessLauncher,
@@ -2877,6 +2895,7 @@ def main() -> int:
                                     min(1, execution.budget.cleanup_seconds / 4)
                                     if execution else 5
                                 ),
+                                pass_fds=inherited_fds,
                             )
                             completed = execute_stage(
                                 execution, "command", launcher.run,

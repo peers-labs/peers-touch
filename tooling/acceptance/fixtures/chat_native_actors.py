@@ -37,6 +37,10 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     seed_federation_context,
     verify_disposable_station_runtime,
 )
+from tooling.acceptance.fixtures.chat_reset_targets import (
+    PROFILE_BINDINGS_ENV,
+    require_reset_lease,
+)
 
 
 ACTOR_ACCOUNTS = {
@@ -167,22 +171,20 @@ def reset_fixture(
     operation_deadline = effective_deadline - termination_reserve
     try:
         child_environment = os.environ.copy()
-        if not child_environment.get(RESET_PROFILE_AUTHORIZATION_ENV) and not child_environment.get(
-            RESET_ENVIRONMENTS_AUTHORIZATION_ENV
-        ):
+        if not any(child_environment.get(key) for key in (
+            RESET_PROFILE_AUTHORIZATION_ENV,
+            RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
+            PROFILE_BINDINGS_ENV,
+        )):
             lease_profile = machine_lease_reset_profile()
             if lease_profile:
                 child_environment[
                     RESET_PROFILE_AUTHORIZATION_ENV
                 ] = lease_profile
-        for key in (
-            "PT_MACHINE_LEASE_KIND",
-            "PT_MACHINE_LEASE_RESOURCE_ID",
-            "PT_MACHINE_LEASE_RESET_SCOPE",
-            "PT_MACHINE_LEASE_FD",
-            "PT_MACHINE_LEASE_ID",
-        ):
-            child_environment.pop(key, None)
+        inherited_fds: tuple[int, ...] = ()
+        if child_environment.get("PT_MACHINE_LEASE_KIND") == "station.reset":
+            require_reset_lease()
+            inherited_fds = (int(child_environment["PT_MACHINE_LEASE_FD"]),)
         if reset_authorized is not None:
             if reset_authorized:
                 child_environment["CHAT_ACCEPTANCE_RESET"] = "1"
@@ -206,6 +208,7 @@ def reset_fixture(
             text=True,
             shell=False,
             close_fds=True,
+            pass_fds=inherited_fds,
             start_new_session=os.name == "posix",
         )
     except OSError as error:
@@ -716,7 +719,7 @@ def produce_actor_manifest(
     deployment_environment: str,
     roles: Iterable[str],
     credential_ref: str,
-    reset_authorized: bool,
+    reset_authorized: bool | None,
 ) -> tuple[ActorManifest, Path, dict[str, str]]:
     return produce_bound_actor_manifest(
         environment_id=environment_id,
@@ -736,11 +739,13 @@ def produce_bound_actor_manifest(
     run_id: str,
     role_targets: Mapping[str, tuple[str, str]],
     credential_ref: str,
-    reset_authorized: bool,
+    reset_authorized: bool | None,
     fixture_id: str = "chat-native-actors",
 ) -> tuple[ActorManifest, Path, dict[str, str]]:
     unique_roles = tuple(dict.fromkeys(role_targets))
-    if not reset_authorized:
+    if reset_authorized is None:
+        require_reset_lease()
+    elif not reset_authorized:
         raise BlockedError(
             reason=(
                 "Chat native actor reset requires CHAT_ACCEPTANCE_RESET=1 "

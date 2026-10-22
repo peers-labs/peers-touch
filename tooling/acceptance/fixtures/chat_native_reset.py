@@ -29,6 +29,10 @@ from tooling.acceptance.core.provisioner import (
 from tooling.acceptance.core.reset_authority import (
     require_station_reset_authority,
 )
+from tooling.acceptance.fixtures.chat_reset_targets import (
+    bound_reset_target,
+    require_reset_lease,
+)
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
 
@@ -407,6 +411,7 @@ def _authorized_reset_environment(
     selected_environment: str,
     environment: dict[str, str],
 ) -> tuple[str, dict[str, str]] | None:
+    bound_target = bound_reset_target(selected_environment, station_url)
     configured_profile = os.environ.get(
         RESET_PROFILE_AUTHORIZATION_ENV,
         "",
@@ -417,10 +422,16 @@ def _authorized_reset_environment(
     ).strip()
     lease_profile = (
         ""
-        if configured_profile or authorized_environments_raw
+        if bound_target or configured_profile or authorized_environments_raw
         else machine_lease_reset_profile()
     )
-    authorized_profile = configured_profile or lease_profile
+    authorized_profile = (
+        bound_target["profile"]
+        if bound_target is not None
+        else configured_profile or lease_profile
+    )
+    if bound_target is not None:
+        authorized_environments_raw = ""
     if authorized_profile and authorized_environments_raw:
         raise RuntimeError(
             "Chat Acceptance reset requires exactly one authorization mode"
@@ -429,7 +440,15 @@ def _authorized_reset_environment(
         return None
 
     if authorized_profile:
-        profile = active_profile_environment()
+        profile = (
+            {
+                "PT_DEV_PROFILE": bound_target["profile"],
+                "PT_STATION_DEPLOY_ENV": bound_target["environment"],
+                "PT_STATION_URL": bound_target["stationUrl"],
+            }
+            if bound_target is not None
+            else active_profile_environment()
+        )
         active_profile = profile.get("PT_DEV_PROFILE", "").strip()
         active_environment = profile.get("PT_STATION_DEPLOY_ENV", "").strip()
         active_station = profile.get("PT_STATION_URL", "").rstrip("/")
@@ -1260,10 +1279,7 @@ def duplicate_acceptance_queue_delivery(
     *,
     deployment_environment: str = "",
 ) -> dict[str, object]:
-    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-        raise RuntimeError(
-            "CHAT_ACCEPTANCE_RESET=1 is required for queue replay fault injection"
-        )
+    require_reset_lease()
     if not source_item_id or not recipient_ptid or not recipient_device_id:
         raise RuntimeError("queue replay requires source item and recipient endpoint")
 
@@ -2485,15 +2501,7 @@ def prepare_local_friend_request_lifecycle(
     *,
     reset_authorized: bool | None = None,
 ) -> None:
-    authorized = (
-        os.environ.get("CHAT_ACCEPTANCE_RESET") == "1"
-        if reset_authorized is None
-        else reset_authorized
-    )
-    if not authorized:
-        raise RuntimeError(
-            "CHAT_ACCEPTANCE_RESET=1 is required for destructive Chat reset"
-        )
+    require_reset_lease()
     if (
         not sender_ptid.startswith("ptid:")
         or not receiver_ptid.startswith("ptid:")
@@ -2565,10 +2573,7 @@ def reset_fixture_follow_edges(
     environment_name: str,
     actor_ptids: Iterable[str],
 ) -> None:
-    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-        raise RuntimeError(
-            "CHAT_ACCEPTANCE_RESET=1 is required for Social relationship reset"
-        )
+    require_reset_lease()
     ptids = tuple(sorted({
         ptid.strip()
         for ptid in actor_ptids
@@ -2658,10 +2663,7 @@ COMMIT;
 
 
 def reset_station_chat_state(environment_name: str) -> None:
-    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-        raise RuntimeError(
-            "CHAT_ACCEPTANCE_RESET=1 is required for destructive Chat reset"
-        )
+    require_reset_lease()
     profile = active_profile_environment()
     station_url = profile.get("PT_STATION_URL", "").strip()
     local_environment = _local_source_environment(
@@ -2900,8 +2902,8 @@ def main() -> int:
     parser.add_argument("--accounts", nargs="+", default=["alice", "bob", "charlie"])
     args = parser.parse_args()
 
-    reset_roots = reset_local_client_storage(args.accounts)
     reset_station_chat_state(args.environment)
+    reset_roots = reset_local_client_storage(args.accounts)
     print(
         f"native Chat fixture reset: environment={args.environment} "
         f"local_storage_roots={reset_roots}"

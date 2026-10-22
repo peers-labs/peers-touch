@@ -788,6 +788,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             self.assertTrue((root / "eve" / "storage").is_dir())
 
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_local_source_reset_recreates_only_profile_database(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -902,6 +903,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             self.assertEqual(evidence["afterCommit"], "abc123")
 
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_local_source_queue_replay_duplicates_acked_item(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "station.db"
@@ -1020,6 +1022,7 @@ WHERE recipient_ptid = 'ptid:bob'
             self.assertEqual(evidence["payloadSha256"], "0304")
 
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_remote_queue_replay_preserves_event_sequence(self) -> None:
         with patch(
             "tooling.acceptance.fixtures.chat_native_reset."
@@ -1306,6 +1309,7 @@ ORDER BY owner_ptid
             ):
                 reset_local_client_storage(["../outside"], Path(directory))
 
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_friend_request_lifecycle_removes_only_the_selected_pair(
         self,
     ) -> None:
@@ -1344,6 +1348,7 @@ ORDER BY owner_ptid
             sql,
         )
 
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_social_fixture_follow_reset_removes_all_selected_actor_edges(
         self,
     ) -> None:
@@ -1561,6 +1566,7 @@ ORDER BY owner_ptid
         "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
         return_value=DISPOSABLE_ENVIRONMENT,
     )
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_station_reset_clears_sessions_and_restores_preset_credentials(
         self,
         _environment,
@@ -1628,11 +1634,11 @@ ORDER BY owner_ptid
         self.assertIn("native Chat preset actor PTIDs are invalid", sql)
         self.assertNotIn("_actor_id::text", sql)
 
-    @patch.dict(os.environ, {}, clear=True)
-    def test_station_reset_requires_explicit_authorization(self) -> None:
+    @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"}, clear=True)
+    def test_station_reset_requires_live_lease_even_with_boolean(self) -> None:
         with self.assertRaisesRegex(
             RuntimeError,
-            "CHAT_ACCEPTANCE_RESET=1 is required",
+            "live station.reset lease",
         ):
             reset_station_chat_state("chat-native-acceptance")
 

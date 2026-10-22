@@ -2217,18 +2217,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     reason="home-station contract is missing chat-native-actors fixture",
                     resource="fixture:chat-native-actors",
                 )
-            authorization_ref = (
-                fixture.authorization_ref or "env:CHAT_ACCEPTANCE_RESET"
-            )
-            authorization_name = (
-                authorization_ref[4:]
-                if authorization_ref.startswith("env:")
-                else authorization_ref
-            )
-            reset_authorized = (
-                not fixture.authorization_required
-                or os.environ.get(authorization_name) == "1"
-            )
             if not profile_env.get("PT_STATION_DEPLOY_ENV", "").strip():
                 raise BlockedError(
                     reason="Active profile is missing PT_STATION_DEPLOY_ENV",
@@ -2247,7 +2235,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 deployment_environment=deployment_environment,
                 roles=roles,
                 credential_ref=credential_refs[0] if credential_refs else "",
-                reset_authorized=reset_authorized,
+                reset_authorized=None,
             )
             clients = self._clients(gate_id, manifest.run_id, slot)
             manifest = dataclasses.replace(

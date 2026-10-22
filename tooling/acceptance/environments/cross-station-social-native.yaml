@@ -90,7 +90,7 @@
     {
       "id": "cross-station-social-actors",
       "authorization_required": true,
-      "authorization_ref": "env:SOCIAL_CROSS_STATION_ACCEPTANCE_RESET"
+      "authorization_ref": "station.reset:cross-station-social-actors"
     }
   ],
   "credentials": [],

@@ -214,6 +214,7 @@ class GateProcessLauncher:
         cwd: Optional[str] = None,
         environment: Optional[Mapping[str, str]] = None,
         termination_timeout_seconds: float = 5.0,
+        pass_fds: tuple[int, ...] = (),
     ) -> None:
         if not _is_positive_finite_timeout(termination_timeout_seconds):
             raise EphemeralLaunchContextInvalid(
@@ -223,6 +224,17 @@ class GateProcessLauncher:
         self._cwd = cwd
         self._environment = None if environment is None else dict(environment)
         self._termination_timeout_seconds = termination_timeout_seconds
+        if (
+            not isinstance(pass_fds, tuple)
+            or any(type(fd) is not int or fd < 3 for fd in pass_fds)
+            or len(set(pass_fds)) != len(pass_fds)
+            or (pass_fds and os.name != "posix")
+        ):
+            raise EphemeralLaunchContextInvalid(
+                "inherited descriptors must be unique POSIX file descriptors",
+                operation="launch",
+            )
+        self._pass_fds = pass_fds
 
     def run(
         self,
@@ -233,6 +245,12 @@ class GateProcessLauncher:
         if bool(spec.required_capabilities) != has_context:
             raise EphemeralLaunchContextInvalid(
                 "launch binding must match required capabilities",
+                operation="launch",
+            )
+        if has_context and self._pass_fds:
+            binding.close_parent_copy()
+            raise EphemeralLaunchContextInvalid(
+                "context Gates cannot inherit ambient descriptors",
                 operation="launch",
             )
         if binding is not None and self._environment is None:
@@ -265,6 +283,8 @@ class GateProcessLauncher:
         }
         if os.name == "posix":
             popen_options["start_new_session"] = True
+            if self._pass_fds:
+                popen_options["pass_fds"] = self._pass_fds
         if binding is not None:
             environment = dict(
                 os.environ if environment is None else environment

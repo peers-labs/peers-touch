@@ -1527,5 +1527,89 @@ class ProfileActivationContractTests(unittest.TestCase):
         )
 
 
+class ChatResetTargetTests(unittest.TestCase):
+    def test_bound_profiles_reset_both_stations_and_restore_context(self) -> None:
+        from tooling.acceptance.fixtures import chat_reset_targets as targets
+
+        profiles = {
+            "chat-native-disposable": {
+                "profile": "chat-native-disposable", "environment": "chat-station",
+                "stationUrl": "http://192.0.2.40:18132",
+            },
+            "fiveArm": {
+                "profile": "fiveArm", "environment": "five-station",
+                "stationUrl": "http://192.0.2.50:18080",
+            },
+        }
+        with patch.dict(os.environ, {}, clear=True), patch.object(
+            targets, "require_reset_lease",
+        ), patch.object(
+            targets, "_reviewed_profile", side_effect=profiles.__getitem__,
+        ):
+            with targets.bound_reset_profiles(profiles):
+                for profile in profiles.values():
+                    resolved = targets.bound_reset_target(
+                        profile["environment"], profile["stationUrl"],
+                    )
+                    self.assertEqual(resolved, profile)
+                with self.assertRaises(BlockedError):
+                    targets.bound_reset_target("five-station", "http://192.0.2.40:18132")
+                with self.assertRaises(BlockedError):
+                    targets.bound_reset_target("unknown-station", "")
+            self.assertNotIn(targets.PROFILE_BINDINGS_ENV, os.environ)
+
+    def test_reviewed_stable_target_remains_protected(self) -> None:
+        from tooling.acceptance.fixtures import chat_reset_targets as targets
+
+        response = subprocess.CompletedProcess(
+            [], 0, stdout=json.dumps({
+                "profile": "prodStable", "resetPolicy": "stable-protected",
+                "environment": "prod", "stationUrl": "https://station.example",
+            }),
+        )
+        with patch.object(targets.subprocess, "run", return_value=response):
+            with self.assertRaisesRegex(BlockedError, "PROFILE_RESET_PROTECTED"):
+                targets._reviewed_profile("prodStable")
+
+    def test_reset_child_inherits_actual_fd_and_source_identity(self) -> None:
+        from tooling.acceptance.fixtures import chat_native_actors as actors
+        from tooling.acceptance.fixtures.chat_reset_targets import PROFILE_BINDINGS_ENV
+
+        read_fd, write_fd = os.pipe()
+        self.addCleanup(os.close, read_fd)
+        self.addCleanup(os.close, write_fd)
+        real_popen = subprocess.Popen
+        observations = []
+
+        def launch(_argv, **options):
+            observations.append(options)
+            code = (
+                "import os;"
+                "os.fstat(int(os.environ['PT_MACHINE_LEASE_FD']));"
+                "assert os.environ['PT_MACHINE_LEASE_SOURCE_HEAD']=='candidate';"
+                "assert os.environ['PT_MACHINE_LEASE_ID']=='real-fd-test';"
+            )
+            return real_popen([sys.executable, "-c", code], **options)
+
+        environment = {
+            "PT_MACHINE_LEASE_KIND": "station.reset",
+            "PT_MACHINE_LEASE_RESOURCE_ID": "chat-native-actors",
+            "PT_MACHINE_LEASE_RESET_SCOPE": "chat-native-actors",
+            "PT_MACHINE_LEASE_FD": str(read_fd),
+            "PT_MACHINE_LEASE_ID": "real-fd-test",
+            "PT_MACHINE_LEASE_SOURCE_HEAD": "candidate",
+            PROFILE_BINDINGS_ENV: json.dumps({"five-station": "fiveArm"}),
+        }
+        with patch.dict(os.environ, environment, clear=True), patch.object(
+            actors, "require_reset_lease",
+        ), patch.object(actors.subprocess, "Popen", side_effect=launch):
+            actors.reset_fixture("five-station", ("bob",))
+        self.assertEqual(observations[0]["pass_fds"], (read_fd,))
+        self.assertEqual(
+            observations[0]["env"][PROFILE_BINDINGS_ENV],
+            environment[PROFILE_BINDINGS_ENV],
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

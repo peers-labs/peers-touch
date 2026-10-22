@@ -40,6 +40,11 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     fixture_password,
     produce_bound_actor_manifest,
 )
+from tooling.acceptance.fixtures.chat_reset_targets import (
+    PROFILE_BINDINGS_ENV,
+    bound_reset_profiles,
+    reviewed_profile_bindings,
+)
 
 from .home_station import HomeStationProvisioner
 from .remote_source_identity import resolve_remote_source_identity
@@ -73,7 +78,6 @@ PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
     environment_id = "native-tauri-embedded-webdriver"
     fixture_id = "chat-native-actors"
-    default_authorization_ref = "env:CHAT_ACCEPTANCE_RESET"
     product_label = "Native Chat"
 
     def __init__(
@@ -88,6 +92,13 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             if not station_profiles
             else station_profiles
         )
+
+    def prepare_fixture_authority(self, *, budget_seconds: float) -> dict[str, str]:
+        environment = super().prepare_fixture_authority(budget_seconds=budget_seconds)
+        environment[PROFILE_BINDINGS_ENV] = json.dumps(
+            reviewed_profile_bindings(self._required_station_profiles().values()),
+        )
+        return environment
 
     def _required_station_profiles(self) -> dict[str, str]:
         expected = {
@@ -495,14 +506,6 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                     ),
                     resource=f"fixture:{self.fixture_id}",
                 )
-            authorization_ref = (
-                fixture.authorization_ref or self.default_authorization_ref
-            )
-            authorization_name = authorization_ref.removeprefix("env:")
-            reset_authorized = (
-                not fixture.authorization_required
-                or os.environ.get(authorization_name) == "1"
-            )
             roles = self._actor_roles(gate_id)
             clients = self._clients(gate_id, manifest.run_id, slot)
             role_targets = self._actor_role_targets(
@@ -511,14 +514,15 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 self.contract.clients,
                 services,
             )
-            actor_manifest, _, actor_ref = produce_bound_actor_manifest(
-                environment_id=self.environment_id,
-                run_id=manifest.run_id,
-                role_targets=role_targets,
-                credential_ref=credential_refs[0] if credential_refs else "",
-                reset_authorized=reset_authorized,
-                fixture_id=self.fixture_id,
-            )
+            with bound_reset_profiles(self._required_station_profiles().values()):
+                actor_manifest, _, actor_ref = produce_bound_actor_manifest(
+                    environment_id=self.environment_id,
+                    run_id=manifest.run_id,
+                    role_targets=role_targets,
+                    credential_ref=credential_refs[0] if credential_refs else "",
+                    reset_authorized=None,
+                    fixture_id=self.fixture_id,
+                )
             if gate_id == "federation-two-station-lifecycle-e2e":
                 actor_ref = self._persist_station_keyed_actor_manifest(
                     manifest=actor_manifest,
@@ -591,7 +595,6 @@ class CrossStationSocialNativeProvisioner(
     environment_id = "cross-station-social-native"
     required_slot = 13
     fixture_id = "cross-station-social-actors"
-    default_authorization_ref = "env:SOCIAL_CROSS_STATION_ACCEPTANCE_RESET"
     product_label = "Cross-Station Social"
 
     def __init__(

@@ -143,12 +143,25 @@ Profile reset policy，也不实现业务删除。
 最后释放；业务 cleanup 继续使用本 Gate 的环境和真实 FD。已继承同一 scope
 的租约必须复验，借用者不释放。一个 Environment 声明多个 reset scope
 时明确拒绝，不能用一个 scope 冒充全部权限。锁内校验失败或取消都会清空
-metadata 并释放锁。子 Gate 的隔离环境仍不接受 raw reset authority。
+metadata 并释放锁。Capability context 的隔离环境仍不接受 raw reset authority。
+普通 Gate 在 launch 前复验同一真实租约，通过已有 Launcher 的显式
+`pass_fds` 继承该 FD 和 Provisioner 产出的输入；借用者不负责释放。
+Capability context Gate 拒绝额外继承 FD，继续只通过其专用 channel 调用能力。
 
 Runner 的父进程上下文显式投影租约的 FD、ID、kind、resource、scope、
 workspace、branch、head 八个字段，并在退出时恢复原值。取得租约之后，
 credentials、provision 与 cleanup 均重新进入这一上下文；只更新子进程
 环境字典不能证明父 Provisioner 持有可验证权限。
+
+Native Chat、Chat Storage、Home Station 与 Cross-Station Social 的 Fixture
+声明 canonical `station.reset:<scope>`，不再要求布尔 reset 开关。
+Chat Fixture 子进程保留八个租约字段并使用 `pass_fds` 继承真实 FD；
+远端 reset 必须先通过租约校验，再触碰本地 client storage。
+多 Station Fixture 由业务 Provisioner 将已选择的 Profile 映射为精确部署目标；
+每个目标重新调用 Machine Dev 的公开 Profile definition owner，
+核对 tracked-clean Profile/部署定义、非 stable policy、deployment environment
+和完整 Station URL。此映射是运行输入，不是第二份授权，也不要求先把每个
+目标设为共享 active Profile。作用域退出后恢复映射，子进程沿用相同映射。
 
 macOS Runtime Cell 采用 Native Input 合同的 semantic-nonintrusive 默认值，
 在构建和写入 PREPARING 状态之前检查输入隔离。
