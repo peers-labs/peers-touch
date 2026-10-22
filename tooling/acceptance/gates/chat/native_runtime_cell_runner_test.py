@@ -1388,8 +1388,15 @@ INSERT INTO conversation_read_cursors VALUES
                     node
                     for node in ast.walk(tree)
                     if isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Name)
-                    and node.func.id == "async_harness"
+                    and (
+                        isinstance(node.func, ast.Name)
+                        and node.func.id == "async_harness"
+                        or filename == "native_interactions_runner.py"
+                        and isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "self"
+                        and node.func.attr == "harness"
+                    )
                     and len(node.args) >= 3
                     and isinstance(node.args[1], ast.Constant)
                     and node.args[1].value == "createGroup"
@@ -1478,8 +1485,15 @@ INSERT INTO conversation_read_cursors VALUES
                     node
                     for node in ast.walk(tree)
                     if isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Name)
-                    and node.func.id == "async_harness"
+                    and (
+                        isinstance(node.func, ast.Name)
+                        and node.func.id == "async_harness"
+                        or filename == "native_interactions_runner.py"
+                        and isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "self"
+                        and node.func.attr == "harness"
+                    )
                     and len(node.args) >= 3
                     and isinstance(node.args[1], ast.Constant)
                     and node.args[1].value == "createDirectConversation"

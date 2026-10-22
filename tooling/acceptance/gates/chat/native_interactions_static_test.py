@@ -252,7 +252,7 @@ class NativeInteractionContractsTest(unittest.TestCase):
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
         start = source.index('        target_actor = "bob"')
-        end = source.index("        deleted = async_harness(", start)
+        end = source.index("        deleted = self.harness(", start)
         actor_hide = source[start:end]
 
         self.assertIn("target_authority_sequence", actor_hide)

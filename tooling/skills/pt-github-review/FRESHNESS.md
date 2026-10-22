@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: c70cd162380b04c4cea9308a1ac6bbdf93a93004eeea660a1005e6c6fd7038c7
+covered_docs_hash: cc0a69f657a3d3a05eef16e1fa5ae4a8094adc5a849b5077d546f49011570cd1
 
 covered_docs:
   - AGENTS.md
@@ -37,7 +37,10 @@ Contacts now commit once per verified Station target with all pair-level
 readback assertions preserved inside that transaction. Target validation is
 not cached across runs or leases. All Native interactions polls journal actual
 predicates and their unfiltered projections in isolated nested sampling contexts,
-as supporting observations without changing any assertion or budget. Existing
+as supporting observations without changing any assertion or budget. Non-poll
+Harness and Station readbacks journal actual call boundaries; RPC observations
+leave expected-rejection judgment to the enclosing negative assertion. Input
+payloads remain absent from these observations. Existing
 ownership, atomicity and evidence rules cover these changes; no Skill policy
 amendment is required.
 

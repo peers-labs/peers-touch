@@ -406,7 +406,11 @@ owner；predicate observation 保留期望值、实际值或实际异常，以�
 读取的实际消息、Engine、Group 和 DOM 投影。嵌套等待使用独立采样上下文，
 过滤条件返回空值时仍保留底层投影，不把未满足与缺失状态混为一谈。状态改变
 时有界采样，已满足条件立即记录，不改变等待断言、轮询间隔或执行预算。
-非轮询的业务操作仅在已有 Step 边界中可观察。
+非轮询 Harness 调用按实际 method 与 Actor 记录开始、完成或异常边界，
+不记录密码等输入 payload。Station 读回按实际 Conversation 和 Message
+记录调用边界；轮询内仅采样实际结果，避免每次 RPC 生成嵌套 Step。
+权限负向断言拥有拒绝是否符合预期的判断，RPC 异常 observation 不能
+抢先把已预期的拒绝记为 Gate 首个失败。所有事件仍只是 supporting evidence。
 
 缺少原因、具体资源、生产阶段、上述诊断或有效证据时，输出逐项缺口，
 而非合成完整结论。业务 producer 负责补足业务检查；Reporter 只投影。
