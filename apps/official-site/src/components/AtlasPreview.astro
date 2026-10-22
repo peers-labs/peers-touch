@@ -1,6 +1,4 @@
 ---
-import ArchitectureDiagram from './ArchitectureDiagram.astro';
-
 interface Props {
   locale: 'en' | 'zh';
 }
@@ -10,109 +8,100 @@ const zh = locale === 'zh';
 const copy = zh
   ? {
       title: '多中心产品，同属一张开放网络。',
-      lead: '从用户视角出发，逐层看懂 Desktop、Mobile、Home Station、Federation 与 Connectivity，以及它们共享的契约和真实运行路径。',
-      open: '全屏打开',
-      loading: '架构画布加载中…',
-      sections: [
-        ['产品架构', '先讲产品价值，再讲实现方式。'],
-        ['技术总览', '固定中心与分层，明确状态归属，连接只做底座。'],
-        ['中心详解', '逐个下钻 Desktop、Mobile、Home Station、Federation 与 Connectivity。'],
-        ['横切架构', '状态归属、Agent 与 Applet 如何组合、契约底座和部署形态。'],
-        ['真实运行路径', '时序只出现在 Journey 里，静态拓扑不掺时间维度。'],
-      ],
-      product: ['用户眼中的 Peers', '个人设备、Home Station、Agent、Applet，以及 Federation 里的人和社区。'],
-      overview: ['多中心网络架构', '四个中心各自固定成列；Connectivity 沉在最底层，只解决可达性。'],
-      core: [
-        ['desktop-center', 'Desktop 产品中心', '涵盖产品界面、Page/Runtime Kernel、Tauri、Station Binding、本地状态与 Desktop Host。'],
-        ['mobile-center', 'Mobile 产品中心', '涵盖 Mobile Surface、Lifecycle Kernel、Tauri Mobile、Portable Cores 与 Android/iOS Host。'],
-        ['station-center', 'Home Station 权威中心', 'Frame/Touch 平台能力、App Domain 业务权威、持久状态、事件与对象，以及跨站投递。'],
-        ['federation-center', 'Federation 网络中心', 'Manifest、Membership、Policy、Sequencer、Ledger、Projection、Catalog 与成员 Station。'],
-        ['connectivity', '身份与连接底座', 'Station Identity、Signed Route、Direct/Relay 链路、Canonical Ingress、Session 与 Peer Transport。'],
-      ],
-      cross: [
-        ['authority', '权威与状态归属', '每类状态只有唯一的 Mutation Owner，其余各处都是投影、缓存或派生产物。'],
-        ['agent-execution', 'Agent 执行架构', 'Session 与 Turn 的权威归 Agent Domain；具体落在 Station 还是 Client Capability，显式声明。'],
-        ['applet-runtime', 'Applet 运行时架构', 'Lynx 沙箱、类型化 Bridge、带权限的 Host Capability Gateway 与 Station Service。'],
-        ['contracts', '共享契约底座', 'Proto 是唯一语义真源，TS、Rust、Go 的 Binding 都由它派生，本身不是在线服务。'],
-        ['deployment', '运行时与部署拓扑', 'Client 的安装形态、Station 与 Relay 的互斥角色、状态 Provider 与外部服务。'],
-      ],
-      journeys: [
-        ['journey-access-route', '可信接入与 Route 收敛', 'Direct 不通时可以切到 Circuit，但 Station Identity 与会话权威始终不变。'],
-        ['journey-same-station', 'Station 内业务写入', '授权、Owner Transaction 提交、Accepted，以及提交后的 Wake，各段边界清晰。'],
-        ['journey-device-messaging', '设备消息接收全流程', 'Durable Device Inbox、唤醒、拉取、解密、本地提交、对用户可见与 ACK，环环相扣。'],
-        ['journey-federation-governance', 'Federation 副本拉取与原子投影', '拉取后先过 Membership、签名与 PrevHash 校验，再让 Ledger 和 Projection 一起原子落库。'],
-        ['journey-cross-station', '跨 Station 的持久社交投递', '源站 Accepted、目标站 Committed、接收设备 Visible，是三个不同的完成时刻。'],
-        ['journey-agent-execution', '执行位置显式的 Agent Turn', '权威始终留在 Agent Domain，执行时明确派发给 Station Adapter 或 Client Capability。'],
+      lead: '从用户视角出发，逐层理解 Desktop、Mobile、Home Station、Federation 与 Connectivity，以及它们共享的契约和真实运行路径。完整结构与决策以仓库内架构文档和源码为准。',
+      groups: [
+        {
+          title: '产品与技术总览',
+          items: [
+            ['用户眼中的 Peers', '个人设备、Home Station、Agent、Applet，以及 Federation 里的人和社区。'],
+            ['多中心网络架构', '四个中心各自固定成列；Connectivity 沉在最底层，只解决可达性。'],
+          ],
+        },
+        {
+          title: '中心详解',
+          items: [
+            ['Desktop 产品中心', '产品界面、Page/Runtime Kernel、Tauri、Station Binding、本地状态与 Desktop Host。'],
+            ['Mobile 产品中心', 'Mobile Surface、Lifecycle Kernel、Tauri Mobile、Portable Cores 与 Android/iOS Host。'],
+            ['Home Station 权威中心', 'Frame/Touch 平台能力、App Domain 业务权威、持久状态、事件与对象，以及跨站投递。'],
+            ['Federation 网络中心', 'Manifest、Membership、Policy、Sequencer、Ledger、Projection、Catalog 与成员 Station。'],
+            ['身份与连接底座', 'Station Identity、Signed Route、Direct/Relay 链路、Canonical Ingress、Session 与 Peer Transport。'],
+          ],
+        },
+        {
+          title: '横切架构',
+          items: [
+            ['权威与状态归属', '每类状态只有唯一的 Mutation Owner，其余各处都是投影、缓存或派生产物。'],
+            ['Agent 执行架构', 'Session 与 Turn 的权威归 Agent Domain；具体落在 Station 还是 Client Capability，显式声明。'],
+            ['Applet 运行时架构', 'Lynx 沙箱、类型化 Bridge、带权限的 Host Capability Gateway 与 Station Service。'],
+            ['共享契约底座', 'Proto 是唯一语义真源，TS、Rust、Go 的 Binding 都由它派生，本身不是在线服务。'],
+            ['运行时与部署拓扑', 'Client 的安装形态、Station 与 Relay 的互斥角色、状态 Provider 与外部服务。'],
+          ],
+        },
+        {
+          title: '真实运行路径',
+          items: [
+            ['可信接入与 Route 收敛', 'Direct 不通时可以切到 Circuit，但 Station Identity 与会话权威始终不变。'],
+            ['Station 内业务写入', '授权、Owner Transaction 提交、Accepted，以及提交后的 Wake，各段边界清晰。'],
+            ['设备消息接收全流程', 'Durable Device Inbox、唤醒、拉取、解密、本地提交、对用户可见与 ACK，环环相扣。'],
+            ['Federation 副本拉取与原子投影', '拉取后先过 Membership、签名与 PrevHash 校验，再让 Ledger 和 Projection 一起原子落库。'],
+            ['跨 Station 的持久社交投递', '源站 Accepted、目标站 Committed、接收设备 Visible，是三个不同的完成时刻。'],
+            ['执行位置显式的 Agent Turn', '权威始终留在 Agent Domain，执行时明确派发给 Station Adapter 或 Client Capability。'],
+          ],
+        },
       ],
       evidenceTitle: '证据边界',
-      evidence: '架构图用于说明系统边界、状态归属与关键运行路径；权威细节以仓库内设计文档、契约和当前源码为准。图形本身不构成生产部署、业务 Journey 或多节点运行的验收证据。',
+      evidence: '本页只做架构导航。系统边界、状态归属与关键运行路径的权威细节以仓库内设计文档、契约和当前源码为准；本页不构成生产部署、业务 Journey 或多节点运行已经通过验收的证据。',
+      repository: '查看 GitHub 架构文档',
     }
   : {
       title: 'A multicenter product on one open network.',
-      lead: 'Start with the product people use, then drill into Desktop, Mobile, Home Station, Federation, Connectivity, shared contracts and real runtime journeys.',
-      open: 'Open fullscreen',
-      loading: 'Loading architecture canvas…',
-      sections: [
-        ['Product architecture', 'Explain what people get before exposing implementation.'],
-        ['Technical overview', 'Fix centers, layers, state owners and the connectivity substrate.'],
-        ['Core centers', 'Drill into Desktop, Mobile, Home Station, Federation and Connectivity.'],
-        ['Cross-cutting architecture', 'Authority, Agent/Applet composition, contracts and deployment.'],
-        ['Dynamic journeys', 'Time belongs in journeys, never in the static topology.'],
-      ],
-      product: ['Peers from a user perspective', 'Devices, a personal Home Station, Agent, Applets, and people and communities across Federations.'],
-      overview: ['Multicenter network architecture', 'Four centers keep fixed columns; Connectivity stays below them and provides reachability only.'],
-      core: [
-        ['desktop-center', 'Desktop product center', 'Product surface, Page/Runtime Kernel, Tauri, Station Binding, local state and Desktop Host.'],
-        ['mobile-center', 'Mobile product center', 'Mobile Surface, Lifecycle Kernel, Tauri Mobile, Portable Cores and Android/iOS Hosts.'],
-        ['station-center', 'Home Station authority center', 'Frame/Touch mechanics, App Domain authority, durable state, events, objects and cross-Station delivery.'],
-        ['federation-center', 'Federation network center', 'Manifest, Membership, Policy, Sequencer, Ledger, Projection, Catalog and Member Stations.'],
-        ['connectivity', 'Identity and connectivity', 'Station Identity, Signed Route, Direct, Relay, Canonical Ingress, Session and Peer Transport.'],
-      ],
-      cross: [
-        ['authority', 'Authority and state ownership', 'Every state has one mutation owner; all other copies are projections, caches or generated artifacts.'],
-        ['agent-execution', 'Agent execution architecture', 'Agent Domain owns sessions and turns while placement explicitly selects Station or Client Capability.'],
-        ['applet-runtime', 'Applet runtime architecture', 'Lynx sandbox, typed Bridge, permissioned Host Capability Gateway and Station service.'],
-        ['contracts', 'Shared contract substrate', 'Proto owns semantics; TS, Rust and Go bindings are derived artifacts, not online services.'],
-        ['deployment', 'Runtime and deployment topology', 'Client installs, exclusive Station/Relay roles, state providers and external services.'],
-      ],
-      journeys: [
-        ['journey-access-route', 'Verified access and route convergence', 'Direct may fall back to Circuit without changing Station Identity or Session authority.'],
-        ['journey-same-station', 'Same-Station business mutation', 'Authorization, owned transaction commit, accepted result and post-commit wake boundary.'],
-        ['journey-device-messaging', 'Device messaging receiver loop', 'Durable Device Inbox, wake, pull, decrypt, local commit, visible projection and ACK.'],
-        ['journey-federation-governance', 'Federation replica pull and atomic projection', 'Fetch, membership/signature/PrevHash verification, atomic Ledger + Projection commit.'],
-        ['journey-cross-station', 'Durable cross-Station social delivery', 'Accepted at source, committed at target and visible on receiver device are distinct boundaries.'],
-        ['journey-agent-execution', 'Agent turn with explicit execution placement', 'Agent Domain retains authority while dispatching a Station adapter or Client Capability.'],
+      lead: 'Understand Desktop, Mobile, the Home Station, Federation and Connectivity from the product view out, together with their shared contracts and real runtime paths. Authoritative structure and decisions live in the repository architecture documents and source.',
+      groups: [
+        {
+          title: 'Product and technical overview',
+          items: [
+            ['Peers from a user perspective', 'Devices, a personal Home Station, Agent, Applets, and people and communities across Federations.'],
+            ['Multicenter network architecture', 'Four centers keep fixed columns; Connectivity stays below them and provides reachability only.'],
+          ],
+        },
+        {
+          title: 'Core centers',
+          items: [
+            ['Desktop product center', 'Product surface, Page/Runtime Kernel, Tauri, Station Binding, local state and Desktop Host.'],
+            ['Mobile product center', 'Mobile Surface, Lifecycle Kernel, Tauri Mobile, Portable Cores and Android/iOS Hosts.'],
+            ['Home Station authority center', 'Frame/Touch mechanics, App Domain authority, durable state, events, objects and cross-Station delivery.'],
+            ['Federation network center', 'Manifest, Membership, Policy, Sequencer, Ledger, Projection, Catalog and member Stations.'],
+            ['Identity and connectivity', 'Station Identity, Signed Route, Direct/Relay paths, Canonical Ingress, Session and Peer Transport.'],
+          ],
+        },
+        {
+          title: 'Cross-cutting architecture',
+          items: [
+            ['Authority and state ownership', 'Every state has one mutation owner; all other copies are projections, caches or derived artifacts.'],
+            ['Agent execution architecture', 'Agent Domain owns sessions and turns while placement explicitly selects Station or Client Capability.'],
+            ['Applet runtime architecture', 'Lynx sandbox, typed Bridge, permissioned Host Capability Gateway and Station service.'],
+            ['Shared contract substrate', 'Proto owns semantics; TS, Rust and Go bindings are derived artifacts, not online services.'],
+            ['Runtime and deployment topology', 'Client installs, exclusive Station/Relay roles, state providers and external services.'],
+          ],
+        },
+        {
+          title: 'Real runtime journeys',
+          items: [
+            ['Verified access and route convergence', 'Direct may fall back to Circuit without changing Station Identity or Session authority.'],
+            ['Same-Station business mutation', 'Authorization, owned transaction commit, accepted result and post-commit wake boundary.'],
+            ['Device messaging receiver loop', 'Durable Device Inbox, wake, pull, decrypt, local commit, visible projection and ACK.'],
+            ['Federation replica pull and atomic projection', 'Fetch, membership/signature/PrevHash verification, atomic Ledger + Projection commit.'],
+            ['Durable cross-Station social delivery', 'Accepted at source, committed at target and visible on receiver device are distinct boundaries.'],
+            ['Agent turn with explicit execution placement', 'Agent Domain retains authority while dispatching a Station adapter or Client Capability.'],
+          ],
+        },
       ],
       evidenceTitle: 'Evidence boundary',
-      evidence: 'Diagrams illustrate system boundaries, state ownership and critical runtime paths; repository design documents, contracts and current source remain authoritative. The graphics are not proof of production deployment, business Journey acceptance or multi-node runtime behavior.',
+      evidence: 'This page is architecture navigation only. Authoritative system boundaries, state ownership and runtime paths live in repository design documents, contracts and current source; it is not evidence of production deployment, business Journey acceptance or multi-node runtime behavior.',
+      repository: 'Open architecture documents on GitHub',
     };
 
-/* SVG viewBox artboards of the generated readers; frame geometry is
-   derived from these so each embedded canvas hugs its artboard. */
-const DIAGRAM_VIEWBOX: Record<string, [number, number]> = {
-  'product-world': [1248, 522],
-  architecture: [1228, 697],
-  'desktop-center': [1230, 542],
-  'mobile-center': [1230, 542],
-  'station-center': [1288, 532],
-  'federation-center': [1288, 542],
-  connectivity: [1260, 552],
-  authority: [1080, 418],
-  'agent-execution': [1300, 492],
-  'applet-runtime': [1300, 472],
-  contracts: [1018, 542],
-  deployment: [1108, 546],
-  'journey-access-route': [1085, 638],
-  'journey-same-station': [1028, 668],
-  'journey-device-messaging': [1085, 708],
-  'journey-federation-governance': [1085, 688],
-  'journey-cross-station': [1085, 688],
-  'journey-agent-execution': [1067, 688],
-};
-const aspectOf = (slug: string): number => {
-  const artboard = DIAGRAM_VIEWBOX[slug];
-  return artboard[0] / artboard[1];
-};
+const repoUrl = 'https://github.com/peers-labs/peers-touch/tree/master/docs/architecture';
 ---
 
 <section class="pt-shell arch-hero">
@@ -122,118 +111,34 @@ const aspectOf = (slug: string): number => {
   </div>
 </section>
 
-<section class="pt-shell arch-section arch-section--first" id="product-architecture">
-  <header class="arch-section__head">
-    <h2 class="arch-section__title">{copy.sections[0][0]}</h2>
-    <p class="arch-section__subtitle">{copy.sections[0][1]}</p>
-  </header>
-  <ArchitectureDiagram
-    locale={locale}
-    slug="product-world"
-    title={copy.product[0]}
-    description={copy.product[1]}
-    openLabel={copy.open}
-    loadingLabel={copy.loading}
-    aspect={aspectOf('product-world')}
-    eager
-  />
-</section>
-
-<section class="pt-shell arch-section" id="technical-overview">
-  <header class="arch-section__head">
-    <h2 class="arch-section__title">{copy.sections[1][0]}</h2>
-    <p class="arch-section__subtitle">{copy.sections[1][1]}</p>
-  </header>
-  <ArchitectureDiagram
-    locale={locale}
-    slug="architecture"
-    title={copy.overview[0]}
-    description={copy.overview[1]}
-    openLabel={copy.open}
-    loadingLabel={copy.loading}
-    aspect={aspectOf('architecture')}
-    eager
-  />
-</section>
-
-<section class="pt-shell arch-section" id="core-centers">
-  <header class="arch-section__head">
-    <h2 class="arch-section__title">{copy.sections[2][0]}</h2>
-    <p class="arch-section__subtitle">{copy.sections[2][1]}</p>
-  </header>
-  <div class="arch-diagrams">
-    {copy.core.map(([slug, title, description]) => (
-      <ArchitectureDiagram
-        locale={locale}
-        slug={slug}
-        title={title}
-        description={description}
-        openLabel={copy.open}
-        loadingLabel={copy.loading}
-        aspect={aspectOf(slug)}
-        collapsible
-      />
-    ))}
-  </div>
-</section>
-
-<section class="pt-shell arch-section" id="cross-cutting">
-  <header class="arch-section__head">
-    <h2 class="arch-section__title">{copy.sections[3][0]}</h2>
-    <p class="arch-section__subtitle">{copy.sections[3][1]}</p>
-  </header>
-  <div class="arch-diagrams">
-    {copy.cross.map(([slug, title, description]) => (
-      <ArchitectureDiagram
-        locale={locale}
-        slug={slug}
-        title={title}
-        description={description}
-        openLabel={copy.open}
-        loadingLabel={copy.loading}
-        aspect={aspectOf(slug)}
-        collapsible
-      />
-    ))}
-  </div>
-</section>
-
-<section class="pt-shell arch-section" id="dynamic-journeys">
-  <header class="arch-section__head">
-    <h2 class="arch-section__title">{copy.sections[4][0]}</h2>
-    <p class="arch-section__subtitle">{copy.sections[4][1]}</p>
-  </header>
-  <div class="arch-diagrams">
-    {copy.journeys.map(([slug, title, description]) => (
-      <ArchitectureDiagram
-        locale={locale}
-        slug={slug}
-        title={title}
-        description={description}
-        openLabel={copy.open}
-        loadingLabel={copy.loading}
-        aspect={aspectOf(slug)}
-        collapsible
-      />
-    ))}
-  </div>
-</section>
+{copy.groups.map((group) => (
+  <section class="pt-shell arch-section">
+    <h2 class="arch-section__title">{group.title}</h2>
+    <div class="arch-grid">
+      {group.items.map(([title, body]) => (
+        <article class="arch-card">
+          <h3>{title}</h3>
+          <p>{body}</p>
+        </article>
+      ))}
+    </div>
+  </section>
+))}
 
 <section class="pt-shell arch-evidence">
   <article class="pt-trust-item">
     <h2 class="pt-trust-item__title">{copy.evidenceTitle}</h2>
     <p class="pt-trust-item__body">{copy.evidence}</p>
+    <a class="arch-repo" href={repoUrl} rel="noopener noreferrer">{copy.repository}</a>
   </article>
 </section>
 
 <style>
-  /* Narrative hero, identical type treatment to How it works (.hi-hero):
-     520px measure, gradient h1. */
   .arch-hero {
     padding-block: clamp(40px, 5vw, 56px) var(--pt-space-xl);
   }
   .arch-hero__copy {
-    width: min(100%, 520px);
+    width: min(100%, 720px);
   }
   .arch-hero h1 {
     margin-top: var(--pt-space-xs);
@@ -246,99 +151,63 @@ const aspectOf = (slug: string): number => {
     color: transparent;
   }
   .arch-hero__copy > p {
-    max-width: 32em;
+    max-width: 40em;
     margin-top: var(--pt-space-sm);
     color: var(--pt-text-secondary);
     font-size: clamp(0.95rem, 1.4vw, 1.1rem);
     line-height: 1.7;
   }
 
-  /* Sections breathe with the same 96px rhythm as Home content blocks. */
   .arch-section {
     margin-top: var(--pt-space-2xl);
   }
-  .arch-section--first {
-    margin-top: var(--pt-space-sm);
-  }
-  /* Section head matches the single h2 idiom on Roadmap (.roadmap__title)
-     and Community (.ways__title): one 32px title, no eyebrow, no number. */
-  .arch-section__head {
-    max-width: 760px;
-    margin-bottom: var(--pt-space-lg);
-  }
   .arch-section__title {
-    font-size: 32px;
-    font-weight: 700;
-    line-height: 38.4px;
-    letter-spacing: 0;
+    margin: 0 0 var(--pt-space-lg);
+    font-size: 1.35rem;
+    font-weight: 750;
+    color: var(--pt-text-primary);
   }
-  .arch-section__subtitle {
-    margin: var(--pt-space-xs) 0 0;
+  .arch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--pt-space-md);
+  }
+  .arch-card {
+    padding: 20px 22px;
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-md);
+    background: var(--pt-surface-base);
+    box-shadow: var(--pt-shadow-soft);
+  }
+  .arch-card h3 {
+    margin: 0 0 8px;
+    font-size: 1.02rem;
+    font-weight: 700;
+    color: var(--pt-text-primary);
+  }
+  .arch-card p {
+    margin: 0;
     color: var(--pt-text-secondary);
-    font-size: 0.95rem;
+    font-size: 0.94rem;
     line-height: 1.65;
   }
 
-  @media (max-width: 720px) {
-    .arch-section__title {
-      font-size: 28px;
-      line-height: 33.6px;
-    }
-  }
-
-  /* Hairline ledger: one top rule per list, one rule per row.
-     Rows render from a child component, so they stay unscoped here.
-     Mirrors the capabilities / point-list idiom used on other tabs. */
-  .arch-diagrams :global(.diagram-detail) {
-    border-bottom: 1px solid var(--pt-border-hairline);
-  }
-  .arch-diagrams :global(.diagram-detail:first-child) {
-    border-top: 1px solid var(--pt-border-hairline);
-  }
-
-  /* Evidence reuses the shared .pt-trust-item card; only rhythm and measure
-     are page-local. */
   .arch-evidence {
     margin-top: var(--pt-space-2xl);
   }
   .arch-evidence .pt-trust-item__body {
     max-width: 820px;
   }
+  .arch-repo {
+    display: inline-flex;
+    margin-top: 16px;
+    min-height: 42px;
+    align-items: center;
+    border-radius: 999px;
+    background: var(--pt-accent);
+    color: var(--pt-text-on-accent);
+    padding: 0 22px;
+    font-weight: 700;
+    text-decoration: none;
+  }
 </style>
-
-<script is:inline define:vars={{ locale }}>
-  document.querySelectorAll('[data-diagram-detail]').forEach((detail) => {
-    const summary = detail.querySelector('summary');
-    const body = detail.querySelector('.diagram-detail__body');
-    const slug = detail.dataset.diagramDetail;
-    if (location.hash === `#${slug}`) {
-      detail.open = true;
-      detail.classList.add('is-open');
-    }
-    summary.addEventListener('click', (event) => {
-      if (event.target.closest('a')) return;
-      event.preventDefault();
-      if (!detail.open) {
-        detail.open = true;
-        requestAnimationFrame(() => requestAnimationFrame(() => detail.classList.add('is-open')));
-        history.replaceState(null, '', `#${slug}`);
-        return;
-      }
-      detail.classList.remove('is-open');
-      let settled = false;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        detail.open = false;
-      };
-      body.addEventListener('transitionend', function onEnd(transitionEvent) {
-        if (transitionEvent.target === body && transitionEvent.propertyName === 'grid-template-rows') {
-          body.removeEventListener('transitionend', onEnd);
-          finish();
-        }
-      });
-      const durationMs = parseFloat(getComputedStyle(body).transitionDuration) * 1000;
-      window.setTimeout(finish, durationMs + 120);
-    });
-  });
-</script>
