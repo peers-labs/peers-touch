@@ -111,7 +111,7 @@
 
 放**跨端、跨运行时、跨层边界**的正式架构文档。
 
-Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md)，定义 Client/Station 信任边界与 Desktop 本机「找回 + 打开」切片。
+Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md)，定义 Client/Station 信任边界与 Desktop/Mobile 本机「找回 + 打开」切片；所选原生证明绑定[指定源码与环境](./architecture/domains/search/acceptance-evidence.md)。
 
 分类入口：[`architecture/README.md`](./architecture/README.md)。该入口按当前
 代码边界使用四个物理分类：

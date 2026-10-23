@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-23
-covered_docs_hash: 9295cb510ac7230e5891c5340f38080b5fa060b1ac5b94a53cf279c2f228254d
+last_verified_at: 2026-10-24
+covered_docs_hash: 677cf9413d0f5b9192f7e350465607e27853d432cda0469a26558deadff4b6ab
 
 covered_docs:
   - AGENTS.md
@@ -33,13 +33,16 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 
 ## Search Source And SQLCipher Knowledge Integration
 
-The covered index changes add the canonical closed-domain Search source to
-`docs/README.md` and the raw-byte SQLCipher key pitfall to
-`docs/knowledge/README.md`. Both additions were reviewed against the existing
-domain ownership, current-source evidence, security and knowledge-delta rules.
-They introduce no new review authority or waiver, so `SKILL.md` remains
-applicable. The architecture registry fixture now checks the exact Search
-module and capability IDs; no assertion or Gate was weakened.
+The covered index changes add the canonical Desktop/Mobile closed-domain Search
+source and its precisely bound native evidence to `docs/README.md`, and the
+raw-byte SQLCipher key pitfall to `docs/knowledge/README.md`. The covered Desktop
+runtime contract makes Search session-scoped after Messaging, with an on-demand
+Shell overlay and identity/Station invalidation instead of a persistent page.
+These changes were reviewed against the existing domain ownership, runtime,
+current-source evidence, security and knowledge-delta rules. The current review
+Skill already requires those boundaries and rejects inherited PASS; no new
+review authority, waiver, `SKILL.md` rule or fixture is needed. The architecture
+registry fixture checks the exact Search module and capability IDs.
 
 ## Mobile Origin Contract Review
 
