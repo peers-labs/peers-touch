@@ -8,11 +8,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
 from tooling.acceptance.core import AcceptanceGate, GateError
-from tooling.acceptance.gates.chat.native_file_picker import select_native_file
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD, async_harness, is_native_tauri_url, selected_native_runtime,
 )
@@ -71,6 +69,9 @@ class DeviceSearchGate(NativeTwoClientGate):
             manifest=selected.manifest, actor_manifest=selected.actor_manifest,
             runtime_binding=selected.binding, gate_id=GATE_ID, journey_id=JOURNEY_ID,
         )
+        # Bob sends the first content; creation must populate his native owner
+        # before Alice can receive and project the conversation.
+        self.direction_order = ("bob", "alice")
         self.token = uuid.uuid4().hex[:12]
         self.query = f"周会 {self.token}"
         self.conversation = ""
@@ -221,17 +222,21 @@ class DeviceSearchGate(NativeTwoClientGate):
         with tempfile.TemporaryDirectory(prefix="search-upload-") as directory:
             source = Path(directory) / f"附件计划-{self.token}.txt"
             source.write_text(f"Search real attachment {self.token}\n")
-            select_native_file(
-                actor="bob", client=sender, sessions=tuple(self.clients.values()),
-                runtime_binding=self.runtime_binding, source_path=source,
-                trigger_selector="[data-chat-attachment-picker]",
-            )
-            wait_until(
-                lambda: any(item.is_displayed() for item in sender.find_elements(
-                    '[data-chat-attachment-draft][data-chat-attachment-status="ready"]',
-                )), "real attachment draft", timeout=60,
-            )
-            sender.find_element("[data-chat-send]", 20).click()
+            native_path = self.runtime_binding.stage_native_file("bob", source)
+            sent = async_harness(sender, "sendInteractionMessage", {
+                "conversationId": self.conversation, "kind": "friend",
+                "content": f"附件 {self.token}",
+                "attachments": [{
+                    "filePath": str(native_path), "filename": source.name,
+                    "mimeType": "text/plain", "contentKind": "file", "durationMs": 0,
+                }],
+            }, timeout=90)
+            if not sent.get("messageId") or len(sent.get("attachmentIds", [])) != 1:
+                raise GateError("Search attachment requires a real Messaging upload")
+            self.report.runtime["search"]["resources"].update({
+                "attachmentMessageId": sent["messageId"],
+                "attachmentIds": sent["attachmentIds"], "attachmentFilename": source.name,
+            })
             self.submit("附件计划")
             self.wait_js(
                 f"document.querySelector('.pt-search-body')?.innerText.includes({json.dumps(source.name)})",

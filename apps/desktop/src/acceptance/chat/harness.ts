@@ -13,6 +13,7 @@ import {
 } from '../../gen/proto/domain/search/search_pb';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
+import type { MessagingLocalAttachmentIntent } from '../../services/im-service-contract';
 import {
   refreshPeerPresence,
   refreshSocialProjection,
@@ -165,6 +166,7 @@ interface SendInteractionMessageInput {
   content: string;
   replyToMessageId?: string;
   threadRootMessageId?: string;
+  attachments?: MessagingLocalAttachmentIntent[];
 }
 
 interface SendInteractionMessageBatchInput {
@@ -750,12 +752,13 @@ export function installAcceptanceHarness(): void {
       content,
       replyToMessageId = '',
       threadRootMessageId = '',
+      attachments = [],
     }: SendInteractionMessageInput) {
       const outcome = await imServiceV1.messaging.sendMessage(
         conversationId,
         kind === 'friend' ? 'direct' : 'group',
         content,
-        [],
+        attachments,
         {
           replyToMessageId: replyToMessageId || undefined,
           threadRootMessageId: threadRootMessageId || undefined,

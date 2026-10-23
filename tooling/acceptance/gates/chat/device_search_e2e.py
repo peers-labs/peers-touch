@@ -59,6 +59,11 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
     resources = search.get("resources", {})
     require(bool(resources.get("messageId")) and bool(resources.get("replyId")), "real message IDs required")
     require(len(set(resources.get("fillerIds", []))) == 55, "history must exceed the latest window")
+    require(
+        bool(resources.get("attachmentMessageId")) and len(resources.get("attachmentIds", [])) == 1
+        and bool(resources.get("attachmentFilename")),
+        "attachment filename evidence requires the real uploaded Messaging resource",
+    )
 
 
 def main() -> int:
