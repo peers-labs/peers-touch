@@ -88,6 +88,12 @@ func directiveCatalog(t *testing.T, now time.Time) catalog.Catalog {
 				Fallback: catalog.CatalogDirectiveValue{EndpointSeedID: "relay-corp-1"},
 			},
 		},
+		Distribution: &catalog.CatalogDistribution{
+			Origins: []string{
+				"http://10.37.221.38:18082",
+				"https://xconfig-backup.example.test",
+			},
+		},
 	}
 }
 
@@ -195,6 +201,12 @@ func TestDirectivePublicationAPIAcceptance(t *testing.T) {
 	}
 	if len(statement.Directives) != 1 || statement.Directives[0].GetKey() != "network.default_relay" {
 		t.Fatalf("directive missing from signed statement: %+v", statement.Directives)
+	}
+	origins := statement.GetDistribution().GetOrigins()
+	if len(origins) != 2 ||
+		origins[0].GetOrigin() != "http://10.37.221.38:18082" ||
+		origins[1].GetOrigin() != "https://xconfig-backup.example.test" {
+		t.Fatalf("distribution origins missing or reordered: %+v", origins)
 	}
 
 	// 5. Evaluate with the Station Go engine for the two targeting cases.

@@ -1,13 +1,14 @@
 # Execution Plan — Distribution Identity And Targeted Directives
 
 > **Date**: 2026-10-23
-> **Decisions**: XCFG-D04, XCFG-D05
+> **Decisions**: XCFG-D04, XCFG-D05, XCFG-D06
 > **Status**: P0, P1, and the Desktop first-run auto-default are implemented on
 > `chore/open-source-launch-prep` (uncommitted). The client owns an
 > independent `meta` module (build identity, runtime region/environment,
 > persistent stable id) consumed by X Config targeting and the Logs debug
-> panel. P2 Station fetch/watermark, Mobile parity, and the Console editor
-> remain.
+> panel. XCFG-D06 baked bootstrap origins and signed snapshot failover are
+> implemented (2026-10-24, uncommitted). P2 Station fetch/watermark, Mobile
+> directive parity, and the Console editor remain.
 
 ## Scope
 
@@ -60,6 +61,31 @@ manifest and override snapshots are deterministic.
   is no embedded-vs-service packaging fork (embedded snapshot remains an
   offline bootstrap/test mechanism only).
 
+## P1.5 (XCFG-D06) — Bootstrap origins and signed failover
+
+Packaged clients bootstrap x-config with no environment variable, and
+operators can roll out mirrors/new origins through signed snapshots.
+
+- `tooling/distribution/channels.json` — checked-in channel registry of
+  bootstrap origins; `make package` bakes the selected channel's origins as
+  comma-separated `PT_DIST_X_CONFIG_URLS`; unknown channels and inadmissible
+  origins fail the build closed. JS admission mirrors Go/Rust (HTTPS any
+  host, HTTP private IP literals only, bare base URL).
+- Proto additive field 9 `distribution.origins` (max 4, 512 chars each) on
+  `XConfigSnapshotStatement`; x-config catalog + publication validate and
+  canonicalize the list; Go integration covers acceptance vectors.
+- `x-config-core`: `origins` admission/merge (`PEERS_X_CONFIG_URL`
+  override → advertised origins → baked anchors, dedup, max 8) and the
+  shared `fetch_with_failover` driver (transport/status/size failures and
+  rejected envelopes advance; rejected acceptance never downgrades the
+  current snapshot; 304 without a current snapshot refetches unconditionally).
+- Desktop/Mobile runtimes hold override/baked/active origins, derive
+  advertised origins from the last signed snapshot itself (no second
+  persistence surface), and expose `active_origin` / `activeOrigin` in the
+  projection for diagnostics.
+- The publisher key cannot be migrated through `distribution.origins`;
+  key rotation still ships in an app release.
+
 ## P2 — Station
 
 - `apps/station/frame/touch/xcontrol`: fetch, verify, watermark, evaluate;
@@ -83,3 +109,17 @@ manifest and override snapshots are deterministic.
   statement window, so standing channel catalogs need periodic
   re-publication automation; the corpstable host reaches the Home relay
   over IPv6 only, so its Compose network enables IPv6/NAT66.
+
+## Rollout state — 2026-10-24 (XCFG-D06)
+
+- `channels.json` bakes stable (`https://xconfig.peers.shux.me:28443`) and
+  corpstable (`http://10.37.221.38:18082`) bootstrap origins; the channel
+  registry is the single source for `PT_DIST_X_CONFIG_URLS`.
+- Signed `distribution.origins` is implemented end to end (publication
+  validation, Go integration, Rust admission/merge/failover, Desktop and
+  Mobile runtimes, projection diagnostics). The live corpstable catalog
+  advertises no mirror yet: appending a real mirror to the reviewed intent
+  and republishing is the failover rollout path — no client release is
+  needed for mirror/new-origin migration, only for publisher key rotation.
+- Remaining proof: corpstable `.app` built without `PEERS_X_CONFIG_URL`
+  must fetch the corpstable origin out of the box from fresh storage.

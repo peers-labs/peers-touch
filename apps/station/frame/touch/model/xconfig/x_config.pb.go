@@ -857,6 +857,97 @@ func (x *Directive) GetFallback() *DirectiveValue {
 	return nil
 }
 
+// DistributionConfig tells clients where to fetch future snapshots. It only
+// steers transport: origins must serve keyring-valid, watermark-monotonic
+// envelopes, so an advertised origin cannot extend publisher trust.
+type DistributionConfig struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Origins       []*DistributionOrigin  `protobuf:"bytes,1,rep,name=origins,proto3" json:"origins,omitempty"` // ordered failover sequence
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DistributionConfig) Reset() {
+	*x = DistributionConfig{}
+	mi := &file_domain_x_config_x_config_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DistributionConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DistributionConfig) ProtoMessage() {}
+
+func (x *DistributionConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_x_config_x_config_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DistributionConfig.ProtoReflect.Descriptor instead.
+func (*DistributionConfig) Descriptor() ([]byte, []int) {
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *DistributionConfig) GetOrigins() []*DistributionOrigin {
+	if x != nil {
+		return x.Origins
+	}
+	return nil
+}
+
+type DistributionOrigin struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Origin        string                 `protobuf:"bytes,1,opt,name=origin,proto3" json:"origin,omitempty"` // clean base URL, no path/query
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DistributionOrigin) Reset() {
+	*x = DistributionOrigin{}
+	mi := &file_domain_x_config_x_config_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DistributionOrigin) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DistributionOrigin) ProtoMessage() {}
+
+func (x *DistributionOrigin) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_x_config_x_config_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DistributionOrigin.ProtoReflect.Descriptor instead.
+func (*DistributionOrigin) Descriptor() ([]byte, []int) {
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DistributionOrigin) GetOrigin() string {
+	if x != nil {
+		return x.Origin
+	}
+	return ""
+}
+
 type XConfigSnapshotStatement struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SchemaVersion uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
@@ -867,13 +958,14 @@ type XConfigSnapshotStatement struct {
 	EndpointSeeds []*EndpointSeed        `protobuf:"bytes,6,rep,name=endpoint_seeds,json=endpointSeeds,proto3" json:"endpoint_seeds,omitempty"`
 	Releases      []*ReleaseDescriptor   `protobuf:"bytes,7,rep,name=releases,proto3" json:"releases,omitempty"`
 	Directives    []*Directive           `protobuf:"bytes,8,rep,name=directives,proto3" json:"directives,omitempty"`
+	Distribution  *DistributionConfig    `protobuf:"bytes,9,opt,name=distribution,proto3" json:"distribution,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *XConfigSnapshotStatement) Reset() {
 	*x = XConfigSnapshotStatement{}
-	mi := &file_domain_x_config_x_config_proto_msgTypes[8]
+	mi := &file_domain_x_config_x_config_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -885,7 +977,7 @@ func (x *XConfigSnapshotStatement) String() string {
 func (*XConfigSnapshotStatement) ProtoMessage() {}
 
 func (x *XConfigSnapshotStatement) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_x_config_x_config_proto_msgTypes[8]
+	mi := &file_domain_x_config_x_config_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -898,7 +990,7 @@ func (x *XConfigSnapshotStatement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XConfigSnapshotStatement.ProtoReflect.Descriptor instead.
 func (*XConfigSnapshotStatement) Descriptor() ([]byte, []int) {
-	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{8}
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *XConfigSnapshotStatement) GetSchemaVersion() uint32 {
@@ -957,6 +1049,13 @@ func (x *XConfigSnapshotStatement) GetDirectives() []*Directive {
 	return nil
 }
 
+func (x *XConfigSnapshotStatement) GetDistribution() *DistributionConfig {
+	if x != nil {
+		return x.Distribution
+	}
+	return nil
+}
+
 type SignedXConfigSnapshot struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	SigningKeyId     string                 `protobuf:"bytes,1,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
@@ -968,7 +1067,7 @@ type SignedXConfigSnapshot struct {
 
 func (x *SignedXConfigSnapshot) Reset() {
 	*x = SignedXConfigSnapshot{}
-	mi := &file_domain_x_config_x_config_proto_msgTypes[9]
+	mi := &file_domain_x_config_x_config_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -980,7 +1079,7 @@ func (x *SignedXConfigSnapshot) String() string {
 func (*SignedXConfigSnapshot) ProtoMessage() {}
 
 func (x *SignedXConfigSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_x_config_x_config_proto_msgTypes[9]
+	mi := &file_domain_x_config_x_config_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -993,7 +1092,7 @@ func (x *SignedXConfigSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignedXConfigSnapshot.ProtoReflect.Descriptor instead.
 func (*SignedXConfigSnapshot) Descriptor() ([]byte, []int) {
-	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{9}
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *SignedXConfigSnapshot) GetSigningKeyId() string {
@@ -1077,7 +1176,11 @@ const file_domain_x_config_x_config_proto_rawDesc = "" +
 	"\tDirective\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12B\n" +
 	"\x05rules\x18\x02 \x03(\v2,.peers_touch.model.x_config.v1.DirectiveRuleR\x05rules\x12I\n" +
-	"\bfallback\x18\x03 \x01(\v2-.peers_touch.model.x_config.v1.DirectiveValueR\bfallback\"\xd7\x03\n" +
+	"\bfallback\x18\x03 \x01(\v2-.peers_touch.model.x_config.v1.DirectiveValueR\bfallback\"a\n" +
+	"\x12DistributionConfig\x12K\n" +
+	"\aorigins\x18\x01 \x03(\v21.peers_touch.model.x_config.v1.DistributionOriginR\aorigins\",\n" +
+	"\x12DistributionOrigin\x12\x16\n" +
+	"\x06origin\x18\x01 \x01(\tR\x06origin\"\xae\x04\n" +
 	"\x18XConfigSnapshotStatement\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x18\n" +
 	"\achannel\x18\x02 \x01(\tR\achannel\x12\x1a\n" +
@@ -1089,7 +1192,8 @@ const file_domain_x_config_x_config_proto_rawDesc = "" +
 	"\breleases\x18\a \x03(\v20.peers_touch.model.x_config.v1.ReleaseDescriptorR\breleases\x12H\n" +
 	"\n" +
 	"directives\x18\b \x03(\v2(.peers_touch.model.x_config.v1.DirectiveR\n" +
-	"directives\"\x93\x01\n" +
+	"directives\x12U\n" +
+	"\fdistribution\x18\t \x01(\v21.peers_touch.model.x_config.v1.DistributionConfigR\fdistribution\"\x93\x01\n" +
 	"\x15SignedXConfigSnapshot\x12$\n" +
 	"\x0esigning_key_id\x18\x01 \x01(\tR\fsigningKeyId\x12'\n" +
 	"\x0fstatement_bytes\x18\x02 \x01(\fR\x0estatementBytes\x12+\n" +
@@ -1124,7 +1228,7 @@ func file_domain_x_config_x_config_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_x_config_x_config_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_domain_x_config_x_config_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_domain_x_config_x_config_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_domain_x_config_x_config_proto_goTypes = []any{
 	(EndpointSeedKind)(0),                         // 0: peers_touch.model.x_config.v1.EndpointSeedKind
 	(ClientPlatform)(0),                           // 1: peers_touch.model.x_config.v1.ClientPlatform
@@ -1137,21 +1241,23 @@ var file_domain_x_config_x_config_proto_goTypes = []any{
 	(*TargetClause)(nil),                          // 8: peers_touch.model.x_config.v1.TargetClause
 	(*DirectiveRule)(nil),                         // 9: peers_touch.model.x_config.v1.DirectiveRule
 	(*Directive)(nil),                             // 10: peers_touch.model.x_config.v1.Directive
-	(*XConfigSnapshotStatement)(nil),              // 11: peers_touch.model.x_config.v1.XConfigSnapshotStatement
-	(*SignedXConfigSnapshot)(nil),                 // 12: peers_touch.model.x_config.v1.SignedXConfigSnapshot
-	(*peer.PublicEndpointConnectionMaterial)(nil), // 13: peers_touch.model.peer.v1.PublicEndpointConnectionMaterial
-	(*peer.SignedPublicStationAdvertisement)(nil), // 14: peers_touch.model.peer.v1.SignedPublicStationAdvertisement
-	(*timestamppb.Timestamp)(nil),                 // 15: google.protobuf.Timestamp
+	(*DistributionConfig)(nil),                    // 11: peers_touch.model.x_config.v1.DistributionConfig
+	(*DistributionOrigin)(nil),                    // 12: peers_touch.model.x_config.v1.DistributionOrigin
+	(*XConfigSnapshotStatement)(nil),              // 13: peers_touch.model.x_config.v1.XConfigSnapshotStatement
+	(*SignedXConfigSnapshot)(nil),                 // 14: peers_touch.model.x_config.v1.SignedXConfigSnapshot
+	(*peer.PublicEndpointConnectionMaterial)(nil), // 15: peers_touch.model.peer.v1.PublicEndpointConnectionMaterial
+	(*peer.SignedPublicStationAdvertisement)(nil), // 16: peers_touch.model.peer.v1.SignedPublicStationAdvertisement
+	(*timestamppb.Timestamp)(nil),                 // 17: google.protobuf.Timestamp
 }
 var file_domain_x_config_x_config_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.x_config.v1.EndpointSeed.kind:type_name -> peers_touch.model.x_config.v1.EndpointSeedKind
-	13, // 1: peers_touch.model.x_config.v1.EndpointSeed.connection_material:type_name -> peers_touch.model.peer.v1.PublicEndpointConnectionMaterial
-	14, // 2: peers_touch.model.x_config.v1.EndpointSeed.station_advertisement:type_name -> peers_touch.model.peer.v1.SignedPublicStationAdvertisement
-	15, // 3: peers_touch.model.x_config.v1.EndpointSeed.available_from:type_name -> google.protobuf.Timestamp
-	15, // 4: peers_touch.model.x_config.v1.EndpointSeed.available_until:type_name -> google.protobuf.Timestamp
+	15, // 1: peers_touch.model.x_config.v1.EndpointSeed.connection_material:type_name -> peers_touch.model.peer.v1.PublicEndpointConnectionMaterial
+	16, // 2: peers_touch.model.x_config.v1.EndpointSeed.station_advertisement:type_name -> peers_touch.model.peer.v1.SignedPublicStationAdvertisement
+	17, // 3: peers_touch.model.x_config.v1.EndpointSeed.available_from:type_name -> google.protobuf.Timestamp
+	17, // 4: peers_touch.model.x_config.v1.EndpointSeed.available_until:type_name -> google.protobuf.Timestamp
 	1,  // 5: peers_touch.model.x_config.v1.ReleaseDescriptor.platform:type_name -> peers_touch.model.x_config.v1.ClientPlatform
 	2,  // 6: peers_touch.model.x_config.v1.ReleaseDescriptor.architecture:type_name -> peers_touch.model.x_config.v1.ClientArchitecture
-	15, // 7: peers_touch.model.x_config.v1.ReleaseDescriptor.published_at:type_name -> google.protobuf.Timestamp
+	17, // 7: peers_touch.model.x_config.v1.ReleaseDescriptor.published_at:type_name -> google.protobuf.Timestamp
 	1,  // 8: peers_touch.model.x_config.v1.TargetClause.platforms:type_name -> peers_touch.model.x_config.v1.ClientPlatform
 	2,  // 9: peers_touch.model.x_config.v1.TargetClause.architectures:type_name -> peers_touch.model.x_config.v1.ClientArchitecture
 	6,  // 10: peers_touch.model.x_config.v1.TargetClause.versions:type_name -> peers_touch.model.x_config.v1.VersionConstraint
@@ -1160,16 +1266,18 @@ var file_domain_x_config_x_config_proto_depIdxs = []int32{
 	5,  // 13: peers_touch.model.x_config.v1.DirectiveRule.value:type_name -> peers_touch.model.x_config.v1.DirectiveValue
 	9,  // 14: peers_touch.model.x_config.v1.Directive.rules:type_name -> peers_touch.model.x_config.v1.DirectiveRule
 	5,  // 15: peers_touch.model.x_config.v1.Directive.fallback:type_name -> peers_touch.model.x_config.v1.DirectiveValue
-	15, // 16: peers_touch.model.x_config.v1.XConfigSnapshotStatement.issued_at:type_name -> google.protobuf.Timestamp
-	15, // 17: peers_touch.model.x_config.v1.XConfigSnapshotStatement.expires_at:type_name -> google.protobuf.Timestamp
-	3,  // 18: peers_touch.model.x_config.v1.XConfigSnapshotStatement.endpoint_seeds:type_name -> peers_touch.model.x_config.v1.EndpointSeed
-	4,  // 19: peers_touch.model.x_config.v1.XConfigSnapshotStatement.releases:type_name -> peers_touch.model.x_config.v1.ReleaseDescriptor
-	10, // 20: peers_touch.model.x_config.v1.XConfigSnapshotStatement.directives:type_name -> peers_touch.model.x_config.v1.Directive
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	12, // 16: peers_touch.model.x_config.v1.DistributionConfig.origins:type_name -> peers_touch.model.x_config.v1.DistributionOrigin
+	17, // 17: peers_touch.model.x_config.v1.XConfigSnapshotStatement.issued_at:type_name -> google.protobuf.Timestamp
+	17, // 18: peers_touch.model.x_config.v1.XConfigSnapshotStatement.expires_at:type_name -> google.protobuf.Timestamp
+	3,  // 19: peers_touch.model.x_config.v1.XConfigSnapshotStatement.endpoint_seeds:type_name -> peers_touch.model.x_config.v1.EndpointSeed
+	4,  // 20: peers_touch.model.x_config.v1.XConfigSnapshotStatement.releases:type_name -> peers_touch.model.x_config.v1.ReleaseDescriptor
+	10, // 21: peers_touch.model.x_config.v1.XConfigSnapshotStatement.directives:type_name -> peers_touch.model.x_config.v1.Directive
+	11, // 22: peers_touch.model.x_config.v1.XConfigSnapshotStatement.distribution:type_name -> peers_touch.model.x_config.v1.DistributionConfig
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_domain_x_config_x_config_proto_init() }
@@ -1189,7 +1297,7 @@ func file_domain_x_config_x_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_x_config_x_config_proto_rawDesc), len(file_domain_x_config_x_config_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   10,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

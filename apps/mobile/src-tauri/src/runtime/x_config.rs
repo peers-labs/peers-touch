@@ -1,13 +1,5 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
-use x_config_core::proto::{
-    ClientArchitecture, ClientPlatform, EndpointSeedKind, ReleaseDescriptor,
-};
-use x_config_core::{
-    project_suggestions, select_release, AcceptOutcome, XConfigError, Freshness,
-    PublisherKeyring, SecureWatermark, SecureWatermarkStore, SnapshotCacheKey, SnapshotCacheStore,
-    SnapshotCoordinator, SnapshotOrigin, StationSuggestion, MAX_ENVELOPE_BYTES,
-};
 use reqwest::blocking::Client;
 use reqwest::header::{ETAG, IF_NONE_MATCH};
 use reqwest::redirect::Policy;
@@ -19,6 +11,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, Runtime};
+use x_config_core::proto::{
+    ClientArchitecture, ClientPlatform, EndpointSeedKind, ReleaseDescriptor,
+};
+use x_config_core::{
+    effective_origins, fetch_with_failover, project_suggestions, select_release, snapshot_url,
+    FailoverSuccess, Freshness, PublisherKeyring, SecureWatermark, SecureWatermarkStore,
+    SnapshotCacheKey, SnapshotCacheStore, SnapshotCoordinator, SnapshotFetch, SnapshotOrigin,
+    StationSuggestion, XConfigError, MAX_ENVELOPE_BYTES,
+};
 
 use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
@@ -38,14 +39,24 @@ pub struct MobileXConfigRuntime {
 impl Default for MobileXConfigRuntime {
     fn default() -> Self {
         let channel = configured_channel();
-        let (remote_url, configuration_error) = match configured_remote_url(&channel) {
-            Ok(remote_url) => (remote_url, None),
+        let (override_origin, mut configuration_error) = match configured_override_origin() {
+            Ok(origin) => (origin, None),
             Err(error) => (None, Some(error.code.to_string())),
+        };
+        let baked_origins = match x_config_core::compiled_build_identity!() {
+            Some(Ok(identity)) => identity.x_config_origins,
+            Some(Err(error)) => {
+                configuration_error = configuration_error.or(Some(error.code.to_string()));
+                Vec::new()
+            }
+            None => Vec::new(),
         };
         Self {
             metadata: Mutex::new(RefreshMetadata {
                 channel,
-                remote_url,
+                override_origin,
+                baked_origins,
+                active_origin: None,
                 etag: None,
                 refreshing: false,
                 refresh_failures: 0,
@@ -85,10 +96,6 @@ impl MobileXConfigRuntime {
                 .lock()
                 .map_err(|_| x_config_error("stateLock"))?;
             let now = unix_ms();
-            let Some(url) = metadata.remote_url.clone() else {
-                drop(metadata);
-                return self.projection(app, storage);
-            };
             if metadata.refreshing || (!force && now < metadata.next_refresh_at_unix_ms) {
                 drop(metadata);
                 return self.projection(app, storage);
@@ -97,13 +104,13 @@ impl MobileXConfigRuntime {
             metadata.last_refresh_attempt_at_unix_ms = Some(now);
             RefreshPlan {
                 channel: metadata.channel.clone(),
-                url,
+                override_origin: metadata.override_origin.clone(),
+                baked_origins: metadata.baked_origins.clone(),
                 etag: metadata.etag.clone(),
             }
         };
 
         let now = unix_ms();
-        let mut fetched = fetch_snapshot(&plan);
         let cache_path = match snapshot_cache_path(app, &plan.channel) {
             Ok(path) => path,
             Err(error) => {
@@ -119,40 +126,65 @@ impl MobileXConfigRuntime {
                     return Err(map_core_error(error));
                 }
             };
-        if matches!(&fetched, Ok(FetchOutcome::NotModified { .. }))
-            && coordinator.current().is_none()
-        {
-            fetched = fetch_snapshot(&RefreshPlan {
-                channel: plan.channel.clone(),
-                url: plan.url.clone(),
-                etag: None,
-            });
+        let advertised: Vec<String> = coordinator
+            .current()
+            .and_then(|snapshot| snapshot.statement.distribution.as_ref())
+            .map(|distribution| {
+                distribution
+                    .origins
+                    .iter()
+                    .map(|entry| entry.origin.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let targets: Vec<RefreshTarget> = effective_origins(
+            plan.override_origin.as_deref(),
+            &advertised,
+            &plan.baked_origins,
+        )
+        .into_iter()
+        .filter_map(|origin| {
+            snapshot_url(&origin, &plan.channel).map(|url| RefreshTarget {
+                origin,
+                url: url.to_string(),
+            })
+        })
+        .collect();
+        if targets.is_empty() {
+            if let Ok(mut metadata) = self.metadata.lock() {
+                metadata.refreshing = false;
+            }
+            return self.projection(app, storage);
         }
+        let urls: Vec<String> = targets.iter().map(|target| target.url.clone()).collect();
+        let outcome = fetch_with_failover(
+            &urls,
+            plan.etag.as_deref(),
+            coordinator.current().is_some(),
+            |url, etag| fetch_snapshot(url, etag),
+            |bytes| coordinator.accept_remote(bytes, now),
+        );
+
         let mut metadata = self
             .metadata
             .lock()
             .map_err(|_| x_config_error("stateLock"))?;
         metadata.refreshing = false;
-        match fetched {
-            Ok(FetchOutcome::NotModified { etag }) => {
+        match outcome {
+            Ok(FailoverSuccess::NotModified { origin_index, etag }) => {
+                metadata.active_origin = targets
+                    .get(origin_index)
+                    .map(|target| target.origin.clone());
                 metadata.etag = etag.or(metadata.etag.take());
-                metadata.refresh_failures = 0;
-                metadata.next_refresh_at_unix_ms =
-                    now.saturating_add(FOREGROUND_REFRESH_INTERVAL_MS);
-                metadata.last_refresh_error = None;
+                metadata.mark_success(now);
             }
-            Ok(FetchOutcome::Snapshot { bytes, etag }) => {
-                match coordinator.accept_remote(&bytes, now) {
-                    Ok(AcceptOutcome::Advanced | AcceptOutcome::Unchanged) => {
-                        source = Freshness::Current;
-                        metadata.etag = etag;
-                        metadata.refresh_failures = 0;
-                        metadata.next_refresh_at_unix_ms =
-                            now.saturating_add(FOREGROUND_REFRESH_INTERVAL_MS);
-                        metadata.last_refresh_error = None;
-                    }
-                    Err(error) => metadata.record_failure(now, error.code),
-                }
+            Ok(FailoverSuccess::Accepted { origin_index, etag }) => {
+                metadata.active_origin = targets
+                    .get(origin_index)
+                    .map(|target| target.origin.clone());
+                source = Freshness::Current;
+                metadata.etag = etag;
+                metadata.mark_success(now);
             }
             Err(error) => metadata.record_failure(now, error.code),
         }
@@ -245,7 +277,12 @@ pub async fn x_config_discover_suggestion<R: Runtime>(
 
 struct RefreshMetadata {
     channel: String,
-    remote_url: Option<String>,
+    /// Development override (`PEERS_X_CONFIG_URL`); always tried first.
+    override_origin: Option<String>,
+    /// Package-time anchors baked from the channel registry (XCFG-D06).
+    baked_origins: Vec<String>,
+    /// Origin that served the last successful refresh, for diagnostics.
+    active_origin: Option<String>,
     etag: Option<String>,
     refreshing: bool,
     refresh_failures: u32,
@@ -255,6 +292,12 @@ struct RefreshMetadata {
 }
 
 impl RefreshMetadata {
+    fn mark_success(&mut self, now: i64) {
+        self.refresh_failures = 0;
+        self.next_refresh_at_unix_ms = now.saturating_add(FOREGROUND_REFRESH_INTERVAL_MS);
+        self.last_refresh_error = None;
+    }
+
     fn record_failure(&mut self, now: i64, code: &str) {
         self.refresh_failures = self.refresh_failures.saturating_add(1);
         let exponent = self.refresh_failures.saturating_sub(1).min(8);
@@ -416,6 +459,8 @@ pub struct XConfigProjection {
     suggestions: Vec<XConfigSuggestionProjection>,
     release: Option<ClientReleaseProjection>,
     refreshing: bool,
+    /// Base origin that served the last accepted snapshot / 304 (XCFG-D06).
+    active_origin: Option<String>,
     last_refresh_attempt_at_unix_ms: Option<i64>,
     next_refresh_at_unix_ms: Option<i64>,
     last_refresh_error: Option<String>,
@@ -447,18 +492,16 @@ pub struct ClientReleaseProjection {
 
 struct RefreshPlan {
     channel: String,
-    url: String,
+    override_origin: Option<String>,
+    baked_origins: Vec<String>,
     etag: Option<String>,
 }
 
-enum FetchOutcome {
-    NotModified {
-        etag: Option<String>,
-    },
-    Snapshot {
-        bytes: Vec<u8>,
-        etag: Option<String>,
-    },
+struct RefreshTarget {
+    /// Bare admitted base origin, mirrored into the projection on success.
+    origin: String,
+    /// Channel-scoped snapshot URL fetched from that origin.
+    url: String,
 }
 
 fn load_coordinator<'a>(
@@ -513,6 +556,7 @@ fn project_runtime(
             suggestions: Vec::new(),
             release: None,
             refreshing: metadata.refreshing,
+            active_origin: metadata.active_origin.clone(),
             last_refresh_attempt_at_unix_ms: metadata.last_refresh_attempt_at_unix_ms,
             next_refresh_at_unix_ms: optional_positive(metadata.next_refresh_at_unix_ms),
             last_refresh_error: metadata.last_refresh_error.clone(),
@@ -537,20 +581,21 @@ fn project_runtime(
         )
         .map(project_release),
         refreshing: metadata.refreshing,
+        active_origin: metadata.active_origin.clone(),
         last_refresh_attempt_at_unix_ms: metadata.last_refresh_attempt_at_unix_ms,
         next_refresh_at_unix_ms: optional_positive(metadata.next_refresh_at_unix_ms),
         last_refresh_error: metadata.last_refresh_error.clone(),
     }
 }
 
-fn fetch_snapshot(plan: &RefreshPlan) -> Result<FetchOutcome, XConfigError> {
+fn fetch_snapshot(url: &str, etag: Option<&str>) -> Result<SnapshotFetch, XConfigError> {
     let client = Client::builder()
         .timeout(REFRESH_TIMEOUT)
         .redirect(Policy::none())
         .build()
         .map_err(|_| XConfigError::new("x_config_http_client"))?;
-    let mut request = client.get(&plan.url);
-    if let Some(etag) = plan.etag.as_deref() {
+    let mut request = client.get(url);
+    if let Some(etag) = etag {
         request = request.header(IF_NONE_MATCH, etag);
     }
     let response = request
@@ -562,7 +607,7 @@ fn fetch_snapshot(plan: &RefreshPlan) -> Result<FetchOutcome, XConfigError> {
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
     if response.status() == reqwest::StatusCode::NOT_MODIFIED {
-        return Ok(FetchOutcome::NotModified { etag });
+        return Ok(SnapshotFetch::NotModified { etag });
     }
     if !response.status().is_success() {
         return Err(XConfigError::new("x_config_http_status"));
@@ -581,7 +626,7 @@ fn fetch_snapshot(plan: &RefreshPlan) -> Result<FetchOutcome, XConfigError> {
     if bytes.len() > MAX_ENVELOPE_BYTES {
         return Err(XConfigError::new("snapshot_envelope_size"));
     }
-    Ok(FetchOutcome::Snapshot { bytes, etag })
+    Ok(SnapshotFetch::Envelope { bytes, etag })
 }
 
 fn project_suggestion(suggestion: StationSuggestion) -> XConfigSuggestionProjection {
@@ -647,7 +692,9 @@ fn configured_channel() -> String {
         .unwrap_or_else(|| DEFAULT_CHANNEL.to_string())
 }
 
-fn configured_remote_url(channel: &str) -> Result<Option<String>, XConfigError> {
+/// Development override origin (XCFG-D06). Must be a bare base URL; channel
+/// scoping happens per fetch target through `snapshot_url`.
+fn configured_override_origin() -> Result<Option<String>, XConfigError> {
     let Some(value) = std::env::var("PEERS_X_CONFIG_URL")
         .ok()
         .or_else(|| option_env!("PEERS_X_CONFIG_URL").map(str::to_string))
@@ -655,14 +702,14 @@ fn configured_remote_url(channel: &str) -> Result<Option<String>, XConfigError> 
     else {
         return Ok(None);
     };
-    let parsed = reqwest::Url::parse(value.trim())
-        .map_err(|_| XConfigError::new("x_config_url"))?;
-    if !x_config_core::origin::valid_snapshot_origin(&parsed) {
+    let trimmed = value.trim();
+    let parsed = reqwest::Url::parse(trimmed).map_err(|_| XConfigError::new("x_config_url"))?;
+    if !x_config_core::origin::valid_snapshot_origin(&parsed) || parsed.path() != "/" {
         return Err(XConfigError::new("x_config_url"));
     }
-    let mut url = parsed;
-    url.set_path(&format!("/channels/{channel}/latest.pb"));
-    Ok(Some(url.to_string()))
+    Ok(Some(
+        trimmed.strip_suffix('/').unwrap_or(trimmed).to_string(),
+    ))
 }
 
 fn embedded_snapshot() -> Option<Vec<u8>> {
@@ -741,21 +788,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn service_url_is_https_and_channel_scoped() {
-        std::env::set_var(
-            "PEERS_X_CONFIG_URL",
-            "https://distribution.example/base",
-        );
+    fn override_origin_must_be_a_bare_admitted_base_url() {
+        std::env::set_var("PEERS_X_CONFIG_URL", "https://distribution.example/");
         assert_eq!(
-            configured_remote_url("stable").unwrap().as_deref(),
-            Some("https://distribution.example/channels/stable/latest.pb")
+            configured_override_origin().unwrap().as_deref(),
+            Some("https://distribution.example")
         );
-        std::env::set_var(
-            "PEERS_X_CONFIG_URL",
-            "http://distribution.example",
+        std::env::set_var("PEERS_X_CONFIG_URL", "http://distribution.example");
+        assert!(configured_override_origin().is_err());
+        std::env::set_var("PEERS_X_CONFIG_URL", "https://distribution.example/base");
+        assert!(configured_override_origin().is_err());
+        std::env::set_var("PEERS_X_CONFIG_URL", "http://10.0.0.5:18082");
+        assert_eq!(
+            configured_override_origin().unwrap().as_deref(),
+            Some("http://10.0.0.5:18082")
         );
-        assert!(configured_remote_url("stable").is_err());
         std::env::remove_var("PEERS_X_CONFIG_URL");
+    }
+
+    #[test]
+    fn refresh_targets_compose_override_advertised_and_baked_origins() {
+        let targets: Vec<String> = effective_origins(
+            Some("http://127.0.0.1:18082"),
+            &["https://mirror.example.test".to_string()],
+            &["http://10.37.221.38:18082".to_string()],
+        )
+        .into_iter()
+        .filter_map(|origin| snapshot_url(&origin, "corpstable").map(|url| url.to_string()))
+        .collect();
+        assert_eq!(
+            targets,
+            vec![
+                "http://127.0.0.1:18082/channels/corpstable/latest.pb",
+                "https://mirror.example.test/channels/corpstable/latest.pb",
+                "http://10.37.221.38:18082/channels/corpstable/latest.pb",
+            ]
+        );
     }
 
     #[test]

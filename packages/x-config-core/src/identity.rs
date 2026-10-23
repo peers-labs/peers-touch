@@ -21,6 +21,7 @@ const DISTRIBUTION_ENV: &[(&str, &str)] = &[
     ("PT_DIST_IDENTIFIER", "identifier"),
     ("PT_DIST_REGION", "region"),
     ("PT_DIST_LABELS_JSON", "labels"),
+    ("PT_DIST_X_CONFIG_URLS", "x_config_urls"),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,6 +36,8 @@ pub struct BuildIdentity {
     pub identifier: String,
     pub default_region: String,
     pub labels: BTreeMap<String, String>,
+    /// Baked bootstrap snapshot origins (XCFG-D06), in failover order.
+    pub x_config_origins: Vec<String>,
 }
 
 impl BuildIdentity {
@@ -78,6 +81,11 @@ impl BuildIdentity {
             return Err(XConfigError::new("dist_commit_invalid"));
         }
         let labels = parse_labels(values.get("PT_DIST_LABELS_JSON").map(String::as_str))?;
+        let x_config_origins = match values.get("PT_DIST_X_CONFIG_URLS").map(String::as_str) {
+            Some(raw) => crate::origins::validate_baked_origins(raw)
+                .map_err(|_| XConfigError::new("dist_x_config_origins_invalid"))?,
+            None => Vec::new(),
+        };
         Ok(Some(Self {
             product,
             flavor,
@@ -88,6 +96,7 @@ impl BuildIdentity {
             identifier,
             default_region,
             labels,
+            x_config_origins,
         }))
     }
 }
@@ -205,6 +214,9 @@ macro_rules! compiled_build_identity {
             "PT_DIST_IDENTIFIER" => option_env!("PT_DIST_IDENTIFIER").map(str::to_string),
             "PT_DIST_REGION" => option_env!("PT_DIST_REGION").map(str::to_string),
             "PT_DIST_LABELS_JSON" => option_env!("PT_DIST_LABELS_JSON").map(str::to_string),
+            "PT_DIST_X_CONFIG_URLS" => {
+                option_env!("PT_DIST_X_CONFIG_URLS").map(str::to_string)
+            }
             _ => None,
         })
         .transpose()
@@ -251,6 +263,29 @@ mod tests {
     #[test]
     fn missing_flavor_is_unpackaged_dev_build() {
         assert!(BuildIdentity::from_vars(vars(&[])).unwrap().is_none());
+    }
+
+    #[test]
+    fn parses_baked_origins() {
+        let mut with_origins = VALID.to_vec();
+        with_origins.push((
+            "PT_DIST_X_CONFIG_URLS",
+            "http://10.37.221.38:18082,https://x.example.test",
+        ));
+        let identity = BuildIdentity::from_vars(vars(&with_origins))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            identity.x_config_origins,
+            vec!["http://10.37.221.38:18082", "https://x.example.test"]
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_baked_origins() {
+        let mut bad_origins = VALID.to_vec();
+        bad_origins.push(("PT_DIST_X_CONFIG_URLS", "http://corp.internal:8080"));
+        assert!(BuildIdentity::from_vars(vars(&bad_origins)).is_err());
     }
 
     #[test]

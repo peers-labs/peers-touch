@@ -1,11 +1,18 @@
 package catalog
 
 type Catalog struct {
-	SchemaVersion int                `json:"schema_version" yaml:"schema_version"`
-	Channel       string             `json:"channel" yaml:"channel"`
-	Endpoints     []CatalogEndpoint  `json:"endpoints" yaml:"endpoints"`
-	Releases      []CatalogRelease   `json:"releases" yaml:"releases"`
-	Directives    []CatalogDirective `json:"directives,omitempty" yaml:"directives,omitempty"`
+	SchemaVersion int                  `json:"schema_version" yaml:"schema_version"`
+	Channel       string               `json:"channel" yaml:"channel"`
+	Endpoints     []CatalogEndpoint    `json:"endpoints" yaml:"endpoints"`
+	Releases      []CatalogRelease     `json:"releases" yaml:"releases"`
+	Directives    []CatalogDirective   `json:"directives,omitempty" yaml:"directives,omitempty"`
+	Distribution  *CatalogDistribution `json:"distribution,omitempty" yaml:"distribution,omitempty"`
+}
+
+// CatalogDistribution is the signed transport steering section: ordered
+// future-fetch origins. It never carries trust material.
+type CatalogDistribution struct {
+	Origins []string `json:"origins,omitempty" yaml:"origins,omitempty"`
 }
 
 // CatalogDirectiveValue is a closed oneof. Exactly one value field must be

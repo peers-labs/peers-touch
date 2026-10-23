@@ -27,6 +27,7 @@
 | XCFG-D03 | Home runtime separates operator state from publication truth | accepted |
 | XCFG-D04 | Closed per-key directive sections evaluated client-side | accepted |
 | XCFG-D05 | One distribution flavor registry drives build identity and OS install identity | accepted |
+| XCFG-D06 | Baked bootstrap origins with signed snapshot-driven origin failover and migration | accepted |
 
 ## CCP-D01: Separate Static Client Reads From Console Mutations
 
@@ -821,3 +822,113 @@ committed `.dev2` identifier is a development-only artifact; distribution
 builds derive canonical identifiers from the registry. Deep-link schemes and
 update endpoints are flavor-scoped, and each mobile suffix requires its own
 platform App ID / push topic when push is enabled.
+
+## XCFG-D06: Baked Bootstrap Origins With Signed Snapshot-Driven Origin Failover And Migration
+
+**Status**: accepted
+**Date**: 2026-10-24
+
+### Context
+
+`PT_DIST_*` bakes flavor/channel identity (XCFG-D05) but packages bake no
+snapshot origin: client resolution reads only runtime/compile-time
+`PEERS_X_CONFIG_URL`, so an installed app with no process environment never
+fetches (`verified_fact`: `configured_remote_url` in Desktop and Mobile
+runtimes). The same channel also serves a single origin today: an operator
+cannot stand up a mirror or move the service without an app release, and a
+single origin outage leaves clients on stale snapshots.
+
+Snapshots are already integrity-protected independently of transport:
+ed25519 over a domain-separated statement, verified against the app-embedded
+publisher keyring, with monotonic-sequence watermark protection
+(`verified_fact`: x-config-core `SnapshotCoordinator`). Origin admission
+follows the closed policy in x-config-core `origin.rs`: HTTPS for any host,
+plain HTTP only for loopback/RFC1918/link-local IP literals (IPv6 loopback
+only).
+
+### Decision
+
+**Bootstrap origins are baked per channel at package time.** A checked-in
+channel registry (`tooling/distribution/channels.json`) maps each channel to
+an ordered bootstrap origin list. `make package` fails closed on unknown
+channels and bakes the list as `PT_DIST_X_CONFIG_URLS`; the compiled list
+ships in the manifest, `BuildIdentity`, and bundle diagnostics.
+
+**Signed snapshots carry future fetch origins.** Statement field 9 is an
+additive closed section:
+
+```proto
+message DistributionConfig { repeated DistributionOrigin origins = 1; }
+message DistributionOrigin { string origin = 1; }
+// XConfigSnapshotStatement.distribution = 9
+```
+
+No schema/version bump: older clients ignore field 9. Catalog publication
+validates origins against the client admission policy (same rules as
+`origin.rs`, independent of the publisher's own deployment flag), caps the
+list, rejects duplicates/query/fragment/credentials, and emits the section in
+deterministic statement order.
+
+**The client maintains three origin classes, merged per refresh into one
+ordered fetch list (deduplicated preserving first occurrence, capped at 8):**
+
+1. the development override `PEERS_X_CONFIG_URL` (runtime then compile
+   time), first in order when present — an explicit local choice always
+   wins;
+2. operator-advertised origins from the last accepted, signed snapshot
+   itself (the snapshot cache is the channel-scoped persistence, updated
+   only through `accept_remote`; at most 4 per snapshot);
+3. baked bootstrap origins, always retained as tail anchors.
+
+Each entry passes the same admission validation (`origin.rs`). Refresh tries
+entries in order: transport, timeout, non-2xx, and oversize responses advance
+to the next origin; a cryptographic or watermark rejection on one response
+also advances to the next origin but never downgrades the current snapshot.
+The first accepted outcome wins; its origin is the active origin exposed in
+the projection (`active_origin` / `activeOrigin`). A `304` is success when a
+current snapshot exists; without one the same origin is refetched
+unconditionally before advancing.
+
+### Rationale
+
+Baked origins solve the packaged-app bootstrap without inventing a runtime
+config channel. Letting signed snapshots mutate the fetch set gives operators
+mirrors and zero-release migration; trusting it is safe because transport
+choice grants no trust — only keyring-validated, watermark-monotonic bytes are
+accepted, so a hostile origin without the publisher key gains nothing. Keeping
+baked origins pinned at the tail guarantees an operator-controlled recovery
+path even if a snapshot advertises an unreachable set. The explicit
+development override stays first so local/test work always pins the fetch
+target despite whatever a production snapshot advertises; advertised
+origins precede only the baked anchors, giving operators zero-release
+failover and migration over the package defaults.
+
+### Alternatives Considered
+
+- Runtime-only `PEERS_X_CONFIG_URL` with baked channel but no origin:
+  rejected; installed apps have no such environment and cannot bootstrap.
+- DNS-based stable name for every channel: rejected for corp channels whose
+  origin is a private IP literal, and it still offers no multi-origin failover.
+- Signed snapshots may also rotate publisher keys: rejected; publisher trust
+  must ship in an app release (XCFG-D01/CCP-era key-rotation rule). Origins
+  ride on existing publisher trust and do not extend it.
+- Drop baked origins after the first snapshot: rejected; a poisoned snapshot
+  set could strand clients with no operator-reachable anchor.
+- Unordered origin set: rejected; operators need deterministic primary/mirror
+  selection rather than client-chosen randomness.
+
+### Consequences
+
+- Fresh packages fetch without any process environment; the dev override
+  remains the highest-priority entry for local work.
+- Operators publish mirrors/new origins through the normal signed-catalog
+  path (same skill as seed refresh); clients adopt them on the next accepted
+  snapshot and retain them across restarts.
+- Persisted advertised origins are control-plane state; clients store only
+  validated origin strings with channel scoping and never accept unsigned
+  origin updates.
+- Mirror operators must serve the exact same signed envelopes (same sequence
+  and statement bytes); divergent valid histories at one channel remain
+  impossible under one key.
+- Up to a bounded number of origins per refresh round; latency on dead
+  origins is bounded per-entry, and bootstrap lists should stay short.

@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 import {
   DistributionError,
   androidVersionCode,
+  loadChannelRegistry,
   loadFlavorRegistry,
   parseSemver,
+  resolveChannelOrigins,
   resolveDistribution,
 } from "./flavors.mjs";
 
@@ -74,6 +76,7 @@ export function canonicalManifestJson(manifest) {
 export function buildManifest(input) {
   const repoRoot = input.repoRoot ?? REPO_ROOT;
   const registry = input.registry ?? loadFlavorRegistry();
+  const channels = input.channels ?? loadChannelRegistry();
   const identity = resolveDistribution(registry, {
     product: input.product,
     flavor: input.flavor,
@@ -81,6 +84,9 @@ export function buildManifest(input) {
     region: input.region,
     labels: input.labels,
   });
+  // Baked bootstrap anchors (XCFG-D06): the packaged client fetches its first
+  // signed snapshot from these origins without PEERS_X_CONFIG_URL.
+  const xConfigOrigins = resolveChannelOrigins(channels, identity.channel);
   const version = (
     input.version ?? readTauriVersion(repoRoot, identity.product)
   ).trim();
@@ -117,6 +123,7 @@ export function buildManifest(input) {
     deep_link_scheme: identity.deepLinkScheme,
     region: identity.region,
     labels: identity.labels,
+    x_config_origins: xConfigOrigins,
     platform: input.platform ?? "",
     architecture: input.architecture ?? "",
     target: input.target ?? "",
@@ -138,6 +145,7 @@ export function manifestEnvironment(manifest) {
     [`${MANIFEST_ENV_PREFIX}LABELS_JSON`]: JSON.stringify(
       sortedObject(manifest.labels),
     ),
+    [`${MANIFEST_ENV_PREFIX}X_CONFIG_URLS`]: manifest.x_config_origins.join(","),
   };
 }
 

@@ -4882,6 +4882,7 @@ export interface XConfigProjection {
   release?: XConfigRelease | null;
   defaults: XConfigDefaults;
   refreshing: boolean;
+  active_origin?: string | null;
   last_refresh_attempt_at_unix_ms?: number | null;
   next_refresh_at_unix_ms?: number | null;
   last_refresh_error?: string | null;

@@ -14,6 +14,7 @@ const DISTRIBUTION_VARS: &[&str] = &[
     "PT_DIST_IDENTIFIER",
     "PT_DIST_REGION",
     "PT_DIST_LABELS_JSON",
+    "PT_DIST_X_CONFIG_URLS",
 ];
 
 pub fn peers_distribution_emit_env() {

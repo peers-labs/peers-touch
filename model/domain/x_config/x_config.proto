@@ -102,6 +102,17 @@ message Directive {
   DirectiveValue fallback = 3;                 // required
 }
 
+// DistributionConfig tells clients where to fetch future snapshots. It only
+// steers transport: origins must serve keyring-valid, watermark-monotonic
+// envelopes, so an advertised origin cannot extend publisher trust.
+message DistributionConfig {
+  repeated DistributionOrigin origins = 1;     // ordered failover sequence
+}
+
+message DistributionOrigin {
+  string origin = 1;                           // clean base URL, no path/query
+}
+
 message XConfigSnapshotStatement {
   uint32 schema_version = 1;
   string channel = 2;
@@ -111,6 +122,7 @@ message XConfigSnapshotStatement {
   repeated EndpointSeed endpoint_seeds = 6;
   repeated ReleaseDescriptor releases = 7;
   repeated Directive directives = 8;
+  DistributionConfig distribution = 9;
 }
 
 message SignedXConfigSnapshot {

@@ -1585,6 +1585,7 @@ export interface XConfigProjection {
   suggestions: XConfigSuggestion[];
   release?: XConfigRelease;
   refreshing: boolean;
+  activeOrigin?: string;
   lastRefreshAttemptAtUnixMs?: number;
   nextRefreshAtUnixMs?: number;
   lastRefreshError?: string;

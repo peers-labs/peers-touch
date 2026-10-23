@@ -3,7 +3,11 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { DistributionError, loadFlavorRegistry } from "./flavors.mjs";
+import {
+  DistributionError,
+  loadChannelRegistry,
+  loadFlavorRegistry,
+} from "./flavors.mjs";
 import {
   REPO_ROOT,
   buildManifest,
@@ -174,6 +178,7 @@ export function packageDistribution(options) {
     architecture: options.architecture ?? "",
     target,
     registry: loadFlavorRegistry(),
+    channels: loadChannelRegistry(),
   });
   const override = tauriOverride(product, target, manifest);
   const { manifestPath, overridePath } = writeBuildArtifacts(
@@ -206,6 +211,7 @@ function main() {
     `${JSON.stringify(
       {
         manifest: plan.manifest,
+        environment: manifestEnvironment(plan.manifest),
         manifestPath: plan.manifestPath,
         overridePath: plan.overridePath,
         command: { cwd: plan.command.cwd, args: plan.command.args },

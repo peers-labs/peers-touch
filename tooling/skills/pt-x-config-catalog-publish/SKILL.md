@@ -1,16 +1,19 @@
 ---
 name: pt-x-config-catalog-publish
-description: Publish or republish signed x-config channel catalogs (endpoint seeds, directives, releases) through the admin API. Use for x-config catalog publish/republish, targeted directive rollout, channel seed refresh, publishing to corpstable/preview, or guiding an operator through x-config catalog configuration.
+description: Publish or republish signed x-config channel catalogs (endpoint seeds, directives, releases, distribution failover origins) through the admin API. Use for x-config catalog publish/republish, targeted directive rollout, channel seed refresh, snapshot mirror/backup-origin or new-origin migration rollout, publishing to corpstable/preview, or guiding an operator through x-config catalog configuration.
 ---
 
 # X Config Catalog Publish
 
 ## Invoke When
 
-- Publishing a new or changed catalog (seeds, directives, releases) to an
-  x-config channel (`corpstable`, `stable`, or a future channel).
+- Publishing a new or changed catalog (seeds, directives, releases,
+  distribution origins) to an x-config channel (`corpstable`, `stable`, or a
+  future channel).
 - Refreshing seeds whose `available_until` is approaching expiry.
 - Adding or changing a targeting directive (rollout, flavor/region rules).
+- Advertising a snapshot mirror/backup origin or migrating clients to a new
+  origin via signed `distribution.origins` (XCFG-D06).
 - Guiding an operator who asks how to configure an internal channel.
 
 Do not use for: broker/Vercel or OAuth site work (see
@@ -38,6 +41,15 @@ verification only.
   `available_until` must be inside that window; standing channels need
   periodic re-publication. Treat seed refresh as part of every publishing
   run when any seed is within an hour of expiry.
+- `distribution.origins` (XCFG-D06) is the only signed channel for snapshot
+  failover/migration. Origins are bare base URLs (no path/query/fragment/
+  credentials): HTTPS for any host, plain HTTP only for IPv4 loopback/
+  RFC1918/link-local literals or IPv6 `[::1]`; up to 4 unique entries, ≤512
+  chars each, order = failover preference. Clients merge in this order per
+  refresh: `PEERS_X_CONFIG_URL` override, advertised origins, then
+  package-baked anchors from `tooling/distribution/channels.json`; an invalid
+  or rejected origin never removes the baked tail. Publisher key rotation
+  cannot be advertised — it must ship in an app release.
 
 ## Inputs
 
@@ -50,7 +62,9 @@ follow the same shape and are reviewed with their channel placement.
 - directives: closed key (`network.default_relay`,
   `network.default_station`), ordered rules (target clause + rollout) and
   required fallback;
-- releases when applicable.
+- releases when applicable;
+- optional `distribution.origins`: snapshot mirrors for client failover and
+  new-origin migration (see Required Discipline for admission limits).
 
 It never carries timestamps or `connection_material_base64`; freshness is
 stamped at publish time.
@@ -84,6 +98,9 @@ With a temporary program under the app module (delete before finishing):
   `issued_at = now-1m`, `expires_at = now+6d`;
 - `available_until = now+50m` (inside the one-hour validation window and
   before material expiry);
+- when the intent carries `distribution.origins`, copy the admitted base
+  URLs verbatim into the catalog's `distribution.origins` (same order);
+  they are re-validated and canonicalized by the publication builder;
 - emit the catalog JSON in the `internal/domain/catalog` shape
   (`schema_version: 1`).
 
@@ -92,7 +109,9 @@ Limits to respect: catalog ≤256 KiB; ≤128 endpoints, ≤64 releases,
 (0 and 1000 both mean full); directive `endpoint_seed_id` values must
 reference an existing seed of matching kind; every directive needs a
 fallback of the same value kind; target fields are wildcard when empty,
-OR within a field, AND across fields.
+OR within a field, AND across fields; distribution carries ≤4 unique
+admitted origins (HTTPS any host, HTTP private IP literals only, no
+path/query/fragment/credentials).
 
 ### 3. Validate, save, publish
 
@@ -125,7 +144,8 @@ active restrictive CSP. Admin JSON responses carry
    publisher public key from
    `apps/x-config/public-keys/publisher-keys.json`.
 3. Unmarshal the statement; assert channel, schema 1, expected seeds and
-   directives; evaluate representative targeting contexts with
+   directives, and (when published) the exact `distribution.origins` list
+   in declared order; evaluate representative targeting contexts with
    `xcontrol.EvaluateDirectives` (Go) or the x-config-core evaluator and
    compare against the shared vectors under
    `model/domain/x_config/evaluation-vectors/`.
@@ -151,7 +171,7 @@ evaluation checks) is
 |---|---|---|
 | `operator_session_required` / 401 on write | No session or wrong origin tab | Re-run `/api/admin/auth/start` on the channel origin |
 | CSRF 403 | Missing/mismatched `X-CSRF-Token` | Read `peers_xcfg_csrf` cookie, send exact value |
-| `catalog_trust_invalid` | Schema, canonical encoding, or lifetime failure | Regenerate material deterministically inside windows |
+| `catalog_trust_invalid` | Schema, canonical encoding, lifetime, or `distribution.origins` admission failure | Regenerate material deterministically inside windows; use bare admitted origins only (HTTPS / private-IP HTTP) |
 | `endpoint_unavailable` | Live discovery probe failed | Check origin, peer ID, and IPv6/network path from the service host |
 | `endpoint_identity_invalid` | Prover identity differs from the seed | Use the relay/station's current live peer ID |
 | Draft conflict on publish (409) | Draft revision moved or wrong base | `GET /api/admin/catalog?channel=<channel>`, rebase, re-validate |
@@ -167,5 +187,9 @@ evaluation checks) is
 - Reusing another channel's publisher key, subjects, or origin.
 - Adding directive keys outside the closed registry or rules that
   reference nonexistent seeds.
+- Putting paths, query strings, credentials, public-HTTP DNS names, or
+  more than four origins into `distribution.origins`; assuming the
+  advertised list can replace publisher keys (key rotation still needs an
+  app release), or that an empty/mirror set can remove the baked anchors.
 - Committing the ephemeral generator, service secrets, or signed snapshot
   bytes as the catalog source of truth.
