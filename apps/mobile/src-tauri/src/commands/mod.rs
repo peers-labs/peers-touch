@@ -21,6 +21,7 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         search::search_suggest,
         search::search_resolve,
         search::search_read_state,
+        search::search_read_diagnostics,
         search::search_cancel,
         // Messaging
         crate::messaging::commands::messaging_activate,
@@ -181,6 +182,7 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         search::search_suggest,
         search::search_resolve,
         search::search_read_state,
+        search::search_read_diagnostics,
         search::search_cancel,
         // Native events
         native_events::mobile_native_event_emit,

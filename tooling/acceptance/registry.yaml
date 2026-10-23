@@ -26,6 +26,31 @@
       "require": ["chat-device-search-contract", "chat-device-search-native-e2e"]
     },
     {
+      "id": "chat-mobile-device-search",
+      "features": ["chat-mobile-device-search"],
+      "when": {
+        "paths": [
+          "packages/search-core/**",
+          "model/domain/search/**",
+          "apps/mobile/src-tauri/src/runtime/search.rs",
+          "apps/mobile/src-tauri/src/commands/search.rs",
+          "apps/mobile/src-tauri/src/messaging/adapter/search.rs",
+          "apps/mobile/src/pages/SearchPage*",
+          "apps/mobile/src/runtimes/searchRuntime.ts",
+          "apps/mobile/src/features/search/**",
+          "apps/mobile/src/services/search.ts",
+          "apps/mobile/src/components/SearchEntry*",
+          "apps/mobile/src/acceptance/searchActions.ts",
+          "docs/architecture/domains/search/**",
+          "tooling/acceptance/features/chat-mobile-device-search.yaml",
+          "tooling/acceptance/environments/chat-mobile-search-simulator.yaml",
+          "tooling/acceptance/provisioners/mobile_search.py",
+          "tooling/acceptance/gates/chat/mobile_device_search.py"
+        ]
+      },
+      "require": ["chat-device-search-contract", "chat-mobile-device-search-native-e2e"]
+    },
+    {
       "id": "x-config-api-closure",
       "features": ["x-config-api-closure"],
       "when": {

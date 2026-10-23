@@ -8,7 +8,8 @@ import re
 from tooling.acceptance.core import AcceptanceGate, REPO_ROOT
 
 FEATURE = "chat-device-search"
-GATES = {"chat-device-search-contract", "chat-device-search-native-e2e"}
+GATES = {"chat-device-search-contract", "chat-device-search-native-e2e",
+         "chat-mobile-device-search-native-e2e"}
 
 
 def read(path: str) -> str:
@@ -29,10 +30,15 @@ class DeviceSearchContractGate(AcceptanceGate):
         capabilities = document("capabilities/chat.yaml")["capabilities"]
         capability = next(item for item in capabilities if item["id"] == FEATURE)
         rule = next(item for item in document("registry.yaml")["rules"] if item["id"] == FEATURE)
+        mobile = document("features/chat-mobile-device-search.yaml")
+        mobile_rule = next(item for item in document("registry.yaml")["rules"]
+                           if item["id"] == mobile["id"])
         self.assert_condition("injection_graph", FEATURE in document("domains/chat.yaml")["capabilities"]
-                              and capability["features"] == [FEATURE]
-                              and set(capability["required_gates"]) == set(feature["required_gates"])
-                              == set(rule["require"]) == GATES)
+                              and set(capability["features"]) == {FEATURE, mobile["id"]}
+                              and set(feature["required_gates"]) == set(rule["require"])
+                              and set(mobile["required_gates"]) == set(mobile_rule["require"])
+                              and set(capability["required_gates"]) == (
+                                  set(feature["required_gates"]) | set(mobile["required_gates"])) == GATES)
         native = document("gates.yaml")["gates"]["chat-device-search-native-e2e"]
         self.assert_condition("native_environment_reused",
                               native["environment"] == native["provisioner"] == "chat-storage-native"

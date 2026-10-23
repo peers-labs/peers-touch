@@ -110,6 +110,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'search.resolve',
   'search.state',
   'search.cancel',
+  'search.reads',
   'messaging.projection.read',
   'social.people.search',
   'reliability.fixture.configure',

@@ -1,6 +1,7 @@
 //! Mobile host binding: native identity and lifecycle grant read publication.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use messaging_core::search::{MessagingContributor, MessagingSearchReader, BINDING, SOURCE};
 use rand::RngCore;
@@ -21,6 +22,27 @@ use crate::runtime::oauth::OAuthCoordinator;
 #[derive(Default, Clone)]
 pub struct MobileSearchExecutor;
 
+// Process-local, content-free observations from the original executor.
+static SOURCE_READS: AtomicU64 = AtomicU64::new(0);
+static HYDRATION_READS: AtomicU64 = AtomicU64::new(0);
+static READ_OBSERVATIONS: AtomicU64 = AtomicU64::new(0);
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchReadDiagnostics {
+    source_reads: u64,
+    hydration_reads: u64,
+    observations: u64,
+}
+
+pub fn read_diagnostics() -> SearchReadDiagnostics {
+    SearchReadDiagnostics {
+        source_reads: SOURCE_READS.load(Ordering::SeqCst),
+        hydration_reads: HYDRATION_READS.load(Ordering::SeqCst),
+        observations: READ_OBSERVATIONS.load(Ordering::SeqCst),
+    }
+}
+
 impl SearchExecutor for MobileSearchExecutor {
     fn spawn(&self, job: Box<dyn FnOnce() + Send>) {
         tauri::async_runtime::spawn_blocking(job);
@@ -29,9 +51,13 @@ impl SearchExecutor for MobileSearchExecutor {
         tauri::async_runtime::block_on(future)
     }
     fn observe_read(&self, source_read: bool, refresh: bool) {
+        SOURCE_READS.fetch_add(u64::from(source_read), Ordering::SeqCst);
+        READ_OBSERVATIONS.fetch_add(1, Ordering::SeqCst);
         log::debug!(target: "search", "Search read source_read={source_read} refresh={refresh}");
     }
     fn observe_hydration(&self, source_reads: usize, resources: usize, refresh: bool) {
+        HYDRATION_READS.fetch_add(source_reads as u64, Ordering::SeqCst);
+        READ_OBSERVATIONS.fetch_add(1, Ordering::SeqCst);
         log::debug!(target: "search", "Search hydration source_reads={source_reads} resources={resources} refresh={refresh}");
     }
 }

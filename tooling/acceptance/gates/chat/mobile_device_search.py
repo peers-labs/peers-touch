@@ -1,0 +1,464 @@
+"""Bilateral native Search proof on one source-bound Mobile Suite."""
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import time
+from collections.abc import Mapping
+from typing import Any
+
+from tooling.acceptance.core import (
+    AcceptanceGate, ArtifactSession, GateError, RuntimeReuseContract, SuiteRuntimeAction,
+    SuiteRuntimeLedger,
+)
+from tooling.acceptance.fixtures.chat_native_actors import ACTOR_PASSWORD
+from tooling.acceptance.gates.mobile.messaging_journey import MobileMessagingJourney
+from tooling.acceptance.gates.mobile.simulator_e2e import (
+    _redacted_markup, _validate_runtime_identity, _validate_source_identity,
+)
+from tooling.acceptance.gates.mobile.simulator_social_e2e import SimulatorSocialGate
+
+GATE_ID = "chat-mobile-device-search-native-e2e"
+ENVIRONMENT_ID = "chat-mobile-search-simulator"
+SCENARIOS = ("ios-search", "android-search", "ios-account", "android-account")
+REUSE = RuntimeReuseContract.from_dict({
+    "scope": "suite", "entryCheckId": "mobile-device-search",
+    "scenarioIds": list(SCENARIOS), "maxProvisioningRuns": 1,
+    "maxClientLaunches": 2, "minWarmReuseRate": 0.75,
+    "requireAttachOnlyScenarios": True, "requireReceiverVisibleProof": True,
+    "allowClientReplacement": False,
+})
+FIELD = "#mobile-search-input"
+PAGE = '[data-product-surface="search.mobile"]'
+ROW = ".mobile-search-result"
+
+
+def require(value: Any, message: str) -> None:
+    if not value:
+        raise GateError(message)
+
+
+class MobileDeviceSearchGate(SimulatorSocialGate):
+    expected_clients = {"sim-ios": "ios", "sim-android": "android"}
+    client_assignments = {
+        "sim-ios": ("station", "alice"), "sim-android": ("station", "bob"),
+    }
+    scenario_gates = {"device-search": GATE_ID}
+    scenario_metadata = {"device-search": {
+        "phase": "Mobile device Search", "bom": ["SEARCH-MOBILE-FIND-OPEN"],
+        "spec": ["chat-mobile-device-search"],
+    }}
+
+    def __init__(self) -> None:
+        super().__init__("device-search")
+        self.environment_id = ENVIRONMENT_ID
+        self.frames: dict[str, dict[str, Any]] = {}
+        self.costs: dict[str, Any] = {}
+        self.denials: dict[str, Any] = {}
+
+    @staticmethod
+    def wait(session: Any, script: str, label: str, *args: Any) -> Any:
+        return SimulatorSocialGate._wait_for_value(
+            lambda: session.execute_script(script, *args) or None, label,
+        )
+
+    def click(self, session: Any, selector: str) -> None:
+        self._wait_ui(session, selector, selector)
+        session.click_element(session.find_element("css selector", selector))
+
+    def open(self, session: Any) -> None:
+        if not session.execute_script("return !!document.querySelector(arguments[0]);", FIELD):
+            self.click(session, '[data-acceptance-id="mobile-search-open"]')
+        self._wait_ui(session, FIELD, "native Search input")
+        require(session.execute_script(
+            "return document.querySelectorAll(arguments[0]).length === 1;", PAGE,
+        ), "Search must have one current detail tree")
+
+    def fill(self, session: Any, query: str, *, submit: bool = True) -> None:
+        self.open(session)
+        self._set_ui_value(session, FIELD, query, "native Search input change")
+        self.wait(session, """
+return document.querySelector(arguments[0])?.value === arguments[1];
+""", "Search input acknowledgement", FIELD, query)
+        if submit:
+            self.click(session, ".mobile-search-input-row button[type=submit]")
+        self.wait(session, """
+const page = document.querySelector(arguments[0]);
+return page && ['ready', 'error', 'idle'].includes(page.dataset.searchState);
+""", "terminal Search rendering", PAGE)
+
+    @staticmethod
+    def rows(session: Any) -> dict[str, str]:
+        return session.execute_script("""
+return Object.fromEntries([...document.querySelectorAll('.mobile-search-result')]
+  .map(row => [row.dataset.resourceId, row.innerText]));
+""")
+
+    def has(self, session: Any, resource_id: str, text: str) -> None:
+        self.wait(session, """
+return [...document.querySelectorAll('.mobile-search-result')].some(
+  row => row.dataset.resourceId === arguments[0] && row.innerText.includes(arguments[1]));
+""", "real received Search result", resource_id, text)
+
+    @staticmethod
+    def surface(session: Any) -> dict:
+        return session.execute_script("""
+const page = document.querySelector('[data-product-surface="search.mobile"]')
+  || document.querySelector('.page-container');
+const rect = page?.getBoundingClientRect();
+return {
+  painted: !!rect && rect.width > 0 && rect.height > 0,
+  viewportWidth: innerWidth, viewportHeight: innerHeight,
+  documentWidth: document.documentElement.scrollWidth,
+  searchState: document.querySelector('[data-search-state]')?.dataset.searchState || '',
+  query: document.querySelector('#mobile-search-input')?.value || '',
+  rows: [...document.querySelectorAll('.mobile-search-result')]
+    .map(row => ({id: row.dataset.resourceId, text: row.innerText})),
+  activeMessage: document.activeElement?.getAttribute('data-message-ulid') || '',
+  unresolvedCopy: [...document.querySelectorAll('button,h1,h2,[role=status]')]
+    .some(node => /\\b(?:search|mobile|common)\\.[a-z][\\w.]+\\b/.test(node.innerText)),
+  controls: [...document.querySelectorAll(
+    '.mobile-search-page .page-header > button,.mobile-search-filters button,'
+    + '.mobile-search-input-row button[type=submit],.mobile-search-pagination button')]
+    .map(node => ({width: node.getBoundingClientRect().width,
+                  height: node.getBoundingClientRect().height})),
+};
+""")
+
+    def capture(self, artifacts: ArtifactSession, session: Any, name: str,
+                *, concealed: bool = False) -> None:
+        deadline = time.monotonic() + 30
+        while True:
+            rendering = self.surface(session)
+            session.switch_to_native()
+            screenshot = session.screenshot_bytes()
+            session.switch_to_app_webview()
+            markup = _redacted_markup(session.get_page_source())
+            if self.surface(session) == rendering:
+                break
+            require(time.monotonic() < deadline, f"{name} stable native capture timed out")
+            time.sleep(0.25)
+        require(rendering["painted"], f"{name} must be painted")
+        require(rendering["documentWidth"] <= rendering["viewportWidth"] + 1,
+                f"{name} must not overflow horizontally")
+        require(not rendering["unresolvedCopy"], f"{name} has unresolved localization keys")
+        require(all(row["width"] >= 43.5 and row["height"] >= 43.5
+                    for row in rendering["controls"]), f"{name} has undersized controls")
+        require(rendering["searchState"] not in (
+            {"loading"} if concealed else {"loading", "concealed"}),
+                f"{name} must be terminal")
+        if concealed:
+            require(not rendering["rows"], f"{name} must contain no private result rows")
+        base = f"mobile-device-search/{session.client_id}/{name}"
+        captured = {
+            "clientId": session.client_id,
+            "screenshot": artifacts.write_bytes(
+                f"{base}/screenshot.png", screenshot, media_type="image/png",
+                role=f"mobile-search-screenshot/{session.client_id}/{name}",
+            ).to_dict(),
+            "dom": artifacts.write_bytes(
+                f"{base}/dom.html", markup, media_type="text/html",
+                role=f"mobile-search-dom/{session.client_id}/{name}",
+            ).to_dict(),
+        }
+        self.frames[f"{session.client_id}/{name}"] = {
+            **captured, "rendering": rendering, "assertionPassed": True,
+        }
+
+    def cost(self, session: Any, name: str, action: Any, *, refresh: bool = False) -> None:
+        before = session.call_action("search.reads")
+        require(before["sourceReads"] > 0, "native source observations must be present")
+        action()
+        self.wait(session, """
+return document.querySelector('[data-search-state]')?.dataset.searchState === 'ready';
+""", f"{name} terminal state")
+        after = session.call_action("search.reads")
+        require(after["sourceReads"] > before["sourceReads"] if refresh else (
+            after["sourceReads"] == before["sourceReads"]
+            and after["hydrationReads"] == before["hydrationReads"]
+        ), f"{name} violates original-source read cost")
+        self.costs[f"{session.client_id}/{name}"] = {"before": before, "after": after}
+
+    def denial(self, session: Any, name: str, action: str, payload: dict, code: str) -> None:
+        result = session.call_action(action, payload)
+        require(result == {"accepted": False, "errorCode": code}, f"{name} typed denial failed")
+        self.denials[f"{session.client_id}/{name}"] = result
+
+    @staticmethod
+    def native_page(session: Any, query: str, **kwargs: Any) -> dict:
+        result = session.call_action("search.page", {"query": query, **kwargs})
+        require(result.get("accepted") is True, "native Search diagnostic query failed")
+        return result["value"]
+
+    def seed(self, journey: MobileMessagingJourney, sender_session: Any,
+             receiver_session: Any, sender: Any, receiver: Any, token: str) -> dict:
+        conversation = journey._create_direct(sender_session, receiver_session, sender, receiver)
+        query = f"周会 {token}"
+        def send(text: str, **extra: Any) -> str:
+            sent = sender_session.call_action("messaging.send", {
+                "conversationId": conversation, "plaintext": text, **extra,
+            })
+            require(bool(sent.get("messageId")), "real Messaging identity required")
+            return sent["messageId"]
+        root = send(f"{query} 原始正文")
+        reply_query = f"线程 {token}"
+        reply = send(reply_query, replyToMessageId=root, threadRootMessageId=root)
+        filler = [send(f"历史 {token} {index:03}") for index in range(105)]
+        filename = f"附件计划-{token}-预算与研发进度审查-跨团队评审-{('年度执行计划' * 7)}.txt"
+        content = f"real attachment {token}".encode()
+        staged = sender_session.call_action("messaging.attachment.stage", {
+            "filename": filename, "mimeType": "text/plain",
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "bytesBase64": base64.b64encode(content).decode(),
+        })
+        attachment = send(f"文件 {token}", attachmentStageIds=[staged["stageId"]])
+        for message_id in (root, reply, filler[-1], attachment):
+            journey._await_message(
+                receiver_session, conversation, message_id, lambda row: bool(row.get("plaintext")),
+                "receiver committed Search fixture",
+            )
+        return {"conversation": conversation, "query": query, "root": root,
+                "reply": reply, "replyQuery": reply_query, "filler": filler,
+                "attachment": attachment, "filename": filename, "token": token}
+
+    def target(self, artifacts: ArtifactSession, session: Any,
+               query: str, message_id: str, name: str) -> None:
+        self.fill(session, query)
+        self.has(session, message_id, query)
+        self.click(session, f'{ROW}[data-resource-id="{message_id}"]')
+        self.wait(session, """
+return document.activeElement?.getAttribute('data-message-ulid') === arguments[0];
+""", "canonical Chat message focus", message_id)
+        self.capture(artifacts, session, name)
+        self.cost(session, f"{name}-return",
+                  lambda: self.click(session, ".chat-thread-header > button"))
+        self.has(session, message_id, query)
+
+    def search_scenario(self, artifacts: ArtifactSession, session: Any, sender_session: Any,
+                        fixture: dict) -> dict:
+        self.fill(session, fixture["query"])
+        self.has(session, fixture["root"], fixture["query"])
+        self.capture(artifacts, session, "chinese")
+        self.cost(session, "repeat", lambda: self.click(
+            session, ".mobile-search-input-row button[type=submit]"))
+        self.cost(session, "reopen", lambda: (
+            self.click(session, f"{PAGE} .page-header > button:first-child"),
+            self.open(session),
+        ))
+        self.fill(session, fixture["query"], submit=False)
+        self.fill(session, fixture["query"] + "z", submit=False)
+        self.cost(session, "backspace", lambda: self.fill(
+            session, fixture["query"], submit=False))
+        self.cost(session, "refresh", lambda: self.click(
+            session, f"{PAGE} .page-header > button:last-child"), refresh=True)
+        self.target(artifacts, session, fixture["query"], fixture["root"], "historical")
+        self.target(artifacts, session, fixture["replyQuery"], fixture["reply"], "thread")
+        self.fill(session, f'历史 {fixture["token"]}')
+        self.wait(session, "return document.querySelectorAll('.mobile-search-result').length === 100;",
+                  "first bounded Search page")
+        self.capture(artifacts, session, "page-one")
+        self.click(session, ".mobile-search-pagination button:last-child")
+        self.wait(session, "return document.querySelectorAll('.mobile-search-result').length === 5;",
+                  "last bounded Search page")
+        self.capture(artifacts, session, "page-two")
+        self.fill(session, f'附件计划-{fixture["token"]}')
+        self.click(session, ".mobile-search-filters button:nth-child(3)")
+        self.has(session, fixture["attachment"], fixture["filename"])
+        self.capture(artifacts, session, "long-filename")
+        self.click(session, ".mobile-search-filters button:first-child")
+        self.fill(session, fixture["query"])
+        self.has(session, fixture["root"], fixture["query"])
+        self.click(session, f'{ROW}[data-resource-id="{fixture["root"]}"]')
+        self._wait_ui(session, ".chat-header-actions", "original Chat actions")
+        self.click(session, ".chat-header-actions > button:last-child")
+        self.click(session, ".chat-action-group > button:first-child")
+        self.fill(session, fixture["query"])
+        self.has(session, fixture["root"], fixture["query"])
+        self._wait_ui(session, ".mobile-search-scope button", "scoped Search expansion")
+        self.capture(artifacts, session, "conversation-scope")
+        self.click(session, ".mobile-search-scope button")
+        self._wait_ui_absent(session, ".mobile-search-scope button", "global scope restored")
+        self.fill(session, fixture["query"])
+        original = next(item["resource"] for item in self.native_page(
+            session, fixture["query"])["items"] if item["resource"]["messageId"] == fixture["root"])
+        self.denial(session, "forged-authority", "search.resolve", {
+            "resource": {**original, "authorityNamespace": "station:forged"},
+        }, "SEARCH_PROTOCOL")
+        edited = f'{fixture["query"]} 更新正文'
+        sender_session.call_action("messaging.interact", {
+            "conversationId": fixture["conversation"], "messageId": fixture["root"],
+            "kind": "edit", "plaintext": edited,
+        })
+        self.has(session, fixture["root"], edited)
+        self.capture(artifacts, session, "edit")
+        self.denial(session, "stale-reference", "search.resolve",
+                    {"resource": original}, "SEARCH_RESOURCE_UNAVAILABLE")
+        fresh = next(item["resource"] for item in self.native_page(
+            session, fixture["query"])["items"] if item["resource"]["messageId"] == fixture["root"])
+        sender_session.call_action("messaging.interact", {
+            "conversationId": fixture["conversation"], "messageId": fixture["root"], "kind": "retract",
+        })
+        self.wait(session, """
+return document.querySelector('[data-search-state]')?.dataset.searchState === 'ready'
+  && ![...document.querySelectorAll('.mobile-search-result')]
+    .some(row => row.dataset.resourceId === arguments[0]);
+""", "retracted content removed from receiver Search", fixture["root"])
+        self.capture(artifacts, session, "retract")
+        self.denial(session, "retracted-reference", "search.resolve",
+                    {"resource": fresh}, "SEARCH_RESOURCE_UNAVAILABLE")
+        self.fill(session, "...")
+        self.wait(session, "return !!document.querySelector('.mobile-search-notice[role=alert]');",
+                  "typed invalid-query UI")
+        self.capture(artifacts, session, "invalid")
+        self.fill(session, fixture["replyQuery"])
+        self.has(session, fixture["reply"], fixture["replyQuery"])
+        self.capture(artifacts, session, "recovered")
+        self.fill(session, f'不存在 {fixture["token"]}')
+        require(not self.rows(session), "empty Search must have no result rows")
+        self.capture(artifacts, session, "empty")
+        self.fill(session, "隐私")
+        self.click(session, ".mobile-search-filters button:last-child")
+        self.click(session, '[data-search-function="privacy-security"]')
+        self._wait_ui_absent(session, PAGE, "real Settings target")
+        self.capture(artifacts, session, "settings")
+        self.click(session, ".page-header > button:first-child")
+        self._wait_ui(session, FIELD, "Settings return to Search")
+        self.click(session, ".mobile-search-filters button:first-child")
+        self.fill(session, fixture["replyQuery"])
+        session.call_action("lifecycle.suspend")
+        require(session.execute_script("return !document.querySelector('.mobile-search-result');"),
+                "suspended Search must remove private result DOM")
+        self.capture(artifacts, session, "suspended", concealed=True)
+        session.call_action("lifecycle.resume")
+        self.has(session, fixture["reply"], fixture["replyQuery"])
+        self.capture(artifacts, session, "resumed")
+        for locale, label in (("en", "English"), ("zh-CN", "简体中文")):
+            self.fill(session, "语言")
+            self.click(session, ".mobile-search-filters button:last-child")
+            self.click(session, '[data-search-function="language"]')
+            self.click(session, ".settings-section .ant-select-selector")
+            self.click(session, f'.ant-select-dropdown:not(.ant-select-dropdown-hidden) '
+                       f'.ant-select-item-option[title="{label}"]')
+            self.wait(session, """
+return document.querySelector('.settings-section .ant-select-selection-item')?.textContent === arguments[0]
+  && !document.querySelector('.settings-section .ant-select-disabled');
+""", "persisted UI language", label)
+            self.click(session, ".page-header > button:first-child")
+            self.click(session, ".mobile-search-filters button:first-child")
+            self.fill(session, fixture["replyQuery"])
+            self.has(session, fixture["reply"], fixture["replyQuery"])
+            self.capture(artifacts, session, f"locale-{locale}")
+        return {
+            "uiAction": f"{session.client_id}:search-query-open-back-refresh",
+            "receiverAssertion": f"{session.client_id}:received-message-thread-file-and-fences",
+            "supportingObservation": f"{session.client_id}:native-read-cost-and-denials",
+        }
+
+    def account_scenario(self, artifacts: ArtifactSession, session: Any, peer_session: Any,
+                         actor: Any, peer: Any, fixture: dict, journey: MobileMessagingJourney) -> dict:
+        self.fill(session, fixture["replyQuery"])
+        self.has(session, fixture["reply"], fixture["replyQuery"])
+        page = self.native_page(session, f'历史 {fixture["token"]}', limit=20)
+        require(bool(page.get("nextCursor")), "old-account paging cursor required")
+        before = session.call_action("search.state")
+        session.call_action("session.logout", {"draftDisposition": "discard"})
+        require(session.execute_script("return !document.querySelector('#mobile-search-input')"
+                                       " && !document.querySelector('.mobile-search-result');"),
+                "logout must clear private Search DOM")
+        journey.authenticate(session, peer, password=ACTOR_PASSWORD)
+        self.open(session)
+        require(session.execute_script("return document.querySelector('#mobile-search-input').value === '';"),
+                "account change must clear the Search query")
+        after = session.call_action("search.state")
+        require(before["readScope"] != after["readScope"], "account change must replace native scope")
+        self.denial(session, "old-account-cursor", "search.page", {
+            "query": f'历史 {fixture["token"]}', "limit": 20, "cursor": page["nextCursor"],
+        }, "SEARCH_CURSOR_EXPIRED")
+        own_query = f'账号切换 {fixture["token"]}'
+        sent = session.call_action("messaging.send", {
+            "conversationId": fixture["conversation"], "plaintext": own_query,
+        })
+        self.fill(session, own_query)
+        self.has(session, sent["messageId"], own_query)
+        self.capture(artifacts, session, "account-isolation")
+        session.call_action("session.logout", {"draftDisposition": "discard"})
+        journey.authenticate(session, actor, password=ACTOR_PASSWORD)
+        # Restore the original peer session revoked by the real account handoff.
+        projection = peer_session.call_action("lifecycle.scope.read")
+        if projection.get("activeActorPtid") != peer.ptid:
+            journey.authenticate(peer_session, peer, password=ACTOR_PASSWORD)
+        return {
+            "uiAction": f"{session.client_id}:same-process-account-search",
+            "receiverAssertion": f"{session.client_id}:new-account-result-old-cursor-denial",
+            "supportingObservation": f"{session.client_id}:native-scope-replaced",
+        }
+
+    def _run_social_journey(self, artifacts: ArtifactSession, manifest: Mapping[str, Any]) -> dict:
+        source = _validate_source_identity(manifest)
+        resources = self._required_object(manifest, "mobileSimulator", "Search runtime")
+        self._reject_credentials(manifest, resources)
+        runtime = _validate_runtime_identity(resources, self.expected_clients)
+        specs = self._client_specs(resources)
+        sessions = {
+            spec.client_id: self._start_social_session(
+                artifacts, resources["appium"]["serverUrl"], spec,
+            ) for spec in specs
+        }
+        identities = {
+            spec.client_id: self._verify_build_identity(
+                sessions[spec.client_id], resources["applications"][spec.platform]["buildIdentity"],
+                f"{spec.client_id} source-bound Search build",
+            ) for spec in specs
+        }
+        actors = self._load_actors(artifacts, manifest)
+        journey = MobileMessagingJourney(timeout_seconds=90)
+        for client_id, actor in actors.items():
+            self._prepare_fresh_actor_identity(sessions[client_id], actor)
+            journey.authenticate(sessions[client_id], actor, password=ACTOR_PASSWORD)
+        ledger = SuiteRuntimeLedger(
+            REUSE, suite_runtime_id=f"mobile-search-{artifacts.run_id}",
+            source_digest=source["commit"], fixture_epoch=manifest["runId"],
+        )
+        self.suite_runtime_ledger = ledger
+        ledger.record(SuiteRuntimeAction.PROVISION, resource_id=ENVIRONMENT_ID)
+        ledger.record(SuiteRuntimeAction.ACCOUNT_PROVISION, resource_id="actors:alice,bob")
+        for client_id in sessions:
+            ledger.record(SuiteRuntimeAction.CLIENT_LAUNCH, resource_id=client_id)
+            ledger.record(SuiteRuntimeAction.LOGIN, resource_id=client_id)
+        fixtures = {}
+        for receiver_id, sender_id in (("sim-ios", "sim-android"), ("sim-android", "sim-ios")):
+            fixtures[receiver_id] = self.seed(
+                journey, sessions[sender_id], sessions[receiver_id], actors[sender_id],
+                actors[receiver_id], f"{artifacts.run_id[-8:]}-{self.expected_clients[receiver_id]}",
+            )
+        results = []
+        for scenario_id in SCENARIOS:
+            client_id = "sim-ios" if scenario_id.startswith("ios") else "sim-android"
+            peer_id = "sim-android" if client_id == "sim-ios" else "sim-ios"
+            ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=scenario_id)
+            start = time.monotonic()
+            result = self.search_scenario(
+                artifacts, sessions[client_id], sessions[peer_id], fixtures[client_id],
+            ) if scenario_id.endswith("search") else self.account_scenario(
+                artifacts, sessions[client_id], sessions[peer_id], actors[client_id], actors[peer_id],
+                fixtures[client_id], journey,
+            )
+            for action, field in (
+                (SuiteRuntimeAction.UI_ACTION, "uiAction"),
+                (SuiteRuntimeAction.RECEIVER_ASSERTION, "receiverAssertion"),
+                (SuiteRuntimeAction.SUPPORTING_OBSERVATION, "supportingObservation"),
+            ):
+                ledger.record(action, scenario_id=scenario_id, resource_id=result[field])
+            ledger.record(SuiteRuntimeAction.SCENARIO_END, scenario_id=scenario_id)
+            results.append({"id": scenario_id, "durationSeconds": time.monotonic() - start, **result})
+        return {
+            **self._result_base("PASS"), "source": source, "runtime": runtime,
+            "buildIdentity": identities, "journey": results, "fixtures": fixtures,
+            "frames": self.frames, "costs": self.costs, "denials": self.denials,
+        }
+
+
+if __name__ == "__main__":
+    gate: AcceptanceGate = MobileDeviceSearchGate()
+    raise SystemExit(gate.execute())

@@ -176,6 +176,20 @@ pub async fn search_read_state<R: Runtime>(app: AppHandle<R>) -> MobileResult<Ve
     .map_err(|_| failure(SearchError::Cancelled))?
 }
 
+/// Supporting cost diagnostics; contains no query, identity or private content.
+#[tauri::command]
+pub async fn search_read_diagnostics<R: Runtime>(
+    app: AppHandle<R>,
+) -> MobileResult<crate::runtime::search::SearchReadDiagnostics> {
+    if !cfg!(debug_assertions) {
+        return Err(failure(SearchError::OutsideDomain));
+    }
+    let binding = Binding::admit(app).map_err(failure)?;
+    binding
+        .publish(|| Ok(crate::runtime::search::read_diagnostics()))
+        .map_err(failure)
+}
+
 #[tauri::command]
 pub async fn search_cancel<R: Runtime>(
     app: AppHandle<R>,

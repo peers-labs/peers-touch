@@ -875,7 +875,10 @@ def _validate_source_identity(manifest: Mapping[str, Any]) -> dict[str, str]:
     return identity
 
 
-def _validate_runtime_identity(resources: Mapping[str, Any]) -> dict[str, Any]:
+def _validate_runtime_identity(
+    resources: Mapping[str, Any],
+    expected_clients: Mapping[str, str] = EXPECTED_CLIENTS,
+) -> dict[str, Any]:
     appium = _required_object(
         resources,
         "appium",
@@ -902,7 +905,7 @@ def _validate_runtime_identity(resources: Mapping[str, Any]) -> dict[str, Any]:
         "drivers",
         "mobile-simulator Appium",
     )
-    required_platforms = set(EXPECTED_CLIENTS.values())
+    required_platforms = set(expected_clients.values())
     driver_identity: dict[str, Any] = {}
     for platform in sorted(required_platforms):
         driver = _required_object(
@@ -1097,6 +1100,7 @@ def _invalid_callback_url(callback_scheme: str, stage: str) -> str:
 
 class SimulatorCallbackRoutingGate(AcceptanceGate):
     gate_id = GATE_ID
+    expected_clients = EXPECTED_CLIENTS
 
     def __init__(
         self,
@@ -1361,14 +1365,14 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
                 + ", ".join(missing_actions),
                 "mobile-simulator:harness-actions",
             )
-        if set(clients) != set(EXPECTED_CLIENTS):
+        if set(clients) != set(self.expected_clients):
             raise SimulatorGateBlocked(
-                "mobile-simulator requires exactly sim-ios and sim-ios-peer",
+                "mobile-simulator client set must match the Gate contract",
                 "mobile-simulator:clients",
             )
 
         specs: list[SimulatorClientSpec] = []
-        for client_id, expected_platform in EXPECTED_CLIENTS.items():
+        for client_id, expected_platform in self.expected_clients.items():
             client = _required_object(
                 clients,
                 client_id,

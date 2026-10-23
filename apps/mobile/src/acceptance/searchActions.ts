@@ -1,4 +1,5 @@
 import { fromJson, toJson, type JsonObject } from '@bufbuild/protobuf';
+import { invoke } from '@tauri-apps/api/core';
 import {
   ResourceRefSchema, ResolvedResourceSchema, SearchKind,
   SearchReadStateSchema, SearchResponseSchema,
@@ -21,6 +22,7 @@ export interface MobileSearchAcceptanceContracts {
   };
   'search.state': { input: undefined; output: JsonObject };
   'search.cancel': { input: { requestId: string }; output: { cancelled: boolean } };
+  'search.reads': { input: undefined; output: { sourceReads: number; hydrationReads: number; observations: number } };
 }
 
 async function read(operation: () => Promise<JsonObject>): Promise<ReadResult> {
@@ -48,6 +50,7 @@ export const mobileSearchAcceptanceActions = {
       fromJson(ResourceRefSchema, input.resource), input.requestId ?? crypto.randomUUID(),
     )) as JsonObject),
   'search.state': async () => toJson(SearchReadStateSchema, await mobileSearchService.readState()) as JsonObject,
+  'search.reads': async () => invoke<MobileSearchAcceptanceContracts['search.reads']['output']>('search_read_diagnostics'),
   'search.cancel': async ({ requestId }: { requestId: string }) => {
     const response = await mobileSearchService.cancel(requestId);
     return { cancelled: response.cancelled };

@@ -172,14 +172,18 @@ STATION_RESTART_TIMEOUT_SECONDS = 180.0
 
 
 class SimulatorSocialGate(SimulatorCallbackRoutingGate):
+    client_assignments = CLIENT_ASSIGNMENTS
+    scenario_gates = SCENARIO_GATES
+    scenario_metadata = SCENARIO_METADATA
+
     def __init__(
         self,
         scenario: str,
         **kwargs: Any,
     ) -> None:
-        if scenario not in SCENARIO_GATES:
+        if scenario not in self.scenario_gates:
             raise ValueError(f"unsupported Mobile social scenario: {scenario}")
-        self.gate_id = SCENARIO_GATES[scenario]
+        self.gate_id = self.scenario_gates[scenario]
         super().__init__(**kwargs)
         self.scenario = scenario
         self.environment_id = (
@@ -261,10 +265,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             )
             if suite_report is not None:
                 suite_report_ref = artifacts.write_json(
-                    "mobile-simulator-social/ios-social-parity/"
-                    "suite-runtime.json",
+                    f"mobile-simulator-social/{self.scenario}/suite-runtime.json",
                     suite_report,
-                    role="mobile-social-ios-suite-runtime",
+                    role=("mobile-social-ios-suite-runtime"
+                          if self.scenario == "ios-social-parity"
+                          else f"mobile-{self.scenario}-suite-runtime"),
                 )
                 result["suiteRuntime"] = {
                     "report": (
@@ -747,7 +752,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "Mobile social actor manifest",
         )
         actors: dict[str, MessagingActor] = {}
-        for client_id, (service_id, role) in CLIENT_ASSIGNMENTS.items():
+        for client_id, (service_id, role) in self.client_assignments.items():
             service = require_runtime_service(manifest, service_id, "station")
             station = self._required_object(
                 stations,
@@ -5277,7 +5282,7 @@ return {
         return value.strip()
 
     def _result_base(self, status: str) -> dict[str, Any]:
-        metadata = SCENARIO_METADATA[self.scenario]
+        metadata = self.scenario_metadata[self.scenario]
         return {
             "artifactKind": "acceptance-gate-evidence-report",
             "gateId": self.gate_id,

@@ -16,6 +16,14 @@
       "tier": "env-evidence",
       "description": "Reuse one same-Station native Alice/Bob runtime for Chinese and attachment search, historical/thread open, cache return, real edit/hide invalidation, typed errors, functions and same-window account isolation; require exact-source UI and immutable evidence."
     },
+    "chat-mobile-device-search-native-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.chat.mobile_device_search"],
+      "timeout_seconds": 2400,
+      "environment": "chat-mobile-search-simulator",
+      "provisioner": "chat-mobile-search-simulator",
+      "tier": "env-evidence",
+      "description": "Reuse one source-bound iOS/Android Suite for bilateral receiver Search, real message/thread anchors, long filenames, scoped paging, cost, content and lifecycle fences, Settings and terminal cleanup."
+    },
     "x-config-home-operator-login-e2e": {
       "argv": ["python3", "-m", "tooling.acceptance.gates.x_config.home_operator_login"],
       "timeout_seconds": 2400,
