@@ -14,10 +14,13 @@
 ```text
 ResourceKey = authorityNamespace + resourceKind + resourceId
 SourceKey   = owningModule + sourceInstanceId + executionBoundary
-QueryKey    = intentId + identityEpoch + scopeFingerprint
+QueryIdentity = intentId + identityEpoch + scopeFingerprint
 ```
 
 authorityNamespace 表示资源的真实权威空间，例如原 Station、Federation 对端站或 Applet instance；不能把来源展示名称当权威 ID。设备/账号存储 namespace 与 authorityNamespace 是不同维度，缓存 key 必须同时约束当前身份。
+
+QueryIdentity 标识执行与发布，不是缓存复用键。新 intent 可以复用仍有效的
+相同查询数据；缓存键、权限约束与 cursor 绑定见第 7 节。
 
 这里的 instance 指稳定业务数据实例/tenant，不是每设备安装记录、运行
 session、服务 URL 或包版本。执行 binding 变化不自动改变原对象的 authority；
@@ -225,13 +228,118 @@ SCOPE_OUTSIDE_SEARCH_DOMAIN
 
 failed、partial、empty 是独立 query status。已失权/删除/隐藏的原对象采用领域统一的 unavailable，避免泄漏身份；详细诊断只在 authorized operator scope。对域外来源（公网、OS 文件、外部 connector）的请求统一返回 SCOPE_OUTSIDE_SEARCH_DOMAIN，不提供配置指引式错误。
 
-## 7. Cursor 与缓存
+## 7. Cursor、缓存与复用
 
 cursor 为 opaque、认证防篡改的 session continuation，绑定 actor、profile、Station/Federation scope、query/filter/sort fingerprint、source set、ranking/index generation、expiry。
 
 Client cursor 可以指向本机 query session，不能发给 Station 当作私密数据。Station cursor 只包含远端会话 reference，不编码正文或可读权限集合。
 
-Cache key 包含 identityEpoch、policyEpoch、resource revision、source revision。权限/身份变化立即失效；分页旧会话不保留访问权。Result cache 与历史 query/suggestion 各自有受保护存储和留存策略。
+以下是目标数据合同，尚未加入当前 proto 或实现。缓存元数据与条件读取提示
+沿同一 Model schema/受信 binding 定义，不增加另一套手写业务模型或权限库。
+缓存策略取来源字段策略、原域读策略和 Host 上限的交集。
+
+### 7.1 缓存对象与复用键
+
+缓存角色共用 Search runtime 的有效性、失效和资源策略；物理存储按 D/S/F
+隔离。持久派生索引独立于可淘汰的缓存，不因缓存淘汰而重建索引。
+
+- **静态声明与功能目录**：以 module/source identity、descriptor/catalog revision、
+  platform、locale 和当前 binding revision 定位。只有无 actor 私密信息的声明
+  可 app-scope 复用；当前 eligible/availability 另受身份与 capability revision
+  约束。声明不变就不重复获取，immutable 声明不设周期性重查。
+- **资源投影与打开绑定**：键包含 ResourceKey、source/binding identity、账号/
+  profile/Station/Federation 授权分区、identityEpoch、read-scope/使用目的
+  fingerprint、read/processing policy revision，以及所需 projection
+  fields/schema/locale/anchor。条目保存
+  content validator/revision；候选要求指定 revision 时必须匹配。正文、缩略图、
+  snippet 和 resolve target 各按字段策略缓存，正文优先复用原域 read cache。
+  snippet/highlight 额外依赖查询条件，不能跨词直接复用。
+- **查询页与负结果**：键包含上述授权分区、规范 QueryIntent 条件（text/phrase、
+  filters、类型、位置、source selection、sort、locale/timeZone、page size、
+  执行与处理范围、检索策略）、capability/source-set/binding revisions、相关来源
+  search watermark/index generation 和 ranking/analyzer/model revisions。只纳入
+  实际参与的策略版本。相同内容的规范条件才可复用；规范化不得丢弃有意义的
+  大小写、短语、时区或筛选。页号/continuation/snapshot 是页定位的必要维度。
+- **短期 UI/query session**：保存输入、筛选、已加载页引用、稳定顺序、选中
+  ResourceRef、滚动位置与 continuation。它不重复持有全部业务正文，也不等同
+  搜索词持久历史；页引用的缓存可读性须在恢复时重新判断。
+
+来源的 search watermark 覆盖可能新增、删除和改变匹配关系的对象，不能只用
+已命中对象的 content revisions 判断整页仍新鲜。能给出可靠 scope watermark
+时定向失效；没有时按该来源整体 revision 或有界新鲜期保守处理。
+
+intentId、attemptId、requestId 不进入复用键；它们约束响应发布。query session
+的 cursor 仍绑定原执行身份、快照和有效期，不得改签给新 intent 以延长寿命。
+复用有效缓存页的值可以形成新响应；继续翻页须使用仍有效的 session 或取得
+新 continuation，不能把旧异步 event 改成新 intent 的响应。
+
+### 7.2 两项独立有效性与元数据
+
+可发布条目同时满足：
+
+1. **内容有效**：validator、revision 或受保证的新鲜期仍匹配；immutable 仅指
+   该 content revision 不变。没有可靠事件/watermark 的可变来源须有有界
+   contentFreshUntil；不得只记录“曾成功读取”而永久视为新鲜。
+2. **读取有效**：当前认证分区、source eligibility、binding、原域 read-scope/
+   policy 仍允许所需字段与用途；原 authority 能直接裁决，或提供仍有效的
+   read lease/离线政策。无 lease 不能自行推导允许时长。
+
+条目记录 resource/query dependencies、content validator/revision、
+contentFreshUntil、policy/read-scope revision、readLeaseUntil（适用时）、
+source/binding revision、storage/processing policy、coverage/snapshot/expiry、
+字节数与最近使用时间。contentFreshUntil 和 readLeaseUntil 不能合成一个 TTL。
+来源返回的缓存提示不能签发或延长 Host/原域授权。
+
+**no-store** 不保存响应投影/正文；**fresh** 可直接形成响应；
+**content-stale** 仅在读取仍有效且策略允许时先返回旧内容、标注 freshness，
+再有界后台更新；**access-invalid** 不返回标题、ID、片段、count、预览或
+evidence，先阻断读和发布。lease 到期不能以 stale-while-revalidate 延长私密
+可读性，content validator 未变化的回复也不代表已续授权。
+
+条件读取可携带已知 validator、需要的投影字段和刷新意图，响应表达 changed/
+unchanged 与独立的当前读取结果。validator 由原域定义，opaque 使用，不拿
+本机 wall clock 代替权威版本；缓存 hint 不包含权限委托。它们属于既有
+query/hydrate/resolve 的 typed envelope，不增加 validateVersion RPC。
+
+### 7.3 失效、负缓存与容量
+
+资源 edit/delete/hidden/policy 事件使相关投影、预览、打开绑定、引用与查询
+dependencies 失效；新对象或匹配字段变化使受影响查询页、count/facet 和负结果
+失效。查询当前显示顺序可保留，更新提示不能保留被删或失权行。不能可靠确认
+count 时返回 unknown/lower-bound，而非复用旧 exact。
+
+权限/成员变化、source removal、binding replacement、lock/logout/identity
+变化先关闭对应分区的读取、订阅和发布，再按 retention 清理；锁定保留的
+受保护磁盘数据不可读取，unlock 须重新取得当前上下文。A→B→A 不恢复旧
+identityEpoch。来源变动不清空无关静态目录和仍可读的其他资源正文。
+
+只缓存成功完成且 coverage 明确的空查询结果，并使用相关来源 watermark 与
+较短有界新鲜期；partial/failure/timeout 不缓存为 empty。不可用对象的负缓存
+仅限相同授权分区和统一 unavailable 语义，恢复/权限变化即失效，不暴露对象
+存在性。显式刷新绕过内容新鲜命中，允许条件读取复用未变 payload。
+
+查询页、预览、负结果与 session 默认有界短期内存持有；磁盘持久化仅在原域/
+字段策略明确允许时使用已有受保护 storage。各分区、来源、条目类型及总量
+同时有数量/字节上限和 LRU 淘汰；session/cursor 有独立 expiry。immutable
+内容仍受容量、读取政策和删除约束；no-store 不落盘，正文不进 Renderer
+localStorage，不新增持久 query history。
+
+### 7.4 并发与发布
+
+相同授权分区、使用目的、操作、字段及 validator 的读取合并为一个 in-flight；需强制
+刷新的调用不能搭载一个不满足其刷新要求的旧读取。hydrate 批量处理缺失或
+须复核的对象，命中对象不重新取正文。
+
+共享读持有独立 operation identity 和原授权快照，完成后产生数据值；
+各仍有效的订阅者分别形成自己的响应。它不重写已取消 intent 的原 event，
+也不合并不同 actor/read-scope 的调用。
+
+每订阅者有独立 intent、deadline 和 cancellation；一个关闭预览不取消其他
+仍使用同一读取的查询；订阅者 deadline 到达使该订阅者退出。最后订阅者退出
+或底层来源预算的 deadline 到达才取消共享操作，不以合并延长任一 deadline。
+提交缓存前重新检查 source/binding、
+identity/read-scope/policy 和 validator 的当前状态；旧响应不能覆盖更新条目、
+tombstone 或新授权分区。发布前再检查该订阅者执行身份与当前读权。
 
 ## 8. AuthorizedEvidenceBundle
 

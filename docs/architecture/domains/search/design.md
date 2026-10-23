@@ -51,8 +51,12 @@ actor 身份只取自认证上下文（跨边界一律 `ptid`，禁止自报 use
 
 1. **准入**：只有域内 contributor 可注册；schema/能力/绑定校验通过才 eligible。
 2. **索引/候选过滤**：D 区索引按账号密钥隔离；S 区查询带 actor 谓词；F 区查询携带认证的联邦身份，由对端裁决。
-3. **当前读权 hydration**：标题、片段、计数、facet、建议、AI evidence 发布前，原域对候选批量执行当前 read-policy；deny/unknown 直接丢弃且不区分“不存在/无权限”。
-4. **预览/打开再校验**：preview 与 Resource Resolver 在打开时再次校验 revision/权限/联邦可达性。
+3. **当前读权 hydration**：标题、片段、计数、facet、建议、AI evidence 发布前，
+   以原域当前 read-policy 或仍有效的 authority read lease 裁决。有效缓存可
+   复用，缺失/过期才批量复核和补齐投影；deny/unknown 直接丢弃且不区分
+   “不存在/无权限”。当前读权不等于每次远端重取正文。
+4. **预览/打开再校验**：preview 与 Resource Resolver 使用当前上下文判断
+   revision/权限/定位可用性，可复用有效投影与绑定；原域保留最终打开裁决。
 
 建议、历史、count、snippet 与 AI 回答全部走同一条链；不存在“仅标题可见”的旁路。撤权/删除/隐藏事件立即阻断读取，再异步清理派生物。
 
@@ -105,7 +109,7 @@ Search source registry 是检索能力投影，不重新拥有 Applet 安装、A
 ### 3.1 组件关系与生命周期
 
 - **Shell / Search UI**：输入、范围选择、结果、预览和返回位置；消费 typed query events。UI 可触发查询或打开，不能直接查数据库、持有来源凭据或决定业务权限。按钮常驻，页面按需挂载；只显示一个预览。
-- **Client Coordinator**：由客户端 Search runtime 持有，输入为 query intent、认证快照和 eligible sources，输出为 result batches/coverage/cursor。依赖源查询 port、policy hydration 和 Shell resolver；只写有界查询状态，不写业务对象。账号锁定/切换使它取消并清理。
+- **Client Coordinator**：由客户端 Search runtime 持有，输入为 query intent、认证快照和 eligible sources，输出为 result batches/coverage/cursor。依赖源查询 port、policy hydration 和 Shell resolver；持有有界查询状态与统一缓存复用策略，不写业务对象。账号锁定/切换使它取消并关闭对应缓存分区。
 - **Source registry projection**：输入已验证 manifest、安装/联邦关系 revision 和 readiness；输出当前身份可参与的域内 source set。静态 schema 可进程级缓存；授权集合按账号/会话持有。不能将 source 自报的 actor/permissions 当 authority。
 - **Local source adapters**：由设备 Search executor 调度 Messaging FTS、端侧私密记忆/附件索引与功能目录，返回候选、rank/provenance 和 coverage。只访问本账号授权读端口；不能经 UI 遍历全量正文或请求 Station 获取 E2EE 明文，也不读取 Peers 存储边界之外的 OS 文件。来源可以随调用短暂激活，不必挂载页面。
 - **Station Search Application**：输入认证上下文和 query，调度本站 domain/index adapter 与 Federation 按需查询；对候选做 batch read-policy 后返回必要投影和真实来源状态。限并发、限候选、限时间；不访问本机目录、不调用公网搜索/外部 connector、不继承另一 actor 凭据。
@@ -132,6 +136,63 @@ Search source registry 是检索能力投影，不重新拥有 Applet 安装、A
 规划优先使用确定的 URL/身份/功能别名、显式条件和低成本查询；模型仅增强模糊意图，不是查找的必要前置。计划中 remote allow、local grants、模型策略和预算固定，模型只能细化允许范围。输入改写、scope 扩大或深度研究产生新 intent/revision，不静默增加成本。
 
 交互查询、手动重建与后台提取分为独立优先级；每 actor、source、grant 有有界队列和 fair scheduling。过载先暂停后台任务，再拒绝超额查询/候选并返回 partial/overloaded。重建、OCR 和 embedding 不在用户 query 中现场执行；没有绑定预算的来源不能 ready。
+
+### 4.1 共享缓存与实际读取路径
+
+目标是 [S-18](./product.md#s-18-重复使用缓存与刷新) 的重复使用体验。缓存由
+headless Search runtime/application 持有，位于 contributor 调用的共通读边界；
+Overlay、完整页、局部入口和 Agent 复用同一有效性规则。Client/Station 在各自
+信任区执行，缓存不跨 actor 或 D/S/F 搬运正文，不增加独立缓存服务。
+
+缓存分工为：版本约束的静态声明/功能目录、授权分区内的资源投影、短期查询页/
+负结果/session。持久派生索引仍由原索引 owner 持有，不能当成可随 LRU 删除的
+查询缓存。正文优先通过原域 read port 复用已有 read cache；Search 只持有
+必要的检索投影、引用及依赖，不给每个页面/provider 建另一套正文缓存。
+
+每次请求从既有身份/registry runtime 读取当前认证、eligible sources 和读策略
+快照，再定位规范复用键；不在每次按键重新发现来源、加载目录或联网取配置：
+
+1. 内容与读权同时有效，直接形成当前 intent 的响应；不重查来源、不重取正文，
+   也不为了证明“查过权限”强制发一个远端 hydrate RPC。
+2. 只有内容过期、读权仍有效且允许旧值时，先显示带 freshness 的结果；
+   一次有界后台条件读取更新内容。收到新匹配先提示更新，保持选中与滚动；
+   delete/hidden/revoke 立即移除，不能等用户点击更新。
+3. 缺失、字段不足或不能复用旧值时，按查询计划调用 contributor。候选批量
+   hydrate 只补缺失字段或复核失效读权；内容未变时可使用 validator 确认而
+   不重传正文。显式刷新检验内容更新，不全量清空其他缓存。
+4. 读权未知、到期、撤销或分区变化时，不发布旧私密投影；必要的权限复核由
+   原 authority 执行，允许后才继续读取。
+
+预览按用户请求补齐，重复预览和原对象打开复用有效内容；原模块/Host resolver
+拥有打开时的最终权限与定位判断。成员关系、绑定与定位变化仍需重新裁决，
+复用正文不能绕过这一边界。
+
+缓存有效性由 content validator/新鲜期与 authority/read-scope 独立决定。
+稳定目录按 revision 复用；immutable 对象只保证其内容版本不变，不保证访问
+许可永不变。可靠事件优先定向失效，无可靠事件的可变来源使用有界新鲜期和
+条件读取；不能为所有对象设置同一 TTL，也不能让私密授权随正文 TTL 延长。
+细化的键、元数据和失效规则唯一维护在 [data-model 第 7 节](./data-model.md#7-cursor缓存与复用)。
+
+同授权操作可合并 in-flight，hydrate misses 批量执行；取消按订阅者处理，
+最后使用者退出或 deadline 到达才中止底层读。缓存提交和响应发布分别检查
+当前 source/binding/identity/policy/revision，拒绝旧响应复活删除对象或覆盖
+新内容。intent/attempt 是发布屏障，不是复用键。
+
+### 4.2 返回、失效与成本边界
+
+返回或重开时恢复短期 session 和已加载页，页面可以卸载。页值仍有效即复用；
+cursor 过期只阻止继续翻页，不清空仍可读的已加载内容。新的查询不沿用过期
+cursor，也不把旧 event 改签为本轮响应。缓存淘汰后重新读取是允许的成本，
+不保证无限期保留每次查询。
+
+来源变化使受影响的查询页、负结果、count/facet 和 cursor 失效；资源变化
+只刷新相关投影和引用。无法精确确定匹配依赖时按该来源保守失效，不能漏掉
+新内容而长期复用空结果。全部失败/partial 不写成功空缓存；后台更新失败
+保留仍获准读取的值并显示真实状态。
+
+缓存总量、分区/来源额度、字段/条目字节数和 session expiry 都受预算约束。
+静态不变数据不反复轮询，敏感数据不因此无限期保存；lock/logout/revoke
+先关读、清订阅与可见投影，再按原 storage retention 处理受保护数据。
 
 ## 5. 聚合、排序与分页
 
@@ -229,7 +290,10 @@ Station semantic 若采用向量存储，优先评估当前 PostgreSQL 的成熟
 
 授权在 source admission、index write、candidate query、projection hydrate、preview/open 和 AI evidence 分别执行。一次来源注册/旧 ACL snapshot 不代表永久内容访问。
 
-索引尽量做权限前置过滤；在返回 title/snippet/object ID/计数前以当前 authority read 重校验。采用 batch read-policy 避免逐条 N+1。deny/unknown 都不得以私密 metadata 解释“你没权限看这个命中”；统一不可用反馈由原域决定。
+索引尽量做权限前置过滤；返回 title/snippet/object ID/计数前仍须满足当前
+authority read。有效原域缓存/授权租约可承接该判断，失效时 batch read-policy
+复核，避免逐条 N+1 和反复重取正文。deny/unknown 都不得以私密 metadata
+解释“你没权限看这个命中”；统一不可用反馈由原域决定。
 
 Session/actor/Station/Federation 变化、锁定、模块卸载、权限事件使对应 query cache、history suggestions、preview、AI citations 失效。来源静态描述可 app-scope；eligible sources 与所有用户结果必须 identity-scope。
 
@@ -260,7 +324,9 @@ UI 只投影 Search intent，不负责来源发现/历史同步。复用 Page/Ru
 - 同账号短期 query 状态在 headless store；Page hidden 后暂停结果订阅与预览渲染。
 - 列表按窗口渲染；只挂载所选预览；不隐藏挂载全部 source editor、Applet 或 Agent 会话。
 - Overlay singleton，由 Shell 管；back stack 保存稳定 resource reference。
-- search session、候选、缓存和 provider worker 有上限与 TTL；logout/lock/session-end 取消并释放。
+- search session、候选、缓存和 provider worker 有数量/字节/并发上限；
+  session/cursor 有有效期，内容与读权分别按第 4.1 节判断。logout/lock/
+  session-end 取消读取并关闭相应用户分区，静态无用户声明可继续复用。
 
 正式实现前把 Desktop/Mobile 默认落点、alive policy、组件树和 runtime registry 更新到对应平台合同。域内附件/消息索引是有预算的后台能力，页面关闭不必停索引；搜索页面也不能成为索引工作者的唯一生命周期 owner。
 
@@ -269,6 +335,12 @@ UI 只投影 Search intent，不负责来源发现/历史同步。复用 Page/Ru
 需验证：Chat 默认落点与 Search 按需显示；同账号跨页面连续性；账号/Station/联邦切换无回写；域内附件随父对象权限过滤与撤回；Federation 对端不可见不泄漏存在性；功能直达真实入口；权限过滤与撤权；迟到 upsert 不复活已删对象；D 区内容不外发；partial/cancel/cursor expiry；索引重建无数据丢失；按原对象 anchor 打开；中文与规模 corpus。另需否定证明：公网/OS 文件/外部 connector 无法通过任何配置、Applet 或 MCP 路径成为来源。
 
 这些是完整目标的证明义务，不是已完成的测试结果。Desktop 已选择共享 CJK/拉丁分词与既有 SQLCipher/FTS5；Station 引擎、语义 analyzer、预算、离线授权期限和 contributor 资源限制需后续领域/测量输入。当前显式执行计划和 registry 只登记真实已实施切片。
+
+缓存设计另由 [V-10](./integration.md#v-10-cache--reentry) 验证：功能目录重复
+使用、同词/退格重输、返回/重开、预览与页复用、条件刷新、新内容使负缓存
+失效、权限租约到期、成员变化、共享读取消与容量淘汰。记录来源 query、正文
+读取、authority 校验次数、字节量和冷/热恢复耗时；有效命中的零次来源/正文
+读取是合同要求，尚不是测量结果。不能用缓存命中率代替权限否定证明。
 
 独立[组件实验](./feasibility.md)与[原始证据索引](./feasibility-evidence.md)已补充基础可行性：300 份真实文档加密 FTS 查询 P95 2.883 ms，中文分词关键词探针 8/8；PG 和生命周期机制有受控验证。域内附件 provider、Federation 按需查询、端侧 inference、原生 Journey、正式 Acceptance 及产品性能均未证明，不能将实验数值变成上述 SLA 或 readiness。
 

@@ -43,11 +43,13 @@ interface SearchContributor {
 
 - **query**：在允许的范围与条件下召回有界候选，返回来源内 rank、分页和真实
   coverage。不支持的筛选明确失败，候选与 count 不绕过来源的读权过滤。
-- **hydrate**：批量复核当前读权，返回允许展示或使用的投影；deny/unknown 的
-  对象不返回。排序候选、缓存和派生索引都复用这一入口，避免逐条 N+1 或另一套
-  权限实现。原 `ValidateAndHydrateBatch` 的语义由此方法完整承接。
-- **resolve**：复核资源及 anchor，返回受信任的只读打开目标。实际导航交给
-  原域/Host resolver，不执行写操作、脚本或任意命令。
+- **hydrate**：以当前读权批量形成允许展示或使用的投影；有效原域缓存/读租约
+  可承接判断，失效才复核，deny/unknown 的对象不返回。排序候选、缓存和派生
+  索引都复用这一读入口，避免逐条 N+1 或另一套权限实现。原
+  `ValidateAndHydrateBatch` 的语义由此方法完整承接。
+- **resolve**：在当前上下文下判断资源及 anchor，返回受信任的只读打开目标。
+  有效内容和定位绑定可复用；实际导航及最终打开裁决交给原域/Host resolver，
+  不执行写操作、脚本或任意命令。
 
 `SourcePage` 是来源候选页，`AuthorizedProjection` 是原对象按读权及字段策略
 形成的有界投影，`ResolvedResource` 是可读资源与受信打开绑定；它们对应
@@ -58,10 +60,23 @@ descriptor 在注册/绑定时读取，不提供单独的 `Describe` RPC。它�
 
 身份、允许范围、deadline 和 cancellation 统一通过 `SearchExecutionContext`
 提供。取消由查询 owner 与 transport adapter 传播到已有执行机制，来源不再
-各建一个 `Cancel` API；取消后停止后续读取与投影，并拒绝迟到发布。
+各建一个 `Cancel` API；取消后停止该订阅者后续读取与投影，并拒绝迟到发布。
+合并读还有其他有效订阅者时不一并取消，最后订阅者退出才中止底层操作。
 
 已有 FTS、人员目录或功能 catalog 直接适配这三个读方法。来源已有索引时不再
 复制一次正文；metadata-only/known-only 来源如实声明覆盖范围。
+
+三个方法定义读语义，不要求每次调用都执行 RPC 或重读正文。Search runtime
+在统一 wrapper 中完成缓存定位、有效性判断、in-flight 合并与失效；来源
+只通过原 read port 提供投影、validator、当前读策略与已有变化通知。有效
+query/preview/resolve 缓存可直接形成响应，miss/失效才进入真实读取。
+
+可选 typed 缓存元数据和条件读取提示放在同一 Model 的 request/response 或
+受信 binding envelope，表达字段、validator、changed/unchanged 和缓存限制，
+不新增 `validateVersion`、`GetCache` 等方法。内容版本和读权独立有效，
+来源提示不能扩大 Host grant；元数据不足时保守重读，不默认永久命中。
+原域已有 read cache 时复用它，来源不被要求各建缓存系统。统一规则见
+[data-model 第 7 节](./data-model.md#7-cursor缓存与复用)。
 
 ### 2.2 可选的派生索引供给
 

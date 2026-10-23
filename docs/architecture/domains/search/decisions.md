@@ -22,6 +22,9 @@
 | D-17 | 查询与后台投影独立、资源有界 | accepted |
 | D-19 | 封闭域、当前 actor 可见性、域外来源禁止 | accepted |
 
+缓存复用的目标规则见 D-20（proposal）；它细化 D-05/D-07/D-17，不表示缓存
+已实施、性能已测或离线授权期限已获确认。
+
 ## D-01 Search 按需唤起，Chat 是默认落点
 
 **Status**: accepted
@@ -380,3 +383,44 @@
 ### Consequences
 
 **代价**：Web Search Applet 的 `search` 路由不进入门户来源；Launcher mock 搜索与 `tools_search_providers` 固定数据应在实施时移除或改造为域内来源，不保留兼容双轨。Federation 覆盖受限于已建立的联邦上下文，不承诺全联邦搜索。未来重新引入外部来源必须作为新范围决策，重开产品与架构确认。
+
+## D-20 缓存由统一读边界持有，内容与授权分别有效
+
+**Status**: proposal
+**Date**: 2026-10-23
+
+### Context
+
+**用户场景输入**：长期不变的内容不应在每次搜索时重新获取；输入/退格、
+反复预览、打开后返回和离线恢复需要复用。已有 `client-chat-core` 通过
+`client-storage` 持有原域派生缓存，可复用读侧 ownership；Search 的通用缓存
+尚未实现。安全合同仍要求当前读权，不能由“内容未变”推导“永久可读”。
+
+### Decision
+
+**建议**：headless Search runtime/application 在 contributor 共通读边界
+统一处理目录、资源投影与短期查询/session 的复用、in-flight 合并及失效，
+正文优先复用原域 read cache。持久派生索引单独持有。静态目录按 revision，
+可变查询按依赖/watermark 与有界新鲜期；内容 validator 与 read-scope/租约
+分别有效。三个读方法保持 `query/hydrate/resolve`，只在 typed envelope 留
+可选 validator、字段和缓存限制，不增加缓存 RPC。
+
+### Rationale
+
+**理由**：有明确有效性的数据可以零次来源/正文读取恢复；缺字段才补齐，
+变更按依赖失效。统一有效性防止 Overlay、局部搜索与 Agent 各自延长私密
+读取期限；新 intent 可复用值，执行身份仍阻断旧响应回写。
+
+### Alternatives Considered
+
+每次强制 hydrate RPC 会重复传输不变内容；全局固定 TTL 同时混淆目录新鲜度、
+正文新鲜度与私密读权；每来源/页面自行缓存会复制失效和授权逻辑。仅用命中
+对象版本也无法发现新内容，故查询页必须依赖检索范围 watermark 或有界新鲜期。
+
+### Consequences
+
+**代价**：统一 wrapper 需维护依赖失效、分区/字节限额、订阅者取消和独立读取
+有效性。原域未提供可靠变更或租约时保守重读/拒绝私密旧值，不能为命中率
+放宽读权。容量淘汰允许增加读取，离线授权政策由原 authority 决定。
+S-18/V-10 是目标证明；性能、缓存参数和真实产品恢复均 UNPROVEN。测量若表明
+缓存维护成本超过重复读取收益，可调整具体缓存角色与额度，不能改变授权边界。
