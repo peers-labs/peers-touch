@@ -558,6 +558,8 @@ fn main() {
     let context = {
         let mut context = context;
         for window in &mut context.config_mut().app.windows {
+            // Explicit native input owns activation; creation preserves operator focus.
+            window.focus = false;
             window.background_throttling =
                 Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
         }
