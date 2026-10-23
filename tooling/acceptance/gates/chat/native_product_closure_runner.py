@@ -2991,6 +2991,7 @@ class NativeProductClosureGate(AcceptanceGate):
         reaction_command = ""
         failed_command: dict[str, Any] = {}
         failed_proxy: dict[str, Any] = {}
+        last_actionable_observation: dict[str, Any] = {}
         try:
             proxy.arm()
             failure_emoji = self.prove_keyboard_reaction_picker(
@@ -3000,6 +3001,7 @@ class NativeProductClosureGate(AcceptanceGate):
 
             def actionable_error() -> bool:
                 nonlocal reaction_command, failed_command, failed_proxy
+                nonlocal last_actionable_observation
                 row = self.clients["alice"].find_element(
                     f'[data-message-ulid="{message_id}"]',
                     5,
@@ -3035,6 +3037,10 @@ class NativeProductClosureGate(AcceptanceGate):
                 ]
                 if len(candidates) > 1:
                     raise GateError("reaction UI created multiple durable commands")
+                snapshot["newCommandCount"] = len(candidates)
+                snapshot["errorSurfaceCount"] = len(error_surfaces)
+                snapshot["controlledLoss"] = False
+                last_actionable_observation = snapshot
                 if not candidates:
                     return False
                 command_id = str(candidates[0].get("commandId") or "")
@@ -3051,14 +3057,32 @@ class NativeProductClosureGate(AcceptanceGate):
                     and int(outbox.get("attemptCount") or 0) >= 1
                     and outbox.get("state") == "retry_wait"
                 )
+                snapshot["command"] = {
+                    "commandId": command_id,
+                    "intentSha256": intent.get("commandSha256"),
+                    "outboxSha256": outbox.get("commandSha256"),
+                    "attemptCount": outbox.get("attemptCount"),
+                    "state": outbox.get("state"),
+                }
+                snapshot["controlledLoss"] = controlled_loss
                 if error_surfaces and controlled_loss:
                     failed_command = current
                     failed_proxy = snapshot["proxy"]
                 return bool(error_surfaces and controlled_loss)
 
-            wait_until(
-                actionable_error,
-                "reaction actionable error",
+            def actionable_observation() -> dict[str, Any]:
+                accepted = actionable_error()
+                return {**last_actionable_observation, "actionable": accepted}
+
+            self.wait_step(
+                actionable_observation,
+                "alice.reaction-actionable-error",
+                expected={
+                    "newCommandCount": 1,
+                    "errorSurfaceCount": "positive",
+                    "controlledLoss": True,
+                },
+                ready=lambda snapshot: snapshot["actionable"],
                 timeout=30,
             )
             self.capture_visible_localization("reaction-error", ("alice",))
