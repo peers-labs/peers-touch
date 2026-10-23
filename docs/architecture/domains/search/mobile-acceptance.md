@@ -40,6 +40,13 @@ attach to the same source commit and Fixture epoch. They use production
 Messaging actions for setup and real Search UI for query/open. Diagnostics
 support cost and denial assertions; they do not replace UI evidence.
 
+Post-login WebView restart must restore the exact persisted Station route before
+Search can activate. Both route restore and refresh return the native
+`StationRouteRefreshProjection` containing `binding` and the verified `route`
+from the same discovery. Station runtime retains its authority, generation,
+revision, pinned root and node checks. A bare binding cannot satisfy bootstrap;
+the bilateral authentication step must reject that return-contract regression.
+
 Resources: active reviewed `three` Profile, disposable same-Station fixture,
 fresh iOS Simulator, isolated Android Emulator, dynamic Appium/client ports,
 source-attested native builds and namespaced runtime storage. The existing
