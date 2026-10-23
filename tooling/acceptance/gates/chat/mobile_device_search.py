@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -290,8 +289,8 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
         def send(text: str, **extra: Any) -> str:
             nonlocal sent_count
             journey._await_condition(
-                lambda: journey._social_runtime_active(sender_session, sender.client_id)
-                and journey._social_runtime_active(receiver_session, receiver.client_id),
+                lambda: journey._social_runtime_active(sender_session, sender_session.client_id)
+                and journey._social_runtime_active(receiver_session, receiver_session.client_id),
                 f"Search fixture {sent_count + 1} writable Messaging runtime",
             )
             try:
@@ -299,7 +298,9 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
                     "conversationId": conversation, "plaintext": text, **extra,
                 })
             except Exception as error:
-                raise GateError(f"{sender.client_id} fixture send {sent_count + 1}: {error}") from error
+                raise GateError(
+                    f"{sender_session.client_id} fixture send {sent_count + 1}: {error}",
+                ) from error
             require(bool(sent.get("messageId")), "real Messaging identity required")
             journey._await_message(
                 receiver_session, conversation, sent["messageId"],
