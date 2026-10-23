@@ -27,6 +27,11 @@ Simulator and Android Emulator.
 - Persisted light/dark preferences and native software-keyboard typing:
   real Settings save, distinct painted themes, input/submit/content clearance
   against the visual viewport, and keyboard dismissal on both platforms.
+  The input is selected from the observed native accessibility tree and tapped
+  through Appium before native typing. WebView focus alone is not keyboard proof.
+  Driver context always returns to the product WebView, including on failure.
+- Result source metadata follows the existing Social display-name policy;
+  identity locators cannot become conversation display copy.
 
 The Feature `chat-mobile-device-search` belongs to the existing Capability
 `chat-device-search`. `chat-mobile-device-search-native-e2e` uses

@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import time
+import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from typing import Any
 
@@ -129,6 +130,8 @@ return {
   activeMessage: document.activeElement?.getAttribute('data-message-ulid') || '',
   unresolvedCopy: [...document.querySelectorAll('button,h1,h2,[role=status]')]
     .some(node => /\\b(?:search|mobile|common)\\.[a-z][\\w.]+\\b/.test(node.innerText)),
+  rawIdentityCopy: [...document.querySelectorAll('.mobile-search-result__meta')]
+    .some(node => /\\b(?:ptid:|did:|https?:\\/\\/)/i.test(node.innerText)),
   controls: [...document.querySelectorAll(
     '.mobile-search-page .page-header > button,.mobile-search-filters button,'
     + '.mobile-search-input-row button[type=submit],.mobile-search-pagination button')]
@@ -170,6 +173,7 @@ return {
         require(rendering["documentWidth"] <= rendering["viewportWidth"] + 1,
                 f"{name} must not overflow horizontally")
         require(not rendering["unresolvedCopy"], f"{name} has unresolved localization keys")
+        require(not rendering["rawIdentityCopy"], f"{name} exposes an identity locator as display copy")
         require(all(row["width"] >= 43.5 and row["height"] >= 43.5
                     for row in rendering["controls"]), f"{name} has undersized controls")
         require(rendering["searchState"] not in (
@@ -188,23 +192,53 @@ return {
         frame["assertionPassed"] = True
 
     def keyboard(self, artifacts: ArtifactSession, session: Any, fixture: dict) -> None:
-        self.click(session, FIELD)
-        session.send_keys(session.find_element("css selector", FIELD), " ")
+        session.switch_to_native()
+        try:
+            markup = session.get_page_source()
+            artifacts.write_bytes(
+                f"mobile-device-search/{session.client_id}/keyboard/native-input.xml",
+                _redacted_markup(markup), media_type="application/xml",
+                role=f"mobile-search-native-input/{session.client_id}",
+            )
+            fields = [
+                node for node in ET.fromstring(markup).iter()
+                if (node.get("type", node.tag) == "XCUIElementTypeTextField"
+                    or node.get("class") == "android.widget.EditText")
+                and node.get("value", node.get("text", "")) == fixture["query"]
+            ]
+            require(len(fields) == 1, "one observed native Search input is required")
+            field = fields[0]
+            attribute = "value" if "value" in field.attrib else "text"
+            kind = "type" if "type" in field.attrib else "class"
+            selector = f"//*[@{kind}='{field.get(kind)}' and @{attribute}='{fixture['query']}']"
+            element = session.find_element("xpath", selector)
+            session.click_element(element)
+            self.wait(session, "mobile: isKeyboardShown", "native software keyboard")
+            session.switch_to_app_webview()
+            session.execute_script("""
+const input = document.querySelector(arguments[0]);
+input.setSelectionRange(input.value.length, input.value.length);
+return true;
+""", FIELD)
+            session.switch_to_native()
+            session.send_keys(element, " ")
+        finally:
+            session.switch_to_app_webview()
         self.wait(session, "return document.querySelector(arguments[0])?.value === arguments[1];",
                   "real native Search typing", FIELD, fixture["query"] + " ")
         self.has(session, fixture["root"], fixture["query"])
-        session.switch_to_native()
-        self.wait(session, "mobile: isKeyboardShown", "native software keyboard")
-        session.switch_to_app_webview()
         self.capture(artifacts, session, "keyboard")
         session.execute_script("document.activeElement?.blur(); return true;")
         session.switch_to_native()
-        session.execute_script("mobile: hideKeyboard")
-        self._wait_for_value(
-            lambda: True if session.execute_script("mobile: isKeyboardShown") is False else None,
-            "native keyboard dismissal",
-        )
-        session.switch_to_app_webview()
+        try:
+            if session.execute_script("mobile: isKeyboardShown"):
+                session.execute_script("mobile: hideKeyboard")
+            self._wait_for_value(
+                lambda: True if session.execute_script("mobile: isKeyboardShown") is False else None,
+                "native keyboard dismissal",
+            )
+        finally:
+            session.switch_to_app_webview()
         self.fill(session, fixture["query"])
 
     def themes(self, artifacts: ArtifactSession, session: Any, fixture: dict) -> None:

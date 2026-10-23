@@ -7,6 +7,7 @@ import { BoundedList } from '../components/BoundedList';
 import { findMobileSearchFunctions } from '../features/search/functions';
 import { useMobileSearchStore, type MobileSearchFilter } from '../features/search/searchStore';
 import { resolveSocialActorIdentity } from '../features/social/useSocialActorIdentity';
+import { actorDisplayName } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
 import { SearchKind, SourceState, type ResultItem } from '../gen/proto/domain/search/search_pb';
 import { mobileSearchActions } from '../runtimes/searchRuntime';
@@ -28,8 +29,10 @@ function SearchResult({
     : session?.participantBPtid === item.authorPtid ? session.participantBDisplayName : '';
   const name = resolveSocialActorIdentity({ actorPtid: item.authorPtid, displayName: fallbackName }, profile).displayName
     || t('mobile.contacts.unknownUser');
-  const conversationTitle = item.conversationTitle || (session?.participantAPtid === currentUserPtid
-    ? session.participantBDisplayName : session?.participantADisplayName) || t('mobile.chat.title');
+  const conversationTitle = actorDisplayName(item.conversationTitle, '')
+    || actorDisplayName(session?.participantAPtid === currentUserPtid
+      ? session.participantBDisplayName : session?.participantADisplayName, '')
+    || t('mobile.chat.title');
   const timestamp = Number(item.createdAtUnixMs);
   return (
     <button
