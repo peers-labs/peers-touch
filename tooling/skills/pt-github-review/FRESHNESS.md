@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-23
-covered_docs_hash: 9b78e0471ef7e634da7715320e5f7b8b192bcc28829acdf6ffb7eb9b54504165
+covered_docs_hash: f06cebebfaf53a91ddf19771cea6e60c33683ce863ef4f936a16c67979f9a55a
 
 covered_docs:
   - AGENTS.md
@@ -31,6 +31,30 @@ covered_docs:
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
+## Fixed Scope Continuation And Public Metadata Review
+
+Acceptance D-23 keeps the complete required scope separate from one bounded
+request's dispatch. Review requires the original DURABLE manifest, complete
+inventory hashes, current source and input identity, DONE/PROVEN, successful
+cleanup and current authoritative resolution before reusing a producer.
+Concurrent, consumed, crashed, stale and raw-ledger resumes must fail closed.
+Only a clean unique request-work expiry permits one explicit next request;
+other stops require qualified repair. Opaque or live inputs remain pending
+without owner-injected identity. Cancelled work retains its complete entrypoint.
+
+Public metadata serialization accepts only closed compiler graphs and actual
+ArtifactRefs. Payload field redaction, secret text, known values and encoded
+value checks remain active. Every publication and reader validates the complete
+inventory; damaged historical evidence is never repaired or relabelled.
+
+The existing Review Skill's owner, complete-cutover, fail-closed tooling,
+meaningful freshness and exact-source proof requirements cover this contract.
+Its behavior and generic fixture taxonomy therefore remain unchanged.
+The execution graph/session, evidence store/redaction and public Runner tests
+provide positive, corruption, authority, replay and crash coverage; the fixed
+scope continuation and run-bound prerequisite invariants govern recurrence.
+Framework evidence does not establish business, live reuse or performance proof.
+
 ## Gate Time Contract Review
 
 Request resource limits, Catalog command protection, explicitly owned
@@ -42,8 +66,8 @@ actual identity and limiting constraints. Missing performance targets and
 domain progress contracts remain unproven.
 
 An accepted policy change starts a fresh Session from verified durable
-manifest/session lineage, preserving full scope without copying attempts or
-PASS. Same-policy restore remains strict. Current virtual-clock and real
+manifest/session lineage, preserving full scope without copying requests or
+PASS. Same-policy restore verifies the original producer contract above. Current virtual-clock and real
 process/Runner regressions cover long work, fixed protections, cancellation,
 publication and lineage hash rejection. The existing prerequisite invariant
 and governing execution-budget document carry these requirements.
