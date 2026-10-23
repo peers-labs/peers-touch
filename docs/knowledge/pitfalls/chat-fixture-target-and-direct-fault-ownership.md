@@ -97,6 +97,13 @@ actual summary/transcript projections. Nested failures preserve the innermost
 first failed boundary; an outer Step must not overwrite it. Sampling changes
 neither predicate nor polling budget, and a partial observation never proves
 the remaining product Journey.
+Avatar proof must classify bundled inline images before checking downloaded
+cache identity. Reuse the existing bundled-square classifier and require the
+rendered data URI to equal its declared source exactly. Downloaded sources
+retain their cache identity check on the local asset filename, not a hash
+substring in a foreign URL or query. Apply the same predicate to every PTID
+surface and group slot; keep exact bilateral sources, image load state and
+deterministic slot order. An inline preset has no downloaded cache filename.
 Product closure must read replies from both real Thread panels after opening
 them through visible UI. The timeline exposes bounded summary count/IDs, not
 individual reply previews. Initial proof and recovery share one panel reader;

@@ -17,6 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import unquote, urlsplit
 
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
@@ -46,6 +47,7 @@ from tooling.acceptance.drivers.native import (
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_file_picker import select_native_file
+from tooling.acceptance.gates.chat.native_two_client_runner import is_bundled_square_avatar
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
     active_direct_route_multiaddr,
@@ -233,6 +235,24 @@ def file_sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def avatar_rendered_source_matches(source: str, rendered: str) -> bool:
+    if not source or not rendered:
+        return False
+    if source.startswith("data:"):
+        return is_bundled_square_avatar(source) and rendered == source
+    expected_cache_key = hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
+    local = urlsplit(rendered)
+    filename = unquote(local.path).rsplit("/", 1)[-1]
+    return (
+        (local.scheme, local.netloc) in {
+            ("asset", "localhost"),
+            ("http", "asset.localhost"),
+            ("https", "asset.localhost"),
+        }
+        and filename.split(".", 1)[0] == expected_cache_key
+    )
 
 
 def public_fixture_password() -> str:
@@ -3462,12 +3482,7 @@ class NativeProductClosureGate(AcceptanceGate):
                     },
                 })
             raw_sources = client_sources[0]["raw"]
-            expected_cache_key = (
-                hashlib.sha256(next(iter(raw_sources)).encode("utf-8"))
-                .hexdigest()[:16]
-                if len(raw_sources) == 1
-                else ""
-            )
+            expected_source = next(iter(raw_sources)) if len(raw_sources) == 1 else ""
             if (
                 len(client_sources) != 2
                 or len(client_sources[0]["canonical"]) != 1
@@ -3475,11 +3490,11 @@ class NativeProductClosureGate(AcceptanceGate):
                 or client_sources[0]["canonical"]
                 != client_sources[1]["canonical"]
                 or client_sources[0]["raw"] != client_sources[1]["raw"]
-                or not expected_cache_key
+                or not expected_source
                 or any(
                     not sources["current"]
                     or any(
-                        expected_cache_key not in str(current)
+                        not avatar_rendered_source_matches(expected_source, str(current))
                         for current in sources["current"]
                     )
                     for sources in client_sources
@@ -3525,8 +3540,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 slot["src"]
                 and slot["canonical"]
                 and slot["currentSrc"]
-                and hashlib.sha256(slot["src"].encode("utf-8"))
-                .hexdigest()[:16] in slot["currentSrc"]
+                and avatar_rendered_source_matches(slot["src"], slot["currentSrc"])
                 and slot["loaded"]
                 for slot in slot_sets["alice"]
             ),

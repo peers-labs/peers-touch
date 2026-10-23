@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import ast
+import base64
 import binascii
+import hashlib
 import json
 import os
+import re
 import struct
 import subprocess
 import tempfile
@@ -25,6 +28,7 @@ from tooling.acceptance.drivers.native.runtime import LocalMacOSRuntimeBinding
 from tooling.acceptance.gates.chat.native_product_closure_runner import (
     NativeProductClosureGate,
     VALID_ATTACHMENT_IMAGE_BYTES,
+    avatar_rendered_source_matches,
     file_sha256,
     native_input_event_cursor,
 )
@@ -70,6 +74,59 @@ CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
 HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+
+
+class NativeAvatarRenderedSourceTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.presets = re.findall(
+            r'^\s*avatar: "(data:image/svg\+xml;base64,[^"]+)"',
+            (ROOT / "apps/station/app/conf/actor.yml").read_text(),
+            re.M,
+        )
+        self.assertGreaterEqual(len(set(self.presets)), 2)
+        self.remote = "https://cdn.example/avatar-a.png"
+        self.cache_key = hashlib.sha256(self.remote.encode()).hexdigest()[:16]
+
+    def test_committed_inline_avatar_preserves_exact_loaded_source(self) -> None:
+        for source in self.presets:
+            with self.subTest(source_hash=hashlib.sha256(source.encode()).hexdigest()):
+                self.assertTrue(avatar_rendered_source_matches(source, source))
+
+    def test_inline_avatar_cannot_render_another_actor(self) -> None:
+        other = next(source for source in self.presets if source != self.presets[0])
+        self.assertFalse(avatar_rendered_source_matches(self.presets[0], other))
+
+    def test_invalid_inline_payload_is_not_an_identity(self) -> None:
+        for source in ("data:image/svg+xml;base64,broken", "data:text/plain,avatar"):
+            self.assertFalse(avatar_rendered_source_matches(source, source))
+
+    def test_rounded_inline_fixture_is_not_a_bundled_square(self) -> None:
+        svg = b'<svg><rect width="128" height="128" rx="64"/></svg>'
+        source = "data:image/svg+xml;base64," + base64.b64encode(svg).decode()
+        self.assertFalse(avatar_rendered_source_matches(source, source))
+
+    def test_downloaded_avatar_uses_its_own_local_cache_file(self) -> None:
+        for origin in ("asset://localhost", "http://asset.localhost", "https://asset.localhost"):
+            self.assertTrue(avatar_rendered_source_matches(
+                self.remote, f"{origin}/private/avatar-cache/{self.cache_key}.png",
+            ))
+
+    def test_downloaded_avatar_cannot_use_a_foreign_cache_file(self) -> None:
+        self.assertFalse(avatar_rendered_source_matches(
+            self.remote, "asset://localhost/private/avatar-cache/foreign.png",
+        ))
+
+    def test_matching_hash_in_remote_or_query_source_does_not_prove_cache(self) -> None:
+        for rendered in (
+            f"https://foreign.example/{self.cache_key}.png",
+            f"asset://foreign/private/{self.cache_key}.png",
+            f"asset://localhost/private/foreign.png?key={self.cache_key}",
+        ):
+            self.assertFalse(avatar_rendered_source_matches(self.remote, rendered))
+
+    def test_missing_declared_or_rendered_source_cannot_pass(self) -> None:
+        self.assertFalse(avatar_rendered_source_matches("", self.presets[0]))
+        self.assertFalse(avatar_rendered_source_matches(self.presets[0], ""))
 
 
 class SyntheticLinuxRuntimeBinding:
