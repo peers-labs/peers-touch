@@ -309,6 +309,35 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
         require(result.get("accepted") is True, "native Search diagnostic query failed")
         return result["value"]
 
+    @staticmethod
+    def mutate_when_admitted(session: Any, action: str, payload: dict) -> Any:
+        # Observe full production admission and invoke in one WebView turn.
+        # Separate driver calls leave a window for Session/Recovery closure.
+        result = session.execute_async_script("""
+const action = arguments[0], input = arguments[1];
+const done = arguments[arguments.length - 1];
+const root = window.__PEERS_MOBILE_ACCEPTANCE__;
+const deadline = Date.now() + 30000;
+(async () => {
+  let reason = 'unavailable';
+  while (Date.now() < deadline) {
+    const snapshot = await root['recovery.snapshot']({});
+    if (snapshot.writeAdmission?.open === true && snapshot.isWriteBlocked === false) {
+      // The original action still performs its own guard. Never retry it.
+      return {value: await root[action](input)};
+    }
+    reason = snapshot.writeAdmission?.reason || 'recovery_projection_blocked';
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return {error: 'write admission timeout', reason};
+})().then(done).catch(error => done({
+  error: String(error?.message || error), reason: error?.reason || '',
+}));
+""", action, payload)
+        require(isinstance(result, dict) and "value" in result,
+                f"{action} failed after admission: {result}")
+        return result["value"]
+
     def seed(self, journey: MobileMessagingJourney, sender_session: Any,
              receiver_session: Any, conversation: str, token: str) -> dict:
         query = f"周会 {token}"
@@ -321,7 +350,7 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
                 f"Search fixture {sent_count + 1} writable Messaging runtime",
             )
             try:
-                sent = sender_session.call_action("messaging.send", {
+                sent = self.mutate_when_admitted(sender_session, "messaging.send", {
                     "conversationId": conversation, "plaintext": text, **extra,
                 })
             except Exception as error:
@@ -342,7 +371,7 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
         filler = [send(f"历史 {token} {index:03}") for index in range(105)]
         filename = f"附件计划-{token}-预算与研发进度审查-跨团队评审-{('年度执行计划' * 7)}.txt"
         content = f"real attachment {token}".encode()
-        staged = sender_session.call_action("messaging.attachment.stage", {
+        staged = self.mutate_when_admitted(sender_session, "messaging.attachment.stage", {
             "filename": filename, "mimeType": "text/plain",
             "sha256": hashlib.sha256(content).hexdigest(),
             "bytesBase64": base64.b64encode(content).decode(),
@@ -419,7 +448,7 @@ return document.activeElement?.getAttribute('data-message-ulid') === arguments[0
             "resource": {**original, "authorityNamespace": "station:forged"},
         }, "SEARCH_PROTOCOL")
         edited = f'{fixture["query"]} 更新正文'
-        sender_session.call_action("messaging.interact", {
+        self.mutate_when_admitted(sender_session, "messaging.interact", {
             "conversationId": fixture["conversation"], "messageId": fixture["root"],
             "kind": "edit", "plaintext": edited,
         })
@@ -429,7 +458,7 @@ return document.activeElement?.getAttribute('data-message-ulid') === arguments[0
                     {"resource": original}, "SEARCH_RESOURCE_UNAVAILABLE")
         fresh = next(item["resource"] for item in self.native_page(
             session, fixture["query"])["items"] if item["resource"]["messageId"] == fixture["root"])
-        sender_session.call_action("messaging.interact", {
+        self.mutate_when_admitted(sender_session, "messaging.interact", {
             "conversationId": fixture["conversation"], "messageId": fixture["root"], "kind": "retract",
         })
         self.wait(session, """
@@ -509,7 +538,7 @@ return document.querySelector('.settings-section .ant-select-selection-item')?.t
             "query": f'历史 {fixture["token"]}', "limit": 20, "cursor": page["nextCursor"],
         }, "SEARCH_CURSOR_EXPIRED")
         own_query = f'账号切换 {fixture["token"]}'
-        sent = session.call_action("messaging.send", {
+        sent = self.mutate_when_admitted(session, "messaging.send", {
             "conversationId": fixture["conversation"], "plaintext": own_query,
         })
         self.fill(session, own_query)

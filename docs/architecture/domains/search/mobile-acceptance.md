@@ -53,8 +53,12 @@ from a rendered page. Failure diagnostics retain independent query, scope and
 cost observations even when one native diagnostic is denied.
 Fixture preparation waits for the original Social/Messaging write-admission
 projection and each receiver's exact committed message before issuing the next
-send. Recovery remains bounded by the existing Journey timeout; no denied write
-is retried, and all 105 historical messages require real receiver commitment.
+send. Every mutation observes the complete production Session/Social/Recovery
+admission and invokes its original guarded action in the same WebView turn.
+This prevents a remote readiness read from becoming stale before submission.
+Only admission observations are polled, for at most 30 seconds; a rejected
+mutation is never retried. All 105 historical messages require real receiver
+commitment.
 Failed runs preserve native screenshots, DOM and measured geometry before
 classifying layout failure. Mutation failures also record the existing public
 Recovery projection's typed write-admission reason and the fixture send ordinal;
