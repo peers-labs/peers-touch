@@ -85,6 +85,7 @@ import {
 } from '../features/chat/typingDispatch';
 import { useMessageFlagState } from '../features/chat/messageFlagState';
 import { useChatMessageAnchor } from '../features/chat/useChatMessageAnchor';
+import { useChatReadCursor } from '../features/chat/useChatReadCursor';
 import { useMobileChatVoiceRecorder } from '../features/chat/useMobileChatVoiceRecorder';
 import { mobileCallManager } from '../features/call/callState';
 import {
@@ -422,6 +423,18 @@ function ChatPageInner({
     threadRootMessageUlid,
     '',
   );
+  const readTarget = history.visible.at(-1);
+  const reportReadCursorError = useCallback((readError: unknown) => {
+    setLocalActionError(formatChatOperationError(readError));
+  }, []);
+  useChatReadCursor({
+    session: authSession,
+    conversationId: activeConversationId,
+    messageId: readTarget?.ulid ?? '',
+    sequence: readTarget?.eventSequence ?? 0,
+    visible: activeDetail !== null,
+    onError: reportReadCursorError,
+  });
   useChatMessageAnchor({
     route: activeDetail,
     conversationId: activeConversationId,

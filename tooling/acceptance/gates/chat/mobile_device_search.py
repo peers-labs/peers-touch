@@ -759,19 +759,22 @@ return true;
             peer_id = "sim-android" if client_id == "sim-ios" else "sim-ios"
             ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=scenario_id)
             start = time.monotonic()
-            result = self.search_scenario(
-                artifacts, sessions[client_id], sessions[peer_id], fixtures[client_id],
-            ) if scenario_id.endswith("search") else self.account_scenario(
-                artifacts, sessions[client_id], sessions[peer_id], actors[client_id], actors[peer_id],
-                fixtures[client_id], journey,
-            )
-            for action, field in (
-                (SuiteRuntimeAction.UI_ACTION, "uiAction"),
-                (SuiteRuntimeAction.RECEIVER_ASSERTION, "receiverAssertion"),
-                (SuiteRuntimeAction.SUPPORTING_OBSERVATION, "supportingObservation"),
-            ):
-                ledger.record(action, scenario_id=scenario_id, resource_id=result[field])
-            ledger.record(SuiteRuntimeAction.SCENARIO_END, scenario_id=scenario_id)
+            try:
+                result = self.search_scenario(
+                    artifacts, sessions[client_id], sessions[peer_id], fixtures[client_id],
+                ) if scenario_id.endswith("search") else self.account_scenario(
+                    artifacts, sessions[client_id], sessions[peer_id], actors[client_id], actors[peer_id],
+                    fixtures[client_id], journey,
+                )
+                for action, field in (
+                    (SuiteRuntimeAction.UI_ACTION, "uiAction"),
+                    (SuiteRuntimeAction.RECEIVER_ASSERTION, "receiverAssertion"),
+                    (SuiteRuntimeAction.SUPPORTING_OBSERVATION, "supportingObservation"),
+                ):
+                    ledger.record(action, scenario_id=scenario_id, resource_id=result[field])
+            finally:
+                # End lifecycle even on failure; missing assertions remain unproven.
+                ledger.record(SuiteRuntimeAction.SCENARIO_END, scenario_id=scenario_id)
             results.append({"id": scenario_id, "durationSeconds": time.monotonic() - start, **result})
         return {
             **self._result_base("PASS"), "source": source, "runtime": runtime,

@@ -86,6 +86,9 @@ Query, navigation and runtime-error diagnostics are collected before native
 screenshot or lifecycle waits. A failed canonical message-focus wait preserves
 its last observed product surfaces, message nodes, window scope, active element
 and runtime errors independently of subsequent driver availability.
+Every started scenario ends its lifecycle in `finally`, including an assertion
+failure. This permits the Suite owner to complete cleanup; missing UI/receiver
+assertions and the original exception keep the failed scenario unproven.
 
 Theme interaction contract:
 

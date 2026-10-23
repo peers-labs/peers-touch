@@ -213,6 +213,14 @@ mount, authentication projection updates, or locale changes. An unanchored
 conversation or account transition resets the local thread independently of
 composer persistence; ordinary thread controls retain their existing behavior.
 
+History and summary hydration never submit a read cursor or clear unread counts
+merely because a conversation remains selected. The visible Chat detail owns
+read intent through `useChatReadCursor`, after lifecycle becomes active and
+Session/Recovery write admission converges. The original guarded Messaging
+command remains the only cursor writer. Unread projection changes follow its
+successful submission, native summary readback and current account/conversation checks; a closed write
+fence cannot fail history reconciliation or acknowledge content optimistically.
+
 `app/navigation/scrollRestoration.ts` owns bounded in-memory window/query/scroll
 metadata outside tab lifetime. Each cache retains at most 100 locations; scroll
 snapshots expire after 30 minutes. The actual page or message scroller is used,
