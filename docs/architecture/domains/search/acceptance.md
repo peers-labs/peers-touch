@@ -29,6 +29,11 @@ Bob 的真实编辑与 Alice 的 actor hide 必须使已展示结果更新或消
 旧正文引用与隐藏引用由原生 owner 拒绝。Functions 必须打开真实 Settings，
 空结果与非法查询必须可见恢复。退出后 Search 清空，在同一 Alice 原生窗口
 登录 Bob 时清空查询、切换 read scope，并拒绝 Alice 的旧分页 cursor。
+同一 Desktop client class 登录 Bob 会撤销原 Bob 客户端会话。Journey 必须
+先记录原客户端仍为 Bob 的已认证身份，再等待原生 Identity owner 返回
+`authenticated=false`、`reason=revoked`、空 Actor 和终态 phase，才将该客户端
+在共享生命周期记录中标记为 revoked；validator 核对两端状态。清理不再对
+已撤销会话重复执行 logout；Alice 窗口恢复分配身份后仍须正常 logout。
 ResourceRef 是稳定资源地址；同资源在新账号下仍有权限时允许重新鉴权打开，
 不以“换账号后一律拒绝旧地址”代替真实权限判断。
 

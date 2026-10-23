@@ -32,12 +32,12 @@ UI_ASSERTIONS = {
 REQUIRED_ASSERTIONS = UI_ASSERTIONS | {
     "native_runtime", "source_build_runtime_identity", "actor_isolation",
     "forged_authority_denied", "stale_content_denied", "hidden_reference_denied",
-    "previous_session_cursor_denied", "resources_released",
+    "previous_session_cursor_denied", "sender_session_revoked", "resources_released",
 }
 REQUIRED_STEPS = {
     "station.identity", "fixture.reset", "client.authenticated",
     "runtime.source_identity", "search.surface_ready",
-    "conversation.open", "message.seed",
+    "conversation.open", "message.seed", "search.sender_session_revoked",
 } | {f"search.{name}" for name in UI_ASSERTIONS}
 
 
@@ -422,6 +422,8 @@ class DeviceSearchGate(NativeTwoClientGate):
         if not old_cursor:
             raise GateError("account isolation requires a real paging session")
         before = async_harness(client, "deviceSearchState", {})
+        sender = self.clients["bob"]
+        sender_before = async_harness(sender, "identityState", {})
         original_pid = client.process_id
         async_harness(client, "logout", {"actorPtid": self.ptids["alice"]}, timeout=30)
         self.client_lifecycles.mark_auth_revoked(client)
@@ -436,6 +438,31 @@ class DeviceSearchGate(NativeTwoClientGate):
                 "account": bob_account, "password": DEV_ACCOUNT_PASSWORD,
             }, timeout=45)
             identity = async_harness(client, "hydrateActiveActor", {}, timeout=45)
+
+            def observe_sender_revocation() -> None:
+                def revoked_identity() -> dict[str, Any] | None:
+                    state = async_harness(sender, "identityState", {})
+                    return state if (
+                        state.get("authenticated") is False
+                        and state.get("phase") in {"revoked", "accountGate"}
+                        and state.get("reason") == "revoked"
+                        and state.get("actorPtid") == ""
+                    ) else None
+
+                revoked = wait_until(
+                    revoked_identity, "original Bob native session revocation", timeout=30,
+                )
+                self.report.runtime["search"]["sessionHandoff"] = {
+                    "actor": "bob", "actorPtid": self.ptids["bob"],
+                    "before": sender_before, "after": revoked,
+                }
+                self.assert_condition("sender_session_revoked", (
+                    sender_before.get("authenticated") is True
+                    and sender_before.get("actorPtid") == self.ptids["bob"]
+                ))
+                self.client_lifecycles.mark_auth_revoked(sender)
+
+            self.step("search.sender_session_revoked", observe_sender_revocation, "bob")
             self.open_search()
             empty_query = self.field().get_attribute("value") == ""
             after = async_harness(client, "deviceSearchState", {})
