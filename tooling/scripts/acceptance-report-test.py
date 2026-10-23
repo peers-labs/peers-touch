@@ -178,8 +178,11 @@ class AcceptanceReportTest(unittest.TestCase):
         from tooling.acceptance.core import ArtifactRef
         result = self.result("producer", complete=True)
         self.store.resolve(ArtifactRef.from_dict(result["sourceArtifact"])).write_text('{"changed": true}')
-        node = self.project([result])["results"][0]
-        self.assertIn("evidence: invalid reports/observation.json", node["missingFields"])
+        projection = self.project([result])
+        node = projection["results"][0]
+        self.assertIn("runManifest: missing or invalid", node["missingFields"])
+        self.assertEqual(projection["diagnosticStatus"], "DIAGNOSTIC_INCOMPLETE")
+        self.assertIsNone(node["reason"])
         self.assertEqual(node["runtime"], {})
 
     def test_cross_gate_artifact_is_not_accepted(self) -> None:

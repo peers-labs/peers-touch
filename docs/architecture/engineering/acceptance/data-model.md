@@ -20,6 +20,8 @@
 - Ephemeral Gate Launch Context、anonymous capability channel与typed failure。
 - 敏感值与可持久化 evidence 的边界。
 - Evidence Store root、identity、ArtifactRef、run manifest和latest pointer。
+- 完整 required scope、有界请求、恢复状态和原始证明引用的合同由
+  [execution-budget.md](execution-budget.md) 唯一拥有；本文件不复制第二套 Session schema。
 
 本文档不定义：
 
@@ -746,6 +748,10 @@ Rules：
 
 Manifest写入前所有referenced artifacts必须durable。Manifest写入成功后内容immutable；
 补充数据必须创建新run，不得原地修改。
+`artifacts` 由真实闭合 ArtifactRef 类型构造，role 名不触发 payload 字段删除。
+writer/reader 逐项解析完整 inventory、核验同 run identity 与 SHA-256；
+额外/缺失/非字符串引用字段或任何不可解析条目均拒绝完整性通过。
+所有公开字符串仍检查秘密文本和已知秘密值；身份受损时拒绝 publication。
 
 ## 12. Latest Pointer
 

@@ -735,7 +735,7 @@ class AcceptanceRunTest(unittest.TestCase):
                     def current_source(_: Path) -> dict[str, str]:
                         nonlocal source_reads
                         source_reads += 1
-                        if source_reads == 1:
+                        if source_reads <= 2:
                             return expected
                         if drift_before_gate or first_marker.exists():
                             return observed

@@ -34,12 +34,13 @@
 | D-20 | Formal Execution Plan owns Acceptance scheduling | accepted |
 | D-21 | Multi-Scenario Proof 使用一个 Suite Runtime | accepted |
 | D-22 | Desktop 输入按非侵入式语义与隔离原生证明分级 | accepted |
+| D-23 | Fixed scope continues through explicit bounded requests and original proof | accepted |
 
 ---
 
 ## D-01: Capability Graph 是验收架构的一等模型
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-06-03
 
 ### Context
@@ -1637,6 +1638,16 @@ release/full-test user intent.
 - A changed path that implies an undeclared Gate fails with
   `ACCEPTANCE_PLAN_DRIFT`.
 
+### Rationale
+
+An explicit closure distinguishes immediate verification from completion and
+full release obligations. Impact discovery remains a conservative projection.
+
+### Alternatives Considered
+
+Executing every impacted Gate from the latest generated pointer conflates
+discovery and scheduling and can launch expensive proof without that intent.
+
 ---
 
 ## D-21: Multi-Scenario Proof Uses One Suite Runtime
@@ -1696,6 +1707,16 @@ validator rejected Scenario-owned provisioning.
 Replace this decision only if every expensive Acceptance resource becomes
 stateless and negligible to recreate, while a stronger receiver-visible proof
 contract preserves the same source, isolation, and cleanup guarantees.
+
+### Rationale
+
+Suite ownership amortizes resource setup while retaining each Scenario's real
+UI action, receiver assertion and terminal cleanup evidence.
+
+### Alternatives Considered
+
+Per-Scenario provisioning repeats setup; Harness-only proof omits the visible
+Journey. Neither satisfies the declared shared-runtime contract.
 
 ---
 
@@ -1766,3 +1787,75 @@ focus or HID delivery.
 Replace this decision only if the operating system provides a verified
 process-scoped input primitive with equivalent native semantics and a
 non-interference proof across supported runtime cells.
+
+### Rationale
+
+The actual input primitive determines what the observation proves. Explicit
+modes preserve operator isolation and prevent semantic evidence from being
+misrepresented as physical input.
+
+### Alternatives Considered
+
+Global HID input in shared sessions competes with the operator. Treating
+WebView input as native focus proof exceeds its observable guarantees.
+
+---
+
+## D-23: Fixed Scope Continues Through Explicit Bounded Requests
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+A finite request deadline can expire before the complete required Gate graph
+finishes. Requiring every resumed request to replay the proved prefix wastes
+that deadline. Payload redaction can also destroy public role references whose
+names contain auth, key or token, making original producer proof unauditable.
+
+### Decision
+
+`ExecutionSession` retains the complete required scope and original request
+reports. Runner owns dispatch and consumes only a DURABLE session manifest.
+Each request holds the existing Evidence Store OS lock primitive and consumes
+one persistent sequence outside the evidence namespace. The prior request must
+have a verified terminal manifest and completed handle cleanup; stale,
+concurrent, consumed or crashed requests fail closed.
+
+Only a unique request-work expiry with actual successful cleanup enters
+`PAUSED_REQUEST_EXHAUSTED`. One explicit invocation then creates one bounded
+request under the same policy. Other stops require qualified owner repair;
+UNKNOWN remains `NEEDS_JUDGMENT`. Cancelled work restarts the complete Gate.
+
+Reuse reads original producer manifests, every inventory hash, current source,
+definition, policy and input context, DONE/PROVEN, cleanup and current
+`authoritative_latest` resolution. D-19 enforcement remains mandatory.
+Local ci-structure/ci-cheap results can be reused under that identity.
+Opaque or live runtime/provider/oracle/action-plan input remains pending until
+its owner supplies current identity; environment names cannot authorize reuse.
+Changed source or candidate identity invalidates all prior completion.
+
+Evidence Store serializes only closed compiler graphs and actual ArtifactRefs
+as public metadata, while all secret text and known-value scans remain active.
+Payload fields retain sensitive-field redaction. Invalid metadata or inventory
+fails publication and read; historical damaged evidence is never repaired.
+
+### Rationale
+
+Separating the complete obligation from the bounded dispatch preserves scope
+and proof while allowing finite work to advance. Original producer references
+retain historical costs and authority; fresh verification has its own cost.
+
+### Alternatives Considered
+
+- Replaying every prefix repeats already proved work.
+- Shrinking required scope or copying PASS loses obligations and identity.
+- Renewing deadlines silently removes the request resource boundary.
+- Name whitelists or disabling redaction can expose secret payload.
+
+### Consequences
+
+Reports account for every required Gate and distinguish original completion,
+validation and actual dispatch. Request metadata is supporting-only. No new
+business assertions, smaller observation windows, uniform work caps, automatic
+budget growth or Gate scope changes follow from this decision.

@@ -4,7 +4,7 @@ import base64
 import json
 import re
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote, quote_plus
 
 
@@ -309,17 +309,7 @@ def _secret_representations(secret_values: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(sorted(representations, key=len, reverse=True))
 
 
-def redact_text_with_values(text: str, secret_values: tuple[str, ...]) -> str:
-    redacted = redact_text(text)
-    for representation in _secret_representations(secret_values):
-        redacted = redacted.replace(representation, REDACTED)
-    return redacted
-
-
-def redact_value_with_values(
-    value: Any,
-    secret_values: tuple[str, ...],
-) -> Any:
+def secret_text_redactor(secret_values: tuple[str, ...]) -> Callable[[str], str]:
     representations = _secret_representations(secret_values)
 
     def text(value: str) -> str:
@@ -327,6 +317,19 @@ def redact_value_with_values(
         for representation in representations:
             result = result.replace(representation, REDACTED)
         return result
+
+    return text
+
+
+def redact_text_with_values(text: str, secret_values: tuple[str, ...]) -> str:
+    return secret_text_redactor(secret_values)(text)
+
+
+def redact_value_with_values(
+    value: Any,
+    secret_values: tuple[str, ...],
+) -> Any:
+    text = secret_text_redactor(secret_values)
 
     def visit(item: Any) -> Any:
         if isinstance(item, Mapping):

@@ -13,6 +13,11 @@ GateProcessLauncher 集成 scope、deadline、计时和停止记录。
 YAML governance parser 使用 Node 的显式 `yaml` 依赖，
 删除跨 Python 解析子进程；输入与 alias expansion 有界，失败不跳过 registry。
 共享场景与具体资源迁移尚未发生，旧产品证明要求保持有效。
+固定范围恢复和公共元数据消费同一 [执行合同](execution-budget.md)：
+Runner 保留完整 required 范围及原 producer 引用，每个新请求有独立期限；
+Planner、RunHandle、ArtifactSession 共享 Evidence Store 的类型化 JSON writer。
+只允许真实 ArtifactRef / ExecutionGraph 公共结构，所有字符串继续秘密扫描，
+所有 manifest inventory 继续逐项解析、校验身份和 hash。
 
 ---
 

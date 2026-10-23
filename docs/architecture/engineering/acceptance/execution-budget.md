@@ -87,7 +87,7 @@ Receipt 是可重建产物缓存，不是产品证明，不继承任何 Gate PAS
 --exclude-gate <exact-catalog-gate-id>
 --execution-budget <explicit-json>
 --stop-on-failure
---resume-session <previous-paused-session-json>
+--resume-session <durable-session-manifest-artifact-ref-json>
 --repair-record <qualified-repair-json>
 --prior-session-manifest <prior-manifest-artifact-ref-json>
 ```
@@ -316,17 +316,53 @@ Gate cost 和 stop 原因。状态包含 planned、within-budget、over-budget�
 - 必要业务时长必须有产品合同及观测支持；缺失时记
   `mandatoryDuration=UNPROVEN`，不得凭宽松旧 timeout 判断合理。
 
-暂停后先做有界诊断，修复并自验后允许新 attempt；不得停在记录问题。
-`core/execution_session.py` 记录完整范围、attempt、归因、修复和验证引用，
-未知归因进入 NEEDS_JUDGMENT。它不编辑源码或授权资源，不生产产品 proof。
-Runner 的实际结果和异常停止记录都生成 immutable session ledger。
-同策略恢复必须同时提供暂停 session 和修复记录；修复记录的验证 ArtifactRef
-必须在同一个 Evidence Store 内可解析且 hash 有效，范围与预算不得改变。
+已接受的恢复合同由 `core/execution_session.py` 持有完整范围与有限请求账本，
+Runner 仍是唯一调度入口。Session 的 required 集合、graph、policy 和 source
+固定；一次请求的 dispatch 可以是仍需证明的必要依赖闭包子集。
+最终报告始终保留全部 required Gate，不以本次 dispatch 反推全量范围。
+恢复消费同 Store 的 DURABLE manifest ArtifactRef；单独可编辑的 ledger
+不是恢复入口。新请求持有现有 OS 文件锁，在锁后重查 source 和 ledger，
+一次请求序号只消费一次；并发、重复继续或缺失崩溃清理证明均拒绝执行。
+账本使用 `sessionId`、`requests`、`request`、`dispatchGateIds`、
+`validatedGateIds`、`graphDigest` 和 `contextDigest`。删除旧 attempts/PAUSED
+恢复语义。序号消费及实际 handle cleanup 后的 terminal manifest 保存在
+worktree `.local/acceptance/execution-sessions/<store-digest>/<sessionId>/`，
+不作为产品 evidence 或资源权限。正常退出打印
+`execution-session-manifest`，该引用才是下一次明确调用的恢复输入。
+控制面规划继续消费 planningSeconds；完成 producer 的逐项校验由独立
+session-validation owner 消费原 request deadline，不把完整 evidence 扫描
+当作 YAML/图编译，也不增加工作额度。报告分别保存 planning、validation、
+原始成本和本次 Gate 成本。请求 terminal commit 与 handle cleanup 共用原有
+2 秒尾部；任一失败以非零退出，未提交的请求序号不能再次执行。
+
+仅当实际唯一限制为 request-work、工作已取消且资源清理成功时，状态为
+PAUSED_REQUEST_EXHAUSTED。显式继续只发起一个使用原策略的新有界请求，
+不延长旧期限、不自动追加额度或无限重启。取消的 Gate 从完整入口重跑，
+不拼接局部业务窗口；被取消项的 UNKNOWN 不因新请求而变为已诊断。
+operation、cleanup、publish、混合限制和其它停止为
+PAUSED_REPAIR_REQUIRED，必须先有原 owner 修复与 qualification；
+归因仍不可靠时为 NEEDS_JUDGMENT。修复证据的 ArtifactRef 必须在同 Store
+可解析且 hash 有效。框架不编辑源码、授权资源或生产产品 proof。
+
+同一候选的完成结果只引用原 producer 的 manifest/runId。Runner 重新核验
+全部 inventory/hash、source、definition、policy、运行输入身份、最终 required
+checks、DONE/PROVEN 和 cleanup；任何缺失或变化使该项重回需执行集合。
+provider、oracle、action-plan 或 runtime 的当前合同身份无法证明一致时不复用。
+当前仅 local 的 ci-structure/ci-cheap 且无 Provisioner、Runtime Cell 或
+ephemeral capability 的结果有复用资格；完整继承环境和明确选择输入只保存
+摘要。活态或不透明输入缺少 identity 注入时从完整入口重新执行。
+当前 authority 由 Evidence Store `authoritative_latest` 校验；D-19 interlock、
+pending 或 generation 变化不能由裸 manifest 绕过。
+原失败、阻断或取消结果不能变为 completed proof。复核成本、本次实际执行成本、
+历史成本与本次 disposition 分别记录，复用结果不冒充新运行。
+Reporter 与 Gap Detector 消费完整 required report 和原 producer 引用，
+损坏引用不能被 passed 文本补足。新源码建立新候选，旧证明全部失效。
+
 明确确认的时间合同修订使用 `--prior-session-manifest` 建立全新 Session；
 它与原有 resume/repair 互斥。Runner 验证旧 manifest 的 DURABLE 状态、
 原始 ArtifactRef/hash、session inventory 和完整范围，并要求策略确实变化。
-新 Session 只保留旧 manifest/session 的 lineage 引用，attempt 从 1 开始，
-不复制旧 attempts、结果或 PASS。原策略 restore 校验不放宽。
+新 Session 只保留旧 manifest/session 的 lineage 引用，请求从 1 开始，
+不复制旧请求、结果或 PASS。旧源码证据保留原身份，不补写历史记录。
 字段为 `cause`、`owner`、`correction`、`qualification`、
 `validation_refs`；归因只允许 ARCHITECTURE_OVERHEAD、REQUIRED_DURATION、
 PRODUCT_FAILURE、UNKNOWN。UNKNOWN 不允许继续执行。
@@ -337,8 +373,27 @@ PRODUCT_FAILURE、UNKNOWN。UNKNOWN 不允许继续执行。
 源码漂移不归类为超时，也不自动恢复、暂存或覆盖外部改动。
 重新冻结实际源码后才允许下一轮。下一窗口必须保留 exact source、
 范围摘要、policy digest、首个失败阶段、资源清理状态、未执行项与诊断预算。
-续跑是新 attempt，先检查候选、范围及资源身份；旧 PASS 不改标为新源码。
+续跑是新有界请求，先检查候选、范围及资源身份；旧 PASS 不改标为新源码。
 成本 profile 只能推荐合法策略，不能改变证明强度、范围或阈值。
+
+## 公共元数据与不可变引用
+
+Evidence Store 是唯一公共元数据序列化 owner。Manifest inventory 只从真实
+ArtifactRef 构造；图映射只消费 `compile_graph` 返回的闭合 ExecutionGraph。
+图保存原始编译摘要，序列化前复核字段、Gate 集合、依赖顺序与 definition
+digest；任意 dict、额外字段和修改后的编译图不能声明公开而绕过秘密检查。
+Planner、父 RunHandle 和子 ArtifactSession 的 JSON 写入消费同一个 owner，
+不在 JSON 编码后再次用 role/Gate 名删除已经验证的 typed value。
+
+敏感字段启发式继续用于 payload。公开 role/Gate ID、path、所有引用字符串
+仍通过秘密文本和已知秘密值扫描；发现秘密或会改变身份时拒绝写入或发布。
+不按业务名称建立白名单，不允许通过 redact=False 关闭持久化秘密检查。
+秘密值的编码变体由现有 redaction owner 生成并在单次遍历中复用。
+
+ArtifactRef reader 拒绝额外、缺失和非字符串字段。DURABLE manifest writer
+和 reader 均复核完整 inventory 的每条引用、同 run 归属与 SHA-256；
+任何引用无法解析都不允许完整性 PASS。三条 finalization publication 路径
+共享同一 inventory owner，不回填历史损坏 manifest 或重新署名。
 
 ## 验证边界
 

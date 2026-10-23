@@ -1,7 +1,7 @@
 ---
 kind: invariant
 title: Shared Gate prerequisites retain original proof ownership
-status: active
+status: superseded-by:docs/knowledge/invariants/acceptance-fixed-scope-continuation.md
 owns:
   - tooling/acceptance/core/execution_graph.py
   - tooling/acceptance/core/execution_budget.py

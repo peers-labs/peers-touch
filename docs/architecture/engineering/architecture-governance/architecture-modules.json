@@ -30,7 +30,6 @@
     "docs/architecture/domains/social/core",
     "docs/architecture/domains/social/federation",
     "docs/architecture/domains/social/runtime",
-    "docs/architecture/engineering/acceptance",
     "docs/architecture/engineering/api-governance",
     "docs/architecture/engineering/prototypes",
     "docs/architecture/engineering/quality",
@@ -46,6 +45,70 @@
     "docs/architecture/shared/security/secure-content"
   ],
   "modules": [
+    {
+      "id": "acceptance",
+      "root": "docs/architecture/engineering/acceptance",
+      "status": "active",
+      "owner": "Architecture Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md", "design.md", "decisions.md", "data-model.md",
+        "module-layout.md", "integration.md"
+      ],
+      "decisionIds": [
+        "D-01", "D-02", "D-04", "D-05", "D-06", "D-07", "D-08", "D-09",
+        "D-10", "D-11", "D-12", "D-13", "D-14", "D-15", "D-16", "D-17",
+        "D-18", "D-19", "D-20", "D-21", "D-22", "D-23"
+      ],
+      "governedPaths": [
+        "docs/architecture/engineering/acceptance",
+        "tooling/acceptance/core",
+        "tooling/acceptance/tests",
+        "tooling/scripts/acceptance-run.py",
+        "tooling/scripts/acceptance-plan.py",
+        "tooling/scripts/acceptance-validate.py",
+        "tooling/scripts/acceptance-report.py",
+        "tooling/scripts/acceptance-gap-detect.py"
+      ],
+      "capabilities": [
+        {
+          "id": "acceptance.core.execution",
+          "owner": "acceptance.infra",
+          "contractRoots": [
+            "tooling/acceptance/core",
+            "docs/architecture/engineering/acceptance"
+          ],
+          "consumers": [
+            "tooling/scripts/acceptance-run.py",
+            "tooling/scripts/acceptance-plan.py",
+            "tooling/scripts/acceptance-report.py",
+            "tooling/scripts/acceptance-gap-detect.py"
+          ],
+          "allowedDependencies": ["python.stdlib", "python.yaml"],
+          "evidenceGates": [
+            "acceptance-plan-self",
+            "acceptance-infra-validation",
+            "acceptance-workflow-contract",
+            "acceptance-runtime-provisioning-self"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": [
+        {
+          "path": "tooling/acceptance/capabilities/core.yaml",
+          "capabilityIds": ["acceptance-framework-self-consistency"],
+          "gate": "acceptance-infra-validation"
+        }
+      ]
+    },
     {
       "id": "architecture-module-governance",
       "root": "docs/architecture/engineering/architecture-governance",

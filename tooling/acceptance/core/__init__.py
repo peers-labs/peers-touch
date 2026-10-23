@@ -52,6 +52,7 @@ from .evidence_store import (
     validate_external_output_path,
     validate_run_id,
     write_current_artifact,
+    write_current_json,
     workspace_id,
 )
 from .evidence import EvidenceReport, new_report, ActorRuntime
@@ -266,5 +267,6 @@ __all__ = [
     "validate_external_output_path",
     "validate_run_id",
     "write_current_artifact",
+    "write_current_json",
     "workspace_id",
 ]

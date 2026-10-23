@@ -299,6 +299,7 @@ function rejectsCode(code, operation) {
 test('current repository satisfies the module registry', () => {
   const result = validateArchitectureRegistry({ repoRoot: REPO_ROOT });
   assert.deepEqual(result.moduleIds, [
+    'acceptance',
     'agent',
     'api-ownership',
     'architecture-module-governance',
@@ -316,6 +317,7 @@ test('current repository satisfies the module registry', () => {
     'x-config',
   ]);
   assert.deepEqual(result.capabilityIds, [
+    'acceptance.core.execution',
     'agent.chat.minimum-usable',
     'agent.mcp.dual-runtime',
     'architecture.module.validate',

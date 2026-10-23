@@ -460,7 +460,7 @@ def main() -> int:
             EvidenceStore,
             current_artifact_ref,
             source_identity,
-            write_current_artifact,
+            write_current_json,
         )
 
         gate_id = "acceptance-plan-self" if args.self_check else "acceptance-plan"
@@ -474,11 +474,9 @@ def main() -> int:
                 raise EvidenceManifestInvalid(
                     "acceptance-plan child Gate does not match run context"
                 )
-            output = write_current_artifact(
+            output = write_current_json(
                 relative_path,
-                (
-                    json.dumps(result, indent=2, ensure_ascii=False) + "\n"
-                ).encode("utf-8"),
+                result,
                 repo_root=REPO_ROOT,
             )
             reference = current_artifact_ref(

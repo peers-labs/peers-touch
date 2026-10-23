@@ -2,9 +2,66 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 from .execution_budget import ExecutionBudgetError, digest
+
+
+class ExecutionGraph(dict[str, Any]):
+    """Closed compiler metadata; its original identity survives serialization."""
+
+    def __init__(self, value: Mapping[str, Any]) -> None:
+        super().__init__(value)
+        self._compiled_digest = value.get("digest")
+        self.validate()
+
+    def validate(self) -> None:
+        fields = {
+            "artifactKind", "selectedGateIds", "dispatchGateIds",
+            "producerGateIds", "dependencies", "definitionDigests",
+            "reusePolicy", "digest",
+        }
+        if set(self) != fields or self.get("artifactKind") != "acceptance-execution-graph":
+            raise ExecutionBudgetError("execution graph metadata has unknown or missing fields")
+        order = self["dispatchGateIds"]
+        for name in ("selectedGateIds", "dispatchGateIds", "producerGateIds"):
+            ids = self[name]
+            if (
+                not isinstance(ids, list)
+                or any(not isinstance(item, str) or not re.fullmatch(
+                    r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", item
+                ) for item in ids)
+                or len(set(ids)) != len(ids)
+            ):
+                raise ExecutionBudgetError("execution graph metadata contains invalid Gate IDs")
+        if not set(self["selectedGateIds"]) <= set(order) or not set(self["producerGateIds"]) <= set(order):
+            raise ExecutionBudgetError("execution graph metadata scope mismatch")
+        edges, identities = self["dependencies"], self["definitionDigests"]
+        if (
+            not isinstance(edges, dict) or not isinstance(identities, dict)
+            or set(edges) != set(order) or set(identities) != set(order)
+        ):
+            raise ExecutionBudgetError("execution graph metadata inventory mismatch")
+        positions = {gate: index for index, gate in enumerate(order)}
+        for gate, required in edges.items():
+            if (
+                not isinstance(required, list)
+                or any(not isinstance(producer, str) for producer in required)
+                or len(set(required)) != len(required)
+                or any(producer not in positions or positions[producer] >= positions[gate]
+                       for producer in required)
+                or not isinstance(identities[gate], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", identities[gate])
+            ):
+                raise ExecutionBudgetError("execution graph metadata dependency or definition mismatch")
+        if (
+            self["reusePolicy"] != "explicit-prerequisites; no command-equality inference"
+            or self["digest"] != self._compiled_digest
+            or digest({key: value for key, value in self.items() if key != "digest"})
+            != self._compiled_digest
+        ):
+            raise ExecutionBudgetError("execution graph metadata digest mismatch")
 
 
 def dependencies(gate_id: str, definition: Mapping[str, Any]) -> tuple[str, ...]:
@@ -37,7 +94,7 @@ def validate_judgment(gate_id: str, definition: Mapping[str, Any]) -> None:
 def compile_graph(
     definitions: Mapping[str, Any], selected_ids: list[str], *,
     excluded_ids: tuple[str, ...] = (),
-) -> dict[str, Any]:
+) -> ExecutionGraph:
     """Selected consumers include their prerequisite closure, once, in order."""
     if len(set(selected_ids)) != len(selected_ids):
         raise ExecutionBudgetError("execution graph contains duplicate selection")
@@ -78,7 +135,7 @@ def compile_graph(
         "reusePolicy": "explicit-prerequisites; no command-equality inference",
     }
     graph["digest"] = digest(graph)
-    return graph
+    return ExecutionGraph(graph)
 
 
 def prerequisite_results(

@@ -22,7 +22,7 @@ tooling/acceptance/
 │   ├── gate.py                     # AcceptanceGate 基类
 │   ├── execution_budget.py         # 实验：范围冻结、阶段deadline、成本和停止投影
 │   ├── execution_graph.py          # 显式证明依赖、唯一生产者、原始manifest验证与效率投影
-│   ├── execution_session.py        # 实验：暂停→归因→修复验证→新候选的循环记录
+│   ├── execution_session.py        # 固定完整范围、有界请求、清理后续跑或归因修复
 │   ├── evidence.py                 # Evidence Schema + 报告工具
 │   ├── evidence_store.py           # [D-11] 唯一root/run/ref/manifest/latest/cleanup owner
 │   ├── errors.py                   # GateError 统一异常
@@ -155,9 +155,12 @@ tooling/acceptance/
 |------|------|
 | `core/gate.py` | AcceptanceGate 抽象基类，统一 execute() 入口、异常捕获、自动证据保存、报告输出 |
 | `core/evidence.py` | Evidence Schema 定义、证据文件路径管理、JSON 报告写入 |
-| `core/evidence_store.py` | 解析artifact root、独占atomic run allocation、验证ArtifactRef、atomic write、artifact seal、manifest finalize/latest、closed authoritative-resolution envelope、active lock与cleanup |
+| `core/evidence_store.py` | 解析artifact root、独占atomic run allocation、验证闭合 ArtifactRef 与完整 inventory、类型化公共元数据/JSON writer、atomic write、artifact seal、manifest finalize/latest、closed authoritative-resolution envelope、active lock与cleanup |
 | `core/errors.py` | GateError 统一异常，其他通用异常类型 |
 | `core/redaction.py` | 敏感字段、Bearer token、private key 和文本证据统一脱敏 |
+| `core/execution_graph.py` | 唯一显式依赖编译器、闭合 ExecutionGraph 和原 producer 证明关系 |
+| `core/execution_session.py` | 固定 required 范围、有界请求账本、恢复/修复状态和原始证明引用 |
+| `core/execution_budget.py` | Request/owner/退出 deadline、取消和实际成本；不生产产品证明 |
 | `core/harness.py` | async_harness 通用 JS 桥接，支持命名空间调用 |
 | `core/provisioning.py` | 定义 EnvironmentProvisioner 生命周期、typed service topology、client-to-service bindings、Runtime Resource Manifest、blocked artifact 和 cleanup result |
 | `core/provisioner.py` | 解析并验证worktree Profile、管理Provisioner状态和reverse-order cleanup；D-19后不持有或执行business finalizer |
@@ -220,9 +223,15 @@ power action资格。
 
 ## 依赖关系
 
+`ExecutionRequestClaim` 由 Evidence Store 复用现有 OS file lock 和 durable
+no-replace writer 实现。它只持有 worktree-local 请求序号与 terminal manifest，
+不授予产品资源权限，不写入 evidence inventory。Runner 在锁后复读 Session、
+源码和当前合同，完成实际 handle cleanup 后才登记该请求 terminal manifest。
+
 ```
 core/gate.py → core/evidence.py → core/errors.py
 core/evidence.py → core/evidence_store.py → core/errors.py + core/redaction.py
+core/execution_session.py → core/execution_budget.py + core/evidence_store.py
 core/provisioning.py → core/errors.py + core/redaction.py
 core/provisioner.py → core/provisioning.py + core/launch_context.py
 core/launch_context.py → core/errors.py

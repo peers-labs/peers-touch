@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.3
-> **Created**: 2026-06-03 | **Updated**: 2026-10-16
+> **Created**: 2026-06-03 | **Updated**: 2026-10-23
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -88,11 +88,16 @@ Suite 资源复用、场景唯一生产者与多 Gate 判定、端到端时延�
 [Gate 执行预算](./execution-budget.md) 已落地实验性的范围冻结、
 生命周期计时、预留清理与发布预算、首超标停止、显式共享结构证明图
 和真实修复续跑记录；业务场景生产图与跨 Gate 原生资源迁移仍待注入。
+该文档也拥有已接受的完整 scope / 有界 request 恢复合同及公开元数据
+序列化合同：原 producer 引用逐项复核，typed graph/inventory 保留身份，
+秘密扫描和所有业务证明强度不变。新候选资格由实际 Gate 独立证明。
+既有 Acceptance 根已登记为 active 架构模块；Core 与 Runner 的正向能力
+治理使用既有四项 self-validation Gate，不接管业务注入或 Catalog owner。
 
 | 文档 | 说明 |
 |------|------|
 | [design.md](./design.md) | 架构原则、分层模型、核心契约、Core Runtime 抽象和执行闭环 |
-| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-22） |
+| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-23） |
 | [data-model.md](./data-model.md) | Provisioning、Evidence Store、ArtifactRef、Run Manifest 与状态机 |
 | [module-layout.md](./module-layout.md) | Core Runtime 与 Environment Provisioning 的目标目录、职责和禁止依赖 |
 | [integration.md](./integration.md) | 现有变量/Profile/Fixture/Gate 到 runtime manifest 的映射与影响面 |

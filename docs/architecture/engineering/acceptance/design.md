@@ -17,6 +17,11 @@ Gate 成本和产品 proof 独立；未执行项保持 UNPROVEN。
 POSIX source lease 在相同 Environment 生命周期内持有并借出 OpenSSH 连接；
 每次操作验证实际连接 owner 和远端锁，失效时拒绝重连，最后随租约清理。
 此传输复用不共享产品 proof，具体上下文和失败合同仍由执行预算文档约束。
+固定范围跨请求恢复与公共元数据合同也由同一文档拥有：
+Session 保留整个 required 集合，唯一 Runner 复核原 producer 的完整证明后
+执行剩余依赖闭包；只有清理完整的 request-work 耗尽允许一次显式新请求。
+公开 inventory 和 compiler metadata 由 Evidence Store 按闭合类型序列化，
+秘密 payload、文本与已知秘密值仍检查，身份受损时拒绝不可变发布。
 
 ---
 

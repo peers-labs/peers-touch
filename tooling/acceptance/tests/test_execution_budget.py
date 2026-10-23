@@ -278,7 +278,7 @@ calls = 0
 def observed_source(root):
     global calls
     calls += 1
-    if calls == 2:
+    if calls == 3:
         time.sleep(0.7)
     return original(root)
 core.source_identity = observed_source
@@ -468,7 +468,7 @@ calls = 0
 def observed_source(root):
     global calls
     calls += 1
-    if calls == 2:
+    if calls == 3:
         {injected_action}
     return original(root)
 core.source_identity = observed_source
@@ -496,6 +496,103 @@ raise SystemExit(runner.main())
                     report["executionBudget"]["stop"]["reason"],
                     "OWNER_INTERRUPTED" if interruption else "EXECUTION_BUDGET_STOP",
                 )
+
+    def test_locked_initialization_interrupt_preserves_full_unproven_scope(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            marker, catalog, policy = root / "dispatched", root / "catalog.json", root / "policy.json"
+            catalog.write_text(json.dumps({"gates": {
+                name: {"argv": [sys.executable, "-c",
+                    f"from pathlib import Path;Path({str(marker)!r}).touch()"]}
+                for name in ("first", "second")
+            }}))
+            policy.write_text(json.dumps({
+                "requestSeconds": 20, "planningSeconds": 5,
+                "lifecycle": {"cleanupSeconds": 1, "publishSeconds": 1}, "gates": {},
+            }))
+            program = f"""
+import importlib.util, os, signal, sys
+import tooling.acceptance.core as core
+spec = importlib.util.spec_from_file_location("bounded_runner", "tooling/scripts/acceptance-run.py")
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+original = core.source_identity
+calls = 0
+def observed_source(root):
+    global calls
+    calls += 1
+    if calls == 2:
+        os.kill(os.getpid(), signal.SIGINT)
+    return original(root)
+core.source_identity = observed_source
+sys.argv = ["acceptance-run.py", "--gates", {str(catalog)!r},
+            "--gate", "first", "--gate", "second", "--execution-budget", {str(policy)!r}]
+raise SystemExit(runner.main())
+"""
+            completed = subprocess.run(
+                [sys.executable, "-B", "-c", program], cwd=REPO_ROOT,
+                env={**os.environ, "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "evidence")},
+                capture_output=True, text=True, timeout=10,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertFalse(marker.exists())
+            report_path, = (root / "evidence").rglob("reports/run.json")
+            report = json.loads(report_path.read_text())
+            self.assertEqual([item["id"] for item in report["results"]], ["first", "second"])
+            self.assertTrue(all(item["proofStatus"] == "UNPROVEN" for item in report["results"]))
+            self.assertEqual(report["executionBudget"]["dispatchedGateCount"], 0)
+            self.assertEqual(report["executionBudget"]["stop"]["reason"], "OWNER_INTERRUPTED")
+            self.assertEqual(report["executionBudget"]["stop"]["gateId"], "control-plane")
+
+    def test_session_terminal_commit_shares_the_bounded_handle_tail(self):
+        from tooling.acceptance.core import ArtifactRef, EvidenceStore
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            catalog, policy = root / "catalog.json", root / "policy.json"
+            catalog.write_text(json.dumps({"gates": {"first": {
+                "argv": [sys.executable, "-c", "pass"], "tier": "ci-cheap",
+            }}}))
+            policy.write_text(json.dumps({
+                "requestSeconds": 20, "planningSeconds": 5,
+                "lifecycle": {"cleanupSeconds": 1, "publishSeconds": 1}, "gates": {},
+            }))
+            program = f"""
+import importlib.util, sys, time
+from tooling.acceptance.core.evidence_store import ExecutionRequestClaim
+spec = importlib.util.spec_from_file_location("bounded_runner", "tooling/scripts/acceptance-run.py")
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+original = ExecutionRequestClaim.complete
+def delayed_commit(self, reference):
+    time.sleep(3)
+    original(self, reference)
+ExecutionRequestClaim.complete = delayed_commit
+sys.argv = ["acceptance-run.py", "--gates", {str(catalog)!r},
+            "--gate", "first", "--execution-budget", {str(policy)!r}]
+raise SystemExit(runner.main())
+"""
+            completed = subprocess.run(
+                [sys.executable, "-B", "-c", program], cwd=REPO_ROOT,
+                env={**os.environ, "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "evidence")},
+                capture_output=True, text=True, timeout=10,
+            )
+            self.assertNotEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            wall = json.loads(next(
+                line.removeprefix("execution-wall-cost: ") for line in completed.stderr.splitlines()
+                if line.startswith("execution-wall-cost: ")
+            ))
+            self.assertEqual(wall["handleCleanupStatus"], "passed")
+            self.assertEqual(wall["sessionCommitStatus"], "failed")
+            store = EvidenceStore(root / "evidence", worktree=REPO_ROOT)
+            latest = store.latest("acceptance-run")
+            ledger = store.read_json(ArtifactRef.from_dict(latest["artifacts"]["execution-session"]))
+            claim = store.execution_request(ledger["sessionId"])
+            try:
+                self.assertTrue((claim.directory / "1" / "consumed.json").exists())
+                self.assertFalse((claim.directory / "1" / "completed.json").exists())
+            finally:
+                claim.close()
 
     def test_real_runner_records_command_cancellation_and_publication_timeout(self):
         for interruption in (True, False):

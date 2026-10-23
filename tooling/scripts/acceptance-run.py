@@ -65,6 +65,7 @@ from tooling.acceptance.core.execution_budget import (
     execute_stage,
     freeze_scope,
     stopped_results,
+    digest,
 )
 from tooling.acceptance.core.execution_graph import compile_graph, efficiency_report, prerequisite_results
 from tooling.acceptance.core.execution_session import ExecutionSession
@@ -100,6 +101,188 @@ def current_result_proof_envelope(
             for result in results
         ],
     }
+
+
+def execution_context_digest(args: argparse.Namespace, plan_source: Any) -> str:
+    """Hash explicit input and inherited environment; never persist secret values."""
+    volatile = {
+        "_", "SHLVL", "PT_ACCEPTANCE_RUN_ID", "PT_ACCEPTANCE_GATE_ID",
+        "PT_ACCEPTANCE_WORKSPACE_ID", AGGREGATE_SOURCE_ENV, PREREQUISITE_PROOFS_ENV,
+    }
+    return digest({
+        "environment": {key: value for key, value in os.environ.items() if key not in volatile},
+        "plan": plan_source,
+        "executionPolicy": args.execution_policy,
+        "runtimeCell": args.runtime_cell,
+        "runtimeCellBindings": args.runtime_cell_binding,
+        "stationProfiles": args.station_profile,
+        "serviceProfiles": args.service_profile,
+        "stopOnFailure": args.stop_on_failure,
+    })
+
+
+def gate_execution_identity(
+    gate: Mapping[str, Any], graph: Mapping[str, Any], policy: Any, context: str,
+) -> dict[str, Any]:
+    """Opaque or live inputs require fresh execution until their owner injects identity."""
+    return {
+        "artifactKind": "acceptance-gate-execution-identity",
+        "gateId": gate["id"],
+        "definitionDigest": graph["definitionDigests"][gate["id"]],
+        "graphDigest": graph["digest"],
+        "policyDigest": policy.identity,
+        "contextDigest": context,
+        "reuseEligible": (
+            gate.get("tier") in {"ci-structure", "ci-cheap"}
+            and gate.get("environment", "local") == "local"
+            and not gate.get("provisioner")
+            and not gate.get("requiredRuntimeCells")
+            and not gate.get("ephemeralCapabilities")
+        ),
+    }
+
+
+def revalidate_session_results(
+    gates: list[dict[str, Any]], prior_report: Mapping[str, Any],
+    source: Mapping[str, str], graph: Mapping[str, Any], policy: Any,
+    context: str, store: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Read original producer proof and current authority; invalid proof returns to work."""
+    from tooling.acceptance.core import ArtifactRef, EvidenceError
+
+    by_id = {item["id"]: item for item in prior_report["results"]}
+    reused: list[dict[str, Any]] = []
+    validation: list[dict[str, Any]] = []
+    reused_ids: set[str] = set()
+    for gate in gates:
+        gate_id = gate["id"]
+        started = time.monotonic()
+        original = by_id[gate_id]
+        identity = gate_execution_identity(gate, graph, policy, context)
+        reason = "original completion is unproven"
+        accepted = False
+        if not identity["reuseEligible"]:
+            reason = "current runtime/provider/oracle/action-plan identity is not injected"
+        elif not set(graph["dependencies"][gate_id]) <= reused_ids:
+            reason = "required producer needs fresh execution"
+        elif all(original.get(key) == value for key, value in (
+            ("status", "passed"), ("completionStatus", "DONE"), ("proofStatus", "PROVEN"),
+        )):
+            try:
+                ref = ArtifactRef.from_dict(original["runManifest"])
+                manifest = store.read_run_manifest(
+                    ref, manifest_sha256=ref.sha256, expected_gate_id=gate_id,
+                )
+                authority = store.authoritative_latest(gate_id)
+                proof_identity = store.read_json(ArtifactRef.from_dict(
+                    manifest["artifacts"]["execution-identity"],
+                ))
+                sealed_result = manifest["result"]
+                if (
+                    authority.manifest_ref.to_dict() != ref.to_dict()
+                    or manifest.get("source") != dict(source)
+                    or proof_identity != identity
+                    or any(sealed_result.get(key) != value for key, value in (
+                        ("status", "passed"), ("completionStatus", "DONE"), ("proofStatus", "PROVEN"),
+                    ))
+                    or sealed_result.get("cleanupStatus") not in {"passed", "not-required"}
+                    or any(original.get(key) != sealed_result.get(key) for key in (
+                        "status", "completionStatus", "proofStatus", "cleanupStatus",
+                    ))
+                ):
+                    raise ExecutionBudgetError("original proof or current authority changed")
+                reused.append({
+                    **sealed_result,
+                    "runManifest": ref.to_dict(),
+                    "executionDisposition": "REUSED_ORIGINAL",
+                    "originRunId": ref.run_id,
+                })
+                reused_ids.add(gate_id)
+                accepted, reason = True, "complete current-source original producer verified"
+            except (EvidenceError, ExecutionBudgetError, KeyError, TypeError, ValueError, OSError):
+                reason = "original inventory, proof, input identity or authority is invalid"
+        validation.append({
+            "gateId": gate_id, "disposition": "REUSED_ORIGINAL" if accepted else "PENDING",
+            "reason": reason, "durationSeconds": round(time.monotonic() - started, 6),
+            "originRunId": reused[-1]["originRunId"] if accepted else None,
+        })
+    return reused, validation
+
+
+def read_session_manifest(store: Any, reference: Any) -> tuple[ExecutionSession, dict[str, Any]]:
+    """Only same-store DURABLE run inventory supplies a session and its original report."""
+    from tooling.acceptance.core import ArtifactRef
+
+    manifest = store.read_run_manifest(reference, manifest_sha256=reference.sha256)
+    session_ref = ArtifactRef.from_dict(manifest["artifacts"]["execution-session"])
+    session = ExecutionSession.restore(store.read_json(session_ref))
+    report_ref = ArtifactRef.from_dict(session.requests[-1]["report"])
+    if (
+        session_ref.path != "reports/session.json"
+        or report_ref.to_dict() != manifest["artifacts"].get("run")
+        or (report_ref.workspace_id, report_ref.gate_id, report_ref.run_id)
+        != (reference.workspace_id, reference.gate_id, reference.run_id)
+    ):
+        raise ExecutionBudgetError("execution session and run inventory identity mismatch")
+    report = store.read_json(report_ref)
+    results = report.get("results", [])
+    if (
+        report.get("source") != session.current_source
+        or len(results) != len(session.required_gate_ids)
+        or {item.get("id") for item in results} != set(session.required_gate_ids)
+        or report.get("executionBudget", {}).get("policyDigest") != session.policy_digest
+        or report.get("executionBudget", {}).get("stop") != session.requests[-1]["stop"]
+        or report.get("executionGraph", {}).get("digest") != session.graph_digest
+    ):
+        raise ExecutionBudgetError("original session report candidate or scope mismatch")
+    graph_ref = ArtifactRef.from_dict(report["executionGraph"]["artifact"])
+    original_graph = store.read_json(graph_ref)
+    from tooling.acceptance.core.execution_graph import ExecutionGraph
+
+    ExecutionGraph(original_graph).validate()
+    if original_graph["digest"] != session.graph_digest:
+        raise ExecutionBudgetError("original session graph mismatch")
+    if session.state == "PAUSED_REQUEST_EXHAUSTED" and not session.clean_request_exhaustion(report):
+        raise ExecutionBudgetError("original session lacks clean request exhaustion")
+    return session, report
+
+
+def publish_initialization_stop(
+    store: Any, gates: list[dict[str, Any]], source: Mapping[str, str],
+    graph: Mapping[str, Any], plan_source: Any, planning: GateExecution,
+    policy: ExecutionBudgetPolicy, error: BaseException,
+) -> None:
+    """Initialization cancellation owns no product run, but retains the full obligation."""
+    from tooling.acceptance.core.execution_budget import deadline
+
+    with deadline(5, ExecutionDeadline("stop-record", "publish", "publish")):
+        with store.begin_run("acceptance-execution-stop", source=source) as diagnostic:
+            stop = {
+                "artifactKind": "acceptance-execution-stop",
+                "reason": "OWNER_INTERRUPTED" if isinstance(error, KeyboardInterrupt) else "EXECUTION_BUDGET_STOP",
+                "gateId": planning.report()["gateId"], "cost": planning.report(),
+                "source": dict(source), "policyDigest": policy.identity,
+                "dispatchedGateIds": [], "unexecutedGateIds": [gate["id"] for gate in gates],
+                "resourceCleanup": "not-required", "proofStatus": "UNPROVEN",
+            }
+            stop_ref = diagnostic.write_json("reports/stop.json", stop, role="execution-stop")
+            graph_ref = diagnostic.write_json("reports/graph.json", graph, role="execution-graph")
+            report = build_run_report(
+                plan_source, stopped_results(gates, set(), stop), source=source,
+            )
+            report["terminalObservation"] = stop_ref.to_dict()
+            report["executionGraph"] = {"artifact": graph_ref.to_dict(), "digest": graph["digest"]}
+            report["executionBudget"] = {
+                "policyDigest": policy.identity, "planning": planning.report(),
+                "stop": stop, "gates": [], "selectedGateCount": len(gates), "dispatchedGateCount": 0,
+            }
+            run_ref = diagnostic.write_json("reports/run.json", report, role="run")
+            diagnostic.finalize(result={
+                "status": "failed", "completionStatus": "PARTIAL", "proofStatus": "UNPROVEN",
+            })
+            diagnostic.publish_latest()
+            print(f"execution-stop: {json.dumps(stop_ref.to_dict(), sort_keys=True)}")
+            print(f"run: {json.dumps(run_ref.to_dict(), sort_keys=True)}")
 
 
 def development_artifact_root(work_item: str, workspace: str) -> Path:
@@ -2205,7 +2388,7 @@ def main() -> int:
     parser.add_argument("--exclude-domain", action="append", default=[])
     parser.add_argument("--exclude-gate", action="append", default=[])
     parser.add_argument("--execution-budget", help="explicit lifecycle budget JSON")
-    parser.add_argument("--resume-session", help="previous paused supporting session JSON")
+    parser.add_argument("--resume-session", help="original DURABLE session manifest ArtifactRef JSON")
     parser.add_argument(
         "--prior-session-manifest",
         help="prior manifest ArtifactRef JSON for a fresh policy session",
@@ -2249,10 +2432,12 @@ def main() -> int:
     parser.add_argument("--candidate-ref-out")
     parser.add_argument("--candidate-manifest-sha-out")
     args = parser.parse_args()
-    if bool(args.resume_session) != bool(args.repair_record) or (
+    if (args.repair_record and not args.resume_session) or (
         args.resume_session and (not args.execution_budget or args.dry_run)
     ):
-        raise SystemExit("session resume requires budget, prior session and qualified repair")
+        raise SystemExit("session resume requires budget and an original durable manifest")
+    if (args.resume_session or args.prior_session_manifest) and args.execution_policy != "acceptance":
+        raise SystemExit("durable execution continuation requires Acceptance policy")
     if args.prior_session_manifest and (
         args.resume_session or args.repair_record or not args.execution_budget or args.dry_run
     ):
@@ -2401,6 +2586,15 @@ def main() -> int:
             raise SystemExit(
                 "--run-id requires one explicit formal --gate invocation"
             )
+    request_claim = None
+    session_terminal_ref = None
+    prior_manifest_ref = None
+    reused_results: list[dict[str, Any]] = []
+    reuse_validation: list[dict[str, Any]] = []
+    context_identity = None
+    aggregate_source = None
+    session_validation = None
+    preparation_owner = planning
     try:
         if args.execution_policy == "development":
             store = EvidenceStore(
@@ -2489,19 +2683,24 @@ def main() -> int:
         )
         session = None
         if policy is not None and not args.dry_run:
-            session = (
-                ExecutionSession.restore(json.loads(Path(args.resume_session).read_text()))
-                if args.resume_session else ExecutionSession(graph["dispatchGateIds"], policy.identity)
-            )
-            if args.prior_session_manifest:
-                from tooling.acceptance.core import ArtifactRef
+            from tooling.acceptance.core import ArtifactRef
 
+            session = ExecutionSession(graph["dispatchGateIds"], policy.identity)
+            prior_report = None
+            if args.resume_session:
                 prior_manifest_ref = ArtifactRef.from_dict(
+                    json.loads(Path(args.resume_session).read_text())
+                )
+                session, prior_report = execute_stage(
+                    planning, "session-manifest", read_session_manifest, store, prior_manifest_ref,
+                )
+            if args.prior_session_manifest:
+                lineage_manifest_ref = ArtifactRef.from_dict(
                     json.loads(Path(args.prior_session_manifest).read_text())
                 )
                 prior_manifest = execute_stage(
                     planning, "prior-session-manifest", store.read_run_manifest,
-                    prior_manifest_ref, manifest_sha256=prior_manifest_ref.sha256,
+                    lineage_manifest_ref, manifest_sha256=lineage_manifest_ref.sha256,
                 )
                 prior_ref = ArtifactRef.from_dict(
                     prior_manifest.get("artifacts", {}).get("execution-session")
@@ -2511,27 +2710,62 @@ def main() -> int:
                 )
                 session = ExecutionSession.from_prior(
                     graph["dispatchGateIds"], policy.identity, prior_value,
-                    manifest_ref=prior_manifest_ref.to_dict(),
+                    manifest_ref=lineage_manifest_ref.to_dict(),
                     session_ref=prior_ref.to_dict(),
                 )
+            request_claim = execute_stage(
+                planning, "session-lock", store.execution_request, session.session_id,
+            )
+            if prior_manifest_ref is not None:
+                session, prior_report = execute_stage(
+                    planning, "locked-session-manifest", read_session_manifest, store, prior_manifest_ref,
+                )
+            aggregate_source = execute_stage(
+                planning, "locked-source-snapshot", source_identity, REPO_ROOT,
+            )
+            context_identity = execution_context_digest(args, plan_source)
             if (
                 set(session.required_gate_ids) != set(graph["dispatchGateIds"])
                 or len(session.required_gate_ids) != len(graph["dispatchGateIds"])
                 or session.policy_digest != policy.identity
             ):
-                raise ExecutionBudgetError("repair attempt must preserve full scope and budget")
+                raise ExecutionBudgetError("request must preserve full scope and budget")
             if args.repair_record:
-                from tooling.acceptance.core import ArtifactRef
                 repair = json.loads(Path(args.repair_record).read_text())
                 for ref in repair.get("validation_refs", []):
                     execute_stage(planning, "repair-evidence", store.resolve, ArtifactRef.from_dict(ref))
                 session.repair(**repair)
+            elif session.state == "PAUSED_REPAIR_REQUIRED":
+                raise ExecutionBudgetError("original stop requires qualified owner repair")
+            planning.finish()
+            session_validation = GateExecution(
+                "session-validation", policy.lifecycle, request_deadline,
+            )
+            preparation_owner = session_validation
+            if (
+                prior_report is not None
+                and session.state == "PAUSED_REQUEST_EXHAUSTED"
+                and session.current_source == aggregate_source
+                and session.graph_digest == graph["digest"]
+                and session.context_digest == context_identity
+            ):
+                reused_results, reuse_validation = execute_stage(
+                    preparation_owner, "original-completion-validation", revalidate_session_results,
+                    gates, prior_report, aggregate_source, graph, policy, context_identity, store,
+                )
+            reused_ids = {item["id"] for item in reused_results}
             session.begin(
                 aggregate_source,
-                graph["dispatchGateIds"],
+                [gate["id"] for gate in gates if gate["id"] not in reused_ids],
+                graph_digest=graph["digest"], context_digest=context_identity,
+                validated_gate_ids=[gate["id"] for gate in gates if gate["id"] in reused_ids],
+            )
+            execute_stage(
+                preparation_owner, "consume-session-request", request_claim.consume,
+                len(session.requests), prior_manifest_ref,
             )
         aggregate_run = execute_stage(
-            planning, "aggregate-initialize", store.begin_run,
+            preparation_owner, "aggregate-initialize", store.begin_run,
             (
                 "development-run"
                 if args.execution_policy == "development"
@@ -2539,14 +2773,26 @@ def main() -> int:
             ),
             source=aggregate_source,
         )
-    except (EvidenceError, ExecutionBudgetError, ExecutionDeadline) as error:
+    except (EvidenceError, ExecutionBudgetError, ExecutionDeadline, KeyboardInterrupt, KeyError, ValueError, TypeError, OSError) as error:
+        if request_claim is not None:
+            request_claim.close()
+        if (
+            isinstance(error, (ExecutionDeadline, KeyboardInterrupt))
+            and policy is not None and "graph" in locals()
+        ):
+            try:
+                publish_initialization_stop(
+                    store, gates, aggregate_source or {}, graph, plan_source, preparation_owner, policy, error,
+                )
+            except (Exception, ExecutionDeadline):
+                print("Initialization stopped; durable stop-record publication failed", file=sys.stderr)
         print(
             f"Acceptance evidence initialization failed: {type(error).__name__}: {error}",
             file=sys.stderr,
         )
         return 1
 
-    results: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = list(reused_results)
     execution_reports: list[dict[str, Any]] = []
     started_gate_ids: set[str] = set()
     execution_stop = None
@@ -2576,12 +2822,12 @@ def main() -> int:
     graph_ref = None
     try:
         graph_ref = execute_stage(
-            planning, "graph-persist", aggregate_run.write_json,
+            preparation_owner, "graph-persist", aggregate_run.write_json,
             "reports/graph.json", graph, role="execution-graph",
         )
         if scope is not None:
             scope_ref = execute_stage(
-                planning, "scope-persist", aggregate_run.write_json,
+                preparation_owner, "scope-persist", aggregate_run.write_json,
                 "reports/scope.json", scope, role="execution-scope", phase="publish",
             )
             plan_source = {
@@ -2591,8 +2837,13 @@ def main() -> int:
             }
         if planning is not None:
             planning.finish()
+        if session_validation is not None:
+            session_validation.finish()
         for gate in gates:
             gate_id = gate["id"]
+            if gate_id in {item["id"] for item in reused_results}:
+                print(f"[REUSED_ORIGINAL] {gate_id}")
+                continue
             command = gate_launch_display(gate)
             timeout = int(gate.get("timeout_seconds") or 600)
             environment = gate.get("environment", "local")
@@ -2640,6 +2891,13 @@ def main() -> int:
             )
             active_gate_run = gate_run
             started_gate_ids.add(gate_id)
+            if session is not None:
+                execute_stage(
+                    execution, "execution-identity", gate_run.write_json,
+                    "proof/execution-identity.json",
+                    gate_execution_identity(gate, graph, policy, context_identity),
+                    role="execution-identity",
+                )
             gate_env = gate_run.subprocess_environment(os.environ.copy())
             gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
                 aggregate_source,
@@ -3591,6 +3849,8 @@ def main() -> int:
                 ))
                 break
 
+        by_id = {item["id"]: item for item in results}
+        results = [by_id[gate["id"]] for gate in gates]
         report = build_run_report(
             plan_source,
             results,
@@ -3608,10 +3868,25 @@ def main() -> int:
                 "requestDurationSeconds": round(time.monotonic() - request_started, 6),
                 "measurementBoundary": "before-aggregate-publication; terminal wall cost is emitted after handle cleanup",
                 "planning": planning.report(),
+                "validation": session_validation.report() if session_validation else None,
                 "gates": execution_reports,
                 "stop": execution_stop,
                 "selectedGateCount": len(gates),
-                "dispatchedGateCount": len(execution_reports),
+                "dispatchedGateCount": len(started_gate_ids),
+            }
+        if session is not None:
+            report["executionSession"] = {
+                "sessionId": session.session_id,
+                "request": len(session.requests),
+                "requiredGateIds": list(session.required_gate_ids),
+                "dispatchGateIds": list(session.requests[-1]["dispatchGateIds"]),
+                "validatedGateIds": list(session.requests[-1]["validatedGateIds"]),
+                "validation": reuse_validation,
+                "priorManifest": prior_manifest_ref.to_dict() if prior_manifest_ref else None,
+                "historicalRequests": [
+                    {"request": item["request"], "report": item["report"]}
+                    for item in session.requests[:-1]
+                ],
             }
         publication = (
             GateExecution(
@@ -3659,6 +3934,9 @@ def main() -> int:
                 runtime={"plan": plan_source},
             )
             execute_stage(publication, "aggregate-publish", aggregate_run.publish_latest)
+            session_terminal_ref = aggregate_run.manifest_ref
+            if session is not None:
+                print(f"execution-session-manifest: {json.dumps(session_terminal_ref.to_dict(), sort_keys=True)}")
         elif args.development_manifest_out:
             development_manifest_ref = finalize_development_run(
                 report,
@@ -3727,7 +4005,7 @@ def main() -> int:
             return 1
         failed_execution = (
             publication if isinstance(publication, GateExecution)
-            else execution if isinstance(execution, GateExecution) else planning
+            else execution if isinstance(execution, GateExecution) else preparation_owner
         )
         cost = failed_execution.report()
         dispatched_ids = started_gate_ids
@@ -3799,6 +4077,7 @@ def main() -> int:
                         "requestDurationSeconds": round(time.monotonic() - request_started, 6),
                         "measurementBoundary": "before-stop-publication; terminal wall cost is emitted after handle cleanup",
                         "planning": planning.report(),
+                        "validation": session_validation.report() if session_validation else None,
                         "gates": [
                             *[item for item in execution_reports if item["gateId"] != cost["gateId"]],
                             *([cost] if cost["gateId"] in dispatched_ids else []),
@@ -3823,6 +4102,7 @@ def main() -> int:
                         "proofStatus": "UNPROVEN",
                     })
                     diagnostic.publish_latest()
+                    session_terminal_ref = diagnostic.manifest_ref
                     print(f"execution-stop: {json.dumps(ref.to_dict(), sort_keys=True)}")
                     print(f"run: {json.dumps(run_ref.to_dict(), sort_keys=True)}")
                 finally:
@@ -3842,24 +4122,47 @@ def main() -> int:
             if publication is not None:
                 publication.finish()
             handle_cleanup_status = "passed"
+            session_commit_status = "not-required"
+            handles_closed = False
             try:
                 with deadline(2, ExecutionDeadline("handles", "close", "cleanup")):
                     if active_gate_run is not None:
                         active_gate_run.close()
                     aggregate_run.close()
+                    handles_closed = True
+                    if request_claim is not None and session_terminal_ref is not None:
+                        session_commit_status = "failed"
+                        store.read_run_manifest(
+                            session_terminal_ref, manifest_sha256=session_terminal_ref.sha256,
+                        )
+                        request_claim.complete(session_terminal_ref)
+                        session_commit_status = "passed"
             except ExecutionDeadline:
-                handle_cleanup_status = "failed"
-                print("Evidence handles did not close within reserved tail", file=sys.stderr)
+                if not handles_closed:
+                    handle_cleanup_status = "failed"
+                print("Evidence handle cleanup or session commit exceeded the reserved tail", file=sys.stderr)
+            except EvidenceError as error:
+                if handles_closed:
+                    session_commit_status = "failed"
+                else:
+                    handle_cleanup_status = "failed"
+                print(f"Execution session terminal commit failed: {type(error).__name__}", file=sys.stderr)
+            finally:
+                if request_claim is not None:
+                    request_claim.close()
             print("execution-wall-cost: " + json.dumps({
                 "runId": getattr(aggregate_run, "run_id", None),
                 "requestDurationSeconds": round(time.monotonic() - request_started, 6),
                 "requestWorkLimitSeconds": policy.request_seconds,
                 "measurementBoundary": "after-terminal-publication-and-handle-cleanup-attempt",
                 "handleCleanupStatus": handle_cleanup_status,
+                "sessionCommitStatus": session_commit_status,
                 "aggregatePublication": publication.report() if publication is not None else None,
                 "performanceStatus": "UNPROVEN",
                 "productProof": "runner-owned",
             }, sort_keys=True), file=sys.stderr)
+            if handle_cleanup_status == "failed" or session_commit_status == "failed":
+                return 1
         else:
             if active_gate_run is not None:
                 active_gate_run.close()

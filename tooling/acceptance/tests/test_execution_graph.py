@@ -1,6 +1,7 @@
 """Explicit producer closure and immutable prerequisite proof integration."""
 
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -96,7 +97,7 @@ class ExecutionGraphTest(unittest.TestCase):
             session_path, = (root / "evidence").rglob("reports/session.json")
             session = json.loads(session_path.read_text())
             self.assertEqual(session["state"], "QUALIFIED")
-            self.assertEqual(session["attempts"][0]["report"]["sha256"],
+            self.assertEqual(session["requests"][0]["report"]["sha256"],
                              hashlib.sha256(report_path.read_bytes()).hexdigest())
 
     def test_real_runner_resumes_after_verified_repair_without_inheriting_pass(self):
@@ -122,7 +123,7 @@ class ExecutionGraphTest(unittest.TestCase):
                                    capture_output=True, text=True, timeout=25)
             self.assertNotEqual(first.returncode, 0)
             session_path, = (root / "evidence").rglob("reports/session.json")
-            self.assertEqual(json.loads(session_path.read_text())["state"], "PAUSED")
+            self.assertEqual(json.loads(session_path.read_text())["state"], "PAUSED_REPAIR_REQUIRED")
             marker.touch()
             store = EvidenceStore(root / "evidence", worktree=REPO_ROOT)
             with store.begin_run("repair-validation", source={"fixture": "synthetic"}) as validation:
@@ -136,17 +137,24 @@ class ExecutionGraphTest(unittest.TestCase):
                 "qualification": "ARCHITECTURE_OVERHEAD",
                 "validation_refs": [validation_ref.to_dict()],
             }))
+            prior = store.latest("acceptance-run")
+            manifest_path = store.workspace_dir / "acceptance-run" / prior["runId"] / "manifest.json"
+            resume_ref = root / "resume.json"
+            resume_ref.write_text(json.dumps(ArtifactRef(
+                prior["workspaceId"], prior["gateId"], prior["runId"], "manifest.json",
+                hashlib.sha256(manifest_path.read_bytes()).hexdigest(), "application/json",
+            ).to_dict()))
             resumed = subprocess.run(
-                command + ["--resume-session", str(session_path), "--repair-record", str(repair_path)],
+                command + ["--resume-session", str(resume_ref), "--repair-record", str(repair_path)],
                 cwd=REPO_ROOT, env=environment, capture_output=True, text=True, timeout=25,
             )
             self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
             self.assertEqual(calls.read_text(), "xx")
             sessions = [json.loads(path.read_text()) for path in (root / "evidence").rglob("reports/session.json")]
-            latest = next(value for value in sessions if len(value["attempts"]) == 2)
+            latest = next(value for value in sessions if len(value["requests"]) == 2)
             self.assertEqual(latest["state"], "QUALIFIED")
-            self.assertEqual(latest["attempts"][0]["state"], "PAUSED")
-            self.assertEqual(latest["attempts"][1]["gateIds"], ["producer"])
+            self.assertEqual(latest["requests"][0]["state"], "PAUSED_REPAIR_REQUIRED")
+            self.assertEqual(latest["requests"][1]["dispatchGateIds"], ["producer"])
 
     def test_failed_prerequisite_never_launches_normal_consumer(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -247,9 +255,9 @@ class ExecutionGraphTest(unittest.TestCase):
             self.assertEqual(calls.read_text(), "xx")
             latest = store.latest("acceptance-run")
             current = store.read_json(ArtifactRef.from_dict(latest["artifacts"]["execution-session"]))
-            self.assertEqual(len(current["attempts"]), 1)
+            self.assertEqual(len(current["requests"]), 1)
             self.assertEqual(current["state"], "QUALIFIED")
-            self.assertTrue(current["attempts"][0]["invalidatedPriorProof"])
+            self.assertTrue(current["requests"][0]["invalidatedPriorProof"])
             self.assertNotEqual(current["policyDigest"], prior_session["policyDigest"])
             self.assertEqual(current["lineage"]["session"], prior_session_ref)
             self.assertEqual(current["lineage"]["proofTransfer"], "NONE")
@@ -279,14 +287,14 @@ class ExecutionGraphTest(unittest.TestCase):
             self.assertFalse(marker.exists())
             session_path, = (root / "evidence").rglob("reports/session.json")
             session = json.loads(session_path.read_text())
-            self.assertEqual(session["state"], "PAUSED")
+            self.assertEqual(session["state"], "PAUSED_REPAIR_REQUIRED")
             self.assertEqual(session["requiredGateIds"], ["first", "second"])
             stop_path, = (root / "evidence").rglob("reports/stop.json")
             stop = json.loads(stop_path.read_text())
             self.assertEqual(stop["unexecutedGateIds"], ["second"])
             self.assertEqual(stop["cost"]["overrun"]["phase"], "publish")
             store = EvidenceStore(root / "evidence", worktree=REPO_ROOT)
-            report = store.read_json(ArtifactRef.from_dict(session["attempts"][-1]["report"]))
+            report = store.read_json(ArtifactRef.from_dict(session["requests"][-1]["report"]))
             self.assertEqual(
                 store.read_json(ArtifactRef.from_dict(report["terminalObservation"])),
                 stop,
@@ -300,6 +308,180 @@ class ExecutionGraphTest(unittest.TestCase):
             self.assertNotIn("not dispatched", first["reason"])
             self.assertEqual(second["status"], "blocked")
             self.assertEqual(second["duration_seconds"], 0)
+
+    def continuation_fixture(self, root):
+        calls, cancelled, downstream = (root / name for name in ("calls", "cancelled", "downstream"))
+        catalog, policy = root / "catalog.json", root / "policy.json"
+        catalog.write_text(json.dumps({"gates": {
+            "first": {"argv": [sys.executable, "-c",
+                f"from pathlib import Path;p=Path({str(calls)!r});"
+                "p.write_text(p.read_text()+'x' if p.exists() else 'x')"], "tier": "ci-cheap"},
+            "second": {"argv": [sys.executable, "-c",
+                f"from pathlib import Path;import time;p=Path({str(cancelled)!r});"
+                "first=not p.exists();p.write_text(p.read_text()+'x' if p.exists() else 'x');"
+                "time.sleep(10 if first else 0)"], "tier": "ci-cheap"},
+            "third": {"dependsOn": ["first", "second"], "argv": [sys.executable, "-c",
+                f"from pathlib import Path;Path({str(downstream)!r}).touch()"], "tier": "ci-cheap"},
+        }}))
+        policy.write_text(json.dumps({
+            "requestSeconds": 2.5, "planningSeconds": 1.5,
+            "lifecycle": {"cleanupSeconds": 1, "publishSeconds": 1}, "gates": {},
+        }))
+        command = [sys.executable, "-B", "tooling/scripts/acceptance-run.py",
+                   "--gates", str(catalog), "--gate", "third",
+                   "--execution-budget", str(policy)]
+        environment = {**os.environ, "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "evidence")}
+        completed = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                   capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        store = EvidenceStore(root / "evidence", worktree=REPO_ROOT)
+        prior = store.latest("acceptance-run")
+        session = store.read_json(ArtifactRef.from_dict(prior["artifacts"]["execution-session"]))
+        self.assertEqual(session["state"], "PAUSED_REQUEST_EXHAUSTED", completed.stdout + completed.stderr)
+        self.assertEqual(calls.read_text(), "x")
+        self.assertEqual(cancelled.read_text(), "x")
+        self.assertFalse(downstream.exists())
+        report = store.read_json(ArtifactRef.from_dict(prior["artifacts"]["run"]))
+        manifest_path = store.workspace_dir / "acceptance-run" / prior["runId"] / "manifest.json"
+        resume = root / "resume.json"
+        resume.write_text(json.dumps(ArtifactRef(
+            prior["workspaceId"], prior["gateId"], prior["runId"], "manifest.json",
+            hashlib.sha256(manifest_path.read_bytes()).hexdigest(), "application/json",
+        ).to_dict()))
+        return command + ["--resume-session", str(resume)], environment, store, session, report
+
+    def test_real_two_requests_keep_original_proof_and_reject_concurrent_stale_or_raw_resume(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            command, environment, store, session, first = self.continuation_fixture(root)
+            claim = store.execution_request(session["sessionId"])
+            try:
+                rejected = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                          capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn("active request", rejected.stderr)
+                self.assertEqual((root / "calls").read_text(), "x")
+            finally:
+                claim.close()
+            raw = root / "raw.json"
+            raw.write_text(json.dumps(session))
+            rejected = subprocess.run(command[:-1] + [str(raw)], cwd=REPO_ROOT, env=environment,
+                                      capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(rejected.returncode, 0)
+            completed = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                       capture_output=True, text=True, timeout=10)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            current = store.latest("acceptance-run")
+            second = store.read_json(ArtifactRef.from_dict(current["artifacts"]["run"]))
+            ledger = store.read_json(ArtifactRef.from_dict(current["artifacts"]["execution-session"]))
+            self.assertEqual(ledger["state"], "QUALIFIED")
+            self.assertEqual(ledger["requiredGateIds"], ["first", "second", "third"])
+            self.assertEqual(ledger["requests"][1]["dispatchGateIds"], ["second", "third"])
+            self.assertEqual((root / "calls").read_text(), "x")
+            self.assertEqual((root / "cancelled").read_text(), "xx")
+            self.assertTrue((root / "downstream").exists())
+            self.assertEqual(second["executionBudget"]["dispatchedGateCount"], 2)
+            self.assertEqual(second["executionBudget"]["selectedGateCount"], 3)
+            self.assertEqual(second["results"][0]["runManifest"], first["results"][0]["runManifest"])
+            self.assertEqual(second["results"][0]["duration_seconds"], first["results"][0]["duration_seconds"])
+            self.assertEqual(second["results"][0]["originRunId"], first["results"][0]["runManifest"]["runId"])
+            self.assertEqual(second["executionSession"]["validatedGateIds"], ["first"])
+            stale = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                   capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(stale.returncode, 0)
+            self.assertEqual((root / "cancelled").read_text(), "xx")
+
+    def test_corrupt_original_artifact_reruns_its_complete_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            command, environment, store, session, report = self.continuation_fixture(root)
+            first = store.read_run_manifest(
+                ArtifactRef.from_dict(report["results"][0]["runManifest"]),
+                manifest_sha256=report["results"][0]["runManifest"]["sha256"],
+            )
+            artifact = store.resolve(ArtifactRef.from_dict(first["artifacts"]["execution-identity"]))
+            artifact.chmod(0o600)
+            artifact.write_text("{}")
+            completed = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                       capture_output=True, text=True, timeout=10)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual((root / "calls").read_text(), "xx")
+            latest = store.latest("acceptance-run")
+            ledger = store.read_json(ArtifactRef.from_dict(latest["artifacts"]["execution-session"]))
+            self.assertEqual(ledger["requests"][1]["validatedGateIds"], [])
+            self.assertEqual(ledger["requests"][1]["dispatchGateIds"], ["first", "second", "third"])
+
+    def test_changed_context_graph_and_policy_cannot_reuse_proof(self):
+        for change in ("context", "graph", "policy"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                command, environment, store, session, report = self.continuation_fixture(root)
+                if change == "context":
+                    environment["PT_CONTINUATION_FIXTURE_EPOCH"] = "changed"
+                elif change == "graph":
+                    catalog = json.loads((root / "catalog.json").read_text())
+                    catalog["gates"]["first"]["timeout"] = 59
+                    (root / "catalog.json").write_text(json.dumps(catalog))
+                else:
+                    policy = json.loads((root / "policy.json").read_text())
+                    policy["lifecycle"]["cleanupSeconds"] = 0.9
+                    (root / "policy.json").write_text(json.dumps(policy))
+                completed = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                           capture_output=True, text=True, timeout=10)
+                if change == "policy":
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertEqual((root / "calls").read_text(), "x")
+                else:
+                    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                    self.assertEqual((root / "calls").read_text(), "xx")
+                    latest = store.latest("acceptance-run")
+                    ledger = store.read_json(ArtifactRef.from_dict(latest["artifacts"]["execution-session"]))
+                    self.assertTrue(ledger["requests"][1]["invalidatedPriorProof"])
+                    self.assertEqual(ledger["requests"][1]["validatedGateIds"], [])
+
+    def test_crashed_consumed_request_cannot_dispatch_again(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            command, environment, store, session, report = self.continuation_fixture(root)
+            reference = ArtifactRef.from_dict(json.loads((root / "resume.json").read_text()))
+            claim = store.execution_request(session["sessionId"])
+            try:
+                claim.consume(2, reference)
+            finally:
+                claim.close()
+            completed = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                       capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("already consumed", completed.stderr)
+            self.assertEqual((root / "calls").read_text(), "x")
+            self.assertEqual((root / "cancelled").read_text(), "x")
+            self.assertFalse((root / "downstream").exists())
+
+    def test_visible_manifest_cannot_bypass_current_finalizer_authority(self):
+        from tooling.acceptance.core.execution_budget import ExecutionBudgetPolicy
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            command, environment, store, session, report = self.continuation_fixture(root)
+            enforcement = store.workspace_dir / "first" / "finalizer-enforcement"
+            enforcement.mkdir()
+            (enforcement / "activation-pending.json").write_text("{}")
+            spec = importlib.util.spec_from_file_location(
+                "continuation_runner", REPO_ROOT / "tooling/scripts/acceptance-run.py",
+            )
+            runner = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(runner)
+            definitions = json.loads((root / "catalog.json").read_text())["gates"]
+            graph = compile_graph(definitions, ["third"])
+            reused, validation = runner.revalidate_session_results(
+                [runner.gate_from_definition(gate, definitions[gate]) for gate in graph["dispatchGateIds"]],
+                report, session["requests"][0]["source"], graph,
+                ExecutionBudgetPolicy(json.loads((root / "policy.json").read_text())),
+                session["requests"][0]["contextDigest"], store,
+            )
+            self.assertFalse(reused)
+            self.assertEqual(validation[0]["disposition"], "PENDING")
+            self.assertIn("authority is invalid", validation[0]["reason"])
 
 
 if __name__ == "__main__":
