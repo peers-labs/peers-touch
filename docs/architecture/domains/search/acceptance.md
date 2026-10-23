@@ -8,6 +8,9 @@ Chat 全量、Completion 或 Full。其他来源、Mobile、Station Search、Ask
 业务接入由 Feature、Capability、Registry 与 Gate catalog 声明。
 Native Gate 复用 `chat-storage-native` 的同 Station 双客户端、Actor Fixture、
 Runtime Binding、Evidence Store 与清理。Search Core 不持有业务写操作。
+此 Environment ID 表示运行拓扑和资源要求，不表示某个 env Profile。
+具体 Profile、Station 地址和部署目标在运行时解析并写入 Runtime Manifest；
+Search Gate 只消费已验证的 Manifest，不绑定具体 Profile 名称。
 
 一条连续 Journey 只初始化 Alice/Bob 一次：Bob 真实发送中文消息、线程回复
 及 55 条历史填充消息，上传真实附件；Alice 在全局 Search 输入、翻页、打开
@@ -30,7 +33,7 @@ Search 查询、打开、返回、刷新和接收端观察均由原生 UI 驱动
 
 ```bash
 make config
-# 核对 three / station-three / 非 loopback remote URL。
+# 核对本次授权的 Profile、部署目标和非 loopback remote URL。
 # 当前源码需形成 clean checkpoint，Station live commit / proto 需一致。
 # 远程部署与 disposable Fixture reset 须有对应授权。
 export PT_ACCEPTANCE_ARTIFACT_ROOT=/absolute/external/evidence-root
