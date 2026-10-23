@@ -25,6 +25,7 @@ import {
 } from '../gen/proto/domain/chat/conversation_pb';
 import { ActorKind } from '../gen/proto/domain/actor/actor_pb';
 import { imServiceV1 } from '../services/im-service';
+import { messagingDomainRuntime } from '../messaging/runtime';
 import { shouldApplyPresenceRevision } from '../services/chatPresence';
 import type {
   MessagingLocalAttachmentIntent,
@@ -473,7 +474,7 @@ interface SocialChatState {
   setActiveTab: (tab: 'friend' | 'group') => void;
   selectSession: (ulid: string) => void;
   selectGroup: (ulid: string) => void;
-  loadMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
+  loadMessages: (ulid: string, kind?: 'friend' | 'group', anchorMessageId?: string) => Promise<void>;
   clearConversationProjection: (ulid: string) => void;
   loadOlderMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
   retryMessage: (
@@ -1346,8 +1347,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       get().markGroupRead(ulid).catch(() => {});
     },
 
-  loadMessages: async (ulid, kind) => {
+  loadMessages: async (ulid, kind, anchorMessageId) => {
     if (!hasAuthenticatedActor()) return;
+    const scope = messagingDomainRuntime.requireActiveScope();
     const activeTab = kind ?? get().activeTab;
     // Fast path: if messages are already loaded for this conversation, render
     // them immediately without blocking on network+decrypt. A background
@@ -1357,9 +1359,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     // in the background, not a visible spinner on every tab click.
     set({ loading: false });
     try {
-      const page = await imServiceV1.messaging.listMessages(ulid);
+      const page = await imServiceV1.messaging.listMessages(ulid, { anchorMessageId });
       const projections = page.messages;
       const serviceMessages = await fetchServiceMessageMap(ulid);
+      if (!messagingDomainRuntime.isCurrent(scope)) return;
       const pageMessages = projections.map(projection => {
         const message = projectMessagingProjection(activeTab, ulid, projection);
         const serviceMessage = serviceMessages.get(message.ulid);
@@ -1434,6 +1437,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         await get().refreshThreadCounts(ulid, rootUlids, activeTab);
       }
     } catch (error) {
+      if (!messagingDomainRuntime.isCurrent(scope)) return;
       if (isUnauthorizedError(error)) {
         set({ loading: false });
         return;
@@ -1507,6 +1511,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadOlderMessages: async (ulid, kind) => {
+    const scope = messagingDomainRuntime.requireActiveScope();
     const activeKind = kind ?? get().activeTab;
     const beforeSequence = get().messageNextBeforeSequence[ulid];
     if (!beforeSequence || !get().messageHasMore[ulid]) return;
@@ -1519,6 +1524,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       });
       const projections = page.messages;
       const serviceMessages = await fetchServiceMessageMap(ulid);
+      if (!messagingDomainRuntime.isCurrent(scope)) return;
       const olderMessages = projections.map(projection => {
         const message = projectMessagingProjection(activeKind, ulid, projection);
         const serviceMessage = serviceMessages.get(message.ulid);
@@ -1564,6 +1570,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         await get().refreshThreadCounts(ulid, rootUlids, activeKind);
       }
     } catch (error) {
+      if (!messagingDomainRuntime.isCurrent(scope)) return;
       set((state) => ({
         messageLoadingMore: { ...state.messageLoadingMore, [ulid]: false },
       }));
@@ -1579,6 +1586,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadThreadMessages: async (ulid, rootUlid, kind, options) => {
+    const scope = messagingDomainRuntime.requireActiveScope();
     const activeKind = kind ?? get().activeTab;
     const key = socialThreadKey(activeKind, ulid, rootUlid);
     const append = options?.append === true;
@@ -1590,6 +1598,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }));
     try {
       const projections = await imServiceV1.messaging.listThreadMessages(ulid, rootUlid);
+      if (!messagingDomainRuntime.isCurrent(scope)) return;
       const nextMessages = projections.map(projection =>
         projectMessagingProjection(activeKind, ulid, projection),
       );
@@ -1607,6 +1616,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }));
       await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
     } catch (error) {
+      if (!messagingDomainRuntime.isCurrent(scope)) return;
       log.error('socialChat', 'loadThreadMessages failed', error);
       set((state) => ({
         threadMessages: state.threadMessages,
@@ -1622,10 +1632,12 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   refreshThreadCounts: async (ulid, rootUlids, kind) => {
+    const scope = messagingDomainRuntime.requireActiveScope();
     const activeKind = kind ?? get().activeTab;
     const uniqueRootUlids = Array.from(new Set(rootUlids.filter(Boolean)));
     if (uniqueRootUlids.length === 0) return;
     const data = await imServiceV1.messaging.threadCounts(ulid, uniqueRootUlids);
+    if (!messagingDomainRuntime.isCurrent(scope)) return;
     const counts = data.counts;
     set((state) => {
       const next = { ...state.threadCounts };

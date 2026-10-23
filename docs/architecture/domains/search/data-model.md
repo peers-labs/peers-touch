@@ -3,7 +3,8 @@
 > **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Client / Station
-> 协议源已在 `model/domain/search/search.proto` 定义，Desktop TS 类型由其生成；本期只消费端侧切片，后续 contributor/Station 合同未实施。
+> 协议源在 `model/domain/search/search.proto`，Desktop TS/Rust 类型由其生成；
+> contributor、批量 hydrate 与缓存有效性已加入端侧切片，Station/外源接入仍未实施。
 
 当前端侧执行候选和 IPC 适配必须投影自上述 proto；它们不构成并行业务线合同。下文完整资源/来源/分页设计属于目标模型，实际字段以 proto 为准，尚未实施的字段、来源和生命周期保持显式未证明。
 
@@ -237,9 +238,23 @@ cursor 为 opaque、认证防篡改的 session continuation，绑定 actor、pro
 
 Client cursor 可以指向本机 query session，不能发给 Station 当作私密数据。Station cursor 只包含远端会话 reference，不编码正文或可读权限集合。
 
-以下是目标数据合同，尚未加入当前 proto 或实现。缓存元数据与条件读取提示
-沿同一 Model schema/受信 binding 定义，不增加另一套手写业务模型或权限库。
-缓存策略取来源字段策略、原域读策略和 Host 上限的交集。
+缓存元数据与条件读取提示沿同一 Model schema/受信 binding 定义，不增加
+另一套手写业务模型或权限库。缓存策略取来源字段策略、原域读策略和 Host
+上限的交集。当前 proto 已定义最小 query/hydration/resolve/read-validity；
+下述完整 D/S/F、派生索引、AI 与字段策略仍按实际接入范围实施。
+
+当前 Desktop 使用原 Messaging Store 的选择性变化水位；消息、会话/成员、
+域内附件和服务消息更新失效该来源查询，收件队列/密钥/维护写入不失效。
+外部连接提交用 `data_version` 保守核对。资源投影的依赖为原对象 revision，
+不因无关消息更新而重新 hydrate。资源投影和查询页共用一份内存 cache；
+不重复 FTS 索引，不落 Renderer storage。读权不签发本机 TTL，每次 cache commit/IPC publication
+都在 identity 与原 Store revision guard 内检查。query/session 到期点与
+monotonic payload expiry 独立保留；空页最多缓存 15 秒，查询/资源最多 5 分钟。
+缓存总量 128 项/4 MiB，每授权分区及来源 64 项/2 MiB；在途读最多 128 项。
+Renderer 保留 32 个查询 frame / 640 项、最多 200 项可见结果；复用前读原模块
+`SearchReadState`，5 分钟查询与 15 秒空页到期保持独立。关闭/切页可保留
+同账号输入、mode、顺序、选中与滚动；账号/锁定/Station 变化清空。远端 read lease、
+content-stale 发布和跨来源完整 session 仍未接入。
 
 ### 7.1 缓存对象与复用键
 

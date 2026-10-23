@@ -9,7 +9,9 @@
 
 **门户与默认落点**：普通启动、登录完成与账号切换默认进入 `chat`；Search 按钮/已确认快捷键主动打开 Search，关闭或返回恢复原页。实施须同时检查 `types/navigation.ts` 默认值、hash fallback、identity warm-resume/last-active-page、无效对象跳转、Search descriptor 与前后导航；不能只改一个常量，让旧 Search 恢复路径继续自动显示。明确对象深链由独立导航合同处理。
 
-D04 由 Shell singleton overlay 消费统一 query/source/coverage contract；D04B 物理删除旧 `SearchPage`、`searchRuntime`、store 与其旧 native 命令。静态 descriptor 与账号 eligible source 分开；同账号导航上下文保留，身份/锁定/Station scope 变化取消并清理。Search UI 按需挂载，查询状态和域内后台索引独立于页面树。导航从 URL 前缀猜测切到 Shell Resource Resolver。D06 删除现有搜索商设置（`tools_search_providers` 固定数据）整条链；这些任务当前未完成。
+D04–D06 源码接线：Shell singleton overlay 消费生成 query/source/coverage contract；旧 `SearchPage` 与成功空 native 命令物理删除，`searchRuntime`/store 替换为唯一 session owner。静态功能目录与账号 eligible source 分开；同账号导航上下文保留，身份/session/Station scope 变化取消并清理。Search UI 按需挂载；本机缓存复用前只读原 Messaging 状态版本，焦点/可见性及 2 秒轻量核对兜底漏事件，不重复 FTS。导航从 URL 前缀猜测切到 Messaging 原对象打开接口。ToolsTab 搜索商设置整条链已删除，真实运行证明仍单独核验。
+
+消息 Open 先 native `resolve`，再由 Messaging 查询可读历史窗口。`messaging_list_messages.anchor_message_id` 与分页 cursor 互斥，主消息只读至目标 sequence 的有界窗口；回复进入原线程。虚拟列表先 `scrollToIndex` 再定位可见节点、还焦与高亮。返回搜索恢复同会话 query/mode/order/scroll；身份变化立即关闭返回入口。功能目录只导航真实 Settings 分区，未知分区/写操作不伪装成可用入口。
 
 **人际消息**：复用 `messaging_message_search_fts` 和 Messaging runtime；由索引 Owner 提供会话/跨会话 scoped provider，保留 hidden/retracted/moderated 与恢复进度。门户、现有 MessageSearchModal、Mobile history search 使用同一查询能力，不能重新全库扫描正文。
 
@@ -187,9 +189,14 @@ Suite 持有构建、客户端、账号、设备、Station 和索引 fixture；�
 
 用户已给出封闭检索域（Peers 域内、端 + Station、当前 actor 有权限）、AI、功能搜索与 Chat 默认落点的方向。具体 S-01～S-18 / SEARCH-* 产品合同、记忆选择与 AI 处理边界仍为草案；确认后制作现有 Shell/Prototype Lib 中的连续原型并完成动态审阅，再按已确认能力产生正式执行计划、注册与真实证明。
 
-当前产品与架构仍为设计草案。独立组件研究已完成真实公开文档的加密 FTS、PG、受控文件边界、协调器合同及模型实验；中文跨语言 semantic/简单 hybrid 排名未达标，结果与限制见[实验记录](./feasibility-evidence.md)。其中受控目录与公共 RSS 实验只作历史机制证据，不属于封闭域产品能力。
+Desktop「找回 + 打开」与 D-20 contributor/cache 合同已经确认并实施。
+独立组件研究包含加密 FTS、PG、受控文件边界、协调器与模型实验；中文跨语言
+semantic/简单 hybrid 排名未达标，限制见[实验记录](./feasibility-evidence.md)。
+受控目录与公共 RSS 实验仅为历史机制证据，不属于封闭域产品能力。
 
-V-01～V-10 的完整目标保持 NOT RUN/UNPROVEN；新增缓存合同没有实现或产品
-性能证明。现有 confirmed 原型与限定 Desktop 代码不证明完整范围已经交付，
-实际切片见 README/执行计划。受控 SQL reader 标签不替代真实 actor，本机
-ONNX 不替代 Agent provider/readiness，域外来源拒绝仍需否定证明。
+V-01～V-10 的跨来源完整目标保持 NOT RUN/UNPROVEN。本期 Desktop 原生
+开发检查覆盖 query/open、缓存复用/刷新、会话失效、分页与非法 scope/资源
+拒绝；受控本机数据库变更探针证明投影失效，但不证明原业务的 edit/hide/
+revoke 投递与 receiver 生命周期。真实产品性能分布与正式 Acceptance 未运行。
+证据在本 worktree `tmp/search-native/`，实际效果见执行计划的 outcome comparison。
+本机 ONNX 不替代 Agent provider/readiness。

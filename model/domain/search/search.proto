@@ -74,6 +74,10 @@ enum SearchErrorCode {
   SEARCH_ERROR_CODE_CANCELLED = 3;
   SEARCH_ERROR_CODE_SOURCE_UNAVAILABLE = 4;
   SEARCH_ERROR_CODE_CURSOR_EXPIRED = 5;
+  SEARCH_ERROR_CODE_SOURCE_TIMEOUT = 6;
+  SEARCH_ERROR_CODE_PROTOCOL = 7;
+  SEARCH_ERROR_CODE_RESOURCE_UNAVAILABLE = 8;
+  SEARCH_ERROR_CODE_SOURCE_CHANGED = 9;
 }
 
 // Canonical address of one searchable object. kind/id identify the object;
@@ -86,6 +90,135 @@ message ResourceRef {
   // Typed navigation target for function results (settings section, agent
   // create flow, etc.). Content results resolve through the owning module.
   string target_page = 5;
+  // Stable data authority, independent of device, package and runtime session.
+  string authority_namespace = 6;
+  string content_revision = 7;
+  ResourceAnchor anchor = 8;
+}
+
+message ResourceAnchor {
+  string kind = 1;
+  string id = 2;
+}
+
+// The binding is resolved by the host. It is neither an endpoint nor a grant.
+message SearchContributorDescriptor {
+  string source_id = 1;
+  string owning_module = 2;
+  repeated string authority_namespaces = 3;
+  repeated SearchKind kinds = 4;
+  string binding_id = 5;
+  string descriptor_revision = 6;
+  bool supports_paging = 7;
+  uint32 max_batch = 8;
+}
+
+enum ProjectionField {
+  PROJECTION_FIELD_UNSPECIFIED = 0;
+  PROJECTION_FIELD_RESULT = 1;
+}
+
+message QueryIntent {
+  string text = 1;
+  SearchKind kind = 2;
+  SearchScope scope = 3;
+  uint32 limit = 4;
+  string cursor = 5;
+  string locale = 6;
+  bool suggestions = 7;
+  // Read requirement, excluded from semantic cache identity.
+  bool refresh = 8;
+}
+
+message SourceCandidate {
+  ResourceRef resource = 1;
+  double source_rank = 2;
+}
+
+// Content and authority are independent. No lease means the original owner
+// must check each publication; successful content validation grants no access.
+message ReadValidity {
+  string read_scope = 1;
+  string policy_revision = 2;
+  int64 lease_until_unix_ms = 3;
+  bool owner_check_required = 4;
+}
+
+message CacheMetadata {
+  string validator = 1;
+  string source_revision = 2;
+  int64 content_fresh_until_unix_ms = 3;
+  ReadValidity read_validity = 4;
+  bool no_store = 5;
+}
+
+message SourcePage {
+  repeated SourceCandidate candidates = 1;
+  string next_cursor = 2;
+  SourceCoverage coverage = 3;
+  CacheMetadata cache = 4;
+  // All continuations preserve the original session expiry.
+  int64 expires_at_unix_ms = 5;
+}
+
+message HydrationItem {
+  string item_id = 1;
+  ResourceRef resource = 2;
+  repeated ProjectionField fields = 3;
+  string known_validator = 4;
+}
+
+message HydrationRequest {
+  repeated HydrationItem items = 1;
+  bool refresh = 2;
+}
+
+message AuthorizedProjection {
+  ResultItem result = 1;
+  repeated ProjectionField fields = 2;
+  CacheMetadata cache = 3;
+}
+
+message UnchangedProjection {
+  string validator = 1;
+  repeated ProjectionField fields = 2;
+  CacheMetadata cache = 3;
+}
+
+// No sensitive resource/title is included in unavailable or retryable.
+message UnavailableResource {}
+message RetryableRead {}
+
+message HydrationOutcome {
+  string item_id = 1;
+  oneof outcome {
+    AuthorizedProjection changed = 2;
+    UnchangedProjection unchanged = 3;
+    UnavailableResource unavailable = 4;
+    RetryableRead retryable = 5;
+  }
+}
+
+message HydrationReply {
+  repeated HydrationOutcome outcomes = 1;
+}
+
+message ResolvedResource {
+  ResourceRef resource = 1;
+  // Host allowlisted resolver identity, never a URL, path or script.
+  string resolver_binding = 2;
+  CacheMetadata cache = 3;
+}
+
+message ResolveRequest {
+  ResourceRef resource = 1;
+  string request_id = 2;
+}
+
+// Local original-owner reconciliation. This checks state, not search content.
+message SearchReadState {
+  string source_revision = 1;
+  string read_scope = 2;
 }
 
 // Local suggestion request: exact objects available on the device without a
@@ -107,6 +240,8 @@ message SubmitRequest {
   string cursor = 5;
   int32 limit = 6;
   string request_id = 7;
+  string locale = 8;
+  bool refresh = 9;
 }
 
 message CancelRequest {
@@ -140,6 +275,9 @@ message SearchResponse {
   string next_cursor = 2;
   bool has_more = 3;
   repeated SourceCoverage coverage = 4;
+  int64 expires_at_unix_ms = 5;
+  ReadValidity read_validity = 6;
+  string source_revision = 7;
 }
 
 message CancelResponse {

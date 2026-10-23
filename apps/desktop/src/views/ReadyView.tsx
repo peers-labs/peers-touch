@@ -12,6 +12,8 @@ import { AppSideNav } from '../components/AppSideNav';
 import { AgentModuleNav } from '../components/agent/AgentModuleNav';
 import { PageRouter } from '../components/PageRouter';
 import { CommandMenu } from '../components/CommandMenu';
+import { SearchHost } from '../components/search/SearchHost';
+import { SearchReturnBar } from '../components/search/SearchReturnBar';
 import { useHashRouter } from '../hooks/useHashRouter';
 import { useNavigation } from '../hooks/useNavigation';
 import { useCommandMenuShortcut } from '../hooks/useCommandMenuShortcut';
@@ -96,7 +98,7 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
 
   return wrapReadyShellCommitProfiler(
     <PageContextProvider value={{ router, navigation }}>
-      <GlobalLayout sideNav={sideNav}>
+      <GlobalLayout sideNav={sideNav} overlay={standaloneApplet ? null : <SearchHost page={router.page} navigation={navigation} />}>
         <div style={{
           width: '100%',
           height: '100%',
@@ -105,6 +107,7 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
           display: 'flex',
           flexDirection: 'column',
         }}>
+          <SearchReturnBar navigation={navigation} />
           <AgentModuleNav page={router.page} navigation={navigation} />
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
             <ShellCommitProfiler owner="shell:page-host" surface="page-host">

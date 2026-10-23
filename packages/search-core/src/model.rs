@@ -7,8 +7,8 @@ pub mod wire {
 }
 
 pub use wire::{
-    ResourceRef, SearchKind as ResultKind, SearchZone as TrustZone,
-    SourceCoverage, SourceState as SourceStateKind,
+    ResourceRef, SearchKind as ResultKind, SearchZone as TrustZone, SourceCoverage,
+    SourceState as SourceStateKind,
 };
 
 impl ResourceRef {
@@ -16,9 +16,17 @@ impl ResourceRef {
     /// (message index, attachment projection, recents) must collapse to one.
     pub fn fusion_key(&self) -> String {
         if self.message_id.is_empty() {
-            format!("{}:{}", self.kind, self.id)
+            format!("{:?}", (&self.authority_namespace, &self.kind, &self.id))
         } else {
-            format!("message:{}:{}", self.conversation_id, self.message_id)
+            format!(
+                "{:?}",
+                (
+                    &self.authority_namespace,
+                    "message",
+                    &self.conversation_id,
+                    &self.message_id
+                )
+            )
         }
     }
 }

@@ -29,6 +29,7 @@ GATE_IDS = frozenset(
         "chat-storage-accounting-e2e",
         "chat-storage-desktop-batch-clear-e2e",
         "chat-storage-redaction-recovery-e2e",
+        "chat-device-search-native-e2e",
     }
 )
 

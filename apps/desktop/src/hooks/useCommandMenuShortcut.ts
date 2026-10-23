@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useCommandMenuStore } from '../store/commandMenu';
 
 /**
- * Registers the global Cmd+K / Ctrl+K keyboard shortcut to toggle the command menu.
+ * Cmd+Shift+K opens the separate command directory. Cmd+K belongs to Search.
  * Should be called once in the application root shell.
  */
 export function useCommandMenuShortcut(): void {
@@ -11,7 +11,7 @@ export function useCommandMenuShortcut(): void {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
       const isMeta = e.metaKey || e.ctrlKey;
-      if (isMeta && e.key === 'k') {
+      if (isMeta && e.shiftKey && e.key.toLowerCase() === 'k' && !e.isComposing) {
         e.preventDefault();
         e.stopPropagation();
         toggle();

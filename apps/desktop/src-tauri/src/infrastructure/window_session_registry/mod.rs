@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use crate::domain::identity::{ActiveSession, ActorRef};
 
@@ -17,6 +17,7 @@ use crate::domain::identity::{ActiveSession, ActorRef};
 pub struct WindowSessionRegistry {
     inner: RwLock<HashMap<String, SessionBinding>>,
     revision: AtomicU64,
+    change_observer: Option<Arc<dyn Fn(&str) + Send + Sync>>,
 }
 
 struct SessionBinding {
@@ -24,9 +25,19 @@ struct SessionBinding {
     revision: u64,
 }
 
+impl SessionBinding {
+    fn same_authority(&self, session: &ActiveSession) -> bool {
+        self.account_id == session.account_id
+            && self.actor.ptid == session.actor.ptid
+            && self.jwt == session.jwt
+    }
+}
+
 impl std::ops::Deref for SessionBinding {
     type Target = ActiveSession;
-    fn deref(&self) -> &Self::Target { &self.session }
+    fn deref(&self) -> &Self::Target {
+        &self.session
+    }
 }
 
 pub struct ExclusiveBindingCommit {
@@ -46,6 +57,20 @@ impl WindowSessionRegistry {
         Self {
             inner: RwLock::new(HashMap::new()),
             revision: AtomicU64::new(0),
+            change_observer: None,
+        }
+    }
+
+    /// Invalidation runs under the identity write guard before old reads can
+    /// publish. Observers must not re-enter this registry.
+    pub fn with_change_observer(mut self, observer: Arc<dyn Fn(&str) + Send + Sync>) -> Self {
+        self.change_observer = Some(observer);
+        self
+    }
+
+    fn changed(&self, window: &str) {
+        if let Some(observer) = &self.change_observer {
+            observer(window);
         }
     }
 
@@ -57,8 +82,15 @@ impl WindowSessionRegistry {
             .write()
             .expect("WindowSessionRegistry write lock poisoned");
         let label = session.window_label.clone();
+        if let Some(existing) = map.get_mut(&label) {
+            if existing.same_authority(&session) {
+                return Some(std::mem::replace(&mut existing.session, session));
+            }
+        }
+        self.changed(&label);
         let revision = self.revision.fetch_add(1, Ordering::SeqCst);
-        map.insert(label, SessionBinding { session, revision }).map(|b| b.session)
+        map.insert(label, SessionBinding { session, revision })
+            .map(|b| b.session)
     }
 
     /// Bind a session and remove any other window already bound to the same
@@ -94,12 +126,25 @@ impl WindowSessionRegistry {
             .collect();
         let mut kicked = Vec::with_capacity(kicked_labels.len());
         for kicked_label in kicked_labels {
+            self.changed(&kicked_label);
             if let Some(prev) = map.remove(&kicked_label) {
                 kicked.push(prev.session);
             }
         }
+        if let Some(existing) = map.get_mut(&label) {
+            if existing.same_authority(&session) {
+                let previous = std::mem::replace(&mut existing.session, session);
+                return Ok(ExclusiveBindingCommit {
+                    window_label: label,
+                    previous_window_session: Some(previous),
+                    kicked,
+                });
+            }
+        }
         let revision = self.revision.fetch_add(1, Ordering::SeqCst);
-        let previous_window_session = map.insert(label.clone(), SessionBinding { session, revision })
+        self.changed(&label);
+        let previous_window_session = map
+            .insert(label.clone(), SessionBinding { session, revision })
             .map(|b| b.session);
         Ok(ExclusiveBindingCommit {
             window_label: label,
@@ -113,14 +158,28 @@ impl WindowSessionRegistry {
             .inner
             .write()
             .map_err(|_| "window session registry write lock poisoned".to_string())?;
+        self.changed(&commit.window_label);
         map.remove(&commit.window_label);
         if let Some(previous) = commit.previous_window_session {
             let revision = self.revision.fetch_add(1, Ordering::SeqCst);
-            map.insert(previous.window_label.clone(), SessionBinding { session: previous, revision });
+            map.insert(
+                previous.window_label.clone(),
+                SessionBinding {
+                    session: previous,
+                    revision,
+                },
+            );
         }
         for kicked in commit.kicked {
+            self.changed(&kicked.window_label);
             let revision = self.revision.fetch_add(1, Ordering::SeqCst);
-            map.insert(kicked.window_label.clone(), SessionBinding { session: kicked, revision });
+            map.insert(
+                kicked.window_label.clone(),
+                SessionBinding {
+                    session: kicked,
+                    revision,
+                },
+            );
         }
         Ok(())
     }
@@ -132,6 +191,7 @@ impl WindowSessionRegistry {
             .inner
             .write()
             .expect("WindowSessionRegistry write lock poisoned");
+        self.changed(window_label);
         let removed = map.remove(window_label).map(|b| b.session);
         removed
     }
@@ -149,7 +209,10 @@ impl WindowSessionRegistry {
             .collect::<Vec<_>>();
         Ok(labels
             .into_iter()
-            .filter_map(|label| map.remove(&label).map(|b| b.session))
+            .filter_map(|label| {
+                self.changed(&label);
+                map.remove(&label).map(|b| b.session)
+            })
             .collect())
     }
 
@@ -159,6 +222,9 @@ impl WindowSessionRegistry {
             .inner
             .write()
             .expect("WindowSessionRegistry write lock poisoned");
+        for label in map.keys() {
+            self.changed(label);
+        }
         map.drain().map(|(_, binding)| binding.session).collect()
     }
 
@@ -176,7 +242,8 @@ impl WindowSessionRegistry {
     /// including A → B → A transitions that restore the same token.
     pub fn get_with_revision(&self, window_label: &str) -> Option<(ActiveSession, u64)> {
         let map = self.inner.read().ok()?;
-        map.get(window_label).map(|b| (b.session.clone(), b.revision))
+        map.get(window_label)
+            .map(|b| (b.session.clone(), b.revision))
     }
 
     /// Snapshot the actor bound to `window_label`, if any.

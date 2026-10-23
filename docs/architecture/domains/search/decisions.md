@@ -22,8 +22,8 @@
 | D-17 | 查询与后台投影独立、资源有界 | accepted |
 | D-19 | 封闭域、当前 actor 可见性、域外来源禁止 | accepted |
 
-缓存复用的目标规则见 D-20（proposal）；它细化 D-05/D-07/D-17，不表示缓存
-已实施、性能已测或离线授权期限已获确认。
+缓存复用规则见已确认的 D-20；它细化 D-05/D-07/D-17。Desktop 原域切片已
+开始实施，性能、完整恢复与离线授权期限仍按证据分别确认。
 
 ## D-01 Search 按需唤起，Chat 是默认落点
 
@@ -386,19 +386,20 @@
 
 ## D-20 缓存由统一读边界持有，内容与授权分别有效
 
-**Status**: proposal
+**Status**: accepted
 **Date**: 2026-10-23
 
 ### Context
 
 **用户场景输入**：长期不变的内容不应在每次搜索时重新获取；输入/退格、
 反复预览、打开后返回和离线恢复需要复用。已有 `client-chat-core` 通过
-`client-storage` 持有原域派生缓存，可复用读侧 ownership；Search 的通用缓存
-尚未实现。安全合同仍要求当前读权，不能由“内容未变”推导“永久可读”。
+`client-storage` 持有原域派生缓存，可复用读侧 ownership。安全合同要求当前
+读权，不能由“内容未变”推导“永久可读”。本期通用缓存及 Desktop 原域
+绑定已落地；其他来源与跨设备仍待接入。
 
 ### Decision
 
-**建议**：headless Search runtime/application 在 contributor 共通读边界
+**决策**：headless Search runtime/application 在 contributor 共通读边界
 统一处理目录、资源投影与短期查询/session 的复用、in-flight 合并及失效，
 正文优先复用原域 read cache。持久派生索引单独持有。静态目录按 revision，
 可变查询按依赖/watermark 与有界新鲜期；内容 validator 与 read-scope/租约

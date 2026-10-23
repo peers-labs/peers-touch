@@ -1,9 +1,6 @@
 // PageDescriptor for the social chat page.
 //
-// `preload: 'idle'` — ChatPage's React tree is heavy (encryption init,
-// store wiring, sub-component theme work), so we mount it during the
-// first idle window after first paint. Subsequent navigations are then
-// pure visibility flips.
+// Chat is the ready landing page. The kernel owns its eager, persistent tree.
 //
 // `keepAlive: 'forever'` matches the legacy KEEP_ALIVE_PAGES semantics:
 // destroying the chat tree on every tab switch loses live P2P state and
@@ -18,7 +15,7 @@ export function registerSocialChatPage(): void {
     id: 'chat',
     title: 'Chat',
     factory: () => <SocialChatPage />,
-    preload: 'idle',
+    preload: 'eager',
     keepAlive: 'forever',
     runtimes: ['messaging', 'social'],
   });

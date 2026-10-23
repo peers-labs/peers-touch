@@ -18,8 +18,6 @@
 
 ```bash
 make run-prototype
-# 或直接跑 shell：
-pnpm --dir packages/prototypes/desktop/shell dev
 ```
 
 ⌘/Ctrl+K 或点击左侧搜索图标唤起；Esc 关闭。
@@ -47,6 +45,7 @@ mock 世界是社交生活语境（好友、兴趣群、徒步/咖啡/胶片、�
 8. **S-08/S-16**：功能直达（隐私与权限、通知与免打扰、身份与站台、新建 Agent）；域内附件随父消息出现，不是文件来源。
 9. **空态**：无命中时明确说明不搜公网与 OS 文件。
 10. 键盘：↑↓ 移动选择（未移动前 Enter 始终提交检索），Enter 打开，Esc 关闭；输入为 combobox 语义并通过 `aria-activedescendant` 归属选中行。
+11. 同账号关闭/返回保留输入、意图、结果与滚动；已完成同词检索在有界 32 项内直接恢复，不重复加载动画。演示账号切换清除这些状态。
 
 ## 视觉与定位合同（本轮修正）
 
@@ -79,6 +78,11 @@ L4 runtime：未做语义树/对比度自动化，UNPROVEN。
 
 ## 已知差异 / 待补
 
+- Desktop 端侧实现只启用本机消息/会话和真实 Settings 功能目录；原型 D/S/F 全对象是目标产品，未接入的来源在生产 footer 明示。Applet 仅预留 binding。
+- 新建 Agent 搜索项打开 Agent 的现有创建入口，实际创建仍由原模块的显式操作触发。通知/免打扰无真实分区，不伪造生产入口。
+- 同账号状态恢复/有界 mock 复用已同步；本轮 `make run-prototype` Portal
+  走查 5 项通过，宽/窄截图已检查。开发证据：`tmp/search-prototype/result.json`
+  与 `01-portal.png`、`02-results.png`、`03-narrow.png`。不替代原生证明。
 - anchor 当前用 toast 表达定位语义；真实产品需在消息流滚动高亮（依赖统一 ResourceResolver，V-01）。
 - Agent「工具调用/任务执行事件」是否独立可搜（定位到 tool-call 而非轮次）仍为待确认范围。
 - 未画：Mobile touch 版本、Ask 回答态、语义模型处理位置的二次授权弹窗、Federation 对端拒绝态。

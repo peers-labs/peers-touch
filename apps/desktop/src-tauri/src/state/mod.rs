@@ -36,13 +36,16 @@ pub struct AppState {
     /// Sole in-process authority for authenticated Desktop sessions.
     pub sessions: WindowSessionRegistry,
     pub search_requests: std::sync::Arc<crate::application::search::requests::SearchRequests>,
-    pub search_cursors: search_core::cursor::authenticated::AuthenticatedCursorCodec,
+    pub search_runtime: std::sync::Arc<crate::application::search::runtime::SearchRuntime>,
+    pub search_cursors: std::sync::Arc<search_core::cursor::authenticated::AuthenticatedCursorCodec>,
 }
 
 impl AppState {
     pub fn new(layout: StorageLayout, i18n: I18nService, station: StationRuntime) -> Self {
         let messaging_engines = EngineRegistry::new(station.client().clone());
         let x_config = XConfigRuntime::new(&layout);
+        let search_runtime = std::sync::Arc::new(crate::application::search::runtime::SearchRuntime::default());
+        let search_identity = search_runtime.clone();
         Self {
             identity_transition: Mutex::new(()),
             settings: Mutex::new(SettingsState::default()),
@@ -53,11 +56,14 @@ impl AppState {
             station,
             messaging_engines,
             secure_content: SecureContentSupervisor::new(),
-            sessions: WindowSessionRegistry::new(),
+            sessions: WindowSessionRegistry::new().with_change_observer(std::sync::Arc::new(
+                move |window| search_identity.invalidate_window(window),
+            )),
             search_requests: Default::default(),
-            search_cursors: search_core::cursor::authenticated::AuthenticatedCursorCodec::new(
+            search_runtime,
+            search_cursors: std::sync::Arc::new(search_core::cursor::authenticated::AuthenticatedCursorCodec::new(
                 rand::random(),
-            ),
+            )),
         }
     }
 }

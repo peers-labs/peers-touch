@@ -1,9 +1,10 @@
 # Search 扩展与接入合同
 
-> **Status**: draft
+> **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Model / Applet Host / Domain Owners
-> 下列接口、ID 和绑定是待确认设计，不是已实现 SDK、API 或已登记能力。
+> 公共读接口及缓存元数据已进入 Model，Desktop Messaging 已接入共享读执行器；
+> Applet/Station/Mobile SDK、传输与接入仍未实施，完整产品证明仍未完成。
 
 ## 1. 扩展目标与边界
 
@@ -27,8 +28,9 @@ Search 是一份逻辑语义合同，在 Client 和 Station 各有执行实例�
 
 ### 2.1 最小公共接口
 
-以下 TypeScript 仅表达逻辑签名；正式类型由同一 Model schema 生成，不是新增
-SDK 或已实现接口：
+以下 TypeScript 表达逻辑签名；正式数据类型从同一 Model schema 生成。
+Rust object-safe 接口位于 `packages/search-core/src/ports.rs`，Desktop 原域
+adapter 位于 `application/search/messaging.rs`。这不表示外源 SDK 已交付：
 
 ```typescript
 interface SearchContributor {
@@ -206,4 +208,10 @@ Search 使用 Agent 既有 provider/runtime 提供理解、embedding、rerank �
 
 已有可复用资产：Model proto-first、Applet manifest/bridge/capability/service、SDK navigation/tasks/Agent、Messaging FTS、Agent connector/knowledge descriptors、身份 runtime 与受保护 storage。
 
-仍需新接入闭环：Search typed schema/SDK、域内附件随父对象授权、跨模块资源打开、source registry projection、统一 query/rank/cursor/coverage、可靠索引更新、Federation 按需查询、来源 conformance（含域外来源拒绝的否定证明）和真实客户端证明。它们是目标合同，不是本次已经实现的能力。
+当前已实现的切片：proto contributor/hydration/validity/ref 合同、单一 Rust 读接口、
+声明/批量回复校验、有界共享缓存、独立 operation/subscriber lifetime，以及
+Desktop Messaging 原域批量读取与 publication guard。原 Messaging 索引没有复制。
+
+仍需新接入闭环：外源 SDK、域内附件正文随父对象授权、其他业务来源、
+Federation 按需查询、完整来源 conformance 与真实客户端证明。这些目标不由
+通用接口或 native 编译通过替代。

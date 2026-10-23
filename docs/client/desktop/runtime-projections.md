@@ -133,7 +133,8 @@ interface RuntimeDescriptor {
 
 - A runtime is the SINGLE owner of one domain's projection store(s). No two runtimes own overlapping fields.
 - `install` runs once at boot. `bootstrap` runs once per `(actorId, runtime)` pair; the registry guards against duplicate concurrent bootstraps via per-runtime sequence numbers.
-- `app`-scope runtimes (search, settings, social, moments) do not depend on the active actor at install time; their data either is identity-independent, is itself the source of truth for the active actor, or observes authenticated actor edges through its own bridge logic.
+- `app`-scope runtimes (settings, social, moments) do not depend on the active actor at install time; their data either is identity-independent, is itself the source of truth for the active actor, or observes authenticated actor edges through its own bridge logic.
+- `search` is session-scoped and boots after Messaging. It owns bounded in-memory query frames, request cancellation and native original-owner read-state reconciliation. The Shell owns one on-demand overlay; no Search page is registered. Identity/session/Station scope transitions clear its projection and cached frames; closing and page navigation preserve same-session query, order, selection and scroll.
 - `session`-scope runtimes are created by registering a descriptor with `scope: 'session'`; the BootPipeline calls their `bootstrap`/`teardown` on the authenticated-actor edge.
 - `agent-chat` is an authenticated-critical session runtime. Its stream consumer and actor-bound recovery projection MUST finish install/bootstrap before Agent turn commands are exposed; otherwise early sequenced events can be observed by the transport but dropped by the recovery owner.
 - `acquirePage` / `releasePage` are optional page-resource lease hooks for dynamic runtime instances. They do not replace `install/bootstrap/reconcile`; they only let the owning runtime acquire or release page-scoped resources when PageHost proves a page needs them.
@@ -208,7 +209,7 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 
 | Page | PageDescriptor | Runtimes | Status |
 |---|---|---|---|
-| `search` | `pages/SearchPage.descriptor.tsx` | `search` | migrated |
+| Search overlay | `components/search/SearchHost.tsx` (Shell overlay slot) | `search` (session) | on-demand; no route |
 | `chat` | `pages/SocialChatPage.descriptor.tsx` | `messaging`, `social` | migrated |
 | `settings` | `pages/SettingsPage.descriptor.tsx` | `settings` | migrated; AI owns Discover and Memory as lazy sections |
 | `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated internal launcher; no primary-nav entry |

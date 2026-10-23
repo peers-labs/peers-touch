@@ -99,7 +99,8 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use zeroize::Zeroizing;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -826,6 +827,27 @@ fn conversation_message_projection_from_row(
 pub struct MessagingStore {
     connection: Mutex<Connection>,
     database_path: Option<PathBuf>,
+    search_changes: Arc<AtomicU64>,
+    search_authority_changes: Arc<AtomicU64>,
+    search_authority_cache: Mutex<Option<(String, Vec<String>)>>,
+}
+
+fn search_store_revision(connection: &Connection, changed: u64) -> Result<String, String> {
+    let external: i64 = connection
+        .query_row("PRAGMA data_version", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    Ok(format!("{changed}:{external}"))
+}
+
+fn search_dependency_table(table: &str) -> bool {
+    matches!(
+        table,
+        "messaging_message_projections"
+            | "messaging_conversations"
+            | "messaging_conversation_members"
+            | "messaging_service_messages"
+            | "messaging_attachment_projections"
+    )
 }
 
 /// One cross-conversation full-text hit. This is the device search D-zone
@@ -836,6 +858,8 @@ pub struct MessagingStore {
 pub struct MessageSearchHit {
     pub conversation_id: String,
     pub message_id: String,
+    pub authority_namespace: String,
+    pub conversation_title: String,
     pub plaintext: String,
     pub sender_ptid: String,
     pub committed_at_unix_ms: i64,
@@ -900,6 +924,188 @@ struct PreparedMessageRedactionPath {
 }
 
 impl MessagingStore {
+    /// Original truth watermark. Content/authority writes invalidate reads;
+    /// inbox, key inventory and housekeeping do not. External commits remain
+    /// conservative because SQLite data_version has no table attribution.
+    pub(super) fn search_revision(&self) -> Result<String, String> {
+        let connection = self.connection()?;
+        search_store_revision(&connection, self.search_changes.load(Ordering::Relaxed))
+    }
+
+    pub(super) fn search_authorities(&self, actor: &str) -> Result<Vec<String>, String> {
+        let connection = self.connection()?;
+        let revision = format!(
+            "{actor}:{}",
+            search_store_revision(
+                &connection,
+                self.search_authority_changes.load(Ordering::Relaxed)
+            )?
+        );
+        let mut cache = self
+            .search_authority_cache
+            .lock()
+            .map_err(|e| e.to_string())?;
+        if let Some((cached_revision, namespaces)) = cache.as_ref() {
+            if cached_revision == &revision {
+                return Ok(namespaces.clone());
+            }
+        }
+        let mut statement = connection
+            .prepare(
+                "SELECT DISTINCT authority_station_id FROM messaging_conversations conversation
+             WHERE authority_station_id <> '' AND conversation.active = 1
+               AND EXISTS (SELECT 1 FROM messaging_conversation_members member
+                 WHERE member.conversation_id = conversation.conversation_id
+                   AND member.ptid = ?1 AND member.active = 1)
+             ORDER BY authority_station_id",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map(params![actor], |row| {
+                row.get::<_, String>(0).map(|id| format!("station:{id}"))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        *cache = Some((revision, rows.clone()));
+        Ok(rows)
+    }
+
+    /// Serialize Search commit/publication with original-domain writes.
+    pub(super) fn with_search_revision<T>(
+        &self,
+        expected: &str,
+        publish: impl FnOnce() -> Result<T, search_core::SearchError>,
+    ) -> Result<T, search_core::SearchError> {
+        let connection = self
+            .connection()
+            .map_err(search_core::SearchError::SourceUnavailable)?;
+        if search_store_revision(&connection, self.search_changes.load(Ordering::Relaxed))
+            .map_err(search_core::SearchError::SourceUnavailable)?
+            != expected
+        {
+            return Err(search_core::SearchError::SourceChanged);
+        }
+        publish()
+    }
+
+    /// One bounded batch read at the original truth. VALUES joins preserve the
+    /// requested authority and container; absent and denied refs merge into
+    /// unavailable at the contributor boundary. Never query per result row.
+    pub(super) fn search_read_resources(
+        &self,
+        refs: &[search_core::ResourceRef],
+        actor: &str,
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<search_core::ScoredDocument>, String> {
+        use search_core::model::TrustZone;
+        use search_core::ResultKind;
+        if refs.is_empty() {
+            return Ok(Vec::new());
+        }
+        if refs.len() > 100 {
+            return Err("search batch exceeds limit".into());
+        }
+        let connection = self.connection()?;
+        check()?;
+        let placeholders = refs
+            .iter()
+            .map(|_| "(?, ?, ?, ?)")
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "WITH requested(kind, id, container, authority) AS (VALUES {placeholders})
+             SELECT requested.kind, requested.id, conversation.conversation_id,
+                    conversation.authority_station_id, conversation.name,
+                    CASE WHEN requested.kind = 'message'
+                         THEN COALESCE(message.edited_text, message.plaintext)
+                           || COALESCE((SELECT char(10) || group_concat(attachment.filename, char(10))
+                               FROM messaging_attachment_projections attachment
+                               WHERE attachment.message_id = message.message_id), '')
+                         ELSE '' END,
+                    COALESCE(message.sender_ptid, ''),
+                    CASE WHEN requested.kind = 'message'
+                         THEN message.committed_at_unix_ms ELSE conversation.updated_at_unix_ms END
+             FROM requested
+             JOIN messaging_conversations conversation
+               ON conversation.conversation_id = requested.container
+              AND 'station:' || conversation.authority_station_id = requested.authority
+             LEFT JOIN messaging_message_projections message
+               ON requested.kind = 'message'
+              AND message.conversation_id = requested.container AND message.message_id = requested.id
+             WHERE conversation.active = 1
+               AND EXISTS (SELECT 1 FROM messaging_conversation_members member
+                 WHERE member.conversation_id = conversation.conversation_id
+                   AND member.ptid = ? AND member.active = 1)
+               AND ((requested.kind = 'conversation' AND requested.id = requested.container)
+                OR (requested.kind = 'message' AND message.retracted = 0
+                    AND message.hidden_for_actor = 0 AND message.moderated = 0
+                    AND NOT EXISTS (SELECT 1 FROM messaging_service_messages service
+                        WHERE service.conversation_id = message.conversation_id
+                          AND service.message_id = message.message_id)))");
+        let mut values: Vec<&str> = refs
+            .iter()
+            .flat_map(|r| {
+                [
+                    r.kind.as_str(),
+                    r.id.as_str(),
+                    r.conversation_id.as_str(),
+                    r.authority_namespace.as_str(),
+                ]
+            })
+            .collect();
+        values.push(actor);
+        let mut statement = connection.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(values), |row| {
+                let kind: String = row.get(0)?;
+                let id: String = row.get(1)?;
+                let conversation_id: String = row.get(2)?;
+                let authority: String = row.get(3)?;
+                let title: String = row.get(4)?;
+                let snippet: String = row.get(5)?;
+                let author: String = row.get(6)?;
+                let timestamp: i64 = row.get(7)?;
+                Ok(search_core::ScoredDocument {
+                    resource: search_core::ResourceRef {
+                        kind: kind.clone(),
+                        id: id.clone(),
+                        conversation_id,
+                        message_id: if kind == "message" {
+                            id.clone()
+                        } else {
+                            String::new()
+                        },
+                        authority_namespace: format!("station:{authority}"),
+                        anchor: (kind == "message").then_some(
+                            search_core::model::wire::ResourceAnchor {
+                                kind: "message".into(),
+                                id,
+                            },
+                        ),
+                        ..Default::default()
+                    },
+                    kind: if kind == "message" {
+                        ResultKind::Message
+                    } else {
+                        ResultKind::Conversation
+                    },
+                    zone: TrustZone::DeviceE2ee,
+                    title: title.clone(),
+                    conversation_title: title,
+                    snippet: snippet.chars().take(512).collect(),
+                    author_ptid: author,
+                    created_at_unix_ms: timestamp,
+                    score: 0.0,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        check()?;
+        Ok(rows)
+    }
+
     pub fn open(profile_id: &str) -> Result<Self, String> {
         if profile_id.trim().is_empty() {
             return Err("messaging store requires a profile ID".to_string());
@@ -926,9 +1132,36 @@ impl MessagingStore {
         database_path: Option<PathBuf>,
     ) -> Result<Self, String> {
         migrate(&connection)?;
+        let search_changes = Arc::new(AtomicU64::new(0));
+        let changes = search_changes.clone();
+        let search_authority_changes = Arc::new(AtomicU64::new(0));
+        let authority_changes = search_authority_changes.clone();
+        connection.update_hook(Some(move |_, _: &str, table: &str, _| {
+            if search_dependency_table(table) {
+                changes.fetch_add(1, Ordering::Relaxed);
+            }
+            if table == "messaging_conversations" || table == "messaging_conversation_members" {
+                authority_changes.fetch_add(1, Ordering::Relaxed);
+            }
+        }));
+        // SQLITE_IGNORE for DELETE preserves deletion but disables SQLite's
+        // truncate optimization, which would otherwise bypass update_hook.
+        connection.authorizer(Some(|ctx: rusqlite::hooks::AuthContext<'_>| {
+            match ctx.action {
+                rusqlite::hooks::AuthAction::Delete { table_name }
+                    if search_dependency_table(table_name) =>
+                {
+                    rusqlite::hooks::Authorization::Ignore
+                }
+                _ => rusqlite::hooks::Authorization::Allow,
+            }
+        }));
         Ok(Self {
             connection: Mutex::new(connection),
             database_path,
+            search_changes,
+            search_authority_changes,
+            search_authority_cache: Mutex::new(None),
         })
     }
 
@@ -3519,6 +3752,43 @@ impl MessagingStore {
         Ok(rows)
     }
 
+    /// Original-owner read for a historical anchor, including thread ownership.
+    pub(super) fn message_anchor(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        actor: &str,
+    ) -> Result<Option<ConversationMessageProjection>, String> {
+        let connection = self.connection()?;
+        let mut message = connection
+            .query_row(
+                "SELECT message.event_id, message.event_sequence, message.message_id,
+                    message.sender_ptid, message.sender_device_id, message.plaintext,
+                    message.delivery_state, message.committed_at_unix_ms,
+                    message.reply_to_message_id, message.thread_root_message_id,
+                    message.edited_text, message.edited_at_unix_ms, message.retracted,
+                    message.hidden_for_actor, message.moderated, message.moderation_reason_code
+             FROM messaging_message_projections message
+             JOIN messaging_conversations conversation
+               ON conversation.conversation_id = message.conversation_id
+             WHERE message.conversation_id = ?1 AND message.message_id = ?2
+               AND conversation.active = 1
+               AND message.hidden_for_actor = 0 AND message.moderated = 0 AND message.retracted = 0
+               AND EXISTS (SELECT 1 FROM messaging_conversation_members member
+                 WHERE member.conversation_id = conversation.conversation_id
+                   AND member.ptid = ?3 AND member.active = 1)",
+                params![conversation_id, message_id, actor],
+                conversation_message_projection_from_row,
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if let Some(message) = message.as_mut() {
+            message.attachments = load_visible_message_attachments(&connection, message_id)?;
+            message.reactions = load_reactions_for_message(&connection, message_id)?;
+        }
+        Ok(message)
+    }
+
     pub fn conversation_message_page(
         &self,
         conversation_id: &str,
@@ -3997,7 +4267,9 @@ impl MessagingStore {
         before: Option<(i64, &str, &str)>,
         limit: usize,
     ) -> Result<Vec<MessageSearchHit>, String> {
-        self.search_message_hits_page_checked(conversation_id, query, before, limit, &|| Ok(()))
+        self.search_message_hits_page_checked(conversation_id, query, before, limit, None, &|| {
+            Ok(())
+        })
     }
 
     pub fn search_message_hits_page_checked(
@@ -4006,6 +4278,7 @@ impl MessagingStore {
         query: &str,
         before: Option<(i64, &str, &str)>,
         limit: usize,
+        actor: Option<&str>,
         check: &dyn Fn() -> Result<(), String>,
     ) -> Result<Vec<MessageSearchHit>, String> {
         if query.trim().is_empty() || limit == 0 || limit > 101 {
@@ -4020,16 +4293,27 @@ impl MessagingStore {
         let connection = self.connection()?;
         check()?;
         let sql = "SELECT message.conversation_id, message.message_id,
-                          COALESCE(message.edited_text, message.plaintext), message.sender_ptid,
-                          message.committed_at_unix_ms
+                          COALESCE(message.edited_text, message.plaintext)
+                            || COALESCE((SELECT char(10) || group_concat(attachment.filename, char(10))
+                                FROM messaging_attachment_projections attachment
+                                WHERE attachment.message_id = message.message_id), ''),
+                          message.sender_ptid,
+                          message.committed_at_unix_ms, conversation.authority_station_id,
+                          conversation.name
                    FROM messaging_message_search_fts
                    JOIN messaging_message_projections message
                      ON message.conversation_id = messaging_message_search_fts.conversation_id
                     AND message.message_id = messaging_message_search_fts.message_id
+                   JOIN messaging_conversations conversation
+                     ON conversation.conversation_id = message.conversation_id
                    WHERE messaging_message_search_fts MATCH ?1
                      AND message.retracted = 0
                      AND message.hidden_for_actor = 0
                      AND message.moderated = 0
+                     AND (?7 = '' OR (conversation.active = 1
+                       AND EXISTS (SELECT 1 FROM messaging_conversation_members member
+                         WHERE member.conversation_id = conversation.conversation_id
+                           AND member.ptid = ?7 AND member.active = 1)))
                      AND NOT EXISTS (
                          SELECT 1 FROM messaging_service_messages service
                          WHERE service.conversation_id = message.conversation_id
@@ -4054,7 +4338,8 @@ impl MessagingStore {
                     timestamp,
                     message_id,
                     conversation,
-                    i64::try_from(limit).map_err(|_| "messaging search limit exceeds i64")?
+                    i64::try_from(limit).map_err(|_| "messaging search limit exceeds i64")?,
+                    actor.unwrap_or("")
                 ],
                 |row| {
                     Ok(MessageSearchHit {
@@ -4063,6 +4348,8 @@ impl MessagingStore {
                         plaintext: row.get(2)?,
                         sender_ptid: row.get(3)?,
                         committed_at_unix_ms: row.get(4)?,
+                        authority_namespace: format!("station:{}", row.get::<_, String>(5)?),
+                        conversation_title: row.get(6)?,
                     })
                 },
             )
@@ -4075,45 +4362,49 @@ impl MessagingStore {
     /// Name-only suggestions: no member or message hydration, stop as soon
     /// as enough matching names have been found.
     pub fn suggest_conversation_names(
-        &self, query: &str, limit: usize, check: &dyn Fn() -> Result<(), String>,
-    ) -> Result<Vec<(String, String, i64)>, String> {
+        &self,
+        query: &str,
+        limit: usize,
+        actor: &str,
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<(String, String, i64, String)>, String> {
         let connection = self.connection()?;
         check()?;
         let needle = query.trim().to_lowercase();
-        let mut statement = connection.prepare(
-            "SELECT conversation_id, name, updated_at_unix_ms
-             FROM messaging_conversations ORDER BY conversation_id",
-        ).map_err(|error| error.to_string())?;
-        let mut rows = statement.query([]).map_err(|error| error.to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT conversation_id, name, updated_at_unix_ms, authority_station_id
+             FROM messaging_conversations conversation
+             WHERE conversation.active = 1
+               AND EXISTS (SELECT 1 FROM messaging_conversation_members member
+                 WHERE member.conversation_id = conversation.conversation_id
+                   AND member.ptid = ?1 AND member.active = 1)
+             ORDER BY conversation.updated_at_unix_ms DESC, conversation.conversation_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let mut rows = statement
+            .query(params![actor])
+            .map_err(|error| error.to_string())?;
         let mut names = Vec::new();
         while let Some(row) = rows.next().map_err(|error| error.to_string())? {
             check()?;
             let name: String = row.get(1).map_err(|error| error.to_string())?;
-            if name.to_lowercase().contains(&needle) {
-                names.push((row.get(0).map_err(|error| error.to_string())?, name,
-                    row.get(2).map_err(|error| error.to_string())?));
-                if names.len() >= limit { break; }
+            if needle.is_empty() || name.to_lowercase().contains(&needle) {
+                names.push((
+                    row.get(0).map_err(|error| error.to_string())?,
+                    name,
+                    row.get(2).map_err(|error| error.to_string())?,
+                    format!(
+                        "station:{}",
+                        row.get::<_, String>(3).map_err(|e| e.to_string())?
+                    ),
+                ));
+                if names.len() >= limit {
+                    break;
+                }
             }
         }
         Ok(names)
-    }
-
-    /// Resolve one conversation's display name; None when the conversation
-    /// is not present locally. Used by device search to title message hits.
-    pub fn conversation_title(
-        &self, conversation_id: &str, check: &dyn Fn() -> Result<(), String>,
-    ) -> Result<Option<String>, String> {
-        let connection = self.connection()?;
-        check()?;
-        let exists = connection
-            .query_row(
-                "SELECT name FROM messaging_conversations WHERE conversation_id = ?1",
-                params![conversation_id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(|error| error.to_string())?;
-        Ok(exists)
     }
 
     pub fn conversation_projections(&self) -> Result<Vec<ConversationProjection>, String> {
@@ -7248,8 +7539,12 @@ impl MessagingStore {
                     "UPDATE messaging_message_projections
                      SET edited_text = ?1, edited_at_unix_ms = ?2
                      WHERE message_id = ?3 AND conversation_id = ?4",
-                    params![input.edited_text, input.edited_at_unix_ms,
-                            input.message_id, input.conversation_id],
+                    params![
+                        input.edited_text,
+                        input.edited_at_unix_ms,
+                        input.message_id,
+                        input.conversation_id
+                    ],
                 )
                 .map_err(|error| error.to_string())?;
             if changed == 0 {
@@ -7646,7 +7941,9 @@ impl MessagingStore {
                         )
                         .map_err(|error| error.to_string())?;
                     refresh_message_search_index(
-                        transaction, input.conversation_id, input.message_id,
+                        transaction,
+                        input.conversation_id,
+                        input.message_id,
                     )?;
                 }
                 InteractionMutation::Retract | InteractionMutation::HideForActor => {
@@ -13929,33 +14226,47 @@ fn refresh_message_search_index(
     conversation_id: &str,
     message_id: &str,
 ) -> Result<(), String> {
-    transaction.execute(
-        "DELETE FROM messaging_message_search_fts
+    transaction
+        .execute(
+            "DELETE FROM messaging_message_search_fts
          WHERE conversation_id = ?1 AND message_id = ?2",
-        params![conversation_id, message_id],
-    ).map_err(|error| error.to_string())?;
-    let text = transaction.query_row(
-        "SELECT COALESCE(edited_text, plaintext) FROM messaging_message_projections
+            params![conversation_id, message_id],
+        )
+        .map_err(|error| error.to_string())?;
+    let text = transaction
+        .query_row(
+            "SELECT COALESCE(edited_text, plaintext) FROM messaging_message_projections
          WHERE conversation_id = ?1 AND message_id = ?2
            AND retracted = 0 AND hidden_for_actor = 0 AND moderated = 0",
-        params![conversation_id, message_id],
-        |row| row.get::<_, String>(0),
-    ).optional().map_err(|error| error.to_string())?;
+            params![conversation_id, message_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
     if let Some(text) = text {
         let filenames = load_attachment_metadata(transaction, message_id)?
-            .into_iter().map(|a| a.filename).collect::<Vec<_>>().join("\n");
-        transaction.execute(
-            "INSERT INTO messaging_message_search_fts
+            .into_iter()
+            .map(|a| a.filename)
+            .collect::<Vec<_>>()
+            .join("\n");
+        transaction
+            .execute(
+                "INSERT INTO messaging_message_search_fts
              (conversation_id, message_id, plaintext, attachment_filenames)
              VALUES (?1, ?2, ?3, ?4)",
-            params![conversation_id, message_id, fts_index_text(&text),
-                    fts_index_text(&filenames)],
-        ).map_err(|error| error.to_string())?;
+                params![
+                    conversation_id,
+                    message_id,
+                    fts_index_text(&text),
+                    fts_index_text(&filenames)
+                ],
+            )
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
 
-/// Segment text before writing it into a generation-2 FTS content column.
+/// Segment text at the original Messaging FTS write boundary.
 fn fts_index_text(text: &str) -> String {
     search_core::build_index_text(text)
 }
@@ -20868,21 +21179,39 @@ mod tests {
         let store = MessagingStore::in_memory().unwrap();
         for n in 0..120 {
             insert_generation_two_message(
-                &store, &format!("conversation-{n:03}"), &format!("event-{n:03}"),
-                1, &format!("message-{n:03}"), "完整分页 corpus", "", 100,
+                &store,
+                &format!("conversation-{n:03}"),
+                &format!("event-{n:03}"),
+                1,
+                &format!("message-{n:03}"),
+                "完整分页 corpus",
+                "",
+                100,
             );
         }
-        let first = store.search_message_hits_page(None, "分页", None, 101).unwrap();
+        let first = store
+            .search_message_hits_page(None, "分页", None, 101)
+            .unwrap();
         assert_eq!(first.len(), 101);
         let boundary = &first[99];
-        let second = store.search_message_hits_page(
-            None, "分页",
-            Some((boundary.committed_at_unix_ms, &boundary.message_id, &boundary.conversation_id)),
-            101,
-        ).unwrap();
+        let second = store
+            .search_message_hits_page(
+                None,
+                "分页",
+                Some((
+                    boundary.committed_at_unix_ms,
+                    &boundary.message_id,
+                    &boundary.conversation_id,
+                )),
+                101,
+            )
+            .unwrap();
         assert_eq!(second.len(), 20);
-        let ids = first[..100].iter().chain(&second)
-            .map(|hit| (&hit.conversation_id, &hit.message_id)).collect::<HashSet<_>>();
+        let ids = first[..100]
+            .iter()
+            .chain(&second)
+            .map(|hit| (&hit.conversation_id, &hit.message_id))
+            .collect::<HashSet<_>>();
         assert_eq!(ids.len(), 120);
     }
 
@@ -20890,7 +21219,14 @@ mod tests {
     fn search_kana_punctuation_never_becomes_an_empty_required_fts_phrase() {
         let store = MessagingStore::in_memory().unwrap();
         insert_generation_two_message(
-            &store, "kana", "kana-event", 1, "kana-message", "ア・イ", "", 100,
+            &store,
+            "kana",
+            "kana-event",
+            1,
+            "kana-message",
+            "ア・イ",
+            "",
+            100,
         );
         let hits = store.search_message_hits(None, "ア・イ", 20).unwrap();
         assert_eq!(hits.len(), 1);
@@ -20901,19 +21237,40 @@ mod tests {
     fn search_device_e2ee_page_excludes_service_plaintext_before_limiting() {
         let store = MessagingStore::in_memory().unwrap();
         insert_generation_two_message(
-            &store, "normal", "event-normal", 1, "message-normal", "设备消息", "", 100,
+            &store,
+            "normal",
+            "event-normal",
+            1,
+            "message-normal",
+            "设备消息",
+            "",
+            100,
         );
         insert_generation_two_message(
-            &store, "service", "event-service", 1, "message-service", "设备消息", "", 200,
+            &store,
+            "service",
+            "event-service",
+            1,
+            "message-service",
+            "设备消息",
+            "",
+            200,
         );
-        store.connection().unwrap().execute(
-            "INSERT INTO messaging_service_messages
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_service_messages
              (conversation_id, event_id, event_sequence, message_id, sender_ptid,
               sender_device_id, fallback_text, committed_at_unix_ms)
              VALUES ('service', 'event-service', 1, 'message-service',
-                     'ptid:service', 'service', '设备消息', 200)", [],
-        ).unwrap();
-        let hits = store.search_message_hits_page(None, "设备消息", None, 1).unwrap();
+                     'ptid:service', 'service', '设备消息', 200)",
+                [],
+            )
+            .unwrap();
+        let hits = store
+            .search_message_hits_page(None, "设备消息", None, 1)
+            .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].message_id, "message-normal");
     }

@@ -18,7 +18,7 @@
 - **accepted_direction**：一份协议、两级执行、可替换索引 adapter；本期仅 Desktop D 区。产品预算、完整中文检索质量和 Agent 模型调用闭环仍待基线验证。
 - **unproven**：域内附件提取覆盖、模型 embedding/rerank 的公共调用闭环、全域 batch read-policy、Federation 按需查询、Search 原生 Journey 与性能。不得凭 SDK 方法名或行业实现补全。
 
-架构 active 表示边界有效。D01–D02 源码已落地，D03 为限定 native 实现，D04–D06 与完整产品 Journey 未完成；[执行计划](./execution-plans/20261022-device-search-find-open/plan.md) 明确当前切片和未证明范围。后续章节的 S/F、语义与 contributor 设计是目标合同，不冒充已部署能力。
+架构 active 表示边界有效。Desktop D01–D06 源码已接通，当前原生 Journey 尚在验证；[执行计划](./execution-plans/20261022-device-search-find-open/plan.md) 明确当前切片和未证明范围。后续章节的 S/F、语义与其他 contributor 是目标合同，不冒充已部署能力。
 
 ## 1. 原则与所有权
 

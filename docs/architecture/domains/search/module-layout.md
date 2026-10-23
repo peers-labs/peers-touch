@@ -3,7 +3,7 @@
 > **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Client / Station
-> Desktop D01–D02 已落地，D03 有限定能力的 native 实现；其余目录仅表示后续 owner，不表示实现或验收完成。
+> Desktop D01–D06 源码闭包及原生开发功能检查已完成。Station/Mobile/Ask/Applet 接入及正式 Acceptance 仍是后续范围。
 
 ## 1. 领域边界
 
@@ -16,16 +16,25 @@ model/domain/search/search.proto      查询/结果/ResourceRef 协议源
 packages/search-core/src/
   tokenize.rs / query.rs              CJK/拉丁分词、索引文本与 MATCH 表达式
   ranking.rs / cursor.rs              RRF 融合与游标机制
-  model.rs / ports.rs                 候选投影、查询 port 与 CancelToken
+  model.rs / ports.rs                 候选投影、统一 Contributor 与 operation ctx
+  contributor.rs                     注册/候选/批量 outcome 协议校验
+  cache.rs                           共享读取、内存额度、subscriber 与失效屏障
 apps/desktop/src/gen/proto/domain/search/search_pb.ts
                                       生成的 Renderer 协议类型
 apps/desktop/src-tauri/src/
   messaging/store.rs                 原 Messaging SQLCipher/FTS5 读写 owner
   messaging/engine.rs                消息检索与会话名称候选适配
-  application/search/mod.rs           本机查询聚合
-  interface/tauri_commands/search.rs  suggest/submit/cancel native 入口
+  application/search/runtime.rs       统一原域读取、身份/Store publication guard
+  application/search/messaging.rs     Messaging query/hydrate/resolve adapter
+  interface/tauri_commands/search.rs  suggest/submit/cancel/resolve/read-state 入口
   application/search/requests.rs      window/account/request ID 取消生命周期
   interface/http_gateway/mod.rs       拒绝未鉴权的私有 Search 调用
+apps/desktop/src/
+  services/search.ts                  生成协议到 native IPC 的薄适配
+  runtimes/searchRuntime.ts           session 缓存、取消、原 owner 状态核对
+  store/search.ts                     输入/结果/选择/滚动投影
+  components/search/                  singleton overlay 与受信任功能目录
+  messaging/openResource.ts           原 Messaging 会话/历史/线程定位
 ```
 
 FTS 表形继续由 Messaging 统一持有。Desktop 的写入和查询共用 `search-core` 分词；无搜索 schema generation、版本元数据或启动迁移。Mobile 不消费 `search-core`，其既有写入/查询保持原行为。
@@ -34,16 +43,16 @@ FTS 表形继续由 Messaging 统一持有。Desktop 的写入和查询共用 `s
 
 `build.rs` 通过 prost 生成 `search.proto` 的 Rust 类型；`model.rs`
 重导出生成的枚举与 ResourceRef，仅 scored candidate 属于内部投影。
-Native IPC 使用生成 Request/Response 的 protobuf bytes。Submit 当前仅支持
-DEVICE/FIND/MESSAGE 和按时间、消息 ID、会话 ID 的 keyset 分页；其他控件
-明确失败。Suggest 支持会话、消息和两者的 RRF 建议。取消由账号和窗口限定，
-每次 binding 变更递增的 session revision 阻止 A→B→A 旧结果发布。
-完整混合结果分页、所有来源 coverage 和锁定 Journey 仍未证明，D03 保持 PARTIAL。
+Native IPC 使用生成 Request/Response 的 protobuf bytes。Submit 当前支持
+DEVICE/FIND/MESSAGE（keyset 分页）及会话名称；Suggest 给会话优先和消息候选。
+cancel 只关闭调用者订阅，最后订阅者退出才中止 operation；同词查询和资源
+投影各按语义键复用，身份变化主动失效对应窗口分区。binding session revision
+阻止 A→B→A 旧结果发布，原 Store 水位 guard 串行裁决缓存提交与响应发布。
+分页绑定原来源快照，后续页保留首次查询到期点。
+完整混合结果分页、所有来源 coverage 和锁定 Journey 仍未证明。
 
 后续实现位置：
 
-- **Shell / Renderer**：D04 singleton overlay 与有界查询投影；D04B 删除 `SearchPage`、旧 `searchRuntime` 和搜索商 store/命令；D04C 由 Shell Resource Resolver 打开消息 anchor。
-- **功能目录**：D05 接真实模块 action/eligibility；D06 物理删除 ToolsTab 搜索商配置链。
 - **Station**：一个 Search application/subserver 执行 S/F 区协议并适配原领域读权。尚未建立，不通过 RPC 调用客户端 Rust core。
 - **Mobile**：未来 native adapter 消费共享核心，UI 仅维护输入/选中/滚动投影；当前没有 Search 核心消费或新 UI。
 - **Applet / Agent**：沿现有 SDK、Host 和 evidence owner 接入；本期没有 contributor/Ask 实现。
@@ -71,7 +80,7 @@ Search core 不依赖 Messaging store、Tauri、UI、Go subserver 或特定模�
 
 来源/结果类型由 Model 或已登记 schema 生成；SDK、native、Station 不各自复制手写模型。UI 的展示 model 是明确的投影，不能重新定义权限与 canonical ID。
 
-旧 `application/search` 成功空 stub 和旧搜索页面仍是 D04B 的待删除范围，与新命令无适配关系。D04B 按 [integration.md](./integration.md) 同批删除旧 TS 消费者和 native 命令；D06 删除搜索商配置。Station Launcher mock 属 Station 后续范围，不得作为本机搜索 fallback。
+旧 SearchPage、来源/AI store、四个成功空 native stub、双份旧 DTO 与 ToolsTab 搜索商配置链已经物理删除。`searchRuntime` 名称保留给唯一 session owner，其旧 app-scope 实现已替换。Settings 帮助使用受信任静态目录。Station Launcher mock 属 Station 后续范围，不得作为本机搜索 fallback。
 
 Search 架构及共享核心在原 registry 登记。当前 Runtime、UI alive policy 和正式 Acceptance 的未实施范围保持显式；架构登记不授予已删除路径或尚未实施 adapter 权限。
 

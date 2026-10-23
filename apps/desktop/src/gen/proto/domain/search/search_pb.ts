@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/search/search.proto.
  */
 export const file_domain_search_search: GenFile = /*@__PURE__*/
-  fileDesc("Chpkb21haW4vc2VhcmNoL3NlYXJjaC5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxImkKC1Jlc291cmNlUmVmEgwKBGtpbmQYASABKAkSCgoCaWQYAiABKAkSFwoPY29udmVyc2F0aW9uX2lkGAMgASgJEhIKCm1lc3NhZ2VfaWQYBCABKAkSEwoLdGFyZ2V0X3BhZ2UYBSABKAkieQoOU3VnZ2VzdFJlcXVlc3QSDQoFcXVlcnkYASABKAkSNQoEa2luZBgCIAEoDjInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hLaW5kEg0KBWxpbWl0GAMgASgFEhIKCnJlcXVlc3RfaWQYBCABKAki/AEKDVN1Ym1pdFJlcXVlc3QSDQoFcXVlcnkYASABKAkSOQoGaW50ZW50GAIgASgOMikucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaEludGVudBI1CgRraW5kGAMgASgOMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaEtpbmQSNwoFc2NvcGUYBCABKA4yKC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU2VhcmNoU2NvcGUSDgoGY3Vyc29yGAUgASgJEg0KBWxpbWl0GAYgASgFEhIKCnJlcXVlc3RfaWQYByABKAkiIwoNQ2FuY2VsUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJIrICCgpSZXN1bHRJdGVtEjoKCHJlc291cmNlGAEgASgLMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlc291cmNlUmVmEjUKBGtpbmQYAiABKA4yJy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU2VhcmNoS2luZBI1CgR6b25lGAMgASgOMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaFpvbmUSDQoFdGl0bGUYBCABKAkSDwoHc25pcHBldBgFIAEoCRIaChJjb252ZXJzYXRpb25fdGl0bGUYBiABKAkSEwoLYXV0aG9yX3B0aWQYByABKAkSGgoSY3JlYXRlZF9hdF91bml4X21zGAggASgDEg0KBXNjb3JlGAkgASgBInAKDlNvdXJjZUNvdmVyYWdlEhEKCXNvdXJjZV9pZBgBIAEoCRI3CgVzdGF0ZRgCIAEoDjIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Tb3VyY2VTdGF0ZRISCgpkZXRhaWxfa2V5GAMgASgJIq4BCg5TZWFyY2hSZXNwb25zZRI2CgVpdGVtcxgBIAMoCzInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZXN1bHRJdGVtEhMKC25leHRfY3Vyc29yGAIgASgJEhAKCGhhc19tb3JlGAMgASgIEj0KCGNvdmVyYWdlGAQgAygLMisucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNvdXJjZUNvdmVyYWdlIjcKDkNhbmNlbFJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSEQoJY2FuY2VsbGVkGAIgASgIKl0KDFNlYXJjaEludGVudBIdChlTRUFSQ0hfSU5URU5UX1VOU1BFQ0lGSUVEEAASFgoSU0VBUkNIX0lOVEVOVF9GSU5EEAESFgoSU0VBUkNIX0lOVEVOVF9PUEVOEAIq/QEKClNlYXJjaEtpbmQSGwoXU0VBUkNIX0tJTkRfVU5TUEVDSUZJRUQQABIWChJTRUFSQ0hfS0lORF9QRVJTT04QARIcChhTRUFSQ0hfS0lORF9DT05WRVJTQVRJT04QAhIXChNTRUFSQ0hfS0lORF9NRVNTQUdFEAMSGwoXU0VBUkNIX0tJTkRfU09DSUFMX1BPU1QQBBIVChFTRUFSQ0hfS0lORF9BR0VOVBAFEhkKFVNFQVJDSF9LSU5EX0tOT1dMRURHRRAGEhoKFlNFQVJDSF9LSU5EX0FUVEFDSE1FTlQQBxIYChRTRUFSQ0hfS0lORF9GVU5DVElPThAIKnsKClNlYXJjaFpvbmUSGwoXU0VBUkNIX1pPTkVfVU5TUEVDSUZJRUQQABIbChdTRUFSQ0hfWk9ORV9ERVZJQ0VfRTJFRRABEhcKE1NFQVJDSF9aT05FX1NUQVRJT04QAhIaChZTRUFSQ0hfWk9ORV9GRURFUkFUSU9OEAMqewoLU2VhcmNoU2NvcGUSHAoYU0VBUkNIX1NDT1BFX1VOU1BFQ0lGSUVEEAASFwoTU0VBUkNIX1NDT1BFX0RFVklDRRABEhgKFFNFQVJDSF9TQ09QRV9TVEFUSU9OEAISGwoXU0VBUkNIX1NDT1BFX0ZFREVSQVRJT04QAyqWAQoLU291cmNlU3RhdGUSHAoYU09VUkNFX1NUQVRFX1VOU1BFQ0lGSUVEEAASFgoSU09VUkNFX1NUQVRFX1JFQURZEAESGAoUU09VUkNFX1NUQVRFX1BBUlRJQUwQAhIcChhTT1VSQ0VfU1RBVEVfVU5BVkFJTEFCTEUQAxIZChVTT1VSQ0VfU1RBVEVfSU5ERVhJTkcQBCr9AQoPU2VhcmNoRXJyb3JDb2RlEiEKHVNFQVJDSF9FUlJPUl9DT0RFX1VOU1BFQ0lGSUVEEAASMQotU0VBUkNIX0VSUk9SX0NPREVfU0NPUEVfT1VUU0lERV9TRUFSQ0hfRE9NQUlOEAESIwofU0VBUkNIX0VSUk9SX0NPREVfSU5WQUxJRF9RVUVSWRACEh8KG1NFQVJDSF9FUlJPUl9DT0RFX0NBTkNFTExFRBADEigKJFNFQVJDSF9FUlJPUl9DT0RFX1NPVVJDRV9VTkFWQUlMQUJMRRAEEiQKIFNFQVJDSF9FUlJPUl9DT0RFX0NVUlNPUl9FWFBJUkVEEAViBnByb3RvMw");
+  fileDesc("Chpkb21haW4vc2VhcmNoL3NlYXJjaC5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxIt0BCgtSZXNvdXJjZVJlZhIMCgRraW5kGAEgASgJEgoKAmlkGAIgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgDIAEoCRISCgptZXNzYWdlX2lkGAQgASgJEhMKC3RhcmdldF9wYWdlGAUgASgJEhsKE2F1dGhvcml0eV9uYW1lc3BhY2UYBiABKAkSGAoQY29udGVudF9yZXZpc2lvbhgHIAEoCRI7CgZhbmNob3IYCCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUmVzb3VyY2VBbmNob3IiKgoOUmVzb3VyY2VBbmNob3ISDAoEa2luZBgBIAEoCRIKCgJpZBgCIAEoCSL6AQobU2VhcmNoQ29udHJpYnV0b3JEZXNjcmlwdG9yEhEKCXNvdXJjZV9pZBgBIAEoCRIVCg1vd25pbmdfbW9kdWxlGAIgASgJEhwKFGF1dGhvcml0eV9uYW1lc3BhY2VzGAMgAygJEjYKBWtpbmRzGAQgAygOMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaEtpbmQSEgoKYmluZGluZ19pZBgFIAEoCRIbChNkZXNjcmlwdG9yX3JldmlzaW9uGAYgASgJEhcKD3N1cHBvcnRzX3BhZ2luZxgHIAEoCBIRCgltYXhfYmF0Y2gYCCABKA0i4AEKC1F1ZXJ5SW50ZW50EgwKBHRleHQYASABKAkSNQoEa2luZBgCIAEoDjInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hLaW5kEjcKBXNjb3BlGAMgASgOMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaFNjb3BlEg0KBWxpbWl0GAQgASgNEg4KBmN1cnNvchgFIAEoCRIOCgZsb2NhbGUYBiABKAkSEwoLc3VnZ2VzdGlvbnMYByABKAgSDwoHcmVmcmVzaBgIIAEoCCJiCg9Tb3VyY2VDYW5kaWRhdGUSOgoIcmVzb3VyY2UYASABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUmVzb3VyY2VSZWYSEwoLc291cmNlX3JhbmsYAiABKAEidgoMUmVhZFZhbGlkaXR5EhIKCnJlYWRfc2NvcGUYASABKAkSFwoPcG9saWN5X3JldmlzaW9uGAIgASgJEhsKE2xlYXNlX3VudGlsX3VuaXhfbXMYAyABKAMSHAoUb3duZXJfY2hlY2tfcmVxdWlyZWQYBCABKAgitAEKDUNhY2hlTWV0YWRhdGESEQoJdmFsaWRhdG9yGAEgASgJEhcKD3NvdXJjZV9yZXZpc2lvbhgCIAEoCRIjChtjb250ZW50X2ZyZXNoX3VudGlsX3VuaXhfbXMYAyABKAMSQAoNcmVhZF92YWxpZGl0eRgEIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZWFkVmFsaWRpdHkSEAoIbm9fc3RvcmUYBSABKAgi+QEKClNvdXJjZVBhZ2USQAoKY2FuZGlkYXRlcxgBIAMoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Tb3VyY2VDYW5kaWRhdGUSEwoLbmV4dF9jdXJzb3IYAiABKAkSPQoIY292ZXJhZ2UYAyABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU291cmNlQ292ZXJhZ2USOQoFY2FjaGUYBCABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuQ2FjaGVNZXRhZGF0YRIaChJleHBpcmVzX2F0X3VuaXhfbXMYBSABKAMiswEKDUh5ZHJhdGlvbkl0ZW0SDwoHaXRlbV9pZBgBIAEoCRI6CghyZXNvdXJjZRgCIAEoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZXNvdXJjZVJlZhI8CgZmaWVsZHMYAyADKA4yLC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUHJvamVjdGlvbkZpZWxkEhcKD2tub3duX3ZhbGlkYXRvchgEIAEoCSJeChBIeWRyYXRpb25SZXF1ZXN0EjkKBWl0ZW1zGAEgAygLMioucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLkh5ZHJhdGlvbkl0ZW0SDwoHcmVmcmVzaBgCIAEoCCLIAQoUQXV0aG9yaXplZFByb2plY3Rpb24SNwoGcmVzdWx0GAEgASgLMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlc3VsdEl0ZW0SPAoGZmllbGRzGAIgAygOMiwucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlByb2plY3Rpb25GaWVsZBI5CgVjYWNoZRgDIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5DYWNoZU1ldGFkYXRhIqEBChNVbmNoYW5nZWRQcm9qZWN0aW9uEhEKCXZhbGlkYXRvchgBIAEoCRI8CgZmaWVsZHMYAiADKA4yLC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUHJvamVjdGlvbkZpZWxkEjkKBWNhY2hlGAMgASgLMioucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLkNhY2hlTWV0YWRhdGEiFQoTVW5hdmFpbGFibGVSZXNvdXJjZSIPCg1SZXRyeWFibGVSZWFkIsUCChBIeWRyYXRpb25PdXRjb21lEg8KB2l0ZW1faWQYASABKAkSRAoHY2hhbmdlZBgCIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5BdXRob3JpemVkUHJvamVjdGlvbkgAEkUKCXVuY2hhbmdlZBgDIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5VbmNoYW5nZWRQcm9qZWN0aW9uSAASRwoLdW5hdmFpbGFibGUYBCABKAsyMC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuVW5hdmFpbGFibGVSZXNvdXJjZUgAEj8KCXJldHJ5YWJsZRgFIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZXRyeWFibGVSZWFkSABCCQoHb3V0Y29tZSJRCg5IeWRyYXRpb25SZXBseRI/CghvdXRjb21lcxgBIAMoCzItLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5IeWRyYXRpb25PdXRjb21lIqMBChBSZXNvbHZlZFJlc291cmNlEjoKCHJlc291cmNlGAEgASgLMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlc291cmNlUmVmEhgKEHJlc29sdmVyX2JpbmRpbmcYAiABKAkSOQoFY2FjaGUYAyABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuQ2FjaGVNZXRhZGF0YSJgCg5SZXNvbHZlUmVxdWVzdBI6CghyZXNvdXJjZRgBIAEoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZXNvdXJjZVJlZhISCgpyZXF1ZXN0X2lkGAIgASgJIj4KD1NlYXJjaFJlYWRTdGF0ZRIXCg9zb3VyY2VfcmV2aXNpb24YASABKAkSEgoKcmVhZF9zY29wZRgCIAEoCSJ5Cg5TdWdnZXN0UmVxdWVzdBINCgVxdWVyeRgBIAEoCRI1CgRraW5kGAIgASgOMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaEtpbmQSDQoFbGltaXQYAyABKAUSEgoKcmVxdWVzdF9pZBgEIAEoCSKdAgoNU3VibWl0UmVxdWVzdBINCgVxdWVyeRgBIAEoCRI5CgZpbnRlbnQYAiABKA4yKS5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU2VhcmNoSW50ZW50EjUKBGtpbmQYAyABKA4yJy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU2VhcmNoS2luZBI3CgVzY29wZRgEIAEoDjIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hTY29wZRIOCgZjdXJzb3IYBSABKAkSDQoFbGltaXQYBiABKAUSEgoKcmVxdWVzdF9pZBgHIAEoCRIOCgZsb2NhbGUYCCABKAkSDwoHcmVmcmVzaBgJIAEoCCIjCg1DYW5jZWxSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkisgIKClJlc3VsdEl0ZW0SOgoIcmVzb3VyY2UYASABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUmVzb3VyY2VSZWYSNQoEa2luZBgCIAEoDjInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hLaW5kEjUKBHpvbmUYAyABKA4yJy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU2VhcmNoWm9uZRINCgV0aXRsZRgEIAEoCRIPCgdzbmlwcGV0GAUgASgJEhoKEmNvbnZlcnNhdGlvbl90aXRsZRgGIAEoCRITCgthdXRob3JfcHRpZBgHIAEoCRIaChJjcmVhdGVkX2F0X3VuaXhfbXMYCCABKAMSDQoFc2NvcmUYCSABKAEicAoOU291cmNlQ292ZXJhZ2USEQoJc291cmNlX2lkGAEgASgJEjcKBXN0YXRlGAIgASgOMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNvdXJjZVN0YXRlEhIKCmRldGFpbF9rZXkYAyABKAkipQIKDlNlYXJjaFJlc3BvbnNlEjYKBWl0ZW1zGAEgAygLMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlc3VsdEl0ZW0SEwoLbmV4dF9jdXJzb3IYAiABKAkSEAoIaGFzX21vcmUYAyABKAgSPQoIY292ZXJhZ2UYBCADKAsyKy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU291cmNlQ292ZXJhZ2USGgoSZXhwaXJlc19hdF91bml4X21zGAUgASgDEkAKDXJlYWRfdmFsaWRpdHkYBiABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUmVhZFZhbGlkaXR5EhcKD3NvdXJjZV9yZXZpc2lvbhgHIAEoCSI3Cg5DYW5jZWxSZXNwb25zZRISCgpyZXF1ZXN0X2lkGAEgASgJEhEKCWNhbmNlbGxlZBgCIAEoCCpdCgxTZWFyY2hJbnRlbnQSHQoZU0VBUkNIX0lOVEVOVF9VTlNQRUNJRklFRBAAEhYKElNFQVJDSF9JTlRFTlRfRklORBABEhYKElNFQVJDSF9JTlRFTlRfT1BFThACKv0BCgpTZWFyY2hLaW5kEhsKF1NFQVJDSF9LSU5EX1VOU1BFQ0lGSUVEEAASFgoSU0VBUkNIX0tJTkRfUEVSU09OEAESHAoYU0VBUkNIX0tJTkRfQ09OVkVSU0FUSU9OEAISFwoTU0VBUkNIX0tJTkRfTUVTU0FHRRADEhsKF1NFQVJDSF9LSU5EX1NPQ0lBTF9QT1NUEAQSFQoRU0VBUkNIX0tJTkRfQUdFTlQQBRIZChVTRUFSQ0hfS0lORF9LTk9XTEVER0UQBhIaChZTRUFSQ0hfS0lORF9BVFRBQ0hNRU5UEAcSGAoUU0VBUkNIX0tJTkRfRlVOQ1RJT04QCCp7CgpTZWFyY2hab25lEhsKF1NFQVJDSF9aT05FX1VOU1BFQ0lGSUVEEAASGwoXU0VBUkNIX1pPTkVfREVWSUNFX0UyRUUQARIXChNTRUFSQ0hfWk9ORV9TVEFUSU9OEAISGgoWU0VBUkNIX1pPTkVfRkVERVJBVElPThADKnsKC1NlYXJjaFNjb3BlEhwKGFNFQVJDSF9TQ09QRV9VTlNQRUNJRklFRBAAEhcKE1NFQVJDSF9TQ09QRV9ERVZJQ0UQARIYChRTRUFSQ0hfU0NPUEVfU1RBVElPThACEhsKF1NFQVJDSF9TQ09QRV9GRURFUkFUSU9OEAMqlgEKC1NvdXJjZVN0YXRlEhwKGFNPVVJDRV9TVEFURV9VTlNQRUNJRklFRBAAEhYKElNPVVJDRV9TVEFURV9SRUFEWRABEhgKFFNPVVJDRV9TVEFURV9QQVJUSUFMEAISHAoYU09VUkNFX1NUQVRFX1VOQVZBSUxBQkxFEAMSGQoVU09VUkNFX1NUQVRFX0lOREVYSU5HEAQqlQMKD1NlYXJjaEVycm9yQ29kZRIhCh1TRUFSQ0hfRVJST1JfQ09ERV9VTlNQRUNJRklFRBAAEjEKLVNFQVJDSF9FUlJPUl9DT0RFX1NDT1BFX09VVFNJREVfU0VBUkNIX0RPTUFJThABEiMKH1NFQVJDSF9FUlJPUl9DT0RFX0lOVkFMSURfUVVFUlkQAhIfChtTRUFSQ0hfRVJST1JfQ09ERV9DQU5DRUxMRUQQAxIoCiRTRUFSQ0hfRVJST1JfQ09ERV9TT1VSQ0VfVU5BVkFJTEFCTEUQBBIkCiBTRUFSQ0hfRVJST1JfQ09ERV9DVVJTT1JfRVhQSVJFRBAFEiQKIFNFQVJDSF9FUlJPUl9DT0RFX1NPVVJDRV9USU1FT1VUEAYSHgoaU0VBUkNIX0VSUk9SX0NPREVfUFJPVE9DT0wQBxIqCiZTRUFSQ0hfRVJST1JfQ09ERV9SRVNPVVJDRV9VTkFWQUlMQUJMRRAIEiQKIFNFQVJDSF9FUlJPUl9DT0RFX1NPVVJDRV9DSEFOR0VEEAkqUAoPUHJvamVjdGlvbkZpZWxkEiAKHFBST0pFQ1RJT05fRklFTERfVU5TUEVDSUZJRUQQABIbChdQUk9KRUNUSU9OX0ZJRUxEX1JFU1VMVBABYgZwcm90bzM");
 
 /**
  * Canonical address of one searchable object. kind/id identify the object;
@@ -46,6 +46,23 @@ export type ResourceRef = Message<"peers_touch.model.search.v1.ResourceRef"> & {
    * @generated from field: string target_page = 5;
    */
   targetPage: string;
+
+  /**
+   * Stable data authority, independent of device, package and runtime session.
+   *
+   * @generated from field: string authority_namespace = 6;
+   */
+  authorityNamespace: string;
+
+  /**
+   * @generated from field: string content_revision = 7;
+   */
+  contentRevision: string;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.ResourceAnchor anchor = 8;
+   */
+  anchor?: ResourceAnchor | undefined;
 };
 
 /**
@@ -54,6 +71,543 @@ export type ResourceRef = Message<"peers_touch.model.search.v1.ResourceRef"> & {
  */
 export const ResourceRefSchema: GenMessage<ResourceRef> = /*@__PURE__*/
   messageDesc(file_domain_search_search, 0);
+
+/**
+ * @generated from message peers_touch.model.search.v1.ResourceAnchor
+ */
+export type ResourceAnchor = Message<"peers_touch.model.search.v1.ResourceAnchor"> & {
+  /**
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string id = 2;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.ResourceAnchor.
+ * Use `create(ResourceAnchorSchema)` to create a new message.
+ */
+export const ResourceAnchorSchema: GenMessage<ResourceAnchor> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 1);
+
+/**
+ * The binding is resolved by the host. It is neither an endpoint nor a grant.
+ *
+ * @generated from message peers_touch.model.search.v1.SearchContributorDescriptor
+ */
+export type SearchContributorDescriptor = Message<"peers_touch.model.search.v1.SearchContributorDescriptor"> & {
+  /**
+   * @generated from field: string source_id = 1;
+   */
+  sourceId: string;
+
+  /**
+   * @generated from field: string owning_module = 2;
+   */
+  owningModule: string;
+
+  /**
+   * @generated from field: repeated string authority_namespaces = 3;
+   */
+  authorityNamespaces: string[];
+
+  /**
+   * @generated from field: repeated peers_touch.model.search.v1.SearchKind kinds = 4;
+   */
+  kinds: SearchKind[];
+
+  /**
+   * @generated from field: string binding_id = 5;
+   */
+  bindingId: string;
+
+  /**
+   * @generated from field: string descriptor_revision = 6;
+   */
+  descriptorRevision: string;
+
+  /**
+   * @generated from field: bool supports_paging = 7;
+   */
+  supportsPaging: boolean;
+
+  /**
+   * @generated from field: uint32 max_batch = 8;
+   */
+  maxBatch: number;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.SearchContributorDescriptor.
+ * Use `create(SearchContributorDescriptorSchema)` to create a new message.
+ */
+export const SearchContributorDescriptorSchema: GenMessage<SearchContributorDescriptor> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 2);
+
+/**
+ * @generated from message peers_touch.model.search.v1.QueryIntent
+ */
+export type QueryIntent = Message<"peers_touch.model.search.v1.QueryIntent"> & {
+  /**
+   * @generated from field: string text = 1;
+   */
+  text: string;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.SearchKind kind = 2;
+   */
+  kind: SearchKind;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.SearchScope scope = 3;
+   */
+  scope: SearchScope;
+
+  /**
+   * @generated from field: uint32 limit = 4;
+   */
+  limit: number;
+
+  /**
+   * @generated from field: string cursor = 5;
+   */
+  cursor: string;
+
+  /**
+   * @generated from field: string locale = 6;
+   */
+  locale: string;
+
+  /**
+   * @generated from field: bool suggestions = 7;
+   */
+  suggestions: boolean;
+
+  /**
+   * Read requirement, excluded from semantic cache identity.
+   *
+   * @generated from field: bool refresh = 8;
+   */
+  refresh: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.QueryIntent.
+ * Use `create(QueryIntentSchema)` to create a new message.
+ */
+export const QueryIntentSchema: GenMessage<QueryIntent> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 3);
+
+/**
+ * @generated from message peers_touch.model.search.v1.SourceCandidate
+ */
+export type SourceCandidate = Message<"peers_touch.model.search.v1.SourceCandidate"> & {
+  /**
+   * @generated from field: peers_touch.model.search.v1.ResourceRef resource = 1;
+   */
+  resource?: ResourceRef | undefined;
+
+  /**
+   * @generated from field: double source_rank = 2;
+   */
+  sourceRank: number;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.SourceCandidate.
+ * Use `create(SourceCandidateSchema)` to create a new message.
+ */
+export const SourceCandidateSchema: GenMessage<SourceCandidate> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 4);
+
+/**
+ * Content and authority are independent. No lease means the original owner
+ * must check each publication; successful content validation grants no access.
+ *
+ * @generated from message peers_touch.model.search.v1.ReadValidity
+ */
+export type ReadValidity = Message<"peers_touch.model.search.v1.ReadValidity"> & {
+  /**
+   * @generated from field: string read_scope = 1;
+   */
+  readScope: string;
+
+  /**
+   * @generated from field: string policy_revision = 2;
+   */
+  policyRevision: string;
+
+  /**
+   * @generated from field: int64 lease_until_unix_ms = 3;
+   */
+  leaseUntilUnixMs: bigint;
+
+  /**
+   * @generated from field: bool owner_check_required = 4;
+   */
+  ownerCheckRequired: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.ReadValidity.
+ * Use `create(ReadValiditySchema)` to create a new message.
+ */
+export const ReadValiditySchema: GenMessage<ReadValidity> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 5);
+
+/**
+ * @generated from message peers_touch.model.search.v1.CacheMetadata
+ */
+export type CacheMetadata = Message<"peers_touch.model.search.v1.CacheMetadata"> & {
+  /**
+   * @generated from field: string validator = 1;
+   */
+  validator: string;
+
+  /**
+   * @generated from field: string source_revision = 2;
+   */
+  sourceRevision: string;
+
+  /**
+   * @generated from field: int64 content_fresh_until_unix_ms = 3;
+   */
+  contentFreshUntilUnixMs: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.ReadValidity read_validity = 4;
+   */
+  readValidity?: ReadValidity | undefined;
+
+  /**
+   * @generated from field: bool no_store = 5;
+   */
+  noStore: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.CacheMetadata.
+ * Use `create(CacheMetadataSchema)` to create a new message.
+ */
+export const CacheMetadataSchema: GenMessage<CacheMetadata> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 6);
+
+/**
+ * @generated from message peers_touch.model.search.v1.SourcePage
+ */
+export type SourcePage = Message<"peers_touch.model.search.v1.SourcePage"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.search.v1.SourceCandidate candidates = 1;
+   */
+  candidates: SourceCandidate[];
+
+  /**
+   * @generated from field: string next_cursor = 2;
+   */
+  nextCursor: string;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.SourceCoverage coverage = 3;
+   */
+  coverage?: SourceCoverage | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.CacheMetadata cache = 4;
+   */
+  cache?: CacheMetadata | undefined;
+
+  /**
+   * All continuations preserve the original session expiry.
+   *
+   * @generated from field: int64 expires_at_unix_ms = 5;
+   */
+  expiresAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.SourcePage.
+ * Use `create(SourcePageSchema)` to create a new message.
+ */
+export const SourcePageSchema: GenMessage<SourcePage> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 7);
+
+/**
+ * @generated from message peers_touch.model.search.v1.HydrationItem
+ */
+export type HydrationItem = Message<"peers_touch.model.search.v1.HydrationItem"> & {
+  /**
+   * @generated from field: string item_id = 1;
+   */
+  itemId: string;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.ResourceRef resource = 2;
+   */
+  resource?: ResourceRef | undefined;
+
+  /**
+   * @generated from field: repeated peers_touch.model.search.v1.ProjectionField fields = 3;
+   */
+  fields: ProjectionField[];
+
+  /**
+   * @generated from field: string known_validator = 4;
+   */
+  knownValidator: string;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.HydrationItem.
+ * Use `create(HydrationItemSchema)` to create a new message.
+ */
+export const HydrationItemSchema: GenMessage<HydrationItem> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 8);
+
+/**
+ * @generated from message peers_touch.model.search.v1.HydrationRequest
+ */
+export type HydrationRequest = Message<"peers_touch.model.search.v1.HydrationRequest"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.search.v1.HydrationItem items = 1;
+   */
+  items: HydrationItem[];
+
+  /**
+   * @generated from field: bool refresh = 2;
+   */
+  refresh: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.HydrationRequest.
+ * Use `create(HydrationRequestSchema)` to create a new message.
+ */
+export const HydrationRequestSchema: GenMessage<HydrationRequest> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 9);
+
+/**
+ * @generated from message peers_touch.model.search.v1.AuthorizedProjection
+ */
+export type AuthorizedProjection = Message<"peers_touch.model.search.v1.AuthorizedProjection"> & {
+  /**
+   * @generated from field: peers_touch.model.search.v1.ResultItem result = 1;
+   */
+  result?: ResultItem | undefined;
+
+  /**
+   * @generated from field: repeated peers_touch.model.search.v1.ProjectionField fields = 2;
+   */
+  fields: ProjectionField[];
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.CacheMetadata cache = 3;
+   */
+  cache?: CacheMetadata | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.AuthorizedProjection.
+ * Use `create(AuthorizedProjectionSchema)` to create a new message.
+ */
+export const AuthorizedProjectionSchema: GenMessage<AuthorizedProjection> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 10);
+
+/**
+ * @generated from message peers_touch.model.search.v1.UnchangedProjection
+ */
+export type UnchangedProjection = Message<"peers_touch.model.search.v1.UnchangedProjection"> & {
+  /**
+   * @generated from field: string validator = 1;
+   */
+  validator: string;
+
+  /**
+   * @generated from field: repeated peers_touch.model.search.v1.ProjectionField fields = 2;
+   */
+  fields: ProjectionField[];
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.CacheMetadata cache = 3;
+   */
+  cache?: CacheMetadata | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.UnchangedProjection.
+ * Use `create(UnchangedProjectionSchema)` to create a new message.
+ */
+export const UnchangedProjectionSchema: GenMessage<UnchangedProjection> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 11);
+
+/**
+ * No sensitive resource/title is included in unavailable or retryable.
+ *
+ * @generated from message peers_touch.model.search.v1.UnavailableResource
+ */
+export type UnavailableResource = Message<"peers_touch.model.search.v1.UnavailableResource"> & {
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.UnavailableResource.
+ * Use `create(UnavailableResourceSchema)` to create a new message.
+ */
+export const UnavailableResourceSchema: GenMessage<UnavailableResource> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 12);
+
+/**
+ * @generated from message peers_touch.model.search.v1.RetryableRead
+ */
+export type RetryableRead = Message<"peers_touch.model.search.v1.RetryableRead"> & {
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.RetryableRead.
+ * Use `create(RetryableReadSchema)` to create a new message.
+ */
+export const RetryableReadSchema: GenMessage<RetryableRead> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 13);
+
+/**
+ * @generated from message peers_touch.model.search.v1.HydrationOutcome
+ */
+export type HydrationOutcome = Message<"peers_touch.model.search.v1.HydrationOutcome"> & {
+  /**
+   * @generated from field: string item_id = 1;
+   */
+  itemId: string;
+
+  /**
+   * @generated from oneof peers_touch.model.search.v1.HydrationOutcome.outcome
+   */
+  outcome: {
+    /**
+     * @generated from field: peers_touch.model.search.v1.AuthorizedProjection changed = 2;
+     */
+    value: AuthorizedProjection;
+    case: "changed";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.search.v1.UnchangedProjection unchanged = 3;
+     */
+    value: UnchangedProjection;
+    case: "unchanged";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.search.v1.UnavailableResource unavailable = 4;
+     */
+    value: UnavailableResource;
+    case: "unavailable";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.search.v1.RetryableRead retryable = 5;
+     */
+    value: RetryableRead;
+    case: "retryable";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.HydrationOutcome.
+ * Use `create(HydrationOutcomeSchema)` to create a new message.
+ */
+export const HydrationOutcomeSchema: GenMessage<HydrationOutcome> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 14);
+
+/**
+ * @generated from message peers_touch.model.search.v1.HydrationReply
+ */
+export type HydrationReply = Message<"peers_touch.model.search.v1.HydrationReply"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.search.v1.HydrationOutcome outcomes = 1;
+   */
+  outcomes: HydrationOutcome[];
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.HydrationReply.
+ * Use `create(HydrationReplySchema)` to create a new message.
+ */
+export const HydrationReplySchema: GenMessage<HydrationReply> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 15);
+
+/**
+ * @generated from message peers_touch.model.search.v1.ResolvedResource
+ */
+export type ResolvedResource = Message<"peers_touch.model.search.v1.ResolvedResource"> & {
+  /**
+   * @generated from field: peers_touch.model.search.v1.ResourceRef resource = 1;
+   */
+  resource?: ResourceRef | undefined;
+
+  /**
+   * Host allowlisted resolver identity, never a URL, path or script.
+   *
+   * @generated from field: string resolver_binding = 2;
+   */
+  resolverBinding: string;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.CacheMetadata cache = 3;
+   */
+  cache?: CacheMetadata | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.ResolvedResource.
+ * Use `create(ResolvedResourceSchema)` to create a new message.
+ */
+export const ResolvedResourceSchema: GenMessage<ResolvedResource> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 16);
+
+/**
+ * @generated from message peers_touch.model.search.v1.ResolveRequest
+ */
+export type ResolveRequest = Message<"peers_touch.model.search.v1.ResolveRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.search.v1.ResourceRef resource = 1;
+   */
+  resource?: ResourceRef | undefined;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.ResolveRequest.
+ * Use `create(ResolveRequestSchema)` to create a new message.
+ */
+export const ResolveRequestSchema: GenMessage<ResolveRequest> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 17);
+
+/**
+ * Local original-owner reconciliation. This checks state, not search content.
+ *
+ * @generated from message peers_touch.model.search.v1.SearchReadState
+ */
+export type SearchReadState = Message<"peers_touch.model.search.v1.SearchReadState"> & {
+  /**
+   * @generated from field: string source_revision = 1;
+   */
+  sourceRevision: string;
+
+  /**
+   * @generated from field: string read_scope = 2;
+   */
+  readScope: string;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.SearchReadState.
+ * Use `create(SearchReadStateSchema)` to create a new message.
+ */
+export const SearchReadStateSchema: GenMessage<SearchReadState> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 18);
 
 /**
  * Local suggestion request: exact objects available on the device without a
@@ -90,7 +644,7 @@ export type SuggestRequest = Message<"peers_touch.model.search.v1.SuggestRequest
  * Use `create(SuggestRequestSchema)` to create a new message.
  */
 export const SuggestRequestSchema: GenMessage<SuggestRequest> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 1);
+  messageDesc(file_domain_search_search, 19);
 
 /**
  * @generated from message peers_touch.model.search.v1.SubmitRequest
@@ -132,6 +686,16 @@ export type SubmitRequest = Message<"peers_touch.model.search.v1.SubmitRequest">
    * @generated from field: string request_id = 7;
    */
   requestId: string;
+
+  /**
+   * @generated from field: string locale = 8;
+   */
+  locale: string;
+
+  /**
+   * @generated from field: bool refresh = 9;
+   */
+  refresh: boolean;
 };
 
 /**
@@ -139,7 +703,7 @@ export type SubmitRequest = Message<"peers_touch.model.search.v1.SubmitRequest">
  * Use `create(SubmitRequestSchema)` to create a new message.
  */
 export const SubmitRequestSchema: GenMessage<SubmitRequest> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 2);
+  messageDesc(file_domain_search_search, 20);
 
 /**
  * @generated from message peers_touch.model.search.v1.CancelRequest
@@ -156,7 +720,7 @@ export type CancelRequest = Message<"peers_touch.model.search.v1.CancelRequest">
  * Use `create(CancelRequestSchema)` to create a new message.
  */
 export const CancelRequestSchema: GenMessage<CancelRequest> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 3);
+  messageDesc(file_domain_search_search, 21);
 
 /**
  * @generated from message peers_touch.model.search.v1.ResultItem
@@ -218,7 +782,7 @@ export type ResultItem = Message<"peers_touch.model.search.v1.ResultItem"> & {
  * Use `create(ResultItemSchema)` to create a new message.
  */
 export const ResultItemSchema: GenMessage<ResultItem> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 4);
+  messageDesc(file_domain_search_search, 22);
 
 /**
  * @generated from message peers_touch.model.search.v1.SourceCoverage
@@ -247,7 +811,7 @@ export type SourceCoverage = Message<"peers_touch.model.search.v1.SourceCoverage
  * Use `create(SourceCoverageSchema)` to create a new message.
  */
 export const SourceCoverageSchema: GenMessage<SourceCoverage> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 5);
+  messageDesc(file_domain_search_search, 23);
 
 /**
  * @generated from message peers_touch.model.search.v1.SearchResponse
@@ -272,6 +836,21 @@ export type SearchResponse = Message<"peers_touch.model.search.v1.SearchResponse
    * @generated from field: repeated peers_touch.model.search.v1.SourceCoverage coverage = 4;
    */
   coverage: SourceCoverage[];
+
+  /**
+   * @generated from field: int64 expires_at_unix_ms = 5;
+   */
+  expiresAtUnixMs: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.ReadValidity read_validity = 6;
+   */
+  readValidity?: ReadValidity | undefined;
+
+  /**
+   * @generated from field: string source_revision = 7;
+   */
+  sourceRevision: string;
 };
 
 /**
@@ -279,7 +858,7 @@ export type SearchResponse = Message<"peers_touch.model.search.v1.SearchResponse
  * Use `create(SearchResponseSchema)` to create a new message.
  */
 export const SearchResponseSchema: GenMessage<SearchResponse> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 6);
+  messageDesc(file_domain_search_search, 24);
 
 /**
  * @generated from message peers_touch.model.search.v1.CancelResponse
@@ -301,7 +880,7 @@ export type CancelResponse = Message<"peers_touch.model.search.v1.CancelResponse
  * Use `create(CancelResponseSchema)` to create a new message.
  */
 export const CancelResponseSchema: GenMessage<CancelResponse> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 7);
+  messageDesc(file_domain_search_search, 25);
 
 /**
  * What the user is trying to do. FIND retrieves content; OPEN resolves a
@@ -535,6 +1114,26 @@ export enum SearchErrorCode {
    * @generated from enum value: SEARCH_ERROR_CODE_CURSOR_EXPIRED = 5;
    */
   CURSOR_EXPIRED = 5,
+
+  /**
+   * @generated from enum value: SEARCH_ERROR_CODE_SOURCE_TIMEOUT = 6;
+   */
+  SOURCE_TIMEOUT = 6,
+
+  /**
+   * @generated from enum value: SEARCH_ERROR_CODE_PROTOCOL = 7;
+   */
+  PROTOCOL = 7,
+
+  /**
+   * @generated from enum value: SEARCH_ERROR_CODE_RESOURCE_UNAVAILABLE = 8;
+   */
+  RESOURCE_UNAVAILABLE = 8,
+
+  /**
+   * @generated from enum value: SEARCH_ERROR_CODE_SOURCE_CHANGED = 9;
+   */
+  SOURCE_CHANGED = 9,
 }
 
 /**
@@ -542,3 +1141,24 @@ export enum SearchErrorCode {
  */
 export const SearchErrorCodeSchema: GenEnum<SearchErrorCode> = /*@__PURE__*/
   enumDesc(file_domain_search_search, 5);
+
+/**
+ * @generated from enum peers_touch.model.search.v1.ProjectionField
+ */
+export enum ProjectionField {
+  /**
+   * @generated from enum value: PROJECTION_FIELD_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PROJECTION_FIELD_RESULT = 1;
+   */
+  RESULT = 1,
+}
+
+/**
+ * Describes the enum peers_touch.model.search.v1.ProjectionField.
+ */
+export const ProjectionFieldSchema: GenEnum<ProjectionField> = /*@__PURE__*/
+  enumDesc(file_domain_search_search, 6);

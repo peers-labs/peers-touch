@@ -14,7 +14,7 @@ import {
 
 export function useNavigation(router: HashRouter): Navigation {
   const [settingsNav, setSettingsNav] = useState<SettingsNavState>({});
-  const { setPage, setProfilePage } = router;
+  const { setPage } = router;
 
   const navigateTo = useCallback((page: Page) => {
     setPage(page);
@@ -43,29 +43,6 @@ export function useNavigation(router: HashRouter): Navigation {
     setSettingsNav({ tab, highlightId });
     setPage('settings');
   }, [setPage]);
-
-  const handleSearchNavigate = useCallback((url: string) => {
-    if (url.startsWith('/chat')) {
-      const params = new URLSearchParams(url.split('?')[1] || '');
-      const sessionKey = params.get('session');
-      if (sessionKey) {
-        useChatStore.getState().selectSession(sessionKey);
-      }
-      setPage('agent');
-    } else if (url.startsWith('/agent-profile/')) {
-      const agentName = decodeURIComponent(url.split('/agent-profile/')[1] || '');
-      if (agentName) setProfilePage(agentName);
-    } else if (url.startsWith('/notes/') || url.startsWith('/pages/')) {
-      setPage(DEFAULT_READY_PAGE);
-    } else if (url.startsWith('/settings')) {
-      const params = new URLSearchParams(url.split('?')[1] || '');
-      setSettingsNav({
-        tab: params.get('tab') || undefined,
-        highlightId: params.get('id') || undefined,
-      });
-      setPage('settings');
-    }
-  }, [setPage, setProfilePage]);
 
   useEffect(() => {
     const unsubscribe = eventBus.subscribe(EVENT.NAVIGATION_REQUESTED, (parsed) => {
@@ -107,5 +84,5 @@ export function useNavigation(router: HashRouter): Navigation {
     };
   }, [setPage]);
 
-  return { settingsNav, navigateTo, navigateToAgentSurface, navigateToSettings, handleSearchNavigate };
+  return { settingsNav, navigateTo, navigateToAgentSurface, navigateToSettings };
 }

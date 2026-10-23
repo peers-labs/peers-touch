@@ -12,6 +12,8 @@
 //! canonical types. Search is a closed domain (decision D-19): there is no web,
 //! OS-file, or external-connector concept anywhere in this crate.
 
+pub mod cache;
+pub mod contributor;
 pub mod cursor;
 pub mod model;
 pub mod ports;
@@ -22,7 +24,7 @@ pub mod tokenize;
 pub use cursor::{decode_cursor, encode_cursor, CursorError, PageCursor};
 pub use model::{ResourceRef, ResultKind, ScoredDocument, SourceCoverage, SourceStateKind};
 pub use ports::{
-    CancelToken, FunctionCatalogPort, MessageSearchPort, PortPage, PortQuery, SearchError,
+    CancelToken, SearchContributor, SearchError, SearchExecutionContext, SourceFuture,
 };
 pub use query::{build_index_text, build_match_expression, MAX_QUERY_CHARS};
 pub use ranking::reciprocal_rank_fusion;

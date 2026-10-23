@@ -93,22 +93,22 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
   // 用户是否已用方向键/悬停“拿过”光标；未拿取前 Enter 始终提交完整检索。
   const [cursorEngaged, setCursorEngaged] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const scrollTop = useRef(0);
+  const completedQueries = useRef(new Set<string>());
   const loadingTimer = useRef<number | null>(null);
   const openingResult = useRef(false);
 
-  // 每次打开重置为轻量首屏。
+  // 同一账号关闭/返回保持输入、结果与滚动；切换账号撤销旧投影。
   useEffect(() => {
     if (open) {
       const opener = document.activeElement;
       openingResult.current = false;
-      setQuery('');
-      setIntent('all');
-      setKindFilter('all');
-      setSubmitted(false);
       setLoading(false);
-      setActiveIndex(0);
-      setCursorEngaged(false);
-      const t = window.setTimeout(() => inputRef.current?.focus(), 30);
+      const t = window.setTimeout(() => {
+        inputRef.current?.focus();
+        if (bodyRef.current) bodyRef.current.scrollTop = scrollTop.current;
+      }, 30);
       return () => {
         window.clearTimeout(t);
         if (loadingTimer.current) window.clearTimeout(loadingTimer.current);
@@ -152,15 +152,33 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
     setCursorEngaged(false);
   }, [query, intent, kindFilter, actor]);
 
+  useEffect(() => {
+    setQuery('');
+    setSubmitted(false);
+    setLoading(false);
+    scrollTop.current = 0;
+    completedQueries.current.clear();
+    if (loadingTimer.current) window.clearTimeout(loadingTimer.current);
+  }, [actor]);
+
   const runSearch = useCallback(() => {
     if (!query.trim()) return;
     setSubmitted(true);
-    setLoading(true);
     setCursorEngaged(false);
     if (loadingTimer.current) window.clearTimeout(loadingTimer.current);
+    const key = JSON.stringify([actor, query, intent, kindFilter]);
+    if (completedQueries.current.has(key)) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     // 原型用短延时表达真实检索的加载态（partial/coverage 的可见性）。
-    loadingTimer.current = window.setTimeout(() => setLoading(false), 280);
-  }, [query]);
+    loadingTimer.current = window.setTimeout(() => {
+      completedQueries.current.add(key);
+      if (completedQueries.current.size > 32) completedQueries.current.delete(completedQueries.current.values().next().value!);
+      setLoading(false);
+    }, 280);
+  }, [query, actor, intent, kindFilter]);
 
   const openResult = useCallback(
     (item: { targetPage: SearchResult['targetPage']; anchor: string; title: string }) => {
@@ -280,7 +298,8 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
         )}
 
         {/* 结果区（各态共享等高容器，避免切换跳动） */}
-        <div className="search-body" id="search-results-region" role="listbox" style={{ minHeight: MIN_RESULT_HEIGHT }}>
+        <div ref={bodyRef} onScroll={event => { scrollTop.current = event.currentTarget.scrollTop; }}
+          className="search-body" id="search-results-region" role="listbox" style={{ minHeight: MIN_RESULT_HEIGHT }}>
           {loading && <LoadingState />}
 
           {!loading && showInitial && (

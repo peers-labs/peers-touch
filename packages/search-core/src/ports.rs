@@ -10,64 +10,78 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::model::{ResultKind, ScoredDocument, SourceCoverage};
-use crate::PageCursor;
+use crate::model::wire::{
+    HydrationReply, HydrationRequest, QueryIntent, ResolvedResource, ResourceRef,
+    SearchContributorDescriptor, SourcePage,
+};
+use std::future::Future;
+use std::pin::Pin;
+use std::time::Instant;
 
-/// Kind filter applied to a port query.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum KindFilter {
-    #[default]
-    All,
-    Only(ResultKind),
+pub type SourceFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, SearchError>> + Send + 'a>>;
+
+/// Trusted host binding, never supplied by the source or an IPC caller.
+/// Cancellation belongs to the shared operation, not its first subscriber.
+#[derive(Clone)]
+pub struct SearchExecutionContext {
+    pub partition: String,
+    pub read_scope: String,
+    pub binding_revision: String,
+    pub deadline: Instant,
+    pub cancel: CancelToken,
 }
 
-/// Inputs for one port retrieval.
-#[derive(Debug, Clone)]
-pub struct PortQuery {
-    pub raw: String,
-    pub kind: KindFilter,
-    pub limit: u32,
-    pub cursor: Option<PageCursor>,
+impl SearchExecutionContext {
+    pub fn check(&self) -> Result<(), SearchError> {
+        self.cancel.check()?;
+        if Instant::now() >= self.deadline {
+            return Err(SearchError::Timeout);
+        }
+        Ok(())
+    }
 }
 
-/// One page returned by a port.
-#[derive(Debug, Clone, Default)]
-pub struct PortPage {
-    pub documents: Vec<ScoredDocument>,
-    pub coverage: SourceCoverage,
-    pub next_offset: Option<u64>,
-}
-
-/// Port over device-held messaging data (messages, conversations, and
-/// attachment names from the encrypted local FTS projection).
-pub trait MessageSearchPort: Send + Sync {
-    fn search(
-        &self,
-        query: &PortQuery,
-        cancel: &CancelToken,
-    ) -> impl std::future::Future<Output = Result<PortPage, SearchError>> + Send;
-}
-
-/// Port over the trusted function descriptor catalog. Function results are
-/// local navigation and carry [`TrustZone::Unspecified`].
-pub trait FunctionCatalogPort: Send + Sync {
-    fn search(
-        &self,
-        query: &PortQuery,
-        cancel: &CancelToken,
-    ) -> impl std::future::Future<Output = Result<PortPage, SearchError>> + Send;
+/// One object-safe read interface for built-in and future host-bound sources.
+/// No database, UI lifetime, endpoint, Describe or per-source Cancel API.
+pub trait SearchContributor: Send + Sync {
+    fn descriptor(&self) -> &SearchContributorDescriptor;
+    fn query<'a>(
+        &'a self,
+        input: &'a QueryIntent,
+        ctx: &'a SearchExecutionContext,
+    ) -> SourceFuture<'a, SourcePage>;
+    fn hydrate<'a>(
+        &'a self,
+        input: &'a HydrationRequest,
+        ctx: &'a SearchExecutionContext,
+    ) -> SourceFuture<'a, HydrationReply>;
+    fn resolve<'a>(
+        &'a self,
+        resource: &'a ResourceRef,
+        ctx: &'a SearchExecutionContext,
+    ) -> SourceFuture<'a, ResolvedResource>;
 }
 
 /// Cooperative cancellation shared between a request and its port reads.
 #[derive(Clone)]
 pub struct CancelToken {
     cancelled: Arc<AtomicBool>,
+    members: Arc<Vec<CancelToken>>,
 }
 
 impl CancelToken {
     pub fn new() -> Self {
         Self {
             cancelled: Arc::new(AtomicBool::new(false)),
+            members: Arc::new(Vec::new()),
+        }
+    }
+
+    /// A batched backend read continues while any member still has subscribers.
+    pub fn all(members: Vec<CancelToken>) -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+            members: Arc::new(members),
         }
     }
 
@@ -77,6 +91,7 @@ impl CancelToken {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
+            || (!self.members.is_empty() && self.members.iter().all(Self::is_cancelled))
     }
 
     pub fn check(&self) -> Result<(), SearchError> {
@@ -106,6 +121,14 @@ pub enum SearchError {
     SourceUnavailable(String),
     #[error("search cursor expired")]
     CursorExpired,
+    #[error("search source timed out")]
+    Timeout,
+    #[error("search contributor protocol error")]
+    Protocol,
+    #[error("resource unavailable")]
+    ResourceUnavailable,
+    #[error("search source changed")]
+    SourceChanged,
 }
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ const AUTH_CHECK_INTERVAL = 120_000;
 interface GlobalLayoutProps {
   sideNav: ReactNode;
   children: ReactNode;
+  overlay?: ReactNode;
 }
 
 export function OnlineIndicator() {
@@ -164,9 +165,9 @@ export function AuthStatusIndicator() {
   );
 }
 
-export function GlobalLayout({ sideNav, children }: GlobalLayoutProps) {
+export function GlobalLayout({ sideNav, children, overlay }: GlobalLayoutProps) {
   return (
-    <Flexbox style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+    <Flexbox style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}>
       <Flexbox horizontal flex={1} style={{ overflow: 'hidden' }}>
         {sideNav}
         <Flexbox flex={1} style={{ overflow: 'hidden', position: 'relative' }}>
@@ -174,6 +175,7 @@ export function GlobalLayout({ sideNav, children }: GlobalLayoutProps) {
         </Flexbox>
       </Flexbox>
       <GlobalOperationTray />
+      {overlay}
     </Flexbox>
   );
 }

@@ -3,11 +3,11 @@
 > **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Client / Station
-> **Review state**: 封闭域与 Desktop「找回 + 打开」方向已确认；D01–D02 已落地，D03 为限定 native 实现，生产覆盖层及 D04–D06 尚未完成。
+> **Review state**: Desktop D01–D06 源码闭包已落地；原生「找回 + 打开」与缓存开发检查通过。Search Acceptance 已接入并通过结构与源码合同校验；尚无正式原生 E2E PASS。
 
 ## 范围
 
-Search 的目标是按需唤起的统一搜索入口，**检索宇宙封闭在 Peers-Touch 域内**：端上私密对象、Station 业务对象以及联邦授权上下文中可见的对端对象，并只返回当前 actor 当前有权限读取的内容；另含域内功能直达。公网搜索、Peers 之外的 OS 文件/目录、外部 connector 不属于检索域（决策 D-19）。本期只实施 Desktop 本机消息「找回 + 打开」；Station、联邦、Mobile 与 Ask 后置。Chat 默认落点和 singleton Search overlay 是已确认的目标，当前生产导航仍待 D04/D04B 替换。
+Search 的目标是按需唤起的统一搜索入口，**检索宇宙封闭在 Peers-Touch 域内**：端上私密对象、Station 业务对象以及联邦授权上下文中可见的对端对象，并只返回当前 actor 当前有权限读取的内容；另含域内功能直达。公网搜索、Peers 之外的 OS 文件/目录、外部 connector 不属于检索域（决策 D-19）。本期实施 Desktop 本机消息「找回 + 打开」；Station、联邦、Mobile 与 Ask 后置。生产导航已切为 Chat 默认落点和 singleton Search overlay。
 
 它拥有检索产品与派生索引合同，不拥有 Chat、Social、Agent、Note、Applet 或附件存储的业务真源和写操作。门户、建议快捷搜索和模块内检索共享查询、内容类型、权限与打开语义。各模块是否可搜、哪些字段可搜、内容属于 D/S/F 哪个信任区、撤权/删除如何生效，必须通过内容接入协议声明。
 
@@ -31,6 +31,7 @@ Search 的目标是按需唤起的统一搜索入口，**检索宇宙封闭在 P
 10. [目标架构图](./architecture-diagram.md)：D/S/F 信任区、两级执行、四级权限链与否定边界。
 11. [原型（confirmed）](./prototype/README.md)：唯一 Desktop Shell 内的封闭域 Search 覆盖层，Owner 已于 2026-10-22 用户层确认。
 12. [执行计划：Desktop 端侧「找回 + 打开」](./execution-plans/20261022-device-search-find-open/plan.md)（SRCH-20261022，实现中；Station S/F 区、联邦、Mobile、Ask 属后续计划）。
+13. [Desktop Search Acceptance](./acceptance.md)：专用 Feature/Gates、连续原生 Journey、证据与授权边界。
 
 ## 当前设计位置
 
@@ -42,24 +43,29 @@ AI 模型执行可行，但当前 E5 中文问题检索英文/混合文档前五
 
 通用 contributor 保持 descriptor 与 query/hydrate/resolve 三个读方法；未来
 外源 adapter 留 binding 位置，具体 Applet SDK/部署/委托不是当前设计门槛。
-D-20 缓存方案仍为 proposal：目录按版本复用，资源沿原域缓存，查询与返回
-状态短期持有；内容与读权独立有效。新增合同尚未修改 proto、SDK 或运行代码，
-有效命中零次来源/正文读取是验收要求，不是已测产品指标。
+D-20 已接通 proto、Rust core/native 与 renderer：目录按版本复用，授权资源
+投影与查询帧有界保留；内容与读权独立有效。原生探针确认重复查询、重开、
+退格恢复零次来源读取，显式刷新进入真源；不同查询复用已读资源。
 
 hydrate 的统一批量请求/响应明确未变、允许投影、不可用与可恢复失败；
 读权到期主动关闭已展示内容，payload 淘汰不解除在途操作失效屏障。
 排序 session 可被符合当前授权的新 subscriber 复用，旧 intent 取消不连带
-取消其他 subscriber，cursor 保持原到期点。上述均为目标合同与 V-10 证明义务。
+取消其他 subscriber，cursor 保持原到期点。共享缓存机制有独立 conformance
+探针，Desktop 会话失效与分页有原生证明；其他来源的完整 V-10 仍未证明。
 
-当前源码已有 `model/domain/search/search.proto`、`packages/search-core`、Desktop CJK 分词直写 FTS 与跨会话查询，以及 `search_suggest/search_submit/search_cancel` native 命令。共享 FTS 表形未改，无搜索 generation/meta 表、迁移钩子或兼容索引。原有数据不会在启动时自动重分词；新写入与业务恢复投影直接使用新分词。
+当前源码已有 `model/domain/search/search.proto`、`packages/search-core`、Desktop CJK 分词直写 FTS 与跨会话查询，以及 `search_suggest/search_submit/search_cancel/search_resolve/search_read_state` native 命令。共享 FTS 表形未改，无搜索 generation/meta 表、迁移钩子或兼容索引。原有数据不会在启动时自动重分词；新写入与业务恢复投影直接使用新分词。
 
-D04/D04B 生产覆盖层与旧页面/命令删除、D04C 全局 ResourceRef 打开、D05 功能目录、D06 ToolsTab 搜索商链清理尚未完成。现有会话内搜索可复用新的分词查询；其截图不证明全局覆盖层已交付。端侧执行 DTO、请求取消及 coverage 仍须与 proto 和生命周期合同逐项核对，不以目录存在证明合同全部闭环。
+D04/D04B singleton 覆盖层与旧页面/命令删除、D04C ResourceRef 消息定位、
+D05 真实功能目录、D06 ToolsTab 搜索商链清理均已落地。当前原生检查包含
+中文查询、结果打开还焦、返回、设置直达、重载、非法资源与退出重登。
+本轮原生结果与截图保存在 worktree 的 `tmp/search-native/`，仅为开发证据。
 
-当前 native 命令使用生成的 protobuf bytes；Submit 只接受 DEVICE/FIND/MESSAGE，
-支持消息 keyset 分页，其他 scope、intent 和 kind 明确拒绝。Suggest 支持消息、
-会话与 RRF 建议；取消按窗口/账号/request ID 管理，session revision 与 Engine
+当前 native 命令使用生成的 protobuf bytes；Submit 只接受 DEVICE/FIND，
+支持本机消息 keyset 分页与会话名读取，其他 scope/intent/不支持的 kind 拒绝。
+Suggest 使用会话名和消息候选，消息按时间顺序；RRF 是核心资产，本期单来源
+不宣称混合排序质量。取消按窗口/账号/request ID 管理，session revision 与 Engine
 身份校验阻止失效结果发布。未鉴权 HTTP gateway 拒绝私有 Search。
-完整混合检索与 coverage 生命周期仍是 D03 的未完成范围。
+其他来源、完整混合检索与跨设备未运行；正式原生 Acceptance 尚未证明。
 
 ## 相关真源
 
