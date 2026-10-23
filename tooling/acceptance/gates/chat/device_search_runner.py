@@ -85,7 +85,7 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def wait_js(self, expression: str, description: str, timeout: float = 30) -> Any:
         return wait_until(
-            lambda: self.receiver.execute_script(f"return ({expression});"),
+            lambda: self.receiver.execute_script(f"return Boolean({expression});"),
             description, timeout=timeout,
         )
 
