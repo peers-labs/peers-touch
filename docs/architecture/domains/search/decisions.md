@@ -402,8 +402,11 @@
 统一处理目录、资源投影与短期查询/session 的复用、in-flight 合并及失效，
 正文优先复用原域 read cache。持久派生索引单独持有。静态目录按 revision，
 可变查询按依赖/watermark 与有界新鲜期；内容 validator 与 read-scope/租约
-分别有效。三个读方法保持 `query/hydrate/resolve`，只在 typed envelope 留
-可选 validator、字段和缓存限制，不增加缓存 RPC。
+分别有效。三个读方法保持 `query/hydrate/resolve`，hydrate 使用统一批量
+请求/outcome；逐项 validator/字段在请求、读取结论在响应，不增加缓存 RPC。
+headless runtime 主动使已展示投影在读权到期时失效。可淘汰 payload 不拥有
+在途失效屏障；内部排序 session 与 subscriber lifetime 分开，operation
+仅在最后 subscriber 退出、来源失效或底层预算到期时取消。
 
 ### Rationale
 
@@ -420,7 +423,8 @@
 ### Consequences
 
 **代价**：统一 wrapper 需维护依赖失效、分区/字节限额、订阅者取消和独立读取
-有效性。原域未提供可靠变更或租约时保守重读/拒绝私密旧值，不能为命中率
+有效性，以及有界 operation 失效标记、session continuation 串行推进和读权
+expiry 调度。原域未提供可靠变更或租约时保守重读/拒绝私密旧值，不能为命中率
 放宽读权。容量淘汰允许增加读取，离线授权政策由原 authority 决定。
 S-18/V-10 是目标证明；性能、缓存参数和真实产品恢复均 UNPROVEN。测量若表明
 缓存维护成本超过重复读取收益，可调整具体缓存角色与额度，不能改变授权边界。

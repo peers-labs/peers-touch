@@ -151,6 +151,23 @@ Model/TypeScript/Rust/Go 的 query intent、resource、source state 和 rank cha
   字段及 D 区明文不进入错误 storage/Station/provider。短期恢复不启用持久
   搜索词历史，重启仍进入 Chat。
 
+交叉序列必须覆盖：
+
+- 同一 hydrate 批次包含 changed、unchanged、unavailable 和 retryable；
+  outcome 与请求项一一关联。缺项/重复/额外项是协议错误，不写不存在负缓存；
+  无 payload 的 unchanged 不形成空正文，内容未变不单独续权。
+- 页面静止且无新请求、隐藏后恢复、设备休眠跨 read expiry、时钟变化和
+  policy stream gap；已展示私密内容按当前读权主动遮蔽，恢复前校验。
+  content index gap 与权限不确定分开，离线许可只沿原 owner 合同。
+- 旧读在途→delete/hidden/revoke→payload/负缓存 LRU 淘汰→取消未及时生效的
+  响应返回；operation 失效屏障不被淘汰，直接查询 adapter 同样不复活。
+- Q1 第一页→换词→同词 Q2 命中→Q1 取消→Q2 翻页；分页归属有效 session，
+  发布归属 Q2。两个入口保持独立浏览位置，continuation/已发集合串行推进，
+  不重复、不混快照、不延长原 expiry。
+- 两个 subscriber 共用读时，首个取消或 deadline 到达只 detach 它；
+  最后退出、source 失效或底层预算到期才取消 operation ctx。新 attach
+  不恢复旧 operation 的提交资格。
+
 证据包含真实客户端恢复/遮蔽、原对象 receiver 结果和脱敏的调用/字节计数，
 按冷读、有效命中、过期、权限失效与淘汰分开记录。不能只凭命中率或服务端
 contract fixture 宣称用户体验、撤权安全或原对象打开已通过。

@@ -41,7 +41,8 @@ opaque binding 引用。下列完整字段按实际启用的能力提供；直�
 
 公共读方法固定为 `query / hydrate / resolve`，逻辑签名见
 [extensions.md](./extensions.md#21-最小公共接口)。`SourcePage` 表达来源内有界候选、
-rank、cursor 与 coverage；`AuthorizedProjection` 表达当前读权下的结果投影；
+rank、cursor 与 coverage；`HydrationRequest/Reply` 封装批量请求及每项读取结果，
+`AuthorizedProjection` 表达当前读权下的结果投影；
 `ResolvedResource` 表达校验后的 ResourceRef 与受信只读打开绑定。它们复用
 本文的资源、投影和查询语义；后续 wire 仍由同一 Model schema 定义和生成。
 身份、允许范围、deadline 与 cancellation 来自 `SearchExecutionContext`，
@@ -176,6 +177,8 @@ resourceRevision / sourceSetRevision / policyEpoch
 ```
 
 eventSequence 只在一个 attempt 内排序；客户端以 query/identity/source/policy tuple 拒绝迟到回写，不能将任意旧 event 强行套入新查询。断线后用原 cursor/reconcile contract 或重查，不能重新生成已发生的业务写操作。CancelQuery 幂等，query session 过期返回明确状态。
+CancelQuery 针对调用方 intent/subscriber，不直接撤销其他 subscriber 共用的
+排序 session 或 operation；底层取消沿第 7.4 节执行。
 
 来源配置/启停/联邦授权移除/重建使用稳定 command ID、expected revision 与 idempotency key；重复提交回读同一结果，冲突保留用户输入。普通 Query 是读操作，重复请求不会创建 Agent/业务对象。provider 不必自建另一套 mutation ledger。
 
@@ -268,10 +271,18 @@ Client cursor 可以指向本机 query session，不能发给 Station 当作私�
 已命中对象的 content revisions 判断整页仍新鲜。能给出可靠 scope watermark
 时定向失效；没有时按该来源整体 revision 或有界新鲜期保守处理。
 
-intentId、attemptId、requestId 不进入复用键；它们约束响应发布。query session
-的 cursor 仍绑定原执行身份、快照和有效期，不得改签给新 intent 以延长寿命。
-复用有效缓存页的值可以形成新响应；继续翻页须使用仍有效的 session 或取得
-新 continuation，不能把旧异步 event 改成新 intent 的响应。
+intentId、attemptId、requestId 不进入复用键；它们约束订阅者响应发布。
+内部 querySessionId/snapshot identity 持有排序、已发对象集合和 continuation；
+cursor 绑定该 session、规范查询、认证分区/读范围、来源状态与原到期点，
+不绑定某个 UI subscriber 的 lifetime。当前限定 D03 的绑定仍以其已实现合同为准。
+
+相同查询且当前授权匹配的新 subscriber 可 attach 尚有效的 session。
+取消旧 intent 只 detach 旧 subscriber；最后 detach 中止在途读，但可保留
+有界 session 数据至原到期点。后续 attach 不能复活已取消 operation，需新建
+读取；成功页值由当前 subscriber 形成响应，不改写旧 SearchEvent。分页操作
+由 session owner 串行推进 continuation/已发集合，各 subscriber 有独立浏览位置。
+session 或 cursor 不可复用时保留仍可读的已加载页，继续翻页前明确建立新
+分页上下文，不拼接不同快照、不延长旧 cursor。
 
 ### 7.2 两项独立有效性与元数据
 
@@ -296,10 +307,34 @@ source/binding revision、storage/processing policy、coverage/snapshot/expiry�
 evidence，先阻断读和发布。lease 到期不能以 stale-while-revalidate 延长私密
 可读性，content validator 未变化的回复也不代表已续授权。
 
-条件读取可携带已知 validator、需要的投影字段和刷新意图，响应表达 changed/
-unchanged 与独立的当前读取结果。validator 由原域定义，opaque 使用，不拿
-本机 wall clock 代替权威版本；缓存 hint 不包含权限委托。它们属于既有
-query/hydrate/resolve 的 typed envelope，不增加 validateVersion RPC。
+逐对象条件读取的唯一位置是 `HydrationRequest.items`：每项包含请求项标识、
+ResourceRef、所需 projection fields 和可选 knownValidator；请求另带内容刷新
+要求。`HydrationReply.outcomes` 恰好关联每个请求项，乱序可按标识关联，缺项/
+重复/额外项为协议错误，不能写入对象不存在的负缓存。批量限制沿 descriptor。
+
+每项的读取结论为 allowed、统一 unavailable 或 retryable。allowed 另表达：
+changed 携带允许字段的 AuthorizedProjection；unchanged 携带所验证的
+content validator、字段集合和独立读取有效性。只有本机已有同 validator/
+字段的 payload 才能承接 unchanged；无 payload 须请求 changed 投影。
+unavailable 不区分不存在/失权，且不带敏感 title/snippet；retryable 不表示
+允许继续读取，只有另有当前有效读权且允许 stale 时才保留旧值。
+
+原 authority/binding 验证的 read-scope、policy 和可选 lease 约束读取结论；
+来源 cache hint 不能签发授权，unchanged 不能单独续租。query 的条件提示
+置于 QueryIntent 的可选读取选项，结果验证/coverage/有效性置于 SourcePage；
+resolve 复用 ResourceRef revision 和响应中的受信绑定有效性，不为缓存另建方法。
+validator 由原域定义，opaque 使用；刷新要求不改变语义复用键，而约束本次
+读取是否足够新。所有字段由同一 Model 定义，逐项缓存选项不放认证 ctx/binding。
+
+读取有效性持续约束已经展示的值。headless runtime 复用原身份/policy 生命周期
+通知并调度依赖项最早 read expiry 的主动失效，不等下一次 query/hydrate。
+到期/失效关闭列表行、预览、count/facet 和 evidence；页面隐藏不暂停该职责。
+唤醒或恢复可见性先判断读权再投影，时钟回拨/重启不能延长原租约；平台 adapter
+按原 authority 的有效期限和本机可信 elapsed-time 处理到期。
+
+依赖策略事件连续性的可撤销读取在 policy stream gap 时为 unknown，需原
+authority 重新裁决；只有原 owner 另提供且仍有效的离线政策可承接。内容
+索引 gap 只影响 content freshness/coverage，不能被当成读权续期或权限真源。
 
 ### 7.3 失效、负缓存与容量
 
@@ -324,6 +359,12 @@ identityEpoch。来源变动不清空无关静态目录和仍可读的其他资�
 内容仍受容量、读取政策和删除约束；no-store 不落盘，正文不进 Renderer
 localStorage，不新增持久 query history。
 
+可淘汰 payload 与防迟到提交的失效屏障不是同类缓存条目。失效时标记相关
+operation handle/generation，payload/LRU/负缓存淘汰不得清除此标记；
+保护持续到失效前的相关读全部结束或超时，再按已确认来源状态回收。无法
+精确关联资源时保守标记该来源/范围的在途读。直接查询 adapter 同样适用，
+不依赖可选 IndexFeed 的持久 tombstone，也不永久保留所有资源的否定记录。
+
 ### 7.4 并发与发布
 
 相同授权分区、使用目的、操作、字段及 validator 的读取合并为一个 in-flight；需强制
@@ -340,6 +381,11 @@ localStorage，不新增持久 query history。
 提交缓存前重新检查 source/binding、
 identity/read-scope/policy 和 validator 的当前状态；旧响应不能覆盖更新条目、
 tombstone 或新授权分区。发布前再检查该订阅者执行身份与当前读权。
+失效标记与缓存提交/可见发布在同一 owner 内串行或原子裁决，禁止 check 后
+再被失效的响应写回。已取消/标记失效的 operation 不能因新 subscriber attach
+获得新的提交资格。每次读取使用新的 operation identity，不改签旧响应。
+仅仍登记为 active 的 operation 可提交；handle 回收后到达的回调直接拒绝，
+不能因找不到旧条目而创建新有效状态。
 
 ## 8. AuthorizedEvidenceBundle
 

@@ -123,7 +123,11 @@ Search source registry 是检索能力投影，不重新拥有 Applet 安装、A
 
 统一解析 normalized text、phrase、typed filters 和 scope，得到 QueryIntent AST。编译为各来源支持的约束，SQL/FTS/engine 使用参数化 API；普通搜索文本不直接作为任意 FTS/SQL 表达式执行。
 
-每轮捕获 `intentId + identityEpoch + sourceSetRevision + policyEpoch`。A→B→A 必须形成三轮不同 identity。来源响应、AI chunk、预览和分页只在 identity 全部匹配时发布；取消同时中止 native/HTTP/backend context，停止后续 fetch/hydration。
+每个 subscriber 捕获 `intentId + identityEpoch + sourceSetRevision + policyEpoch`。
+A→B→A 必须形成三轮不同 identity；结果、AI chunk、预览和分页只向当前有效
+subscriber 发布。subscriber 取消只停止其订阅/发布；共通 wrapper 持有独立
+operation ctx，最后 subscriber 退出、来源失效或 operation deadline 到达
+才中止 native/HTTP/backend。来源不以首个 intent 的 ctx 持有共享读 lifetime。
 
 计划按成本和信任域选择来源：本地名称/消息优先出结果，Station 域异步补齐，Federation 仅在已授权联邦上下文内按需调度。来源类型筛选缩小执行图，不先搜索全部再前端过滤；计划中不存在公网/OS 文件分支。
 
@@ -178,12 +182,33 @@ Overlay、完整页、局部入口和 Agent 复用同一有效性规则。Client
 当前 source/binding/identity/policy/revision，拒绝旧响应复活删除对象或覆盖
 新内容。intent/attempt 是发布屏障，不是复用键。
 
+批量 hydrate 使用统一 HydrationRequest/Reply，明确逐项 changed/unchanged、
+unavailable 与 retryable；字段/validator 在请求、读取有效性在响应，认证
+ctx 只提供允许范围。省略项不是不存在，unchanged 不单独续权，也不能在缺
+payload 时制造空投影。这样不同 adapter 不需要自行解释批量缺项。
+
+读取权限由 headless runtime 持续约束。沿原 authority 生命周期在最早读权
+到期点主动失效已展示结果、预览和引用；页面静止、隐藏、休眠不把失效延迟到
+下一次请求。唤醒/恢复显示前判断，时钟回拨不能延寿。policy stream gap 使
+依赖其连续性的读取 unknown；内容索引 gap 仅改变 freshness/coverage。
+
+payload 的 LRU 淘汰不淘汰在途操作失效标记；直到旧读结束/超时才回收保护。
+失效、缓存提交和可见发布由同一 owner 串行/原子裁决，旧 operation 不能因
+新 intent 复用同词而重新获得提交资格；无需另建永久 tombstone/cache 服务。
+
 ### 4.2 返回、失效与成本边界
 
-返回或重开时恢复短期 session 和已加载页，页面可以卸载。页值仍有效即复用；
+返回或重开时恢复短期 session 和已加载页，页面可以卸载。内部排序 session
+持有 snapshot/continuation/已发集合；UI intent 是独立 subscriber，符合相同
+查询和当前授权才可 attach，取消旧 intent 不取消新的 subscriber。页值仍有效即复用；
 cursor 过期只阻止继续翻页，不清空仍可读的已加载内容。新的查询不沿用过期
 cursor，也不把旧 event 改签为本轮响应。缓存淘汰后重新读取是允许的成本，
 不保证无限期保留每次查询。
+
+session owner 串行推进来源 continuation 和已发对象集合，subscriber 各自持有
+浏览位置。最后 detach 停止在途读，可保留有界 session 值至原到期点；新 attach
+仅创建新的读，不复活旧 operation。不可复用时继续翻页前建立新分页上下文，
+不把新旧快照拼接；当前限定 D03 不因此被写成已支持完整共享 session。
 
 来源变化使受影响的查询页、负结果、count/facet 和 cursor 失效；资源变化
 只刷新相关投影和引用。无法精确确定匹配依赖时按该来源保守失效，不能漏掉
@@ -322,6 +347,7 @@ UI 只投影 Search intent，不负责来源发现/历史同步。复用 Page/Ru
 - Shell 普通启动、登录完成与账号切换落到 `chat`；Search 由按钮/已确认快捷键主动唤起，不能由启动 fallback 或跨启动旧 Search 路由恢复自动显示。明确对象深链遵循独立导航规则。
 - 静态 provider/function descriptors 可常驻；身份 eligibility runtime 随认证/session reconcile。Search UI 按需挂载，不为默认首页 eager/forever；轻量 entry 和有界 query 状态与页面树分离。
 - 同账号短期 query 状态在 headless store；Page hidden 后暂停结果订阅与预览渲染。
+- headless read-validity 失效与 expiry 调度独立于 Page 订阅；恢复显示前先校验。
 - 列表按窗口渲染；只挂载所选预览；不隐藏挂载全部 source editor、Applet 或 Agent 会话。
 - Overlay singleton，由 Shell 管；back stack 保存稳定 resource reference。
 - search session、候选、缓存和 provider worker 有数量/字节/并发上限；

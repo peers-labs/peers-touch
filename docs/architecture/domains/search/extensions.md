@@ -34,7 +34,7 @@ SDK 或已实现接口：
 interface SearchContributor {
   readonly descriptor: SearchContributorDescriptor;
   query(input: QueryIntent, ctx: SearchExecutionContext): Promise<SourcePage>;
-  hydrate(refs: readonly ResourceRef[], ctx: SearchExecutionContext): Promise<readonly AuthorizedProjection[]>;
+  hydrate(input: HydrationRequest, ctx: SearchExecutionContext): Promise<HydrationReply>;
   resolve(ref: ResourceRef, ctx: SearchExecutionContext): Promise<ResolvedResource>;
 }
 ```
@@ -44,9 +44,9 @@ interface SearchContributor {
 - **query**：在允许的范围与条件下召回有界候选，返回来源内 rank、分页和真实
   coverage。不支持的筛选明确失败，候选与 count 不绕过来源的读权过滤。
 - **hydrate**：以当前读权批量形成允许展示或使用的投影；有效原域缓存/读租约
-  可承接判断，失效才复核，deny/unknown 的对象不返回。排序候选、缓存和派生
-  索引都复用这一读入口，避免逐条 N+1 或另一套权限实现。原
-  `ValidateAndHydrateBatch` 的语义由此方法完整承接。
+  可承接判断，失效才复核。每请求项有确定 outcome，deny/unknown 不返回
+  敏感投影；正文未变与读取失败分别表达，不能靠数组缺项推断。
+  排序候选、缓存和派生索引复用这一入口，避免逐条 N+1 或第二权限实现。
 - **resolve**：在当前上下文下判断资源及 anchor，返回受信任的只读打开目标。
   有效内容和定位绑定可复用；实际导航及最终打开裁决交给原域/Host resolver，
   不执行写操作、脚本或任意命令。
@@ -55,13 +55,20 @@ interface SearchContributor {
 形成的有界投影，`ResolvedResource` 是可读资源与受信打开绑定；它们对应
 data-model 中的候选、结果和资源语义，不形成第二套业务 DTO 真源。
 
+`HydrationRequest` 仅封装批量 refs、每项所需投影字段/已知 validator 和刷新
+要求；`HydrationReply` 按请求项关联 outcome。allowed 项表达 changed 投影或
+unchanged validator 与独立的读取有效性；unavailable 合并不存在/失权且不带
+敏感对象字段，retryable 表达无法完成的读取。缺项、重复或额外项是协议错误，
+不等同不存在；具体语义唯一维护在 data-model 第 7.2 节。
+
 descriptor 在注册/绑定时读取，不提供单独的 `Describe` RPC。它只声明身份、
 资源 namespace、类型、支持能力与 binding，不能自行授予权限。
 
 身份、允许范围、deadline 和 cancellation 统一通过 `SearchExecutionContext`
-提供。取消由查询 owner 与 transport adapter 传播到已有执行机制，来源不再
-各建一个 `Cancel` API；取消后停止该订阅者后续读取与投影，并拒绝迟到发布。
-合并读还有其他有效订阅者时不一并取消，最后订阅者退出才中止底层操作。
+提供。wrapper 持有独立 operation ctx，来源只接收该 operation 的取消信号；
+单个 subscriber 取消只关闭其订阅/发布。最后订阅者退出、来源失效或底层预算
+到期才把取消传到 native/HTTP/backend。来源不各建 Cancel API，也不持有
+首个 subscriber 的 ctx 作为共享操作 lifetime owner。
 
 已有 FTS、人员目录或功能 catalog 直接适配这三个读方法。来源已有索引时不再
 复制一次正文；metadata-only/known-only 来源如实声明覆盖范围。
@@ -71,9 +78,9 @@ descriptor 在注册/绑定时读取，不提供单独的 `Describe` RPC。它�
 只通过原 read port 提供投影、validator、当前读策略与已有变化通知。有效
 query/preview/resolve 缓存可直接形成响应，miss/失效才进入真实读取。
 
-可选 typed 缓存元数据和条件读取提示放在同一 Model 的 request/response 或
-受信 binding envelope，表达字段、validator、changed/unchanged 和缓存限制，
-不新增 `validateVersion`、`GetCache` 等方法。内容版本和读权独立有效，
+可选条件读取提示只放在相应 typed 请求中，缓存元数据和读取结论只放在相应
+typed 响应中，由同一 Model schema 生成；binding/ctx 继续提供身份和允许范围，
+不混入逐对象缓存选项。不新增 validateVersion/GetCache 方法。内容与读权独立有效，
 来源提示不能扩大 Host grant；元数据不足时保守重读，不默认永久命中。
 原域已有 read cache 时复用它，来源不被要求各建缓存系统。统一规则见
 [data-model 第 7 节](./data-model.md#7-cursor缓存与复用)。

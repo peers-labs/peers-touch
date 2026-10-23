@@ -19,7 +19,8 @@ Search 的目标是按需唤起的统一搜索入口，**检索宇宙封闭在 P
 3. [技术设计](./design.md)：Owner、运行拓扑、查询聚合、索引、授权与生命周期；
    第 4.1 节定义共享缓存读边界。
 4. [数据与接入协议](./data-model.md)：来源声明、对象身份、查询/结果、增量、
-   游标及第 7 节的缓存键、独立内容/读权有效性与失效语义。
+   游标及第 7 节的缓存键、逐项读取 outcome、主动读权到期、操作失效屏障、
+   session/subscriber 归属与两层取消。
 5. [扩展与接入](./extensions.md)：域内来源/SDK、索引后端、附件格式、功能、展示和 Agent/MCP 的独立扩展点（不含域外来源）。
 6. [目录与职责](./module-layout.md)：已落地路径、模块边界与后续实现范围。
 7. [集成与验证](./integration.md)：现有模块映射、切换约束与待执行的证据要求；
@@ -44,6 +45,11 @@ AI 模型执行可行，但当前 E5 中文问题检索英文/混合文档前五
 D-20 缓存方案仍为 proposal：目录按版本复用，资源沿原域缓存，查询与返回
 状态短期持有；内容与读权独立有效。新增合同尚未修改 proto、SDK 或运行代码，
 有效命中零次来源/正文读取是验收要求，不是已测产品指标。
+
+hydrate 的统一批量请求/响应明确未变、允许投影、不可用与可恢复失败；
+读权到期主动关闭已展示内容，payload 淘汰不解除在途操作失效屏障。
+排序 session 可被符合当前授权的新 subscriber 复用，旧 intent 取消不连带
+取消其他 subscriber，cursor 保持原到期点。上述均为目标合同与 V-10 证明义务。
 
 当前源码已有 `model/domain/search/search.proto`、`packages/search-core`、Desktop CJK 分词直写 FTS 与跨会话查询，以及 `search_suggest/search_submit/search_cancel` native 命令。共享 FTS 表形未改，无搜索 generation/meta 表、迁移钩子或兼容索引。原有数据不会在启动时自动重分词；新写入与业务恢复投影直接使用新分词。
 
