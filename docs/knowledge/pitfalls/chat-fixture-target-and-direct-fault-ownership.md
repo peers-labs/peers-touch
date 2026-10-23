@@ -131,3 +131,11 @@ when the interval is zero. A regression must execute the actual emitted script
 against deferred focus and control creation. Reaction selection must durably
 retain actual focus, key/click events and the overlay Message ID when its
 predicate rejects, plus failed screenshot/DOM, without relaxing keyboard proof.
+Semantic mouse clicks must deliver press and release to the visible hit target
+through the existing Selenium Actions SDK. The embedded driver's element-click
+command only emits `click`; controls that open on `mousedown` remain closed.
+Use an element-origin pointer sequence, not an OS pointer or a product-specific
+DOM event workaround. Regressions inspect the actual SDK W3C payload and reject
+fallback after a failed action. Native qualification must retain actual events,
+rendered options, selected-value readback and cleanup; a targeted observation
+does not prove the rest of product closure.

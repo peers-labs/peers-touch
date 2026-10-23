@@ -811,14 +811,30 @@ class EnvironmentProvisioner(ABC):
             require_identity_match=self.contract.profile.identity_match,
         )
 
-    def _station_ready(self, station_url: str, health_url: str = "") -> bool:
+    def _station_health(self, station_url: str, health_url: str = "") -> dict[str, object]:
         url = health_url or f"{station_url.rstrip('/')}/api/oauth/providers"
         request = urllib.request.Request(url, headers={"Accept": "application/json"})
+        observation = {"endpoint": url, "timeoutSeconds": 8, "ready": False}
         try:
             with urllib.request.urlopen(request, timeout=8) as response:
-                return 200 <= response.status < 300
-        except (urllib.error.URLError, OSError, TimeoutError):
-            return False
+                observation.update(
+                    statusCode=response.status,
+                    ready=200 <= response.status < 300,
+                )
+        except urllib.error.HTTPError as error:
+            observation.update(statusCode=error.code, errorType=type(error).__name__)
+            error.close()
+        except (urllib.error.URLError, OSError, TimeoutError) as error:
+            cause = error.reason if isinstance(error, urllib.error.URLError) else error
+            observation.update(
+                errorType=type(error).__name__,
+                causeType=type(cause).__name__,
+                errno=getattr(cause, "errno", None),
+            )
+        return observation
+
+    def _station_ready(self, station_url: str, health_url: str = "") -> bool:
+        return bool(self._station_health(station_url, health_url)["ready"])
 
     def _new_base_manifest(self, gate_id: str) -> RuntimeManifest:
         return new_manifest(

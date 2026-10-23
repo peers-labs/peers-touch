@@ -1725,6 +1725,11 @@ focus or HID delivery.
 - Local Desktop development defaults to `semantic-nonintrusive`.
 - Semantic interaction uses the embedded WebDriver and must not activate an
   application, move the system pointer, or post global keyboard/mouse events.
+- Semantic mouse clicks use the existing Selenium element-origin Actions
+  sequence so the visible hit target receives mouse press, release and click.
+  A JavaScript `element.click()` alone does not represent that sequence.
+  Failed Actions remain failures; no global-input or product-specific fallback
+  may replace them.
 - A native Accessibility action may join the semantic mode only after a
   focused non-interference contract proves that frontmost PID, pointer
   location, and operator keyboard focus remain unchanged.

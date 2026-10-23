@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import importlib.util
+import dataclasses
 import json
 import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import socket
 import subprocess
 import tempfile
+from threading import Thread
 import unittest
 from unittest.mock import patch
 import sys
@@ -24,6 +27,9 @@ from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.lease import RemoteGitSourceLease
 from tooling.acceptance.core.provisioning import CredentialRef, EnvironmentContract
 from tooling.acceptance.provisioners.home_station import HomeStationProvisioner
+from tooling.acceptance.provisioners.native_tauri_embedded_webdriver import (
+    NativeTauriEmbeddedWebDriverProvisioner,
+)
 
 
 def script_module(name: str):
@@ -51,6 +57,117 @@ def diagnostic() -> ResourceDiagnostic:
 
 
 class ResourceDiagnosticTests(unittest.TestCase):
+    def test_health_probe_records_real_success_and_connection_refusal(self) -> None:
+        owner = HomeStationProvisioner(EnvironmentContract(id="home-station"))
+
+        class Healthy(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(204)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        with HTTPServer(("127.0.0.1", 0), Healthy) as server:
+            server.timeout = 1
+            worker = Thread(target=server.handle_request)
+            worker.start()
+            endpoint = f"http://127.0.0.1:{server.server_port}/healthz"
+            try:
+                observed = owner._station_health(endpoint, endpoint)
+            finally:
+                worker.join(timeout=2)
+            self.assertFalse(worker.is_alive())
+        self.assertTrue(observed["ready"])
+        self.assertEqual(observed["statusCode"], 204)
+        self.assertEqual(observed["endpoint"], endpoint)
+
+        with socket.socket() as unavailable:
+            unavailable.bind(("127.0.0.1", 0))
+            endpoint = f"http://127.0.0.1:{unavailable.getsockname()[1]}/healthz"
+        observed = owner._station_health(endpoint, endpoint)
+        self.assertFalse(observed["ready"])
+        self.assertEqual(observed["causeType"], "ConnectionRefusedError")
+        self.assertIsInstance(observed["errno"], int)
+        self.assertNotIn("statusCode", observed)
+
+    def test_native_health_failure_survives_sealing_without_inventing_source_drift(self) -> None:
+        class Unhealthy(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(503)
+                self.send_header("X-Private-Detail", "private-response-not-evidence")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        contract = EnvironmentContract.from_yaml(
+            REPO_ROOT / "tooling/acceptance/environments/native-tauri-embedded-webdriver.yaml",
+        )
+        contract = dataclasses.replace(
+            contract, services={"station-four": contract.services["station-four"]},
+        )
+        owner = NativeTauriEmbeddedWebDriverProvisioner(
+            contract, station_profiles={"station-four": "chat-native-disposable"},
+        )
+        base = owner._new_base_manifest("health-probe")
+        with HTTPServer(("127.0.0.1", 0), Unhealthy) as server:
+            server.timeout = 1
+            endpoint = f"http://127.0.0.1:{server.server_port}"
+            worker = Thread(target=server.handle_request)
+            worker.start()
+            module = "tooling.acceptance.provisioners.native_tauri_embedded_webdriver."
+            with patch(module + "resolve_reviewed_profile_environment", return_value=(
+                Path("/reviewed/profile.env"), {
+                    "PT_STATION_MODE": "remote", "PT_STATION_URL": endpoint,
+                    "PT_STATION_HEALTH_URL": endpoint + "/healthz",
+                    "PT_STATION_DEPLOY_ENV": "chat-native-disposable-station",
+                },
+            )), patch(module + "resolve_deployment_environment_path", return_value=Path("/reviewed/deploy.env")), patch(
+                module + "load_env_file", return_value={},
+            ), patch(module + "source_proto_digest", return_value="probe-protocol"), patch.object(
+                owner, "acquire_profile_lease",
+            ), patch.object(owner, "acquire_remote_git_source_lease"), patch(
+                module + "produce_station_attestation",
+            ) as source_attestation:
+                try:
+                    with self.assertRaises(BlockedError) as caught:
+                        owner._provision_station_services(base)
+                finally:
+                    worker.join(timeout=2)
+            self.assertFalse(worker.is_alive())
+        source_attestation.assert_not_called()
+        error = caught.exception
+        details = error.diagnostic.to_dict()
+        self.assertEqual(details["owner"], "native-tauri-embedded-webdriver-provisioner")
+        observed = details["resourceChecks"][0]["observed"]
+        self.assertEqual(observed["statusCode"], 503)
+        self.assertEqual(observed["endpoint"], endpoint + "/healthz")
+        self.assertFalse(observed["ready"])
+        self.assertEqual(details["resourceChecks"][1]["state"], "NOT_EVALUATED")
+        self.assertIn("chat-native-disposable", details["recoveryAction"])
+        self.assertNotIn("private-response-not-evidence", json.dumps(details))
+        runner = script_module("acceptance-run")
+        reporter = script_module("acceptance-report")
+        source = {"commit": base.source_commit, "workspaceDigest": base.workspace_digest}
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=REPO_ROOT)
+            with store.begin_run("health-probe", source=source) as run:
+                result = runner.runtime_cell_failure_result(
+                    gate_id="health-probe", command="health-probe",
+                    environment=contract.id, tier="local-evidence",
+                    runtime_cell="health-probe", error=error, duration_seconds=0,
+                )
+                result["cleanupStatus"] = "passed"
+                result = runner.record_failure_observation(result, run)
+                result = runner.enrich_result_with_run_artifacts(result, run)
+                run.finalize(result=result)
+                delivered = {**result, "runManifest": run.manifest_ref.to_dict()}
+            projected = reporter.result_diagnostic(delivered, source, store)
+            self.assertEqual(projected["missingFields"], [])
+            self.assertEqual(projected["status"], "blocked")
+            self.assertEqual(delivered["proofStatus"], "UNPROVEN")
+
     def test_actual_remote_lease_handshake_timeout_seals_unknown_source_state(self) -> None:
         owner = HomeStationProvisioner(EnvironmentContract(id="home-station"))
         processes = []

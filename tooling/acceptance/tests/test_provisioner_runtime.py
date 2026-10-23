@@ -212,8 +212,8 @@ class ProvisionerBaseClassTests(unittest.TestCase):
                 "resolve_deployment_environment_path",
             ) as resolve_deployment, patch.object(
                 provisioner,
-                "_station_ready",
-                return_value=True,
+                "_station_health",
+                return_value={"ready": True},
             ), patch.object(
                 provisioner,
                 "acquire_profile_lease",
@@ -319,8 +319,8 @@ class ProvisionerBaseClassTests(unittest.TestCase):
                 return_value=deployment_path,
             ) as resolve_deployment, patch.object(
                 provisioner,
-                "_station_ready",
-                return_value=True,
+                "_station_health",
+                return_value={"ready": True},
             ) as station_ready, patch.object(
                 provisioner,
                 "acquire_profile_lease",

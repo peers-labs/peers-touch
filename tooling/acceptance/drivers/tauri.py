@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Generator, Mapping, Optional, Protocol
 
 from selenium import webdriver
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support.ui import WebDriverWait
@@ -958,7 +959,7 @@ class TauriSession(DomDriver):
         return self._connected_driver().find_elements(selector)
 
     def semantic_click(self, element: Any) -> None:
-        element.click()
+        ActionChains(self.driver, duration=0).move_to_element(element).click().perform()
 
     def semantic_hover(self, element: Any) -> None:
         self.execute_script(

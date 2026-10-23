@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-23
-covered_docs_hash: 09dd1ab57df7543071c78b566535333cdea4c1b88a54852f39198f6b5879a700
+covered_docs_hash: 897eecf27e6077f0d1cdc28885a43f24546a54c300c08074c0c3c0f1ba8b49b7
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,20 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Semantic Mouse And Health Observation Review
+
+D-22 now names the existing element-origin Selenium Actions sequence for
+semantic mouse clicks. The actual SDK payload retains press/release, zero
+synthetic movement duration and failed-action propagation; native observation
+retains events, rendered options, selected-value readback and cleanup.
+Core owns one bounded health probe. Native Tauri preserves actual HTTP status
+or safe transport failure fields, assigned target and recovery action, leaving
+unperformed source attestation unevaluated. Real loopback success, refusal and
+503-to-Runner-to-Reporter regressions verify the diagnostic contract.
+Existing review rules already require ownership, complete failures and current
+proof. No Skill behavior or fixture taxonomy changes; the two owning knowledge
+entries and affected runtime/diagnostic regressions carry these concrete cases.
 
 ## Open Thread And Durable Fault Phase Review
 

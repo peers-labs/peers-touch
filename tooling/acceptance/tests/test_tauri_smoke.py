@@ -7,6 +7,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from selenium.webdriver.remote.command import Command
+from selenium.webdriver.remote.webelement import WebElement
+
 from tooling.acceptance.drivers.tauri import (
     MakeDesktopLauncher,
     TauriSession,
@@ -40,10 +43,31 @@ class TauriSessionSemanticActionTests(unittest.TestCase):
         self.session._driver = self.native_driver
         self.element = Mock()
 
-    def test_semantic_click_uses_element_click(self) -> None:
-        self.session.semantic_click(self.element)
+    def test_semantic_click_emits_element_targeted_mouse_press_and_release(self) -> None:
+        driver = self.native_driver.driver
+        self.session.semantic_click(WebElement(driver, "visible-select"))
 
-        self.element.click.assert_called_once_with()
+        command, payload = driver.execute.call_args.args
+        self.assertEqual(command, Command.W3C_ACTIONS)
+        pointer = next(action for action in payload["actions"] if action["type"] == "pointer")
+        self.assertEqual(pointer["parameters"]["pointerType"], "mouse")
+        self.assertEqual(
+            [(action["type"], action.get("button")) for action in pointer["actions"]],
+            [("pointerMove", None), ("pointerDown", 0), ("pointerUp", 0)],
+        )
+        self.assertEqual(pointer["actions"][0]["origin"], {
+            "element-6066-11e4-a52e-4f735466cecf": "visible-select",
+        })
+        self.assertEqual(pointer["actions"][0]["duration"], 0)
+        self.assertEqual((pointer["actions"][0]["x"], pointer["actions"][0]["y"]), (0, 0))
+        driver.execute.assert_called_once()
+
+    def test_semantic_click_preserves_action_failure_without_fallback(self) -> None:
+        driver = self.native_driver.driver
+        driver.execute.side_effect = RuntimeError("rejected pointer action")
+        with self.assertRaisesRegex(RuntimeError, "rejected pointer action"):
+            self.session.semantic_click(WebElement(driver, "visible-select"))
+        driver.execute.assert_called_once()
 
     def test_semantic_hover_dispatches_webview_pointer_events(self) -> None:
         self.session.semantic_hover(self.element)

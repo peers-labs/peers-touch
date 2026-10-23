@@ -184,6 +184,52 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             resource=resource,
         )
 
+    def _station_health_failure(
+        self,
+        manifest: RuntimeManifest,
+        service_id: str,
+        profile_name: str,
+        deployment_environment: str,
+        observation: dict[str, object],
+    ) -> BlockedError:
+        resource = f"service-health:{service_id}"
+        return BlockedError(
+            reason=(
+                f"{self.product_label} service {service_id!r} is not healthy "
+                f"at {observation['endpoint']}: {json.dumps(observation, sort_keys=True)}"
+            ),
+            resource=resource,
+            diagnostic=ResourceDiagnostic(
+                owner="native-tauri-embedded-webdriver-provisioner",
+                recovery_action=(
+                    f"Inspect the recorded health probe for Profile {profile_name} "
+                    f"(deployment {deployment_environment}); restore that reviewed "
+                    f"Station through make station, then repeat its health probe "
+                    f"and source attestation for {manifest.source_commit}."
+                ),
+                resource_checks=[
+                    {
+                        "resource": resource,
+                        "expected": {
+                            "serviceId": service_id,
+                            "profile": profile_name,
+                            "deployment": deployment_environment,
+                            "endpoint": observation["endpoint"],
+                            "statusCode": "200..299",
+                        },
+                        "state": "OBSERVED",
+                        "observed": observation,
+                    },
+                    {
+                        "resource": f"source-identity:{service_id}",
+                        "expected": {"commit": manifest.source_commit},
+                        "state": "NOT_EVALUATED",
+                        "reason": "Health preparation failed before Station source attestation.",
+                    },
+                ],
+            ),
+        )
+
     def _provision_station_services(
         self,
         manifest: RuntimeManifest,
@@ -226,14 +272,12 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                     deployment_environment,
                     owner,
                 )
-            if not self._station_ready(station_url, health_url):
+            health = self._station_health(station_url, health_url)
+            if not health["ready"]:
                 if mode == "remote":
-                    raise BlockedError(
-                        reason=(
-                            f"{self.product_label} service {service_id!r} is not "
-                            "healthy at its declared profile endpoint"
-                        ),
-                        resource=f"service-health:{service_id}",
+                    raise self._station_health_failure(
+                        manifest, service_id, profile_name,
+                        deployment_environment, health,
                     )
                 station_environment = {
                     **os.environ,
@@ -255,18 +299,17 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                     timeout=180,
                     check=False,
                 )
-                if completed.returncode != 0 or not self._station_ready(
-                    station_url,
-                    health_url,
-                ):
-                    detail = (
-                        completed.stderr.strip()
-                        or completed.stdout.strip()
-                        or "Station remained unavailable"
-                    )
-                    raise BlockedError(
-                        reason=f"Local Station provisioning failed: {detail}",
-                        resource=f"service-health:{service_id}",
+                if completed.returncode == 0:
+                    health = self._station_health(station_url, health_url)
+                else:
+                    health = {
+                        **health, "probePhase": "before-local-launch",
+                        "launchExitCode": completed.returncode,
+                    }
+                if completed.returncode != 0 or not health["ready"]:
+                    raise self._station_health_failure(
+                        manifest, service_id, profile_name,
+                        deployment_environment, health,
                     )
 
                 def stop_local_station(

@@ -58,3 +58,11 @@ The actual subprocess script case must retain its absolute source path and
 The real subprocess handshake timeout must survive Runner sealing and Reporter
 projection with no missing diagnostic fields, failed lease acquisition and
 unevaluated source verification. Product proof remains `UNPROVEN`.
+Station health probes must retain their actual endpoint, HTTP status or safe
+exception type/cause/errno, and timeout. A boolean alone discards the evidence
+needed by the concrete Provisioner. Native Tauri consumes the same Core probe
+and records the assigned service, Profile, deployment and recovery action.
+Health failure before attestation leaves source identity `NOT_EVALUATED`;
+it cannot establish source drift or a missing device. Real loopback HTTP and
+connection-refusal regressions must survive Runner sealing and Reporter
+validation without recording response bodies or private headers.
