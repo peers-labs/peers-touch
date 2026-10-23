@@ -249,7 +249,7 @@ return true;
             self.fill(session, "字体")
             self.click(session, ".mobile-search-filters button:last-child")
             self.click(session, '[data-search-function="chat-settings"]')
-            self.click(session, ".settings-section .settings-row .ant-select-selector")
+            self.click(session, ".settings-section .settings-row [role=combobox]")
             options = ",".join(
                 f'.ant-select-dropdown:not(.ant-select-dropdown-hidden) '
                 f'.ant-select-item-option[title="{label}"]' for label in labels
@@ -533,13 +533,13 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
             self.fill(session, "语言")
             self.click(session, ".mobile-search-filters button:last-child")
             self.click(session, '[data-search-function="language"]')
-            self.click(session, ".settings-section .ant-select-selector")
+            self.click(session, ".settings-section [role=combobox]")
             self.click(session, f'.ant-select-dropdown:not(.ant-select-dropdown-hidden) '
                        f'.ant-select-item-option[title="{label}"]')
             self.wait(session, """
-return document.querySelector('.settings-section .ant-select-selection-item')?.textContent === arguments[0]
-  && !document.querySelector('.settings-section .ant-select-disabled');
-""", "persisted UI language", label)
+const input = document.querySelector('.settings-section [role=combobox]');
+return input && !input.disabled && document.documentElement.lang === arguments[0];
+""", "persisted UI language", locale)
             self.click(session, ".page-header > button:first-child")
             self.click(session, ".mobile-search-filters button:first-child")
             self.fill(session, fixture["replyQuery"])
