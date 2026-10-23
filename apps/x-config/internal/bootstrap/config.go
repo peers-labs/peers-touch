@@ -85,8 +85,10 @@ func LoadConfig() (Config, error) {
 	// Private corp deployments (e.g. fiveArm) serve plain HTTP on RFC1918
 	// addresses; the ed25519 snapshot signature remains the integrity
 	// boundary. Public origins still require HTTPS.
+	allowPrivateHTTP := os.Getenv("X_CONFIG_ALLOW_PRIVATE_HTTP") == "1"
+	config.Operator.AllowPrivateHTTP = allowPrivateHTTP
 	originAllowed := validHTTPSURL
-	if os.Getenv("X_CONFIG_ALLOW_PRIVATE_HTTP") == "1" {
+	if allowPrivateHTTP {
 		originAllowed = func(raw string) bool {
 			return validHTTPSURL(raw) || validPrivateHTTPURL(raw)
 		}

@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"time"
 
 	githubrepository "github.com/peers-labs/peers-touch/github-repository"
@@ -104,8 +105,15 @@ func BuildContainer(config Config) (*Container, error) {
 		Signer: signer,
 		Clock:  admin.RealClock{},
 	}
+	secureCookies := true
+	if callbackURL, err := url.Parse(config.Operator.CallbackURL); err == nil {
+		secureCookies = callbackURL.Scheme == "https"
+	}
 	container := &Container{
-		Auth: &httpinterface.AuthHandler{Service: service},
+		Auth: &httpinterface.AuthHandler{
+			Service:       service,
+			SecureCookies: secureCookies,
+		},
 		Admin: &httpinterface.AdminHandler{
 			Auth:    service,
 			Service: adminService,
