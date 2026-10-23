@@ -123,6 +123,7 @@ return {
   documentWidth: document.documentElement.scrollWidth,
   searchState: document.querySelector('[data-search-state]')?.dataset.searchState || '',
   query: document.querySelector('#mobile-search-input')?.value || '',
+  notice: document.querySelector('.mobile-search-notice')?.innerText || '',
   rows: [...document.querySelectorAll('.mobile-search-result')]
     .map(row => ({id: row.dataset.resourceId, text: row.innerText})),
   activeMessage: document.activeElement?.getAttribute('data-message-ulid') || '',
@@ -137,7 +138,7 @@ return {
 """)
 
     def capture(self, artifacts: ArtifactSession, session: Any, name: str,
-                *, concealed: bool = False) -> None:
+                *, concealed: bool = False, diagnostic: bool = False) -> None:
         deadline = time.monotonic() + 30
         while True:
             rendering = self.surface(session)
@@ -163,6 +164,8 @@ return {
         }
         frame = {**captured, "rendering": rendering, "assertionPassed": False}
         self.frames[f"{session.client_id}/{name}"] = frame
+        if diagnostic:
+            return
         require(rendering["painted"], f"{name} must be painted")
         require(rendering["documentWidth"] <= rendering["viewportWidth"] + 1,
                 f"{name} must not overflow horizontally")
@@ -234,6 +237,25 @@ return document.documentElement.dataset.mobileColorScheme === arguments[0]
     def _capture_runtime_failure(self, artifacts: ArtifactSession) -> list[dict[str, Any]]:
         diagnostics = super()._capture_runtime_failure(artifacts)
         for session in self.sessions:
+            try:
+                self.capture(artifacts, session, "failure", diagnostic=True)
+                rendering = self.frames[f"{session.client_id}/failure"]["rendering"]
+                reference = artifacts.write_json(
+                    f"mobile-device-search/{session.client_id}/failure-query.json",
+                    {
+                        "clientId": session.client_id,
+                        "rendering": rendering,
+                        "readState": session.call_action("search.state"),
+                        "readCosts": session.call_action("search.reads"),
+                        "nativeQuery": session.call_action(
+                            "search.page", {"query": rendering["query"]},
+                        ) if rendering["query"] else None,
+                    },
+                    role=f"mobile-search-failed-query/{session.client_id}",
+                )
+                diagnostics.append({"clientId": session.client_id, "artifact": reference.to_dict()})
+            except Exception as error:
+                diagnostics.append({"clientId": session.client_id, "errorType": type(error).__name__})
             try:
                 recovery = session.call_action("recovery.snapshot")
                 reference = artifacts.write_json(
@@ -341,6 +363,7 @@ return document.activeElement?.getAttribute('data-message-ulid') === arguments[0
     def search_scenario(self, artifacts: ArtifactSession, session: Any, sender_session: Any,
                         fixture: dict) -> dict:
         self.fill(session, fixture["query"])
+        self.capture(artifacts, session, "submitted", diagnostic=True)
         self.has(session, fixture["root"], fixture["query"])
         self.capture(artifacts, session, "chinese")
         self.keyboard(artifacts, session, fixture)
