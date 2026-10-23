@@ -46,6 +46,11 @@ fixture records its original message IDs before the UI scenarios. Scenarios
 attach to the same source commit and Fixture epoch. They use production
 Messaging actions for setup and real Search UI for query/open. Diagnostics
 support cost and denial assertions; they do not replace UI evidence.
+Both authenticated clients must expose a current native Search read scope and
+source revision before fixture preparation. Native lifecycle startup observes
+the actual OS state after callback registration; it cannot infer foreground
+from a rendered page. Failure diagnostics retain independent query, scope and
+cost observations even when one native diagnostic is denied.
 Fixture preparation waits for the original Social/Messaging write-admission
 projection and each receiver's exact committed message before issuing the next
 send. Recovery remains bounded by the existing Journey timeout; no denied write

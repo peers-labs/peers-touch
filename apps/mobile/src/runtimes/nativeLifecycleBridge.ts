@@ -432,6 +432,19 @@ export function installNativeLifecycleBridge(
         return;
       }
       nativeLifecycleListener = listener;
+      // Callback registration cannot recover the OS state before registration.
+      // Read it through the same native owner before admitting dependent reads.
+      const initial = await enqueueNativePluginCommand(
+        () => invokeNative<unknown>('lifecycle_observe'),
+      );
+      if (!initial || typeof initial !== 'object'
+        || !('accepted' in initial) || typeof initial.accepted !== 'boolean'
+        || !('generation' in initial)) {
+        throw new NativeLifecycleBridgeError(
+          'MOBILE_NATIVE_READBACK_INVALID', 'lifecycle-observation',
+        );
+      }
+      observeGeneration(validateGeneration(initial.generation, 'lifecycle-observation'));
       handlers.onNativeListenerReady?.();
     } catch (error) {
       const bridgeError = toBridgeError(
@@ -507,6 +520,7 @@ export function installNativeLifecycleBridge(
         return;
       }
       nativeNetworkListener = listener;
+      await nativeLifecycleReady;
       const initial = validateNativeNetworkIngestResult(
         await enqueueNativePluginCommand(
           () => invokeNative<unknown>('network_start_observation'),

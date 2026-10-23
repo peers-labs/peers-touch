@@ -97,6 +97,15 @@ pub struct NativeSystemActionOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LifecycleObservationResponse {
+    pub platform: String,
+    pub state: String,
+    pub sequence: u64,
+    pub timestamp_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkObservationResponse {
     pub platform: String,
@@ -298,6 +307,25 @@ impl<R: Runtime> PlatformPermissions<R> {
             Ok(NativeSystemActionOutcome {
                 state: NativeSystemActionState::Unavailable,
                 reason: Some("mobile host is unavailable".to_string()),
+            })
+        }
+    }
+
+    pub async fn observe_lifecycle(&self) -> Result<LifecycleObservationResponse> {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            return self
+                .plugin_handle
+                .run_mobile_plugin_async("observeLifecycle", ())
+                .await
+                .map_err(|error| Error::invoke("observe lifecycle", error));
+        }
+
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            Err(Error {
+                operation: "observe lifecycle",
+                detail: "mobile host is unavailable".into(),
             })
         }
     }

@@ -240,14 +240,19 @@ return document.documentElement.dataset.mobileColorScheme === arguments[0]
             try:
                 self.capture(artifacts, session, "failure", diagnostic=True)
                 rendering = self.frames[f"{session.client_id}/failure"]["rendering"]
+                def observe(action: str, payload: dict | None = None) -> Any:
+                    try:
+                        return session.call_action(action, payload or {})
+                    except Exception as error:
+                        return {"errorType": type(error).__name__}
                 reference = artifacts.write_json(
                     f"mobile-device-search/{session.client_id}/failure-query.json",
                     {
                         "clientId": session.client_id,
                         "rendering": rendering,
-                        "readState": session.call_action("search.state"),
-                        "readCosts": session.call_action("search.reads"),
-                        "nativeQuery": session.call_action(
+                        "readState": observe("search.state"),
+                        "readCosts": observe("search.reads"),
+                        "nativeQuery": observe(
                             "search.page", {"query": rendering["query"]},
                         ) if rendering["query"] else None,
                     },
@@ -544,6 +549,14 @@ return document.querySelector('.settings-section .ant-select-selection-item')?.t
         for client_id, actor in actors.items():
             self._prepare_fresh_actor_identity(sessions[client_id], actor)
             journey.authenticate(sessions[client_id], actor, password=ACTOR_PASSWORD)
+            read_state = sessions[client_id].call_action("search.state")
+            require(read_state.get("readScope") and read_state.get("sourceRevision"),
+                    f"{client_id} authenticated native Search admission is required")
+            artifacts.write_json(
+                f"mobile-device-search/{client_id}/native-admission.json",
+                {"clientId": client_id, "readState": read_state},
+                role=f"mobile-search-native-admission/{client_id}",
+            )
         ledger = SuiteRuntimeLedger(
             REUSE, suite_runtime_id=f"mobile-search-{artifacts.run_id}",
             source_digest=source["commit"], fixture_epoch=manifest["runId"],
