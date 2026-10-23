@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+package peers_touch.model.search.v1;
+
+// Search domain contract (decision D-19: closed search domain).
+//
+// This file declares no Go package option: this milestone generates Desktop
+// TypeScript only (build.sh skips Go generation when the option is absent).
+// The query universe is the Peers domain on the current device; Station S-zone
+// and federation F-zone adapters, Ask, and semantic retrieval are later plans
+// and reuse these shapes without renegotiating the wire contract.
+//
+// Scope enforcement: requests carrying anything other than DEVICE scope in
+// the device milestone must be rejected at admission with
+// SCOPE_OUTSIDE_SEARCH_DOMAIN. There is intentionally no web/os/connector
+// scope anywhere in this enum.
+
+// What the user is trying to do. FIND retrieves content; OPEN resolves a
+// known resource (used by deep links and recent items).
+enum SearchIntent {
+  SEARCH_INTENT_UNSPECIFIED = 0;
+  SEARCH_INTENT_FIND = 1;
+  SEARCH_INTENT_OPEN = 2;
+}
+
+enum SearchKind {
+  SEARCH_KIND_UNSPECIFIED = 0;
+  SEARCH_KIND_PERSON = 1;
+  SEARCH_KIND_CONVERSATION = 2;
+  SEARCH_KIND_MESSAGE = 3;
+  SEARCH_KIND_SOCIAL_POST = 4;
+  SEARCH_KIND_AGENT = 5;
+  SEARCH_KIND_KNOWLEDGE = 6;
+  SEARCH_KIND_ATTACHMENT = 7;
+  SEARCH_KIND_FUNCTION = 8;
+}
+
+// Trust zone of a result. FUNCTION shortcuts are local navigation and leave
+// zone unset (SEARCH_ZONE_UNSPECIFIED) — they carry no source trust claim.
+enum SearchZone {
+  SEARCH_ZONE_UNSPECIFIED = 0;
+  // Device-only end-to-end encrypted content, never leaves the device.
+  SEARCH_ZONE_DEVICE_E2EE = 1;
+  // Station-held content visible under the actor read policy. Reserved; not
+  // produced by the device milestone.
+  SEARCH_ZONE_STATION = 2;
+  // Federated content authorized within an existing federation context.
+  // Reserved; not produced by the device milestone.
+  SEARCH_ZONE_FEDERATION = 3;
+}
+
+enum SearchScope {
+  SEARCH_SCOPE_UNSPECIFIED = 0;
+  SEARCH_SCOPE_DEVICE = 1;
+  // Reserved values for later milestones; admission rejects them for now.
+  SEARCH_SCOPE_STATION = 2;
+  SEARCH_SCOPE_FEDERATION = 3;
+}
+
+enum SourceState {
+  SOURCE_STATE_UNSPECIFIED = 0;
+  SOURCE_STATE_READY = 1;
+  SOURCE_STATE_PARTIAL = 2;
+  SOURCE_STATE_UNAVAILABLE = 3;
+  SOURCE_STATE_INDEXING = 4;
+}
+
+enum SearchErrorCode {
+  SEARCH_ERROR_CODE_UNSPECIFIED = 0;
+  // The request named web, OS files, or an external connector — all outside
+  // the closed search domain (D-19).
+  SEARCH_ERROR_CODE_SCOPE_OUTSIDE_SEARCH_DOMAIN = 1;
+  SEARCH_ERROR_CODE_INVALID_QUERY = 2;
+  SEARCH_ERROR_CODE_CANCELLED = 3;
+  SEARCH_ERROR_CODE_SOURCE_UNAVAILABLE = 4;
+  SEARCH_ERROR_CODE_CURSOR_EXPIRED = 5;
+}
+
+// Canonical address of one searchable object. kind/id identify the object;
+// the optional conversation/message fields carry the message anchor.
+message ResourceRef {
+  string kind = 1;
+  string id = 2;
+  string conversation_id = 3;
+  string message_id = 4;
+  // Typed navigation target for function results (settings section, agent
+  // create flow, etc.). Content results resolve through the owning module.
+  string target_page = 5;
+}
+
+// Local suggestion request: exact objects available on the device without a
+// full retrieval pass. Must never trigger a network request.
+message SuggestRequest {
+  string query = 1;
+  SearchKind kind = 2;
+  int32 limit = 3;
+  // Client-generated id used to cancel an in-flight suggestion.
+  string request_id = 4;
+}
+
+message SubmitRequest {
+  string query = 1;
+  SearchIntent intent = 2;
+  SearchKind kind = 3;
+  SearchScope scope = 4;
+  // Empty on first page; pass the opaque cursor from the previous response.
+  string cursor = 5;
+  int32 limit = 6;
+  string request_id = 7;
+}
+
+message CancelRequest {
+  string request_id = 1;
+}
+
+message ResultItem {
+  ResourceRef resource = 1;
+  SearchKind kind = 2;
+  SearchZone zone = 3;
+  string title = 4;
+  // Short matched fragment, already policy-filtered by the producer. Snippet
+  // text must never be hydrated for an object the actor cannot open.
+  string snippet = 5;
+  string conversation_title = 6;
+  string author_ptid = 7;
+  int64 created_at_unix_ms = 8;
+  // Producer-local relevance, fused by the coordinator; not user-visible.
+  double score = 9;
+}
+
+message SourceCoverage {
+  string source_id = 1;
+  SourceState state = 2;
+  // i18n key in packages/locales; the wire never carries display copy.
+  string detail_key = 3;
+}
+
+message SearchResponse {
+  repeated ResultItem items = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+  repeated SourceCoverage coverage = 4;
+}
+
+message CancelResponse {
+  string request_id = 1;
+  bool cancelled = 2;
+}

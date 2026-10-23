@@ -53,6 +53,7 @@ futures-lite = "2"
 ulid = "1.1"
 bip39 = { version = "2", features = ["rand"] }
 messaging-core = { path = "../../../packages/messaging-core" }
+search-core = { path = "../../../packages/search-core" }
 messaging-native-filesystem = { path = "../../../packages/messaging-native-filesystem" }
 secure-content-core = { path = "../../../packages/secure-content-core" }
 station-trust = { path = "../../../packages/station-trust" }

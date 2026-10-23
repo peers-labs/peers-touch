@@ -213,7 +213,7 @@ Shell 的类型解析与运行时保持同一个 React 主版本，Atelier 入�
 
 - Applet launcher 与 `applet:<id>` 路由继续作为容器内部能力存在，但不占用全局一级 Rail，也不提供 Pin 到 Rail。
 - Atelier 的用户入口归入 Agent 模块二级工作面；其 applet runtime 仍可在内容区渲染 `@peers-touch/prototype-desktop-atelier` 的 `AtelierPage`。
-- Shell 默认落在 Search，隐藏能力不会改变首屏信息架构。
+- Search 是按需唤起的覆盖层（默认落点是 Chat）：rail 搜索按钮与 ⌘K 打开 `src/search/SearchOverlay.tsx`，只覆盖 Peers 封闭域（端 + Station、当前 actor 授权），不含公网/OS 文件。见 [Search 原型 README](../../../domains/search/prototype/README.md)。
 
 ## 对应设计
 
@@ -227,7 +227,7 @@ drafting（见 [原型总账](../README.md)）。
 
 ## 已知差异 / 待补
 
-- Search、Moments 等未覆盖页面仍有占位内容；Agent Profile 已接入整合原型。
+- Search 已接入封闭域覆盖层原型（见 [Search 原型](../../../domains/search/prototype/README.md)）；Moments 等未覆盖页面仍有占位内容。Agent Profile 已接入整合原型。
 - SideNav 用纯 DOM 复刻 LobeUI `<SideNav>` 形态（avatar/topActions/bottomActions），未引入 `@lobehub/ui` 与 antd theme token；视觉为近似，不接真实主题系统。
 - 二级侧栏（真实工程 agent 页的 `DraggablePanel`）未复刻。
 - 命令面板为 mock 跳转，未接真实快捷键全集与命令注册表。

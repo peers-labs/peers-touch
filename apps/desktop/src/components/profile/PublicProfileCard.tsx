@@ -12,6 +12,7 @@ import { Button, toast } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import { Tooltip, theme, Typography } from 'antd';
 import { Copy } from 'lucide-react';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 
 const { Text } = Typography;
 
@@ -121,40 +122,27 @@ export function PublicProfileCard({ compact, profile, avatarNode, actions }: Pub
     <Flexbox align="center" gap={compact ? 12 : 16}>
       {/* Avatar */}
       {avatarNode ?? (
-        profile.avatar ? (
-          <img
-            data-chat-avatar-ptid={profile.did || ''}
-            data-chat-avatar-src={profile.avatar}
-            src={profile.avatar}
-            alt={profile.displayName}
+        <Flexbox
+          data-chat-avatar-ptid={profile.did || ''}
+          data-chat-avatar-src={profile.avatar || ''}
+          align="center"
+          justify="center"
+          style={{ width: avatarSize, height: avatarSize, flexShrink: 0 }}
+        >
+          <UserSquareAvatar
+            remoteUrl={profile.avatar}
+            name={profile.displayName}
+            size={avatarSize}
+            radius={avatarRadius}
+            background={token.colorFillSecondary}
+            fallback={getInitial(profile.displayName)}
             style={{
-              width: avatarSize,
-              height: avatarSize,
-              borderRadius: avatarRadius,
-              objectFit: 'cover',
-              flexShrink: 0,
-            }}
-          />
-        ) : (
-          <Flexbox
-            data-chat-avatar-ptid={profile.did || ''}
-            data-chat-avatar-src=""
-            align="center"
-            justify="center"
-            style={{
-              width: avatarSize,
-              height: avatarSize,
-              borderRadius: avatarRadius,
-              background: token.colorFillSecondary,
               color: token.colorTextSecondary,
               fontSize: compact ? 22 : 28,
               fontWeight: 700,
-              flexShrink: 0,
             }}
-          >
-            {getInitial(profile.displayName)}
-          </Flexbox>
-        )
+          />
+        </Flexbox>
       )}
 
       {/* Display name */}

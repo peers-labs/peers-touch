@@ -4533,8 +4533,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
 
         // =================================================================
-        // Search (no state)
+        // Search — closed-domain device retrieval (SRCH-D03)
         // =================================================================
+        // This development gateway has no caller-bound window authority.
+        // A shared logged-in gateway session cannot authorize private Search.
+        "search_suggest" | "search_submit" | "search_cancel" =>
+            to_json(AppResult::<Value>::fail(
+                ErrorCode::Unauthorized,
+                "private device search requires an authenticated native window",
+                None,
+            )),
+        // Legacy success-empty stubs for the old search-provider UI.
         "help_get" => to_json(app_search::help_get()),
         "search_sources" => to_json(app_search::search_sources()),
         "search_query" => {

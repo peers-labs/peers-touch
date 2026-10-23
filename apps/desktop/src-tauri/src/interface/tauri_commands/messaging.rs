@@ -610,7 +610,7 @@ pub(crate) fn messaging_update_member_settings_result(
     }
 }
 
-fn active_engine(
+pub(crate) fn active_engine(
     state: &Arc<AppState>,
     window: &Window,
 ) -> Result<(String, String, Arc<crate::messaging::MessagingEngine>), AppResult<Value>> {

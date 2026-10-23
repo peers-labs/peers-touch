@@ -2547,7 +2547,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             conversationId,
             scope,
             senderPtid: message.senderPtid,
-            content: message.plaintext,
+            content: message.editedText ?? message.plaintext,
             sentAt: message.timestampUnixMs,
             conversationName: conversationName || conversationId.slice(0, 12),
             attachments: message.attachments.map(attachment => ({

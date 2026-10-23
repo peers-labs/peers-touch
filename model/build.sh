@@ -62,9 +62,18 @@ APPLET_SERVICE_MODULE_PREFIX="github.com/peers-labs/peers-touch/apps/applets/"
 OAUTH_CLIENT_MODULE_PREFIX="github.com/peers-labs/peers-touch/oauth2-client/"
 
 for file in $GO_PROTO_FILES; do
-    GO_PACKAGE_LINE=$(grep 'option[[:space:]]\+go_package' "$file" || true)
+    GO_PACKAGE_LINE=$(grep -E '^[[:space:]]*option[[:space:]]+go_package' "$file" || true)
     GO_PROTO_OUT="$GO_OUT"
     GO_MODULE="github.com/peers-labs/peers-touch/station"
+
+    # Device-only protos intentionally carry no go_package (e.g. the closed
+    # search domain, whose Station adapter lands with a later plan). Skip Go
+    # generation for them instead of letting protoc-gen-go fail; TypeScript
+    # bindings are still generated below.
+    if [ -z "$GO_PACKAGE_LINE" ]; then
+        echo "  Skipping Go generation (no go_package): $file"
+        continue
+    fi
 
     if [[ "$GO_PACKAGE_LINE" =~ \"([^\"]+)\" ]]; then
         GO_PACKAGE="${BASH_REMATCH[1]}"
@@ -96,8 +105,6 @@ for file in $GO_PROTO_FILES; do
         else
             echo "  Generating $file (go_package: $GO_PACKAGE)"
         fi
-    else
-        echo "  Generating $file (no go_package option)"
     fi
 
     mkdir -p "$GO_PROTO_OUT"

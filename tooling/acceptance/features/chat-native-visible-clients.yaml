@@ -59,7 +59,7 @@
       "CHAT-UR09: Native contact identity renders the authoritative Station name in summaries and exposes raw identity values only in expandable copyable details",
       "CHAT-UR10: Direct Chat renders authoritative Station names and snapshot-plus-event presence, while keeping raw IDs in expandable technical details",
       "CHAT-UR11: Local background selection previews immediately while upload and durable persistence continue asynchronously, with rollback and retry on failure",
-      "CHAT-UR12: Message search targets canonical Conversation projections, finds known durable plaintext, and keeps the clear affordance inside the input boundary",
+      "CHAT-UR12: Message search targets canonical Conversation projections, finds the latest durable message body including edits, renders that same body in the result snippet and keyword highlight, and keeps the clear affordance inside the input boundary",
       "CHAT-UR13: Current-device conversation clearing commits a verified sequence/hash floor, remains effective after restart, leaves peer devices unchanged, and accepts later messages",
       "a persistent current-profile client explicitly authenticates its assigned actor even when a prior session restores",
       "Station and every client record matching commit and canonical proto digest with workspace identity",
@@ -108,6 +108,7 @@
     "raw Station peer IDs must not be primary Direct Chat labels and unknown presence must not be rendered as online or offline",
     "local background preview must not wait for upload or persist a local filesystem reference",
     "message search must not derive targets from retired legacy session/group arrays",
+    "message search must not render superseded plaintext when the canonical message projection contains edited text",
     "conversation clearing must not expose undo, mutate Station authority or another device, or report incomplete compaction as success",
     "missing stale partial API-only browser-only or dirty-Station evidence fails closed"
   ]
