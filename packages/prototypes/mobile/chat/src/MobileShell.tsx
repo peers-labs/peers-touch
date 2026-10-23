@@ -1,9 +1,10 @@
 import { useEffect, useState, type Dispatch, type ReactNode } from 'react';
 import { Badge } from 'antd';
-import { Image as ImageIcon, MessageCircle, User, Users } from 'lucide-react';
+import { Image as ImageIcon, MessageCircle, Search, User, Users } from 'lucide-react';
 import type { TabId, Conversation, Contact, GroupItem, MobileUiEvidence, SettingEntry } from './types';
 import {
   deliveryRecoveryMessages,
+  demoMessages,
   demoConversations,
   directDemoMessages,
   unknownOutcomeMessages,
@@ -18,6 +19,7 @@ import type { SocialDemoAction, SocialDemoState, SocialEvidenceScenario } from '
 import type { SearchDemoControl } from './searchDemo';
 import { ChatPage } from './pages/ChatPage';
 import { ChatThread } from './pages/ChatThread';
+import { SearchPage, type SearchPresentation, type SearchTarget } from './pages/SearchPage';
 import { MomentsPage, type MomentsEvidenceScenario } from './pages/MomentsPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -98,6 +100,15 @@ export function MobileShell({
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupItem | null>(null);
   const [selectedSetting, setSelectedSetting] = useState<SettingEntry | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchOrigin, setSearchOrigin] = useState<{ tab: TabId; conversation: Conversation | null }>({
+    tab: 'chat', conversation: null,
+  });
+  const [searchSetting, setSearchSetting] = useState(false);
+  const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
+  const [searchView, setSearchView] = useState<SearchPresentation>({
+    query: '', filter: 'all', conversationKey: '', submitted: false,
+  });
   const [shellToast, setShellToast] = useState<string | null>(null);
   const [shellToastKey, setShellToastKey] = useState(0);
   const [momentsImmersiveOpen, setMomentsImmersiveOpen] = useState(false);
@@ -152,8 +163,28 @@ export function MobileShell({
   }
 
   function handleBackToList() {
+    if (searchTarget) {
+      setSearchTarget(null);
+      setSearchOpen(true);
+      return;
+    }
     setSelectedConversation(null);
   }
+
+  function openSearch(conversationKey = '') {
+    setSearchOrigin({ tab: activeTab, conversation: selectedConversation });
+    if (searchView.conversationKey !== conversationKey) {
+      setSearchView({ query: '', filter: 'all', conversationKey, submitted: false });
+    }
+    setSearchTarget(null);
+    if (searchDemo && searchDemo.state.owner !== 'global-search') {
+      searchDemo.dispatch({ type: 'open', owner: 'global-search' });
+    }
+    setSearchOpen(true);
+  }
+
+  const searchEntry = <button type="button" className="mp-header-action" aria-label="Search"
+    onClick={() => openSearch()}><Search size={20} /></button>;
 
   function handleContactClick(contact: Contact) {
     dispatchSocialDemo({ type: 'close-direct' });
@@ -165,6 +196,7 @@ export function MobileShell({
   }
 
   function handleSettingClick(setting: SettingEntry) {
+    setSearchSetting(false);
     setSelectedSetting(setting);
   }
 
@@ -201,6 +233,26 @@ export function MobileShell({
   }
 
   function renderPage(): ReactNode {
+    if (searchOpen) {
+      const targets = conversations.flatMap(conversation => {
+        const messages = longLists ? longListMessages : conversation.key === 'dev-team' ? demoMessages : directDemoMessages;
+        return messages.filter(message => !message.dateLabel).flatMap(message => [
+          { conversation, message },
+          ...(message.threadReplies ?? []).map(reply => ({ conversation, message: reply, root: message })),
+        ]);
+      });
+      return <SearchPage view={searchView} onChange={setSearchView} targets={targets} memory={listMemory}
+        demo={searchDemo} onBack={() => {
+          setSearchOpen(false); setSearchTarget(null); setSelectedSetting(null);
+          setActiveTab(searchOrigin.tab); setSelectedConversation(searchOrigin.conversation);
+        }} onOpen={target => {
+          setActiveTab('chat'); setSelectedConversation(target.conversation);
+          setSearchTarget(target); setSearchOpen(false);
+        }} onSetting={setting => {
+          setSearchSetting(true);
+          setActiveTab('profile'); setSelectedSetting(setting); setSearchOpen(false);
+        }} />;
+    }
     if ((activeTab === 'chat' || activeTab === 'contacts') && socialDemo.runtime !== 'ready') {
       const conversationUnavailable = activeTab === 'chat' && selectedConversation;
       return <SocialUnavailablePage
@@ -228,7 +280,9 @@ export function MobileShell({
                 : directDemoMessages;
       return <ChatThread key={selectedConversation.key} conversation={selectedConversation}
         initialMessages={initialMessages}
-        listMemory={listMemory} searchDemo={searchDemo} uiEvidence={uiEvidence}
+        listMemory={listMemory} uiEvidence={uiEvidence}
+        messageId={searchTarget?.message.id} threadRootMessageId={searchTarget?.root?.id}
+        onSearch={() => openSearch(selectedConversation.key)}
         onStartCall={(mediaKind) => handleStartCall(selectedConversation, mediaKind)}
         onBack={handleBackToList} />;
     }
@@ -238,6 +292,7 @@ export function MobileShell({
         return <ChatThread key={direct.conversation.key} conversation={direct.conversation}
           initialMessages={direct.conversation.key.startsWith('demo-direct-') ? [] : undefined}
           listMemory={listMemory} uiEvidence={uiEvidence}
+          onSearch={() => openSearch(direct.conversation!.key)}
           onStartCall={(mediaKind) => handleStartCall(direct.conversation!, mediaKind)}
           onBack={() => dispatchSocialDemo({ type: 'close-direct' })} />;
       }
@@ -258,30 +313,31 @@ export function MobileShell({
       return (
         <SettingDetailView
           setting={selectedSetting}
-          onBack={() => setSelectedSetting(null)}
+          onBack={() => { setSelectedSetting(null); if (searchSetting) setSearchOpen(true); }}
           onChangeStation={onChangeStation}
         />
       );
     }
     switch (activeTab) {
-      case 'chat': return <ChatPage conversations={conversations}
+      case 'chat': return <ChatPage conversations={conversations} headerActions={searchEntry}
         listMemory={listMemory} uiEvidence={uiEvidence} onConversationClick={handleConversationClick} />;
       case 'moments': return <MomentsPage
+        headerActions={searchEntry}
         scenario={momentsScenario}
         onImmersiveVisibilityChange={setMomentsImmersiveOpen}
       />;
-      case 'contacts': return <ContactsPage contacts={longLists ? longListContacts : socialDemo.contacts}
+      case 'contacts': return <ContactsPage headerActions={searchEntry} contacts={longLists ? longListContacts : socialDemo.contacts}
         groups={longLists ? longListGroups : undefined} requests={longLists ? longListRequests : undefined}
         listMemory={listMemory} request={socialDemo.request}
         avatarState={uiEvidence.avatarState}
         onContactClick={handleContactClick} onGroupClick={handleGroupClick}
         onAddContact={handleAddContact} onCreateGroup={handleCreateGroup} />;
-      case 'profile': return <ProfilePage avatarState={uiEvidence.avatarState}
+      case 'profile': return <ProfilePage headerActions={searchEntry} avatarState={uiEvidence.avatarState}
         onChangeStation={onChangeStation} onSettingClick={handleSettingClick} />;
     }
   }
 
-  const showTabBar = !(activeTab === 'chat' && selectedConversation)
+  const showTabBar = !searchOpen && !(activeTab === 'chat' && selectedConversation)
     && !(activeTab === 'contacts' && (selectedContact || selectedGroup))
     && !(activeTab === 'profile' && selectedSetting)
     && !(activeTab === 'moments' && momentsImmersiveOpen);

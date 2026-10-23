@@ -846,7 +846,7 @@
     scroll-margin-block: var(--mp-header-h);
     &:active { background: var(--mp-gray-200); }
   }
-  .mp-list-control:focus-visible, .mp-history-result:focus-visible,
+  .mp-list-control:focus-visible,
   .mp-list-window [data-scroll-anchor-id]:focus-visible {
     outline: 2px solid var(--mp-primary); outline-offset: -2px;
   }
@@ -854,16 +854,6 @@
     display: flex; flex-direction: column; gap: 4px;
   }
   .mp-list-window .mp-message-row { animation: none; }
-  .mp-history-search-form { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .mp-history-search-form .mp-details-search-input { flex: 1; min-width: 0; }
-  .mp-history-search-error { flex-direction: column; gap: 16px; }
-  .mp-history-result {
-    display: flex; flex-direction: column; width: 100%; text-align: left;
-    border: none; border-bottom: 1px solid var(--mp-gray-100);
-    background: var(--mp-bubble-peer); font: inherit; cursor: pointer;
-  }
-  .mp-history-result .mp-details-search-result-text { overflow-wrap: anywhere; }
-
   /* ── Conversation list ── */
   .mp-conversation-item {
     min-height: 68px !important; padding: 10px 16px !important; cursor: pointer;
@@ -2187,28 +2177,6 @@
   .mp-toggle.active .mp-toggle-thumb { transform: translateX(18px); }
 
   /* ── Details Sub-views ── */
-  .mp-details-search-box {
-    padding: 12px 16px; background: white; margin-bottom: 12px;
-  }
-  .mp-details-search-input {
-    width: 100%; padding: 10px 14px; border-radius: 10px;
-    border: 1px solid rgba(0,0,0,.1); font-size: 14px;
-    background: #f9f9fb; outline: none;
-    &:focus { border-color: var(--mp-primary); background: var(--pt-surface-base); }
-  }
-  .mp-details-search-results { background: white; flex: 1; display: flex; flex-direction: column; }
-  .mp-details-search-result-item {
-    padding: 12px 16px; border-bottom: 1px solid rgba(0,0,0,.04);
-  }
-  .mp-details-search-result-sender {
-    font-size: 12px; font-weight: 600; color: var(--mp-primary);
-  }
-  .mp-details-search-result-text {
-    font-size: 14px; color: #2d3352; margin-top: 3px; line-height: 1.4;
-  }
-  .mp-details-search-result-time {
-    font-size: 11px; color: #9ca0ab; margin-top: 4px;
-  }
   .mp-details-empty {
     flex: 1; display: flex; align-items: center; justify-content: center;
     padding: 40px 20px; text-align: center; color: #9ca0ab; font-size: 14px;
@@ -3467,8 +3435,6 @@
   .mp-chat-details-profile,
   .mp-chat-details-section,
   .mp-thread-root-msg,
-  .mp-details-search-box,
-  .mp-details-search-results,
   .mp-confirm-dialog,
   .mp-new-post-card {
     background: var(--pt-surface-base);
@@ -3482,14 +3448,12 @@
   .mp-thread-reply-name,
   .mp-chat-details-title,
   .mp-chat-details-item,
-  .mp-confirm-title,
-  .mp-details-search-result-text {
+  .mp-confirm-title {
     color: var(--pt-text-primary);
   }
   .mp-thread-root-sender,
   .mp-thread-badge,
-  .mp-pinned-item-sender,
-  .mp-details-search-result-sender {
+  .mp-pinned-item-sender {
     color: var(--pt-action-primary);
   }
   .mp-chat-details-item,
@@ -3504,8 +3468,7 @@
   .mp-action-sheet-backdrop,
   .mp-confirm-backdrop { background: rgba(0, 0, 0, 0.52); }
   .mp-new-post-textarea,
-  .mp-moment-comment-input,
-  .mp-details-search-input {
+  .mp-moment-comment-input {
     background: var(--pt-surface-subtle);
     color: var(--pt-text-primary);
     border-color: var(--pt-border-hairline);

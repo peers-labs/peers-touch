@@ -53,7 +53,17 @@ apps/mobile/src/
   components/SearchEntry.tsx          Shell 注入既有一级页 header action rail
   features/chat/useChatMessageAnchor.ts
                                       原 Messaging 投影中的 message/thread 定位
+  acceptance/searchActions.ts         同协议的类型化查询/解析/取消诊断，不代替 UI
+packages/prototypes/mobile/chat/src/
+  pages/SearchPage.tsx                同一 Shell 全屏详情的样本表达
+  MobileShell.tsx                     四个一级入口、会话范围和返回来源
 ```
+
+Mobile 旧 `messaging_search_messages` IPC、输入 DTO、注册和服务 wrapper 已删除。
+现有 Acceptance `messaging.search` 为原 Chat Gate 保留结果投影合同：先经统一
+Search 协议取得命中 ID，再由原 Messaging owner 读取投影。它不持有查询实现、
+独立 FTS、缓存或 Renderer 账号选择。新增 `search.*` 诊断保留 native typed
+denial，正式 Search 的输入、筛选、打开、返回和结果行仍须通过 UI 证明。
 
 FTS 表形继续由 Messaging 统一持有。两端写入和查询共用 `search-core` 分词。
 Mobile 从原消息表重建既有 FTS，每批最多 128 行；原 Store 中的

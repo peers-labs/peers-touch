@@ -551,6 +551,15 @@ node packages/prototypes/mobile/chat/scripts/check-residual-parity.mjs
 
 ## Acceptance Notes
 
+- **Unified device Search, 2026-10-23:** four primary header actions and Chat
+  History Search enter one full-height Shell detail. Message/attachment-name/
+  function filters, explicit conversation scope, original message/thread focus
+  and returning input are represented in `src/pages/SearchPage.tsx`. Portal
+  touch checks cover these routes plus dark/narrow, loading and error/retry.
+  Development screenshots and result: `/tmp/mobile-search-prototype-20261023/`.
+  Old Search sections in the long-list/residual scripts still need migration.
+  Native Android/iOS behavior, account fencing and complete localization remain
+  unproven; sample rendering does not establish production readiness.
 - **W6A long-list sample: source/render synchronized for the covered subset.**
   Previous/Next, search paging, older-history anchors, large request/member
   collections, and controlled search loading/failure/retry now have repeatable

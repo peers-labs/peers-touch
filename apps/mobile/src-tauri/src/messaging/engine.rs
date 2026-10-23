@@ -1902,17 +1902,6 @@ impl MobileMessagingEngine {
             .thread_message_projections(conversation_id, thread_root_message_id)
     }
 
-    pub fn search_messages(
-        &self,
-        conversation_id: &str,
-        query: &str,
-        before: Option<(i64, &str)>,
-        limit: usize,
-    ) -> Result<Vec<ConversationMessageProjection>, String> {
-        self.store
-            .search_message_projections(conversation_id, query, before, limit)
-    }
-
     pub fn command_status(
         &self,
         command_id: &str,

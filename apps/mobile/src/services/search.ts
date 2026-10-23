@@ -20,10 +20,10 @@ export const mobileSearchService = {
   },
   async submit(
     query: string, requestId: string, locale: string, kind: SearchKind,
-    conversationId: string, cursor = '', refresh = false, attachmentNamesOnly = false,
+    conversationId: string, cursor = '', refresh = false, attachmentNamesOnly = false, limit = 100,
   ) {
     const request = create(SubmitRequestSchema, {
-      query, requestId, locale, kind, conversationId, cursor, refresh, attachmentNamesOnly, limit: 100,
+      query, requestId, locale, kind, conversationId, cursor, refresh, attachmentNamesOnly, limit,
       intent: SearchIntent.FIND, scope: SearchScope.DEVICE,
     });
     const bytes = await invoke<number[]>('search_submit', {

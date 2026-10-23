@@ -1,6 +1,6 @@
 # Search 门户 — 原型
 
-> 状态：confirmed（Owner 2026-10-22 用户层确认，作为 Desktop 端侧落地参照；Mobile/Ask/联邦面孔仍待补）
+> 状态：confirmed（Desktop 2026-10-22；Mobile 全屏端侧范围 2026-10-23 已批准；Ask/联邦面孔仍待补）
 > 创建：2026-10-22
 > 对应设计：[..\/README.md](../README.md)（封闭检索域 D-19）· [product.md](../product.md) · [design.md](../design.md)
 > 落地计划：[20261022-device-search-find-open](../execution-plans/20261022-device-search-find-open/plan.md)（Desktop 端侧「找回 + 打开」）
@@ -78,10 +78,15 @@ L4 runtime：未做语义树/对比度自动化，UNPROVEN。
 
 ## 已知差异 / 待补
 
-- Mobile 当前为 `UNSYNCED`：2026-10-23 已批准全屏 Search、显式会话范围、
-  原消息/线程打开和返回恢复；生产源码已有实现，既有
-  `packages/prototypes/mobile/chat/` 仍需在本工作流同步并采集 L2/L3。
-  Owner：Mobile / Search。原型状态不能替代 Android/iOS 原生证明。
+- Mobile 全屏 Search、显式会话范围、原消息/线程打开与返回的源码已同步到
+  `packages/prototypes/mobile/chat/src/pages/SearchPage.tsx` 与既有 Shell。
+  已通过 Portal 的四个一级入口、实际消息/线程 focus、附件筛选、Settings
+  跳转、返回输入、暗色/窄屏和可控 loading/error/retry 走查；结果列表使用
+  原 `PrototypeListWindow`。L2/L3 开发证据位于
+  `/tmp/mobile-search-prototype-20261023/`，不替代 Android/iOS 原生证明。
+  既有 `check-long-lists.mjs` / `check-residual-parity.mjs` 的旧 Search
+  路径仍需迁移；可控 demo 的跨会话失效与完整本地化仍未证明。
+  Owner：Mobile / Search。
 - Desktop 端侧实现只启用本机消息/会话和真实 Settings 功能目录；原型 D/S/F 全对象是目标产品，未接入的来源在生产 footer 明示。Applet 仅预留 binding。
 - 新建 Agent 搜索项打开 Agent 的现有创建入口，实际创建仍由原模块的显式操作触发。通知/免打扰无真实分区，不伪造生产入口。
 - 同账号状态恢复/有界 mock 复用已同步；本轮 `make run-prototype` Portal
@@ -89,7 +94,7 @@ L4 runtime：未做语义树/对比度自动化，UNPROVEN。
   与 `01-portal.png`、`02-results.png`、`03-narrow.png`。不替代原生证明。
 - anchor 当前用 toast 表达定位语义；真实产品需在消息流滚动高亮（依赖统一 ResourceResolver，V-01）。
 - Agent「工具调用/任务执行事件」是否独立可搜（定位到 tool-call 而非轮次）仍为待确认范围。
-- 未画：Mobile touch 版本、Ask 回答态、语义模型处理位置的二次授权弹窗、Federation 对端拒绝态。
+- 未画：Ask 回答态、语义模型处理位置的二次授权弹窗、Federation 对端拒绝态。
 - 未演示真实索引/延迟分布；280ms 加载为 mock。
 - 演示视角切换器是原型专用控件，落地时移除。
 - 背景 Chat 仍为既有 social-chat acceptance 夹具（英文 Release Room 等），属另一原型的测试语料，本原型不改动；Search 自身语料已全部社交生活化。

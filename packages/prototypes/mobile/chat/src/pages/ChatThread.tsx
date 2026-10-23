@@ -12,10 +12,8 @@ import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../typ
 import { demoMessages } from '../data';
 import { ThreadView } from '../components/ThreadView';
 import { ForwardPicker } from '../components/ForwardPicker';
-import { ChatHistorySearch } from '../components/ChatHistorySearch';
 import { PrototypeListWindow, type PrototypeListHandle } from '../components/PrototypeListWindow';
 import type { PrototypeListMemory } from '../listPresentation';
-import type { SearchDemoControl } from '../searchDemo';
 import copy from '../../../../../locales/en/common.json';
 import {
   CHAT_JOURNEY,
@@ -34,13 +32,15 @@ import {
 const { Text } = Typography;
 const messageKey = (message: Message) => message.id;
 
-export function ChatThread({ conversation, onBack, onStartCall, initialMessages = demoMessages, listMemory, searchDemo, uiEvidence }: {
+export function ChatThread({ conversation, onBack, onStartCall, initialMessages = demoMessages, listMemory, uiEvidence, onSearch, messageId, threadRootMessageId }: {
   conversation: Conversation;
   onBack: () => void;
   onStartCall?: (mediaKind: PrototypeCallMediaKind) => void;
   initialMessages?: Message[];
   listMemory: PrototypeListMemory;
-  searchDemo?: SearchDemoControl;
+  onSearch?: () => void;
+  messageId?: string;
+  threadRootMessageId?: string;
   uiEvidence: MobileUiEvidence;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -51,14 +51,15 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
     initialMessages.length > 0
       && !initialMessages.some((message) => message.status === 'failed' || message.status === 'unknown'),
   );
-  const [threadMessage, setThreadMessage] = useState<Message | null>(null);
+  const [threadMessage, setThreadMessage] = useState<Message | null>(() =>
+    initialMessages.find(message => message.id === threadRootMessageId) ?? null);
   const [showPinnedMessages, setShowPinnedMessages] = useState(false);
   const [showEmojiGrid, setShowEmojiGrid] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastKey, setToastKey] = useState(0);
   const [showChatDetails, setShowChatDetails] = useState(false);
-  const [detailsView, setDetailsView] = useState<'main' | 'search' | 'media'>('main');
-  const [targetMessageId, setTargetMessageId] = useState<string | null>(null);
+  const [detailsView, setDetailsView] = useState<'main' | 'media'>('main');
+  const [targetMessageId, setTargetMessageId] = useState<string | null>(messageId ?? null);
   const [targetUnavailable, setTargetUnavailable] = useState(false);
   const messageWindow = useRef<PrototypeListHandle>(null);
   const retryTimers = useRef<Set<number>>(new Set());
@@ -795,7 +796,6 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
             </button>
             <span className="mp-chat-details-title">
               {detailsView === 'main' && 'Details'}
-              {detailsView === 'search' && 'Search Chat'}
               {detailsView === 'media' && 'Shared Media'}
             </span>
           </header>
@@ -812,7 +812,7 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
               </div>
 
               <div className="mp-chat-details-section">
-                <button type="button" className="mp-chat-details-item" onClick={() => setDetailsView('search')}>
+                <button type="button" className="mp-chat-details-item" onClick={onSearch}>
                   <span>Search Chat History</span>
                   <ChevronRight size={16} className="mp-row-chevron" />
                 </button>
@@ -872,16 +872,6 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
             </div>
           )}
 
-          {/* Search Chat History Sub-view */}
-          {detailsView === 'search' && (
-            <ChatHistorySearch messages={messages} conversationKey={conversation.key}
-              peerName={conversation.name} memory={listMemory} searchDemo={searchDemo} onSelect={(id) => {
-                setTargetMessageId(id);
-                setDetailsView('main');
-                setShowChatDetails(false);
-              }} />
-          )}
-
           {/* Shared Media Sub-view */}
           {detailsView === 'media' && (
             <div className="mp-chat-details-body">
@@ -938,7 +928,8 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
 
       {/* Thread View overlay */}
       {threadMessage && (
-        <ThreadView message={threadMessage} conversation={conversation} onBack={() => setThreadMessage(null)} />
+        <ThreadView message={threadMessage} conversation={conversation} targetId={messageId}
+          onBack={messageId ? onBack : () => setThreadMessage(null)} />
       )}
     </div>
   );
