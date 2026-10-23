@@ -218,11 +218,30 @@ class DeviceSearchGate(NativeTwoClientGate):
         }, timeout=180)
         if len(filler.get("messageIds", [])) != 55:
             raise GateError("Search history must exceed the latest message window")
-        # Wait on received Search UI later; Harness results only identify targets.
+        # Sender commits do not prove the receiver has synchronized the batch.
+        # This native-owner receipt is Fixture readiness; Search still uses UI.
         self.report.runtime["search"]["resources"].update({
             "conversationId": self.conversation, "messageId": self.message,
             "replyId": self.reply, "fillerIds": filler["messageIds"],
         })
+        received: set[str] = set()
+
+        def received_message(message_id: str) -> bool:
+            if message_id not in received:
+                page = async_harness(self.receiver, "messagePage", {
+                    "conversationId": self.conversation, "limit": 100,
+                })
+                received.update(page.get("messageIds", []))
+            return message_id in received
+
+        for message_id in filler["messageIds"]:
+            wait_until(
+                lambda message_id=message_id: received_message(message_id),
+                "receiver commits seeded message", timeout=30,
+            )
+        self.report.runtime["search"]["resources"]["receiverFillerIds"] = sorted(
+            received.intersection(filler["messageIds"]),
+        )
 
     def upload(self) -> None:
         sender = self.clients["bob"]
