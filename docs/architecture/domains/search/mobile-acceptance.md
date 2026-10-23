@@ -33,8 +33,8 @@ Simulator and Android Emulator.
   The Search detail consumes the shared `useVisualKeyboardOverlap` measurement
   to shrink its full-height rail; its result scroll root ends above the keyboard.
 - Theme rendering consumes the committed device preference through the root
-  LobeUI ThemeProvider. Captured title, result, source, history-boundary and query
-  text must retain at least 4.5:1 contrast against its actual ancestor-composited
+  LobeUI ThemeProvider. Captured title, result, source, history-boundary, scope,
+  filter and query text must retain at least 4.5:1 contrast against its actual ancestor-composited
   background, including text opacity. Distinct backgrounds alone cannot pass.
 - Result source metadata follows the existing Social display-name policy;
   identity locators cannot become conversation display copy.
@@ -82,6 +82,10 @@ Each source-bound client also records at most 32 existing Messaging runtime-erro
 events inside its own WebView lifetime. Failure diagnostics redact and preserve
 the operation and original error, so a dependency-failed route cannot conceal
 its originating native/projection failure.
+Query, navigation and runtime-error diagnostics are collected before native
+screenshot or lifecycle waits. A failed canonical message-focus wait preserves
+its last observed product surfaces, message nodes, window scope, active element
+and runtime errors independently of subsequent driver availability.
 
 Theme interaction contract:
 
@@ -90,7 +94,7 @@ surface: mobile.search
 given: [readable received result, current device preference]
 when: [save opposite theme through Chat Settings, return to Search]
 then: [committed theme in root UI provider, same matching received result]
-visual_invariants: [text contrast at least 4.5:1, semantic header surface]
+visual_invariants: [text contrast at least 4.5:1 including scope and filters, semantic header surface]
 forbidden: [dark surface with light-theme text tokens, background-only proof]
 evidence: [native screenshot, DOM, composited text contrast, persisted preference]
 ```

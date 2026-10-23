@@ -54,7 +54,7 @@
 
 .mobile-search-filters button[aria-pressed='true'] {
   background: var(--brand-muted);
-  color: var(--brand-primary);
+  font-weight: 600;
 }
 
 .mobile-search-scope {
@@ -64,6 +64,11 @@
   justify-content: space-between;
   gap: 4px;
   min-height: 44px;
+}
+
+.mobile-search-scope .ant-typography {
+  color: inherit;
+  opacity: 0.75;
 }
 
 .mobile-search-scope .ant-btn {

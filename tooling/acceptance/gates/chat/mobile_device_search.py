@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
@@ -171,7 +172,8 @@ return {
   foreground: page ? getComputedStyle(page).color : '',
   textContrasts: [...document.querySelectorAll(
     '.mobile-search-page h1,.mobile-search-result__title,.mobile-search-result__meta,'
-    + '.mobile-search-coverage span,#mobile-search-input')]
+    + '.mobile-search-coverage span,.mobile-search-scope .ant-typography,'
+    + '.mobile-search-filters button,#mobile-search-input')]
     .map(textContrast),
   documentWidth: document.documentElement.scrollWidth,
   searchState: document.querySelector('[data-search-state]')?.dataset.searchState || '',
@@ -323,11 +325,10 @@ return document.documentElement.dataset.mobileColorScheme === arguments[0]
         require(backgrounds[0] != backgrounds[1], "native Search themes must actually differ")
 
     def _capture_runtime_failure(self, artifacts: ArtifactSession) -> list[dict[str, Any]]:
-        diagnostics = super()._capture_runtime_failure(artifacts)
+        diagnostics = []
         for session in self.sessions:
             try:
-                self.capture(artifacts, session, "failure", diagnostic=True)
-                rendering = self.frames[f"{session.client_id}/failure"]["rendering"]
+                rendering = self.surface(session)
                 def observe(action: str, payload: dict | None = None) -> Any:
                     try:
                         return session.call_action(action, payload or {})
@@ -338,6 +339,7 @@ return document.documentElement.dataset.mobileColorScheme === arguments[0]
                     {
                         "clientId": session.client_id,
                         "rendering": rendering,
+                        "navigation": observe("navigation.snapshot"),
                         "runtimeErrors": [
                             {"operation": item["operation"],
                              "message": _redacted_markup(item["message"]).decode("utf-8")}
@@ -357,6 +359,10 @@ return document.documentElement.dataset.mobileColorScheme === arguments[0]
             except Exception as error:
                 diagnostics.append({"clientId": session.client_id, "errorType": type(error).__name__})
             try:
+                self.capture(artifacts, session, "failure", diagnostic=True)
+            except Exception as error:
+                diagnostics.append({"clientId": session.client_id, "errorType": type(error).__name__})
+            try:
                 recovery = session.call_action("recovery.snapshot")
                 reference = artifacts.write_json(
                     f"mobile-device-search/{session.client_id}/failure-admission.json",
@@ -371,6 +377,7 @@ return document.documentElement.dataset.mobileColorScheme === arguments[0]
                 diagnostics.append({"clientId": session.client_id, "artifact": reference.to_dict()})
             except Exception as error:
                 diagnostics.append({"clientId": session.client_id, "errorType": type(error).__name__})
+        diagnostics.extend(super()._capture_runtime_failure(artifacts))
         reference = artifacts.write_json(
             "mobile-device-search/observations.json",
             {"frames": self.frames, "costs": self.costs, "denials": self.denials,
@@ -482,9 +489,35 @@ const deadline = Date.now() + 30000;
         self.fill(session, query)
         self.has(session, message_id, query)
         self.click(session, f'{ROW}[data-resource-id="{message_id}"]')
-        self.wait(session, """
-return document.activeElement?.getAttribute('data-message-ulid') === arguments[0];
-""", "canonical Chat message focus", message_id)
+        observation: dict[str, Any] = {}
+        def focus() -> dict | None:
+            nonlocal observation
+            observation = session.execute_script("""
+return {
+  activeMessage: document.activeElement?.getAttribute('data-message-ulid') || '',
+  activeElement: document.activeElement?.outerHTML.slice(0, 1024) || '',
+  surfaces: [...document.querySelectorAll('[data-product-surface]')]
+    .map(node => node.dataset.productSurface),
+  windows: [...document.querySelectorAll('[data-window-surface]')]
+    .map(node => ({surface: node.dataset.windowSurface, total: node.dataset.windowTotal})),
+  messages: [...document.querySelectorAll('[data-message-ulid]')]
+    .map(node => ({id: node.dataset.messageUlid, text: node.innerText.slice(0, 256)})),
+  runtimeErrors: window.__PEERS_SEARCH_RUNTIME_ERRORS__ || [],
+  body: document.body.innerText.slice(0, 4096),
+};
+""")
+            return observation if observation["activeMessage"] == message_id else None
+        try:
+            self._wait_for_value(focus, "canonical Chat message focus")
+        except Exception:
+            artifacts.write_json(
+                f"mobile-device-search/{session.client_id}/{name}/focus-failure.json",
+                json.loads(_redacted_markup(json.dumps({
+                    "targetMessage": message_id, "observation": observation,
+                })).decode("utf-8")),
+                role=f"mobile-search-focus-failure/{session.client_id}/{name}",
+            )
+            raise
         self.capture(artifacts, session, name)
         self.cost(session, f"{name}-return",
                   lambda: self.click(session, ".chat-thread-header > button"))
