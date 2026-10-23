@@ -29,6 +29,10 @@ UI_ASSERTIONS = {
     "functions_navigation", "empty_state", "invalid_query_recovery",
     "logout_clears_search", "same_window_account_isolation",
 }
+RESULT_ASSERTIONS = UI_ASSERTIONS - {
+    "historical_open", "thread_open", "hide_invalidation",
+    "functions_navigation", "empty_state", "logout_clears_search",
+}
 REQUIRED_ASSERTIONS = UI_ASSERTIONS | {
     "native_runtime", "source_build_runtime_identity", "actor_isolation",
     "forged_authority_denied", "stale_content_denied", "hidden_reference_denied",
@@ -110,6 +114,9 @@ class DeviceSearchGate(NativeTwoClientGate):
                 modalClass: modal?.className || '',
                 query: field?.querySelector('input')?.value || '',
                 bodyText: document.querySelector('.pt-search-body')?.innerText || '',
+                resultCount: document.querySelectorAll('.pt-search-row').length,
+                resultText: [...document.querySelectorAll('.pt-search-row')]
+                    .map(row => row.innerText).join('\\n'),
                 loading: !!document.querySelector('.pt-search-status'),
             };
             if (!field || !modal) return result;
@@ -193,7 +200,8 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def rows(self) -> str:
         return str(self.receiver.execute_script(
-            "return document.querySelector('.pt-search-body')?.innerText || '';",
+            "return [...document.querySelectorAll('.pt-search-row')]"
+            ".map(row => row.innerText).join('\\n');",
         ))
 
     def visible(self, name: str, predicate: Any, detail: Any = None) -> None:
@@ -397,7 +405,9 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.report.runtime["search"]["cache"]["explicit_refresh"] = {
             "before": before, "after": after,
         }
-        self.visible("explicit_refresh", lambda: after["sourceReads"] > before["sourceReads"])
+        self.visible("explicit_refresh", lambda: (
+            self.query in self.rows() and after["sourceReads"] > before["sourceReads"]
+        ))
         self.report.runtime["search"]["cache"]["explicit_refresh"]["after"] = self.counts()
         self.receiver.find_element(".pt-search-row", 20).click()
         self.wait_js("!document.querySelector('.pt-search-field')", "Chat open")
@@ -515,7 +525,8 @@ class DeviceSearchGate(NativeTwoClientGate):
                                   denied.get("accepted") is False and denied.get("errorCode") == 5)
             self.submit(self.query)
             self.wait_js(
-                f"document.querySelector('.pt-search-body')?.innerText.includes({json.dumps(self.query)})",
+                "[...document.querySelectorAll('.pt-search-row')].some("
+                f"row => row.innerText.includes({json.dumps(self.query)}))",
                 "Bob Search after same-window account switch", timeout=90,
             )
             self.visible("same_window_account_isolation", lambda: (

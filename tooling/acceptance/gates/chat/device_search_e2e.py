@@ -1,11 +1,39 @@
 """Fail-closed validator for the native device Search report."""
 from __future__ import annotations
 
+from html.parser import HTMLParser
+
 from tooling.acceptance.core import ArtifactRef, ArtifactSession, EvidenceStore, REPO_ROOT
 from tooling.acceptance.gates.chat.device_search_runner import (
-    GATE_ID, JOURNEY_ID, REQUIRED_ASSERTIONS, REQUIRED_STEPS, UI_ASSERTIONS, read_counts,
+    GATE_ID, JOURNEY_ID, REQUIRED_ASSERTIONS, REQUIRED_STEPS, RESULT_ASSERTIONS,
+    UI_ASSERTIONS, read_counts,
 )
 from tooling.acceptance.gates.chat.native_two_client_e2e import load_report, require, validate_report
+
+
+class SearchResultDom(HTMLParser):
+    def __init__(self, dom: str) -> None:
+        super().__init__()
+        self.result_count = 0
+        self.feed(dom)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "button" and "pt-search-row" in (dict(attrs).get("class") or "").split():
+            self.result_count += 1
+
+
+def validate_result_frame(name: str, rendering: dict, dom: str) -> None:
+    count = rendering.get("resultCount")
+    require(
+        isinstance(count, int) and count == SearchResultDom(dom).result_count,
+        f"{name} result count must match the captured native DOM",
+    )
+    if name in RESULT_ASSERTIONS:
+        query, text = rendering.get("query", "").strip(), rendering.get("resultText", "")
+        require(
+            count > 0 and bool(query) and query in text,
+            f"{name} requires a real matching result row; empty-state query copy is not a hit",
+        )
 
 
 def validate_search_report(report: dict, source_ref: ArtifactRef, store: EvidenceStore) -> None:
@@ -38,7 +66,9 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
                 ref.workspace_id == source_ref.workspace_id and ref.gate_id == source_ref.gate_id
                 and ref.run_id == source_ref.run_id, f"{name} requires current-run {suffix}",
             )
-            store.resolve(ref)
+            path = store.resolve(ref)
+            if suffix == "dom":
+                validate_result_frame(name, rendering, path.read_text())
     cache = search.get("cache", {})
     names = {"repeat_cache", "reopen_cache", "backspace_cache", "return_cache", "explicit_refresh"}
     require(set(cache) == names, "Search cache evidence is incomplete")
@@ -89,7 +119,7 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
         "attachment filename evidence requires the real uploaded Messaging resource",
     )
     require(
-        resources["attachmentFilename"] in ui["attachment_filename"]["rendering"].get("bodyText", ""),
+        resources["attachmentFilename"] in ui["attachment_filename"]["rendering"].get("resultText", ""),
         "attachment filename must be present in the captured native Search frame",
     )
 
