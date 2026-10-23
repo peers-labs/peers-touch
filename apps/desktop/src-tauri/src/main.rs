@@ -56,6 +56,30 @@ use tauri::{Emitter, Manager};
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+fn show_acceptance_background_windows(app: &tauri::App) -> std::io::Result<()> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSWindow};
+
+    let main_thread = MainThreadMarker::new()
+        .ok_or_else(|| std::io::Error::other("acceptance setup requires the AppKit main thread"))?;
+    if !NSApplication::sharedApplication(main_thread)
+        .setActivationPolicy(NSApplicationActivationPolicy::Accessory)
+    {
+        return Err(std::io::Error::other(
+            "acceptance background activation policy was rejected",
+        ));
+    }
+    for window in app.webview_windows().values() {
+        let ns_window = window.ns_window().map_err(|error| {
+            std::io::Error::other(format!("acceptance native window lookup failed: {error}"))
+        })?;
+        // Order behind the operator without making the window key or activating the app.
+        unsafe { &*(ns_window as *mut NSWindow) }.orderBack(None);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 fn configure_acceptance_window_level(window: &tauri::WebviewWindow) -> std::io::Result<()> {
     use dispatch2::DispatchQueue;
     use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindow, NSWindowCollectionBehavior};
@@ -225,16 +249,8 @@ fn position_acceptance_window(
 fn configure_acceptance_window(
     window: &tauri::WebviewWindow,
     minimum_window_width: f64,
+    exclusive_native_input: bool,
 ) -> std::io::Result<()> {
-    let exclusive_native_input = acceptance_input_mode_is_exclusive(
-        std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
-            .ok()
-            .as_deref(),
-        std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION")
-            .ok()
-            .as_deref(),
-    )
-    .map_err(std::io::Error::other)?;
     let slot = std::env::var("PT_ACCEPTANCE_WINDOW_SLOT")
         .map_err(|error| {
             std::io::Error::other(format!("acceptance window slot is missing: {error}"))
@@ -347,10 +363,15 @@ fn configure_acceptance_window(
         slot,
         count,
     )?;
+    #[cfg(not(target_os = "macos"))]
     window.show().map_err(|error| {
         std::io::Error::other(format!("acceptance window show failed: {error}"))
     })?;
     if exclusive_native_input {
+        #[cfg(target_os = "macos")]
+        window.show().map_err(|error| {
+            std::io::Error::other(format!("acceptance window show failed: {error}"))
+        })?;
         window.set_always_on_top(true).map_err(|error| {
             std::io::Error::other(format!("acceptance window layering failed: {error}"))
         })?;
@@ -444,6 +465,16 @@ mod acceptance_window_tests {
 }
 
 fn main() {
+    #[cfg(feature = "acceptance-webdriver")]
+    let exclusive_native_input = acceptance_input_mode_is_exclusive(
+        std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
+            .ok()
+            .as_deref(),
+        std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION")
+            .ok()
+            .as_deref(),
+    )
+    .expect("invalid acceptance Desktop input policy");
     let ctx = bootstrap::run();
 
     tracing::info!("Launching Tauri application");
@@ -558,15 +589,18 @@ fn main() {
     let context = {
         let mut context = context;
         for window in &mut context.config_mut().app.windows {
-            // Explicit native input owns activation; creation preserves operator focus.
+            // Tao activates visible windows during launch regardless of initial focus.
             window.focus = false;
+            if !exclusive_native_input {
+                window.visible = false;
+            }
             window.background_throttling =
                 Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
         }
         context
     };
 
-    builder
+    let app = builder
         .manage(app_state)
         .manage(capability_worker_supervisor)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
@@ -575,7 +609,7 @@ fn main() {
         .on_window_event(|window, event| {
             application::window_lifecycle::handle_window_event(window, event);
         })
-        .setup(|app| {
+        .setup(move |app| {
             app.state::<Arc<state::AppState>>()
                 .secure_content
                 .bind_app_handle(app.handle().clone());
@@ -592,7 +626,15 @@ fn main() {
                 let window = app
                     .get_webview_window("main")
                     .ok_or_else(|| std::io::Error::other("acceptance main window is missing"))?;
-                configure_acceptance_window(&window, minimum_window_width)?;
+                configure_acceptance_window(
+                    &window,
+                    minimum_window_width,
+                    exclusive_native_input,
+                )?;
+            }
+            #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+            if !exclusive_native_input {
+                show_acceptance_background_windows(app)?;
             }
 
             let resource_dir = app.path()
@@ -1300,113 +1342,125 @@ fn main() {
             application::error_resolver::resolve_error_action
         ])
         .build(context)
-        .expect("error while building tauri application")
-        .run(|app, event| {
-            // Closing the symmetric pair to AppLaunch (fired from the
-            // frontend usePresence hook): when the user quits the app we
-            // owe Station an explicit AppShutdown trigger per bound
-            // actor, so its session is taken Offline immediately rather
-            // than waiting for the client TCP to time out. We block on
-            // the resulting reconcile threads so the network round-trip
-            // has a chance to complete before the process exits — but
-            // bound by a generous wall-clock budget so a wedged station
-            // cannot prevent shutdown.
-            if matches!(event, tauri::RunEvent::Resumed) {
-                if let Err(error) = application::host_events::emit_resume(app, "tauri-run-event") {
-                    let _ = application::host_events::emit_native_event_error(
-                        app,
-                        "emit-desktop-resume",
-                        &error.to_string(),
-                    );
-                }
-            }
-            // Clicking the dock icon with the window resident-hidden reopens
-            // and focuses it, mirroring the tray Show action.
-            #[cfg(target_os = "macos")]
-            if matches!(event, tauri::RunEvent::Reopen { .. }) {
-                application::tray::restore_main_window(app);
-            }
-            if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
-                let _ = (api, code);
-                let capability_supervisor = app
-                    .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
-                if let Err(error) = capability_supervisor.shutdown() {
-                    tracing::warn!(
-                        error = %error,
-                        "client capability supervisor shutdown failed"
-                    );
-                }
-                let state = app.state::<Arc<state::AppState>>();
-                if let Err(error) = state.secure_content.shutdown() {
-                    tracing::warn!(
-                        error = %error,
-                        "secure content supervisor shutdown failed"
-                    );
-                }
-                if let Err(error) = state.messaging_engines.deactivate_all() {
-                    tracing::warn!(
-                        error = %error,
-                        "messaging: failed to stop all profile workers during shutdown"
-                    );
-                }
-                let supervisor = app.state::<Arc<application::presence::PresenceSupervisor>>();
-                let sessions = state.sessions.snapshot_all();
-                tracing::info!(
-                    bound_sessions = sessions.len(),
-                    "presence: dispatching AppShutdown for bound actors"
+        .expect("error while building tauri application");
+    #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+    let app = {
+        let mut app = app;
+        if !exclusive_native_input {
+            // Suppress Tao's unconditional launch activation before its event loop runs.
+            app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
+        }
+        app
+    };
+    app.run(move |app, event| {
+        // Closing the symmetric pair to AppLaunch (fired from the
+        // frontend usePresence hook): when the user quits the app we
+        // owe Station an explicit AppShutdown trigger per bound
+        // actor, so its session is taken Offline immediately rather
+        // than waiting for the client TCP to time out. We block on
+        // the resulting reconcile threads so the network round-trip
+        // has a chance to complete before the process exits — but
+        // bound by a generous wall-clock budget so a wedged station
+        // cannot prevent shutdown.
+        if matches!(event, tauri::RunEvent::Resumed) {
+            if let Err(error) = application::host_events::emit_resume(app, "tauri-run-event") {
+                let _ = application::host_events::emit_native_event_error(
+                    app,
+                    "emit-desktop-resume",
+                    &error.to_string(),
                 );
-                let mut handles = Vec::new();
-                for session in sessions {
-                    if session.actor.ptid.is_empty() || session.jwt.trim().is_empty() {
-                        continue;
-                    }
-                    if let Some(h) = supervisor.notify(
-                        &session.actor.ptid,
-                        &session.jwt,
-                        domain::presence::PresenceTrigger::AppShutdown,
-                        app.clone(),
-                    ) {
-                        handles.push(h);
-                    }
+            }
+        }
+        // Clicking the dock icon with the window resident-hidden reopens
+        // and focuses it, mirroring the tray Show action.
+        #[cfg(all(target_os = "macos", not(feature = "acceptance-webdriver")))]
+        if matches!(event, tauri::RunEvent::Reopen { .. }) {
+            application::tray::restore_main_window(app);
+        }
+        #[cfg(all(target_os = "macos", feature = "acceptance-webdriver"))]
+        if exclusive_native_input && matches!(event, tauri::RunEvent::Reopen { .. }) {
+            application::tray::restore_main_window(app);
+        }
+        if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+            let _ = (api, code);
+            let capability_supervisor = app
+                .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
+            if let Err(error) = capability_supervisor.shutdown() {
+                tracing::warn!(
+                    error = %error,
+                    "client capability supervisor shutdown failed"
+                );
+            }
+            let state = app.state::<Arc<state::AppState>>();
+            if let Err(error) = state.secure_content.shutdown() {
+                tracing::warn!(
+                    error = %error,
+                    "secure content supervisor shutdown failed"
+                );
+            }
+            if let Err(error) = state.messaging_engines.deactivate_all() {
+                tracing::warn!(
+                    error = %error,
+                    "messaging: failed to stop all profile workers during shutdown"
+                );
+            }
+            let supervisor = app.state::<Arc<application::presence::PresenceSupervisor>>();
+            let sessions = state.sessions.snapshot_all();
+            tracing::info!(
+                bound_sessions = sessions.len(),
+                "presence: dispatching AppShutdown for bound actors"
+            );
+            let mut handles = Vec::new();
+            for session in sessions {
+                if session.actor.ptid.is_empty() || session.jwt.trim().is_empty() {
+                    continue;
                 }
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-                let mut pending = handles;
-                while !pending.is_empty() && std::time::Instant::now() < deadline {
-                    pending.retain(|h| !h.is_finished());
-                    if !pending.is_empty() {
-                        std::thread::sleep(std::time::Duration::from_millis(50));
-                    }
+                if let Some(h) = supervisor.notify(
+                    &session.actor.ptid,
+                    &session.jwt,
+                    domain::presence::PresenceTrigger::AppShutdown,
+                    app.clone(),
+                ) {
+                    handles.push(h);
                 }
+            }
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            let mut pending = handles;
+            while !pending.is_empty() && std::time::Instant::now() < deadline {
+                pending.retain(|h| !h.is_finished());
                 if !pending.is_empty() {
-                    tracing::warn!(
-                        remaining = pending.len(),
-                        "presence: AppShutdown deadline reached, abandoning remaining reconciles"
-                    );
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
-                let event_stream_shutdown_failed =
-                    if let Err(error) = state.event_streams.stop_all() {
-                        tracing::warn!(
-                            error = %error,
-                            "event stream runtime did not drain before transport shutdown"
-                        );
-                        true
-                    } else {
-                        false
-                    };
-                if let Err(error) = state.station.shutdown() {
-                    tracing::warn!(
-                        error = %error,
-                        "Station runtime shutdown failed"
-                    );
-                }
-                if event_stream_shutdown_failed {
-                    if let Err(error) = state.event_streams.stop_all() {
+            }
+            if !pending.is_empty() {
+                tracing::warn!(
+                    remaining = pending.len(),
+                    "presence: AppShutdown deadline reached, abandoning remaining reconciles"
+                );
+            }
+            let event_stream_shutdown_failed = if let Err(error) = state.event_streams.stop_all() {
+                tracing::warn!(
+                    error = %error,
+                    "event stream runtime did not drain before transport shutdown"
+                );
+                true
+            } else {
+                false
+            };
+            if let Err(error) = state.station.shutdown() {
+                tracing::warn!(
+                    error = %error,
+                    "Station runtime shutdown failed"
+                );
+            }
+            if event_stream_shutdown_failed {
+                if let Err(error) = state.event_streams.stop_all() {
                     tracing::warn!(
                         error = %error,
                             "event stream runtime shutdown failed after transport drain"
                     );
-                    }
                 }
             }
-        });
+        }
+    });
 }
