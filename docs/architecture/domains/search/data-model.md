@@ -19,6 +19,10 @@ QueryKey    = intentId + identityEpoch + scopeFingerprint
 
 authorityNamespace 表示资源的真实权威空间，例如原 Station、Federation 对端站或 Applet instance；不能把来源展示名称当权威 ID。设备/账号存储 namespace 与 authorityNamespace 是不同维度，缓存 key 必须同时约束当前身份。
 
+这里的 instance 指稳定业务数据实例/tenant，不是每设备安装记录、运行
+session、服务 URL 或包版本。执行 binding 变化不自动改变原对象的 authority；
+来源身份与资源 namespace 由受信平台绑定验证，不接受 provider 越域自报。
+
 ResourceRef 包含 key、parent/container reference、可选 message/thread/block anchor 与 content revision。封闭域内不存在外部 URL 资源 variant；消息正文中的 URL 只是文本，不产生可搜索网页资源。
 
 域内附件 variant 包含 device/profile 或 Station object reference、所属父对象（消息/知识/任务/帖子）、附件稳定引用与可选页/段落 anchor；只在父对象当前可读时解析。与 Agent 知识关联时优先引用已有 `KnowledgeClientResourceRef` 的 opaque resource/device/capability identity，Search 仅补 anchor，不复制知识对象 authority。功能 variant 包含受信任 module/capability/action ID 与定位参数；不是任意脚本、shell command、URL 或文件路径。
@@ -26,6 +30,20 @@ ResourceRef 包含 key、parent/container reference、可选 message/thread/bloc
 同一对象从多个查询来源出现可以合并 provenance；不同对象同标题不能合并。删除 parent 是否删除 child 由原域规则声明；例如 private comment 的读取依赖 parent post 的当前 visibility。
 
 ## 2. SearchContributorDescriptor
+
+通用接口的最小声明只有来源 ID、稳定资源 namespace、资源类型、支持能力和
+opaque binding 引用。下列完整字段按实际启用的能力提供；直接查询来源不被
+要求同时实现派生索引、模型、附件提取或 Applet SDK。读取许可、字段处理策略
+与预算始终由受信 binding 和统一执行上下文约束，不能因未声明高级能力放宽。
+
+公共读方法固定为 `query / hydrate / resolve`，逻辑签名见
+[extensions.md](./extensions.md#21-最小公共接口)。`SourcePage` 表达来源内有界候选、
+rank、cursor 与 coverage；`AuthorizedProjection` 表达当前读权下的结果投影；
+`ResolvedResource` 表达校验后的 ResourceRef 与受信只读打开绑定。它们复用
+本文的资源、投影和查询语义；后续 wire 仍由同一 Model schema 定义和生成。
+身份、允许范围、deadline 与 cancellation 来自 `SearchExecutionContext`，
+不增加来源侧 Describe/Cancel RPC。可选 IndexFeed 只提供 snapshot/changes，
+核对与 gap 恢复由标准 projection worker 复用 snapshot 完成。
 
 每个内置域或受信 Applet 声明下列内容。descriptor kind 只允许域内类型（person、conversation、message、post/comment、agent-session、knowledge/note、domain-attachment、applet-object、function）；公网、OS 文件与外部 connector 类型在 schema 层被拒绝：
 
@@ -123,11 +141,11 @@ searchScope / retrievalStrategies
 allowFederatedResolution / evidenceUsePolicy
 ```
 
-actor/session/profile/Station 由认证上下文提供；客户端只能选择已允许的 source/context，服务端再次校验。time range 的用户时区与服务端 UTC 边界明确。空字符串/长词/无效 operator/超限 page size 用 typed error 返回。请求不包含任何 web/OS 文件/外部 connector 选择字段；域外范围请求返回 INVALID_QUERY。
+actor/session/profile/Station 由认证上下文提供；客户端只能选择已允许的 source/context，服务端再次校验。time range 的用户时区与服务端 UTC 边界明确。空字符串/长词/无效 operator/超限 page size 用 typed error 返回。请求不包含任何 web/OS 文件/外部 connector 选择字段；域外范围请求返回 SCOPE_OUTSIDE_SEARCH_DOMAIN。
 
 Search request 和 Ask request 是不同意图。查找、短答案与深入研究有明确 mode/预算；自动建议只给模式建议，不扩大权限。Ask 引用 QueryIntent/EvidenceBundle，并带已验证的处理策略；证据集合只包含当前 actor 可读的域内对象。
 
-searchScope 表达综合/功能等用户可见范围以及域内 contentKinds，具体 proto 枚举待冻结。retrievalStrategies 是来源支持与用户处理策略的交集。Federation 结果只在 allowFederatedResolution 且存在有效联邦上下文时按对端授权返回；本机输入建议不触发任何远端或模型外发。
+searchScope 表达允许检索的执行/授权范围，当前 proto 使用 DEVICE/STATION/FEDERATION。综合/功能等视图由 intent、contentKinds 与 sourceSelection 表达，不与执行 scope 混用。retrievalStrategies 是来源支持与用户处理策略的交集。Federation 结果只在 allowFederatedResolution 且存在有效联邦上下文时按对端授权返回；本机输入建议不触发任何远端或模型外发。
 
 建议通过 `model/domain/search/` 形成 proto-first 远端合同、生成客户端/native 类型。候选操作：ListEligibleSources、Query、ContinueQuery、CancelQuery、ResolvePreview；最终公共路由经 API Governance 确认。这些名称是设计建议，当前没有宣称任何 `/api/v1/search` 已可调用。
 

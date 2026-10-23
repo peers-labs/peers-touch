@@ -13,56 +13,101 @@ Search 是一份逻辑语义合同，在 Client 和 Station 各有执行实例�
 
 扩展分为域内内容来源、检索后端、域内附件提取、功能目录、结果投影与 Agent 证据消费。每一种扩展有固定边界，不允许一个插件同时自行定义身份、读取整个数据库、返回任意 HTML 和执行写操作。
 
+本次设计评审只要求通用来源接口干净、简洁、有效，并能由未来外源 adapter
+接入。Applet 是扩展性检验例，具体 SDK、部署、授权委托和后台运行集成留待
+实际接入任务；不把完整 Applet 接入工程作为当前接口设计的通过条件。
+
 ## 2. 内容来源 SearchContributor
 
-所有内置域与官方/第三方 Applet 的域内对象使用 [SearchContributorDescriptor](./data-model.md)。descriptor 指向受信任 provider binding，运行时实现按两个分离方向提供能力。descriptor kind 仅允许域内类型，外部 connector、网络搜索商、OS 文件来源在 schema 校验阶段被拒绝。
+执行器只依赖一个 `SearchContributor` 读侧接口。内置模块与未来外源 adapter
+提供相同语义；descriptor 使用 [SearchContributorDescriptor](./data-model.md)，
+引用平台可解析的 binding。来源可以复用原域查询，或由标准派生索引 adapter
+提供检索，执行器和全局 UI 不增加来源专用业务分支。允许的资源类型仍受 D-19
+约束，注册声明不扩大读取或处理权限。
 
-### 2.1 Query adapter
+### 2.1 最小公共接口
 
-逻辑 port：
+以下 TypeScript 仅表达逻辑签名；正式类型由同一 Model schema 生成，不是新增
+SDK 或已实现接口：
 
-- **Describe**：返回可检索对象/字段、过滤/排序/策略、分页、coverage、预算与绑定 revision；不能自行授予权限。
-- **Query**：接收已经限制范围的 QueryIntent 与 Host/Station 提供的执行上下文，返回有界候选、排名 channel、来源状态和 continuation；不能忽略不支持的筛选。
-- **ValidateAndHydrateBatch**：原域批量确认当前可读性，再返回标题、片段、元数据和必要引用；候选 ID 或 count 本身也是敏感投影，未授权不能发布给调用方。
-- **Resolve**：把稳定 ResourceRef 转为当前可读预览和受信任 open action；写动作仍由原模块实施。
-- **Cancel**：通过当前查询 context/attempt 停止运行与后续 fetch；支持的 resume/cursor 语义显式声明。
+```typescript
+interface SearchContributor {
+  readonly descriptor: SearchContributorDescriptor;
+  query(input: QueryIntent, ctx: SearchExecutionContext): Promise<SourcePage>;
+  hydrate(refs: readonly ResourceRef[], ctx: SearchExecutionContext): Promise<readonly AuthorizedProjection[]>;
+  resolve(ref: ResourceRef, ctx: SearchExecutionContext): Promise<ResolvedResource>;
+}
+```
 
-例如人员目录、现有 Chat FTS、少量功能 catalog 可以直接 query。来源已有索引时不要求再复制一次正文；没有完整全文能力时声明 metadata-only/known-only，不冒充完整来源。
+三个方法各有一个职责：
 
-### 2.2 Derived index adapter
+- **query**：在允许的范围与条件下召回有界候选，返回来源内 rank、分页和真实
+  coverage。不支持的筛选明确失败，候选与 count 不绕过来源的读权过滤。
+- **hydrate**：批量复核当前读权，返回允许展示或使用的投影；deny/unknown 的
+  对象不返回。排序候选、缓存和派生索引都复用这一入口，避免逐条 N+1 或另一套
+  权限实现。原 `ValidateAndHydrateBatch` 的语义由此方法完整承接。
+- **resolve**：复核资源及 anchor，返回受信任的只读打开目标。实际导航交给
+  原域/Host resolver，不执行写操作、脚本或任意命令。
 
-逻辑 port：
+`SourcePage` 是来源候选页，`AuthorizedProjection` 是原对象按读权及字段策略
+形成的有界投影，`ResolvedResource` 是可读资源与受信打开绑定；它们对应
+data-model 中的候选、结果和资源语义，不形成第二套业务 DTO 真源。
 
-- **Snapshot**：分页返回授权 projection，提供 snapshot identity 和 watermark。
-- **Changes**：返回 watermark 后的 upsert/delete/policy/extraction/source 事件、checkpoint 与 gap indicator。
-- **Reconcile**：用于源无可靠事件流、checkpoint gap 或语料核对；扫描可重建，不跳过删除和权限状态。
-- **ValidateAndHydrateBatch / Resolve**：继续由业务 owner 实现；索引不取得永久读取权。
+descriptor 在注册/绑定时读取，不提供单独的 `Describe` RPC。它只声明身份、
+资源 namespace、类型、支持能力与 binding，不能自行授予权限。
 
-业务 outbox 与原事务一起提交；域内附件使用所属模块的变更事件加水印核对。Search 的索引 worker 幂等消费并事务推进 checkpoint；tombstone/revoke 压住迟到旧 upsert。快照未追平时报告 catching-up，索引 generation 切换只改变派生投影。
+身份、允许范围、deadline 和 cancellation 统一通过 `SearchExecutionContext`
+提供。取消由查询 owner 与 transport adapter 传播到已有执行机制，来源不再
+各建一个 `Cancel` API；取消后停止后续读取与投影，并拒绝迟到发布。
 
-### 2.3 一次接入示例
+已有 FTS、人员目录或功能 catalog 直接适配这三个读方法。来源已有索引时不再
+复制一次正文；metadata-only/known-only 来源如实声明覆盖范围。
 
-笔记 Applet 声明可搜 title/body/tags、account scope、read-policy、revision 和 block anchor，选择已有 query 或 snapshot/change 绑定；Host 校验安装实例、manifest 和权限后投影 eligible source。Search 用已有结果行显示笔记，并通过 Applet 的 open binding 进入正确笔记和段落。
+### 2.2 可选的派生索引供给
 
-该 Applet 的页面没有挂载时，provider 可通过已有 service 或被 Host 托管的 headless capability 工作。若它只能在页面 alive 时执行，必须声明这一限制：未打开时返回 unavailable/需打开，不能为了搜索偷偷挂载完整 Applet UI 或伪造空结果。
+需要 Search 维护派生索引的来源，额外提供 `IndexFeed`，只有两项供给能力：
 
-允许参与全局搜索不等于允许 Applet 查询其他来源。Applet 自己的数据贡献与它消费 Search 结果是两种独立权限。
+- **snapshot**：分页返回允许落盘的 projection，绑定视图范围、snapshot identity
+  和 watermark。
+- **changes**：返回该范围 watermark 后的 upsert/delete/policy/extraction/source
+  事件、checkpoint 与 gap indicator。
 
-## 3. 接入、消费与执行权限
+标准 projection worker 复用 snapshot 做核对与 gap 恢复，不新增来源侧
+`Reconcile` 方法。它幂等应用变更并事务推进 checkpoint；deny/tombstone 压住
+迟到 upsert，快照未追平时报告 catching-up。
 
-建议在现有 `applet-contract` 和 `applet-sdk` 中增加 typed Search facade，而不是创建第二套桥接协议。方法名称在正式 Model/SDK 合同中冻结，逻辑权限至少分开：
+标准索引 adapter 提供 `query`，`hydrate/resolve` 继续委托原业务读端口，对外
+仍呈现同一 `SearchContributor`。原文与业务权限仍归原模块；直接查询来源不被
+要求实现 feed、后台队列或索引管理。
 
-- **source.contribute**：贡献该 applet/service 自己拥有的对象；不读取别人数据。
-- **query.own**：查询自己的来源。
-- **query.selected**：查询用户明确授予且当前可读的其他来源；授权由 Host 决定。
-- **source.configure**：配置当前 applet 允许管理的来源实例；不管理全局任意来源。
-- **resource.open**：打开其可读对象；不隐含写入、发送、安装或系统命令。
+### 2.3 外源接入的预留验证
 
-这些不是当前已存在的 permission literal。现有 `network.request`、`file.read`、`skills.register` 和 `tasks.start` 不自动取得上述权限。
+未来笔记 Applet 的 adapter 可以把自有查询、批量读取和资源打开绑定适配为
+上述接口；Search 仍接收同样的 ResourceRef、候选和授权投影。来源 binding
+可以被 Host 代理解析，不要求把 Applet 源码编译进 Search。
 
-source 描述、Model 消息和 schema 为一份真源生成 TypeScript/Rust/Go 类型；Applet bridge 使用既有 envelope/session/error 合同。声明包含 capability/service binding、支持平台与完整性引用；Host 注入 actor/session 与联邦授权上下文，不接受 Applet 自报 actor ID 或任意 backend URL。
+当前只保留这一能力边界与 typed binding 位置。具体 Applet SDK 方法、部署拓扑、
+委托凭据和 headless runtime 的产品证明，在实际接入时沿既有 Host/SDK 合同
+实施，不在本次增加 Applet 专用注册、权限或执行系统。
 
-贡献的数据被当前用户、另一用户或 Agent 查询，分别验证 source visibility、document read-policy 与 processing policy。descriptor 中 `public` 只表示该来源声明的允许处理边界；调用身份与 authority 仍必须验证。
+## 3. 共通上下文与协议边界
+
+descriptor、QueryIntent、ResourceRef、投影和错误沿同一 Model/schema 真源生成
+TypeScript/Rust/Go 类型。adapter 负责传输与已有原域接口映射，Search core
+不感知来源部署地址、UI 技术栈或 Applet 生命周期细节。
+
+`SearchExecutionContext` 由 Host/Station 的认证与 policy owner 提供，来源不能
+自报 actor、扩大 scope 或改变 processing policy。注册贡献本源不隐含查询
+其他来源、管理全局来源或执行写操作；现有网络、文件、Skill/Task 能力也不
+自动取得这些许可。
+
+SourceHandle 只引用既有 capability/service/grant binding。Query、hydrate 与
+resolve 始终受当前身份、来源 namespace 和原域读权约束。来源返回的资源、
+投影类型和打开目标须匹配受信 binding，标题、ID、count 与 snippet 没有旁路。
+
+撤权、来源停用或绑定变更由既有 owner 使上下文和查询会话失效；Search 停止
+读取和发布，再按策略清理派生内容。不新建 Search 安装目录、凭据库或权限
+authority，也不让当前 Applet 集成的未实现细节成为通用接口设计的门槛。
 
 ## 4. 来源准入与卸载
 
