@@ -55,6 +55,13 @@ provisioner, Journey and Mobile diagnostics files are business injection.
 Acceptance Core, runner, Evidence Store and generic schemas remain unchanged.
 
 One Suite provisions, authenticates and binds iOS Alice and Android Bob once.
+Before either actor enrolls, the Suite prepares one fresh identity seed per
+reset-owned actor in both existing installations. Same-process account switching
+then uses the same actor identity with each installation's own device identity.
+This is controlled fixture preparation, not fresh-device identity recovery.
+Seeds remain transient and are zeroized after preparation; no key enters proof.
+The account scenario restores the peer through real logout/login after the
+handoff revokes its session, rather than trusting its cached actor projection.
 The original Social owner establishes one accepted relationship and Direct
 conversation. Both actors then send through that same bidirectional conversation
 and receive messages from the other existing client; fixture preparation never

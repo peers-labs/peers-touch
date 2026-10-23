@@ -663,6 +663,8 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
     def _prepare_fresh_actor_identity(
         session: Any,
         actor: MessagingActor,
+        *,
+        seed: bytearray | None = None,
     ) -> dict[str, Any]:
         if (
             not actor.station_peer_id.strip()
@@ -677,8 +679,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             + b"\x1f"
             + actor.ptid.encode("utf-8")
         ).digest()[:16].hex()
-        seed = bytearray(secrets.token_bytes(32))
-        seed_base64 = base64.b64encode(seed).decode("ascii")
+        identity_seed = bytearray(secrets.token_bytes(32) if seed is None else seed)
+        if len(identity_seed) != 32:
+            identity_seed[:] = b"\x00" * len(identity_seed)
+            raise GateError("fresh Actor identity seed must contain 32 bytes")
+        seed_base64 = base64.b64encode(identity_seed).decode("ascii")
         try:
             prepared = session.call_action(
                 "runtime.prepareActorIdentity",
@@ -690,7 +695,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 },
             )
         finally:
-            seed[:] = b"\x00" * len(seed)
+            identity_seed[:] = b"\x00" * len(identity_seed)
             seed_base64 = ""
         if prepared != {"prepared": True}:
             raise GateError(

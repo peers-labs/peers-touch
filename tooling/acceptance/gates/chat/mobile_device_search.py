@@ -5,9 +5,11 @@ import base64
 import hashlib
 import json
 import re
+import secrets
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from tooling.acceptance.core import (
@@ -709,7 +711,8 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
         require(session.execute_script("return !document.querySelector('#mobile-search-input')"
                                        " && !document.querySelector('.mobile-search-result');"),
                 "logout must clear private Search DOM")
-        journey.authenticate(session, peer, password=ACTOR_PASSWORD)
+        journey.authenticate(session, replace(peer, client_id=session.client_id),
+                             password=ACTOR_PASSWORD)
         self.open(session)
         require(session.execute_script("return document.querySelector('#mobile-search-input').value === '';"),
                 "account change must clear the Search query")
@@ -728,9 +731,8 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
         session.call_action("session.logout", {"draftDisposition": "discard"})
         journey.authenticate(session, actor, password=ACTOR_PASSWORD)
         # Restore the original peer session revoked by the real account handoff.
-        projection = peer_session.call_action("lifecycle.scope.read")
-        if projection.get("activeActorPtid") != peer.ptid:
-            journey.authenticate(peer_session, peer, password=ACTOR_PASSWORD)
+        peer_session.call_action("session.logout", {"draftDisposition": "discard"})
+        journey.authenticate(peer_session, peer, password=ACTOR_PASSWORD)
         return {
             "uiAction": f"{session.client_id}:same-process-account-search",
             "receiverAssertion": f"{session.client_id}:new-account-result-old-cursor-denial",
@@ -756,8 +758,18 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
         }
         actors = self._load_actors(artifacts, manifest)
         journey = MobileMessagingJourney(timeout_seconds=90)
+        # Reset-owned actors have one fresh identity across the two Suite devices.
+        # Prepare both scopes before enrollment; this is not recovery of a live actor.
+        for actor in actors.values():
+            seed = bytearray(secrets.token_bytes(32))
+            try:
+                for client_id, session in sessions.items():
+                    self._prepare_fresh_actor_identity(
+                        session, replace(actor, client_id=client_id), seed=seed,
+                    )
+            finally:
+                seed[:] = b"\x00" * len(seed)
         for client_id, actor in actors.items():
-            self._prepare_fresh_actor_identity(sessions[client_id], actor)
             journey.authenticate(sessions[client_id], actor, password=ACTOR_PASSWORD)
             sessions[client_id].execute_script("""
 window.__PEERS_SEARCH_RUNTIME_ERRORS__ = [];
