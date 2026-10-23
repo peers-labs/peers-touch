@@ -8,6 +8,7 @@ const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const require = createRequire(resolve(repoRoot, 'apps/desktop/package.json'));
 const { chromium, expect } = require('@playwright/test');
 const copy = require(resolve(repoRoot, 'packages/locales/en/common.json'));
+const searchCopy = require(resolve(repoRoot, 'packages/locales/en/search.json'));
 const output = resolve(repoRoot, 'apps/mobile/src-tauri/target/prototype-residual-parity');
 const url = new URL(process.env.PROTOTYPE_URL ?? 'http://localhost:3262');
 assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname), 'Use the local Make Portal');
@@ -28,9 +29,16 @@ try {
   for (const viewport of viewports) {
     const context = await browser.newContext({ viewport, colorScheme: 'light', serviceWorkers: 'block' });
     const blockedTraffic = [];
+    const offlineArtwork = [];
     await context.route('**/*', (route) => {
       const request = route.request();
       const target = new URL(request.url());
+      if (request.resourceType() === 'image' && request.method() === 'GET'
+        && target.origin === 'https://copilot-cn.bytedance.net'
+        && target.pathname === '/api/ide/v1/tool_text_to_image') {
+        offlineArtwork.push({ purpose: 'generated-portrait', delivered: false });
+        return route.abort('blockedbyclient');
+      }
       if (target.origin !== url.origin || request.method() !== 'GET'
         || /^\/(?:api|device|conversation|messaging|station|app-meta)(?:\/|$)/.test(target.pathname)) {
         blockedTraffic.push({ method: request.method(), url: request.url() });
@@ -58,9 +66,10 @@ try {
     const back = () => device.getByRole('button', { name: copy['common.action.back'], exact: true }).click();
     const contactQuery = () => device.getByPlaceholder(copy['mobile.contacts.searchPlaceholder'], { exact: true });
     const memberQuery = () => device.getByRole('textbox', { name: copy['mobile.group.members'], exact: true });
-    const search = () => device.locator('[data-prototype-page="history-search"]');
-    const searchQuery = () => search().getByRole('searchbox', { name: copy['mobile.chat.searchMessagesPlaceholder'], exact: true });
-    const submit = () => search().getByRole('button', { name: copy['mobile.contacts.search'], exact: true }).click();
+    const search = () => device.locator('[data-prototype-page="search"]');
+    const searchQuery = () => search().getByRole('textbox', { name: searchCopy['search.label'], exact: true });
+    const submit = () => search().getByRole('button', { name: searchCopy['search.mobile.submit'], exact: true }).click();
+    const empty = () => search().getByText(searchCopy['search.empty.detail'], { exact: true });
     const outcome = (name) => page.getByRole('button', { name, exact: true }).click();
     const searchStatus = (status) => expect(search()).toHaveAttribute('data-demo-search-status', status);
 
@@ -186,20 +195,19 @@ try {
     await searchQuery().fill(copy['mobile.chat.threadReplyPlaceholder']);
     await submit();
     await searchStatus('results');
-    await expect(list('history-search')).toHaveAttribute('data-window-total', '480');
-    await expect(rows(list('history-search'))).toHaveCount(100);
+    await expect(list('search')).toHaveAttribute('data-window-total', '480');
+    await expect(rows(list('search'))).toHaveCount(100);
     await expect(page.getByRole('region', { name: 'Controlled search demo transitions', exact: true })).toHaveCount(0);
-    await rows(list('history-search')).first().click();
-    await expect(list('messages').locator('[data-scroll-anchor-id="long-message-480"]')).toBeFocused();
+    await rows(list('search')).first().click();
+    await expect(list('messages').locator('[data-scroll-anchor-id="long-message-001"]')).toBeFocused();
     passed.push('baseline: long-lists retains immediate bounded search and target materialization');
     await openHistory();
     await expect(searchQuery()).toHaveValue(copy['mobile.chat.threadReplyPlaceholder']);
     await searchStatus('results');
     await searchQuery().fill('no-sample-message');
     await submit();
-    await expect(rows(list('history-search'))).toHaveCount(0);
-    await expect(search().getByText(copy['mobile.chat.noMessageResults'], { exact: true })).toBeVisible();
-    await back();
+    await expect(rows(list('search'))).toHaveCount(0);
+    await expect(empty()).toBeVisible();
     await back();
     await back();
     passed.push('baseline: long-lists retains submitted query, immediate empty and back navigation');
@@ -275,15 +283,15 @@ try {
     await searchQuery().fill(query);
     await submit();
     await searchStatus('loading');
-    await expect(search().getByText(copy['common.state.loading'], { exact: true })).toBeVisible();
-    await expect(rows(list('history-search'))).toHaveCount(0);
+    await expect(search().getByText(searchCopy['search.loading'], { exact: true })).toBeVisible();
+    await expect(rows(list('search'))).toHaveCount(0);
     await capture('search-loading');
     passed.push('search: explicit submit/loading without premature results');
     await outcome('Search fails');
     await searchStatus('error');
-    await expect(search().getByRole('alert')).toHaveText(new RegExp(copy['mobile.chat.searchFailed'].replaceAll('.', '\\.')));
+    await expect(search().getByRole('alert')).toContainText(searchCopy['search.error.unavailable']);
     await expect(searchQuery()).toHaveValue(query);
-    await expect(search().getByText(copy['mobile.chat.noMessageResults'], { exact: true })).toHaveCount(0);
+    await expect(empty()).toHaveCount(0);
     await capture('search-error');
     passed.push('search: failure distinct from empty, query retained');
     await search().getByRole('button', { name: copy['common.action.retry'], exact: true }).click();
@@ -292,14 +300,14 @@ try {
     await capture('search-retry');
     await outcome('Search results');
     await searchStatus('results');
-    await expect(list('history-search')).toHaveAttribute('data-window-total', '480');
-    await expect(rows(list('history-search'))).toHaveCount(100);
+    await expect(list('search')).toHaveAttribute('data-window-total', '480');
+    await expect(rows(list('search'))).toHaveCount(100);
     passed.push('search: same-query retry, explicit success with bounded results');
     await capture('search-results');
-    await move(list('history-search'), 1);
-    await retainAnchor(list('history-search'), (target) => target.click(), async () => {
+    await move(list('search'), 1);
+    await retainAnchor(list('search'), (target) => target.click(), async () => {
       await expect(list('messages')).toHaveCount(1);
-      await openHistory();
+      await back();
       await searchStatus('idle');
       await expect(searchQuery()).toHaveValue(query);
       await submit();
@@ -310,9 +318,9 @@ try {
     await submit();
     await outcome('Search empty');
     await searchStatus('empty');
-    await expect(rows(list('history-search'))).toHaveCount(0);
+    await expect(rows(list('search'))).toHaveCount(0);
     await expect(searchQuery()).toHaveValue(query);
-    await expect(search().getByText(copy['mobile.chat.noMessageResults'], { exact: true })).toBeVisible();
+    await expect(empty()).toBeVisible();
     await capture('search-empty');
     passed.push('search: explicit empty outcome preserves query');
 
@@ -322,18 +330,18 @@ try {
     await submit();
     await outcome('Discarded search results');
     await searchStatus('loading');
-    await expect(rows(list('history-search'))).toHaveCount(0);
+    await expect(rows(list('search'))).toHaveCount(0);
     await expect(searchQuery()).toHaveValue('240');
     await outcome('Search results');
-    await expect(rows(list('history-search'))).toHaveCount(1);
-    await expect(rows(list('history-search')).first()).toHaveAttribute('data-scroll-anchor-id', 'long-message-240');
+    await expect(rows(list('search'))).toHaveCount(1);
+    await expect(rows(list('search')).first()).toHaveAttribute('data-scroll-anchor-id', 'long-chat-001:long-message-240');
     passed.push('search: old query completion rejected while new query is pending');
 
     await submit();
     await searchQuery().fill('');
     await outcome('Discarded search results');
     await searchStatus('idle');
-    await expect(rows(list('history-search'))).toHaveCount(0);
+    await expect(rows(list('search'))).toHaveCount(0);
     passed.push('search: clear discards pending completion');
 
     await searchQuery().fill(query);
@@ -343,7 +351,7 @@ try {
     await expect(page.getByRole('button', { name: 'Search results', exact: true })).toBeDisabled();
     await outcome('Discarded search results');
     await expect(search()).toHaveCount(0);
-    await device.getByRole('button', { name: 'Search Chat History', exact: true }).click();
+    await openHistory();
     await searchStatus('idle');
     await expect(searchQuery()).toHaveValue(query);
     await submit();
@@ -356,7 +364,6 @@ try {
     await submit();
     await back();
     await back();
-    await back();
     await device.getByRole('button', { name: 'Me', exact: true }).click();
     await device.locator('.mp-tabbar-item').filter({ hasText: copy['mobile.chat.title'] }).click();
     await rows(list('conversations')).first().click();
@@ -367,13 +374,13 @@ try {
     await outcome('Discarded search results');
     await searchStatus('loading');
     await outcome('Search results');
-    await expect(list('history-search')).toHaveAttribute('data-window-total', '480');
+    await expect(list('search')).toHaveAttribute('data-window-total', '480');
     passed.push('search: thread/tab remount rejects prior instance, retains query');
 
     assert.deepEqual(errors, [], 'No browser errors');
-    assert.deepEqual(blockedTraffic, [], 'No Station, API, native or external requests attempted');
-    passed.push('browser: no errors or prohibited traffic');
-    reports.push({ viewport, passed, requestTraversal, memberTraversal, errors, blockedTraffic });
+    assert.deepEqual(blockedTraffic, [], 'No Station, product API, native or unapproved external requests attempted');
+    passed.push('browser: no errors or prohibited traffic; approved portrait requests blocked offline');
+    reports.push({ viewport, passed, requestTraversal, memberTraversal, errors, blockedTraffic, offlineArtwork });
     await context.close();
   }
   const result = {

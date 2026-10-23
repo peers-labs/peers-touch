@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { Input, Typography } from 'antd';
 import {
   AlertCircle, ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import type { Conversation, Message, MessageStatus, MobileUiEvidence, ReactionKind } from '../types';
 import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../types';
-import { demoMessages } from '../data';
 import { ThreadView } from '../components/ThreadView';
 import { ForwardPicker } from '../components/ForwardPicker';
 import { PrototypeListWindow, type PrototypeListHandle } from '../components/PrototypeListWindow';
@@ -32,27 +31,27 @@ import {
 const { Text } = Typography;
 const messageKey = (message: Message) => message.id;
 
-export function ChatThread({ conversation, onBack, onStartCall, initialMessages = demoMessages, listMemory, uiEvidence, onSearch, messageId, threadRootMessageId }: {
+export function ChatThread({ conversation, onBack, onStartCall, messages, onMessagesChange: setMessages, listMemory, uiEvidence, onSearch, messageId, threadRootMessageId }: {
   conversation: Conversation;
   onBack: () => void;
   onStartCall?: (mediaKind: PrototypeCallMediaKind) => void;
-  initialMessages?: Message[];
+  messages: Message[];
+  onMessagesChange: Dispatch<SetStateAction<Message[]>>;
   listMemory: PrototypeListMemory;
   onSearch?: () => void;
   messageId?: string;
   threadRootMessageId?: string;
   uiEvidence: MobileUiEvidence;
 }) {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [inputValue, setInputValue] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [actionSheetMessage, setActionSheetMessage] = useState<Message | null>(null);
   const [isTyping] = useState(
-    initialMessages.length > 0
-      && !initialMessages.some((message) => message.status === 'failed' || message.status === 'unknown'),
+    messages.length > 0
+      && !messages.some((message) => message.status === 'failed' || message.status === 'unknown'),
   );
   const [threadMessage, setThreadMessage] = useState<Message | null>(() =>
-    initialMessages.find(message => message.id === threadRootMessageId) ?? null);
+    messages.find(message => message.id === threadRootMessageId) ?? null);
   const [showPinnedMessages, setShowPinnedMessages] = useState(false);
   const [showEmojiGrid, setShowEmojiGrid] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -928,8 +927,12 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
 
       {/* Thread View overlay */}
       {threadMessage && (
-        <ThreadView message={threadMessage} conversation={conversation} targetId={messageId}
-          onBack={messageId ? onBack : () => setThreadMessage(null)} />
+        <ThreadView message={messages.find(message => message.id === threadMessage.id) ?? threadMessage}
+          conversation={conversation} targetId={messageId}
+          onReply={reply => setMessages(current => current.map(message => message.id === threadMessage.id
+            ? { ...message, threadReplies: [...(message.threadReplies ?? []), reply],
+              threadCount: (message.threadReplies?.length ?? 0) + 1 } : message))}
+          onBack={threadRootMessageId ? onBack : () => setThreadMessage(null)} />
       )}
     </div>
   );

@@ -7,9 +7,12 @@ import { IdentityAvatar } from './IdentityAvatar';
 
 const { Text } = Typography;
 
-export function ThreadView({ message, conversation, onBack, targetId }: { message: Message; conversation: Conversation; onBack: () => void; targetId?: string }) {
+export function ThreadView({ message, conversation, onBack, targetId, onReply }: {
+  message: Message; conversation: Conversation; onBack: () => void; targetId?: string;
+  onReply: (reply: Message) => void;
+}) {
   const [threadInput, setThreadInput] = useState('');
-  const [localReplies, setLocalReplies] = useState<Message[]>(message.threadReplies ?? []);
+  const replies = message.threadReplies ?? [];
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!targetId) return;
@@ -31,7 +34,7 @@ export function ThreadView({ message, conversation, onBack, targetId }: { messag
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'sent',
     };
-    setLocalReplies((prev) => [...prev, newReply]);
+    onReply(newReply);
     setThreadInput('');
   }
 
@@ -54,10 +57,10 @@ export function ThreadView({ message, conversation, onBack, targetId }: { messag
         <div className="mp-thread-root-text">{message.text}</div>
       </div>
 
-      <div className="mp-thread-replies-header">{localReplies.length} replies</div>
+      <div className="mp-thread-replies-header">{replies.length} replies</div>
 
       <div data-thread-viewport style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        {localReplies.map((reply) => (
+        {replies.map((reply) => (
           <div key={reply.id} className="mp-thread-reply-item" data-thread-message-id={reply.id}
             data-search-target={reply.id === targetId || undefined} tabIndex={-1}>
             <IdentityAvatar

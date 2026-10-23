@@ -57,7 +57,7 @@ export function SearchPage({
     </header>
     <form className="mp-global-search-controls" onSubmit={event => { event.preventDefault(); submit(); }}>
       <div className="mp-global-search-input">
-        <Input prefix={<Search size={18} />} allowClear aria-label={copy['search.label']} value={view.query}
+        <Input prefix={<Search size={18} />} allowClear autoFocus aria-label={copy['search.label']} value={view.query}
           placeholder={copy['search.mobile.placeholder']} onChange={event => {
             onChange({ ...view, query: event.target.value, submitted: false });
             demo?.dispatch({ type: 'edit', owner: 'global-search' });

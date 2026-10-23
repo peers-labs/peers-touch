@@ -14,13 +14,13 @@ const chatJourneyLocale = typeof window === 'undefined'
   : resolveChatJourneyLocale(window.location.search, window.navigator.language);
 
 function generatedAvatar(prompt: string): string {
-  return `https://copilot-cn.bytedance.net/api/ide/v1/text_to_image?prompt=${encodeURIComponent(
+  return `https://copilot-cn.bytedance.net/api/ide/v1/tool_text_to_image?prompt=${encodeURIComponent(
     `Realistic head-and-shoulders portrait photograph of a ${prompt}. Centered face, calm natural expression, soft neutral daylight, plain cool gray studio background, square crop. No interface, no icon, no frame, no placeholder graphic, no text.`,
   )}&image_size=square`;
 }
 
 function generatedMedia(prompt: string): string {
-  const url = `https://copilot-cn.bytedance.net/api/ide/v1/text_to_image?prompt=${encodeURIComponent(
+  const url = `https://copilot-cn.bytedance.net/api/ide/v1/tool_text_to_image?prompt=${encodeURIComponent(
     `${prompt}. Realistic editorial photograph, natural lighting, inspectable subject, no interface chrome, no icon, no text, no watermark.`,
   )}&image_size=square`;
   return `url("${url}") center / cover no-repeat`;

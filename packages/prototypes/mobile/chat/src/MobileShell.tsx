@@ -1,7 +1,7 @@
-import { useEffect, useState, type Dispatch, type ReactNode } from 'react';
+import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { Badge } from 'antd';
 import { Image as ImageIcon, MessageCircle, Search, User, Users } from 'lucide-react';
-import type { TabId, Conversation, Contact, GroupItem, MobileUiEvidence, SettingEntry } from './types';
+import type { TabId, Conversation, Contact, GroupItem, Message, MobileUiEvidence, SettingEntry } from './types';
 import {
   deliveryRecoveryMessages,
   demoMessages,
@@ -109,6 +109,7 @@ export function MobileShell({
   const [searchView, setSearchView] = useState<SearchPresentation>({
     query: '', filter: 'all', conversationKey: '', submitted: false,
   });
+  const [conversationMessages, setConversationMessages] = useState<Record<string, Message[]>>({});
   const [shellToast, setShellToast] = useState<string | null>(null);
   const [shellToastKey, setShellToastKey] = useState(0);
   const [momentsImmersiveOpen, setMomentsImmersiveOpen] = useState(false);
@@ -165,6 +166,7 @@ export function MobileShell({
   function handleBackToList() {
     if (searchTarget) {
       setSearchTarget(null);
+      searchDemo?.dispatch({ type: 'open', owner: 'global-search' });
       setSearchOpen(true);
       return;
     }
@@ -181,6 +183,31 @@ export function MobileShell({
       searchDemo.dispatch({ type: 'open', owner: 'global-search' });
     }
     setSearchOpen(true);
+  }
+
+  function initialMessages(conversation: Conversation): Message[] {
+    if (longLists) return longListMessages;
+    if (deliveryRecovery) return deliveryRecoveryMessages;
+    if (uiEvidence.chatThreadState === 'unknown-outcome') return unknownOutcomeMessages;
+    if (conversation.key.startsWith('demo-direct-')) return [];
+    return conversation.key === 'dev-team' ? demoMessages : directDemoMessages;
+  }
+
+  function readMessages(conversation: Conversation): Message[] {
+    return conversationMessages[conversation.key] ?? initialMessages(conversation);
+  }
+
+  function updateMessages(conversation: Conversation, next: SetStateAction<Message[]>) {
+    setConversationMessages(current => ({
+      ...current,
+      [conversation.key]: typeof next === 'function'
+        ? next(current[conversation.key] ?? initialMessages(conversation)) : next,
+    }));
+  }
+
+  function leaveSearch() {
+    searchDemo?.dispatch({ type: 'close', owner: 'global-search' });
+    setSearchOpen(false);
   }
 
   const searchEntry = <button type="button" className="mp-header-action" aria-label="Search"
@@ -235,7 +262,7 @@ export function MobileShell({
   function renderPage(): ReactNode {
     if (searchOpen) {
       const targets = conversations.flatMap(conversation => {
-        const messages = longLists ? longListMessages : conversation.key === 'dev-team' ? demoMessages : directDemoMessages;
+        const messages = readMessages(conversation);
         return messages.filter(message => !message.dateLabel).flatMap(message => [
           { conversation, message },
           ...(message.threadReplies ?? []).map(reply => ({ conversation, message: reply, root: message })),
@@ -243,14 +270,14 @@ export function MobileShell({
       });
       return <SearchPage view={searchView} onChange={setSearchView} targets={targets} memory={listMemory}
         demo={searchDemo} onBack={() => {
-          setSearchOpen(false); setSearchTarget(null); setSelectedSetting(null);
+          leaveSearch(); setSearchTarget(null); setSelectedSetting(null);
           setActiveTab(searchOrigin.tab); setSelectedConversation(searchOrigin.conversation);
         }} onOpen={target => {
           setActiveTab('chat'); setSelectedConversation(target.conversation);
-          setSearchTarget(target); setSearchOpen(false);
+          setSearchTarget(target); leaveSearch();
         }} onSetting={setting => {
           setSearchSetting(true);
-          setActiveTab('profile'); setSelectedSetting(setting); setSearchOpen(false);
+          setActiveTab('profile'); setSelectedSetting(setting); leaveSearch();
         }} />;
     }
     if ((activeTab === 'chat' || activeTab === 'contacts') && socialDemo.runtime !== 'ready') {
@@ -267,19 +294,9 @@ export function MobileShell({
       />;
     }
     if (activeTab === 'chat' && selectedConversation) {
-      const initialMessages = longLists
-        ? longListMessages
-        : deliveryRecovery
-          ? deliveryRecoveryMessages
-          : uiEvidence.chatThreadState === 'unknown-outcome'
-            ? unknownOutcomeMessages
-            : selectedConversation.key.startsWith('demo-direct-')
-              ? []
-              : selectedConversation.key === 'dev-team'
-                ? undefined
-                : directDemoMessages;
       return <ChatThread key={selectedConversation.key} conversation={selectedConversation}
-        initialMessages={initialMessages}
+        messages={readMessages(selectedConversation)}
+        onMessagesChange={next => updateMessages(selectedConversation, next)}
         listMemory={listMemory} uiEvidence={uiEvidence}
         messageId={searchTarget?.message.id} threadRootMessageId={searchTarget?.root?.id}
         onSearch={() => openSearch(selectedConversation.key)}
@@ -290,7 +307,8 @@ export function MobileShell({
       const direct = socialDemo.direct?.contactKey === selectedContact.key ? socialDemo.direct : null;
       if (direct?.status === 'ready' && direct.conversation) {
         return <ChatThread key={direct.conversation.key} conversation={direct.conversation}
-          initialMessages={direct.conversation.key.startsWith('demo-direct-') ? [] : undefined}
+          messages={readMessages(direct.conversation)}
+          onMessagesChange={next => updateMessages(direct.conversation!, next)}
           listMemory={listMemory} uiEvidence={uiEvidence}
           onSearch={() => openSearch(direct.conversation!.key)}
           onStartCall={(mediaKind) => handleStartCall(direct.conversation!, mediaKind)}
@@ -313,7 +331,13 @@ export function MobileShell({
       return (
         <SettingDetailView
           setting={selectedSetting}
-          onBack={() => { setSelectedSetting(null); if (searchSetting) setSearchOpen(true); }}
+          onBack={() => {
+            setSelectedSetting(null);
+            if (searchSetting) {
+              searchDemo?.dispatch({ type: 'open', owner: 'global-search' });
+              setSearchOpen(true);
+            }
+          }}
           onChangeStation={onChangeStation}
         />
       );
