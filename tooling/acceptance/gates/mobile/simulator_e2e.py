@@ -448,6 +448,7 @@ class SimulatorAppiumSession:
                     "appium:mjpegServerPort": self._required_port("mjpeg"),
                     "appium:chromedriverPort": self._required_port("webview"),
                     "appium:ensureWebviewsHavePages": True,
+                    "appium:nativeWebScreenshot": True,
                     "appium:chromedriverExecutable": (
                         self.chromedriver_executable
                     ),

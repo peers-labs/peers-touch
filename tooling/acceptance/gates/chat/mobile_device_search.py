@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
@@ -199,9 +200,13 @@ return {
         deadline = time.monotonic() + 30
         while True:
             rendering = self.surface(session)
-            session.switch_to_native()
-            screenshot = session.screenshot_bytes()
-            session.switch_to_app_webview()
+            if session.platform == "android":
+                # The adapter binds nativeWebScreenshot: UiAutomator owns these pixels.
+                screenshot = session.screenshot_bytes()
+            else:
+                session.switch_to_native()
+                screenshot = session.screenshot_bytes()
+                session.switch_to_app_webview()
             markup = _redacted_markup(session.get_page_source())
             if self.surface(session) == rendering:
                 break
@@ -247,7 +252,47 @@ return {
                         f"native keyboard obscures Search {field}")
         frame["assertionPassed"] = True
 
+    def tap_android_input(self, artifacts: ArtifactSession, session: Any,
+                          markup: str, target: dict) -> None:
+        webviews = [
+            node for node in ET.fromstring(markup).iter()
+            if node.get("class") == "android.webkit.WebView"
+            and node.get("package") == session.build.application_id
+            and node.get("displayed") == "true"
+        ]
+        require(len(webviews) == 1, "one observed native product WebView is required")
+        bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+                              webviews[0].get("bounds", ""))
+        require(bounds, "native product WebView bounds are required")
+        left, top, right, bottom = map(int, bounds.groups())
+        require(right > left and bottom > top
+                and target["width"] > 0 and target["height"] > 0,
+                "native and WebView input geometry must be positive")
+        scale_x = (right - left) / target["width"]
+        scale_y = (bottom - top) / target["height"]
+        require(abs(scale_x - scale_y) <= scale_x * 0.02,
+                "native and WebView input coordinate scales must agree")
+        point = {"x": round(left + target["x"] * scale_x),
+                 "y": round(top + target["y"] * scale_y)}
+        require(left < point["x"] < right and top < point["y"] < bottom,
+                "Search input tap must remain inside the native product WebView")
+        artifacts.write_json(
+            f"mobile-device-search/{session.client_id}/keyboard/native-target.json",
+            {"input": target, "webviewBounds": [left, top, right, bottom], "tap": point},
+            role=f"mobile-search-native-target/{session.client_id}",
+        )
+        session.execute_script("mobile: clickGesture", point)
+
     def keyboard(self, artifacts: ArtifactSession, session: Any, fixture: dict) -> None:
+        target = self.wait(session, """
+const input = document.querySelector(arguments[0]);
+if (!input || input.disabled || input.readOnly || input.value !== arguments[1]) return false;
+const box = input.getBoundingClientRect();
+const x = box.left + box.width / 2, y = box.top + box.height / 2;
+if (box.width <= 0 || box.height <= 0 || x <= 0 || x >= innerWidth
+    || y <= 0 || y >= innerHeight || document.elementFromPoint(x, y) !== input) return false;
+return {id: input.id, x, y, width: innerWidth, height: innerHeight};
+""", "visible semantic Search input target", FIELD, fixture["query"])
         session.switch_to_native()
         try:
             markup = session.get_page_source()
@@ -256,28 +301,35 @@ return {
                 _redacted_markup(markup), media_type="application/xml",
                 role=f"mobile-search-native-input/{session.client_id}",
             )
-            fields = [
-                node for node in ET.fromstring(markup).iter()
-                if (node.get("type", node.tag) == "XCUIElementTypeTextField"
-                    or node.get("class") == "android.widget.EditText")
-                and node.get("value", node.get("text", "")) == fixture["query"]
-            ]
-            require(len(fields) == 1, "one observed native Search input is required")
-            field = fields[0]
-            attribute = "value" if "value" in field.attrib else "text"
-            kind = "type" if "type" in field.attrib else "class"
-            selector = f"//*[@{kind}='{field.get(kind)}' and @{attribute}='{fixture['query']}']"
-            element = session.find_element("xpath", selector)
-            session.click_element(element)
+            if session.platform == "android":
+                # Android may expose the native WebView without its Chromium children.
+                self.tap_android_input(artifacts, session, markup, target)
+                element = None
+            else:
+                fields = [
+                    node for node in ET.fromstring(markup).iter()
+                    if node.get("type", node.tag) == "XCUIElementTypeTextField"
+                    and node.get("value") == fixture["query"]
+                ]
+                require(len(fields) == 1, "one observed native Search input is required")
+                selector = f"//*[@type='XCUIElementTypeTextField' and @value='{fixture['query']}']"
+                element = session.find_element("xpath", selector)
+                session.click_element(element)
             self.wait(session, "mobile: isKeyboardShown", "native software keyboard")
-            session.switch_to_app_webview()
-            session.execute_script("""
+            if session.platform == "android":
+                session.execute_script("mobile: pressKey", {"keycode": 123})  # MOVE_END
+                session.execute_script("mobile: pressKey", {"keycode": 62})  # SPACE
+            else:
+                session.switch_to_app_webview()
+                session.execute_script("""
 const input = document.querySelector(arguments[0]);
 input.setSelectionRange(input.value.length, input.value.length);
 return true;
 """, FIELD)
-            session.switch_to_native()
-            session.send_keys(element, " ")
+                session.switch_to_native()
+                session.send_keys(element, " ")
+            require(session.execute_script("mobile: isKeyboardShown") is True,
+                    "native software keyboard must remain visible after typing")
         finally:
             session.switch_to_app_webview()
         self.wait(session, "return document.querySelector(arguments[0])?.value === arguments[1];",

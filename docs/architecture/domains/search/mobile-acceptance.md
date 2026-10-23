@@ -27,8 +27,14 @@ Simulator and Android Emulator.
 - Persisted light/dark preferences and native software-keyboard typing:
   real Settings save, distinct painted themes, input/submit/content clearance
   against the visual viewport, and keyboard dismissal on both platforms.
-  The input is selected from the observed native accessibility tree and tapped
-  through Appium before native typing. WebView focus alone is not keyboard proof.
+  iOS selects the input from the observed native accessibility tree. Android
+  binds the visible semantic input and its hit-tested center to the single
+  product WebView's observed native bounds, validates both coordinate scales,
+  and sends an Appium native touch. Chromium input children are not assumed to
+  exist in Android's accessibility snapshot. Both platforms require a visible
+  software keyboard and native typing before acknowledging the changed query;
+  Android uses native MOVE_END and SPACE key events. WebView focus alone is not
+  keyboard proof. The native tree and Android coordinate binding are retained.
   Driver context always returns to the product WebView, including on failure.
   The Search detail consumes the shared `useVisualKeyboardOverlap` measurement
   to shrink its full-height rail; its result scroll root ends above the keyboard.
@@ -82,6 +88,9 @@ Each source-bound client also records at most 32 existing Messaging runtime-erro
 events inside its own WebView lifetime. Failure diagnostics redact and preserve
 the operation and original error, so a dependency-failed route cannot conceal
 its originating native/projection failure.
+Android Appium sessions bind `nativeWebScreenshot=true`; Search captures the
+UiAutomator screenshot while retaining WebView context. This preserves native
+keyboard/system pixels without repeating ADB context discovery for every frame.
 Query, navigation and runtime-error diagnostics are collected before native
 screenshot or lifecycle waits. A failed canonical message-focus wait preserves
 its last observed product surfaces, message nodes, window scope, active element
