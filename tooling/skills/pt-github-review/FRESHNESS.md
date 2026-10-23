@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-23
-covered_docs_hash: 897eecf27e6077f0d1cdc28885a43f24546a54c300c08074c0c3c0f1ba8b49b7
+covered_docs_hash: e229859da12b9138fc494591c0ee10a215dc3b6dd8a4d19cc480352cc993373a
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,18 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Native Input And Operator Focus Diagnostic Review
+
+The accepted D-22 policy is unchanged. Every native-input refusal now requires
+the policy owner's actual mode/isolation observation, attempted operation,
+expected capability and recovery action. macOS operator-focus failures retain
+observed PIDs or bounded probe state without private window titles. No new
+input authority, timeout, fallback or product proof is introduced.
+The command and preparation regressions verify Runner sealing and Reporter
+projection, retaining BLOCKED/UNPROVEN and rejecting a forged resource.
+Existing review rules cover these owner-produced diagnostics; no Skill behavior
+or fixture taxonomy changes. The existing diagnostic pitfall records the cases.
 
 ## Semantic Mouse And Health Observation Review
 

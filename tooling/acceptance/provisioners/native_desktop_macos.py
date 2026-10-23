@@ -37,6 +37,7 @@ from tooling.acceptance.core.errors import (
     DriverError,
     ProvisioningError,
 )
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
@@ -817,6 +818,17 @@ class NativeDesktopMacOSProvisioner:
             raise BlockedError(
                 reason="macOS operator frontmost process is unavailable",
                 resource="runtime-cell-operator-focus",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="native-desktop-macos-provisioner",
+                    recovery_action=(
+                        "Retry the same semantic Runtime Cell when the operator's "
+                        "GUI session exposes a frontmost process. Do not activate "
+                        "another application to manufacture the observation."
+                    ),
+                    resource="runtime-cell-operator-focus",
+                    expected={"frontmostPid": "positive process ID"},
+                    observed={"frontmostPid": process_id},
+                ),
             )
         focus_identity = cls._stable_operator_focus_identity(
             adapter,
@@ -880,6 +892,22 @@ class NativeDesktopMacOSProvisioner:
                         f"actual={control.actual_frontmost_pid}"
                     ),
                     resource="runtime-cell-operator-focus",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-desktop-macos-provisioner",
+                        recovery_action=(
+                            "Retry the same semantic Runtime Cell when operator "
+                            "focus remains stable. If it keeps changing, prepare "
+                            "a reviewed isolated GUI Runtime Cell; do not activate "
+                            "the operator's application or suppress the "
+                            "non-interference check."
+                        ),
+                        resource="runtime-cell-operator-focus",
+                        expected={"frontmostPid": process_id},
+                        observed={
+                            "frontmostPid": control.actual_frontmost_pid,
+                            "probeError": control.error,
+                        },
+                    ),
                 )
             valid = (
                 not control.error
@@ -904,6 +932,30 @@ class NativeDesktopMacOSProvisioner:
                         f"error={last_control.error!r}"
                     ),
                     resource="runtime-cell-operator-focus",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-desktop-macos-provisioner",
+                        recovery_action=(
+                            "Check the macOS Accessibility probe and retry the "
+                            "same semantic Runtime Cell with stable operator "
+                            "focus. Keep the non-interference assertion and its "
+                            "existing timeout; do not infer a missing device "
+                            "from an unavailable or unstable focus probe."
+                        ),
+                        resource="runtime-cell-operator-focus",
+                        expected={
+                            "frontmostPid": process_id,
+                            "consecutiveStableSamples": 2,
+                            "timeoutSeconds": timeout_seconds,
+                        },
+                        observed={
+                            "frontmostPid": last_control.actual_frontmost_pid,
+                            "kind": last_control.kind,
+                            "platformRole": last_control.platform_role,
+                            "platformSubrole": last_control.platform_subrole,
+                            "probeError": last_control.error,
+                            "deadlineExceeded": True,
+                        },
+                    ),
                 )
             if interval_seconds > 0:
                 time.sleep(interval_seconds)

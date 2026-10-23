@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 from threading import Thread
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import sys
 
 from tooling.acceptance.core import EvidenceStore, REPO_ROOT, blocked_manifest, new_manifest
@@ -26,7 +26,12 @@ from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.lease import RemoteGitSourceLease
 from tooling.acceptance.core.provisioning import CredentialRef, EnvironmentContract
+from tooling.acceptance.drivers.native.base import (
+    NativeControlSnapshot, admit_local_native_input_mode,
+)
+from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 from tooling.acceptance.provisioners.home_station import HomeStationProvisioner
+from tooling.acceptance.provisioners.native_desktop_macos import NativeDesktopMacOSProvisioner
 from tooling.acceptance.provisioners.native_tauri_embedded_webdriver import (
     NativeTauriEmbeddedWebDriverProvisioner,
 )
@@ -57,6 +62,126 @@ def diagnostic() -> ResourceDiagnostic:
 
 
 class ResourceDiagnosticTests(unittest.TestCase):
+    def test_native_input_admission_records_actual_configuration(self) -> None:
+        cases = (
+            ("unsupported", "", "inputMode", "unsupported"),
+            ("semantic-nonintrusive", "unsupported", "inputIsolation", "unsupported"),
+            ("exclusive-native-input", "", "inputIsolation", "shared-user-session"),
+            ("exclusive-native-input", "shared-user-session",
+             "inputIsolation", "shared-user-session"),
+        )
+        for mode, isolation, field, actual in cases:
+            with self.subTest(mode=mode, isolation=isolation):
+                with self.assertRaises(BlockedError) as caught:
+                    admit_local_native_input_mode(mode, isolation)
+                details = caught.exception.diagnostic.to_dict()
+                self.assertEqual(details["owner"], "native-input-policy")
+                check = details["resourceChecks"][0]
+                self.assertEqual(check["state"], "OBSERVED")
+                self.assertEqual(check["observed"][field], actual)
+                self.assertEqual(
+                    check["resource"], "desktop-native-input-isolation",
+                )
+                self.assertNotIn("source", check["observed"])
+                self.assertNotIn("device", check["observed"])
+                self.assertTrue(details["recoveryAction"])
+
+    def test_native_input_refusal_survives_command_sealing_and_reporter(self) -> None:
+        class InputGate(AcceptanceGate):
+            gate_id = "native-input-probe"
+            phase = "native input"
+            bom = ("synthetic",)
+            spec = ("synthetic",)
+
+            def run(self):
+                MacOSNativeDesktopAdapter().require_exclusive_input(
+                    "select file through native chooser",
+                )
+
+        runner = script_module("acceptance-run")
+        reporter = script_module("acceptance-report")
+        source = {"commit": "native-input-probe", "workspaceDigest": "clean"}
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=REPO_ROOT)
+            with store.begin_run(InputGate.gate_id, source=source) as run:
+                gate = InputGate()
+                with patch.dict("os.environ", run.subprocess_environment()), \
+                        patch.object(gate, "_print_blocked"):
+                    self.assertEqual(gate.execute(), 2)
+                result = runner.enrich_result_with_run_artifacts({
+                    "id": gate.gate_id, "status": "blocked", "exit_code": 2,
+                    "tier": "local-evidence", "cleanupStatus": "passed",
+                }, run)
+                run.finalize(result=result)
+                delivered = {**result, "runManifest": run.manifest_ref.to_dict()}
+            projected = reporter.result_diagnostic(delivered, source, store)
+            self.assertEqual(projected["missingFields"], [])
+            self.assertEqual(projected["status"], "blocked")
+            self.assertEqual(delivered["proofStatus"], "UNPROVEN")
+            check = projected["resourceChecks"][0]
+            self.assertEqual(check["expected"]["inputMode"], "exclusive-native-input")
+            self.assertEqual(check["observed"]["inputMode"], "semantic-nonintrusive")
+            self.assertEqual(
+                check["observed"]["operation"], "select file through native chooser",
+            )
+            self.assertIn("isolated GUI", projected["recoveryAction"])
+            self.assertIn("Station Profile", projected["recoveryAction"])
+            self.assertIn(
+                "runManifest.result.blockedResource: mismatch",
+                reporter.result_diagnostic(
+                    {**delivered, "blockedResource": "made-up-device"}, source, store,
+                )["missingFields"],
+            )
+
+    def test_operator_focus_refusals_seal_actual_pid_and_probe_state(self) -> None:
+        runner = script_module("acceptance-run")
+        reporter = script_module("acceptance-report")
+        source = {"commit": "operator-focus-probe", "workspaceDigest": "clean"}
+        controls = (
+            NativeControlSnapshot(
+                actual_frontmost_pid=42, title="private-title-not-evidence",
+            ),
+            NativeControlSnapshot(
+                actual_frontmost_pid=41, error="AX probe unavailable",
+                title="private-title-not-evidence",
+            ),
+        )
+        for index, control in enumerate(controls):
+            with self.subTest(control=control.actual_frontmost_pid):
+                adapter = Mock(spec=MacOSNativeDesktopAdapter)
+                adapter.focused_control.return_value = control
+                with self.assertRaises(BlockedError) as caught:
+                    NativeDesktopMacOSProvisioner._stable_operator_focus_identity(
+                        adapter, 41, timeout_seconds=0, interval_seconds=0,
+                    )
+                error = caught.exception
+                details = error.diagnostic.to_dict()
+                check = details["resourceChecks"][0]
+                self.assertEqual(check["expected"]["frontmostPid"], 41)
+                self.assertEqual(
+                    check["observed"]["frontmostPid"], control.actual_frontmost_pid,
+                )
+                self.assertNotIn("private-title-not-evidence", json.dumps(details))
+                gate_id = f"operator-focus-probe-{index}"
+                with tempfile.TemporaryDirectory() as directory:
+                    store = EvidenceStore(Path(directory), worktree=REPO_ROOT)
+                    with store.begin_run(gate_id, source=source) as run:
+                        result = runner.runtime_cell_failure_result(
+                            gate_id=gate_id, command="operator-focus-probe",
+                            environment="native-tauri-embedded-webdriver",
+                            tier="local-evidence", runtime_cell="desktop-macos-native",
+                            error=error, duration_seconds=0,
+                        )
+                        result["cleanupStatus"] = "passed"
+                        result = runner.record_failure_observation(result, run)
+                        result = runner.enrich_result_with_run_artifacts(result, run)
+                        run.finalize(result=result)
+                        delivered = {**result, "runManifest": run.manifest_ref.to_dict()}
+                    projected = reporter.result_diagnostic(delivered, source, store)
+                    self.assertEqual(projected["missingFields"], [])
+                    self.assertEqual(projected["status"], "blocked")
+                    self.assertEqual(delivered["proofStatus"], "UNPROVEN")
+
     def test_health_probe_records_real_success_and_connection_refusal(self) -> None:
         owner = HomeStationProvisioner(EnvironmentContract(id="home-station"))
 

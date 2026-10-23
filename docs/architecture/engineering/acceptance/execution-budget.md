@@ -422,6 +422,17 @@ body 与私有 headers。失败诊断绑定 service、Profile、部署环境和�
 源码漂移或主机不存在。未获租约时，后续源码验证明确为 `NOT_EVALUATED`。
 恢复动作定位同一个 reviewed Profile，保留规范租约获取与持有者清理边界。
 
+Native Input policy 的全部拒绝边界必须保留 `ResourceDiagnostic`：
+实际 operation、input mode 或 isolation 值、期望 capability、同一 policy owner
+及恢复动作。未声明 isolation 按现有合同解析为 shared user session，不推断
+硬件缺失或源码漂移。恢复原生 file panel、permission、drag/focus 证明需要
+真实 reviewed isolated GUI Runtime Cell；Station Profile 只提供 Station 资源，
+不能把 shared user session 改名为 isolated。原生操作及后续未运行断言继续
+`BLOCKED/UNPROVEN`，完整的阻断诊断不等于产品 `PASS`。
+macOS Cell 的 operator focus 拒绝由该 Provisioner 记录实际 PID、probe 状态
+或已超过原有上界的采样状态，不采集窗口标题。恢复动作保留同一语义 Cell、
+非侵入式断言及原有 timeout；前台 PID 变化不推断为产品激活失败。
+
 Runner 为准备异常和 deadline 生成本 Gate 的不可变失败 observation，
 并将原始 Manifest、Report 或 observation 的 ArtifactRef 绑定到每项
 检查；生产者不签发自引用 hash。显式失败 observation 优先于清理和

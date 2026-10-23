@@ -1753,6 +1753,11 @@ focus or HID delivery.
   semantic mode.
 - Native file chooser, permission, physical drag, and native-focus claims stay
   `BLOCKED/UNPROVEN` without an isolated GUI session.
+- The input policy owner records the attempted operation, actual mode or
+  isolation value, expected capability and recovery action in a structured
+  resource diagnostic. Runner and Reporter preserve that same observation.
+  A Station Profile is not a GUI isolation resource; absent observations do
+  not establish missing hardware or source drift.
 - Business Gate assertions remain unchanged; only their admitted interaction
   mechanism and evidence classification differ.
 

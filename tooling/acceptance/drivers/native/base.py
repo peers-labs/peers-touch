@@ -7,6 +7,7 @@ from enum import Enum
 from pathlib import Path
 
 from tooling.acceptance.core.errors import NativeInputBlocked
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 
 
 class NativeInputMode(str, Enum):
@@ -19,6 +20,27 @@ class NativeInputIsolation(str, Enum):
     ISOLATED_GUI_SESSION = "isolated-gui-session"
 
 
+def _blocked_input(
+    operation: str,
+    detail: str,
+    *,
+    expected: dict[str, object],
+    observed: dict[str, object],
+    recovery_action: str,
+) -> NativeInputBlocked:
+    return NativeInputBlocked(
+        operation,
+        detail,
+        diagnostic=ResourceDiagnostic.observed(
+            owner="native-input-policy",
+            recovery_action=recovery_action,
+            resource="desktop-native-input-isolation",
+            expected=expected,
+            observed={"operation": operation, **observed},
+        ),
+    )
+
+
 def resolve_native_input_mode(value: str | None) -> NativeInputMode:
     normalized = (value or "").strip()
     if not normalized:
@@ -27,9 +49,16 @@ def resolve_native_input_mode(value: str | None) -> NativeInputMode:
         return NativeInputMode(normalized)
     except ValueError as error:
         supported = ", ".join(mode.value for mode in NativeInputMode)
-        raise NativeInputBlocked(
+        raise _blocked_input(
             "resolve native input mode",
             f"unsupported mode {normalized!r}; expected one of: {supported}",
+            expected={"inputMode": [mode.value for mode in NativeInputMode]},
+            observed={"inputMode": normalized},
+            recovery_action=(
+                "Set PT_ACCEPTANCE_DESKTOP_INPUT_MODE to a supported mode. "
+                "Exclusive input additionally requires a reviewed isolated GUI "
+                "session; changing a flag does not isolate a shared user session."
+            ),
         ) from error
 
 
@@ -49,18 +78,44 @@ def admit_local_native_input_mode(
         supported = ", ".join(
             isolation.value for isolation in NativeInputIsolation
         )
-        raise NativeInputBlocked(
+        raise _blocked_input(
             "resolve native input isolation",
             f"unsupported isolation {isolation_raw!r}; expected: {supported}",
+            expected={
+                "inputIsolation": [
+                    isolation.value for isolation in NativeInputIsolation
+                ],
+            },
+            observed={
+                "inputMode": mode.value,
+                "inputIsolation": isolation_raw,
+            },
+            recovery_action=(
+                "Set PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION to the actual reviewed "
+                "GUI session isolation. Do not label a shared user session isolated."
+            ),
         ) from error
     if (
         mode is NativeInputMode.EXCLUSIVE_NATIVE_INPUT
         and isolation is not NativeInputIsolation.ISOLATED_GUI_SESSION
     ):
-        raise NativeInputBlocked(
+        raise _blocked_input(
             "admit local exclusive native input",
             "exclusive input requires PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION="
             f"{NativeInputIsolation.ISOLATED_GUI_SESSION.value}",
+            expected={
+                "inputMode": NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value,
+                "inputIsolation": NativeInputIsolation.ISOLATED_GUI_SESSION.value,
+            },
+            observed={
+                "inputMode": mode.value,
+                "inputIsolation": isolation.value,
+            },
+            recovery_action=(
+                "Prepare a reviewed isolated GUI Runtime Cell before admitting "
+                "exclusive input. Keep this native-input claim BLOCKED/UNPROVEN "
+                "while using a shared user session."
+            ),
         )
     return mode
 
@@ -180,10 +235,19 @@ class NativeDesktopAdapter(ABC):
     def require_exclusive_input(self, operation: str) -> None:
         if self.input_mode is NativeInputMode.EXCLUSIVE_NATIVE_INPUT:
             return
-        raise NativeInputBlocked(
+        raise _blocked_input(
             operation,
             "global focus, keyboard, or pointer injection is forbidden in "
             f"{self.input_mode.value!r} mode",
+            expected={"inputMode": NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value},
+            observed={"inputMode": self.input_mode.value},
+            recovery_action=(
+                "Run the declared native operation in a reviewed isolated GUI "
+                "Runtime Cell with exclusive-native-input. A Station Profile "
+                "does not provide GUI isolation. Keep this claim BLOCKED/UNPROVEN "
+                "until that resource is available; do not relabel the shared "
+                "user session or replace the operation with a Harness action."
+            ),
         )
 
     @property

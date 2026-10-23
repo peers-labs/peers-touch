@@ -148,10 +148,17 @@ class BlockedError(ProvisioningError):
 class NativeInputBlocked(BlockedError):
     code = "NATIVE_INPUT_ISOLATION_REQUIRED"
 
-    def __init__(self, operation: str, detail: str) -> None:
+    def __init__(
+        self,
+        operation: str,
+        detail: str,
+        *,
+        diagnostic: ResourceDiagnostic,
+    ) -> None:
         super().__init__(
             reason=f"{self.code}: {operation}: {detail}",
             resource="desktop-native-input-isolation",
+            diagnostic=diagnostic,
         )
         self.operation = operation
         self.detail = detail

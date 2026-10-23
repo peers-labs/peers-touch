@@ -3,9 +3,12 @@ kind: pitfall
 title: Generic credential resolution must preserve Core diagnostics
 status: active
 owns:
+  - tooling/acceptance/core/errors.py
   - tooling/acceptance/core/gate.py
   - tooling/acceptance/core/provisioner.py
+  - tooling/acceptance/drivers/native/base.py
   - tooling/acceptance/provisioners/home_station.py
+  - tooling/acceptance/provisioners/native_desktop_macos.py
   - tooling/acceptance/tests/test_resource_diagnostic.py
 referenced-by: []
 related:
@@ -66,3 +69,13 @@ Health failure before attestation leaves source identity `NOT_EVALUATED`;
 it cannot establish source drift or a missing device. Real loopback HTTP and
 connection-refusal regressions must survive Runner sealing and Reporter
 validation without recording response bodies or private headers.
+Native input refusals must retain the actual operation, mode/isolation
+observation, expected capability and `native-input-policy` recovery action.
+`NativeInputBlocked` requires this owner-produced diagnostic at construction.
+The real semantic adapter refusal must survive command reporting, Runner
+sealing and Reporter verification while remaining `BLOCKED/UNPROVEN`.
+Missing or invalid input declarations are not evidence of missing hardware.
+A Station Profile cannot supply an isolated desktop GUI session.
+macOS operator-focus refusal must likewise retain the observed frontmost PID
+or bounded Accessibility probe failure, without private window titles. The
+recovery keeps the same semantic Cell and non-interference assertion.
