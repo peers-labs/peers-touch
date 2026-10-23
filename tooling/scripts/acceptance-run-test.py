@@ -961,6 +961,8 @@ class AcceptanceRunTest(unittest.TestCase):
 
         class EnvironmentProvisioner:
             resolved_credential_values = ("resolved-secret",)
+            remote_source_environment: dict[str, str] = {}
+            remote_source_context = staticmethod(contextlib.nullcontext)
 
             def bind_evidence_run(self, run: object) -> None:
                 self.evidence_run = run
@@ -1176,6 +1178,8 @@ class AcceptanceRunTest(unittest.TestCase):
         class EnvironmentProvisioner:
             environment_id = "synthetic-environment"
             resolved_credential_values: tuple[str, ...] = ()
+            remote_source_environment: dict[str, str] = {}
+            remote_source_context = staticmethod(contextlib.nullcontext)
 
             def bind_evidence_run(self, run: object) -> None:
                 self.evidence_run = run
@@ -1357,7 +1361,10 @@ class AcceptanceRunTest(unittest.TestCase):
 
     def test_main_preserves_parent_blocked_context_result(self) -> None:
         module = load_module()
-        provisioner = mock.Mock()
+        provisioner = mock.Mock(
+            remote_source_environment={},
+            remote_source_context=mock.Mock(return_value=contextlib.nullcontext()),
+        )
         provisioner.environment_id = "synthetic-environment"
         provisioner.resolved_credential_values = ()
         provisioner.prepare_fixture_authority.return_value = {}
@@ -1485,7 +1492,10 @@ class AcceptanceRunTest(unittest.TestCase):
     ) -> None:
         module = load_module()
         events: list[str] = []
-        provisioner = mock.Mock()
+        provisioner = mock.Mock(
+            remote_source_environment={},
+            remote_source_context=mock.Mock(return_value=contextlib.nullcontext()),
+        )
         provisioner.environment_id = "synthetic-environment"
         provisioner.resolved_credential_values = ()
         provisioner.prepare_fixture_authority.return_value = {}
@@ -1802,7 +1812,10 @@ class AcceptanceRunTest(unittest.TestCase):
         if close_error is not None:
             launch_context.close.side_effect = close_error
         launch_context.bind_child.return_value = mock.Mock()
-        provisioner = mock.Mock()
+        provisioner = mock.Mock(
+            remote_source_environment={},
+            remote_source_context=mock.Mock(return_value=contextlib.nullcontext()),
+        )
         provisioner.environment_id = "synthetic-environment"
         provisioner.resolved_credential_values = ()
         provisioner.prepare_fixture_authority.return_value = {}

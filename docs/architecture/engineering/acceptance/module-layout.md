@@ -31,6 +31,7 @@ tooling/acceptance/
 │   ├── harness.py                  # 通用 JS harness 桥接 helper
 │   ├── provisioning.py             # Environment contract、runtime manifest 与生命周期接口
 │   ├── provisioner.py              # EnvironmentProvisioner 生命周期与 fail-closed 公共逻辑
+│   ├── lease.py                    # OS/source lease、连接 owner 和逐操作远端锁检查
 │   ├── launch_context.py           # [D-18] ephemeral capability channel与child launch binding
 │   ├── bounded_http.py             # monotonic deadline与byte-bound HTTP response reader
 │   ├── result_contracts.py          # shared pure canonical result tuple/cell/matrix algebra
@@ -66,7 +67,7 @@ tooling/acceptance/
 │   └── mobile.py                   # [Phase 4] Mobile Tauri driver
 ├── transports/
 │   ├── __init__.py
-│   └── ssh.py                      # verified host、bounded command、tunnel、cancel
+│   └── ssh.py                      # verified host、owned connection、bounded command、tunnel、cancel
 ├── fixtures/                       # 具体 Fixture 实现
 │   ├── chat_native_reset.py        # Chat 环境重置
 │   └── chat_native_actors.py       # Chat account/PTID actor manifest producer

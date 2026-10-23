@@ -222,6 +222,24 @@ Fixture Actor 读取按精确 Station 目标批量执行：每次操作解析目
 拒绝。建档和联系人写入前仍各自执行一次独立读取与身份漂移核对，不跨阶段
 或租约缓存。Federation 准备使用同一批量读取 owner。
 
+有界 Environment 准备在 `remote_source_context` 中获取 POSIX 远端 source lease。
+该租约的现有 SSH 进程同时拥有 OpenSSH ControlMaster，`ControlPersist=no`；
+私有 socket 随租约创建和删除，不建立主机级连接缓存或持久 daemon。
+Provisioner 保存本次获取的连接描述，Runner 显式投影到父准备上下文、普通
+Gate 子进程和 cleanup。上下文退出恢复原值，子进程只借用、不释放；
+连接描述及 socket 不写入 Runtime Manifest、Git 或 Evidence Store。
+无可复用连接的 Windows、本机独立维护和 persistent lease 保持其独立生命周期。
+
+每次 SSH 命令先验证完整 host/user/port/known-host path/platform 目标、
+私有 socket 权限和实际 master PID，再在同一远端调用内重查 source 文件锁
+确实被记录 owner 持有。主连接存活不能代替实际租约检查；远端租约提前释放
+时仍拒绝新操作。`ProxyCommand=false` 禁止 master 丢失后的隐式 TCP 重连。
+copy 先验证同一租约；forward 保持独立 SSH 进程和转发清理，不把转发注册到
+借用 master。检查耗时消费原命令 deadline，Gate 工作预算不增加。
+租约竞争、目标/PID/owner 不一致、提前退出、子进程继承及 socket 清理必须
+通过真实连接资格验证。此优化仅减少重复握手，不替代 Profile/reset、源码、
+Actor、UI 或接收者证明，也不说明底层网络变化原因。
+
 macOS Runtime Cell 采用 Native Input 合同的 semantic-nonintrusive 默认值，
 在构建和写入 PREPARING 状态之前检查输入隔离。
 托盘 Gate 必须先通过 exclusive-native-input 的隔离检查，再构建真实

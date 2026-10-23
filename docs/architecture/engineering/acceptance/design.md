@@ -14,6 +14,9 @@ Runner 冻结显式全量范围，生命周期阶段消费绝对 deadline，
 Gate 成本和产品 proof 独立；未执行项保持 UNPROVEN。
 结构检查的显式 dependsOn 由同一个编译器处理，生产者只执行一次，
 消费者引用当前源码的原始 durable manifest；不自动合并业务资源。
+POSIX source lease 在相同 Environment 生命周期内持有并借出 OpenSSH 连接；
+每次操作验证实际连接 owner 和远端锁，失效时拒绝重连，最后随租约清理。
+此传输复用不共享产品 proof，具体上下文和失败合同仍由执行预算文档约束。
 
 ---
 

@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-22
-covered_docs_hash: de6676fe49940e61fb101c992bfa429e2d2497dfa4200669734c154815db34c8
+last_verified_at: 2026-10-23
+covered_docs_hash: 02fdc5a4a656093956c4fd95f6bf5737f06bc5d0a49da66e932e0696d252c9e0
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,21 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Owned SSH Connection Review
+
+The existing source lease owns the connection and private socket. Runner
+projects its descriptors through explicit parent and ordinary child contexts;
+borrowers acquire no release authority. Each remote operation verifies both
+the actual master PID and the still-held source lock, with no reconnect after
+loss. The guard replaces itself with the requested command instead of adding a
+remote process supervisor. Windows and persistent leases keep their existing
+lifecycle, and forward processes retain separate cleanup ownership.
+Target/owner/PID mismatch, actual lease loss and cleanup have real assigned-host
+qualification; product proof remains independent. The new guard regression
+checks actual file-lock ownership, command nonexecution after release and dead
+socket rejection. Existing lifecycle and proof rules apply without a Skill
+policy amendment.
 
 ## Generic Lease Diagnostic Review
 

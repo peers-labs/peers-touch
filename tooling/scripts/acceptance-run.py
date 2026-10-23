@@ -251,6 +251,7 @@ def run_environment(environment: dict[str, str]):
         "PT_ACCEPTANCE_RUN_ID",
         "PT_ACCEPTANCE_REDACTION_VALUES",
         "PT_ACCEPTANCE_RUNTIME_CELL",
+        "PT_ACCEPTANCE_SSH_CONNECTIONS",
         AGGREGATE_SOURCE_ENV,
         "PT_MACHINE_LEASE_FD",
         "PT_MACHINE_LEASE_ID",
@@ -2767,12 +2768,16 @@ def main() -> int:
                         if preparation_error is not None:
                             raise preparation_error
                         with run_environment(gate_env):
-                            provisioner, manifest, manifest_path = execute_stage(
-                                execution, "provision", provision_environment,
-                                provisioner_id,
-                                gate_id,
-                                provisioner,
-                            )
+                            with provisioner.remote_source_context():
+                                try:
+                                    provisioner, manifest, manifest_path = execute_stage(
+                                        execution, "provision", provision_environment,
+                                        provisioner_id,
+                                        gate_id,
+                                        provisioner,
+                                    )
+                                finally:
+                                    gate_env.update(provisioner.remote_source_environment)
                     except EvidenceError:
                         raise
                     except Exception as error:
@@ -2908,6 +2913,8 @@ def main() -> int:
                             os.environ.copy()
                         )
                         gate_env.update(authority_environment)
+                        if provisioner is not None:
+                            gate_env.update(provisioner.remote_source_environment)
                     gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
                         aggregate_source,
                         sort_keys=True,

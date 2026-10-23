@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
 
 from ._paths import REPO_ROOT
@@ -422,6 +423,47 @@ class EnvironmentProvisioner(ABC):
         ) = None
         self._credential_preparation_error: Exception | None = None
         self._evidence_run: RunHandle | None = None
+        self._source_leases: list[RemoteGitSourceLease] = []
+        self._remote_source_context_depth = 0
+
+    @property
+    def remote_source_environment(self) -> dict[str, str]:
+        from tooling.acceptance.transports.ssh import SSH_CONNECTIONS_ENV
+
+        descriptors = [
+            descriptor for lease in self._source_leases
+            if (descriptor := lease.connection_descriptor) is not None
+        ]
+        return (
+            {SSH_CONNECTIONS_ENV: json.dumps(descriptors, separators=(",", ":"))}
+            if descriptors else {}
+        )
+
+    def _refresh_remote_source_context(self) -> None:
+        from tooling.acceptance.transports.ssh import SSH_CONNECTIONS_ENV
+
+        environment = self.remote_source_environment
+        if SSH_CONNECTIONS_ENV in environment:
+            os.environ[SSH_CONNECTIONS_ENV] = environment[SSH_CONNECTIONS_ENV]
+        else:
+            os.environ.pop(SSH_CONNECTIONS_ENV, None)
+
+    @contextmanager
+    def remote_source_context(self):
+        """Project only this owner's live connections for synchronous operations."""
+        from tooling.acceptance.transports.ssh import SSH_CONNECTIONS_ENV
+
+        previous = os.environ.get(SSH_CONNECTIONS_ENV)
+        self._remote_source_context_depth += 1
+        try:
+            self._refresh_remote_source_context()
+            yield
+        finally:
+            self._remote_source_context_depth -= 1
+            if previous is None:
+                os.environ.pop(SSH_CONNECTIONS_ENV, None)
+            else:
+                os.environ[SSH_CONNECTIONS_ENV] = previous
 
     def bind_evidence_run(self, run: RunHandle) -> None:
         if self._manifest is not None:
@@ -474,6 +516,7 @@ class EnvironmentProvisioner(ABC):
             except Exception as error:
                 failures.append(f"{name}: {error}")
         self._cleanup_handlers.clear()
+        self._source_leases.clear()
         if failures:
             raise ProvisioningError(f"cleanup failed: {'; '.join(failures)}")
         return tuple(completed)
@@ -687,6 +730,11 @@ class EnvironmentProvisioner(ABC):
                     "PT_DEPLOY_KNOWN_HOSTS_FILE",
                     "",
                 ),
+                **(
+                    {"reuse_connection": True}
+                    if self._remote_source_context_depth > 0 and os.name == "posix"
+                    else {}
+                ),
             )
             lease.acquire()
         except (
@@ -733,6 +781,9 @@ class EnvironmentProvisioner(ABC):
             f"source-lease:{lease.resource}",
             lease.release,
         )
+        self._source_leases.append(lease)
+        if self._remote_source_context_depth:
+            self._refresh_remote_source_context()
 
     def _git_commit(self) -> str:
         completed = subprocess.run(
