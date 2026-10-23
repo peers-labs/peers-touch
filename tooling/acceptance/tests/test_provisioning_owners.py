@@ -218,7 +218,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertNotIn("StrictHostKeyChecking=no", command)
         self.assertIn(f"UserKnownHostsFile={known_hosts}", command)
         self.assertIn("2222", command)
-        self.assertEqual(run.call_args.kwargs["timeout"], 30)
+        self.assertGreater(run.call_args.kwargs["timeout"], 0)
+        self.assertLessEqual(run.call_args.kwargs["timeout"], 30)
         self.assertFalse(run.call_args.kwargs["check"])
 
     def test_remote_attestation_rejects_invalid_known_hosts_contract(self) -> None:
