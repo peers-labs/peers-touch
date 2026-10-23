@@ -36,6 +36,33 @@ def validate_result_frame(name: str, rendering: dict, dom: str) -> None:
         )
 
 
+def validate_account_scope(search: dict) -> None:
+    scope = search.get("accountScope", {})
+    identity = scope.get("identity", {})
+    before, after = scope.get("before", {}), scope.get("after", {})
+    rendering = search["ui"]["same_window_account_isolation"]["rendering"]
+    require(
+        identity.get("authenticated") is True
+        and identity.get("actorPtid") == search["sessionHandoff"]["actorPtid"],
+        "account isolation requires authoritative Bob identity in the receiving window",
+    )
+    require(
+        scope.get("emptyQuery") is True and bool(before.get("readScope"))
+        and bool(after.get("readScope")) and before["readScope"] != after["readScope"]
+        and scope.get("originalPid") == scope.get("currentPid")
+        and isinstance(scope.get("currentPid"), int) and scope["currentPid"] > 0,
+        "account isolation must clear the query and replace scope in the same native process",
+    )
+    require(
+        bool(scope.get("messageId"))
+        and scope["messageId"] != search["resources"].get("messageId")
+        and scope.get("conversationId") == search["resources"].get("conversationId")
+        and bool(scope.get("query")) and rendering.get("query") == scope["query"]
+        and scope["query"] in rendering.get("resultText", ""),
+        "account isolation requires a real newly sent Bob current-device message and matching UI row",
+    )
+
+
 def validate_search_report(report: dict, source_ref: ArtifactRef, store: EvidenceStore) -> None:
     validate_report(
         report, source_ref=source_ref, store=store, gate_id=GATE_ID,
@@ -110,6 +137,7 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
         and after.get("reason") == "revoked" and after.get("actorPtid") == "",
         "same-window account switch requires authoritative original Bob session revocation",
     )
+    validate_account_scope(search)
     resources = search.get("resources", {})
     require(bool(resources.get("messageId")) and bool(resources.get("replyId")), "real message IDs required")
     require(len(set(resources.get("fillerIds", []))) == 55, "history must exceed the latest window")

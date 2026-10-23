@@ -42,6 +42,7 @@ REQUIRED_STEPS = {
     "station.identity", "fixture.reset", "client.authenticated",
     "runtime.source_identity", "search.surface_ready",
     "conversation.open", "message.seed", "search.sender_session_revoked",
+    "search.account_scope_seed", "search.account_scope_result",
 } | {f"search.{name}" for name in UI_ASSERTIONS}
 
 
@@ -523,16 +524,42 @@ class DeviceSearchGate(NativeTwoClientGate):
             ] = denied
             self.assert_condition("previous_session_cursor_denied",
                                   denied.get("accepted") is False and denied.get("errorCode") == 5)
-            self.submit(self.query)
-            self.wait_js(
-                "[...document.querySelectorAll('.pt-search-row')].some("
-                f"row => row.innerText.includes({json.dumps(self.query)}))",
-                "Bob Search after same-window account switch", timeout=90,
-            )
+            # This Bob device has not restored the original sender's history.
+            # Search must prove content acquired by its own Messaging owner.
+            query = f"账号切换 {self.token}"
+
+            def seed_current_device() -> str:
+                sent = async_harness(client, "sendInteractionMessage", {
+                    "conversationId": self.conversation, "kind": "friend",
+                    "content": f"{query} Bob 当前设备正文",
+                }, timeout=90)
+                message_id = str(sent.get("messageId") or "")
+                if not message_id:
+                    raise GateError("account isolation requires a committed current-device message")
+                return message_id
+
+            message_id = self.step("search.account_scope_seed", seed_current_device, "alice")
+            self.report.runtime["search"]["accountScope"] = {
+                "identity": async_harness(client, "identityState", {}),
+                "before": before, "after": after, "emptyQuery": empty_query,
+                "originalPid": original_pid, "currentPid": client.process_id,
+                "query": query, "messageId": message_id,
+                "conversationId": self.conversation,
+            }
+
+            def observe_current_device() -> None:
+                self.submit(query)
+                self.wait_js(
+                    "[...document.querySelectorAll('.pt-search-row')].some("
+                    f"row => row.innerText.includes({json.dumps(query)}))",
+                    "Bob current-device Search after same-window account switch", timeout=90,
+                )
+
+            self.step("search.account_scope_result", observe_current_device, "alice")
             self.visible("same_window_account_isolation", lambda: (
                 empty_query and before["readScope"] != after["readScope"]
                 and identity.get("actorPtid") == self.ptids["bob"]
-                and client.process_id == original_pid and self.query in self.rows()
+                and client.process_id == original_pid and query in self.rows()
             ))
         finally:
             # Restore the allocated Actor before the shared lifecycle owner logs out.
