@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	catalogdomain "github.com/peers-labs/peers-touch/x-config/internal/domain/catalog"
-	xconfig "github.com/peers-labs/peers-touch/station/frame/touch/model/xconfig"
 	peer "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
+	xconfig "github.com/peers-labs/peers-touch/station/frame/touch/model/xconfig"
+	catalogdomain "github.com/peers-labs/peers-touch/x-config/internal/domain/catalog"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v3"
@@ -26,6 +26,10 @@ const (
 	MaxCatalogBytes       = 256 * 1024
 	MaxSnapshotLifetime   = 7 * 24 * time.Hour
 	SnapshotClockSkew     = 5 * time.Minute
+	MaxDirectives         = 32
+	MaxDirectiveRules     = 16
+	MaxTargetValues       = 8
+	MaxRolloutPermille    = 1000
 )
 
 var (
@@ -54,7 +58,8 @@ func ParseCatalog(raw []byte) (*Catalog, error) {
 	if catalog.SchemaVersion != CatalogSchemaVersion ||
 		!validIdentifier(catalog.Channel, 32) ||
 		len(catalog.Endpoints) > 128 ||
-		len(catalog.Releases) > 64 {
+		len(catalog.Releases) > 64 ||
+		len(catalog.Directives) > MaxDirectives {
 		return nil, ErrCatalogInvalid
 	}
 	return &catalog, nil
@@ -105,6 +110,26 @@ func BuildStatement(
 	sort.Slice(releases, func(left, right int) bool {
 		return releases[left].GetReleaseId() < releases[right].GetReleaseId()
 	})
+
+	seedKinds := make(map[string]xconfig.EndpointSeedKind, len(catalog.Endpoints))
+	for _, input := range catalog.Endpoints {
+		switch input.Kind {
+		case "relay":
+			seedKinds[input.SeedID] = xconfig.EndpointSeedKind_ENDPOINT_SEED_KIND_RELAY
+		case "direct_station":
+			seedKinds[input.SeedID] = xconfig.EndpointSeedKind_ENDPOINT_SEED_KIND_DIRECT_STATION
+		default:
+			return nil, nil, ErrCatalogInvalid
+		}
+	}
+	directives, err := buildDirectives(catalog.Directives, seedKinds)
+	if err != nil {
+		return nil, nil, err
+	}
+	sort.Slice(directives, func(left, right int) bool {
+		return directives[left].GetKey() < directives[right].GetKey()
+	})
+
 	statement := &xconfig.XConfigSnapshotStatement{
 		SchemaVersion: SnapshotSchemaVersion,
 		Channel:       catalog.Channel,
@@ -113,6 +138,7 @@ func BuildStatement(
 		ExpiresAt:     timestamppb.New(expiresAt.UTC()),
 		EndpointSeeds: endpoints,
 		Releases:      releases,
+		Directives:    directives,
 	}
 	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(statement)
 	if err != nil || len(raw) == 0 || len(raw) > MaxCatalogBytes {

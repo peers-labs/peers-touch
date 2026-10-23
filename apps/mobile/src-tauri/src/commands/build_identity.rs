@@ -111,6 +111,15 @@ pub fn mobile_build_identity() -> MobileResult<EmbeddedMobileBuildIdentity> {
     read_embedded_build_identity()
 }
 
+/// Distribution identity baked in by `make package` (XCFG-D05). Unpackaged
+/// development builds report `null`; unlike the acceptance harness identity,
+/// this command exists in every build configuration.
+#[tauri::command]
+pub fn mobile_distribution_identity() -> Option<x_config_core::BuildIdentity> {
+    x_config_core::compiled_build_identity!()
+        .and_then(std::result::Result::ok)
+}
+
 fn is_sha256(value: &str) -> bool {
     value.len() == 71 && value.starts_with("sha256:") && value[7..].bytes().all(is_lowercase_hex)
 }

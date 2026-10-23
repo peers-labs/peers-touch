@@ -7,11 +7,21 @@ use crate::contracts::{
 };
 use crate::error::AppResult;
 
+use std::sync::Arc;
+
+use tauri::State;
+
 use crate::application::system as application_system;
+use crate::state::AppState;
 
 #[tauri::command]
-pub fn system_health() -> AppResult<StubPayload> {
-    application_system::system_health()
+pub fn system_health(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
+    application_system::system_health(Some(&state.meta))
+}
+
+#[tauri::command]
+pub fn client_meta(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
+    application_system::client_meta(&state.meta)
 }
 #[tauri::command]
 pub fn open_external_url(input: ExternalUrlInput) -> AppResult<StubPayload> {

@@ -5,10 +5,14 @@ use base64::Engine as _;
 use x_config_core::proto::{
     ClientArchitecture, ClientPlatform, EndpointSeedKind, ReleaseDescriptor,
 };
+use x_config_core::evaluation::EvaluatedValue;
 use x_config_core::{
-    project_suggestions, select_release, AcceptOutcome, XConfigError, Freshness,
-    PublisherKeyring, SnapshotCoordinator, SnapshotOrigin, StationSuggestion, MAX_ENVELOPE_BYTES,
+    evaluate_directives, project_suggestions, select_release, AcceptOutcome, Freshness,
+    PublisherKeyring, SnapshotCoordinator, SnapshotOrigin, StationSuggestion, TargetingContext,
+    XConfigError, MAX_ENVELOPE_BYTES,
 };
+
+use crate::application::meta::ClientMeta;
 use reqwest::blocking::Client;
 use reqwest::header::{ETAG, IF_NONE_MATCH};
 use reqwest::redirect::Policy;
@@ -21,7 +25,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::infrastructure::storage::{StorageKind, StorageLayout};
 use persistence::{DesktopWatermarkStore, FileSnapshotCache};
 
-const DEFAULT_CHANNEL: &str = "stable";
 const REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
 const FOREGROUND_REFRESH_INTERVAL_MS: i64 = 6 * 60 * 60 * 1_000;
 const MAX_BACKOFF_MS: i64 = 6 * 60 * 60 * 1_000;
@@ -33,9 +36,9 @@ pub struct XConfigRuntime {
 }
 
 impl XConfigRuntime {
-    pub fn new(layout: &StorageLayout) -> Self {
+    pub fn new(layout: &StorageLayout, meta: ClientMeta) -> Self {
         Self {
-            state: Mutex::new(RuntimeState::new(layout)),
+            state: Mutex::new(RuntimeState::new(layout, meta)),
         }
     }
 
@@ -140,6 +143,7 @@ impl XConfigRuntime {
 
 struct RuntimeState {
     channel: String,
+    meta: ClientMeta,
     coordinator: Option<SnapshotCoordinator<DesktopWatermarkStore, FileSnapshotCache>>,
     source: Freshness,
     remote_url: Option<String>,
@@ -152,8 +156,8 @@ struct RuntimeState {
 }
 
 impl RuntimeState {
-    fn new(layout: &StorageLayout) -> Self {
-        let channel = configured_channel();
+    fn new(layout: &StorageLayout, meta: ClientMeta) -> Self {
+        let channel = meta.channel().to_string();
         let (remote_url, configuration_error) = match configured_remote_url(&channel) {
             Ok(remote_url) => (remote_url, None),
             Err(error) => (None, Some(error.code.to_string())),
@@ -185,6 +189,7 @@ impl RuntimeState {
             .ok();
         let mut state = Self {
             channel,
+            meta,
             coordinator,
             source: Freshness::Embedded,
             remote_url,
@@ -227,6 +232,7 @@ impl RuntimeState {
                 freshness: "unavailable",
                 suggestions: Vec::new(),
                 release: None,
+                defaults: ResolvedDefaults::default(),
                 refreshing: self.refreshing,
                 last_refresh_attempt_at_unix_ms: self.last_refresh_attempt_at_unix_ms,
                 next_refresh_at_unix_ms: optional_positive(self.next_refresh_at_unix_ms),
@@ -234,12 +240,14 @@ impl RuntimeState {
             };
         };
         let freshness = effective_freshness(snapshot.expires_at_unix_ms, now, self.source);
+        let station_suggestions = project_suggestions(snapshot, now, freshness);
+        let defaults = self.resolved_defaults(snapshot, &station_suggestions);
         XConfigProjection {
             channel: self.channel.clone(),
             sequence: Some(snapshot.statement.sequence),
             expires_at_unix_ms: Some(snapshot.expires_at_unix_ms),
             freshness: freshness_name(freshness),
-            suggestions: project_suggestions(snapshot, now, freshness)
+            suggestions: station_suggestions
                 .into_iter()
                 .map(project_suggestion)
                 .collect(),
@@ -251,11 +259,55 @@ impl RuntimeState {
                 now,
             )
             .map(project_release),
+            defaults,
             refreshing: self.refreshing,
             last_refresh_attempt_at_unix_ms: self.last_refresh_attempt_at_unix_ms,
             next_refresh_at_unix_ms: optional_positive(self.next_refresh_at_unix_ms),
             last_refresh_error: self.last_refresh_error.clone(),
         }
+    }
+
+    fn targeting_context(&self) -> Option<TargetingContext> {
+        self.meta.targeting_context(
+            current_platform(),
+            current_architecture(),
+            env!("CARGO_PKG_VERSION"),
+        )
+    }
+
+    fn resolved_defaults(
+        &self,
+        snapshot: &x_config_core::VerifiedSnapshot,
+        suggestions: &[StationSuggestion],
+    ) -> ResolvedDefaults {
+        let Some(context) = self.targeting_context() else {
+            return ResolvedDefaults::default();
+        };
+        let mut defaults = ResolvedDefaults::default();
+        for resolved in evaluate_directives(&snapshot.statement.directives, &context) {
+            let EvaluatedValue::EndpointSeedId(seed_id) = &resolved.value else {
+                continue;
+            };
+            let Some(suggestion) = suggestions
+                .iter()
+                .find(|candidate| &candidate.seed_id == seed_id)
+            else {
+                continue;
+            };
+            let projected = ResolvedEndpointDefault {
+                seed_id: suggestion.seed_id.clone(),
+                display_name: suggestion.display_name.clone(),
+                canonical_origin: suggestion.connection_material.canonical_discovery_origin.clone(),
+                matched_rule_id: resolved.matched_rule_id,
+                actionable: suggestion.actionable,
+            };
+            match resolved.key.as_str() {
+                "network.default_relay" => defaults.default_relay = Some(projected),
+                "network.default_station" => defaults.default_station = Some(projected),
+                _ => {}
+            }
+        }
+        defaults
     }
 
     fn record_failure(&mut self, now: i64, code: &str) {
@@ -277,6 +329,7 @@ pub struct XConfigProjection {
     pub freshness: &'static str,
     pub suggestions: Vec<XConfigSuggestionProjection>,
     pub release: Option<ClientReleaseProjection>,
+    pub defaults: ResolvedDefaults,
     pub refreshing: bool,
     pub last_refresh_attempt_at_unix_ms: Option<i64>,
     pub next_refresh_at_unix_ms: Option<i64>,
@@ -303,6 +356,21 @@ pub struct ClientReleaseProjection {
     pub manifest_sha256_hex: String,
     pub release_signing_key_id: String,
     pub release_notes_url: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ResolvedEndpointDefault {
+    pub seed_id: String,
+    pub display_name: String,
+    pub canonical_origin: String,
+    pub matched_rule_id: Option<String>,
+    pub actionable: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ResolvedDefaults {
+    pub default_relay: Option<ResolvedEndpointDefault>,
+    pub default_station: Option<ResolvedEndpointDefault>,
 }
 
 struct RefreshPlan {
@@ -390,14 +458,6 @@ fn project_release(release: ReleaseDescriptor) -> ClientReleaseProjection {
     }
 }
 
-fn configured_channel() -> String {
-    std::env::var("PEERS_X_CONFIG_CHANNEL")
-        .ok()
-        .or_else(|| option_env!("PEERS_X_CONFIG_CHANNEL").map(str::to_string))
-        .filter(|value| valid_channel(value))
-        .unwrap_or_else(|| DEFAULT_CHANNEL.to_string())
-}
-
 fn configured_remote_url(channel: &str) -> Result<Option<String>, XConfigError> {
     let Some(value) = std::env::var("PEERS_X_CONFIG_URL")
         .ok()
@@ -406,17 +466,12 @@ fn configured_remote_url(channel: &str) -> Result<Option<String>, XConfigError> 
     else {
         return Ok(None);
     };
-    let mut url = reqwest::Url::parse(value.trim())
+    let parsed = reqwest::Url::parse(value.trim())
         .map_err(|_| XConfigError::new("x_config_url"))?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
+    if !x_config_core::origin::valid_snapshot_origin(&parsed) {
         return Err(XConfigError::new("x_config_url"));
     }
+    let mut url = parsed;
     url.set_path(&format!("/channels/{channel}/latest.pb"));
     Ok(Some(url.to_string()))
 }
@@ -461,14 +516,6 @@ fn current_architecture() -> ClientArchitecture {
     return ClientArchitecture::X8664;
     #[allow(unreachable_code)]
     ClientArchitecture::Unspecified
-}
-
-fn valid_channel(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 32
-        && value.bytes().all(|character| {
-            character.is_ascii_lowercase() || character.is_ascii_digit() || character == b'-'
-        })
 }
 
 fn optional_positive(value: i64) -> Option<i64> {

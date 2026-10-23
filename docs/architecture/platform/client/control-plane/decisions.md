@@ -1,8 +1,8 @@
 # X Config - Decisions
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-10-17 | **Updated**: 2026-10-20
+> **Version**: v2.2
+> **Created**: 2026-10-17 | **Updated**: 2026-10-23
 > **Owner**: Client Platform
 
 ---
@@ -25,6 +25,8 @@
 | XCFG-D01 | X Config is the sole active module identity | accepted |
 | XCFG-D02 | Use one service and shared prefixed repository | superseded |
 | XCFG-D03 | Home runtime separates operator state from publication truth | accepted |
+| XCFG-D04 | Closed per-key directive sections evaluated client-side | accepted |
+| XCFG-D05 | One distribution flavor registry drives build identity and OS install identity | accepted |
 
 ## CCP-D01: Separate Static Client Reads From Console Mutations
 
@@ -665,3 +667,157 @@ The former Vercel X Config runtime is not a supported parallel path. Rollback is
 a versioned Home deployment or VCS revert, not a storage toggle. OAuth Broker
 latency remains owned and measured separately by the Identity domain; changing
 its `OAuthStore` adapter does not belong to this decision.
+
+## XCFG-D04: Closed Per-Key Directive Sections Evaluated Client-Side
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+Operators need to publish client defaults that vary by audience, region, and
+build — for example the default relay or default seed Station for a dedicated
+distribution build. CCP-D03 deliberately chose closed protobuf sections over a
+generic remote-config map. Targeted defaults must not reopen that decision.
+
+The catalog already carries two locally-evaluated dimensions: endpoint seeds
+are tagged with regions, and releases are matched client-side by platform,
+architecture, and semantic version. Public snapshot serving is anonymous,
+cache-friendly, and free of per-request client attributes.
+
+### Decision
+
+Add a new closed catalog section, `directives`, governed by a curated key
+registry. A directive is one registered key, an ordered list of rules, and a
+required fallback. A rule matches a targeting context (product, platform,
+architecture, flavor, channel, environment, regions, semantic-version
+constraints, named labels) with AND across fields and OR within repeated
+fields; the first matching rule wins, otherwise the fallback applies. A stable
+HMAC permille bucket on the client's existing stable identity supports staged
+rollout without sending a new identifier.
+
+Directive values are a closed `oneof` (`string_value`, `bool_value`,
+`int_value`, `endpoint_seed_id`). `endpoint_seed_id` must reference an
+endpoint seed in the same snapshot, and the key registry constrains which seed
+kind is admissible. Initial registered keys are `network.default_relay`
+(relay seed only) and `network.default_station` (direct-station seed only).
+Secrets are never directive values: snapshots are broadcast to all subscribers.
+
+Evaluation happens client-side against the signed snapshot, following the
+release-selection precedent. The service never renders per-client responses
+and adds no client-attribute endpoint. Stale persisted snapshots remain usable
+as last-known-good; consumers must mark results stale and prefer explicit local
+configuration. Directives are added as a new protobuf field on the existing
+snapshot message and catalog; `schema_version` stays `1` and the proto package
+name is unchanged. No release exists yet and protobuf field additions are
+ignored by older generated clients, so no schema bump, hard cut, or dual
+publication is warranted. Operator validation rejects unknown keys, value-type
+mismatches, dangling or wrong-kind seed references, duplicate rule IDs,
+missing fallbacks, unregistered flavors, oversize directives, and (as
+warnings) unreachable shadowed rules.
+
+The Rust and Go evaluators must agree on one shared JSON conformance-vector
+suite; the vectors are the only semantic source of truth.
+
+### Rationale
+
+Signed whole-snapshot distribution preserves offline use, CDN caching, and the
+zero-request-metadata privacy posture. A per-key ordered-rules model with
+mandatory fallback is the industry-standard shape (LaunchDarkly/Statsig/Unleash
+mobile SDKs): bounded, auditable, and testable, while the curated registry keeps
+CCP-D03's closed-section guarantee.
+
+### Alternatives Considered
+
+- Server-side evaluation keyed by region/version headers: rejected because it
+  creates a tracking endpoint, breaks offline evaluation, and forks the trust
+  model.
+- Open string KV remote config: rejected by CCP-D03; untyped keys cannot be
+  validated or safely consumed.
+- Flat global priority instead of ordered per-key rules: rejected because it
+  cannot express fallback guarantees or rule-order overrides per concern.
+- Geo-IP region detection: rejected for the initial model; region comes from
+  the build or explicit operator/user setting, defaulting to `unknown` which
+  matches only global rules. Revisit requires a separate privacy review.
+
+### Consequences
+
+Clients gain a targeting context assembled from build identity and runtime
+context. Endpoint defaults are resolved seed IDs that flow through the existing
+discovery path; no parallel connection channel is introduced. Station (Go)
+needs its own snapshot fetch/verify/evaluate implementation in
+`apps/station/frame/touch/xcontrol`, semantically locked to the shared vectors.
+
+## XCFG-D05: One Distribution Flavor Registry Drives Build Identity And OS Install Identity
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+Dedicated builds (geek audience builds, partner builds, internal dev builds)
+need a baked distribution identity for directive targeting, and some builds
+must install side-by-side on the same machine. Today the desktop dev-install
+path hard-codes one identifier, display name, and URL scheme, and no package
+target exists.
+
+### Decision
+
+Introduce one checked-in registry, `tooling/distribution/flavors.json`, as the
+single source for distribution identity. Each flavor declares a display name,
+optional identifier suffix, URL-scheme suffix, default channel, default region,
+and an allowlist of distribution labels. All distribution builds run through
+`make package PRODUCT=… FLAVOR=…`, which fails closed on unknown flavors or
+labels.
+
+One build manifest is produced and projected to three places:
+
+1. Compile-time distribution environment consumed by a shared Rust
+   `BuildIdentity` in x-config-core (and a Go embed for Station): product,
+   flavor, channel, semver, source commit, platform, architecture, default
+   region, labels.
+2. Platform metadata via Tauri `--config` overrides: identifier, product name,
+   version, Android version code, deep-link scheme, and release channel path.
+3. A sidecar `build-manifest.json` inside the bundle for diagnostics; the
+   compile-time copy remains authoritative at runtime.
+
+Identifier mapping is fixed: `com.peers.touch.{product}` plus
+`.{identifier_suffix}` when present. The `geek` flavor occupies the canonical
+suffix-less identifier; partner flavors use their suffix and therefore install
+side-by-side, with isolated data containers, distinct URL schemes
+(`peers-touch[-suffix]`), and distinct update channels. Flavors sharing the
+canonical identifier are mutually exclusive installs. Build number is
+`git rev-list --count HEAD` mapped into each platform's numeric version field.
+
+Packaging is one local command (`make package`) for every audience: internal
+and formal builds run the identical script and differ only in parameters. The
+build never uploads; distributing the produced artifact (internal file share
+versus a formal GitHub Release) is a separate manual step outside packaging.
+Artifact file names carry only platform-mandated segments; commit/region never
+appear in file names. A remote artifact directory layout is deferred until the
+formal updater channel is actually built.
+
+### Rationale
+
+A registry makes the coexistence topology explicit and impossible to bypass via
+ad-hoc command-line values. Reusing the existing Tauri override and build.rs
+`rustc-env` mechanisms avoids a parallel packaging system. Keeping identity out
+of artifact file names respects OS install semantics and updater contracts.
+
+### Alternatives Considered
+
+- Encode the full identity string in the artifact file name: rejected because
+  installed runtimes cannot read installer names and OS version grammars reject
+  the string.
+- One identifier for all flavors: rejected for partner builds that must coexist
+  with the public build.
+- Separate packaging scripts per client: rejected as a chimney; desktop and
+  mobile share the registry, manifest, and override generator.
+
+### Consequences
+
+The legacy hard-coded dev identity becomes a registered `dev` flavor. The
+committed `.dev2` identifier is a development-only artifact; distribution
+builds derive canonical identifiers from the registry. Deep-link schemes and
+update endpoints are flavor-scoped, and each mobile suffix requires its own
+platform App ID / push topic when push is enabled.

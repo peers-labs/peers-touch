@@ -53,6 +53,55 @@ message ReleaseDescriptor {
   google.protobuf.Timestamp published_at = 10;
 }
 
+message DirectiveValue {
+  oneof value {
+    string string_value = 1;
+    bool bool_value = 2;
+    int64 int_value = 3;
+    string endpoint_seed_id = 4;
+  }
+}
+
+message VersionConstraint {
+  // Allowed comparators: ">=", "<", "^" (caret, cargo-style floor/ceiling).
+  // Multiple constraints on one rule combine with AND.
+  string comparator = 1;
+  string version = 2;
+}
+
+message LabelMatcher {
+  string key = 1;
+  string value = 2;
+}
+
+message TargetClause {
+  // Empty repeated fields are wildcards; within a field values combine OR,
+  // across fields the clause combines AND.
+  repeated string products = 1;                // desktop | mobile | station
+  repeated ClientPlatform platforms = 2;
+  repeated ClientArchitecture architectures = 3;
+  repeated string flavors = 4;
+  repeated string channels = 5;
+  repeated string environments = 6;            // dev | staging | prod
+  repeated string regions = 7;                 // "unknown" matches no region
+  repeated VersionConstraint versions = 8;
+  repeated LabelMatcher labels = 9;
+}
+
+message DirectiveRule {
+  string id = 1;
+  TargetClause match = 2;
+  DirectiveValue value = 3;
+  // 0 and 1000 both mean full rollout; 1..999 enables device-id bucketing.
+  uint32 rollout_permille = 4;
+}
+
+message Directive {
+  string key = 1;
+  repeated DirectiveRule rules = 2;            // ordered, first match wins
+  DirectiveValue fallback = 3;                 // required
+}
+
 message XConfigSnapshotStatement {
   uint32 schema_version = 1;
   string channel = 2;
@@ -61,6 +110,7 @@ message XConfigSnapshotStatement {
   google.protobuf.Timestamp expires_at = 5;
   repeated EndpointSeed endpoint_seeds = 6;
   repeated ReleaseDescriptor releases = 7;
+  repeated Directive directives = 8;
 }
 
 message SignedXConfigSnapshot {

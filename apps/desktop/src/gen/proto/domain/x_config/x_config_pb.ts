@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/x_config/x_config.proto.
  */
 export const file_domain_x_config_x_config: GenFile = /*@__PURE__*/
-  fileDesc("Ch5kb21haW4veF9jb25maWcveF9jb25maWcucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnhfY29uZmlnLnYxIqQDCgxFbmRwb2ludFNlZWQSDwoHc2VlZF9pZBgBIAEoCRI9CgRraW5kGAIgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuRW5kcG9pbnRTZWVkS2luZBIUCgxkaXNwbGF5X25hbWUYAyABKAkSWAoTY29ubmVjdGlvbl9tYXRlcmlhbBgEIAEoCzI7LnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuUHVibGljRW5kcG9pbnRDb25uZWN0aW9uTWF0ZXJpYWwSDwoHcmVnaW9ucxgFIAMoCRJaChVzdGF0aW9uX2FkdmVydGlzZW1lbnQYBiABKAsyOy5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlNpZ25lZFB1YmxpY1N0YXRpb25BZHZlcnRpc2VtZW50EjIKDmF2YWlsYWJsZV9mcm9tGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIzCg9hdmFpbGFibGVfdW50aWwYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoEDChFSZWxlYXNlRGVzY3JpcHRvchISCgpyZWxlYXNlX2lkGAEgASgJEj8KCHBsYXRmb3JtGAIgASgOMi0ucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuQ2xpZW50UGxhdGZvcm0SRwoMYXJjaGl0ZWN0dXJlGAMgASgOMjEucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuQ2xpZW50QXJjaGl0ZWN0dXJlEg8KB3ZlcnNpb24YBCABKAkSIQoZbWluaW11bV9zdXBwb3J0ZWRfdmVyc2lvbhgFIAEoCRIUCgxtYW5pZmVzdF91cmwYBiABKAkSFwoPbWFuaWZlc3Rfc2hhMjU2GAcgASgMEh4KFnJlbGVhc2Vfc2lnbmluZ19rZXlfaWQYCCABKAkSGQoRcmVsZWFzZV9ub3Rlc191cmwYCSABKAkSMAoMcHVibGlzaGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK9AgoYWENvbmZpZ1NuYXBzaG90U3RhdGVtZW50EhYKDnNjaGVtYV92ZXJzaW9uGAEgASgNEg8KB2NoYW5uZWwYAiABKAkSEAoIc2VxdWVuY2UYAyABKAQSLQoJaXNzdWVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJDCg5lbmRwb2ludF9zZWVkcxgGIAMoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLnhfY29uZmlnLnYxLkVuZHBvaW50U2VlZBJCCghyZWxlYXNlcxgHIAMoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLnhfY29uZmlnLnYxLlJlbGVhc2VEZXNjcmlwdG9yImMKFVNpZ25lZFhDb25maWdTbmFwc2hvdBIWCg5zaWduaW5nX2tleV9pZBgBIAEoCRIXCg9zdGF0ZW1lbnRfYnl0ZXMYAiABKAwSGQoRZWQyNTUxOV9zaWduYXR1cmUYAyABKAwqewoQRW5kcG9pbnRTZWVkS2luZBIiCh5FTkRQT0lOVF9TRUVEX0tJTkRfVU5TUEVDSUZJRUQQABIcChhFTkRQT0lOVF9TRUVEX0tJTkRfUkVMQVkQARIlCiFFTkRQT0lOVF9TRUVEX0tJTkRfRElSRUNUX1NUQVRJT04QAiq6AQoOQ2xpZW50UGxhdGZvcm0SHwobQ0xJRU5UX1BMQVRGT1JNX1VOU1BFQ0lGSUVEEAASGQoVQ0xJRU5UX1BMQVRGT1JNX01BQ09TEAESGwoXQ0xJRU5UX1BMQVRGT1JNX1dJTkRPV1MQAhIZChVDTElFTlRfUExBVEZPUk1fTElOVVgQAxIXChNDTElFTlRfUExBVEZPUk1fSU9TEAQSGwoXQ0xJRU5UX1BMQVRGT1JNX0FORFJPSUQQBSqbAQoSQ2xpZW50QXJjaGl0ZWN0dXJlEiMKH0NMSUVOVF9BUkNISVRFQ1RVUkVfVU5TUEVDSUZJRUQQABIdChlDTElFTlRfQVJDSElURUNUVVJFX0FSTTY0EAESHgoaQ0xJRU5UX0FSQ0hJVEVDVFVSRV9YODZfNjQQAhIhCh1DTElFTlRfQVJDSElURUNUVVJFX1VOSVZFUlNBTBADQk1aS2dpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL3hjb25maWc7eGNvbmZpZ2IGcHJvdG8z", [file_domain_peer_access_endpoint, file_google_protobuf_timestamp]);
+  fileDesc("Ch5kb21haW4veF9jb25maWcveF9jb25maWcucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnhfY29uZmlnLnYxIqQDCgxFbmRwb2ludFNlZWQSDwoHc2VlZF9pZBgBIAEoCRI9CgRraW5kGAIgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuRW5kcG9pbnRTZWVkS2luZBIUCgxkaXNwbGF5X25hbWUYAyABKAkSWAoTY29ubmVjdGlvbl9tYXRlcmlhbBgEIAEoCzI7LnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuUHVibGljRW5kcG9pbnRDb25uZWN0aW9uTWF0ZXJpYWwSDwoHcmVnaW9ucxgFIAMoCRJaChVzdGF0aW9uX2FkdmVydGlzZW1lbnQYBiABKAsyOy5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlNpZ25lZFB1YmxpY1N0YXRpb25BZHZlcnRpc2VtZW50EjIKDmF2YWlsYWJsZV9mcm9tGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIzCg9hdmFpbGFibGVfdW50aWwYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoEDChFSZWxlYXNlRGVzY3JpcHRvchISCgpyZWxlYXNlX2lkGAEgASgJEj8KCHBsYXRmb3JtGAIgASgOMi0ucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuQ2xpZW50UGxhdGZvcm0SRwoMYXJjaGl0ZWN0dXJlGAMgASgOMjEucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuQ2xpZW50QXJjaGl0ZWN0dXJlEg8KB3ZlcnNpb24YBCABKAkSIQoZbWluaW11bV9zdXBwb3J0ZWRfdmVyc2lvbhgFIAEoCRIUCgxtYW5pZmVzdF91cmwYBiABKAkSFwoPbWFuaWZlc3Rfc2hhMjU2GAcgASgMEh4KFnJlbGVhc2Vfc2lnbmluZ19rZXlfaWQYCCABKAkSGQoRcmVsZWFzZV9ub3Rlc191cmwYCSABKAkSMAoMcHVibGlzaGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJ4Cg5EaXJlY3RpdmVWYWx1ZRIWCgxzdHJpbmdfdmFsdWUYASABKAlIABIUCgpib29sX3ZhbHVlGAIgASgISAASEwoJaW50X3ZhbHVlGAMgASgDSAASGgoQZW5kcG9pbnRfc2VlZF9pZBgEIAEoCUgAQgcKBXZhbHVlIjgKEVZlcnNpb25Db25zdHJhaW50EhIKCmNvbXBhcmF0b3IYASABKAkSDwoHdmVyc2lvbhgCIAEoCSIqCgxMYWJlbE1hdGNoZXISCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJIvcCCgxUYXJnZXRDbGF1c2USEAoIcHJvZHVjdHMYASADKAkSQAoJcGxhdGZvcm1zGAIgAygOMi0ucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuQ2xpZW50UGxhdGZvcm0SSAoNYXJjaGl0ZWN0dXJlcxgDIAMoDjIxLnBlZXJzX3RvdWNoLm1vZGVsLnhfY29uZmlnLnYxLkNsaWVudEFyY2hpdGVjdHVyZRIPCgdmbGF2b3JzGAQgAygJEhAKCGNoYW5uZWxzGAUgAygJEhQKDGVudmlyb25tZW50cxgGIAMoCRIPCgdyZWdpb25zGAcgAygJEkIKCHZlcnNpb25zGAggAygLMjAucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuVmVyc2lvbkNvbnN0cmFpbnQSOwoGbGFiZWxzGAkgAygLMisucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuTGFiZWxNYXRjaGVyIq8BCg1EaXJlY3RpdmVSdWxlEgoKAmlkGAEgASgJEjoKBW1hdGNoGAIgASgLMisucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuVGFyZ2V0Q2xhdXNlEjwKBXZhbHVlGAMgASgLMi0ucGVlcnNfdG91Y2gubW9kZWwueF9jb25maWcudjEuRGlyZWN0aXZlVmFsdWUSGAoQcm9sbG91dF9wZXJtaWxsZRgEIAEoDSKWAQoJRGlyZWN0aXZlEgsKA2tleRgBIAEoCRI7CgVydWxlcxgCIAMoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLnhfY29uZmlnLnYxLkRpcmVjdGl2ZVJ1bGUSPwoIZmFsbGJhY2sYAyABKAsyLS5wZWVyc190b3VjaC5tb2RlbC54X2NvbmZpZy52MS5EaXJlY3RpdmVWYWx1ZSL7AgoYWENvbmZpZ1NuYXBzaG90U3RhdGVtZW50EhYKDnNjaGVtYV92ZXJzaW9uGAEgASgNEg8KB2NoYW5uZWwYAiABKAkSEAoIc2VxdWVuY2UYAyABKAQSLQoJaXNzdWVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJDCg5lbmRwb2ludF9zZWVkcxgGIAMoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLnhfY29uZmlnLnYxLkVuZHBvaW50U2VlZBJCCghyZWxlYXNlcxgHIAMoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLnhfY29uZmlnLnYxLlJlbGVhc2VEZXNjcmlwdG9yEjwKCmRpcmVjdGl2ZXMYCCADKAsyKC5wZWVyc190b3VjaC5tb2RlbC54X2NvbmZpZy52MS5EaXJlY3RpdmUiYwoVU2lnbmVkWENvbmZpZ1NuYXBzaG90EhYKDnNpZ25pbmdfa2V5X2lkGAEgASgJEhcKD3N0YXRlbWVudF9ieXRlcxgCIAEoDBIZChFlZDI1NTE5X3NpZ25hdHVyZRgDIAEoDCp7ChBFbmRwb2ludFNlZWRLaW5kEiIKHkVORFBPSU5UX1NFRURfS0lORF9VTlNQRUNJRklFRBAAEhwKGEVORFBPSU5UX1NFRURfS0lORF9SRUxBWRABEiUKIUVORFBPSU5UX1NFRURfS0lORF9ESVJFQ1RfU1RBVElPThACKroBCg5DbGllbnRQbGF0Zm9ybRIfChtDTElFTlRfUExBVEZPUk1fVU5TUEVDSUZJRUQQABIZChVDTElFTlRfUExBVEZPUk1fTUFDT1MQARIbChdDTElFTlRfUExBVEZPUk1fV0lORE9XUxACEhkKFUNMSUVOVF9QTEFURk9STV9MSU5VWBADEhcKE0NMSUVOVF9QTEFURk9STV9JT1MQBBIbChdDTElFTlRfUExBVEZPUk1fQU5EUk9JRBAFKpsBChJDbGllbnRBcmNoaXRlY3R1cmUSIwofQ0xJRU5UX0FSQ0hJVEVDVFVSRV9VTlNQRUNJRklFRBAAEh0KGUNMSUVOVF9BUkNISVRFQ1RVUkVfQVJNNjQQARIeChpDTElFTlRfQVJDSElURUNUVVJFX1g4Nl82NBACEiEKHUNMSUVOVF9BUkNISVRFQ1RVUkVfVU5JVkVSU0FMEANCTVpLZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwveGNvbmZpZzt4Y29uZmlnYgZwcm90bzM", [file_domain_peer_access_endpoint, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.x_config.v1.EndpointSeed
@@ -131,6 +131,225 @@ export const ReleaseDescriptorSchema: GenMessage<ReleaseDescriptor> = /*@__PURE_
   messageDesc(file_domain_x_config_x_config, 1);
 
 /**
+ * @generated from message peers_touch.model.x_config.v1.DirectiveValue
+ */
+export type DirectiveValue = Message<"peers_touch.model.x_config.v1.DirectiveValue"> & {
+  /**
+   * @generated from oneof peers_touch.model.x_config.v1.DirectiveValue.value
+   */
+  value: {
+    /**
+     * @generated from field: string string_value = 1;
+     */
+    value: string;
+    case: "stringValue";
+  } | {
+    /**
+     * @generated from field: bool bool_value = 2;
+     */
+    value: boolean;
+    case: "boolValue";
+  } | {
+    /**
+     * @generated from field: int64 int_value = 3;
+     */
+    value: bigint;
+    case: "intValue";
+  } | {
+    /**
+     * @generated from field: string endpoint_seed_id = 4;
+     */
+    value: string;
+    case: "endpointSeedId";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message peers_touch.model.x_config.v1.DirectiveValue.
+ * Use `create(DirectiveValueSchema)` to create a new message.
+ */
+export const DirectiveValueSchema: GenMessage<DirectiveValue> = /*@__PURE__*/
+  messageDesc(file_domain_x_config_x_config, 2);
+
+/**
+ * @generated from message peers_touch.model.x_config.v1.VersionConstraint
+ */
+export type VersionConstraint = Message<"peers_touch.model.x_config.v1.VersionConstraint"> & {
+  /**
+   * Allowed comparators: ">=", "<", "^" (caret, cargo-style floor/ceiling).
+   * Multiple constraints on one rule combine with AND.
+   *
+   * @generated from field: string comparator = 1;
+   */
+  comparator: string;
+
+  /**
+   * @generated from field: string version = 2;
+   */
+  version: string;
+};
+
+/**
+ * Describes the message peers_touch.model.x_config.v1.VersionConstraint.
+ * Use `create(VersionConstraintSchema)` to create a new message.
+ */
+export const VersionConstraintSchema: GenMessage<VersionConstraint> = /*@__PURE__*/
+  messageDesc(file_domain_x_config_x_config, 3);
+
+/**
+ * @generated from message peers_touch.model.x_config.v1.LabelMatcher
+ */
+export type LabelMatcher = Message<"peers_touch.model.x_config.v1.LabelMatcher"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from field: string value = 2;
+   */
+  value: string;
+};
+
+/**
+ * Describes the message peers_touch.model.x_config.v1.LabelMatcher.
+ * Use `create(LabelMatcherSchema)` to create a new message.
+ */
+export const LabelMatcherSchema: GenMessage<LabelMatcher> = /*@__PURE__*/
+  messageDesc(file_domain_x_config_x_config, 4);
+
+/**
+ * @generated from message peers_touch.model.x_config.v1.TargetClause
+ */
+export type TargetClause = Message<"peers_touch.model.x_config.v1.TargetClause"> & {
+  /**
+   * Empty repeated fields are wildcards; within a field values combine OR,
+   * across fields the clause combines AND.
+   *
+   * desktop | mobile | station
+   *
+   * @generated from field: repeated string products = 1;
+   */
+  products: string[];
+
+  /**
+   * @generated from field: repeated peers_touch.model.x_config.v1.ClientPlatform platforms = 2;
+   */
+  platforms: ClientPlatform[];
+
+  /**
+   * @generated from field: repeated peers_touch.model.x_config.v1.ClientArchitecture architectures = 3;
+   */
+  architectures: ClientArchitecture[];
+
+  /**
+   * @generated from field: repeated string flavors = 4;
+   */
+  flavors: string[];
+
+  /**
+   * @generated from field: repeated string channels = 5;
+   */
+  channels: string[];
+
+  /**
+   * dev | staging | prod
+   *
+   * @generated from field: repeated string environments = 6;
+   */
+  environments: string[];
+
+  /**
+   * "unknown" matches no region
+   *
+   * @generated from field: repeated string regions = 7;
+   */
+  regions: string[];
+
+  /**
+   * @generated from field: repeated peers_touch.model.x_config.v1.VersionConstraint versions = 8;
+   */
+  versions: VersionConstraint[];
+
+  /**
+   * @generated from field: repeated peers_touch.model.x_config.v1.LabelMatcher labels = 9;
+   */
+  labels: LabelMatcher[];
+};
+
+/**
+ * Describes the message peers_touch.model.x_config.v1.TargetClause.
+ * Use `create(TargetClauseSchema)` to create a new message.
+ */
+export const TargetClauseSchema: GenMessage<TargetClause> = /*@__PURE__*/
+  messageDesc(file_domain_x_config_x_config, 5);
+
+/**
+ * @generated from message peers_touch.model.x_config.v1.DirectiveRule
+ */
+export type DirectiveRule = Message<"peers_touch.model.x_config.v1.DirectiveRule"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: peers_touch.model.x_config.v1.TargetClause match = 2;
+   */
+  match?: TargetClause | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.x_config.v1.DirectiveValue value = 3;
+   */
+  value?: DirectiveValue | undefined;
+
+  /**
+   * 0 and 1000 both mean full rollout; 1..999 enables device-id bucketing.
+   *
+   * @generated from field: uint32 rollout_permille = 4;
+   */
+  rolloutPermille: number;
+};
+
+/**
+ * Describes the message peers_touch.model.x_config.v1.DirectiveRule.
+ * Use `create(DirectiveRuleSchema)` to create a new message.
+ */
+export const DirectiveRuleSchema: GenMessage<DirectiveRule> = /*@__PURE__*/
+  messageDesc(file_domain_x_config_x_config, 6);
+
+/**
+ * @generated from message peers_touch.model.x_config.v1.Directive
+ */
+export type Directive = Message<"peers_touch.model.x_config.v1.Directive"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * ordered, first match wins
+   *
+   * @generated from field: repeated peers_touch.model.x_config.v1.DirectiveRule rules = 2;
+   */
+  rules: DirectiveRule[];
+
+  /**
+   * required
+   *
+   * @generated from field: peers_touch.model.x_config.v1.DirectiveValue fallback = 3;
+   */
+  fallback?: DirectiveValue | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.x_config.v1.Directive.
+ * Use `create(DirectiveSchema)` to create a new message.
+ */
+export const DirectiveSchema: GenMessage<Directive> = /*@__PURE__*/
+  messageDesc(file_domain_x_config_x_config, 7);
+
+/**
  * @generated from message peers_touch.model.x_config.v1.XConfigSnapshotStatement
  */
 export type XConfigSnapshotStatement = Message<"peers_touch.model.x_config.v1.XConfigSnapshotStatement"> & {
@@ -168,6 +387,11 @@ export type XConfigSnapshotStatement = Message<"peers_touch.model.x_config.v1.XC
    * @generated from field: repeated peers_touch.model.x_config.v1.ReleaseDescriptor releases = 7;
    */
   releases: ReleaseDescriptor[];
+
+  /**
+   * @generated from field: repeated peers_touch.model.x_config.v1.Directive directives = 8;
+   */
+  directives: Directive[];
 };
 
 /**
@@ -175,7 +399,7 @@ export type XConfigSnapshotStatement = Message<"peers_touch.model.x_config.v1.XC
  * Use `create(XConfigSnapshotStatementSchema)` to create a new message.
  */
 export const XConfigSnapshotStatementSchema: GenMessage<XConfigSnapshotStatement> = /*@__PURE__*/
-  messageDesc(file_domain_x_config_x_config, 2);
+  messageDesc(file_domain_x_config_x_config, 8);
 
 /**
  * @generated from message peers_touch.model.x_config.v1.SignedXConfigSnapshot
@@ -202,7 +426,7 @@ export type SignedXConfigSnapshot = Message<"peers_touch.model.x_config.v1.Signe
  * Use `create(SignedXConfigSnapshotSchema)` to create a new message.
  */
 export const SignedXConfigSnapshotSchema: GenMessage<SignedXConfigSnapshot> = /*@__PURE__*/
-  messageDesc(file_domain_x_config_x_config, 3);
+  messageDesc(file_domain_x_config_x_config, 9);
 
 /**
  * @generated from enum peers_touch.model.x_config.v1.EndpointSeedKind

@@ -1,7 +1,10 @@
+include!("../../../packages/x-config-core/dist-build.rs");
+
 use std::io::{self, Write};
 
 fn main() {
     tauri_build::build();
+    peers_distribution_emit_env();
     let stdout = io::stdout();
     let mut output = stdout.lock();
     emit_build_identity(&mut output);

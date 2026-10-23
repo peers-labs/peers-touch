@@ -141,7 +141,7 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-pub fn system_health() -> AppResult<StubPayload> {
+pub fn system_health(meta: Option<&crate::application::meta::ClientMeta>) -> AppResult<StubPayload> {
     success_payload(
         "system_health",
         json!({
@@ -150,9 +150,15 @@ pub fn system_health() -> AppResult<StubPayload> {
             "releaseTarget": "desktop",
             "processModel": "tauri-desktop",
             "hostOs": DESKTOP_HOST_OS,
-            "sourceCommit": env!("PT_BUILD_SOURCE_COMMIT")
+            "sourceCommit": env!("PT_BUILD_SOURCE_COMMIT"),
+            "meta": meta.map(|value| value.projection())
         }),
     )
+}
+
+pub fn client_meta(meta: &crate::application::meta::ClientMeta) -> AppResult<StubPayload> {
+    let value = serde_json::to_value(meta.projection()).unwrap_or(serde_json::Value::Null);
+    success_payload("client_meta", value)
 }
 
 pub fn open_external_url(input: ExternalUrlInput) -> AppResult<StubPayload> {
@@ -721,7 +727,7 @@ mod tests {
 
     #[test]
     fn system_health_reports_compiled_desktop_identity() {
-        let result = system_health();
+        let result = system_health(None);
         assert!(result.ok);
         assert!(result.error.is_none());
 
@@ -729,16 +735,14 @@ mod tests {
         assert_eq!(payload.command, "system_health");
         let status: serde_json::Value =
             serde_json::from_str(&payload.status).expect("valid system health JSON");
-        assert_eq!(
-            status,
-            json!({
-                "status": "ok",
-                "clientForm": "desktop",
-                "releaseTarget": "desktop",
-                "processModel": "tauri-desktop",
-                "hostOs": DESKTOP_HOST_OS,
-                "sourceCommit": env!("PT_BUILD_SOURCE_COMMIT")
-            })
-        );
+        assert_eq!(status["status"], json!("ok"));
+        assert_eq!(status["clientForm"], json!("desktop"));
+        assert_eq!(status["releaseTarget"], json!("desktop"));
+        assert_eq!(status["processModel"], json!("tauri-desktop"));
+        assert_eq!(status["hostOs"], json!(DESKTOP_HOST_OS));
+        assert_eq!(status["sourceCommit"], json!(env!("PT_BUILD_SOURCE_COMMIT")));
+        // Meta is injected by the command layer with AppState; the function
+        // itself accepts None when called without state (e.g. this unit test).
+        assert_eq!(status["meta"], serde_json::Value::Null);
     }
 }

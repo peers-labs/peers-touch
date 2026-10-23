@@ -655,17 +655,12 @@ fn configured_remote_url(channel: &str) -> Result<Option<String>, XConfigError> 
     else {
         return Ok(None);
     };
-    let mut url = reqwest::Url::parse(value.trim())
+    let parsed = reqwest::Url::parse(value.trim())
         .map_err(|_| XConfigError::new("x_config_url"))?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
+    if !x_config_core::origin::valid_snapshot_origin(&parsed) {
         return Err(XConfigError::new("x_config_url"));
     }
+    let mut url = parsed;
     url.set_path(&format!("/channels/{channel}/latest.pb"));
     Ok(Some(url.to_string()))
 }

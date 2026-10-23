@@ -398,6 +398,465 @@ func (x *ReleaseDescriptor) GetPublishedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type DirectiveValue struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Value:
+	//
+	//	*DirectiveValue_StringValue
+	//	*DirectiveValue_BoolValue
+	//	*DirectiveValue_IntValue
+	//	*DirectiveValue_EndpointSeedId
+	Value         isDirectiveValue_Value `protobuf_oneof:"value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DirectiveValue) Reset() {
+	*x = DirectiveValue{}
+	mi := &file_domain_x_config_x_config_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DirectiveValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DirectiveValue) ProtoMessage() {}
+
+func (x *DirectiveValue) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_x_config_x_config_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DirectiveValue.ProtoReflect.Descriptor instead.
+func (*DirectiveValue) Descriptor() ([]byte, []int) {
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *DirectiveValue) GetValue() isDirectiveValue_Value {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *DirectiveValue) GetStringValue() string {
+	if x != nil {
+		if x, ok := x.Value.(*DirectiveValue_StringValue); ok {
+			return x.StringValue
+		}
+	}
+	return ""
+}
+
+func (x *DirectiveValue) GetBoolValue() bool {
+	if x != nil {
+		if x, ok := x.Value.(*DirectiveValue_BoolValue); ok {
+			return x.BoolValue
+		}
+	}
+	return false
+}
+
+func (x *DirectiveValue) GetIntValue() int64 {
+	if x != nil {
+		if x, ok := x.Value.(*DirectiveValue_IntValue); ok {
+			return x.IntValue
+		}
+	}
+	return 0
+}
+
+func (x *DirectiveValue) GetEndpointSeedId() string {
+	if x != nil {
+		if x, ok := x.Value.(*DirectiveValue_EndpointSeedId); ok {
+			return x.EndpointSeedId
+		}
+	}
+	return ""
+}
+
+type isDirectiveValue_Value interface {
+	isDirectiveValue_Value()
+}
+
+type DirectiveValue_StringValue struct {
+	StringValue string `protobuf:"bytes,1,opt,name=string_value,json=stringValue,proto3,oneof"`
+}
+
+type DirectiveValue_BoolValue struct {
+	BoolValue bool `protobuf:"varint,2,opt,name=bool_value,json=boolValue,proto3,oneof"`
+}
+
+type DirectiveValue_IntValue struct {
+	IntValue int64 `protobuf:"varint,3,opt,name=int_value,json=intValue,proto3,oneof"`
+}
+
+type DirectiveValue_EndpointSeedId struct {
+	EndpointSeedId string `protobuf:"bytes,4,opt,name=endpoint_seed_id,json=endpointSeedId,proto3,oneof"`
+}
+
+func (*DirectiveValue_StringValue) isDirectiveValue_Value() {}
+
+func (*DirectiveValue_BoolValue) isDirectiveValue_Value() {}
+
+func (*DirectiveValue_IntValue) isDirectiveValue_Value() {}
+
+func (*DirectiveValue_EndpointSeedId) isDirectiveValue_Value() {}
+
+type VersionConstraint struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Allowed comparators: ">=", "<", "^" (caret, cargo-style floor/ceiling).
+	// Multiple constraints on one rule combine with AND.
+	Comparator    string `protobuf:"bytes,1,opt,name=comparator,proto3" json:"comparator,omitempty"`
+	Version       string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VersionConstraint) Reset() {
+	*x = VersionConstraint{}
+	mi := &file_domain_x_config_x_config_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VersionConstraint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VersionConstraint) ProtoMessage() {}
+
+func (x *VersionConstraint) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_x_config_x_config_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VersionConstraint.ProtoReflect.Descriptor instead.
+func (*VersionConstraint) Descriptor() ([]byte, []int) {
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *VersionConstraint) GetComparator() string {
+	if x != nil {
+		return x.Comparator
+	}
+	return ""
+}
+
+func (x *VersionConstraint) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+type LabelMatcher struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LabelMatcher) Reset() {
+	*x = LabelMatcher{}
+	mi := &file_domain_x_config_x_config_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LabelMatcher) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LabelMatcher) ProtoMessage() {}
+
+func (x *LabelMatcher) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_x_config_x_config_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LabelMatcher.ProtoReflect.Descriptor instead.
+func (*LabelMatcher) Descriptor() ([]byte, []int) {
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *LabelMatcher) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *LabelMatcher) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+type TargetClause struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Empty repeated fields are wildcards; within a field values combine OR,
+	// across fields the clause combines AND.
+	Products      []string             `protobuf:"bytes,1,rep,name=products,proto3" json:"products,omitempty"` // desktop | mobile | station
+	Platforms     []ClientPlatform     `protobuf:"varint,2,rep,packed,name=platforms,proto3,enum=peers_touch.model.x_config.v1.ClientPlatform" json:"platforms,omitempty"`
+	Architectures []ClientArchitecture `protobuf:"varint,3,rep,packed,name=architectures,proto3,enum=peers_touch.model.x_config.v1.ClientArchitecture" json:"architectures,omitempty"`
+	Flavors       []string             `protobuf:"bytes,4,rep,name=flavors,proto3" json:"flavors,omitempty"`
+	Channels      []string             `protobuf:"bytes,5,rep,name=channels,proto3" json:"channels,omitempty"`
+	Environments  []string             `protobuf:"bytes,6,rep,name=environments,proto3" json:"environments,omitempty"` // dev | staging | prod
+	Regions       []string             `protobuf:"bytes,7,rep,name=regions,proto3" json:"regions,omitempty"`           // "unknown" matches no region
+	Versions      []*VersionConstraint `protobuf:"bytes,8,rep,name=versions,proto3" json:"versions,omitempty"`
+	Labels        []*LabelMatcher      `protobuf:"bytes,9,rep,name=labels,proto3" json:"labels,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TargetClause) Reset() {
+	*x = TargetClause{}
+	mi := &file_domain_x_config_x_config_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TargetClause) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TargetClause) ProtoMessage() {}
+
+func (x *TargetClause) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_x_config_x_config_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TargetClause.ProtoReflect.Descriptor instead.
+func (*TargetClause) Descriptor() ([]byte, []int) {
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *TargetClause) GetProducts() []string {
+	if x != nil {
+		return x.Products
+	}
+	return nil
+}
+
+func (x *TargetClause) GetPlatforms() []ClientPlatform {
+	if x != nil {
+		return x.Platforms
+	}
+	return nil
+}
+
+func (x *TargetClause) GetArchitectures() []ClientArchitecture {
+	if x != nil {
+		return x.Architectures
+	}
+	return nil
+}
+
+func (x *TargetClause) GetFlavors() []string {
+	if x != nil {
+		return x.Flavors
+	}
+	return nil
+}
+
+func (x *TargetClause) GetChannels() []string {
+	if x != nil {
+		return x.Channels
+	}
+	return nil
+}
+
+func (x *TargetClause) GetEnvironments() []string {
+	if x != nil {
+		return x.Environments
+	}
+	return nil
+}
+
+func (x *TargetClause) GetRegions() []string {
+	if x != nil {
+		return x.Regions
+	}
+	return nil
+}
+
+func (x *TargetClause) GetVersions() []*VersionConstraint {
+	if x != nil {
+		return x.Versions
+	}
+	return nil
+}
+
+func (x *TargetClause) GetLabels() []*LabelMatcher {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+type DirectiveRule struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Match *TargetClause          `protobuf:"bytes,2,opt,name=match,proto3" json:"match,omitempty"`
+	Value *DirectiveValue        `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	// 0 and 1000 both mean full rollout; 1..999 enables device-id bucketing.
+	RolloutPermille uint32 `protobuf:"varint,4,opt,name=rollout_permille,json=rolloutPermille,proto3" json:"rollout_permille,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DirectiveRule) Reset() {
+	*x = DirectiveRule{}
+	mi := &file_domain_x_config_x_config_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DirectiveRule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DirectiveRule) ProtoMessage() {}
+
+func (x *DirectiveRule) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_x_config_x_config_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DirectiveRule.ProtoReflect.Descriptor instead.
+func (*DirectiveRule) Descriptor() ([]byte, []int) {
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *DirectiveRule) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DirectiveRule) GetMatch() *TargetClause {
+	if x != nil {
+		return x.Match
+	}
+	return nil
+}
+
+func (x *DirectiveRule) GetValue() *DirectiveValue {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *DirectiveRule) GetRolloutPermille() uint32 {
+	if x != nil {
+		return x.RolloutPermille
+	}
+	return 0
+}
+
+type Directive struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Rules         []*DirectiveRule       `protobuf:"bytes,2,rep,name=rules,proto3" json:"rules,omitempty"`       // ordered, first match wins
+	Fallback      *DirectiveValue        `protobuf:"bytes,3,opt,name=fallback,proto3" json:"fallback,omitempty"` // required
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Directive) Reset() {
+	*x = Directive{}
+	mi := &file_domain_x_config_x_config_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Directive) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Directive) ProtoMessage() {}
+
+func (x *Directive) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_x_config_x_config_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Directive.ProtoReflect.Descriptor instead.
+func (*Directive) Descriptor() ([]byte, []int) {
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Directive) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *Directive) GetRules() []*DirectiveRule {
+	if x != nil {
+		return x.Rules
+	}
+	return nil
+}
+
+func (x *Directive) GetFallback() *DirectiveValue {
+	if x != nil {
+		return x.Fallback
+	}
+	return nil
+}
+
 type XConfigSnapshotStatement struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SchemaVersion uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
@@ -407,13 +866,14 @@ type XConfigSnapshotStatement struct {
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	EndpointSeeds []*EndpointSeed        `protobuf:"bytes,6,rep,name=endpoint_seeds,json=endpointSeeds,proto3" json:"endpoint_seeds,omitempty"`
 	Releases      []*ReleaseDescriptor   `protobuf:"bytes,7,rep,name=releases,proto3" json:"releases,omitempty"`
+	Directives    []*Directive           `protobuf:"bytes,8,rep,name=directives,proto3" json:"directives,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *XConfigSnapshotStatement) Reset() {
 	*x = XConfigSnapshotStatement{}
-	mi := &file_domain_x_config_x_config_proto_msgTypes[2]
+	mi := &file_domain_x_config_x_config_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -425,7 +885,7 @@ func (x *XConfigSnapshotStatement) String() string {
 func (*XConfigSnapshotStatement) ProtoMessage() {}
 
 func (x *XConfigSnapshotStatement) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_x_config_x_config_proto_msgTypes[2]
+	mi := &file_domain_x_config_x_config_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -438,7 +898,7 @@ func (x *XConfigSnapshotStatement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XConfigSnapshotStatement.ProtoReflect.Descriptor instead.
 func (*XConfigSnapshotStatement) Descriptor() ([]byte, []int) {
-	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{2}
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *XConfigSnapshotStatement) GetSchemaVersion() uint32 {
@@ -490,6 +950,13 @@ func (x *XConfigSnapshotStatement) GetReleases() []*ReleaseDescriptor {
 	return nil
 }
 
+func (x *XConfigSnapshotStatement) GetDirectives() []*Directive {
+	if x != nil {
+		return x.Directives
+	}
+	return nil
+}
+
 type SignedXConfigSnapshot struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	SigningKeyId     string                 `protobuf:"bytes,1,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
@@ -501,7 +968,7 @@ type SignedXConfigSnapshot struct {
 
 func (x *SignedXConfigSnapshot) Reset() {
 	*x = SignedXConfigSnapshot{}
-	mi := &file_domain_x_config_x_config_proto_msgTypes[3]
+	mi := &file_domain_x_config_x_config_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -513,7 +980,7 @@ func (x *SignedXConfigSnapshot) String() string {
 func (*SignedXConfigSnapshot) ProtoMessage() {}
 
 func (x *SignedXConfigSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_x_config_x_config_proto_msgTypes[3]
+	mi := &file_domain_x_config_x_config_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -526,7 +993,7 @@ func (x *SignedXConfigSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignedXConfigSnapshot.ProtoReflect.Descriptor instead.
 func (*SignedXConfigSnapshot) Descriptor() ([]byte, []int) {
-	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{3}
+	return file_domain_x_config_x_config_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SignedXConfigSnapshot) GetSigningKeyId() string {
@@ -576,7 +1043,41 @@ const file_domain_x_config_x_config_proto_rawDesc = "" +
 	"\x16release_signing_key_id\x18\b \x01(\tR\x13releaseSigningKeyId\x12*\n" +
 	"\x11release_notes_url\x18\t \x01(\tR\x0freleaseNotesUrl\x12=\n" +
 	"\fpublished_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\vpublishedAt\"\x8d\x03\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\vpublishedAt\"\xaa\x01\n" +
+	"\x0eDirectiveValue\x12#\n" +
+	"\fstring_value\x18\x01 \x01(\tH\x00R\vstringValue\x12\x1f\n" +
+	"\n" +
+	"bool_value\x18\x02 \x01(\bH\x00R\tboolValue\x12\x1d\n" +
+	"\tint_value\x18\x03 \x01(\x03H\x00R\bintValue\x12*\n" +
+	"\x10endpoint_seed_id\x18\x04 \x01(\tH\x00R\x0eendpointSeedIdB\a\n" +
+	"\x05value\"M\n" +
+	"\x11VersionConstraint\x12\x1e\n" +
+	"\n" +
+	"comparator\x18\x01 \x01(\tR\n" +
+	"comparator\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\"6\n" +
+	"\fLabelMatcher\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"\xd7\x03\n" +
+	"\fTargetClause\x12\x1a\n" +
+	"\bproducts\x18\x01 \x03(\tR\bproducts\x12K\n" +
+	"\tplatforms\x18\x02 \x03(\x0e2-.peers_touch.model.x_config.v1.ClientPlatformR\tplatforms\x12W\n" +
+	"\rarchitectures\x18\x03 \x03(\x0e21.peers_touch.model.x_config.v1.ClientArchitectureR\rarchitectures\x12\x18\n" +
+	"\aflavors\x18\x04 \x03(\tR\aflavors\x12\x1a\n" +
+	"\bchannels\x18\x05 \x03(\tR\bchannels\x12\"\n" +
+	"\fenvironments\x18\x06 \x03(\tR\fenvironments\x12\x18\n" +
+	"\aregions\x18\a \x03(\tR\aregions\x12L\n" +
+	"\bversions\x18\b \x03(\v20.peers_touch.model.x_config.v1.VersionConstraintR\bversions\x12C\n" +
+	"\x06labels\x18\t \x03(\v2+.peers_touch.model.x_config.v1.LabelMatcherR\x06labels\"\xd2\x01\n" +
+	"\rDirectiveRule\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12A\n" +
+	"\x05match\x18\x02 \x01(\v2+.peers_touch.model.x_config.v1.TargetClauseR\x05match\x12C\n" +
+	"\x05value\x18\x03 \x01(\v2-.peers_touch.model.x_config.v1.DirectiveValueR\x05value\x12)\n" +
+	"\x10rollout_permille\x18\x04 \x01(\rR\x0frolloutPermille\"\xac\x01\n" +
+	"\tDirective\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12B\n" +
+	"\x05rules\x18\x02 \x03(\v2,.peers_touch.model.x_config.v1.DirectiveRuleR\x05rules\x12I\n" +
+	"\bfallback\x18\x03 \x01(\v2-.peers_touch.model.x_config.v1.DirectiveValueR\bfallback\"\xd7\x03\n" +
 	"\x18XConfigSnapshotStatement\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x18\n" +
 	"\achannel\x18\x02 \x01(\tR\achannel\x12\x1a\n" +
@@ -585,7 +1086,10 @@ const file_domain_x_config_x_config_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12R\n" +
 	"\x0eendpoint_seeds\x18\x06 \x03(\v2+.peers_touch.model.x_config.v1.EndpointSeedR\rendpointSeeds\x12L\n" +
-	"\breleases\x18\a \x03(\v20.peers_touch.model.x_config.v1.ReleaseDescriptorR\breleases\"\x93\x01\n" +
+	"\breleases\x18\a \x03(\v20.peers_touch.model.x_config.v1.ReleaseDescriptorR\breleases\x12H\n" +
+	"\n" +
+	"directives\x18\b \x03(\v2(.peers_touch.model.x_config.v1.DirectiveR\n" +
+	"directives\"\x93\x01\n" +
 	"\x15SignedXConfigSnapshot\x12$\n" +
 	"\x0esigning_key_id\x18\x01 \x01(\tR\fsigningKeyId\x12'\n" +
 	"\x0fstatement_bytes\x18\x02 \x01(\fR\x0estatementBytes\x12+\n" +
@@ -620,37 +1124,52 @@ func file_domain_x_config_x_config_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_x_config_x_config_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_domain_x_config_x_config_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_domain_x_config_x_config_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_domain_x_config_x_config_proto_goTypes = []any{
 	(EndpointSeedKind)(0),                         // 0: peers_touch.model.x_config.v1.EndpointSeedKind
 	(ClientPlatform)(0),                           // 1: peers_touch.model.x_config.v1.ClientPlatform
 	(ClientArchitecture)(0),                       // 2: peers_touch.model.x_config.v1.ClientArchitecture
 	(*EndpointSeed)(nil),                          // 3: peers_touch.model.x_config.v1.EndpointSeed
 	(*ReleaseDescriptor)(nil),                     // 4: peers_touch.model.x_config.v1.ReleaseDescriptor
-	(*XConfigSnapshotStatement)(nil),              // 5: peers_touch.model.x_config.v1.XConfigSnapshotStatement
-	(*SignedXConfigSnapshot)(nil),                 // 6: peers_touch.model.x_config.v1.SignedXConfigSnapshot
-	(*peer.PublicEndpointConnectionMaterial)(nil), // 7: peers_touch.model.peer.v1.PublicEndpointConnectionMaterial
-	(*peer.SignedPublicStationAdvertisement)(nil), // 8: peers_touch.model.peer.v1.SignedPublicStationAdvertisement
-	(*timestamppb.Timestamp)(nil),                 // 9: google.protobuf.Timestamp
+	(*DirectiveValue)(nil),                        // 5: peers_touch.model.x_config.v1.DirectiveValue
+	(*VersionConstraint)(nil),                     // 6: peers_touch.model.x_config.v1.VersionConstraint
+	(*LabelMatcher)(nil),                          // 7: peers_touch.model.x_config.v1.LabelMatcher
+	(*TargetClause)(nil),                          // 8: peers_touch.model.x_config.v1.TargetClause
+	(*DirectiveRule)(nil),                         // 9: peers_touch.model.x_config.v1.DirectiveRule
+	(*Directive)(nil),                             // 10: peers_touch.model.x_config.v1.Directive
+	(*XConfigSnapshotStatement)(nil),              // 11: peers_touch.model.x_config.v1.XConfigSnapshotStatement
+	(*SignedXConfigSnapshot)(nil),                 // 12: peers_touch.model.x_config.v1.SignedXConfigSnapshot
+	(*peer.PublicEndpointConnectionMaterial)(nil), // 13: peers_touch.model.peer.v1.PublicEndpointConnectionMaterial
+	(*peer.SignedPublicStationAdvertisement)(nil), // 14: peers_touch.model.peer.v1.SignedPublicStationAdvertisement
+	(*timestamppb.Timestamp)(nil),                 // 15: google.protobuf.Timestamp
 }
 var file_domain_x_config_x_config_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.x_config.v1.EndpointSeed.kind:type_name -> peers_touch.model.x_config.v1.EndpointSeedKind
-	7,  // 1: peers_touch.model.x_config.v1.EndpointSeed.connection_material:type_name -> peers_touch.model.peer.v1.PublicEndpointConnectionMaterial
-	8,  // 2: peers_touch.model.x_config.v1.EndpointSeed.station_advertisement:type_name -> peers_touch.model.peer.v1.SignedPublicStationAdvertisement
-	9,  // 3: peers_touch.model.x_config.v1.EndpointSeed.available_from:type_name -> google.protobuf.Timestamp
-	9,  // 4: peers_touch.model.x_config.v1.EndpointSeed.available_until:type_name -> google.protobuf.Timestamp
+	13, // 1: peers_touch.model.x_config.v1.EndpointSeed.connection_material:type_name -> peers_touch.model.peer.v1.PublicEndpointConnectionMaterial
+	14, // 2: peers_touch.model.x_config.v1.EndpointSeed.station_advertisement:type_name -> peers_touch.model.peer.v1.SignedPublicStationAdvertisement
+	15, // 3: peers_touch.model.x_config.v1.EndpointSeed.available_from:type_name -> google.protobuf.Timestamp
+	15, // 4: peers_touch.model.x_config.v1.EndpointSeed.available_until:type_name -> google.protobuf.Timestamp
 	1,  // 5: peers_touch.model.x_config.v1.ReleaseDescriptor.platform:type_name -> peers_touch.model.x_config.v1.ClientPlatform
 	2,  // 6: peers_touch.model.x_config.v1.ReleaseDescriptor.architecture:type_name -> peers_touch.model.x_config.v1.ClientArchitecture
-	9,  // 7: peers_touch.model.x_config.v1.ReleaseDescriptor.published_at:type_name -> google.protobuf.Timestamp
-	9,  // 8: peers_touch.model.x_config.v1.XConfigSnapshotStatement.issued_at:type_name -> google.protobuf.Timestamp
-	9,  // 9: peers_touch.model.x_config.v1.XConfigSnapshotStatement.expires_at:type_name -> google.protobuf.Timestamp
-	3,  // 10: peers_touch.model.x_config.v1.XConfigSnapshotStatement.endpoint_seeds:type_name -> peers_touch.model.x_config.v1.EndpointSeed
-	4,  // 11: peers_touch.model.x_config.v1.XConfigSnapshotStatement.releases:type_name -> peers_touch.model.x_config.v1.ReleaseDescriptor
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	15, // 7: peers_touch.model.x_config.v1.ReleaseDescriptor.published_at:type_name -> google.protobuf.Timestamp
+	1,  // 8: peers_touch.model.x_config.v1.TargetClause.platforms:type_name -> peers_touch.model.x_config.v1.ClientPlatform
+	2,  // 9: peers_touch.model.x_config.v1.TargetClause.architectures:type_name -> peers_touch.model.x_config.v1.ClientArchitecture
+	6,  // 10: peers_touch.model.x_config.v1.TargetClause.versions:type_name -> peers_touch.model.x_config.v1.VersionConstraint
+	7,  // 11: peers_touch.model.x_config.v1.TargetClause.labels:type_name -> peers_touch.model.x_config.v1.LabelMatcher
+	8,  // 12: peers_touch.model.x_config.v1.DirectiveRule.match:type_name -> peers_touch.model.x_config.v1.TargetClause
+	5,  // 13: peers_touch.model.x_config.v1.DirectiveRule.value:type_name -> peers_touch.model.x_config.v1.DirectiveValue
+	9,  // 14: peers_touch.model.x_config.v1.Directive.rules:type_name -> peers_touch.model.x_config.v1.DirectiveRule
+	5,  // 15: peers_touch.model.x_config.v1.Directive.fallback:type_name -> peers_touch.model.x_config.v1.DirectiveValue
+	15, // 16: peers_touch.model.x_config.v1.XConfigSnapshotStatement.issued_at:type_name -> google.protobuf.Timestamp
+	15, // 17: peers_touch.model.x_config.v1.XConfigSnapshotStatement.expires_at:type_name -> google.protobuf.Timestamp
+	3,  // 18: peers_touch.model.x_config.v1.XConfigSnapshotStatement.endpoint_seeds:type_name -> peers_touch.model.x_config.v1.EndpointSeed
+	4,  // 19: peers_touch.model.x_config.v1.XConfigSnapshotStatement.releases:type_name -> peers_touch.model.x_config.v1.ReleaseDescriptor
+	10, // 20: peers_touch.model.x_config.v1.XConfigSnapshotStatement.directives:type_name -> peers_touch.model.x_config.v1.Directive
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_domain_x_config_x_config_proto_init() }
@@ -658,13 +1177,19 @@ func file_domain_x_config_x_config_proto_init() {
 	if File_domain_x_config_x_config_proto != nil {
 		return
 	}
+	file_domain_x_config_x_config_proto_msgTypes[2].OneofWrappers = []any{
+		(*DirectiveValue_StringValue)(nil),
+		(*DirectiveValue_BoolValue)(nil),
+		(*DirectiveValue_IntValue)(nil),
+		(*DirectiveValue_EndpointSeedId)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_x_config_x_config_proto_rawDesc), len(file_domain_x_config_x_config_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   4,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

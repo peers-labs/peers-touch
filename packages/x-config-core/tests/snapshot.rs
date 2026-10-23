@@ -351,6 +351,7 @@ fn signed_snapshot_with(
         } else {
             Vec::new()
         },
+        directives: Vec::new(),
     };
     let statement_bytes = statement.encode_to_vec();
     let mut signed = SNAPSHOT_SIGNATURE_DOMAIN.to_vec();
@@ -394,6 +395,7 @@ fn signed_empty_snapshot(
         expires_at: Some(timestamp(expires_at)),
         endpoint_seeds: Vec::new(),
         releases: Vec::new(),
+        directives: Vec::new(),
     };
     let statement_bytes = statement.encode_to_vec();
     let mut signed = SNAPSHOT_SIGNATURE_DOMAIN.to_vec();
