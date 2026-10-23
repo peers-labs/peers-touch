@@ -85,7 +85,13 @@ of the top-level timeline in `socialChat.messages`. The message summary and Thre
 panel both consume `client-chat-core.buildChatThreadSurface`; the summary retains
 the authoritative reply-count floor while exposing the loaded reply IDs in the
 same order as the panel. Opening the Thread owns its on-visit load. Rendering a
-summary must not fetch all replies or flatten them into the timeline. Native
+summary must not fetch all replies or flatten them into the timeline. After
+refreshing a conversation's message projection, the store also reloads the
+currently open Thread only when its active conversation and kind still match.
+Typed invalidation and periodic reconciliation use this same refresh path;
+summary counts alone cannot keep an already open Thread payload current.
+Actor or Messaging scope reset invalidates pending message, Thread payload,
+and Thread count reads before they can repopulate the new scope. Native
 proof checks summary/panel count and ID equality after that load, including
 offline and restart recovery.
 

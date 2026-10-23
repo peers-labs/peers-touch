@@ -940,13 +940,18 @@ const initialSocialState: Pick<
 };
 
 let loadSessionsGeneration = 0;
+let messagingProjectionGeneration = 0;
 
 export const useSocialChatStore = createDesktopStore<SocialChatState>('socialChat', (set, get) => ({
   ...initialSocialState,
 
-  reset: () => set({ ...initialSocialState }),
+  reset: () => {
+    messagingProjectionGeneration += 1;
+    set({ ...initialSocialState });
+  },
   resetMessagingProjection: () => {
     loadSessionsGeneration += 1;
+    messagingProjectionGeneration += 1;
     set({
       conversations: [],
       conversationMembers: {},
@@ -1347,7 +1352,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     },
 
   loadMessages: async (ulid, kind) => {
-    if (!hasAuthenticatedActor()) return;
+    const actorPtid = currentAuthenticatedActorPtid();
+    if (!actorPtid) return;
+    const generation = messagingProjectionGeneration;
+    const isCurrentProjection = () => (
+      generation === messagingProjectionGeneration
+      && currentAuthenticatedActorPtid() === actorPtid
+    );
     const activeTab = kind ?? get().activeTab;
     // Fast path: if messages are already loaded for this conversation, render
     // them immediately without blocking on network+decrypt. A background
@@ -1358,8 +1369,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     set({ loading: false });
     try {
       const page = await imServiceV1.messaging.listMessages(ulid);
+      if (!isCurrentProjection()) return;
       const projections = page.messages;
       const serviceMessages = await fetchServiceMessageMap(ulid);
+      if (!isCurrentProjection()) return;
       const pageMessages = projections.map(projection => {
         const message = projectMessagingProjection(activeTab, ulid, projection);
         const serviceMessage = serviceMessages.get(message.ulid);
@@ -1433,7 +1446,20 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       if (rootUlids.length > 0) {
         await get().refreshThreadCounts(ulid, rootUlids, activeTab);
       }
+      if (!isCurrentProjection()) return;
+      const refreshed = get();
+      const activeUlid = activeTab === 'friend'
+        ? refreshed.activeSessionUlid
+        : refreshed.activeGroupUlid;
+      if (
+        refreshed.activeTab === activeTab
+        && activeUlid === ulid
+        && refreshed.openThreadRootUlid
+      ) {
+        await refreshed.loadThreadMessages(ulid, refreshed.openThreadRootUlid, activeTab);
+      }
     } catch (error) {
+      if (!isCurrentProjection()) return;
       if (isUnauthorizedError(error)) {
         set({ loading: false });
         return;
@@ -1579,6 +1605,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadThreadMessages: async (ulid, rootUlid, kind, options) => {
+    const actorPtid = currentAuthenticatedActorPtid();
+    if (!actorPtid) return;
+    const generation = messagingProjectionGeneration;
+    const isCurrentProjection = () => (
+      generation === messagingProjectionGeneration
+      && currentAuthenticatedActorPtid() === actorPtid
+    );
     const activeKind = kind ?? get().activeTab;
     const key = socialThreadKey(activeKind, ulid, rootUlid);
     const append = options?.append === true;
@@ -1590,6 +1623,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }));
     try {
       const projections = await imServiceV1.messaging.listThreadMessages(ulid, rootUlid);
+      if (!isCurrentProjection()) return;
       const nextMessages = projections.map(projection =>
         projectMessagingProjection(activeKind, ulid, projection),
       );
@@ -1607,6 +1641,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }));
       await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
     } catch (error) {
+      if (!isCurrentProjection()) return;
       log.error('socialChat', 'loadThreadMessages failed', error);
       set((state) => ({
         threadMessages: state.threadMessages,
@@ -1622,10 +1657,17 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   refreshThreadCounts: async (ulid, rootUlids, kind) => {
+    const actorPtid = currentAuthenticatedActorPtid();
+    if (!actorPtid) return;
+    const generation = messagingProjectionGeneration;
     const activeKind = kind ?? get().activeTab;
     const uniqueRootUlids = Array.from(new Set(rootUlids.filter(Boolean)));
     if (uniqueRootUlids.length === 0) return;
     const data = await imServiceV1.messaging.threadCounts(ulid, uniqueRootUlids);
+    if (
+      generation !== messagingProjectionGeneration
+      || currentAuthenticatedActorPtid() !== actorPtid
+    ) return;
     const counts = data.counts;
     set((state) => {
       const next = { ...state.threadCounts };
