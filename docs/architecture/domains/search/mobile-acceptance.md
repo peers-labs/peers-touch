@@ -38,7 +38,11 @@ provisioner, Journey and Mobile diagnostics files are business injection.
 Acceptance Core, runner, Evidence Store and generic schemas remain unchanged.
 
 One Suite provisions, authenticates and binds iOS Alice and Android Bob once.
-Both actors then receive messages from the other existing client. Scenarios
+The original Social owner establishes one accepted relationship and Direct
+conversation. Both actors then send through that same bidirectional conversation
+and receive messages from the other existing client; fixture preparation never
+creates a second direction-specific friend request. Each completed receiver
+fixture records its original message IDs before the UI scenarios. Scenarios
 attach to the same source commit and Fixture epoch. They use production
 Messaging actions for setup and real Search UI for query/open. Diagnostics
 support cost and denial assertions; they do not replace UI evidence.

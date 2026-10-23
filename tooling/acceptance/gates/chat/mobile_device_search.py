@@ -284,8 +284,7 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
         return result["value"]
 
     def seed(self, journey: MobileMessagingJourney, sender_session: Any,
-             receiver_session: Any, sender: Any, receiver: Any, token: str) -> dict:
-        conversation = journey._create_direct(sender_session, receiver_session, sender, receiver)
+             receiver_session: Any, conversation: str, token: str) -> dict:
         query = f"周会 {token}"
         sent_count = 0
         def send(text: str, **extra: Any) -> str:
@@ -531,11 +530,21 @@ return document.querySelector('.settings-section .ant-select-selection-item')?.t
         for client_id in sessions:
             ledger.record(SuiteRuntimeAction.CLIENT_LAUNCH, resource_id=client_id)
             ledger.record(SuiteRuntimeAction.LOGIN, resource_id=client_id)
+        conversation = journey._create_direct(
+            sessions["sim-android"], sessions["sim-ios"],
+            actors["sim-android"], actors["sim-ios"],
+        )
         fixtures = {}
         for receiver_id, sender_id in (("sim-ios", "sim-android"), ("sim-android", "sim-ios")):
             fixtures[receiver_id] = self.seed(
-                journey, sessions[sender_id], sessions[receiver_id], actors[sender_id],
-                actors[receiver_id], f"{artifacts.run_id[-8:]}-{self.expected_clients[receiver_id]}",
+                journey, sessions[sender_id], sessions[receiver_id], conversation,
+                f"{artifacts.run_id[-8:]}-{self.expected_clients[receiver_id]}",
+            )
+            artifacts.write_json(
+                f"mobile-device-search/{receiver_id}/fixture.json",
+                {"senderClientId": sender_id, "receiverClientId": receiver_id,
+                 **fixtures[receiver_id]},
+                role=f"mobile-search-received-fixture/{receiver_id}",
             )
         results = []
         for scenario_id in SCENARIOS:
