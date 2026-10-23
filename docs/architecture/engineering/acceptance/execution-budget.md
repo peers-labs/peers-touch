@@ -493,6 +493,10 @@ Runtime Binding 始终通过 canonical Station origin 完成签名发现和 bind
 只在 live client 完成发现后应用 opaque handle 到 Direct dial override。Reaction
 使用真实 UI 操作，Engine command ledger 前后唯一新增的目标 Message command、
 持久化 intent/outbox ID 与 hash、失败计数和终态以及双端可见结果证明 exact retry。
+故障只针对已持久化命令的 dispatch：复用 actor-bound lifecycle pause，
+让 UI 在健康路由上完成 authority sync、计划校验与持久化；核对唯一新增命令、
+intent/outbox 相同 hash、pending 状态及零失败计数后，才 arm TCP proxy 并 resume。
+暂停状态在所有退出路径恢复。不得在命令准备前断连并将未创建命令解释为重试失败。
 `attemptCount` 计数失败重试安排，成功提交不自动递增；恢复保留该计数，proxy
 恢复后的新转发连接及 `submitted/committed` 状态证明后续提交。加密 TCP proxy
 只证明连接丢失与转发，不宣称 HTTP path 或线上 command byte hash。联系人场景

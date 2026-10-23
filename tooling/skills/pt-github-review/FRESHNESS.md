@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-23
-covered_docs_hash: 02fdc5a4a656093956c4fd95f6bf5737f06bc5d0a49da66e932e0696d252c9e0
+covered_docs_hash: 09dd1ab57df7543071c78b566535333cdea4c1b88a54852f39198f6b5879a700
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,20 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Open Thread And Durable Fault Phase Review
+
+The existing message projection owner refreshes only the open Thread whose
+conversation and kind still match, for both invalidation and reconciliation.
+Pending message, Thread payload and count reads cannot repopulate a reset scope.
+Thread count and ID equality still require the original dual-client Native proof.
+Reaction fault injection reuses the existing actor-bound worker pause so the
+real UI prepares over a healthy route before the TCP proxy interrupts dispatch.
+The prepared, failed and recovered command retain one ID and byte hash.
+Pause cleanup and all existing UI failure, retry and receiver assertions remain.
+The existing ownership and proof rules apply without a Skill policy amendment;
+the fault ownership knowledge entry now records the required preparation phase.
+Focused source checks pass. Current full product proof remains unproven.
 
 ## Owned SSH Connection Review
 

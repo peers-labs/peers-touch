@@ -58,6 +58,12 @@ message-scoped command, retained intent/outbox hash and ID, retry scheduling
 count, restored connection forwarding, automatic submission and both visible
 receivers. Successful submission retains the failure scheduling count.
 Encrypted TCP evidence cannot establish HTTP path or wire command hashes.
+The fault must begin after durable preparation. Metadata preparation performs
+queue drain and authoritative plan validation over the real route; arming the
+proxy before the UI action prevents a command from existing. Reuse the existing
+actor-bound lifecycle pause, let the UI prepare while the route is healthy,
+verify the unique pending command and matching intent/outbox hash, then arm and
+resume dispatch. Restore any retained pause on every exit path.
 
 ## How to detect a recurrence
 
@@ -72,6 +78,9 @@ current source, acquire the canonical Fixture lease, verify the borrowed child
 FD, resolve and reset both targets, read back Actors and seal actual mismatch
 diagnostics. The real product scenarios separately prove Direct interruption,
 UI failure, recovery and cleanup. Fixture routing alone is not product proof.
+The reaction's durable-before-loss observation must precede the proxy loss and
+worker resume. Failed and recovered hashes must equal that prepared command's
+hash. An error surface with zero new commands does not prove outbox retry.
 Batch read regressions must reject missing/duplicate accounts and invalid
 container identity or volume. Actual three-actor timing must retain both
 independent read phases. Product closure records durable Step and login/device

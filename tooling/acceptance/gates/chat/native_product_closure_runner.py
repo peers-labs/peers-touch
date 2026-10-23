@@ -2992,12 +2992,70 @@ class NativeProductClosureGate(AcceptanceGate):
         failed_command: dict[str, Any] = {}
         failed_proxy: dict[str, Any] = {}
         last_actionable_observation: dict[str, Any] = {}
+        lifecycle_paused = False
         try:
-            proxy.arm()
+            lifecycle_paused = True
+            self.step(
+                "alice.reaction-worker.pause",
+                lambda: self.clients["alice"].invoke_app_result(
+                    "messaging_acceptance_pause_lifecycle",
+                    {"input": {"expected_actor_ptid": self.ptids["alice"]}},
+                ),
+            )
             failure_emoji = self.prove_keyboard_reaction_picker(
                 "alice",
                 message_id,
             )
+
+            def prepared_observation() -> dict[str, Any]:
+                nonlocal reaction_command
+                candidates = [
+                    item for item in command_snapshot().get("commandLedger", [])
+                    if str(item.get("commandId") or "") not in baseline_ids
+                    and item.get("messageId") == message_id
+                ]
+                if len(candidates) > 1:
+                    raise GateError("reaction UI created multiple durable commands")
+                if not candidates:
+                    return {"newCommandCount": 0}
+                reaction_command = str(candidates[0].get("commandId") or "")
+                current = command_snapshot(reaction_command)
+                intent = current.get("intent") or {}
+                outbox = current.get("outbox") or {}
+                return {
+                    "newCommandCount": 1,
+                    "commandId": reaction_command,
+                    "intentSha256": intent.get("commandSha256"),
+                    "outboxSha256": outbox.get("commandSha256"),
+                    "state": outbox.get("state"),
+                    "attemptCount": outbox.get("attemptCount"),
+                }
+
+            # Preparation performs real authority sync over the healthy route.
+            # Only the already-durable command's dispatch is interrupted.
+            prepared_command = self.wait_step(
+                prepared_observation,
+                "alice.reaction-durable-before-loss",
+                expected={"newCommandCount": 1, "state": "pending", "attemptCount": 0},
+                ready=lambda value: (
+                    value.get("newCommandCount") == 1
+                    and bool(value.get("commandId"))
+                    and bool(value.get("intentSha256"))
+                    and value.get("intentSha256") == value.get("outboxSha256")
+                    and value.get("state") == "pending"
+                    and value.get("attemptCount") == 0
+                ),
+                timeout=30,
+            )
+            proxy.arm()
+            self.step(
+                "alice.reaction-worker.resume",
+                lambda: self.clients["alice"].invoke_app_result(
+                    "messaging_acceptance_resume_lifecycle",
+                    {"input": {"expected_actor_ptid": self.ptids["alice"]}},
+                ),
+            )
+            lifecycle_paused = False
 
             def actionable_error() -> bool:
                 nonlocal reaction_command, failed_command, failed_proxy
@@ -3053,6 +3111,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 controlled_loss = (
                     int(snapshot["proxy"].get("failureCount") or 0) >= 1
                     and bool(intent.get("commandSha256"))
+                    and intent.get("commandSha256") == prepared_command["intentSha256"]
                     and intent.get("commandSha256") == outbox.get("commandSha256")
                     and int(outbox.get("attemptCount") or 0) >= 1
                     and outbox.get("state") == "retry_wait"
@@ -3189,6 +3248,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 "failureEmoji": failure_emoji,
                 "proxy": proxy_evidence,
                 "commandId": reaction_command,
+                "preparedCommand": prepared_command,
                 "failedCommand": failed_command,
                 "recoveredCommand": recovered_command,
                 "engine": engine,
@@ -3196,6 +3256,11 @@ class NativeProductClosureGate(AcceptanceGate):
             }
         finally:
             proxy.disarm()
+            if lifecycle_paused:
+                self.clients["alice"].invoke_app_result(
+                    "messaging_acceptance_resume_lifecycle",
+                    {"input": {"expected_actor_ptid": self.ptids["alice"]}},
+                )
 
     def open_details(self, actor: str) -> Any:
         if not self.clients[actor].find_elements("[data-chat-detail-panel='open']"):
