@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 
 from tooling.acceptance.core import AcceptanceGate, GateError
@@ -92,6 +93,12 @@ class DeviceSearchGate(NativeTwoClientGate):
     def field(self) -> Any:
         return self.receiver.find_element(".pt-search-field input", 20)
 
+    def press(self, key: str) -> None:
+        self.receiver.execute_script(
+            "arguments[0].focus({preventScroll: true});", self.field(),
+        )
+        ActionChains(self.receiver.driver).send_keys(key).perform()
+
     def open_search(self) -> None:
         if not self.receiver.find_elements(".pt-search-field input"):
             self.receiver.find_element(
@@ -130,7 +137,7 @@ class DeviceSearchGate(NativeTwoClientGate):
     def submit(self, query: str) -> None:
         self.open_search()
         self.fill(query)
-        self.field().send_keys(Keys.ENTER)
+        self.press(Keys.ENTER)
         self.settled()
 
     def rows(self) -> str:
@@ -259,9 +266,9 @@ class DeviceSearchGate(NativeTwoClientGate):
     def prove_cache(self) -> None:
         self.submit(self.query)
         self.visible("chinese_search", lambda: self.query in self.rows())
-        self.cached("repeat_cache", lambda: self.field().send_keys(Keys.ENTER))
+        self.cached("repeat_cache", lambda: self.press(Keys.ENTER))
         def reopen() -> None:
-            self.field().send_keys(Keys.ESCAPE)
+            self.press(Keys.ESCAPE)
             self.wait_js("!document.querySelector('.pt-search-field')", "Search closed")
             self.open_search()
         self.cached("reopen_cache", reopen)
@@ -273,8 +280,8 @@ class DeviceSearchGate(NativeTwoClientGate):
             " && !document.querySelector('.pt-search-status')",
             "changed query terminal state",
         )
-        self.cached("backspace_cache", lambda: self.field().send_keys(Keys.BACKSPACE))
-        self.field().send_keys(Keys.ENTER)
+        self.cached("backspace_cache", lambda: self.press(Keys.BACKSPACE))
+        self.press(Keys.ENTER)
         self.settled()
         before = self.counts()
         self.receiver.find_element(".pt-search-footer button", 20).click()
@@ -322,7 +329,7 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.fill(f"empty-{uuid.uuid4().hex}")
         self.visible("empty_state", lambda: bool(self.receiver.find_elements(".pt-search-empty")))
         self.fill("...")
-        self.field().send_keys(Keys.ENTER)
+        self.press(Keys.ENTER)
         self.wait_js("!!document.querySelector('.pt-search-error')", "typed invalid-query UI")
         self.fill(f"线程 {self.token}")
         self.visible("invalid_query_recovery", lambda: (
