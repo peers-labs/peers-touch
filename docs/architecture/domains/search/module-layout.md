@@ -3,7 +3,7 @@
 > **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Client / Station
-> Desktop D01–D06 源码闭包及原生开发功能检查已完成。Station/Mobile/Ask/Applet 接入及正式 Acceptance 仍是后续范围。
+> Desktop 与 Mobile 共享原生读取协调器；Mobile 界面与原生证明正在实施。Station/Ask/Applet 接入仍是后续范围。
 
 ## 1. 领域边界
 
@@ -19,15 +19,18 @@ packages/search-core/src/
   model.rs / ports.rs                 候选投影、统一 Contributor 与 operation ctx
   contributor.rs                     注册/候选/批量 outcome 协议校验
   cache.rs                           共享读取、内存额度、subscriber 与失效屏障
+  runtime.rs                         query/hydrate/resolve 协调与源回复校验
+  requests.rs                        身份分区/request ID 准入、取消与完成裁决
+packages/messaging-core/src/search.rs
+                                      原 Messaging 读取端口与共享 Contributor
 apps/desktop/src/gen/proto/domain/search/search_pb.ts
                                       生成的 Renderer 协议类型
 apps/desktop/src-tauri/src/
   messaging/store.rs                 原 Messaging SQLCipher/FTS5 读写 owner
   messaging/engine.rs                消息检索与会话名称候选适配
-  application/search/runtime.rs       统一原域读取、身份/Store publication guard
-  application/search/messaging.rs     Messaging query/hydrate/resolve adapter
+  application/search/runtime.rs       Desktop 身份/Store publication guard 与执行调度
+  application/search/messaging.rs     共享 Messaging Contributor 的重导出
   interface/tauri_commands/search.rs  suggest/submit/cancel/resolve/read-state 入口
-  application/search/requests.rs      window/account/request ID 取消生命周期
   interface/http_gateway/mod.rs       拒绝未鉴权的私有 Search 调用
 apps/desktop/src/
   services/search.ts                  生成协议到 native IPC 的薄适配
@@ -35,11 +38,31 @@ apps/desktop/src/
   store/search.ts                     输入/结果/选择/滚动投影
   components/search/                  singleton overlay 与受信任功能目录
   messaging/openResource.ts           原 Messaging 会话/历史/线程定位
+apps/mobile/src-tauri/src/
+  messaging/adapter/search.rs         原 Store 读权、批量投影、全局/会话 FTS 与索引重建
+  messaging/search.rs                 MessagingSearchReader 本机端口
+  runtime/search.rs                   OAuth/OS/Messaging/Store 发布边界与原生调度
+  commands/search.rs                  生成协议 suggest/submit/cancel/resolve/read-state
+apps/mobile/src/gen/proto/domain/search/search_pb.ts
+                                      生成的 Mobile Renderer 协议类型
 ```
 
-FTS 表形继续由 Messaging 统一持有。Desktop 的写入和查询共用 `search-core` 分词；无搜索 schema generation、版本元数据或启动迁移。Mobile 不消费 `search-core`，其既有写入/查询保持原行为。
+FTS 表形继续由 Messaging 统一持有。两端写入和查询共用 `search-core` 分词。
+Mobile 从原消息表重建既有 FTS，每批最多 128 行；原 Store 中的
+`messaging_search_index_progress` 保存 token format、rowid checkpoint 与完成状态。
+它不迁移正文、密钥或消息恢复 cursor，不保留旧查询路径或第二套索引。
+索引未完成时返回 `INDEXING`，不缓存不完整候选页。
 
-`packages/search-core` 已作为 `client.search.portable-core` 登记，当前消费者仅 Desktop Rust。该 crate 不依赖 Tauri、Messaging 数据库或网络 SDK。`model.rs` 是端侧候选执行投影，不可替代 proto 成为第二份业务线合同；适配器必须遵循生成类型。
+`packages/search-core` 已作为 `client.search.portable-core` 登记，消费者包括
+Desktop/Mobile Rust 与 Messaging 的共享协议适配器。该 crate 不依赖 Tauri、
+Messaging 数据库或网络 SDK。`model.rs` 是端侧候选执行投影，不可替代 proto
+成为第二份业务线合同；适配器必须遵循生成类型。
+
+通用请求生命周期与读取协调机制唯一位于共享核心。宿主实现 `SearchExecutor`
+和 `SearchBinding`；前者提供原生调度，后者提供已认证的分区、原来源水位、
+Contributor 与串行发布裁决。Contributor 构造可读取原 Store，必须在 Store
+发布锁之外完成，再在发布锁内重新核对身份和水位并登记。Desktop 原通用
+协调器及请求实现已经删除，平台文件只保留 Binding 和调度适配。
 
 `build.rs` 通过 prost 生成 `search.proto` 的 Rust 类型；`model.rs`
 重导出生成的枚举与 ResourceRef，仅 scored candidate 属于内部投影。
@@ -51,10 +74,16 @@ cancel 只关闭调用者订阅，最后订阅者退出才中止 operation；同
 分页绑定原来源快照，后续页保留首次查询到期点。
 完整混合结果分页、所有来源 coverage 和锁定 Journey 仍未证明。
 
+Mobile 原生分区由 current native session 的 Station、Actor、device、Session、
+认证操作 revision、OS generation 和 engine incarnation 推导。Renderer 不选账号。
+OAuth 操作标记、OS 前后台事件锁、Messaging active lock 和 Store 水位锁共同
+裁决缓存与最终响应发布；后台、身份过期或旧实例均拒绝读取。
+会话筛选进入生成协议语义键及签名 cursor，不授予会话读权。
+
 后续实现位置：
 
 - **Station**：一个 Search application/subserver 执行 S/F 区协议并适配原领域读权。尚未建立，不通过 RPC 调用客户端 Rust core。
-- **Mobile**：未来 native adapter 消费共享核心，UI 仅维护输入/选中/滚动投影；当前没有 Search 核心消费或新 UI。
+- **Mobile UI**：Shell 搜索详情仅维护输入/选中/滚动投影，原对象由 Messaging 打开；原生 Journey 及正式证明仍待执行。
 - **Applet / Agent**：沿现有 SDK、Host 和 evidence owner 接入；本期没有 contributor/Ask 实现。
 
 Renderer 不建立第二个 TypeScript 查询执行引擎。取消、cursor 和完整 coverage 的执行闭环需要真实请求生命周期与 conformance，不能用 core 中存在相应类型代替。

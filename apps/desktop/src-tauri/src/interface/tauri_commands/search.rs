@@ -5,6 +5,7 @@ use search_core::model::wire::{
     CancelRequest, CancelResponse, QueryIntent, ResolveRequest, SearchErrorCode, SearchIntent,
     SearchKind, SearchReadState, SearchScope, SubmitRequest, SuggestRequest,
 };
+use search_core::runtime::{SearchBinding, SearchRuntime};
 use search_core::SearchError;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -46,7 +47,7 @@ struct Admission {
     session: crate::domain::identity::ActiveSession,
     revision: u64,
     engine: Arc<crate::messaging::MessagingEngine>,
-    request: application_search::requests::SearchRequest,
+    request: search_core::requests::SearchRequest,
 }
 
 fn admit(
@@ -105,7 +106,7 @@ fn execute<M: Message>(
     window: &Window,
     admission: Admission,
     run: impl FnOnce(
-        &application_search::runtime::SearchRuntime,
+        &SearchRuntime<application_search::runtime::DesktopSearchExecutor>,
         &application_search::runtime::Binding,
         &search_core::CancelToken,
     ) -> Result<M, SearchError>,
@@ -171,6 +172,7 @@ pub async fn search_suggest(
                         request.limit.clamp(1, 100) as u32
                     },
                     suggestions: true,
+                    conversation_id: request.conversation_id,
                     ..Default::default()
                 },
                 cancel,
@@ -223,6 +225,7 @@ pub async fn search_submit(
                     locale: request.locale,
                     refresh: request.refresh,
                     suggestions: false,
+                    conversation_id: request.conversation_id,
                 },
                 cancel,
             )

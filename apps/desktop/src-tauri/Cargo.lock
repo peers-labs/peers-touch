@@ -4449,6 +4449,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "rand 0.8.5",
+ "search-core",
  "secure-content-core",
  "serde",
  "serde_json",

@@ -4363,6 +4363,7 @@ impl MessagingStore {
     /// as enough matching names have been found.
     pub fn suggest_conversation_names(
         &self,
+        conversation: Option<&str>,
         query: &str,
         limit: usize,
         actor: &str,
@@ -4376,6 +4377,7 @@ impl MessagingStore {
                 "SELECT conversation_id, name, updated_at_unix_ms, authority_station_id
              FROM messaging_conversations conversation
              WHERE conversation.active = 1
+               AND (?2 = '' OR conversation.conversation_id = ?2)
                AND EXISTS (SELECT 1 FROM messaging_conversation_members member
                  WHERE member.conversation_id = conversation.conversation_id
                    AND member.ptid = ?1 AND member.active = 1)
@@ -4383,7 +4385,7 @@ impl MessagingStore {
             )
             .map_err(|error| error.to_string())?;
         let mut rows = statement
-            .query(params![actor])
+            .query(params![actor, conversation.unwrap_or("")])
             .map_err(|error| error.to_string())?;
         let mut names = Vec::new();
         while let Some(row) = rows.next().map_err(|error| error.to_string())? {

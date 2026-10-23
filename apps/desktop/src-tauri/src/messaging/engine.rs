@@ -2745,6 +2745,7 @@ impl MessagingEngine {
     /// conversations table so the renderer never joins store tables itself.
     pub fn search_device_documents(
         &self,
+        conversation: Option<&str>,
         query: &str,
         before: Option<(i64, &str, &str)>,
         limit: usize,
@@ -2753,7 +2754,7 @@ impl MessagingEngine {
         use search_core::model::{ResourceRef, ResultKind, TrustZone};
         check()?;
         let hits = self.store.search_message_hits_page_checked(
-            None,
+            conversation,
             query,
             before,
             limit,
@@ -2796,15 +2797,20 @@ impl MessagingEngine {
     /// suggestion phase (no full-text scan). Returns conversation resources.
     pub fn suggest_conversations(
         &self,
+        conversation: Option<&str>,
         query: &str,
         limit: usize,
         check: &dyn Fn() -> Result<(), String>,
     ) -> Result<Vec<search_core::ScoredDocument>, String> {
         use search_core::model::{ResourceRef, ResultKind, TrustZone};
         check()?;
-        let conversations =
-            self.store
-                .suggest_conversation_names(query, limit, &self.endpoint.ptid, check)?;
+        let conversations = self.store.suggest_conversation_names(
+            conversation,
+            query,
+            limit,
+            &self.endpoint.ptid,
+            check,
+        )?;
         check()?;
         let mut documents = Vec::new();
         for (conversation_id, name, updated_at_unix_ms, authority_namespace) in conversations {

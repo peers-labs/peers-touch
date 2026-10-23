@@ -11,7 +11,7 @@
 // - No component creates a second retry or persistence owner.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,7 @@ use crate::error::{MobileError, MobileResult};
 /// Each resume increments the generation; events with a stale generation
 /// are silently rejected.
 static LIFECYCLE_GENERATION: AtomicU64 = AtomicU64::new(0);
+static PRIVATE_READ_VISIBLE: AtomicBool = AtomicBool::new(false);
 
 /// Event identities accepted in the current generation.
 ///
@@ -63,6 +64,22 @@ pub fn advance_generation() -> u64 {
 /// Check if a given generation is exactly current.
 pub fn is_current_generation(generation: u64) -> bool {
     generation == LIFECYCLE_GENERATION.load(Ordering::Acquire)
+}
+
+/// Hold the native lifecycle publication boundary. Background denies private
+/// reads even before renderer teardown or Messaging suspension is processed.
+pub(crate) fn with_visible_generation<T>(
+    expected: Option<u64>,
+    read: impl FnOnce(u64) -> Result<T, search_core::SearchError>,
+) -> Result<T, search_core::SearchError> {
+    let _events = lock_processed_event_ids().map_err(|_| search_core::SearchError::Cancelled)?;
+    let generation = current_generation();
+    if !PRIVATE_READ_VISIBLE.load(Ordering::Acquire)
+        || expected.is_some_and(|expected| expected != generation)
+    {
+        return Err(search_core::SearchError::Cancelled);
+    }
+    read(generation)
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +222,11 @@ pub fn process_lifecycle_event(
         });
     }
 
+    match event.state {
+        NativeLifecycleState::Foreground => PRIVATE_READ_VISIBLE.store(true, Ordering::Release),
+        NativeLifecycleState::Background => PRIVATE_READ_VISIBLE.store(false, Ordering::Release),
+        NativeLifecycleState::Wakeup => {}
+    }
     Ok(LifecycleBridgeResult {
         accepted: true,
         generation: current_gen,
@@ -349,6 +371,7 @@ pub fn build_reconciliation_report(
 pub fn reset_lifecycle_bridge() {
     let mut processed_event_ids = lock_processed_event_ids_after_poison();
     LIFECYCLE_GENERATION.store(0, Ordering::Release);
+    PRIVATE_READ_VISIBLE.store(false, Ordering::Release);
     processed_event_ids.clear();
     drop(processed_event_ids);
 

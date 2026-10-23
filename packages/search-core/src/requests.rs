@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use search_core::{CancelToken, SearchError};
+use crate::{CancelToken, SearchError};
 
 type RequestKey = (String, String, String);
 

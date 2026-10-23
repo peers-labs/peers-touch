@@ -39,6 +39,7 @@ pub fn run() {
         .manage(MobilePrivateSocialRuntime::default())
         .manage(PushBridgeRuntime::default())
         .manage(ReliabilityRuntime::default())
+        .manage(runtime::search::MobileSearchState::default())
         .manage(MobileXConfigRuntime::default())
         .manage(StationTransportRuntime::default());
 

@@ -10,6 +10,7 @@ pub mod outbox;
 pub mod ports;
 pub mod proto;
 pub mod recovery;
+pub mod search;
 pub mod storage_governance;
 pub mod store;
 

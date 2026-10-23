@@ -4,8 +4,8 @@ package peers_touch.model.search.v1;
 
 // Search domain contract (decision D-19: closed search domain).
 //
-// This file declares no Go package option: this milestone generates Desktop
-// TypeScript only (build.sh skips Go generation when the option is absent).
+// This file declares no Go package option: Desktop and Mobile generate
+// TypeScript (build.sh skips Go generation when the option is absent).
 // The query universe is the Peers domain on the current device; Station S-zone
 // and federation F-zone adapters, Ask, and semantic retrieval are later plans
 // and reuse these shapes without renegotiating the wire contract.
@@ -128,6 +128,9 @@ message QueryIntent {
   bool suggestions = 7;
   // Read requirement, excluded from semantic cache identity.
   bool refresh = 8;
+  // Empty selects all currently readable local conversations. This is a
+  // content filter, never an account selector or an authorization grant.
+  string conversation_id = 9;
 }
 
 message SourceCandidate {
@@ -229,6 +232,7 @@ message SuggestRequest {
   int32 limit = 3;
   // Client-generated id used to cancel an in-flight suggestion.
   string request_id = 4;
+  string conversation_id = 5;
 }
 
 message SubmitRequest {
@@ -242,6 +246,7 @@ message SubmitRequest {
   string request_id = 7;
   string locale = 8;
   bool refresh = 9;
+  string conversation_id = 10;
 }
 
 message CancelRequest {

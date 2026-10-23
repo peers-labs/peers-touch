@@ -1,6 +1,6 @@
 //! Portable Peers Search query kernel.
 //!
-//! Host-neutral search semantics shared by Desktop (and later Mobile) native
+//! Host-neutral search semantics shared by Desktop and Mobile native
 //! adapters. It owns deterministic text analysis, the FTS5 match expression,
 //! reciprocal-rank fusion, opaque cursors, and cancellation. It deliberately
 //! depends on neither host application frameworks, database drivers,
@@ -19,6 +19,8 @@ pub mod model;
 pub mod ports;
 pub mod query;
 pub mod ranking;
+pub mod requests;
+pub mod runtime;
 pub mod tokenize;
 
 pub use cursor::{decode_cursor, encode_cursor, CursorError, PageCursor};

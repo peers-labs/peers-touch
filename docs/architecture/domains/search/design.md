@@ -3,7 +3,8 @@
 > **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Client / Station
-> **Basis**: 封闭域与 Desktop「找回 + 打开」方向、Shell 原型已确认；本期实施边界见显式执行计划。后续 S/F、Mobile、Ask 不表示已接受实施或已验证。
+> **Basis**: 封闭域与 Desktop「找回 + 打开」方向、Shell 原型已确认；
+> Mobile 已接受同一端侧查找/打开范围。S/F、Ask 尚未实施；源码不代替原生证明。
 
 ## 0. 设计依据与层级
 
@@ -143,6 +144,29 @@ operation ctx，最后 subscriber 退出、来源失效或 operation deadline �
 
 ### 4.1 共享缓存与实际读取路径
 
+Desktop 与 Mobile 原生宿主消费同一 `search-core::runtime::SearchRuntime` 和
+`requests::SearchRequests`。核心持有读协调、资源批量补齐、规范缓存键、取消、
+逐项回复校验与内存缓存；`SearchExecutor` 注入调度及 Future 执行，
+`SearchBinding` 注入当前认证分区、原来源水位、Contributor 构造和发布锁。
+核心不 import AppState、Tauri、MessagingEngine 或 SQL 驱动。平台保留身份与
+原 Store 的锁顺序，缓存提交和最终 IPC bytes 发布都必须通过同一裁决。
+
+Contributor 的 descriptor 构造可能读取原 Store，不能在持有 Store 发布锁
+时再次取得该锁。核心先在当前绑定下复用已登记实例；缺失时在锁外构造，
+随后在身份和原 Store 发布锁内核对水位再登记，拒绝迟到的旧身份实例。
+Desktop 被替代的通用协调器与请求 owner 同步删除，不保留并行查询路径。
+
+`messaging-core::search` 唯一持有消息 Contributor 的 query/hydrate/resolve
+协议实现。它消费 `MessagingSearchReader` 的授权候选和批量投影；Desktop/Mobile
+原 Store 分别执行 SQL、权限和内容读取，Search 核心不复制原域策略。
+显式 `conversation_id` 同时约束查询、缓存语义和签名 continuation。
+
+Mobile 按 OAuth admission → native lifecycle event → Messaging active →
+Store revision 的锁顺序发布。OAuth 的异步操作只持有 active 标记，
+不跨 await 持有 mutex；读取拒绝操作中的或过期的 Session。OS background
+事件在其原生边界立即拒绝私密发布，无需等待页面卸载。engine incarnation
+与认证操作 revision 使 A→B→A 无法重新接受旧结果。
+
 目标是 [S-18](./product.md#s-18-重复使用缓存与刷新) 的重复使用体验。缓存由
 headless Search runtime/application 持有，位于 contributor 调用的共通读边界；
 Overlay、完整页、局部入口和 Agent 复用同一有效性规则。Client/Station 在各自
@@ -262,6 +286,14 @@ incarnation 绑定，最长有效期五分钟。AppState 生成进程内随机�
 Chat 继续由 Messaging Store 持有 SQLCipher/FTS5，Search provider 查询当前授权投影，不复制一份全量聊天数据库。跨会话检索放到拥有该索引的 native/headless 层，避免 TS 对所有会话发无界请求。
 
 当前 Desktop 直接在既有 FTS 表写入 `search-core` 分词文本，并以同一分词生成参数化 MATCH 表达式。表形和 `unicode61` 不变；没有搜索 generation/meta 表、版本切换、启动重建或 downgrade 兼容路径。既有未重写 FTS 行不保证新中文短词召回；原消息写入和业务恢复投影使用新分词。Messaging 原文、密钥和恢复 cursor 不因 Search 改动迁移或删除。
+
+Mobile 统一切换到相同 token stream。Messaging 原 Store 初始化时清空旧的
+派生 FTS 并建立 `messaging_search_index_progress`；只从既有原消息及附件投影
+读取，每批最多 128 行，在同一事务中写索引与 rowid checkpoint。原消息、密钥、
+附件对象和消息恢复 cursor 保留。原 Messaging worker 在联网工作之前分批继续，
+每批释放 Store 锁并重新核对生命周期，后台挂起后恢复。未完成时返回 `INDEXING`
+coverage；候选页不缓存为完整结果。新写入和编辑始终使用同一分词路径，
+不保留旧索引查询或双索引切换。
 
 接受的 Direct edit 和 sender/MLS interaction edit 在原事务中刷新派生行，
 以 effective edited text 和附件名称生成索引。隐藏、撤回和治理谓词同时阻止

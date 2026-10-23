@@ -7,6 +7,7 @@ pub mod native_events;
 pub mod oauth;
 pub mod platform_bridge;
 pub mod secure_storage;
+pub mod search;
 pub mod station;
 
 use tauri::ipc::Invoke;
@@ -16,6 +17,11 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
     tauri::generate_handler![
         // Health
         health::mobile_health,
+        search::search_submit,
+        search::search_suggest,
+        search::search_resolve,
+        search::search_read_state,
+        search::search_cancel,
         // Messaging
         crate::messaging::commands::messaging_activate,
         crate::messaging::commands::messaging_attachment_stage_begin,
@@ -172,6 +178,11 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         build_identity::mobile_build_identity,
         // Health
         health::mobile_health,
+        search::search_submit,
+        search::search_suggest,
+        search::search_resolve,
+        search::search_read_state,
+        search::search_cancel,
         // Native events
         native_events::mobile_native_event_emit,
         // Messaging
