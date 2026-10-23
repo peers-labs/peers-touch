@@ -81,6 +81,11 @@ UI failure, recovery and cleanup. Fixture routing alone is not product proof.
 The reaction's durable-before-loss observation must precede the proxy loss and
 worker resume. Failed and recovered hashes must equal that prepared command's
 hash. An error surface with zero new commands does not prove outbox retry.
+The message metadata rail retains a reaction-state slot even when settled;
+its value is `idle`. Recovery must observe the exact mounted message, one
+`idle` slot and no retry control after both receiver reactions converge.
+Waiting for every reaction-state attribute to disappear cannot succeed.
+Retain the actual recovery-state predicate as a durable Step observation.
 Batch read regressions must reject missing/duplicate accounts and invalid
 container identity or volume. Actual three-actor timing must retain both
 independent read phases. Product closure records durable Step and login/device

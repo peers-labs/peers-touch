@@ -3154,14 +3154,31 @@ class NativeProductClosureGate(AcceptanceGate):
                 "reaction automatic retry convergence",
                 timeout=120,
             )
-            wait_until(
-                lambda: (
-                    not self.clients["alice"].find_elements(
-                        f'[data-message-ulid="{message_id}"] '
-                        "[data-message-reaction-state]"
-                    )
+            recovery_state = self.wait_step(
+                lambda: self.clients["alice"].execute_script(
+                    """
+                    const row = document.querySelector(
+                      `[data-message-ulid="${arguments[0]}"]`,
+                    );
+                    return {
+                      rowFound: Boolean(row),
+                      states: row ? Array.from(
+                        row.querySelectorAll('[data-message-reaction-state]'),
+                      ).map((item) => item.getAttribute('data-message-reaction-state')) : [],
+                      retryCount: row ? row.querySelectorAll(
+                        '[data-message-reaction-retry]',
+                      ).length : 0,
+                    };
+                    """,
+                    message_id,
                 ),
-                "reaction recovery state cleared",
+                "alice.reaction-recovery-state-cleared",
+                expected={"rowFound": True, "states": ["idle"], "retryCount": 0},
+                ready=lambda value: (
+                    value.get("rowFound") is True
+                    and value.get("states") == ["idle"]
+                    and value.get("retryCount") == 0
+                ),
                 timeout=30,
             )
             proxy_evidence = proxy.evidence()
@@ -3251,6 +3268,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 "preparedCommand": prepared_command,
                 "failedCommand": failed_command,
                 "recoveredCommand": recovered_command,
+                "recoveryState": recovery_state,
                 "engine": engine,
                 "recovered": True,
             }
