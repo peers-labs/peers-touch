@@ -355,6 +355,7 @@ def run_portable_contract_tests(root: Path = REPO_ROOT) -> None:
         isolated_root = Path(temporary)
         for relative in (
             Path("packages/messaging-core"),
+            Path("packages/search-core"),
             Path("packages/secure-content-core"),
             Path("model/domain"),
         ):

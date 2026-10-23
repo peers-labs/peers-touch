@@ -365,6 +365,11 @@ test('current shared client dependencies are capability-registered', () => {
         reuseLayer: 'platform-adapter',
       },
       {
+        id: 'cargo:search-core',
+        capabilityId: 'client.search.portable-core',
+        reuseLayer: 'portable-rust-core',
+      },
+      {
         id: 'cargo:secure-content-core',
         capabilityId: 'client.secure-content.portable-core',
         reuseLayer: 'portable-rust-core',

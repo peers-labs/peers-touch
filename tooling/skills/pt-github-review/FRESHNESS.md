@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-24
-covered_docs_hash: 677cf9413d0f5b9192f7e350465607e27853d432cda0469a26558deadff4b6ab
+covered_docs_hash: 7c044e0f12272a76c1e0dc141d720abb43396959dade03295f96bf8e48d1795a
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,15 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Generated Coverage Inventory Review
+
+The generated Acceptance inventory now includes the registered Desktop/Mobile
+Search and unified-client Features: 48 wired Features and zero global proven
+Features. These counts describe wiring, and retain unexecuted or stale evidence
+as unproven. They were checked against the Feature and Gate catalogs. Existing
+source-bound proof rules already require this distinction; no review rule,
+waiver, fixture deletion or severity change is introduced.
 
 ## Search Source And SQLCipher Knowledge Integration
 
