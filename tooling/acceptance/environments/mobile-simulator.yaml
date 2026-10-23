@@ -58,6 +58,8 @@
         "build",
         "--ci",
         "--debug",
+        "--features",
+        "acceptance-harness",
         "--target",
         "aarch64",
         "--split-per-abi",
