@@ -20,6 +20,14 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
     require(set(ui) == UI_ASSERTIONS, "all Search UI obligations require evidence")
     for name in UI_ASSERTIONS:
         require(ui[name].get("actor") == "alice", f"{name} must use the receiving native window")
+        rendering = ui[name].get("rendering", {})
+        require(rendering.get("painted") is True, f"{name} requires a painted native surface")
+        if rendering.get("searchOpen"):
+            require(
+                "prepare" not in rendering.get("modalClass", "")
+                and float(rendering.get("opacity", "0")) >= 0.99,
+                f"{name} cannot use an invisible modal animation frame",
+            )
         for suffix in ("screenshot", "dom"):
             ref = ArtifactRef.from_dict(ui[name].get(suffix))
             require(

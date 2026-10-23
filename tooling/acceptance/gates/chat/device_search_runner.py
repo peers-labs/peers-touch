@@ -36,7 +36,8 @@ REQUIRED_ASSERTIONS = UI_ASSERTIONS | {
 }
 REQUIRED_STEPS = {
     "station.identity", "fixture.reset", "client.authenticated",
-    "runtime.source_identity", "conversation.open", "message.seed",
+    "runtime.source_identity", "search.surface_ready",
+    "conversation.open", "message.seed",
 } | {f"search.{name}" for name in UI_ASSERTIONS}
 
 
@@ -99,12 +100,56 @@ class DeviceSearchGate(NativeTwoClientGate):
         )
         ActionChains(self.receiver.driver).send_keys(key).perform()
 
+    def surface(self) -> dict[str, Any]:
+        return self.receiver.execute_script("""
+            const field = document.querySelector('.pt-search-field');
+            const modal = field?.closest('.ant-modal');
+            const result = {
+                searchOpen: !!field, painted: !field,
+                visibilityState: document.visibilityState,
+                modalClass: modal?.className || '',
+            };
+            if (!field || !modal) return result;
+            const rect = field.getBoundingClientRect();
+            result.bounds = rect.toJSON();
+            result.opacity = getComputedStyle(modal).opacity;
+            let visible = rect.width > 0 && rect.height > 0
+                && rect.left >= 0 && rect.top >= 0
+                && rect.right <= innerWidth && rect.bottom <= innerHeight;
+            for (let node = field; node && visible; node = node.parentElement) {
+                const style = getComputedStyle(node);
+                visible = style.display !== 'none' && style.visibility === 'visible'
+                    && Number(style.opacity) >= 0.99;
+            }
+            const hit = document.elementFromPoint(
+                rect.left + rect.width / 2, rect.top + rect.height / 2,
+            );
+            result.painted = visible && !modal.className.includes('prepare')
+                && !!hit && modal.contains(hit);
+            return result;
+        """)
+
+    def wait_surface(self) -> dict[str, Any]:
+        try:
+            return wait_until(
+                lambda: (state if (state := self.surface()).get("painted") else None),
+                "painted native Search surface", timeout=30,
+            )
+        except GateError:
+            self.report.runtime["search"]["surfaceReadiness"] = {
+                **self.surface(),
+                "screenshot": self.save_screenshot(self.receiver, "surface-readiness"),
+                "dom": self.save_dom(self.receiver, "surface-readiness"),
+            }
+            raise
+
     def open_search(self) -> None:
         if not self.receiver.find_elements(".pt-search-field input"):
             self.receiver.find_element(
                 '[data-pt-primary-nav="search"] [role="button"]', 20,
             ).click()
         self.field()
+        self.wait_surface()
         self.assert_condition(
             "search_singleton",
             len(self.receiver.find_elements(".pt-search-field input")) == 1,
@@ -150,11 +195,13 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def visible(self, name: str, predicate: Any, detail: Any = None) -> None:
         def observe() -> None:
+            rendering = self.wait_surface()
             self.assert_condition(name, bool(predicate()), json.dumps(detail))
             screenshot = self.save_screenshot(self.receiver, name)
             dom = self.save_dom(self.receiver, name)
             self.report.runtime["search"]["ui"][name] = {
                 "actor": "alice", "screenshot": screenshot, "dom": dom,
+                "rendering": rendering,
                 "query": self.field().get_attribute("value")
                 if self.receiver.find_elements(".pt-search-field input") else "",
             }
@@ -435,6 +482,9 @@ class DeviceSearchGate(NativeTwoClientGate):
             ))
             self.assert_condition("actor_isolation", len(set(self.ptids.values())) == 2
                                   and len(set(self.device_ids.values())) == 2)
+            self.step("search.surface_ready", self.open_search, "alice")
+            self.press(Keys.ESCAPE)
+            self.wait_js("!document.querySelector('.pt-search-field')", "Search closed")
             self.conversation = self.step("conversation.open", self.open_conversation)
             self.step("message.seed", self.seed, "bob")
             self.submit(f"filler-{self.token}")

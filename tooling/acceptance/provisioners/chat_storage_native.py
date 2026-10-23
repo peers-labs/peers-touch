@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import subprocess
+from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
@@ -187,6 +188,20 @@ class ChatStorageNativeProvisioner(HomeStationProvisioner):
                 manifest.run_id,
                 slot,
             )
+            if gate_id == "chat-device-search-native-e2e":
+                # Actor keys follow canonical Actor identity across account
+                # switches; each client retains independent device/data storage.
+                identity_root = (
+                    Path(clients[0].storage_root).parent.parent / "actor-identity"
+                )
+                identity_root.mkdir(parents=True, mode=0o700, exist_ok=True)
+                identity_root.chmod(0o700)
+                clients = tuple(
+                    dataclasses.replace(
+                        client, actor_identity_root=str(identity_root),
+                    )
+                    for client in clients
+                )
             manifest = dataclasses.replace(
                 manifest,
                 actor_manifest_ref=actor_ref,

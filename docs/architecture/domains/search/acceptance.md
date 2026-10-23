@@ -11,12 +11,19 @@ Runtime Binding、Evidence Store 与清理。Search Core 不持有业务写操�
 此 Environment ID 表示运行拓扑和资源要求，不表示某个 env Profile。
 具体 Profile、Station 地址和部署目标在运行时解析并写入 Runtime Manifest；
 Search Gate 只消费已验证的 Manifest，不绑定具体 Profile 名称。
+Search Fixture 为两端配置同一临时 Actor 身份密钥目录，密钥仍按 canonical
+Actor key ref 隔离，以保持同窗口登录 Bob 时的身份连续性。两端设备身份、
+消息数据库、缓存和客户端存储继续独立；密钥目录随本次 Fixture 根目录清理，
+不进入 Git 或证据文件，也不复制展示数据来满足账号隔离断言。
 
 一条连续 Journey 只初始化 Alice/Bob 一次：Bob 真实发送中文消息、线程回复
 及 55 条历史填充消息，上传真实附件；Alice 在全局 Search 输入、翻页、打开
 实际消息/线程并返回。重复、重开、退格和返回必须维持同一查询并零次来源
 读取；显式刷新必须进入来源。缓存成本以最终原生日志核对，并同时要求
 当前运行的 UI 截图与 DOM。
+分页前须由接收端原生 Messaging owner 确认全部测试消息已同步。长数据准备前
+先检查 Search 弹窗确实完成绘制；每项 UI 证据都核对弹窗透明度、动画准备态、
+视口边界与命中位置。后台窗口暂停帧回调时不能以隐藏 DOM 作为可见结果。
 
 Bob 的真实编辑与 Alice 的 actor hide 必须使已展示结果更新或消失；
 旧正文引用与隐藏引用由原生 owner 拒绝。Functions 必须打开真实 Settings，
