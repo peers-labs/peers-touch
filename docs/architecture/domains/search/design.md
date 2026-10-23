@@ -10,16 +10,16 @@
 
 本合同位于 Search 业务域，因为它约束跨模块检索、内容接入、覆盖和派生数据。Desktop/Mobile 平台文档细化 Host 与 UI 生命周期；Agent、Messaging、Social、Identity、Applet 继续拥有各自真源。Model 是双方生成类型的协议层。
 
-- **verified_fact**：Desktop 已有 `search_suggest/search_submit/search_cancel` 本机入口、跨会话 FTS 查询和独立 `search-core`。旧门户仍调用成功空 stub，覆盖层及旧链删除未完成；入口存在不证明取消、分页、coverage 和线合同已经闭环。路径见 [module-layout.md](./module-layout.md)。
+- **verified_fact**：Desktop/Mobile 原生入口、跨会话 FTS 与读取协调器消费同一 `search-core`；Desktop 覆盖层、Mobile 按需详情及旧链删除已落地。路径见 [module-layout.md](./module-layout.md)，所选原生证明见 [证据快照](./acceptance-evidence.md)。
 - **verified_fact**：Applet SDK 已提供 file、navigation、tasks、agent、ai API；`file.*` 的 Desktop native 实现使用 `applets/{id}/files` 沙箱，不是 OS 用户目录许可。当前 SDK 和 manifest 未提供 Search 专用协议。
 - **verified_fact**：Agent 已有 `CapabilityManifest`、connector/knowledge resource、readiness 与 execution-owner 合同。原生模型调用与本地 MCP 是不同所有权，Search 不将它们合并为自有通道。
 - **inference**：缺少内容接入/打开/覆盖闭环是门户弱化的重要结构原因；各独立能力的源码存在不证明当前 Search runtime 可用或性能达标。
 - **component_observation**：[可行性研究](./feasibility.md) 实测 SQLCipher/FTS5、PG、受控文件边界与本机模型；基础索引机制可行，默认中文短词遗漏及 E5 跨语言召回不足均已观察。它不证明 production Search 或手机资源预算；其中公网 RSS 与受控目录实验只作为历史机制证据，封闭域决策后不属于产品能力。
 - **accepted_direction（用户决策，2026-10-22）**：检索宇宙封闭在 Peers-Touch 域内（端 + Station），只返回当前 actor 有权限的对象；公网、OS 任意文件、外部 connector 不进入来源集合。详见 [D-19](./decisions.md)。
-- **accepted_direction**：一份协议、两级执行、可替换索引 adapter；本期仅 Desktop D 区。产品预算、完整中文检索质量和 Agent 模型调用闭环仍待基线验证。
-- **unproven**：域内附件提取覆盖、模型 embedding/rerank 的公共调用闭环、全域 batch read-policy、Federation 按需查询、Search 原生 Journey 与性能。不得凭 SDK 方法名或行业实现补全。
+- **accepted_direction**：一份协议、两级执行、可替换索引 adapter；本期已实施 Desktop/Mobile D 区消息与功能导航。产品预算、完整中文检索质量和 Agent 模型调用闭环仍待基线验证。
+- **unproven**：域内附件正文提取覆盖、模型 embedding/rerank 的公共调用闭环、全域 batch read-policy、Federation 按需查询、实机/OS 后台锁屏 Journey 与现场性能。不得凭 SDK 方法名或行业实现补全。
 
-架构 active 表示边界有效。Desktop D01–D06 源码已接通，当前原生 Journey 尚在验证；[执行计划](./execution-plans/20261022-device-search-find-open/plan.md) 明确当前切片和未证明范围。后续章节的 S/F、语义与其他 contributor 是目标合同，不冒充已部署能力。
+架构 active 表示边界有效。[执行计划](./execution-plans/20261022-device-search-find-open/plan.md) 保留冻结的 Desktop 切片；后续已授权的 Mobile 实施见其平台与验收合同。所选 macOS/iOS Simulator/Android Emulator 原生 Journey 已在[指定快照](./acceptance-evidence.md)通过，后续源码需重验。后续章节的 S/F、语义与其他 contributor 是目标合同，不冒充已部署能力。
 
 ## 1. 原则与所有权
 
@@ -273,7 +273,7 @@ HMAC-SHA256 codec：认证完整位置字段、查询及窗口/账号/session re
 incarnation 绑定，最长有效期五分钟。AppState 生成进程内随机密钥，重启即失效，
 不持久化密钥或查询。篡改、过期、上下文替换在读取来源前拒绝；消息检索先由
 共享查询核心验证，纯标点等无 token 输入返回 `INVALID_QUERY`。完整混合来源
-快照与 coverage 生命周期仍属于 D03 未完成范围。
+快照与 coverage 生命周期属于后续跨来源范围，本期单来源证明不覆盖它们。
 
 数据更新/权限变化时，允许从当前页移除失效对象；结果快照不冻结权限。总量与 facet 只基于当前授权范围；重校验后缺乏准确全量就返回 lower-bound/estimated/unknown，不泄漏未经授权的 raw hit count。
 
@@ -394,7 +394,7 @@ UI 只投影 Search intent，不负责来源发现/历史同步。复用 Page/Ru
   session/cursor 有有效期，内容与读权分别按第 4.1 节判断。logout/lock/
   session-end 取消读取并关闭相应用户分区，静态无用户声明可继续复用。
 
-正式实现前把 Desktop/Mobile 默认落点、alive policy、组件树和 runtime registry 更新到对应平台合同。域内附件/消息索引是有预算的后台能力，页面关闭不必停索引；搜索页面也不能成为索引工作者的唯一生命周期 owner。
+Desktop/Mobile 默认落点、alive policy、组件树和 runtime registry 已更新到对应平台合同；后续来源也必须遵循这些边界。域内附件/消息索引是有预算的后台能力，页面关闭不必停索引；搜索页面也不能成为索引工作者的唯一生命周期 owner。
 
 ## 11. 架构验证与尚未冻结事项
 
@@ -406,9 +406,9 @@ UI 只投影 Search intent，不负责来源发现/历史同步。复用 Page/Ru
 使用、同词/退格重输、返回/重开、预览与页复用、条件刷新、新内容使负缓存
 失效、权限租约到期、成员变化、共享读取消与容量淘汰。记录来源 query、正文
 读取、authority 校验次数、字节量和冷/热恢复耗时；有效命中的零次来源/正文
-读取是合同要求，尚不是测量结果。不能用缓存命中率代替权限否定证明。
+读取是合同要求；所选消息 Journey 已记录原来源读取计数，完整跨来源成本仍需测量。不能用缓存命中率代替权限否定证明。
 
-独立[组件实验](./feasibility.md)与[原始证据索引](./feasibility-evidence.md)已补充基础可行性：300 份真实文档加密 FTS 查询 P95 2.883 ms，中文分词关键词探针 8/8；PG 和生命周期机制有受控验证。域内附件 provider、Federation 按需查询、端侧 inference、原生 Journey、正式 Acceptance 及产品性能均未证明，不能将实验数值变成上述 SLA 或 readiness。
+独立[组件实验](./feasibility.md)与[原始证据索引](./feasibility-evidence.md)已补充基础可行性：300 份真实文档加密 FTS 查询 P95 2.883 ms，中文分词关键词探针 8/8；PG 和生命周期机制有受控验证。域内附件正文 provider、Federation 按需查询、端侧 inference、完整产品 Acceptance 及产品性能仍未证明，不能将实验数值变成上述 SLA 或 readiness。已执行的端侧消息原生 Journey 单独绑定[证据快照](./acceptance-evidence.md)。
 
 基线使用同一设备/runtime、当前源码与可重复语料，分别记录首条可用结果、全选范围收敛、取消、原对象打开和更新/撤权可见耗时的 P50/P95/P99，以及 memory/index size/IO/fan-out。标注语料按中文/英文混合、短词、ID、同名、权限组、文件格式与规模分层，比较 Recall@10/MRR/NDCG。目标阈值在实测后冻结，不凭 industry 数字宣称达标。
 

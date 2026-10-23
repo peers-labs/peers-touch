@@ -3,8 +3,8 @@
 > **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Model / Applet Host / Domain Owners
-> 公共读接口及缓存元数据已进入 Model，Desktop Messaging 已接入共享读执行器；
-> Applet/Station/Mobile SDK、传输与接入仍未实施，完整产品证明仍未完成。
+> 公共读接口及缓存元数据已进入 Model，Desktop/Mobile Messaging 已接入共享读执行器；
+> Applet/Station SDK、传输与接入仍未实施，完整跨来源产品证明仍未完成。
 
 ## 1. 扩展目标与边界
 
@@ -210,7 +210,8 @@ Search 使用 Agent 既有 provider/runtime 提供理解、embedding、rerank �
 
 当前已实现的切片：proto contributor/hydration/validity/ref 合同、单一 Rust 读接口、
 声明/批量回复校验、有界共享缓存、独立 operation/subscriber lifetime，以及
-Desktop Messaging 原域批量读取与 publication guard。原 Messaging 索引没有复制。
+Desktop/Mobile Messaging 原域批量读取与 publication guard。原 Messaging 索引没有复制。
+所选端侧消息原生证明见[证据快照](./acceptance-evidence.md)，不证明后续来源可用。
 
 仍需新接入闭环：外源 SDK、域内附件正文随父对象授权、其他业务来源、
 Federation 按需查询、完整来源 conformance 与真实客户端证明。这些目标不由

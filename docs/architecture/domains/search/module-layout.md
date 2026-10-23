@@ -3,7 +3,7 @@
 > **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Client / Station
-> Desktop 与 Mobile 共享原生读取协调器；Mobile 界面已有源码，原型同步与原生证明仍在实施。Station/Ask/Applet 接入仍是后续范围。
+> Desktop 与 Mobile 共享原生读取协调器；Mobile 界面及既有 Shell 原型已同步，所选原生证明见 [证据快照](./acceptance-evidence.md)。Station/Ask/Applet 接入仍是后续范围。
 
 ## 1. 领域边界
 
@@ -110,7 +110,7 @@ scope/revision/expiry，再恢复结果、筛选、选择、滚动和焦点。�
 后续实现位置：
 
 - **Station**：一个 Search application/subserver 执行 S/F 区协议并适配原领域读权。尚未建立，不通过 RPC 调用客户端 Rust core。
-- **Mobile 原型和证明**：同步既有 Mobile Chat 原型；Android/iOS 原生 Journey 及正式证明仍待执行。
+- **Mobile 扩展证明**：现有 Android/iOS 模拟器 Journey 已有指定源码证明；实机、OEM、辅助技术与 OS 后台/锁屏仍未证明。
 - **Applet / Agent**：沿现有 SDK、Host 和 evidence owner 接入；本期没有 contributor/Ask 实现。
 
 Renderer 不建立第二个 TypeScript 查询执行引擎。取消、cursor 和完整 coverage 的执行闭环需要真实请求生命周期与 conformance，不能用 core 中存在相应类型代替。

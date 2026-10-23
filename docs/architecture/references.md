@@ -19,6 +19,9 @@ image embeds targeting that exact asset are counted as diagram references.
 | `project.logical-layered-architecture` | `project` | `logical-layer` | [source](./architecture.svg) | 3 |
 | `project.runtime-topology` | `project` | `runtime-topology` | [source](./runtime-topology.svg) | 3 |
 | `project.system-context` | `project` | `system-context` | [source](./system-context.svg) | 2 |
+| `search.authority-map` | `search` | `authority-map` | [source](./domains/search/authority-map.svg) | 1 |
+| `search.device-query` | `search` | `dynamic-flow` | [source](./domains/search/device-query.svg) | 1 |
+| `search.reuse-topology` | `search` | `reuse-topology` | [source](./domains/search/architecture.svg) | 2 |
 
 ## `cross-client-runtime.reuse-topology`
 
@@ -113,3 +116,31 @@ image embeds targeting that exact asset are counted as diagram references.
 - Referenced by:
   - [docs/architecture/README.md](./README.md)
   - [docs/architecture/architecture.md](./architecture.md)
+
+## `search.authority-map`
+
+- Module: `search`
+- Viewpoint: `authority-map`
+- Diagram spec: [docs/architecture/domains/search/authority-map.diagram.json](./domains/search/authority-map.diagram.json)
+- SVG asset: [docs/architecture/domains/search/authority-map.svg](./domains/search/authority-map.svg)
+- Referenced by:
+  - [docs/architecture/domains/search/architecture-diagram.md](./domains/search/architecture-diagram.md)
+
+## `search.device-query`
+
+- Module: `search`
+- Viewpoint: `dynamic-flow`
+- Diagram spec: [docs/architecture/domains/search/device-query.diagram.json](./domains/search/device-query.diagram.json)
+- SVG asset: [docs/architecture/domains/search/device-query.svg](./domains/search/device-query.svg)
+- Referenced by:
+  - [docs/architecture/domains/search/architecture-diagram.md](./domains/search/architecture-diagram.md)
+
+## `search.reuse-topology`
+
+- Module: `search`
+- Viewpoint: `reuse-topology`
+- Diagram spec: [docs/architecture/domains/search/architecture.diagram.json](./domains/search/architecture.diagram.json)
+- SVG asset: [docs/architecture/domains/search/architecture.svg](./domains/search/architecture.svg)
+- Referenced by:
+  - [docs/architecture/README.md](./README.md)
+  - [docs/architecture/domains/search/architecture-diagram.md](./domains/search/architecture-diagram.md)

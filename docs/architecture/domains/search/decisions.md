@@ -21,9 +21,10 @@
 | D-16 | 叶子排名只融合一次 | accepted |
 | D-17 | 查询与后台投影独立、资源有界 | accepted |
 | D-19 | 封闭域、当前 actor 可见性、域外来源禁止 | accepted |
+| D-20 | 统一读边界缓存，内容与授权分别有效 | accepted |
 
-缓存复用规则见已确认的 D-20；它细化 D-05/D-07/D-17。Desktop 原域切片已
-开始实施，性能、完整恢复与离线授权期限仍按证据分别确认。
+缓存复用规则见已确认的 D-20；它细化 D-05/D-07/D-17。Desktop/Mobile 原域
+切片已落地，性能、完整恢复与离线授权期限仍按证据分别确认。
 
 ## D-01 Search 按需唤起，Chat 是默认落点
 
@@ -260,7 +261,7 @@
 
 ### Decision
 
-**约束**：客户端分词、排名、cursor 与取消机制只有一份 Rust 核心，Renderer 只投影。`packages/search-core` 已登记，当前仅 Desktop 消费；Mobile 适配与完整请求生命周期后置，不能以核心类型存在证明取消或分页已闭环。
+**约束**：客户端分词、排名、cursor 与取消机制只有一份 Rust 核心，Renderer 只投影。`packages/search-core` 已登记，Desktop/Mobile 原生绑定及 Messaging 共享适配器均消费它。请求/订阅生命周期由共享核心持有，平台只提供身份、原 Store 发布屏障与调度。取消或分页的证明必须来自当前源码 conformance 和原生 Journey，不能以核心类型存在代替；所选证明见[证据快照](./acceptance-evidence.md)。
 
 ### Rationale
 

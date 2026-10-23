@@ -3,7 +3,7 @@
 > **Plan**: `SRCH-20261022`
 > **Version**: `20261023-device-find-open-direct-write`
 > **用途**: 实施前确认预期效果，实施后按当前源码核对端侧 Journey 与源码零遗留
-> **当前阶段**: Desktop Find/Open 与 contributor/cache 已落地；开发检查与受控变更探针见本 worktree `tmp/search-native/`。正式 Acceptance 未运行。
+> **当前阶段**: Desktop/Mobile Find/Open 与共享 contributor/cache 已落地；实际结果绑定 `3fd0225` 原生证明快照。冻结的 Planned 内容保留原 Desktop 范围，Mobile 属后续已授权实施。
 
 ## Outcome Comparison Contract
 
@@ -169,22 +169,22 @@
   "schemaVersion": 1,
   "planId": "SRCH-20261022",
   "sourceIdentity": {
-    "worktree": "/Users/bytedance/Documents/Projects/peers-touch/peers-android",
+    "worktree": "peers-android",
     "branch": "analysis/android-platform-alignment",
-    "commit": "cb54f5708cfa8eee7c0458fd2673a8583e8abd75",
-    "evidenceRef": "tmp/search-native/result.json",
-    "binding": "该结果保存运行前后 workspaceDigest 与逐文件 SHA-256；源码评审另绑定 tmp/search-structure-decision.json。"
+    "commit": "3fd0225cee5366d8143b742b20d99f49e8dbf051",
+    "evidenceRef": "docs/architecture/domains/search/acceptance-evidence.md",
+    "binding": "证据索引记录仓库外不可变 run ID、workspace ID、原生构建与 manifest 源码绑定；后续源码必须重验，不能继承该快照 PASS。"
   },
   "items": [
-    { "id": "SRCH-O01", "status": "PARTIAL", "actualEffect": "普通登录默认 Chat；Search 按需单例覆盖层。重开、退格返回保留查询且零次来源读取，重载保留现有页面，退出重登清除搜索状态。", "evidenceRefs": ["tmp/search-native/result.json", "tmp/search-native/01-default.png", "tmp/search-native/02-initial.png"], "deviation": "功能检查为 DEVELOPMENT_ITERATION；同设备多账号 UI 切换缺少已登记夹具，未运行；窗口/账号隔离另有 native registry 测试。" },
-    { "id": "SRCH-O02", "status": "PASS", "actualEffect": "真实消息结果经 native resolve 打开、落焦与高亮；返回条独占 Shell 导航空间，返回恢复查询；隐私入口打开真实 Security 分区。受控历史窗口外消息与线程回复均通过原生结果点击定位。", "evidenceRefs": ["tmp/search-native/result.json", "tmp/search-native/04-anchor.png", "tmp/search-native/05-functions.png", "tmp/search-native/09-history-anchor.png", "tmp/search-native/10-thread-anchor.png"], "deviation": "历史/线程使用隔离本机语料，未证明其业务投递生命周期。设置页重载沿原模块重置子分区；原型用 toast 表达 anchor，生产定位实际消息；未声明跨业务 anchor。" },
-    { "id": "SRCH-O03", "status": "PARTIAL", "actualEffect": "本机恢复语料中文周会命中；CJK/中英/附件名由共享分析器生成 FTS 表达式。受控消息更新后只重读一项投影，隐藏与成员失权排除热缓存和旧打开引用。", "evidenceRefs": ["tmp/search-native/result.json", "tmp/search-core-current.log", "tmp/search-messaging-probe.log"], "deviation": "编辑/隐藏/撤权探针只改隔离数据库，不证明业务投递与接收端生命周期；真实附件上传搜索未运行，排序质量基线未冻结。" },
-    { "id": "SRCH-O04", "status": "PASS", "actualEffect": "单一受信函数目录提供 Settings 分区及 Agent 操作面导航，Help 复用相同静态目录，搜索不产生业务写入。", "evidenceRefs": ["apps/desktop/src/components/search/functions.ts", "tmp/search-native/result.json"], "deviation": "Agent 项进入原模块，创建须由原操作面显式触发；未提供不存在的通知/免打扰入口。" },
-    { "id": "SRCH-O05", "status": "PASS", "actualEffect": "Rust 核心提供 query/hydrate/resolve 契约和统一缓存，native 绑定原 Messaging 真源与发布屏障；renderer 仅保留输入和有界结果帧。", "evidenceRefs": ["packages/search-core/README.md", "tmp/search-structure-decision.json", "tmp/search-conformance.log", "tmp/search-native/result.json"], "deviation": "本期单一 Messaging contributor，RRF 为核心资产，未接入多来源融合；Applet 仅留 adapter/binding。" },
-    { "id": "SRCH-O06", "status": "PASS", "actualEffect": "本机 Search 无网络或模型读取路径；Station scope、伪造 authority、任意打开 URL 被 native 拒绝；旧 provider 设置和命令链已删除。", "evidenceRefs": ["tmp/search-native/result.json", "tmp/search-structure-decision.json", "tmp/search-legacy-scan.log"], "deviation": "源码与 native admission 证明，不等同全客户端网络抓包；Station 服务端历史 mock 不属于本期。" },
-    { "id": "SRCH-O07", "status": "PARTIAL", "actualEffect": "Messaging 继续写既有加密 FTS 表；Desktop 正文与附件名直写共享分词，无 schema/generation/meta/启动重建。", "evidenceRefs": ["tmp/search-messaging-probe.log", "tmp/search-core-current.log", "apps/desktop/src-tauri/src/messaging/store.rs"], "deviation": "Mobile 源码未改，本轮未做 Mobile 编译/运行；旧 raw FTS 不自动重分词。" },
-    { "id": "SRCH-O08", "status": "PASS", "actualEffect": "proto 是唯一线合同，新增 authority namespace、通用 anchor、descriptor、批量 outcome、内容 validator/读权有效性；Desktop TS 与 Rust 消费生成物。", "evidenceRefs": ["model/domain/search/search.proto", "tmp/search-ts-check.log", "tmp/search-driver-build.log"], "deviation": "Go/Station/Mobile 尚未消费，未声明未来来源可用。" },
-    { "id": "SRCH-O09", "status": "PARTIAL", "actualEffect": "旧 SearchPage、sources/AI DTO、tools provider 命令与消费者已删除；核心/现有前端测试、检查与 native 构建通过，开发 Journey 保留源码和清理证据。", "evidenceRefs": ["tmp/search-native/result.json", "tmp/search-structure-decision.json", "tmp/search-current-tests.log", "tmp/search-ts-check.log", "tmp/search-driver-build.log"], "deviation": "正式 Acceptance NOT RUN/UNPROVEN；无提交、推送、PR、远程部署或发布。完整跨平台/跨来源验证未运行。" }
+    { "id": "SRCH-O01", "status": "PASS", "actualEffect": "Desktop 普通登录默认 Chat，Search 按需单例覆盖层；Mobile 使用既有 Shell 全局/会话入口和按需详情。重开、返回与退格保留查询，账号切换清除旧结果及 cursor。", "evidenceRefs": ["docs/architecture/domains/search/acceptance-evidence.md"], "deviation": "Mobile 是后续已授权的全屏详情，未改写冻结的 Desktop Planned；实机与 OS 后台/锁屏未证明。" },
+    { "id": "SRCH-O02", "status": "PASS", "actualEffect": "双端真实接收消息经 Search UI 与 native resolve 定位原消息和线程；返回恢复查询、筛选、分页及位置；功能结果进入真实 Settings 分区。", "evidenceRefs": ["docs/architecture/domains/search/acceptance-evidence.md"], "deviation": "只证明已取得的本机消息及所选环境；跨业务 anchor、跨 Station 和历史恢复未证明。" },
+    { "id": "SRCH-O03", "status": "PARTIAL", "actualEffect": "共享 CJK/拉丁分词支持中文正文、线程回复和附件名称；原生接收提交后由真实 Search UI 检索。Desktop 回归包含原业务变更后的缓存失效及权限拒绝。", "evidenceRefs": ["docs/architecture/domains/search/acceptance-evidence.md"], "deviation": "Recall@10/MRR 排序质量基线、规模 corpus 与附件正文提取未冻结或未证明。" },
+    { "id": "SRCH-O04", "status": "PASS", "actualEffect": "受信任功能目录仅导航至当前存在的原操作面，双端 Settings 入口有 UI 证明；业务写操作继续由原模块确认。", "evidenceRefs": ["apps/desktop/src/components/search/functions.ts", "apps/mobile/src/features/search/functions.ts", "docs/architecture/domains/search/acceptance-evidence.md"], "deviation": "不声明不存在的通知/免打扰入口或 Applet/MCP 功能可用。" },
+    { "id": "SRCH-O05", "status": "PASS", "actualEffect": "两端共享 Rust query/hydrate/resolve、request/subscriber 与有界缓存机制；Messaging 共享 contributor，平台绑定身份和原 Store 发布屏障；Renderer 只保留有界呈现投影。", "evidenceRefs": ["packages/search-core/README.md", "docs/architecture/domains/search/module-layout.md", "docs/architecture/domains/search/acceptance-evidence.md"], "deviation": "单一 Messaging contributor，RRF 是核心资产，多来源融合与 Applet binding 未实现。" },
+    { "id": "SRCH-O06", "status": "PASS", "actualEffect": "本机 Search 无网络/模型读取路径，native admission 拒绝非法 scope、旧身份和任意资源；旧 provider 配置/命令链已删除。", "evidenceRefs": ["docs/architecture/domains/search/acceptance-evidence.md", "docs/architecture/domains/search/module-layout.md"], "deviation": "源码和原生拒绝证明不等于全客户端网络抓包；Station 服务端历史 mock 属后续范围。" },
+    { "id": "SRCH-O07", "status": "PARTIAL", "actualEffect": "两端共用相同 token stream 和既有加密 FTS 表；Desktop 业务写入/恢复直接分词，Mobile 原 Messaging Store 分批重建既有 FTS 并保留 checkpoint，未完成返回 INDEXING。", "evidenceRefs": ["docs/architecture/domains/search/module-layout.md", "docs/architecture/domains/search/acceptance-evidence.md"], "deviation": "冻结 Planned 保留 Mobile 行为不变的原范围；后续已授权 Mobile 实施改为共享分词和原 Store 重建。Desktop 旧 raw FTS 不自动重分词；跨设备索引/历史恢复未证明。" },
+    { "id": "SRCH-O08", "status": "PASS", "actualEffect": "proto 是唯一线合同；Desktop/Mobile TS 和 Rust 均消费生成类型，共享权限、批量 outcome、cursor 与 ResourceRef 含义。", "evidenceRefs": ["model/domain/search/search.proto", "docs/architecture/domains/search/acceptance-evidence.md"], "deviation": "Go/Station 业务消费未实现，不声明未来来源可用。" },
+    { "id": "SRCH-O09", "status": "PARTIAL", "actualEffect": "Desktop 旧 SearchPage、sources/AI DTO 和 tools provider 链，以及 Mobile 旧 Search IPC 已删除。指定快照的所选双端 native Acceptance、合同、完整性与资源释放通过。", "evidenceRefs": ["docs/architecture/domains/search/acceptance-evidence.md", "docs/architecture/domains/search/module-layout.md"], "deviation": "所选 Gate 不是 Full/Chat 全量或整个分支验收；实机、OS 后台/锁屏、跨 Station、Ask/Applet 和完整 V-01～V-10 未证明。后续源码必须重新取得证据。" }
   ]
 }
 ```

@@ -194,9 +194,11 @@ Desktop「找回 + 打开」与 D-20 contributor/cache 合同已经确认并实�
 semantic/简单 hybrid 排名未达标，限制见[实验记录](./feasibility-evidence.md)。
 受控目录与公共 RSS 实验仅为历史机制证据，不属于封闭域产品能力。
 
-V-01～V-10 的跨来源完整目标保持 NOT RUN/UNPROVEN。本期 Desktop 原生
-开发检查覆盖 query/open、缓存复用/刷新、会话失效、分页与非法 scope/资源
-拒绝；受控本机数据库变更探针证明投影失效，但不证明原业务的 edit/hide/
-revoke 投递与 receiver 生命周期。真实产品性能分布与正式 Acceptance 未运行。
-证据在本 worktree `tmp/search-native/`，实际效果见执行计划的 outcome comparison。
+V-01～V-10 的跨来源完整目标保持 NOT RUN/UNPROVEN。Desktop/Mobile 所选原生
+Acceptance 覆盖消息 query/open、缓存复用/刷新、会话失效、分页与非法
+scope/资源拒绝。正式 Journey 使用真实 Messaging 投递与接收；Desktop
+回归包含原业务变更后的缓存失效与权限拒绝。早期隔离数据库探针仍只是开发
+证据。指定源码、环境、不可变 run ID 和未证明范围见
+[原生证明快照](./acceptance-evidence.md)，实际效果见执行计划的 outcome comparison。
+真实产品性能分布、实机、OS 后台/锁屏和跨来源完整证明仍未运行。
 本机 ONNX 不替代 Agent provider/readiness。

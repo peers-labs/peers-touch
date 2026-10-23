@@ -39,5 +39,6 @@ semantics merely to make the tree look complete.
 ## 4. Implementation Boundaries
 
 - [Search 门户能力](./search/README.md)：Peers 封闭域（端 + Station、当前 actor 授权）内
-  的已登记架构模块。本期已有端侧核心与部分 native coordinator；
-  生产 overlay、功能直达和旧入口替换尚未完成，原型不构成生产验收。
+  的已登记架构模块。Desktop/Mobile 共用端侧核心，overlay/按需详情、
+  功能直达和旧入口替换已落地；所选原生证明绑定
+  [指定源码与环境](./search/acceptance-evidence.md)，原型不构成生产验收。

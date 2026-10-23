@@ -8,9 +8,11 @@ original Messaging authority, scoped queries, full-screen Search, canonical
 message/thread anchors, Settings navigation, private lifecycle fencing, and
 bounded reads. This document connects those assertions to native proof.
 
-Current source/prototype checks are STRUCTURAL_ONLY / UX_REVIEW. Every native
-assertion below is UNPROVEN until its current-source Gate succeeds on both iOS
-Simulator and Android Emulator.
+The selected native Gates passed on iOS Simulator and Android Emulator at the
+source recorded in the [evidence snapshot](./acceptance-evidence.md), with the
+required macOS Desktop regression. The existing Mobile Shell prototype is
+synchronized. Each later source must obtain fresh Gate evidence; these results
+do not prove physical hardware, OS background/lock behavior or full Search.
 
 - Real received Chinese messages, thread replies and long attachment filenames:
   Search input, submit and result rows on each receiver.
