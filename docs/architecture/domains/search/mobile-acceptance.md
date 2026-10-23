@@ -42,6 +42,10 @@ Both actors then receive messages from the other existing client. Scenarios
 attach to the same source commit and Fixture epoch. They use production
 Messaging actions for setup and real Search UI for query/open. Diagnostics
 support cost and denial assertions; they do not replace UI evidence.
+Fixture preparation waits for the original Social/Messaging write-admission
+projection and each receiver's exact committed message before issuing the next
+send. Recovery remains bounded by the existing Journey timeout; no denied write
+is retried, and all 105 historical messages require real receiver commitment.
 Failed runs preserve native screenshots, DOM and measured geometry before
 classifying layout failure. Mutation failures also record the existing public
 Recovery projection's typed write-admission reason and the fixture send ordinal;

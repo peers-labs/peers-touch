@@ -290,6 +290,11 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
         sent_count = 0
         def send(text: str, **extra: Any) -> str:
             nonlocal sent_count
+            journey._await_condition(
+                lambda: journey._social_runtime_active(sender_session, sender.client_id)
+                and journey._social_runtime_active(receiver_session, receiver.client_id),
+                f"Search fixture {sent_count + 1} writable Messaging runtime",
+            )
             try:
                 sent = sender_session.call_action("messaging.send", {
                     "conversationId": conversation, "plaintext": text, **extra,
@@ -297,6 +302,11 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
             except Exception as error:
                 raise GateError(f"{sender.client_id} fixture send {sent_count + 1}: {error}") from error
             require(bool(sent.get("messageId")), "real Messaging identity required")
+            journey._await_message(
+                receiver_session, conversation, sent["messageId"],
+                lambda row: row.get("plaintext") == text,
+                f"Search fixture {sent_count + 1} receiver commit",
+            )
             sent_count += 1
             return sent["messageId"]
         root = send(f"{query} 原始正文")
@@ -311,11 +321,6 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
             "bytesBase64": base64.b64encode(content).decode(),
         })
         attachment = send(f"文件 {token}", attachmentStageIds=[staged["stageId"]])
-        for message_id in (root, reply, filler[-1], attachment):
-            journey._await_message(
-                receiver_session, conversation, message_id, lambda row: bool(row.get("plaintext")),
-                "receiver committed Search fixture",
-            )
         return {"conversation": conversation, "query": query, "root": root,
                 "reply": reply, "replyQuery": reply_query, "filler": filler,
                 "attachment": attachment, "filename": filename, "token": token}
