@@ -553,6 +553,17 @@ fn main() {
     #[cfg(feature = "acceptance-webdriver")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
+    let context = tauri::generate_context!();
+    #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+    let context = {
+        let mut context = context;
+        for window in &mut context.config_mut().app.windows {
+            window.background_throttling =
+                Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
+        }
+        context
+    };
+
     builder
         .manage(app_state)
         .manage(capability_worker_supervisor)
@@ -1286,7 +1297,7 @@ fn main() {
             conversation::dkx_send,
             application::error_resolver::resolve_error_action
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
             // Closing the symmetric pair to AppLaunch (fired from the
