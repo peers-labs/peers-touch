@@ -67,3 +67,19 @@ manifest and override snapshots are deterministic.
   consumption only (Station does not consume `network.default_station`).
 
 ## P3 — Mobile directive consumption parity and Console directive editor.
+
+## Rollout state — 2026-10-23
+
+- P0/P1 shipped behind field 8; conformance vectors shared by Rust and Go.
+- corpstable channel live: x-config service on fiveArm
+  (`http://10.37.221.38:18082`) with the corpstable publisher key,
+  GitHub CAS sequence 1, and a `network.default_relay` directive
+  (`cn-xx` rule, shared fallback).
+- Operator login across private HTTP required symmetric gateway work:
+  broker multi-site operator config with flag-gated private-IP callbacks
+  (`OAUTH_OPERATOR_LOGIN_CORPSTABLE_*`), and x-config request-time URL
+  gating plus origin-derived cookie `Secure` flags.
+- Operational follow-up: publication validates seeds against a one-hour
+  statement window, so standing channel catalogs need periodic
+  re-publication automation; the corpstable host reaches the Home relay
+  over IPv6 only, so its Compose network enables IPv6/NAT66.
