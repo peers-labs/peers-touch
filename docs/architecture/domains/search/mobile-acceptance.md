@@ -62,6 +62,10 @@ This is controlled fixture preparation, not fresh-device identity recovery.
 Seeds remain transient and are zeroized after preparation; no key enters proof.
 The account scenario restores the peer through real logout/login after the
 handoff revokes its session, rather than trusting its cached actor projection.
+After switching to an actor not previously active in that installation, it
+reopens the existing deterministic Direct through `messaging.createDirect` and
+requires the original conversation ID before sending fresh content. Login
+alone does not acquire that actor's conversation authority or encrypted history.
 The original Social owner establishes one accepted relationship and Direct
 conversation. Both actors then send through that same bidirectional conversation
 and receive messages from the other existing client; fixture preparation never

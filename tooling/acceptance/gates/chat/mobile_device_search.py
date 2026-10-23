@@ -721,6 +721,18 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
         self.denial(session, "old-account-cursor", "search.page", {
             "query": f'历史 {fixture["token"]}', "limit": 20, "cursor": page["nextCursor"],
         }, "SEARCH_CURSOR_EXPIRED")
+        # This installation has not acquired the newly selected actor's Direct.
+        # Reopen through the original owner before sending; login is not recovery.
+        direct = self.mutate_when_admitted(session, "messaging.createDirect", {
+            "peerPtid": actor.ptid, "federationId": peer.federation_id,
+        })
+        require(direct.get("conversationId") == fixture["conversation"],
+                "account handoff must reopen the same original Direct")
+        artifacts.write_json(
+            f"mobile-device-search/{session.client_id}/account-conversation.json",
+            {"clientId": session.client_id, "direct": direct},
+            role=f"mobile-search-account-conversation/{session.client_id}",
+        )
         own_query = f'账号切换 {fixture["token"]}'
         sent = self.mutate_when_admitted(session, "messaging.send", {
             "conversationId": fixture["conversation"], "plaintext": own_query,
