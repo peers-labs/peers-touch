@@ -108,6 +108,9 @@ class DeviceSearchGate(NativeTwoClientGate):
                 searchOpen: !!field, painted: !field,
                 visibilityState: document.visibilityState,
                 modalClass: modal?.className || '',
+                query: field?.querySelector('input')?.value || '',
+                bodyText: document.querySelector('.pt-search-body')?.innerText || '',
+                loading: !!document.querySelector('.pt-search-status'),
             };
             if (!field || !modal) return result;
             const rect = field.getBoundingClientRect();
@@ -195,15 +198,44 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def visible(self, name: str, predicate: Any, detail: Any = None) -> None:
         def observe() -> None:
-            rendering = self.wait_surface()
-            self.assert_condition(name, bool(predicate()), json.dumps(detail))
-            screenshot = self.save_screenshot(self.receiver, name)
-            dom = self.save_dom(self.receiver, name)
+            with tempfile.TemporaryDirectory(prefix="search-capture-") as directory:
+                screenshot_path = Path(directory) / "frame.png"
+                dom_path = Path(directory) / "frame.html"
+
+                def capture() -> dict[str, Any] | None:
+                    rendering = self.surface()
+                    if not rendering["painted"] or rendering["loading"] or not predicate():
+                        return None
+                    self.receiver.save_screenshot(screenshot_path)
+                    dom_path.write_text(self.receiver.get_page_source())
+                    after = self.surface()
+                    matched = bool(predicate())
+                    if after != rendering or not matched:
+                        return None
+                    return {**rendering, "assertionPassed": matched}
+
+                try:
+                    rendering = wait_until(
+                        capture, f"stable painted Search evidence for {name}", timeout=30,
+                    )
+                except GateError:
+                    self.report.runtime["search"]["captureFailure"] = {
+                        "assertion": name, "rendering": self.surface(),
+                        "screenshot": self.save_screenshot(self.receiver, f"{name}-capture-failure"),
+                        "dom": self.save_dom(self.receiver, f"{name}-capture-failure"),
+                    }
+                    raise
+                screenshot = self.report.add_evidence_file(
+                    f"{name}-screenshot", screenshot_path, destination_dir=self.evidence_dir,
+                )
+                dom = self.report.add_evidence_file(
+                    f"{name}-dom", dom_path, destination_dir=self.evidence_dir,
+                )
+            self.assert_condition(name, rendering["assertionPassed"], json.dumps(detail))
             self.report.runtime["search"]["ui"][name] = {
                 "actor": "alice", "screenshot": screenshot, "dom": dom,
                 "rendering": rendering,
-                "query": self.field().get_attribute("value")
-                if self.receiver.find_elements(".pt-search-field input") else "",
+                "query": rendering["query"],
             }
         self.step(f"search.{name}", observe, "alice")
 
@@ -222,6 +254,12 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.visible(name, lambda: (
             self.field().get_attribute("value") == self.query
             and self.token in self.rows() and before["sourceReads"] == after["sourceReads"]
+            and before["hydrationReads"] == after["hydrationReads"]
+        ))
+        after = self.counts()
+        self.report.runtime["search"]["cache"][name]["after"] = after
+        self.assert_condition(name, (
+            before["sourceReads"] == after["sourceReads"]
             and before["hydrationReads"] == after["hydrationReads"]
         ))
 
@@ -360,6 +398,7 @@ class DeviceSearchGate(NativeTwoClientGate):
             "before": before, "after": after,
         }
         self.visible("explicit_refresh", lambda: after["sourceReads"] > before["sourceReads"])
+        self.report.runtime["search"]["cache"]["explicit_refresh"]["after"] = self.counts()
         self.receiver.find_element(".pt-search-row", 20).click()
         self.wait_js("!document.querySelector('.pt-search-field')", "Chat open")
         self.cached("return_cache", lambda: (

@@ -22,6 +22,10 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
         require(ui[name].get("actor") == "alice", f"{name} must use the receiving native window")
         rendering = ui[name].get("rendering", {})
         require(rendering.get("painted") is True, f"{name} requires a painted native surface")
+        require(
+            rendering.get("loading") is False and rendering.get("assertionPassed") is True,
+            f"{name} requires a settled assertion across native screenshot and DOM capture",
+        )
         if rendering.get("searchOpen"):
             require(
                 "prepare" not in rendering.get("modalClass", "")
@@ -83,6 +87,10 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
         bool(resources.get("attachmentMessageId")) and len(resources.get("attachmentIds", [])) == 1
         and bool(resources.get("attachmentFilename")),
         "attachment filename evidence requires the real uploaded Messaging resource",
+    )
+    require(
+        resources["attachmentFilename"] in ui["attachment_filename"]["rendering"].get("bodyText", ""),
+        "attachment filename must be present in the captured native Search frame",
     )
 
 
