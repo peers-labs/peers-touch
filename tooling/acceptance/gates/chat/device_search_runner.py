@@ -136,6 +136,9 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def submit(self, query: str) -> None:
         self.open_search()
+        all_results = self.receiver.find_elements(".pt-search-intents button")[0]
+        if all_results.get_attribute("aria-selected") != "true":
+            all_results.click()
         self.fill(query)
         self.press(Keys.ENTER)
         self.settled()
@@ -363,11 +366,15 @@ class DeviceSearchGate(NativeTwoClientGate):
     def prove_account_scope(self) -> None:
         client = self.receiver
         self.submit(f"线程 {self.token}")
+        self.wait_js(
+            f"document.querySelector('.pt-search-body')?.innerText.includes({json.dumps(self.token)})",
+            "private Search result before logout",
+        )
         cursor_query = f"filler-{self.token}"
         old_cursor = self.native_page(cursor_query).get("nextCursor")
         if not old_cursor:
             raise GateError("account isolation requires a real paging session")
-        before = async_harness(client, "deviceSearchState")
+        before = async_harness(client, "deviceSearchState", {})
         original_pid = client.process_id
         async_harness(client, "logout", {"actorPtid": self.ptids["alice"]}, timeout=30)
         self.client_lifecycles.mark_auth_revoked(client)
@@ -381,10 +388,10 @@ class DeviceSearchGate(NativeTwoClientGate):
             async_harness(client, "loginWithPassword", {
                 "account": bob_account, "password": DEV_ACCOUNT_PASSWORD,
             }, timeout=45)
-            identity = async_harness(client, "hydrateActiveActor", timeout=45)
+            identity = async_harness(client, "hydrateActiveActor", {}, timeout=45)
             self.open_search()
             empty_query = self.field().get_attribute("value") == ""
-            after = async_harness(client, "deviceSearchState")
+            after = async_harness(client, "deviceSearchState", {})
             denied = async_harness(client, "deviceSearchPage", {
                 "query": cursor_query, "cursor": old_cursor, "requestId": uuid.uuid4().hex,
             })
@@ -405,13 +412,13 @@ class DeviceSearchGate(NativeTwoClientGate):
             ))
         finally:
             # Restore the allocated Actor before the shared lifecycle owner logs out.
-            identity = async_harness(client, "identityState")
+            identity = async_harness(client, "identityState", {})
             if identity.get("actorPtid") == self.ptids["bob"]:
                 async_harness(client, "logout", {"actorPtid": self.ptids["bob"]})
             async_harness(client, "loginWithPassword", {
                 "account": alice_account, "password": DEV_ACCOUNT_PASSWORD,
             }, timeout=45)
-            restored = async_harness(client, "hydrateActiveActor", timeout=45)
+            restored = async_harness(client, "hydrateActiveActor", {}, timeout=45)
             if restored.get("actorPtid") != self.ptids["alice"]:
                 raise GateError("allocated Search Actor was not restored")
             self.client_lifecycles.mark_authenticated(client)
