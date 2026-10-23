@@ -1,7 +1,8 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { Button, Input, Spin, Typography } from 'antd';
 import { ArrowLeft, ChevronRight, FileText, MessageCircle, RefreshCw, Search, Settings } from 'lucide-react';
 import { useMobileI18n } from '../app/mobileI18n';
+import { useVisualKeyboardOverlap } from '../app/layout/useVisualKeyboardOverlap';
 import type { MobileDetailRoute } from '../app/navigation';
 import { BoundedList } from '../components/BoundedList';
 import { findMobileSearchFunctions } from '../features/search/functions';
@@ -64,6 +65,8 @@ export function SearchPage({
 }: { onBack: () => void; onOpenDetail: (route: MobileDetailRoute) => void }) {
   const { t } = useMobileI18n();
   const view = useMobileSearchStore();
+  const keyboardOverlapHeight = useVisualKeyboardOverlap();
+  const style = { '--mobile-search-keyboard-overlap': `${keyboardOverlapHeight}px` } as CSSProperties;
   const viewport = useRef<HTMLDivElement>(null);
   const items = view.status === 'ready' ? view.response?.items ?? [] : [];
   const functions = findMobileSearchFunctions(view.query);
@@ -100,7 +103,8 @@ export function SearchPage({
   }
 
   return (
-    <div className="page-container mobile-search-page" data-product-surface="search.mobile" data-search-state={view.status}>
+    <div className="page-container mobile-search-page" style={style}
+      data-product-surface="search.mobile" data-search-state={view.status}>
       <header className="page-header">
         <button type="button" className="header-action" onClick={onBack} aria-label={t('common.action.back')}>
           <ArrowLeft size={20} />

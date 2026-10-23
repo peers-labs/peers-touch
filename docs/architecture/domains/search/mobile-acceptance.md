@@ -30,6 +30,8 @@ Simulator and Android Emulator.
   The input is selected from the observed native accessibility tree and tapped
   through Appium before native typing. WebView focus alone is not keyboard proof.
   Driver context always returns to the product WebView, including on failure.
+  The Search detail consumes the shared `useVisualKeyboardOverlap` measurement
+  to shrink its full-height rail; its result scroll root ends above the keyboard.
 - Result source metadata follows the existing Social display-name policy;
   identity locators cannot become conversation display copy.
 
