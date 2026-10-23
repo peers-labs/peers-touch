@@ -207,6 +207,12 @@ its generated protocol uses the same native coordinator and opaque cursor as
 global Search. Opening a result materializes the original message/thread
 window, and Back restores Search context after original-owner revalidation.
 
+The Chat route anchor owns the selected thread while a message target is active.
+Composer draft restoration must not clear that thread selection during route
+mount, authentication projection updates, or locale changes. An unanchored
+conversation or account transition resets the local thread independently of
+composer persistence; ordinary thread controls retain their existing behavior.
+
 `app/navigation/scrollRestoration.ts` owns bounded in-memory window/query/scroll
 metadata outside tab lifetime. Each cache retains at most 100 locations; scroll
 snapshots expire after 30 minutes. The actual page or message scroller is used,

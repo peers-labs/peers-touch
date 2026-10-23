@@ -273,6 +273,9 @@ function ChatPageInner({
   const activeGroupUlid = activeDetail?.routeId === 'detail:group-conversation'
     ? activeDetail.groupUlid
     : null;
+  const routeHasMessageAnchor = Boolean(
+    activeDetail?.messageId || activeDetail?.threadRootMessageId,
+  );
 
   // --- Local UI state (no business logic) ---
   const [draft, setDraft] = useState('');
@@ -572,6 +575,11 @@ function ChatPageInner({
   }, [activeConversationId, selectSession, selectedConversationId]);
 
   useEffect(() => {
+    // Route anchors own thread selection independently of composer restoration.
+    if (!routeHasMessageAnchor) setThreadRootMessageUlid('');
+  }, [activeConversationId, authSession, routeHasMessageAnchor]);
+
+  useEffect(() => {
     if (
       activeGroupUlid
       && lastReconcileAt !== null
@@ -596,7 +604,6 @@ function ChatPageInner({
     replyToMessageUlidRef.current = '';
     setEncryptedAttachmentRefs([]);
     encryptedAttachmentRefsRef.current = [];
-    setThreadRootMessageUlid('');
     setMessageActionUlid('');
     setForwardMessageSource(null);
     setForwardPendingDestinationId('');
