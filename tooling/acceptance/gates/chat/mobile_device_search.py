@@ -56,6 +56,7 @@ class MobileDeviceSearchGate(SimulatorSocialGate):
         self.frames: dict[str, dict[str, Any]] = {}
         self.costs: dict[str, Any] = {}
         self.denials: dict[str, Any] = {}
+        self.current_control = ""
 
     @staticmethod
     def wait(session: Any, script: str, label: str, *args: Any) -> Any:
@@ -64,7 +65,19 @@ class MobileDeviceSearchGate(SimulatorSocialGate):
         )
 
     def click(self, session: Any, selector: str) -> None:
-        self._wait_ui(session, selector, selector)
+        self.current_control = selector
+        self.wait(session, """
+const node = document.querySelector(arguments[0]);
+if (!node || node.disabled || node.getAttribute('aria-disabled') === 'true') return false;
+const box = node.getBoundingClientRect();
+if (box.width <= 0 || box.height <= 0) return false;
+for (let parent = node; parent; parent = parent.parentElement) {
+  const style = getComputedStyle(parent);
+  if (style.display === 'none' || style.visibility !== 'visible'
+      || Number(style.opacity) < 0.99) return false;
+}
+return true;
+""", f"visible enabled control {selector}", selector)
         session.click_element(session.find_element("css selector", selector))
 
     def open(self, session: Any) -> None:
@@ -249,7 +262,7 @@ return true;
             self.fill(session, "字体")
             self.click(session, ".mobile-search-filters button:last-child")
             self.click(session, '[data-search-function="chat-settings"]')
-            self.click(session, ".settings-section .settings-row [role=combobox]")
+            self.click(session, ".settings-section .settings-row .ant-select")
             options = ",".join(
                 f'.ant-select-dropdown:not(.ant-select-dropdown-hidden) '
                 f'.ant-select-item-option[title="{label}"]' for label in labels
@@ -312,7 +325,8 @@ return document.documentElement.dataset.mobileColorScheme === arguments[0]
                 diagnostics.append({"clientId": session.client_id, "errorType": type(error).__name__})
         reference = artifacts.write_json(
             "mobile-device-search/observations.json",
-            {"frames": self.frames, "costs": self.costs, "denials": self.denials},
+            {"frames": self.frames, "costs": self.costs, "denials": self.denials,
+             "currentControl": self.current_control},
             role="mobile-search-failed-observations",
         )
         diagnostics.append({"artifact": reference.to_dict()})
@@ -533,7 +547,7 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
             self.fill(session, "语言")
             self.click(session, ".mobile-search-filters button:last-child")
             self.click(session, '[data-search-function="language"]')
-            self.click(session, ".settings-section [role=combobox]")
+            self.click(session, ".settings-section .ant-select")
             self.click(session, f'.ant-select-dropdown:not(.ant-select-dropdown-hidden) '
                        f'.ant-select-item-option[title="{label}"]')
             self.wait(session, """

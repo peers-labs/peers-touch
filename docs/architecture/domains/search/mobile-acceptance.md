@@ -67,8 +67,12 @@ Only admission observations are polled, for at most 30 seconds; a rejected
 mutation is never retried. All 105 historical messages require real receiver
 commitment.
 Failed runs preserve native screenshots, DOM and measured geometry before
-classifying layout failure. Mutation failures also record the existing public
-Recovery projection's typed write-admission reason and the fixture send ordinal;
+classifying layout failure. UI clicks wait for visible, enabled control surfaces
+and settled ancestor opacity before one WebDriver click; failures retain the
+current target selector. Settings selects are clicked through their visible
+control frame, while persisted language is observed through the product's
+document language and enabled combobox. Mutation failures also record the
+existing public Recovery projection's typed write-admission reason and the fixture send ordinal;
 they must not be hidden by retries or admission bypasses.
 
 Post-login WebView restart must restore the exact persisted Station route before
