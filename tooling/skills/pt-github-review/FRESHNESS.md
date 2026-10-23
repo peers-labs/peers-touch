@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-23
-covered_docs_hash: e229859da12b9138fc494591c0ee10a215dc3b6dd8a4d19cc480352cc993373a
+covered_docs_hash: 9b78e0471ef7e634da7715320e5f7b8b192bcc28829acdf6ffb7eb9b54504165
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,26 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Gate Time Contract Review
+
+Request resource limits, Catalog command protection, explicitly owned
+operation limits, required business windows and measured performance
+objectives are distinct. No default or tier-wide Gate work cap remains.
+Cleanup replaces the unwound work alarm; process termination and resource
+cleanup share one fixed phase tail. Earlier outer deadlines preserve their
+actual identity and limiting constraints. Missing performance targets and
+domain progress contracts remain unproven.
+
+An accepted policy change starts a fresh Session from verified durable
+manifest/session lineage, preserving full scope without copying attempts or
+PASS. Same-policy restore remains strict. Current virtual-clock and real
+process/Runner regressions cover long work, fixed protections, cancellation,
+publication and lineage hash rejection. The existing prerequisite invariant
+and governing execution-budget document carry these requirements.
+Existing review rules cover ownership, complete cutover, failure honesty and
+current-source proof; no SKILL behavior or review fixture taxonomy change is
+required. Source checks do not qualify native product or performance scope.
 
 ## Native Input And Operator Focus Diagnostic Review
 

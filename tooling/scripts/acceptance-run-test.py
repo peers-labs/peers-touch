@@ -724,12 +724,11 @@ class AcceptanceRunTest(unittest.TestCase):
                     }}))
                     policy.write_text(json.dumps({
                         "requestSeconds": 30, "planningSeconds": 5,
-                        "default": {
-                            "totalSeconds": 15,
+                        "lifecycle": {
                             "cleanupSeconds": 2,
                             "publishSeconds": 5,
                         },
-                        "tiers": {}, "gates": {},
+                        "gates": {},
                     }))
                     source_reads = 0
 

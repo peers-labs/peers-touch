@@ -60,7 +60,7 @@ from tooling.acceptance.core.execution_budget import (
     ExecutionBudgetError,
     ExecutionBudgetPolicy,
     ExecutionDeadline,
-    GateBudget,
+    GateTimeLimits,
     GateExecution,
     execute_stage,
     freeze_scope,
@@ -2206,6 +2206,10 @@ def main() -> int:
     parser.add_argument("--exclude-gate", action="append", default=[])
     parser.add_argument("--execution-budget", help="explicit lifecycle budget JSON")
     parser.add_argument("--resume-session", help="previous paused supporting session JSON")
+    parser.add_argument(
+        "--prior-session-manifest",
+        help="prior manifest ArtifactRef JSON for a fresh policy session",
+    )
     parser.add_argument("--repair-record", help="qualified repair with immutable validation refs")
     parser.add_argument("--stop-on-failure", action="store_true")
     parser.add_argument("--tier", action="append", default=[])
@@ -2249,6 +2253,10 @@ def main() -> int:
         args.resume_session and (not args.execution_budget or args.dry_run)
     ):
         raise SystemExit("session resume requires budget, prior session and qualified repair")
+    if args.prior_session_manifest and (
+        args.resume_session or args.repair_record or not args.execution_budget or args.dry_run
+    ):
+        raise SystemExit("policy lineage requires a fresh bounded execution session")
     if args.all_gates and (
         args.plan or args.execution_plan or args.gate or args.tier
         or args.completion or args.full or args.run_id or args.allocate_run_id
@@ -2277,7 +2285,7 @@ def main() -> int:
     planning = (
         GateExecution(
             "control-plane",
-            GateBudget(policy.planning_seconds + 2, 1, 1),
+            GateTimeLimits(1, 1, work_seconds=policy.planning_seconds),
             request_deadline,
         ) if policy else None
     )
@@ -2425,6 +2433,8 @@ def main() -> int:
         definitions = execute_stage(
             planning, "catalog", load_gate_definitions, Path(args.gates)
         )
+        if policy is not None and set(policy.gates) - set(definitions):
+            raise ExecutionBudgetError("time limits reference unknown catalog Gates")
         if args.all_gates:
             capabilities = execute_stage(
                 planning, "capability-catalog", load_scope_capabilities
@@ -2483,6 +2493,27 @@ def main() -> int:
                 ExecutionSession.restore(json.loads(Path(args.resume_session).read_text()))
                 if args.resume_session else ExecutionSession(graph["dispatchGateIds"], policy.identity)
             )
+            if args.prior_session_manifest:
+                from tooling.acceptance.core import ArtifactRef
+
+                prior_manifest_ref = ArtifactRef.from_dict(
+                    json.loads(Path(args.prior_session_manifest).read_text())
+                )
+                prior_manifest = execute_stage(
+                    planning, "prior-session-manifest", store.read_run_manifest,
+                    prior_manifest_ref, manifest_sha256=prior_manifest_ref.sha256,
+                )
+                prior_ref = ArtifactRef.from_dict(
+                    prior_manifest.get("artifacts", {}).get("execution-session")
+                )
+                prior_value = execute_stage(
+                    planning, "prior-session-evidence", store.read_json, prior_ref,
+                )
+                session = ExecutionSession.from_prior(
+                    graph["dispatchGateIds"], policy.identity, prior_value,
+                    manifest_ref=prior_manifest_ref.to_dict(),
+                    session_ref=prior_ref.to_dict(),
+                )
             if (
                 set(session.required_gate_ids) != set(graph["dispatchGateIds"])
                 or len(session.required_gate_ids) != len(graph["dispatchGateIds"])
@@ -2985,23 +3016,27 @@ def main() -> int:
                                 output_text = stdout + stderr
                                 gate_process_cleanup_status = "passed"
 
-                            completed = execute_stage(
-                                execution, "command", launcher.run,
+                            completed = launcher.run(
                                 GateLaunchSpec(
                                     argv=(
                                         tuple(gate["argv"]) if "argv" in gate
                                         else ("sh", "-c", command)
                                     ),
-                                    timeout_seconds=(
-                                        min(timeout, max(0.001, execution.remaining() - 0.05))
-                                        if execution else timeout
-                                    ),
+                                    timeout_seconds=timeout,
                                     required_capabilities=tuple(
                                         gate.get("ephemeralCapabilities", ())
                                     ),
                                 ),
                                 launch_binding,
                                 capture_output=capture_gate_output,
+                                **({
+                                    "work_scope": lambda: execution.stage(
+                                        "command", timeout_seconds=timeout,
+                                    ),
+                                    "cleanup_scope": lambda: execution.stage(
+                                        "command-process-cleanup", phase="cleanup",
+                                    ),
+                                } if execution is not None else {}),
                             )
                             gate_process_cleanup_status = "passed"
                         else:
@@ -3571,6 +3606,7 @@ def main() -> int:
             report["executionBudget"] = {
                 "policyDigest": policy.identity,
                 "requestDurationSeconds": round(time.monotonic() - request_started, 6),
+                "measurementBoundary": "before-aggregate-publication; terminal wall cost is emitted after handle cleanup",
                 "planning": planning.report(),
                 "gates": execution_reports,
                 "stop": execution_stop,
@@ -3579,7 +3615,7 @@ def main() -> int:
             }
         publication = (
             GateExecution(
-                "aggregate-publication", GateBudget(20, 1, 1),
+                "aggregate-publication", GateTimeLimits(1, 1, work_seconds=18),
                 time.monotonic() + 20,
             ) if policy else None
         )
@@ -3761,6 +3797,7 @@ def main() -> int:
                     report["executionBudget"] = {
                         "policyDigest": policy.identity,
                         "requestDurationSeconds": round(time.monotonic() - request_started, 6),
+                        "measurementBoundary": "before-stop-publication; terminal wall cost is emitted after handle cleanup",
                         "planning": planning.report(),
                         "gates": [
                             *[item for item in execution_reports if item["gateId"] != cost["gateId"]],
@@ -3802,13 +3839,27 @@ def main() -> int:
     finally:
         if policy is not None:
             from tooling.acceptance.core.execution_budget import deadline
+            if publication is not None:
+                publication.finish()
+            handle_cleanup_status = "passed"
             try:
                 with deadline(2, ExecutionDeadline("handles", "close", "cleanup")):
                     if active_gate_run is not None:
                         active_gate_run.close()
                     aggregate_run.close()
             except ExecutionDeadline:
+                handle_cleanup_status = "failed"
                 print("Evidence handles did not close within reserved tail", file=sys.stderr)
+            print("execution-wall-cost: " + json.dumps({
+                "runId": getattr(aggregate_run, "run_id", None),
+                "requestDurationSeconds": round(time.monotonic() - request_started, 6),
+                "requestWorkLimitSeconds": policy.request_seconds,
+                "measurementBoundary": "after-terminal-publication-and-handle-cleanup-attempt",
+                "handleCleanupStatus": handle_cleanup_status,
+                "aggregatePublication": publication.report() if publication is not None else None,
+                "performanceStatus": "UNPROVEN",
+                "productProof": "runner-owned",
+            }, sort_keys=True), file=sys.stderr)
         else:
             if active_gate_run is not None:
                 active_gate_run.close()

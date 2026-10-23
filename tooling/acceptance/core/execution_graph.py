@@ -135,5 +135,8 @@ def efficiency_report(graph: Mapping[str, Any], costs: list[dict[str, Any]]) -> 
             if sorted_durations else None
         ),
         "overBudgetGateIds": [item["gateId"] for item in costs if item["state"] == "OVER_BUDGET"],
-        "optimizationPolicy": "shared prerequisites only; budgets and proof requirements unchanged",
+        "measurementBoundary": "heterogeneous Gate lifecycle samples; not product latency",
+        "performanceStatus": "UNPROVEN",
+        "mandatoryDuration": "UNPROVEN",
+        "optimizationPolicy": "explicit prerequisites; fixed request and owner protections; proof unchanged",
     }

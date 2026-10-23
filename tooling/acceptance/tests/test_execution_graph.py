@@ -78,8 +78,8 @@ class ExecutionGraphTest(unittest.TestCase):
             }}))
             policy.write_text(json.dumps({
                 "requestSeconds": 30, "planningSeconds": 5,
-                "default": {"totalSeconds": 10, "cleanupSeconds": 2, "publishSeconds": 3},
-                "tiers": {}, "gates": {},
+                "lifecycle": {"cleanupSeconds": 2, "publishSeconds": 3},
+                "gates": {},
             }))
             completed = subprocess.run(
                 [sys.executable, "tooling/scripts/acceptance-run.py", "--gates", str(catalog),
@@ -111,8 +111,8 @@ class ExecutionGraphTest(unittest.TestCase):
             }}}))
             policy.write_text(json.dumps({
                 "requestSeconds": 30, "planningSeconds": 5,
-                "default": {"totalSeconds": 10, "cleanupSeconds": 2, "publishSeconds": 3},
-                "tiers": {}, "gates": {},
+                "lifecycle": {"cleanupSeconds": 2, "publishSeconds": 3},
+                "gates": {},
             }))
             command = [sys.executable, "tooling/scripts/acceptance-run.py",
                        "--gates", str(catalog), "--gate", "producer",
@@ -193,6 +193,67 @@ class ExecutionGraphTest(unittest.TestCase):
             self.assertEqual(judgment["requiredGateIds"], ["producer"])
             self.assertEqual(judgment["prerequisiteProofs"], [])
 
+    def test_new_policy_uses_verified_lineage_without_copying_attempts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            marker, calls = root / "repaired", root / "calls"
+            catalog, policy = root / "catalog.json", root / "policy.json"
+            lineage = root / "prior-manifest.json"
+            catalog.write_text(json.dumps({"gates": {"producer": {
+                "argv": [sys.executable, "-c",
+                         f"from pathlib import Path;import sys;p=Path({str(calls)!r});"
+                         "p.write_text(p.read_text()+'x' if p.exists() else 'x');"
+                         f"sys.exit(0 if Path({str(marker)!r}).exists() else 1)"],
+            }}}))
+            limits = {
+                "requestSeconds": 30, "planningSeconds": 5,
+                "lifecycle": {"cleanupSeconds": 2, "publishSeconds": 3},
+                "gates": {},
+            }
+            policy.write_text(json.dumps(limits))
+            command = [sys.executable, "tooling/scripts/acceptance-run.py",
+                       "--gates", str(catalog), "--gate", "producer",
+                       "--execution-budget", str(policy), "--stop-on-failure"]
+            environment = {**os.environ, "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "evidence")}
+            first = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                   capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(first.returncode, 0)
+            store = EvidenceStore(root / "evidence", worktree=REPO_ROOT)
+            prior = store.latest("acceptance-run")
+            manifest_path = store.workspace_dir / "acceptance-run" / prior["runId"] / "manifest.json"
+            manifest_ref = ArtifactRef(
+                prior["workspaceId"], prior["gateId"], prior["runId"],
+                "manifest.json", hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                "application/json",
+            ).to_dict()
+            prior_session_ref = prior["artifacts"]["execution-session"]
+            prior_session = store.read_json(ArtifactRef.from_dict(prior_session_ref))
+            marker.touch()
+            limits["lifecycle"]["cleanupSeconds"] = 1
+            policy.write_text(json.dumps(limits))
+            lineage.write_text(json.dumps({**manifest_ref, "sha256": "0" * 64}))
+            rejected = subprocess.run(
+                command + ["--prior-session-manifest", str(lineage)],
+                cwd=REPO_ROOT, env=environment, capture_output=True, text=True, timeout=15,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertEqual(calls.read_text(), "x")
+            lineage.write_text(json.dumps(manifest_ref))
+            completed = subprocess.run(
+                command + ["--prior-session-manifest", str(lineage)],
+                cwd=REPO_ROOT, env=environment, capture_output=True, text=True, timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual(calls.read_text(), "xx")
+            latest = store.latest("acceptance-run")
+            current = store.read_json(ArtifactRef.from_dict(latest["artifacts"]["execution-session"]))
+            self.assertEqual(len(current["attempts"]), 1)
+            self.assertEqual(current["state"], "QUALIFIED")
+            self.assertTrue(current["attempts"][0]["invalidatedPriorProof"])
+            self.assertNotEqual(current["policyDigest"], prior_session["policyDigest"])
+            self.assertEqual(current["lineage"]["session"], prior_session_ref)
+            self.assertEqual(current["lineage"]["proofTransfer"], "NONE")
+
     def test_publication_timeout_records_full_scope_paused_session(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -204,8 +265,8 @@ class ExecutionGraphTest(unittest.TestCase):
             }}))
             policy.write_text(json.dumps({
                 "requestSeconds": 30, "planningSeconds": 5,
-                "default": {"totalSeconds": 15, "cleanupSeconds": 1, "publishSeconds": 0.000001},
-                "tiers": {}, "gates": {},
+                "lifecycle": {"cleanupSeconds": 1, "publishSeconds": 0.000001},
+                "gates": {},
             }))
             completed = subprocess.run(
                 [sys.executable, "tooling/scripts/acceptance-run.py",

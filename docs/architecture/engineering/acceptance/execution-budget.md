@@ -1,4 +1,4 @@
-# Gate 执行预算、共享证明与修复循环
+# Gate 时间约束、共享证明与修复循环
 
 > **Status**: experimental implementation
 > **Created**: 2026-10-22 | **Owner**: Acceptance Infra
@@ -11,16 +11,17 @@
 随后原地诊断、修复、记录和自验，再冻结新候选继续循环到可用版本。
 只有归因或影响边界无法可靠判断时才请求用户决定。
 
-执行预算属于性能实验合同，不替代产品阈值、Catalog timeout、
-Runtime Profile、证明合同或 Evidence Store。数值是显式实验阈值，
-不是历史 P95，不允许自动扩大以获得通过。
+业务等待、操作保护、性能目标和整轮资源期限分别拥有自己的合同。
+Catalog timeout 是完整命令的保护上界，不是产品承诺或性能目标。
+没有实测目标时性能为 UNPROVEN；不允许自动扩大保护期限以获得通过。
+整轮 requestSeconds 不证明全量请求必然可在该时间内完成。
 
 ## 适用性审查
 
 当前方案适合分阶段落地，不能声称现有 Gate 已具备完整场景复用能力。
 
-- `acceptance-run.py` 通过 `GateExecution` 对资源准备、命令、清理、
-  evidence 扫描与发布设置同一个生命周期预算，并保留清理与发布尾部。
+- `acceptance-run.py` 通过 `GateExecution` 对真实 owner 边界计时，
+  工作受整轮期限及该操作保护约束；清理与发布各有固定尾部。
 - shell 子进程超时可能遗留后代。预算实验沿用已有
   `GateProcessLauncher`，将既有 shell 命令作为明确的 `sh -c` argv，
   由同一进程组终止机制处理；不新造进程监督器。
@@ -88,6 +89,7 @@ Receipt 是可重建产物缓存，不是产品证明，不继承任何 Gate PAS
 --stop-on-failure
 --resume-session <previous-paused-session-json>
 --repair-record <qualified-repair-json>
+--prior-session-manifest <prior-manifest-artifact-ref-json>
 ```
 
 `--all-gates` 与 Gate/Plan/tier/completion/full 选择器互斥。
@@ -132,34 +134,54 @@ validator 和 Infra 边界回归指定为共享生产者，删除消费者里的
 效率报告给出实际 dispatch 数、共享引用数、Gate 总时长、观测 P95 和超标项。
 P95 是本次已调度 Gate 的样本分位数，不冒充产品效果时延或长期控制面 SLO。
 
-预算格式为闭合 JSON 对象：
+时间约束格式为闭合 JSON 对象：
 
 ```json
 {
   "requestSeconds": 3600,
   "planningSeconds": 5,
-  "default": {
-    "totalSeconds": 180,
+  "lifecycle": {
     "cleanupSeconds": 30,
     "publishSeconds": 15
-  },
-  "tiers": {
-    "ci-structure": {
-      "totalSeconds": 30,
-      "cleanupSeconds": 5,
-      "publishSeconds": 10
-    }
   },
   "gates": {}
 }
 ```
 
-优先级是 exact Gate、tier、default。总预算包含工作、清理与发布，
-工作可用时间为 total−cleanup−publish。Catalog command timeout 仍生效，
-实际命令最多使用它与工作剩余时间中的较小值。
-每个阶段消费同一绝对 deadline，后续 RPC 不重新获得完整预算。
-request deadline 到期后停止启动新工作，仅允许预留的清理和发布尾部。
-最终 aggregate 发布另有 20 秒上界，异常停止记录最多 5 秒。
+`lifecycle` 只声明清理和发布保护；`gates` 是实际 Catalog Gate ID 到
+显式 owner 约束的映射，未知 Gate 拒绝。删除 default、tiers、totalSeconds
+格式，不保留旧语义兼容入口。没有全体 Gate 通用工作上界。
+单个 Gate 可以显式声明 `workSeconds` 作为额外资源上界；该值必须有
+owner 来源，不能批量作为未测量的性能目标。operations 绑定实际 stage。
+当前 Catalog 的 Interactions 3600、Lifecycle Interactions 2400、Contact 600、
+Product Closure 3600 秒保持原样，从实际 command 开始计算。
+准备消耗整轮时间，不扣减命令自身的保护额度。
+
+有效期限取整轮剩余期限、当前 phase 祖先及当前 owner 操作上界的较小值。
+未声明子操作上界时父保护仍生效，granularity 保持 owner-boundary。
+有限进展、日志与重试不续发父期限。本修订不引入 Suite/case 重构、
+新的无进展 engine 或产品 SLO。缺进展注入与业务必要时长下界仍未证明。
+既有正向等待和完整负向观察窗口保持原样；不透明 command 不能被推断为
+必然能在剩余 request 时间内结束，也不能截短观察来取得 PASS。
+
+request deadline 到期后停止启动新工作，清理和发布替换已退出的工作 alarm。
+首次进入 phase 固定该 phase 的期限，后续子调用不续发尾部：
+cleanupEnd 取首次 cleanup 开始加 cleanupLimit 与工作期限加 cleanupLimit
+的较小值；publishEnd 同理受工作期限加两段尾部及首次 publish 开始约束。
+命令取消、终止、后代确认与之后的资源清理共享同一 cleanup phase，
+删除额外 termination allowance。Launcher 自身的终止、强杀与确认同样
+共享一个固定上界。外层 timer 更早到期时保留实际外层取消身份。
+取消状态不能通过进入清理而恢复业务执行。
+
+requestSeconds 是 Runner 接收请求后的工作期限，正常运行中的清理和发布
+也消耗它；到期后的退出尾部可使完整墙钟超过该值。上层监督须容纳尾部，
+实际总成本完整保留。最终 aggregate owner 沿用 20 秒生命周期上界
+（18 秒工作、1 秒清理、1 秒发布）；独立异常停止记录最多 5 秒。
+阶段记录保留实际限制来源与相交期限，区分 request、显式 Gate work、
+owner operation 和退出 phase。没有性能目标时 protection 通过仍不产生
+性能 PASS。sealed run report 注明发布前测量边界；Runner 在终态发布和
+handle 清理尝试后输出 `execution-wall-cost`，保留完整墙钟、aggregate
+发布成本与真实 handle 清理结果。外层监督器同时保留全部退出开销。
 
 ## 生命周期与异常
 
@@ -298,8 +320,13 @@ Gate cost 和 stop 原因。状态包含 planned、within-budget、over-budget�
 `core/execution_session.py` 记录完整范围、attempt、归因、修复和验证引用，
 未知归因进入 NEEDS_JUDGMENT。它不编辑源码或授权资源，不生产产品 proof。
 Runner 的实际结果和异常停止记录都生成 immutable session ledger。
-恢复必须同时提供暂停 session 和修复记录；修复记录的验证 ArtifactRef
+同策略恢复必须同时提供暂停 session 和修复记录；修复记录的验证 ArtifactRef
 必须在同一个 Evidence Store 内可解析且 hash 有效，范围与预算不得改变。
+明确确认的时间合同修订使用 `--prior-session-manifest` 建立全新 Session；
+它与原有 resume/repair 互斥。Runner 验证旧 manifest 的 DURABLE 状态、
+原始 ArtifactRef/hash、session inventory 和完整范围，并要求策略确实变化。
+新 Session 只保留旧 manifest/session 的 lineage 引用，attempt 从 1 开始，
+不复制旧 attempts、结果或 PASS。原策略 restore 校验不放宽。
 字段为 `cause`、`owner`、`correction`、`qualification`、
 `validation_refs`；归因只允许 ARCHITECTURE_OVERHEAD、REQUIRED_DURATION、
 PRODUCT_FAILURE、UNKNOWN。UNKNOWN 不允许继续执行。
@@ -348,9 +375,10 @@ Station ownership Gate 的目录/文件读取由分析内共享输入和固定 1
 在 2.779 秒内退出 0，回归在 1.150 秒内退出 0；旧 I/O 等待未复现。
 实验输入、监督器和日志保存到工作区外的持久 machine 目录，不依赖 `/tmp`。
 
-结构预算依旧 30 秒总预算，含 cleanup 5 秒、publish 10 秒。
-复合检查拆成真实共享生产者，各自接受预算约束。历史 timeout 或复合总时长
-不能作为单项必须耗时的依据。全量每轮仍在第一超标处暂停并进入修复循环。
+结构检查沿用 Catalog 命令保护与原有清理、发布上界，
+删除 tier 通用总时长。复合检查拆成真实共享生产者，各自消费实际 owner
+约束。历史 timeout 或复合总时长不能作为单项必须耗时的依据。
+全量每轮仍在第一保护超标处暂停并进入修复循环。
 
 ## 当前控制面切换
 

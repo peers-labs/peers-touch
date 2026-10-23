@@ -88,6 +88,31 @@ class ExecutionSessionTest(unittest.TestCase):
             with self.assertRaises(ExecutionBudgetError):
                 session.observe(report, {})
 
+    def test_new_policy_lineage_cannot_change_scope_or_reuse_policy(self):
+        prior = ExecutionSession(["first", "second"], "old-policy")
+        source = {"commit": "one"}
+        prior.begin(source)
+        prior.observe({
+            "source": source,
+            "results": [{"id": "first", "status": "failed"},
+                        {"id": "second", "status": "blocked"}],
+        }, {})
+        for gates, policy in [
+            (["first"], "new-policy"),
+            (["first", "second", "third"], "new-policy"),
+            (["first", "second"], "old-policy"),
+        ]:
+            with self.subTest(gates=gates, policy=policy), self.assertRaises(
+                ExecutionBudgetError
+            ):
+                ExecutionSession.from_prior(
+                    gates, policy, prior.report(), manifest_ref={}, session_ref={},
+                )
+        changed = prior.report()
+        changed["attempts"][0]["policyDigest"] = "new-policy"
+        with self.assertRaises(ExecutionBudgetError):
+            ExecutionSession.restore(changed)
+
 
 if __name__ == "__main__":
     unittest.main()

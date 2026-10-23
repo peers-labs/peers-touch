@@ -38,6 +38,18 @@ records validation and begins a new frozen-source attempt. Recording a failure
 alone does not complete the engineering task. Unknown attribution requires
 judgment. New source invalidates previous proof; a repair ledger neither grants
 authority nor manufactures proof, and must retain the full scope and budget.
+An explicitly accepted time-contract change creates a fresh Session with
+verified durable prior manifest/session lineage. It retains the complete scope,
+starts attempt numbering afresh and transfers no attempts or PASS. It must not
+weaken same-policy restore validation.
+
+There is no implicit uniform Gate work deadline. Request resource limits,
+Catalog command protection from actual command start, explicitly owned
+operation limits, business observation windows and measured performance
+objectives remain distinct. Missing objectives stay UNPROVEN. Cleanup replaces
+the unwound work alarm and fixes its deadline on first entry; process
+termination, descendant confirmation and resource cleanup share that tail.
+Nested cancellation must retain the identity of the actual earlier owner.
 
 Early initialization and Gate publication failures must produce a full-scope
 UNPROVEN run report even without an ExecutionSession. The independently sealed

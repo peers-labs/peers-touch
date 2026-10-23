@@ -19,6 +19,41 @@ class ExecutionSession:
         self.attempts: list[dict[str, Any]] = []
         self.current_source: dict[str, str] | None = None
         self.state = "READY"
+        self.lineage: dict[str, Any] | None = None
+
+    @classmethod
+    def from_prior(
+        cls, required_gate_ids: list[str], policy_digest: str,
+        prior_value: Mapping[str, Any], *,
+        manifest_ref: Mapping[str, Any], session_ref: Mapping[str, Any],
+    ) -> "ExecutionSession":
+        """A policy change starts fresh; resolved prior evidence is lineage only."""
+        from .evidence_store import ArtifactRef
+
+        prior = cls.restore(prior_value)
+        session = cls(required_gate_ids, policy_digest)
+        if (
+            set(prior.required_gate_ids) != set(session.required_gate_ids)
+            or prior.policy_digest == policy_digest
+        ):
+            raise ExecutionBudgetError("new policy lineage must preserve scope and change policy")
+        manifest = ArtifactRef.from_dict(manifest_ref)
+        reference = ArtifactRef.from_dict(session_ref)
+        if (
+            manifest.path != "manifest.json"
+            or reference.path != "reports/session.json"
+            or (manifest.workspace_id, manifest.gate_id, manifest.run_id)
+            != (reference.workspace_id, reference.gate_id, reference.run_id)
+        ):
+            raise ExecutionBudgetError("prior session lineage identity mismatch")
+        session.lineage = {
+            "manifest": manifest.to_dict(),
+            "session": reference.to_dict(),
+            "policyDigest": prior.policy_digest,
+            "source": prior.current_source,
+            "proofTransfer": "NONE",
+        }
+        return session
 
     def begin(
         self,
@@ -42,7 +77,7 @@ class ExecutionSession:
             "source": dict(source),
             "scopeDigest": self.scope_digest,
             "policyDigest": self.policy_digest,
-            "invalidatedPriorProof": source_changed,
+            "invalidatedPriorProof": source_changed or bool(self.lineage and not self.attempts),
             "gateIds": list(dispatch),
             "state": "RUNNING",
         })
@@ -85,7 +120,7 @@ class ExecutionSession:
         self.state = "NEEDS_JUDGMENT" if qualification == "UNKNOWN" else "REPAIRED"
 
     def report(self) -> dict[str, Any]:
-        return {
+        value = {
             "artifactKind": "acceptance-execution-session",
             "state": self.state,
             "scopeDigest": self.scope_digest,
@@ -94,12 +129,37 @@ class ExecutionSession:
             "attempts": list(self.attempts),
             "proofStatus": "supporting-only",
         }
+        if self.lineage is not None:
+            value["lineage"] = self.lineage
+        return value
 
     @classmethod
     def restore(cls, value: Mapping[str, Any]) -> "ExecutionSession":
         if value.get("artifactKind") != "acceptance-execution-session":
             raise ExecutionBudgetError("not an execution session ledger")
         session = cls(value["requiredGateIds"], value["policyDigest"])
+        if "lineage" in value:
+            from .evidence_store import ArtifactRef
+
+            lineage = value["lineage"]
+            if (
+                not isinstance(lineage, dict)
+                or set(lineage) != {"manifest", "session", "policyDigest", "source", "proofTransfer"}
+                or lineage.get("proofTransfer") != "NONE"
+                or lineage.get("policyDigest") == session.policy_digest
+                or not isinstance(lineage.get("source"), dict)
+            ):
+                raise ExecutionBudgetError("invalid execution session lineage")
+            manifest = ArtifactRef.from_dict(lineage["manifest"])
+            reference = ArtifactRef.from_dict(lineage["session"])
+            if (
+                manifest.path != "manifest.json"
+                or reference.path != "reports/session.json"
+                or (manifest.workspace_id, manifest.gate_id, manifest.run_id)
+                != (reference.workspace_id, reference.gate_id, reference.run_id)
+            ):
+                raise ExecutionBudgetError("prior session lineage identity mismatch")
+            session.lineage = dict(lineage)
         if value.get("scopeDigest") != session.scope_digest:
             raise ExecutionBudgetError("execution session scope digest mismatch")
         attempts = value.get("attempts")

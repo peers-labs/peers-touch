@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+from contextlib import nullcontext
 import hashlib
 import json
 import math
@@ -22,7 +23,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, ContextManager, Mapping, Optional
 
 from .errors import (
     EphemeralCapabilityBlocked,
@@ -243,6 +244,8 @@ class GateProcessLauncher:
         binding: Optional[GateLaunchBinding],
         *,
         capture_output: Callable[[str, str], None] | None = None,
+        work_scope: Callable[[], ContextManager[Any]] | None = None,
+        cleanup_scope: Callable[[], ContextManager[Any]] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         has_context = binding is not None
         if bool(spec.required_capabilities) != has_context:
@@ -296,37 +299,49 @@ class GateProcessLauncher:
             popen_options["env"] = environment
             popen_options["pass_fds"] = binding.pass_fds
 
+        process: subprocess.Popen[str] | None = None
         try:
-            launch_argv = (
-                _isolated_python_argv(
-                    spec.argv,
-                    environment=environment,
-                )
-                if binding is not None
-                else spec.argv
-            )
-            process = subprocess.Popen(launch_argv, **popen_options)
-        except OSError as error:
-            errno_name = errno.errorcode.get(error.errno or 0, "UNKNOWN")
-            raise EphemeralLaunchBindFailed(
-                f"failed to spawn Gate process ({errno_name})",
-                operation="gate_process",
-                errno_name=errno_name,
-                resource_category=_SPAWN_RESOURCE_CATEGORIES.get(
-                    error.errno,
-                    "operating-system-spawn-failure",
-                ),
-            ) from error
-        finally:
-            if binding is not None:
-                binding.close_parent_copy()
-
-        try:
-            stdout, stderr = process.communicate(timeout=spec.timeout_seconds)
-        except subprocess.TimeoutExpired as error:
-            stdout, stderr = self._terminate(process)
-            if capture_output is not None:
-                capture_output(stdout, stderr)
+            with work_scope() if work_scope is not None else nullcontext():
+                try:
+                    launch_argv = (
+                        _isolated_python_argv(
+                            spec.argv,
+                            environment=environment,
+                        )
+                        if binding is not None
+                        else spec.argv
+                    )
+                    process = subprocess.Popen(launch_argv, **popen_options)
+                except OSError as error:
+                    errno_name = errno.errorcode.get(error.errno or 0, "UNKNOWN")
+                    raise EphemeralLaunchBindFailed(
+                        f"failed to spawn Gate process ({errno_name})",
+                        operation="gate_process",
+                        errno_name=errno_name,
+                        resource_category=_SPAWN_RESOURCE_CATEGORIES.get(
+                            error.errno,
+                            "operating-system-spawn-failure",
+                        ),
+                    ) from error
+                finally:
+                    if binding is not None:
+                        binding.close_parent_copy()
+                stdout, stderr = process.communicate(timeout=spec.timeout_seconds)
+        except BaseException as error:
+            # The work context has unwound before termination starts. Both
+            # process termination and subsequent resource cleanup consume
+            # the lifecycle owner's same fixed cleanup tail.
+            if process is not None:
+                with cleanup_scope() if cleanup_scope is not None else nullcontext():
+                    try:
+                        stdout, stderr = self._terminate(process)
+                    except BaseException:
+                        self._signal_process_tree(process, force=True)
+                        raise
+                if capture_output is not None:
+                    capture_output(stdout, stderr)
+            if not isinstance(error, subprocess.TimeoutExpired):
+                raise
             raise EphemeralLaunchTimeout(
                 "Gate process exceeded its launch timeout",
                 operation="gate_process",
@@ -336,7 +351,7 @@ class GateProcessLauncher:
                     recovery_action=(
                         "Inspect the captured command output and same-run Step observations; "
                         "attribute the command delay at its actual owner, repair and qualify "
-                        "it, then refreeze the original scope and budget."
+                        "it, then refreeze the original scope and time contract."
                     ),
                     resource="gate-command-process",
                     expected={"commandTimeoutSeconds": spec.timeout_seconds},
@@ -346,14 +361,17 @@ class GateProcessLauncher:
                         "deadlineExceeded": True,
                         "processCleanup": "completed",
                     },
-                ),
+                )
             ) from error
-        except BaseException:
-            stdout, stderr = self._terminate(process)
-            if capture_output is not None:
-                capture_output(stdout, stderr)
-            raise
-        self._kill_remaining_process_group(process)
+        finally:
+            if binding is not None:
+                binding.close_parent_copy()
+        with cleanup_scope() if cleanup_scope is not None else nullcontext():
+            try:
+                self._kill_remaining_process_group(process)
+            except BaseException:
+                self._signal_process_tree(process, force=True)
+                raise
         if capture_output is not None:
             capture_output(stdout, stderr)
         return subprocess.CompletedProcess(
@@ -364,18 +382,21 @@ class GateProcessLauncher:
         )
 
     def _terminate(self, process: subprocess.Popen[str]) -> tuple[str, str]:
+        cleanup_end = time.monotonic() + self._termination_timeout_seconds
         self._signal_process_tree(process, force=False)
         try:
-            output = process.communicate(timeout=self._termination_timeout_seconds)
+            output = process.communicate(
+                timeout=max(0, cleanup_end - time.monotonic()) / 2,
+            )
         except subprocess.TimeoutExpired:
             self._signal_process_tree(process, force=True)
         except BaseException:
             self._signal_process_tree(process, force=True)
         else:
-            self._kill_remaining_process_group(process)
+            self._kill_remaining_process_group(process, cleanup_end=cleanup_end)
             return output
         try:
-            output = process.communicate(timeout=self._termination_timeout_seconds)
+            output = process.communicate(timeout=max(0, cleanup_end - time.monotonic()))
         except subprocess.TimeoutExpired as error:
             raise EphemeralLaunchCleanupFailed(
                 "Gate process did not stop after termination",
@@ -386,7 +407,7 @@ class GateProcessLauncher:
                 "Gate process could not be reaped after termination",
                 operation="gate_process",
             ) from error
-        self._kill_remaining_process_group(process)
+        self._kill_remaining_process_group(process, cleanup_end=cleanup_end)
         return output
 
     @staticmethod
@@ -420,6 +441,8 @@ class GateProcessLauncher:
     def _kill_remaining_process_group(
         self,
         process: subprocess.Popen[str],
+        *,
+        cleanup_end: float | None = None,
     ) -> None:
         if os.name != "posix":
             return
@@ -436,7 +459,10 @@ class GateProcessLauncher:
                 "Gate process descendants could not be killed",
                 operation="gate_process",
             ) from error
-        deadline = time.monotonic() + self._termination_timeout_seconds
+        deadline = (
+            time.monotonic() + self._termination_timeout_seconds
+            if cleanup_end is None else cleanup_end
+        )
         while True:
             try:
                 os.killpg(process.pid, 0)

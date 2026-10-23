@@ -11,11 +11,13 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from tooling.acceptance.core.execution_budget import (
     ExecutionBudgetError,
     ExecutionDeadline,
-    GateBudget,
+    ExecutionBudgetPolicy,
+    GateTimeLimits,
     GateExecution,
     deadline,
     freeze_scope,
@@ -30,18 +32,20 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 @unittest.skipUnless(hasattr(signal, "setitimer"), "POSIX cancellation owner")
 class ExecutionBudgetTest(unittest.TestCase):
-    def execution(self, total=0.3, cleanup=0.1, publish=0.1):
-        return GateExecution("synthetic", GateBudget(total, cleanup, publish),
+    def execution(self, work=0.1, cleanup=0.1, publish=0.1):
+        return GateExecution("synthetic", GateTimeLimits(cleanup, publish, work),
                              time.monotonic() + 10)
 
     def test_invalid_reserve_and_nonfinite_deadline_rejected(self):
         for value in [
             {"totalSeconds": 1, "cleanupSeconds": 1, "publishSeconds": 1},
-            {"totalSeconds": float("inf"), "cleanupSeconds": 1, "publishSeconds": 1},
-            {"totalSeconds": True, "cleanupSeconds": 1, "publishSeconds": 1},
+            {"cleanupSeconds": float("inf"), "publishSeconds": 1},
+            {"cleanupSeconds": True, "publishSeconds": 1},
+            {"cleanupSeconds": 1, "publishSeconds": 1, "workSeconds": 0},
+            {"cleanupSeconds": 1, "publishSeconds": 1, "operations": {"read": -1}},
         ]:
             with self.assertRaises(ExecutionBudgetError):
-                GateBudget.from_dict(value)
+                GateTimeLimits.from_dict(value)
 
     def test_polling_cannot_swallow_cancellation(self):
         execution = self.execution()
@@ -75,7 +79,7 @@ class ExecutionBudgetTest(unittest.TestCase):
             execution.call("retry-work", lambda: None)
 
     def test_cleanup_calls_share_reserve_and_publish_has_own_reserve(self):
-        execution = self.execution(total=0.5)
+        execution = self.execution(work=0.3)
         execution.call("cleanup-first", time.sleep, 0.06, phase="cleanup")
         with self.assertRaises(ExecutionDeadline):
             execution.call("cleanup-second", time.sleep, 0.07, phase="cleanup")
@@ -85,13 +89,231 @@ class ExecutionBudgetTest(unittest.TestCase):
     def test_outer_timer_is_not_extended_by_inner_call(self):
         started = time.monotonic()
         previous = signal.getsignal(signal.SIGALRM)
-        with self.assertRaises(ExecutionDeadline):
+        with self.assertRaises(ExecutionDeadline) as cancelled:
             with deadline(0.06, ExecutionDeadline("outer", "outer", "work")):
                 with deadline(0.2, ExecutionDeadline("inner", "inner", "work")):
                     time.sleep(0.2)
+        self.assertEqual(
+            (cancelled.exception.gate_id, cancelled.exception.stage,
+             cancelled.exception.phase),
+            ("outer", "outer", "work"),
+        )
         self.assertLess(time.monotonic() - started, 0.15)
         self.assertEqual(signal.getsignal(signal.SIGALRM), previous)
         self.assertEqual(signal.getitimer(signal.ITIMER_REAL)[0], 0)
+
+    def test_long_work_keeps_request_deadline_after_preparation(self):
+        with mock.patch(
+            "tooling.acceptance.core.execution_budget.time.monotonic"
+        ) as clock:
+            clock.return_value = 100
+            execution = GateExecution(
+                "long-flow", GateTimeLimits(30, 15), request_deadline=400,
+            )
+            clock.return_value = 260
+            self.assertEqual(execution.remaining(), 140)
+            execution.call("next-operation", lambda: None)
+            clock.return_value = 280
+            execution.call("cleanup", lambda: None, phase="cleanup")
+            execution.call("publish", lambda: None, phase="publish")
+            execution.finish()
+            self.assertEqual(execution.report()["state"], "WITHIN_BUDGET")
+            self.assertEqual(execution.report()["durationSeconds"], 180)
+
+    def test_ambient_alarm_semantics_do_not_disable_operation_deadline(self):
+        for handler in (signal.SIG_IGN, lambda *_: None):
+            with self.subTest(handler=handler):
+                previous = signal.getsignal(signal.SIGALRM)
+                try:
+                    signal.signal(signal.SIGALRM, handler)
+                    signal.setitimer(signal.ITIMER_REAL, 0.02)
+                    with self.assertRaises(ExecutionDeadline) as cancelled:
+                        with deadline(0.07, ExecutionDeadline("inner", "read", "work")):
+                            time.sleep(0.15)
+                    self.assertEqual(cancelled.exception.gate_id, "inner")
+                    self.assertEqual(signal.getsignal(signal.SIGALRM), handler)
+                    self.assertEqual(signal.getitimer(signal.ITIMER_REAL)[0], 0)
+                finally:
+                    signal.setitimer(signal.ITIMER_REAL, 0)
+                    signal.signal(signal.SIGALRM, previous)
+        program = """
+import signal, time
+from tooling.acceptance.core.execution_budget import ExecutionDeadline, deadline
+signal.signal(signal.SIGALRM, signal.SIG_DFL)
+signal.setitimer(signal.ITIMER_REAL, 0.02)
+with deadline(0.2, ExecutionDeadline("inner", "read", "work")):
+    time.sleep(0.3)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", program], cwd=REPO_ROOT,
+            capture_output=True, text=True, timeout=2,
+        )
+        self.assertEqual(completed.returncode, -signal.SIGALRM)
+
+    def test_policy_has_no_uniform_work_limit_and_rejects_legacy_policy(self):
+        policy = ExecutionBudgetPolicy({
+            "requestSeconds": 3600, "planningSeconds": 5,
+            "lifecycle": {"cleanupSeconds": 30, "publishSeconds": 15},
+            "gates": {},
+        })
+        self.assertIsNone(policy.for_gate({"id": "long", "tier": "any"}).work_seconds)
+        with self.assertRaises(ExecutionBudgetError):
+            ExecutionBudgetPolicy({
+                "requestSeconds": 3600, "planningSeconds": 5,
+                "default": {"totalSeconds": 180, "cleanupSeconds": 30, "publishSeconds": 15},
+                "tiers": {}, "gates": {},
+            })
+        with self.assertRaises(ExecutionBudgetError):
+            ExecutionBudgetPolicy({
+                "requestSeconds": 3600, "planningSeconds": 5,
+                "lifecycle": {"cleanupSeconds": 30, "publishSeconds": 15, "workSeconds": 135},
+                "gates": {},
+            })
+
+    def test_owner_operation_limit_cancels_without_renewing_request(self):
+        execution = GateExecution(
+            "operations", GateTimeLimits(
+                0.1, 0.1, operations={"read": 0.04},
+            ), time.monotonic() + 10,
+        )
+        with self.assertRaises(ExecutionDeadline) as cancelled:
+            execution.call("read", time.sleep, 0.1)
+        self.assertEqual(cancelled.exception.stage, "read")
+        self.assertEqual(cancelled.exception.constraints[0]["kind"], "owner-operation")
+        self.assertEqual(cancelled.exception.constraints[0]["source"], "exact Gate operations.read")
+        execution.call("cleanup", lambda: None, phase="cleanup")
+        execution.call("publish", lambda: None, phase="publish")
+        self.assertEqual(execution.report()["performanceStatus"], "UNPROVEN")
+
+    def test_declared_operation_and_request_limits_both_remain_fixed(self):
+        configured = {"read": 0.04}
+        limits = GateTimeLimits(0.1, 0.1, operations=configured)
+        configured["read"] = 10
+        self.assertEqual(limits.operations["read"], 0.04)
+        execution = GateExecution("limits", limits, time.monotonic() + 10)
+        with self.assertRaises(ExecutionDeadline):
+            with execution.stage("read", timeout_seconds=1):
+                time.sleep(0.1)
+        self.assertEqual(execution.spans[-1]["operationLimitSeconds"], 0.04)
+
+        with mock.patch(
+            "tooling.acceptance.core.execution_budget.time.monotonic"
+        ) as clock:
+            clock.return_value = 100
+            execution = GateExecution("progress", GateTimeLimits(30, 15), 400)
+            for now in (150, 200, 250, 300, 350):
+                clock.return_value = now
+                execution.call("finite-operation", lambda: None)
+                self.assertEqual(execution.ends["work"], 400)
+            clock.return_value = 401
+            with self.assertRaises(ExecutionDeadline):
+                execution.call("retry", lambda: None)
+            self.assertEqual(execution.report()["overrun"]["constraints"][0]["kind"], "request-work")
+            execution.call("cleanup", lambda: None, phase="cleanup")
+            cleanup_end = execution.ends["cleanup"]
+            clock.return_value = 410
+            execution.call("cleanup-second", lambda: None, phase="cleanup")
+            self.assertEqual(execution.ends["cleanup"], cleanup_end)
+            self.assertEqual(cleanup_end, 430)
+
+    def test_command_cancellation_exits_work_before_shared_cleanup(self):
+        execution = self.execution(work=0.12, cleanup=0.3, publish=0.1)
+        output = []
+        launcher = GateProcessLauncher(termination_timeout_seconds=0.2)
+        program = (
+            "import signal,time,sys;"
+            "signal.signal(signal.SIGTERM,lambda *_:(time.sleep(0.06),sys.exit(0)));"
+            "print('ready',flush=True);time.sleep(10)"
+        )
+        with self.assertRaises(ExecutionDeadline):
+            launcher.run(
+                GateLaunchSpec(
+                    (sys.executable, "-c", program), 5, (),
+                ), None,
+                capture_output=lambda stdout, stderr: output.append(stdout + stderr),
+                work_scope=lambda: execution.stage("command", timeout_seconds=5),
+                cleanup_scope=lambda: execution.stage("process-cleanup", phase="cleanup"),
+            )
+        cleanup_end = execution.ends["cleanup"]
+        execution.call("resource-cleanup", lambda: None, phase="cleanup")
+        self.assertEqual(execution.ends["cleanup"], cleanup_end)
+        execution.call("publish", lambda: None, phase="publish")
+        self.assertEqual(len(output), 1)
+        self.assertIn("ready", output[0])
+        self.assertEqual(
+            [(span["stage"], span["phase"], span["status"])
+             for span in execution.spans],
+            [("command", "work", "overrun"),
+             ("process-cleanup", "cleanup", "completed"),
+             ("resource-cleanup", "cleanup", "completed"),
+             ("publish", "publish", "completed")],
+        )
+
+    def test_real_runner_preserves_command_protection_after_preparation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            catalog, policy = root / "catalog.json", root / "policy.json"
+            marker = root / "completed"
+            catalog.write_text(json.dumps({"gates": {"long-flow": {
+                "argv": [
+                    sys.executable, "-c",
+                    "import time;from pathlib import Path;time.sleep(0.7);"
+                    f"Path({str(marker)!r}).touch()",
+                ],
+                "timeout_seconds": 2,
+            }}}))
+            policy.write_text(json.dumps({
+                "requestSeconds": 20, "planningSeconds": 5,
+                "lifecycle": {"cleanupSeconds": 0.5, "publishSeconds": 2},
+                "gates": {},
+            }))
+            program = f"""
+import importlib.util, sys, time
+import tooling.acceptance.core as core
+spec = importlib.util.spec_from_file_location("bounded_runner", "tooling/scripts/acceptance-run.py")
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+original = core.source_identity
+calls = 0
+def observed_source(root):
+    global calls
+    calls += 1
+    if calls == 2:
+        time.sleep(0.7)
+    return original(root)
+core.source_identity = observed_source
+sys.argv = ["acceptance-run.py", "--gates", {str(catalog)!r},
+            "--gate", "long-flow", "--execution-budget", {str(policy)!r}]
+raise SystemExit(runner.main())
+"""
+            completed = subprocess.run(
+                [sys.executable, "-c", program], cwd=REPO_ROOT,
+                env={**os.environ, "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "evidence")},
+                capture_output=True, text=True, timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertTrue(marker.exists())
+            path, = (root / "evidence").rglob("reports/run.json")
+            report = json.loads(path.read_text())
+            cost = report["executionBudget"]["gates"][0]
+            self.assertIsNone(report["executionBudget"]["stop"])
+            self.assertGreater(cost["durationSeconds"], 1.4)
+            self.assertEqual(
+                next(span["operationLimitSeconds"] for span in cost["spans"]
+                     if span["stage"] == "command"), 2,
+            )
+            self.assertEqual(cost["performanceStatus"], "UNPROVEN")
+            wall = json.loads(next(
+                line.removeprefix("execution-wall-cost: ")
+                for line in completed.stderr.splitlines()
+                if line.startswith("execution-wall-cost: ")
+            ))
+            self.assertEqual(wall["handleCleanupStatus"], "passed")
+            self.assertGreaterEqual(
+                wall["requestDurationSeconds"],
+                report["executionBudget"]["requestDurationSeconds"],
+            )
+            self.assertEqual(wall["requestWorkLimitSeconds"], 20)
 
     def test_owned_grandchild_stops_without_touching_unrelated_process(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -182,8 +404,10 @@ class ExecutionBudgetTest(unittest.TestCase):
             }}))
             policy.write_text(json.dumps({
                 "requestSeconds": 20, "planningSeconds": 5,
-                "default": {"totalSeconds": 3, "cleanupSeconds": 0.5, "publishSeconds": 2},
-                "tiers": {}, "gates": {},
+                "lifecycle": {"cleanupSeconds": 0.5, "publishSeconds": 2},
+                "gates": {"synthetic-timeout": {
+                    "workSeconds": 0.5, "cleanupSeconds": 0.5, "publishSeconds": 2,
+                }},
             }))
             completed = subprocess.run(
                 [sys.executable, "tooling/scripts/acceptance-run.py",
@@ -224,10 +448,10 @@ class ExecutionBudgetTest(unittest.TestCase):
                 }}))
                 policy.write_text(json.dumps({
                     "requestSeconds": 20, "planningSeconds": 5,
-                    "default": {
-                        "totalSeconds": 3, "cleanupSeconds": 0.5, "publishSeconds": 2,
-                    },
-                    "tiers": {}, "gates": {},
+                    "lifecycle": {"cleanupSeconds": 0.5, "publishSeconds": 2},
+                    "gates": {"synthetic-first": {
+                        "workSeconds": 0.5, "cleanupSeconds": 0.5, "publishSeconds": 2,
+                    }},
                 }))
                 injected_action = (
                     "os.kill(os.getpid(), signal.SIGINT)"
@@ -305,10 +529,8 @@ raise SystemExit(runner.main())
                 policy = root / "policy.json"
                 policy.write_text(json.dumps({
                     "requestSeconds": 20, "planningSeconds": 5,
-                    "default": {
-                        "totalSeconds": 3, "cleanupSeconds": 0.5, "publishSeconds": 2,
-                    },
-                    "tiers": {}, "gates": {},
+                    "lifecycle": {"cleanupSeconds": 0.5, "publishSeconds": 2},
+                    "gates": {},
                 }))
                 program = f"""
 import importlib.util, sys, time
