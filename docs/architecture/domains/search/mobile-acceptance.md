@@ -32,6 +32,10 @@ Simulator and Android Emulator.
   Driver context always returns to the product WebView, including on failure.
   The Search detail consumes the shared `useVisualKeyboardOverlap` measurement
   to shrink its full-height rail; its result scroll root ends above the keyboard.
+- Theme rendering consumes the committed device preference through the root
+  LobeUI ThemeProvider. Captured title, result, source, history-boundary and query
+  text must retain at least 4.5:1 contrast against its actual ancestor-composited
+  background, including text opacity. Distinct backgrounds alone cannot pass.
 - Result source metadata follows the existing Social display-name policy;
   identity locators cannot become conversation display copy.
 
@@ -74,6 +78,22 @@ control frame, while persisted language is observed through the product's
 document language and enabled combobox. Mutation failures also record the
 existing public Recovery projection's typed write-admission reason and the fixture send ordinal;
 they must not be hidden by retries or admission bypasses.
+Each source-bound client also records at most 32 existing Messaging runtime-error
+events inside its own WebView lifetime. Failure diagnostics redact and preserve
+the operation and original error, so a dependency-failed route cannot conceal
+its originating native/projection failure.
+
+Theme interaction contract:
+
+```yaml
+surface: mobile.search
+given: [readable received result, current device preference]
+when: [save opposite theme through Chat Settings, return to Search]
+then: [committed theme in root UI provider, same matching received result]
+visual_invariants: [text contrast at least 4.5:1, semantic header surface]
+forbidden: [dark surface with light-theme text tokens, background-only proof]
+evidence: [native screenshot, DOM, composited text contrast, persisted preference]
+```
 
 Post-login WebView restart must restore the exact persisted Station route before
 Search can activate. Both route restore and refresh return the native

@@ -124,6 +124,41 @@ const bounds = selector => {
   const box = document.querySelector(selector)?.getBoundingClientRect();
   return box ? {top: box.top, bottom: box.bottom, width: box.width, height: box.height} : null;
 };
+const textContrast = node => {
+  const rgba = value => {
+    const modern = value.match(/^color\\(srgb (.+)\\)$/);
+    const match = modern || value.match(/^rgba?\\((.+)\\)$/);
+    if (!match) return null;
+    const parts = match[1].split(/[\\s,/]+/).map(Number);
+    const scale = modern ? 255 : 1;
+    return [parts[0] * scale, parts[1] * scale, parts[2] * scale, parts[3] ?? 1];
+  };
+  const over = (front, back) => [
+    ...front.slice(0, 3).map((value, index) =>
+      value * front[3] + back[index] * (1 - front[3])), 1,
+  ];
+  const layers = [];
+  for (let parent = node; parent; parent = parent.parentElement) {
+    layers.push(getComputedStyle(parent));
+  }
+  let background = [255, 255, 255, 1];
+  for (const style of [...layers].reverse()) {
+    const color = rgba(style.backgroundColor);
+    if (!color) return 0;
+    background = over(color, background);
+  }
+  const foreground = rgba(layers[0].color);
+  if (!foreground) return 0;
+  foreground[3] *= layers.reduce((opacity, style) => opacity * Number(style.opacity), 1);
+  const luminance = color => color.slice(0, 3).reduce((sum, channel, index) => {
+    const value = channel / 255;
+    return sum + [0.2126, 0.7152, 0.0722][index]
+      * (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  }, 0);
+  const front = luminance(over(foreground, background));
+  const back = luminance(background);
+  return (Math.max(front, back) + 0.05) / (Math.min(front, back) + 0.05);
+};
 return {
   painted: !!rect && rect.width > 0 && rect.height > 0,
   viewportWidth: innerWidth, viewportHeight: innerHeight,
@@ -134,6 +169,10 @@ return {
   colorScheme: document.documentElement.dataset.mobileColorScheme || '',
   background: page ? getComputedStyle(page).backgroundColor : '',
   foreground: page ? getComputedStyle(page).color : '',
+  textContrasts: [...document.querySelectorAll(
+    '.mobile-search-page h1,.mobile-search-result__title,.mobile-search-result__meta,'
+    + '.mobile-search-coverage span,#mobile-search-input')]
+    .map(textContrast),
   documentWidth: document.documentElement.scrollWidth,
   searchState: document.querySelector('[data-search-state]')?.dataset.searchState || '',
   query: document.querySelector('#mobile-search-input')?.value || '',
@@ -187,6 +226,8 @@ return {
                 f"{name} must not overflow horizontally")
         require(not rendering["unresolvedCopy"], f"{name} has unresolved localization keys")
         require(not rendering["rawIdentityCopy"], f"{name} exposes an identity locator as display copy")
+        require(all(value >= 4.5 for value in rendering["textContrasts"]),
+                f"{name} has unreadable Search text contrast")
         require(all(row["width"] >= 43.5 and row["height"] >= 43.5
                     for row in rendering["controls"]), f"{name} has undersized controls")
         require(rendering["searchState"] not in (
@@ -297,6 +338,13 @@ return document.documentElement.dataset.mobileColorScheme === arguments[0]
                     {
                         "clientId": session.client_id,
                         "rendering": rendering,
+                        "runtimeErrors": [
+                            {"operation": item["operation"],
+                             "message": _redacted_markup(item["message"]).decode("utf-8")}
+                            for item in session.execute_script(
+                                "return window.__PEERS_SEARCH_RUNTIME_ERRORS__ || [];",
+                            )
+                        ],
                         "readState": observe("search.state"),
                         "readCosts": observe("search.reads"),
                         "nativeQuery": observe(
@@ -626,6 +674,18 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
         for client_id, actor in actors.items():
             self._prepare_fresh_actor_identity(sessions[client_id], actor)
             journey.authenticate(sessions[client_id], actor, password=ACTOR_PASSWORD)
+            sessions[client_id].execute_script("""
+window.__PEERS_SEARCH_RUNTIME_ERRORS__ = [];
+window.addEventListener('mobile:messaging-runtime-error', event => {
+  const detail = event.detail;
+  if (!detail?.operation || !detail?.message) return;
+  const errors = window.__PEERS_SEARCH_RUNTIME_ERRORS__;
+  errors.push({operation: String(detail.operation).slice(0, 128),
+               message: String(detail.message).slice(0, 4096)});
+  if (errors.length > 32) errors.shift();
+});
+return true;
+""")
             read_state = sessions[client_id].call_action("search.state")
             require(read_state.get("readScope") and read_state.get("sourceRevision"),
                     f"{client_id} authenticated native Search admission is required")
