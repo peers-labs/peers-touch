@@ -63,9 +63,16 @@ Seeds remain transient and are zeroized after preparation; no key enters proof.
 The account scenario restores the peer through real logout/login after the
 handoff revokes its session, rather than trusting its cached actor projection.
 After switching to an actor not previously active in that installation, it
-reopens the existing deterministic Direct through `messaging.createDirect` and
-requires the original conversation ID before sending fresh content. Login
-alone does not acquire that actor's conversation authority or encrypted history.
+requires old-result absence and old-cursor denial, then switches the existing
+peer client to the other actor. Original `messaging.createGroup` creates one
+namespaced current-account conversation; both existing clients must observe its
+active projection before the peer sends fresh content. The switched receiver
+must commit that exact message and find it through real Search UI. The scenario
+restores both original accounts after capture. No client or actor is provisioned
+inside a scenario. Login and reopening an existing Direct do not acquire its
+old encrypted history; a `pending` creation response is not permission to send.
+This sample proves current-account isolation and newly acquired content, not
+new-device history recovery.
 The original Social owner establishes one accepted relationship and Direct
 conversation. Both actors then send through that same bidirectional conversation
 and receive messages from the other existing client; fixture preparation never

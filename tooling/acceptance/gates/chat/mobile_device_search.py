@@ -721,22 +721,39 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
         self.denial(session, "old-account-cursor", "search.page", {
             "query": f'历史 {fixture["token"]}', "limit": 20, "cursor": page["nextCursor"],
         }, "SEARCH_CURSOR_EXPIRED")
-        # This installation has not acquired the newly selected actor's Direct.
-        # Reopen through the original owner before sending; login is not recovery.
-        direct = self.mutate_when_admitted(session, "messaging.createDirect", {
-            "peerPtid": actor.ptid, "federationId": peer.federation_id,
+        self.fill(session, fixture["replyQuery"])
+        require(fixture["reply"] not in self.rows(session),
+                "new account must not reveal the old account's received result")
+        self.capture(artifacts, session, "account-old-result-denied")
+        # New installations do not inherit old encrypted conversation history.
+        # Use original Messaging to acquire fresh content for the current actors.
+        peer_session.call_action("session.logout", {"draftDisposition": "discard"})
+        journey.authenticate(peer_session, replace(actor, client_id=peer_session.client_id),
+                             password=ACTOR_PASSWORD)
+        conversation_id = f'search-account-{fixture["token"]}'
+        created = self.mutate_when_admitted(session, "messaging.createGroup", {
+            "conversationId": conversation_id, "name": f'Search {fixture["token"]}',
+            "memberPtids": [peer.ptid, actor.ptid], "federationId": peer.federation_id,
         })
-        require(direct.get("conversationId") == fixture["conversation"],
-                "account handoff must reopen the same original Direct")
+        require(created.get("conversationId") == conversation_id,
+                "account conversation must bind the original Messaging result")
+        for current in (session, peer_session):
+            journey.wait_for_conversation(current, conversation_id, kind=2)
+        own_query = f'账号切换 {fixture["token"]}'
+        sent = self.mutate_when_admitted(peer_session, "messaging.send", {
+            "conversationId": conversation_id, "plaintext": own_query,
+        })
+        received, _ = journey.wait_for_message(
+            session, conversation_id, sent["messageId"],
+            lambda message: message.get("plaintext") == own_query,
+            "new-account real received Search content",
+        )
         artifacts.write_json(
             f"mobile-device-search/{session.client_id}/account-conversation.json",
-            {"clientId": session.client_id, "direct": direct},
+            {"clientId": session.client_id, "senderClientId": peer_session.client_id,
+             "created": created, "messageId": sent["messageId"], "received": received},
             role=f"mobile-search-account-conversation/{session.client_id}",
         )
-        own_query = f'账号切换 {fixture["token"]}'
-        sent = self.mutate_when_admitted(session, "messaging.send", {
-            "conversationId": fixture["conversation"], "plaintext": own_query,
-        })
         self.fill(session, own_query)
         self.has(session, sent["messageId"], own_query)
         self.capture(artifacts, session, "account-isolation")

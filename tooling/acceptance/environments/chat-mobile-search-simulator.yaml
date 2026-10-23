@@ -42,7 +42,7 @@
       "lifecycle.restart", "lifecycle.waitReady", "lifecycle.scope.read",
       "lifecycle.suspend", "lifecycle.resume", "session.logout",
       "navigation.snapshot", "navigation.apply", "projection.read",
-      "messaging.createDirect", "messaging.attachment.stage", "messaging.send",
+      "messaging.createDirect", "messaging.createGroup", "messaging.attachment.stage", "messaging.send",
       "messaging.interact", "messaging.reconcile", "messaging.projection.read",
       "social.people.search", "social.request.send", "social.request.accept",
       "social.contact.open", "social.reconcile", "social.projection.read",
