@@ -38,3 +38,10 @@ Run `python3 -m unittest tooling.acceptance.tests.test_resource_diagnostic`.
 The sealed-array case must retain complete diagnostics, reject changed bytes,
 and ignore embedded runtime objects and misleading deployment labels. A sealed
 array used as the source observation must still be rejected.
+
+Complete inventory verification runs when the parent manifest is read. Changed
+supporting bytes must therefore invalidate that manifest before any diagnostic
+or evidence projection is trusted. Expect `runManifest: missing or invalid`,
+empty evidence/runtime/deployment projections, and no inherited reason,
+source observation or owner. Do not restore the later per-artifact rejection
+path merely to retain an older test's error text.

@@ -525,10 +525,17 @@ class ResourceDiagnosticTests(unittest.TestCase):
             self.assertEqual(supporting[0]["jsonValueType"], "array")
             self.assertEqual(supporting[0]["itemCount"], 1)
             store.resolve(references[0]).write_text("[]")
+            invalidated = reporter.result_diagnostic(delivered, source, store)
             self.assertIn(
-                "evidence: invalid reports/supporting-0.json",
-                reporter.result_diagnostic(delivered, source, store)["missingFields"],
+                "runManifest: missing or invalid",
+                invalidated["missingFields"],
             )
+            self.assertIsNone(invalidated["reason"])
+            self.assertIsNone(invalidated["sourceArtifact"])
+            self.assertIsNone(invalidated["owner"])
+            self.assertEqual(invalidated["evidence"], [])
+            self.assertEqual(invalidated["runtime"], {})
+            self.assertEqual(invalidated["deployments"], [])
 
     def test_sealed_source_observation_must_remain_a_json_object(self) -> None:
         reporter = script_module("acceptance-report")
