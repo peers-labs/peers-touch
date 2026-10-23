@@ -107,9 +107,20 @@ return [...document.querySelectorAll('.mobile-search-result')].some(
 const page = document.querySelector('[data-product-surface="search.mobile"]')
   || document.querySelector('.page-container');
 const rect = page?.getBoundingClientRect();
+const bounds = selector => {
+  const box = document.querySelector(selector)?.getBoundingClientRect();
+  return box ? {top: box.top, bottom: box.bottom, width: box.width, height: box.height} : null;
+};
 return {
   painted: !!rect && rect.width > 0 && rect.height > 0,
   viewportWidth: innerWidth, viewportHeight: innerHeight,
+  visualViewport: {top: visualViewport?.offsetTop || 0, height: visualViewport?.height || innerHeight},
+  inputBounds: bounds('#mobile-search-input'),
+  submitBounds: bounds('.mobile-search-input-row button[type=submit]'),
+  contentBounds: bounds('.mobile-search-viewport'),
+  colorScheme: document.documentElement.dataset.mobileColorScheme || '',
+  background: page ? getComputedStyle(page).backgroundColor : '',
+  foreground: page ? getComputedStyle(page).color : '',
   documentWidth: document.documentElement.scrollWidth,
   searchState: document.querySelector('[data-search-state]')?.dataset.searchState || '',
   query: document.querySelector('#mobile-search-input')?.value || '',
@@ -139,17 +150,6 @@ return {
                 break
             require(time.monotonic() < deadline, f"{name} stable native capture timed out")
             time.sleep(0.25)
-        require(rendering["painted"], f"{name} must be painted")
-        require(rendering["documentWidth"] <= rendering["viewportWidth"] + 1,
-                f"{name} must not overflow horizontally")
-        require(not rendering["unresolvedCopy"], f"{name} has unresolved localization keys")
-        require(all(row["width"] >= 43.5 and row["height"] >= 43.5
-                    for row in rendering["controls"]), f"{name} has undersized controls")
-        require(rendering["searchState"] not in (
-            {"loading"} if concealed else {"loading", "concealed"}),
-                f"{name} must be terminal")
-        if concealed:
-            require(not rendering["rows"], f"{name} must contain no private result rows")
         base = f"mobile-device-search/{session.client_id}/{name}"
         captured = {
             "clientId": session.client_id,
@@ -162,9 +162,101 @@ return {
                 role=f"mobile-search-dom/{session.client_id}/{name}",
             ).to_dict(),
         }
-        self.frames[f"{session.client_id}/{name}"] = {
-            **captured, "rendering": rendering, "assertionPassed": True,
-        }
+        frame = {**captured, "rendering": rendering, "assertionPassed": False}
+        self.frames[f"{session.client_id}/{name}"] = frame
+        require(rendering["painted"], f"{name} must be painted")
+        require(rendering["documentWidth"] <= rendering["viewportWidth"] + 1,
+                f"{name} must not overflow horizontally")
+        require(not rendering["unresolvedCopy"], f"{name} has unresolved localization keys")
+        require(all(row["width"] >= 43.5 and row["height"] >= 43.5
+                    for row in rendering["controls"]), f"{name} has undersized controls")
+        require(rendering["searchState"] not in (
+            {"loading"} if concealed else {"loading", "concealed"}),
+                f"{name} must be terminal")
+        if concealed:
+            require(not rendering["rows"], f"{name} must contain no private result rows")
+        if name == "keyboard":
+            visual = rendering["visualViewport"]
+            for field in ("inputBounds", "submitBounds", "contentBounds"):
+                box = rendering[field]
+                require(box and box["height"] > 0
+                        and box["top"] >= visual["top"] - 1
+                        and box["bottom"] <= visual["top"] + visual["height"] + 1,
+                        f"native keyboard obscures Search {field}")
+        frame["assertionPassed"] = True
+
+    def keyboard(self, artifacts: ArtifactSession, session: Any, fixture: dict) -> None:
+        self.click(session, FIELD)
+        session.send_keys(session.find_element("css selector", FIELD), " ")
+        self.wait(session, "return document.querySelector(arguments[0])?.value === arguments[1];",
+                  "real native Search typing", FIELD, fixture["query"] + " ")
+        self.has(session, fixture["root"], fixture["query"])
+        session.switch_to_native()
+        self.wait(session, "mobile: isKeyboardShown", "native software keyboard")
+        session.switch_to_app_webview()
+        self.capture(artifacts, session, "keyboard")
+        session.execute_script("document.activeElement?.blur(); return true;")
+        session.switch_to_native()
+        session.execute_script("mobile: hideKeyboard")
+        self._wait_for_value(
+            lambda: True if session.execute_script("mobile: isKeyboardShown") is False else None,
+            "native keyboard dismissal",
+        )
+        session.switch_to_app_webview()
+        self.fill(session, fixture["query"])
+
+    def themes(self, artifacts: ArtifactSession, session: Any, fixture: dict) -> None:
+        backgrounds = []
+        modes = ("light", "dark") if self.surface(session)["colorScheme"] == "dark" else ("dark", "light")
+        for mode in modes:
+            labels = ("Light", "浅色") if mode == "light" else ("Dark", "深色")
+            self.fill(session, "字体")
+            self.click(session, ".mobile-search-filters button:last-child")
+            self.click(session, '[data-search-function="chat-settings"]')
+            self.click(session, ".settings-section .settings-row .ant-select-selector")
+            options = ",".join(
+                f'.ant-select-dropdown:not(.ant-select-dropdown-hidden) '
+                f'.ant-select-item-option[title="{label}"]' for label in labels
+            )
+            self.click(session, options)
+            self.click(session, ".settings-dirty-buttons .ant-btn-primary")
+            self.wait(session, """
+return document.documentElement.dataset.mobileColorScheme === arguments[0]
+  && !!document.querySelector('[data-product-surface="settings.detail-saved"]');
+""", "persisted native theme", mode)
+            self.click(session, ".page-header > button:first-child")
+            self.click(session, ".mobile-search-filters button:first-child")
+            self.fill(session, fixture["query"])
+            self.has(session, fixture["root"], fixture["query"])
+            self.capture(artifacts, session, f"theme-{mode}")
+            backgrounds.append(self.surface(session)["background"])
+        require(backgrounds[0] != backgrounds[1], "native Search themes must actually differ")
+
+    def _capture_runtime_failure(self, artifacts: ArtifactSession) -> list[dict[str, Any]]:
+        diagnostics = super()._capture_runtime_failure(artifacts)
+        for session in self.sessions:
+            try:
+                recovery = session.call_action("recovery.snapshot")
+                reference = artifacts.write_json(
+                    f"mobile-device-search/{session.client_id}/failure-admission.json",
+                    {
+                        "clientId": session.client_id,
+                        "writeAdmission": recovery["writeAdmission"],
+                        "isWriteBlocked": recovery["isWriteBlocked"],
+                        "stateKinds": [state["kind"] for state in recovery["states"]],
+                    },
+                    role=f"mobile-search-failed-admission/{session.client_id}",
+                )
+                diagnostics.append({"clientId": session.client_id, "artifact": reference.to_dict()})
+            except Exception as error:
+                diagnostics.append({"clientId": session.client_id, "errorType": type(error).__name__})
+        reference = artifacts.write_json(
+            "mobile-device-search/observations.json",
+            {"frames": self.frames, "costs": self.costs, "denials": self.denials},
+            role="mobile-search-failed-observations",
+        )
+        diagnostics.append({"artifact": reference.to_dict()})
+        return diagnostics
 
     def cost(self, session: Any, name: str, action: Any, *, refresh: bool = False) -> None:
         before = session.call_action("search.reads")
@@ -195,11 +287,17 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
              receiver_session: Any, sender: Any, receiver: Any, token: str) -> dict:
         conversation = journey._create_direct(sender_session, receiver_session, sender, receiver)
         query = f"周会 {token}"
+        sent_count = 0
         def send(text: str, **extra: Any) -> str:
-            sent = sender_session.call_action("messaging.send", {
-                "conversationId": conversation, "plaintext": text, **extra,
-            })
+            nonlocal sent_count
+            try:
+                sent = sender_session.call_action("messaging.send", {
+                    "conversationId": conversation, "plaintext": text, **extra,
+                })
+            except Exception as error:
+                raise GateError(f"{sender.client_id} fixture send {sent_count + 1}: {error}") from error
             require(bool(sent.get("messageId")), "real Messaging identity required")
+            sent_count += 1
             return sent["messageId"]
         root = send(f"{query} 原始正文")
         reply_query = f"线程 {token}"
@@ -240,6 +338,8 @@ return document.activeElement?.getAttribute('data-message-ulid') === arguments[0
         self.fill(session, fixture["query"])
         self.has(session, fixture["root"], fixture["query"])
         self.capture(artifacts, session, "chinese")
+        self.keyboard(artifacts, session, fixture)
+        self.themes(artifacts, session, fixture)
         self.cost(session, "repeat", lambda: self.click(
             session, ".mobile-search-input-row button[type=submit]"))
         self.cost(session, "reopen", lambda: (

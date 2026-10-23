@@ -684,6 +684,15 @@ class SimulatorAppiumSession:
             {},
         )
 
+    def send_keys(self, element_ref: str, text: str) -> None:
+        if not element_ref:
+            raise DriverError("Appium element reference is required")
+        self._request(
+            "POST",
+            self._path(f"/element/{urllib.parse.quote(element_ref, safe='')}/value"),
+            {"text": text},
+        )
+
     def refresh_webview(self) -> None:
         self._request("POST", self._path("/refresh"), {})
 

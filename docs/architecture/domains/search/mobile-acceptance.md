@@ -24,6 +24,9 @@ Simulator and Android Emulator.
   private projection removal, new authenticated scope and old-cursor denial.
 - Settings, locale, touch targets and safe layout:
   real target, readable copy and captured native geometry.
+- Persisted light/dark preferences and native software-keyboard typing:
+  real Settings save, distinct painted themes, input/submit/content clearance
+  against the visual viewport, and keyboard dismissal on both platforms.
 
 The Feature `chat-mobile-device-search` belongs to the existing Capability
 `chat-device-search`. `chat-mobile-device-search-native-e2e` uses
@@ -39,6 +42,10 @@ Both actors then receive messages from the other existing client. Scenarios
 attach to the same source commit and Fixture epoch. They use production
 Messaging actions for setup and real Search UI for query/open. Diagnostics
 support cost and denial assertions; they do not replace UI evidence.
+Failed runs preserve native screenshots, DOM and measured geometry before
+classifying layout failure. Mutation failures also record the existing public
+Recovery projection's typed write-admission reason and the fixture send ordinal;
+they must not be hidden by retries or admission bypasses.
 
 Post-login WebView restart must restore the exact persisted Station route before
 Search can activate. Both route restore and refresh return the native

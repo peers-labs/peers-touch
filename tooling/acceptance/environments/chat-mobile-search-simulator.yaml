@@ -46,7 +46,7 @@
       "messaging.interact", "messaging.reconcile", "messaging.projection.read",
       "social.people.search", "social.request.send", "social.request.accept",
       "social.contact.open", "social.reconcile", "social.projection.read",
-      "moments.private.snapshot", "getRealtimeDevice",
+      "moments.private.snapshot", "recovery.snapshot", "getRealtimeDevice",
       "search.page", "search.resolve", "search.state", "search.cancel", "search.reads",
       "cleanup"
     ],
@@ -57,6 +57,7 @@
       "source-bound iOS Simulator and Android Emulator receivers",
       "real received Chinese messages, replies and attachment filenames",
       "native Search query, canonical Chat open, return, paging and Settings navigation",
+      "persisted light and dark themes and real software-keyboard input clearance",
       "typed authority, revision and old-session denial",
       "original SearchExecutor read costs and lifecycle fences"
     ],
