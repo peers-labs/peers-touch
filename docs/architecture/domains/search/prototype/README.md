@@ -78,6 +78,10 @@ L4 runtime：未做语义树/对比度自动化，UNPROVEN。
 
 ## 已知差异 / 待补
 
+- Mobile 当前为 `UNSYNCED`：2026-10-23 已批准全屏 Search、显式会话范围、
+  原消息/线程打开和返回恢复；生产源码已有实现，既有
+  `packages/prototypes/mobile/chat/` 仍需在本工作流同步并采集 L2/L3。
+  Owner：Mobile / Search。原型状态不能替代 Android/iOS 原生证明。
 - Desktop 端侧实现只启用本机消息/会话和真实 Settings 功能目录；原型 D/S/F 全对象是目标产品，未接入的来源在生产 footer 明示。Applet 仅预留 binding。
 - 新建 Agent 搜索项打开 Agent 的现有创建入口，实际创建仍由原模块的显式操作触发。通知/免打扰无真实分区，不伪造生产入口。
 - 同账号状态恢复/有界 mock 复用已同步；本轮 `make run-prototype` Portal

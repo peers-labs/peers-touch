@@ -173,6 +173,7 @@ pub async fn search_suggest(
                     },
                     suggestions: true,
                     conversation_id: request.conversation_id,
+                    attachment_names_only: request.attachment_names_only,
                     ..Default::default()
                 },
                 cancel,
@@ -226,6 +227,7 @@ pub async fn search_submit(
                     refresh: request.refresh,
                     suggestions: false,
                     conversation_id: request.conversation_id,
+                    attachment_names_only: request.attachment_names_only,
                 },
                 cancel,
             )

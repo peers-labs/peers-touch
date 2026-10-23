@@ -223,12 +223,16 @@ impl MobileMessagingStore {
         actor: &str,
         conversation: Option<&str>,
         query: &str,
+        attachment_names_only: bool,
         before: Option<(i64, &str, &str)>,
         limit: usize,
         check: &dyn Fn() -> Result<(), String>,
     ) -> Result<Vec<ScoredDocument>, String> {
-        let expression =
+        let mut expression =
             search_core::build_match_expression(query).map_err(|error| error.to_string())?;
+        if attachment_names_only {
+            expression = format!("attachment_filenames : ({expression})");
+        }
         if limit == 0 || limit > 101 {
             return Err("search limit invalid".into());
         }
@@ -238,10 +242,10 @@ impl MobileMessagingStore {
             .prepare(
                 "SELECT 'message', message.message_id, message.conversation_id,
                     conversation.authority_station_id, conversation.name,
-                    COALESCE(message.edited_text, message.plaintext)
-                    || COALESCE((SELECT char(10) || group_concat(attachment.filename, char(10))
+                    COALESCE((SELECT group_concat(attachment.filename, char(10)) || char(10)
                          FROM messaging_attachment_projections attachment
-                         WHERE attachment.message_id = message.message_id), ''),
+                         WHERE attachment.message_id = message.message_id), '')
+                    || COALESCE(message.edited_text, message.plaintext),
                     message.sender_ptid, message.committed_at_unix_ms
              FROM messaging_message_search_fts
              JOIN messaging_message_projections message
@@ -351,10 +355,10 @@ impl MobileMessagingStore {
              SELECT requested.kind, requested.id, conversation.conversation_id,
                     conversation.authority_station_id, conversation.name,
                     CASE WHEN requested.kind = 'message'
-                      THEN COALESCE(message.edited_text, message.plaintext)
-                        || COALESCE((SELECT char(10) || group_concat(attachment.filename, char(10))
+                      THEN COALESCE((SELECT group_concat(attachment.filename, char(10)) || char(10)
                             FROM messaging_attachment_projections attachment
                             WHERE attachment.message_id = message.message_id), '')
+                        || COALESCE(message.edited_text, message.plaintext)
                       ELSE '' END, COALESCE(message.sender_ptid, ''),
                     CASE WHEN requested.kind = 'message' THEN message.committed_at_unix_ms
                          ELSE conversation.updated_at_unix_ms END
@@ -460,15 +464,21 @@ mod tests {
         assert!(!store.rebuild_search_index_batch().unwrap());
         assert!(store.rebuild_search_index_batch().unwrap());
         let documents = store
-            .search_documents("ptid:alice", None, "目录", None, 101, &|| Ok(()))
+            .search_documents("ptid:alice", None, "目录", false, None, 101, &|| Ok(()))
             .unwrap();
         assert_eq!(documents.len(), 101);
         assert!(documents.iter().all(|doc| doc.snippet.contains("周会目录")));
         assert_eq!(
             store
-                .search_documents("ptid:alice", Some("another"), "目录", None, 101, &|| Ok(
-                    ()
-                ),)
+                .search_documents(
+                    "ptid:alice",
+                    Some("another"),
+                    "目录",
+                    false,
+                    None,
+                    101,
+                    &|| Ok(()),
+                )
                 .unwrap()
                 .len(),
             0
@@ -501,7 +511,15 @@ mod tests {
             .unwrap();
         }
         let hits = store
-            .search_documents("ptid:alice", None, "目录 Camino", None, 20, &|| Ok(()))
+            .search_documents(
+                "ptid:alice",
+                None,
+                "目录 Camino",
+                false,
+                None,
+                20,
+                &|| Ok(()),
+            )
             .unwrap();
         assert_eq!(hits.len(), 1);
         let reference = hits[0].resource.clone();
@@ -524,11 +542,42 @@ mod tests {
             Err(SearchError::SourceChanged)
         );
         assert!(store
-            .search_documents("ptid:alice", None, "目录", None, 20, &|| Ok(()))
+            .search_documents("ptid:alice", None, "目录", false, None, 20, &|| Ok(()))
             .unwrap()
             .is_empty());
         assert!(store
             .search_read_resources(&[reference], "ptid:alice", &|| Ok(()))
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn filename_filter_excludes_body_only_hits_and_retains_message_anchor() {
+        let store = MobileMessagingStore::in_memory().unwrap();
+        {
+            let connection = store.connection.lock().unwrap();
+            seed(&connection, 2);
+            connection
+                .execute(
+                    "UPDATE messaging_message_search_fts SET plaintext = ?1,
+                 attachment_filenames = CASE WHEN message_id = 'message-0001'
+                    THEN ?1 ELSE '' END",
+                    params![search_core::tokenize("周会目录.pdf").join(" ")],
+                )
+                .unwrap();
+        }
+        let all = store
+            .search_documents("ptid:alice", None, "目录", false, None, 20, &|| Ok(()))
+            .unwrap();
+        let names = store
+            .search_documents("ptid:alice", None, "目录", true, None, 20, &|| Ok(()))
+            .unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0].resource.kind, "message");
+        assert_eq!(names[0].resource.message_id, "message-0001");
+        assert!(store
+            .search_documents("ptid:other", None, "目录", true, None, 20, &|| Ok(()))
             .unwrap()
             .is_empty());
     }

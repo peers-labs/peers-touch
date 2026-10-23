@@ -3,7 +3,7 @@
 > **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Client / Station
-> Desktop 与 Mobile 共享原生读取协调器；Mobile 界面与原生证明正在实施。Station/Ask/Applet 接入仍是后续范围。
+> Desktop 与 Mobile 共享原生读取协调器；Mobile 界面已有源码，原型同步与原生证明仍在实施。Station/Ask/Applet 接入仍是后续范围。
 
 ## 1. 领域边界
 
@@ -45,6 +45,14 @@ apps/mobile/src-tauri/src/
   commands/search.rs                  生成协议 suggest/submit/cancel/resolve/read-state
 apps/mobile/src/gen/proto/domain/search/search_pb.ts
                                       生成的 Mobile Renderer 协议类型
+apps/mobile/src/
+  services/search.ts                  protobuf IPC 薄适配，不接受 Renderer 账号选择
+  runtimes/searchRuntime.ts           独立于页面的输入/结果投影、失效与返回核对
+  features/search/                    有界呈现状态和受信任 Mobile 设置目录
+  pages/SearchPage.tsx                按需挂载全屏详情及 BoundedList 结果
+  components/SearchEntry.tsx          Shell 注入既有一级页 header action rail
+  features/chat/useChatMessageAnchor.ts
+                                      原 Messaging 投影中的 message/thread 定位
 ```
 
 FTS 表形继续由 Messaging 统一持有。两端写入和查询共用 `search-core` 分词。
@@ -79,11 +87,20 @@ Mobile 原生分区由 current native session 的 Station、Actor、device、Ses
 OAuth 操作标记、OS 前后台事件锁、Messaging active lock 和 Store 水位锁共同
 裁决缓存与最终响应发布；后台、身份过期或旧实例均拒绝读取。
 会话筛选进入生成协议语义键及签名 cursor，不授予会话读权。
+`attachment_names_only` 限定原 FTS 的附件名称列，返回附件所在消息的原地址；
+它不创建附件资源或读取附件正文。该条件进入缓存和 continuation 语义键。
+
+Mobile `detail:search` 由 Search runtime descriptor 持有，只挂载当前详情。
+Renderer 最多保留一个 100 行结果页和 32 个分页 cursor，不复制 native 检索
+执行器或内容缓存。打开消息或真实 Settings 详情后，返回先核对 native
+scope/revision/expiry，再恢复结果、筛选、选择、滚动和焦点。原账号变化清空
+投影；同账号后台/恢复保留呈现元数据并重新取得合法结果。界面始终说明
+尚未取得的历史不在搜索范围，不能从缺省 recovery marker 推导完整历史。
 
 后续实现位置：
 
 - **Station**：一个 Search application/subserver 执行 S/F 区协议并适配原领域读权。尚未建立，不通过 RPC 调用客户端 Rust core。
-- **Mobile UI**：Shell 搜索详情仅维护输入/选中/滚动投影，原对象由 Messaging 打开；原生 Journey 及正式证明仍待执行。
+- **Mobile 原型和证明**：同步既有 Mobile Chat 原型；Android/iOS 原生 Journey 及正式证明仍待执行。
 - **Applet / Agent**：沿现有 SDK、Host 和 evidence owner 接入；本期没有 contributor/Ask 实现。
 
 Renderer 不建立第二个 TypeScript 查询执行引擎。取消、cursor 和完整 coverage 的执行闭环需要真实请求生命周期与 conformance，不能用 core 中存在相应类型代替。

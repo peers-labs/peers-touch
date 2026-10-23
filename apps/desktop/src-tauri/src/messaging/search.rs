@@ -20,11 +20,20 @@ impl MessagingSearchReader for MessagingEngine {
         &self,
         conversation: Option<&str>,
         query: &str,
+        attachment_names_only: bool,
         before: Option<(i64, &str, &str)>,
         limit: usize,
         check: &dyn Fn() -> Result<(), String>,
     ) -> Result<Vec<ScoredDocument>, String> {
-        MessagingEngine::search_device_documents(self, conversation, query, before, limit, check)
+        MessagingEngine::search_device_documents(
+            self,
+            conversation,
+            query,
+            attachment_names_only,
+            before,
+            limit,
+            check,
+        )
     }
 
     fn suggest_conversations(

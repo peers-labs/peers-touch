@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Badge } from 'antd';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Badge, Spin } from 'antd';
 import { Image, MessageCircle, User, Users } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
@@ -40,6 +40,10 @@ import {
 import { MobileRouteBoundary } from './MobileRouteBoundary';
 import { MobileCallSurface } from './call/MobileCallSurface';
 import { useMobilePlatform } from '../services/platform/PlatformContext';
+import { mobileSearchActions } from '../runtimes/searchRuntime';
+import { SearchEntry } from './SearchEntry';
+
+const SearchPage = lazy(() => import('../pages/SearchPage').then(module => ({ default: module.SearchPage })));
 
 type TabId = 'chat' | 'moments' | 'contacts' | 'settings';
 
@@ -92,7 +96,14 @@ function renderPage(
   onCloseOverlay: () => void,
   onBack: () => void,
   onMomentsImmersiveVisibilityChange: (visible: boolean) => void,
+  onOpenSearch: (conversationId?: string) => void,
 ) {
+  if (activeDetail?.routeId === 'detail:search') {
+    return <Suspense fallback={<div className="mobile-route-state" role="status"><Spin /></div>}>
+      <SearchPage onBack={onBack} onOpenDetail={onOpenDetail} />
+    </Suspense>;
+  }
+  const searchEntry = <SearchEntry onOpen={() => onOpenSearch()} />;
   switch (tabId) {
     case 'chat':
       return (
@@ -106,6 +117,8 @@ function renderPage(
           onStartConversation={onStartConversation}
           onBack={onBack}
           onOpenConversation={onOpenDetail}
+          searchEntry={searchEntry}
+          onOpenSearch={onOpenSearch}
         />
       );
     case 'moments':
@@ -172,6 +185,7 @@ function renderPage(
           })}
           onImmersiveVisibilityChange={onMomentsImmersiveVisibilityChange}
           onBack={onBack}
+          searchEntry={searchEntry}
         />
       );
     case 'contacts':
@@ -191,6 +205,7 @@ function renderPage(
           onOpenOverlay={onOpenOverlay}
           onCloseOverlay={onCloseOverlay}
           onBack={onBack}
+          searchEntry={searchEntry}
         />
       );
     case 'settings':
@@ -211,6 +226,7 @@ function renderPage(
           onChangeStation={props.onChangeStation}
           onChangeStationRoute={props.onChangeStationRoute}
           onLogout={props.onLogout}
+          searchEntry={searchEntry}
         />
       );
   }
@@ -234,7 +250,7 @@ export interface MobileShellProps {
  * are saved/restored through the externalized scroll restoration module.
  */
 export function MobileShell(props: MobileShellProps) {
-  const { t } = useMobileI18n();
+  const { t, language } = useMobileI18n();
   const platform = useMobilePlatform();
   const authSession = useAuthStore((state) => state.session);
   const primaryRouteId = useMobileNavigationStore(
@@ -345,6 +361,13 @@ export function MobileShell(props: MobileShellProps) {
     restoreLocation(nextRoute);
   }, [popDetail, restoreLocation, saveCurrentLocation]);
 
+  const openSearch = useCallback((conversationId = '') => {
+    requestSettingsExit(() => {
+      mobileSearchActions.prepare(conversationId, language);
+      openDetail({ routeId: 'detail:search' });
+    });
+  }, [language, openDetail]);
+
   useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => Promise<void>) | null = null;
@@ -397,6 +420,7 @@ export function MobileShell(props: MobileShellProps) {
             closeOverlay,
             closeDetail,
             setMomentsImmersive,
+            openSearch,
           )}
         </MobileRouteBoundary>
       </div>

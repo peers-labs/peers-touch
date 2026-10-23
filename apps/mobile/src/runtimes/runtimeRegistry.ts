@@ -54,6 +54,7 @@ import { createDeviceSettingsRuntimeDescriptor } from './deviceSettingsRuntime';
 import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
 import { fetchLifecycleGeneration } from './nativeLifecycleBridge';
 import { createMessagingRuntimeDescriptor } from './messagingRuntime';
+import { createSearchRuntimeDescriptor, fenceMobileSearch } from './searchRuntime';
 import { createChatStorageRuntimeDescriptor } from './chatStorageRuntime';
 import {
   createPrivateMomentsRuntimeDescriptor,
@@ -735,6 +736,7 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
     createSessionRuntimeDescriptor(),
     createNativeEventBridgeDescriptor(),
     createMessagingRuntimeDescriptor(),
+    createSearchRuntimeDescriptor(),
     createChatStorageRuntimeDescriptor(),
     createCommandRuntimeDescriptor(),
     createSocialRuntimeDescriptor(),
@@ -764,6 +766,7 @@ export function fenceMobileRuntimeProjections(
   fenceAccessRuntimeProjection();
   fenceSessionRuntimeProjection();
   fencePrivateMomentsRuntimeProjection();
+  fenceMobileSearch();
   resetMobileNavigation();
   useSocialStore.getState().bindSession(null);
   destroyRecoveryProjection();

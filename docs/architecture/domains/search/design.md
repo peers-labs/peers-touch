@@ -160,12 +160,20 @@ Desktop 被替代的通用协调器与请求 owner 同步删除，不保留并�
 协议实现。它消费 `MessagingSearchReader` 的授权候选和批量投影；Desktop/Mobile
 原 Store 分别执行 SQL、权限和内容读取，Search 核心不复制原域策略。
 显式 `conversation_id` 同时约束查询、缓存语义和签名 continuation。
+`attachment_names_only` 是同一原 Messaging 查询的字段条件，只匹配 FTS
+附件名称列，并返回所在消息地址。它参与生成协议、缓存和 cursor 语义；
+不等同于附件正文检索或独立附件资源。
 
 Mobile 按 OAuth admission → native lifecycle event → Messaging active →
 Store revision 的锁顺序发布。OAuth 的异步操作只持有 active 标记，
 不跨 await 持有 mutex；读取拒绝操作中的或过期的 Session。OS background
 事件在其原生边界立即拒绝私密发布，无需等待页面卸载。engine incarnation
 与认证操作 revision 使 A→B→A 无法重新接受旧结果。
+Mobile Search 详情按需挂载，runtime 保留一个结果页及有界分页/输入/选择元数据。
+原生后台、内容变化或身份变化立即遮蔽结果；返回和恢复先核对原 owner
+scope/revision/expiry。相同身份的生命周期 generation 变化保留用户输入，
+新身份清空全部私密投影。界面和原对象定位合同见
+[Mobile Search](../../../client/mobile/search-experience-contract.md)。
 
 目标是 [S-18](./product.md#s-18-重复使用缓存与刷新) 的重复使用体验。缓存由
 headless Search runtime/application 持有，位于 contributor 调用的共通读边界；

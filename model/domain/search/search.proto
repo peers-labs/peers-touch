@@ -131,6 +131,9 @@ message QueryIntent {
   // Empty selects all currently readable local conversations. This is a
   // content filter, never an account selector or an authorization grant.
   string conversation_id = 9;
+  // Match only attachment filenames, returning the containing message anchor.
+  // This does not search attachment bodies or create attachment resources.
+  bool attachment_names_only = 10;
 }
 
 message SourceCandidate {
@@ -233,6 +236,7 @@ message SuggestRequest {
   // Client-generated id used to cancel an in-flight suggestion.
   string request_id = 4;
   string conversation_id = 5;
+  bool attachment_names_only = 6;
 }
 
 message SubmitRequest {
@@ -247,6 +251,7 @@ message SubmitRequest {
   string locale = 8;
   bool refresh = 9;
   string conversation_id = 10;
+  bool attachment_names_only = 11;
 }
 
 message CancelRequest {

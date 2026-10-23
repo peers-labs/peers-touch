@@ -63,6 +63,7 @@ interface ChatConversationListPageContentProps {
   readonly onDismissGroupError: () => void;
   readonly onStartConversation: () => void;
   readonly onOpenConversation: (conversation: MobileConversation) => void;
+  readonly searchEntry?: ReactNode;
 }
 
 export function ChatConversationListPageContent({
@@ -79,6 +80,7 @@ export function ChatConversationListPageContent({
   onDismissGroupError,
   onStartConversation,
   onOpenConversation,
+  searchEntry,
 }: ChatConversationListPageContentProps) {
   const { t } = useMobileI18n();
   const productSurface = loading && items.length === 0
@@ -97,6 +99,7 @@ export function ChatConversationListPageContent({
     <div className="page-container" data-product-surface={productSurface}>
       <header className="page-header">
         <h1 className="header-title">{t('mobile.chat.title')}</h1>
+        {searchEntry}
         <button
           type="button"
           className="header-action"

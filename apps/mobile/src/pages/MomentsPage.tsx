@@ -22,7 +22,7 @@
  * binds runtime projections and intents to the Home/Explore surface.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button, Typography } from 'antd';
 import { ArrowLeft } from 'lucide-react';
 
@@ -121,6 +121,7 @@ interface MomentsPageProps {
   readonly onOpenCircles: () => void;
   readonly onImmersiveVisibilityChange: (visible: boolean) => void;
   readonly onBack: () => void;
+  readonly searchEntry?: ReactNode;
 }
 
 export async function submitInlineCommentIntent(
@@ -148,6 +149,7 @@ export function MomentsPage({
   onOpenCircles,
   onImmersiveVisibilityChange,
   onBack,
+  searchEntry,
 }: MomentsPageProps) {
   const fixture = useMomentsSurfaceFixture();
   if (fixture.surfaceId) {
@@ -166,6 +168,7 @@ export function MomentsPage({
       onOpenCircles={onOpenCircles}
       onImmersiveVisibilityChange={onImmersiveVisibilityChange}
       onBack={onBack}
+      searchEntry={searchEntry}
     />
   );
 }
@@ -177,6 +180,7 @@ function MomentsPageInner({
   onOpenCircles,
   onImmersiveVisibilityChange,
   onBack,
+  searchEntry,
 }: MomentsPageProps) {
   const { t } = useMobileI18n();
   const authSession = useAuthStore((state) => state.session);
@@ -560,6 +564,7 @@ function MomentsPageInner({
       data-product-surface="moments.feed"
     >
       <MomentsScopeHeader
+        searchEntry={searchEntry}
         scope={feedScope}
         exploreSort={facade?.feeds?.explore.sort() ?? TimelineSort.RECENT}
         onChangeScope={(scope) => {

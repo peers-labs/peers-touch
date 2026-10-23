@@ -201,8 +201,11 @@ and member selections. It does not fetch data or retain hidden page trees.
 Messages mount at most 200 rows; other lists mount at most 100. Previous/Next
 traverse overlapping half-windows, and message targets materialize before focus
 or scrolling. Replacing a window keeps the overlapping row's viewport offset.
-Logical-history selectors own thread counts and local search; submitting search
-uses the existing native indexed-search command and its timestamp/ID cursor.
+Logical-history selectors own thread counts. Conversation Search enters the
+descriptor-owned unified Search detail with an explicit conversation filter;
+its generated protocol uses the same native coordinator and opaque cursor as
+global Search. Opening a result materializes the original message/thread
+window, and Back restores Search context after original-owner revalidation.
 
 `app/navigation/scrollRestoration.ts` owns bounded in-memory window/query/scroll
 metadata outside tab lifetime. Each cache retains at most 100 locations; scroll

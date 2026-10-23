@@ -2747,6 +2747,7 @@ impl MessagingEngine {
         &self,
         conversation: Option<&str>,
         query: &str,
+        attachment_names_only: bool,
         before: Option<(i64, &str, &str)>,
         limit: usize,
         check: &dyn Fn() -> Result<(), String>,
@@ -2756,6 +2757,7 @@ impl MessagingEngine {
         let hits = self.store.search_message_hits_page_checked(
             conversation,
             query,
+            attachment_names_only,
             before,
             limit,
             Some(&self.endpoint.ptid),

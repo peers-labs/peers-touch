@@ -4267,15 +4267,22 @@ impl MessagingStore {
         before: Option<(i64, &str, &str)>,
         limit: usize,
     ) -> Result<Vec<MessageSearchHit>, String> {
-        self.search_message_hits_page_checked(conversation_id, query, before, limit, None, &|| {
-            Ok(())
-        })
+        self.search_message_hits_page_checked(
+            conversation_id,
+            query,
+            false,
+            before,
+            limit,
+            None,
+            &|| Ok(()),
+        )
     }
 
     pub fn search_message_hits_page_checked(
         &self,
         conversation_id: Option<&str>,
         query: &str,
+        attachment_names_only: bool,
         before: Option<(i64, &str, &str)>,
         limit: usize,
         actor: Option<&str>,
@@ -4289,7 +4296,10 @@ impl MessagingStore {
                 return Err("messaging search input is invalid".to_string());
             }
         }
-        let search_query = fts_phrase_query(query)?;
+        let mut search_query = fts_phrase_query(query)?;
+        if attachment_names_only {
+            search_query = format!("attachment_filenames : ({search_query})");
+        }
         let connection = self.connection()?;
         check()?;
         let sql = "SELECT message.conversation_id, message.message_id,

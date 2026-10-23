@@ -95,6 +95,7 @@ pub async fn search_submit<R: Runtime>(
                     suggestions: false,
                     refresh: request.refresh,
                     conversation_id: request.conversation_id.clone(),
+                    attachment_names_only: request.attachment_names_only,
                 },
                 cancel,
             )
@@ -128,6 +129,7 @@ pub async fn search_suggest<R: Runtime>(
                     },
                     suggestions: true,
                     conversation_id: request.conversation_id.clone(),
+                    attachment_names_only: request.attachment_names_only,
                     ..Default::default()
                 },
                 cancel,

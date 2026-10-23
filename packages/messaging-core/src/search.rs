@@ -27,6 +27,7 @@ pub trait MessagingSearchReader: Send + Sync + 'static {
         &self,
         conversation: Option<&str>,
         query: &str,
+        attachment_names_only: bool,
         before: Option<(i64, &str, &str)>,
         limit: usize,
         check: &dyn Fn() -> Result<(), String>,
@@ -204,7 +205,7 @@ impl SearchContributor for MessagingContributor {
             let mut documents = Vec::new();
             // Check deadlines during traversal, without re-entering the Store mutex.
             let check = || ctx.check().map_err(|e| e.to_string());
-            if kind != SearchKind::Message {
+            if kind != SearchKind::Message && !input.attachment_names_only {
                 documents = self
                     .engine
                     .suggest_conversations(
@@ -238,6 +239,7 @@ impl SearchContributor for MessagingContributor {
                         .search_device_documents(
                             conversation,
                             query,
+                            input.attachment_names_only,
                             before,
                             message_limit + 1,
                             &check,
