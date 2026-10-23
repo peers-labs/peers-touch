@@ -168,13 +168,7 @@
   "kind": "peers-touch-outcome-comparison-results",
   "schemaVersion": 1,
   "planId": "SRCH-20261022",
-  "sourceIdentity": {
-    "worktree": "peers-android",
-    "branch": "analysis/android-platform-alignment",
-    "commit": "3fd0225cee5366d8143b742b20d99f49e8dbf051",
-    "evidenceRef": "docs/architecture/domains/search/acceptance-evidence.md",
-    "binding": "证据索引记录仓库外不可变 run ID、workspace ID、原生构建与 manifest 源码绑定；后续源码必须重验，不能继承该快照 PASS。"
-  },
+  "sourceIdentity": "peers-android / analysis/android-platform-alignment / 3fd0225cee5366d8143b742b20d99f49e8dbf051 / workspace 8b99621815d8a125 / clean; immutable native evidence indexed in docs/architecture/domains/search/acceptance-evidence.md; later source requires fresh proof",
   "items": [
     { "id": "SRCH-O01", "status": "PASS", "actualEffect": "Desktop 普通登录默认 Chat，Search 按需单例覆盖层；Mobile 使用既有 Shell 全局/会话入口和按需详情。重开、返回与退格保留查询，账号切换清除旧结果及 cursor。", "evidenceRefs": ["docs/architecture/domains/search/acceptance-evidence.md"], "deviation": "Mobile 是后续已授权的全屏详情，未改写冻结的 Desktop Planned；实机与 OS 后台/锁屏未证明。" },
     { "id": "SRCH-O02", "status": "PASS", "actualEffect": "双端真实接收消息经 Search UI 与 native resolve 定位原消息和线程；返回恢复查询、筛选、分页及位置；功能结果进入真实 Settings 分区。", "evidenceRefs": ["docs/architecture/domains/search/acceptance-evidence.md"], "deviation": "只证明已取得的本机消息及所选环境；跨业务 anchor、跨 Station 和历史恢复未证明。" },
