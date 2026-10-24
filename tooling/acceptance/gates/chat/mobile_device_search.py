@@ -202,6 +202,13 @@ return {
         deadline = time.monotonic() + 30
         while True:
             rendering = self.surface(session)
+            pending = rendering["searchState"] in (
+                {"loading"} if concealed else {"loading", "concealed"})
+            if pending and not diagnostic:
+                require(time.monotonic() < deadline,
+                        f"{name} terminal native rendering timed out")
+                time.sleep(0.25)
+                continue
             if session.platform == "android":
                 # The adapter binds nativeWebScreenshot: UiAutomator owns these pixels.
                 screenshot = session.screenshot_bytes()

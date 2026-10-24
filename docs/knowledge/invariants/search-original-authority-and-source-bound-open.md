@@ -29,6 +29,7 @@ owns:
   - apps/station/app/subserver/social/infrastructure/private_read_policy.go
   - packages/locales/en/search.json
   - packages/locales/zh-CN/search.json
+  - tooling/acceptance/gates/chat/mobile_device_search.py
   - tooling/acceptance/gates/social/content_search_contract.py
   - tooling/acceptance/gates/social/content_search_desktop.py
   - tooling/acceptance/gates/social/content_search_mobile.py
@@ -80,6 +81,10 @@ release, as defined in Search design §4.1. The overlay must declare navigation
 before awaiting Open so its teardown cannot restore the old entry focus.
 Return proof MUST activate the original domain's actual Back control. A Social
 thread header cannot be located through an unrelated common page header.
+Native Search capture MUST wait for a stable terminal rendering inside its
+existing bounded capture deadline. A stable pending frame during original-owner
+revalidation is not terminal evidence. Diagnostics may record that frame, but
+all product terminal, readability and retained-context assertions remain required.
 
 Coverage copy MUST come from the original source's generated `SourceCoverage`.
 Public Station scope must never fall back to acquired-device coverage;
@@ -139,6 +144,9 @@ and panics; the outer IPC join can then report only `search cancelled`.
   alone leave that journey `UNPROVEN`.
 - Mobile Social return must use the Back button within the original
   `social-moment-thread`, then assert the retained Search query and filter.
+- Mobile capture must wait through a stable pending frame followed by `ready`,
+  fail within its deadline when pending never ends, and retain every terminal
+  assertion. Diagnostic pending frames must remain unasserted.
 - The same Journey must complete private Open after original projection
   materialization, reject unavailable targets and show distinct acquired-private
   and current-Station public coverage.
