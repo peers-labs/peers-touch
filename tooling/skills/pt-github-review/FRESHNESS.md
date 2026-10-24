@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-22
-covered_docs_hash: fa9c1c918e1896f07dbdbb685d6d324782b83838277b9fee824a3a207bbee070
+last_verified_at: 2026-10-24
+covered_docs_hash: ff7d0172e7bcc3dca7a244335ea771dc889ad523ddaaef71d88ecaefd36dd239
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,19 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-24 X-Config Distribution And Knowledge Coverage Review
+
+`AGENTS.md` registers the new `pt-x-config-catalog-publish` skill, and the
+knowledge README indexes the new XCFG-D06 invariant and the mobile proto
+regen pitfall. Review now also performs Knowledge Coverage Review: a new
+cross-layer contract, runtime-semantic proto section, module path, or
+paid-for failure mode with zero matching knowledge must add a governing
+entry or record an explicit `no_growth_needed` waiver, and documentation
+must not restate decisions or describe persisted state that the code only
+derives. `SKILL.md` was updated with this checklist; the large-requirement
+documentation playbook carries the authoring-side steps, so no separate
+fixture is required for the documentation-consistency judgment.
 
 ## Mobile Origin Contract Review
 
