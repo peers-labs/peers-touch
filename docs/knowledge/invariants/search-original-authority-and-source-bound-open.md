@@ -27,6 +27,8 @@ owns:
   - apps/station/app/subserver/social/application/public_search_test.go
   - apps/station/app/subserver/social/application/private_read_policy.go
   - apps/station/app/subserver/social/infrastructure/private_read_policy.go
+  - packages/locales/en/search.json
+  - packages/locales/zh-CN/search.json
   - tooling/acceptance/gates/social/content_search
 referenced-by: []
 related:
@@ -78,6 +80,10 @@ before awaiting Open so its teardown cannot restore the old entry focus.
 Coverage copy MUST come from the original source's generated `SourceCoverage`.
 Public Station scope must never fall back to acquired-device coverage;
 unfinished public scans must retain their incomplete state.
+Private `INDEXING` coverage MUST retain both the acquired-device scope and
+unfinished index status. Already indexed readable results can coexist with
+pending original projections; hiding the scope or forcing `READY` would
+misrepresent that source. Use the shared locale pack on both clients.
 Original projection readback/replay MUST NOT invalidate an unchanged Search
 reference by advancing the derived index watermark. Search design §4.1 owns
 the idempotent update boundary; original denial and generation checks remain
@@ -130,6 +136,10 @@ and panics; the outer IPC join can then report only `search cancelled`.
 - The same Journey must complete private Open after original projection
   materialization, reject unavailable targets and show distinct acquired-private
   and current-Station public coverage.
+- Check `search.coverage.social_indexing` in both shared locale packs: it must
+  identify acquired private posts/comments and disclose unfinished indexing.
+  The existing Mobile Social coverage assertion must still run against a
+  native `INDEXING` response; do not replace it with a ready-state fixture.
 - Social native Gates must prove outage recovery and parent deletion before
   blocking their independent targets, with all four targets visible before block
   and all four old references denied after it.

@@ -42,7 +42,7 @@
   "search.coverage.device_ready": "本机已取得的消息",
   "search.coverage.device_indexing": "正在准备本机消息索引，请稍后重新搜索。",
   "search.coverage.social_acquired": "本机已取得的私密动态与评论",
-  "search.coverage.social_indexing": "正在准备私密动态索引",
+  "search.coverage.social_indexing": "本机已取得的私密动态与评论 · 索引尚未准备完成",
   "search.coverage.social_public": "当前 Station 可读的公开动态与评论",
   "search.coverage.social_public_partial": "当前 Station 公开检索尚不完整，还有内容未检索",
   "search.coverage.social_unavailable": "动态内容来源暂不可用",

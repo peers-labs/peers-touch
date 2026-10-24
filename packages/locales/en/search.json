@@ -42,7 +42,7 @@
   "search.coverage.device_ready": "Messages acquired on this device",
   "search.coverage.device_indexing": "Preparing the local message index. Search again shortly.",
   "search.coverage.social_acquired": "Private posts and comments acquired on this device",
-  "search.coverage.social_indexing": "Preparing the private Social index",
+  "search.coverage.social_indexing": "Private posts and comments acquired on this device · index preparation is incomplete",
   "search.coverage.social_public": "Readable public posts and comments on this Station",
   "search.coverage.social_public_partial": "Public search on this Station is incomplete; more content remains",
   "search.coverage.social_unavailable": "Social content is temporarily unavailable",
