@@ -188,6 +188,14 @@ suggestions 只选 Device，主动提交明确允许 Device 与当前 Station。
 所有来源并发共用最初 5 秒 deadline。候选、已发 identity、各来源 continuation
 和首次 expiry 由有界客户端 session 持有，opaque authenticated cursor
 仅引用 session。来源改变或到期拒绝旧 continuation，串行推进避免重复/丢失。
+同一来源的有界 hydrate 批次只分别在缓存提交和投影消费时取得一次原 authority
+发布锁，避免每个候选重复执行宿主认证/安全存储读取。逐项 operation 继续持有
+独立取消、deadline、容量和失败结果；批次 admission 失败使全部 leader 失败，
+某项提交失败不取消其余项。批次在取得锁前及锁内检查取消和绝对 deadline。
+validator 替换、序列化、订阅等待、解码与原域读取都在锁外；锁内核对当前
+identity/source/policy metadata 并提交或形成可见结果。远端批次消费仍拒绝
+混合 owner observation，no-store 不进入可复用正文缓存。批量裁决不缓存身份、
+凭据或授权，也不延长原查询预算。
 每个来源在独立 worker 内完成 query → 当前授权 batch hydrate，复用核心
 `query_source`；已有未发候选直接进入该来源的 hydrate。不存在先等待全体
 query 再开始 hydrate 的全局阶段屏障。接收器使用绝对 deadline，保留原预算
@@ -215,6 +223,10 @@ kind 或 namespace，并返回 `SEARCH_PROTOCOL`；合法但未签发、到期�
 其他来源解析。域外资源类型继续沿封闭域错误合同拒绝。
 旧 session 中相同内容的记录不得遮蔽当前有效签发；仅存在旧签发仍拒绝，
 匹配后的原域 resolve 继续实时核权。
+分页推进在同一原 authority 发布锁内提交回复、更新签发 metadata 并释放
+session 锁；回复消费取得该 authority 锁后不得再遇到发布者尚未释放的签发锁。
+紧接分页成功的 Open 不能因该短暂发布窗口误判为未签发。提交失败仍不推进
+现有 session，原身份、水位、签发有效期及 owner 核权继续约束打开。
 原域打开接口取得历史目标帖和有界评论 anchor 窗口，返回由 Search 保留上下文。
 查询与原对象打开分别持有操作生命周期。来源失效立即遮蔽查询投影，但原域
 打开的读取/回填不取消自身；打开仍由原域当前读权、结果可用性及身份/用户

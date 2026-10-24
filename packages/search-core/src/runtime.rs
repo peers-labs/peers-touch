@@ -491,8 +491,9 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                     items: leaders.iter().map(|(item, _)| item.clone()).collect(),
                     refresh,
                 };
-                let read = executor
-                    .block_on(source.hydrate(&request, &ctx))
+                let read = ctx
+                    .check()
+                    .and_then(|()| executor.block_on(source.hydrate(&request, &ctx)))
                     .and_then(|reply| {
                         validate_hydration(&request, &reply)?;
                         Ok(reply)
@@ -504,52 +505,76 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                             .into_iter()
                             .map(|outcome| (outcome.item_id.clone(), outcome))
                             .collect();
-                        for (item, operation) in leaders {
-                            let outcome = outcomes
-                                .get(&item.item_id)
-                                .cloned()
-                                .ok_or(SearchError::Protocol)
-                                .and_then(|mut outcome| {
-                                    if let Some(hydration_outcome::Outcome::Unchanged(unchanged)) =
-                                        &outcome.outcome
-                                    {
-                                        let mut projection = validators
-                                            .get(&item.item_id)
-                                            .cloned()
-                                            .ok_or(SearchError::Protocol)?;
-                                        if projection.cache.as_ref().map(|c| &c.validator)
-                                            != Some(&unchanged.validator)
+                        // Substitute validators and encode outside the original
+                        // authority guard. Each resource keeps its own operation.
+                        let prepared: Vec<_> = leaders
+                            .iter()
+                            .map(|(item, _)| {
+                                outcomes
+                                    .get(&item.item_id)
+                                    .cloned()
+                                    .ok_or(SearchError::Protocol)
+                                    .and_then(|mut outcome| {
+                                        if let Some(hydration_outcome::Outcome::Unchanged(
+                                            unchanged,
+                                        )) = &outcome.outcome
                                         {
-                                            return Err(SearchError::Protocol);
-                                        }
-                                        projection.cache = unchanged.cache.clone();
-                                        outcome.outcome =
-                                            Some(hydration_outcome::Outcome::Changed(projection));
-                                    }
-                                    Ok(outcome)
-                                });
-                            let commit = outcome.and_then(|outcome| {
-                                binding.publish(|| {
-                                    let (fresh_until, no_store) = match &outcome.outcome {
-                                        Some(hydration_outcome::Outcome::Changed(projection)) => {
-                                            let cache = projection
-                                                .cache
-                                                .as_ref()
+                                            let mut projection = validators
+                                                .get(&item.item_id)
+                                                .cloned()
                                                 .ok_or(SearchError::Protocol)?;
-                                            validate_metadata(
-                                                binding.read_authority(),
-                                                &state,
-                                                cache,
-                                            )?;
-                                            (freshness(cache)?, cache.no_store || state.no_store)
+                                            if projection.cache.as_ref().map(|c| &c.validator)
+                                                != Some(&unchanged.validator)
+                                            {
+                                                return Err(SearchError::Protocol);
+                                            }
+                                            projection.cache = unchanged.cache.clone();
+                                            outcome.outcome = Some(
+                                                hydration_outcome::Outcome::Changed(projection),
+                                            );
                                         }
-                                        _ => (Instant::now(), true),
-                                    };
-                                    operation.commit(outcome.encode_to_vec(), fresh_until, no_store)
-                                })
-                            });
-                            if let Err(error) = commit {
-                                operation.fail(error);
+                                        let bytes = outcome.encode_to_vec();
+                                        Ok((outcome, bytes))
+                                    })
+                            })
+                            .collect();
+                        let published = ctx.check().and_then(|()| {
+                            binding.publish(|| {
+                                ctx.check()?;
+                                for ((_, operation), prepared) in leaders.iter().zip(prepared) {
+                                    let commit = prepared.and_then(|(outcome, bytes)| {
+                                        let (fresh_until, no_store) = match &outcome.outcome {
+                                            Some(hydration_outcome::Outcome::Changed(
+                                                projection,
+                                            )) => {
+                                                let cache = projection
+                                                    .cache
+                                                    .as_ref()
+                                                    .ok_or(SearchError::Protocol)?;
+                                                validate_metadata(
+                                                    binding.read_authority(),
+                                                    &state,
+                                                    cache,
+                                                )?;
+                                                (
+                                                    freshness(cache)?,
+                                                    cache.no_store || state.no_store,
+                                                )
+                                            }
+                                            _ => (Instant::now(), true),
+                                        };
+                                        operation.commit(bytes, fresh_until, no_store)
+                                    });
+                                    if let Err(error) = commit {
+                                        operation.fail(error);
+                                    }
+                                }
+                                Ok(())
+                            })
+                        });
+                        if let Err(error) = published {
+                            for (_, operation) in leaders {
+                                operation.fail(error.clone());
                             }
                         }
                     }
@@ -561,43 +586,55 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                 }
             }));
         }
-        let mut items = Vec::new();
-        let mut observed: Option<SourceReadState> = None;
+        // Never wait or decode while holding the authentication/Store guard.
+        let mut projections = Vec::new();
         for subscription in subscriptions {
             let bytes = subscription.wait(cancel, deadline)?;
             let outcome =
                 HydrationOutcome::decode(bytes.as_ref()).map_err(|_| SearchError::Protocol)?;
             match outcome.outcome {
                 Some(hydration_outcome::Outcome::Changed(projection)) => {
-                    let cache = projection.cache.as_ref().ok_or(SearchError::Protocol)?;
-                    binding.publish(|| {
-                        cancel.check()?;
-                        validate_metadata(binding.read_authority(), &state, cache)?;
-                        if binding.read_authority() == ReadAuthority::RemoteOwner {
-                            let mut current = state.clone();
-                            apply_observation(&mut current, cache)?;
-                            if observed
-                                .as_ref()
-                                .is_some_and(|previous| previous != &current)
-                            {
-                                return Err(SearchError::SourceChanged);
-                            }
-                            observed = Some(current);
-                        }
-                        let mut result = projection.result.clone().ok_or(SearchError::Protocol)?;
-                        result.source_id = binding.source_id().into();
-                        result.read_validity = cache.read_validity.clone();
-                        items.push(result);
-                        Ok(())
-                    })?;
+                    projections.push(projection);
                 }
                 Some(hydration_outcome::Outcome::Unavailable(_)) => {}
                 _ => return Err(SearchError::Protocol),
             }
         }
-        Ok(Hydrated {
-            items,
-            state: observed.unwrap_or(state),
+        let ctx = SearchExecutionContext {
+            partition: binding.partition().into(),
+            read_scope: state.read_scope.clone(),
+            binding_revision: binding.source_revision().into(),
+            deadline,
+            cancel: cancel.clone(),
+        };
+        ctx.check()?;
+        binding.publish(|| {
+            ctx.check()?;
+            let mut items = Vec::new();
+            let mut observed: Option<SourceReadState> = None;
+            for projection in projections {
+                let cache = projection.cache.as_ref().ok_or(SearchError::Protocol)?;
+                validate_metadata(binding.read_authority(), &state, cache)?;
+                if binding.read_authority() == ReadAuthority::RemoteOwner {
+                    let mut current = state.clone();
+                    apply_observation(&mut current, cache)?;
+                    if observed
+                        .as_ref()
+                        .is_some_and(|previous| previous != &current)
+                    {
+                        return Err(SearchError::SourceChanged);
+                    }
+                    observed = Some(current);
+                }
+                let mut result = projection.result.ok_or(SearchError::Protocol)?;
+                result.source_id = binding.source_id().into();
+                result.read_validity = cache.read_validity.clone();
+                items.push(result);
+            }
+            Ok(Hydrated {
+                items,
+                state: observed.unwrap_or(state),
+            })
         })
     }
 

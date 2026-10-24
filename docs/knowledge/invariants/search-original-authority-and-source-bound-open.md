@@ -69,6 +69,10 @@ identity, resource and expiry checks still apply, followed by original-owner
 authorization. Finding only an older issuance cannot grant access.
 Original-owner invalidations hide the affected source immediately; they do
 not expose stale content while another source completes.
+Continuation publication MUST release its issuance metadata guard before
+leaving the original authority guard, as defined by Search design §4.1.
+A successful reply must not lead to an immediate Open observing a locked
+issuance and incorrectly treating its valid reference as unavailable.
 Query invalidation MUST NOT cancel an Open because its original owner is
 materializing the target. Search design §4.1 separates those lifecycles:
 the original current read and availability result decide Open, while identity
@@ -158,6 +162,10 @@ time. Failed windows and continuations must not survive as resumable candidates.
 Successful RRF ordering, winner identity and pagination stay deterministic.
 Hydration may read each bounded unissued window before fusion, but session
 storage remains metadata-only and only displayed references are issued.
+Bounded hydration publication follows Search design §4.1's batch boundary.
+Do not reintroduce an original authentication/Store guard per resource or hold
+that guard across subscription waits, encoding, decoding or original reads.
+Per-resource operation fences and current consumption authority remain required.
 
 Resolution validates resource shape, declared kind and namespace before issued
 association lookup. A forged or undeclared namespace must be a protocol error;
@@ -194,6 +202,17 @@ Search publication order and can deadlock the native UI during reconciliation.
 - Search Core `current_issuance_survives_older_sessions_of_the_same_resource`
   covers overlapping sessions, rejection before a current issuance, and fresh
   owner denial after a valid issuance.
+- Search Core `bounded_hydration_publication_cost_preserves_three_source_results`
+  checks bounded original authority cost at three 100-candidate sources while
+  retaining no-store, complete coverage, RRF score and winner identity.
+  `hydration_batch_rejects_revocation_and_cancellation_at_commit_or_consumption`
+  fences both publication boundaries; mixed remote owner observations must
+  fail without issuing any resource in
+  `hydration_batch_rejects_mixed_remote_owner_observations`.
+- Search Core `continuation_response_releases_issuance_guard_before_immediate_open`
+  pauses the continuation publisher after authority release, then consumes
+  that response and opens its newly issued reference before the publisher
+  returns. The original owner must resolve that exact resource.
 - Search Core `slow_source_timeout_preserves_fast_source_within_total_budget`
   must include nonzero fast-source hydration latency. The fast source retains
   its authorized page when the slow query exhausts the unchanged budget.

@@ -674,6 +674,9 @@ impl<E: SearchExecutor> SearchRuntime<E> {
             if let Some(guard) = &mut guard {
                 **guard = draft;
             }
+            // Consumption uses this same authority guard. Release issuance
+            // metadata before it can observe the committed continuation.
+            drop(guard.take());
             Ok(())
         })
     }

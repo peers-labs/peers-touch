@@ -49,6 +49,7 @@ struct Source {
     remote: bool,
     observation: AtomicUsize,
     wrong_scope: AtomicBool,
+    mixed_observation: bool,
     suggestions: bool,
     revision: String,
 }
@@ -79,6 +80,7 @@ impl Source {
             remote: false,
             observation: AtomicUsize::new(0),
             wrong_scope: AtomicBool::new(false),
+            mixed_observation: false,
             suggestions: true,
             revision: "one".into(),
         }
@@ -217,19 +219,28 @@ impl SearchContributor for Source {
                 outcomes: input
                     .items
                     .iter()
-                    .map(|i| HydrationOutcome {
-                        item_id: i.item_id.clone(),
-                        outcome: Some(hydration_outcome::Outcome::Changed(AuthorizedProjection {
-                            result: Some(ResultItem {
-                                resource: i.resource.clone(),
-                                kind: SearchKind::Knowledge as i32,
-                                source_id: self.descriptor.source_id.clone(),
-                                title: "authorized".into(),
-                                ..Default::default()
-                            }),
-                            fields: i.fields.clone(),
-                            cache: Some(self.cache()),
-                        })),
+                    .enumerate()
+                    .map(|(index, i)| {
+                        let mut cache = self.cache();
+                        if self.mixed_observation && index == 0 {
+                            cache.source_revision.push_str(":different");
+                        }
+                        HydrationOutcome {
+                            item_id: i.item_id.clone(),
+                            outcome: Some(hydration_outcome::Outcome::Changed(
+                                AuthorizedProjection {
+                                    result: Some(ResultItem {
+                                        resource: i.resource.clone(),
+                                        kind: SearchKind::Knowledge as i32,
+                                        source_id: self.descriptor.source_id.clone(),
+                                        title: "authorized".into(),
+                                        ..Default::default()
+                                    }),
+                                    fields: i.fields.clone(),
+                                    cache: Some(cache),
+                                },
+                            )),
+                        }
                     })
                     .collect(),
             })
@@ -260,6 +271,7 @@ impl SearchContributor for Source {
 struct Binding {
     source: Arc<Source>,
     active: Arc<AtomicBool>,
+    publication_guard: Arc<std::sync::Mutex<()>>,
     revision: String,
     partition: String,
 }
@@ -268,6 +280,7 @@ impl Binding {
         Self {
             source: Arc::new(source),
             active: Arc::new(AtomicBool::new(true)),
+            publication_guard: Default::default(),
             revision: "one".into(),
             partition: "actor".into(),
         }
@@ -297,6 +310,7 @@ impl SearchBinding for Binding {
         &self,
         publish: impl FnOnce() -> Result<T, SearchError>,
     ) -> Result<T, SearchError> {
+        let _guard = self.publication_guard.lock().unwrap();
         self.check()?;
         publish()
     }
@@ -305,7 +319,7 @@ impl SearchBinding for Binding {
         _: &[SourceReadState],
         publish: impl FnOnce() -> Result<T, SearchError>,
     ) -> Result<T, SearchError> {
-        // Tests exercise coordinator checks; production uses an atomic host guard.
+        // Match the host's atomic publication contract, including consumption.
         self.publish(publish)
     }
     fn contributor(&self) -> Result<Arc<dyn SearchContributor>, SearchError> {
@@ -346,6 +360,225 @@ fn intent() -> QueryIntent {
         scopes: vec![SearchScope::Device as i32, SearchScope::Station as i32],
         ..Default::default()
     }
+}
+
+#[derive(Clone)]
+struct GuardedBinding {
+    inner: Binding,
+    guard: Arc<std::sync::Mutex<()>>,
+    publications: Arc<AtomicUsize>,
+    hydration_publications: Arc<AtomicUsize>,
+    stop_at: usize,
+    cancel_at_stop: Option<CancelToken>,
+    composition_pause: Option<Arc<PublicationPause>>,
+}
+struct PublicationPause {
+    calls: AtomicUsize,
+    entered: std::sync::Barrier,
+    resume: std::sync::Barrier,
+}
+impl GuardedBinding {
+    fn new(source: Source) -> Self {
+        Self {
+            inner: Binding::new(source),
+            guard: Default::default(),
+            publications: Default::default(),
+            hydration_publications: Default::default(),
+            stop_at: 0,
+            cancel_at_stop: None,
+            composition_pause: None,
+        }
+    }
+}
+impl SearchBinding for GuardedBinding {
+    fn partition(&self) -> &str {
+        self.inner.partition()
+    }
+    fn source_revision(&self) -> &str {
+        self.inner.source_revision()
+    }
+    fn source_id(&self) -> &str {
+        self.inner.source_id()
+    }
+    fn binding_id(&self) -> &str {
+        self.inner.binding_id()
+    }
+    fn check(&self) -> Result<(), SearchError> {
+        self.inner.check()
+    }
+    fn publish<T>(
+        &self,
+        publish: impl FnOnce() -> Result<T, SearchError>,
+    ) -> Result<T, SearchError> {
+        let _guard = self.guard.lock().unwrap();
+        self.publications.fetch_add(1, Ordering::SeqCst);
+        if self.inner.source.hydrates.load(Ordering::SeqCst) > 0 {
+            let count = self.hydration_publications.fetch_add(1, Ordering::SeqCst) + 1;
+            if count == self.stop_at {
+                if let Some(cancel) = &self.cancel_at_stop {
+                    cancel.cancel();
+                } else {
+                    self.inner.active.store(false, Ordering::SeqCst);
+                }
+            }
+        }
+        self.check()?;
+        publish()
+    }
+    fn publish_sources<T>(
+        &self,
+        _: &[SourceReadState],
+        publish: impl FnOnce() -> Result<T, SearchError>,
+    ) -> Result<T, SearchError> {
+        let call = self
+            .composition_pause
+            .as_ref()
+            .map(|pause| pause.calls.fetch_add(1, Ordering::SeqCst) + 1);
+        let result = self.publish(publish);
+        if call == Some(3) {
+            let pause = self.composition_pause.as_ref().unwrap();
+            pause.entered.wait();
+            pause.resume.wait();
+        }
+        result
+    }
+    fn contributor(&self) -> Result<Arc<dyn SearchContributor>, SearchError> {
+        self.inner.contributor()
+    }
+    fn read_authority(&self) -> ReadAuthority {
+        self.inner.read_authority()
+    }
+    fn read_state(&self) -> Result<SourceReadState, SearchError> {
+        self.inner.read_state()
+    }
+}
+
+#[test]
+fn bounded_hydration_publication_cost_preserves_three_source_results() {
+    let runtime = SearchRuntime::<Executor>::default();
+    let guard = Arc::new(std::sync::Mutex::new(()));
+    let bindings: Vec<_> = ["device", "private", "station"]
+        .into_iter()
+        .map(|id| {
+            let mut source = Source::new(id, SearchScope::Device);
+            source.no_store = true;
+            let mut binding = GuardedBinding::new(source);
+            binding.guard = guard.clone();
+            binding
+        })
+        .collect();
+    let page = runtime
+        .query_all(&bindings, intent(), &CancelToken::new())
+        .unwrap();
+    assert_eq!(page.items.len(), 20);
+    assert_eq!(page.items[0].score, 3.0 / 61.0);
+    assert_eq!(page.items[0].source_id, "device");
+    assert!(page
+        .coverage
+        .iter()
+        .all(|c| c.state == SourceState::Ready as i32));
+    assert!(page.sources.iter().all(|s| s.no_store));
+    let publications: usize = bindings
+        .iter()
+        .map(|b| b.publications.load(Ordering::SeqCst))
+        .sum();
+    assert!(publications <= 32, "bounded authority cost: {publications}");
+    assert!(bindings
+        .iter()
+        .all(|b| b.inner.source.hydrates.load(Ordering::SeqCst) == 1));
+}
+
+#[test]
+fn hydration_batch_rejects_revocation_and_cancellation_at_commit_or_consumption() {
+    for stop_at in [1, 2] {
+        for cancel_at_stop in [false, true] {
+            let runtime = SearchRuntime::<Executor>::default();
+            let mut source = Source::new("device", SearchScope::Device);
+            source.no_store = true;
+            let mut binding = GuardedBinding::new(source);
+            binding.stop_at = stop_at;
+            let cancel = CancelToken::new();
+            if cancel_at_stop {
+                binding.cancel_at_stop = Some(cancel.clone());
+            }
+            assert_eq!(
+                runtime.query(&binding, intent(), &cancel),
+                Err(SearchError::Cancelled)
+            );
+            assert_eq!(binding.inner.source.hydrates.load(Ordering::SeqCst), 1);
+            assert_eq!(
+                binding.hydration_publications.load(Ordering::SeqCst),
+                stop_at
+            );
+        }
+    }
+}
+
+#[test]
+fn hydration_batch_rejects_mixed_remote_owner_observations() {
+    let runtime = SearchRuntime::<Executor>::default();
+    let mut source = Source::new("remote", SearchScope::Station);
+    source.remote = true;
+    source.no_store = true;
+    source.mixed_observation = true;
+    let binding = Binding::new(source);
+    assert_eq!(
+        runtime.query(&binding, intent(), &CancelToken::new()),
+        Err(SearchError::SourceChanged)
+    );
+    assert_eq!(binding.source.hydrates.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        runtime.resolve(&binding, binding.source.resource(0), &CancelToken::new()),
+        Err(SearchError::ResourceUnavailable)
+    );
+    assert_eq!(binding.source.resolves.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn continuation_response_releases_issuance_guard_before_immediate_open() {
+    let runtime = SearchRuntime::<Executor>::default();
+    let mut source = Source::new("remote", SearchScope::Station);
+    source.remote = true;
+    source.no_store = true;
+    let mut binding = GuardedBinding::new(source);
+    let pause = Arc::new(PublicationPause {
+        calls: AtomicUsize::new(0),
+        entered: std::sync::Barrier::new(2),
+        resume: std::sync::Barrier::new(2),
+    });
+    binding.composition_pause = Some(pause.clone());
+    let first = runtime
+        .query_all(
+            std::slice::from_ref(&binding),
+            intent(),
+            &CancelToken::new(),
+        )
+        .unwrap();
+    let worker = {
+        let runtime = runtime.clone();
+        let binding = binding.clone();
+        std::thread::spawn(move || {
+            runtime.query_all(
+                &[binding],
+                QueryIntent {
+                    cursor: first.next_cursor,
+                    ..intent()
+                },
+                &CancelToken::new(),
+            )
+        })
+    };
+    pause.entered.wait();
+    let next = worker.join().unwrap().unwrap();
+    let resolved = runtime.resolve_all(
+        std::slice::from_ref(&binding),
+        "remote",
+        next.items[0].resource.clone().unwrap(),
+        &CancelToken::new(),
+    );
+    // Always release the paused publisher before checking the result.
+    pause.resume.wait();
+    assert_eq!(resolved.unwrap().resource, next.items[0].resource);
 }
 
 #[test]
