@@ -252,16 +252,17 @@ XConfigCache
   expires_at
   etag?
 
-XConfigOriginSet (channel-scoped, XCFG-D06)
-  advertised_origins[]   # last accepted snapshot's distribution section
-  active_origin?         # origin of the currently accepted snapshot
-  updated_at
+Origin set (XCFG-D06) — derived per refresh, NOT a separate persisted object:
+  advertised_origins[]   # derived from the accepted snapshot's distribution section
+  active_origin?         # in-memory diagnostic; origin serving the last accepted snapshot/304
 
-Bootstrap origin sources merged per refresh (first occurrence wins,
-effective fetch list capped at 8 after admission):
-  PEERS_X_CONFIG_URL (dev override)
-  ++ advertised_origins (signed, <=4)
-  ++ baked PT_DIST_X_CONFIG_URLS (package anchors, pinned)
+Advertised origins need no dedicated store: they are read from the
+persisted signed snapshot, so they survive restarts through the snapshot
+cache and watermark. Merge order, admission, and failover semantics are
+defined once by XCFG-D06 in `decisions.md` and by
+`packages/x-config-core/src/origins.rs` + `failover.rs` (override,
+advertised, baked anchors; dedup first occurrence; effective list capped
+at 8 after admission).
 
 StationSuggestion
   seed_id
@@ -275,8 +276,9 @@ StationSuggestion
 ```
 
 The secure watermark is `(channel, sequence, statement_sha256, signing_key_id)`.
-Cache persistence precedes watermark advancement. Advertised origins persist
-only after the same signed acceptance; unsigned origin mutation is impossible.
+Cache persistence precedes watermark advancement. Advertised origins become
+visible only after the same signed acceptance; unsigned origin mutation is
+impossible.
 Cloud refresh never mutates verified Station entries, active route, Session,
 Actor, Device, or Federation scope.
 

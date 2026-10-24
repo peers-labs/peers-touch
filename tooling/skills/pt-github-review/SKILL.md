@@ -369,6 +369,24 @@ Knowledge Delta Review:
 - bug fix discovers reusable root cause -> require pitfall or explicit waiver;
 - repeated procedure appears again -> propose playbook.
 
+Knowledge Coverage Review (the reverse direction — required knowledge that is
+missing, not just stale knowledge):
+
+- If the diff introduces a new cross-layer contract, a new proto section with
+  client/runtime semantics, a new registered architecture module/path, or a
+  paid-for failure mode, and `knowledge-match.sh` reports `Matched operational
+  knowledge: none` for the changed implementation paths, record a finding:
+  either the PR adds the governing invariant/pitfall/playbook/term (with
+  `owns:` and README index) or states an explicit `no_growth_needed` reason.
+  This is normally P2 for additive, well-documented work; raise to P1 when the
+  change adds a trust, persistence, or protocol boundary whose violation
+  future edits could silently repeat.
+- Review documentation diffs for duplicated truth: a knowledge entry must
+  reference, not restate, an architecture decision; a data/state model must
+  not document persisted objects that the code only derives or holds in
+  memory. Require the single source to be linked and the redundant copy
+  removed.
+
 ## Acceptance Evidence
 
 Acceptance Framework proves product capability scope. It does not approve PRs.
