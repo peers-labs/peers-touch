@@ -166,6 +166,7 @@ function publish(frame: Frame): void {
 }
 
 export async function runSearchQuery(locale: string, refresh = false, more = false): Promise<void> {
+  if (useSearchStore.getState().opening) return;
   stopSearchQuery();
   activeLocale = locale;
   const view = useSearchStore.getState();
@@ -174,7 +175,7 @@ export async function runSearchQuery(locale: string, refresh = false, more = fal
   const token = {};
   active = token;
   const current = () => active === token && !!identity && captureSearchIdentity() === identity
-    && useSearchStore.getState().open;
+    && useSearchStore.getState().open && !useSearchStore.getState().opening;
   const query = view.query.trim();
   const mode = view.mode;
   const cursor = more ? view.response?.nextCursor ?? '' : '';
@@ -275,15 +276,15 @@ export async function reconcileSearchQuery(locale: string): Promise<void> {
   const capturedEpoch = epoch;
   try {
     await readState();
-    if (capturedEpoch !== epoch || !useSearchStore.getState().open) return;
     const latest = useSearchStore.getState();
+    if (capturedEpoch !== epoch || !latest.open || latest.opening) return;
     if (latest.response && !valid(latest.response)) {
       useSearchStore.setState({ response: concealChangedSearchSources(latest.response, ownerState!) });
     }
     if (latest.status !== 'loading' && latest.status !== 'error'
       && (!latest.response || !reusable(latest.response))) await runSearchQuery(locale);
   } catch {
-    if (capturedEpoch === epoch) {
+    if (capturedEpoch === epoch && !useSearchStore.getState().opening) {
       hide();
       useSearchStore.setState({ status: 'error', stalled: false, errorKey: 'search.error.unavailable' });
     }

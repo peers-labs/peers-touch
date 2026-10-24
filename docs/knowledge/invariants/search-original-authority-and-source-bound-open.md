@@ -61,6 +61,9 @@ materializing the target. Search design §4.1 separates those lifecycles:
 the original current read and availability result decide Open, while identity
 or user intent changes still cancel it. Query reconciliation waits until Open
 settles. A non-readable private projection MUST NOT be accepted as a target.
+The query owner MUST recheck Open after asynchronous read-state waits, including
+failure publication. An earlier idle observation cannot authorize a late query
+or error projection over a current Open.
 
 Coverage copy MUST come from the original source's generated `SourceCoverage`.
 Public Station scope must never fall back to acquired-device coverage;

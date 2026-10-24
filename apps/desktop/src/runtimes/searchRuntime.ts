@@ -8,6 +8,7 @@ import type { Navigation, Page } from '../types/navigation';
 import { clearSearchQueries, invalidateSearchSources, reconcileSearchQuery, runSearchQuery, searchErrorKey, stopSearchQuery } from './searchQueries';
 import { openSearchResource } from './searchOpeners';
 import { subscribeSearchInvalidations } from './searchInvalidations';
+import { log } from '../utils/logger';
 
 const RECONCILE_MS = 2_000;
 let requestGeneration = 0;
@@ -21,7 +22,10 @@ let installed = false;
 let installationGeneration = 0;
 let locale = 'en';
 
-function stopRequest(): void {
+function stopRequest(reason = 'user-intent'): void {
+  if (useSearchStore.getState().opening) {
+    log.debug('searchRuntime', 'Search Open cancelled by intent', { reason });
+  }
   requestGeneration++;
   stopSearchQuery();
   if (debounce !== null) clearTimeout(debounce);
@@ -32,7 +36,7 @@ function stopRequest(): void {
 }
 
 function reset(): void {
-  stopRequest();
+  stopRequest('identity-reset');
   clearSearchQueries();
   useSearchStore.setState(emptySearchState());
 }
@@ -87,6 +91,8 @@ export const searchActions = {
     if (!identity) return false;
     const id = crypto.randomUUID();
     requestId = id;
+    let phase = 'resolve';
+    log.debug('searchRuntime', 'Search Open started');
     useSearchStore.setState({
       opening: true, errorKey: null,
       status: useSearchStore.getState().response ? 'ready' : 'idle',
@@ -95,13 +101,27 @@ export const searchActions = {
       const current = () => generation === requestGeneration && captureSearchIdentity() === identity
         && useSearchStore.getState().open;
       const resolved = await searchService.resolve(item.resource, item.sourceId, id);
-      if (!current()) return false;
+      if (!current()) {
+        log.debug('searchRuntime', 'Search Open superseded', { phase });
+        return false;
+      }
+      phase = 'original-target';
+      log.debug('searchRuntime', 'Search Open resolved');
       await openSearchResource(resolved, navigation, current);
-      if (!current()) return false;
-      useSearchStore.setState({ returnAvailable: true });
+      if (!current()) {
+        log.debug('searchRuntime', 'Search Open superseded', { phase });
+        return false;
+      }
+      useSearchStore.setState({ returnAvailable: true, opening: false });
+      log.debug('searchRuntime', 'Search Open completed');
       searchActions.close();
       return true;
     } catch (error) {
+      log.debug('searchRuntime', 'Search Open failed', {
+        phase, currentIntent: generation === requestGeneration,
+        currentIdentity: captureSearchIdentity() === identity,
+        errorKey: searchErrorKey(error),
+      });
       if (generation === requestGeneration && captureSearchIdentity() === identity) {
         useSearchStore.setState({ errorKey: searchErrorKey(error) });
       }
