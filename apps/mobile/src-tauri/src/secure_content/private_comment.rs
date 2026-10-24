@@ -81,7 +81,7 @@ pub struct PrivateCommentProjection {
 }
 
 impl PrivateCommentProjection {
-    fn encode(&self) -> Result<Vec<u8>, String> {
+    pub(crate) fn encode(&self) -> Result<Vec<u8>, String> {
         serde_json::to_vec(self).map_err(|error| error.to_string())
     }
 
@@ -129,6 +129,79 @@ struct DecryptedPrivateComment {
     projection: PrivateCommentProjection,
     content_key: ContentKey,
     consumed_prekey_id: Option<String>,
+}
+
+pub(crate) fn list_acquired_anchor(
+    store: &PrivateSocialStore,
+    transport: &NativeSocialTransport,
+    session_generation: u64,
+    post_id: &str,
+    anchor_comment_id: &str,
+    limit: u32,
+    deadline: std::time::Instant,
+) -> Result<PrivateCommentPage, String> {
+    if !canonical_identifier(post_id) || !canonical_identifier(anchor_comment_id) {
+        return Err("private Comment anchor is invalid".into());
+    }
+    let revision = store.search_revision()?;
+    let retained = store.comment_projection_window(post_id, anchor_comment_id, limit as usize)?;
+    let mut comments = Vec::with_capacity(retained.len());
+    for bytes in retained {
+        store.ensure_session_generation(session_generation)?;
+        let p = PrivateCommentProjection::decode(&bytes)?;
+        if p.state != CommentState::Posted.as_str() || p.text.is_none() {
+            continue;
+        }
+        let generation = p
+            .generation
+            .parse::<u64>()
+            .map_err(|_| "private Comment generation is invalid")?;
+        if store.content_root(&p.content_id, generation)?.is_none() {
+            continue;
+        }
+        comments.push(p);
+    }
+    if comments
+        .first()
+        .is_none_or(|p| p.comment_id != anchor_comment_id)
+    {
+        return Err("private Comment anchor is unavailable".into());
+    }
+    let request = social::CheckMomentReadPolicyRequest {
+        targets: comments
+            .iter()
+            .enumerate()
+            .map(|(index, comment)| social::MomentReadPolicyTarget {
+                item_id: format!("item-{index}"),
+                post_id: post_id.to_string(),
+                comment_id: comment.comment_id.clone(),
+            })
+            .collect(),
+    };
+    let response = transport
+        .check_moment_read_policy(&request)
+        .map_err(|e| e.to_string())?;
+    let decisions =
+        crate::secure_content::transport::validated_moment_read_decisions(&request, &response)?;
+    if !decisions[0] || std::time::Instant::now() >= deadline {
+        return Err("private Comment anchor is unavailable".into());
+    }
+    let comments = comments
+        .into_iter()
+        .zip(decisions)
+        .filter_map(|(comment, readable)| readable.then_some(comment))
+        .collect();
+    // A contextual acquired window is not an exhaustive remote comment page.
+    store
+        .with_search_revision(&revision, || {
+            Ok(PrivateCommentPage {
+                post_id: post_id.to_string(),
+                comments,
+                next_cursor: String::new(),
+                has_more: false,
+            })
+        })
+        .map_err(|e| e.to_string())
 }
 
 struct CommentRecoveryTarget {

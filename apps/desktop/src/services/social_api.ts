@@ -498,6 +498,7 @@ export async function socialGetComments(
   postId: string,
   cursor?: string,
   limit?: number,
+  anchorCommentId?: string,
 ): Promise<ListMomentCommentsResponse> {
   const boundedLimit = Number.isInteger(limit) && Number(limit) > 0
     ? Math.min(Number(limit), 100)
@@ -507,12 +508,14 @@ export async function socialGetComments(
       post_id: ListMomentCommentsRequest['postId'];
       cursor?: ListMomentCommentsRequest['cursor'];
       limit: ListMomentCommentsRequest['limit'];
+      anchor_comment_id?: ListMomentCommentsRequest['anchorCommentId'];
     },
     ListMomentCommentsResponse
   >('social_get_comments', ListMomentCommentsResponseSchema, {
     post_id: postId,
     cursor,
     limit: boundedLimit,
+    anchor_comment_id: anchorCommentId,
   });
 }
 

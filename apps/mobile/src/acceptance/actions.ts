@@ -3,6 +3,7 @@ import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { invoke } from '@tauri-apps/api/core';
 import { SearchResponseSchema } from '../gen/proto/domain/search/search_pb';
 import { mobileSearchAcceptanceActions } from './searchActions';
+import { mobileSocialSearchAcceptanceActions } from './socialSearchActions';
 
 import {
   currentAccessGate,
@@ -946,6 +947,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   }),
 
   ...mobileSearchAcceptanceActions,
+  ...mobileSocialSearchAcceptanceActions,
   'messaging.search': async (input) => {
     const conversationId = requireString(input?.conversationId, 'messaging.search.conversationId');
     const result = await mobileSearchAcceptanceActions['search.page']({

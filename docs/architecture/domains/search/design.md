@@ -4,7 +4,8 @@
 > **Created**: 2026-10-22
 > **Owner**: Search / Client / Station
 > **Basis**: 封闭域与 Desktop「找回 + 打开」方向、Shell 原型已确认；
-> Mobile 已接受同一端侧查找/打开范围。S/F、Ask 尚未实施；源码不代替原生证明。
+> Mobile 已接受同一查找/打开范围。已授权多来源与 Social 接入；实现与原生证明
+> 分别核验。Federation、Ask 尚未实施。
 
 ## 0. 设计依据与层级
 
@@ -75,7 +76,7 @@ Portal / Shortcut / Scoped UI
   → 当前账号 Search intent
   → Client native/headless Coordinator
       ├─ D 区 provider → 本账号受保护索引（消息/私密记忆/私有附件）/ 功能目录
-      └─ Station request（认证 actor 上下文）→ Search application
+      └─ Station request（认证 actor 上下文）→ 原领域 Search read application
                               ├─ S 区 domain query adapter（当前 actor 谓词）
                               ├─ S 区 derived index（行级 ACL）
                               └─ F 区 Federation on-demand adapter（对端裁决）
@@ -113,7 +114,11 @@ Search source registry 是检索能力投影，不重新拥有 Applet 安装、A
 - **Client Coordinator**：由客户端 Search runtime 持有，输入为 query intent、认证快照和 eligible sources，输出为 result batches/coverage/cursor。依赖源查询 port、policy hydration 和 Shell resolver；持有有界查询状态与统一缓存复用策略，不写业务对象。账号锁定/切换使它取消并关闭对应缓存分区。
 - **Source registry projection**：输入已验证 manifest、安装/联邦关系 revision 和 readiness；输出当前身份可参与的域内 source set。静态 schema 可进程级缓存；授权集合按账号/会话持有。不能将 source 自报的 actor/permissions 当 authority。
 - **Local source adapters**：由设备 Search executor 调度 Messaging FTS、端侧私密记忆/附件索引与功能目录，返回候选、rank/provenance 和 coverage。只访问本账号授权读端口；不能经 UI 遍历全量正文或请求 Station 获取 E2EE 明文，也不读取 Peers 存储边界之外的 OS 文件。来源可以随调用短暂激活，不必挂载页面。
-- **Station Search Application**：输入认证上下文和 query，调度本站 domain/index adapter 与 Federation 按需查询；对候选做 batch read-policy 后返回必要投影和真实来源状态。限并发、限候选、限时间；不访问本机目录、不调用公网搜索/外部 connector、不继承另一 actor 凭据。
+- **Station 来源 read adapter**：当前由原 Social application 持有，输入认证
+  上下文和 query，复用原 domain/repository 与 batch read-policy，返回必要
+  投影和真实来源状态。其他本站来源与 Federation 按需查询仍是未实施的目标；
+  不据此创建平行 Search subserver。限并发、限候选、限时间；不访问本机目录、
+  不调用公网搜索/外部 connector、不继承另一 actor 凭据。
 - **Index projection workers**：由各信任边界的后台 runtime 持有，输入 snapshot/change/extraction 状态，输出 index generation/checkpoint/coverage。只写派生索引；grant/source/policy revoke 优先阻断读取。与 UI 查询共享 IO/CPU 预算，但无页面挂载依赖。
 - **Agent model / evidence adapter**：输入允许的 query understanding 或已授权 evidence bundle，返回条件、rerank/embedding 能力结果或 cited answer。复用 Agent provider/runtime；不能新增另一套凭据、Turn 或自动副作用。只在提交后按处理策略调用。
 - **Shell Resource Resolver**：输入 typed ResourceRef/action ID，调用原域或 Host 在域内存储边界内打开/预览；输出 opened/unavailable/permission-required。它不猜 URL 前缀，不打开域外任意路径，也不把对象 metadata 当执行脚本。
@@ -151,6 +156,42 @@ Desktop 与 Mobile 原生宿主消费同一 `search-core::runtime::SearchRuntime
 核心不 import AppState、Tauri、MessagingEngine 或 SQL 驱动。平台保留身份与
 原 Store 的锁顺序，缓存提交和最终 IPC bytes 发布都必须通过同一裁决。
 
+认证分区来自平台 Session，独立于 MessagingEngine。当前生产 composition
+声明 `device.messaging`、`device.social`、`station.social.public`；
+每来源独立检查 readiness、binding、content/policy revision。Messaging 不可用
+不能阻断 Social。空输入 recent-conversation 语义只由 Messaging Contributor
+提供，通用核心不改写业务类型。
+
+`SearchBinding::read_authority` 区分本机 `LocalSnapshot` 和远端 `RemoteOwner`。
+本机读回复必须与原 Store 的冻结 content/policy 水位相同，再在原 Store 锁内
+发布。远端 Host 只冻结认证分区、原 owner/source/binding 与 actor read scope，
+读取前不虚构 content/policy observation；远端回复保留原 owner 实际观察版本。
+不同 HTTP 读取可观察不同 PostgreSQL 快照，不把预先查询的快照当下一次读取的
+权限水位。当前远端模式强制 no-store、owner-check、零离线租约；补齐结果更新
+当前响应的逐来源观察，continuation/resolve 再由原 owner 核权。本机出版锁仅
+防止身份/路由切换，不能宣称服务器权限变更已被本机锁线性化。
+
+受信 contributor descriptor 可声明 authority namespace 根。共同验证器只接受
+该根自身或以冒号分隔的后代；不接受任意字符串前缀或通配符。公开 Social Host
+固定根 `social:public`，原 owner 从持久化原作者 Home Station 生成后代 namespace；
+Renderer/candidate 均不能扩大 descriptor 的授权根集合。
+
+共享 query session 协调器按 generated `kinds/scopes` 集合选择并收窄来源；
+suggestions 只选 Device，主动提交明确允许 Device 与当前 Station。
+私密 Social 没有离线读租约时不生成正文建议；建议过程不得为它请求 Station。
+每来源候选上限 100，最终页默认 20、最大 100；最多三个来源，
+所有来源并发共用最初 5 秒 deadline。候选、已发 identity、各来源 continuation
+和首次 expiry 由有界客户端 session 持有，opaque authenticated cursor
+仅引用 session。来源改变或到期拒绝旧 continuation，串行推进避免重复/丢失。
+跨来源使用 rank 融合，不比较 raw score；来源失败独立报告 coverage，
+成功来源结果继续可用。读缓存与 session 候选共享总内容上限 8 MiB，
+沿既有 200 展示行、32 frames、640 items 上限约束 admission。
+
+响应使用 source state 向量与逐项 read validity；来源失效只遮蔽对应投影。
+全局 resolve 经受信 composition 的原域 opener registry，未知 binding 拒绝，
+不返回任意 URL。SocialComment 使用独立 comment ID 与 typed SocialPost parent；
+原域打开接口取得历史目标帖和有界评论 anchor 窗口，返回由 Search 保留上下文。
+
 Contributor 的 descriptor 构造可能读取原 Store，不能在持有 Store 发布锁
 时再次取得该锁。核心先在当前绑定下复用已登记实例；缺失时在锁外构造，
 随后在身份和原 Store 发布锁内核对水位再登记，拒绝迟到的旧身份实例。
@@ -164,8 +205,8 @@ Desktop 被替代的通用协调器与请求 owner 同步删除，不保留并�
 附件名称列，并返回所在消息地址。它参与生成协议、缓存和 cursor 语义；
 不等同于附件正文检索或独立附件资源。
 
-Mobile 按 OAuth admission → native lifecycle event → Messaging active →
-Store revision 的锁顺序发布。OAuth 的异步操作只持有 active 标记，
+Mobile 按 OAuth admission → native lifecycle event → 对应来源 active →
+原域 Store revision 的锁顺序发布。OAuth 的异步操作只持有 active 标记，
 不跨 await 持有 mutex；读取拒绝操作中的或过期的 Session。OS background
 事件在其原生边界立即拒绝私密发布，无需等待页面卸载。engine incarnation
 与认证操作 revision 使 A→B→A 无法重新接受旧结果。
@@ -322,13 +363,43 @@ coverage；候选页不缓存为完整结果。新写入和编辑始终使用同
 以 effective edited text 和附件名称生成索引。隐藏、撤回和治理谓词同时阻止
 编辑重新收录不可见对象；检索 snippet 读取最新 effective text。
 
-非 Messaging 的本地私密对象由其 owner 持有索引或向同账号受保护 Search projection 供给允许字段。每账号/设备 storage scope、OS key lifecycle、lock/unlock 和 purge 与现有原域合同一致；无 renderer localStorage 明文正文/embedding。
+本机 Social 索引附着原 SecureContentStore / PrivateSocialStore 的 SQLCipher
+数据库，只索引 ContentReady 且当前可读的帖子/评论 token、稳定 ID 与 revision。
+评论依赖可读父帖；原 projection commit/revoke/delete 事务同时维护 token、
+generation/checkpoint 与 deny/tombstone。恢复以原域有界 snapshot 分批回填，
+未追平标 recovering；不在每次查询扫描全量 `projections/read_projections`。
+Search 不持有原文副本、密码、root key 或恢复 cursor。每账号/设备 storage scope、
+OS key lifecycle、lock/unlock 和 purge 沿原域；无 renderer localStorage 明文正文。
+
+本机投影的签名/完整性沿原 commit owner 校验。当前无可执行的离线读租约时，
+query/hydrate 使用原 Social authenticated
+`POST /api/v1/social/moments/read-policy` 批量核对父帖与评论当前可读性。
+Model `CheckMomentReadPolicyRequest/Response` 只传原域对象引用与逐项读取决定，
+最多 100 项，不传正文、密钥或 Search cursor，也不签发离线 grant。
+point 与 batch 共用原域 CanRead、block、moderation 和 interaction policy；
+禁止逐候选 HTTP 读取或重新解密整页。该来源声明 no-store，Renderer、原生
+缓存和分页 session 对正文复用共同遵守；后续页须重新补齐/核权。
+签名校验成功和本机 Store 发布锁都不能替代服务器当前权限。
 
 FTS/index 和 snippet 是敏感派生内容。撤回/删除/编辑必须同步修改正文投影和搜索表；无法立即物理擦除时先禁止读取，后台 compact/rebuild/vacuum 按 storage policy 执行，并验证 WAL、缓存和向量副本。不能仅 DELETE 业务行而遗留可检索 FTS 词项。
 
 ### 6.2 Station 派生索引
 
-建议先复用既有 PostgreSQL：source catalog、document projection、ACL reference、outbox/checkpoint、tombstone 与 search session；可用 GIN FTS + trigram/语言 analyzer 支撑站内内容。源业务库仍是正文真源。
+当前公开 Social source 复用原 PostgreSQL `social_public_posts/social_comments`，
+参数化字面量子串查询与 pg_trgm GIN 附着原表，不建立正文镜像或平行 Search
+subserver。Social application 复用原 CanRead、互动可见性与 moderation，
+按作者/父帖批量构建权限上下文；point/batch 读取共用一个 policy owner。
+authenticated POST `/api/v1/social/search/{query,hydrate,resolve}` 只映射共同 Model
+Contributor 读协议；Desktop StationClient、Mobile StationTransportRuntime
+继续拥有认证、取消与错误边界。
+
+公开 analyzer 是 literal-substring，私密 analyzer 是共同 CJK/FTS5；
+中文短词、英文、混合文本以同一 corpus 校验召回与查询计划。短 CJK 的索引
+性能尚未证明，不能以全表扫描宣称性能达标。分页按最后扫描位置推进，
+权限过滤或扫描预算导致的不完整页报告 partial，不能误认来源耗尽。
+远端读取保留原域 policy observation；有可执行 lease 时才允许依约复用。
+当前 public Social 没有离线 lease，所有 query/hydrate/resolve 都 no-store 并
+复核原权限。本机锁不线性化服务器写入，预读取的 PostgreSQL 快照也不是租约。
 
 一个逻辑 Search 能力可分多个权限/来源分区；物理数据库/索引布局由部署与 schema Owner 决定，不预先要求跨业务 DB 任意 JOIN。Search hydration 通过领域 application/read contract，不直接依赖业务表细节。
 

@@ -47,6 +47,8 @@ export type MobileDetailRoute =
   | {
       readonly routeId: 'detail:moment';
       readonly postId: string;
+      readonly commentId?: string;
+      readonly readSource?: 'device' | 'station';
     }
   | {
       readonly routeId: 'detail:social-search';
@@ -204,7 +206,7 @@ export function navigationLocationKey(
     case 'detail:contact-profile':
       return `${route.routeId}:${route.actorPtid}`;
     case 'detail:moment':
-      return `${route.routeId}:${route.postId}`;
+      return `${route.routeId}:${route.postId}${route.commentId ? `:${route.commentId}` : ''}${route.readSource ? `:${route.readSource}` : ''}`;
     case 'detail:social-search':
       return route.routeId;
     case 'detail:social-profile':

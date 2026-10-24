@@ -490,6 +490,49 @@ impl StationClient {
             .map_err(|error| map_transport_error(error, replay_policy))
     }
 
+    /// A generated read at an already authenticated Station scope. The caller
+    /// supplies its remaining operation budget; routing cannot extend it.
+    pub fn request_bounded_proto_read<Req: Message, Resp: Message + Default>(
+        &self,
+        scope: &StationRequestScope,
+        path: &str,
+        token: &str,
+        body: &Req,
+        deadline: std::time::Instant,
+    ) -> Result<Resp, StationClientError> {
+        let (mut request, replay) = wire_request(
+            Method::POST,
+            path,
+            None,
+            Some(token),
+            self.device_id().as_deref(),
+            Some("application/protobuf"),
+            "application/protobuf",
+            proto_body(Some(body)),
+            StationTransportPolicy::Interactive,
+            TrafficClass::Interactive,
+            Some(ReplayPolicy::SafeRead),
+        )?;
+        request.expected_scope = Some(scope.clone());
+        request.timeout = deadline.saturating_duration_since(std::time::Instant::now());
+        request.admission_timeout = request.admission_timeout.min(request.timeout);
+        if request.timeout.is_zero() {
+            return Err(StationClientError::new(
+                StationClientErrorKind::Cancelled,
+                "read deadline expired",
+                None,
+            ));
+        }
+        let response = buffer_response(path, self.execute_raw(request)?, &replay)?;
+        Resp::decode(response.body.as_slice()).map_err(|_| {
+            StationClientError::new(
+                StationClientErrorKind::Decode,
+                "invalid generated read response",
+                None,
+            )
+        })
+    }
+
     pub fn open_json_stream(
         &self,
         path: &str,

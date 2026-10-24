@@ -1,6 +1,6 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { Badge } from 'antd';
-import { Image as ImageIcon, MessageCircle, Search, User, Users } from 'lucide-react';
+import { ArrowLeft, Image as ImageIcon, MessageCircle, Search, User, Users } from 'lucide-react';
 import type { TabId, Conversation, Contact, GroupItem, Message, MobileUiEvidence, SettingEntry } from './types';
 import {
   deliveryRecoveryMessages,
@@ -19,8 +19,8 @@ import type { SocialDemoAction, SocialDemoState, SocialEvidenceScenario } from '
 import type { SearchDemoControl } from './searchDemo';
 import { ChatPage } from './pages/ChatPage';
 import { ChatThread } from './pages/ChatThread';
-import { SearchPage, type SearchPresentation, type SearchTarget } from './pages/SearchPage';
-import { MomentsPage, type MomentsEvidenceScenario } from './pages/MomentsPage';
+import { SearchPage, type SearchPresentation, type SearchTarget, type SocialSearchTarget } from './pages/SearchPage';
+import { MomentsPage, preparedMoments, type MomentsEvidenceScenario } from './pages/MomentsPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ContactDetailView } from './components/ContactDetailView';
@@ -106,6 +106,8 @@ export function MobileShell({
   });
   const [searchSetting, setSearchSetting] = useState(false);
   const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
+  const [socialSearchTarget, setSocialSearchTarget] = useState<SocialSearchTarget | null>(null);
+  const [searchMoments] = useState(preparedMoments);
   const [searchView, setSearchView] = useState<SearchPresentation>({
     query: '', filter: 'all', conversationKey: '', submitted: false,
   });
@@ -179,6 +181,7 @@ export function MobileShell({
       setSearchView({ query: '', filter: 'all', conversationKey, submitted: false });
     }
     setSearchTarget(null);
+    setSocialSearchTarget(null);
     if (searchDemo && searchDemo.state.owner !== 'global-search') {
       searchDemo.dispatch({ type: 'open', owner: 'global-search' });
     }
@@ -269,6 +272,11 @@ export function MobileShell({
         ]);
       });
       return <SearchPage view={searchView} onChange={setSearchView} targets={targets} memory={listMemory}
+        socialTargets={searchMoments.flatMap(moment => [
+          { moment }, ...moment.comments.map(comment => ({ moment, comment })),
+        ])} onOpenSocial={target => {
+          setSocialSearchTarget(target); setActiveTab('moments'); leaveSearch();
+        }}
         demo={searchDemo} onBack={() => {
           leaveSearch(); setSearchTarget(null); setSelectedSetting(null);
           setActiveTab(searchOrigin.tab); setSelectedConversation(searchOrigin.conversation);
@@ -346,7 +354,13 @@ export function MobileShell({
       case 'chat': return <ChatPage conversations={conversations} headerActions={searchEntry}
         listMemory={listMemory} uiEvidence={uiEvidence} onConversationClick={handleConversationClick} />;
       case 'moments': return <MomentsPage
-        headerActions={searchEntry}
+        headerActions={socialSearchTarget ? <button type="button" className="mp-header-action"
+          aria-label="Back to search results" onClick={() => {
+            setSocialSearchTarget(null); setSearchOpen(true);
+          }}><ArrowLeft size={20} /></button> : searchEntry}
+        searchTarget={socialSearchTarget ? {
+          postId: socialSearchTarget.moment.id, commentId: socialSearchTarget.comment?.id,
+        } : undefined}
         scenario={momentsScenario}
         onImmersiveVisibilityChange={setMomentsImmersiveOpen}
       />;

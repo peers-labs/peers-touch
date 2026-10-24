@@ -62,7 +62,9 @@ class DeviceSearchContractGate(AcceptanceGate):
         )))
         runtime = read("apps/desktop/src/runtimes/searchRuntime.ts")
         queries = read("apps/desktop/src/runtimes/searchQueries.ts")
-        self.assert_condition("runtime_scope_and_validity", all(name in runtime + queries for name in (
+        service = read("apps/desktop/src/services/search.ts")
+        invalidations = read("apps/desktop/src/runtimes/searchInvalidations.ts")
+        self.assert_condition("runtime_scope_and_validity", all(name in runtime + queries + service + invalidations for name in (
             "sessionEpoch", "readScope", "sourceRevision", "expiresAtUnixMs",
             "leaseUntilUnixMs", "messaging:projection-changed", "clearSearchQueries",
         )) and "client.clear()" in queries and all(name in queries for name in (

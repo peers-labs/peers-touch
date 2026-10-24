@@ -19,6 +19,9 @@ use zeroize::Zeroize;
 
 use crate::secure_content::proto::secure_content::v1::ContentPreKeyKind;
 
+mod search;
+pub use search::{SearchBoundary, SearchDocumentPage, SEARCH_BACKFILL_MAX, SEARCH_BATCH_MAX};
+
 const ENDPOINT_PREKEY_KIND: i64 = ContentPreKeyKind::ContentPrekeyKindEndpoint as i32 as i64;
 const RECOVERY_PREKEY_KIND: i64 = ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32 as i64;
 const MAX_REACTION_RETRY_AFTER_SECONDS: u64 = 300;
@@ -384,6 +387,7 @@ impl PrivateSocialStore {
     ) -> Result<Self, String> {
         migrate(&mut connection)?;
         bind_scope(&connection, station_peer_id, actor_ptid)?;
+        search::migrate(&mut connection)?;
         let store = Self {
             connection: Mutex::new(connection),
             session_generation: AtomicU64::new(0),
@@ -402,7 +406,8 @@ impl PrivateSocialStore {
         if generation == 0 {
             return Err("private Social session generation is required".to_string());
         }
-        self.connection()?
+        let connection = self.connection()?;
+        connection
             .execute(
                 "UPDATE mobile_private_social_object_transfers
                  SET session_generation = ?1",
@@ -1025,7 +1030,12 @@ impl PrivateSocialStore {
         if comment_id.trim().is_empty() || post_id.trim().is_empty() || projection_json.is_empty() {
             return Err("private Comment projection is invalid".to_string());
         }
-        self.connection()?
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        search::require_upsert(&transaction, "social-comment", comment_id, post_id)?;
+        transaction
             .execute(
                 "INSERT INTO mobile_private_social_comment_projections(
                    comment_id, post_id, projection_json, updated_at_unix_ms
@@ -1036,8 +1046,9 @@ impl PrivateSocialStore {
                    updated_at_unix_ms = excluded.updated_at_unix_ms",
                 params![comment_id, post_id, projection_json, now_unix_ms()],
             )
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        search::update_comment(&transaction, comment_id, post_id, projection_json)?;
+        transaction.commit().map_err(|error| error.to_string())
     }
 
     pub fn comment_projections(&self, post_id: &str) -> Result<Vec<Vec<u8>>, String> {
@@ -1706,6 +1717,7 @@ impl PrivateSocialStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
+        search::require_upsert(&transaction, "social-post", post_id, "")?;
         transaction
             .execute(
                 "INSERT INTO mobile_private_social_roots(
@@ -1766,6 +1778,7 @@ impl PrivateSocialStore {
                 );
             }
         }
+        search::update_post(&transaction, post_id, projection_json)?;
         transaction.commit().map_err(|error| error.to_string())
     }
 
@@ -1794,6 +1807,7 @@ impl PrivateSocialStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
+        search::require_upsert(&transaction, "social-comment", comment_id, post_id)?;
         transaction
             .execute(
                 "INSERT INTO mobile_private_social_roots(
@@ -1847,6 +1861,7 @@ impl PrivateSocialStore {
                 );
             }
         }
+        search::update_comment(&transaction, comment_id, post_id, projection_json)?;
         transaction.commit().map_err(|error| error.to_string())
     }
 
@@ -2154,6 +2169,8 @@ impl PrivateSocialStore {
                     "private Reaction completion has no private Moment projection".to_string(),
                 );
             }
+            search::require_upsert(&transaction, "social-post", post_id, "")?;
+            search::update_post(&transaction, post_id, projection_json)?;
         }
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(changed == 1)
@@ -2174,6 +2191,13 @@ impl PrivateSocialStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
+        let terminal =
+            crate::secure_content::receiver::PrivateMomentReadProjection::decode(projection_json)
+                .is_ok_and(|projection| {
+                    projection.state
+                        == crate::secure_content::receiver::PrivateReadState::DeletedOrRevoked
+                });
+        search::deny_post(&transaction, post_id, purge_private_material || terminal)?;
         if purge_private_material {
             transaction
                 .execute(

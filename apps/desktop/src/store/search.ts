@@ -3,12 +3,15 @@ import type { SearchResponse } from '../gen/proto/domain/search/search_pb';
 import type { Page } from '../types/navigation';
 
 export type SearchMode = 'suggest' | 'submit' | 'functions';
+export type SearchContentFilter = 'all' | 'messages' | 'social' | 'attachments';
 export interface SearchState {
   open: boolean;
   query: string;
   mode: SearchMode;
   displayedQuery: string;
   displayedMode: Exclude<SearchMode, 'functions'>;
+  contentFilter: SearchContentFilter;
+  displayedFilter: SearchContentFilter;
   status: 'idle' | 'loading' | 'ready' | 'error';
   stalled: boolean;
   response: SearchResponse | null;
@@ -25,6 +28,7 @@ export interface SearchState {
 export const emptySearchState = (): SearchState => ({
   open: false, query: '', mode: 'suggest', status: 'idle', response: null,
   displayedQuery: '', displayedMode: 'suggest', stalled: false,
+  contentFilter: 'all', displayedFilter: 'all',
   errorKey: null, opening: false, selectedIndex: 0, cursorEngaged: false,
   scrollTop: 0, originPage: 'chat', returnAvailable: false,
 });

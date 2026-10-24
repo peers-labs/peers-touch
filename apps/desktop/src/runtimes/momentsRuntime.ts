@@ -6,6 +6,7 @@
 
 import { useDiscoveryStore } from '../store/discovery';
 import { useMomentsStore } from '../store/moments';
+import { useMomentsNavigationStore } from '../store/momentsNavigation';
 import { usePrivateCommentsStore } from '../store/privateComments';
 import { usePrivateMomentsStore } from '../store/privateMoments';
 import { useRelationshipsStore } from '../store/relationships';
@@ -161,6 +162,7 @@ function invalidateScope(): number {
   privateProjectionReady = false;
   pendingMomentEventKeys.clear();
   completedMomentEventKeys.clear();
+  useMomentsNavigationStore.getState().reset();
   resetProjection(generation);
   return generation;
 }
@@ -193,6 +195,11 @@ function enqueueScopedProjection<T>(
 
 export function captureMomentsRuntimeScope(): MomentsRuntimeScope | null {
   return activeScope ? { ...activeScope } : null;
+}
+
+export function matchesCurrentMomentEvent(payload: MomentRealtimeBasePayload): boolean {
+  return !!activeScope && isCurrentScope(activeScope)
+    && momentEventMatchesScope(activeScope, payload);
 }
 
 function momentEventMatchesScope(
@@ -418,6 +425,7 @@ async function ensurePrivateProjectionReady(
 async function ensureMomentDetailProjectionNow(
   scope: MomentsRuntimeScope | null,
   postId: string,
+  target?: { origin: 'device' | 'station'; commentId?: string },
 ): Promise<void> {
   const trimmedPostId = postId.trim();
   if (!trimmedPostId) return;
@@ -428,14 +436,14 @@ async function ensureMomentDetailProjectionNow(
   const privateComments = usePrivateCommentsStore.getState();
   const knownPost = moments.postsById[trimmedPostId];
   log.info('momentsRuntime', 'moment detail projection refresh started');
-  if (isPrivateMomentPost(knownPost)) {
+  if (target?.origin === 'device' || target?.origin !== 'station' && isPrivateMomentPost(knownPost)) {
     await privateMoments.readMoment(trimmedPostId);
     const projection = usePrivateMomentsStore.getState().postsById[trimmedPostId];
     moments.hydratePrivateMoments(
       Object.values(usePrivateMomentsStore.getState().postsById),
     );
     if (projection?.state === 'CONTENT_READY') {
-      await privateComments.loadComments(trimmedPostId, true);
+      await privateComments.loadComments(trimmedPostId, true, target?.commentId);
     } else if (
       projection?.state === 'NOT_FOUND_OR_NOT_AUTHORIZED'
       || projection?.state === 'DELETED_OR_REVOKED'
@@ -446,13 +454,14 @@ async function ensureMomentDetailProjectionNow(
     const post = await moments.loadPost(trimmedPostId);
     if (scope && !isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
     if (!post || isPrivateMomentPost(post)) {
+      if (target?.origin === 'station') throw new Error('search.error.resourceUnavailable');
       await usePrivateMomentsStore.getState().readMoment(trimmedPostId);
       const projection = usePrivateMomentsStore.getState().postsById[trimmedPostId];
       moments.hydratePrivateMoments(
         Object.values(usePrivateMomentsStore.getState().postsById),
       );
       if (projection?.state === 'CONTENT_READY') {
-        await usePrivateCommentsStore.getState().loadComments(trimmedPostId, true);
+        await usePrivateCommentsStore.getState().loadComments(trimmedPostId, true, target?.commentId);
       } else if (
         projection?.state === 'NOT_FOUND_OR_NOT_AUTHORIZED'
         || projection?.state === 'DELETED_OR_REVOKED'
@@ -463,23 +472,25 @@ async function ensureMomentDetailProjectionNow(
         );
       }
     } else {
-      await moments.loadComments(trimmedPostId, true);
+      await moments.loadComments(trimmedPostId, true, target?.commentId);
     }
   }
   if (scope && !isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
   log.info('momentsRuntime', 'moment detail projection refresh completed');
 }
 
-export async function ensureMomentDetailProjection(postId: string): Promise<void> {
+export async function ensureMomentDetailProjection(
+  postId: string, target?: { origin: 'device' | 'station'; commentId?: string },
+): Promise<void> {
   if (!activeScope) {
     const privateScope = usePrivateMomentsStore.getState().scope;
     if (privateScope.actorPtid) {
-      await ensureMomentDetailProjectionNow(null, postId);
+      await ensureMomentDetailProjectionNow(null, postId, target);
     }
     return;
   }
   await enqueueScopedProjection((scope) => (
-    ensureMomentDetailProjectionNow(scope, postId)
+    ensureMomentDetailProjectionNow(scope, postId, target)
   ));
 }
 

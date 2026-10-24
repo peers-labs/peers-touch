@@ -263,6 +263,9 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
   registerMobileAcceptanceAction('search.state', mobileAcceptanceActions['search.state'], registry);
   registerMobileAcceptanceAction('search.cancel', mobileAcceptanceActions['search.cancel'], registry);
   registerMobileAcceptanceAction('search.reads', mobileAcceptanceActions['search.reads'], registry);
+  registerMobileAcceptanceAction('moments.delete', mobileAcceptanceActions['moments.delete'], registry);
+  registerMobileAcceptanceAction('social.block', mobileAcceptanceActions['social.block'], registry);
+  registerMobileAcceptanceAction('social.unblock', mobileAcceptanceActions['social.unblock'], registry);
   registerMobileAcceptanceAction(
     'messaging.projection.read',
     mobileAcceptanceActions['messaging.projection.read'],

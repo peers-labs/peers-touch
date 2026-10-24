@@ -116,6 +116,8 @@ function nativeErrorCode(error: unknown): string {
 
 interface MomentsPageProps {
   readonly activePostId: string | null;
+  readonly activeCommentId?: string | null;
+  readonly activeReadSource?: 'device' | 'station' | null;
   readonly onOpenProfile: (actorPtid: string, federationId: string) => void;
   readonly onOpenSearch: () => void;
   readonly onOpenCircles: () => void;
@@ -144,6 +146,8 @@ export async function retryMomentsRuntime(
 
 export function MomentsPage({
   activePostId,
+  activeCommentId,
+  activeReadSource,
   onOpenProfile,
   onOpenSearch,
   onOpenCircles,
@@ -163,6 +167,8 @@ export function MomentsPage({
   return (
     <MomentsPageInner
       activePostId={activePostId}
+      activeCommentId={activeCommentId}
+      activeReadSource={activeReadSource}
       onOpenProfile={onOpenProfile}
       onOpenSearch={onOpenSearch}
       onOpenCircles={onOpenCircles}
@@ -175,6 +181,8 @@ export function MomentsPage({
 
 function MomentsPageInner({
   activePostId,
+  activeCommentId,
+  activeReadSource,
   onOpenProfile,
   onOpenSearch,
   onOpenCircles,
@@ -499,19 +507,23 @@ function MomentsPageInner({
   const routeDetailPostId = activePostId ?? undefined;
   if (routeDetailPostId !== undefined) {
     const activePost = feed.posts.find((post) => post.id === routeDetailPostId);
-    const privateBlockingState = blockingPrivateStates.find(
+    const privateBlockingState = activeReadSource === 'station' ? undefined : blockingPrivateStates.find(
       (privateProjection) => privateProjection.postId === routeDetailPostId,
     );
+    const canReadDetail = Boolean(facade && (activeReadSource || !isUnavailable));
     return (
       <div
         className="page-container moments-page moments-route-detail"
         data-product-surface="moments.detail-comments"
       >
-        {facade && !isUnavailable && privateBlockingState ? (
+        {canReadDetail && privateBlockingState ? (
           renderPrivateBlockingState(privateBlockingState, onBack)
-        ) : facade && !isUnavailable ? (
+        ) : facade && canReadDetail ? (
           <MomentCommentsSection
             postId={routeDetailPostId}
+            commentId={activeCommentId ?? undefined}
+            sourceId={activeReadSource === 'device' ? 'device.social'
+              : activeReadSource === 'station' ? 'station.social.public' : undefined}
             post={activePost}
             mode="detail"
             intents={facade.intents}

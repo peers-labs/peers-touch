@@ -421,7 +421,7 @@ interface MomentsState {
   createPost: (draft: MomentDraft) => Promise<string>;
   deletePost: (postId: string) => Promise<void>;
 
-  loadComments: (postId: string, refresh?: boolean) => Promise<void>;
+  loadComments: (postId: string, refresh?: boolean, anchorCommentId?: string) => Promise<void>;
   createComment: (
     postId: string,
     content: string,
@@ -882,20 +882,20 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // Comments
   // -------------------------------------------------------------------------
 
-  loadComments: async (postId, refresh = false) => {
+  loadComments: async (postId, refresh = false, anchorCommentId) => {
     const generation = storeGeneration;
     const loading = get().commentsLoading[postId];
     if (loading) return;
     set((s) => ({
       commentsLoading: { ...s.commentsLoading, [postId]: true },
     }));
-    const cursor = refresh ? '' : (get().commentsCursor[postId] ?? '');
+    const cursor = refresh || anchorCommentId ? '' : (get().commentsCursor[postId] ?? '');
     try {
-      const resp = await socialGetComments(postId, cursor || undefined);
+      const resp = await socialGetComments(postId, cursor || undefined, 20, anchorCommentId);
       if (generation !== storeGeneration) return;
       const page = resp.comments.map(publicCommentFromResource);
       set((s) => {
-        const prev = refresh ? [] : (s.comments[postId] ?? []);
+        const prev = refresh || anchorCommentId ? [] : (s.comments[postId] ?? []);
         const seen = new Set(prev.map((c) => c.id));
         const merged = [...prev, ...page.filter((c) => !seen.has(c.id))];
         return {

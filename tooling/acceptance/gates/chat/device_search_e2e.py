@@ -47,8 +47,8 @@ def validate_account_scope(search: dict) -> None:
         "account isolation requires authoritative Bob identity in the receiving window",
     )
     require(
-        scope.get("emptyQuery") is True and bool(before.get("readScope"))
-        and bool(after.get("readScope")) and before["readScope"] != after["readScope"]
+        scope.get("emptyQuery") is True and bool(before.get("partition"))
+        and bool(after.get("partition")) and before["partition"] != after["partition"]
         and scope.get("originalPid") == scope.get("currentPid")
         and isinstance(scope.get("currentPid"), int) and scope["currentPid"] > 0,
         "account isolation must clear the query and replace scope in the same native process",

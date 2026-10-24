@@ -5,6 +5,7 @@ import json
 import re
 import tempfile
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -65,17 +66,18 @@ def read_counts(lines: list[str]) -> dict[str, int]:
 
 class DeviceSearchGate(NativeTwoClientGate):
     gate_id = GATE_ID
+    journey_id = JOURNEY_ID
     phase = "chat-device-search"
     bom = ("SEARCH-DEVICE-FIND-OPEN",)
     spec = ("chat-device-search",)
 
     def __init__(self) -> None:
-        selected = selected_native_runtime(GATE_ID)
+        selected = selected_native_runtime(self.gate_id)
         if selected is None or selected.binding.cell_id != "desktop-macos-native":
             raise GateError("Search requires the selected native macOS runtime")
         super().__init__(
             manifest=selected.manifest, actor_manifest=selected.actor_manifest,
-            runtime_binding=selected.binding, gate_id=GATE_ID, journey_id=JOURNEY_ID,
+            runtime_binding=selected.binding, gate_id=self.gate_id, journey_id=self.journey_id,
         )
         # Bob sends the first content; creation must populate his native owner
         # before Alice can receive and project the conversation.
@@ -174,7 +176,7 @@ class DeviceSearchGate(NativeTwoClientGate):
             "document.querySelector('.pt-search-field input')"
             " && document.querySelector('.pt-search-body')?.getAttribute('aria-busy') === 'false'"
             " && (document.querySelector('.pt-search-error')"
-            " || document.querySelector('.pt-search-intents button:nth-child(2)')?.getAttribute('aria-selected') === 'true'"
+            " || document.querySelector('[data-search-filter=\"functions\"]')?.getAttribute('aria-selected') === 'true'"
             " || document.querySelector('.pt-search-body')?.dataset.displayedQuery"
             " === document.querySelector('.pt-search-field input')?.value.trim())",
             "settled Search UI",
@@ -199,9 +201,9 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def submit(self, query: str) -> None:
         self.open_search()
-        all_results = self.receiver.find_elements(".pt-search-intents button")[0]
-        if all_results.get_attribute("aria-selected") != "true":
-            all_results.click()
+        messages = self.receiver.find_element('[data-search-filter="messages"]')
+        if messages.get_attribute("aria-selected") != "true":
+            messages.click()
         self.fill(query)
         self.press(Keys.ENTER)
         self.settled()
@@ -289,7 +291,7 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def resolve(self, resource: dict[str, Any]) -> dict[str, Any]:
         return async_harness(self.receiver, "deviceSearchResolve", {
-            "resource": resource, "requestId": uuid.uuid4().hex,
+            "resource": resource, "sourceId": "device.messaging", "requestId": uuid.uuid4().hex,
         })
 
     def message_ref(self) -> dict[str, Any]:
@@ -501,12 +503,12 @@ class DeviceSearchGate(NativeTwoClientGate):
             self.token in self.rows() and not self.receiver.find_elements(".pt-search-error")
         ))
         self.fill("隐私")
-        self.receiver.find_elements(".pt-search-intents button")[1].click()
+        self.receiver.find_element('[data-search-filter="functions"]').click()
         self.receiver.find_element(".pt-search-row", 20).click()
         self.wait_js("!!document.querySelector('[data-pt-section-host=\"security\"]')", "real Settings")
         self.visible("functions_navigation", lambda: not self.receiver.find_elements('[data-page="search"]'))
 
-    def prove_account_scope(self) -> None:
+    def prove_account_scope(self, observe_account: Callable[[], None] | None = None) -> None:
         client = self.receiver
         self.submit(f"线程 {self.token}")
         self.wait_js(
@@ -570,6 +572,8 @@ class DeviceSearchGate(NativeTwoClientGate):
             ] = denied
             self.assert_condition("previous_session_cursor_denied",
                                   denied.get("accepted") is False and denied.get("errorCode") == 5)
+            if observe_account is not None:
+                observe_account()
             # This Bob device has not restored the original sender's history.
             # Search must prove content acquired by its own Messaging owner.
             query = f"账号切换 {self.token}"
@@ -603,7 +607,7 @@ class DeviceSearchGate(NativeTwoClientGate):
 
             self.step("search.account_scope_result", observe_current_device, "alice")
             self.visible("same_window_account_isolation", lambda: (
-                empty_query and before["readScope"] != after["readScope"]
+                empty_query and before["partition"] != after["partition"]
                 and identity.get("actorPtid") == self.ptids["bob"]
                 and client.process_id == original_pid and query in self.rows()
             ))

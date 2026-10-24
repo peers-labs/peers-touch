@@ -2,14 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, type KeyboardEvent } from 
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import { Modal, theme } from 'antd';
-import { ArrowUpRight, CircleSlash, Hash, Loader2, Lock, MessageCircle, Search, Wrench, X } from 'lucide-react';
-import { SearchKind, SourceState, type ResultItem } from '../../gen/proto/domain/search/search_pb';
+import { ArrowUpRight, CircleSlash, Hash, Loader2, Lock, MessageCircle, Newspaper, Search, Wrench, X } from 'lucide-react';
+import { SearchKind, SearchZone, SourceState, type ResultItem } from '../../gen/proto/domain/search/search_pb';
 import { useSearchStore } from '../../store/search';
 import { searchActions } from '../../runtimes/searchRuntime';
 import { resourceIdentity } from '../../services/search';
-import { openMessagingResource } from '../../messaging/openResource';
-import { messagingDomainRuntime } from '../../messaging/runtime';
-import { useSocialChatStore } from '../../store/socialChat';
 import type { Navigation } from '../../types/navigation';
 import { SEARCH_FUNCTIONS, openSearchFunction, type SearchFunction } from './functions';
 import './SearchOverlay.css';
@@ -24,6 +21,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     displayedQuery: state.displayedQuery, displayedMode: state.displayedMode, stalled: state.stalled,
     errorKey: state.errorKey, opening: state.opening, selectedIndex: state.selectedIndex,
     cursorEngaged: state.cursorEngaged,
+    contentFilter: state.contentFilter, displayedFilter: state.displayedFilter,
   })));
   const inputRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -40,7 +38,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     : (view.response?.items ?? []).map(item => ({ type: 'content', item })), [view.mode, functions, view.response]);
   const displayedQuery = view.mode === 'functions' ? view.query : view.displayedQuery;
   const initial = !displayedQuery && view.mode !== 'functions';
-  const draftMatches = view.query.trim() === view.displayedQuery;
+  const draftMatches = view.query.trim() === view.displayedQuery && view.contentFilter === view.displayedFilter;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -66,25 +64,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
       openSearchFunction(row.item, navigation);
       return;
     }
-    if (!row.item.resource) return;
-    const scope = messagingDomainRuntime.captureScope();
-    if (!scope) return;
-    const resource = await searchActions.resolve(row.item.resource);
-    if (!resource) return;
-    const generation = searchActions.generation();
-    useSearchStore.setState({ opening: true });
-    try {
-      const current = () => searchActions.generation() === generation && useSearchStore.getState().open;
-      await openMessagingResource(resource, () => navigation.navigateTo('chat'), current);
-      if (!messagingDomainRuntime.isCurrent(scope) || !current()) return;
-      navigating.current = true;
-      useSearchStore.setState({ returnAvailable: true });
-      searchActions.close();
-    } catch {
-      if (searchActions.generation() === generation && useSearchStore.getState().open) {
-        useSearchStore.setState({ opening: false, errorKey: 'search.error.resourceUnavailable' });
-      }
-    }
+    navigating.current = await searchActions.openResult(row.item, navigation);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
@@ -114,13 +94,11 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     const content = row.type === 'content' ? row.item : null;
     const title = row.type === 'function' ? t(row.item.titleKey) : row.item.title || t('search.kind.message');
     const detail = row.type === 'function' ? t(row.item.detailKey) : row.item.snippet;
-    const Icon = isFunction ? Wrench : content?.kind === SearchKind.CONVERSATION ? Hash : MessageCircle;
+    const Icon = isFunction ? Wrench : content?.kind === SearchKind.CONVERSATION ? Hash
+      : content?.kind === SearchKind.SOCIAL_POST || content?.kind === SearchKind.SOCIAL_COMMENT ? Newspaper : MessageCircle;
     const selected = view.cursorEngaged && index === view.selectedIndex;
-    const sender = content?.authorPtid && content.resource
-      ? useSocialChatStore.getState().getIMSenderProfile(
-        useSocialChatStore.getState().conversations.find(conversation => conversation.conversationId === content.resource?.conversationId)?.kind === 2 ? 'group' : 'friend',
-        content.resource.conversationId, content.authorPtid,
-      ).name : '';
+    const zoneKey = content?.zone === SearchZone.STATION ? 'search.zone.station'
+      : content?.zone === SearchZone.FEDERATION ? 'search.zone.federation' : 'search.zone.device';
     return (
       <button key={row.type === 'function' ? row.item.id : resourceIdentity(row.item.resource)}
         type="button" className={`pt-search-row${selected ? ' active' : ''}`}
@@ -132,12 +110,11 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
           <span className="pt-search-title">{highlight(title, displayedQuery)}</span>
           {detail && <span className="pt-search-snippet">{highlight(detail, displayedQuery)}</span>}
           {content && <span className="pt-search-meta">
-            {content.conversationTitle || sender}
-            {content.conversationTitle && sender && ` · ${sender}`}
+            {content.conversationTitle}
             {content.createdAtUnixMs > 0n && ` · ${new Date(Number(content.createdAtUnixMs)).toLocaleString(i18n.language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
           </span>}
         </span>
-        {!isFunction && <span className="pt-search-zone"><Lock size={11} />{t('search.zone.device')}</span>}
+        {!isFunction && <span className="pt-search-zone"><Lock size={11} />{t(zoneKey)}</span>}
         <ArrowUpRight size={14} className="pt-search-row-open" />
       </button>
     );
@@ -179,9 +156,12 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
         </div>
       </div>
       <div className="pt-search-intents" role="tablist" aria-label={t('search.range')}>
-        <button role="tab" aria-selected={view.mode !== 'functions'} className={view.mode !== 'functions' ? 'active' : ''}
-          onClick={() => searchActions.mode('suggest')}>{t('search.tab.all')}</button>
-        <button role="tab" aria-selected={view.mode === 'functions'} className={view.mode === 'functions' ? 'active' : ''}
+        {(['all', 'messages', 'social', 'attachments'] as const).map(filter => <button key={filter}
+          data-search-filter={filter}
+          role="tab" aria-selected={view.mode !== 'functions' && view.contentFilter === filter}
+          className={view.mode !== 'functions' && view.contentFilter === filter ? 'active' : ''}
+          onClick={() => searchActions.filter(filter)}>{t(`search.tab.${filter}`)}</button>)}
+        <button role="tab" data-search-filter="functions" aria-selected={view.mode === 'functions'} className={view.mode === 'functions' ? 'active' : ''}
           onClick={() => searchActions.mode('functions')}>{t('search.tab.functions')}</button>
         <span className="pt-search-boundary"><Lock size={12} />{t('search.boundary')}</span>
       </div>
@@ -215,7 +195,8 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
           disabled={view.status === 'loading' || !draftMatches} onClick={searchActions.more}>{t('search.more')}</button>}
       </div>
       <div className="pt-search-footer" aria-live="polite">
-        <span>{t(partial ? 'search.coverage.partial' : 'search.coverage.device')}</span>
+        <span>{view.response?.coverage.map(source => t(source.detailKey
+          || (partial ? 'search.coverage.partial' : 'search.coverage.device'))).join(' · ') || t('search.coverage.device')}</span>
         {view.mode === 'submit' && <button type="button" disabled={view.status === 'loading' || view.opening}
           onClick={() => searchActions.submit(true)}>{t('search.refresh')}</button>}
         {view.opening ? <span><Loader2 size={12} className="pt-search-spin" /> {t('search.opening')}</span> : <span>↑↓ · Enter · Esc</span>}

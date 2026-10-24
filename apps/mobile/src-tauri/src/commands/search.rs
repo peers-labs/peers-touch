@@ -41,23 +41,29 @@ fn execute<M: Message, R: Runtime>(
     request_id: &str,
     run: impl FnOnce(
         &MobileSearchState,
-        &Binding<R>,
+        &[Binding<R>],
         &search_core::CancelToken,
     ) -> Result<M, SearchError>,
 ) -> MobileResult<Vec<u8>> {
-    let binding = Binding::admit(app.clone()).map_err(failure)?;
+    let composition = Binding::admit(app.clone()).map_err(failure)?;
     let state = app.state::<MobileSearchState>();
     // Only one current private partition is retained on Mobile.
     state
         .runtime
-        .invalidate_partitions(|partition| partition != binding.partition);
+        .invalidate_partitions(|partition| partition != composition.partition);
     let mut request = state
         .requests
-        .begin("mobile", &binding.partition, request_id)
+        .begin("mobile", &composition.partition, request_id)
         .map_err(failure)?;
-    let result = run(&state, &binding, &request.cancel).map_err(failure)?;
-    binding
-        .publish(|| {
+    let result = run(&state, &composition.bindings, &request.cancel).map_err(failure)?;
+    let sources = composition
+        .bindings
+        .iter()
+        .map(|b| b.read_state())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(failure)?;
+    composition.bindings[0]
+        .publish_sources(&sources, || {
             request.complete()?;
             Ok(result.encode_to_vec())
         })
@@ -75,16 +81,12 @@ pub async fn search_submit<R: Runtime>(
     }
     tauri::async_runtime::spawn_blocking(move || {
         execute(&app, &request.request_id, |state, binding, cancel| {
-            state.runtime.query(
+            state.runtime.query_all(
                 binding,
                 QueryIntent {
                     text: request.query.clone(),
-                    kind: if request.kind == SearchKind::Unspecified as i32 {
-                        SearchKind::Message as i32
-                    } else {
-                        request.kind
-                    },
-                    scope: request.scope,
+                    kinds: request.kinds.clone(),
+                    scopes: request.scopes.clone(),
                     limit: if request.limit == 0 {
                         20
                     } else {
@@ -116,12 +118,12 @@ pub async fn search_suggest<R: Runtime>(
     }
     tauri::async_runtime::spawn_blocking(move || {
         execute(&app, &request.request_id, |state, binding, cancel| {
-            state.runtime.query(
+            state.runtime.query_all(
                 binding,
                 QueryIntent {
                     text: request.query.clone(),
-                    kind: request.kind,
-                    scope: SearchScope::Device as i32,
+                    kinds: request.kinds.clone(),
+                    scopes: vec![SearchScope::Device as i32],
                     limit: if request.limit == 0 {
                         12
                     } else {
@@ -151,7 +153,9 @@ pub async fn search_resolve<R: Runtime>(
         .ok_or_else(|| failure(SearchError::InvalidQuery))?;
     tauri::async_runtime::spawn_blocking(move || {
         execute(&app, &request.request_id, |state, binding, cancel| {
-            state.runtime.resolve(binding, resource, cancel)
+            state
+                .runtime
+                .resolve_all(binding, &request.source_id, resource, cancel)
         })
     })
     .await
@@ -161,12 +165,18 @@ pub async fn search_resolve<R: Runtime>(
 #[tauri::command]
 pub async fn search_read_state<R: Runtime>(app: AppHandle<R>) -> MobileResult<Vec<u8>> {
     tauri::async_runtime::spawn_blocking(move || {
-        let binding = Binding::admit(app).map_err(failure)?;
-        binding
-            .publish(|| {
+        let composition = Binding::admit(app).map_err(failure)?;
+        let sources = composition
+            .bindings
+            .iter()
+            .map(|b| b.read_state())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(failure)?;
+        composition.bindings[0]
+            .publish_sources(&sources, || {
                 Ok(SearchReadState {
-                    source_revision: binding.source_revision.clone(),
-                    read_scope: binding.partition.clone(),
+                    sources: sources.clone(),
+                    partition: composition.partition,
                 }
                 .encode_to_vec())
             })
@@ -184,8 +194,8 @@ pub async fn search_read_diagnostics<R: Runtime>(
     if !cfg!(debug_assertions) {
         return Err(failure(SearchError::OutsideDomain));
     }
-    let binding = Binding::admit(app).map_err(failure)?;
-    binding
+    let composition = Binding::admit(app).map_err(failure)?;
+    composition.bindings[0]
         .publish(|| Ok(crate::runtime::search::read_diagnostics()))
         .map_err(failure)
 }
@@ -200,12 +210,12 @@ pub async fn search_cancel<R: Runtime>(
         return Err(failure(SearchError::InvalidQuery));
     }
     tauri::async_runtime::spawn_blocking(move || {
-        let binding = Binding::admit(app.clone()).map_err(failure)?;
-        binding
+        let composition = Binding::admit(app.clone()).map_err(failure)?;
+        composition.bindings[0]
             .publish(|| {
                 let cancelled = app.state::<MobileSearchState>().requests.cancel(
                     "mobile",
-                    &binding.partition,
+                    &composition.partition,
                     &request.request_id,
                 )?;
                 Ok(CancelResponse {

@@ -13,6 +13,7 @@ class MobileSearchSimulatorProvisioner(MobileDirectSimulatorProvisioner):
     overlay_filename = "chat-mobile-search-simulator.yaml"
     actor_manifest_kind = "chat-mobile-search-actor-manifest"
     actor_manifest_path = "runtime/chat-mobile-search-actors.json"
+    station_outage_gate_ids = frozenset({"social-content-search-mobile-native-e2e"})
 
     def _new_base_provisioner(
         self, contract: EnvironmentContract, source_commit: str,

@@ -3,7 +3,10 @@
 > **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Client / Station
-> Desktop 与 Mobile 共享原生读取协调器；Mobile 界面及既有 Shell 原型已同步，所选原生证明见 [证据快照](./acceptance-evidence.md)。Station/Ask/Applet 接入仍是后续范围。
+> Desktop 与 Mobile 共享原生读取协调器；公开及已获取的私密 Social
+> 已接入原领域读取端口。源码落地与所选原生证明分开记录，见
+> [证据快照](./acceptance-evidence.md)。其他 Station 来源、Ask/Applet 接入
+> 仍是后续范围。
 
 ## 1. 领域边界
 
@@ -20,6 +23,8 @@ packages/search-core/src/
   contributor.rs                     注册/候选/批量 outcome 协议校验
   cache.rs                           共享读取、内存额度、subscriber 与失效屏障
   runtime.rs                         query/hydrate/resolve 协调与源回复校验
+  session.rs                         三来源有界排序/continuation/已发引用关联
+  projected.rs / remote.rs            原 owner 投影与远端生成协议的通用适配
   requests.rs                        身份分区/request ID 准入、取消与完成裁决
 packages/messaging-core/src/search.rs
                                       原 Messaging 读取端口与共享 Contributor
@@ -30,24 +35,34 @@ apps/desktop/src-tauri/src/
   messaging/engine.rs                消息检索与会话名称候选适配
   application/search/runtime.rs       Desktop 身份/Store publication guard 与执行调度
   application/search/messaging.rs     共享 Messaging Contributor 的重导出
+  application/search/private.rs      原 SecureContent 读端口到共同投影适配
+  application/search/social.rs       原 Social public 的受信 Station 读适配
+  secure_content/search*.rs          私密派生 FTS、批量原权限复核与目标窗口
   interface/tauri_commands/search.rs  suggest/submit/cancel/resolve/read-state 入口
   interface/http_gateway/mod.rs       拒绝未鉴权的私有 Search 调用
 apps/desktop/src/
   services/search.ts                  生成协议到 native IPC 的薄适配
   runtimes/searchRuntime.ts           session 缓存、取消、原 owner 状态核对
+  runtimes/searchInvalidations.ts     Host 组合原 Messaging/Social 失效订阅
+  runtimes/searchOpeners.ts           source-bound 受信任原对象打开注册
   store/search.ts                     输入/结果/选择/滚动投影
   components/search/                  singleton overlay 与受信任功能目录
   messaging/openResource.ts           原 Messaging 会话/历史/线程定位
 apps/mobile/src-tauri/src/
   messaging/adapter/search.rs         原 Store 读权、批量投影、全局/会话 FTS 与索引重建
   messaging/search.rs                 MessagingSearchReader 本机端口
-  runtime/search.rs                   OAuth/OS/Messaging/Store 发布边界与原生调度
+  runtime/search.rs                   OAuth/OS/独立领域 Store 发布边界与原生调度
+  runtime/search/social/private.rs    私密投影的共同 Contributor 接线
+  runtime/search/social.rs            public Social 原生认证传输
+  social/search.rs                   原私密 Social 读端口、批量权限复核
+  secure_content/store/search.rs      私密派生 FTS/checkpoint/读屏障
   commands/search.rs                  生成协议 suggest/submit/cancel/resolve/read-state
 apps/mobile/src/gen/proto/domain/search/search_pb.ts
                                       生成的 Mobile Renderer 协议类型
 apps/mobile/src/
   services/search.ts                  protobuf IPC 薄适配，不接受 Renderer 账号选择
   runtimes/searchRuntime.ts           独立于页面的输入/结果投影、失效与返回核对
+  runtimes/searchInvalidations.ts     原领域失效事件到来源 ID 的 Host 接线
   features/search/                    有界呈现状态和受信任 Mobile 设置目录
   pages/SearchPage.tsx                按需挂载全屏详情及 BoundedList 结果
   components/SearchEntry.tsx          Shell 注入既有一级页 header action rail
@@ -57,6 +72,14 @@ apps/mobile/src/
 packages/prototypes/mobile/chat/src/
   pages/SearchPage.tsx                同一 Shell 全屏详情的样本表达
   MobileShell.tsx                     四个一级入口、会话范围和返回来源
+apps/station/app/subserver/social/
+  application/public_read.go          public point/batch 的共同读策略 owner
+  application/public_search*.go       原 public 表的检索协议适配
+  application/private_read_policy.go  私密当前权限批量读契约
+  infrastructure/private_read_policy.go
+                                      原私密 Store 的有界权限事务
+  search_handler.go / read_policy_handler.go
+                                      已鉴权生成协议 HTTP 边界
 ```
 
 Mobile 旧 `messaging_search_messages` IPC、输入 DTO、注册和服务 wrapper 已删除。
@@ -84,8 +107,10 @@ Contributor 与串行发布裁决。Contributor 构造可读取原 Store，必�
 
 `build.rs` 通过 prost 生成 `search.proto` 的 Rust 类型；`model.rs`
 重导出生成的枚举与 ResourceRef，仅 scored candidate 属于内部投影。
-Native IPC 使用生成 Request/Response 的 protobuf bytes。Submit 当前支持
-DEVICE/FIND/MESSAGE（keyset 分页）及会话名称；Suggest 给会话优先和消息候选。
+Native IPC 使用生成 Request/Response 的 protobuf bytes。Submit 以集合条件
+选择本机 Messaging、已获取的私密 Social 和当前 Station public Social；
+post/comment 独立分页和打开。Suggest 不发网络请求，私密 Social 没有离线读
+租约时不产生正文建议；会话优先语义仍属于 Messaging。
 cancel 只关闭调用者订阅，最后订阅者退出才中止 operation；同词查询和资源
 投影各按语义键复用，身份变化主动失效对应窗口分区。binding session revision
 阻止 A→B→A 旧结果发布，原 Store 水位 guard 串行裁决缓存提交与响应发布。
@@ -93,7 +118,7 @@ cancel 只关闭调用者订阅，最后订阅者退出才中止 operation；同
 完整混合结果分页、所有来源 coverage 和锁定 Journey 仍未证明。
 
 Mobile 原生分区由 current native session 的 Station、Actor、device、Session、
-认证操作 revision、OS generation 和 engine incarnation 推导。Renderer 不选账号。
+认证操作 revision 和 OS generation 推导，独立于 Messaging 实例。Renderer 不选账号。
 OAuth 操作标记、OS 前后台事件锁、Messaging active lock 和 Store 水位锁共同
 裁决缓存与最终响应发布；后台、身份过期或旧实例均拒绝读取。
 会话筛选进入生成协议语义键及签名 cursor，不授予会话读权。
@@ -109,7 +134,8 @@ scope/revision/expiry，再恢复结果、筛选、选择、滚动和焦点。�
 
 后续实现位置：
 
-- **Station**：一个 Search application/subserver 执行 S/F 区协议并适配原领域读权。尚未建立，不通过 RPC 调用客户端 Rust core。
+- **Station**：public Social source 已在原 Social owner 接入共同读协议。其他
+  Station 来源和 Federation 未实施；不新增平行 Search subserver 或调用客户端 Rust core。
 - **Mobile 扩展证明**：现有 Android/iOS 模拟器 Journey 已有指定源码证明；实机、OEM、辅助技术与 OS 后台/锁屏仍未证明。
 - **Applet / Agent**：沿现有 SDK、Host 和 evidence owner 接入；本期没有 contributor/Ask 实现。
 
@@ -128,7 +154,9 @@ Renderer 不建立第二个 TypeScript 查询执行引擎。取消、cursor 和�
 
 ## 3. 组件依赖方向
 
-UI → Client application/coordinator → Search core ports → 领域/域内附件/功能/Station adapters。Station interface → Search application → domain/index/Federation adapters。adapter 依赖原 owner 的读取与权限接口，原业务模块不 import Search 内部库。
+UI → Client application/coordinator → Search core ports → 领域/域内附件/功能/Station adapters。
+当前 Station Social interface → 原 Social application/read owner → 原 domain/repository。
+adapter 依赖原 owner 的读取与权限接口，原业务模块不 import Search 内部库。
 
 Search core 不依赖 Messaging store、Tauri、UI、Go subserver 或特定模型。Search 不持有原业务写入与密码；Agent 消费 query/evidence contract，不 import Search 页面；来源也不 import排名/分页/UI状态。依赖关系和禁止调用详见 [design.md](./design.md)。
 
@@ -140,4 +168,7 @@ Search core 不依赖 Messaging store、Tauri、UI、Go subserver 或特定模�
 
 Search 架构及共享核心在原 registry 登记。当前 Runtime、UI alive policy 和正式 Acceptance 的未实施范围保持显式；架构登记不授予已删除路径或尚未实施 adapter 权限。
 
-Search application 保持 Station 内的一个领域模块，不为 source catalog、ranking、indexing、AI answer 各自创建微服务。已有 query adapter 直接复用，不先把所有正文集中复制。索引引擎是 infrastructure port，独立进程只在成熟引擎的真实部署需要时出现。
+当前 Station 来源直接复用原 Social application 的 query/read adapter，
+不创建平行 Search subserver，也不为 source catalog、ranking、indexing、
+AI answer 各自创建微服务。正文保持原 owner 存储，索引引擎属于 infrastructure
+port；独立进程仅在已接受的真实部署需要时出现。

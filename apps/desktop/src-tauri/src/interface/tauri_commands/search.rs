@@ -3,17 +3,16 @@ use std::sync::Arc;
 use prost::Message;
 use search_core::model::wire::{
     CancelRequest, CancelResponse, QueryIntent, ResolveRequest, SearchErrorCode, SearchIntent,
-    SearchKind, SearchReadState, SearchScope, SubmitRequest, SuggestRequest,
+    SearchReadState, SearchScope, SubmitRequest, SuggestRequest,
 };
 use search_core::runtime::{SearchBinding, SearchRuntime};
 use search_core::SearchError;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
 use tauri::{Manager, State, Window};
 
 use crate::application::search as application_search;
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::tauri_commands::messaging::active_engine;
 use crate::state::AppState;
 
 // ── New closed-domain search commands (SRCH-D03) ──────────────────────────
@@ -44,9 +43,7 @@ fn failure(error: SearchError) -> AppResult<Vec<u8>> {
 }
 
 struct Admission {
-    session: crate::domain::identity::ActiveSession,
-    revision: u64,
-    engine: Arc<crate::messaging::MessagingEngine>,
+    composition: application_search::runtime::Composition,
     request: search_core::requests::SearchRequest,
 }
 
@@ -55,83 +52,61 @@ fn admit(
     window: &Window,
     request_id: &str,
 ) -> Result<Admission, AppResult<Vec<u8>>> {
-    let (session, revision, engine) = {
-        let _transition = match state.identity_transition.lock() {
-            Ok(lock) => lock,
-            Err(_) => return Err(failure(SearchError::Cancelled)),
+    let composition =
+        match application_search::runtime::Binding::admit(state.clone(), window.label()) {
+            Ok(composition) => composition,
+            Err(error) => return Err(failure(error)),
         };
-        let (session, revision) = match state.sessions.get_with_revision(window.label()) {
-            Some(value) => value,
-            None => {
-                return Err(AppResult::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ))
-            }
+    let partition_prefix = composition.partition.clone();
+    state.search_runtime.invalidate_partitions(|partition| {
+        partition.starts_with(window.label()) && partition != partition_prefix
+    });
+    let request =
+        match state
+            .search_requests
+            .begin(window.label(), &composition.partition, request_id)
+        {
+            Ok(request) => request,
+            Err(error) => return Err(failure(error)),
         };
-        let (_, _, engine) = match active_engine(state, window) {
-            Ok(value) => value,
-            Err(error) => {
-                return Err(AppResult::fail(
-                    error
-                        .error
-                        .as_ref()
-                        .map(|e| e.code.clone())
-                        .unwrap_or(ErrorCode::Unauthorized),
-                    "authenticated messaging engine required",
-                    None,
-                ))
-            }
-        };
-        (session, revision, engine)
-    };
-    let request = match state
-        .search_requests
-        .begin(window.label(), &session.account_id, request_id)
-    {
-        Ok(request) => request,
-        Err(error) => return Err(failure(error)),
-    };
     Ok(Admission {
-        session,
-        revision,
-        engine,
+        composition,
         request,
     })
 }
 
 fn execute<M: Message>(
     state: &Arc<AppState>,
-    window: &Window,
+    _window: &Window,
     admission: Admission,
     run: impl FnOnce(
         &SearchRuntime<application_search::runtime::DesktopSearchExecutor>,
-        &application_search::runtime::Binding,
+        &[application_search::runtime::Binding],
         &search_core::CancelToken,
     ) -> Result<M, SearchError>,
 ) -> AppResult<Vec<u8>> {
     let Admission {
-        session,
-        revision,
-        engine,
+        composition,
         mut request,
     } = admission;
-    let binding = match application_search::runtime::Binding::new(
-        state.clone(),
-        window.label().into(),
-        session.account_id,
-        revision,
-        engine,
+    let response = match run(
+        &state.search_runtime,
+        &composition.bindings,
+        &request.cancel,
     ) {
-        Ok(binding) => binding,
-        Err(error) => return failure(error),
-    };
-    let response = match run(&state.search_runtime, &binding, &request.cancel) {
         Ok(response) => response,
         Err(error) => return failure(error),
     };
-    match binding.publish(|| {
+    let source_states = match composition
+        .bindings
+        .iter()
+        .map(|binding| binding.read_state())
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(states) => states,
+        Err(error) => return failure(error),
+    };
+    match composition.bindings[0].publish_sources(&source_states, || {
         request.complete()?;
         Ok(response.encode_to_vec())
     }) {
@@ -160,12 +135,12 @@ pub async fn search_suggest(
     };
     tauri::async_runtime::spawn_blocking(move || {
         execute(&state, &window, admission, |runtime, binding, cancel| {
-            runtime.query(
+            runtime.query_all(
                 binding,
                 QueryIntent {
                     text: request.query,
-                    kind: request.kind,
-                    scope: SearchScope::Device as i32,
+                    kinds: request.kinds,
+                    scopes: vec![SearchScope::Device as i32],
                     limit: if request.limit == 0 {
                         12
                     } else {
@@ -207,16 +182,12 @@ pub async fn search_submit(
     };
     tauri::async_runtime::spawn_blocking(move || {
         execute(&state, &window, admission, |runtime, binding, cancel| {
-            runtime.query(
+            runtime.query_all(
                 binding,
                 QueryIntent {
                     text: request.query,
-                    kind: if request.kind == SearchKind::Unspecified as i32 {
-                        SearchKind::Message as i32
-                    } else {
-                        request.kind
-                    },
-                    scope: request.scope,
+                    kinds: request.kinds,
+                    scopes: request.scopes,
                     cursor: request.cursor,
                     limit: if request.limit == 0 {
                         20
@@ -260,7 +231,7 @@ pub async fn search_resolve(
     };
     tauri::async_runtime::spawn_blocking(move || {
         execute(&state, &window, admission, |runtime, binding, cancel| {
-            runtime.resolve(binding, resource, cancel)
+            runtime.resolve_all(binding, &request.source_id, resource, cancel)
         })
     })
     .await
@@ -269,34 +240,24 @@ pub async fn search_resolve(
 
 #[tauri::command]
 pub fn search_read_state(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Vec<u8>> {
-    let (session, revision) = match state.sessions.get_with_revision(window.label()) {
-        Some(binding) => binding,
-        None => return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None),
-    };
-    let (_, _, engine) = match active_engine(state.inner(), &window) {
-        Ok(engine) => engine,
-        Err(_) => {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "authenticated engine required",
-                None,
-            )
-        }
-    };
-    let binding = match application_search::runtime::Binding::new(
-        state.inner().clone(),
-        window.label().into(),
-        session.account_id,
-        revision,
-        engine,
-    ) {
-        Ok(binding) => binding,
+    let composition =
+        match application_search::runtime::Binding::admit(state.inner().clone(), window.label()) {
+            Ok(composition) => composition,
+            Err(error) => return failure(error),
+        };
+    let sources = match composition
+        .bindings
+        .iter()
+        .map(|b| b.read_state())
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(sources) => sources,
         Err(error) => return failure(error),
     };
-    match binding.publish(|| {
+    match composition.bindings[0].publish_sources(&sources, || {
         Ok(SearchReadState {
-            source_revision: binding.source_revision.clone(),
-            read_scope: binding.partition.clone(),
+            sources: sources.clone(),
+            partition: composition.partition,
         }
         .encode_to_vec())
     }) {
@@ -318,13 +279,14 @@ pub fn search_cancel(
         Ok(request) if !request.request_id.trim().is_empty() => request,
         _ => return failure(SearchError::InvalidQuery),
     };
-    let (account, _, _) = match active_engine(state.inner(), &window) {
-        Ok(value) => value,
-        Err(_) => return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None),
-    };
+    let composition =
+        match application_search::runtime::Binding::admit(state.inner().clone(), window.label()) {
+            Ok(composition) => composition,
+            Err(error) => return failure(error),
+        };
     match state
         .search_requests
-        .cancel(window.label(), &account, &request.request_id)
+        .cancel(window.label(), &composition.partition, &request.request_id)
     {
         Ok(cancelled) => AppResult::success(
             CancelResponse {

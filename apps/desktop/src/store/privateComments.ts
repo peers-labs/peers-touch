@@ -46,7 +46,7 @@ interface PrivateCommentsState {
     reason: string,
     rendererGeneration: number,
   ) => Promise<void>;
-  loadComments: (postId: string, refresh?: boolean) => Promise<void>;
+  loadComments: (postId: string, refresh?: boolean, anchorCommentId?: string) => Promise<void>;
   submitComment: (
     postId: string,
     text: string,
@@ -506,7 +506,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
         );
       },
 
-      loadComments: async (postId, refresh = false) => {
+      loadComments: async (postId, refresh = false, anchorCommentId) => {
         const trimmedPostId = postId.trim();
         const scope = get().scope;
         const actorPtid = scope.actorPtid;
@@ -545,10 +545,11 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
             actorPtid,
             rendererGeneration: scope.rendererGeneration,
             postId: trimmedPostId,
-            cursor: refresh ? '' : current.nextCursor,
+            cursor: refresh || anchorCommentId ? '' : current.nextCursor,
             limit: 20,
+            anchorCommentId,
           });
-          applyPage(page, refresh, actorPtid, scope.rendererGeneration);
+          applyPage(page, refresh || !!anchorCommentId, actorPtid, scope.rendererGeneration);
         } catch (error) {
           if (!isCurrentScope(get().scope, actorPtid, scope.rendererGeneration)) return;
           const nativeError = error instanceof PrivateCommentsNativeError ? error : undefined;

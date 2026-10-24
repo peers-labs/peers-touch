@@ -5,6 +5,7 @@ mod private_mention;
 mod private_moment;
 mod private_reaction;
 mod projection;
+pub(crate) mod search_projection;
 
 use std::path::Path;
 use std::sync::Arc;

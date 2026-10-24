@@ -1042,6 +1042,17 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             }
             Err(error) => {
                 self.ensure_current()?;
+                if error.http_status == Some(401)
+                    || matches!(
+                        error.disposition,
+                        NativeErrorDisposition::Retryable | NativeErrorDisposition::UnknownCommit
+                    )
+                {
+                    self.supervisor
+                        .with_current(&self.lease.session.key, |lease| {
+                            lease.store.invalidate_search_policy()
+                        })?;
+                }
                 if requires_private_resource_purge(&error) {
                     self.purge_private_resource(post_id, revoke_media)?;
                 }
@@ -2187,7 +2198,7 @@ fn apply_terminal_media_failure(
     };
 }
 
-fn scrub_persisted_media_projection(
+pub(super) fn scrub_persisted_media_projection(
     mut projection: PrivateMomentProjection,
 ) -> PrivateMomentProjection {
     match projection.content.as_mut() {

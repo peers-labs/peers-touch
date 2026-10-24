@@ -1,6 +1,33 @@
 {
   "version": 1,
   "gates": {
+    "social-content-search-contract": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_contract"],
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate Social Search contract injection, original read authority and source-bound native proof requirements; source evidence only."
+    },
+    "social-content-search-desktop-native-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_desktop"],
+      "timeout_seconds": 1200,
+      "environment": "chat-storage-native",
+      "provisioner": "chat-storage-native",
+      "requiredRuntimeCells": ["desktop-macos-native"],
+      "runtimeCellArtifact": "acceptance-binary",
+      "ephemeralCapabilities": ["mobile.station-outage"],
+      "tier": "env-evidence",
+      "description": "Reuse one exact-source native Desktop Suite for mixed Search, public/private posts and comments, exact historical anchors, Return and read-policy invalidation."
+    },
+    "social-content-search-mobile-native-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_mobile"],
+      "timeout_seconds": 1800,
+      "environment": "chat-mobile-search-simulator",
+      "provisioner": "chat-mobile-search-simulator",
+      "ephemeralCapabilities": ["mobile.station-outage"],
+      "tier": "env-evidence",
+      "description": "Reuse one exact-source iOS/Android Suite for public/private content Search, independent comment anchors, Return, current policy and account/lifecycle isolation."
+    },
     "chat-device-search-contract": {
       "argv": ["python3", "-m", "tooling.acceptance.gates.chat.device_search_contract"],
       "timeout_seconds": 120,

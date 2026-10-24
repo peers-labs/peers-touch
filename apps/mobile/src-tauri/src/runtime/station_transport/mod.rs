@@ -226,6 +226,7 @@ enum StationOperation {
         post_id: String,
         cursor: Option<String>,
         limit: u32,
+        anchor_comment_id: Option<String>,
     },
     MomentsCommentCreate {
         post_id: String,
@@ -1095,8 +1096,14 @@ fn build_request(
             post_id,
             cursor,
             limit,
+            anchor_comment_id,
         } => {
-            bounded_limit(limit, 200, "moments_comments_list")?;
+            bounded_limit(limit, 100, "moments_comments_list")?;
+            let cursor = clean_optional(cursor.unwrap_or_default(), 2048, "cursor")?;
+            let anchor = clean_optional(anchor_comment_id.unwrap_or_default(), 512, "anchor_comment_id")?;
+            if cursor.is_some() && anchor.is_some() {
+                return Err(transport_error("moments_comments_list", "anchor_with_cursor"));
+            }
             let mut url = url_with_segments(
                 session,
                 MOMENTS_RESOURCE_PATH,
@@ -1104,8 +1111,11 @@ fn build_request(
             )?;
             url.query_pairs_mut()
                 .append_pair("limit", &limit.to_string());
-            if let Some(cursor) = clean_optional(cursor.unwrap_or_default(), 2048, "cursor")? {
+            if let Some(cursor) = cursor {
                 url.query_pairs_mut().append_pair("cursor", &cursor);
+            }
+            if let Some(anchor) = anchor {
+                url.query_pairs_mut().append_pair("anchor_comment_id", &anchor);
             }
             authenticated_request(client, session, Method::GET, url)
         }

@@ -9,10 +9,17 @@ use prost::Message;
 use crate::cache::{Operation, ReadCache, ReadKey};
 use crate::contributor::{validate_hydration, validate_page, ContributorRegistry};
 use crate::model::wire::*;
+use crate::session::SessionStore;
 use crate::{CancelToken, SearchContributor, SearchError, SearchExecutionContext, SourceFuture};
 
 pub const READ_BUDGET: Duration = Duration::from_secs(5);
 const MAX_FRESHNESS: Duration = Duration::from_secs(5 * 60);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadAuthority {
+    LocalSnapshot,
+    RemoteOwner,
+}
 
 /// Native execution scheduling is supplied by the host, never by a contributor.
 pub trait SearchExecutor: Default + Clone + Send + Sync + 'static {
@@ -35,6 +42,50 @@ pub trait SearchBinding: Clone + Send + Sync + 'static {
         publish: impl FnOnce() -> Result<T, SearchError>,
     ) -> Result<T, SearchError>;
     fn contributor(&self) -> Result<Arc<dyn SearchContributor>, SearchError>;
+
+    fn read_authority(&self) -> ReadAuthority {
+        ReadAuthority::LocalSnapshot
+    }
+
+    /// Override for independent read scopes, policy revisions and coverage.
+    /// Called outside publication locks; the host authenticates this snapshot.
+    fn read_state(&self) -> Result<SourceReadState, SearchError> {
+        self.check()?;
+        Ok(SourceReadState {
+            source_id: self.source_id().into(),
+            binding_id: self.binding_id().into(),
+            source_revision: self.source_revision().into(),
+            read_scope: self.partition().into(),
+            policy_revision: self.source_revision().into(),
+            state: SourceState::Ready as i32,
+            extent: CoverageExtent::DeclaredScope as i32,
+            no_store: false,
+        })
+    }
+
+    /// A composite host must atomically validate this entire vector with its
+    /// authentication/source owners, then invoke the closure under that guard.
+    /// Never implement this by nesting per-source locks that share an owner.
+    fn publish_sources<T>(
+        &self,
+        sources: &[SourceReadState],
+        publish: impl FnOnce() -> Result<T, SearchError>,
+    ) -> Result<T, SearchError> {
+        if sources.is_empty() {
+            return self.publish(publish);
+        }
+        if sources.len() != 1
+            || sources[0].source_id != self.source_id()
+            || sources[0].binding_id != self.binding_id()
+            || (self.read_authority() == ReadAuthority::LocalSnapshot
+                && sources[0].source_revision != self.source_revision())
+            || (self.read_authority() == ReadAuthority::RemoteOwner
+                && (!sources[0].no_store || sources[0].read_scope != self.read_state()?.read_scope))
+        {
+            return Err(SearchError::Protocol);
+        }
+        self.publish(publish)
+    }
 }
 
 pub fn now_ms() -> Result<u64, SearchError> {
@@ -44,22 +95,34 @@ pub fn now_ms() -> Result<u64, SearchError> {
         .map_err(|_| SearchError::CursorExpired)
 }
 
-fn freshness(metadata: &CacheMetadata) -> Result<Instant, SearchError> {
-    let remaining = metadata
-        .content_fresh_until_unix_ms
-        .saturating_sub(now_ms()? as i64)
-        .max(0) as u64;
+pub(crate) fn freshness(metadata: &CacheMetadata) -> Result<Instant, SearchError> {
+    let validity = metadata
+        .read_validity
+        .as_ref()
+        .ok_or(SearchError::Protocol)?;
+    let until = if validity.owner_check_required {
+        metadata.content_fresh_until_unix_ms
+    } else {
+        metadata
+            .content_fresh_until_unix_ms
+            .min(validity.lease_until_unix_ms)
+    };
+    let remaining = until.saturating_sub(now_ms()? as i64).max(0) as u64;
     Ok(Instant::now() + Duration::from_millis(remaining).min(MAX_FRESHNESS))
 }
 
-fn context<B: SearchBinding>(binding: &B, operation: &Operation) -> SearchExecutionContext {
-    SearchExecutionContext {
+fn context<B: SearchBinding>(
+    binding: &B,
+    operation: &Operation,
+    state: &SourceReadState,
+) -> Result<SearchExecutionContext, SearchError> {
+    Ok(SearchExecutionContext {
         partition: binding.partition().into(),
-        read_scope: binding.partition().into(),
-        binding_revision: binding.binding_id().into(),
+        read_scope: state.read_scope.clone(),
+        binding_revision: binding.source_revision().into(),
         deadline: operation.deadline,
         cancel: operation.cancel.clone(),
-    }
+    })
 }
 
 fn key<B: SearchBinding, M: Message>(binding: &B, operation: &str, input: &M) -> ReadKey {
@@ -101,10 +164,27 @@ impl CachedReply for ResolvedResource {
 type SourceKey = (String, String, String);
 type BoundSource = (String, Arc<dyn SearchContributor>);
 
+pub(crate) struct Hydrated {
+    pub items: Vec<ResultItem>,
+    pub state: SourceReadState,
+}
+
 pub struct SearchRuntime<E: SearchExecutor> {
     pub cache: Arc<ReadCache>,
-    executor: E,
-    sources: Mutex<HashMap<SourceKey, BoundSource>>,
+    pub(crate) executor: E,
+    sources: Arc<Mutex<HashMap<SourceKey, BoundSource>>>,
+    pub(crate) sessions: Arc<SessionStore>,
+}
+
+impl<E: SearchExecutor> Clone for SearchRuntime<E> {
+    fn clone(&self) -> Self {
+        Self {
+            cache: self.cache.clone(),
+            executor: self.executor.clone(),
+            sources: self.sources.clone(),
+            sessions: self.sessions.clone(),
+        }
+    }
 }
 
 impl<E: SearchExecutor> Default for SearchRuntime<E> {
@@ -113,6 +193,7 @@ impl<E: SearchExecutor> Default for SearchRuntime<E> {
             cache: Default::default(),
             executor: E::default(),
             sources: Default::default(),
+            sessions: Default::default(),
         }
     }
 }
@@ -120,12 +201,13 @@ impl<E: SearchExecutor> Default for SearchRuntime<E> {
 impl<E: SearchExecutor> SearchRuntime<E> {
     pub fn invalidate_partitions(&self, matches: impl Fn(&str) -> bool) {
         self.cache.invalidate(|key| matches(&key.partition));
+        self.sessions.invalidate(&matches);
         if let Ok(mut sources) = self.sources.lock() {
             sources.retain(|(partition, _, _), _| !matches(partition));
         }
     }
 
-    fn source<B: SearchBinding>(
+    pub(crate) fn source<B: SearchBinding>(
         &self,
         binding: &B,
     ) -> Result<Arc<dyn SearchContributor>, SearchError> {
@@ -180,22 +262,34 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         key: ReadKey,
         refresh: bool,
         cancel: &CancelToken,
+        deadline: Instant,
         run: impl FnOnce(SearchExecutionContext) -> Result<M, SearchError> + Send + 'static,
     ) -> Result<M, SearchError> {
         binding.check()?;
-        let (subscription, operation) = self.cache.subscribe(key, refresh, READ_BUDGET)?;
+        let state = binding.read_state()?;
+        let mut key = key;
+        key.read_scope = state.read_scope.clone();
+        key.binding
+            .push_str(&format!(":{:?}", state.policy_revision));
+        let (subscription, operation) = self.cache.subscribe(
+            key,
+            refresh || state.no_store,
+            deadline.saturating_duration_since(Instant::now()),
+        )?;
         self.executor.observe_read(operation.is_some(), refresh);
         if let Some(operation) = operation {
             let binding = binding.clone();
-            let ctx = context(&binding, &operation);
+            let ctx = context(&binding, &operation, &state)?;
+            let state = state.clone();
             self.executor.spawn(Box::new(move || {
                 let read = run(ctx).and_then(|value| {
                     binding.publish(|| {
                         let metadata = value.cache_metadata().ok_or(SearchError::Protocol)?;
+                        validate_metadata(binding.read_authority(), &state, metadata)?;
                         operation.commit(
                             value.encode_to_vec(),
                             freshness(metadata)?,
-                            metadata.no_store || !value.complete(),
+                            metadata.no_store || state.no_store || !value.complete(),
                         )
                     })
                 });
@@ -204,68 +298,126 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                 }
             }));
         }
-        let bytes = subscription.wait(cancel, Instant::now() + READ_BUDGET)?;
-        M::decode(bytes.as_ref()).map_err(|_| SearchError::Protocol)
+        let bytes = subscription.wait(cancel, deadline)?;
+        binding.publish(|| {
+            cancel.check()?;
+            let value = M::decode(bytes.as_ref()).map_err(|_| SearchError::Protocol)?;
+            validate_metadata(
+                binding.read_authority(),
+                &state,
+                value.cache_metadata().ok_or(SearchError::Protocol)?,
+            )?;
+            Ok(value)
+        })
     }
 
     pub fn query<B: SearchBinding>(
         &self,
         binding: &B,
-        mut input: QueryIntent,
+        input: QueryIntent,
         cancel: &CancelToken,
     ) -> Result<SearchResponse, SearchError> {
-        let source = self.source(binding)?;
-        if input.suggestions && input.text.trim().is_empty() {
-            input.kind = SearchKind::Conversation as i32;
+        let deadline = Instant::now() + READ_BUDGET;
+        let input = crate::contributor::normalize_intent(input)?;
+        if input.suggestions && binding.read_authority() == ReadAuthority::RemoteOwner {
+            return Err(SearchError::SourceUnavailable(binding.source_id().into()));
         }
+        let (page, hydrated) = self.query_source(binding, input, cancel, deadline)?;
+        let mut state = hydrated.state;
+        state.no_store |= page.cache.as_ref().is_some_and(|c| c.no_store);
+        let response = SearchResponse {
+            items: hydrated.items,
+            next_cursor: page.next_cursor.clone(),
+            has_more: !page.next_cursor.is_empty(),
+            coverage: page.coverage.clone().into_iter().collect(),
+            expires_at_unix_ms: page.expires_at_unix_ms,
+            sources: vec![state.clone()],
+            partition: binding.partition().into(),
+        };
+        binding.publish(|| {
+            cancel.check()?;
+            self.sessions.remember(
+                &response,
+                &page,
+                binding.source_revision(),
+                binding.read_authority(),
+            )?;
+            Ok(response)
+        })
+    }
+
+    pub(crate) fn query_source<B: SearchBinding>(
+        &self,
+        binding: &B,
+        input: QueryIntent,
+        cancel: &CancelToken,
+        deadline: Instant,
+    ) -> Result<(SourcePage, Hydrated), SearchError> {
         let refresh = input.refresh;
-        input.refresh = false;
-        input.text = input.text.trim().to_owned();
-        let read_key = key(binding, "query", &input);
-        let executor = self.executor.clone();
-        let page: SourcePage = self.read(binding, read_key, refresh, cancel, move |ctx| {
-            let page = executor.block_on(source.query(&input, &ctx))?;
-            validate_page(source.descriptor(), &input, &page)?;
-            Ok(page)
-        })?;
-        if page.expires_at_unix_ms <= now_ms()? as i64 {
-            return Err(SearchError::CursorExpired);
-        }
+        let page = self.source_page(binding, input, cancel, deadline)?;
         let references = page
             .candidates
             .iter()
             .map(|candidate| candidate.resource.clone().ok_or(SearchError::Protocol))
             .collect::<Result<_, _>>()?;
-        let items = self.hydrate(binding, references, refresh, cancel)?;
-        let has_more = !page.next_cursor.is_empty();
-        let expires_at_unix_ms = page
-            .cache
-            .as_ref()
-            .map_or(page.expires_at_unix_ms, |metadata| {
-                page.expires_at_unix_ms
-                    .min(metadata.content_fresh_until_unix_ms)
-            });
-        Ok(SearchResponse {
-            items,
-            next_cursor: page.next_cursor,
-            has_more,
-            coverage: page.coverage.into_iter().collect(),
-            expires_at_unix_ms,
-            read_validity: page.cache.and_then(|metadata| metadata.read_validity),
-            source_revision: binding.source_revision().into(),
-        })
+        let mut hydrated = self.hydrate(binding, references, refresh, cancel, deadline)?;
+        if binding.read_authority() == ReadAuthority::RemoteOwner {
+            if hydrated.state.source_revision.is_empty() {
+                apply_observation(
+                    &mut hydrated.state,
+                    page.cache.as_ref().ok_or(SearchError::Protocol)?,
+                )?;
+            }
+            if let Some(coverage) = &page.coverage {
+                hydrated.state.state = coverage.state;
+                hydrated.state.extent = coverage.extent;
+            }
+        }
+        Ok((page, hydrated))
+    }
+
+    pub(crate) fn source_page<B: SearchBinding>(
+        &self,
+        binding: &B,
+        mut input: QueryIntent,
+        cancel: &CancelToken,
+        deadline: Instant,
+    ) -> Result<SourcePage, SearchError> {
+        let source = self.source(binding)?;
+        if input.suggestions && !source.supports_suggestions() {
+            return Err(SearchError::SourceUnavailable(binding.source_id().into()));
+        }
+        input = crate::contributor::narrow_intent(source.descriptor(), &input)
+            .ok_or(SearchError::InvalidQuery)?;
+        let refresh = input.refresh;
+        input.refresh = false;
+        input.text = input.text.trim().to_owned();
+        let read_key = key(binding, "query", &input);
+        let executor = self.executor.clone();
+        let page: SourcePage =
+            self.read(binding, read_key, refresh, cancel, deadline, move |ctx| {
+                let page = executor.block_on(source.query(&input, &ctx))?;
+                validate_page(source.descriptor(), &input, &page)?;
+                Ok(page)
+            })?;
+        if page.expires_at_unix_ms <= now_ms()? as i64 {
+            return Err(SearchError::CursorExpired);
+        }
+        Ok(page)
     }
 
     /// All misses enter one original-domain batch. Resources retain independent
     /// shared operations, allowing other queries to reuse unchanged projections.
-    fn hydrate<B: SearchBinding>(
+    pub(crate) fn hydrate<B: SearchBinding>(
         &self,
         binding: &B,
         references: Vec<ResourceRef>,
         refresh: bool,
         cancel: &CancelToken,
-    ) -> Result<Vec<ResultItem>, SearchError> {
+        deadline: Instant,
+    ) -> Result<Hydrated, SearchError> {
         let source = self.source(binding)?;
+        let state = binding.read_state()?;
         let mut subscriptions = Vec::new();
         let mut leaders = Vec::new();
         let mut validators = HashMap::new();
@@ -288,7 +440,14 @@ impl<E: SearchExecutor> SearchRuntime<E> {
             if read_key.dependency.is_empty() {
                 return Err(SearchError::Protocol);
             }
-            if let Some(bytes) = self.cache.validator_payload(&read_key) {
+            read_key.read_scope = state.read_scope.clone();
+            read_key
+                .binding
+                .push_str(&format!(":{:?}", state.policy_revision));
+            if let Some(bytes) = (!state.no_store)
+                .then(|| self.cache.validator_payload(&read_key))
+                .flatten()
+            {
                 if let Ok(outcome) = HydrationOutcome::decode(bytes.as_ref()) {
                     if let Some(hydration_outcome::Outcome::Changed(projection)) = outcome.outcome {
                         if let Some(cache) = &projection.cache {
@@ -298,7 +457,11 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                     }
                 }
             }
-            let (subscription, operation) = self.cache.subscribe(read_key, refresh, READ_BUDGET)?;
+            let (subscription, operation) = self.cache.subscribe(
+                read_key,
+                refresh || state.no_store,
+                deadline.saturating_duration_since(Instant::now()),
+            )?;
             subscriptions.push(subscription);
             if let Some(operation) = operation {
                 leaders.push((item, operation));
@@ -309,12 +472,17 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         if !leaders.is_empty() {
             let binding = binding.clone();
             let executor = self.executor.clone();
+            let state = state.clone();
             self.executor.spawn(Box::new(move || {
                 let ctx = SearchExecutionContext {
                     partition: binding.partition().into(),
-                    read_scope: binding.partition().into(),
-                    binding_revision: binding.binding_id().into(),
-                    deadline: Instant::now() + READ_BUDGET,
+                    read_scope: state.read_scope.clone(),
+                    binding_revision: binding.source_revision().into(),
+                    deadline: leaders
+                        .iter()
+                        .map(|(_, op)| op.deadline)
+                        .max()
+                        .unwrap_or(deadline),
                     cancel: CancelToken::all(
                         leaders.iter().map(|(_, op)| op.cancel.clone()).collect(),
                     ),
@@ -368,7 +536,12 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                                                 .cache
                                                 .as_ref()
                                                 .ok_or(SearchError::Protocol)?;
-                                            (freshness(cache)?, cache.no_store)
+                                            validate_metadata(
+                                                binding.read_authority(),
+                                                &state,
+                                                cache,
+                                            )?;
+                                            (freshness(cache)?, cache.no_store || state.no_store)
                                         }
                                         _ => (Instant::now(), true),
                                     };
@@ -389,19 +562,43 @@ impl<E: SearchExecutor> SearchRuntime<E> {
             }));
         }
         let mut items = Vec::new();
+        let mut observed: Option<SourceReadState> = None;
         for subscription in subscriptions {
-            let bytes = subscription.wait(cancel, Instant::now() + READ_BUDGET)?;
+            let bytes = subscription.wait(cancel, deadline)?;
             let outcome =
                 HydrationOutcome::decode(bytes.as_ref()).map_err(|_| SearchError::Protocol)?;
             match outcome.outcome {
                 Some(hydration_outcome::Outcome::Changed(projection)) => {
-                    items.push(projection.result.ok_or(SearchError::Protocol)?)
+                    let cache = projection.cache.as_ref().ok_or(SearchError::Protocol)?;
+                    binding.publish(|| {
+                        cancel.check()?;
+                        validate_metadata(binding.read_authority(), &state, cache)?;
+                        if binding.read_authority() == ReadAuthority::RemoteOwner {
+                            let mut current = state.clone();
+                            apply_observation(&mut current, cache)?;
+                            if observed
+                                .as_ref()
+                                .is_some_and(|previous| previous != &current)
+                            {
+                                return Err(SearchError::SourceChanged);
+                            }
+                            observed = Some(current);
+                        }
+                        let mut result = projection.result.clone().ok_or(SearchError::Protocol)?;
+                        result.source_id = binding.source_id().into();
+                        result.read_validity = cache.read_validity.clone();
+                        items.push(result);
+                        Ok(())
+                    })?;
                 }
                 Some(hydration_outcome::Outcome::Unavailable(_)) => {}
                 _ => return Err(SearchError::Protocol),
             }
         }
-        Ok(items)
+        Ok(Hydrated {
+            items,
+            state: observed.unwrap_or(state),
+        })
     }
 
     pub fn resolve<B: SearchBinding>(
@@ -410,13 +607,89 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         resource: ResourceRef,
         cancel: &CancelToken,
     ) -> Result<ResolvedResource, SearchError> {
+        self.resolve_all(
+            std::slice::from_ref(binding),
+            binding.source_id(),
+            resource,
+            cancel,
+        )
+    }
+
+    pub(crate) fn resolve_source<B: SearchBinding>(
+        &self,
+        binding: &B,
+        resource: ResourceRef,
+        cancel: &CancelToken,
+    ) -> Result<ResolvedResource, SearchError> {
         let source = self.source(binding)?;
         let read_key = key(binding, "resolve", &resource);
         let executor = self.executor.clone();
-        self.read(binding, read_key, false, cancel, move |ctx| {
-            executor.block_on(source.resolve(&resource, &ctx))
-        })
+        self.read(
+            binding,
+            read_key,
+            false,
+            cancel,
+            Instant::now() + READ_BUDGET,
+            move |ctx| {
+                let resolved = executor.block_on(source.resolve(&resource, &ctx))?;
+                if resolved.resource.as_ref().is_none_or(|r| r != &resource)
+                    || resolved.resolver_binding.is_empty()
+                {
+                    return Err(SearchError::Protocol);
+                }
+                Ok(resolved)
+            },
+        )
     }
+}
+
+pub(crate) fn validate_metadata(
+    authority: ReadAuthority,
+    state: &SourceReadState,
+    metadata: &CacheMetadata,
+) -> Result<(), SearchError> {
+    let validity = metadata
+        .read_validity
+        .as_ref()
+        .ok_or(SearchError::Protocol)?;
+    if authority == ReadAuthority::RemoteOwner {
+        if !state.no_store
+            || !metadata.no_store
+            || !validity.owner_check_required
+            || validity.lease_until_unix_ms != 0
+            || metadata.source_revision.is_empty()
+            || validity.policy_revision.is_empty()
+        {
+            return Err(SearchError::Protocol);
+        }
+        if validity.read_scope != state.read_scope {
+            return Err(SearchError::SourceChanged);
+        }
+        return Ok(());
+    }
+    if metadata.source_revision != state.source_revision
+        || validity.read_scope != state.read_scope
+        || validity.policy_revision != state.policy_revision
+        || (!validity.owner_check_required && validity.lease_until_unix_ms <= now_ms()? as i64)
+    {
+        return Err(SearchError::SourceChanged);
+    }
+    Ok(())
+}
+
+pub(crate) fn apply_observation(
+    state: &mut SourceReadState,
+    metadata: &CacheMetadata,
+) -> Result<(), SearchError> {
+    let validity = metadata
+        .read_validity
+        .as_ref()
+        .ok_or(SearchError::Protocol)?;
+    state.source_revision = metadata.source_revision.clone();
+    state.read_scope = validity.read_scope.clone();
+    state.policy_revision = validity.policy_revision.clone();
+    state.no_store |= metadata.no_store;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -463,6 +736,7 @@ mod tests {
                     descriptor_revision: "current".into(),
                     supports_paging: true,
                     max_batch: 100,
+                    scopes: vec![SearchScope::Device as i32],
                 },
                 reads: AtomicUsize::new(0),
             }
@@ -596,6 +870,31 @@ mod tests {
             ..Default::default()
         };
         let cancel = CancelToken::new();
+        runtime
+            .sessions
+            .remember(
+                &SearchResponse {
+                    items: vec![ResultItem {
+                        resource: Some(resource.clone()),
+                        source_id: binding.source_id().into(),
+                        read_validity: Some(ReadValidity {
+                            read_scope: "identity".into(),
+                            policy_revision: "one".into(),
+                            owner_check_required: true,
+                            lease_until_unix_ms: 0,
+                        }),
+                        ..Default::default()
+                    }],
+                    sources: vec![binding.read_state().unwrap()],
+                    partition: "identity".into(),
+                    expires_at_unix_ms: now_ms().unwrap() as i64 + 60_000,
+                    ..Default::default()
+                },
+                &SourcePage::default(),
+                binding.source_revision(),
+                binding.read_authority(),
+            )
+            .unwrap();
         let first = runtime
             .resolve(&binding, resource.clone(), &cancel)
             .unwrap();

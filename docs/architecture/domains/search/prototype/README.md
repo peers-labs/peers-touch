@@ -84,10 +84,22 @@ L4 runtime：未做语义树/对比度自动化，UNPROVEN。
   跳转、返回输入、暗色/窄屏和可控 loading/error/retry 走查；结果列表使用
   原 `PrototypeListWindow`。L2/L3 开发证据位于
   `/tmp/mobile-search-prototype-20261023/`，不替代 Android/iOS 原生证明。
+  Mobile 的 Social 筛选现在复用 `preparedMoments` 的公开/私密帖子及评论样本；
+  公开项只在提交后进入结果。打开复用原 Moments 页面，旧评论展开后精确
+  focus，返回保留查询和筛选。2026-10-24 Portal Playwright 六项走查通过，
+  包含私密建议、帖子/历史评论定位、返回、公开提交、类型筛选与暗色窄屏。
+  已查看历史评论和暗色窄屏截图。开发证据：
+  `/tmp/peers-social-search/prototype/result.json` 与 `01`–`06` 截图。
+  原型表面沿用 shared UI Identity 及 Social 模块合同；主对象为可读内容，
+  主操作为查询/打开，列表和 header 复用既有 rail。语义树、对比度及现场
+  性能仍未证明，样本不代表原生运行时证明。
   既有 `check-long-lists.mjs` / `check-residual-parity.mjs` 的旧 Search
   路径仍需迁移；可控 demo 的跨会话失效与完整本地化仍未证明。
   Owner：Mobile / Search。
-- Desktop 端侧实现只启用本机消息/会话和真实 Settings 功能目录；原型 D/S/F 全对象是目标产品，未接入的来源在生产 footer 明示。Applet 仅预留 binding。
+- Desktop/Mobile 源码已接入本机消息、已获取私密 Social、当前 Station
+  公开 Social 与真实 Settings；完整混合结果和原生打开仍须当前源码证明。
+  原型中其他对象及 Federation 是目标产品，未接入来源在生产 coverage 明示。
+  Applet 仅预留 binding。
 - 新建 Agent 搜索项打开 Agent 的现有创建入口，实际创建仍由原模块的显式操作触发。通知/免打扰无真实分区，不伪造生产入口。
 - 同账号状态恢复/有界 mock 复用已同步；本轮 `make run-prototype` Portal
   走查 5 项通过，宽/窄截图已检查。开发证据：`tmp/search-prototype/result.json`

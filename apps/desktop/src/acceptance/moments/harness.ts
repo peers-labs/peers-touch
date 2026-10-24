@@ -1606,6 +1606,23 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async submitPublicComment(input: { postId: string; text: string }) {
+      if (!input?.postId?.trim() || !input?.text?.trim()) {
+        throw new Error('moments.acceptance.publicCommentInvalid');
+      }
+      await useMomentsStore.getState().createComment(input.postId, input.text);
+      const comment = useMomentsStore.getState().comments[input.postId]
+        ?.find(candidate => candidate.content === input.text);
+      if (!comment) throw new Error('moments.acceptance.publicCommentMissing');
+      return { commentId: comment.id, postId: input.postId };
+    },
+
+    async deletePublicMoment(input: { postId: string }) {
+      if (!input?.postId?.trim()) throw new Error('moments.acceptance.postIdMissing');
+      await useMomentsStore.getState().deletePost(input.postId);
+      return { postId: input.postId };
+    },
+
     async clearLocalState() {
       const moments = useMomentsStore.getState();
       moments.clearComposerDraft();

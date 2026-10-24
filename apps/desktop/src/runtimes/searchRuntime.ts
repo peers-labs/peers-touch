@@ -1,29 +1,25 @@
-import { fromJson, type JsonValue } from '@bufbuild/protobuf';
-import { listen } from '@tauri-apps/api/event';
-import { MessagingProjectionInvalidationSchema } from '../gen/proto/domain/chat/event_pb';
-import type { ResourceRef } from '../gen/proto/domain/search/search_pb';
-import { messagingDomainRuntime, type MessagingRuntimeScope } from '../messaging/runtime';
-import { searchService } from '../services/search';
-import { emptySearchState, useSearchStore } from '../store/search';
+import type { ResultItem } from '../gen/proto/domain/search/search_pb';
+import { captureSearchIdentity, searchService } from '../services/search';
+import { emptySearchState, useSearchStore, type SearchContentFilter } from '../store/search';
 import { useSessionStore } from '../store/session';
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import { EVENT, eventBus } from '../kernel/events';
-import type { Page } from '../types/navigation';
-import { clearSearchQueries, reconcileSearchQuery, runSearchQuery, searchErrorKey, stopSearchQuery } from './searchQueries';
+import type { Navigation, Page } from '../types/navigation';
+import { clearSearchQueries, invalidateSearchSources, reconcileSearchQuery, runSearchQuery, searchErrorKey, stopSearchQuery } from './searchQueries';
+import { openSearchResource } from './searchOpeners';
+import { subscribeSearchInvalidations } from './searchInvalidations';
 
 const RECONCILE_MS = 2_000;
 let requestGeneration = 0;
 let requestId: string | null = null;
 let debounce: ReturnType<typeof setTimeout> | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
-let removeScope: (() => void) | null = null;
 let removeSession: (() => void) | null = null;
 let removeStation: (() => void) | null = null;
 let removeEvent: (() => void) | null = null;
 let installed = false;
 let installationGeneration = 0;
 let locale = 'en';
-let activeScopeKey = '';
 
 function stopRequest(): void {
   requestGeneration++;
@@ -38,15 +34,7 @@ function stopRequest(): void {
 function reset(): void {
   stopRequest();
   clearSearchQueries();
-  activeScopeKey = '';
   useSearchStore.setState(emptySearchState());
-}
-
-function scopeChanged(scope: MessagingRuntimeScope | null): void {
-  const next = scope ? JSON.stringify(scope) : '';
-  if (next === activeScopeKey) return;
-  reset();
-  activeScopeKey = next;
 }
 
 export const searchActions = {
@@ -59,7 +47,11 @@ export const searchActions = {
   },
   close(): void {
     stopRequest();
-    useSearchStore.setState({ open: false, opening: false });
+    const response = useSearchStore.getState().response;
+    useSearchStore.setState({
+      open: false, opening: false,
+      ...(response?.sources.some(source => source.noStore) ? { response: null } : {}),
+    });
   },
   query(query: string, ready = true): void {
     stopRequest();
@@ -76,17 +68,23 @@ export const searchActions = {
     useSearchStore.setState({ mode, status: 'idle', errorKey: null, scrollTop: 0, cursorEngaged: false });
     void runSearchQuery(locale);
   },
+  filter(contentFilter: SearchContentFilter): void {
+    stopRequest();
+    useSearchStore.setState({ contentFilter, mode: 'submit', status: 'idle', errorKey: null });
+    void runSearchQuery(locale);
+  },
   submit(refresh = false): void {
     stopRequest();
     useSearchStore.setState({ mode: 'submit' });
     void runSearchQuery(locale, refresh);
   },
   more(): void { void runSearchQuery(locale, false, true); },
-  async resolve(resource: ResourceRef): Promise<ResourceRef | null> {
+  async openResult(item: ResultItem, navigation: Navigation): Promise<boolean> {
+    if (!item.resource || !item.sourceId) return false;
     stopRequest();
     const generation = requestGeneration;
-    const scope = messagingDomainRuntime.captureScope();
-    if (!scope) return null;
+    const identity = captureSearchIdentity();
+    if (!identity) return false;
     const id = crypto.randomUUID();
     requestId = id;
     useSearchStore.setState({
@@ -94,15 +92,20 @@ export const searchActions = {
       status: useSearchStore.getState().response ? 'ready' : 'idle',
     });
     try {
-      const resolved = await searchService.resolve(resource, id);
-      if (generation !== requestGeneration || !messagingDomainRuntime.isCurrent(scope)) return null;
-      if (resolved.resolverBinding !== 'messaging.device.open' || !resolved.resource) throw new Error('unknown resolver');
-      return resolved.resource;
+      const current = () => generation === requestGeneration && captureSearchIdentity() === identity
+        && useSearchStore.getState().open;
+      const resolved = await searchService.resolve(item.resource, item.sourceId, id);
+      if (!current()) return false;
+      await openSearchResource(resolved, navigation, current);
+      if (!current()) return false;
+      useSearchStore.setState({ returnAvailable: true });
+      searchActions.close();
+      return true;
     } catch (error) {
-      if (generation === requestGeneration && messagingDomainRuntime.isCurrent(scope)) {
+      if (generation === requestGeneration && captureSearchIdentity() === identity) {
         useSearchStore.setState({ errorKey: searchErrorKey(error) });
       }
-      return null;
+      return false;
     } finally {
       if (generation === requestGeneration) useSearchStore.setState({ opening: false });
       if (requestId === id) requestId = null;
@@ -117,22 +120,15 @@ export const searchRuntime: RuntimeDescriptor = {
     if (installed) return;
     installed = true;
     const generation = ++installationGeneration;
-    removeScope = messagingDomainRuntime.subscribeScope(scopeChanged);
-    removeStation = eventBus.subscribe(EVENT.STATION_ACTIVE_CHANGED, payload => {
-      if (payload.stationPeerId !== messagingDomainRuntime.captureScope()?.stationPeerId) reset();
-    });
+    removeStation = eventBus.subscribe(EVENT.STATION_ACTIVE_CHANGED, reset);
     removeSession = useSessionStore.subscribe((state, previous) => {
       if (state.sessionEpoch !== previous.sessionEpoch
         || state.currentUser?.actorPtid !== previous.currentUser?.actorPtid) reset();
     });
-    void listen<JsonValue>('messaging:projection-changed', ({ payload }) => {
-      try {
-        const event = fromJson(MessagingProjectionInvalidationSchema, payload);
-        if (!messagingDomainRuntime.matchesInvalidation(event)) return;
-      } catch { return; }
+    void subscribeSearchInvalidations(sourceIds => {
       // Hide prior authorization immediately; owner reconciliation decides reuse.
       stopRequest();
-      clearSearchQueries();
+      invalidateSearchSources(sourceIds);
       useSearchStore.setState({ status: 'idle', opening: false });
       void reconcileSearchQuery(locale);
     }).then(remove => {
@@ -146,7 +142,6 @@ export const searchRuntime: RuntimeDescriptor = {
   teardown(): void {
     installed = false;
     installationGeneration++;
-    removeScope?.(); removeScope = null;
     removeSession?.(); removeSession = null;
     removeStation?.(); removeStation = null;
     removeEvent?.(); removeEvent = null;
@@ -157,7 +152,7 @@ export const searchRuntime: RuntimeDescriptor = {
     reset();
   },
   async bootstrap(): Promise<void> {
-    scopeChanged(messagingDomainRuntime.captureScope());
+    reset();
   },
   async reconcile(): Promise<void> {
     await reconcileSearchQuery(locale);

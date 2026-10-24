@@ -9,7 +9,7 @@ import { installAuthenticatedCriticalRuntimes } from '../../services/appRuntime'
 import { api, RustCommandException } from '../../services/desktop_api';
 import { searchService } from '../../services/search';
 import {
-  ResourceRefSchema, ResolvedResourceSchema, SearchReadStateSchema, SearchResponseSchema,
+  ResourceRefSchema, ResolvedResourceSchema, SearchKind, SearchReadStateSchema, SearchResponseSchema,
 } from '../../gen/proto/domain/search/search_pb';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
@@ -563,11 +563,11 @@ export function installAcceptanceHarness(): void {
       return toJson(SearchReadStateSchema, await searchService.readState());
     },
 
-    async deviceSearchPage({ query, requestId, cursor = '' }: {
-      query: string; requestId: string; cursor?: string;
+    async deviceSearchPage({ query, requestId, cursor = '', kinds = [SearchKind.MESSAGE] }: {
+      query: string; requestId: string; cursor?: string; kinds?: SearchKind[];
     }) {
       try {
-        const page = await searchService.submit(query, requestId, 'en', cursor);
+        const page = await searchService.submit(query, requestId, 'en', cursor, false, kinds);
         return { accepted: true, page: toJson(SearchResponseSchema, page) };
       } catch (error) {
         return {
@@ -578,11 +578,11 @@ export function installAcceptanceHarness(): void {
       }
     },
 
-    async deviceSearchResolve({ resource, requestId }: {
-      resource: JsonValue; requestId: string;
+    async deviceSearchResolve({ resource, sourceId, requestId }: {
+      resource: JsonValue; sourceId: string; requestId: string;
     }) {
       try {
-        const resolved = await searchService.resolve(fromJson(ResourceRefSchema, resource), requestId);
+        const resolved = await searchService.resolve(fromJson(ResourceRefSchema, resource), sourceId, requestId);
         return { accepted: true, resolved: toJson(ResolvedResourceSchema, resolved) };
       } catch (error) {
         return {

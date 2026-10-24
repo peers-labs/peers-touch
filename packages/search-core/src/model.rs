@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+#[allow(clippy::large_enum_variant)]
 pub mod wire {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.model.search.v1.rs"));
 }
@@ -15,7 +16,7 @@ impl ResourceRef {
     /// Stable fusion identity: the same object returned by several sources
     /// (message index, attachment projection, recents) must collapse to one.
     pub fn fusion_key(&self) -> String {
-        if self.message_id.is_empty() {
+        if self.kind != "message" || self.message_id.is_empty() {
             format!("{:?}", (&self.authority_namespace, &self.kind, &self.id))
         } else {
             format!(

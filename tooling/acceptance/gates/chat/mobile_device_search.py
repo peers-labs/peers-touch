@@ -8,7 +8,7 @@ import re
 import secrets
 import time
 import xml.etree.ElementTree as ET
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any
 
@@ -357,7 +357,7 @@ return true;
         for mode in modes:
             labels = ("Light", "浅色") if mode == "light" else ("Dark", "深色")
             self.fill(session, "字体")
-            self.click(session, ".mobile-search-filters button:last-child")
+            self.click(session, '[data-search-filter="functions"]')
             self.click(session, '[data-search-function="chat-settings"]')
             self.click(session, ".settings-section .settings-row .ant-select")
             options = ",".join(
@@ -371,7 +371,7 @@ return document.documentElement.dataset.mobileColorScheme === arguments[0]
   && !!document.querySelector('[data-product-surface="settings.detail-saved"]');
 """, "persisted native theme", mode)
             self.click(session, ".page-header > button:first-child")
-            self.click(session, ".mobile-search-filters button:first-child")
+            self.click(session, '[data-search-filter="messages"]')
             self.fill(session, fixture["query"])
             self.has(session, fixture["root"], fixture["query"])
             self.capture(artifacts, session, f"theme-{mode}")
@@ -462,7 +462,7 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
 
     @staticmethod
     def native_page(session: Any, query: str, **kwargs: Any) -> dict:
-        result = session.call_action("search.page", {"query": query, **kwargs})
+        result = session.call_action("search.page", {"query": query, "kinds": [3], **kwargs})
         require(result.get("accepted") is True, "native Search diagnostic query failed")
         return result["value"]
 
@@ -579,6 +579,8 @@ return {
 
     def search_scenario(self, artifacts: ArtifactSession, session: Any, sender_session: Any,
                         fixture: dict) -> dict:
+        self.open(session)
+        self.click(session, '[data-search-filter="messages"]')
         self.fill(session, fixture["query"])
         self.capture(artifacts, session, "submitted", diagnostic=True)
         self.has(session, fixture["root"], fixture["query"])
@@ -608,10 +610,10 @@ return {
                   "last bounded Search page")
         self.capture(artifacts, session, "page-two")
         self.fill(session, f'附件计划-{fixture["token"]}')
-        self.click(session, ".mobile-search-filters button:nth-child(3)")
+        self.click(session, '[data-search-filter="attachments"]')
         self.has(session, fixture["attachment"], fixture["filename"])
         self.capture(artifacts, session, "long-filename")
-        self.click(session, ".mobile-search-filters button:first-child")
+        self.click(session, '[data-search-filter="messages"]')
         self.fill(session, fixture["query"])
         self.has(session, fixture["root"], fixture["query"])
         self.click(session, f'{ROW}[data-resource-id="{fixture["root"]}"]')
@@ -663,13 +665,13 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
         require(not self.rows(session), "empty Search must have no result rows")
         self.capture(artifacts, session, "empty")
         self.fill(session, "隐私")
-        self.click(session, ".mobile-search-filters button:last-child")
+        self.click(session, '[data-search-filter="functions"]')
         self.click(session, '[data-search-function="privacy-security"]')
         self._wait_ui_absent(session, PAGE, "real Settings target")
         self.capture(artifacts, session, "settings")
         self.click(session, ".page-header > button:first-child")
         self._wait_ui(session, FIELD, "Settings return to Search")
-        self.click(session, ".mobile-search-filters button:first-child")
+        self.click(session, '[data-search-filter="messages"]')
         self.fill(session, fixture["replyQuery"])
         session.call_action("lifecycle.suspend")
         require(session.execute_script("return !document.querySelector('.mobile-search-result');"),
@@ -680,7 +682,7 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
         self.capture(artifacts, session, "resumed")
         for locale, label in (("en", "English"), ("zh-CN", "简体中文")):
             self.fill(session, "语言")
-            self.click(session, ".mobile-search-filters button:last-child")
+            self.click(session, '[data-search-filter="functions"]')
             self.click(session, '[data-search-function="language"]')
             self.click(session, ".settings-section .ant-select")
             self.click(session, f'.ant-select-dropdown:not(.ant-select-dropdown-hidden) '
@@ -690,7 +692,7 @@ const input = document.querySelector('.settings-section [role=combobox]');
 return input && !input.disabled && document.documentElement.lang === arguments[0];
 """, "persisted UI language", locale)
             self.click(session, ".page-header > button:first-child")
-            self.click(session, ".mobile-search-filters button:first-child")
+            self.click(session, '[data-search-filter="messages"]')
             self.fill(session, fixture["replyQuery"])
             self.has(session, fixture["reply"], fixture["replyQuery"])
             self.capture(artifacts, session, f"locale-{locale}")
@@ -701,7 +703,8 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
         }
 
     def account_scenario(self, artifacts: ArtifactSession, session: Any, peer_session: Any,
-                         actor: Any, peer: Any, fixture: dict, journey: MobileMessagingJourney) -> dict:
+                         actor: Any, peer: Any, fixture: dict, journey: MobileMessagingJourney,
+                         observe_account: Callable[[], None] | None = None) -> dict:
         self.fill(session, fixture["replyQuery"])
         self.has(session, fixture["reply"], fixture["replyQuery"])
         page = self.native_page(session, f'历史 {fixture["token"]}', limit=20)
@@ -717,7 +720,7 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
         require(session.execute_script("return document.querySelector('#mobile-search-input').value === '';"),
                 "account change must clear the Search query")
         after = session.call_action("search.state")
-        require(before["readScope"] != after["readScope"], "account change must replace native scope")
+        require(before["partition"] != after["partition"], "account change must replace native scope")
         self.denial(session, "old-account-cursor", "search.page", {
             "query": f'历史 {fixture["token"]}', "limit": 20, "cursor": page["nextCursor"],
         }, "SEARCH_CURSOR_EXPIRED")
@@ -725,6 +728,8 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
         require(fixture["reply"] not in self.rows(session),
                 "new account must not reveal the old account's received result")
         self.capture(artifacts, session, "account-old-result-denied")
+        if observe_account is not None:
+            observe_account()
         # New installations do not inherit old encrypted conversation history.
         # Use original Messaging to acquire fresh content for the current actors.
         peer_session.call_action("session.logout", {"draftDisposition": "discard"})
@@ -813,7 +818,10 @@ window.addEventListener('mobile:messaging-runtime-error', event => {
 return true;
 """)
             read_state = sessions[client_id].call_action("search.state")
-            require(read_state.get("readScope") and read_state.get("sourceRevision"),
+            require(read_state.get("partition") and any(
+                source.get("sourceId") == "device.messaging" and source.get("sourceRevision")
+                for source in read_state.get("sources", [])
+            ),
                     f"{client_id} authenticated native Search admission is required")
             artifacts.write_json(
                 f"mobile-device-search/{client_id}/native-admission.json",

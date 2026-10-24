@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use prost::Message;
@@ -79,6 +80,8 @@ pub struct PrivateCommentListInput {
     pub post_id: String,
     #[serde(default)]
     pub cursor: String,
+    #[serde(default)]
+    pub anchor_comment_id: String,
     #[serde(default = "default_comment_limit")]
     pub limit: u32,
 }
@@ -111,7 +114,7 @@ impl PrivateCommentProjection {
         serde_json::to_vec(self).map_err(|error| error.to_string())
     }
 
-    fn decode_local(bytes: &[u8]) -> Result<Self, String> {
+    pub(crate) fn decode_local(bytes: &[u8]) -> Result<Self, String> {
         serde_json::from_slice(bytes).map_err(|error| error.to_string())
     }
 }
@@ -677,16 +680,35 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         if input.post_id.trim().is_empty()
             || input.limit == 0
             || input.limit > PRIVATE_COMMENT_LIMIT_MAX
+            || (!input.anchor_comment_id.is_empty()
+                && (!input.cursor.is_empty()
+                    || !super::projection::canonical_identifier(&input.anchor_comment_id)))
         {
             return Err(PrivateCommentFailure::failed(
                 "COMMENT_LIST_INVALID",
                 "private Comment list request is invalid",
             ));
         }
-        let response = self
-            .transport
-            .list_moment_comments(&input.post_id, &input.cursor, input.limit)
-            .map_err(PrivateCommentFailure::from_transport)?;
+        if !input.anchor_comment_id.is_empty() {
+            return self.list_retained_target(input);
+        }
+        let response =
+            match self
+                .transport
+                .list_moment_comments(&input.post_id, &input.cursor, input.limit)
+            {
+                Ok(response) => response,
+                Err(error) => {
+                    self.with_current_store("COMMENT_READ_POLICY_UNAVAILABLE", |store| {
+                        if matches!(error.http_status, Some(403 | 404 | 410)) {
+                            store.clear_comment_projections(&input.post_id)
+                        } else {
+                            store.invalidate_search_policy()
+                        }
+                    })?;
+                    return Err(PrivateCommentFailure::from_transport(error));
+                }
+            };
         self.ensure_current()?;
         let mut recovery_ids = HashSet::new();
         for resource in &response.comments {
@@ -747,6 +769,60 @@ impl<'a> PrivateCommentOrchestrator<'a> {
             next_cursor: response.next_cursor,
             has_more: response.has_more,
         })
+    }
+
+    fn list_retained_target(
+        &self,
+        input: &PrivateCommentListInput,
+    ) -> Result<PrivateCommentPage, PrivateCommentFailure> {
+        self.ensure_current()?;
+        let unavailable =
+            |detail| PrivateCommentFailure::failed("COMMENT_TARGET_UNAVAILABLE", detail);
+        let guard = self.lease.session.begin_request().map_err(unavailable)?;
+        let binding = self
+            .supervisor
+            .search_binding(
+                &self.lease.session.key.window_label,
+                &self.lease.session.account_id,
+                &self.lease.session.key.actor_ptid,
+                guard.token(),
+            )
+            .map_err(unavailable)?;
+        drop(guard);
+        let revision = binding.search_revision().map_err(unavailable)?;
+        let target = binding
+            .search_read_target_window(
+                &input.post_id,
+                Some(&input.anchor_comment_id),
+                input.limit as usize,
+                Instant::now() + Duration::from_secs(5),
+                &|| Ok(()),
+            )
+            .map_err(unavailable)?
+            .ok_or_else(|| {
+                unavailable("retained private Comment target is unavailable".to_string())
+            })?;
+        let comments = target
+            .comment_projections
+            .iter()
+            .map(|bytes| PrivateCommentProjection::decode_local(bytes))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(unavailable)?;
+        self.ensure_current()?;
+        self.supervisor
+            .with_current_search(&binding.key, |store| {
+                store.with_search_revision(&revision, || {
+                    Ok(PrivateCommentPage {
+                        post_id: input.post_id.clone(),
+                        comments,
+                        next_cursor: String::new(),
+                        has_more: false,
+                    })
+                })
+            })
+            .map_err(|_| {
+                unavailable("private Comment target changed before publication".to_string())
+            })
     }
 
     fn comment_recovery_entries(
@@ -899,9 +975,15 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 }
             }
             Err(error) if error.http_status == Some(404) => {
+                self.with_current_store("COMMENT_READ_POLICY_UNAVAILABLE", |store| {
+                    store.purge_private_comment_material(&draft.post_id, &comment_id)
+                })?;
                 ReadbackObservation::AuthoritativeAbsent
             }
             Err(error) if matches!(error.http_status, Some(403 | 410)) => {
+                self.with_current_store("COMMENT_READ_POLICY_UNAVAILABLE", |store| {
+                    store.purge_private_comment_material(&draft.post_id, &comment_id)
+                })?;
                 let failure = PrivateCommentFailure {
                     state: CommentState::ParentUnavailable,
                     code: "COMMENT_PARENT_UNAVAILABLE".to_string(),

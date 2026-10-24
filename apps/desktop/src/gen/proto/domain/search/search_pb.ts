@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/search/search.proto.
  */
 export const file_domain_search_search: GenFile = /*@__PURE__*/
-  fileDesc("Chpkb21haW4vc2VhcmNoL3NlYXJjaC5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxIt0BCgtSZXNvdXJjZVJlZhIMCgRraW5kGAEgASgJEgoKAmlkGAIgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgDIAEoCRISCgptZXNzYWdlX2lkGAQgASgJEhMKC3RhcmdldF9wYWdlGAUgASgJEhsKE2F1dGhvcml0eV9uYW1lc3BhY2UYBiABKAkSGAoQY29udGVudF9yZXZpc2lvbhgHIAEoCRI7CgZhbmNob3IYCCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUmVzb3VyY2VBbmNob3IiKgoOUmVzb3VyY2VBbmNob3ISDAoEa2luZBgBIAEoCRIKCgJpZBgCIAEoCSL6AQobU2VhcmNoQ29udHJpYnV0b3JEZXNjcmlwdG9yEhEKCXNvdXJjZV9pZBgBIAEoCRIVCg1vd25pbmdfbW9kdWxlGAIgASgJEhwKFGF1dGhvcml0eV9uYW1lc3BhY2VzGAMgAygJEjYKBWtpbmRzGAQgAygOMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaEtpbmQSEgoKYmluZGluZ19pZBgFIAEoCRIbChNkZXNjcmlwdG9yX3JldmlzaW9uGAYgASgJEhcKD3N1cHBvcnRzX3BhZ2luZxgHIAEoCBIRCgltYXhfYmF0Y2gYCCABKA0imAIKC1F1ZXJ5SW50ZW50EgwKBHRleHQYASABKAkSNQoEa2luZBgCIAEoDjInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hLaW5kEjcKBXNjb3BlGAMgASgOMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaFNjb3BlEg0KBWxpbWl0GAQgASgNEg4KBmN1cnNvchgFIAEoCRIOCgZsb2NhbGUYBiABKAkSEwoLc3VnZ2VzdGlvbnMYByABKAgSDwoHcmVmcmVzaBgIIAEoCBIXCg9jb252ZXJzYXRpb25faWQYCSABKAkSHQoVYXR0YWNobWVudF9uYW1lc19vbmx5GAogASgIImIKD1NvdXJjZUNhbmRpZGF0ZRI6CghyZXNvdXJjZRgBIAEoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZXNvdXJjZVJlZhITCgtzb3VyY2VfcmFuaxgCIAEoASJ2CgxSZWFkVmFsaWRpdHkSEgoKcmVhZF9zY29wZRgBIAEoCRIXCg9wb2xpY3lfcmV2aXNpb24YAiABKAkSGwoTbGVhc2VfdW50aWxfdW5peF9tcxgDIAEoAxIcChRvd25lcl9jaGVja19yZXF1aXJlZBgEIAEoCCK0AQoNQ2FjaGVNZXRhZGF0YRIRCgl2YWxpZGF0b3IYASABKAkSFwoPc291cmNlX3JldmlzaW9uGAIgASgJEiMKG2NvbnRlbnRfZnJlc2hfdW50aWxfdW5peF9tcxgDIAEoAxJACg1yZWFkX3ZhbGlkaXR5GAQgASgLMikucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlYWRWYWxpZGl0eRIQCghub19zdG9yZRgFIAEoCCL5AQoKU291cmNlUGFnZRJACgpjYW5kaWRhdGVzGAEgAygLMiwucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNvdXJjZUNhbmRpZGF0ZRITCgtuZXh0X2N1cnNvchgCIAEoCRI9Cghjb3ZlcmFnZRgDIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Tb3VyY2VDb3ZlcmFnZRI5CgVjYWNoZRgEIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5DYWNoZU1ldGFkYXRhEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgFIAEoAyKzAQoNSHlkcmF0aW9uSXRlbRIPCgdpdGVtX2lkGAEgASgJEjoKCHJlc291cmNlGAIgASgLMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlc291cmNlUmVmEjwKBmZpZWxkcxgDIAMoDjIsLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Qcm9qZWN0aW9uRmllbGQSFwoPa25vd25fdmFsaWRhdG9yGAQgASgJIl4KEEh5ZHJhdGlvblJlcXVlc3QSOQoFaXRlbXMYASADKAsyKi5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuSHlkcmF0aW9uSXRlbRIPCgdyZWZyZXNoGAIgASgIIsgBChRBdXRob3JpemVkUHJvamVjdGlvbhI3CgZyZXN1bHQYASABKAsyJy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUmVzdWx0SXRlbRI8CgZmaWVsZHMYAiADKA4yLC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUHJvamVjdGlvbkZpZWxkEjkKBWNhY2hlGAMgASgLMioucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLkNhY2hlTWV0YWRhdGEioQEKE1VuY2hhbmdlZFByb2plY3Rpb24SEQoJdmFsaWRhdG9yGAEgASgJEjwKBmZpZWxkcxgCIAMoDjIsLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Qcm9qZWN0aW9uRmllbGQSOQoFY2FjaGUYAyABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuQ2FjaGVNZXRhZGF0YSIVChNVbmF2YWlsYWJsZVJlc291cmNlIg8KDVJldHJ5YWJsZVJlYWQixQIKEEh5ZHJhdGlvbk91dGNvbWUSDwoHaXRlbV9pZBgBIAEoCRJECgdjaGFuZ2VkGAIgASgLMjEucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLkF1dGhvcml6ZWRQcm9qZWN0aW9uSAASRQoJdW5jaGFuZ2VkGAMgASgLMjAucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlVuY2hhbmdlZFByb2plY3Rpb25IABJHCgt1bmF2YWlsYWJsZRgEIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5VbmF2YWlsYWJsZVJlc291cmNlSAASPwoJcmV0cnlhYmxlGAUgASgLMioucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJldHJ5YWJsZVJlYWRIAEIJCgdvdXRjb21lIlEKDkh5ZHJhdGlvblJlcGx5Ej8KCG91dGNvbWVzGAEgAygLMi0ucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLkh5ZHJhdGlvbk91dGNvbWUiowEKEFJlc29sdmVkUmVzb3VyY2USOgoIcmVzb3VyY2UYASABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUmVzb3VyY2VSZWYSGAoQcmVzb2x2ZXJfYmluZGluZxgCIAEoCRI5CgVjYWNoZRgDIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5DYWNoZU1ldGFkYXRhImAKDlJlc29sdmVSZXF1ZXN0EjoKCHJlc291cmNlGAEgASgLMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlc291cmNlUmVmEhIKCnJlcXVlc3RfaWQYAiABKAkiPgoPU2VhcmNoUmVhZFN0YXRlEhcKD3NvdXJjZV9yZXZpc2lvbhgBIAEoCRISCgpyZWFkX3Njb3BlGAIgASgJIrEBCg5TdWdnZXN0UmVxdWVzdBINCgVxdWVyeRgBIAEoCRI1CgRraW5kGAIgASgOMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaEtpbmQSDQoFbGltaXQYAyABKAUSEgoKcmVxdWVzdF9pZBgEIAEoCRIXCg9jb252ZXJzYXRpb25faWQYBSABKAkSHQoVYXR0YWNobWVudF9uYW1lc19vbmx5GAYgASgIItUCCg1TdWJtaXRSZXF1ZXN0Eg0KBXF1ZXJ5GAEgASgJEjkKBmludGVudBgCIAEoDjIpLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hJbnRlbnQSNQoEa2luZBgDIAEoDjInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hLaW5kEjcKBXNjb3BlGAQgASgOMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaFNjb3BlEg4KBmN1cnNvchgFIAEoCRINCgVsaW1pdBgGIAEoBRISCgpyZXF1ZXN0X2lkGAcgASgJEg4KBmxvY2FsZRgIIAEoCRIPCgdyZWZyZXNoGAkgASgIEhcKD2NvbnZlcnNhdGlvbl9pZBgKIAEoCRIdChVhdHRhY2htZW50X25hbWVzX29ubHkYCyABKAgiIwoNQ2FuY2VsUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJIrICCgpSZXN1bHRJdGVtEjoKCHJlc291cmNlGAEgASgLMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlc291cmNlUmVmEjUKBGtpbmQYAiABKA4yJy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU2VhcmNoS2luZBI1CgR6b25lGAMgASgOMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaFpvbmUSDQoFdGl0bGUYBCABKAkSDwoHc25pcHBldBgFIAEoCRIaChJjb252ZXJzYXRpb25fdGl0bGUYBiABKAkSEwoLYXV0aG9yX3B0aWQYByABKAkSGgoSY3JlYXRlZF9hdF91bml4X21zGAggASgDEg0KBXNjb3JlGAkgASgBInAKDlNvdXJjZUNvdmVyYWdlEhEKCXNvdXJjZV9pZBgBIAEoCRI3CgVzdGF0ZRgCIAEoDjIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Tb3VyY2VTdGF0ZRISCgpkZXRhaWxfa2V5GAMgASgJIqUCCg5TZWFyY2hSZXNwb25zZRI2CgVpdGVtcxgBIAMoCzInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZXN1bHRJdGVtEhMKC25leHRfY3Vyc29yGAIgASgJEhAKCGhhc19tb3JlGAMgASgIEj0KCGNvdmVyYWdlGAQgAygLMisucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNvdXJjZUNvdmVyYWdlEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgFIAEoAxJACg1yZWFkX3ZhbGlkaXR5GAYgASgLMikucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlYWRWYWxpZGl0eRIXCg9zb3VyY2VfcmV2aXNpb24YByABKAkiNwoOQ2FuY2VsUmVzcG9uc2USEgoKcmVxdWVzdF9pZBgBIAEoCRIRCgljYW5jZWxsZWQYAiABKAgqXQoMU2VhcmNoSW50ZW50Eh0KGVNFQVJDSF9JTlRFTlRfVU5TUEVDSUZJRUQQABIWChJTRUFSQ0hfSU5URU5UX0ZJTkQQARIWChJTRUFSQ0hfSU5URU5UX09QRU4QAir9AQoKU2VhcmNoS2luZBIbChdTRUFSQ0hfS0lORF9VTlNQRUNJRklFRBAAEhYKElNFQVJDSF9LSU5EX1BFUlNPThABEhwKGFNFQVJDSF9LSU5EX0NPTlZFUlNBVElPThACEhcKE1NFQVJDSF9LSU5EX01FU1NBR0UQAxIbChdTRUFSQ0hfS0lORF9TT0NJQUxfUE9TVBAEEhUKEVNFQVJDSF9LSU5EX0FHRU5UEAUSGQoVU0VBUkNIX0tJTkRfS05PV0xFREdFEAYSGgoWU0VBUkNIX0tJTkRfQVRUQUNITUVOVBAHEhgKFFNFQVJDSF9LSU5EX0ZVTkNUSU9OEAgqewoKU2VhcmNoWm9uZRIbChdTRUFSQ0hfWk9ORV9VTlNQRUNJRklFRBAAEhsKF1NFQVJDSF9aT05FX0RFVklDRV9FMkVFEAESFwoTU0VBUkNIX1pPTkVfU1RBVElPThACEhoKFlNFQVJDSF9aT05FX0ZFREVSQVRJT04QAyp7CgtTZWFyY2hTY29wZRIcChhTRUFSQ0hfU0NPUEVfVU5TUEVDSUZJRUQQABIXChNTRUFSQ0hfU0NPUEVfREVWSUNFEAESGAoUU0VBUkNIX1NDT1BFX1NUQVRJT04QAhIbChdTRUFSQ0hfU0NPUEVfRkVERVJBVElPThADKpYBCgtTb3VyY2VTdGF0ZRIcChhTT1VSQ0VfU1RBVEVfVU5TUEVDSUZJRUQQABIWChJTT1VSQ0VfU1RBVEVfUkVBRFkQARIYChRTT1VSQ0VfU1RBVEVfUEFSVElBTBACEhwKGFNPVVJDRV9TVEFURV9VTkFWQUlMQUJMRRADEhkKFVNPVVJDRV9TVEFURV9JTkRFWElORxAEKpUDCg9TZWFyY2hFcnJvckNvZGUSIQodU0VBUkNIX0VSUk9SX0NPREVfVU5TUEVDSUZJRUQQABIxCi1TRUFSQ0hfRVJST1JfQ09ERV9TQ09QRV9PVVRTSURFX1NFQVJDSF9ET01BSU4QARIjCh9TRUFSQ0hfRVJST1JfQ09ERV9JTlZBTElEX1FVRVJZEAISHwobU0VBUkNIX0VSUk9SX0NPREVfQ0FOQ0VMTEVEEAMSKAokU0VBUkNIX0VSUk9SX0NPREVfU09VUkNFX1VOQVZBSUxBQkxFEAQSJAogU0VBUkNIX0VSUk9SX0NPREVfQ1VSU09SX0VYUElSRUQQBRIkCiBTRUFSQ0hfRVJST1JfQ09ERV9TT1VSQ0VfVElNRU9VVBAGEh4KGlNFQVJDSF9FUlJPUl9DT0RFX1BST1RPQ09MEAcSKgomU0VBUkNIX0VSUk9SX0NPREVfUkVTT1VSQ0VfVU5BVkFJTEFCTEUQCBIkCiBTRUFSQ0hfRVJST1JfQ09ERV9TT1VSQ0VfQ0hBTkdFRBAJKlAKD1Byb2plY3Rpb25GaWVsZBIgChxQUk9KRUNUSU9OX0ZJRUxEX1VOU1BFQ0lGSUVEEAASGwoXUFJPSkVDVElPTl9GSUVMRF9SRVNVTFQQAWIGcHJvdG8z");
+  fileDesc("Chpkb21haW4vc2VhcmNoL3NlYXJjaC5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxIpcCCgtSZXNvdXJjZVJlZhIMCgRraW5kGAEgASgJEgoKAmlkGAIgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgDIAEoCRISCgptZXNzYWdlX2lkGAQgASgJEhMKC3RhcmdldF9wYWdlGAUgASgJEhsKE2F1dGhvcml0eV9uYW1lc3BhY2UYBiABKAkSGAoQY29udGVudF9yZXZpc2lvbhgHIAEoCRI7CgZhbmNob3IYCCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUmVzb3VyY2VBbmNob3ISOAoGcGFyZW50GAkgASgLMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlc291cmNlUmVmIioKDlJlc291cmNlQW5jaG9yEgwKBGtpbmQYASABKAkSCgoCaWQYAiABKAkitAIKG1NlYXJjaENvbnRyaWJ1dG9yRGVzY3JpcHRvchIRCglzb3VyY2VfaWQYASABKAkSFQoNb3duaW5nX21vZHVsZRgCIAEoCRIcChRhdXRob3JpdHlfbmFtZXNwYWNlcxgDIAMoCRI2CgVraW5kcxgEIAMoDjInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hLaW5kEhIKCmJpbmRpbmdfaWQYBSABKAkSGwoTZGVzY3JpcHRvcl9yZXZpc2lvbhgGIAEoCRIXCg9zdXBwb3J0c19wYWdpbmcYByABKAgSEQoJbWF4X2JhdGNoGAggASgNEjgKBnNjb3BlcxgJIAMoDjIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hTY29wZSKaAgoLUXVlcnlJbnRlbnQSDAoEdGV4dBgBIAEoCRI2CgVraW5kcxgCIAMoDjInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hLaW5kEjgKBnNjb3BlcxgDIAMoDjIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hTY29wZRINCgVsaW1pdBgEIAEoDRIOCgZjdXJzb3IYBSABKAkSDgoGbG9jYWxlGAYgASgJEhMKC3N1Z2dlc3Rpb25zGAcgASgIEg8KB3JlZnJlc2gYCCABKAgSFwoPY29udmVyc2F0aW9uX2lkGAkgASgJEh0KFWF0dGFjaG1lbnRfbmFtZXNfb25seRgKIAEoCCJiCg9Tb3VyY2VDYW5kaWRhdGUSOgoIcmVzb3VyY2UYASABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUmVzb3VyY2VSZWYSEwoLc291cmNlX3JhbmsYAiABKAEidgoMUmVhZFZhbGlkaXR5EhIKCnJlYWRfc2NvcGUYASABKAkSFwoPcG9saWN5X3JldmlzaW9uGAIgASgJEhsKE2xlYXNlX3VudGlsX3VuaXhfbXMYAyABKAMSHAoUb3duZXJfY2hlY2tfcmVxdWlyZWQYBCABKAgitAEKDUNhY2hlTWV0YWRhdGESEQoJdmFsaWRhdG9yGAEgASgJEhcKD3NvdXJjZV9yZXZpc2lvbhgCIAEoCRIjChtjb250ZW50X2ZyZXNoX3VudGlsX3VuaXhfbXMYAyABKAMSQAoNcmVhZF92YWxpZGl0eRgEIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZWFkVmFsaWRpdHkSEAoIbm9fc3RvcmUYBSABKAgi+QEKClNvdXJjZVBhZ2USQAoKY2FuZGlkYXRlcxgBIAMoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Tb3VyY2VDYW5kaWRhdGUSEwoLbmV4dF9jdXJzb3IYAiABKAkSPQoIY292ZXJhZ2UYAyABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU291cmNlQ292ZXJhZ2USOQoFY2FjaGUYBCABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuQ2FjaGVNZXRhZGF0YRIaChJleHBpcmVzX2F0X3VuaXhfbXMYBSABKAMiswEKDUh5ZHJhdGlvbkl0ZW0SDwoHaXRlbV9pZBgBIAEoCRI6CghyZXNvdXJjZRgCIAEoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZXNvdXJjZVJlZhI8CgZmaWVsZHMYAyADKA4yLC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUHJvamVjdGlvbkZpZWxkEhcKD2tub3duX3ZhbGlkYXRvchgEIAEoCSJeChBIeWRyYXRpb25SZXF1ZXN0EjkKBWl0ZW1zGAEgAygLMioucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLkh5ZHJhdGlvbkl0ZW0SDwoHcmVmcmVzaBgCIAEoCCLIAQoUQXV0aG9yaXplZFByb2plY3Rpb24SNwoGcmVzdWx0GAEgASgLMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlc3VsdEl0ZW0SPAoGZmllbGRzGAIgAygOMiwucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlByb2plY3Rpb25GaWVsZBI5CgVjYWNoZRgDIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5DYWNoZU1ldGFkYXRhIqEBChNVbmNoYW5nZWRQcm9qZWN0aW9uEhEKCXZhbGlkYXRvchgBIAEoCRI8CgZmaWVsZHMYAiADKA4yLC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUHJvamVjdGlvbkZpZWxkEjkKBWNhY2hlGAMgASgLMioucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLkNhY2hlTWV0YWRhdGEiFQoTVW5hdmFpbGFibGVSZXNvdXJjZSIPCg1SZXRyeWFibGVSZWFkIsUCChBIeWRyYXRpb25PdXRjb21lEg8KB2l0ZW1faWQYASABKAkSRAoHY2hhbmdlZBgCIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5BdXRob3JpemVkUHJvamVjdGlvbkgAEkUKCXVuY2hhbmdlZBgDIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5VbmNoYW5nZWRQcm9qZWN0aW9uSAASRwoLdW5hdmFpbGFibGUYBCABKAsyMC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuVW5hdmFpbGFibGVSZXNvdXJjZUgAEj8KCXJldHJ5YWJsZRgFIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZXRyeWFibGVSZWFkSABCCQoHb3V0Y29tZSJRCg5IeWRyYXRpb25SZXBseRI/CghvdXRjb21lcxgBIAMoCzItLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5IeWRyYXRpb25PdXRjb21lIqMBChBSZXNvbHZlZFJlc291cmNlEjoKCHJlc291cmNlGAEgASgLMigucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlJlc291cmNlUmVmEhgKEHJlc29sdmVyX2JpbmRpbmcYAiABKAkSOQoFY2FjaGUYAyABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuQ2FjaGVNZXRhZGF0YSJzCg5SZXNvbHZlUmVxdWVzdBI6CghyZXNvdXJjZRgBIAEoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZXNvdXJjZVJlZhISCgpyZXF1ZXN0X2lkGAIgASgJEhEKCXNvdXJjZV9pZBgDIAEoCSKGAgoPU291cmNlUmVhZFN0YXRlEhEKCXNvdXJjZV9pZBgBIAEoCRISCgpiaW5kaW5nX2lkGAIgASgJEhcKD3NvdXJjZV9yZXZpc2lvbhgDIAEoCRISCgpyZWFkX3Njb3BlGAQgASgJEhcKD3BvbGljeV9yZXZpc2lvbhgFIAEoCRI3CgVzdGF0ZRgGIAEoDjIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Tb3VyY2VTdGF0ZRI7CgZleHRlbnQYByABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuQ292ZXJhZ2VFeHRlbnQSEAoIbm9fc3RvcmUYCCABKAgibwoPU2VhcmNoUmVhZFN0YXRlEj0KB3NvdXJjZXMYAyADKAsyLC5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU291cmNlUmVhZFN0YXRlEhEKCXBhcnRpdGlvbhgEIAEoCUoECAEQAkoECAIQAyKyAQoOU3VnZ2VzdFJlcXVlc3QSDQoFcXVlcnkYASABKAkSNgoFa2luZHMYAiADKA4yJy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuU2VhcmNoS2luZBINCgVsaW1pdBgDIAEoBRISCgpyZXF1ZXN0X2lkGAQgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgFIAEoCRIdChVhdHRhY2htZW50X25hbWVzX29ubHkYBiABKAgi1wIKDVN1Ym1pdFJlcXVlc3QSDQoFcXVlcnkYASABKAkSOQoGaW50ZW50GAIgASgOMikucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaEludGVudBI2CgVraW5kcxgDIAMoDjInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hLaW5kEjgKBnNjb3BlcxgEIAMoDjIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hTY29wZRIOCgZjdXJzb3IYBSABKAkSDQoFbGltaXQYBiABKAUSEgoKcmVxdWVzdF9pZBgHIAEoCRIOCgZsb2NhbGUYCCABKAkSDwoHcmVmcmVzaBgJIAEoCBIXCg9jb252ZXJzYXRpb25faWQYCiABKAkSHQoVYXR0YWNobWVudF9uYW1lc19vbmx5GAsgASgIIiMKDUNhbmNlbFJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCSKHAwoKUmVzdWx0SXRlbRI6CghyZXNvdXJjZRgBIAEoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZXNvdXJjZVJlZhI1CgRraW5kGAIgASgOMicucGVlcnNfdG91Y2gubW9kZWwuc2VhcmNoLnYxLlNlYXJjaEtpbmQSNQoEem9uZRgDIAEoDjInLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5TZWFyY2hab25lEg0KBXRpdGxlGAQgASgJEg8KB3NuaXBwZXQYBSABKAkSGgoSY29udmVyc2F0aW9uX3RpdGxlGAYgASgJEhMKC2F1dGhvcl9wdGlkGAcgASgJEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgIIAEoAxINCgVzY29yZRgJIAEoARIRCglzb3VyY2VfaWQYCiABKAkSQAoNcmVhZF92YWxpZGl0eRgLIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5SZWFkVmFsaWRpdHkirQEKDlNvdXJjZUNvdmVyYWdlEhEKCXNvdXJjZV9pZBgBIAEoCRI3CgVzdGF0ZRgCIAEoDjIoLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Tb3VyY2VTdGF0ZRISCgpkZXRhaWxfa2V5GAMgASgJEjsKBmV4dGVudBgEIAEoDjIrLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Db3ZlcmFnZUV4dGVudCKoAgoOU2VhcmNoUmVzcG9uc2USNgoFaXRlbXMYASADKAsyJy5wZWVyc190b3VjaC5tb2RlbC5zZWFyY2gudjEuUmVzdWx0SXRlbRITCgtuZXh0X2N1cnNvchgCIAEoCRIQCghoYXNfbW9yZRgDIAEoCBI9Cghjb3ZlcmFnZRgEIAMoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Tb3VyY2VDb3ZlcmFnZRIaChJleHBpcmVzX2F0X3VuaXhfbXMYBSABKAMSPQoHc291cmNlcxgIIAMoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLnNlYXJjaC52MS5Tb3VyY2VSZWFkU3RhdGUSEQoJcGFydGl0aW9uGAkgASgJSgQIBhAHSgQIBxAIIjcKDkNhbmNlbFJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSEQoJY2FuY2VsbGVkGAIgASgIKl0KDFNlYXJjaEludGVudBIdChlTRUFSQ0hfSU5URU5UX1VOU1BFQ0lGSUVEEAASFgoSU0VBUkNIX0lOVEVOVF9GSU5EEAESFgoSU0VBUkNIX0lOVEVOVF9PUEVOEAIqnQIKClNlYXJjaEtpbmQSGwoXU0VBUkNIX0tJTkRfVU5TUEVDSUZJRUQQABIWChJTRUFSQ0hfS0lORF9QRVJTT04QARIcChhTRUFSQ0hfS0lORF9DT05WRVJTQVRJT04QAhIXChNTRUFSQ0hfS0lORF9NRVNTQUdFEAMSGwoXU0VBUkNIX0tJTkRfU09DSUFMX1BPU1QQBBIVChFTRUFSQ0hfS0lORF9BR0VOVBAFEhkKFVNFQVJDSF9LSU5EX0tOT1dMRURHRRAGEhoKFlNFQVJDSF9LSU5EX0FUVEFDSE1FTlQQBxIYChRTRUFSQ0hfS0lORF9GVU5DVElPThAIEh4KGlNFQVJDSF9LSU5EX1NPQ0lBTF9DT01NRU5UEAkqewoKU2VhcmNoWm9uZRIbChdTRUFSQ0hfWk9ORV9VTlNQRUNJRklFRBAAEhsKF1NFQVJDSF9aT05FX0RFVklDRV9FMkVFEAESFwoTU0VBUkNIX1pPTkVfU1RBVElPThACEhoKFlNFQVJDSF9aT05FX0ZFREVSQVRJT04QAyp7CgtTZWFyY2hTY29wZRIcChhTRUFSQ0hfU0NPUEVfVU5TUEVDSUZJRUQQABIXChNTRUFSQ0hfU0NPUEVfREVWSUNFEAESGAoUU0VBUkNIX1NDT1BFX1NUQVRJT04QAhIbChdTRUFSQ0hfU0NPUEVfRkVERVJBVElPThADKpYBCgtTb3VyY2VTdGF0ZRIcChhTT1VSQ0VfU1RBVEVfVU5TUEVDSUZJRUQQABIWChJTT1VSQ0VfU1RBVEVfUkVBRFkQARIYChRTT1VSQ0VfU1RBVEVfUEFSVElBTBACEhwKGFNPVVJDRV9TVEFURV9VTkFWQUlMQUJMRRADEhkKFVNPVVJDRV9TVEFURV9JTkRFWElORxAEKpkBCg5Db3ZlcmFnZUV4dGVudBIfChtDT1ZFUkFHRV9FWFRFTlRfVU5TUEVDSUZJRUQQABIiCh5DT1ZFUkFHRV9FWFRFTlRfREVDTEFSRURfU0NPUEUQARIiCh5DT1ZFUkFHRV9FWFRFTlRfQUNRVUlSRURfTE9DQUwQAhIeChpDT1ZFUkFHRV9FWFRFTlRfUkVDT1ZFUklORxADKpUDCg9TZWFyY2hFcnJvckNvZGUSIQodU0VBUkNIX0VSUk9SX0NPREVfVU5TUEVDSUZJRUQQABIxCi1TRUFSQ0hfRVJST1JfQ09ERV9TQ09QRV9PVVRTSURFX1NFQVJDSF9ET01BSU4QARIjCh9TRUFSQ0hfRVJST1JfQ09ERV9JTlZBTElEX1FVRVJZEAISHwobU0VBUkNIX0VSUk9SX0NPREVfQ0FOQ0VMTEVEEAMSKAokU0VBUkNIX0VSUk9SX0NPREVfU09VUkNFX1VOQVZBSUxBQkxFEAQSJAogU0VBUkNIX0VSUk9SX0NPREVfQ1VSU09SX0VYUElSRUQQBRIkCiBTRUFSQ0hfRVJST1JfQ09ERV9TT1VSQ0VfVElNRU9VVBAGEh4KGlNFQVJDSF9FUlJPUl9DT0RFX1BST1RPQ09MEAcSKgomU0VBUkNIX0VSUk9SX0NPREVfUkVTT1VSQ0VfVU5BVkFJTEFCTEUQCBIkCiBTRUFSQ0hfRVJST1JfQ09ERV9TT1VSQ0VfQ0hBTkdFRBAJKlAKD1Byb2plY3Rpb25GaWVsZBIgChxQUk9KRUNUSU9OX0ZJRUxEX1VOU1BFQ0lGSUVEEAASGwoXUFJPSkVDVElPTl9GSUVMRF9SRVNVTFQQAUJDWkFnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvbW9kZWwvc2VhcmNoO3NlYXJjaGIGcHJvdG8z");
 
 /**
  * Canonical address of one searchable object. kind/id identify the object;
@@ -63,6 +63,14 @@ export type ResourceRef = Message<"peers_touch.model.search.v1.ResourceRef"> & {
    * @generated from field: peers_touch.model.search.v1.ResourceAnchor anchor = 8;
    */
   anchor?: ResourceAnchor | undefined;
+
+  /**
+   * Independent comment identity with its canonical post parent. No content,
+   * endpoint or authorization grant is carried by this relationship.
+   *
+   * @generated from field: peers_touch.model.search.v1.ResourceRef parent = 9;
+   */
+  parent?: ResourceRef | undefined;
 };
 
 /**
@@ -139,6 +147,11 @@ export type SearchContributorDescriptor = Message<"peers_touch.model.search.v1.S
    * @generated from field: uint32 max_batch = 8;
    */
   maxBatch: number;
+
+  /**
+   * @generated from field: repeated peers_touch.model.search.v1.SearchScope scopes = 9;
+   */
+  scopes: SearchScope[];
 };
 
 /**
@@ -158,14 +171,18 @@ export type QueryIntent = Message<"peers_touch.model.search.v1.QueryIntent"> & {
   text: string;
 
   /**
-   * @generated from field: peers_touch.model.search.v1.SearchKind kind = 2;
+   * Empty selects all kinds allowed by the trusted source composition.
+   *
+   * @generated from field: repeated peers_touch.model.search.v1.SearchKind kinds = 2;
    */
-  kind: SearchKind;
+  kinds: SearchKind[];
 
   /**
-   * @generated from field: peers_touch.model.search.v1.SearchScope scope = 3;
+   * Explicit scopes; suggestions are Device-only. No scope grants read rights.
+   *
+   * @generated from field: repeated peers_touch.model.search.v1.SearchScope scopes = 3;
    */
-  scope: SearchScope;
+  scopes: SearchScope[];
 
   /**
    * @generated from field: uint32 limit = 4;
@@ -592,6 +609,15 @@ export type ResolveRequest = Message<"peers_touch.model.search.v1.ResolveRequest
    * @generated from field: string request_id = 2;
    */
   requestId: string;
+
+  /**
+   * Selects a trusted mounted source; the host verifies that this source issued
+   * the reference in the current query session before dispatching. In
+   * particular, a private reference must never be tried against a Station.
+   *
+   * @generated from field: string source_id = 3;
+   */
+  sourceId: string;
 };
 
 /**
@@ -602,20 +628,77 @@ export const ResolveRequestSchema: GenMessage<ResolveRequest> = /*@__PURE__*/
   messageDesc(file_domain_search_search, 17);
 
 /**
- * Local original-owner reconciliation. This checks state, not search content.
+ * A source-specific original-owner state; no content or private cursor.
+ *
+ * @generated from message peers_touch.model.search.v1.SourceReadState
+ */
+export type SourceReadState = Message<"peers_touch.model.search.v1.SourceReadState"> & {
+  /**
+   * @generated from field: string source_id = 1;
+   */
+  sourceId: string;
+
+  /**
+   * @generated from field: string binding_id = 2;
+   */
+  bindingId: string;
+
+  /**
+   * @generated from field: string source_revision = 3;
+   */
+  sourceRevision: string;
+
+  /**
+   * @generated from field: string read_scope = 4;
+   */
+  readScope: string;
+
+  /**
+   * @generated from field: string policy_revision = 5;
+   */
+  policyRevision: string;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.SourceState state = 6;
+   */
+  state: SourceState;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.CoverageExtent extent = 7;
+   */
+  extent: CoverageExtent;
+
+  /**
+   * Owner metadata does not permit reusable content. Renderer caches must
+   * observe the same restriction as the native read cache.
+   *
+   * @generated from field: bool no_store = 8;
+   */
+  noStore: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.search.v1.SourceReadState.
+ * Use `create(SourceReadStateSchema)` to create a new message.
+ */
+export const SourceReadStateSchema: GenMessage<SourceReadState> = /*@__PURE__*/
+  messageDesc(file_domain_search_search, 18);
+
+/**
+ * Trusted authentication partition and independent source state vector.
  *
  * @generated from message peers_touch.model.search.v1.SearchReadState
  */
 export type SearchReadState = Message<"peers_touch.model.search.v1.SearchReadState"> & {
   /**
-   * @generated from field: string source_revision = 1;
+   * @generated from field: repeated peers_touch.model.search.v1.SourceReadState sources = 3;
    */
-  sourceRevision: string;
+  sources: SourceReadState[];
 
   /**
-   * @generated from field: string read_scope = 2;
+   * @generated from field: string partition = 4;
    */
-  readScope: string;
+  partition: string;
 };
 
 /**
@@ -623,7 +706,7 @@ export type SearchReadState = Message<"peers_touch.model.search.v1.SearchReadSta
  * Use `create(SearchReadStateSchema)` to create a new message.
  */
 export const SearchReadStateSchema: GenMessage<SearchReadState> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 18);
+  messageDesc(file_domain_search_search, 19);
 
 /**
  * Local suggestion request: exact objects available on the device without a
@@ -638,9 +721,9 @@ export type SuggestRequest = Message<"peers_touch.model.search.v1.SuggestRequest
   query: string;
 
   /**
-   * @generated from field: peers_touch.model.search.v1.SearchKind kind = 2;
+   * @generated from field: repeated peers_touch.model.search.v1.SearchKind kinds = 2;
    */
-  kind: SearchKind;
+  kinds: SearchKind[];
 
   /**
    * @generated from field: int32 limit = 3;
@@ -670,7 +753,7 @@ export type SuggestRequest = Message<"peers_touch.model.search.v1.SuggestRequest
  * Use `create(SuggestRequestSchema)` to create a new message.
  */
 export const SuggestRequestSchema: GenMessage<SuggestRequest> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 19);
+  messageDesc(file_domain_search_search, 20);
 
 /**
  * @generated from message peers_touch.model.search.v1.SubmitRequest
@@ -687,14 +770,14 @@ export type SubmitRequest = Message<"peers_touch.model.search.v1.SubmitRequest">
   intent: SearchIntent;
 
   /**
-   * @generated from field: peers_touch.model.search.v1.SearchKind kind = 3;
+   * @generated from field: repeated peers_touch.model.search.v1.SearchKind kinds = 3;
    */
-  kind: SearchKind;
+  kinds: SearchKind[];
 
   /**
-   * @generated from field: peers_touch.model.search.v1.SearchScope scope = 4;
+   * @generated from field: repeated peers_touch.model.search.v1.SearchScope scopes = 4;
    */
-  scope: SearchScope;
+  scopes: SearchScope[];
 
   /**
    * Empty on first page; pass the opaque cursor from the previous response.
@@ -739,7 +822,7 @@ export type SubmitRequest = Message<"peers_touch.model.search.v1.SubmitRequest">
  * Use `create(SubmitRequestSchema)` to create a new message.
  */
 export const SubmitRequestSchema: GenMessage<SubmitRequest> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 20);
+  messageDesc(file_domain_search_search, 21);
 
 /**
  * @generated from message peers_touch.model.search.v1.CancelRequest
@@ -756,7 +839,7 @@ export type CancelRequest = Message<"peers_touch.model.search.v1.CancelRequest">
  * Use `create(CancelRequestSchema)` to create a new message.
  */
 export const CancelRequestSchema: GenMessage<CancelRequest> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 21);
+  messageDesc(file_domain_search_search, 22);
 
 /**
  * @generated from message peers_touch.model.search.v1.ResultItem
@@ -811,6 +894,18 @@ export type ResultItem = Message<"peers_touch.model.search.v1.ResultItem"> & {
    * @generated from field: double score = 9;
    */
   score: number;
+
+  /**
+   * @generated from field: string source_id = 10;
+   */
+  sourceId: string;
+
+  /**
+   * Read authority belongs to this item/source, never to another source's lease.
+   *
+   * @generated from field: peers_touch.model.search.v1.ReadValidity read_validity = 11;
+   */
+  readValidity?: ReadValidity | undefined;
 };
 
 /**
@@ -818,7 +913,7 @@ export type ResultItem = Message<"peers_touch.model.search.v1.ResultItem"> & {
  * Use `create(ResultItemSchema)` to create a new message.
  */
 export const ResultItemSchema: GenMessage<ResultItem> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 22);
+  messageDesc(file_domain_search_search, 23);
 
 /**
  * @generated from message peers_touch.model.search.v1.SourceCoverage
@@ -840,6 +935,11 @@ export type SourceCoverage = Message<"peers_touch.model.search.v1.SourceCoverage
    * @generated from field: string detail_key = 3;
    */
   detailKey: string;
+
+  /**
+   * @generated from field: peers_touch.model.search.v1.CoverageExtent extent = 4;
+   */
+  extent: CoverageExtent;
 };
 
 /**
@@ -847,7 +947,7 @@ export type SourceCoverage = Message<"peers_touch.model.search.v1.SourceCoverage
  * Use `create(SourceCoverageSchema)` to create a new message.
  */
 export const SourceCoverageSchema: GenMessage<SourceCoverage> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 23);
+  messageDesc(file_domain_search_search, 24);
 
 /**
  * @generated from message peers_touch.model.search.v1.SearchResponse
@@ -879,14 +979,14 @@ export type SearchResponse = Message<"peers_touch.model.search.v1.SearchResponse
   expiresAtUnixMs: bigint;
 
   /**
-   * @generated from field: peers_touch.model.search.v1.ReadValidity read_validity = 6;
+   * @generated from field: repeated peers_touch.model.search.v1.SourceReadState sources = 8;
    */
-  readValidity?: ReadValidity | undefined;
+  sources: SourceReadState[];
 
   /**
-   * @generated from field: string source_revision = 7;
+   * @generated from field: string partition = 9;
    */
-  sourceRevision: string;
+  partition: string;
 };
 
 /**
@@ -894,7 +994,7 @@ export type SearchResponse = Message<"peers_touch.model.search.v1.SearchResponse
  * Use `create(SearchResponseSchema)` to create a new message.
  */
 export const SearchResponseSchema: GenMessage<SearchResponse> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 24);
+  messageDesc(file_domain_search_search, 25);
 
 /**
  * @generated from message peers_touch.model.search.v1.CancelResponse
@@ -916,7 +1016,7 @@ export type CancelResponse = Message<"peers_touch.model.search.v1.CancelResponse
  * Use `create(CancelResponseSchema)` to create a new message.
  */
 export const CancelResponseSchema: GenMessage<CancelResponse> = /*@__PURE__*/
-  messageDesc(file_domain_search_search, 25);
+  messageDesc(file_domain_search_search, 26);
 
 /**
  * What the user is trying to do. FIND retrieves content; OPEN resolves a
@@ -995,6 +1095,11 @@ export enum SearchKind {
    * @generated from enum value: SEARCH_KIND_FUNCTION = 8;
    */
   FUNCTION = 8,
+
+  /**
+   * @generated from enum value: SEARCH_KIND_SOCIAL_COMMENT = 9;
+   */
+  SOCIAL_COMMENT = 9,
 }
 
 /**
@@ -1023,8 +1128,7 @@ export enum SearchZone {
   DEVICE_E2EE = 1,
 
   /**
-   * Station-held content visible under the actor read policy. Reserved; not
-   * produced by the device milestone.
+   * Station-held content visible under the actor read policy.
    *
    * @generated from enum value: SEARCH_ZONE_STATION = 2;
    */
@@ -1060,8 +1164,6 @@ export enum SearchScope {
   DEVICE = 1,
 
   /**
-   * Reserved values for later milestones; admission rejects them for now.
-   *
    * @generated from enum value: SEARCH_SCOPE_STATION = 2;
    */
   STATION = 2,
@@ -1113,6 +1215,41 @@ export enum SourceState {
  */
 export const SourceStateSchema: GenEnum<SourceState> = /*@__PURE__*/
   enumDesc(file_domain_search_search, 4);
+
+/**
+ * @generated from enum peers_touch.model.search.v1.CoverageExtent
+ */
+export enum CoverageExtent {
+  /**
+   * @generated from enum value: COVERAGE_EXTENT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Complete within the source's declared, currently authorized scope.
+   *
+   * @generated from enum value: COVERAGE_EXTENT_DECLARED_SCOPE = 1;
+   */
+  DECLARED_SCOPE = 1,
+
+  /**
+   * Only projections already acquired by this device.
+   *
+   * @generated from enum value: COVERAGE_EXTENT_ACQUIRED_LOCAL = 2;
+   */
+  ACQUIRED_LOCAL = 2,
+
+  /**
+   * @generated from enum value: COVERAGE_EXTENT_RECOVERING = 3;
+   */
+  RECOVERING = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.search.v1.CoverageExtent.
+ */
+export const CoverageExtentSchema: GenEnum<CoverageExtent> = /*@__PURE__*/
+  enumDesc(file_domain_search_search, 5);
 
 /**
  * @generated from enum peers_touch.model.search.v1.SearchErrorCode
@@ -1176,7 +1313,7 @@ export enum SearchErrorCode {
  * Describes the enum peers_touch.model.search.v1.SearchErrorCode.
  */
 export const SearchErrorCodeSchema: GenEnum<SearchErrorCode> = /*@__PURE__*/
-  enumDesc(file_domain_search_search, 5);
+  enumDesc(file_domain_search_search, 6);
 
 /**
  * @generated from enum peers_touch.model.search.v1.ProjectionField
@@ -1197,4 +1334,4 @@ export enum ProjectionField {
  * Describes the enum peers_touch.model.search.v1.ProjectionField.
  */
 export const ProjectionFieldSchema: GenEnum<ProjectionField> = /*@__PURE__*/
-  enumDesc(file_domain_search_search, 6);
+  enumDesc(file_domain_search_search, 7);

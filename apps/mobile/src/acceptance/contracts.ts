@@ -56,6 +56,7 @@ import type {
   SettingsSurfaceFixtureSnapshot,
 } from './settingsSurfaceFixture';
 import type { MobileSearchAcceptanceContracts } from './searchActions';
+import type { MobileSocialSearchAcceptanceContracts } from './socialSearchActions';
 
 export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'build.identity',
@@ -144,6 +145,9 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'moments.react',
   'moments.comment',
   'moments.comments.read',
+  'moments.delete',
+  'social.block',
+  'social.unblock',
   'storage.cache.seed',
   'storage.conversation-clear.seed',
   'storage.batch.scenario',
@@ -1253,7 +1257,7 @@ export interface PrepareActorIdentityInput {
   seedBase64: string;
 }
 
-export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceContracts {
+export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceContracts, MobileSocialSearchAcceptanceContracts {
   'build.identity': {
     input: undefined;
     output: EmbeddedMobileBuildIdentity;

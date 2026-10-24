@@ -5,7 +5,7 @@
 //! relevance scores: `score = Σ 1/(k + rank)` over every list containing the
 //! object. A leaf object is fused at most once per list (decision D-16).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::model::ScoredDocument;
 
@@ -27,7 +27,11 @@ pub fn reciprocal_rank_fusion(lists: &[Vec<ScoredDocument>], k: usize) -> Vec<Sc
     let mut order = 0usize;
 
     for list in lists {
+        let mut seen = HashSet::new();
         for (rank, document) in list.iter().enumerate() {
+            if !seen.insert(document.fusion_key()) {
+                continue;
+            }
             let contribution = 1.0 / (k as f64 + rank as f64 + 1.0);
             let key = document.fusion_key();
             fused

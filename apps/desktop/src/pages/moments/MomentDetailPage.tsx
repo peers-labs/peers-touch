@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from 'antd';
 import { ChevronLeft } from 'lucide-react';
@@ -21,6 +21,7 @@ import {
   SocialThreadSurface,
 } from '../../components/moments/surfaces';
 import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
+import { useIsPageActive } from '../../kernel/PageActivityContext';
 
 // MomentDetailView — single post + comment thread.
 //
@@ -32,6 +33,7 @@ import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 
 interface MomentDetailViewProps {
   postId: string;
+  commentId?: string;
   viewerActorPtid?: string;
   onBack: () => void;
   onAuthorClick: (actorPtid: string) => void;
@@ -39,12 +41,15 @@ interface MomentDetailViewProps {
 
 export function MomentDetailView({
   postId,
+  commentId,
   viewerActorPtid,
   onBack,
   onAuthorClick,
 }: MomentDetailViewProps) {
   const { t } = useTranslation('moments');
   const commentsRegionId = useId();
+  const root = useRef<HTMLDivElement>(null);
+  const active = useIsPageActive();
   const [commentsOpen, setCommentsOpen] = useState(true);
   const {
     post,
@@ -112,6 +117,14 @@ export function MomentDetailView({
     ? privateThread.errorCode
     : privateDraft?.errorCode ?? privateThread.errorCode;
 
+  useLayoutEffect(() => {
+    if (!active || !commentId) return;
+    const node = Array.from(root.current?.querySelectorAll<HTMLElement>('[data-moments-comment]') ?? [])
+      .find(row => row.dataset.momentsComment === commentId);
+    node?.scrollIntoView({ block: 'center' });
+    node?.focus({ preventScroll: true });
+  }, [active, commentId, visibleComments]);
+
   const handleReact = async (id: string, kind: ReactionKind) => {
     await reactToPost(id, kind);
   };
@@ -121,7 +134,7 @@ export function MomentDetailView({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div ref={root} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Button
         type="text"
         icon={<ChevronLeft size={16} />}
@@ -178,6 +191,7 @@ export function MomentDetailView({
                   privateDraft?.draftRevision ?? 0,
                 ].join(':')}
                 postId={postId}
+                targetCommentId={commentId}
                 comments={visibleComments}
                 loading={visibleCommentsLoading}
                 hasMore={visibleCommentsHasMore}

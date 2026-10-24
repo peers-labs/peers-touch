@@ -64,6 +64,8 @@ pub fn result(mut doc: ScoredDocument) -> ResultItem {
         author_ptid: doc.author_ptid,
         created_at_unix_ms: doc.created_at_unix_ms,
         score: doc.score,
+        source_id: SOURCE.into(),
+        read_validity: None,
     };
     doc.resource.content_revision = hex::encode(Sha256::digest(item.encode_to_vec()));
     item.resource = Some(doc.resource);
@@ -107,6 +109,7 @@ impl MessagingContributor {
                 descriptor_revision: "device-read".into(),
                 supports_paging: true,
                 max_batch: 100,
+                scopes: vec![SearchScope::Device as i32],
             },
         })
     }
@@ -157,7 +160,7 @@ impl SearchContributor for MessagingContributor {
     ) -> SourceFuture<'a, SourcePage> {
         Box::pin(async move {
             self.check(ctx)?;
-            if input.scope != SearchScope::Device as i32 {
+            if input.scopes != [SearchScope::Device as i32] {
                 return Err(SearchError::OutsideDomain);
             }
             let query = input.text.trim();
@@ -168,13 +171,22 @@ impl SearchContributor for MessagingContributor {
             {
                 return Err(SearchError::InvalidQuery);
             }
-            let kind = SearchKind::try_from(input.kind).map_err(|_| SearchError::InvalidQuery)?;
-            if !matches!(
-                kind,
-                SearchKind::Message | SearchKind::Conversation | SearchKind::Unspecified
-            ) || (kind == SearchKind::Unspecified && !input.suggestions)
-                || (kind == SearchKind::Conversation && !input.cursor.is_empty())
-            {
+            if input.kinds.iter().any(|k| {
+                !matches!(
+                    SearchKind::try_from(*k),
+                    Ok(SearchKind::Message | SearchKind::Conversation)
+                )
+            }) {
+                return Err(SearchError::InvalidQuery);
+            }
+            let conversations = (input.kinds.is_empty()
+                || input.kinds.contains(&(SearchKind::Conversation as i32)))
+                && !input.attachment_names_only
+                && input.cursor.is_empty();
+            let messages = (input.kinds.is_empty()
+                || input.kinds.contains(&(SearchKind::Message as i32)))
+                && !query.is_empty();
+            if !input.cursor.is_empty() && !messages {
                 return Err(SearchError::InvalidQuery);
             }
             let now = now_ms()?;
@@ -205,13 +217,14 @@ impl SearchContributor for MessagingContributor {
             let mut documents = Vec::new();
             // Check deadlines during traversal, without re-entering the Store mutex.
             let check = || ctx.check().map_err(|e| e.to_string());
-            if kind != SearchKind::Message && !input.attachment_names_only {
+            // Empty suggestions have conversation semantics only in Messaging.
+            if conversations {
                 documents = self
                     .engine
                     .suggest_conversations(
                         conversation,
                         query,
-                        if input.suggestions {
+                        if input.suggestions || messages {
                             limit.min(5)
                         } else {
                             limit
@@ -222,7 +235,7 @@ impl SearchContributor for MessagingContributor {
             }
             let mut has_more = false;
             let mut next_cursor = String::new();
-            if kind != SearchKind::Conversation && !query.is_empty() {
+            if messages {
                 search_core::build_match_expression(query)
                     .map_err(|_| SearchError::InvalidQuery)?;
                 let message_limit = limit.saturating_sub(documents.len());
@@ -302,6 +315,11 @@ impl SearchContributor for MessagingContributor {
                         "search.coverage.device_indexing"
                     }
                     .into(),
+                    extent: if ready {
+                        CoverageExtent::DeclaredScope
+                    } else {
+                        CoverageExtent::Recovering
+                    } as i32,
                 }),
                 cache: Some(self.metadata(ctx, self.revision.clone(), fresh_until)),
                 expires_at_unix_ms: expires as i64,
@@ -333,6 +351,8 @@ impl SearchContributor for MessagingContributor {
                 .collect::<Result<_, _>>()?;
             if refs.iter().any(|r| {
                 !r.target_page.is_empty()
+                    || r.parent.is_some()
+                    || !matches!(r.kind.as_str(), "message" | "conversation")
                     || !self
                         .descriptor
                         .authority_namespaces

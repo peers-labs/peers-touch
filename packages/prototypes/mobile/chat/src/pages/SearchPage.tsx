@@ -1,6 +1,6 @@
 import { Button, Input, Spin } from 'antd';
 import { ArrowLeft, ChevronRight, FileText, MessageCircle, RefreshCw, Search, Settings } from 'lucide-react';
-import type { Conversation, Message, SettingEntry } from '../types';
+import type { Conversation, Message, Moment, MomentComment, SettingEntry } from '../types';
 import type { PrototypeListMemory } from '../listPresentation';
 import type { SearchDemoControl } from '../searchDemo';
 import { PrototypeListWindow } from '../components/PrototypeListWindow';
@@ -9,7 +9,7 @@ import './SearchPage.css';
 
 export interface SearchPresentation {
   query: string;
-  filter: 'all' | 'messages' | 'attachments' | 'functions';
+  filter: 'all' | 'messages' | 'social' | 'attachments' | 'functions';
   conversationKey: string;
   submitted: boolean;
 }
@@ -19,6 +19,13 @@ export interface SearchTarget {
   root?: Message;
 }
 const key = (target: SearchTarget) => `${target.conversation.key}:${target.message.id}`;
+export interface SocialSearchTarget {
+  moment: Moment;
+  comment?: MomentComment;
+}
+type Result = { kind: 'message'; target: SearchTarget } | { kind: 'social'; target: SocialSearchTarget };
+const resultKey = (result: Result) => result.kind === 'message' ? key(result.target)
+  : `${result.target.moment.id}:${result.target.comment?.id ?? 'post'}`;
 const functions: Array<SettingEntry & { keywords: string }> = [
   { id: 'account-info', label: 'Account Info', icon: Settings, tint: 'primary', keywords: '账号 身份 account identity profile' },
   { id: 'privacy-security', label: 'Privacy and security', icon: Settings, tint: 'primary', keywords: '隐私 安全 权限 privacy security permissions' },
@@ -30,20 +37,30 @@ const functions: Array<SettingEntry & { keywords: string }> = [
 
 /** Shell-owned presentation; sample data never represents native proof. */
 export function SearchPage({
-  view, onChange, targets, memory, demo, onBack, onOpen, onSetting,
+  view, onChange, targets, socialTargets, memory, demo, onBack, onOpen, onOpenSocial, onSetting,
 }: {
   view: SearchPresentation; onChange: (next: SearchPresentation) => void;
   targets: SearchTarget[]; memory: PrototypeListMemory; demo?: SearchDemoControl;
+  socialTargets: SocialSearchTarget[]; onOpenSocial: (target: SocialSearchTarget) => void;
   onBack: () => void; onOpen: (target: SearchTarget) => void;
   onSetting: (setting: SettingEntry) => void;
 }) {
   const words = view.query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const status = demo?.state.status ?? (words.length ? 'results' : 'idle');
   const matches = (text: string) => words.every(word => text.toLocaleLowerCase().includes(word));
-  const rows = targets.filter(target => !target.message.recalled && !target.message.moderated
+  const messageRows = targets.filter(target => !target.message.recalled && !target.message.moderated
+    && view.filter !== 'social'
     && (!view.conversationKey || target.conversation.key === view.conversationKey)
     && matches(view.filter === 'attachments' ? target.message.file?.name ?? ''
       : `${target.message.text ?? ''} ${target.message.file?.name ?? ''}`));
+  const socialRows = socialTargets.filter(target => !view.conversationKey
+    && (view.filter === 'all' || view.filter === 'social')
+    && (view.submitted || target.moment.audience !== 'Public')
+    && matches(target.comment?.text ?? target.moment.text));
+  const rows: Result[] = [
+    ...messageRows.map(target => ({ kind: 'message' as const, target })),
+    ...socialRows.map(target => ({ kind: 'social' as const, target })),
+  ];
   const shown = demo && status !== 'results' ? [] : view.submitted ? rows : rows.slice(0, 12);
   const submit = () => {
     onChange({ ...view, submitted: true });
@@ -65,8 +82,8 @@ export function SearchPage({
         <Button type="primary" htmlType="submit">{copy['search.mobile.submit']}</Button>
       </div>
       <div className="mp-global-search-filters" role="group" aria-label={copy['search.range']}>
-        {(['all', 'messages', 'attachments', 'functions'] as const).map(filter =>
-          <button key={filter} type="button" aria-pressed={view.filter === filter}
+        {(['all', 'messages', 'social', 'attachments', 'functions'] as const).map(filter =>
+          <button key={filter} type="button" data-search-filter={filter} aria-pressed={view.filter === filter}
             onClick={() => onChange({ ...view, filter })}>{copy[`search.tab.${filter}`]}</button>)}
       </div>
       <div className="mp-global-search-scope">
@@ -82,15 +99,24 @@ export function SearchPage({
           {!words.length ? <div className="mp-global-search-state">{copy['search.mobile.initial']}</div> : null}
           {words.length && view.filter !== 'functions' ? <>
             <p className="mp-global-search-coverage" role="status">{copy['search.coverage.historyBoundary']}</p>
+            {!view.conversationKey ? <p className="mp-global-search-coverage" role="status">
+              {copy[view.submitted ? 'search.coverage.social_public' : 'search.coverage.social_acquired']}
+            </p> : null}
             {status === 'empty' || !shown.length ? <div className="mp-global-search-state" role="status">
               {copy['search.empty.title'].replace('{{query}}', view.query)}<span>{copy['search.empty.detail']}</span>
-            </div> : <PrototypeListWindow items={shown} itemKey={key} size={100} memory={memory}
+            </div> : <PrototypeListWindow items={shown} itemKey={resultKey} size={100} memory={memory}
               surfaceKey={`search:${view.query}:${view.filter}:${view.conversationKey}`}>
-              {window => window.map(target => <button key={key(target)} type="button"
-                className="mp-global-search-row" data-scroll-anchor-id={key(target)} onClick={() => onOpen(target)}>
-                {target.message.file ? <FileText size={20} /> : <MessageCircle size={20} />}
-                <span><strong>{view.filter === 'attachments' ? target.message.file?.name : target.message.text || target.message.file?.name}</strong>
-                  <small>{target.conversation.name} · {target.message.mine ? 'You' : target.conversation.name} · {target.message.time}</small></span>
+              {window => window.map(result => <button key={resultKey(result)} type="button"
+                className="mp-global-search-row" data-scroll-anchor-id={resultKey(result)}
+                onClick={() => result.kind === 'message' ? onOpen(result.target) : onOpenSocial(result.target)}>
+                {result.kind === 'message' && result.target.message.file ? <FileText size={20} /> : <MessageCircle size={20} />}
+                {result.kind === 'message' ? <span><strong>{view.filter === 'attachments'
+                  ? result.target.message.file?.name : result.target.message.text || result.target.message.file?.name}</strong>
+                  <small>{result.target.conversation.name} · {result.target.message.mine ? 'You' : result.target.conversation.name} · {result.target.message.time}</small></span>
+                  : <span><strong>{result.target.comment?.text ?? result.target.moment.text}</strong>
+                    <small>{result.target.comment?.name ?? result.target.moment.name} · {result.target.moment.audience}
+                      {' · '}{copy[result.target.moment.audience === 'Public' ? 'search.zone.station' : 'search.zone.device']}
+                    </small></span>}
                 <ChevronRight size={18} />
               </button>)}
             </PrototypeListWindow>}

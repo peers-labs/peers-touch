@@ -18,8 +18,12 @@ import {
   type DescMessage,
   type JsonValue,
 } from '@bufbuild/protobuf';
-import type { MobileAuthSession } from '../../features/auth/authSession';
+import { timestampFromDate } from '@bufbuild/protobuf/wkt';
+import { isAccessGranted, type MobileAuthSession } from '../../features/auth/authSession';
+import { useAuthStore } from '../../features/auth/authStore';
 import { mobileAuthScopeKey } from '../../features/auth/mobileAuthIdentity';
+import { privateMomentFeedPost } from '../../features/social/privateMomentFeedProjection';
+import { isPublicSocialAudience } from '../../features/social/socialAudience';
 import {
   CreatePostRequestSchema,
   CreatePostResponseSchema,
@@ -44,6 +48,7 @@ import {
   type Comment,
 } from '../../gen/proto/domain/social/comment_pb';
 import {
+  ListMomentCommentsRequestSchema,
   ListMomentCommentsResponseSchema,
   type CommentResource,
   type ListMomentCommentsResponse,
@@ -57,6 +62,15 @@ import {
   MobileMutationAdmissionError,
   requireMobileMutationAdmission,
 } from '../../runtimes/mutationAdmission';
+import {
+  readPrivateMoment,
+  readPrivateMomentsSnapshot,
+} from '../../runtimes/privateMomentsRuntime';
+import {
+  privateSocialComments,
+  type PrivateCommentProjection,
+  type PrivateSocialAccountInput,
+} from '../mobileCommands';
 import { responseBytes, responseJson } from '../stationTransport';
 import {
   executeSocialNativeOperation,
@@ -91,6 +105,13 @@ export interface MomentDetailResult {
   readonly post?: Post;
   readonly explanation?: FeedObjectExplanation;
   readonly outcome: PostDetailOutcome;
+}
+
+export type MomentReadSource = 'device.social' | 'station.social.public';
+
+export interface MomentDetailReadOptions {
+  readonly sourceId?: MomentReadSource;
+  readonly anchorCommentId?: string;
 }
 
 /** Result of a reaction toggle (react / unreact) */
@@ -142,7 +163,10 @@ export interface MomentsGateway {
   ) => Promise<CommandOutcome<MomentsFeedPage>>;
 
   /** Get a single post by ID. */
-  getPost: (postId: string) => Promise<CommandOutcome<MomentDetailResult>>;
+  getPost: (
+    postId: string,
+    sourceId?: MomentReadSource,
+  ) => Promise<CommandOutcome<MomentDetailResult>>;
 
   /** Delete one Moment owned by the authenticated author. */
   deletePost: (postId: string) => Promise<CommandOutcome<{ success: boolean }>>;
@@ -164,6 +188,7 @@ export interface MomentsGateway {
     postId: string,
     cursor: string,
     limit: number,
+    options?: MomentDetailReadOptions,
   ) => Promise<CommandOutcome<CommentsPage>>;
 
   /** Create a comment on a post. */
@@ -197,6 +222,38 @@ export function createMomentsGateway(
       ),
   );
   const scopeKey = mobileAuthScopeKey(session);
+  const requirePrivateScope = (): PrivateSocialAccountInput => {
+    const auth = useAuthStore.getState();
+    const current = auth.session;
+    const native = readPrivateMomentsSnapshot();
+    if (
+      !isAccessGranted(auth.accessDecision)
+      || !current
+      || mobileAuthScopeKey(current) !== scopeKey
+      || current.sessionId !== session.sessionId
+      || !native.active
+      || native.stationPeerId !== session.stationPeerId
+      || native.actorPtid !== session.actorRef.ptid
+      || native.deviceId !== session.deviceId
+      || native.lifecycleGeneration !== String(session.lifecycleGeneration)
+      || !Number.isSafeInteger(native.activationGeneration)
+      || native.activationGeneration <= 0
+    ) {
+      throw new Error('mobile.privateSocial.runtimeInactive');
+    }
+    return {
+      stationPeerId: session.stationPeerId,
+      actorPtid: session.actorRef.ptid,
+      deviceId: session.deviceId,
+      lifecycleGeneration: session.lifecycleGeneration,
+      activationGeneration: native.activationGeneration,
+    };
+  };
+  const requirePrivateCompletion = (scope: PrivateSocialAccountInput): void => {
+    if (requirePrivateScope().activationGeneration !== scope.activationGeneration) {
+      throw new Error('mobile.privateSocial.staleReadCompletion');
+    }
+  };
   const commandProtoJson = async <Desc extends DescMessage>(
     options: GatewayRequestOptions,
     schema: Desc,
@@ -315,8 +372,30 @@ export function createMomentsGateway(
       return validateTimelineOutcome(result, '/api/v1/social/timeline');
     },
 
-    getPost: async (postId) => {
+    getPost: async (postId, sourceId = 'station.social.public') => {
       const path = `/api/v1/social/moments/${encodeURIComponent(postId)}`;
+      if (sourceId === 'device.social') {
+        try {
+          const scope = requirePrivateScope();
+          const projection = await readPrivateMoment(postId);
+          requirePrivateCompletion(scope);
+          if (projection.postId !== postId) return invalidMomentsOutcome(path);
+          const post = privateMomentFeedPost(projection);
+          return {
+            ok: true,
+            data: post
+              ? { post, outcome: PostDetailOutcome.AVAILABLE }
+              : {
+                  outcome: projection.state === 'DELETED_OR_REVOKED'
+                    ? PostDetailOutcome.DELETED
+                    : PostDetailOutcome.UNAVAILABLE,
+                },
+          };
+        } catch {
+          return privateReadUnavailable(path);
+        }
+      }
+      if (sourceId !== 'station.social.public') return invalidMomentsOutcome(path);
       const raw = await command<JsonValue>({
         method: 'GET',
         path,
@@ -331,7 +410,14 @@ export function createMomentsGateway(
           path,
         },
       );
-      return validateDetailOutcome(result, path);
+      const validated = validateDetailOutcome(result, path);
+      if (
+        validated.ok && validated.data.post
+        && (validated.data.post.id !== postId
+          || !validated.data.post.audience
+          || !isPublicSocialAudience(validated.data.post.audience))
+      ) return invalidMomentsOutcome(path);
+      return validated;
     },
 
     deletePost: (postId) =>
@@ -372,21 +458,69 @@ export function createMomentsGateway(
         'mobile.moments.reaction.error',
       ),
 
-    fetchComments: async (postId, cursor, limit) => {
+    fetchComments: async (postId, cursor, limit, options = {}) => {
       const path = `/api/v1/social/moments/${encodeURIComponent(postId)}/comments`;
+      const request = create(ListMomentCommentsRequestSchema, {
+        postId,
+        cursor,
+        limit,
+        anchorCommentId: options.anchorCommentId ?? '',
+      });
+      if (
+        !postId || limit < 1 || limit > 100 || !Number.isInteger(limit)
+        || (request.anchorCommentId && cursor)
+      ) return invalidMomentsOutcome(path);
+      if (options.sourceId === 'device.social') {
+        try {
+          const scope = requirePrivateScope();
+          const input = {
+            ...scope,
+            postId: request.postId,
+            cursor: request.cursor,
+            limit: request.limit,
+            anchorCommentId: request.anchorCommentId,
+          };
+          const page = await privateSocialComments(input);
+          requirePrivateCompletion(scope);
+          if (page.postId !== postId) return invalidMomentsOutcome(path);
+          const comments = page.comments.map((comment) =>
+            privateCommentFromProjection(comment, postId),
+          );
+          if (
+            request.anchorCommentId
+            && !comments.some((comment) => comment.id === request.anchorCommentId)
+          ) return privateReadUnavailable(path);
+          return {
+            ok: true,
+            data: { comments, nextCursor: page.nextCursor, hasMore: page.hasMore },
+          };
+        } catch {
+          return privateReadUnavailable(path);
+        }
+      }
+      if (
+        options.sourceId && options.sourceId !== 'station.social.public'
+      ) return invalidMomentsOutcome(path);
       const result = await commandProtoJson(
         {
           method: 'GET',
           path,
           query: {
-            cursor: cursor || undefined,
-            limit,
+            cursor: request.cursor || undefined,
+            limit: request.limit,
+            anchor_comment_id: request.anchorCommentId || undefined,
           },
         },
         ListMomentCommentsResponseSchema,
         'mobile.moments.comment.error',
       );
-      return projectPublicCommentPage(result, path);
+      const page = projectPublicCommentPage(result, path);
+      if (
+        page.ok && (page.data.comments.some((comment) => comment.postId !== postId)
+          || (request.anchorCommentId
+            && !page.data.comments.some((comment) => comment.id === request.anchorCommentId)))
+      ) return invalidMomentsOutcome(path);
+      return page;
     },
 
     createComment: (postId, content, replyToCommentId) =>
@@ -497,6 +631,43 @@ function invalidMomentsOutcome<T>(path: string): CommandOutcome<T> {
       path,
     },
   };
+}
+
+function privateReadUnavailable<T>(path: string): CommandOutcome<T> {
+  return {
+    ok: false,
+    error: {
+      code: 'PRIVATE_SOCIAL_READ_UNAVAILABLE',
+      message: 'mobile.moments.feed.error',
+      method: 'GET',
+      path,
+    },
+  };
+}
+
+function privateCommentFromProjection(
+  projection: PrivateCommentProjection,
+  postId: string,
+): Comment {
+  if (
+    projection.postId !== postId || !projection.commentId
+    || !projection.authorPtid || projection.state !== 'COMMENT_POSTED'
+    || projection.text === undefined
+  ) throw new Error('PRIVATE_COMMENT_RESOURCE_INVALID');
+  return create(CommentSchema, {
+    id: projection.commentId,
+    postId,
+    authorPtid: projection.authorPtid,
+    content: projection.text,
+    replyToCommentId: projection.replyToCommentId,
+    likesCount: BigInt(projection.reactionsCount),
+    repliesCount: BigInt(projection.repliesCount),
+    author: create(PostAuthorSchema, { id: projection.authorPtid }),
+    createdAt: projection.createdAtMillis === undefined
+      ? undefined : timestampFromDate(new Date(projection.createdAtMillis)),
+    updatedAt: projection.updatedAtMillis === undefined
+      ? undefined : timestampFromDate(new Date(projection.updatedAtMillis)),
+  });
 }
 
 function projectPublicCommentPage(
