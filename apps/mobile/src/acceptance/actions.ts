@@ -105,6 +105,7 @@ import {
   updateCurrentSocialProfile,
 } from '../features/social/socialRuntime';
 import type { PeerProfile } from '../features/social/socialTypes';
+import { projectMomentsRuntimeDiagnostics } from './momentsProjection';
 import {
   ChatDraftPayloadSchema,
   MobileDraftEnvelopeV2Schema,
@@ -1276,7 +1277,10 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'social.reconcile': async () => reconcileSocialRuntime(),
 
-  'social.projection.read': async () => readSocialRuntimeProjection(),
+  'social.projection.read': async () => ({
+    ...readSocialRuntimeProjection(),
+    moments: projectMomentsRuntimeDiagnostics(readCurrentActiveMomentsRuntime()),
+  }),
 
   'moments.private.acceptance.prepareKeys': async () => {
     const snapshot = readPrivateMomentsSnapshot();

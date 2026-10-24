@@ -30,6 +30,7 @@ import type {
   PermissionRequestResult,
 } from '../runtimes/nativeLifecycleBridge';
 import type { DevicePreferences } from '../runtimes/deviceSettingsRuntime';
+import type { projectMomentsRuntimeDiagnostics } from './momentsProjection';
 import type { EmbeddedMobileBuildIdentity } from './buildIdentity';
 import type {
   EntrySurfaceFixtureId,
@@ -1531,7 +1532,9 @@ export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceCo
   };
   'social.projection.read': {
     input: undefined;
-    output: PublicSocialRuntimeProjection;
+    output: PublicSocialRuntimeProjection & {
+      moments: ReturnType<typeof projectMomentsRuntimeDiagnostics>;
+    };
   };
   'moments.private.acceptance.prepareKeys': {
     input: undefined;

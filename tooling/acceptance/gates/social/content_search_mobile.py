@@ -65,6 +65,23 @@ return {
                 "Social Search requires its source-bound outage capability")
         return super()._run_social_journey(artifacts, manifest)
 
+    def _capture_runtime_failure(self, artifacts: ArtifactSession) -> list[dict[str, Any]]:
+        diagnostics = []
+        for session in self.sessions:
+            try:
+                social = session.call_action("social.projection.read")
+                private = session.call_action("moments.private.snapshot")
+                reference = artifacts.write_json(
+                    f"social-content-search/{session.client_id}/failure-moments.json",
+                    {"clientId": session.client_id, "moments": social.get("moments"),
+                     "privateReads": private.get("reads")},
+                    role=f"social-search-original-moments-failure/{session.client_id}",
+                )
+                diagnostics.append({"clientId": session.client_id, "artifact": reference.to_dict()})
+            except Exception as error:
+                diagnostics.append({"clientId": session.client_id, "errorType": type(error).__name__})
+        return diagnostics + super()._capture_runtime_failure(artifacts)
+
     def seed(self, journey: MobileMessagingJourney, sender_session: Any,
              receiver_session: Any, conversation: str, token: str) -> dict:
         def send(text: str, **extra: Any) -> str:
