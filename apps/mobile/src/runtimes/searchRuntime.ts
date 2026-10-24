@@ -143,7 +143,8 @@ async function run(refresh = false): Promise<void> {
     retained = response.sources.some(source => source.noStore) ? null : response;
     retainedKey = retained ? key : '';
     if (current()) useMobileSearchStore.setState({
-      response, status: 'ready', errorKey: null, displayedQuery: view.query, displayedFilter: view.filter,
+      response, status: 'ready', errorKey: null,
+      displayedQuery: view.query, displayedMode: view.mode, displayedFilter: view.filter,
     });
   } catch (error) {
     if (current() || (generation === admitted && active() && !scope)) {
@@ -275,10 +276,14 @@ export function createSearchRuntimeDescriptor(): MobileRuntimeDescriptor {
     if (active()) void run();
   };
   const invalidated = (sourceIds: readonly string[]) => {
-    const opening = useMobileSearchStore.getState().opening;
+    const view = useMobileSearchStore.getState();
+    const response = view.response;
+    if (response?.sources.length && view.displayedQuery === view.query
+      && view.displayedMode === view.mode && view.displayedFilter === view.filter
+      && !response.sources.some(source => sourceIds.includes(source.sourceId))) return;
+    const opening = view.opening;
     if (!opening) stop();
     retained = null;
-    const response = useMobileSearchStore.getState().response;
     if (response) useMobileSearchStore.setState({ response: {
       ...response, items: response.items.filter(item => !sourceIds.includes(item.sourceId)),
       nextCursor: '', hasMore: false,

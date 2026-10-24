@@ -90,24 +90,33 @@ export function clearSearchQueries(): void {
   hide();
 }
 
-export function invalidateSearchSources(sourceIds: readonly string[]): void {
+export function invalidateSearchSources(sourceIds: readonly string[]): boolean {
+  const affected = new Set(sourceIds);
+  const view = useSearchStore.getState();
+  const response = view.response;
+  // A pending new intent has no qualified source vector yet. Keep that case
+  // conservative; a continuation retains its current response's dependencies.
+  const queryAffected = !response?.sources.length
+    || view.displayedQuery !== view.query.trim() || view.displayedMode !== view.mode
+    || view.displayedFilter !== view.contentFilter
+    || response.sources.some(source => affected.has(source.sourceId));
+  client.removeQueries({ predicate: query => {
+    const frame = query.state.data as Frame | undefined;
+    return frame ? frame.response.sources.some(source => affected.has(source.sourceId)) : queryAffected;
+  } });
+  if (!queryAffected) return false;
   epoch++;
   stopSearchQuery();
   observer?.destroy(); observer = null;
-  const affected = new Set(sourceIds);
-  client.removeQueries({ predicate: query => {
-    const frame = query.state.data as Frame | undefined;
-    return !frame || frame.response.sources.some(source => affected.has(source.sourceId));
-  } });
   ownerState = null;
   stateFlight = null;
-  const response = useSearchStore.getState().response;
   if (response) useSearchStore.setState({ response: {
     ...response, items: response.items.filter(item => !affected.has(item.sourceId)),
     nextCursor: '', hasMore: false,
     coverage: response.coverage.map(source => affected.has(source.sourceId)
       ? { ...source, state: SourceState.PARTIAL, detailKey: 'search.coverage.partial' } : source),
   } });
+  return true;
 }
 
 async function readState(): Promise<SearchReadState> {

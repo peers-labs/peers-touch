@@ -654,10 +654,11 @@ return {
         self.click(session, ".mobile-search-scope button")
         self._wait_ui_absent(session, ".mobile-search-scope button", "global scope restored")
         self.fill(session, fixture["query"])
-        original = next(item["resource"] for item in self.native_page(
+        original = next(item for item in self.native_page(
             session, fixture["query"])["items"] if item["resource"]["messageId"] == fixture["root"])
         self.denial(session, "forged-authority", "search.resolve", {
-            "resource": {**original, "authorityNamespace": "station:forged"},
+            "resource": {**original["resource"], "authorityNamespace": "station:forged"},
+            "sourceId": original["sourceId"],
         }, "SEARCH_PROTOCOL")
         edited = f'{fixture["query"]} 更新正文'
         self.mutate_when_admitted(sender_session, "messaging.interact", {
@@ -667,8 +668,9 @@ return {
         self.has(session, fixture["root"], edited)
         self.capture(artifacts, session, "edit")
         self.denial(session, "stale-reference", "search.resolve",
-                    {"resource": original}, "SEARCH_RESOURCE_UNAVAILABLE")
-        fresh = next(item["resource"] for item in self.native_page(
+                    {"resource": original["resource"], "sourceId": original["sourceId"]},
+                    "SEARCH_RESOURCE_UNAVAILABLE")
+        fresh = next(item for item in self.native_page(
             session, fixture["query"])["items"] if item["resource"]["messageId"] == fixture["root"])
         self.mutate_when_admitted(sender_session, "messaging.interact", {
             "conversationId": fixture["conversation"], "messageId": fixture["root"], "kind": "retract",
@@ -680,7 +682,8 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
 """, "retracted content removed from receiver Search", fixture["root"])
         self.capture(artifacts, session, "retract")
         self.denial(session, "retracted-reference", "search.resolve",
-                    {"resource": fresh}, "SEARCH_RESOURCE_UNAVAILABLE")
+                    {"resource": fresh["resource"], "sourceId": fresh["sourceId"]},
+                    "SEARCH_RESOURCE_UNAVAILABLE")
         self.fill(session, "...")
         self.wait(session, "return !!document.querySelector('.mobile-search-notice[role=alert]');",
                   "typed invalid-query UI")

@@ -147,4 +147,43 @@ describe('Mobile Search original Open lifetime', () => {
     expect(f.store.getState().response).toBeNull();
     await f.cleanup();
   });
+
+  it('finishes a Messaging continuation across an unrelated Social invalidation', async () => {
+    const f = await fixture();
+    const source = {
+      sourceId: 'device.messaging', bindingId: 'messaging.read',
+      readScope: 'device', sourceRevision: '1', policyRevision: '1',
+    };
+    const response = create(SearchResponseSchema, {
+      partition: 'partition', sources: [source],
+      expiresAtUnixMs: BigInt(Date.now() + 60_000), nextCursor: 'next', hasMore: true,
+      items: [{
+        sourceId: source.sourceId, resource: { kind: 'message', id: 'message' },
+        readValidity: { readScope: source.readScope, policyRevision: source.policyRevision },
+      }],
+    });
+    f.service.readState.mockResolvedValue(create(SearchReadStateSchema, {
+      partition: response.partition, sources: response.sources,
+    }));
+    let finishPage!: (value: typeof response) => void;
+    f.service.submit.mockImplementationOnce(() => new Promise(resolve => { finishPage = resolve; }));
+    f.store.setState({
+      query: 'message', displayedQuery: 'message', mode: 'submit', displayedMode: 'submit',
+      filter: 'messages', displayedFilter: 'messages', response,
+    });
+    f.actions.page(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.service.submit).toHaveBeenCalledOnce();
+    f.invalidate(['device.social']);
+    expect(f.service.cancel).not.toHaveBeenCalled();
+    expect(f.store.getState().response?.nextCursor).toBe('next');
+    expect(f.store.getState().status).toBe('loading');
+    const finalPage = create(SearchResponseSchema, { ...response, nextCursor: '', hasMore: false });
+    finishPage(finalPage);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.store.getState().response).toEqual(finalPage);
+    expect(f.store.getState().status).toBe('ready');
+    expect(f.service.submit).toHaveBeenCalledOnce();
+    await f.cleanup();
+  });
 });

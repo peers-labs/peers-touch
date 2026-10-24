@@ -69,6 +69,12 @@ identity, resource and expiry checks still apply, followed by original-owner
 authorization. Finding only an older issuance cannot grant access.
 Original-owner invalidations hide the affected source immediately; they do
 not expose stale content while another source completes.
+Current query and continuation cancellation must follow the response's actual
+source vector. An unrelated notification may evict that source's cached frames,
+but must not cancel a qualified current query, clear its cursor or reread a
+healthy source. The displayed query, mode and filter must match current intent
+before using that vector; unknown or changed intent remains conservative.
+Mobile retains displayed mode so a prior suggestion cannot qualify a new submit.
 Continuation publication MUST release its issuance metadata guard before
 leaving the original authority guard, as defined by Search design §4.1.
 A successful reply must not lead to an immediate Open observing a locked
@@ -139,6 +145,9 @@ must acquire every required reference from one response inside its existing
 bounded wait. Do not merge references from different responses, invent missing
 references or force source coverage to READY. Missing issuance must produce a
 canonical Gate failure rather than an uncaught object lookup.
+Native denial requests must carry the source ID from that same issued result.
+Dropping it makes an unknown-source denial substitute for namespace, stale
+content or original-owner policy proof. Keep each expected typed denial.
 Account-isolation private fixtures must acquire their SELF post through the
 original read owner before Search, following Search design §6.1. Publication
 completion is not a ContentReady read projection. A missing or unreadable
@@ -269,6 +278,12 @@ Search publication order and can deadlock the native UI during reconciliation.
   within the existing 30-second wait, require all targets in one response, and
   fail canonically for permanently missing targets or rejected queries.
   Disjoint partial responses must never be merged into an issuance snapshot.
+- Pause a real Messaging continuation, deliver an unrelated Social notification,
+  then complete the page. Both clients must retain the current request and cursor
+  and publish the final page without another source read. A relevant notification,
+  changed intent and identity fence must still cancel or conceal as specified.
+- Mobile Messaging forged, edited and retracted reference checks must preserve
+  each original result's `sourceId`; a missing source must not satisfy that proof.
 - Desktop and Mobile account fixtures must qualify the exact SELF post as
   CONTENT_READY through the original read, then prove Search visibility and
   old-account result/reference denial. Publication alone cannot seed this proof.

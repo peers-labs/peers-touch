@@ -213,6 +213,12 @@ query 再开始 hydrate 的全局阶段屏障。接收器使用绝对 deadline�
 来源独立性，现场吞吐与内存仍须测量，不能据此宣称产品性能通过。
 
 响应使用 source state 向量与逐项 read validity；来源失效只遮蔽对应投影。
+客户端按当前展示响应的原来源向量定向取消查询和分页；无关来源的通知只
+淘汰依赖该来源的缓存，不取消当前请求、清空其游标或重新读取健康来源。
+只有展示 query、mode、filter 与当前 intent 一致时，该向量才可用于判断
+无关通知；尚无当前响应或 intent 已改变时保守取消并协调。Mobile 同样保留
+displayed mode，以区分同词的 suggest 与 submit。身份、有效期、原域权限
+变化仍沿原屏障立即失效，不能用通知过滤延长授权。
 全局 resolve 经受信 composition 的原域 opener registry，未知 binding 拒绝，
 不返回任意 URL。SocialComment 使用独立 comment ID 与 typed SocialPost parent；
 同一资源可在多个有界查询 session 中被签发；resolve 必须寻找匹配当前

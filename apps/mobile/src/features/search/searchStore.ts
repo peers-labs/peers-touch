@@ -17,6 +17,7 @@ export interface MobileSearchProjection {
   page: number;
   opening: boolean;
   displayedQuery: string;
+  displayedMode: 'suggest' | 'submit';
   displayedFilter: MobileSearchFilter;
   stalled: boolean;
 }
@@ -25,7 +26,7 @@ export const emptyMobileSearch = (): MobileSearchProjection => ({
   query: '', filter: 'all', conversationId: '', locale: 'en', mode: 'suggest',
   status: 'idle', response: null, errorKey: null, selectedId: '', scrollTop: 0,
   cursors: [''], page: 0, opening: false,
-  displayedQuery: '', displayedFilter: 'all', stalled: false,
+  displayedQuery: '', displayedMode: 'suggest', displayedFilter: 'all', stalled: false,
 });
 
 export const useMobileSearchStore = create<MobileSearchProjection>(() => emptyMobileSearch());

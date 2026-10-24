@@ -154,8 +154,8 @@ export const searchRuntime: RuntimeDescriptor = {
       // Original-domain materialization can publish a projection during Open.
       // Its read authority still decides availability; do not cancel that Open.
       const opening = useSearchStore.getState().opening;
+      if (!invalidateSearchSources(sourceIds)) return;
       if (!opening) stopRequest();
-      invalidateSearchSources(sourceIds);
       useSearchStore.setState({ status: 'idle' });
       if (!opening) void reconcileSearchQuery(locale);
     }).then(remove => {
