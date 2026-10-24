@@ -29,7 +29,9 @@ owns:
   - apps/station/app/subserver/social/infrastructure/private_read_policy.go
   - packages/locales/en/search.json
   - packages/locales/zh-CN/search.json
-  - tooling/acceptance/gates/social/content_search
+  - tooling/acceptance/gates/social/content_search_contract.py
+  - tooling/acceptance/gates/social/content_search_desktop.py
+  - tooling/acceptance/gates/social/content_search_mobile.py
 referenced-by: []
 related:
   - ../../architecture/domains/search/design.md
@@ -76,6 +78,8 @@ or error projection over a current Open.
 The original target's focus must wait for the Search overlay focus boundary to
 release, as defined in Search design §4.1. The overlay must declare navigation
 before awaiting Open so its teardown cannot restore the old entry focus.
+Return proof MUST activate the original domain's actual Back control. A Social
+thread header cannot be located through an unrelated common page header.
 
 Coverage copy MUST come from the original source's generated `SourceCoverage`.
 Public Station scope must never fall back to acquired-device coverage;
@@ -133,6 +137,8 @@ and panics; the outer IPC join can then report only `search cancelled`.
 - Native UI proof must search, open the original post/comment, focus its exact
   anchor, return with the prior query and remove revoked content. Source tests
   alone leave that journey `UNPROVEN`.
+- Mobile Social return must use the Back button within the original
+  `social-moment-thread`, then assert the retained Search query and filter.
 - The same Journey must complete private Open after original projection
   materialization, reject unavailable targets and show distinct acquired-private
   and current-Station public coverage.

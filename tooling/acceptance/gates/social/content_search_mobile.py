@@ -123,7 +123,8 @@ return [...document.querySelectorAll('[data-acceptance-id="social-moment-card"]'
   .some(row => row.dataset.postId === arguments[0] && row.innerText.includes(arguments[1]));
 """, "original Social post body", resource_id, text)
         self.capture(artifacts, session, f"social-{name}-open")
-        self.click(session, ".page-header > button:first-child")
+        self.click(session, '[data-acceptance-id="social-moment-thread"] '
+                   '.moments-comments-header > button')
         self._wait_ui(session, PAGE, "return to retained Search route")
         self.has(session, resource_id, text)
         require(session.execute_script("""
