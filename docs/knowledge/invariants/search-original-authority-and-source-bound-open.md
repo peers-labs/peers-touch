@@ -17,6 +17,7 @@ owns:
   - apps/mobile/src-tauri/src/runtime/search/
   - apps/mobile/src-tauri/src/secure_content/store/search.rs
   - apps/mobile/src/runtimes/searchRuntime.ts
+  - apps/mobile/src/runtimes/searchRuntime.test.ts
   - apps/mobile/src/runtimes/searchInvalidations.ts
   - apps/mobile/src/features/search/
   - apps/mobile/src/features/social/openSearchResource.ts
@@ -134,6 +135,10 @@ Search publication order and can deadlock the native UI during reconciliation.
   repeated original commits, real content changes and denied-parent replay.
 - Mobile `secure_content::store::search` tests cover the same policy and
   original identity constraints.
+- Mobile `searchRuntime.test.ts` delays original resolution across source
+  invalidation: affected rows disappear immediately while the original Open
+  and original-owner denial remain authoritative. New user intent and identity
+  fencing must still cancel and suppress the old completion.
 - `backfill_releases_store_before_external_lifecycle_checks` requires both
   bounded backfill phases to permit Store acquisition from each external check.
   Native Social Search must still conceal and resume all four original targets.

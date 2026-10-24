@@ -275,14 +275,15 @@ export function createSearchRuntimeDescriptor(): MobileRuntimeDescriptor {
     if (active()) void run();
   };
   const invalidated = (sourceIds: readonly string[]) => {
-    stop();
+    const opening = useMobileSearchStore.getState().opening;
+    if (!opening) stop();
     retained = null;
     const response = useMobileSearchStore.getState().response;
     if (response) useMobileSearchStore.setState({ response: {
       ...response, items: response.items.filter(item => !sourceIds.includes(item.sourceId)),
       nextCursor: '', hasMore: false,
     } });
-    void run();
+    if (!opening) void run();
   };
   const visibility = () => {
     conceal();
