@@ -162,7 +162,8 @@ func (s *PublicSearchService) queryPage(
 		Cache: publicSearchCache(viewer, observation, ""), ExpiresAtUnixMs: cursor.ExpiresAt,
 		Coverage: &searchpb.SourceCoverage{
 			SourceId: PublicSearchSourceID, State: searchpb.SourceState_SOURCE_STATE_READY,
-			Extent: searchpb.CoverageExtent_COVERAGE_EXTENT_DECLARED_SCOPE,
+			Extent:    searchpb.CoverageExtent_COVERAGE_EXTENT_DECLARED_SCOPE,
+			DetailKey: "search.coverage.social_public",
 		},
 	}
 	limit := int(request.Limit)
@@ -187,6 +188,7 @@ func (s *PublicSearchService) queryPage(
 	}
 	if more {
 		page.Coverage.State = searchpb.SourceState_SOURCE_STATE_PARTIAL
+		page.Coverage.DetailKey = "search.coverage.social_public_partial"
 		cursor.Observation, cursor.After = revision, last
 		page.NextCursor, err = s.encodeCursor(cursor)
 		if err != nil {

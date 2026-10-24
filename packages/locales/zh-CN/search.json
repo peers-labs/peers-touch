@@ -44,6 +44,7 @@
   "search.coverage.social_acquired": "本机已取得的私密动态与评论",
   "search.coverage.social_indexing": "正在准备私密动态索引",
   "search.coverage.social_public": "当前 Station 可读的公开动态与评论",
+  "search.coverage.social_public_partial": "当前 Station 公开检索尚不完整，还有内容未检索",
   "search.coverage.social_unavailable": "动态内容来源暂不可用",
   "search.coverage.historyBoundary": "私密检索仅包含本机已取得的内容，尚未恢复的历史不在结果中。",
   "search.empty.title": "没有找到「{{query}}」",

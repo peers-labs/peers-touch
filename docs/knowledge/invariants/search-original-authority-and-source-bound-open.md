@@ -56,6 +56,15 @@ typed parent and exact comment anchor. A caller URL, source ID alone, first
 timeline page or first comment page cannot establish target identity.
 Original-owner invalidations hide the affected source immediately; they do
 not expose stale content while another source completes.
+Query invalidation MUST NOT cancel an Open because its original owner is
+materializing the target. Search design §4.1 separates those lifecycles:
+the original current read and availability result decide Open, while identity
+or user intent changes still cancel it. Query reconciliation waits until Open
+settles. A non-readable private projection MUST NOT be accepted as a target.
+
+Coverage copy MUST come from the original source's generated `SourceCoverage`.
+Public Station scope must never fall back to acquired-device coverage;
+unfinished public scans must retain their incomplete state.
 
 ## Why this matters
 
@@ -90,6 +99,9 @@ and panics; the outer IPC join can then report only `search cancelled`.
 - Native UI proof must search, open the original post/comment, focus its exact
   anchor, return with the prior query and remove revoked content. Source tests
   alone leave that journey `UNPROVEN`.
+- The same Journey must complete private Open after original projection
+  materialization, reject unavailable targets and show distinct acquired-private
+  and current-Station public coverage.
 - Inspect Desktop/Mobile `SearchExecutor::block_on`: it must not call
   `tauri::async_runtime::block_on`. The native Social Search Suite must show
   mixed results without `Cannot block the current thread from within a runtime`

@@ -13,6 +13,14 @@ struct Reader {
 }
 
 impl ProjectedSearchReader for Reader {
+    fn coverage_detail_key(&self, state: &SourceReadState) -> &str {
+        if state.state == SourceState::Indexing as i32 {
+            "search.coverage.social_indexing"
+        } else {
+            "search.coverage.social_acquired"
+        }
+    }
+
     fn supports_suggestions(&self) -> bool {
         false
     }

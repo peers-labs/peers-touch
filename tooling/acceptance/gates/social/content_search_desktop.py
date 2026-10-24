@@ -179,6 +179,13 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
                 self.public_text, self.private_text,
                 self.public_comment_text, self.private_comment_text,
             )))
+        self.visible("social_source_coverage", lambda: all(
+            any(copy in self.receiver.find_element(".pt-search-footer").text for copy in copies)
+            for copies in (
+                ("Private posts and comments acquired on this device", "本机已取得的私密动态与评论"),
+                ("Readable public posts and comments on this Station", "当前 Station 可读的公开动态与评论"),
+            )
+        ))
         self.select("messages")
         self.visible("messages_filter", lambda: self.query + " 原始正文" in self.rows()
                      and self.public_text not in self.rows() and self.private_text not in self.rows())

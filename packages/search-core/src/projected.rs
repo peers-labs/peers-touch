@@ -32,6 +32,10 @@ pub trait ProjectedSearchReader: Send + Sync + 'static {
     }
     /// Must describe the just-completed read, not an invented permission lease.
     fn read_state(&self) -> Result<SourceReadState, SearchError>;
+    /// The original source owns the presentation of its declared coverage.
+    fn coverage_detail_key(&self, _state: &SourceReadState) -> &str {
+        ""
+    }
     fn query_documents(
         &self,
         input: &QueryIntent,
@@ -295,7 +299,7 @@ impl SearchContributor for ProjectedContributor {
                     source_id: state.source_id.clone(),
                     state: state.state,
                     extent: state.extent,
-                    detail_key: String::new(),
+                    detail_key: self.reader.coverage_detail_key(&state).into(),
                 }),
                 cache: Some(Self::metadata(
                     &state,

@@ -109,6 +109,9 @@ export const searchActions = {
     } finally {
       if (generation === requestGeneration) useSearchStore.setState({ opening: false });
       if (requestId === id) requestId = null;
+      if (generation === requestGeneration && useSearchStore.getState().open) {
+        void reconcileSearchQuery(locale);
+      }
     }
   },
 };
@@ -127,10 +130,13 @@ export const searchRuntime: RuntimeDescriptor = {
     });
     void subscribeSearchInvalidations(sourceIds => {
       // Hide prior authorization immediately; owner reconciliation decides reuse.
-      stopRequest();
+      // Original-domain materialization can publish a projection during Open.
+      // Its read authority still decides availability; do not cancel that Open.
+      const opening = useSearchStore.getState().opening;
+      if (!opening) stopRequest();
       invalidateSearchSources(sourceIds);
-      useSearchStore.setState({ status: 'idle', opening: false });
-      void reconcileSearchQuery(locale);
+      useSearchStore.setState({ status: 'idle' });
+      if (!opening) void reconcileSearchQuery(locale);
     }).then(remove => {
       if (!installed || generation !== installationGeneration) remove();
       else removeEvent = remove;

@@ -147,6 +147,13 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
         for resource_id in ids:
             self.has(session, resource_id, query)
         self.has(session, fixture["root"], query)
+        self.wait(session, """
+const coverage = document.querySelector('.mobile-search-coverage')?.innerText || '';
+return ['Private posts and comments acquired on this device', '本机已取得的私密动态与评论']
+  .some(copy => coverage.includes(copy))
+  && ['Readable public posts and comments on this Station', '当前 Station 可读的公开动态与评论']
+    .some(copy => coverage.includes(copy));
+""", "original public and acquired-private source coverage")
         self.capture(artifacts, session, "social-mixed-results")
         self.select(session, "messages", query)
         require(not set(ids).intersection(self.rows(session)), "message filter excludes Social")

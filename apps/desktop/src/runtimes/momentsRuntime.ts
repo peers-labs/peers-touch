@@ -476,6 +476,10 @@ async function ensureMomentDetailProjectionNow(
     }
   }
   if (scope && !isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+  if (target?.origin === 'device'
+    && usePrivateMomentsStore.getState().postsById[trimmedPostId]?.state !== 'CONTENT_READY') {
+    throw new Error('search.error.resourceUnavailable');
+  }
   log.info('momentsRuntime', 'moment detail projection refresh completed');
 }
 
