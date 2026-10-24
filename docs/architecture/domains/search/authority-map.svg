@@ -1,0 +1,173 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1400 780" width="1400" height="780"
+  role="img" aria-labelledby="title-search.authority-map">
+<style>
+  .canvas { fill: #111418; }
+  .headerRule { stroke: #30363d; stroke-width: 1; }
+  .title { fill: #f4f7fa; font: 600 30px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .viewpoint { fill: #8c98a4; font: 600 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .boundary { fill: none; stroke: #69737d; stroke-width: 1.5; stroke-dasharray: 7 6; }
+  .boundaryTitle { fill: #aeb7c0; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .zone { fill: #171b20; stroke: #343b43; stroke-width: 1.4; }
+  .zone-primary { fill: #152019; stroke: #55d98d; }
+  .zone-secondary { fill: #141d25; stroke: #65b8ff; }
+  .zone-state { fill: #211d14; stroke: #e0b35a; }
+  .zone-external { fill: #191b1e; stroke: #7c8792; stroke-dasharray: 6 5; }
+  .zone-muted { fill: #14171b; stroke: #2c3239; }
+  .zoneTitle { fill: #aeb7c0; font: 600 15px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .node { fill: #1b2026; stroke: #49525c; stroke-width: 1.4; }
+  .node-primary { fill: #17231b; stroke: #55d98d; stroke-width: 1.8; }
+  .node-secondary { fill: #16212b; stroke: #65b8ff; }
+  .node-state { fill: #252116; stroke: #e0b35a; }
+  .node-external { fill: #1a1d21; stroke: #7c8792; }
+  .node-muted { fill: #161a1f; stroke: #343b43; }
+  .nodeTitle { fill: #f0f3f6; font: 600 18px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .nodeCaption { fill: #9da8b3; font: 400 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .edge { fill: none; stroke: #55d98d; stroke-width: 2; stroke-linejoin: round; }
+  .edge-secondary { stroke: #65b8ff; }
+  .edge-return { stroke: #a6b0ba; stroke-dasharray: 6 5; }
+  .edge-event { stroke: #e0b35a; stroke-dasharray: 3 4; }
+  .edge-feedback { stroke: #d48787; stroke-dasharray: 7 5; }
+  .edgeLabelBox { fill: #111418; stroke: #30363d; stroke-width: 1; }
+  .edgeLabel { fill: #d7dde3; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .band { fill: #171b20; }
+  .band-primary { fill: #142019; }
+  .band-secondary { fill: #141d25; }
+  .band-state { fill: #201c14; }
+  .band-muted { fill: #14171b; }
+  .bandRule { stroke: #30363d; stroke-width: 1; }
+  .bandTitle { fill: #8f9aa5; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .lifeline { stroke: #48515a; stroke-width: 1.3; stroke-dasharray: 5 6; }
+  .fragment { fill: #151a1f; stroke: #3b444d; stroke-width: 1; }
+  .fragment-primary { fill: #142019; stroke: #3d7555; }
+  .fragment-secondary { fill: #141d25; stroke: #416884; }
+  .fragmentLabel { fill: #aeb7c0; font: 600 12px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .matrixHead { fill: #181d22; stroke: #343b43; stroke-width: 1; }
+  .matrixCell { fill: #14181d; stroke: #2d343c; stroke-width: 1; }
+  .matrixOwner { fill: #17301f; stroke: #55d98d; stroke-width: 1.4; }
+  .matrixText { fill: #d8dee4; font: 500 14px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .matrixOwnerText { fill: #7fe7a8; font: 700 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .guard { fill: #151a1f; stroke: #59636e; stroke-width: 1; }
+  .guard-primary { stroke: #55d98d; }
+  .guard-secondary { stroke: #65b8ff; }
+  .guard-state { stroke: #e0b35a; }
+  .guardLine { stroke: #59636e; stroke-width: 1; stroke-dasharray: 3 4; }
+  .guardText { fill: #b4bec8; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+</style>
+<defs>
+  <marker id="arrow-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#55d98d"/>
+  </marker>
+  <marker id="arrow-secondary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#65b8ff"/>
+  </marker>
+  <marker id="arrow-return" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#a6b0ba"/>
+  </marker>
+  <marker id="arrow-event" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#e0b35a"/>
+  </marker>
+  <marker id="arrow-feedback" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#d48787"/>
+  </marker>
+</defs>
+<title id="title-search.authority-map">Search 权威边界</title>
+<rect class="canvas" width="1400" height="780"/>
+<text class="title" x="44" y="48">Search 权威边界</text>
+<text class="viewpoint" x="1356" y="46" text-anchor="end">AUTHORITY-MAP</text>
+<line class="headerRule" x1="44" y1="72" x2="1356" y2="72"/>
+<rect class="matrixHead" x="44" y="96" width="256" height="64"/>
+<text class="matrixText" x="62" y="134">STATE / DECISION</text>
+<rect class="matrixHead" x="300" y="96" width="176" height="64"/>
+<text class="matrixText" x="388" y="134" text-anchor="middle">Model</text>
+<rect class="matrixHead" x="476" y="96" width="176" height="64"/>
+<text class="matrixText" x="564" y="134" text-anchor="middle">Shell</text>
+<rect class="matrixHead" x="652" y="96" width="176" height="64"/>
+<text class="matrixText" x="740" y="134" text-anchor="middle">Search</text>
+<rect class="matrixHead" x="828" y="96" width="176" height="64"/>
+<text class="matrixText" x="916" y="134" text-anchor="middle">D 区原域</text>
+<rect class="matrixHead" x="1004" y="96" width="176" height="64"/>
+<text class="matrixText" x="1092" y="134" text-anchor="middle">S 区原域</text>
+<rect class="matrixHead" x="1180" y="96" width="176" height="64"/>
+<text class="matrixText" x="1268" y="134" text-anchor="middle">F 区对端</text>
+<rect class="matrixHead" x="44" y="160" width="256" height="72"/>
+<text class="matrixText" x="62" y="201">查询与资源线合同</text>
+<rect class="matrixOwner" x="300" y="160" width="176" height="72"/>
+<circle cx="388" cy="189" r="6" fill="#55d98d"/>
+<text class="matrixOwnerText" x="388" y="214" text-anchor="middle">OWNER</text>
+<rect class="matrixCell" x="476" y="160" width="176" height="72"/>
+<rect class="matrixCell" x="652" y="160" width="176" height="72"/>
+<rect class="matrixCell" x="828" y="160" width="176" height="72"/>
+<rect class="matrixCell" x="1004" y="160" width="176" height="72"/>
+<rect class="matrixCell" x="1180" y="160" width="176" height="72"/>
+<rect class="matrixHead" x="44" y="232" width="256" height="72"/>
+<text class="matrixText" x="62" y="273">入口与原对象导航</text>
+<rect class="matrixCell" x="300" y="232" width="176" height="72"/>
+<rect class="matrixOwner" x="476" y="232" width="176" height="72"/>
+<circle cx="564" cy="261" r="6" fill="#55d98d"/>
+<text class="matrixOwnerText" x="564" y="286" text-anchor="middle">OWNER</text>
+<rect class="matrixCell" x="652" y="232" width="176" height="72"/>
+<rect class="matrixCell" x="828" y="232" width="176" height="72"/>
+<rect class="matrixCell" x="1004" y="232" width="176" height="72"/>
+<rect class="matrixCell" x="1180" y="232" width="176" height="72"/>
+<rect class="matrixHead" x="44" y="304" width="256" height="72"/>
+<text class="matrixText" x="62" y="345">查询、缓存与订阅</text>
+<rect class="matrixCell" x="300" y="304" width="176" height="72"/>
+<rect class="matrixCell" x="476" y="304" width="176" height="72"/>
+<rect class="matrixOwner" x="652" y="304" width="176" height="72"/>
+<circle cx="740" cy="333" r="6" fill="#55d98d"/>
+<text class="matrixOwnerText" x="740" y="358" text-anchor="middle">OWNER</text>
+<rect class="matrixCell" x="828" y="304" width="176" height="72"/>
+<rect class="matrixCell" x="1004" y="304" width="176" height="72"/>
+<rect class="matrixCell" x="1180" y="304" width="176" height="72"/>
+<rect class="matrixHead" x="44" y="376" width="256" height="72"/>
+<text class="matrixText" x="62" y="417">端侧正文与当前读权</text>
+<rect class="matrixCell" x="300" y="376" width="176" height="72"/>
+<rect class="matrixCell" x="476" y="376" width="176" height="72"/>
+<rect class="matrixCell" x="652" y="376" width="176" height="72"/>
+<rect class="matrixOwner" x="828" y="376" width="176" height="72"/>
+<circle cx="916" cy="405" r="6" fill="#55d98d"/>
+<text class="matrixOwnerText" x="916" y="430" text-anchor="middle">OWNER</text>
+<rect class="matrixCell" x="1004" y="376" width="176" height="72"/>
+<rect class="matrixCell" x="1180" y="376" width="176" height="72"/>
+<rect class="matrixHead" x="44" y="448" width="256" height="72"/>
+<text class="matrixText" x="62" y="489">本站正文与 actor / ACL</text>
+<rect class="matrixCell" x="300" y="448" width="176" height="72"/>
+<rect class="matrixCell" x="476" y="448" width="176" height="72"/>
+<rect class="matrixCell" x="652" y="448" width="176" height="72"/>
+<rect class="matrixCell" x="828" y="448" width="176" height="72"/>
+<rect class="matrixOwner" x="1004" y="448" width="176" height="72"/>
+<circle cx="1092" cy="477" r="6" fill="#55d98d"/>
+<text class="matrixOwnerText" x="1092" y="502" text-anchor="middle">OWNER</text>
+<rect class="matrixCell" x="1180" y="448" width="176" height="72"/>
+<rect class="matrixHead" x="44" y="520" width="256" height="72"/>
+<text class="matrixText" x="62" y="561">对端按需可见性裁决</text>
+<rect class="matrixCell" x="300" y="520" width="176" height="72"/>
+<rect class="matrixCell" x="476" y="520" width="176" height="72"/>
+<rect class="matrixCell" x="652" y="520" width="176" height="72"/>
+<rect class="matrixCell" x="828" y="520" width="176" height="72"/>
+<rect class="matrixCell" x="1004" y="520" width="176" height="72"/>
+<rect class="matrixOwner" x="1180" y="520" width="176" height="72"/>
+<circle cx="1268" cy="549" r="6" fill="#55d98d"/>
+<text class="matrixOwnerText" x="1268" y="574" text-anchor="middle">OWNER</text>
+<rect class="matrixHead" x="44" y="592" width="256" height="72"/>
+<text class="matrixText" x="62" y="633">消息 FTS 与重建进度</text>
+<rect class="matrixCell" x="300" y="592" width="176" height="72"/>
+<rect class="matrixCell" x="476" y="592" width="176" height="72"/>
+<rect class="matrixCell" x="652" y="592" width="176" height="72"/>
+<rect class="matrixOwner" x="828" y="592" width="176" height="72"/>
+<circle cx="916" cy="621" r="6" fill="#55d98d"/>
+<text class="matrixOwnerText" x="916" y="646" text-anchor="middle">OWNER</text>
+<rect class="matrixCell" x="1004" y="592" width="176" height="72"/>
+<rect class="matrixCell" x="1180" y="592" width="176" height="72"/>
+<rect class="matrixHead" x="44" y="664" width="256" height="72"/>
+<text class="matrixText" x="62" y="705">派生检索与覆盖合同</text>
+<rect class="matrixCell" x="300" y="664" width="176" height="72"/>
+<rect class="matrixCell" x="476" y="664" width="176" height="72"/>
+<rect class="matrixOwner" x="652" y="664" width="176" height="72"/>
+<circle cx="740" cy="693" r="6" fill="#55d98d"/>
+<text class="matrixOwnerText" x="740" y="718" text-anchor="middle">OWNER</text>
+<rect class="matrixCell" x="828" y="664" width="176" height="72"/>
+<rect class="matrixCell" x="1004" y="664" width="176" height="72"/>
+<rect class="matrixCell" x="1180" y="664" width="176" height="72"/>
+</svg>

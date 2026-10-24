@@ -1,0 +1,150 @@
+# Mobile device Search Acceptance
+
+Mode: COMPLETE / UPGRADE. Owner: Chat business injection. Stage: EXECUTE under
+the approved Mobile Search completion request.
+
+The accepted Search and Mobile contracts already define device-only retrieval,
+original Messaging authority, scoped queries, full-screen Search, canonical
+message/thread anchors, Settings navigation, private lifecycle fencing, and
+bounded reads. This document connects those assertions to native proof.
+
+The selected native Gates passed on iOS Simulator and Android Emulator at the
+source recorded in the [evidence snapshot](./acceptance-evidence.md), with the
+required macOS Desktop regression. The existing Mobile Shell prototype is
+synchronized. Each later source must obtain fresh Gate evidence; these results
+do not prove physical hardware, OS background/lock behavior or full Search.
+
+- Real received Chinese messages, thread replies and long attachment filenames:
+  Search input, submit and result rows on each receiver.
+- Historical open, thread open, return, reopen, repeat and backspace:
+  canonical Chat anchor and unchanged original-source read counters.
+- Pagination, conversation scope, explicit refresh, empty/error recovery:
+  visible controls, real results and bounded native reads.
+- Real edits and retracts, forged authority and stale references:
+  receiver invalidation and typed native denial.
+- Background/resume and same-process account change:
+  private projection removal, new authenticated scope and old-cursor denial.
+- Settings, locale, touch targets and safe layout:
+  real target, readable copy and captured native geometry.
+- Persisted light/dark preferences and native software-keyboard typing:
+  real Settings save, distinct painted themes, input/submit/content clearance
+  against the visual viewport, and keyboard dismissal on both platforms.
+  iOS selects the input from the observed native accessibility tree. Android
+  binds the visible semantic input and its hit-tested center to the single
+  product WebView's observed native bounds, validates both coordinate scales,
+  and sends an Appium native touch. Chromium input children are not assumed to
+  exist in Android's accessibility snapshot. Both platforms require a visible
+  software keyboard and native typing before acknowledging the changed query;
+  Android uses native MOVE_END and SPACE key events. WebView focus alone is not
+  keyboard proof. The native tree and Android coordinate binding are retained.
+  Driver context always returns to the product WebView, including on failure.
+  The Search detail consumes the shared `useVisualKeyboardOverlap` measurement
+  to shrink its full-height rail; its result scroll root ends above the keyboard.
+- Theme rendering consumes the committed device preference through the root
+  LobeUI ThemeProvider. Captured title, result, source, history-boundary, scope,
+  filter and query text must retain at least 4.5:1 contrast against its actual ancestor-composited
+  background, including text opacity. Distinct backgrounds alone cannot pass.
+- Result source metadata follows the existing Social display-name policy;
+  identity locators cannot become conversation display copy.
+
+The Feature `chat-mobile-device-search` belongs to the existing Capability
+`chat-device-search`. `chat-mobile-device-search-native-e2e` uses
+`chat-mobile-search-simulator`, a business-owned composition of the existing
+Mobile Direct actor/reset owner and selected native-client provisioner.
+
+All changed Feature, Capability, Registry, Gate, concrete environment,
+provisioner, Journey and Mobile diagnostics files are business injection.
+Acceptance Core, runner, Evidence Store and generic schemas remain unchanged.
+
+One Suite provisions, authenticates and binds iOS Alice and Android Bob once.
+Before either actor enrolls, the Suite prepares one fresh identity seed per
+reset-owned actor in both existing installations. Same-process account switching
+then uses the same actor identity with each installation's own device identity.
+This is controlled fixture preparation, not fresh-device identity recovery.
+Seeds remain transient and are zeroized after preparation; no key enters proof.
+The account scenario restores the peer through real logout/login after the
+handoff revokes its session, rather than trusting its cached actor projection.
+After switching to an actor not previously active in that installation, it
+requires old-result absence and old-cursor denial, then switches the existing
+peer client to the other actor. Original `messaging.createGroup` creates one
+namespaced current-account conversation; both existing clients must observe its
+active projection before the peer sends fresh content. The switched receiver
+must commit that exact message and find it through real Search UI. The scenario
+restores both original accounts after capture. No client or actor is provisioned
+inside a scenario. Login and reopening an existing Direct do not acquire its
+old encrypted history; a `pending` creation response is not permission to send.
+This sample proves current-account isolation and newly acquired content, not
+new-device history recovery.
+The original Social owner establishes one accepted relationship and Direct
+conversation. Both actors then send through that same bidirectional conversation
+and receive messages from the other existing client; fixture preparation never
+creates a second direction-specific friend request. Each completed receiver
+fixture records its original message IDs before the UI scenarios. Scenarios
+attach to the same source commit and Fixture epoch. They use production
+Messaging actions for setup and real Search UI for query/open. Diagnostics
+support cost and denial assertions; they do not replace UI evidence.
+Both authenticated clients must expose a current native Search read scope and
+source revision before fixture preparation. Native lifecycle startup observes
+the actual OS state after callback registration; it cannot infer foreground
+from a rendered page. Failure diagnostics retain independent query, scope and
+cost observations even when one native diagnostic is denied.
+Fixture preparation waits for the original Social/Messaging write-admission
+projection and each receiver's exact committed message before issuing the next
+send. Every mutation observes the complete production Session/Social/Recovery
+admission and invokes its original guarded action in the same WebView turn.
+This prevents a remote readiness read from becoming stale before submission.
+Only admission observations are polled, for at most 30 seconds; a rejected
+mutation is never retried. All 105 historical messages require real receiver
+commitment.
+Failed runs preserve native screenshots, DOM and measured geometry before
+classifying layout failure. UI clicks wait for visible, enabled control surfaces
+and settled ancestor opacity before one WebDriver click; failures retain the
+current target selector. Settings selects are clicked through their visible
+control frame, while persisted language is observed through the product's
+document language and enabled combobox. Mutation failures also record the
+existing public Recovery projection's typed write-admission reason and the fixture send ordinal;
+they must not be hidden by retries or admission bypasses.
+Each source-bound client also records at most 32 existing Messaging runtime-error
+events inside its own WebView lifetime. Failure diagnostics redact and preserve
+the operation and original error, so a dependency-failed route cannot conceal
+its originating native/projection failure.
+Android Appium sessions bind `nativeWebScreenshot=true`; Search captures the
+UiAutomator screenshot while retaining WebView context. This preserves native
+keyboard/system pixels without repeating ADB context discovery for every frame.
+Query, navigation and runtime-error diagnostics are collected before native
+screenshot or lifecycle waits. A failed canonical message-focus wait preserves
+its last observed product surfaces, message nodes, window scope, active element
+and runtime errors independently of subsequent driver availability.
+Every started scenario ends its lifecycle in `finally`, including an assertion
+failure. This permits the Suite owner to complete cleanup; missing UI/receiver
+assertions and the original exception keep the failed scenario unproven.
+
+Theme interaction contract:
+
+```yaml
+surface: mobile.search
+given: [readable received result, current device preference]
+when: [save opposite theme through Chat Settings, return to Search]
+then: [committed theme in root UI provider, same matching received result]
+visual_invariants: [text contrast at least 4.5:1 including scope and filters, semantic header surface]
+forbidden: [dark surface with light-theme text tokens, background-only proof]
+evidence: [native screenshot, DOM, composited text contrast, persisted preference]
+```
+
+Post-login WebView restart must restore the exact persisted Station route before
+Search can activate. Both route restore and refresh return the native
+`StationRouteRefreshProjection` containing `binding` and the verified `route`
+from the same discovery. Station runtime retains its authority, generation,
+revision, pinned root and node checks. A bare binding cannot satisfy bootstrap;
+the bilateral authentication step must reject that return-contract regression.
+
+Resources: active reviewed `three` Profile, disposable same-Station fixture,
+fresh iOS Simulator, isolated Android Emulator, dynamic Appium/client ports,
+source-attested native builds and namespaced runtime storage. The existing
+owners acquire leases, verify reset authority, and release owned sessions,
+applications, devices, ports, storage and leases in reverse order.
+
+Physical hardware, OEM scheduling, assistive-technology traversal, Applet
+contributors, Station Search, Ask and cross-Station transport are outside this
+proof. Shared Search changes additionally require the current-source Desktop
+device Search regression.

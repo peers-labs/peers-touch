@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-24
-covered_docs_hash: ff7d0172e7bcc3dca7a244335ea771dc889ad523ddaaef71d88ecaefd36dd239
+covered_docs_hash: 5b1325cb4767b63b68bd1a13c08dce787c69de1bff65ad254961be9835697f79
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,38 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Desktop Search Continuity Review
+
+The Desktop runtime contract now delegates bounded query subscriptions and
+previous-result projection to one headless coordinator while native owners
+continue to control read validity, cancellation and opening. The interaction
+contract keeps draft input separate from displayed query and preserves results,
+selection and scroll until commit. Existing lifecycle, dependency and evidence
+rules cover this change; the business Gate owns the added rendered-frame
+assertion. Functional observations do not replace current formal native proof.
+
+## Generated Coverage Inventory Review
+
+The generated Acceptance inventory now includes the registered Desktop/Mobile
+Search and unified-client Features: 48 wired Features and zero global proven
+Features. These counts describe wiring, and retain unexecuted or stale evidence
+as unproven. They were checked against the Feature and Gate catalogs. Existing
+source-bound proof rules already require this distinction; no review rule,
+waiver, fixture deletion or severity change is introduced.
+
+## Search Source And SQLCipher Knowledge Integration
+
+The covered index changes add the canonical Desktop/Mobile closed-domain Search
+source and its precisely bound native evidence to `docs/README.md`, and the
+raw-byte SQLCipher key pitfall to `docs/knowledge/README.md`. The covered Desktop
+runtime contract makes Search session-scoped after Messaging, with an on-demand
+Shell overlay and identity/Station invalidation instead of a persistent page.
+These changes were reviewed against the existing domain ownership, runtime,
+current-source evidence, security and knowledge-delta rules. The current review
+Skill already requires those boundaries and rejects inherited PASS; no new
+review authority, waiver, `SKILL.md` rule or fixture is needed. The architecture
+registry fixture checks the exact Search module and capability IDs.
 
 ## 2026-10-24 X-Config Distribution And Knowledge Coverage Review
 

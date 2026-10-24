@@ -433,7 +433,7 @@ Desktop and Mobile share the same alive/lifetime contract (§5), but they realiz
 MobileShell (NavigationShell)
   MobileNavigationStore (descriptor-backed primary route + detail stack)
   mobile-content (active tab only)
-    ChatPage | MomentsPage | ContactsPage | SettingsPage
+    ChatPage | MomentsPage | ContactsPage | SettingsPage | selected SearchPage
       OverlayHost (action sheet, modals)
   mobile-tabbar (NavigationShell)
   RuntimeProjection: Mobile runtime registry + Messaging/Social projections
@@ -449,6 +449,10 @@ Layer mapping:
   projection readback, but they do not decide whether a detail tree is visible.
 - `RuntimeProjection` is owned by the Mobile runtime registry and feature
   stores, so projection truth stays fresh even while a tab tree is unmounted.
+- Search is a selected-only detail, lazy-loaded by Shell. Its runtime owns
+  scope revalidation and one bounded presentation page; native Search owns
+  retrieval and caching. Message/thread and Settings results push original
+  owner routes; returning restores presentation only after revalidation.
 
 ### 14.2 Mobile Alive Rules
 

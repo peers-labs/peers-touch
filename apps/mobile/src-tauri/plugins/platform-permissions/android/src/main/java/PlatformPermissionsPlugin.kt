@@ -23,6 +23,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType as WorkNetworkType
@@ -300,6 +302,22 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
                         "system_action_failed",
                     )
                 }
+            }
+        }
+    }
+
+    @Command
+    fun observeLifecycle(invoke: Invoke) {
+        activity.runOnUiThread {
+            execute(invoke, "observe-lifecycle") {
+                val owner = activity as? LifecycleOwner
+                    ?: throw IllegalStateException("activity lifecycle is unavailable")
+                val state = if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    LifecycleState.Foreground
+                } else {
+                    LifecycleState.Background
+                }
+                invoke.resolve(makeLifecycleSignal(state))
             }
         }
     }
@@ -982,13 +1000,17 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
         invoke.resolve(response)
     }
 
-    private fun emitLifecycleSignal(state: LifecycleState) {
+    private fun makeLifecycleSignal(state: LifecycleState): JSObject {
         val payload = JSObject()
         payload.put("platform", "android")
         payload.put("state", state.wireValue)
         payload.put("sequence", lifecycleSequence.incrementAndGet())
         payload.put("timestampMs", System.currentTimeMillis())
-        trigger(LIFECYCLE_EVENT, payload)
+        return payload
+    }
+
+    private fun emitLifecycleSignal(state: LifecycleState) {
+        trigger(LIFECYCLE_EVENT, makeLifecycleSignal(state))
     }
 
     private fun emitCurrentNetworkSignal(onEmitted: (JSObject) -> Unit = { _ -> }) {

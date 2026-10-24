@@ -7699,20 +7699,23 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             contract_clients = {
                 client.id: client
                 for client in environment_clients
-                if client.runtime == "tauri-ios-simulator"
+                if client.runtime in {
+                    "tauri-ios-simulator", "tauri-android-emulator"
+                }
             }
             base_clients = {
                 client.profile: client for client in base_manifest.clients
             }
-            required_client_ids = ("sim-ios", "sim-ios-peer")
+            required_client_ids = tuple(contract_clients)
             if (
+                len(required_client_ids) != 2
+                or
                 set(base_clients) != set(required_client_ids)
-                or set(contract_clients) != set(required_client_ids)
             ):
                 raise BlockedError(
                     reason=(
-                        f"{self.environment_id} requires both isolated iOS "
-                        "simulator clients"
+                        f"{self.environment_id} requires its two isolated "
+                        "contract-selected Mobile clients"
                     ),
                     resource=f"{self.environment_id}:clients",
                 )

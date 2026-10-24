@@ -47,6 +47,57 @@
   ],
   "modules": [
     {
+      "id": "search",
+      "root": "docs/architecture/domains/search",
+      "status": "active",
+      "owner": "Search / Client / Station",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "D-01", "D-02", "D-03", "D-04", "D-05", "D-06", "D-07",
+        "D-12", "D-13", "D-16", "D-17", "D-19", "D-20"
+      ],
+      "governedPaths": [
+        "docs/architecture/domains/search",
+        "model/domain/search",
+        "apps/desktop/src-tauri/src/application/search",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/search.rs",
+        "apps/mobile/src-tauri/src/runtime/search.rs",
+        "apps/mobile/src-tauri/src/commands/search.rs"
+      ],
+      "capabilities": [
+        {
+          "id": "search.device.find",
+          "owner": "search",
+          "contractRoots": ["model/domain/search/search.proto"],
+          "consumers": [
+            "apps/desktop/src-tauri/src/application/search",
+            "apps/desktop/src-tauri/src/interface/tauri_commands/search.rs",
+            "apps/mobile/src-tauri/src/runtime/search.rs",
+            "apps/mobile/src-tauri/src/commands/search.rs"
+          ],
+          "allowedDependencies": ["client.search.portable-core"],
+          "evidenceGates": ["CCR-G02", "CCR-G09"]
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "architecture-module-governance",
       "root": "docs/architecture/engineering/architecture-governance",
       "status": "active",
@@ -1026,7 +1077,8 @@
         "packages/messaging-core/Cargo.toml",
         "packages/messaging-native-filesystem/Cargo.toml",
         "packages/secure-content-core/Cargo.toml",
-        "packages/station-trust/Cargo.toml"
+        "packages/station-trust/Cargo.toml",
+        "packages/search-core/Cargo.toml"
       ],
       "capabilities": [
         {
@@ -1277,6 +1329,24 @@
             "CCR-G02",
             "CCR-G09",
             "station-identity-contract"
+          ],
+          "reuseLayer": "portable-rust-core"
+        },
+        {
+          "id": "client.search.portable-core",
+          "owner": "search",
+          "contractRoots": [
+            "packages/search-core/Cargo.toml"
+          ],
+          "consumers": [
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml",
+            "packages/messaging-core/Cargo.toml"
+          ],
+          "allowedDependencies": [],
+          "evidenceGates": [
+            "CCR-G02",
+            "CCR-G09"
           ],
           "reuseLayer": "portable-rust-core"
         }

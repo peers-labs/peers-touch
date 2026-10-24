@@ -24,7 +24,7 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect(primaryTabDescriptors.every((descriptor) => (
       descriptor.layout === 'primary' && descriptor.keepAlive === false
     ))).toBe(true);
-    expect(detailDescriptors).toHaveLength(10);
+    expect(detailDescriptors).toHaveLength(11);
     expect(detailDescriptors.every((descriptor) => (
       descriptor.layout === 'detail' && descriptor.keepAlive === false
     ))).toBe(true);
@@ -46,6 +46,24 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect([...detailDescriptors, ...overlayDescriptors].some(
       (descriptor) => descriptor.ownerRuntimeId === 'group',
     )).toBe(false);
+  });
+
+  it('returns from the exact message anchor to Search and then its origin', () => {
+    const navigation = useMobileNavigationStore.getState();
+    navigation.navigatePrimary('tab:settings');
+    navigation.pushDetail({ routeId: 'detail:search' });
+    navigation.pushDetail({
+      routeId: 'detail:chat-conversation', sessionUlid: 'direct',
+      messageId: 'reply', threadRootMessageId: 'root',
+    });
+    expect(navigationLocationKey(activeMobileDetailRoute(useMobileNavigationStore.getState())!))
+      .toBe('detail:chat-conversation:direct:reply');
+    navigation.popDetail();
+    expect(activeMobileDetailRoute(useMobileNavigationStore.getState())?.routeId).toBe('detail:search');
+    navigation.popDetail();
+    expect(useMobileNavigationStore.getState().primaryRouteId).toBe('tab:settings');
+    expect(detailDescriptors.find(route => route.routeId === 'detail:search'))
+      .toMatchObject({ ownerRuntimeId: 'search', keepAlive: false });
   });
 
   it('owns primary and detail route identity independently of business stores', () => {

@@ -1,0 +1,40 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "search.device-query",
+  "module": "search",
+  "viewpoint": "dynamic-flow",
+  "layout": "sequence",
+  "output": "device-query.svg",
+  "title": "Search 端侧查询与打开时序",
+  "canvas": {"width": 1400, "height": 1120},
+  "edgeMeaning": "箭头表示本机读取与打开的时间顺序",
+  "scene": {
+    "participants": [
+      {"id": "ui", "title": "Search UI", "tone": "neutral"},
+      {"id": "binding", "title": "Native Binding", "tone": "secondary"},
+      {"id": "core", "title": "Search Core", "tone": "primary"},
+      {"id": "domain", "title": "Messaging", "tone": "state"},
+      {"id": "shell", "title": "Shell / Chat", "tone": "neutral"}
+    ],
+    "messages": [
+      {"from": "ui", "to": "binding", "label": "QueryIntent", "at": 1, "style": "primary"},
+      {"from": "binding", "to": "core", "label": "scope + revision", "at": 2, "style": "primary"},
+      {"from": "core", "to": "domain", "label": "query + hydrate", "at": 3, "style": "primary"},
+      {"from": "domain", "to": "core", "label": "authorized projection", "at": 4, "style": "return"},
+      {"from": "core", "to": "binding", "label": "bounded result frame", "at": 5, "style": "return"},
+      {"from": "binding", "to": "ui", "label": "guarded publication", "at": 6, "style": "return"},
+      {"from": "ui", "to": "binding", "label": "ResourceRef", "at": 7, "style": "primary"},
+      {"from": "binding", "to": "core", "label": "resolve", "at": 8, "style": "primary"},
+      {"from": "core", "to": "domain", "label": "current read authority", "at": 9, "style": "primary"},
+      {"from": "domain", "to": "core", "label": "original anchor", "at": 10, "style": "return"},
+      {"from": "core", "to": "binding", "label": "resolve outcome", "at": 11, "style": "return"},
+      {"from": "binding", "to": "ui", "label": "guarded anchor", "at": 12, "style": "return"},
+      {"from": "ui", "to": "shell", "label": "open message / thread", "at": 13, "style": "primary"}
+    ],
+    "fragments": [
+      {"kind": "region", "label": "查询与逐项读权", "startAt": 1, "endAt": 6, "tone": "primary"},
+      {"kind": "region", "label": "打开时重新裁决", "startAt": 7, "endAt": 13, "tone": "secondary"}
+    ]
+  }
+}

@@ -18,7 +18,7 @@
  * The page never fetches or persists data directly.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Avatar, Button, Card, Empty, Modal, Spin, Typography } from 'antd';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -102,6 +102,7 @@ interface SettingsPageProps {
   readonly activeSettingId: MobileSettingDetailId | null;
   readonly onOpenSetting: (settingId: MobileSettingDetailId) => void;
   readonly onBack: () => void;
+  readonly searchEntry?: ReactNode;
   readonly onChangeStation: () => Promise<void>;
   readonly onChangeStationRoute: (
     stationPeerId: string,
@@ -172,6 +173,7 @@ function SettingsPageContent({
   activeSettingId,
   onOpenSetting,
   onBack,
+  searchEntry,
   onChangeStation,
   onChangeStationRoute,
   onLogout,
@@ -551,6 +553,7 @@ function SettingsPageContent({
       {/* The page is already Settings; profile details remain the first row. */}
       <header className="page-header">
         <h1 className="header-title">{t('mobile.settings.title')}</h1>
+        {searchEntry}
       </header>
 
       <div className="settings-body">

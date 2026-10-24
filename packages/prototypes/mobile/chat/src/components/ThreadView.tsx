@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Input, Typography } from 'antd';
 import { ArrowLeft, Plus, Send } from 'lucide-react';
 import type { Message, Conversation } from '../types';
@@ -7,9 +7,22 @@ import { IdentityAvatar } from './IdentityAvatar';
 
 const { Text } = Typography;
 
-export function ThreadView({ message, conversation, onBack }: { message: Message; conversation: Conversation; onBack: () => void }) {
+export function ThreadView({ message, conversation, onBack, targetId, onReply }: {
+  message: Message; conversation: Conversation; onBack: () => void; targetId?: string;
+  onReply: (reply: Message) => void;
+}) {
   const [threadInput, setThreadInput] = useState('');
-  const [localReplies, setLocalReplies] = useState<Message[]>(message.threadReplies ?? []);
+  const replies = message.threadReplies ?? [];
+  const root = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!targetId) return;
+    const row = Array.from(root.current?.querySelectorAll<HTMLElement>('[data-thread-message-id]') ?? [])
+      .find(item => item.dataset.threadMessageId === targetId);
+    const viewport = row?.closest<HTMLElement>('[data-thread-viewport]');
+    if (row && viewport) viewport.scrollTop += row.getBoundingClientRect().top
+      - viewport.getBoundingClientRect().top - (viewport.clientHeight - row.clientHeight) / 2;
+    row?.focus({ preventScroll: true });
+  }, [targetId]);
 
   function handleThreadSend() {
     const text = threadInput.trim();
@@ -21,12 +34,12 @@ export function ThreadView({ message, conversation, onBack }: { message: Message
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'sent',
     };
-    setLocalReplies((prev) => [...prev, newReply]);
+    onReply(newReply);
     setThreadInput('');
   }
 
   return (
-    <div className="mp-thread-view">
+    <div className="mp-thread-view" ref={root}>
       <header className="mp-thread-header">
         <button type="button" className="mp-thread-back" onClick={onBack} aria-label="Back">
           <ArrowLeft size={22} />
@@ -44,11 +57,12 @@ export function ThreadView({ message, conversation, onBack }: { message: Message
         <div className="mp-thread-root-text">{message.text}</div>
       </div>
 
-      <div className="mp-thread-replies-header">{localReplies.length} replies</div>
+      <div className="mp-thread-replies-header">{replies.length} replies</div>
 
-      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        {localReplies.map((reply) => (
-          <div key={reply.id} className="mp-thread-reply-item">
+      <div data-thread-viewport style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        {replies.map((reply) => (
+          <div key={reply.id} className="mp-thread-reply-item" data-thread-message-id={reply.id}
+            data-search-target={reply.id === targetId || undefined} tabIndex={-1}>
             <IdentityAvatar
               name={reply.mine ? 'Alice Chen' : conversation.name}
               initials={reply.mine ? 'AC' : conversation.avatar}

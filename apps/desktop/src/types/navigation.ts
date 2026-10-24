@@ -4,7 +4,6 @@ export type { AccountIdentity };
 
 const CORE_PAGES = [
   'home',
-  'search',
   'chat',
   'agent',
   'moments',
@@ -20,7 +19,7 @@ const CORE_PAGES = [
 
 export type CorePage = (typeof CORE_PAGES)[number];
 export type Page = CorePage | `applet:${string}`;
-export const DEFAULT_READY_PAGE: Page = 'search';
+export const DEFAULT_READY_PAGE: Page = 'chat';
 
 export function isCorePageOrKnown(segment: string): segment is Page {
   if ((CORE_PAGES as readonly string[]).includes(segment)) return true;
@@ -85,5 +84,4 @@ export interface Navigation {
   navigateTo: (page: Page) => void;
   navigateToAgentSurface: (agentName: string, surface: 'chat' | 'profile') => void;
   navigateToSettings: (tab: string, highlightId?: string) => void;
-  handleSearchNavigate: (url: string) => void;
 }

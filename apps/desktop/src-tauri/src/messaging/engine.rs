@@ -520,6 +520,10 @@ pub struct MessagingEngine {
 }
 
 impl MessagingEngine {
+    pub(crate) fn incarnation(&self) -> &str {
+        &self.consumer_id
+    }
+
     pub(crate) fn station_client(&self) -> &StationClient {
         &self.station_client
     }
@@ -2620,6 +2624,46 @@ impl MessagingEngine {
             .conversation_message_page(conversation_id, before_sequence, limit)
     }
 
+    pub(crate) fn message_anchor_page(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        limit: usize,
+    ) -> Result<ConversationMessagePage, String> {
+        let anchor = self
+            .store
+            .message_anchor(conversation_id, message_id, &self.endpoint.ptid)?
+            .ok_or_else(|| "message anchor unavailable".to_string())?;
+        if anchor
+            .thread_root_message_id
+            .as_deref()
+            .is_some_and(|id| !id.is_empty())
+        {
+            return Ok(ConversationMessagePage {
+                messages: vec![anchor],
+                has_more: false,
+                next_before_sequence: None,
+            });
+        }
+        let sequence = anchor
+            .event_sequence
+            .ok_or_else(|| "message anchor sequence missing".to_string())?;
+        let before = sequence
+            .checked_add(1)
+            .ok_or_else(|| "message anchor sequence invalid".to_string())?;
+        let page = self
+            .store
+            .conversation_message_page(conversation_id, Some(before), limit)?;
+        if !page
+            .messages
+            .iter()
+            .any(|message| message.message_id == message_id)
+        {
+            return Err("message anchor unavailable".into());
+        }
+        Ok(page)
+    }
+
     pub fn conversation_summary(
         &self,
         conversation_id: &str,
@@ -2658,6 +2702,145 @@ impl MessagingEngine {
     ) -> Result<Vec<ConversationMessageProjection>, String> {
         self.store
             .search_message_projections(conversation_id, query, before, limit)
+    }
+
+    pub(crate) fn search_revision(&self) -> Result<String, String> {
+        self.store.search_revision()
+    }
+
+    pub(crate) fn search_authorities(&self) -> Result<Vec<String>, String> {
+        let mut namespaces = self.store.search_authorities(&self.endpoint.ptid)?;
+        let home = self
+            .station_client
+            .active_station_peer_id()
+            .ok_or_else(|| "search Station identity unavailable".to_string())?;
+        let home = format!("station:{home}");
+        if !namespaces.contains(&home) {
+            namespaces.push(home);
+        }
+        namespaces.sort();
+        Ok(namespaces)
+    }
+
+    pub(crate) fn with_search_revision<T>(
+        &self,
+        expected: &str,
+        publish: impl FnOnce() -> Result<T, search_core::SearchError>,
+    ) -> Result<T, search_core::SearchError> {
+        self.store.with_search_revision(expected, publish)
+    }
+
+    pub(crate) fn search_read_resources(
+        &self,
+        refs: &[search_core::ResourceRef],
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<search_core::ScoredDocument>, String> {
+        self.store
+            .search_read_resources(refs, &self.endpoint.ptid, check)
+    }
+
+    /// Cross-conversation device search for the closed-domain Search overlay.
+    /// Returns fused search-core documents from the encrypted local FTS
+    /// projection. Conversation display names are resolved from the local
+    /// conversations table so the renderer never joins store tables itself.
+    pub fn search_device_documents(
+        &self,
+        conversation: Option<&str>,
+        query: &str,
+        attachment_names_only: bool,
+        before: Option<(i64, &str, &str)>,
+        limit: usize,
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<search_core::ScoredDocument>, String> {
+        use search_core::model::{ResourceRef, ResultKind, TrustZone};
+        check()?;
+        let hits = self.store.search_message_hits_page_checked(
+            conversation,
+            query,
+            attachment_names_only,
+            before,
+            limit,
+            Some(&self.endpoint.ptid),
+            check,
+        )?;
+        check()?;
+        let mut documents = Vec::with_capacity(hits.len());
+        for hit in hits {
+            check()?;
+            let conversation_title = hit.conversation_title;
+            documents.push(search_core::ScoredDocument {
+                resource: ResourceRef {
+                    kind: "message".to_string(),
+                    id: hit.message_id.clone(),
+                    conversation_id: hit.conversation_id.clone(),
+                    message_id: hit.message_id.clone(),
+                    target_page: String::new(),
+                    authority_namespace: hit.authority_namespace,
+                    anchor: Some(search_core::model::wire::ResourceAnchor {
+                        kind: "message".into(),
+                        id: hit.message_id,
+                    }),
+                    ..Default::default()
+                },
+                kind: ResultKind::Message,
+                zone: TrustZone::DeviceE2ee,
+                title: conversation_title.clone(),
+                snippet: hit.plaintext.chars().take(512).collect(),
+                conversation_title,
+                author_ptid: hit.sender_ptid,
+                created_at_unix_ms: hit.committed_at_unix_ms,
+                score: 0.0,
+            });
+        }
+        Ok(documents)
+    }
+
+    /// Immediate in-conversation name suggestions for the overlay's
+    /// suggestion phase (no full-text scan). Returns conversation resources.
+    pub fn suggest_conversations(
+        &self,
+        conversation: Option<&str>,
+        query: &str,
+        limit: usize,
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<search_core::ScoredDocument>, String> {
+        use search_core::model::{ResourceRef, ResultKind, TrustZone};
+        check()?;
+        let conversations = self.store.suggest_conversation_names(
+            conversation,
+            query,
+            limit,
+            &self.endpoint.ptid,
+            check,
+        )?;
+        check()?;
+        let mut documents = Vec::new();
+        for (conversation_id, name, updated_at_unix_ms, authority_namespace) in conversations {
+            check()?;
+            documents.push(search_core::ScoredDocument {
+                resource: ResourceRef {
+                    kind: "conversation".to_string(),
+                    id: conversation_id.clone(),
+                    conversation_id,
+                    message_id: String::new(),
+                    target_page: String::new(),
+                    authority_namespace,
+                    ..Default::default()
+                },
+                kind: ResultKind::Conversation,
+                zone: TrustZone::DeviceE2ee,
+                title: name.clone(),
+                snippet: String::new(),
+                conversation_title: name,
+                author_ptid: String::new(),
+                created_at_unix_ms: updated_at_unix_ms,
+                score: 0.0,
+            });
+            if documents.len() >= limit {
+                break;
+            }
+        }
+        Ok(documents)
     }
 
     pub fn create_direct_conversation(

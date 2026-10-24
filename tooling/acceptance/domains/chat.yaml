@@ -25,7 +25,8 @@
     "chat-storage-batch-clear",
     "chat-storage-governance-integrity",
     "chat-message-interactions",
-    "chat-typing-presence"
+    "chat-typing-presence",
+    "chat-device-search"
   ],
   "validation_gate_id": "chat-domain-validation"
 }

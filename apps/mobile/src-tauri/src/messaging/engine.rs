@@ -407,6 +407,7 @@ type CoreItemConsumer =
 
 pub struct MobileMessagingEngine {
     profile_id: String,
+    incarnation: String,
     scope: MessagingAccountScope,
     store: Arc<MobileMessagingStore>,
     attachment_root: PathBuf,
@@ -603,6 +604,7 @@ impl MobileMessagingEngine {
 
         Ok(Self {
             profile_id,
+            incarnation: Ulid::new().to_string(),
             scope,
             store,
             attachment_root,
@@ -626,6 +628,18 @@ impl MobileMessagingEngine {
 
     pub fn profile_id(&self) -> &str {
         &self.profile_id
+    }
+
+    pub(crate) fn incarnation(&self) -> &str {
+        &self.incarnation
+    }
+
+    pub(crate) fn with_search_revision<T>(
+        &self,
+        expected: &str,
+        publish: impl FnOnce() -> Result<T, search_core::SearchError>,
+    ) -> Result<T, search_core::SearchError> {
+        self.store.with_search_revision(expected, publish)
     }
 
     fn consumer_epoch_observer(&self) -> ConsumerEpochObserver {
@@ -1886,17 +1900,6 @@ impl MobileMessagingEngine {
     ) -> Result<Vec<ConversationMessageProjection>, String> {
         self.store
             .thread_message_projections(conversation_id, thread_root_message_id)
-    }
-
-    pub fn search_messages(
-        &self,
-        conversation_id: &str,
-        query: &str,
-        before: Option<(i64, &str)>,
-        limit: usize,
-    ) -> Result<Vec<ConversationMessageProjection>, String> {
-        self.store
-            .search_message_projections(conversation_id, query, before, limit)
     }
 
     pub fn command_status(

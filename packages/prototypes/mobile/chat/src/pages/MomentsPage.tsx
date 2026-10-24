@@ -224,7 +224,9 @@ function preparedMoments(): Moment[] {
 export function MomentsPage({
   scenario = 'social-parity',
   onImmersiveVisibilityChange,
+  headerActions,
 }: {
+  headerActions?: ReactNode;
   scenario?: MomentsEvidenceScenario;
   onImmersiveVisibilityChange?: (visible: boolean) => void;
 }) {
@@ -422,6 +424,7 @@ export function MomentsPage({
       <header className="mp-header">
         <h1 className="mp-header-title">Moments</h1>
         <div className="mp-social-header-actions">
+          {headerActions}
           <IconButton label="Search people" onClick={() => navigate('search')}><Search size={19} /></IconButton>
           <IconButton label="Manage circles" onClick={() => navigate('circles')}><UsersRound size={19} /></IconButton>
           <IconButton label="New post" onClick={() => setShowComposer(true)}><ImagePlus size={20} /></IconButton>

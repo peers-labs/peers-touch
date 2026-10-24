@@ -85,6 +85,32 @@ pub(crate) fn authenticated_native_session(
     authenticated_native_session_inner(storage, station_peer_id, actor_ptid, session_id)
 }
 
+/// The renderer supplies no account. Resolve the native current-session index,
+/// then validate the complete Station/Actor/device/auth-generation binding.
+/// The caller must hold OAuthCoordinator's read admission guard.
+pub(crate) fn current_authenticated_native_session(
+    storage: &SecureStorage,
+) -> MobileResult<AuthenticatedNativeSession> {
+    let key = storage
+        .get_secret(CURRENT_SESSION_INDEX_KEY)?
+        .ok_or_else(|| oauth_error("sessionMissing"))?;
+    let session = read_json::<_, PersistedNativeSession>(storage, &key)?
+        .ok_or_else(|| oauth_error("sessionIndexCorrupt"))?;
+    let expiry = session
+        .expires_at
+        .parse::<prost_types::Timestamp>()
+        .map_err(|_| oauth_error("sessionExpiryInvalid"))?;
+    if super::timestamp_to_unix_ms(Some(&expiry))? <= super::now_unix_ms() {
+        return Err(oauth_error("sessionExpired"));
+    }
+    authenticated_native_session_inner(
+        storage,
+        &session.station_peer_id,
+        &session.actor_ptid,
+        &session.session_id,
+    )
+}
+
 impl OAuthCoordinator {
     pub fn session_projection(
         &self,

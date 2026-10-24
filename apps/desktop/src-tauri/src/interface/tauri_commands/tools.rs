@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::{State, Window};
 
 use crate::application::session_resolver;
-use crate::contracts::{SearchPrimaryInput, StubPayload};
+use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
 
@@ -16,14 +16,4 @@ pub fn tools_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     application_tools::tools_list(&actor_ptid)
-}
-
-#[tauri::command]
-pub fn tools_search_providers() -> AppResult<StubPayload> {
-    application_tools::tools_search_providers()
-}
-
-#[tauri::command]
-pub fn tools_set_search_primary(input: SearchPrimaryInput) -> AppResult<StubPayload> {
-    application_tools::tools_set_search_primary(input)
 }

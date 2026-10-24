@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1400 760" width="1400" height="760"
+  role="img" aria-labelledby="title-search.reuse-topology">
+<style>
+  .canvas { fill: #111418; }
+  .headerRule { stroke: #30363d; stroke-width: 1; }
+  .title { fill: #f4f7fa; font: 600 30px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .viewpoint { fill: #8c98a4; font: 600 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .boundary { fill: none; stroke: #69737d; stroke-width: 1.5; stroke-dasharray: 7 6; }
+  .boundaryTitle { fill: #aeb7c0; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .zone { fill: #171b20; stroke: #343b43; stroke-width: 1.4; }
+  .zone-primary { fill: #152019; stroke: #55d98d; }
+  .zone-secondary { fill: #141d25; stroke: #65b8ff; }
+  .zone-state { fill: #211d14; stroke: #e0b35a; }
+  .zone-external { fill: #191b1e; stroke: #7c8792; stroke-dasharray: 6 5; }
+  .zone-muted { fill: #14171b; stroke: #2c3239; }
+  .zoneTitle { fill: #aeb7c0; font: 600 15px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .node { fill: #1b2026; stroke: #49525c; stroke-width: 1.4; }
+  .node-primary { fill: #17231b; stroke: #55d98d; stroke-width: 1.8; }
+  .node-secondary { fill: #16212b; stroke: #65b8ff; }
+  .node-state { fill: #252116; stroke: #e0b35a; }
+  .node-external { fill: #1a1d21; stroke: #7c8792; }
+  .node-muted { fill: #161a1f; stroke: #343b43; }
+  .nodeTitle { fill: #f0f3f6; font: 600 18px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .nodeCaption { fill: #9da8b3; font: 400 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .edge { fill: none; stroke: #55d98d; stroke-width: 2; stroke-linejoin: round; }
+  .edge-secondary { stroke: #65b8ff; }
+  .edge-return { stroke: #a6b0ba; stroke-dasharray: 6 5; }
+  .edge-event { stroke: #e0b35a; stroke-dasharray: 3 4; }
+  .edge-feedback { stroke: #d48787; stroke-dasharray: 7 5; }
+  .edgeLabelBox { fill: #111418; stroke: #30363d; stroke-width: 1; }
+  .edgeLabel { fill: #d7dde3; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .band { fill: #171b20; }
+  .band-primary { fill: #142019; }
+  .band-secondary { fill: #141d25; }
+  .band-state { fill: #201c14; }
+  .band-muted { fill: #14171b; }
+  .bandRule { stroke: #30363d; stroke-width: 1; }
+  .bandTitle { fill: #8f9aa5; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .lifeline { stroke: #48515a; stroke-width: 1.3; stroke-dasharray: 5 6; }
+  .fragment { fill: #151a1f; stroke: #3b444d; stroke-width: 1; }
+  .fragment-primary { fill: #142019; stroke: #3d7555; }
+  .fragment-secondary { fill: #141d25; stroke: #416884; }
+  .fragmentLabel { fill: #aeb7c0; font: 600 12px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .matrixHead { fill: #181d22; stroke: #343b43; stroke-width: 1; }
+  .matrixCell { fill: #14181d; stroke: #2d343c; stroke-width: 1; }
+  .matrixOwner { fill: #17301f; stroke: #55d98d; stroke-width: 1.4; }
+  .matrixText { fill: #d8dee4; font: 500 14px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .matrixOwnerText { fill: #7fe7a8; font: 700 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .guard { fill: #151a1f; stroke: #59636e; stroke-width: 1; }
+  .guard-primary { stroke: #55d98d; }
+  .guard-secondary { stroke: #65b8ff; }
+  .guard-state { stroke: #e0b35a; }
+  .guardLine { stroke: #59636e; stroke-width: 1; stroke-dasharray: 3 4; }
+  .guardText { fill: #b4bec8; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+</style>
+<defs>
+  <marker id="arrow-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#55d98d"/>
+  </marker>
+  <marker id="arrow-secondary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#65b8ff"/>
+  </marker>
+  <marker id="arrow-return" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#a6b0ba"/>
+  </marker>
+  <marker id="arrow-event" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#e0b35a"/>
+  </marker>
+  <marker id="arrow-feedback" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#d48787"/>
+  </marker>
+</defs>
+<title id="title-search.reuse-topology">Search 端侧复用拓扑</title>
+<rect class="canvas" width="1400" height="760"/>
+<text class="title" x="44" y="48">Search 端侧复用拓扑</text>
+<text class="viewpoint" x="1356" y="46" text-anchor="end">REUSE-TOPOLOGY</text>
+<line class="headerRule" x1="44" y1="72" x2="1356" y2="72"/>
+<rect class="band band-secondary" x="44" y="100" width="1108" height="145"/>
+<line class="bandRule" x1="44" y1="100" x2="1152" y2="100"/>
+<text class="bandTitle" x="62" y="128">CLIENT BINDINGS</text>
+<rect class="node node-secondary" x="105" y="150" width="430" height="70" rx="6"/>
+<text class="nodeTitle" x="119" y="181">Desktop Native Search</text>
+<text class="nodeCaption" x="119" y="203">window · identity · Store guard</text>
+<rect class="node node-secondary" x="665" y="150" width="430" height="70" rx="6"/>
+<text class="nodeTitle" x="679" y="181">Mobile Native Search</text>
+<text class="nodeCaption" x="679" y="203">OAuth · OS lifecycle · Store guard</text>
+<rect class="band band-primary" x="44" y="265" width="1108" height="125"/>
+<line class="bandRule" x1="44" y1="265" x2="1152" y2="265"/>
+<text class="bandTitle" x="62" y="293">SHARED QUERY OWNER</text>
+<rect class="node node-primary" x="250" y="305" width="700" height="65" rx="6"/>
+<text class="nodeTitle" x="264" y="336">search-core</text>
+<text class="nodeCaption" x="264" y="353">query · cursor · cache · cancellation</text>
+<rect class="band band-state" x="44" y="415" width="1108" height="125"/>
+<line class="bandRule" x1="44" y1="415" x2="1152" y2="415"/>
+<text class="bandTitle" x="62" y="443">ORIGINAL DOMAIN ADAPTER</text>
+<rect class="node node-state" x="250" y="455" width="700" height="65" rx="6"/>
+<text class="nodeTitle" x="264" y="486">Messaging Search Contributor</text>
+<text class="nodeCaption" x="264" y="503">original authority · batch projection</text>
+<rect class="band band-muted" x="44" y="565" width="1108" height="155"/>
+<line class="bandRule" x1="44" y1="565" x2="1152" y2="565"/>
+<text class="bandTitle" x="62" y="593">DEVICE-PRIVATE TRUTH</text>
+<rect class="node node-muted" x="105" y="615" width="430" height="70" rx="6"/>
+<text class="nodeTitle" x="119" y="646">Desktop Messaging Store</text>
+<text class="nodeCaption" x="119" y="668">SQLCipher · original FTS</text>
+<rect class="node node-muted" x="665" y="615" width="430" height="70" rx="6"/>
+<text class="nodeTitle" x="679" y="646">Mobile Messaging Store</text>
+<text class="nodeCaption" x="679" y="668">SQLCipher · original FTS</text>
+<rect class="zone zone-external" x="1176" y="100" width="180" height="620" rx="6"/>
+<text class="zoneTitle" x="1190" y="128">MODEL CONTRACT</text>
+<rect class="node node-external" x="1190" y="305" width="152" height="65" rx="6"/>
+<text class="nodeTitle" x="1204" y="336">Search Proto</text>
+<text class="nodeCaption" x="1204" y="353">generated</text>
+<path class="edge edge-primary" d="M 320 220 L 320 255 L 600 255 L 600 305" marker-end="url(#arrow-primary)"/>
+<path class="edge edge-primary" d="M 880 220 L 880 255 L 600 255 L 600 305" marker-end="url(#arrow-primary)"/>
+<path class="edge edge-secondary" d="M 950 337.5 L 1190 337.5" marker-end="url(#arrow-secondary)"/>
+<path class="edge edge-primary" d="M 600 455 L 600 370" marker-end="url(#arrow-primary)"/>
+<path class="edge edge-primary" d="M 320 615 L 320 550 L 600 550 L 600 520" marker-end="url(#arrow-primary)"/>
+<path class="edge edge-primary" d="M 880 615 L 880 550 L 600 550 L 600 520" marker-end="url(#arrow-primary)"/>
+</svg>

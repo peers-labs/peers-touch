@@ -486,7 +486,7 @@ pub fn station_route_activate(
 pub async fn station_route_restore(
     storage: State<'_, SecureStorage>,
     input: StationRouteRestoreInput,
-) -> MobileResult<StationRouteBindingProjection> {
+) -> MobileResult<StationRouteRefreshProjection> {
     let station_peer_id = clean_identifier(&input.station_peer_id, "stationPeerId")?;
     let route_id = clean_identifier(&input.route_id, "routeId")?;
     let source = if input.source_ref.trim().is_empty() {
@@ -501,16 +501,20 @@ pub async fn station_route_restore(
         tauri::async_runtime::spawn_blocking(move || discover_station_input(&source, true))
             .await
             .map_err(|_| discovery_error("runtimeUnavailable"))??;
-    let exact = discovery.projection.routes.iter().any(|route| {
-        route.station_peer_id == station_peer_id
-            && route.route_id == route_id
-            && route.route_generation == input.route_generation
-    });
-    if !exact {
-        return Err(route_error("routeGenerationRevoked"));
-    }
+    let route = discovery
+        .projection
+        .routes
+        .iter()
+        .find(|route| {
+            route.station_peer_id == station_peer_id
+                && route.route_id == route_id
+                && route.route_generation == input.route_generation
+        })
+        .cloned()
+        .ok_or_else(|| route_error("routeGenerationRevoked"))?;
     ROUTES.register(&discovery)?;
-    ROUTES.activate(&station_peer_id, &route_id, input.route_revision)
+    let binding = ROUTES.activate(&station_peer_id, &route_id, input.route_revision)?;
+    Ok(StationRouteRefreshProjection { binding, route })
 }
 
 #[tauri::command]

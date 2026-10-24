@@ -8,6 +8,7 @@ const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const require = createRequire(resolve(repoRoot, 'apps/desktop/package.json'));
 const { chromium, expect } = require('@playwright/test');
 const copy = require(resolve(repoRoot, 'packages/locales/en/common.json'));
+const searchCopy = require(resolve(repoRoot, 'packages/locales/en/search.json'));
 const output = resolve(repoRoot, 'apps/mobile/src-tauri/target/prototype-long-lists');
 await mkdir(output, { recursive: true });
 const url = new URL(process.env.PROTOTYPE_URL ?? 'http://localhost:3262');
@@ -113,8 +114,9 @@ try {
       await device.getByRole('button', { name: 'More', exact: true }).click();
       await device.getByRole('button', { name: 'Search Chat History', exact: true }).click();
       await expect(messages()).toHaveCount(0);
-      await device.getByRole('searchbox', { name: copy['mobile.chat.searchMessagesPlaceholder'], exact: true }).fill(query);
-      await device.getByRole('button', { name: copy['mobile.contacts.search'], exact: true }).click();
+      await device.getByRole('textbox', { name: searchCopy['search.label'], exact: true }).fill(query);
+      await device.locator('[data-prototype-page="search"]')
+        .getByRole('button', { name: searchCopy['search.mobile.submit'], exact: true }).click();
     }
     async function atTail() {
       await expect.poll(() => scroller().evaluate((element) =>
@@ -154,12 +156,13 @@ try {
     await atTail();
 
     await searchHistory(copy['mobile.chat.threadReplyPlaceholder']);
-    const search = list('history-search');
+    const search = list('search');
     await device.screenshot({ path: resolve(output, `${viewport.width}-search.png`) });
     const searchCount = await traverse(search, 480, 100);
     await move(search, -1);
     await move(search, 1);
-    await search.locator('[data-scroll-anchor-id="long-message-001"]').click();
+    while (Number(await search.getAttribute('data-window-start')) > 0) await move(search, -1);
+    await search.locator('[data-scroll-anchor-id="long-chat-240:long-message-001"]').click();
     await expect(search).toHaveCount(0);
     const older = messages().locator('[data-scroll-anchor-id="long-message-001"]');
     await expect(older).toBeFocused();
@@ -168,8 +171,12 @@ try {
     await device.screenshot({ path: resolve(output, `${viewport.width}-older-target.png`) });
 
     // Reply-thread detail must unmount the message window and restore its reader.
+    const threadControl = older.getByRole('button', {
+      name: copy['mobile.chat.threadReplyCount'].replace('{{count}}', '3'), exact: true,
+    });
+    await threadControl.scrollIntoViewIfNeeded();
     const olderOffset = await offset(older);
-    await older.getByRole('button', { name: copy['mobile.chat.threadReplyCount'].replace('{{count}}', '3'), exact: true }).click();
+    await threadControl.click();
     await expect(messages()).toHaveCount(0);
     await expect(device.locator('.mp-thread-view')).toHaveCount(1);
     await device.getByRole('button', { name: 'Back', exact: true }).click();
@@ -194,9 +201,10 @@ try {
     await atTail();
 
     await searchHistory('no-sample-matches-this-query');
-    await expect(device.getByText(copy['mobile.chat.noMessageResults'], { exact: true })).toBeVisible();
-    await expect(rows(list('history-search'))).toHaveCount(0);
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(device.locator('[data-prototype-page="search"] [role="status"]').filter({
+      hasText: searchCopy['search.empty.title'].replace('{{query}}', 'no-sample-matches-this-query'),
+    })).toBeVisible();
+    await expect(rows(list('search'))).toHaveCount(0);
     await device.getByRole('button', { name: 'Back', exact: true }).click();
     await move(messages(), -1);
     const threadWindow = await messages().getAttribute('data-window-start');
@@ -245,6 +253,54 @@ try {
     }));
     assert(geometry.width >= 320 && !geometry.overflowing && !geometry.portalOverflow);
 
+    // Search and Chat share one Shell-owned sample snapshot across unmounts.
+    await open('long-lists');
+    await rows(list('conversations')).first().click();
+    const retainedText = 'local-search-continuity';
+    await device.getByPlaceholder('Message', { exact: true }).fill(retainedText);
+    await device.getByRole('button', { name: 'Send', exact: true }).click();
+    await searchHistory(retainedText);
+    await expect(rows(list('search'))).toHaveCount(1);
+    const retainedId = (await rows(list('search')).first().getAttribute('data-scroll-anchor-id'))
+      .slice('long-chat-001:'.length);
+    await rows(list('search')).first().click();
+    await expect(messages().locator(`[data-scroll-anchor-id="${retainedId}"]`)).toBeFocused();
+    await device.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(device.getByRole('textbox', { name: searchCopy['search.label'], exact: true })).toHaveValue(retainedText);
+    await device.getByRole('button', { name: 'Back', exact: true }).click();
+    await device.getByRole('button', { name: 'Back', exact: true }).click();
+    await rows(list('conversations')).nth(1).click();
+    await searchHistory(retainedText);
+    await expect(rows(list('search'))).toHaveCount(0);
+    await device.getByRole('button', { name: searchCopy['search.mobile.expandScope'], exact: true }).click();
+    await expect(rows(list('search'))).toHaveCount(1);
+    await rows(list('search')).first().click();
+    const retainedMessage = messages().locator(`[data-scroll-anchor-id="${retainedId}"]`);
+    await expect(retainedMessage).toBeFocused();
+    await retainedMessage.locator('.mp-bubble').click({ button: 'right' });
+    await device.getByRole('button', { name: copy['mobile.chat.deleteForMe'], exact: true }).click();
+    await device.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(rows(list('search'))).toHaveCount(0);
+    await expect(device.getByText(searchCopy['search.empty.detail'], { exact: true })).toBeVisible();
+
+    await open('long-lists');
+    await rows(list('conversations')).first().click();
+    await searchHistory(`${copy['mobile.chat.threadReplyPlaceholder']} 001`);
+    await rows(list('search')).first().click();
+    await messages().locator('[data-scroll-anchor-id="long-message-001"]').getByRole('button', {
+      name: copy['mobile.chat.threadReplyCount'].replace('{{count}}', '3'), exact: true,
+    }).click();
+    await device.getByPlaceholder('Reply in thread', { exact: true }).fill('local-thread-search-continuity');
+    await device.getByRole('button', { name: 'Send', exact: true }).click();
+    await device.getByRole('button', { name: 'Back', exact: true }).click();
+    await searchHistory('local-thread-search-continuity');
+    await expect(rows(list('search'))).toHaveCount(1);
+    await rows(list('search')).first().click();
+    await expect(device.locator('.mp-thread-reply-item[data-search-target]')).toBeFocused();
+    await device.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(device.getByRole('textbox', { name: searchCopy['search.label'], exact: true }))
+      .toHaveValue('local-thread-search-continuity');
+
     // Retain the prior recovery/Social samples, without using them as business proof.
     await open('social-unavailable');
     await device.getByRole('button', { name: 'Retry', exact: true }).click();
@@ -274,7 +330,8 @@ try {
     await open('draft-restored');
     await expect(device.locator('.mp-shell')).toHaveCount(1);
     assert.deepEqual(errors, []);
-    reports.push({ viewport, conversationCount, contactCount, messageCount, searchCount, geometry });
+    reports.push({ viewport, conversationCount, contactCount, messageCount, searchCount, geometry,
+      continuity: ['sent-message-remount', 'scoped-isolation', 'global-original', 'hide-revalidation', 'thread-reply-remount'] });
     await page.close();
   }
   process.stdout.write(`${JSON.stringify({

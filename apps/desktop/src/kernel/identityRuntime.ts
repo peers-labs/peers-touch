@@ -11,7 +11,7 @@ import {
   isLoginGate,
 } from '../services/accessGate';
 import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
-import type { AppLifecycle, SessionUser } from '../types/navigation';
+import { DEFAULT_READY_PAGE, type AppLifecycle, type SessionUser } from '../types/navigation';
 import { log } from '../utils/logger';
 import { markPhaseEnd, markPhaseStart } from './boot';
 import { EVENT, eventBus } from './events';
@@ -121,7 +121,11 @@ export function persistLastActivePage(page: string): void {
   writeDesktopPreferenceSync(LAST_ACTIVE_PAGE_KEY, page);
 }
 
-function restoreLastActivePage(): void {
+function restoreLastActivePage(preservePage: boolean): void {
+  if (!preservePage) {
+    window.history.replaceState(null, '', `#/${DEFAULT_READY_PAGE}`);
+    return;
+  }
   if (window.location.hash) return;
   const page = readDesktopPreferenceSync<string>(LAST_ACTIVE_PAGE_KEY);
   if (!page) return;
@@ -644,7 +648,7 @@ class IdentityRuntime {
   private acceptAuthenticatedEdge = async (edge: IdentityAuthenticatedEdge): Promise<void> => {
     markRendererAuthenticated();
     if (edge.kind !== 'applet_launch') {
-      restoreLastActivePage();
+      restoreLastActivePage(edge.kind === 'restored_session' && this.initialBootReason === 'renderer_reload');
     }
     this.restoredUser = edge.user;
     this.knownAccounts = [edge.user];

@@ -551,6 +551,27 @@ node packages/prototypes/mobile/chat/scripts/check-residual-parity.mjs
 
 ## Acceptance Notes
 
+- **Unified device Search, 2026-10-23:** four primary header actions and Chat
+  History Search enter one full-height Shell detail. Message/attachment-name/
+  function filters, explicit conversation scope, original message/thread focus
+  and returning input are represented in `src/pages/SearchPage.tsx`. Portal
+  touch checks cover these routes plus dark/narrow, loading and error/retry.
+  Shell owns the sample message snapshot used by Chat, thread replies and
+  Search. Sending, editing and hiding survive selected-page unmounts; search
+  entry/exit fences controlled tickets. A thread entered manually from a
+  Search-opened message returns to that message before returning to Search.
+  The migrated long-list script traverses all 480 scoped results at three
+  viewports, retains original-reader/live-tail anchors, and checks sent-message
+  remount, scope isolation, cross-conversation original opening, hide
+  revalidation and thread-reply remount. The residual script passes 40 checks
+  at two viewports, including discarded query/close/remount completions.
+  Approved generated portraits are blocked offline in the residual check and
+  reported separately from prohibited business/external traffic.
+  Fresh touch screenshots and seven-group result:
+  `/tmp/mobile-search-prototype-continuity-20261023/`; long-list and residual
+  screenshots remain in their external runtime target directories.
+  Native Android/iOS behavior, account fencing and complete localization remain
+  unproven; sample rendering does not establish production readiness.
 - **W6A long-list sample: source/render synchronized for the covered subset.**
   Previous/Next, search paging, older-history anchors, large request/member
   collections, and controlled search loading/failure/retry now have repeatable

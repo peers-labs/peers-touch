@@ -1,5 +1,5 @@
 use crate::application::plugins;
-use crate::contracts::{SearchPrimaryInput, StubPayload};
+use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use serde_json::{json, Value};
 use std::fs;
@@ -381,32 +381,6 @@ fn now_rfc3339() -> String {
         time::OffsetDateTime::from_unix_timestamp(unix).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
     dt.format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
-}
-
-pub fn tools_search_providers() -> AppResult<StubPayload> {
-    success_payload(
-        "tools_search_providers",
-        json!({
-            "providers":[
-                {"id":"all","name":"All"},
-                {"id":"web","name":"Web"}
-            ],
-            "primary":"all"
-        }),
-    )
-}
-
-pub fn tools_set_search_primary(input: SearchPrimaryInput) -> AppResult<StubPayload> {
-    if input.provider.trim().is_empty() {
-        return invalid_argument("provider is required");
-    }
-    success_payload(
-        "tools_set_search_primary",
-        json!({
-            "ok":true,
-            "primary":input.provider
-        }),
-    )
 }
 
 #[cfg(test)]

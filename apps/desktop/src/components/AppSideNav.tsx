@@ -19,6 +19,8 @@ import { openAgentChatSession } from '../utils/openAgentChatSession';
 import type { Page, Navigation } from '../types/navigation';
 import { markInteractionStarted } from '../kernel/frontendRuntimeProfiler';
 import { getDesktopHostPolicy } from '../kernel/hostPolicy';
+import { useSearchStore } from '../store/search';
+import { searchActions } from '../runtimes/searchRuntime';
 
 interface AppSideNavProps {
   page: Page;
@@ -41,7 +43,8 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export function AppSideNav({ page, navigation }: AppSideNavProps) {
   const userAvatar = useUserAvatar();
-  const { t } = useTranslation('layout');
+  const { t, i18n } = useTranslation('layout');
+  const searchOpen = useSearchStore(state => state.open);
   const agents = useAgentStore((state) => state.agents);
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
   const setAgentSurface = useAgentStore((state) => state.setAgentSurface);
@@ -138,8 +141,8 @@ export function AppSideNav({ page, navigation }: AppSideNavProps) {
               <ActionIcon
                 icon={Search}
                 size="large"
-                active={page === 'search'}
-                onClick={() => navigatePrimary('search')}
+                active={searchOpen}
+                onClick={() => searchActions.open(page, i18n.language)}
                 title={t('layout.nav.search')}
               />
             </PrimaryNavAnchor>

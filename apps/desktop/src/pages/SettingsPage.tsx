@@ -17,7 +17,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useProviderStore } from '../store/provider';
-import { api, type Agent, type AppletInfo, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
+import { api, type Agent, type AppletInfo, type HelpCategoryGroup, type StatisticsData } from '../services/desktop_api';
+import { SEARCH_FUNCTIONS } from '../components/search/functions';
 import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
@@ -1429,43 +1430,18 @@ function GeneralTab() {
 }
 
 function ToolsTab() {
-  // Tool registry and search-provider list are read via `usePrefetch`
-  // so the loader runs during the `pages:prewarm` idle window — by the
-  // time the user clicks the Tools tab the cache is typically warm and
-  // the panel paints synchronously.
   const { tools, error, loadTools } = useActiveSettingsSlice((s) => ({
     tools: s.tools,
     error: s.error,
     loadTools: s.loadTools,
   }));
-  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
   const { value: toolsCache } = usePrefetch('settings.tools', () => loadTools());
-  const { value: providersResult, loading: loadingProviders, reload: reloadProviders } = usePrefetch(
-    'settings.searchProviders',
-    () => api.listSearchProviders(),
-  );
-  const searchProviders: SearchProviderInfo[] = providersResult?.providers ?? [];
-  const [primaryOverride, setPrimaryOverride] = useState<string | null>(null);
-  const searchPrimary = primaryOverride ?? providersResult?.primary ?? '';
 
   // `usePrefetch` reads loadTools()'s return value (void); the side-effect
   // is the store update. Reference `toolsCache` so React/ESLint know we
   // intentionally consume the entry.
   void toolsCache;
-  const loadingSP = loadingProviders;
-
-  const handleSetPrimary = async (name: string) => {
-    const newPrimary = name === searchPrimary ? '' : name;
-    try {
-      await api.setSearchPrimary(newPrimary);
-      setPrimaryOverride(newPrimary);
-      reloadProviders();
-      message.success(newPrimary ? t('settings.tools.setPrimarySuccess', { name: newPrimary }) : t('settings.tools.clearPrimarySuccess'));
-    } catch {
-      message.error(t('settings.tools.setPrimaryFailed'));
-    }
-  };
 
   const toolColumns = [
     {
@@ -1499,61 +1475,8 @@ function ToolsTab() {
     },
   ];
 
-  const configuredCount = searchProviders.filter((p) => p.available).length;
-
   return (
     <SettingsContainer>
-      <SettingsSection
-        icon={<Globe size={18} />}
-        title={t('settings.tools.searchEnginesTitle')}
-        subtitle={t('settings.tools.searchEnginesDescription')}
-        extra={
-          <Tag color={configuredCount > 0 ? 'success' : 'default'}>
-            {t('settings.tools.searchEnginesConfigured', { configured: configuredCount, total: searchProviders.length })}
-          </Tag>
-        }
-      >
-        {loadingSP ? (
-          <Spin size="small" />
-        ) : (
-          <Flexbox gap={8}>
-            {searchProviders.map((p) => (
-              <SettingsItemCard
-                key={p.name}
-                style={{
-                  border: `1px solid ${p.available ? token.colorSuccessBorder : token.colorBorderSecondary}`,
-                  background: p.available ? token.colorSuccessBg : undefined,
-                  opacity: p.available ? 1 : 0.6,
-                  padding: '8px 12px',
-                }}
-              >
-                <Flexbox horizontal align="center" justify="space-between">
-                  <Flexbox horizontal align="center" gap={8}>
-                    <Text strong style={{ fontSize: 13, textTransform: 'capitalize' }}>{p.name}</Text>
-                    {p.available ? (
-                      <Tag color="success" style={{ margin: 0 }}>{t('settings.tools.searchActive')}</Tag>
-                    ) : (
-                      <Tag style={{ margin: 0 }}>{t('settings.tools.searchNotConfigured')}</Tag>
-                    )}
-                  </Flexbox>
-                  <Flexbox horizontal align="center" gap={8}>
-                    {p.available && (
-                      <Button
-                        size="small"
-                        type={searchPrimary === p.name ? 'primary' : 'default'}
-                        onClick={() => handleSetPrimary(p.name)}
-                      >
-                        {searchPrimary === p.name ? t('settings.tools.primaryLabel') : t('settings.tools.setPrimary')}
-                      </Button>
-                    )}
-                  </Flexbox>
-                </Flexbox>
-              </SettingsItemCard>
-            ))}
-          </Flexbox>
-        )}
-      </SettingsSection>
-
       <SettingsSection
         icon={<Wrench size={18} />}
         title={t('settings.tools.toolsTitle', { count: tools.length })}
@@ -1597,17 +1520,21 @@ function getIcon(name?: string, size = 16) {
 }
 
 function HelpTab({ highlightId }: { highlightId?: string }) {
-  const [groups, setGroups] = useState<HelpCategoryGroup[]>([]);
-  const [activeKeys, setActiveKeys] = useState<string[]>([]);
+  const [activeKeys, setActiveKeys] = useState<string[]>(['search']);
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
-
-  useEffect(() => {
-    api.getHelp().then((g) => {
-      setGroups(g);
-      setActiveKeys(g.map((gr) => gr.category.id));
-    }).catch((e) => log.error('settings', 'Failed to load help', e));
-  }, []);
+  const groups: HelpCategoryGroup[] = useMemo(() => [{
+    category: { id: 'search', title: t('search.label', { ns: 'search' }), icon: 'Search' },
+    items: [
+      { id: 'search', category: 'search', source: 'builtin', icon: 'Search',
+        title: t('search.label', { ns: 'search' }),
+        description: t('search.boundary', { ns: 'search' }), usage: '⌘ / Ctrl + K · ↑↓ · Enter · Esc' },
+      ...SEARCH_FUNCTIONS.map(item => ({
+        id: item.id, category: 'search', source: 'builtin', icon: 'Wrench',
+        title: t(item.titleKey, { ns: 'search' }), description: t(item.detailKey, { ns: 'search' }),
+      })),
+    ],
+  }], [t]);
 
   useEffect(() => {
     if (!highlightId || groups.length === 0) return;

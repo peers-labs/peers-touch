@@ -39,14 +39,14 @@ describe('resolveSocialActorIdentity', () => {
     });
   });
 
-  it('projects the same readable author from a private post and a comment', () => {
+  it('waits for a canonical profile instead of deriving a name from an actor locator', () => {
     const actorPtid =
       'ptid:v1:actor:peers:p:alice:12203e0f255f835ecd0abd93aa0ea6f11bcd7580bcb1e7fcc0977567f44493fb62f7';
     const postIdentity = resolveSocialActorIdentity({
       actorPtid,
       displayName: actorPtid,
     });
-    expect(postIdentity.displayName).toBe('Alice');
+    expect(postIdentity.displayName).toBe('');
     expect(resolveSocialActorIdentity({ actorPtid })).toEqual(postIdentity);
     expect(
       resolveSocialActorIdentity(

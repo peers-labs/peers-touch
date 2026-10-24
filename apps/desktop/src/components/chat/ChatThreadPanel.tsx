@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -242,6 +243,7 @@ export function ChatThreadPanel() {
     refreshThreadCounts,
     markThreadRead,
     setScrollToMessageUlid,
+    scrollToMessageUlid,
     sendFriendMessage,
     sendGroupMessage,
     deleteMessage,
@@ -265,6 +267,7 @@ export function ChatThreadPanel() {
     refreshThreadCounts: s.refreshThreadCounts,
     markThreadRead: s.markThreadRead,
     setScrollToMessageUlid: s.setScrollToMessageUlid,
+    scrollToMessageUlid: s.scrollToMessageUlid,
     sendFriendMessage: s.sendFriendMessage,
     sendGroupMessage: s.sendGroupMessage,
     deleteMessage: s.deleteMessage,
@@ -278,6 +281,8 @@ export function ChatThreadPanel() {
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [highlightedAnchor, setHighlightedAnchor] = useState<string | null>(null);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
@@ -319,6 +324,28 @@ export function ChatThreadPanel() {
     [currentMessages, loadedThreadMessages, openThreadRootUlid],
   );
   const { rootMessage, replies, displayMessages } = threadSurface;
+
+  useEffect(() => {
+    if (!scrollToMessageUlid || !displayMessages.some(item => item.ulid === scrollToMessageUlid)) return;
+    const element = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('[data-thread-message-id]') ?? [])
+      .find(node => node.dataset.threadMessageId === scrollToMessageUlid);
+    if (!element) return;
+    const viewport = panelRef.current?.querySelector<HTMLElement>('.chat-thread-scroll');
+    if (!viewport) return;
+    const target = element.getBoundingClientRect();
+    const bounds = viewport.getBoundingClientRect();
+    viewport.scrollTop += target.top - bounds.top - (viewport.clientHeight - target.height) / 2;
+    element.tabIndex = -1;
+    element.focus({ preventScroll: true });
+    setHighlightedAnchor(scrollToMessageUlid);
+    setScrollToMessageUlid(null);
+  }, [scrollToMessageUlid, displayMessages, setScrollToMessageUlid]);
+
+  useEffect(() => {
+    if (!highlightedAnchor) return;
+    const timer = window.setTimeout(() => setHighlightedAnchor(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [highlightedAnchor]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -431,6 +458,7 @@ export function ChatThreadPanel() {
 
   return (
     <Flexbox
+      ref={panelRef}
       data-chat-thread-panel="open"
       data-chat-thread-reply-count={replies.length}
       data-chat-thread-root={openThreadRootUlid}
@@ -467,6 +495,13 @@ export function ChatThreadPanel() {
           .thread-comment-row:hover .thread-reply-action,
           .thread-comment-row:focus-within .thread-reply-action {
             opacity: 1;
+          }
+          .thread-comment-row:focus {
+            outline: 2px solid ${token.colorPrimaryBorder};
+            outline-offset: 2px;
+          }
+          .thread-comment-row[data-thread-message-id="${highlightedAnchor || ''}"] {
+            background: ${token.colorPrimaryBg};
           }
         `}
       </style>

@@ -7,6 +7,7 @@ pub mod native_events;
 pub mod oauth;
 pub mod platform_bridge;
 pub mod secure_storage;
+pub mod search;
 pub mod station;
 
 use tauri::ipc::Invoke;
@@ -18,6 +19,12 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         health::mobile_health,
         // Distribution identity (XCFG-D05)
         build_identity::mobile_distribution_identity,
+        search::search_submit,
+        search::search_suggest,
+        search::search_resolve,
+        search::search_read_state,
+        search::search_read_diagnostics,
+        search::search_cancel,
         // Messaging
         crate::messaging::commands::messaging_activate,
         crate::messaging::commands::messaging_attachment_stage_begin,
@@ -46,7 +53,6 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::messaging::commands::messaging_reconcile,
         crate::messaging::commands::messaging_recover_identity_with_native_input,
         crate::messaging::commands::messaging_resume,
-        crate::messaging::commands::messaging_search_messages,
         crate::messaging::commands::messaging_send_message,
         crate::messaging::commands::messaging_status,
         crate::messaging::commands::messaging_submit_leave_intent,
@@ -147,6 +153,7 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         platform_bridge::lifecycle_advance_generation,
         platform_bridge::lifecycle_process_event,
         platform_bridge::lifecycle_ingest_native_signal,
+        platform_bridge::lifecycle_observe,
         platform_bridge::lifecycle_reconcile,
         platform_bridge::permission_check,
         platform_bridge::permission_request,
@@ -176,6 +183,12 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         build_identity::mobile_distribution_identity,
         // Health
         health::mobile_health,
+        search::search_submit,
+        search::search_suggest,
+        search::search_resolve,
+        search::search_read_state,
+        search::search_read_diagnostics,
+        search::search_cancel,
         // Native events
         native_events::mobile_native_event_emit,
         // Messaging
@@ -209,7 +222,6 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::messaging::commands::messaging_reconcile,
         crate::messaging::commands::messaging_recover_identity_with_native_input,
         crate::messaging::commands::messaging_resume,
-        crate::messaging::commands::messaging_search_messages,
         crate::messaging::commands::messaging_send_message,
         crate::messaging::commands::messaging_status,
         crate::messaging::commands::messaging_submit_leave_intent,
@@ -315,6 +327,7 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         platform_bridge::lifecycle_advance_generation,
         platform_bridge::lifecycle_process_event,
         platform_bridge::lifecycle_ingest_native_signal,
+        platform_bridge::lifecycle_observe,
         platform_bridge::lifecycle_reconcile,
         platform_bridge::permission_check,
         platform_bridge::permission_request,

@@ -138,23 +138,6 @@ pub struct MessagingThreadInput {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MessagingSearchInput {
-    station_peer_id: String,
-    actor_ptid: String,
-    conversation_id: String,
-    query: String,
-    before_timestamp_unix_ms: Option<i64>,
-    before_message_id: Option<String>,
-    #[serde(default = "default_search_limit")]
-    limit: usize,
-}
-
-fn default_search_limit() -> usize {
-    50
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct MessagingSendMessageInput {
     station_peer_id: String,
     actor_ptid: String,
@@ -2202,39 +2185,6 @@ pub fn messaging_list_thread_messages(
     let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
     engine
         .thread_messages(&input.conversation_id, &input.thread_root_message_id)
-        .and_then(|messages| {
-            messages
-                .into_iter()
-                .map(|message| {
-                    message_projection(message, |attachment_id| {
-                        engine.attachment_availability_state(attachment_id)
-                    })
-                })
-                .collect()
-        })
-        .map_err(MobileError::messaging)
-}
-
-#[tauri::command]
-pub fn messaging_search_messages(
-    runtime: State<'_, MobileMessagingRuntime>,
-    input: MessagingSearchInput,
-) -> MobileResult<Vec<MessagingMessageProjection>> {
-    let before = match (
-        input.before_timestamp_unix_ms,
-        input.before_message_id.as_deref(),
-    ) {
-        (None, None) => None,
-        (Some(timestamp), Some(message_id)) => Some((timestamp, message_id)),
-        _ => {
-            return Err(MobileError::invalid_input(
-                "mobile messaging search cursor is incomplete",
-            ))
-        }
-    };
-    let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
-    engine
-        .search_messages(&input.conversation_id, &input.query, before, input.limit)
         .and_then(|messages| {
             messages
                 .into_iter()

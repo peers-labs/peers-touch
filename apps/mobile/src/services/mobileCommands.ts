@@ -1291,18 +1291,6 @@ export async function messagingListThreadMessages(
   return invoke<MessagingMessageProjection[]>('messaging_list_thread_messages', { input });
 }
 
-export async function messagingSearchMessages(
-  input: MessagingAccountInput & {
-    conversationId: string;
-    query: string;
-    beforeTimestampUnixMs?: number;
-    beforeMessageId?: string;
-    limit?: number;
-  },
-): Promise<MessagingMessageProjection[]> {
-  return invoke<MessagingMessageProjection[]>('messaging_search_messages', { input });
-}
-
 export async function messagingStageAttachment(
   input: MessagingAccountInput & {
     file: File;

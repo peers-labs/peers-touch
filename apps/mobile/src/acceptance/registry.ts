@@ -258,6 +258,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     mobileAcceptanceActions['messaging.search'],
     registry,
   );
+  registerMobileAcceptanceAction('search.page', mobileAcceptanceActions['search.page'], registry);
+  registerMobileAcceptanceAction('search.resolve', mobileAcceptanceActions['search.resolve'], registry);
+  registerMobileAcceptanceAction('search.state', mobileAcceptanceActions['search.state'], registry);
+  registerMobileAcceptanceAction('search.cancel', mobileAcceptanceActions['search.cancel'], registry);
+  registerMobileAcceptanceAction('search.reads', mobileAcceptanceActions['search.reads'], registry);
   registerMobileAcceptanceAction(
     'messaging.projection.read',
     mobileAcceptanceActions['messaging.projection.read'],

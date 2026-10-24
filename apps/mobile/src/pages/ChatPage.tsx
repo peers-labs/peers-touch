@@ -12,7 +12,7 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { Button, Input, Modal, Spin, Typography, type InputRef } from 'antd';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { ArrowLeft, CornerUpLeft, Flag, FolderOpen, Mic, MoreHorizontal, Phone, Plus, RotateCcw, Scissors, Search, Send, Smile, Square, Video, X } from 'lucide-react';
+import { ArrowLeft, CornerUpLeft, Flag, FolderOpen, Mic, MoreHorizontal, Phone, Plus, RotateCcw, Scissors, Send, Smile, Square, Video, X } from 'lucide-react';
 import { useShallow } from 'zustand/shallow';
 import {
   canSubmitChatComposerDraft,
@@ -27,7 +27,7 @@ import { useMobileI18n } from '../app/mobileI18n';
 import type { MobileChatDetailRoute } from '../app/navigation';
 import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestoration';
 import { useChatSurfaceFixture } from '../acceptance/chatSurfaceFixture';
-import { BoundedList, type BoundedListHandle } from '../components/BoundedList';
+import type { BoundedListHandle } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
@@ -84,7 +84,8 @@ import {
   dispatchSenderTypingRequest,
 } from '../features/chat/typingDispatch';
 import { useMessageFlagState } from '../features/chat/messageFlagState';
-import { useChatHistorySearch } from '../features/chat/useChatHistorySearch';
+import { useChatMessageAnchor } from '../features/chat/useChatMessageAnchor';
+import { useChatReadCursor } from '../features/chat/useChatReadCursor';
 import { useMobileChatVoiceRecorder } from '../features/chat/useMobileChatVoiceRecorder';
 import { mobileCallManager } from '../features/call/callState';
 import {
@@ -141,7 +142,6 @@ import {
   ChatMessageSectionBoundary,
   chatMessageSenderPtids,
   messageContentForSearch,
-  messageKey,
 } from './chat/ChatMessageSectionBoundary';
 import {
   ChatDestructiveConfirmSheet,
@@ -228,6 +228,8 @@ class ChatMountGuard extends Component<{
 interface ChatPageProps {
   readonly activeDetail: MobileChatDetailRoute | null;
   readonly onStartConversation: () => void;
+  readonly searchEntry?: ReactNode;
+  readonly onOpenSearch?: (conversationId: string) => void;
   readonly onOpenConversation: (route: MobileChatDetailRoute) => void;
   readonly onBack: () => void;
 }
@@ -262,6 +264,8 @@ function ChatPageInner({
   onStartConversation,
   onOpenConversation,
   onBack,
+  searchEntry,
+  onOpenSearch,
 }: ChatPageProps) {
   const { t } = useMobileI18n();
   const activeSessionUlid = activeDetail?.routeId === 'detail:chat-conversation'
@@ -270,12 +274,13 @@ function ChatPageInner({
   const activeGroupUlid = activeDetail?.routeId === 'detail:group-conversation'
     ? activeDetail.groupUlid
     : null;
+  const routeHasMessageAnchor = Boolean(
+    activeDetail?.messageId || activeDetail?.threadRootMessageId,
+  );
 
   // --- Local UI state (no business logic) ---
   const [draft, setDraft] = useState('');
   const [conversationQuery, setConversationQuery] = useState(() => readRouteQuery('tab:chat'));
-  const [threadSearchQuery, setThreadSearchQuery] = useState('');
-  const [threadSearchOpen, setThreadSearchOpen] = useState(false);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
   const [composerMoreOpen, setComposerMoreOpen] = useState(false);
@@ -344,10 +349,6 @@ function ChatPageInner({
   })));
   const activeConversationId = activeGroupUlid || activeSessionUlid || '';
   const authSession = useAuthStore((s) => s.session);
-  const searchSession = useSocialStore((s) => s.authSession);
-  const historySearch = useChatHistorySearch(
-    searchSession, activeGroupUlid ? 'group' : 'friend', activeConversationId,
-  );
   const messageFlagKind = activeGroupUlid
     ? 'group'
     : activeSessionUlid
@@ -420,8 +421,30 @@ function ChatPageInner({
     messages,
     projectedThreadMessages,
     threadRootMessageUlid,
-    threadSearchQuery,
+    '',
   );
+  const readTarget = history.visible.at(-1);
+  const reportReadCursorError = useCallback((readError: unknown) => {
+    setLocalActionError(formatChatOperationError(readError));
+  }, []);
+  useChatReadCursor({
+    session: authSession,
+    conversationId: activeConversationId,
+    messageId: readTarget?.ulid ?? '',
+    sequence: readTarget?.eventSequence ?? 0,
+    visible: activeDetail !== null,
+    onError: reportReadCursorError,
+  });
+  useChatMessageAnchor({
+    route: activeDetail,
+    conversationId: activeConversationId,
+    messages,
+    threadMessages: projectedThreadMessages,
+    threadRootMessageId: threadRootMessageUlid,
+    setThreadRootMessageId: setThreadRootMessageUlid,
+    highlight: setHighlightedMessageUlid,
+    controller: messageWindow,
+  });
   const activeConversationKeyRef = useRef('');
   const chatActionStatesRef = useRef<Record<string, ChatActionState>>({});
   const chatActionStateWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -565,6 +588,11 @@ function ChatPageInner({
   }, [activeConversationId, selectSession, selectedConversationId]);
 
   useEffect(() => {
+    // Route anchors own thread selection independently of composer restoration.
+    if (!routeHasMessageAnchor) setThreadRootMessageUlid('');
+  }, [activeConversationId, authSession, routeHasMessageAnchor]);
+
+  useEffect(() => {
     if (
       activeGroupUlid
       && lastReconcileAt !== null
@@ -580,8 +608,6 @@ function ChatPageInner({
   useEffect(() => {
     const loadGeneration = draftLoadGenerationRef.current + 1;
     draftLoadGenerationRef.current = loadGeneration;
-    setThreadSearchQuery('');
-    setThreadSearchOpen(false);
     setActionSheetOpen(false);
     setGroupManageOpen(false);
     setComposerEmojiOpen(false);
@@ -591,7 +617,6 @@ function ChatPageInner({
     replyToMessageUlidRef.current = '';
     setEncryptedAttachmentRefs([]);
     encryptedAttachmentRefsRef.current = [];
-    setThreadRootMessageUlid('');
     setMessageActionUlid('');
     setForwardMessageSource(null);
     setForwardPendingDestinationId('');
@@ -1275,8 +1300,6 @@ function ChatPageInner({
   const openMessageThread = (message: SocialMessage) => {
     const rootMessageUlid = message.threadRootUlid || message.ulid;
     setThreadRootMessageUlid(rootMessageUlid);
-    setThreadSearchOpen(false);
-    setThreadSearchQuery('');
     setMessageActionUlid('');
     void runChatOperation(
       () => loadFriendThreadMessages(activeConversationId, rootMessageUlid),
@@ -1398,11 +1421,6 @@ function ChatPageInner({
       ? t('mobile.chat.threadReplyCount', { count: threadReplyCount })
       : conversationSubtitle;
 
-    const submittedSearch = historySearch.query === threadSearchQuery.trim() && historySearch.query !== '';
-    const threadSearchResults = submittedSearch
-      ? (historySearch.page?.messages ?? [])
-      : history.searchResults;
-
     return (
       <ChatThreadPageContent
         activeInputPanel={chatBottomOcclusion.activePanel}
@@ -1413,9 +1431,9 @@ function ChatPageInner({
         style={chatThreadStyle}
         tabBarVisible={chatBottomOcclusion.tabBarVisible}
       >
-        <header className={`page-header chat-thread-header ${threadSearchOpen ? 'searching' : ''}`}>
+        <header className="page-header chat-thread-header">
           <button className="header-action" type="button" onClick={() => {
-            if (threadRootMessageUlid) {
+            if (threadRootMessageUlid && !activeDetail?.messageId) {
               setThreadRootMessageUlid('');
               updateReplyContext('');
               setMessageActionUlid('');
@@ -1425,16 +1443,7 @@ function ChatPageInner({
           }} aria-label={t('common.action.back')}>
             <ArrowLeft size={20} />
           </button>
-          {threadSearchOpen ? (
-            <>
-              <h1 className="chat-search-title">
-                {t('mobile.chat.quickSearch')}
-              </h1>
-              <Input.Search className="chat-header-search" value={threadSearchQuery} onChange={(e) => { setThreadSearchQuery(e.target.value); historySearch.clear(); }} prefix={<Search size={16} />} placeholder={t('mobile.chat.searchMessagesPlaceholder')} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} allowClear loading={historySearch.loading} onSearch={historySearch.search} />
-              <button className="header-action" type="button" onClick={() => { setThreadSearchOpen(false); setThreadSearchQuery(''); historySearch.clear(); }} aria-label={t('common.action.cancel')}><X size={18} /></button>
-            </>
-          ) : (
-            <>
+          <>
               <div className="header-title-stack">
                 <h1 className="header-title compact">{headerTitle}</h1>
                 <Text type="secondary">{subtitle}</Text>
@@ -1480,8 +1489,7 @@ function ChatPageInner({
                   <button className="header-action" type="button" onClick={() => setActionSheetOpen(true)} aria-label={t('mobile.chat.moreActions')}><MoreHorizontal size={20} /></button>
                 </div>
               ) : null}
-            </>
-          )}
+          </>
         </header>
 
         <ChatOverlayHost>
@@ -1494,7 +1502,7 @@ function ChatPageInner({
               if (conversationSettingsState.phase !== 'failed' || !conversationSettingsState.patch) return;
               void updateChatActionState(activeKey, conversationSettingsState.patch, 'retry');
             }}
-            onSearch={() => { setThreadSearchOpen(true); setActionSheetOpen(false); }}
+            onSearch={() => { setActionSheetOpen(false); onOpenSearch?.(activeConversationId); }}
             onToggleMute={() => { void updateChatActionState(activeKey, { muted: !actionState.muted }); }}
             onToggleSticky={() => { void updateChatActionState(activeKey, { sticky: !actionState.sticky }); }}
             onToggleAlert={() => { void updateChatActionState(activeKey, { alertEnabled: !actionState.alertEnabled }); }}
@@ -1733,43 +1741,6 @@ function ChatPageInner({
         ) : null}
         {localActionError ? <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice> : null}
 
-        {threadSearchQuery.trim() ? (
-          <section
-            className="message-search-panel"
-            data-product-surface={submittedSearch && historySearch.error
-              ? 'chat.thread-search-error'
-              : threadSearchResults.length === 0
-                ? 'chat.thread-search-empty'
-                : 'chat.thread-search'}
-          >
-            {submittedSearch && historySearch.loading ? <Spin /> : submittedSearch && historySearch.error ? (
-              <MobileNotice tone="error">
-                {t('mobile.chat.searchFailed')}
-                <Button icon={<RotateCcw size={14} />} onClick={historySearch.retry}>{t('common.action.retry')}</Button>
-              </MobileNotice>
-            ) : threadSearchResults.length > 0 ? (
-              <BoundedList surfaceKey={`search:${activeConversationKey}:${threadSearchQuery}:${historySearch.index}`} items={threadSearchResults as SocialMessage[]} itemKey={messageKey}>
-              {(rows) => rows.map((msg) => (
-                <button className="message-search-result" data-scroll-anchor-id={msg.ulid} type="button" key={msg.ulid} onClick={() => {
-                  setThreadSearchOpen(false);
-                  setThreadSearchQuery('');
-                  historySearch.clear();
-                  void scrollToMessage(msg.ulid);
-                }}>
-                  <Text ellipsis>{messageContentForSearch(msg, t)}</Text>
-                  <Text type="secondary">{formatRelativeTime(messageTimestampMillis(msg), t)}</Text>
-                </button>
-              ))}</BoundedList>
-            ) : <Text type="secondary">{t('mobile.chat.noMessageResults')}</Text>}
-            {submittedSearch && !historySearch.loading ? (
-              <div className="bounded-list-controls">
-                {historySearch.index > 0 ? <Button onClick={historySearch.previous}>{t('mobile.list.previous')}</Button> : null}
-                {historySearch.page?.nextCursor ? <Button onClick={historySearch.next}>{t('mobile.list.next')}</Button> : null}
-              </div>
-            ) : null}
-          </section>
-        ) : null}
-
         <ChatMessageSectionBoundary
           surfaceKey={`messages:${activeConversationKey}:${threadRootMessageUlid}`}
           background={actionState.background}
@@ -1997,6 +1968,7 @@ function ChatPageInner({
       onDismissGroupError={() => undefined}
       onStartConversation={onStartConversation}
       onOpenConversation={openConversation}
+      searchEntry={searchEntry}
     />
   );
 }

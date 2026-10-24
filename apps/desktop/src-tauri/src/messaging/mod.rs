@@ -10,6 +10,7 @@ mod mls_leave_intent;
 mod prekeys;
 mod private_content;
 mod recovery;
+mod search;
 mod store;
 mod transport;
 mod verification;

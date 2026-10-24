@@ -55,6 +55,7 @@ import type {
   SettingsSurfaceFixtureId,
   SettingsSurfaceFixtureSnapshot,
 } from './settingsSurfaceFixture';
+import type { MobileSearchAcceptanceContracts } from './searchActions';
 
 export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'build.identity',
@@ -105,6 +106,11 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'messaging.reconcile',
   'messaging.command.read',
   'messaging.search',
+  'search.page',
+  'search.resolve',
+  'search.state',
+  'search.cancel',
+  'search.reads',
   'messaging.projection.read',
   'social.people.search',
   'reliability.fixture.configure',
@@ -1247,7 +1253,7 @@ export interface PrepareActorIdentityInput {
   seedBase64: string;
 }
 
-export interface MobileAcceptanceActionContract {
+export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceContracts {
   'build.identity': {
     input: undefined;
     output: EmbeddedMobileBuildIdentity;

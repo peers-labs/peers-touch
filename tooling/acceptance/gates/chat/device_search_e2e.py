@@ -1,0 +1,197 @@
+"""Fail-closed validator for the native device Search report."""
+from __future__ import annotations
+
+from html.parser import HTMLParser
+
+from tooling.acceptance.core import ArtifactRef, ArtifactSession, EvidenceStore, REPO_ROOT
+from tooling.acceptance.gates.chat.device_search_runner import (
+    GATE_ID, JOURNEY_ID, REQUIRED_ASSERTIONS, REQUIRED_STEPS, RESULT_ASSERTIONS,
+    UI_ASSERTIONS, read_counts,
+)
+from tooling.acceptance.gates.chat.native_two_client_e2e import load_report, require, validate_report
+
+
+class SearchResultDom(HTMLParser):
+    def __init__(self, dom: str) -> None:
+        super().__init__()
+        self.result_count = 0
+        self.feed(dom)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "button" and "pt-search-row" in (dict(attrs).get("class") or "").split():
+            self.result_count += 1
+
+
+def validate_result_frame(name: str, rendering: dict, dom: str) -> None:
+    count = rendering.get("resultCount")
+    require(
+        isinstance(count, int) and count == SearchResultDom(dom).result_count,
+        f"{name} result count must match the captured native DOM",
+    )
+    if name in RESULT_ASSERTIONS:
+        query, text = rendering.get("query", "").strip(), rendering.get("resultText", "")
+        require(
+            count > 0 and bool(query) and query in text,
+            f"{name} requires a real matching result row; empty-state query copy is not a hit",
+        )
+
+
+def validate_account_scope(search: dict) -> None:
+    scope = search.get("accountScope", {})
+    identity = scope.get("identity", {})
+    before, after = scope.get("before", {}), scope.get("after", {})
+    rendering = search["ui"]["same_window_account_isolation"]["rendering"]
+    require(
+        identity.get("authenticated") is True
+        and identity.get("actorPtid") == search["sessionHandoff"]["actorPtid"],
+        "account isolation requires authoritative Bob identity in the receiving window",
+    )
+    require(
+        scope.get("emptyQuery") is True and bool(before.get("readScope"))
+        and bool(after.get("readScope")) and before["readScope"] != after["readScope"]
+        and scope.get("originalPid") == scope.get("currentPid")
+        and isinstance(scope.get("currentPid"), int) and scope["currentPid"] > 0,
+        "account isolation must clear the query and replace scope in the same native process",
+    )
+    require(
+        bool(scope.get("messageId"))
+        and scope["messageId"] != search["resources"].get("messageId")
+        and scope.get("conversationId") == search["resources"].get("conversationId")
+        and bool(scope.get("query")) and rendering.get("query") == scope["query"]
+        and scope["query"] in rendering.get("resultText", ""),
+        "account isolation requires a real newly sent Bob current-device message and matching UI row",
+    )
+
+def validate_continuity(search: dict) -> None:
+    frames = search.get("continuity", {}).get("frames")
+    require(isinstance(frames, list) and 1 < len(frames) <= 600,
+            "continuity requires a bounded rendered-frame trace")
+    baseline = frames[0]
+    query = search["ui"]["input_continuity"]["rendering"]["query"]
+    require(baseline.get("displayed") == query and bool(baseline.get("rows")),
+            "continuity starts with real readable rows")
+    pending = [frame for frame in frames
+               if frame.get("draft") == query + "z" and frame.get("displayed") == query]
+    require(bool(pending) and all(
+        frame.get("rows") == baseline["rows"] and frame.get("marks") == baseline["marks"]
+        for frame in pending
+    ), "pending draft must retain the prior rows and highlight query")
+    require(all(
+        isinstance(frame.get(region), dict)
+        and all(isinstance(frame[region].get(axis), (int, float))
+                and abs(frame[region][axis] - baseline[region][axis]) <= 1
+                for axis in ("x", "y", "width", "height"))
+        for frame in frames for region in ("field", "body")
+    ), "continuity must not move or resize the field or list")
+
+
+def validate_search_report(report: dict, source_ref: ArtifactRef, store: EvidenceStore) -> None:
+    validate_report(
+        report, source_ref=source_ref, store=store, gate_id=GATE_ID,
+        required_assertions=REQUIRED_ASSERTIONS, required_steps=REQUIRED_STEPS,
+        expected_journey=JOURNEY_ID,
+    )
+    search = report["runtime"].get("search")
+    require(isinstance(search, dict), "Search evidence is required")
+    ui = search.get("ui", {})
+    require(set(ui) == UI_ASSERTIONS, "all Search UI obligations require evidence")
+    for name in UI_ASSERTIONS:
+        require(ui[name].get("actor") == "alice", f"{name} must use the receiving native window")
+        rendering = ui[name].get("rendering", {})
+        require(rendering.get("painted") is True, f"{name} requires a painted native surface")
+        require(
+            rendering.get("loading") is False and rendering.get("busy") is False
+            and rendering.get("assertionPassed") is True,
+            f"{name} requires a settled assertion across native screenshot and DOM capture",
+        )
+        if rendering.get("searchOpen"):
+            require(
+                "prepare" not in rendering.get("modalClass", "")
+                and float(rendering.get("opacity", "0")) >= 0.99,
+                f"{name} cannot use an invisible modal animation frame",
+            )
+        for suffix in ("screenshot", "dom"):
+            ref = ArtifactRef.from_dict(ui[name].get(suffix))
+            require(
+                ref.workspace_id == source_ref.workspace_id and ref.gate_id == source_ref.gate_id
+                and ref.run_id == source_ref.run_id, f"{name} requires current-run {suffix}",
+            )
+            path = store.resolve(ref)
+            if suffix == "dom":
+                validate_result_frame(name, rendering, path.read_text())
+    cache = search.get("cache", {})
+    names = {"repeat_cache", "reopen_cache", "backspace_cache", "return_cache", "explicit_refresh"}
+    require(set(cache) == names, "Search cache evidence is incomplete")
+    log_ref = ArtifactRef.from_dict(report["evidence"]["alice-app-log"])
+    lines = store.resolve(log_ref).read_text(errors="replace").splitlines()
+    for name in names:
+        observed = cache[name]
+        for edge in ("before", "after"):
+            counts = observed.get(edge)
+            require(isinstance(counts, dict), f"{name} requires {edge} counters")
+            length = counts.get("lineCount")
+            require(isinstance(length, int) and 0 < length <= len(lines), "invalid final-log boundary")
+            require(read_counts(lines[:length]) == counts, f"{name} counters differ from final native log")
+        before, after = observed["before"], observed["after"]
+        require(after["lineCount"] >= before["lineCount"], f"{name} log boundary is reversed")
+        require(before["sourceReads"] > 0, "source-read tracing must actually observe source I/O")
+        if name == "explicit_refresh":
+            require(after["sourceReads"] > before["sourceReads"], "explicit refresh must query the source")
+        else:
+            require(after["sourceReads"] == before["sourceReads"], f"{name} queried the source")
+            require(after["hydrationReads"] == before["hydrationReads"], f"{name} rehydrated cached content")
+    denials = search.get("denials", {})
+    for name, code in (
+        ("forged_authority_denied", 7), ("stale_content_denied", 8),
+        ("hidden_reference_denied", 8), ("previous_session_cursor_denied", 5),
+    ):
+        result = denials.get(name, {})
+        require(result.get("accepted") is False and result.get("errorCode") == code,
+                f"{name} must provide the expected typed native denial")
+    handoff = search.get("sessionHandoff", {})
+    before, after = handoff.get("before", {}), handoff.get("after", {})
+    require(
+        handoff.get("actor") == "bob"
+        and str(handoff.get("actorPtid", "")).startswith("ptid:")
+        and before.get("authenticated") is True
+        and before.get("actorPtid") == handoff.get("actorPtid")
+        and after.get("authenticated") is False
+        and after.get("phase") in {"revoked", "accountGate"}
+        and after.get("reason") == "revoked" and after.get("actorPtid") == "",
+        "same-window account switch requires authoritative original Bob session revocation",
+    )
+    validate_account_scope(search)
+    validate_continuity(search)
+    resources = search.get("resources", {})
+    require(bool(resources.get("messageId")) and bool(resources.get("replyId")), "real message IDs required")
+    require(len(set(resources.get("fillerIds", []))) == 55, "history must exceed the latest window")
+    require(
+        bool(resources.get("attachmentMessageId")) and len(resources.get("attachmentIds", [])) == 1
+        and bool(resources.get("attachmentFilename")),
+        "attachment filename evidence requires the real uploaded Messaging resource",
+    )
+    require(
+        resources["attachmentFilename"] in ui["attachment_filename"]["rendering"].get("resultText", ""),
+        "attachment filename must be present in the captured native Search frame",
+    )
+
+
+def main() -> int:
+    store = EvidenceStore.from_environment(repo_root=REPO_ROOT, worktree=REPO_ROOT)
+    report, source_ref = load_report(store, GATE_ID)
+    validate_search_report(report, source_ref, store)
+    reference = ArtifactSession(repo_root=REPO_ROOT, gate_id=GATE_ID).write_json(
+        f"reports/{GATE_ID}-validation.json", {
+            "artifactKind": "chat-device-search-validation", "gate": GATE_ID,
+            "status": "pass", "completionStatus": "DONE", "proofStatus": "PROVEN",
+            "sampleEmissionAllowed": False, "sourceArtifact": source_ref.to_dict(),
+            "testedCommit": report["runtime"]["sourceIdentity"]["orchestrator"]["commit"],
+            "assertionCount": len(REQUIRED_ASSERTIONS),
+        }, role="validation",
+    )
+    print(f"PASS: {GATE_ID} validation {reference.path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

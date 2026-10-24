@@ -40,6 +40,11 @@
 
 ## 主题实现
 
-- 在 `app/theme/app_theme.dart` 统一定义 Token 与 ThemeData；`app_styles.dart` 暴露便捷常量
+- `deviceSettingsRuntime` 持有已保存的设备偏好，并更新文档色系、字号和密度
+- 根 `MobileThemeProvider` 订阅同一偏好，交给既有 LobeUI ThemeProvider 的
+  `themeMode`；`system` 映射为 SDK 的 `auto`，不建立第二份主题状态
+- `styles.css` 的语义表面、边框与继承文字同时消费当前主题；通用页头不保留浅色常量
 - 组件内部仅引用 Token；不直接使用硬编码常量
 - 支持动态切换（light/dark/brand 变种），即时生效
+- 原生 Search 验收同时检查实际背景变化和正文、来源、历史边界及查询文字的
+  4.5:1 对比度，包含父级透明度；截图必须检查可读性

@@ -28,3 +28,4 @@
 | 文档 | 说明 |
 |------|------|
 | [lobehub-engineering-infra.md](./lobehub-engineering-infra.md) | LobeHub 工程基建研究：E2E、质量门禁、插件/扩展机制、发布与自动化治理 |
+| [search-current-state-and-benchmarks.md](./search-current-state-and-benchmarks.md) | Search 现状（空 stub/独立资产/历史）与行业参照；范围已按 D-19 收窄为封闭域，公网/OS 资料仅历史调研 |

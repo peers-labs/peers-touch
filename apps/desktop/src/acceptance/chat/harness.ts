@@ -1,3 +1,4 @@
+import { fromJson, toJson, type JsonValue } from '@bufbuild/protobuf';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { messagingDomainRuntime } from '../../messaging/runtime';
 import {
@@ -5,9 +6,14 @@ import {
   type ChatStorageBatchAcceptanceScenario,
 } from '../../runtimes/chatStorageRuntime';
 import { installAuthenticatedCriticalRuntimes } from '../../services/appRuntime';
-import { api } from '../../services/desktop_api';
+import { api, RustCommandException } from '../../services/desktop_api';
+import { searchService } from '../../services/search';
+import {
+  ResourceRefSchema, ResolvedResourceSchema, SearchReadStateSchema, SearchResponseSchema,
+} from '../../gen/proto/domain/search/search_pb';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
+import type { MessagingLocalAttachmentIntent } from '../../services/im-service-contract';
 import {
   refreshPeerPresence,
   refreshSocialProjection,
@@ -160,6 +166,7 @@ interface SendInteractionMessageInput {
   content: string;
   replyToMessageId?: string;
   threadRootMessageId?: string;
+  attachments?: MessagingLocalAttachmentIntent[];
 }
 
 interface SendInteractionMessageBatchInput {
@@ -551,6 +558,41 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    // Supporting native-owner diagnostics. Search UI actions remain in the Journey.
+    async deviceSearchState() {
+      return toJson(SearchReadStateSchema, await searchService.readState());
+    },
+
+    async deviceSearchPage({ query, requestId, cursor = '' }: {
+      query: string; requestId: string; cursor?: string;
+    }) {
+      try {
+        const page = await searchService.submit(query, requestId, 'en', cursor);
+        return { accepted: true, page: toJson(SearchResponseSchema, page) };
+      } catch (error) {
+        return {
+          accepted: false,
+          errorCode: error instanceof RustCommandException
+            ? error.details?.search_error_code : null,
+        };
+      }
+    },
+
+    async deviceSearchResolve({ resource, requestId }: {
+      resource: JsonValue; requestId: string;
+    }) {
+      try {
+        const resolved = await searchService.resolve(fromJson(ResourceRefSchema, resource), requestId);
+        return { accepted: true, resolved: toJson(ResolvedResourceSchema, resolved) };
+      } catch (error) {
+        return {
+          accepted: false,
+          errorCode: error instanceof RustCommandException
+            ? error.details?.search_error_code : null,
+        };
+      }
+    },
+
     async prepareOnboardingPeer({ peerPtid }: OnboardingPeerInput) {
       const actorPtid = activeActorPtid();
       const relationships = useRelationshipsStore.getState();
@@ -710,12 +752,13 @@ export function installAcceptanceHarness(): void {
       content,
       replyToMessageId = '',
       threadRootMessageId = '',
+      attachments = [],
     }: SendInteractionMessageInput) {
       const outcome = await imServiceV1.messaging.sendMessage(
         conversationId,
         kind === 'friend' ? 'direct' : 'group',
         content,
-        [],
+        attachments,
         {
           replyToMessageId: replyToMessageId || undefined,
           threadRootMessageId: threadRootMessageId || undefined,

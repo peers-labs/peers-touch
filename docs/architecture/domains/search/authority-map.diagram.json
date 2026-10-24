@@ -1,0 +1,42 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "search.authority-map",
+  "module": "search",
+  "viewpoint": "authority-map",
+  "layout": "matrix",
+  "output": "authority-map.svg",
+  "title": "Search 权威边界",
+  "canvas": {"width": 1400, "height": 780},
+  "edgeMeaning": null,
+  "scene": {
+    "owners": [
+      {"id": "model", "title": "Model"},
+      {"id": "shell", "title": "Shell"},
+      {"id": "search", "title": "Search"},
+      {"id": "device-domain", "title": "D 区原域"},
+      {"id": "station-domain", "title": "S 区原域"},
+      {"id": "peer-domain", "title": "F 区对端"}
+    ],
+    "concerns": [
+      {"id": "wire", "title": "查询与资源线合同"},
+      {"id": "navigation", "title": "入口与原对象导航"},
+      {"id": "query", "title": "查询、缓存与订阅"},
+      {"id": "device", "title": "端侧正文与当前读权"},
+      {"id": "station", "title": "本站正文与 actor / ACL"},
+      {"id": "federation", "title": "对端按需可见性裁决"},
+      {"id": "device-index", "title": "消息 FTS 与重建进度"},
+      {"id": "projection", "title": "派生检索与覆盖合同"}
+    ],
+    "assignments": [
+      {"concern": "wire", "owner": "model"},
+      {"concern": "navigation", "owner": "shell"},
+      {"concern": "query", "owner": "search"},
+      {"concern": "device", "owner": "device-domain"},
+      {"concern": "station", "owner": "station-domain"},
+      {"concern": "federation", "owner": "peer-domain"},
+      {"concern": "device-index", "owner": "device-domain"},
+      {"concern": "projection", "owner": "search"}
+    ]
+  }
+}

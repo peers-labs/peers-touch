@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { Input, Typography } from 'antd';
 import {
   AlertCircle, ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
@@ -9,13 +9,10 @@ import {
 } from 'lucide-react';
 import type { Conversation, Message, MessageStatus, MobileUiEvidence, ReactionKind } from '../types';
 import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../types';
-import { demoMessages } from '../data';
 import { ThreadView } from '../components/ThreadView';
 import { ForwardPicker } from '../components/ForwardPicker';
-import { ChatHistorySearch } from '../components/ChatHistorySearch';
 import { PrototypeListWindow, type PrototypeListHandle } from '../components/PrototypeListWindow';
 import type { PrototypeListMemory } from '../listPresentation';
-import type { SearchDemoControl } from '../searchDemo';
 import copy from '../../../../../locales/en/common.json';
 import {
   CHAT_JOURNEY,
@@ -34,31 +31,34 @@ import {
 const { Text } = Typography;
 const messageKey = (message: Message) => message.id;
 
-export function ChatThread({ conversation, onBack, onStartCall, initialMessages = demoMessages, listMemory, searchDemo, uiEvidence }: {
+export function ChatThread({ conversation, onBack, onStartCall, messages, onMessagesChange: setMessages, listMemory, uiEvidence, onSearch, messageId, threadRootMessageId }: {
   conversation: Conversation;
   onBack: () => void;
   onStartCall?: (mediaKind: PrototypeCallMediaKind) => void;
-  initialMessages?: Message[];
+  messages: Message[];
+  onMessagesChange: Dispatch<SetStateAction<Message[]>>;
   listMemory: PrototypeListMemory;
-  searchDemo?: SearchDemoControl;
+  onSearch?: () => void;
+  messageId?: string;
+  threadRootMessageId?: string;
   uiEvidence: MobileUiEvidence;
 }) {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [inputValue, setInputValue] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [actionSheetMessage, setActionSheetMessage] = useState<Message | null>(null);
   const [isTyping] = useState(
-    initialMessages.length > 0
-      && !initialMessages.some((message) => message.status === 'failed' || message.status === 'unknown'),
+    messages.length > 0
+      && !messages.some((message) => message.status === 'failed' || message.status === 'unknown'),
   );
-  const [threadMessage, setThreadMessage] = useState<Message | null>(null);
+  const [threadMessage, setThreadMessage] = useState<Message | null>(() =>
+    messages.find(message => message.id === threadRootMessageId) ?? null);
   const [showPinnedMessages, setShowPinnedMessages] = useState(false);
   const [showEmojiGrid, setShowEmojiGrid] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastKey, setToastKey] = useState(0);
   const [showChatDetails, setShowChatDetails] = useState(false);
-  const [detailsView, setDetailsView] = useState<'main' | 'search' | 'media'>('main');
-  const [targetMessageId, setTargetMessageId] = useState<string | null>(null);
+  const [detailsView, setDetailsView] = useState<'main' | 'media'>('main');
+  const [targetMessageId, setTargetMessageId] = useState<string | null>(messageId ?? null);
   const [targetUnavailable, setTargetUnavailable] = useState(false);
   const messageWindow = useRef<PrototypeListHandle>(null);
   const retryTimers = useRef<Set<number>>(new Set());
@@ -795,7 +795,6 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
             </button>
             <span className="mp-chat-details-title">
               {detailsView === 'main' && 'Details'}
-              {detailsView === 'search' && 'Search Chat'}
               {detailsView === 'media' && 'Shared Media'}
             </span>
           </header>
@@ -812,7 +811,7 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
               </div>
 
               <div className="mp-chat-details-section">
-                <button type="button" className="mp-chat-details-item" onClick={() => setDetailsView('search')}>
+                <button type="button" className="mp-chat-details-item" onClick={onSearch}>
                   <span>Search Chat History</span>
                   <ChevronRight size={16} className="mp-row-chevron" />
                 </button>
@@ -872,16 +871,6 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
             </div>
           )}
 
-          {/* Search Chat History Sub-view */}
-          {detailsView === 'search' && (
-            <ChatHistorySearch messages={messages} conversationKey={conversation.key}
-              peerName={conversation.name} memory={listMemory} searchDemo={searchDemo} onSelect={(id) => {
-                setTargetMessageId(id);
-                setDetailsView('main');
-                setShowChatDetails(false);
-              }} />
-          )}
-
           {/* Shared Media Sub-view */}
           {detailsView === 'media' && (
             <div className="mp-chat-details-body">
@@ -938,7 +927,12 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
 
       {/* Thread View overlay */}
       {threadMessage && (
-        <ThreadView message={threadMessage} conversation={conversation} onBack={() => setThreadMessage(null)} />
+        <ThreadView message={messages.find(message => message.id === threadMessage.id) ?? threadMessage}
+          conversation={conversation} targetId={messageId}
+          onReply={reply => setMessages(current => current.map(message => message.id === threadMessage.id
+            ? { ...message, threadReplies: [...(message.threadReplies ?? []), reply],
+              threadCount: (message.threadReplies?.length ?? 0) + 1 } : message))}
+          onBack={threadRootMessageId ? onBack : () => setThreadMessage(null)} />
       )}
     </div>
   );

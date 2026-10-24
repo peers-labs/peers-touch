@@ -27,12 +27,22 @@ const SQLITE_JOURNAL_SUFFIX_BYTES: usize = 8;
 #[cfg(not(target_os = "windows"))]
 const COMPACT_DATABASE_SCOPE_PREFIX: &str = "scope-";
 
-/// SQLCipher accepts a textual passphrase the same way `PRAGMA key = '...'` does: passphrase
-/// bytes are the UTF-8 encoding of this lossy string (see `sqlite3.c` pragma KEY branch,
-/// which calls `sqlite3_key_v2` with `strlen(zRight)`). Building a single-quoted SQL literal
-/// from that string breaks when the passphrase contains NULs, unescaped tokens, or bytes that
-/// confuse the SQL tokenizer—so we call `sqlite3_key_v2` directly with an explicit length.
+/// Raw passphrase bytes handed to SQLCipher.
+///
+/// `sqlite3_key_v2` takes an explicit-length byte buffer, so the 32 random
+/// bytes from [`PlatformKeyProvider`] must be passed through unchanged. The
+/// previous implementation ran them through `String::from_utf8_lossy`, which
+/// collapses every invalid UTF-8 subsequence into the same `EF BF BD`
+/// replacement sequence and silently folds key entropy before KDF.
 fn sqlcipher_passphrase_bytes(key: &KeyMaterial) -> Vec<u8> {
+    key.key_bytes.clone()
+}
+
+/// Passphrase bytes used by databases created before the entropy-folding fix:
+/// random key bytes were lossily UTF-8 decoded before reaching SQLCipher.
+/// Retained solely so [`open_database`] can perform a one-time open-and-rekey
+/// migration of existing local databases; it is never used for new databases.
+fn legacy_lossy_passphrase_bytes(key: &KeyMaterial) -> Vec<u8> {
     String::from_utf8_lossy(&key.key_bytes)
         .into_owned()
         .into_bytes()
@@ -48,48 +58,86 @@ fn sqlcipher_errmsg(conn: &Connection) -> String {
     }
 }
 
-fn apply_sqlcipher_key(conn: &Connection, key: &KeyMaterial) -> Result<(), StorageError> {
-    let pass = sqlcipher_passphrase_bytes(key);
-    let n = i32::try_from(pass.len()).map_err(|_| {
+fn apply_sqlcipher_passphrase(
+    conn: &Connection,
+    passphrase: &[u8],
+    rekey: bool,
+) -> Result<(), StorageError> {
+    let n = i32::try_from(passphrase.len()).map_err(|_| {
         StorageError::WriteFailed("sqlcipher passphrase length exceeds i32::MAX".to_string())
     })?;
     let rc = unsafe {
-        ffi::sqlite3_key_v2(
-            conn.handle(),
-            c"main".as_ptr().cast(),
-            pass.as_ptr().cast(),
-            n,
-        )
+        if rekey {
+            ffi::sqlite3_rekey_v2(
+                conn.handle(),
+                c"main".as_ptr().cast(),
+                passphrase.as_ptr().cast(),
+                n,
+            )
+        } else {
+            ffi::sqlite3_key_v2(
+                conn.handle(),
+                c"main".as_ptr().cast(),
+                passphrase.as_ptr().cast(),
+                n,
+            )
+        }
     };
     if rc != ffi::SQLITE_OK {
+        let op = if rekey { "rekey" } else { "key" };
         return Err(StorageError::WriteFailed(format!(
-            "sqlite3_key_v2 failed (code {rc}): {}",
+            "sqlite3_{op}_v2 failed (code {rc}): {}",
             sqlcipher_errmsg(conn)
         )));
     }
     Ok(())
 }
 
-fn apply_sqlcipher_rekey(conn: &Connection, new_key: &KeyMaterial) -> Result<(), StorageError> {
-    let pass = sqlcipher_passphrase_bytes(new_key);
-    let n = i32::try_from(pass.len()).map_err(|_| {
-        StorageError::WriteFailed("sqlcipher passphrase length exceeds i32::MAX".to_string())
-    })?;
-    let rc = unsafe {
-        ffi::sqlite3_rekey_v2(
-            conn.handle(),
-            c"main".as_ptr().cast(),
-            pass.as_ptr().cast(),
-            n,
-        )
-    };
-    if rc != ffi::SQLITE_OK {
-        return Err(StorageError::WriteFailed(format!(
-            "sqlite3_rekey_v2 failed (code {rc}): {}",
-            sqlcipher_errmsg(conn)
-        )));
+fn verify_sqlcipher_key(conn: &Connection) -> bool {
+    conn.query_row("SELECT count(*) FROM sqlite_master;", [], |row| row.get::<_, i64>(0))
+        .is_ok()
+}
+
+/// Opens an existing database encrypted with the pre-fix lossy passphrase and
+/// rekeys it in place to the full-entropy raw key bytes.
+fn migrate_legacy_lossy_key(
+    path: &std::path::Path,
+    key: &KeyMaterial,
+) -> Result<Connection, StorageError> {
+    let conn = Connection::open(path)
+        .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    apply_sqlcipher_passphrase(&conn, &legacy_lossy_passphrase_bytes(key), false)?;
+    if !verify_sqlcipher_key(&conn) {
+        return Err(StorageError::WriteFailed(
+            "database key verification failed: wrong key or corrupted database".to_string(),
+        ));
     }
-    Ok(())
+    apply_sqlcipher_passphrase(&conn, &sqlcipher_passphrase_bytes(key), true)?;
+    // Bundled SQLCipher can return SQLITE_OK after a rolled-back rekey while
+    // this connection still reads with its old key. Never reuse that context.
+    drop(conn);
+    let verified = Connection::open(path)
+        .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    apply_sqlcipher_passphrase(&verified, &sqlcipher_passphrase_bytes(key), false)?;
+    if !verify_sqlcipher_key(&verified) {
+        return Err(StorageError::WriteFailed(
+            "database key migration to raw passphrase failed verification".to_string(),
+        ));
+    }
+    let stale = Connection::open(path)
+        .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    apply_sqlcipher_passphrase(&stale, &legacy_lossy_passphrase_bytes(key), false)?;
+    if verify_sqlcipher_key(&stale) {
+        return Err(StorageError::WriteFailed(
+            "database still accepts the legacy passphrase after migration".to_string(),
+        ));
+    }
+    drop(stale);
+    tracing::info!(
+        key_ref = %key.key_id,
+        "migrated encrypted database from legacy lossy passphrase to raw key bytes"
+    );
+    Ok(verified)
 }
 
 #[derive(Debug)]
@@ -322,17 +370,24 @@ pub fn open_database(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
     }
-    let conn =
-        Connection::open(path).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    let mut conn =
+        Connection::open(&path).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
     if spec.encryption_level != EncryptionLevel::L0 {
         let key = key_provider.get_or_create_key(&spec.key_ref)?;
-        apply_sqlcipher_key(&conn, &key)?;
-        conn.execute_batch("SELECT count(*) FROM sqlite_master;")
-            .map_err(|_| {
-                StorageError::WriteFailed(
-                    "database key verification failed: wrong key or corrupted database".to_string(),
-                )
-            })?;
+        apply_sqlcipher_passphrase(&conn, &sqlcipher_passphrase_bytes(&key), false)?;
+        if !verify_sqlcipher_key(&conn) {
+            // Raw-key verification failed on a non-empty database: it may have
+            // been created before the entropy-folding fix with the lossy
+            // passphrase. Open with the legacy passphrase and rekey once.
+            let existing = fs::metadata(&path).map(|m| m.len() > 0).unwrap_or(false);
+            if !existing {
+                return Err(StorageError::WriteFailed(
+                    "database key verification failed on empty database".to_string(),
+                ));
+            }
+            drop(conn);
+            conn = migrate_legacy_lossy_key(&path, &key)?;
+        }
         conn.execute(
             "CREATE TABLE IF NOT EXISTS _db_key_meta (
                 key_ref TEXT PRIMARY KEY,
@@ -391,7 +446,8 @@ pub fn rotate_database_key(
     let prev_key = key_provider.get_or_create_key(&spec.key_ref)?;
     let conn = open_database(spec, key_provider)?;
     let rotated = key_provider.rotate_key(&spec.key_ref, next_version)?;
-    let rekey_result = apply_sqlcipher_rekey(&conn, &rotated);
+    let rekey_result =
+        apply_sqlcipher_passphrase(&conn, &sqlcipher_passphrase_bytes(&rotated), true);
     if let Err(rekey_err) = rekey_result {
         tracing::error!(domain = %spec.domain, profile = %spec.profile, error = %rekey_err, "Database rekey failed, rolling back");
         let _ = key_provider.rotate_key(&spec.key_ref, prev_key.key_version);
@@ -563,10 +619,15 @@ fn default_platform_root() -> Result<PathBuf, StorageError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compact_database_scope, sqlite_compatible_path, sqlite_path_has_journal_headroom,
+        apply_sqlcipher_passphrase, compact_database_scope, legacy_lossy_passphrase_bytes,
+        migrate_legacy_lossy_key, open_database, sqlcipher_passphrase_bytes, sqlite_compatible_path,
+        sqlite_path_has_journal_headroom, verify_sqlcipher_key, StorageError,
         SQLITE_JOURNAL_SUFFIX_BYTES, SQLITE_PATH_LIMIT_BYTES,
     };
-    use std::path::PathBuf;
+    use crate::domain::storage::database::{DatabaseOpenSpec, EncryptionLevel};
+    use crate::domain::storage::key_management::{KeyErrorCode, KeyMaterial, KeyProvider, KeyProviderError};
+    use rusqlite::Connection;
+    use std::path::{Path, PathBuf};
 
     #[cfg(not(target_os = "windows"))]
     #[test]
@@ -658,5 +719,199 @@ mod tests {
         let compatible = sqlite_compatible_path(path);
 
         assert!(compatible.to_string_lossy().starts_with("\\\\?\\C:\\"));
+    }
+
+    struct FixedKeyProvider {
+        key: KeyMaterial,
+    }
+
+    impl FixedKeyProvider {
+        fn new(bytes: Vec<u8>) -> Self {
+            Self {
+                key: KeyMaterial {
+                    key_id: "test/key".to_string(),
+                    key_version: 1,
+                    key_bytes: bytes,
+                },
+            }
+        }
+    }
+
+    impl KeyProvider for FixedKeyProvider {
+        fn get_or_create_key(&self, _key_ref: &str) -> Result<KeyMaterial, KeyProviderError> {
+            Ok(self.key.clone())
+        }
+
+        fn rotate_key(
+            &self,
+            _key_ref: &str,
+            _next_version: i32,
+        ) -> Result<KeyMaterial, KeyProviderError> {
+            Err(KeyProviderError::internal("test/key", "rotate unsupported in test"))
+        }
+    }
+
+    /// 32 random bytes that are deliberately invalid UTF-8 (and contain a NUL),
+    /// which is exactly the case the old lossy conversion folded away.
+    fn non_utf8_key() -> Vec<u8> {
+        let mut bytes = vec![0xFFu8, 0x00, 0xFE, 0x80, 0xC0, 0xFD];
+        bytes.extend((6u8..32).map(|i| i.wrapping_mul(7).wrapping_add(0xA0)));
+        assert_eq!(bytes.len(), 32);
+        bytes
+    }
+
+    fn isolated_storage_root() -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!(
+            "peers-sqlcipher-key-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn test_spec(root: &Path) -> DatabaseOpenSpec {
+        // resolve_database_path honors PEERS_STORAGE_ROOT/<trimmed>/peers-touch;
+        // app_name must equal the trimmed root suffix layout used by resolver.
+        std::env::set_var("PEERS_STORAGE_ROOT", root);
+        DatabaseOpenSpec {
+            app_name: "desktop".to_string(),
+            domain: "chat".to_string(),
+            profile: "main".to_string(),
+            user_scope: "actor-test".to_string(),
+            encryption_level: EncryptionLevel::L2,
+            key_ref: "chat/main/actor-test".to_string(),
+            schema_version: 1,
+        }
+    }
+
+    #[test]
+    fn raw_non_utf8_key_preserves_entropy_and_opens_database() {
+        let _env = super::test_storage_env_lock();
+        let root = isolated_storage_root();
+        let spec = test_spec(&root);
+        let key_bytes = non_utf8_key();
+        let provider = FixedKeyProvider::new(key_bytes.clone());
+
+        // Raw passphrase must be byte-identical; legacy conversion folds it.
+        let key = provider.get_or_create_key(&spec.key_ref).unwrap();
+        assert_eq!(sqlcipher_passphrase_bytes(&key), key_bytes);
+        assert_ne!(
+            sqlcipher_passphrase_bytes(&key),
+            legacy_lossy_passphrase_bytes(&key),
+            "lossy conversion must not be the active passphrase"
+        );
+
+        {
+            let conn = open_database(&spec, &provider).expect("first open (create)");
+            conn.execute_batch(
+                "CREATE TABLE probe(id INTEGER PRIMARY KEY, note TEXT);
+                 INSERT INTO probe(note) VALUES ('café-密钥');",
+            )
+            .unwrap();
+        }
+        {
+            let conn = open_database(&spec, &provider).expect("second open (reopen)");
+            let note: String = conn
+                .query_row("SELECT note FROM probe WHERE id = 1", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(note, "café-密钥");
+        }
+
+        std::fs::remove_dir_all(&root).ok();
+        std::env::remove_var("PEERS_STORAGE_ROOT");
+    }
+
+    #[test]
+    fn legacy_lossy_database_is_opened_and_rekeyed_to_raw_bytes() {
+        let _env = super::test_storage_env_lock();
+        let root = isolated_storage_root();
+        let spec = test_spec(&root);
+        let key_bytes = non_utf8_key();
+        let provider = FixedKeyProvider::new(key_bytes.clone());
+        let key = provider.get_or_create_key(&spec.key_ref).unwrap();
+
+        let db_path = super::resolve_database_path(
+            &spec.app_name,
+            &spec.domain,
+            &spec.profile,
+            &spec.user_scope,
+        )
+        .unwrap();
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+
+        // Simulate a database created by the pre-fix code: encrypted with the
+        // lossy passphrase and already containing user data.
+        {
+            let legacy = Connection::open(&db_path).unwrap();
+            apply_sqlcipher_passphrase(&legacy, &legacy_lossy_passphrase_bytes(&key), false)
+                .unwrap();
+            assert!(verify_sqlcipher_key(&legacy));
+            legacy
+                .execute_batch(
+                    "CREATE TABLE probe(id INTEGER PRIMARY KEY, note TEXT);
+                     INSERT INTO probe(note) VALUES ('legacy-data');",
+                )
+                .unwrap();
+        }
+
+        // open_database must transparently migrate to raw key bytes.
+        {
+            let conn = open_database(&spec, &provider).expect("migration open");
+            let note: String = conn
+                .query_row("SELECT note FROM probe WHERE id = 1", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(note, "legacy-data");
+        }
+
+        // Subsequent opens use raw bytes; the legacy passphrase no longer works.
+        {
+            let conn = open_database(&spec, &provider).expect("post-migration reopen");
+            assert!(verify_sqlcipher_key(&conn));
+
+            let stale = Connection::open(&db_path).unwrap();
+            apply_sqlcipher_passphrase(&stale, &legacy_lossy_passphrase_bytes(&key), false)
+                .unwrap();
+            assert!(
+                !verify_sqlcipher_key(&stale),
+                "legacy passphrase must be rejected after migration"
+            );
+        }
+
+        // Direct migration helper is idempotently unavailable on raw databases.
+        let re_migrate: Result<Connection, StorageError> =
+            migrate_legacy_lossy_key(&db_path, &key);
+        assert!(re_migrate.is_err());
+
+        std::fs::remove_dir_all(&root).ok();
+        std::env::remove_var("PEERS_STORAGE_ROOT");
+    }
+
+    #[test]
+    fn search_key_migration_rejects_a_rolled_back_rekey_with_competing_writer() {
+        let root = isolated_storage_root();
+        let path = root.join("locked.db");
+        let key = FixedKeyProvider::new(non_utf8_key()).key;
+        let writer = Connection::open(&path).unwrap();
+        apply_sqlcipher_passphrase(&writer, &legacy_lossy_passphrase_bytes(&key), false).unwrap();
+        writer.execute_batch(
+            "CREATE TABLE probe(note TEXT);
+             INSERT INTO probe VALUES ('preserved');
+             BEGIN IMMEDIATE;",
+        ).unwrap();
+        assert!(migrate_legacy_lossy_key(&path, &key).is_err());
+        writer.execute_batch("ROLLBACK").unwrap();
+        assert_eq!(writer.query_row("SELECT note FROM probe", [], |r| r.get::<_, String>(0))
+            .unwrap(), "preserved");
+        drop(writer);
+        let fresh = migrate_legacy_lossy_key(&path, &key).unwrap();
+        assert_eq!(fresh.query_row("SELECT note FROM probe", [], |r| r.get::<_, String>(0))
+            .unwrap(), "preserved");
+        drop(fresh);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

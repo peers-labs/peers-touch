@@ -67,6 +67,9 @@ Rules:
 - Comments should use indentation, subtle dividers, or background continuity, not separate heavy cards.
 - Reply composer belongs to the thread surface.
 - Empty comments should read as "no replies yet", not as a missing panel.
+- Comment rows, feed previews, and reply-target labels resolve identity by
+  `authorPtid` through the shared actor profile projection; transport author
+  handles are not display-name or avatar authority.
 
 ## 6. Composer
 

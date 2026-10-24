@@ -267,6 +267,11 @@ const ALWAYS_QUIET_COMMANDS = new Set([
   'applets_action',
   'applets_invoke',
   'applets_set_config',
+  'search_suggest',
+  'search_submit',
+  'search_cancel',
+  'search_resolve',
+  'search_read_state',
 ]);
 
 // Quiet only in production. In dev we want timing for these so we can
@@ -1458,38 +1463,6 @@ export interface StatisticsData {
   topic_rank: StatisticsRankItem[] | null;
 }
 
-export interface SearchSource {
-  id: string;
-  name: string;
-  icon: string;
-  description?: string;
-  builtin: boolean;
-  applet_id?: string;
-}
-
-export interface SearchResultItem {
-  id: string;
-  source: string;
-  title: string;
-  snippet: string;
-  url?: string;
-  icon?: string;
-  metadata?: Record<string, string>;
-}
-
-export interface SearchSourceGroup {
-  source: SearchSource;
-  items: SearchResultItem[];
-  total: number;
-}
-
-export interface AISearchResponse {
-  query: string;
-  answer: string;
-  web: boolean;
-  sources: Array<{ title: string; source: string; url: string }>;
-}
-
 export interface TTSVoice {
   id: string;
   name: string;
@@ -2015,12 +1988,6 @@ export interface AccountSetPinInput {
 export interface AccountUnlockInput {
   account_id: string;
   pin: string;
-}
-
-export interface SearchProviderInfo {
-  name: string;
-  available: boolean;
-  is_primary: boolean;
 }
 
 // --- OAuth2 types ---
@@ -4648,21 +4615,6 @@ export interface AgentSelectInput {
   name: string;
 }
 
-export interface SearchPrimaryInput {
-  provider: string;
-}
-
-export interface SearchQueryInput {
-  query: string;
-  source?: string;
-  limit?: number;
-}
-
-export interface AiSearchInput {
-  query: string;
-  web?: boolean;
-}
-
 export interface PreferencesSetInput {
   prefs: Partial<UserPreferences>;
 }
@@ -5876,14 +5828,6 @@ export const api = {
   listTools: () =>
     invokeRustDataFromStatus<void, { tools: ToolInfo[] }>('tools_list').then((r) => r.tools),
 
-  listSearchProviders: () =>
-    invokeRustDataFromStatus<void, { providers: SearchProviderInfo[]; primary: string }>('tools_search_providers'),
-
-  setSearchPrimary: (provider: string) =>
-    invokeRustDataFromStatus<SearchPrimaryInput, { ok: boolean; primary: string }>('tools_set_search_primary', {
-      provider,
-    }),
-
   listAvailableModels: async () => {
     const r = await invokeRustDataFromStatus<void, { models?: AvailableModelWire[] }>('provider_list_available_models');
     const models: AvailableModel[] = Array.isArray(r.models)
@@ -5997,21 +5941,6 @@ export const api = {
       model_id: modelId,
       enabled,
     }),
-
-  getHelp: () =>
-    invokeRustDataFromStatus<void, { categories: HelpCategoryGroup[] }>('help_get').then((r) => r.categories),
-
-  searchSources: () =>
-    invokeRustDataFromStatus<void, { sources: SearchSource[] }>('search_sources').then((r) => r.sources),
-
-  search: (query: string, source = 'all', limit = 20) =>
-    invokeRustDataFromStatus<SearchQueryInput, { query: string; source: string; groups?: SearchSourceGroup[]; results?: SearchResultItem[]; count?: number }>(
-      'search_query',
-      { query, source, limit },
-    ),
-
-  aiSearch: (query: string, web = false) =>
-    invokeRustDataFromStatus<AiSearchInput, AISearchResponse>('search_ai', { query, web }),
 
   resetOnboarding: () =>
     invokeRustDataFromStatus<void, { ok: boolean }>('onboarding_reset'),

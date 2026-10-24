@@ -201,8 +201,25 @@ and member selections. It does not fetch data or retain hidden page trees.
 Messages mount at most 200 rows; other lists mount at most 100. Previous/Next
 traverse overlapping half-windows, and message targets materialize before focus
 or scrolling. Replacing a window keeps the overlapping row's viewport offset.
-Logical-history selectors own thread counts and local search; submitting search
-uses the existing native indexed-search command and its timestamp/ID cursor.
+Logical-history selectors own thread counts. Conversation Search enters the
+descriptor-owned unified Search detail with an explicit conversation filter;
+its generated protocol uses the same native coordinator and opaque cursor as
+global Search. Opening a result materializes the original message/thread
+window, and Back restores Search context after original-owner revalidation.
+
+The Chat route anchor owns the selected thread while a message target is active.
+Composer draft restoration must not clear that thread selection during route
+mount, authentication projection updates, or locale changes. An unanchored
+conversation or account transition resets the local thread independently of
+composer persistence; ordinary thread controls retain their existing behavior.
+
+History and summary hydration never submit a read cursor or clear unread counts
+merely because a conversation remains selected. The visible Chat detail owns
+read intent through `useChatReadCursor`, after lifecycle becomes active and
+Session/Recovery write admission converges. The original guarded Messaging
+command remains the only cursor writer. Unread projection changes follow its
+successful submission, native summary readback and current account/conversation checks; a closed write
+fence cannot fail history reconciliation or acknowledge content optimistically.
 
 `app/navigation/scrollRestoration.ts` owns bounded in-memory window/query/scroll
 metadata outside tab lifetime. Each cache retains at most 100 locations; scroll
