@@ -17,6 +17,8 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
     tauri::generate_handler![
         // Health
         health::mobile_health,
+        // Distribution identity (XCFG-D05)
+        build_identity::mobile_distribution_identity,
         search::search_submit,
         search::search_suggest,
         search::search_resolve,
@@ -177,6 +179,8 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
     tauri::generate_handler![
         // Build identity (acceptance only)
         build_identity::mobile_build_identity,
+        // Distribution identity (XCFG-D05)
+        build_identity::mobile_distribution_identity,
         // Health
         health::mobile_health,
         search::search_submit,

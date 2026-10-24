@@ -4536,9 +4536,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             )),
 
         // =================================================================
-        // System (no state)
+        // System
         // =================================================================
-        "system_health" => to_json(app_system::system_health()),
+        "system_health" => to_json(app_system::system_health(Some(&state.meta))),
+        "client_meta" => to_json(app_system::client_meta(&state.meta)),
         "open_external_url" => {
             let input = match parse_args::<ExternalUrlInput>(args) {
                 Ok(v) => v,

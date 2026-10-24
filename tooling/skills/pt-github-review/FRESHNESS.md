@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-24
-covered_docs_hash: 7c044e0f12272a76c1e0dc141d720abb43396959dade03295f96bf8e48d1795a
+covered_docs_hash: 5b1325cb4767b63b68bd1a13c08dce787c69de1bff65ad254961be9835697f79
 
 covered_docs:
   - AGENTS.md
@@ -31,6 +31,16 @@ covered_docs:
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
+## Desktop Search Continuity Review
+
+The Desktop runtime contract now delegates bounded query subscriptions and
+previous-result projection to one headless coordinator while native owners
+continue to control read validity, cancellation and opening. The interaction
+contract keeps draft input separate from displayed query and preserves results,
+selection and scroll until commit. Existing lifecycle, dependency and evidence
+rules cover this change; the business Gate owns the added rendered-frame
+assertion. Functional observations do not replace current formal native proof.
+
 ## Generated Coverage Inventory Review
 
 The generated Acceptance inventory now includes the registered Desktop/Mobile
@@ -52,6 +62,19 @@ current-source evidence, security and knowledge-delta rules. The current review
 Skill already requires those boundaries and rejects inherited PASS; no new
 review authority, waiver, `SKILL.md` rule or fixture is needed. The architecture
 registry fixture checks the exact Search module and capability IDs.
+
+## 2026-10-24 X-Config Distribution And Knowledge Coverage Review
+
+`AGENTS.md` registers the new `pt-x-config-catalog-publish` skill, and the
+knowledge README indexes the new XCFG-D06 invariant and the mobile proto
+regen pitfall. Review now also performs Knowledge Coverage Review: a new
+cross-layer contract, runtime-semantic proto section, module path, or
+paid-for failure mode with zero matching knowledge must add a governing
+entry or record an explicit `no_growth_needed` waiver, and documentation
+must not restate decisions or describe persisted state that the code only
+derives. `SKILL.md` was updated with this checklist; the large-requirement
+documentation playbook carries the authoring-side steps, so no separate
+fixture is required for the documentation-consistency judgment.
 
 ## Mobile Origin Contract Review
 

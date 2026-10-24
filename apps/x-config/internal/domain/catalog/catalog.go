@@ -1,10 +1,62 @@
 package catalog
 
 type Catalog struct {
-	SchemaVersion int               `json:"schema_version" yaml:"schema_version"`
-	Channel       string            `json:"channel" yaml:"channel"`
-	Endpoints     []CatalogEndpoint `json:"endpoints" yaml:"endpoints"`
-	Releases      []CatalogRelease  `json:"releases" yaml:"releases"`
+	SchemaVersion int                  `json:"schema_version" yaml:"schema_version"`
+	Channel       string               `json:"channel" yaml:"channel"`
+	Endpoints     []CatalogEndpoint    `json:"endpoints" yaml:"endpoints"`
+	Releases      []CatalogRelease     `json:"releases" yaml:"releases"`
+	Directives    []CatalogDirective   `json:"directives,omitempty" yaml:"directives,omitempty"`
+	Distribution  *CatalogDistribution `json:"distribution,omitempty" yaml:"distribution,omitempty"`
+}
+
+// CatalogDistribution is the signed transport steering section: ordered
+// future-fetch origins. It never carries trust material.
+type CatalogDistribution struct {
+	Origins []string `json:"origins,omitempty" yaml:"origins,omitempty"`
+}
+
+// CatalogDirectiveValue is a closed oneof. Exactly one value field must be
+// set; pointer scalars distinguish "unset" from a false/zero value.
+type CatalogDirectiveValue struct {
+	StringValue    string `json:"string_value,omitempty" yaml:"string_value,omitempty"`
+	BoolValue      *bool  `json:"bool_value,omitempty" yaml:"bool_value,omitempty"`
+	IntValue       *int64 `json:"int_value,omitempty" yaml:"int_value,omitempty"`
+	EndpointSeedID string `json:"endpoint_seed_id,omitempty" yaml:"endpoint_seed_id,omitempty"`
+}
+
+type CatalogVersionConstraint struct {
+	Comparator string `json:"comparator" yaml:"comparator"`
+	Version    string `json:"version" yaml:"version"`
+}
+
+type CatalogLabelMatcher struct {
+	Key   string `json:"key" yaml:"key"`
+	Value string `json:"value" yaml:"value"`
+}
+
+type CatalogTargetClause struct {
+	Products      []string                   `json:"products,omitempty" yaml:"products,omitempty"`
+	Platforms     []string                   `json:"platforms,omitempty" yaml:"platforms,omitempty"`
+	Architectures []string                   `json:"architectures,omitempty" yaml:"architectures,omitempty"`
+	Flavors       []string                   `json:"flavors,omitempty" yaml:"flavors,omitempty"`
+	Channels      []string                   `json:"channels,omitempty" yaml:"channels,omitempty"`
+	Environments  []string                   `json:"environments,omitempty" yaml:"environments,omitempty"`
+	Regions       []string                   `json:"regions,omitempty" yaml:"regions,omitempty"`
+	Versions      []CatalogVersionConstraint `json:"versions,omitempty" yaml:"versions,omitempty"`
+	Labels        []CatalogLabelMatcher      `json:"labels,omitempty" yaml:"labels,omitempty"`
+}
+
+type CatalogDirectiveRule struct {
+	ID              string                `json:"id" yaml:"id"`
+	Match           CatalogTargetClause   `json:"match" yaml:"match"`
+	Value           CatalogDirectiveValue `json:"value" yaml:"value"`
+	RolloutPermille uint32                `json:"rollout_permille,omitempty" yaml:"rollout_permille,omitempty"`
+}
+
+type CatalogDirective struct {
+	Key      string                 `json:"key" yaml:"key"`
+	Rules    []CatalogDirectiveRule `json:"rules" yaml:"rules"`
+	Fallback CatalogDirectiveValue  `json:"fallback" yaml:"fallback"`
 }
 
 type CatalogEndpoint struct {

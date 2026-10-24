@@ -6,26 +6,33 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"net"
 	"net/url"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
-	catalogdomain "github.com/peers-labs/peers-touch/x-config/internal/domain/catalog"
-	xconfig "github.com/peers-labs/peers-touch/station/frame/touch/model/xconfig"
 	peer "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
+	xconfig "github.com/peers-labs/peers-touch/station/frame/touch/model/xconfig"
+	catalogdomain "github.com/peers-labs/peers-touch/x-config/internal/domain/catalog"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	CatalogSchemaVersion  = 1
-	SnapshotSchemaVersion = 1
-	MaxCatalogBytes       = 256 * 1024
-	MaxSnapshotLifetime   = 7 * 24 * time.Hour
-	SnapshotClockSkew     = 5 * time.Minute
+	CatalogSchemaVersion    = 1
+	SnapshotSchemaVersion   = 1
+	MaxCatalogBytes         = 256 * 1024
+	MaxSnapshotLifetime     = 7 * 24 * time.Hour
+	SnapshotClockSkew       = 5 * time.Minute
+	MaxDirectives           = 32
+	MaxDirectiveRules       = 16
+	MaxTargetValues         = 8
+	MaxRolloutPermille      = 1000
+	MaxDistributionOrigins  = 4
+	MaxDistributionOriginCh = 512
 )
 
 var (
@@ -54,7 +61,8 @@ func ParseCatalog(raw []byte) (*Catalog, error) {
 	if catalog.SchemaVersion != CatalogSchemaVersion ||
 		!validIdentifier(catalog.Channel, 32) ||
 		len(catalog.Endpoints) > 128 ||
-		len(catalog.Releases) > 64 {
+		len(catalog.Releases) > 64 ||
+		len(catalog.Directives) > MaxDirectives {
 		return nil, ErrCatalogInvalid
 	}
 	return &catalog, nil
@@ -105,6 +113,31 @@ func BuildStatement(
 	sort.Slice(releases, func(left, right int) bool {
 		return releases[left].GetReleaseId() < releases[right].GetReleaseId()
 	})
+
+	seedKinds := make(map[string]xconfig.EndpointSeedKind, len(catalog.Endpoints))
+	for _, input := range catalog.Endpoints {
+		switch input.Kind {
+		case "relay":
+			seedKinds[input.SeedID] = xconfig.EndpointSeedKind_ENDPOINT_SEED_KIND_RELAY
+		case "direct_station":
+			seedKinds[input.SeedID] = xconfig.EndpointSeedKind_ENDPOINT_SEED_KIND_DIRECT_STATION
+		default:
+			return nil, nil, ErrCatalogInvalid
+		}
+	}
+	directives, err := buildDirectives(catalog.Directives, seedKinds)
+	if err != nil {
+		return nil, nil, err
+	}
+	sort.Slice(directives, func(left, right int) bool {
+		return directives[left].GetKey() < directives[right].GetKey()
+	})
+
+	distribution, err := buildDistribution(catalog.Distribution)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	statement := &xconfig.XConfigSnapshotStatement{
 		SchemaVersion: SnapshotSchemaVersion,
 		Channel:       catalog.Channel,
@@ -113,6 +146,8 @@ func BuildStatement(
 		ExpiresAt:     timestamppb.New(expiresAt.UTC()),
 		EndpointSeeds: endpoints,
 		Releases:      releases,
+		Directives:    directives,
+		Distribution:  distribution,
 	}
 	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(statement)
 	if err != nil || len(raw) == 0 || len(raw) > MaxCatalogBytes {
@@ -361,4 +396,82 @@ func mapArchitecture(
 	default:
 		return xconfig.ClientArchitecture_CLIENT_ARCHITECTURE_UNSPECIFIED, false
 	}
+}
+
+// buildDistribution converts the catalog transport-steering section. It
+// mirrors the client admission policy in x-config-core origin.rs: HTTPS
+// for any host; plain HTTP only for loopback/RFC1918/link-local IPv4 or
+// IPv6 loopback; origins are bare base URLs because clients append the
+// channel path. Operator-declared order is preserved as failover order.
+func buildDistribution(
+	input *catalogdomain.CatalogDistribution,
+) (*xconfig.DistributionConfig, error) {
+	if input == nil || len(input.Origins) == 0 {
+		return nil, nil
+	}
+	if len(input.Origins) > MaxDistributionOrigins {
+		return nil, ErrCatalogInvalid
+	}
+	seen := make(map[string]struct{}, len(input.Origins))
+	origins := make([]*xconfig.DistributionOrigin, 0, len(input.Origins))
+	for _, raw := range input.Origins {
+		origin, err := canonicalDistributionOrigin(raw)
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := seen[origin]; exists {
+			return nil, ErrCatalogInvalid
+		}
+		seen[origin] = struct{}{}
+		origins = append(origins, &xconfig.DistributionOrigin{
+			Origin: origin,
+		})
+	}
+	return &xconfig.DistributionConfig{Origins: origins}, nil
+}
+
+func canonicalDistributionOrigin(raw string) (string, error) {
+	if len(raw) == 0 || len(raw) > MaxDistributionOriginCh {
+		return "", ErrCatalogInvalid
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", ErrCatalogInvalid
+	}
+	switch parsed.Scheme {
+	case "https":
+		if parsed.Host == "" {
+			return "", ErrCatalogInvalid
+		}
+	case "http":
+		if !admittedPrivateHTTPHost(parsed.Hostname()) {
+			return "", ErrCatalogInvalid
+		}
+	default:
+		return "", ErrCatalogInvalid
+	}
+	if parsed.User != nil ||
+		parsed.Path != "" ||
+		parsed.RawPath != "" ||
+		parsed.RawQuery != "" ||
+		parsed.ForceQuery ||
+		parsed.Fragment != "" ||
+		strings.TrimSpace(parsed.Host) != parsed.Host {
+		return "", ErrCatalogInvalid
+	}
+	return parsed.String(), nil
+}
+
+// admittedPrivateHTTPHost mirrors x-config-core::origin: plain HTTP is
+// admitted only for IPv4 loopback/RFC1918/link-local literals or IPv6
+// loopback; ULA IPv6 and DNS names stay rejected.
+func admittedPrivateHTTPHost(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return v4.IsLoopback() || v4.IsPrivate() || v4.IsLinkLocalUnicast()
+	}
+	return ip.Equal(net.ParseIP("::1"))
 }

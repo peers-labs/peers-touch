@@ -1,3 +1,4 @@
+use crate::application::meta::ClientMeta;
 use crate::application::station_runtime::StationRuntime;
 use crate::application::x_config::XConfigRuntime;
 use crate::infrastructure::event_stream::EventStreamRuntime;
@@ -23,6 +24,9 @@ pub struct AppState {
     pub event_streams: EventStreamRuntime,
     pub storage: StorageLayout,
     pub i18n: I18nService,
+    /// Single owner of build identity and runtime context (region,
+    /// environment, stable client id) for targeting and debug surfaces.
+    pub meta: ClientMeta,
     /// App-scoped owner for signed public X Config cache, rollback
     /// watermark, release metadata, and non-authoritative Station suggestions.
     pub x_config: XConfigRuntime,
@@ -48,7 +52,8 @@ pub struct AppState {
 impl AppState {
     pub fn new(layout: StorageLayout, i18n: I18nService, station: StationRuntime) -> Self {
         let messaging_engines = EngineRegistry::new(station.client().clone());
-        let x_config = XConfigRuntime::new(&layout);
+        let meta = ClientMeta::new(&layout);
+        let x_config = XConfigRuntime::new(&layout, meta.clone());
         let search_runtime = std::sync::Arc::new(search_core::runtime::SearchRuntime::<
             crate::application::search::runtime::DesktopSearchExecutor,
         >::default());
@@ -59,6 +64,7 @@ impl AppState {
             event_streams: EventStreamRuntime::new(),
             storage: layout,
             i18n,
+            meta,
             x_config,
             station,
             messaging_engines,

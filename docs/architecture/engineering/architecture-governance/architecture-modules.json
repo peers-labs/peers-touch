@@ -769,7 +769,10 @@
         "CCP-D09",
         "CCP-D11",
         "XCFG-D01",
-        "XCFG-D03"
+        "XCFG-D03",
+        "XCFG-D04",
+        "XCFG-D05",
+        "XCFG-D06"
       ],
       "governedPaths": [
         "apps/x-config",
@@ -782,7 +785,8 @@
         "model/domain/x_config",
         "packages/x-config-core",
         "packages/prototypes/control/x-config",
-        "tooling/acceptance/gates/x_config"
+        "tooling/acceptance/gates/x_config",
+        "tooling/distribution/channels.json"
       ],
       "capabilities": [
         {

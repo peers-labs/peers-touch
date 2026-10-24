@@ -8,6 +8,7 @@ const EMPTY_PROJECTION: XConfigProjection = Object.freeze({
   channel: 'stable',
   freshness: 'unavailable',
   suggestions: [],
+  defaults: { default_relay: null, default_station: null },
   refreshing: false,
 });
 

@@ -110,6 +110,7 @@ apps/mobile/android/gradle/wrapper/gradle-wrapper.jar
 apps/mobile/flutter/
 packages/messaging-core/target/
 packages/search-core/target/
+packages/x-config-core/target/
 tooling/acceptance/reports/
 apps/desktop/test-results/
 tooling/scripts/__pycache__/
@@ -119,3 +120,10 @@ tooling/scripts/__pycache__/
 # Generated third-party architecture diagram readers; architecture content is
 # maintained as repository source documents rather than large static HTML.
 apps/official-site/public/architecture-assets/
+
+# Local review / delivery artifacts — machine-local, never commit
+/.archify/
+/deliverables/
+/review-reports/
+/output/
+/tooling/distribution/build/

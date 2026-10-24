@@ -120,6 +120,14 @@ maintainability/docs/evidence debt.
 - Confirm governing docs and operational knowledge match the implementation.
 - For structural changes, require one current source of truth and zero live
   references to the removed path.
+- New cross-layer contracts, proto sections with runtime semantics, or
+  paid-for failure modes must have a governing `docs/knowledge` entry
+  (invariant/pitfall/playbook/term) wired to the changed paths, or an
+  explicit `no_growth_needed` reason; see the Knowledge Coverage Review in
+  `pt-github-review`.
+- Reject duplicated truth in docs: knowledge entries reference decisions
+  rather than restating them, and data/state models describe only what the
+  implementation actually stores (derived/in-memory views marked as such).
 
 ### Verification And Proof
 

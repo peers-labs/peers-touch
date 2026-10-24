@@ -4796,6 +4796,35 @@ export interface XConfigRelease {
   release_notes_url: string;
 }
 
+export interface ClientMeta {
+  packaged: boolean;
+  product: string | null;
+  flavor: string | null;
+  channel: string;
+  version: string | null;
+  build_number?: number | null;
+  commit: string | null;
+  identifier: string | null;
+  default_region: string | null;
+  region: string;
+  environment: string;
+  device_id: string;
+  labels: Record<string, string>;
+}
+
+export interface XConfigResolvedEndpointDefault {
+  seed_id: string;
+  display_name: string;
+  canonical_origin: string;
+  matched_rule_id: string | null;
+  actionable: boolean;
+}
+
+export interface XConfigDefaults {
+  default_relay: XConfigResolvedEndpointDefault | null;
+  default_station: XConfigResolvedEndpointDefault | null;
+}
+
 export interface XConfigProjection {
   channel: string;
   sequence?: number | null;
@@ -4803,7 +4832,9 @@ export interface XConfigProjection {
   freshness: XConfigFreshness;
   suggestions: XConfigSuggestion[];
   release?: XConfigRelease | null;
+  defaults: XConfigDefaults;
   refreshing: boolean;
+  active_origin?: string | null;
   last_refresh_attempt_at_unix_ms?: number | null;
   next_refresh_at_unix_ms?: number | null;
   last_refresh_error?: string | null;
@@ -8386,6 +8417,9 @@ export const api = {
 
   stationProbe: (input: string) =>
     invokeRustDataFromStatus<{ input: string }, StationDiscoveryResult>('station_probe', { input }),
+
+  clientMeta: () =>
+    invokeRustDataFromStatus<void, ClientMeta>('client_meta'),
 
   xConfigProjection: () =>
     invokeRustDataFromStatus<void, XConfigProjection>('x_config_projection'),

@@ -1023,6 +1023,7 @@ fn main() {
             search::search_resolve,
             search::search_read_state,
             system::system_health,
+            system::client_meta,
             system::open_external_url,
             system::onboarding_reset,
             system::preferences_get,

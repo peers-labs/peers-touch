@@ -22,11 +22,55 @@ export type CatalogRelease = {
   published_at: string;
 };
 
+export type DirectiveValue = {
+  string_value?: string;
+  bool_value?: boolean;
+  int_value?: number;
+  endpoint_seed_id?: string;
+};
+
+export type VersionConstraint = {
+  comparator: ">=" | "<" | "^";
+  version: string;
+};
+
+export type LabelMatcher = {
+  key: string;
+  value: string;
+};
+
+export type TargetClause = {
+  products?: string[];
+  platforms?: CatalogRelease["platform"][];
+  architectures?: CatalogRelease["architecture"][];
+  flavors?: string[];
+  channels?: string[];
+  environments?: string[];
+  regions?: string[];
+  versions?: VersionConstraint[];
+  labels?: LabelMatcher[];
+};
+
+export type CatalogDirectiveRule = {
+  id: string;
+  match: TargetClause;
+  value: DirectiveValue;
+  rollout_permille?: number;
+};
+
+export type CatalogDirective = {
+  key: string;
+  rules: CatalogDirectiveRule[];
+  fallback: DirectiveValue;
+};
+
 export type Catalog = {
   schema_version: 1;
   channel: string;
   endpoints: CatalogEndpoint[];
   releases: CatalogRelease[];
+  // Passed through unchanged in P1; directive editing arrives in P3.
+  directives?: CatalogDirective[];
 };
 
 export type Draft = {

@@ -23,6 +23,7 @@ serde_json = "1"
 serde_yaml = "0.9"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 urlencoding = "2"
+uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", features = ["blocking", "json", "multipart", "rustls-tls", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl", "hooks"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }

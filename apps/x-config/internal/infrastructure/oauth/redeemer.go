@@ -3,15 +3,17 @@ package oauth
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/peers-labs/peers-touch/x-config/internal/application/operatorauth"
 	"github.com/peers-labs/peers-touch/oauth2-client/model/operatorlogin"
+	"github.com/peers-labs/peers-touch/x-config/internal/application/operatorauth"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -95,6 +97,27 @@ func (r *Redeemer) Redeem(
 		return nil, errors.New("oauth_redeem_unavailable")
 	}
 	if response.StatusCode != http.StatusOK {
+		// The broker answers failures with a bounded JSON error code; logging
+		// that label (never headers or secrets) keeps operator-login
+		// diagnosis possible across the server-to-server redeem hop.
+		var failure struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(body, &failure)
+		detail := strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' {
+				return r
+			}
+			return -1
+		}, failure.Error)
+		if len(detail) > 32 {
+			detail = detail[:32]
+		}
+		log.Printf(
+			"x_config_auth event=redeem outcome=rejected status=%d detail=%s",
+			response.StatusCode,
+			detail,
+		)
 		return nil, errors.New("oauth_redeem_rejected")
 	}
 	result := &operatorlogin.RedeemOperatorLoginHandoffResponse{}
