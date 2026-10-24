@@ -25,6 +25,7 @@ UI_ASSERTIONS = {
     "chinese_search", "attachment_filename", "historical_open", "thread_open",
     "pagination",
     "repeat_cache", "reopen_cache", "backspace_cache", "return_cache",
+    "input_continuity",
     "explicit_refresh", "edit_invalidation", "hide_invalidation",
     "functions_navigation", "empty_state", "invalid_query_recovery",
     "logout_clears_search", "same_window_account_isolation",
@@ -114,6 +115,8 @@ class DeviceSearchGate(NativeTwoClientGate):
                 visibilityState: document.visibilityState,
                 modalClass: modal?.className || '',
                 query: field?.querySelector('input')?.value || '',
+                displayedQuery: document.querySelector('.pt-search-body')?.dataset.displayedQuery || '',
+                busy: document.querySelector('.pt-search-body')?.getAttribute('aria-busy') === 'true',
                 bodyText: document.querySelector('.pt-search-body')?.innerText || '',
                 resultCount: document.querySelectorAll('.pt-search-row').length,
                 resultText: [...document.querySelectorAll('.pt-search-row')]
@@ -169,7 +172,11 @@ class DeviceSearchGate(NativeTwoClientGate):
     def settled(self) -> None:
         self.wait_js(
             "document.querySelector('.pt-search-field input')"
-            " && !document.querySelector('.pt-search-status')",
+            " && document.querySelector('.pt-search-body')?.getAttribute('aria-busy') === 'false'"
+            " && (document.querySelector('.pt-search-error')"
+            " || document.querySelector('.pt-search-intents button:nth-child(2)')?.getAttribute('aria-selected') === 'true'"
+            " || document.querySelector('.pt-search-body')?.dataset.displayedQuery"
+            " === document.querySelector('.pt-search-field input')?.value.trim())",
             "settled Search UI",
         )
 
@@ -213,7 +220,7 @@ class DeviceSearchGate(NativeTwoClientGate):
 
                 def capture() -> dict[str, Any] | None:
                     rendering = self.surface()
-                    if not rendering["painted"] or rendering["loading"] or not predicate():
+                    if not rendering["painted"] or rendering["loading"] or rendering["busy"] or not predicate():
                         return None
                     self.receiver.save_screenshot(screenshot_path)
                     dom_path.write_text(self.receiver.get_page_source())
@@ -390,13 +397,7 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.cached("reopen_cache", reopen)
         # Warm suggest separately; returning to the prefix reuses that frame.
         self.fill(self.query)
-        self.field().send_keys("z")
-        self.wait_js(
-            "document.querySelector('.pt-search-empty')"
-            " && !document.querySelector('.pt-search-status')",
-            "changed query terminal state",
-        )
-        self.cached("backspace_cache", lambda: self.press(Keys.BACKSPACE))
+        self.prove_input_continuity()
         self.press(Keys.ENTER)
         self.settled()
         before = self.counts()
@@ -415,6 +416,51 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.cached("return_cache", lambda: (
             self.receiver.find_element("[data-search-return] button", 20).click(), self.field()
         ))
+
+    def prove_input_continuity(self) -> None:
+        self.receiver.execute_script("""
+            window.__searchContinuity = {active: true, frames: []};
+            const sample = () => {
+                const trace = window.__searchContinuity;
+                if (!trace.active || trace.frames.length >= 600) return;
+                const body = document.querySelector('.pt-search-body');
+                trace.frames.push({
+                    draft: document.querySelector('.pt-search-field input')?.value,
+                    displayed: body?.dataset.displayedQuery,
+                    rows: [...document.querySelectorAll('.pt-search-row')].map(row => row.innerText),
+                    marks: [...document.querySelectorAll('.pt-search-body mark')].map(mark => mark.textContent),
+                    field: document.querySelector('.pt-search-field')?.getBoundingClientRect().toJSON(),
+                    body: body?.getBoundingClientRect().toJSON(),
+                });
+                requestAnimationFrame(sample);
+            };
+            sample();
+        """)
+        try:
+            self.field().send_keys("z")
+            self.settled()
+            self.cached("backspace_cache", lambda: self.press(Keys.BACKSPACE))
+        finally:
+            frames = self.receiver.execute_script(
+                "window.__searchContinuity.active = false; return window.__searchContinuity.frames;",
+            )
+        baseline = frames[0]
+        pending = [frame for frame in frames
+                   if frame["draft"] == self.query + "z" and frame["displayed"] == self.query]
+        retained = bool(pending) and all(
+            frame["rows"] == baseline["rows"] and frame["marks"] == baseline["marks"]
+            for frame in pending
+        )
+        geometry = all(
+            abs(frame[region][axis] - baseline[region][axis]) <= 1
+            for frame in frames for region in ("field", "body")
+            for axis in ("x", "y", "width", "height")
+        )
+        self.report.runtime["search"]["continuity"] = {"frames": frames}
+        self.visible("input_continuity", lambda: (
+            retained and geometry and self.surface()["displayedQuery"] == self.query
+            and self.query in self.rows()
+        ), {"retained": retained, "geometry": geometry, "frameCount": len(frames)})
 
     def prove_mutations(self) -> None:
         self.submit(self.query)

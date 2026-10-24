@@ -40,3 +40,11 @@ export const searchService = {
     return invokeRustProto('search_read_state', SearchReadStateSchema);
   },
 };
+
+// Content revisions change row data, never the identity of the underlying object.
+export function resourceIdentity(resource: ResourceRef | undefined): string {
+  return resource ? JSON.stringify([
+    resource.authorityNamespace, resource.kind, resource.id,
+    resource.conversationId, resource.messageId, resource.anchor?.kind, resource.anchor?.id,
+  ]) : '';
+}

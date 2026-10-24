@@ -12,6 +12,8 @@
           "apps/desktop/src-tauri/src/interface/tauri_commands/search.rs",
           "apps/desktop/src/components/search/**",
           "apps/desktop/src/runtimes/searchRuntime.ts",
+          "apps/desktop/src/runtimes/searchQueries.ts",
+          "docs/client/desktop/search-experience-contract.md",
           "apps/desktop/src/store/search.ts",
           "apps/desktop/src/services/search.ts",
           "apps/desktop/src/messaging/openResource.ts",

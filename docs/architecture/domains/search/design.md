@@ -230,6 +230,21 @@ payload 的 LRU 淘汰不淘汰在途操作失效标记；直到旧读结束/超
 
 ### 4.2 返回、失效与成本边界
 
+Desktop 表现层由 `runtimes/searchQueries.ts` 内唯一 TanStack Query
+Client/Observer 管理查询订阅、取消和短期结果存储，替代手写 frames Map；
+不接入 React Query Provider，也不新增 UI/CSS 依赖。原生 Search/Messaging
+继续裁决权限、内容水位与读取有效性，Query 的 staleTime 不构成授权。
+每次复用前与响应后检查原 owner read-state；账号、Session、Station 与
+匹配的 Messaging 失效事件清除表现层查询分区。
+
+输入草稿与已展示 query/mode 分离。Observer 仅在原 read-scope/revision/
+expiry/lease 仍有效时允许 `keepPreviousData`；新结果原子替换正文和展示
+query，防止旧行被新词高亮。120ms 输入 admission、200ms stalled 提示和
+固定输入区状态槽保持列表几何；最早 expiry/lease 定时器主动遮蔽旧结果。
+原生 cache/read port 是业务读取复用层，Query 是有界客户端结果订阅层，
+两者不复制权限策略或建立第二套原文存储。交互规则唯一维护在
+[Desktop Search continuity](../../../client/desktop/search-experience-contract.md)。
+
 返回或重开时恢复短期 session 和已加载页，页面可以卸载。内部排序 session
 持有 snapshot/continuation/已发集合；UI intent 是独立 subscriber，符合相同
 查询和当前授权才可 attach，取消旧 intent 不取消新的 subscriber。页值仍有效即复用；

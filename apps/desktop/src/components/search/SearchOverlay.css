@@ -28,7 +28,8 @@
 .pt-search-body mark { background: var(--pt-search-wash); color: var(--pt-search-primary); border-radius: 3px; }
 .pt-search-hint { padding: 8px 16px; font-size: 12px; color: var(--pt-search-muted); }
 .pt-search-empty { min-height: 320px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; padding: 24px; text-align: center; color: var(--pt-search-secondary); }
-.pt-search-status { display: flex; align-items: center; gap: 8px; padding: 18px; color: var(--pt-search-secondary); }
+.pt-search-progress { width: 16px; height: 16px; flex: none; }
+.pt-search-status { display: flex; color: var(--pt-search-secondary); }
 .pt-search-error { display: flex; align-items: center; gap: 12px; padding: 18px; color: var(--pt-search-secondary); }
 .pt-search-error button, .pt-search-more { border: 1px solid var(--pt-search-border); border-radius: 8px; background: var(--pt-search-surface); color: var(--pt-search-primary); padding: 6px 12px; cursor: pointer; }
 .pt-search-more { display: block; margin: 8px auto; }

@@ -61,9 +61,12 @@ class DeviceSearchContractGate(AcceptanceGate):
             "UnchangedProjection", "UnavailableResource", "RetryableRead", "ReadValidity",
         )))
         runtime = read("apps/desktop/src/runtimes/searchRuntime.ts")
-        self.assert_condition("runtime_scope_and_validity", all(name in runtime for name in (
+        queries = read("apps/desktop/src/runtimes/searchQueries.ts")
+        self.assert_condition("runtime_scope_and_validity", all(name in runtime + queries for name in (
             "sessionEpoch", "readScope", "sourceRevision", "expiresAtUnixMs",
-            "leaseUntilUnixMs", "messaging:projection-changed", "frames.clear()",
+            "leaseUntilUnixMs", "messaging:projection-changed", "clearSearchQueries",
+        )) and "client.clear()" in queries and all(name in queries for name in (
+            "QueryClient", "QueryObserver", "keepPreviousData",
         )))
         runner = read("tooling/acceptance/gates/chat/device_search_runner.py")
         tree = ast.parse(runner)

@@ -80,7 +80,6 @@ export interface SearchOverlayProps {
   onOpenResult: (result: Pick<SearchResult, 'targetPage' | 'anchor' | 'title'>) => void;
 }
 
-const MIN_RESULT_HEIGHT = 380;
 
 export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProps) {
   const [query, setQuery] = useState('');
@@ -89,6 +88,10 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
   const [actor, setActor] = useState<ActorId>('owner');
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [displayedQuery, setDisplayedQuery] = useState('');
+  const [displayedSubmitted, setDisplayedSubmitted] = useState(false);
+  const [stalled, setStalled] = useState(false);
+  const [composing, setComposing] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   // 用户是否已用方向键/悬停“拿过”光标；未拿取前 Enter 始终提交完整检索。
   const [cursorEngaged, setCursorEngaged] = useState(false);
@@ -124,61 +127,78 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
   }, []);
 
   const suggestionItems = useMemo(
-    () => (intent !== 'functions' && query.trim() && !loading ? suggestions(query, actor) : []),
-    [query, loading, actor, intent],
+    () => (intent !== 'functions' && displayedQuery.trim() ? suggestions(displayedQuery, actor) : []),
+    [displayedQuery, actor, intent],
   );
 
-  const submittedQuery = query;
+  const submittedQuery = displayedQuery;
   const results = useMemo(() => {
-    if (!submitted || loading || !submittedQuery.trim()) return [];
+    if (!displayedSubmitted || !submittedQuery.trim()) return [];
     const matches = searchResults(submittedQuery, actor, intent === 'functions' ? 'functions' : kindFilter);
     return KIND_ORDER.flatMap((kind) => matches.filter((item) => item.kind === kind));
-  }, [submitted, submittedQuery, loading, actor, intent, kindFilter]);
+  }, [displayedSubmitted, submittedQuery, actor, intent, kindFilter]);
 
   const recent = useMemo(() => recentObjects(actor), [actor]);
 
   // 平面可选行：输入态用建议，提交态按结果顺序，供键盘上下移动。
   const selectable: { targetPage: SearchResult['targetPage']; anchor: string; title: string }[] =
-    loading || !query.trim()
+    !displayedQuery.trim()
       ? []
-      : submitted && results.length > 0
+      : displayedSubmitted && results.length > 0
         ? results.map((r) => ({ targetPage: r.targetPage, anchor: r.anchor, title: r.title }))
-        : !submitted
+        : !displayedSubmitted
           ? suggestionItems.map((s) => ({ targetPage: s.targetPage, anchor: s.anchor, title: s.label }))
           : [];
 
   useEffect(() => {
     setActiveIndex(0);
     setCursorEngaged(false);
-  }, [query, intent, kindFilter, actor]);
+    scrollTop.current = 0;
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+  }, [displayedQuery, displayedSubmitted, intent, kindFilter, actor]);
 
   useEffect(() => {
     setQuery('');
     setSubmitted(false);
+    setDisplayedQuery('');
+    setDisplayedSubmitted(false);
+    setStalled(false);
     setLoading(false);
     scrollTop.current = 0;
     completedQueries.current.clear();
     if (loadingTimer.current) window.clearTimeout(loadingTimer.current);
   }, [actor]);
 
+  useEffect(() => {
+    if (!open || composing) return;
+    if (loadingTimer.current) window.clearTimeout(loadingTimer.current);
+    let stalledTimer: number | null = null;
+    const key = JSON.stringify([actor, query, intent, kindFilter]);
+    const commit = () => {
+      setDisplayedQuery(query);
+      setDisplayedSubmitted(submitted);
+      setLoading(false);
+      setStalled(false);
+      if (stalledTimer !== null) window.clearTimeout(stalledTimer);
+      if (submitted) completedQueries.current.add(key);
+      if (completedQueries.current.size > 32) completedQueries.current.delete(completedQueries.current.values().next().value!);
+    };
+    if (intent === 'functions' || completedQueries.current.has(key)) { commit(); return; }
+    setLoading(true);
+    setStalled(false);
+    stalledTimer = window.setTimeout(() => setStalled(true), 200);
+    // Mock latency expresses the approved continuity contract; it is not runtime proof.
+    loadingTimer.current = window.setTimeout(commit, submitted ? 280 : 120);
+    return () => {
+      if (stalledTimer !== null) window.clearTimeout(stalledTimer);
+      if (loadingTimer.current) window.clearTimeout(loadingTimer.current);
+    };
+  }, [open, query, submitted, actor, intent, kindFilter, composing]);
+
   const runSearch = useCallback(() => {
     if (!query.trim()) return;
     setSubmitted(true);
-    setCursorEngaged(false);
-    if (loadingTimer.current) window.clearTimeout(loadingTimer.current);
-    const key = JSON.stringify([actor, query, intent, kindFilter]);
-    if (completedQueries.current.has(key)) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    // 原型用短延时表达真实检索的加载态（partial/coverage 的可见性）。
-    loadingTimer.current = window.setTimeout(() => {
-      completedQueries.current.add(key);
-      if (completedQueries.current.size > 32) completedQueries.current.delete(completedQueries.current.values().next().value!);
-      setLoading(false);
-    }, 280);
-  }, [query, actor, intent, kindFilter]);
+  }, [query]);
 
   const openResult = useCallback(
     (item: { targetPage: SearchResult['targetPage']; anchor: string; title: string }) => {
@@ -201,7 +221,7 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
       setActiveIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const target = cursorEngaged ? selectable[activeIndex] : undefined;
+      const target = cursorEngaged && query === displayedQuery ? selectable[activeIndex] : undefined;
       if (target) openResult(target);
       else runSearch();
     } else if (e.key === 'Escape') {
@@ -213,12 +233,12 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
   if (!open) return null;
 
   const counts = new Map<SearchKind, number>();
-  for (const r of searchResults(query, actor, 'all')) {
+  for (const r of searchResults(displayedQuery, actor, 'all')) {
     counts.set(r.kind, (counts.get(r.kind) ?? 0) + 1);
   }
-  const showInitial = !loading && !query.trim();
-  const showSuggestions = !loading && !submitted && query.trim().length > 0;
-  const showEmpty = !loading && submitted && results.length === 0;
+  const showInitial = !displayedQuery.trim();
+  const showSuggestions = !displayedSubmitted && displayedQuery.trim().length > 0;
+  const showEmpty = displayedSubmitted && results.length === 0;
   const unavailableSources = SOURCE_STATUS[actor].unavailable;
 
   return (
@@ -235,6 +255,8 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
               placeholder="搜索消息、人、群、动态、Agent、收藏…"
               value={query}
               onChange={(e) => { setQuery(e.target.value); setSubmitted(false); }}
+              onCompositionStart={() => setComposing(true)}
+              onCompositionEnd={(e) => { setComposing(false); setQuery(e.currentTarget.value); }}
               onKeyDown={onKeyDown}
               aria-label="搜索 Peers 内容"
               aria-controls="search-results-region"
@@ -243,6 +265,9 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
               aria-autocomplete="list"
               aria-activedescendant={cursorEngaged && selectable.length > 0 ? `search-opt-${activeIndex}` : undefined}
             />
+            <span className="search-progress">
+              {stalled && <span role="status" aria-label="正在搜索"><Loader2 size={16} className="spin" /></span>}
+            </span>
             <span className="search-scope-chip" title="封闭检索域：只包含你有权访问的 Peers 内容">
               Peers 内
             </span>
@@ -279,7 +304,7 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
           </span>
         </div>
 
-        {intent === 'all' && submitted && !loading && results.length > 0 && (
+        {intent === 'all' && displayedSubmitted && results.length > 0 && (
           <div className="search-kind-row" role="group" aria-label="内容类型筛选">
             <KindChip label="全部" active={kindFilter === 'all'} onClick={() => setKindFilter('all')} />
             {CONTENT_KINDS.map((k) => {
@@ -299,10 +324,10 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
 
         {/* 结果区（各态共享等高容器，避免切换跳动） */}
         <div ref={bodyRef} onScroll={event => { scrollTop.current = event.currentTarget.scrollTop; }}
-          className="search-body" id="search-results-region" role="listbox" style={{ minHeight: MIN_RESULT_HEIGHT }}>
-          {loading && <LoadingState />}
+          className="search-body" id="search-results-region" role="listbox" aria-busy={loading}
+          data-displayed-query={displayedQuery}>
 
-          {!loading && showInitial && (
+          {showInitial && (
             <InitialState
               recent={recent}
               quickFunctions={QUICK_FUNCTIONS}
@@ -311,7 +336,7 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
             />
           )}
 
-          {!loading && showSuggestions && suggestionItems.length > 0 && (
+          {showSuggestions && suggestionItems.length > 0 && (
             <div className="search-group">
               <GroupTitle>建议（本机即时匹配，未提交远端）</GroupTitle>
               {suggestionItems.map((s, idx) => {
@@ -330,13 +355,13 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
             </div>
           )}
 
-          {!loading && showSuggestions && suggestionItems.length === 0 && (
+          {showSuggestions && suggestionItems.length === 0 && (
             <div className="search-enter-hint">
               未发现即时匹配；按 Enter 检索 Station 与已授权联邦中的历史内容。
             </div>
           )}
 
-          {!loading && submitted && results.length > 0 && (
+          {displayedSubmitted && results.length > 0 && (
             <ResultsState
               results={results}
               activeIndex={cursorEngaged ? activeIndex : -1}
@@ -346,7 +371,7 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
             />
           )}
 
-          {!loading && showEmpty && <EmptyState query={query} />}
+          {showEmpty && <EmptyState query={displayedQuery} />}
         </div>
 
         {/* 来源状态 + 演示用账号视角切换（权限链的用户可见表达） */}
@@ -382,18 +407,6 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
 }
 
 /* ---------------- 子状态与行 ---------------- */
-
-function LoadingState() {
-  return (
-    <div className="search-loading" aria-live="polite">
-      <Loader2 size={16} className="spin" />
-      <span>正在检索有权访问的内容…</span>
-      <div className="skeleton-list">
-        {[0, 1, 2].map((i) => <div key={i} className="skeleton-row" />)}
-      </div>
-    </div>
-  );
-}
 
 function InitialState({
   recent,

@@ -62,6 +62,28 @@ def validate_account_scope(search: dict) -> None:
         "account isolation requires a real newly sent Bob current-device message and matching UI row",
     )
 
+def validate_continuity(search: dict) -> None:
+    frames = search.get("continuity", {}).get("frames")
+    require(isinstance(frames, list) and 1 < len(frames) <= 600,
+            "continuity requires a bounded rendered-frame trace")
+    baseline = frames[0]
+    query = search["ui"]["input_continuity"]["rendering"]["query"]
+    require(baseline.get("displayed") == query and bool(baseline.get("rows")),
+            "continuity starts with real readable rows")
+    pending = [frame for frame in frames
+               if frame.get("draft") == query + "z" and frame.get("displayed") == query]
+    require(bool(pending) and all(
+        frame.get("rows") == baseline["rows"] and frame.get("marks") == baseline["marks"]
+        for frame in pending
+    ), "pending draft must retain the prior rows and highlight query")
+    require(all(
+        isinstance(frame.get(region), dict)
+        and all(isinstance(frame[region].get(axis), (int, float))
+                and abs(frame[region][axis] - baseline[region][axis]) <= 1
+                for axis in ("x", "y", "width", "height"))
+        for frame in frames for region in ("field", "body")
+    ), "continuity must not move or resize the field or list")
+
 
 def validate_search_report(report: dict, source_ref: ArtifactRef, store: EvidenceStore) -> None:
     validate_report(
@@ -78,7 +100,8 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
         rendering = ui[name].get("rendering", {})
         require(rendering.get("painted") is True, f"{name} requires a painted native surface")
         require(
-            rendering.get("loading") is False and rendering.get("assertionPassed") is True,
+            rendering.get("loading") is False and rendering.get("busy") is False
+            and rendering.get("assertionPassed") is True,
             f"{name} requires a settled assertion across native screenshot and DOM capture",
         )
         if rendering.get("searchOpen"):
@@ -138,6 +161,7 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
         "same-window account switch requires authoritative original Bob session revocation",
     )
     validate_account_scope(search)
+    validate_continuity(search)
     resources = search.get("resources", {})
     require(bool(resources.get("messageId")) and bool(resources.get("replyId")), "real message IDs required")
     require(len(set(resources.get("fillerIds", []))) == 55, "history must exceed the latest window")

@@ -6,6 +6,7 @@ import { ArrowUpRight, CircleSlash, Hash, Loader2, Lock, MessageCircle, Search, 
 import { SearchKind, SourceState, type ResultItem } from '../../gen/proto/domain/search/search_pb';
 import { useSearchStore } from '../../store/search';
 import { searchActions } from '../../runtimes/searchRuntime';
+import { resourceIdentity } from '../../services/search';
 import { openMessagingResource } from '../../messaging/openResource';
 import { messagingDomainRuntime } from '../../messaging/runtime';
 import { useSocialChatStore } from '../../store/socialChat';
@@ -20,6 +21,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   const { token } = theme.useToken();
   const view = useSearchStore(useShallow(state => ({
     query: state.query, mode: state.mode, status: state.status, response: state.response,
+    displayedQuery: state.displayedQuery, displayedMode: state.displayedMode, stalled: state.stalled,
     errorKey: state.errorKey, opening: state.opening, selectedIndex: state.selectedIndex,
     cursorEngaged: state.cursorEngaged,
   })));
@@ -36,7 +38,9 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   const rows: Row[] = useMemo(() => view.mode === 'functions'
     ? functions.map(item => ({ type: 'function', item }))
     : (view.response?.items ?? []).map(item => ({ type: 'content', item })), [view.mode, functions, view.response]);
-  const initial = !view.query.trim() && view.mode !== 'functions';
+  const displayedQuery = view.mode === 'functions' ? view.query : view.displayedQuery;
+  const initial = !displayedQuery && view.mode !== 'functions';
+  const draftMatches = view.query.trim() === view.displayedQuery;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -95,7 +99,8 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
       });
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      const row = view.cursorEngaged || view.mode === 'functions' ? rows[view.selectedIndex] : undefined;
+      const row = view.mode === 'functions' || (view.cursorEngaged && draftMatches)
+        ? rows[view.selectedIndex] : undefined;
       if (row) void openRow(row);
       else if (view.mode !== 'functions' && view.query.trim()) searchActions.submit();
     } else if (event.key === 'Escape') {
@@ -117,15 +122,15 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
         content.resource.conversationId, content.authorPtid,
       ).name : '';
     return (
-      <button key={row.type === 'function' ? row.item.id : JSON.stringify(row.item.resource)}
+      <button key={row.type === 'function' ? row.item.id : resourceIdentity(row.item.resource)}
         type="button" className={`pt-search-row${selected ? ' active' : ''}`}
         id={`pt-search-option-${index}`} role="option" aria-selected={selected} tabIndex={-1}
         disabled={view.opening} onMouseEnter={() => useSearchStore.setState({ cursorEngaged: true, selectedIndex: index })}
         onClick={() => { void openRow(row); }}>
         <span className="pt-search-row-icon"><Icon size={15} /></span>
         <span className="pt-search-main">
-          <span className="pt-search-title">{highlight(title, view.query)}</span>
-          {detail && <span className="pt-search-snippet">{highlight(detail, view.query)}</span>}
+          <span className="pt-search-title">{highlight(title, displayedQuery)}</span>
+          {detail && <span className="pt-search-snippet">{highlight(detail, displayedQuery)}</span>}
           {content && <span className="pt-search-meta">
             {content.conversationTitle || sender}
             {content.conversationTitle && sender && ` · ${sender}`}
@@ -164,6 +169,11 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
             onChange={event => {
               searchActions.query(event.target.value, !composing.current);
             }} />
+          <span className="pt-search-progress">
+            {view.stalled && <span className="pt-search-status" role="status" aria-label={t('search.loading')}>
+              <Loader2 size={16} className="pt-search-spin" aria-hidden="true" />
+            </span>}
+          </span>
           <span className="pt-search-scope">{t('search.scope')}</span>
           <button type="button" className="pt-search-close" onClick={searchActions.close} aria-label={t('search.close')}><X size={15} /></button>
         </div>
@@ -176,12 +186,12 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
         <span className="pt-search-boundary"><Lock size={12} />{t('search.boundary')}</span>
       </div>
       <div ref={bodyRef} className="pt-search-body" id="pt-search-results" role="listbox" aria-label={t('search.results')}
+        aria-busy={view.status === 'loading'} data-displayed-query={displayedQuery}
         onScroll={event => {
-          if (view.status === 'ready') useSearchStore.setState({ scrollTop: event.currentTarget.scrollTop });
+          useSearchStore.setState({ scrollTop: event.currentTarget.scrollTop });
         }}>
-        {view.status === 'loading' && <div className="pt-search-status" role="status"><Loader2 size={16} className="pt-search-spin" />{t('search.loading')}</div>}
         {rows.length > 0 && <div className="pt-search-group">
-          <div className="pt-search-group-title">{t(initial ? 'search.recent' : view.mode === 'functions' ? 'search.tab.functions' : view.mode === 'suggest' ? 'search.suggestions' : 'search.results')} · {rows.length}</div>
+          <div className="pt-search-group-title">{t(initial ? 'search.recent' : view.mode === 'functions' ? 'search.tab.functions' : view.displayedMode === 'suggest' ? 'search.suggestions' : 'search.results')} · {rows.length}</div>
           {rows.map(renderRow)}
         </div>}
         {initial && <div className="pt-search-group">
@@ -193,16 +203,16 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
             <ArrowUpRight size={14} />
           </button>)}
         </div>}
-        {view.query.trim() && view.mode === 'suggest' && view.status === 'ready' && <p className="pt-search-hint">{t('search.enterHint')}</p>}
-        {!initial && rows.length === 0 && view.status !== 'loading' && !view.errorKey && <div className="pt-search-empty">
-          <CircleSlash size={28} /><strong>{t('search.empty.title', { query: view.query })}</strong><span>{t('search.empty.detail')}</span>
+        {displayedQuery && view.displayedMode === 'suggest' && view.mode !== 'functions' && <p className="pt-search-hint">{t('search.enterHint')}</p>}
+        {!initial && rows.length === 0 && (view.status !== 'loading' || !!view.response) && !view.errorKey && <div className="pt-search-empty">
+          <CircleSlash size={28} /><strong>{t('search.empty.title', { query: displayedQuery })}</strong><span>{t('search.empty.detail')}</span>
         </div>}
         {view.errorKey && <div className="pt-search-error" role="alert">
           <span>{t(view.errorKey)}</span>
           <button onClick={() => searchActions.submit(true)}>{t('search.retry')}</button>
         </div>}
-        {view.mode === 'submit' && view.response?.hasMore && <button className="pt-search-more"
-          disabled={view.status === 'loading'} onClick={searchActions.more}>{t('search.more')}</button>}
+        {view.displayedMode === 'submit' && view.mode !== 'functions' && view.response?.hasMore && <button className="pt-search-more"
+          disabled={view.status === 'loading' || !draftMatches} onClick={searchActions.more}>{t('search.more')}</button>}
       </div>
       <div className="pt-search-footer" aria-live="polite">
         <span>{t(partial ? 'search.coverage.partial' : 'search.coverage.device')}</span>

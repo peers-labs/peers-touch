@@ -7,7 +7,10 @@ export interface SearchState {
   open: boolean;
   query: string;
   mode: SearchMode;
+  displayedQuery: string;
+  displayedMode: Exclude<SearchMode, 'functions'>;
   status: 'idle' | 'loading' | 'ready' | 'error';
+  stalled: boolean;
   response: SearchResponse | null;
   errorKey: string | null;
   opening: boolean;
@@ -21,6 +24,7 @@ export interface SearchState {
 // Projection only. Search runtime owns all reads, cache and lifecycle.
 export const emptySearchState = (): SearchState => ({
   open: false, query: '', mode: 'suggest', status: 'idle', response: null,
+  displayedQuery: '', displayedMode: 'suggest', stalled: false,
   errorKey: null, opening: false, selectedIndex: 0, cursorEngaged: false,
   scrollTop: 0, originPage: 'chat', returnAvailable: false,
 });

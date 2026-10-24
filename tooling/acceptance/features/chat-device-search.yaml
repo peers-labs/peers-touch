@@ -9,6 +9,8 @@
     "apps/desktop/src-tauri/src/interface/tauri_commands/search.rs",
     "apps/desktop/src/components/search/**",
     "apps/desktop/src/runtimes/searchRuntime.ts",
+    "apps/desktop/src/runtimes/searchQueries.ts",
+    "docs/client/desktop/search-experience-contract.md",
     "apps/desktop/src/store/search.ts",
     "apps/desktop/src/services/search.ts",
     "apps/desktop/src/messaging/openResource.ts",
@@ -35,6 +37,7 @@
       "a received Chinese message and uploaded attachment filename appear in global Search",
       "opening historical messages and thread replies focuses the actual Chat target",
       "return, reopen, repeat and backspace restore results without another source query",
+      "pending input retains readable rows and their displayed query; newest draft commits atomically without moving the field or list",
       "explicit refresh queries the source; real edits and actor hide update receiver Search",
       "Functions opens real Settings; empty and invalid queries recover visibly",
       "logout clears Search; switching accounts in the same native window isolates results"
