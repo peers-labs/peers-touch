@@ -71,13 +71,47 @@ return {
             try:
                 social = session.call_action("social.projection.read")
                 private = session.call_action("moments.private.snapshot")
+                moments = social.get("moments") or {}
                 reference = artifacts.write_json(
                     f"social-content-search/{session.client_id}/failure-moments.json",
-                    {"clientId": session.client_id, "moments": social.get("moments"),
-                     "privateReads": private.get("reads")},
+                    {"clientId": session.client_id, "moments": moments,
+                     "privateReads": private.get("reads"),
+                     "privateReadHistory": private.get("readStateHistoryByPostId")},
                     role=f"social-search-original-moments-failure/{session.client_id}",
                 )
                 diagnostics.append({"clientId": session.client_id, "artifact": reference.to_dict()})
+                for feed in moments.values():
+                    detail = feed.get("selectedDetail") or {}
+                    retained = next((row for row in private.get("reads", [])
+                                     if row.get("postId") == detail.get("postId")), {})
+                    if (detail.get("sourceId") != "device.social"
+                            or detail.get("state") != "unavailable"
+                            or retained.get("state") != "CONTENT_READY"):
+                        continue
+                    probe = session.execute_async_script("""
+const done = arguments[arguments.length - 1];
+Promise.resolve(window.__PEERS_MOBILE_ACCEPTANCE__['moments.private.read']({
+  postId: arguments[0],
+})).then(value => done({state: value.state}), error => {
+  const message = String(error?.message || error);
+  const transport = message.match(
+    /private Social transport failed \\(status=(Some\\(\\d+\\)|None), code=(\\d+), private_content_code=([A-Z0-9_]+|none)\\)/);
+  done({
+    code: /^MOBILE_[A-Z_]+$/.test(error?.code || '') ? error.code : '',
+    runtimeError: message.match(/^mobile\\.privateSocial\\.[A-Za-z]+$/)?.[0] || '',
+    transport: transport ? {status: transport[1], code: transport[2],
+      privateContentCode: transport[3]} : null,
+  });
+});
+""", detail["postId"])
+                    probe_reference = artifacts.write_json(
+                        f"social-content-search/{session.client_id}/failure-private-read.json",
+                        {"postId": detail["postId"], "originalRead": probe},
+                        role=f"social-search-original-private-read-failure/{session.client_id}",
+                    )
+                    diagnostics.append({"clientId": session.client_id,
+                                        "artifact": probe_reference.to_dict()})
+                    break
             except Exception as error:
                 diagnostics.append({"clientId": session.client_id, "errorType": type(error).__name__})
         return diagnostics + super()._capture_runtime_failure(artifacts)
