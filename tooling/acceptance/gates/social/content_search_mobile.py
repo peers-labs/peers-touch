@@ -220,6 +220,10 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
             role=f"social-content-search-outage/{session.client_id}",
         )
         self.select(session, "social", query)
+        # Service health alone cannot prove original Social reads have resumed.
+        self.has(session, social["publicId"], social["public"])
+        self.has(session, social["privateId"], social["private"])
+        self.capture(artifacts, session, "social-source-recovered")
         deleted = self.mutate_when_admitted(sender_session, "moments.delete", {
             "postId": social["privateId"],
         })

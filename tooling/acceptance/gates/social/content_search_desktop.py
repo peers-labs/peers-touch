@@ -90,8 +90,13 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         self.settled()
 
     def item(self, resource_id: str) -> dict:
-        return next(item for item in self.page()["items"]
-                    if item["resource"]["id"] == resource_id)
+        page = self.page()
+        item = next((item for item in page["items"]
+                     if item["resource"]["id"] == resource_id), None)
+        if item is None:
+            raise GateError("original Search result is unavailable; source states="
+                            + json.dumps([source["state"] for source in page["coverage"]]))
+        return item
 
     def seed_social(self) -> None:
         # Social content keys belong to the original Secure Content owner.
@@ -265,6 +270,14 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
             )
         )
         self.select("social")
+        # Process health does not establish original Social read readiness.
+        self.wait_js(
+            f"document.querySelector('[data-resource-id=\"{self.private_post}\"]')"
+            f" && document.querySelector('[data-resource-id=\"{self.public_post}\"]')",
+            "original public and private Social results after Station restoration",
+        )
+        self.visible("social_source_recovered", lambda: self.private_text in self.rows()
+                     and self.public_text in self.rows())
         old = self.item(self.private_post)
         self.moments("bob", "deletePrivateMoment", {"postId": self.private_post})
         self.select("social")
