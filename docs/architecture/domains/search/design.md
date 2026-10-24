@@ -156,6 +156,11 @@ Desktop 与 Mobile 原生宿主消费同一 `search-core::runtime::SearchRuntime
 核心不 import AppState、Tauri、MessagingEngine 或 SQL 驱动。平台保留身份与
 原 Store 的锁顺序，缓存提交和最终 IPC bytes 发布都必须通过同一裁决。
 
+宿主在阻塞线程上使用现有 `futures-lite` 驱动 Contributor Future，不进入
+Tokio 异步执行上下文。原 Station 传输提供同步响应读取；在 Tokio Future
+中调用该读取会触发 `blocking_recv` panic。Search 不替换原传输，也不为每个
+来源创建异步运行时；Desktop/Mobile 执行器共同承担这条适配边界。
+
 认证分区来自平台 Session，独立于 MessagingEngine。当前生产 composition
 声明 `device.messaging`、`device.social`、`station.social.public`；
 每来源独立检查 readiness、binding、content/policy revision。Messaging 不可用

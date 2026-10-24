@@ -65,6 +65,14 @@ Reusing an arbitrary resolver would turn a trusted result into an unrelated
 navigation or cross-account read. Keeping authorization and anchors at the
 original owner makes the same rules apply to ordinary point reads and Search.
 
+## Executor boundary
+
+The host executor MUST NOT poll original-owner synchronous reads inside a
+Tokio asynchronous context. Follow Search design §4.1: use the existing
+`futures-lite` executor on the host's blocking worker. Entering Tokio while
+reading Station's response invokes `blocking_recv` from an asynchronous task
+and panics; the outer IPC join can then report only `search cancelled`.
+
 ## How to verify
 
 - Desktop `secure_content::search` tests cover current policy, revoked parent,
@@ -82,6 +90,10 @@ original owner makes the same rules apply to ordinary point reads and Search.
 - Native UI proof must search, open the original post/comment, focus its exact
   anchor, return with the prior query and remove revoked content. Source tests
   alone leave that journey `UNPROVEN`.
+- Inspect Desktop/Mobile `SearchExecutor::block_on`: it must not call
+  `tauri::async_runtime::block_on`. The native Social Search Suite must show
+  mixed results without `Cannot block the current thread from within a runtime`
+  in either client log.
 
 ## Crosswalks
 

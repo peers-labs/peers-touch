@@ -53,7 +53,7 @@ impl SearchExecutor for MobileSearchExecutor {
         tauri::async_runtime::spawn_blocking(job);
     }
     fn block_on<T: Send>(&self, future: SourceFuture<'_, T>) -> Result<T, SearchError> {
-        tauri::async_runtime::block_on(future)
+        futures_lite::future::block_on(future)
     }
     fn observe_read(&self, source_read: bool, refresh: bool) {
         SOURCE_READS.fetch_add(u64::from(source_read), Ordering::SeqCst);
