@@ -14,7 +14,9 @@ from tooling.acceptance.core import (
     SuiteRuntimeLedger, call_async_harness,
 )
 from tooling.acceptance.gates.chat.device_search_runner import DeviceSearchGate
-from tooling.acceptance.gates.chat.native_support import async_harness, is_native_tauri_url
+from tooling.acceptance.gates.chat.native_support import (
+    async_harness, is_native_tauri_url, runtime_station_service,
+)
 from tooling.acceptance.gates.chat.native_two_client_runner import read_station_version
 from tooling.acceptance.gates.mobile.simulator_social_e2e import SimulatorSocialGate
 
@@ -323,7 +325,9 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
             if self.capability_client is None:
                 raise GateError("Social Search requires its source-bound outage capability")
             version = self.step("station.identity", lambda: read_station_version(self.station_url))
-            self.station_peer_id = str(version.get("peer_id") or version.get("station_peer_id") or "")
+            self.station_peer_id = str(runtime_station_service(
+                self.manifest, "bob",
+            )["runtimeIdentity"])
             self.step("fixture.reset", self.verify_fixture_ready)
             for actor in ("alice", "bob"):
                 self.step("client.authenticated", lambda actor=actor: self.start_client(actor), actor)
