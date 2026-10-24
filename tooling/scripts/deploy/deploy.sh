@@ -112,7 +112,7 @@ acceptance_runtime_env_prefix() {
   local environment="${PT_ACCEPTANCE_ENVIRONMENT:-}"
   local scenario_control="${PT_AGENT_CAPABILITY_SCENARIO_CONTROL:-}"
   local run_id="${PT_ACCEPTANCE_RUN_ID:-}"
-  if [[ -z "$environment" && -z "$scenario_control" && -z "$run_id" ]]; then
+  if [[ -z "$environment" && -z "$scenario_control" ]]; then
     return
   fi
   if [[ "$PT_DEPLOY_ROLE" != "station" ]] \
