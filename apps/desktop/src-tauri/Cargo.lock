@@ -5564,6 +5564,7 @@ dependencies = [
  "tracing-subscriber",
  "ulid",
  "urlencoding",
+ "uuid",
  "x-config-core",
  "x25519-dalek 2.0.1",
  "zeroize",
@@ -9949,6 +9950,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek 2.2.0",
+ "hmac 0.12.1",
  "prost",
  "prost-build",
  "prost-types",

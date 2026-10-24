@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "channels": {
+    "stable": {
+      "bootstrap_origins": [
+        "https://xconfig.peers.shux.me:28443"
+      ]
+    },
+    "corpstable": {
+      "bootstrap_origins": [
+        "http://10.37.221.38:18082"
+      ]
+    }
+  }
+}

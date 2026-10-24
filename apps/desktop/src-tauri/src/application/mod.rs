@@ -26,6 +26,7 @@ pub mod key_exchange;
 pub mod macos_user_notifications;
 pub mod mcp;
 pub mod memory;
+pub mod meta;
 pub mod model_config;
 pub mod native_surface;
 pub mod notebook;

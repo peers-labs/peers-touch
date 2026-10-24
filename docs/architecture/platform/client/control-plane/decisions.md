@@ -1,8 +1,8 @@
 # X Config - Decisions
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-10-17 | **Updated**: 2026-10-20
+> **Version**: v2.2
+> **Created**: 2026-10-17 | **Updated**: 2026-10-23
 > **Owner**: Client Platform
 
 ---
@@ -25,6 +25,9 @@
 | XCFG-D01 | X Config is the sole active module identity | accepted |
 | XCFG-D02 | Use one service and shared prefixed repository | superseded |
 | XCFG-D03 | Home runtime separates operator state from publication truth | accepted |
+| XCFG-D04 | Closed per-key directive sections evaluated client-side | accepted |
+| XCFG-D05 | One distribution flavor registry drives build identity and OS install identity | accepted |
+| XCFG-D06 | Baked bootstrap origins with signed snapshot-driven origin failover and migration | accepted |
 
 ## CCP-D01: Separate Static Client Reads From Console Mutations
 
@@ -665,3 +668,267 @@ The former Vercel X Config runtime is not a supported parallel path. Rollback is
 a versioned Home deployment or VCS revert, not a storage toggle. OAuth Broker
 latency remains owned and measured separately by the Identity domain; changing
 its `OAuthStore` adapter does not belong to this decision.
+
+## XCFG-D04: Closed Per-Key Directive Sections Evaluated Client-Side
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+Operators need to publish client defaults that vary by audience, region, and
+build — for example the default relay or default seed Station for a dedicated
+distribution build. CCP-D03 deliberately chose closed protobuf sections over a
+generic remote-config map. Targeted defaults must not reopen that decision.
+
+The catalog already carries two locally-evaluated dimensions: endpoint seeds
+are tagged with regions, and releases are matched client-side by platform,
+architecture, and semantic version. Public snapshot serving is anonymous,
+cache-friendly, and free of per-request client attributes.
+
+### Decision
+
+Add a new closed catalog section, `directives`, governed by a curated key
+registry. A directive is one registered key, an ordered list of rules, and a
+required fallback. A rule matches a targeting context (product, platform,
+architecture, flavor, channel, environment, regions, semantic-version
+constraints, named labels) with AND across fields and OR within repeated
+fields; the first matching rule wins, otherwise the fallback applies. A stable
+HMAC permille bucket on the client's existing stable identity supports staged
+rollout without sending a new identifier.
+
+Directive values are a closed `oneof` (`string_value`, `bool_value`,
+`int_value`, `endpoint_seed_id`). `endpoint_seed_id` must reference an
+endpoint seed in the same snapshot, and the key registry constrains which seed
+kind is admissible. Initial registered keys are `network.default_relay`
+(relay seed only) and `network.default_station` (direct-station seed only).
+Secrets are never directive values: snapshots are broadcast to all subscribers.
+
+Evaluation happens client-side against the signed snapshot, following the
+release-selection precedent. The service never renders per-client responses
+and adds no client-attribute endpoint. Stale persisted snapshots remain usable
+as last-known-good; consumers must mark results stale and prefer explicit local
+configuration. Directives are added as a new protobuf field on the existing
+snapshot message and catalog; `schema_version` stays `1` and the proto package
+name is unchanged. No release exists yet and protobuf field additions are
+ignored by older generated clients, so no schema bump, hard cut, or dual
+publication is warranted. Operator validation rejects unknown keys, value-type
+mismatches, dangling or wrong-kind seed references, duplicate rule IDs,
+missing fallbacks, unregistered flavors, oversize directives, and (as
+warnings) unreachable shadowed rules.
+
+The Rust and Go evaluators must agree on one shared JSON conformance-vector
+suite; the vectors are the only semantic source of truth.
+
+### Rationale
+
+Signed whole-snapshot distribution preserves offline use, CDN caching, and the
+zero-request-metadata privacy posture. A per-key ordered-rules model with
+mandatory fallback is the industry-standard shape (LaunchDarkly/Statsig/Unleash
+mobile SDKs): bounded, auditable, and testable, while the curated registry keeps
+CCP-D03's closed-section guarantee.
+
+### Alternatives Considered
+
+- Server-side evaluation keyed by region/version headers: rejected because it
+  creates a tracking endpoint, breaks offline evaluation, and forks the trust
+  model.
+- Open string KV remote config: rejected by CCP-D03; untyped keys cannot be
+  validated or safely consumed.
+- Flat global priority instead of ordered per-key rules: rejected because it
+  cannot express fallback guarantees or rule-order overrides per concern.
+- Geo-IP region detection: rejected for the initial model; region comes from
+  the build or explicit operator/user setting, defaulting to `unknown` which
+  matches only global rules. Revisit requires a separate privacy review.
+
+### Consequences
+
+Clients gain a targeting context assembled from build identity and runtime
+context. Endpoint defaults are resolved seed IDs that flow through the existing
+discovery path; no parallel connection channel is introduced. Station (Go)
+needs its own snapshot fetch/verify/evaluate implementation in
+`apps/station/frame/touch/xcontrol`, semantically locked to the shared vectors.
+
+## XCFG-D05: One Distribution Flavor Registry Drives Build Identity And OS Install Identity
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+Dedicated builds (geek audience builds, partner builds, internal dev builds)
+need a baked distribution identity for directive targeting, and some builds
+must install side-by-side on the same machine. Today the desktop dev-install
+path hard-codes one identifier, display name, and URL scheme, and no package
+target exists.
+
+### Decision
+
+Introduce one checked-in registry, `tooling/distribution/flavors.json`, as the
+single source for distribution identity. Each flavor declares a display name,
+optional identifier suffix, URL-scheme suffix, default channel, default region,
+and an allowlist of distribution labels. All distribution builds run through
+`make package PRODUCT=… FLAVOR=…`, which fails closed on unknown flavors or
+labels.
+
+One build manifest is produced and projected to three places:
+
+1. Compile-time distribution environment consumed by a shared Rust
+   `BuildIdentity` in x-config-core (and a Go embed for Station): product,
+   flavor, channel, semver, source commit, platform, architecture, default
+   region, labels.
+2. Platform metadata via Tauri `--config` overrides: identifier, product name,
+   version, Android version code, deep-link scheme, and release channel path.
+3. A sidecar `build-manifest.json` inside the bundle for diagnostics; the
+   compile-time copy remains authoritative at runtime.
+
+Identifier mapping is fixed: `com.peers.touch.{product}` plus
+`.{identifier_suffix}` when present. The `geek` flavor occupies the canonical
+suffix-less identifier; partner flavors use their suffix and therefore install
+side-by-side, with isolated data containers, distinct URL schemes
+(`peers-touch[-suffix]`), and distinct update channels. Flavors sharing the
+canonical identifier are mutually exclusive installs. Build number is
+`git rev-list --count HEAD` mapped into each platform's numeric version field.
+
+Packaging is one local command (`make package`) for every audience: internal
+and formal builds run the identical script and differ only in parameters. The
+build never uploads; distributing the produced artifact (internal file share
+versus a formal GitHub Release) is a separate manual step outside packaging.
+Artifact file names carry only platform-mandated segments; commit/region never
+appear in file names. A remote artifact directory layout is deferred until the
+formal updater channel is actually built.
+
+### Rationale
+
+A registry makes the coexistence topology explicit and impossible to bypass via
+ad-hoc command-line values. Reusing the existing Tauri override and build.rs
+`rustc-env` mechanisms avoids a parallel packaging system. Keeping identity out
+of artifact file names respects OS install semantics and updater contracts.
+
+### Alternatives Considered
+
+- Encode the full identity string in the artifact file name: rejected because
+  installed runtimes cannot read installer names and OS version grammars reject
+  the string.
+- One identifier for all flavors: rejected for partner builds that must coexist
+  with the public build.
+- Separate packaging scripts per client: rejected as a chimney; desktop and
+  mobile share the registry, manifest, and override generator.
+
+### Consequences
+
+The legacy hard-coded dev identity becomes a registered `dev` flavor. The
+committed `.dev2` identifier is a development-only artifact; distribution
+builds derive canonical identifiers from the registry. Deep-link schemes and
+update endpoints are flavor-scoped, and each mobile suffix requires its own
+platform App ID / push topic when push is enabled.
+
+## XCFG-D06: Baked Bootstrap Origins With Signed Snapshot-Driven Origin Failover And Migration
+
+**Status**: accepted
+**Date**: 2026-10-24
+
+### Context
+
+`PT_DIST_*` bakes flavor/channel identity (XCFG-D05) but packages bake no
+snapshot origin: client resolution reads only runtime/compile-time
+`PEERS_X_CONFIG_URL`, so an installed app with no process environment never
+fetches (`verified_fact`: `configured_remote_url` in Desktop and Mobile
+runtimes). The same channel also serves a single origin today: an operator
+cannot stand up a mirror or move the service without an app release, and a
+single origin outage leaves clients on stale snapshots.
+
+Snapshots are already integrity-protected independently of transport:
+ed25519 over a domain-separated statement, verified against the app-embedded
+publisher keyring, with monotonic-sequence watermark protection
+(`verified_fact`: x-config-core `SnapshotCoordinator`). Origin admission
+follows the closed policy in x-config-core `origin.rs`: HTTPS for any host,
+plain HTTP only for loopback/RFC1918/link-local IP literals (IPv6 loopback
+only).
+
+### Decision
+
+**Bootstrap origins are baked per channel at package time.** A checked-in
+channel registry (`tooling/distribution/channels.json`) maps each channel to
+an ordered bootstrap origin list. `make package` fails closed on unknown
+channels and bakes the list as `PT_DIST_X_CONFIG_URLS`; the compiled list
+ships in the manifest, `BuildIdentity`, and bundle diagnostics.
+
+**Signed snapshots carry future fetch origins.** Statement field 9 is an
+additive closed section:
+
+```proto
+message DistributionConfig { repeated DistributionOrigin origins = 1; }
+message DistributionOrigin { string origin = 1; }
+// XConfigSnapshotStatement.distribution = 9
+```
+
+No schema/version bump: older clients ignore field 9. Catalog publication
+validates origins against the client admission policy (same rules as
+`origin.rs`, independent of the publisher's own deployment flag), caps the
+list, rejects duplicates/query/fragment/credentials, and emits the section in
+deterministic statement order.
+
+**The client maintains three origin classes, merged per refresh into one
+ordered fetch list (deduplicated preserving first occurrence, capped at 8):**
+
+1. the development override `PEERS_X_CONFIG_URL` (runtime then compile
+   time), first in order when present — an explicit local choice always
+   wins;
+2. operator-advertised origins from the last accepted, signed snapshot
+   itself (the snapshot cache is the channel-scoped persistence, updated
+   only through `accept_remote`; at most 4 per snapshot);
+3. baked bootstrap origins, always retained as tail anchors.
+
+Each entry passes the same admission validation (`origin.rs`). Refresh tries
+entries in order: transport, timeout, non-2xx, and oversize responses advance
+to the next origin; a cryptographic or watermark rejection on one response
+also advances to the next origin but never downgrades the current snapshot.
+The first accepted outcome wins; its origin is the active origin exposed in
+the projection (`active_origin` / `activeOrigin`). A `304` is success when a
+current snapshot exists; without one the same origin is refetched
+unconditionally before advancing.
+
+### Rationale
+
+Baked origins solve the packaged-app bootstrap without inventing a runtime
+config channel. Letting signed snapshots mutate the fetch set gives operators
+mirrors and zero-release migration; trusting it is safe because transport
+choice grants no trust — only keyring-validated, watermark-monotonic bytes are
+accepted, so a hostile origin without the publisher key gains nothing. Keeping
+baked origins pinned at the tail guarantees an operator-controlled recovery
+path even if a snapshot advertises an unreachable set. The explicit
+development override stays first so local/test work always pins the fetch
+target despite whatever a production snapshot advertises; advertised
+origins precede only the baked anchors, giving operators zero-release
+failover and migration over the package defaults.
+
+### Alternatives Considered
+
+- Runtime-only `PEERS_X_CONFIG_URL` with baked channel but no origin:
+  rejected; installed apps have no such environment and cannot bootstrap.
+- DNS-based stable name for every channel: rejected for corp channels whose
+  origin is a private IP literal, and it still offers no multi-origin failover.
+- Signed snapshots may also rotate publisher keys: rejected; publisher trust
+  must ship in an app release (XCFG-D01/CCP-era key-rotation rule). Origins
+  ride on existing publisher trust and do not extend it.
+- Drop baked origins after the first snapshot: rejected; a poisoned snapshot
+  set could strand clients with no operator-reachable anchor.
+- Unordered origin set: rejected; operators need deterministic primary/mirror
+  selection rather than client-chosen randomness.
+
+### Consequences
+
+- Fresh packages fetch without any process environment; the dev override
+  remains the highest-priority entry for local work.
+- Operators publish mirrors/new origins through the normal signed-catalog
+  path (same skill as seed refresh); clients adopt them on the next accepted
+  snapshot and retain them across restarts.
+- Persisted advertised origins are control-plane state; clients store only
+  validated origin strings with channel scoping and never accept unsigned
+  origin updates.
+- Mirror operators must serve the exact same signed envelopes (same sequence
+  and statement bytes); divergent valid histories at one channel remain
+  impossible under one key.
+- Up to a bounded number of origins per refresh round; latency on dead
+  origins is bounded per-entry, and bootstrap lists should stay short.

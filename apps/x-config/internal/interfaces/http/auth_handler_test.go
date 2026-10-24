@@ -42,16 +42,19 @@ func TestOperatorAuthHTTPFlowEnforcesCSRFAndRevocation(t *testing.T) {
 			"github\x00subject-42": {},
 		},
 	}
-	handler := &AuthHandler{Service: operatorauth.Service{
-		Config: config,
-		Store:  operatorstore.NewMemoryStore(),
-		Redeemer: handlerRedeemer{
-			privateKey: privateKey,
-			now:        now,
+	handler := &AuthHandler{
+		SecureCookies: true,
+		Service: operatorauth.Service{
+			Config: config,
+			Store:  operatorstore.NewMemoryStore(),
+			Redeemer: handlerRedeemer{
+				privateKey: privateKey,
+				now:        now,
+			},
+			Clock:  handlerClock{now: now},
+			Random: bytes.NewReader(bytes.Repeat([]byte{0x77}, 256)),
 		},
-		Clock:  handlerClock{now: now},
-		Random: bytes.NewReader(bytes.Repeat([]byte{0x77}, 256)),
-	}}
+	}
 
 	startRecorder := httptest.NewRecorder()
 	handler.Start(
@@ -252,4 +255,47 @@ func (r handlerRedeemer) Redeem(
 		StatementBytes:   statementBytes,
 		Ed25519Signature: ed25519.Sign(r.privateKey, signed),
 	}, nil
+}
+
+func TestOperatorAuthPrivateHTTPOriginDropsSecureCookieFlag(t *testing.T) {
+	now := time.Now().UTC()
+	privateKey := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x67}, 32))
+	config := operatorauth.Config{
+		SiteID:           "corpstable",
+		Audience:         "client-control-admin",
+		BrokerStartURL:   "https://broker.example.test/api/oauth/github/start",
+		CallbackURL:      "http://10.37.221.38:18082/api/admin/auth/callback",
+		ConsoleURL:       "http://10.37.221.38:18082/",
+		Provider:         "github",
+		AllowPrivateHTTP: true,
+		SigningKeys:      map[string]ed25519.PublicKey{"key-1": privateKey.Public().(ed25519.PublicKey)},
+		AllowedSubjects:  map[string]struct{}{"github\x00subject-42": {}},
+	}
+	handler := &AuthHandler{
+		SecureCookies: false,
+		Service: operatorauth.Service{
+			Config:   config,
+			Store:    operatorstore.NewMemoryStore(),
+			Redeemer: handlerRedeemer{privateKey: privateKey, now: now},
+			Clock:    handlerClock{now: now},
+			Random:   bytes.NewReader(bytes.Repeat([]byte{0x88}, 256)),
+		},
+	}
+	startRecorder := httptest.NewRecorder()
+	handler.Start(
+		startRecorder,
+		httptest.NewRequest(http.MethodGet, "/api/admin/auth/start", nil),
+	)
+	if startRecorder.Code != http.StatusFound {
+		t.Fatalf("start status = %d, body=%s", startRecorder.Code, startRecorder.Body.String())
+	}
+	var attemptCookie *http.Cookie
+	for _, cookie := range startRecorder.Result().Cookies() {
+		if cookie.Name == loginAttemptCookie {
+			attemptCookie = cookie
+		}
+	}
+	if attemptCookie == nil || !attemptCookie.HttpOnly || attemptCookie.Secure {
+		t.Fatalf("private-origin attempt cookie must not carry Secure: %#v", attemptCookie)
+	}
 }

@@ -6,8 +6,8 @@ import {
   useSyncExternalStore,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
-} from 'react';
-import { createPortal } from 'react-dom';
+} from "react";
+import { createPortal } from "react-dom";
 import {
   Check,
   Cloud,
@@ -19,27 +19,32 @@ import {
   Server,
   Trash2,
   Wifi,
-} from 'lucide-react';
-import { theme } from 'antd';
-import { useTranslation } from 'react-i18next';
-import { api } from '../../services/desktop_api';
+} from "lucide-react";
+import { theme } from "antd";
+import { useTranslation } from "react-i18next";
+import { api } from "../../services/desktop_api";
 import type {
   XConfigSuggestion,
   StationEntry,
   StationRouteCandidate,
   StationRouteHealth,
-} from '../../services/desktop_api';
+} from "../../services/desktop_api";
 import {
   discoverXConfigSuggestion,
   getXConfigProjection,
   refreshXConfigProjection,
   subscribeXConfigProjection,
-} from '../../services/xConfig';
-import { log } from '../../utils/logger';
+} from "../../services/xConfig";
+import {
+  markStationUserChoice,
+  shouldAutoApplyDefault,
+  storeStationAutoDefault,
+} from "../../services/stationDefault";
+import { log } from "../../utils/logger";
 
-type StationHealthStatus = 'unknown' | 'checking' | 'online' | 'offline';
+type StationHealthStatus = "unknown" | "checking" | "online" | "offline";
 
-type DesignToken = ReturnType<typeof theme.useToken>['token'];
+type DesignToken = ReturnType<typeof theme.useToken>["token"];
 
 const PANEL_WIDTH = 336;
 const COPY_CONFIRM_MS = 1200;
@@ -48,17 +53,25 @@ const TRIGGER_STATUS_SLOT_SIZE = 16;
 
 export function StationPicker() {
   const { token } = theme.useToken();
-  const { t } = useTranslation('common');
+  const { t } = useTranslation("common");
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<StationEntry[]>([]);
-  const [activeStationPeerId, setActiveStationPeerId] = useState('');
-  const [inputValue, setInputValue] = useState('');
+  const [activeStationPeerId, setActiveStationPeerId] = useState("");
+  const [inputValue, setInputValue] = useState("");
   const [adding, setAdding] = useState(false);
-  const [selectingSuggestionId, setSelectingSuggestionId] = useState<string | null>(null);
-  const [suggestionErrorId, setSuggestionErrorId] = useState<string | null>(null);
+  const [selectingSuggestionId, setSelectingSuggestionId] = useState<
+    string | null
+  >(null);
+  const [suggestionErrorId, setSuggestionErrorId] = useState<string | null>(
+    null,
+  );
   const [refreshingSuggestions, setRefreshingSuggestions] = useState(false);
-  const [checkingStationPeerId, setCheckingStationPeerId] = useState<string | null>(null);
-  const [hoveredStationPeerId, setHoveredStationPeerId] = useState<string | null>(null);
+  const [checkingStationPeerId, setCheckingStationPeerId] = useState<
+    string | null
+  >(null);
+  const [hoveredStationPeerId, setHoveredStationPeerId] = useState<
+    string | null
+  >(null);
   const [copiedEndpoint, setCopiedEndpoint] = useState<string | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
   const [triggerHovered, setTriggerHovered] = useState(false);
@@ -66,7 +79,11 @@ export function StationPicker() {
   const panelRef = useRef<HTMLDivElement>(null);
   const requestRef = useRef(0);
   const copyResetTimerRef = useRef<number | null>(null);
-  const [panelPos, setPanelPos] = useState({ top: 0, left: 0, openRight: true });
+  const [panelPos, setPanelPos] = useState({
+    top: 0,
+    left: 0,
+    openRight: true,
+  });
   const xConfig = useSyncExternalStore(
     subscribeXConfigProjection,
     getXConfigProjection,
@@ -79,9 +96,9 @@ export function StationPicker() {
       const result = await api.stationList();
       if (requestRef.current !== requestId) return;
       setEntries(result.entries ?? []);
-      setActiveStationPeerId(result.active_station_peer_id ?? '');
+      setActiveStationPeerId(result.active_station_peer_id ?? "");
     } catch (error) {
-      log.error('StationPicker', 'Failed to load Station registry', { error });
+      log.error("StationPicker", "Failed to load Station registry", { error });
     }
   }, []);
 
@@ -107,68 +124,87 @@ export function StationPicker() {
     const handleClickOutside = (event: globalThis.MouseEvent) => {
       const target = event.target as Node;
       if (
-        triggerRef.current
-        && !triggerRef.current.contains(target)
-        && panelRef.current
-        && !panelRef.current.contains(target)
+        triggerRef.current &&
+        !triggerRef.current.contains(target) &&
+        panelRef.current &&
+        !panelRef.current.contains(target)
       ) {
         setOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('resize', updatePosition);
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("resize", updatePosition);
     return () => {
       requestRef.current += 1;
-      document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('resize', updatePosition);
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("resize", updatePosition);
     };
   }, [loadStations, open, updatePosition]);
 
-  useEffect(() => () => {
-    if (copyResetTimerRef.current !== null) {
-      window.clearTimeout(copyResetTimerRef.current);
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const selectRoute = async (
     entry: StationEntry,
     route: StationRouteCandidate,
-    confirmPrivacyChange = true,
-  ) => {
-    const current = entries.find((candidate) => candidate.station_peer_id === activeStationPeerId);
+    options: { confirmPrivacyChange?: boolean; userInitiated?: boolean } = {},
+  ): Promise<boolean> => {
+    const { confirmPrivacyChange = true, userInitiated = true } = options;
+    const current = entries.find(
+      (candidate) => candidate.station_peer_id === activeStationPeerId,
+    );
     const stationChanges = current?.station_peer_id !== entry.station_peer_id;
-    const routeChanges = !stationChanges && current?.active_route_id !== route.route_id;
+    const routeChanges =
+      !stationChanges && current?.active_route_id !== route.route_id;
     if (
-      confirmPrivacyChange
-      && stationChanges
-      && current
-      && !window.confirm(t('common.stationPicker.confirmStationChange'))
-    ) return;
+      confirmPrivacyChange &&
+      stationChanges &&
+      current &&
+      !window.confirm(t("common.stationPicker.confirmStationChange"))
+    )
+      return false;
     if (
-      confirmPrivacyChange
-      && routeChanges
-      && !window.confirm(t('common.stationPicker.confirmRouteChange'))
-    ) return;
+      confirmPrivacyChange &&
+      routeChanges &&
+      !window.confirm(t("common.stationPicker.confirmRouteChange"))
+    )
+      return false;
 
     try {
-      const result = await api.stationSetActive(entry.station_peer_id, route.route_id);
-      setActiveStationPeerId(result.active_station_peer_id ?? entry.station_peer_id);
-      setEntries((currentEntries) => currentEntries.map((candidate) => (
-        candidate.station_peer_id === entry.station_peer_id
-          ? {
-              ...candidate,
-              active_route_id: result.active_route_id ?? route.route_id,
-              route_revision: result.binding.route_revision,
-              lifecycle_generation: result.binding.lifecycle_generation,
-            }
-          : candidate
-      )));
+      const result = await api.stationSetActive(
+        entry.station_peer_id,
+        route.route_id,
+      );
+      if (userInitiated) markStationUserChoice();
+      setActiveStationPeerId(
+        result.active_station_peer_id ?? entry.station_peer_id,
+      );
+      setEntries((currentEntries) =>
+        currentEntries.map((candidate) =>
+          candidate.station_peer_id === entry.station_peer_id
+            ? {
+                ...candidate,
+                active_route_id: result.active_route_id ?? route.route_id,
+                route_revision: result.binding.route_revision,
+                lifecycle_generation: result.binding.lifecycle_generation,
+              }
+            : candidate,
+        ),
+      );
+      return true;
     } catch (error) {
-      log.error('StationPicker', 'Failed to select Station route', {
+      log.error("StationPicker", "Failed to select Station route", {
         stationPeerId: entry.station_peer_id,
         routeId: route.route_id,
         error,
       });
+      return false;
     }
   };
 
@@ -181,14 +217,14 @@ export function StationPicker() {
       const result = await api.stationProbe(route.endpoint_origin);
       setEntries((current) => mergeDiscoveredEntries(current, result.entries));
     } catch (error) {
-      log.warn('StationPicker', 'Failed to verify Station route', {
+      log.warn("StationPicker", "Failed to verify Station route", {
         stationPeerId: entry.station_peer_id,
         error,
       });
     } finally {
-      setCheckingStationPeerId((current) => (
-        current === entry.station_peer_id ? null : current
-      ));
+      setCheckingStationPeerId((current) =>
+        current === entry.station_peer_id ? null : current,
+      );
     }
   };
 
@@ -198,38 +234,65 @@ export function StationPicker() {
     setAdding(true);
     try {
       const discovered = await api.stationAdd(input);
-      setInputValue('');
+      setInputValue("");
       await loadStations();
-      if (discovered.entries.length === 1 && discovered.entries[0]?.routes.length === 1) {
+      if (
+        discovered.entries.length === 1 &&
+        discovered.entries[0]?.routes.length === 1
+      ) {
         const entry = discovered.entries[0];
         const route = entry.routes[0];
-        if (entry && route) await selectRoute(entry, route, false);
+        if (entry && route) {
+          await selectRoute(entry, route, {
+            confirmPrivacyChange: false,
+            userInitiated: true,
+          });
+        }
       }
     } catch (error) {
-      log.error('StationPicker', 'Failed to discover Station input', { error });
+      log.error("StationPicker", "Failed to discover Station input", { error });
     } finally {
       setAdding(false);
     }
   };
 
   const handleSuggestion = async (suggestion: XConfigSuggestion) => {
-    if (!suggestion.actionable || selectingSuggestionId) return;
+    await applySuggestion(suggestion, false);
+  };
+
+  const applySuggestion = async (
+    suggestion: XConfigSuggestion,
+    auto: boolean,
+  ): Promise<boolean> => {
+    if (!suggestion.actionable || selectingSuggestionId) return false;
     setSelectingSuggestionId(suggestion.seed_id);
     setSuggestionErrorId(null);
     try {
       const discovered = await discoverXConfigSuggestion(suggestion.seed_id);
       await loadStations();
-      if (discovered.entries.length === 1 && discovered.entries[0]?.routes.length === 1) {
+      if (
+        discovered.entries.length === 1 &&
+        discovered.entries[0]?.routes.length === 1
+      ) {
         const entry = discovered.entries[0];
         const route = entry.routes[0];
-        if (entry && route) await selectRoute(entry, route);
+        if (entry && route) {
+          const selected = await selectRoute(entry, route, {
+            confirmPrivacyChange: !auto,
+            userInitiated: !auto,
+          });
+          if (selected && auto) storeStationAutoDefault(suggestion.seed_id);
+          return selected;
+        }
       }
+      return false;
     } catch (error) {
       setSuggestionErrorId(suggestion.seed_id);
-      log.warn('StationPicker', 'Suggested Station discovery failed', {
+      log.warn("StationPicker", "Suggested Station discovery failed", {
         seedId: suggestion.seed_id,
         error,
       });
+      return false;
     } finally {
       setSelectingSuggestionId(null);
     }
@@ -241,26 +304,56 @@ export function StationPicker() {
     try {
       await refreshXConfigProjection(true);
     } catch (error) {
-      log.warn('StationPicker', 'X Config refresh failed', { error });
+      log.warn("StationPicker", "X Config refresh failed", { error });
     } finally {
       setRefreshingSuggestions(false);
     }
   };
 
+  // First-run cloud default: apply the directive relay seed once while the
+  // Station registry is empty. Any later user action flips the persisted
+  // choice flag and disables auto-apply permanently.
+  const autoDefaultInFlight = useRef<string | null>(null);
+  useEffect(() => {
+    const seedId = xConfig.defaults?.default_relay?.seed_id ?? null;
+    if (!seedId || entries.length > 0 || activeStationPeerId) return;
+    if (!shouldAutoApplyDefault(seedId)) return;
+    const suggestion = xConfig.suggestions.find(
+      (candidate) => candidate.seed_id === seedId,
+    );
+    if (!suggestion?.actionable || autoDefaultInFlight.current) return;
+    autoDefaultInFlight.current = seedId;
+    void applySuggestion(suggestion, true).finally(() => {
+      autoDefaultInFlight.current = null;
+    });
+    // applySuggestion closes over transient selection state; effect identity
+    // is driven by the registry/projection inputs below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    xConfig.defaults?.default_relay?.seed_id,
+    xConfig.suggestions,
+    entries.length,
+    activeStationPeerId,
+  ]);
+
   const handleRemove = async (entry: StationEntry, event: ReactMouseEvent) => {
     event.stopPropagation();
+    markStationUserChoice();
     try {
       await api.stationRemove(entry.station_peer_id);
       await loadStations();
     } catch (error) {
-      log.error('StationPicker', 'Failed to remove Station', {
+      log.error("StationPicker", "Failed to remove Station", {
         stationPeerId: entry.station_peer_id,
         error,
       });
     }
   };
 
-  const handleCopy = async (route: StationRouteCandidate, event: ReactMouseEvent) => {
+  const handleCopy = async (
+    route: StationRouteCandidate,
+    event: ReactMouseEvent,
+  ) => {
     event.stopPropagation();
     try {
       await writeClipboardText(route.endpoint_origin);
@@ -273,25 +366,30 @@ export function StationPicker() {
         copyResetTimerRef.current = null;
       }, COPY_CONFIRM_MS);
     } catch (error) {
-      log.error('StationPicker', 'Failed to copy Station endpoint', { error });
+      log.error("StationPicker", "Failed to copy Station endpoint", { error });
     }
   };
 
-  const activeEntry = entries.find(
-    (entry) => entry.station_peer_id === activeStationPeerId,
-  ) ?? (entries.length === 1 ? entries[0] : undefined);
+  const activeEntry =
+    entries.find((entry) => entry.station_peer_id === activeStationPeerId) ??
+    (entries.length === 1 ? entries[0] : undefined);
   const currentRoute = activeEntry ? activeRoute(activeEntry) : undefined;
-  const currentStatus = checkingStationPeerId === activeEntry?.station_peer_id
-    ? 'checking'
-    : statusFromRoute(currentRoute);
-  const displayLabel = activeEntry?.display_name
-    || shortPeerId(activeEntry?.station_peer_id)
-    || t('common.stationPicker.fallbackLabel');
+  const currentStatus =
+    checkingStationPeerId === activeEntry?.station_peer_id
+      ? "checking"
+      : statusFromRoute(currentRoute);
+  const displayLabel =
+    activeEntry?.display_name ||
+    shortPeerId(activeEntry?.station_peer_id) ||
+    t("common.stationPicker.fallbackLabel");
   const suggestions = visibleXConfigSuggestions(entries, xConfig.suggestions);
 
   return (
     <>
-      <div ref={triggerRef} style={{ position: 'relative', display: 'inline-block' }}>
+      <div
+        ref={triggerRef}
+        style={{ position: "relative", display: "inline-block" }}
+      >
         <StationPickerTrigger
           token={token}
           open={open}
@@ -299,176 +397,232 @@ export function StationPicker() {
           label={displayLabel}
           status={currentStatus}
           statusText={statusLabel(currentStatus, t)}
-          triggerLabel={t('common.stationPicker.triggerLabel')}
+          triggerLabel={t("common.stationPicker.triggerLabel")}
           onToggle={() => setOpen(!open)}
           onMouseEnter={() => setTriggerHovered(true)}
           onMouseLeave={() => setTriggerHovered(false)}
         />
       </div>
 
-      {open && createPortal(
-        <div
-          ref={panelRef}
-          style={{
-            position: 'fixed',
-            top: panelPos.top,
-            left: panelPos.left,
-            transform: panelPos.openRight ? 'translate(0, -100%)' : 'translate(-100%, -100%)',
-            width: PANEL_WIDTH,
-            background: token.colorBgElevated,
-            borderRadius: 8,
-            boxShadow: `0 18px 48px rgba(15, 23, 42, 0.16), 0 0 0 1px ${token.colorBorderSecondary}`,
-            padding: 10,
-            zIndex: 10000,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px 10px' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: token.colorText }}>
-                {t('common.stationPicker.title')}
-              </div>
-              <div style={{ marginTop: 2, fontSize: 11, color: token.colorTextQuaternary }}>
-                {t('common.stationPicker.subtitle')}
-              </div>
-            </div>
-            <IconAction
-              visible
-              label={t('common.stationPicker.refreshSuggestions')}
-              token={token}
-              onClick={() => void refreshSuggestions()}
-              icon={<RefreshCw size={13} style={refreshingSuggestions ? { animation: 'spin 1s linear infinite' } : undefined} />}
-            />
-          </div>
-
-          <div style={{ maxHeight: 276, overflowY: 'auto', paddingRight: 2 }}>
-            {entries.map((entry) => (
-              <StationRow
-                key={entry.station_peer_id}
-                entry={entry}
-                active={entry.station_peer_id === activeStationPeerId}
-                hovered={entry.station_peer_id === hoveredStationPeerId}
-                checking={entry.station_peer_id === checkingStationPeerId}
-                copiedEndpoint={copiedEndpoint}
-                token={token}
-                directLabel={t('common.stationPicker.direct')}
-                relayLabel={t('common.stationPicker.viaRelay')}
-                verifyLabel={t('common.stationPicker.verify')}
-                removeLabel={t('common.stationPicker.removeLabel', {
-                  station: entry.display_name || shortPeerId(entry.station_peer_id),
-                })}
-                copyLabel={t('common.stationPicker.copyEndpoint')}
-                statusText={statusLabel(
-                  checkingStationPeerId === entry.station_peer_id
-                    ? 'checking'
-                    : statusFromRoute(activeRoute(entry)),
-                  t,
-                )}
-                onSelect={(route) => void selectRoute(entry, route)}
-                onProbe={(event) => void probeStation(entry, event)}
-                onCopy={(route, event) => void handleCopy(route, event)}
-                onRemove={(event) => void handleRemove(entry, event)}
-                onMouseEnter={() => setHoveredStationPeerId(entry.station_peer_id)}
-                onMouseLeave={() => setHoveredStationPeerId(null)}
-              />
-            ))}
-            {entries.length === 0 && (
-              <div style={{ padding: 18, fontSize: 12, color: token.colorTextQuaternary, textAlign: 'center' }}>
-                {t('common.stationPicker.empty')}
-              </div>
-            )}
-            {suggestions.length > 0 && (
-              <>
-                <div
-                  style={{
-                    padding: '9px 6px 6px',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: token.colorTextQuaternary,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {t('common.stationPicker.suggestions')}
-                </div>
-                {suggestions.map((suggestion) => (
-                  <StationSuggestionRow
-                    key={suggestion.seed_id}
-                    suggestion={suggestion}
-                    selecting={suggestion.seed_id === selectingSuggestionId}
-                    failed={suggestion.seed_id === suggestionErrorId}
-                    token={token}
-                    suggestionLabel={t('common.stationPicker.suggested')}
-                    staleLabel={t('common.stationPicker.suggestionStale')}
-                    failedLabel={t('common.stationPicker.suggestionInvalid')}
-                    onSelect={() => void handleSuggestion(suggestion)}
-                  />
-                ))}
-              </>
-            )}
-          </div>
-
-          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '10px 4px' }} />
+      {open &&
+        createPortal(
           <div
+            ref={panelRef}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: 4,
-              background: inputFocused ? token.colorBgContainer : token.colorFillQuaternary,
-              border: `1px solid ${inputFocused ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
+              position: "fixed",
+              top: panelPos.top,
+              left: panelPos.left,
+              transform: panelPos.openRight
+                ? "translate(0, -100%)"
+                : "translate(-100%, -100%)",
+              width: PANEL_WIDTH,
+              background: token.colorBgElevated,
               borderRadius: 8,
-              boxShadow: inputFocused ? `0 0 0 3px ${token.colorPrimaryBg}` : 'none',
+              boxShadow: `0 18px 48px rgba(15, 23, 42, 0.16), 0 0 0 1px ${token.colorBorderSecondary}`,
+              padding: 10,
+              zIndex: 10000,
             }}
           >
-            <input
-              type="text"
-              value={inputValue}
-              onChange={(event) => setInputValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void handleAdd();
-              }}
-              onFocus={() => setInputFocused(true)}
-              onBlur={() => setInputFocused(false)}
-              placeholder={t('common.stationPicker.placeholder')}
-              disabled={adding}
-              aria-label={t('common.stationPicker.inputLabel')}
+            <div
               style={{
-                flex: 1,
-                minWidth: 0,
-                padding: '7px 8px',
-                fontSize: 12,
-                fontFamily: 'inherit',
-                background: 'transparent',
-                border: 'none',
-                color: token.colorText,
-                outline: 'none',
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => void handleAdd()}
-              disabled={adding || !inputValue.trim()}
-              aria-label={t('common.stationPicker.addLabel')}
-              title={t('common.stationPicker.addLabel')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 30,
-                height: 30,
-                background: token.colorPrimary,
-                border: 'none',
-                borderRadius: 7,
-                cursor: adding || !inputValue.trim() ? 'not-allowed' : 'pointer',
-                opacity: adding || !inputValue.trim() ? 0.5 : 1,
-                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "4px 6px 10px",
               }}
             >
-              {adding ? <Loader2 size={14} color="#fff" /> : <Plus size={14} color="#fff" />}
-            </button>
-          </div>
-        </div>,
-        document.body,
-      )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: token.colorText,
+                  }}
+                >
+                  {t("common.stationPicker.title")}
+                </div>
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontSize: 11,
+                    color: token.colorTextQuaternary,
+                  }}
+                >
+                  {t("common.stationPicker.subtitle")}
+                </div>
+              </div>
+              <IconAction
+                visible
+                label={t("common.stationPicker.refreshSuggestions")}
+                token={token}
+                onClick={() => void refreshSuggestions()}
+                icon={
+                  <RefreshCw
+                    size={13}
+                    style={
+                      refreshingSuggestions
+                        ? { animation: "spin 1s linear infinite" }
+                        : undefined
+                    }
+                  />
+                }
+              />
+            </div>
+
+            <div style={{ maxHeight: 276, overflowY: "auto", paddingRight: 2 }}>
+              {entries.map((entry) => (
+                <StationRow
+                  key={entry.station_peer_id}
+                  entry={entry}
+                  active={entry.station_peer_id === activeStationPeerId}
+                  hovered={entry.station_peer_id === hoveredStationPeerId}
+                  checking={entry.station_peer_id === checkingStationPeerId}
+                  copiedEndpoint={copiedEndpoint}
+                  token={token}
+                  directLabel={t("common.stationPicker.direct")}
+                  relayLabel={t("common.stationPicker.viaRelay")}
+                  verifyLabel={t("common.stationPicker.verify")}
+                  removeLabel={t("common.stationPicker.removeLabel", {
+                    station:
+                      entry.display_name || shortPeerId(entry.station_peer_id),
+                  })}
+                  copyLabel={t("common.stationPicker.copyEndpoint")}
+                  statusText={statusLabel(
+                    checkingStationPeerId === entry.station_peer_id
+                      ? "checking"
+                      : statusFromRoute(activeRoute(entry)),
+                    t,
+                  )}
+                  onSelect={(route) => void selectRoute(entry, route)}
+                  onProbe={(event) => void probeStation(entry, event)}
+                  onCopy={(route, event) => void handleCopy(route, event)}
+                  onRemove={(event) => void handleRemove(entry, event)}
+                  onMouseEnter={() =>
+                    setHoveredStationPeerId(entry.station_peer_id)
+                  }
+                  onMouseLeave={() => setHoveredStationPeerId(null)}
+                />
+              ))}
+              {entries.length === 0 && (
+                <div
+                  style={{
+                    padding: 18,
+                    fontSize: 12,
+                    color: token.colorTextQuaternary,
+                    textAlign: "center",
+                  }}
+                >
+                  {t("common.stationPicker.empty")}
+                </div>
+              )}
+              {suggestions.length > 0 && (
+                <>
+                  <div
+                    style={{
+                      padding: "9px 6px 6px",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: token.colorTextQuaternary,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {t("common.stationPicker.suggestions")}
+                  </div>
+                  {suggestions.map((suggestion) => (
+                    <StationSuggestionRow
+                      key={suggestion.seed_id}
+                      suggestion={suggestion}
+                      selecting={suggestion.seed_id === selectingSuggestionId}
+                      failed={suggestion.seed_id === suggestionErrorId}
+                      token={token}
+                      suggestionLabel={t("common.stationPicker.suggested")}
+                      staleLabel={t("common.stationPicker.suggestionStale")}
+                      failedLabel={t("common.stationPicker.suggestionInvalid")}
+                      onSelect={() => void handleSuggestion(suggestion)}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+
+            <div
+              style={{
+                height: 1,
+                background: token.colorBorderSecondary,
+                margin: "10px 4px",
+              }}
+            />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: 4,
+                background: inputFocused
+                  ? token.colorBgContainer
+                  : token.colorFillQuaternary,
+                border: `1px solid ${inputFocused ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
+                borderRadius: 8,
+                boxShadow: inputFocused
+                  ? `0 0 0 3px ${token.colorPrimaryBg}`
+                  : "none",
+              }}
+            >
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(event) => setInputValue(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void handleAdd();
+                }}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
+                placeholder={t("common.stationPicker.placeholder")}
+                disabled={adding}
+                aria-label={t("common.stationPicker.inputLabel")}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  padding: "7px 8px",
+                  fontSize: 12,
+                  fontFamily: "inherit",
+                  background: "transparent",
+                  border: "none",
+                  color: token.colorText,
+                  outline: "none",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => void handleAdd()}
+                disabled={adding || !inputValue.trim()}
+                aria-label={t("common.stationPicker.addLabel")}
+                title={t("common.stationPicker.addLabel")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 30,
+                  height: 30,
+                  background: token.colorPrimary,
+                  border: "none",
+                  borderRadius: 7,
+                  cursor:
+                    adding || !inputValue.trim() ? "not-allowed" : "pointer",
+                  opacity: adding || !inputValue.trim() ? 0.5 : 1,
+                  flexShrink: 0,
+                }}
+              >
+                {adding ? (
+                  <Loader2 size={14} color="#fff" />
+                ) : (
+                  <Plus size={14} color="#fff" />
+                )}
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
@@ -495,29 +649,50 @@ function StationPickerTrigger(props: {
       onMouseLeave={props.onMouseLeave}
       aria-label={props.triggerLabel}
       style={{
-        display: 'flex',
-        alignItems: 'center',
+        display: "flex",
+        alignItems: "center",
         gap: 8,
         width: TRIGGER_WIDTH,
-        padding: '6px 10px',
-        background: hovered || open ? token.colorFillQuaternary : token.colorBgContainer,
+        padding: "6px 10px",
+        background:
+          hovered || open ? token.colorFillQuaternary : token.colorBgContainer,
         border: `1px solid ${open ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
         borderRadius: 8,
-        boxShadow: open ? `0 0 0 3px ${token.colorPrimaryBg}` : 'none',
-        cursor: 'pointer',
+        boxShadow: open ? `0 0 0 3px ${token.colorPrimaryBg}` : "none",
+        cursor: "pointer",
         color: hovered || open ? token.colorText : token.colorTextSecondary,
         fontSize: 12,
-        fontFamily: 'inherit',
+        fontFamily: "inherit",
       }}
     >
       <Server size={14} style={{ flexShrink: 0 }} />
-      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
+      <span
+        style={{
+          flex: 1,
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          textAlign: "left",
+        }}
+      >
         {label}
       </span>
-      {status === 'unknown' ? (
-        <span aria-hidden="true" style={{ width: TRIGGER_STATUS_SLOT_SIZE, height: TRIGGER_STATUS_SLOT_SIZE }} />
+      {status === "unknown" ? (
+        <span
+          aria-hidden="true"
+          style={{
+            width: TRIGGER_STATUS_SLOT_SIZE,
+            height: TRIGGER_STATUS_SLOT_SIZE,
+          }}
+        />
       ) : (
-        <StationStatus status={status} token={token} label={statusText} compact />
+        <StationStatus
+          status={status}
+          token={token}
+          label={statusText}
+          compact
+        />
       )}
     </button>
   );
@@ -546,7 +721,7 @@ function StationRow(props: {
   const { entry, token } = props;
   const route = activeRoute(entry);
   const title = entry.display_name || shortPeerId(entry.station_peer_id);
-  const status = props.checking ? 'checking' : statusFromRoute(route);
+  const status = props.checking ? "checking" : statusFromRoute(route);
   return (
     <div
       data-station-peer-id={entry.station_peer_id}
@@ -555,22 +730,39 @@ function StationRow(props: {
       style={{
         padding: 9,
         marginBottom: 5,
-        background: props.active ? token.colorPrimaryBg : props.hovered ? token.colorFillQuaternary : 'transparent',
+        background: props.active
+          ? token.colorPrimaryBg
+          : props.hovered
+            ? token.colorFillQuaternary
+            : "transparent",
         border: `1px solid ${props.active ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
         borderRadius: 8,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <StationStatus
-          status={status}
-          token={token}
-          label={props.statusText}
-        />
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <StationStatus status={status} token={token} label={props.statusText} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 650 }}>
+          <div
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontSize: 13,
+              fontWeight: 650,
+            }}
+          >
             {title}
           </div>
-          <div style={{ marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, color: token.colorTextQuaternary }}>
+          <div
+            style={{
+              marginTop: 2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontSize: 10,
+              color: token.colorTextQuaternary,
+            }}
+          >
             {shortPeerId(entry.station_peer_id)}
           </div>
         </div>
@@ -579,7 +771,16 @@ function StationRow(props: {
           label={props.verifyLabel}
           token={token}
           onClick={props.onProbe}
-          icon={<Loader2 size={13} style={props.checking ? { animation: 'spin 1s linear infinite' } : undefined} />}
+          icon={
+            <Loader2
+              size={13}
+              style={
+                props.checking
+                  ? { animation: "spin 1s linear infinite" }
+                  : undefined
+              }
+            />
+          }
         />
         {!props.active && (
           <IconAction
@@ -591,12 +792,14 @@ function StationRow(props: {
           />
         )}
       </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
         {entry.routes.map((candidate) => {
-          const selected = props.active && candidate.route_id === entry.active_route_id;
-          const label = candidate.route_type === 'direct'
-            ? props.directLabel
-            : props.relayLabel;
+          const selected =
+            props.active && candidate.route_id === entry.active_route_id;
+          const label =
+            candidate.route_type === "direct"
+              ? props.directLabel
+              : props.relayLabel;
           return (
             <button
               type="button"
@@ -607,21 +810,27 @@ function StationRow(props: {
               aria-pressed={selected}
               title={candidate.endpoint_origin}
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
+                display: "inline-flex",
+                alignItems: "center",
                 gap: 5,
                 minWidth: 0,
-                padding: '5px 7px',
+                padding: "5px 7px",
                 border: `1px solid ${selected ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
                 borderRadius: 6,
-                background: selected ? token.colorBgContainer : 'transparent',
+                background: selected ? token.colorBgContainer : "transparent",
                 color: selected ? token.colorPrimary : token.colorTextSecondary,
-                cursor: 'pointer',
+                cursor: "pointer",
                 fontSize: 11,
-                fontFamily: 'inherit',
+                fontFamily: "inherit",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
               }}
             >
-              {candidate.route_type === 'direct' ? <Wifi size={12} /> : <RadioTower size={12} />}
+              {candidate.route_type === "direct" ? (
+                <Wifi size={12} style={{ flexShrink: 0 }} />
+              ) : (
+                <RadioTower size={12} style={{ flexShrink: 0 }} />
+              )}
               <span>{label}</span>
               {selected && <Check size={11} />}
             </button>
@@ -634,7 +843,13 @@ function StationRow(props: {
             label={props.copyLabel}
             token={token}
             onClick={(event) => props.onCopy(route, event)}
-            icon={props.copiedEndpoint === route.endpoint_origin ? <Check size={13} /> : <Copy size={13} />}
+            icon={
+              props.copiedEndpoint === route.endpoint_origin ? (
+                <Check size={13} />
+              ) : (
+                <Copy size={13} />
+              )
+            }
           />
         )}
       </div>
@@ -656,7 +871,7 @@ function StationSuggestionRow(props: {
   const disabled = !suggestion.actionable || props.selecting;
   const status = props.failed
     ? props.failedLabel
-    : suggestion.freshness === 'stale'
+    : suggestion.freshness === "stale"
       ? props.staleLabel
       : props.suggestionLabel;
   return (
@@ -667,38 +882,63 @@ function StationSuggestionRow(props: {
       disabled={disabled}
       onClick={props.onSelect}
       style={{
-        display: 'grid',
-        gridTemplateColumns: '18px minmax(0, 1fr) auto',
-        alignItems: 'center',
+        display: "grid",
+        gridTemplateColumns: "18px minmax(0, 1fr) auto",
+        alignItems: "center",
         gap: 8,
-        width: '100%',
+        width: "100%",
         minHeight: 52,
         marginBottom: 5,
-        padding: '8px 9px',
+        padding: "8px 9px",
         border: `1px dashed ${props.failed ? token.colorErrorBorder : token.colorBorderSecondary}`,
         borderRadius: 8,
-        background: 'transparent',
+        background: "transparent",
         color: disabled ? token.colorTextDisabled : token.colorText,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        fontFamily: 'inherit',
-        textAlign: 'left',
+        cursor: disabled ? "not-allowed" : "pointer",
+        fontFamily: "inherit",
+        textAlign: "left",
       }}
     >
-      {props.selecting
-        ? <Loader2 size={15} aria-hidden="true" style={{ color: token.colorPrimary }} />
-        : suggestion.kind === 'relay'
-          ? <RadioTower size={15} aria-hidden="true" />
-          : <Cloud size={15} aria-hidden="true" />}
+      {props.selecting ? (
+        <Loader2
+          size={15}
+          aria-hidden="true"
+          style={{ color: token.colorPrimary }}
+        />
+      ) : suggestion.kind === "relay" ? (
+        <RadioTower size={15} aria-hidden="true" />
+      ) : (
+        <Cloud size={15} aria-hidden="true" />
+      )}
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 650 }}>
+        <span
+          style={{
+            display: "block",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: 12,
+            fontWeight: 650,
+          }}
+        >
           {suggestion.display_name}
         </span>
-        <span style={{ display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, color: token.colorTextQuaternary }}>
+        <span
+          style={{
+            display: "block",
+            marginTop: 2,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: 10,
+            color: token.colorTextQuaternary,
+          }}
+        >
           {suggestion.canonical_origin}
         </span>
       </span>
       <span
-        aria-live={props.failed ? 'polite' : undefined}
+        aria-live={props.failed ? "polite" : undefined}
         style={{
           color: props.failed
             ? token.colorError
@@ -707,7 +947,7 @@ function StationSuggestionRow(props: {
               : token.colorTextQuaternary,
           fontSize: 10,
           fontWeight: 700,
-          whiteSpace: 'nowrap',
+          whiteSpace: "nowrap",
         }}
       >
         {status}
@@ -731,17 +971,23 @@ function IconAction(props: {
       aria-label={props.label}
       title={props.label}
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         width: 26,
         height: 26,
-        border: 'none',
+        border: "none",
         borderRadius: 6,
-        background: props.visible ? props.token.colorFillSecondary : 'transparent',
-        color: props.active ? props.token.colorSuccess : props.visible ? props.token.colorTextSecondary : 'transparent',
-        cursor: props.visible ? 'pointer' : 'default',
-        pointerEvents: props.visible ? 'auto' : 'none',
+        background: props.visible
+          ? props.token.colorFillSecondary
+          : "transparent",
+        color: props.active
+          ? props.token.colorSuccess
+          : props.visible
+            ? props.token.colorTextSecondary
+            : "transparent",
+        cursor: props.visible ? "pointer" : "default",
+        pointerEvents: props.visible ? "auto" : "none",
         flexShrink: 0,
       }}
     >
@@ -757,14 +1003,21 @@ function StationStatus(props: {
   compact?: boolean;
 }) {
   const { status, token, label, compact = false } = props;
-  if (status === 'checking') {
-    return <Loader2 size={compact ? 12 : 14} aria-label={label} style={{ color: token.colorPrimary, flexShrink: 0 }} />;
+  if (status === "checking") {
+    return (
+      <Loader2
+        size={compact ? 12 : 14}
+        aria-label={label}
+        style={{ color: token.colorPrimary, flexShrink: 0 }}
+      />
+    );
   }
-  const fill = status === 'online'
-    ? token.colorSuccess
-    : status === 'offline'
-      ? token.colorError
-      : token.colorTextQuaternary;
+  const fill =
+    status === "online"
+      ? token.colorSuccess
+      : status === "offline"
+        ? token.colorError
+        : token.colorTextQuaternary;
   return (
     <span
       aria-label={label}
@@ -772,13 +1025,20 @@ function StationStatus(props: {
       style={{
         width: compact ? 12 : 16,
         height: compact ? 12 : 16,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
         flexShrink: 0,
       }}
     >
-      <span style={{ width: compact ? 7 : 9, height: compact ? 7 : 9, borderRadius: 999, background: fill }} />
+      <span
+        style={{
+          width: compact ? 7 : 9,
+          height: compact ? 7 : 9,
+          borderRadius: 999,
+          background: fill,
+        }}
+      />
     </span>
   );
 }
@@ -788,12 +1048,12 @@ function activeRoute(entry: StationEntry): StationRouteCandidate | undefined {
 }
 
 function statusFromRoute(route?: StationRouteCandidate): StationHealthStatus {
-  if (!route) return 'unknown';
+  if (!route) return "unknown";
   const mapping: Record<StationRouteHealth, StationHealthStatus> = {
-    available: 'online',
-    degraded: 'offline',
-    unavailable: 'offline',
-    revoked: 'offline',
+    available: "online",
+    degraded: "offline",
+    unavailable: "offline",
+    revoked: "offline",
   };
   return mapping[route.health];
 }
@@ -809,7 +1069,11 @@ function mergeDiscoveredEntries(
     (entry) => replacements.get(entry.station_peer_id) ?? entry,
   );
   for (const entry of discovered) {
-    if (!current.some((candidate) => candidate.station_peer_id === entry.station_peer_id)) {
+    if (
+      !current.some(
+        (candidate) => candidate.station_peer_id === entry.station_peer_id,
+      )
+    ) {
       merged.push(entry);
     }
   }
@@ -821,7 +1085,9 @@ export function visibleXConfigSuggestions(
   suggestions: XConfigSuggestion[],
 ): XConfigSuggestion[] {
   const verifiedOrigins = new Set(
-    entries.flatMap((entry) => entry.routes.map((route) => route.endpoint_origin)),
+    entries.flatMap((entry) =>
+      entry.routes.map((route) => route.endpoint_origin),
+    ),
   );
   return suggestions.filter(
     (suggestion) => !verifiedOrigins.has(suggestion.canonical_origin),
@@ -829,7 +1095,7 @@ export function visibleXConfigSuggestions(
 }
 
 function shortPeerId(value?: string): string {
-  const peerId = value?.trim() ?? '';
+  const peerId = value?.trim() ?? "";
   if (peerId.length <= 22) return peerId;
   return `${peerId.slice(0, 10)}...${peerId.slice(-8)}`;
 }
@@ -846,15 +1112,16 @@ async function writeClipboardText(text: string): Promise<void> {
     await navigator.clipboard.writeText(text);
     return;
   }
-  const textarea = document.createElement('textarea');
+  const textarea = document.createElement("textarea");
   textarea.value = text;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
   document.body.appendChild(textarea);
   textarea.select();
   try {
-    if (!document.execCommand('copy')) throw new Error('clipboard copy command failed');
+    if (!document.execCommand("copy"))
+      throw new Error("clipboard copy command failed");
   } finally {
     document.body.removeChild(textarea);
   }

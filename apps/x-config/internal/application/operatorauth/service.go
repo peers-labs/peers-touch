@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -58,8 +59,11 @@ type Config struct {
 	Provider        string
 	SigningKeys     map[string]ed25519.PublicKey
 	AllowedSubjects map[string]struct{}
-	AttemptLifetime time.Duration
-	SessionLifetime time.Duration
+	// AllowPrivateHTTP permits the broker callback and console URLs to use
+	// plain HTTP on loopback or private corp-network IP literals only.
+	AllowPrivateHTTP bool
+	AttemptLifetime  time.Duration
+	SessionLifetime  time.Duration
 }
 
 type Service struct {
@@ -379,14 +383,40 @@ func validateConfig(config Config) error {
 	} {
 		parsed, err := url.Parse(raw)
 		if err != nil ||
-			parsed.Scheme != "https" ||
 			parsed.Host == "" ||
 			parsed.User != nil ||
-			parsed.Fragment != "" {
+			parsed.Fragment != "" ||
+			!validOperatorURL(parsed, config.AllowPrivateHTTP) {
 			return errors.New("invalid_operator_auth_config")
 		}
 	}
 	return nil
+}
+
+// validOperatorURL accepts HTTPS on any host. HTTP is accepted only when
+// private origins are explicitly enabled and the host is an IP literal on
+// loopback or private corp networks (IPv6 loopback only); the operator
+// handoff carries only a one-time challenge and the assertion is exchanged
+// over the server-side redeem channel.
+func validOperatorURL(parsed *url.URL, allowPrivateHTTP bool) bool {
+	switch parsed.Scheme {
+	case "https":
+		return true
+	case "http":
+		if !allowPrivateHTTP {
+			return false
+		}
+		ip := net.ParseIP(parsed.Hostname())
+		if ip == nil {
+			return false
+		}
+		if v4 := ip.To4(); v4 != nil {
+			return v4.IsLoopback() || v4.IsPrivate() || v4.IsLinkLocalUnicast()
+		}
+		return ip.IsLoopback()
+	default:
+		return false
+	}
 }
 
 func subjectKey(provider string, subject string) string {

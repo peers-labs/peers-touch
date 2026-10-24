@@ -16,6 +16,8 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
     tauri::generate_handler![
         // Health
         health::mobile_health,
+        // Distribution identity (XCFG-D05)
+        build_identity::mobile_distribution_identity,
         // Messaging
         crate::messaging::commands::messaging_activate,
         crate::messaging::commands::messaging_attachment_stage_begin,
@@ -170,6 +172,8 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
     tauri::generate_handler![
         // Build identity (acceptance only)
         build_identity::mobile_build_identity,
+        // Distribution identity (XCFG-D05)
+        build_identity::mobile_distribution_identity,
         // Health
         health::mobile_health,
         // Native events

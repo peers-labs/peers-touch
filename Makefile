@@ -4,6 +4,7 @@ export PATH := /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
 # ─── Include split modules ───────────────────────────────────────
 include tooling/make/local-dev.mk
+include tooling/make/distribution.mk
 include tooling/make/station-go.mk
 include tooling/make/monorepo.mk
 include tooling/make/proto.mk
@@ -57,6 +58,11 @@ help:
 	@echo "  make desktop                   Start Desktop App"
 	@echo "  make desktop-install           Build/install current source (macOS .app or Linux AppImage)"
 	@echo "  make mobile                    Start Mobile iOS Simulator"
+	@echo ""
+	@echo "Distribution packaging:"
+	@echo "  make package PRODUCT=desktop FLAVOR=geek [TARGET=dmg]"
+	@echo "  make package PRODUCT=mobile  FLAVOR=xx TARGET=android-apk [REGION=cn]"
+	@echo "  make package-dry-run ...       Print manifest, override, and build command"
 	@echo ""
 	@echo "Development workflow:"
 	@echo "  make dev-start TASK=<id> GOAL='<goal>' CONTRIBUTION='<contribution>'"

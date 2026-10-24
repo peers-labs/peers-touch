@@ -969,6 +969,7 @@ fn main() {
             search::search_query,
             search::search_ai,
             system::system_health,
+            system::client_meta,
             system::open_external_url,
             system::onboarding_reset,
             system::preferences_get,
