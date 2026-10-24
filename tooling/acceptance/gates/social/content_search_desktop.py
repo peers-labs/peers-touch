@@ -245,6 +245,8 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
                 "requestId": uuid.uuid4().hex,
             })
             self.assert_condition("private_account_reference", denial.get("accepted") is False)
+            self.select("messages")
+        self.select("messages")
         self.prove_account_scope(account_check)
         before = async_harness(self.receiver, "deviceSearchState", {})
         async_harness(self.receiver, "logout", {"actorPtid": self.ptids["alice"]})
