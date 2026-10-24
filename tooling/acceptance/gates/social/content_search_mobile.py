@@ -177,7 +177,7 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
         references = [item for item in page["items"] if item["resource"]["id"] in ids]
         require(len(references) == 4, "block fixture must have four issued references")
         artifacts.write_json(
-            f"social-content-search/{session.client_id}/block-references.json", references,
+            f"social-content-search/{session.client_id}/block-references.json", {"items": references},
             role=f"social-content-search-block-references/{session.client_id}",
         )
         peer_identity = sender.call_action("getRealtimeDevice")
