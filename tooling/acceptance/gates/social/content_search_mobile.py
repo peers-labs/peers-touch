@@ -132,6 +132,71 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
 """, query), "Social return must retain query and filter")
         self.capture(artifacts, session, f"social-{name}-return")
 
+    def block_policy(self, artifacts: ArtifactSession, session: Any,
+                     sender: Any, query: str) -> None:
+        # Existing private grants are revoked by block, not restored by unblock.
+        # These targets do not share the outage/deletion fixture's authority.
+        texts = [f"{query} {label}" for label in (
+            "屏蔽公开帖子", "屏蔽私密帖子", "屏蔽公开评论", "屏蔽私密评论",
+        )]
+        public = self.mutate_when_admitted(sender, "moments.publish", {
+            "text": texts[0], "audienceKind": 1,
+        })
+        private = self.mutate_when_admitted(sender, "moments.private.publishText", {
+            "draftId": uuid.uuid4().hex, "draftRevision": 1,
+            "text": texts[1], "audience": {"kind": "FRIENDS"},
+        })
+        require(public.get("postId") and private.get("postId"),
+                "original block fixture must supply canonical post IDs")
+        public_comment = self.mutate_when_admitted(sender, "moments.comment", {
+            "postId": public["postId"], "content": texts[2],
+        })
+        private_comment = self.mutate_when_admitted(sender, "moments.private.comment.submit", {
+            "draftId": uuid.uuid4().hex, "draftRevision": 1,
+            "postId": private["postId"], "text": texts[3],
+        })
+        require(public_comment.get("commentId") and private_comment.get("commentId"),
+                "original block fixture must supply canonical comment IDs")
+        acquired = session.call_action("moments.private.read", {"postId": private["postId"]})
+        require(acquired.get("state") == "CONTENT_READY",
+                "block fixture private content must be acquired before block")
+        acquired_comments = session.call_action("moments.private.comments.read", {
+            "postId": private["postId"],
+        })
+        require(any(row["commentId"] == private_comment["commentId"]
+                    for row in acquired_comments["comments"]),
+                "block fixture private comment must be acquired before block")
+        ids = [public["postId"], private["postId"],
+               public_comment["commentId"], private_comment["commentId"]]
+        self.select(session, "social", query)
+        for resource_id, text in zip(ids, texts):
+            self.has(session, resource_id, text)
+        self.capture(artifacts, session, "social-block-fixture-visible")
+        page = self.native_page(session, query, kinds=[])
+        references = [item for item in page["items"] if item["resource"]["id"] in ids]
+        require(len(references) == 4, "block fixture must have four issued references")
+        artifacts.write_json(
+            f"social-content-search/{session.client_id}/block-references.json", references,
+            role=f"social-content-search-block-references/{session.client_id}",
+        )
+        peer_identity = sender.call_action("getRealtimeDevice")
+        self.mutate_when_admitted(session, "social.block", {
+            "actorPtid": peer_identity["actorPtid"],
+        })
+        try:
+            self.select(session, "social", query)
+            require(not set(ids).intersection(self.rows(session)),
+                    "blocked author's posts and comments must disappear")
+            self.capture(artifacts, session, "social-blocked")
+            for index, reference in enumerate(references):
+                self.denial(session, f"blocked-reference-{index}", "search.resolve", {
+                    "resource": reference["resource"], "sourceId": reference["sourceId"],
+                }, "SEARCH_RESOURCE_UNAVAILABLE")
+        finally:
+            self.mutate_when_admitted(session, "social.unblock", {
+                "actorPtid": peer_identity["actorPtid"],
+            })
+
     def search_scenario(self, artifacts: ArtifactSession, session: Any,
                         sender_session: Any, fixture: dict) -> dict:
         query = fixture["query"]
@@ -184,24 +249,6 @@ return ['Private posts and comments acquired on this device', '本机已取得�
         for resource_id in ids:
             self.has(session, resource_id, query)
         self.capture(artifacts, session, "social-resumed")
-        peer_identity = sender_session.call_action("getRealtimeDevice")
-        self.mutate_when_admitted(session, "social.block", {
-            "actorPtid": peer_identity["actorPtid"],
-        })
-        try:
-            self.select(session, "social", query)
-            require(not set(ids).intersection(self.rows(session)),
-                    "blocked author's posts and comments must disappear")
-            self.capture(artifacts, session, "social-blocked")
-            public_item = next(item for item in original["items"]
-                               if item["resource"]["id"] == social["publicId"])
-            self.denial(session, "blocked-public-reference", "search.resolve", {
-                "resource": public_item["resource"], "sourceId": public_item["sourceId"],
-            }, "SEARCH_RESOURCE_UNAVAILABLE")
-        finally:
-            self.mutate_when_admitted(session, "social.unblock", {
-                "actorPtid": peer_identity["actorPtid"],
-            })
         self.select(session, "all", query)
         def unavailable() -> None:
             self.click(session, ".mobile-search-page .page-header .header-action:last-child")
@@ -237,6 +284,21 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
             self.denial(session, f"deleted-{resource_id}", "search.resolve", {
                 "resource": item["resource"], "sourceId": item["sourceId"],
             }, "SEARCH_RESOURCE_UNAVAILABLE")
+        deleted_public = self.mutate_when_admitted(sender_session, "moments.delete", {
+            "postId": social["publicId"],
+        })
+        require(deleted_public.get("deleted") is True, "original owner must delete public parent")
+        self.select(session, "all", query)
+        require(not {social["publicId"], social["publicCommentId"]}.intersection(self.rows(session)),
+                "deleted public parent suppresses every comment")
+        self.has(session, fixture["root"], query)
+        self.capture(artifacts, session, "social-public-parent-deleted")
+        for resource_id in (social["publicId"], social["publicCommentId"]):
+            item = next(item for item in original["items"] if item["resource"]["id"] == resource_id)
+            self.denial(session, f"deleted-{resource_id}", "search.resolve", {
+                "resource": item["resource"], "sourceId": item["sourceId"],
+            }, "SEARCH_RESOURCE_UNAVAILABLE")
+        self.block_policy(artifacts, session, sender_session, query)
         # Real Chat received content and the existing continuity/return owner.
         self.select(session, "messages", fixture["replyQuery"])
         self.target(artifacts, session, fixture["replyQuery"], fixture["reply"], "social-chat-regression")

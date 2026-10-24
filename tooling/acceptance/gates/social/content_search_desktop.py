@@ -235,8 +235,39 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
                          and self.receiver.find_element('[data-search-filter="social"]')
                          .get_attribute("aria-selected") == "true" and text in self.rows())
 
-    def policy(self) -> None:
-        public_before_block = self.item(self.public_post)
+    def block_policy(self) -> None:
+        # Block permanently revokes existing private grants. Use fresh targets
+        # after outage/deletion proof rather than expecting unblock to restore them.
+        texts = [f"{self.query} {label}" for label in (
+            "屏蔽公开帖子", "屏蔽私密帖子", "屏蔽公开评论", "屏蔽私密评论",
+        )]
+        public = self.moments("bob", "publishPublicMoment", {"text": texts[0]})
+        private = self.publish_private("bob", {
+            "draftId": uuid.uuid4().hex, "revision": 1, "momentKind": "TEXT",
+            "text": texts[1], "audienceKind": "FRIENDS",
+        })
+        public_id = str(public.get("transientPostId") or "")
+        private_id = str(private.get("transientPostId") or "")
+        if not public_id or not private_id:
+            raise GateError("original block fixture publication is unavailable")
+        self.moments("bob", "submitPublicComment", {"postId": public_id, "text": texts[2]})
+        self.moments("bob", "submitPrivateCommentWithRetry", {
+            "postId": private_id, "text": texts[3],
+        })
+        acquired = self.moments("alice", "readPrivateMoment", {"postId": private_id})
+        if acquired.get("state") != "CONTENT_READY":
+            raise GateError("original block fixture private acquisition is unavailable")
+        self.moments("alice", "readPrivateComments", {"postId": private_id})
+        self.select("social")
+        self.wait_js(
+            f"{json.dumps(texts)}.every(text => [...document.querySelectorAll('.pt-search-row')]"
+            ".some(row => row.innerText.includes(text)))",
+            "all current block fixture posts and comments",
+        )
+        references = [item for item in self.page()["items"] if item.get("snippet") in texts]
+        self.assert_condition("block_fixture_references", len(references) == 4)
+        self.report.runtime["search"]["blockReferences"] = references
+        self.visible("block_fixture_visible", lambda: all(text in self.rows() for text in texts))
         relationship = self.moments("alice", "relationshipStatus", {
             "actorPtid": self.ptids["bob"],
         })
@@ -247,20 +278,20 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         })
         try:
             self.select("social")
-            self.visible("blocked_social_source", lambda: self.public_text not in self.rows()
-                         and self.public_comment_text not in self.rows()
-                         and self.private_text not in self.rows()
-                         and self.private_comment_text not in self.rows())
-            blocked_reference = async_harness(self.receiver, "deviceSearchResolve", {
-                "resource": public_before_block["resource"],
-                "sourceId": public_before_block["sourceId"], "requestId": uuid.uuid4().hex,
-            })
-            self.assert_condition("blocked_reference", blocked_reference.get("accepted") is False)
+            self.visible("blocked_social_source", lambda: all(text not in self.rows() for text in texts))
+            for index, reference in enumerate(references):
+                denied = async_harness(self.receiver, "deviceSearchResolve", {
+                    "resource": reference["resource"],
+                    "sourceId": reference["sourceId"], "requestId": uuid.uuid4().hex,
+                })
+                self.assert_condition(f"blocked_reference_{index}", denied.get("accepted") is False)
         finally:
             self.moments("alice", "unblockActor", {
                 "actorPtid": self.ptids["bob"], "homeStationPeerId": self.station_peer_id,
                 "observedRevision": blocked["revision"],
             })
+
+    def policy(self) -> None:
         self.select("all")
         def unavailable() -> None:
             self.receiver.find_element(".pt-search-footer button", 20).click()
@@ -275,11 +306,18 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         )
         self.select("social")
         # Process health does not establish original Social read readiness.
-        self.wait_js(
-            f"document.querySelector('[data-resource-id=\"{self.private_post}\"]')"
-            f" && document.querySelector('[data-resource-id=\"{self.public_post}\"]')",
-            "original public and private Social results after Station restoration",
-        )
+        try:
+            self.wait_js(
+                f"document.querySelector('[data-resource-id=\"{self.private_post}\"]')"
+                f" && document.querySelector('[data-resource-id=\"{self.public_post}\"]')",
+                "original public and private Social results after Station restoration",
+            )
+        except GateError:
+            self.report.runtime["search"]["restorationFailure"] = {
+                "surface": self.surface(),
+                "presentation": async_harness(self.receiver, "deviceSearchPresentation", {}),
+            }
+            raise
         self.visible("social_source_recovered", lambda: self.private_text in self.rows()
                      and self.public_text in self.rows())
         old = self.item(self.private_post)
@@ -304,6 +342,7 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         })
         self.assert_condition("deleted_public_reference", denial_public.get("accepted") is False)
         self.report.runtime["search"]["policyDenials"] = [denial, denial_public]
+        self.block_policy()
 
     def fence(self) -> None:
         sentinel_text = f"{self.query} 账号隔离私密"

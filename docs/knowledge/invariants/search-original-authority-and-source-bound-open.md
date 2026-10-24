@@ -27,10 +27,12 @@ owns:
   - apps/station/app/subserver/social/application/public_search_test.go
   - apps/station/app/subserver/social/application/private_read_policy.go
   - apps/station/app/subserver/social/infrastructure/private_read_policy.go
+  - tooling/acceptance/gates/social/content_search
 referenced-by: []
 related:
   - ../../architecture/domains/search/design.md
   - ../../station/social-search.md
+  - ../../architecture/domains/social/core/product-state-model.md
 detected: 2026-10-24
 ---
 
@@ -82,6 +84,10 @@ the idempotent update boundary; original denial and generation checks remain
 before the unchanged-projection check.
 Content-key generation MUST NOT substitute for the original projection content
 revision; distinct readable projection bytes must have distinct validators.
+Search policy fixtures MUST NOT expect revoked private grants to recover through
+unblock or Station restart. Use independent readable resources for recovery,
+deletion and block proof, following the original Social relationship contract
+in `product-state-model.md` §5. Keep every required UI and denial assertion.
 
 ## Why this matters
 
@@ -124,6 +130,9 @@ and panics; the outer IPC join can then report only `search cancelled`.
 - The same Journey must complete private Open after original projection
   materialization, reject unavailable targets and show distinct acquired-private
   and current-Station public coverage.
+- Social native Gates must prove outage recovery and parent deletion before
+  blocking their independent targets, with all four targets visible before block
+  and all four old references denied after it.
 - Inspect Desktop/Mobile `SearchExecutor::block_on`: it must not call
   `tauri::async_runtime::block_on`. The native Social Search Suite must show
   mixed results without `Cannot block the current thread from within a runtime`
