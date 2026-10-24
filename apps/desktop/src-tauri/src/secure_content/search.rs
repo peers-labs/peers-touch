@@ -166,6 +166,31 @@ pub(super) fn refresh(
     let projection = search_projection::decode(kind, id, post_id, bytes).filter(|projection| {
         projection.content_id == content_id && projection.generation == generation
     });
+    let revision = projection
+        .as_ref()
+        .map(|p| p.document.resource.content_revision.as_str())
+        .unwrap_or("");
+    let created_at = projection
+        .as_ref()
+        .map(|p| p.document.created_at_unix_ms)
+        .unwrap_or(0);
+    let unchanged: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM secure_content_search_documents
+             WHERE kind = ?1 AND id = ?2 AND post_id = ?3 AND content_id = ?4
+               AND generation = ?5 AND revision = ?6 AND created_at = ?7 AND readable = ?8)",
+            params![
+                kind, id, post_id, content_id, generation as i64,
+                revision, created_at, projection.is_some(),
+            ],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    // Replayed/read-back projections are not new content. The original denial
+    // and generation checks above still precede this idempotent index update.
+    if unchanged {
+        return Ok(());
+    }
     connection
         .execute(
             "DELETE FROM secure_content_social_search_fts WHERE kind = ?1 AND id = ?2",
@@ -189,14 +214,8 @@ pub(super) fn refresh(
                 post_id,
                 content_id,
                 generation as i64,
-                projection
-                    .as_ref()
-                    .map(|p| p.document.resource.content_revision.as_str())
-                    .unwrap_or(""),
-                projection
-                    .as_ref()
-                    .map(|p| p.document.created_at_unix_ms)
-                    .unwrap_or(0),
+                revision,
+                created_at,
                 projection.is_some(),
             ],
         )

@@ -24,7 +24,7 @@ let locale = 'en';
 
 function stopRequest(reason = 'user-intent'): void {
   if (useSearchStore.getState().opening) {
-    log.debug('searchRuntime', 'Search Open cancelled by intent', { reason });
+    log.info('searchRuntime', 'Search Open cancelled by intent', { reason });
   }
   requestGeneration++;
   stopSearchQuery();
@@ -93,7 +93,7 @@ export const searchActions = {
     const id = crypto.randomUUID();
     requestId = id;
     let phase = 'resolve';
-    log.debug('searchRuntime', 'Search Open started');
+    log.info('searchRuntime', 'Search Open started');
     useSearchStore.setState({
       opening: true, errorKey: null,
       status: useSearchStore.getState().response ? 'ready' : 'idle',
@@ -103,22 +103,22 @@ export const searchActions = {
         && useSearchStore.getState().open;
       const resolved = await searchService.resolve(item.resource, item.sourceId, id);
       if (!current()) {
-        log.debug('searchRuntime', 'Search Open superseded', { phase });
+        log.info('searchRuntime', 'Search Open superseded', { phase });
         return false;
       }
       phase = 'original-target';
-      log.debug('searchRuntime', 'Search Open resolved');
+      log.info('searchRuntime', 'Search Open resolved');
       await openSearchResource(resolved, navigation, current);
       if (!current()) {
-        log.debug('searchRuntime', 'Search Open superseded', { phase });
+        log.info('searchRuntime', 'Search Open superseded', { phase });
         return false;
       }
       useSearchStore.setState({ returnAvailable: true, opening: false });
-      log.debug('searchRuntime', 'Search Open completed');
+      log.info('searchRuntime', 'Search Open completed');
       searchActions.close();
       return true;
     } catch (error) {
-      log.debug('searchRuntime', 'Search Open failed', {
+      log.warn('searchRuntime', 'Search Open failed', {
         phase, currentIntent: generation === requestGeneration,
         currentIdentity: captureSearchIdentity() === identity,
         errorKey: searchErrorKey(error),

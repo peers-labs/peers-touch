@@ -2,6 +2,7 @@
 
 use search_core::model::{wire::ResourceAnchor, TrustZone};
 use search_core::{ResourceRef, ResultKind, ScoredDocument};
+use sha2::{Digest, Sha256};
 
 use super::private_comment::PrivateCommentProjection;
 use super::projection::{
@@ -123,7 +124,7 @@ pub(crate) fn decode(
     if generation == 0 || content_id.is_empty() || author_ptid.is_empty() {
         return None;
     }
-    let resource = resource_ref(kind, id, post_id, &format!("{content_id}:{generation}"));
+    let resource = resource_ref(kind, id, post_id, &format!("{:x}", Sha256::digest(bytes)));
     Some(SearchProjection {
         document: ScoredDocument {
             resource,

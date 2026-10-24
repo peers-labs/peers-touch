@@ -20,6 +20,7 @@ import {
 } from '../../services/socialRealtime';
 import { useRelationshipsStore } from '../../store/relationships';
 import { useSessionStore } from '../../store/session';
+import { useSearchStore } from '../../store/search';
 import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
 import { messageGroupSeq, type SocialMessage } from '../../store/socialProjection';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
@@ -561,6 +562,17 @@ export function installAcceptanceHarness(): void {
     // Supporting native-owner diagnostics. Search UI actions remain in the Journey.
     async deviceSearchState() {
       return toJson(SearchReadStateSchema, await searchService.readState());
+    },
+
+    async deviceSearchPresentation() {
+      const view = useSearchStore.getState();
+      return {
+        open: view.open,
+        status: view.status,
+        query: view.displayedQuery,
+        filter: view.displayedFilter,
+        page: view.response ? toJson(SearchResponseSchema, view.response) : null,
+      };
     },
 
     async deviceSearchPage({ query, requestId, cursor = '', kinds = [SearchKind.MESSAGE] }: {

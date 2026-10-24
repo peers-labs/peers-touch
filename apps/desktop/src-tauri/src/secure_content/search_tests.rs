@@ -105,6 +105,38 @@ fn commit_comment(store: &SecureContentStore, post_id: &str, id: &str, text: &st
 }
 
 #[test]
+fn private_social_search_duplicate_projection_preserves_read_revision() {
+    let store = SecureContentStore::in_memory().unwrap();
+    commit_post(&store, "post-1", 1, "needle");
+    commit_comment(&store, "post-1", "comment-1", "needle");
+    let revision = store.search_revision().unwrap();
+    let references = store
+        .search_candidate_refs("needle", &[], None, 10, &|| Ok(()))
+        .unwrap()
+        .resources;
+    commit_post(&store, "post-1", 1, "needle");
+    commit_comment(&store, "post-1", "comment-1", "needle");
+    assert_eq!(store.search_revision().unwrap(), revision);
+    assert_eq!(
+        store.search_read_resources(&references, &|| Ok(())).unwrap().len(),
+        2
+    );
+    commit_post(&store, "post-1", 1, "changed");
+    assert_ne!(store.search_revision().unwrap(), revision);
+    assert_eq!(
+        store.with_search_revision(&revision, || Ok(())).unwrap_err(),
+        SearchError::SourceChanged
+    );
+    store.mark_private_resource_purge_pending("post-1").unwrap();
+    assert!(store
+        .commit_comment_root(
+            "content-comment-1", 1, "post-1", "comment-1", &[8; 32], None,
+            &comment("post-1", "comment-1", 1, "needle"),
+        )
+        .is_err());
+}
+
+#[test]
 fn private_social_search_cjk_kinds_and_canonical_comment_reference() {
     let store = SecureContentStore::in_memory().unwrap();
     commit_post(&store, "post-1", 1, "\u{5f92}\u{6b65} Camino");

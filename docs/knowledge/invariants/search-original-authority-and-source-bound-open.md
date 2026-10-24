@@ -7,6 +7,7 @@ owns:
   - apps/desktop/src-tauri/src/application/search/
   - apps/desktop/src-tauri/src/secure_content/search.rs
   - apps/desktop/src-tauri/src/secure_content/search_policy.rs
+  - apps/desktop/src-tauri/src/social/search_projection.rs
   - apps/desktop/src/runtimes/searchRuntime.ts
   - apps/desktop/src/runtimes/searchQueries.ts
   - apps/desktop/src/runtimes/searchInvalidations.ts
@@ -71,6 +72,12 @@ before awaiting Open so its teardown cannot restore the old entry focus.
 Coverage copy MUST come from the original source's generated `SourceCoverage`.
 Public Station scope must never fall back to acquired-device coverage;
 unfinished public scans must retain their incomplete state.
+Original projection readback/replay MUST NOT invalidate an unchanged Search
+reference by advancing the derived index watermark. Search design §4.1 owns
+the idempotent update boundary; original denial and generation checks remain
+before the unchanged-projection check.
+Content-key generation MUST NOT substitute for the original projection content
+revision; distinct readable projection bytes must have distinct validators.
 
 ## Why this matters
 
@@ -92,6 +99,8 @@ and panics; the outer IPC join can then report only `search cancelled`.
 
 - Desktop `secure_content::search` tests cover current policy, revoked parent,
   late publication, cancellation, SQLCipher rollback and historical anchors.
+  `private_social_search_duplicate_projection_preserves_read_revision` covers
+  repeated original commits, real content changes and denied-parent replay.
 - Mobile `secure_content::store::search` tests cover the same policy and
   original identity constraints.
 - Station `TestMomentReadPolicyOriginalAuthority` covers post/comment policy

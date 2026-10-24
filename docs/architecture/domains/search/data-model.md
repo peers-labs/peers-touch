@@ -253,8 +253,9 @@ monotonic payload expiry 独立保留；空页最多缓存 15 秒，查询/资�
 缓存总量 128 项/4 MiB，每授权分区及来源 64 项/2 MiB；在途读最多 128 项。
 Renderer 保留 32 个查询 frame / 640 项、最多 200 项可见结果；复用前读原模块
 `SearchReadState`，5 分钟查询与 15 秒空页到期保持独立。关闭/切页可保留
-同账号输入、mode、顺序、选中与滚动；账号/锁定/Station 变化清空。远端 read lease、
-content-stale 发布和跨来源完整 session 仍未接入。
+同账号输入、mode、顺序、选中与滚动；账号/锁定/Station 变化清空。当前三来源
+session 与原对象打开绑定见设计 §4.1；远端 read lease、content-stale 发布和
+其他来源的完整接入仍未证明。
 
 ### 7.1 缓存对象与复用键
 

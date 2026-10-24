@@ -199,6 +199,11 @@ suggestions 只选 Device，主动提交明确允许 Device 与当前 Station。
 查询与原对象打开分别持有操作生命周期。来源失效立即遮蔽查询投影，但原域
 打开的读取/回填不取消自身；打开仍由原域当前读权、结果可用性及身份/用户
 intent 屏障裁决。打开期间不启动查询重读，完成后若仍显示 Search 再协调。
+原 Social 投影回读/重放保持派生索引幂等：相同 identity、generation、
+content revision 与可读状态不得推进 Search 水位或重写 FTS。原撤权/删除
+及 generation 屏障先于幂等判断，变化的内容或读状态仍推进水位。
+私密 content revision 从原持久化投影 bytes 的 SHA-256 导出，独立于内容密钥
+generation；同一密钥 generation 中的可检索投影变化不得伪装为内容未变。
 查询协调在每次异步等待后重新检查 Open 状态；等待前的空闲观察不能授权
 等待后的重读或错误投影，避免已开始的原对象打开被迟到协调覆盖。
 原页面拥有目标焦点，须在 Search 覆盖层释放焦点边界后定位评论。覆盖层在
@@ -339,12 +344,13 @@ Source weights、fusion 常数与 personalization 需在标注 corpus 验证，�
 
 分页 Coordinator 保留短期 query session：排序候选快照、各来源 continuation token、已发对象集合、未发候选、revision 和过期时间；数量有上限。cursor 不包含私密明文，绑定 actor/session/scope/filter/ranking/source-set。状态过期返回 `CURSOR_EXPIRED`，不能静默翻回第一页。
 
-当前 D03 的单一 DEVICE/FIND/MESSAGE keyset continuation 复用 `search-core` 的
+既有 D03 证明快照中的 DEVICE/FIND/MESSAGE keyset continuation 复用 `search-core` 的
 HMAC-SHA256 codec：认证完整位置字段、查询及窗口/账号/session revision/Engine
 incarnation 绑定，最长有效期五分钟。AppState 生成进程内随机密钥，重启即失效，
 不持久化密钥或查询。篡改、过期、上下文替换在读取来源前拒绝；消息检索先由
-共享查询核心验证，纯标点等无 token 输入返回 `INVALID_QUERY`。完整混合来源
-快照与 coverage 生命周期属于后续跨来源范围，本期单来源证明不覆盖它们。
+共享查询核心验证，纯标点等无 token 输入返回 `INVALID_QUERY`。当前多来源
+协调器及叶子 continuation 的边界见 §4.1；旧单来源快照不证明当前混合来源
+分页、coverage 或原对象打开。
 
 数据更新/权限变化时，允许从当前页移除失效对象；结果快照不冻结权限。总量与 facet 只基于当前授权范围；重校验后缺乏准确全量就返回 lower-bound/estimated/unknown，不泄漏未经授权的 raw hit count。
 

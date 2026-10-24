@@ -75,11 +75,11 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         raise GateError("original private publication did not reconcile UNKNOWN_COMMIT within 45s")
 
     def page(self) -> dict:
-        result = async_harness(self.receiver, "deviceSearchPage", {
-            "query": self.query, "kinds": [], "requestId": uuid.uuid4().hex,
-        })
-        if not result.get("accepted"):
-            raise GateError(f"native Social Search failed: {result}")
+        # Supporting references must belong to the real presented UI response.
+        # Another submit can change its source session before the row is clicked.
+        result = async_harness(self.receiver, "deviceSearchPresentation", {})
+        if not result.get("open") or result.get("query") != self.query or not result.get("page"):
+            raise GateError("native Social Search has no current presented result page")
         return result["page"]
 
     def select(self, kind: str) -> None:
