@@ -7,12 +7,12 @@ description: Deploy or roll back the apps/x-config service to a named SSH target
 
 ## Invoke When
 
-- Deploying, upgrading, or rolling back the `apps/x-config` API service to
-  one of its named environments:
-  - `xconfig-corpstable` — fiveArm `10.37.221.38`, corpstable channel,
-    origin `http://10.37.221.38:18082`;
-  - `xconfig-preview` — Home `peers.shux.me:12222`, stable channel,
-    public origin `https://xconfig.peers.shux.me:28443`.
+- Deploying, upgrading, or rolling back the `apps/x-config` service
+  (`SRV=xconfig`) to one of its environments:
+  - `ENV=corpstable SRV=xconfig` — fiveArm `10.37.221.38`, corpstable
+    channel, origin `http://10.37.221.38:18082`;
+  - `ENV=preview SRV=xconfig` — Home `peers.shux.me:12222`, stable
+    channel, public origin `https://xconfig.peers.shux.me:28443`.
 - Verifying a deployed x-config runtime (health, current snapshot, logs).
 
 Do not use for: publishing catalog content (snapshots/directives/origins go
@@ -23,18 +23,31 @@ env>`), or OAuth broker/Vercel deployment (`pt-oauth2-client-2-vercel`).
 ## Core Rule — Use The Station Pipeline, Never Hand SCP
 
 x-config deploys through the **same reviewed remote pipeline as
-`make station` remote mode**: `make deploy ENV=<name>` resolves a
-git-tracked deploy definition in the sibling `env` repository, then
-source-syncs the exact commit to the target's
-`$HOME/peers-touch/repo` worktree, takes a machine/resource lease, runs the
-reviewed build and restart commands over SSH, and health-checks.
+`make station` remote mode**, with environment and service as two
+orthogonal dimensions:
+
+```sh
+make deploy ENV=corpstable SRV=xconfig
+```
+
+`ENV` names the environment, `SRV` names the service role. The pipeline
+resolves one git-tracked definition
+`env/peers-touch/<host>/deploy/<env>-<srv>.env.example`
+(`PT_DEPLOY_*`), source-syncs the exact commit to the target's
+`$HOME/peers-touch/repo` worktree, takes a machine/resource lease, runs
+the reviewed build and restart commands over SSH, and health-checks. One
+command deploys exactly one service; there is no "deploy the whole
+environment" entry — relay/station/xconfig are separate
+`SRV=` invocations with isolated compose projects.
 
 - The SSH target (host, user, port, paths, build, restart, health URL) is
-  declared once in the reviewed, git-crypt-tracked definition:
-  `env/peers-touch/<host>/deploy/<name>.env.example` (`PT_DEPLOY_*`).
+  declared once in the reviewed, git-crypt-tracked
+  `PT_DEPLOY_*` definition.
 - **Deploying to another IP is adding or editing a reviewed deploy env
   file, never passing an IP in chat or on a command line.** A new target
   needs its own reviewed definition plus a provisioned runtime root.
+- Legacy flat instance names still work without `SRV`
+  (`make deploy ENV=station-five-arm`); new services use ENV+SRV.
 - Do not hand-`scp` binaries, run inline SSH build commands, or edit the
   remote runtime outside this pipeline. The deploy definition is the only
   write authority.
@@ -96,17 +109,19 @@ Provisioning changes are reviewed in the env/infra repositories. Re-running
 # product repo: exact commit being deployed
 git status --short && git rev-parse HEAD
 # env repo: clean and current; the resolved definition must be unique
-bash tooling/scripts/deploy/deploy.sh resolve xconfig-corpstable
+SRV=xconfig ENV=corpstable bash tooling/scripts/deploy/deploy.sh resolve
 # target reachability + current snapshot (record before/after)
 curl -fsS http://10.37.221.38:18082/channels/corpstable/latest.pb | shasum -a 256
 ```
 
-Deploying a non-default ref: `BRANCH=<ref> make deploy ENV=xconfig-corpstable`.
+Deploying a non-default ref:
+`BRANCH=<ref> make deploy ENV=corpstable SRV=xconfig`.
 
 ### 2. Deploy
 
 ```sh
-make deploy ENV=xconfig-corpstable          # or xconfig-preview
+make deploy ENV=corpstable SRV=xconfig      # corpstable
+make deploy ENV=preview SRV=xconfig         # Home preview
 ```
 
 The pipeline: source-sync exact commit to `$HOME/peers-touch/repo` → lease
@@ -118,8 +133,8 @@ stopped/failed visibly; inspect logs, do not retry blindly.
 ### 3. Verify
 
 ```sh
-make deploy-status ENV=xconfig-corpstable
-make deploy-logs   ENV=xconfig-corpstable
+make deploy-status ENV=corpstable SRV=xconfig
+make deploy-logs   ENV=corpstable SRV=xconfig
 docker ps --filter name=peers-x-config-corpstable-api   # healthy
 ```
 
@@ -135,12 +150,13 @@ docker ps --filter name=peers-x-config-corpstable-api   # healthy
 ### 4. Rollback
 
 ```sh
-make deploy-repair ENV=xconfig-corpstable   # reviewed restart only
+make deploy-repair ENV=corpstable SRV=xconfig   # reviewed restart only
 ```
 
 Binary rollback: on the host, `install -m 0755
 artifacts/x-config-server.prev artifacts/x-config-server` in the runtime
-root and re-run `make deploy ENV=...` (or the reviewed restart command),
+root and re-run `make deploy ENV=<env> SRV=xconfig` (or the reviewed
+restart command),
 then repeat step 3. Never roll back by restoring `state/`. If an env
 revision caused the failure, revert/redeploy the reviewed definition; do
 not hand-edit secrets on the host.
@@ -156,8 +172,9 @@ journeys follow
 
 ## Verification
 
-- `bash tooling/scripts/deploy/deploy.sh resolve xconfig-corpstable` and
-  `... xconfig-preview` each resolve to exactly one git-tracked file.
+- `SRV=xconfig ENV=corpstable bash tooling/scripts/deploy/deploy.sh resolve`
+  and the `ENV=preview` equivalent each resolve to exactly one git-tracked
+  file (`corpstable-xconfig` / `preview-xconfig`).
 - `make deploy-status ENV=<name>` reaches the right host (host in the
   definition equals the intended target) before any deploy.
 - Exactly one project container exists after roll:

@@ -30,6 +30,23 @@ class DeployOrchestrationTest(unittest.TestCase):
 
         definition_root = self.env_root / "peers-touch" / "test" / "deploy"
         definition_root.mkdir(parents=True)
+        # Second service in the same environment: verifies ENV+SRV composes
+        # the "<env>-<srv>" instance name independently of positional args.
+        (definition_root / "corpstable-xconfig.env.example").write_text(
+            "\n".join(
+                (
+                    "PT_DEPLOY_HOST=xconfig.example",
+                    "PT_DEPLOY_USER=developer",
+                    "PT_DEPLOY_PATH=peers-touch/repo",
+                    "PT_DEPLOY_ROLE=xconfig",
+                    "PT_DEPLOY_BUILD_CMD='go build -o xconfig ./cmd/server'",
+                    "PT_DEPLOY_RESTART_CMD='compose up -d xconfig'",
+                    "PT_DEPLOY_HEALTH_URL=http://xconfig.example/healthz",
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
         self.definition = definition_root / "station-test.env.example"
         self.definition.write_text(
             "\n".join(
@@ -128,6 +145,79 @@ class DeployOrchestrationTest(unittest.TestCase):
         )
         self.assertLess(dependencies, build)
         self.assertLess(build, restart)
+
+    def test_srv_and_env_compose_instance_name_without_positional_arg(
+        self,
+    ) -> None:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "PATH": f"{self.bin_root}:{environment['PATH']}",
+                "PT_ENV_REPO": str(self.env_root),
+                "PT_PROFILE_LEASE_HELD": "1",
+                "PT_SOURCE_LEASE_HELD": "1",
+                "DEPLOY_TEST_TRACE": str(self.trace),
+                "ENV": "corpstable",
+                "SRV": "xconfig",
+            }
+        )
+
+        self.trace.unlink(missing_ok=True)
+        result = subprocess.run(
+            ["/bin/bash", str(self.script)],
+            cwd=self.project_root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = self.trace.read_text(encoding="utf-8").splitlines()
+        self.assertTrue(
+            any("go build -o xconfig ./cmd/server" in command for command in commands),
+            commands,
+        )
+        self.assertTrue(
+            any("compose up -d xconfig" in command for command in commands),
+            commands,
+        )
+        # The station service definition in the same environment must not
+        # be touched by an SRV-scoped deploy.
+        self.assertFalse(
+            any("compose build station" in command for command in commands),
+            commands,
+        )
+
+    def test_srv_appends_to_positional_environment_name(self) -> None:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "PATH": f"{self.bin_root}:{environment['PATH']}",
+                "PT_ENV_REPO": str(self.env_root),
+                "PT_PROFILE_LEASE_HELD": "1",
+                "PT_SOURCE_LEASE_HELD": "1",
+                "DEPLOY_TEST_TRACE": str(self.trace),
+                "SRV": "xconfig",
+            }
+        )
+
+        self.trace.unlink(missing_ok=True)
+        result = subprocess.run(
+            ["/bin/bash", str(self.script), "corpstable"],
+            cwd=self.project_root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = self.trace.read_text(encoding="utf-8").splitlines()
+        self.assertTrue(
+            any("go build -o xconfig ./cmd/server" in command for command in commands),
+            commands,
+        )
 
 
 if __name__ == "__main__":
