@@ -94,6 +94,8 @@ Private `INDEXING` coverage MUST retain both the acquired-device scope and
 unfinished index status. Already indexed readable results can coexist with
 pending original projections; hiding the scope or forcing `READY` would
 misrepresent that source. Use the shared locale pack on both clients.
+Every coordinator-produced source failure detail key MUST resolve in both
+shared locale packs, including unavailable, timeout and invalid-response states.
 Original projection readback/replay MUST NOT invalidate an unchanged Search
 reference by advancing the derived index watermark. Search design §4.1 owns
 the idempotent update boundary; original denial and generation checks remain
@@ -168,6 +170,9 @@ Search publication order and can deadlock the native UI during reconciliation.
   identify acquired private posts/comments and disclose unfinished indexing.
   The existing Mobile Social coverage assertion must still run against a
   native `INDEXING` response; do not replace it with a ready-state fixture.
+- Check every failure detail key emitted by Search Core `session::failed`
+  against both shared packs. Native outage capture must retain Messaging results
+  and reject unresolved localization keys.
 - Social native Gates must prove outage recovery and parent deletion before
   blocking their independent targets, with all four targets visible before block
   and all four old references denied after it.
