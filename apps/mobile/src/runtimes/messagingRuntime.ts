@@ -54,10 +54,15 @@ interface MessagingRuntimeErrorEventDetail {
 }
 
 interface MessagingRuntimeReadinessPort {
+  requiresRecovery(): boolean;
   fail(operation: string, error?: string): void;
   recover(operation: string): void;
   recoverAll(): void;
   observeReady(): void;
+}
+
+export interface MessagingWakeOptions {
+  readonly onlyIfFailed?: boolean;
 }
 
 const MESSAGING_READINESS_FAILURE_OPERATIONS = new Set([
@@ -90,6 +95,7 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
   const readinessFailures = new Set<string>();
 
   const readinessPort: MessagingRuntimeReadinessPort = {
+    requiresRecovery: () => readinessFailures.size > 0,
     fail(operation, error): void {
       if (!runtimeContext || readinessFailures.has(operation)) return;
       if (readinessFailures.size > 0) {
@@ -213,7 +219,12 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
   };
 }
 
-export async function wakeActiveMessagingSession(): Promise<MessagingReconcileResult | null> {
+export async function wakeActiveMessagingSession(
+  options: MessagingWakeOptions = {},
+): Promise<MessagingReconcileResult | null> {
+  if (options.onlyIfFailed && !activeRuntimeReadinessPort?.requiresRecovery()) {
+    return null;
+  }
   try {
     return await reconcileActiveMessagingSession();
   } catch (error) {

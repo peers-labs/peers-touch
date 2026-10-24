@@ -161,6 +161,14 @@ host resume
 
 Resume never treats cached projection state as current before reconciliation.
 
+If Messaging reconciliation fails while the OS network remains connected,
+the existing Social foreground reconciliation interval retries only Messaging
+failures reported by its current readiness owner, before repairing dependent
+Social projections. Healthy Messaging skips that periodic native call. A failed
+retry keeps writes closed; only the original scope-fenced Messaging success and
+successful projection repair reopen admission. This path creates no retry timer,
+alternate readiness state, or replay of business mutations.
+
 ## 8. Scope Change and Logout
 
 Station change, Station replacement, actor change, session revocation, and
