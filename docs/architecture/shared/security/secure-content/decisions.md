@@ -1444,6 +1444,12 @@ complete remote command, while the reset owner revalidates binding,
 declaration, source, profile, scope, and process identity after lease
 acquisition and before every remote stage.
 
+An outer Suite actor-reset lease remains in its parent process while schema
+activation obtains the separate exact-scope maintenance lease. Profile selection
+and Station deployment children acquire their own deployment authority and receive
+no `PT_MACHINE_LEASE_*` metadata from that parent. This preserves the parent lease
+without advertising a descriptor closed by the subprocess exec boundary.
+
 Each remote attempt receives one canonical `SecureContentResetInvocationV1`
 over SSH stdin. The CLI validates its compiled source commit, deployment
 environment, destructive scope, reset intent, reset-manifest digest,

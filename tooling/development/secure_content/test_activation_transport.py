@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -175,6 +176,14 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
                 command_runner=command_runner,
             )
             with (
+                mock.patch.dict(os.environ, {
+                    "PT_MACHINE_LEASE_FD": "64",
+                    "PT_MACHINE_LEASE_ID": "outer-reset-lease",
+                    "PT_MACHINE_LEASE_KIND": "station.reset",
+                    "PT_MACHINE_LEASE_RESOURCE_ID": "mobile-social-simulator-actors",
+                    "PT_MACHINE_LEASE_RESET_SCOPE": "mobile-social-simulator-actors",
+                    "PT_ACTIVATION_TEST_VALUE": "preserved",
+                }),
                 mock.patch(
                     "tooling.development.secure_content.activation_transport."
                     "read_service_version",
@@ -207,6 +216,8 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
                     },
                     budget_seconds=3600,
                 )
+                self.assertEqual("64", os.environ["PT_MACHINE_LEASE_FD"])
+                self.assertEqual("outer-reset-lease", os.environ["PT_MACHINE_LEASE_ID"])
 
         self.assertEqual(
             ["make", "profile", "PROFILE=four"],
@@ -216,6 +227,11 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
             ["make", "station"],
             command_runner.call_args_list[1].args[0],
         )
+        for invocation in command_runner.call_args_list:
+            environment = invocation.kwargs["env"]
+            self.assertFalse(any(key.startswith("PT_MACHINE_LEASE_") for key in environment))
+            self.assertEqual("preserved", environment["PT_ACTIVATION_TEST_VALUE"])
+            self.assertEqual("3600", environment["PT_STATION_LEASE_BUDGET_SECONDS"])
         install_call = remote.calls[0]
         self.assertIn("install-attestation", install_call[0][-1])
         payload = json.loads(str(install_call[1]["input_text"]))

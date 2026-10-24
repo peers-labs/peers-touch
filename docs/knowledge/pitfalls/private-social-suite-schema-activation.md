@@ -4,6 +4,8 @@ title: Private Social Suites require canonical schema before publication
 status: active
 owns:
   - tooling/development/secure_content/runtime_schema.py
+  - tooling/development/secure_content/activation_transport.py
+  - tooling/development/secure_content/test_activation_transport.py
   - tooling/acceptance/provisioners/chat_storage_native.py
   - tooling/acceptance/provisioners/mobile_search.py
   - apps/station/app/subserver/social/infrastructure/secure_content_reset_types.go
@@ -41,6 +43,13 @@ operation. Planless schema activation uses an empty `plan_id` and generated
 source-bound audit metadata. Stable Profiles, unknown targets, final-cut intent,
 and process-binding drift remain rejected.
 
+The Suite's actor-reset lease remains owned by the parent throughout schema
+preparation. The profile/deployment child obtains its own deployment lease;
+its environment must omit `PT_MACHINE_LEASE_*` metadata for the unrelated
+parent descriptor. Python closes that descriptor across exec, so forwarding
+its number causes the deployment bridge to fail with `EBADF`. Do not mutate
+the parent environment or forward reset authority to a deployment child.
+
 ## How to detect a recurrence
 
 - Run the Social Search Desktop or Mobile native Suite against a reviewed
@@ -52,3 +61,6 @@ and process-binding drift remain rejected.
   from `apps/station/app`.
 - Confirm schema preparation occurs once at Suite scope, before the first
   scenario; public snapshot equality is checked by the reset owner.
+- Run `python3 -m unittest
+  tooling.development.secure_content.test_activation_transport`; profile and
+  deploy children must omit parent lease metadata while the parent retains it.
