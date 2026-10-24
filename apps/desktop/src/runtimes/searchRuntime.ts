@@ -33,6 +33,7 @@ function stopRequest(reason = 'user-intent'): void {
   const cancelled = requestId;
   requestId = null;
   if (cancelled) void searchService.cancel(cancelled).catch(() => {});
+  useSearchStore.setState({ opening: false });
 }
 
 function reset(): void {
