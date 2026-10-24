@@ -482,15 +482,25 @@ const action = arguments[0], input = arguments[1];
 const done = arguments[arguments.length - 1];
 const root = window.__PEERS_MOBILE_ACCEPTANCE__;
 const deadline = Date.now() + 30000;
+const domain = action.startsWith('moments.') ? 'moments'
+  : action.startsWith('social.') ? 'social' : null;
 (async () => {
   let reason = 'unavailable';
   while (Date.now() < deadline) {
     const snapshot = await root['recovery.snapshot']({});
-    if (snapshot.writeAdmission?.open === true && snapshot.isWriteBlocked === false) {
+    const projection = domain ? await root['social.projection.read']({}) : null;
+    const domainReady = !domain || (projection?.active === true
+      && projection.ingress?.lifecycle === 'active'
+      && projection.ingress.writeAdmissionOpen === true
+      && Array.isArray(projection.ingress.staleDomains)
+      && !projection.ingress.staleDomains.includes(domain));
+    if (snapshot.writeAdmission?.open === true && snapshot.isWriteBlocked === false && domainReady) {
       // The original action still performs its own guard. Never retry it.
       return {value: await root[action](input)};
     }
-    reason = snapshot.writeAdmission?.reason || 'recovery_projection_blocked';
+    reason = domainReady
+      ? snapshot.writeAdmission?.reason || 'recovery_projection_blocked'
+      : `${domain}:projection_stale`;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   return {error: 'write admission timeout', reason};

@@ -106,6 +106,11 @@ Search policy fixtures MUST NOT expect revoked private grants to recover through
 unblock or Station restart. Use independent readable resources for recovery,
 deletion and block proof, following the original Social relationship contract
 in `product-state-model.md` §5. Keep every required UI and denial assertion.
+Fixture mutations MUST wait for the original target domain's projection to
+be current, as required by Mobile lifecycle reconciliation. Global write
+admission alone does not clear `moments` or `social` staleness. Observe the
+original projection inside the existing bounded wait, then invoke once;
+do not retry mutations or reopen admission from the Gate.
 
 ## Why this matters
 
@@ -176,6 +181,9 @@ Search publication order and can deadlock the native UI during reconciliation.
 - Social native Gates must prove outage recovery and parent deletion before
   blocking their independent targets, with all four targets visible before block
   and all four old references denied after it.
+- Native mutation preparation must wait while the original target domain is
+  stale even when global write admission is open; permanent staleness must
+  fail within the existing deadline without invoking the mutation.
 - Inspect Desktop/Mobile `SearchExecutor::block_on`: it must not call
   `tauri::async_runtime::block_on`. The native Social Search Suite must show
   mixed results without `Cannot block the current thread from within a runtime`
