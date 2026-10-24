@@ -14,6 +14,7 @@ import {
   useActivePrivateCommentsSlice,
 } from '../../components/moments/useActiveMomentsStore';
 import { isPrivateMomentPost } from '../../runtimes/momentsRuntime';
+import { useSearchStore } from '../../store/search';
 import {
   SocialEmptyState,
   SocialThreadDivider,
@@ -50,6 +51,7 @@ export function MomentDetailView({
   const commentsRegionId = useId();
   const root = useRef<HTMLDivElement>(null);
   const active = useIsPageActive();
+  const searchOpen = useSearchStore(state => state.open);
   const [commentsOpen, setCommentsOpen] = useState(true);
   const {
     post,
@@ -118,12 +120,12 @@ export function MomentDetailView({
     : privateDraft?.errorCode ?? privateThread.errorCode;
 
   useLayoutEffect(() => {
-    if (!active || !commentId) return;
+    if (!active || searchOpen || !commentId) return;
     const node = Array.from(root.current?.querySelectorAll<HTMLElement>('[data-moments-comment]') ?? [])
       .find(row => row.dataset.momentsComment === commentId);
     node?.scrollIntoView({ block: 'center' });
     node?.focus({ preventScroll: true });
-  }, [active, commentId, visibleComments]);
+  }, [active, searchOpen, commentId, visibleComments]);
 
   const handleReact = async (id: string, kind: ReactionKind) => {
     await reactToPost(id, kind);

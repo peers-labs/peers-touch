@@ -64,6 +64,9 @@ settles. A non-readable private projection MUST NOT be accepted as a target.
 The query owner MUST recheck Open after asynchronous read-state waits, including
 failure publication. An earlier idle observation cannot authorize a late query
 or error projection over a current Open.
+The original target's focus must wait for the Search overlay focus boundary to
+release, as defined in Search design §4.1. The overlay must declare navigation
+before awaiting Open so its teardown cannot restore the old entry focus.
 
 Coverage copy MUST come from the original source's generated `SourceCoverage`.
 Public Station scope must never fall back to acquired-device coverage;

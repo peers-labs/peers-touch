@@ -65,7 +65,10 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
       openSearchFunction(row.item, navigation);
       return;
     }
-    navigating.current = await searchActions.openResult(row.item, navigation);
+    // Closing the overlay occurs inside the runtime before its Promise settles.
+    // Focus restoration must already know that the original page owns focus.
+    navigating.current = true;
+    if (!await searchActions.openResult(row.item, navigation)) navigating.current = false;
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
