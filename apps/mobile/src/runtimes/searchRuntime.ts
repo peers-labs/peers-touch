@@ -46,7 +46,7 @@ function stop(): void {
   debounce = null;
   if (stalledTimer) clearTimeout(stalledTimer);
   stalledTimer = null;
-  useMobileSearchStore.setState({ stalled: false });
+  useMobileSearchStore.setState({ stalled: false, opening: false });
   const id = requestId;
   requestId = null;
   if (id) void mobileSearchService.cancel(id).catch(() => undefined);
