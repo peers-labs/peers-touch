@@ -233,6 +233,13 @@ return page?.dataset.searchState === 'ready'
   && document.querySelector('#mobile-search-input')?.value === arguments[1];
 """, "current Social Search result page", PAGE, query)
 
+    def issued_page(self, session: Any, query: str, resource_ids: set[str]) -> dict:
+        def read() -> dict | None:
+            page = self.native_page(session, query, kinds=[])
+            issued = {item["resource"]["id"] for item in page["items"]}
+            return page if resource_ids.issubset(issued) else None
+        return self._wait_for_value(read, "original Social Search reference issuance")
+
     def original_open(self, artifacts: ArtifactSession, session: Any,
                       query: str, resource_id: str, post_id: str,
                       text: str, name: str) -> None:
@@ -319,7 +326,7 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
         for resource_id, text in zip(ids, texts):
             self.has(session, resource_id, text)
         self.capture(artifacts, session, "social-block-fixture-visible")
-        page = self.native_page(session, query, kinds=[])
+        page = self.issued_page(session, query, set(ids))
         references = [item for item in page["items"] if item["resource"]["id"] in ids]
         require(len(references) == 4, "block fixture must have four issued references")
         artifacts.write_json(
@@ -377,7 +384,8 @@ return ['Private posts and comments acquired on this device', '本机已取得�
         for resource_id in ids:
             self.has(session, resource_id, query)
         self.capture(artifacts, session, "social-content-filter")
-        original = self.native_page(session, query, kinds=[])
+        original = self.issued_page(session, query, set(ids))
+        references = {item["resource"]["id"]: item for item in original["items"]}
         artifacts.write_json(
             f"social-content-search/{session.client_id}/references.json", original,
             role=f"social-content-search-references/{session.client_id}",
@@ -430,7 +438,7 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
                 "deleted private parent suppresses every comment")
         self.capture(artifacts, session, "social-private-parent-deleted")
         for resource_id in (social["privateId"], social["privateCommentId"]):
-            item = next(item for item in original["items"] if item["resource"]["id"] == resource_id)
+            item = references[resource_id]
             self.denial(session, f"deleted-{resource_id}", "search.resolve", {
                 "resource": item["resource"], "sourceId": item["sourceId"],
             }, "SEARCH_RESOURCE_UNAVAILABLE")
@@ -444,7 +452,7 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
         self.has(session, fixture["root"], query)
         self.capture(artifacts, session, "social-public-parent-deleted")
         for resource_id in (social["publicId"], social["publicCommentId"]):
-            item = next(item for item in original["items"] if item["resource"]["id"] == resource_id)
+            item = references[resource_id]
             self.denial(session, f"deleted-{resource_id}", "search.resolve", {
                 "resource": item["resource"], "sourceId": item["sourceId"],
             }, "SEARCH_RESOURCE_UNAVAILABLE")
@@ -468,8 +476,8 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
         self.select(session, "social", fixture["query"])
         self.has(session, sentinel["postId"], text)
         self.capture(artifacts, session, "social-account-before")
-        item = next(item for item in self.native_page(session, fixture["query"], kinds=[])["items"]
-                    if item["resource"]["id"] == sentinel["postId"])
+        page = self.issued_page(session, fixture["query"], {sentinel["postId"]})
+        item = {row["resource"]["id"]: row for row in page["items"]}[sentinel["postId"]]
         self.select(session, "messages", fixture["replyQuery"])
         def account_check() -> None:
             self.select(session, "social", fixture["query"])

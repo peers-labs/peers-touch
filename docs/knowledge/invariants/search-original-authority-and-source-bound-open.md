@@ -124,6 +124,12 @@ Private recovery-key preparation is a per-client Suite fixture operation.
 Prepare each receiver before scenarios begin; attach-only iOS/Android legs
 reuse that preparation. Recreating a random recovery phrase at the same epoch
 inside each leg violates the original Store's epoch-conflict contract.
+Native reference diagnostics perform a fresh original-owner read and may be
+partial even after the UI showed a target. Before policy invalidation, the Gate
+must acquire every required reference from one response inside its existing
+bounded wait. Do not merge references from different responses, invent missing
+references or force source coverage to READY. Missing issuance must produce a
+canonical Gate failure rather than an uncaught object lookup.
 
 ## Why this matters
 
@@ -204,6 +210,10 @@ Search publication order and can deadlock the native UI during reconciliation.
 - Native mutation preparation must wait while the original target domain is
   stale even when global write admission is open; permanent staleness must
   fail within the existing deadline without invoking the mutation.
+- Mobile Social reference acquisition must retry an accepted partial response
+  within the existing 30-second wait, require all targets in one response, and
+  fail canonically for permanently missing targets or rejected queries.
+  Disjoint partial responses must never be merged into an issuance snapshot.
 - Inspect Desktop/Mobile `SearchExecutor::block_on`: it must not call
   `tauri::async_runtime::block_on`. The native Social Search Suite must show
   mixed results without `Cannot block the current thread from within a runtime`
