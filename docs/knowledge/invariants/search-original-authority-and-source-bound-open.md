@@ -115,6 +115,11 @@ Search policy fixtures MUST NOT expect revoked private grants to recover through
 unblock or Station restart. Use independent readable resources for recovery,
 deletion and block proof, following the original Social relationship contract
 in `product-state-model.md` §5. Keep every required UI and denial assertion.
+Block also deletes the original friendship projection. A bilateral Suite may
+reestablish fixture continuity only through a new original request and acceptance
+on both clients after its block proof. Match the new request ID, never an old
+accepted event. Previously revoked private references must remain denied after
+that new relationship; unblock alone cannot authorize the next FRIENDS publish.
 Fixture mutations MUST wait for the original target domain's projection to
 be current, as required by Mobile lifecycle reconciliation. Global write
 admission alone does not clear `moments` or `social` staleness. Observe the
@@ -207,6 +212,9 @@ Search publication order and can deadlock the native UI during reconciliation.
 - Social native Gates must prove outage recovery and parent deletion before
   blocking their independent targets, with all four targets visible before block
   and all four old references denied after it.
+- Both Mobile legs must establish their next FRIENDS fixture through original
+  relationship authority. After unblock, a new request must be accepted on both
+  clients while every old private block reference remains unavailable.
 - Native mutation preparation must wait while the original target domain is
   stale even when global write admission is open; permanent staleness must
   fail within the existing deadline without invoking the mutation.

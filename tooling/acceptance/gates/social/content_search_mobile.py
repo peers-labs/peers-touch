@@ -334,6 +334,17 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
             role=f"social-content-search-block-references/{session.client_id}",
         )
         peer_identity = sender.call_action("getRealtimeDevice")
+        identity = session.call_action("getRealtimeDevice")
+        projection = session.call_action("social.reconcile")
+        pair = {identity["actorPtid"], peer_identity["actorPtid"]}
+        relationships = [row for row in projection["friendRequests"]
+                         if {row["senderPtid"], row["receiverPtid"]} == pair]
+        require(bool(relationships), "block fixture must have its original relationship")
+        route = relationships[0]
+        peer_station = route["senderHomeStationPeerId"] if (
+            route["senderPtid"] == peer_identity["actorPtid"]
+        ) else route["receiverHomeStationPeerId"]
+        previous_request_ids = {row["requestId"] for row in relationships}
         self.mutate_when_admitted(session, "social.block", {
             "actorPtid": peer_identity["actorPtid"],
         })
@@ -350,6 +361,39 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
             self.mutate_when_admitted(session, "social.unblock", {
                 "actorPtid": peer_identity["actorPtid"],
             })
+        # Unblock leaves the relationship deleted. A new real request belongs to
+        # Suite fixture continuity, not restoration of any revoked private grant.
+        self.mutate_when_admitted(session, "social.request.send", {
+            "receiverPtid": peer_identity["actorPtid"],
+            "receiverHomeStationPeerId": peer_station,
+            "federationId": route["federationId"], "message": "Search Suite continuity",
+        })
+        def new_request() -> dict | None:
+            current = sender.call_action("social.reconcile")
+            return next((row for row in current["friendRequests"]
+                         if row["requestId"] not in previous_request_ids
+                         and row["senderPtid"] == identity["actorPtid"]
+                         and row["receiverPtid"] == peer_identity["actorPtid"]), None)
+        request = self._wait_for_value(new_request, "new Suite relationship request")
+        self.mutate_when_admitted(sender, "social.request.accept", {
+            "requestId": request["requestId"],
+        })
+        for client in (session, sender):
+            self._wait_for_accepted_relationship(
+                client, request_id=request["requestId"],
+                sender_ptid=identity["actorPtid"], receiver_ptid=peer_identity["actorPtid"],
+            )
+        for index, reference in enumerate(references):
+            if reference["sourceId"] == "device.social":
+                self.denial(session, f"reaccepted-private-reference-{index}", "search.resolve", {
+                    "resource": reference["resource"], "sourceId": reference["sourceId"],
+                }, "SEARCH_RESOURCE_UNAVAILABLE")
+        artifacts.write_json(
+            f"social-content-search/{session.client_id}/new-relationship.json",
+            {"requestId": request["requestId"], "newRequest": True,
+             "acceptedOnBothClients": True, "oldPrivateReferencesDenied": True},
+            role=f"social-content-search-new-relationship/{session.client_id}",
+        )
 
     def search_scenario(self, artifacts: ArtifactSession, session: Any,
                         sender_session: Any, fixture: dict) -> dict:
