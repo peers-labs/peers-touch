@@ -469,8 +469,8 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
 
     def denial(self, session: Any, name: str, action: str, payload: dict, code: str) -> None:
         result = session.call_action(action, payload)
-        require(result == {"accepted": False, "errorCode": code}, f"{name} typed denial failed")
         self.denials[f"{session.client_id}/{name}"] = result
+        require(result == {"accepted": False, "errorCode": code}, f"{name} typed denial failed")
 
     @staticmethod
     def native_page(session: Any, query: str, **kwargs: Any) -> dict:

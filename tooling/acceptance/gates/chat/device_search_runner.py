@@ -215,6 +215,38 @@ class DeviceSearchGate(NativeTwoClientGate):
             ".map(row => row.innerText).join('\\n');",
         ))
 
+    def retain_pagination_failure(self) -> None:
+        """Read the failed presentation without issuing another native query."""
+        diagnostic: dict[str, Any] = {"assertionPassed": False}
+        self.report.runtime["search"]["paginationFailure"] = diagnostic
+        try:
+            diagnostic["surface"] = self.receiver.execute_script("""
+                const body = document.querySelector('.pt-search-body');
+                const more = document.querySelector('.pt-search-more');
+                return {
+                    rowCount: document.querySelectorAll('.pt-search-row').length,
+                    busy: body?.getAttribute('aria-busy') === 'true',
+                    error: !!document.querySelector('.pt-search-error'),
+                    loading: !!document.querySelector('.pt-search-status'),
+                    hasMoreControl: !!more, moreDisabled: more?.disabled ?? null,
+                    visibilityState: document.visibilityState,
+                };
+            """)
+            view = async_harness(self.receiver, "deviceSearchPresentation", {}, timeout=5)
+            page = view.get("page") or {}
+            diagnostic["presentation"] = {
+                "open": view.get("open"), "status": view.get("status"),
+                "filter": view.get("filter"), "rowCount": len(page.get("items", [])),
+                "hasMore": page.get("hasMore", False),
+                "nextCursor": page.get("nextCursor", ""),
+                "sources": page.get("sources", []), "coverage": page.get("coverage", []),
+            }
+            diagnostic["screenshot"] = self.save_screenshot(self.receiver, "pagination-failure")
+            diagnostic["dom"] = self.save_dom(self.receiver, "pagination-failure")
+        except Exception as error:
+            # A diagnostic failure must never replace the original product failure.
+            diagnostic["errorType"] = type(error).__name__
+
     def visible(self, name: str, predicate: Any, detail: Any = None) -> None:
         def observe() -> None:
             with tempfile.TemporaryDirectory(prefix="search-capture-") as directory:
@@ -642,15 +674,19 @@ class DeviceSearchGate(NativeTwoClientGate):
             self.wait_js("!document.querySelector('.pt-search-field')", "Search closed")
             self.conversation = self.step("conversation.open", self.open_conversation)
             self.step("message.seed", self.seed, "bob")
-            self.submit(f"filler-{self.token}")
-            self.wait_js("document.querySelectorAll('.pt-search-row').length === 20",
-                         "first real Search page", timeout=90)
-            self.receiver.find_element(".pt-search-more", 20).click()
-            self.wait_js("document.querySelectorAll('.pt-search-row').length === 40",
-                         "second real Search page")
-            self.receiver.find_element(".pt-search-more", 20).click()
-            self.wait_js("document.querySelectorAll('.pt-search-row').length === 55",
-                         "all real filler messages received", timeout=90)
+            try:
+                self.submit(f"filler-{self.token}")
+                self.wait_js("document.querySelectorAll('.pt-search-row').length === 20",
+                             "first real Search page", timeout=90)
+                self.receiver.find_element(".pt-search-more", 20).click()
+                self.wait_js("document.querySelectorAll('.pt-search-row').length === 40",
+                             "second real Search page")
+                self.receiver.find_element(".pt-search-more", 20).click()
+                self.wait_js("document.querySelectorAll('.pt-search-row').length === 55",
+                             "all real filler messages received", timeout=90)
+            except GateError:
+                self.retain_pagination_failure()
+                raise
             self.visible("pagination", lambda: len(self.receiver.find_elements(".pt-search-row")) == 55)
             self.prove_cache()
             self.open_target("historical_open", self.query, self.message, "data-message-ulid")
