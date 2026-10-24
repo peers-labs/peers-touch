@@ -86,6 +86,10 @@ Native Search capture MUST wait for a stable terminal rendering inside its
 existing bounded capture deadline. A stable pending frame during original-owner
 revalidation is not terminal evidence. Diagnostics may record that frame, but
 all product terminal, readability and retained-context assertions remain required.
+The Social capture includes the original thread's loading state, parent,
+source, body and comment anchor in the before/after rendering comparison.
+An original comment frame must show its exact text, focused anchor and viewport
+visibility; a preceding DOM assertion cannot authorize a later loading screenshot.
 
 Coverage copy MUST come from the original source's generated `SourceCoverage`.
 Public Station scope must never fall back to acquired-device coverage;
@@ -168,6 +172,10 @@ Search publication order and can deadlock the native UI during reconciliation.
 - Mobile capture must wait through a stable pending frame followed by `ready`,
   fail within its deadline when pending never ends, and retain every terminal
   assertion. Diagnostic pending frames must remain unasserted.
+- Social capture must also wait through original-detail/comment revalidation
+  and pending anchor focus inside that same deadline. Its captured rendering
+  must bind the expected original parent/source and the visible exact comment,
+  or the original post body. Inspect the native pixels before claiming Open.
 - The same Journey must complete private Open after original projection
   materialization, reject unavailable targets and show distinct acquired-private
   and current-Station public coverage.

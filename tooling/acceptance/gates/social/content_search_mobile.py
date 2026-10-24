@@ -21,6 +21,43 @@ class SocialContentSearchMobileGate(MobileDeviceSearchGate):
         "bom": ["SOCIAL-CONTENT-FIND-OPEN"], "spec": ["social-content-search"],
     }}
 
+    @staticmethod
+    def surface(session: Any) -> dict:
+        rendering = MobileDeviceSearchGate.surface(session)
+        rendering["originalSocial"] = session.execute_script("""
+const thread = document.querySelector('[data-acceptance-id="social-moment-thread"]');
+if (!thread) return null;
+const anchor = [...thread.querySelectorAll('[data-scroll-anchor-id]')]
+  .find(row => row.dataset.scrollAnchorId === thread.dataset.anchorCommentId
+    && row.dataset.searchHighlighted === 'true');
+const box = anchor?.getBoundingClientRect();
+return {
+  postId: thread.dataset.postId,
+  sourceId: thread.dataset.sourceId || 'station.social.public',
+  anchorCommentId: thread.dataset.anchorCommentId || '',
+  pending: !!thread.querySelector('[data-product-surface="moments.detail-loading"],'
+    + '[data-product-surface="moments.comments-loading"]'),
+  postText: thread.querySelector('[data-acceptance-id="social-moment-card"]')?.innerText || '',
+  anchorText: anchor?.innerText || '',
+  anchorFocused: !!anchor && document.activeElement === anchor,
+  anchorVisible: !!box && box.width > 0 && box.height > 0
+    && box.top >= 0 && box.bottom <= innerHeight
+    && box.left >= 0 && box.right <= innerWidth,
+};
+""")
+        return rendering
+
+    @staticmethod
+    def capture_pending(rendering: Mapping[str, Any], concealed: bool) -> bool:
+        original = rendering.get("originalSocial")
+        return MobileDeviceSearchGate.capture_pending(rendering, concealed) or bool(
+            isinstance(original, Mapping) and (
+                original.get("pending")
+                or (original.get("anchorCommentId") and (
+                    not original.get("anchorFocused") or not original.get("anchorVisible")
+                ))
+            ))
+
     def _run_social_journey(self, artifacts: ArtifactSession,
                             manifest: Mapping[str, Any]) -> dict:
         self.capability_client = EphemeralGateClient.from_environment()
@@ -106,7 +143,8 @@ return page?.dataset.searchState === 'ready'
 """, "current Social Search result page", PAGE, query)
 
     def original_open(self, artifacts: ArtifactSession, session: Any,
-                      query: str, resource_id: str, text: str, name: str) -> None:
+                      query: str, resource_id: str, post_id: str,
+                      text: str, name: str) -> None:
         self.select(session, "social", query)
         self.has(session, resource_id, text)
         self.click(session, f'{ROW}[data-resource-id="{resource_id}"]')
@@ -123,6 +161,23 @@ return [...document.querySelectorAll('[data-acceptance-id="social-moment-card"]'
   .some(row => row.dataset.postId === arguments[0] && row.innerText.includes(arguments[1]));
 """, "original Social post body", resource_id, text)
         self.capture(artifacts, session, f"social-{name}-open")
+        frame = self.frames[f"{session.client_id}/social-{name}-open"]
+        frame["assertionPassed"] = False
+        original = frame["rendering"].get("originalSocial") or {}
+        require(original.get("postId") == post_id
+                and original.get("sourceId") == (
+                    "device.social" if "private" in name else "station.social.public")
+                and not original.get("pending"),
+                "captured original Social target must match its issued parent and source")
+        if "comment" in name:
+            require(original.get("anchorCommentId") == resource_id
+                    and original.get("anchorFocused") and original.get("anchorVisible")
+                    and text in original.get("anchorText", ""),
+                    "captured historical comment must be visible, focused and exact")
+        else:
+            require(text in original.get("postText", ""),
+                    "captured original post body must match")
+        frame["assertionPassed"] = True
         self.click(session, '[data-acceptance-id="social-moment-thread"] '
                    '.moments-comments-header > button')
         self._wait_ui(session, PAGE, "return to retained Search route")
@@ -242,7 +297,10 @@ return ['Private posts and comments acquired on this device', '本机已取得�
             ("public-comment", "publicCommentId", "publicComment"),
             ("private-comment", "privateCommentId", "privateComment"),
         ):
-            self.original_open(artifacts, session, query, social[key], social[text_key], name)
+            parent = social["privateId" if "private" in name else "publicId"]
+            self.original_open(
+                artifacts, session, query, social[key], parent, social[text_key], name,
+            )
         session.call_action("lifecycle.suspend")
         require(not self.rows(session), "background concealment must remove all Social rows")
         self.capture(artifacts, session, "social-concealed", concealed=True)

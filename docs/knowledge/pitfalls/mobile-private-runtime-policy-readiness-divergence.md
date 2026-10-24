@@ -9,6 +9,7 @@ owns:
   - apps/mobile/src/pages/moments/MomentCommentsSection.tsx
   - apps/mobile/src/runtimes/privateMomentsRuntime.ts
   - apps/mobile/src/runtimes/privateMomentsRuntime.test.ts
+  - apps/mobile/src/services/gateways/momentsGateway.ts
   - apps/mobile/src/services/mobileCommands.ts
   - apps/station/app/subserver/social/application/federated_private_interaction.go
   - tooling/acceptance/gates/social/cross_station_mobile_desktop_e2e.py
@@ -218,6 +219,12 @@ successful terminal state into an Appium transport failure. Reconciliation
 snapshot state, not another content read, owns observation of that terminal
 projection.
 
+The Mobile Moments Gateway made the same mistake while reconciling a retained
+Search detail. Its catch-all conversion turned the original Runtime's terminal
+refusal into `PRIVATE_SOCIAL_READ_UNAVAILABLE`. The feed therefore reported a
+failed Moments repair after every periodic reconciliation and kept mutation
+admission closed even though all lifecycle runtimes were ready.
+
 Native activation creates and binds the Private Social engine, but endpoint
 Content PreKey provisioning belongs to Native reconciliation. The mobile
 lifecycle published readiness immediately after activation and snapshot
@@ -321,6 +328,11 @@ briefly while Session refresh or Social ingress reconciliation completes.
   It calls the access-open point-read only while no matching terminal
   projection exists, and still requires receiver-visible feed absence plus
   restart non-resurrection.
+- The Mobile Moments Gateway checks its current authenticated session and exact
+  Native activation before observing a matching `DELETED_OR_REVOKED` projection.
+  It returns a payload-free `PostDetailOutcome.DELETED` without another private
+  content read. Missing projections, unavailable reads and stale sessions still
+  fail; the original Runtime's content, media and mutation refusals remain closed.
 - Private Social lifecycle bootstrap now completes Native reconciliation before
   publishing the runtime as active. Reconciliation failure fails lifecycle
   readiness and tears down the exact Native generation.
@@ -390,6 +402,10 @@ briefly while Session refresh or Social ingress reconciliation completes.
 - `test_cross_station_mobile_desktop_e2e.py` verifies that a reconciled terminal
   revocation projection is accepted without calling the access-open Mobile
   action.
+- `persists ordered revocation and closes every private post operation` also
+  runs the real Gateway and feed reconciliation against the original Runtime
+  tombstone. Terminal detail repair succeeds without another Native read, while
+  a same-actor session switch still rejects the old Gateway.
 - `publishes readiness only after Content PreKey reconciliation` verifies that
   activation cannot become ready before Native provisioning succeeds, and
   `rejects readiness when a configured recovery pool is empty` verifies that

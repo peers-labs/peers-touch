@@ -169,6 +169,12 @@ retry keeps writes closed; only the original scope-fenced Messaging success and
 successful projection repair reopen admission. This path creates no retry timer,
 alternate readiness state, or replay of business mutations.
 
+Moments repair treats an original Private Runtime tombstone as a successful,
+payload-free deleted detail. Its Gateway must validate the current session and
+Native activation before reading that terminal projection; it must not invoke
+the content read that the original owner has already closed. Unavailable reads
+and stale scopes still fail repair and keep admission closed.
+
 ## 8. Scope Change and Logout
 
 Station change, Station replacement, actor change, session revocation, and

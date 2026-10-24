@@ -197,14 +197,17 @@ return {
 };
 """)
 
+    @staticmethod
+    def capture_pending(rendering: Mapping[str, Any], concealed: bool) -> bool:
+        return rendering["searchState"] in (
+            {"loading"} if concealed else {"loading", "concealed"})
+
     def capture(self, artifacts: ArtifactSession, session: Any, name: str,
                 *, concealed: bool = False, diagnostic: bool = False) -> None:
         deadline = time.monotonic() + 30
         while True:
             rendering = self.surface(session)
-            pending = rendering["searchState"] in (
-                {"loading"} if concealed else {"loading", "concealed"})
-            if pending and not diagnostic:
+            if self.capture_pending(rendering, concealed) and not diagnostic:
                 require(time.monotonic() < deadline,
                         f"{name} terminal native rendering timed out")
                 time.sleep(0.25)

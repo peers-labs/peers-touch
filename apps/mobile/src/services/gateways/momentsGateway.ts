@@ -377,6 +377,10 @@ export function createMomentsGateway(
       if (sourceId === 'device.social') {
         try {
           const scope = requirePrivateScope();
+          const retained = readPrivateMomentsSnapshot().postsById[postId];
+          if (retained?.postId === postId && retained.state === 'DELETED_OR_REVOKED') {
+            return { ok: true, data: { outcome: PostDetailOutcome.DELETED } };
+          }
           const projection = await readPrivateMoment(postId);
           requirePrivateCompletion(scope);
           if (projection.postId !== postId) return invalidMomentsOutcome(path);

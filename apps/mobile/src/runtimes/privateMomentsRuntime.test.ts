@@ -15,6 +15,9 @@ import { MobileLifecycleKernel } from '../app/lifecycle/MobileLifecycleKernel';
 import type { MobileRuntimeDescriptor } from '../app/lifecycle/types';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
+import { createMomentsFeedStore } from '../features/social/momentsFeedStore';
+import { createMomentsGateway } from '../services/gateways/momentsGateway';
+import { PostDetailOutcome, TimelinePageOutcome } from '../gen/proto/domain/social/post_pb';
 
 const commandMocks = vi.hoisted(() => ({
   activate: vi.fn(),
@@ -505,6 +508,31 @@ describe('privateMomentsRuntime projection', () => {
     expect(commandMocks.openMedia).not.toHaveBeenCalled();
     expect(commandMocks.commentSubmit).not.toHaveBeenCalled();
     expect(commandMocks.react).not.toHaveBeenCalled();
+
+    const gateway = createMomentsGateway(authSession('session-1'));
+    await expect(gateway.getPost('post-a', 'device.social')).resolves.toEqual({
+      ok: true,
+      data: { outcome: PostDetailOutcome.DELETED },
+    });
+    const feed = createMomentsFeedStore({
+      ...gateway,
+      fetchFeed: async () => ({
+        ok: true,
+        data: {
+          posts: [], explanations: [], nextCursor: '', hasMore: false,
+          outcome: TimelinePageOutcome.EMPTY,
+        },
+      }),
+    });
+    await feed.ensureMoment('post-a', { sourceId: 'device.social' });
+    await expect(feed.reconcile()).resolves.toBe(true);
+    expect(feed.state().selectedDetail?.readback).toEqual({ kind: 'deleted' });
+    expect(commandMocks.readMoment).not.toHaveBeenCalled();
+    feed.teardown();
+
+    useAuthStore.setState({ session: authSession('session-2') });
+    await expect(gateway.getPost('post-a', 'device.social'))
+      .resolves.toMatchObject({ ok: false });
   });
 
   it('purges the readable Web projection when device access is revoked', async () => {
