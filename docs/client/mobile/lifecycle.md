@@ -168,6 +168,13 @@ A change observed while the old readiness context was fenced cannot authorize
 resuming the old controller; teardown and drain precede creation under the new
 context. Registry session transitions use that same complete identity.
 
+Private Social may retain its Native engine across a same-session projection
+fence. Successful scope-fenced reconciliation must republish the engine's
+original Station/Actor/device/generation/activation metadata with its fresh
+projection. Spreading the empty fenced snapshot cannot leave `active=false`
+or zero identity fields after readiness succeeds. Failed or superseded
+reconciliation must not republish that identity or protected content.
+
 If Messaging reconciliation fails while the OS network remains connected,
 the existing Social foreground reconciliation interval retries only Messaging
 failures reported by its current readiness owner, before repairing dependent

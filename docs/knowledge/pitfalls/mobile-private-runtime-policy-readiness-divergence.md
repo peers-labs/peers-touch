@@ -236,6 +236,14 @@ device and authentication generation. Separately, the Gateway mapped a trusted
 `NOT_FOUND_OR_NOT_AUTHORIZED` read to unavailable instead of a hidden detail,
 turning a valid original authority denial into another failed repair.
 
+Private Runtime reconciliation also spread the empty fenced snapshot when
+the original Native engine remained valid across a same-session fence. It
+reloaded readable projections and reported lifecycle readiness while retaining
+`active=false`, empty identity and activation zero. Direct reads used the valid
+original scope, but Gateway admission rejected the inconsistent public
+snapshot. Successful reconciliation must derive identity from its validated
+original scope, not inherit it from a cleared presentation snapshot.
+
 Native activation creates and binds the Private Social engine, but endpoint
 Content PreKey provisioning belongs to Native reconciliation. The mobile
 lifecycle published readiness immediately after activation and snapshot
@@ -352,6 +360,9 @@ briefly while Session refresh or Social ingress reconciliation completes.
   hidden detail without comment reads or an inferred deletion. Authentication,
   recovery and integrity failures remain unavailable; stale Gateway rejection
   is unchanged.
+- Successful current-scope Private Social reconciliation republishes active,
+  Station, Actor, device, authentication generation and Native activation from
+  its original scope. Failed or superseded operations cannot reopen it.
 - Private Social lifecycle bootstrap now completes Native reconciliation before
   publishing the runtime as active. Reconciliation failure fails lifecycle
   readiness and tears down the exact Native generation.
@@ -431,6 +442,9 @@ briefly while Session refresh or Social ingress reconciliation completes.
 - `repairs a retained private detail from an original typed denial without comments`
   runs the real Private Runtime, Gateway and feed, requiring hidden detail,
   successful repair, retained denied projection and zero comment reads.
+- `rebinds original scope metadata after a same-session projection fence on resume`
+  retains the original Native activation, fences the projection, resumes and
+  requires complete identity plus a successful real Gateway read.
 - `publishes readiness only after Content PreKey reconciliation` verifies that
   activation cannot become ready before Native provisioning succeeds, and
   `rejects readiness when a configured recovery pool is empty` verifies that
@@ -506,6 +520,10 @@ the current admitted session before it is reused. Device and authentication
 generation changes cannot be ignored because Actor and session ID match.
 An original typed not-found/not-authorized result is a hidden detail; it must
 not become a transport failure or authorize old private content or comments.
+After a same-session projection fence, successful Private Social reconciliation
+must restore the original current scope metadata alongside fresh projections.
+Lifecycle ready with `active=false` or activation zero is invalid even when a
+direct Native read succeeds.
 
 ## Crosswalks
 

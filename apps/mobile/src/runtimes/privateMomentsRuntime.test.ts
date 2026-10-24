@@ -275,6 +275,32 @@ describe('privateMomentsRuntime projection', () => {
     expect(readPrivateMomentsSnapshot().projections).toEqual([]);
   });
 
+  it('rebinds original scope metadata after a same-session projection fence on resume', async () => {
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    const session = authSession('session-1');
+    useAuthStore.setState({
+      session,
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED', attemptId: 'attempt-1', gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    await activeDescriptor.suspend();
+    fencePrivateMomentsRuntimeProjection();
+    await activeDescriptor.resume(runtimeContext);
+    expect(commandMocks.activate).toHaveBeenCalledOnce();
+    expect(readPrivateMomentsSnapshot()).toMatchObject({
+      active: true, stationPeerId: 'station-1', actorPtid: 'ptid:alice',
+      deviceId: 'device-1', lifecycleGeneration: '1', activationGeneration: 7,
+    });
+    commandMocks.readMoment.mockResolvedValue(
+      readProjection('post-a', '1', 'CONTENT_READY'),
+    );
+    await expect(createMomentsGateway(session).getPost('post-a', 'device.social'))
+      .resolves.toMatchObject({ ok: true, data: { outcome: PostDetailOutcome.AVAILABLE } });
+  });
+
   it('preserves projections while suspended and reconciles before resume completes', async () => {
     commandMocks.activate.mockResolvedValue(activeStatus(1));
     useAuthStore.setState({
