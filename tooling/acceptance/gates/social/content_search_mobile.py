@@ -41,6 +41,7 @@ class SocialContentSearchMobileGate(MobileDeviceSearchGate):
 
     def social_seed(self, session: Any, sender: Any, query: str) -> dict:
         self._prepare_private_keys(session)
+        self._prepare_private_keys(sender)
         text = {
             "public": f"{query} 公开帖子", "private": f"{query} 私密帖子",
             "publicComment": f"{query} 历史公开评论",
@@ -49,32 +50,42 @@ class SocialContentSearchMobileGate(MobileDeviceSearchGate):
         public = self.mutate_when_admitted(sender, "moments.publish", {
             "text": text["public"], "audienceKind": 1,
         })
-        private = self.mutate_when_admitted(session, "moments.private.publishText", {
+        private = self.mutate_when_admitted(sender, "moments.private.publishText", {
             "draftId": uuid.uuid4().hex, "draftRevision": 1,
-            "text": text["private"], "audience": {"kind": "SELF"},
+            "text": text["private"], "audience": {"kind": "FRIENDS"},
         })
         require(public.get("postId") and private.get("postId"),
                 "original Social publication must supply canonical IDs")
         public_comment = self.mutate_when_admitted(sender, "moments.comment", {
             "postId": public["postId"], "content": text["publicComment"],
         })
-        private_comment = self.mutate_when_admitted(session, "moments.private.comment.submit", {
+        private_comment = self.mutate_when_admitted(sender, "moments.private.comment.submit", {
             "draftId": uuid.uuid4().hex, "draftRevision": 1,
             "postId": private["postId"], "text": text["privateComment"],
         })
         require(public_comment.get("commentId") and private_comment.get("commentId"),
                 "original public/private comments must be acquired")
+        acquired = session.call_action("moments.private.read", {"postId": private["postId"]})
+        require(acquired.get("state") == "CONTENT_READY",
+                "original recipient must receive and decrypt the private post")
+        acquired_comments = session.call_action("moments.private.comments.read", {
+            "postId": private["postId"],
+        })
+        require(any(row["commentId"] == private_comment["commentId"]
+                    for row in acquired_comments["comments"]),
+                "original recipient must acquire the old private comment")
         for index in range(22):
             self.mutate_when_admitted(sender, "moments.comment", {
                 "postId": public["postId"], "content": f"new-public-{query}-{index}",
             })
-            self.mutate_when_admitted(session, "moments.private.comment.submit", {
+            self.mutate_when_admitted(sender, "moments.private.comment.submit", {
                 "draftId": uuid.uuid4().hex, "draftRevision": 1,
                 "postId": private["postId"], "text": f"new-private-{query}-{index}",
             })
         return {**text, "publicId": public["postId"], "privateId": private["postId"],
                 "publicCommentId": public_comment["commentId"],
-                "privateCommentId": private_comment["commentId"], "newerCommentsPerPost": 22}
+                "privateCommentId": private_comment["commentId"], "newerCommentsPerPost": 22,
+                "privateAudience": "FRIENDS", "recipientAcquisition": acquired}
 
     def select(self, session: Any, filter_name: str, query: str) -> None:
         self.open(session)
@@ -109,7 +120,7 @@ return [...document.querySelectorAll('[data-acceptance-id="social-moment-card"]'
         self.has(session, resource_id, text)
         require(session.execute_script("""
 return document.querySelector('#mobile-search-input')?.value === arguments[0]
-  && document.querySelector('[data-search-filter="social"]')?.getAttribute('aria-selected') === 'true';
+  && document.querySelector('[data-search-filter="social"]')?.getAttribute('aria-pressed') === 'true';
 """, query), "Social return must retain query and filter")
         self.capture(artifacts, session, f"social-{name}-return")
 
@@ -163,7 +174,7 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
         })
         try:
             self.select(session, "social", query)
-            require(not {social["publicId"], social["publicCommentId"]}.intersection(self.rows(session)),
+            require(not set(ids).intersection(self.rows(session)),
                     "blocked author's posts and comments must disappear")
             self.capture(artifacts, session, "social-blocked")
             public_item = next(item for item in original["items"]
@@ -191,7 +202,7 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
             role=f"social-content-search-outage/{session.client_id}",
         )
         self.select(session, "social", query)
-        deleted = self.mutate_when_admitted(session, "moments.delete", {
+        deleted = self.mutate_when_admitted(sender_session, "moments.delete", {
             "postId": social["privateId"],
         })
         require(deleted.get("deleted") is True, "original owner must delete private parent")

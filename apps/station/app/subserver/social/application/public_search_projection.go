@@ -64,7 +64,7 @@ func publicPostRef(post *domain.Post, author *db.Actor) *searchpb.ResourceRef {
 
 func publicSearchResult(batch *PublicReadBatch, kind string, id uint64, viewer, observation string) *searchpb.ResultItem {
 	var resource *searchpb.ResourceRef
-	var text, authorPTID string
+	var text, title, authorPTID string
 	var createdAt time.Time
 	searchKind := searchpb.SearchKind_SEARCH_KIND_SOCIAL_POST
 	if kind == "social-post" {
@@ -74,6 +74,7 @@ func publicSearchResult(batch *PublicReadBatch, kind string, id uint64, viewer, 
 		}
 		resource = publicPostRef(post, batch.Authors[post.AuthorPTID])
 		text, authorPTID, createdAt = post.TextBody, post.AuthorPTID, post.CreatedAt
+		title = text
 	} else if kind == "social-comment" {
 		comment := batch.Comments[id]
 		if comment == nil {
@@ -93,6 +94,7 @@ func publicSearchResult(batch *PublicReadBatch, kind string, id uint64, viewer, 
 			ContentRevision: publicSearchHash(data),
 		}
 		text, authorPTID, createdAt = comment.TextBody, comment.AuthorPTID, comment.CreatedAt
+		title = parent.TextBody
 		searchKind = searchpb.SearchKind_SEARCH_KIND_SOCIAL_COMMENT
 	}
 	if resource == nil {
@@ -100,7 +102,7 @@ func publicSearchResult(batch *PublicReadBatch, kind string, id uint64, viewer, 
 	}
 	return &searchpb.ResultItem{
 		Resource: resource, Kind: searchKind, Zone: searchpb.SearchZone_SEARCH_ZONE_STATION,
-		Title: publicSearchFragment(text, 96), Snippet: publicSearchFragment(text, 240),
+		Title: publicSearchFragment(title, 96), Snippet: publicSearchFragment(text, 240),
 		AuthorPtid: authorPTID, CreatedAtUnixMs: createdAt.UnixMilli(), Score: 1,
 		SourceId: PublicSearchSourceID, ReadValidity: publicSearchReadValidity(viewer, observation),
 	}

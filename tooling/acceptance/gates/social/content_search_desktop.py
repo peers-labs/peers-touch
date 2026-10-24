@@ -65,9 +65,9 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         self.public_comment_text = f"{self.query} 历史公开评论"
         self.private_comment_text = f"{self.query} 历史私密评论"
         public = self.moments("bob", "publishPublicMoment", {"text": self.public_text})
-        private = self.moments("alice", "publishTypedPrivateMoment", {
+        private = self.moments("bob", "publishTypedPrivateMoment", {
             "draftId": uuid.uuid4().hex, "revision": 1, "momentKind": "TEXT",
-            "text": self.private_text, "audienceKind": "SELF",
+            "text": self.private_text, "audienceKind": "FRIENDS",
         })
         self.public_post = str(public.get("transientPostId") or "")
         self.private_post = str(private.get("transientPostId") or "")
@@ -76,9 +76,17 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         public_comment = self.moments("bob", "submitPublicComment", {
             "postId": self.public_post, "text": self.public_comment_text,
         })
-        private_comment = self.moments("alice", "submitPrivateCommentWithRetry", {
+        private_comment = self.moments("bob", "submitPrivateCommentWithRetry", {
             "postId": self.private_post, "text": self.private_comment_text,
         })
+        acquired = self.moments("alice", "readPrivateMoment", {"postId": self.private_post})
+        if acquired.get("state") != "CONTENT_READY":
+            raise GateError(f"original recipient private acquisition is not ready: {acquired}")
+        acquired_comments = self.moments("alice", "readPrivateComments", {
+            "postId": self.private_post,
+        })
+        if not acquired_comments.get("comments"):
+            raise GateError("original recipient must acquire the old private comment")
         self.public_comment = str(public_comment.get("commentId") or "")
         # Private evidence intentionally hashes IDs; the owning query supplies
         # the original reference after local acquisition.
@@ -87,13 +95,14 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
             self.moments("bob", "submitPublicComment", {
                 "postId": self.public_post, "text": f"new-public-{self.token}-{index}",
             })
-            self.moments("alice", "submitPrivateCommentWithRetry", {
+            self.moments("bob", "submitPrivateCommentWithRetry", {
                 "postId": self.private_post, "text": f"new-private-{self.token}-{index}",
             })
         self.report.runtime["search"]["socialFixture"] = {
             "publicPost": self.public_post, "privatePost": self.private_post,
             "publicComment": self.public_comment, "newerCommentsPerPost": 22,
             "privatePublication": private, "privateCommentReceipt": private_comment,
+            "recipientAcquisition": acquired, "privateAudience": "FRIENDS",
         }
 
     def mixed(self) -> None:
@@ -110,6 +119,13 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
                        if item.get("snippet") == self.private_comment_text)
         self.private_comment = private["resource"]["id"]
         self.report.runtime["search"]["socialFixture"]["privateComment"] = self.private_comment
+        for resource_id in (
+            self.public_post, self.private_post, self.public_comment, self.private_comment,
+        ):
+            self.wait_js(
+                f"document.querySelector('[data-resource-id=\"{resource_id}\"]')",
+                "independent canonical Social result row",
+            )
         self.visible("mixed_public_private_messages", lambda: all(
             text in self.rows() for text in (
                 self.public_text, self.private_text,
@@ -134,8 +150,7 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
             self.select("social")
             item = self.item(resource_id)
             self.report.runtime["search"].setdefault("socialReferences", {})[name] = item
-            row = next(row for row in self.receiver.find_elements(".pt-search-row")
-                       if text in row.text)
+            row = self.receiver.find_element(f'[data-resource-id="{resource_id}"]', 20)
             row.click()
             self.wait_js("!document.querySelector('.pt-search-field')", "original Social route")
             if "comment" in name:
@@ -166,7 +181,9 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         try:
             self.select("social")
             self.visible("blocked_social_source", lambda: self.public_text not in self.rows()
-                         and self.public_comment_text not in self.rows())
+                         and self.public_comment_text not in self.rows()
+                         and self.private_text not in self.rows()
+                         and self.private_comment_text not in self.rows())
             blocked_reference = async_harness(self.receiver, "deviceSearchResolve", {
                 "resource": public_before_block["resource"],
                 "sourceId": public_before_block["sourceId"], "requestId": uuid.uuid4().hex,
@@ -189,7 +206,7 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         )
         self.select("social")
         old = self.item(self.private_post)
-        self.moments("alice", "deletePrivateMoment", {"postId": self.private_post})
+        self.moments("bob", "deletePrivateMoment", {"postId": self.private_post})
         self.select("social")
         self.visible("private_parent_delete", lambda: self.private_text not in self.rows()
                      and self.private_comment_text not in self.rows() and self.public_text in self.rows())

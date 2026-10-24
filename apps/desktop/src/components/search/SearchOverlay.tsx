@@ -9,12 +9,13 @@ import { searchActions } from '../../runtimes/searchRuntime';
 import { resourceIdentity } from '../../services/search';
 import type { Navigation } from '../../types/navigation';
 import { SEARCH_FUNCTIONS, openSearchFunction, type SearchFunction } from './functions';
+import { SearchResultMeta } from './SearchResultMeta';
 import './SearchOverlay.css';
 
 type Row = { type: 'content'; item: ResultItem } | { type: 'function'; item: SearchFunction };
 
 export function SearchOverlay({ navigation }: { navigation: Navigation }) {
-  const { t, i18n } = useTranslation('search');
+  const { t } = useTranslation('search');
   const { token } = theme.useToken();
   const view = useSearchStore(useShallow(state => ({
     query: state.query, mode: state.mode, status: state.status, response: state.response,
@@ -102,6 +103,8 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     return (
       <button key={row.type === 'function' ? row.item.id : resourceIdentity(row.item.resource)}
         type="button" className={`pt-search-row${selected ? ' active' : ''}`}
+        data-resource-id={content?.resource?.id} data-source-id={content?.sourceId}
+        data-resource-kind={content?.resource?.kind}
         id={`pt-search-option-${index}`} role="option" aria-selected={selected} tabIndex={-1}
         disabled={view.opening} onMouseEnter={() => useSearchStore.setState({ cursorEngaged: true, selectedIndex: index })}
         onClick={() => { void openRow(row); }}>
@@ -109,10 +112,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
         <span className="pt-search-main">
           <span className="pt-search-title">{highlight(title, displayedQuery)}</span>
           {detail && <span className="pt-search-snippet">{highlight(detail, displayedQuery)}</span>}
-          {content && <span className="pt-search-meta">
-            {content.conversationTitle}
-            {content.createdAtUnixMs > 0n && ` · ${new Date(Number(content.createdAtUnixMs)).toLocaleString(i18n.language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
-          </span>}
+          {content && <SearchResultMeta item={content} />}
         </span>
         {!isFunction && <span className="pt-search-zone"><Lock size={11} />{t(zoneKey)}</span>}
         <ArrowUpRight size={14} className="pt-search-row-open" />

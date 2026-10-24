@@ -191,6 +191,9 @@ suggestions 只选 Device，主动提交明确允许 Device 与当前 Station。
 全局 resolve 经受信 composition 的原域 opener registry，未知 binding 拒绝，
 不返回任意 URL。SocialComment 使用独立 comment ID 与 typed SocialPost parent；
 原域打开接口取得历史目标帖和有界评论 anchor 窗口，返回由 Search 保留上下文。
+Social 评论的 ResultItem.title 是原域复核可读的父帖摘要，snippet 是评论命中片段；
+帖子仍以自身正文提供 title/snippet。两端以原 Social 身份投影显示作者、类型和时间，
+不在结果行另建 profile 查询或正文缓存。父帖不可读时，评论及其父帖摘要一并消失。
 
 Contributor 的 descriptor 构造可能读取原 Store，不能在持有 Store 发布锁
 时再次取得该锁。核心先在当前绑定下复用已登记实例；缺失时在锁外构造，

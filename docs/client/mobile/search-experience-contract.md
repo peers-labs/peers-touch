@@ -4,8 +4,9 @@ Source: the approved Mobile Search proposal (2026-10-23), Search product and
 design contracts. Android and iOS share implementation and require separate
 native evidence.
 
-Search finds readable content already acquired by this device and returns to
-the original message or thread. Its main subject is the matched fragment.
+Search finds acquired readable messages, private Social posts/comments and
+current-Station public Social content, then returns to the original object.
+Its main subject is the matched fragment.
 The signature is continuity from fragment to exact original position and back.
 The shell owns entry and the detail stack; Search owns a single full-height
 content rail, input/filter action rail, source coverage and local recovery.
@@ -13,18 +14,24 @@ There is no floating result panel or independent data store.
 
 Primary-page Search occupies the existing header action position. Conversation
 Search opens the same detail with an explicit conversation filter. The user may
-expand to all readable local conversations. Message, attachment-name and
+expand to all readable content. Message, post/comment, attachment-name and
 function filters are explicit. Function results bind only existing Mobile
-settings routes. Ask and other content sources are outside this milestone.
+settings routes. Ask and additional content sources are outside this milestone.
+Social comments show their own fragment, readable parent-post summary and the
+original Social author projection; private content never implies recovered history.
 
 The Search detail is `on-visit + none`; its headless runtime retains one query,
 filter, selected result, page cursor history and scroll metadata. Native
 Search owns execution and bounded content caching. Renderer retains at most one
 100-item result page and 32 page cursors, without a second retrieval engine.
-Messaging owns object materialization, read rights and thread anchors.
+Each original domain owns materialization, read rights and exact anchors.
+Social comments open an independently addressed historical comment inside the
+original post detail. Search presentation does not load profiles or cache bodies.
 
-Input edits publish immediately and debounce native suggestions. Submit is an
-explicit history search. Pagination preserves query and scope. Object opening
+Input edits publish immediately and debounce device suggestions. Submit is the
+explicit boundary for Station public search. Private Social requires a current
+original-owner policy read and contributes no offline body suggestions.
+Pagination preserves query and scope. Object opening
 pushes the owner detail; Back returns to Search with filter, selection and
 position. Returning revalidates the native read scope, source revision and
 expiry before revealing private rows. Background, auth transition or owner

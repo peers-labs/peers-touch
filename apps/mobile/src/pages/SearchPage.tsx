@@ -49,6 +49,9 @@ function SearchResult({
       </span>
       <span className="mobile-search-result__body">
         <span className="mobile-search-result__title">{item.snippet || item.title}</span>
+        {item.kind === SearchKind.SOCIAL_COMMENT && item.title ? (
+          <span className="mobile-search-result__meta">{item.title}</span>
+        ) : null}
         <span className="mobile-search-result__meta">
           <span>{isSocial ? t(item.kind === SearchKind.SOCIAL_COMMENT ? 'search.kind.socialComment' : 'search.kind.socialPost') : conversationTitle} · {name}</span>
           <span>{t(item.zone === SearchZone.STATION ? 'search.zone.station' : 'search.zone.device')}</span>

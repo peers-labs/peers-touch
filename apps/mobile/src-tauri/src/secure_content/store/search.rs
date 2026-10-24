@@ -415,16 +415,15 @@ fn comment_doc(
     parent: &PrivateMomentReadProjection,
 ) -> Result<ScoredDocument, String> {
     let parent_bytes = parent.encode()?;
-    let parent_ref = post_doc(parent, &parent_bytes)
-        .ok_or("private Social parent unavailable")?
-        .resource;
-    Ok(document(
+    let parent_document =
+        post_doc(parent, &parent_bytes).ok_or("private Social parent unavailable")?;
+    let mut comment = document(
         ResourceRef {
             kind: "social-comment".into(),
             id: p.comment_id.clone(),
             authority_namespace: parent.authority_namespace.clone(),
             content_revision: revision(bytes),
-            parent: Some(Box::new(parent_ref)),
+            parent: Some(Box::new(parent_document.resource)),
             anchor: Some(ResourceAnchor {
                 kind: "comment".into(),
                 id: p.comment_id.clone(),
@@ -435,7 +434,9 @@ fn comment_doc(
         p.text.clone().unwrap_or_default(),
         p.author_ptid.clone(),
         p.created_at_millis.unwrap_or(0),
-    ))
+    );
+    comment.title = parent_document.title;
+    Ok(comment)
 }
 
 fn read_document(

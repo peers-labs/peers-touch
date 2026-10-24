@@ -1,5 +1,5 @@
 import { Button, Input, Spin } from 'antd';
-import { ArrowLeft, ChevronRight, FileText, MessageCircle, RefreshCw, Search, Settings } from 'lucide-react';
+import { ArrowLeft, ChevronRight, FileText, MessageCircle, Newspaper, RefreshCw, Search, Settings } from 'lucide-react';
 import type { Conversation, Message, Moment, MomentComment, SettingEntry } from '../types';
 import type { PrototypeListMemory } from '../listPresentation';
 import type { SearchDemoControl } from '../searchDemo';
@@ -109,12 +109,15 @@ export function SearchPage({
               {window => window.map(result => <button key={resultKey(result)} type="button"
                 className="mp-global-search-row" data-scroll-anchor-id={resultKey(result)}
                 onClick={() => result.kind === 'message' ? onOpen(result.target) : onOpenSocial(result.target)}>
-                {result.kind === 'message' && result.target.message.file ? <FileText size={20} /> : <MessageCircle size={20} />}
+                {result.kind === 'social' ? <Newspaper size={20} />
+                  : result.target.message.file ? <FileText size={20} /> : <MessageCircle size={20} />}
                 {result.kind === 'message' ? <span><strong>{view.filter === 'attachments'
                   ? result.target.message.file?.name : result.target.message.text || result.target.message.file?.name}</strong>
                   <small>{result.target.conversation.name} · {result.target.message.mine ? 'You' : result.target.conversation.name} · {result.target.message.time}</small></span>
                   : <span><strong>{result.target.comment?.text ?? result.target.moment.text}</strong>
-                    <small>{result.target.comment?.name ?? result.target.moment.name} · {result.target.moment.audience}
+                    {result.target.comment ? <small>{result.target.moment.text}</small> : null}
+                    <small>{copy[result.target.comment ? 'search.kind.socialComment' : 'search.kind.socialPost']}
+                      {' · '}{result.target.comment?.name ?? result.target.moment.name} · {result.target.moment.audience}
                       {' · '}{copy[result.target.moment.audience === 'Public' ? 'search.zone.station' : 'search.zone.device']}
                     </small></span>}
                 <ChevronRight size={18} />

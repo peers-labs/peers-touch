@@ -361,9 +361,18 @@ fn read_document(
             .optional()
     }
     .map_err(|error| error.to_string())?;
-    Ok(bytes
+    let mut document = bytes
         .and_then(|bytes| search_projection::decode(kind, id, post_id, &bytes))
-        .map(|p| p.document))
+        .map(|p| p.document);
+    if kind == COMMENT {
+        let Some(parent) = read_document(connection, POST, post_id, post_id)? else {
+            return Ok(None);
+        };
+        if let Some(comment) = document.as_mut() {
+            comment.title = parent.title;
+        }
+    }
+    Ok(document)
 }
 
 impl SecureContentStore {
