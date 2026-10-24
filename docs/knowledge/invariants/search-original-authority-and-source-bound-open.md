@@ -135,6 +135,10 @@ must acquire every required reference from one response inside its existing
 bounded wait. Do not merge references from different responses, invent missing
 references or force source coverage to READY. Missing issuance must produce a
 canonical Gate failure rather than an uncaught object lookup.
+Account-isolation private fixtures must acquire their SELF post through the
+original read owner before Search, following Search design §6.1. Publication
+completion is not a ContentReady read projection. A missing or unreadable
+acquisition must fail before the UI query; it must not force index readiness.
 
 ## Why this matters
 
@@ -222,6 +226,9 @@ Search publication order and can deadlock the native UI during reconciliation.
   within the existing 30-second wait, require all targets in one response, and
   fail canonically for permanently missing targets or rejected queries.
   Disjoint partial responses must never be merged into an issuance snapshot.
+- Desktop and Mobile account fixtures must qualify the exact SELF post as
+  CONTENT_READY through the original read, then prove Search visibility and
+  old-account result/reference denial. Publication alone cannot seed this proof.
 - Inspect Desktop/Mobile `SearchExecutor::block_on`: it must not call
   `tauri::async_runtime::block_on`. The native Social Search Suite must show
   mixed results without `Cannot block the current thread from within a runtime`

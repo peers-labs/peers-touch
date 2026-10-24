@@ -517,6 +517,15 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
             "draftId": uuid.uuid4().hex, "draftRevision": 1,
             "text": text, "audience": {"kind": "SELF"},
         })
+        require(sentinel.get("postId"), "original SELF publication must supply its canonical ID")
+        acquired = session.call_action("moments.private.read", {"postId": sentinel["postId"]})
+        require(acquired.get("state") == "CONTENT_READY",
+                "account fixture must acquire its original SELF post")
+        artifacts.write_json(
+            f"social-content-search/{session.client_id}/account-fixture.json",
+            {"postId": sentinel["postId"], "state": acquired["state"]},
+            role=f"social-content-search-account-fixture/{session.client_id}",
+        )
         self.select(session, "social", fixture["query"])
         self.has(session, sentinel["postId"], text)
         self.capture(artifacts, session, "social-account-before")

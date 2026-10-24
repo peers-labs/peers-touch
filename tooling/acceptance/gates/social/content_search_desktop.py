@@ -350,9 +350,18 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
             "draftId": uuid.uuid4().hex, "revision": 1, "momentKind": "TEXT",
             "text": sentinel_text, "audienceKind": "SELF",
         })
+        sentinel_id = str(sentinel.get("transientPostId") or "")
+        if not sentinel_id:
+            raise GateError("original SELF publication must supply its canonical ID")
+        acquired = self.moments("alice", "readPrivateMoment", {"postId": sentinel_id})
+        if acquired.get("state") != "CONTENT_READY":
+            raise GateError("account fixture must acquire its original SELF post")
+        self.report.runtime["search"]["accountFixture"] = {
+            "postId": sentinel_id, "state": acquired["state"],
+        }
         self.select("social")
         self.visible("private_account_before_switch", lambda: sentinel_text in self.rows())
-        sentinel_item = self.item(sentinel["transientPostId"])
+        sentinel_item = self.item(sentinel_id)
         def account_check() -> None:
             self.select("social")
             self.visible("private_account_after_switch", lambda: sentinel_text not in self.rows())
