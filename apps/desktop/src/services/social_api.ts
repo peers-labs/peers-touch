@@ -103,6 +103,7 @@ import {
   UnfollowResponseSchema,
   UnblockSocialActorResponseSchema,
   GetRelationshipResponseSchema,
+  GetSocialRelationshipStatusResponseSchema,
   GetFollowersResponseSchema,
   GetFollowingResponseSchema,
   type BlockSocialActorResponse,
@@ -110,6 +111,7 @@ import {
   type UnfollowResponse,
   type UnblockSocialActorResponse,
   type GetRelationshipResponse,
+  type GetSocialRelationshipStatusResponse,
   type GetFollowersResponse,
   type GetFollowingResponse,
 } from '../gen/proto/domain/social/relationship_pb';
@@ -637,6 +639,17 @@ export interface SocialRelationshipMutationInput {
   targetActorPtid: string;
   targetHomeStationPeerId: string;
   observedRevision: number;
+}
+
+export async function socialGetRelationshipStatus(
+  targetActorPtid: string,
+): Promise<GetSocialRelationshipStatusResponse> {
+  return invokeRustProto<
+    { target_actor_ptid: string },
+    GetSocialRelationshipStatusResponse
+  >('social_get_relationship_status', GetSocialRelationshipStatusResponseSchema, {
+    target_actor_ptid: targetActorPtid,
+  });
 }
 
 export async function socialBlockActor(

@@ -19,6 +19,7 @@ import { api } from '../../services/desktop_api';
 import {
   socialBlockActor,
   socialFollow,
+  socialGetRelationshipStatus,
   socialUnblockActor,
   type MomentDraft,
 } from '../../services/social_api';
@@ -1353,6 +1354,28 @@ export function installAcceptanceHarness(): void {
         localProjectionPresent: Boolean(
           usePrivateMomentsStore.getState().postsById[input.postId],
         ),
+      };
+    },
+
+    async relationshipStatus(input: { actorPtid: string }) {
+      if (!input?.actorPtid?.trim()) {
+        throw new Error('moments.acceptance.relationshipInputInvalid');
+      }
+      const response = await socialGetRelationshipStatus(input.actorPtid);
+      const projection = response.relationship;
+      if (
+        !projection
+        || projection.targetActor?.ptid !== input.actorPtid
+        || projection.revision < 0n
+        || projection.revision > BigInt(Number.MAX_SAFE_INTEGER)
+      ) {
+        throw new Error('moments.acceptance.relationshipStatusInvalid');
+      }
+      return {
+        blockedByViewer: projection.blockedByViewer,
+        revision: Number(projection.revision),
+        interactionAllowed: projection.interactionAllowed,
+        targetActorPtidSha256: await sha256(input.actorPtid),
       };
     },
 

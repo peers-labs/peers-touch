@@ -237,9 +237,13 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
 
     def policy(self) -> None:
         public_before_block = self.item(self.public_post)
+        relationship = self.moments("alice", "relationshipStatus", {
+            "actorPtid": self.ptids["bob"],
+        })
+        self.assert_condition("relationship_before_block", relationship["blockedByViewer"] is False)
         blocked = self.moments("alice", "blockActor", {
             "actorPtid": self.ptids["bob"], "homeStationPeerId": self.station_peer_id,
-            "observedRevision": 0,
+            "observedRevision": relationship["revision"],
         })
         try:
             self.select("social")
