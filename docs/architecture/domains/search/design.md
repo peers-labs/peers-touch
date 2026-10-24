@@ -234,6 +234,10 @@ Mobile 按 OAuth admission → native lifecycle event → 对应来源 active �
 不跨 await 持有 mutex；读取拒绝操作中的或过期的 Session。OS background
 事件在其原生边界立即拒绝私密发布，无需等待页面卸载。engine incarnation
 与认证操作 revision 使 A→B→A 无法重新接受旧结果。
+Mobile 私密索引回填每批先检查生命周期，再在 SQLCipher 事务内写索引与
+checkpoint；事务提交后必须释放连接锁，才可调用外部生命周期检查。
+回填不持有 Store 锁取得 OS 或 OAuth admission，避免反转上述发布锁顺序。
+前后生命周期检查与事务内 Session generation 检查共同保留挂起和取消屏障。
 Mobile Search 详情按需挂载，runtime 保留一个结果页及有界分页/输入/选择元数据。
 原生后台、内容变化或身份变化立即遮蔽结果；返回和恢复先核对原 owner
 scope/revision/expiry。相同身份的生命周期 generation 变化保留用户输入，

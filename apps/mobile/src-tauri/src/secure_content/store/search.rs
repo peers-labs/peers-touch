@@ -697,6 +697,7 @@ impl PrivateSocialStore {
         tx.execute("UPDATE mobile_social_search_progress SET phase = ?1, checkpoint = ?2, revision = revision + 1 WHERE singleton = 1",
             params![next_phase, next_checkpoint]).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
+        drop(connection);
         check()?;
         Ok(next_phase == 2)
     }
@@ -1119,6 +1120,24 @@ mod tests {
                 "cancelled".into()
             ))
             .is_err());
+    }
+
+    #[test]
+    fn backfill_releases_store_before_external_lifecycle_checks() {
+        let store = store();
+        let checks = std::cell::Cell::new(0);
+        let check = || {
+            let _connection = store
+                .connection
+                .try_lock()
+                .map_err(|_| "lifecycle check cannot acquire the store".to_string())?;
+            checks.set(checks.get() + 1);
+            Ok(())
+        };
+
+        assert!(!store.backfill_search_index(&check).unwrap());
+        assert!(store.backfill_search_index(&check).unwrap());
+        assert_eq!(checks.get(), 4);
     }
 
     #[test]

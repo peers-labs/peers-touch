@@ -120,6 +120,12 @@ Tokio asynchronous context. Follow Search design §4.1: use the existing
 reading Station's response invokes `blocking_recv` from an asynchronous task
 and panics; the outer IPC join can then report only `search cancelled`.
 
+Mobile private index backfill MUST release its SQLCipher connection lock before
+the external lifecycle check, following Search design §4.1's publication lock
+order. The batch's pre-check, transactional generation check and post-check
+remain required. Taking OS admission while holding the Store lock reverses the
+Search publication order and can deadlock the native UI during reconciliation.
+
 ## How to verify
 
 - Desktop `secure_content::search` tests cover current policy, revoked parent,
@@ -128,6 +134,9 @@ and panics; the outer IPC join can then report only `search cancelled`.
   repeated original commits, real content changes and denied-parent replay.
 - Mobile `secure_content::store::search` tests cover the same policy and
   original identity constraints.
+- `backfill_releases_store_before_external_lifecycle_checks` requires both
+  bounded backfill phases to permit Store acquisition from each external check.
+  Native Social Search must still conceal and resume all four original targets.
 - Search Core `current_issuance_survives_older_sessions_of_the_same_resource`
   covers overlapping sessions, rejection before a current issuance, and fresh
   owner denial after a valid issuance.
