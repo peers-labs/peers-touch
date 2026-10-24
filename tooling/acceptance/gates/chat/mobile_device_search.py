@@ -475,7 +475,12 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
     @staticmethod
     def native_page(session: Any, query: str, **kwargs: Any) -> dict:
         result = session.call_action("search.page", {"query": query, "kinds": [3], **kwargs})
-        require(result.get("accepted") is True, "native Search diagnostic query failed")
+        code = result.get("errorCode")
+        diagnostic_code = code if isinstance(code, str) and re.fullmatch(
+            r"SEARCH_[A-Z_]+", code,
+        ) else "UNCLASSIFIED"
+        require(result.get("accepted") is True,
+                f"native Search diagnostic query failed ({diagnostic_code})")
         return result["value"]
 
     @staticmethod
