@@ -85,11 +85,14 @@ L4 runtime：未做语义树/对比度自动化，UNPROVEN。
   原 `PrototypeListWindow`。L2/L3 开发证据位于
   `/tmp/mobile-search-prototype-20261023/`，不替代 Android/iOS 原生证明。
   Mobile 的 Social 筛选现在复用 `preparedMoments` 的公开/私密帖子及评论样本；
-  公开项只在提交后进入结果。打开复用原 Moments 页面，旧评论展开后精确
-  focus，返回保留查询和筛选。2026-10-24 Portal Playwright 六项走查通过，
-  包含私密建议、帖子/历史评论定位、返回、公开提交、类型筛选与暗色窄屏。
-  已查看历史评论和暗色窄屏截图。开发证据：
-  `/tmp/peers-social-search/prototype/result.json` 与 `01`–`06` 截图。
+  两类 Social 来源都只在显式提交后进入结果；选择内容筛选即提交当前查询，
+  与原生 UI 相同。未取得离线读租约的私密 Social 不进入输入建议。
+  提交后覆盖同时明示本机已取得内容和当前 Station 公开内容。
+  打开复用原 Moments 页面，旧评论展开后精确 focus，返回保留查询和筛选。
+  2026-10-24 当前 Portal 的 8 项动态走查通过，覆盖提交前遮蔽、显式筛选、
+  帖子/历史评论定位、返回及暗色窄屏。已检查历史评论 focus 和窄屏截图。
+  开发证据位于仓库外的 `peers-social-search/prototype/result.json` 及
+  `03-old-comment-anchor.png`、`06-narrow.png`；样本不作为原生产品证明。
   原型表面沿用 shared UI Identity 及 Social 模块合同；主对象为可读内容，
   主操作为查询/打开，列表和 header 复用既有 rail。语义树、对比度及现场
   性能仍未证明，样本不代表原生运行时证明。

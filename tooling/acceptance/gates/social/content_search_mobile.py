@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from typing import Any
 
-from tooling.acceptance.core import AcceptanceGate, ArtifactSession
+from tooling.acceptance.core import AcceptanceGate, ArtifactSession, EphemeralGateClient
 from tooling.acceptance.gates.chat.mobile_device_search import (
     MobileDeviceSearchGate, PAGE, ROW, require,
 )
@@ -19,6 +20,13 @@ class SocialContentSearchMobileGate(MobileDeviceSearchGate):
         "phase": "Social content Search Mobile",
         "bom": ["SOCIAL-CONTENT-FIND-OPEN"], "spec": ["social-content-search"],
     }}
+
+    def _run_social_journey(self, artifacts: ArtifactSession,
+                            manifest: Mapping[str, Any]) -> dict:
+        self.capability_client = EphemeralGateClient.from_environment()
+        require(self.capability_client is not None,
+                "Social Search requires its source-bound outage capability")
+        return super()._run_social_journey(artifacts, manifest)
 
     def seed(self, journey: MobileMessagingJourney, sender_session: Any,
              receiver_session: Any, conversation: str, token: str) -> dict:
@@ -196,7 +204,9 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
 """, "visible incomplete source coverage during Station outage")
             self.has(session, fixture["root"], query)
             self.capture(artifacts, session, "social-source-partial")
-        outage = self._restart_source_bound_station(during_outage=unavailable)
+        outage = self._restart_source_bound_station(
+            during_outage=unavailable, capability_client=self.capability_client,
+        )
         artifacts.write_json(
             f"social-content-search/{session.client_id}/outage.json", outage,
             role=f"social-content-search-outage/{session.client_id}",

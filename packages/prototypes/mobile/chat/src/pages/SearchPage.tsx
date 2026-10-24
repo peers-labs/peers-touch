@@ -55,7 +55,7 @@ export function SearchPage({
       : `${target.message.text ?? ''} ${target.message.file?.name ?? ''}`));
   const socialRows = socialTargets.filter(target => !view.conversationKey
     && (view.filter === 'all' || view.filter === 'social')
-    && (view.submitted || target.moment.audience !== 'Public')
+    && view.submitted
     && matches(target.comment?.text ?? target.moment.text));
   const rows: Result[] = [
     ...messageRows.map(target => ({ kind: 'message' as const, target })),
@@ -84,7 +84,12 @@ export function SearchPage({
       <div className="mp-global-search-filters" role="group" aria-label={copy['search.range']}>
         {(['all', 'messages', 'social', 'attachments', 'functions'] as const).map(filter =>
           <button key={filter} type="button" data-search-filter={filter} aria-pressed={view.filter === filter}
-            onClick={() => onChange({ ...view, filter })}>{copy[`search.tab.${filter}`]}</button>)}
+            onClick={() => {
+              onChange({ ...view, filter, submitted: filter !== 'functions' });
+              if (filter !== 'functions') {
+                demo?.dispatch({ type: 'submit', owner: 'global-search', query: view.query });
+              }
+            }}>{copy[`search.tab.${filter}`]}</button>)}
       </div>
       <div className="mp-global-search-scope">
         <span>{copy[view.conversationKey ? 'search.mobile.currentConversation' : 'search.mobile.allConversations']}</span>
@@ -99,8 +104,8 @@ export function SearchPage({
           {!words.length ? <div className="mp-global-search-state">{copy['search.mobile.initial']}</div> : null}
           {words.length && view.filter !== 'functions' ? <>
             <p className="mp-global-search-coverage" role="status">{copy['search.coverage.historyBoundary']}</p>
-            {!view.conversationKey ? <p className="mp-global-search-coverage" role="status">
-              {copy[view.submitted ? 'search.coverage.social_public' : 'search.coverage.social_acquired']}
+            {!view.conversationKey && view.submitted && (view.filter === 'all' || view.filter === 'social') ? <p className="mp-global-search-coverage" role="status">
+              {copy['search.coverage.social_acquired']} · {copy['search.coverage.social_public']}
             </p> : null}
             {status === 'empty' || !shown.length ? <div className="mp-global-search-state" role="status">
               {copy['search.empty.title'].replace('{{query}}', view.query)}<span>{copy['search.empty.detail']}</span>

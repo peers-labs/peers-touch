@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import uuid
 from typing import Any
 
@@ -43,6 +44,33 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
             self.clients[actor], method, payload, namespace="moments",
             script_timeout=60,
         )
+
+    def publish_private(self, actor: str, payload: dict) -> dict:
+        # The original UI wrapper can throw UNKNOWN_COMMIT for several native
+        # states. The native journal owns reconciliation of this exact draft;
+        # Fixture readiness waits for its committed result within one budget.
+        deadline = time.monotonic() + 45
+        while (remaining := deadline - time.monotonic()) >= 1:
+            result = call_async_harness(
+                self.clients[actor], "probeTypedPrivateMomentRejection", payload,
+                namespace="moments", script_timeout=min(15, int(remaining)),
+            )
+            self.report.runtime["search"].setdefault("privatePublicationAttempts", []).append({
+                "actor": actor, "rejected": result.get("rejected"),
+                "state": result.get("state"), "errorCode": result.get("errorCode"),
+            })
+            if result.get("state") == "UNKNOWN_COMMIT":
+                time.sleep(min(1, max(0, deadline - time.monotonic())))
+                continue
+            if not result.get("rejected") and result.get("state") in {
+                "PUBLISHED", "REMOTE_DELIVERY_PENDING", "REMOTE_DELIVERY_RETRYING",
+            } and result.get("transientPostId"):
+                return result
+            raise GateError(
+                f"original private publication failed: state={result.get('state')}, "
+                f"code={result.get('errorCode')}"
+            )
+        raise GateError("original private publication did not reconcile UNKNOWN_COMMIT within 45s")
 
     def page(self) -> dict:
         result = async_harness(self.receiver, "deviceSearchPage", {
@@ -85,7 +113,7 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         self.public_comment_text = f"{self.query} 历史公开评论"
         self.private_comment_text = f"{self.query} 历史私密评论"
         public = self.moments("bob", "publishPublicMoment", {"text": self.public_text})
-        private = self.moments("bob", "publishTypedPrivateMoment", {
+        private = self.publish_private("bob", {
             "draftId": uuid.uuid4().hex, "revision": 1, "momentKind": "TEXT",
             "text": self.private_text, "audienceKind": "FRIENDS",
         })
@@ -252,7 +280,7 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
 
     def fence(self) -> None:
         sentinel_text = f"{self.query} 账号隔离私密"
-        sentinel = self.moments("alice", "publishTypedPrivateMoment", {
+        sentinel = self.publish_private("alice", {
             "draftId": uuid.uuid4().hex, "revision": 1, "momentKind": "TEXT",
             "text": sentinel_text, "audienceKind": "SELF",
         })
