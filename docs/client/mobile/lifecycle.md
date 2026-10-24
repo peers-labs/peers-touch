@@ -161,6 +161,13 @@ host resume
 
 Resume never treats cached projection state as current before reconciliation.
 
+The Social descriptor records the complete admitted session identity of its
+controller: Station, Actor, device, authentication generation and session ID.
+After Session resume, it reuses the controller only when that identity matches.
+A change observed while the old readiness context was fenced cannot authorize
+resuming the old controller; teardown and drain precede creation under the new
+context. Registry session transitions use that same complete identity.
+
 If Messaging reconciliation fails while the OS network remains connected,
 the existing Social foreground reconciliation interval retries only Messaging
 failures reported by its current readiness owner, before repairing dependent
@@ -174,6 +181,11 @@ payload-free deleted detail. Its Gateway must validate the current session and
 Native activation before reading that terminal projection; it must not invoke
 the content read that the original owner has already closed. Unavailable reads
 and stale scopes still fail repair and keep admission closed.
+An original typed `NOT_FOUND_OR_NOT_AUTHORIZED` read maps to a payload-free
+hidden detail. This is successful authority readback, not a transport failure:
+it does not fetch comments or infer deletion, and the original private
+projection remains denied. Authentication, recovery and integrity failures
+remain unavailable.
 
 ## 8. Scope Change and Logout
 

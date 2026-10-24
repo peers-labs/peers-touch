@@ -90,6 +90,11 @@ The Social capture includes the original thread's loading state, parent,
 source, body and comment anchor in the before/after rendering comparison.
 An original comment frame must show its exact text, focused anchor and viewport
 visibility; a preceding DOM assertion cannot authorize a later loading screenshot.
+The native capture must observe original-thread DOM mutations throughout
+sampling, including queued mutation records. Two equal terminal snapshots can
+surround an intermediate loading frame; a mutation revision must invalidate
+that attempt. A capture-owned observer is always disconnected in finalization,
+and terminal capture waits for the WebView's paint frames before sampling.
 
 Coverage copy MUST come from the original source's generated `SourceCoverage`.
 Public Station scope must never fall back to acquired-device coverage;
@@ -176,6 +181,9 @@ Search publication order and can deadlock the native UI during reconciliation.
   and pending anchor focus inside that same deadline. Its captured rendering
   must bind the expected original parent/source and the visible exact comment,
   or the original post body. Inspect the native pixels before claiming Open.
+- Replay a terminal/loading/terminal transition during the native screenshot:
+  even when both terminal DOM samples are equal, capture must reject the first
+  image, repeat within its existing deadline and release its mutation observer.
 - The same Journey must complete private Open after original projection
   materialization, reject unavailable targets and show distinct acquired-private
   and current-Station public coverage.

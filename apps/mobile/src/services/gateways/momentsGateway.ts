@@ -392,7 +392,9 @@ export function createMomentsGateway(
               : {
                   outcome: projection.state === 'DELETED_OR_REVOKED'
                     ? PostDetailOutcome.DELETED
-                    : PostDetailOutcome.UNAVAILABLE,
+                    : projection.state === 'NOT_FOUND_OR_NOT_AUTHORIZED'
+                      ? PostDetailOutcome.HIDDEN
+                      : PostDetailOutcome.UNAVAILABLE,
                 },
           };
         } catch {

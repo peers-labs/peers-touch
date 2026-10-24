@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -25,6 +26,8 @@ class SocialContentSearchMobileGate(MobileDeviceSearchGate):
     def surface(session: Any) -> dict:
         rendering = MobileDeviceSearchGate.surface(session)
         rendering["originalSocial"] = session.execute_script("""
+const watch = window.__PT_SOCIAL_CAPTURE_WATCH__;
+if (watch && watch.observer.takeRecords().length) watch.revision += 1;
 const thread = document.querySelector('[data-acceptance-id="social-moment-thread"]');
 if (!thread) return null;
 const anchor = [...thread.querySelectorAll('[data-scroll-anchor-id]')]
@@ -32,6 +35,7 @@ const anchor = [...thread.querySelectorAll('[data-scroll-anchor-id]')]
     && row.dataset.searchHighlighted === 'true');
 const box = anchor?.getBoundingClientRect();
 return {
+  domRevision: watch?.revision || 0,
   postId: thread.dataset.postId,
   sourceId: thread.dataset.sourceId || 'station.social.public',
   anchorCommentId: thread.dataset.anchorCommentId || '',
@@ -46,6 +50,42 @@ return {
 };
 """)
         return rendering
+
+    def capture(self, artifacts: ArtifactSession, session: Any, name: str,
+                *, concealed: bool = False, diagnostic: bool = False) -> None:
+        deadline = time.monotonic() + 30
+        session.execute_script("""
+window.__PT_SOCIAL_CAPTURE_WATCH__?.observer.disconnect();
+const watch = {revision: 0};
+watch.observer = new MutationObserver(() => { watch.revision += 1; });
+watch.observer.observe(document.body, {
+  childList: true, subtree: true, characterData: true, attributes: true,
+});
+window.__PT_SOCIAL_CAPTURE_WATCH__ = watch;
+""")
+        try:
+            if not diagnostic:
+                painted = session.execute_async_script("""
+const done = arguments[arguments.length - 1];
+let finished = false;
+const finish = value => { if (!finished) { finished = true; done(value); } };
+const timeout = setTimeout(() => finish(false), arguments[0]);
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  clearTimeout(timeout);
+  finish(true);
+}));
+""", max(1, int((deadline - time.monotonic()) * 1000)))
+                require(painted and time.monotonic() < deadline,
+                        f"{name} native paint frames timed out")
+            super().capture(
+                artifacts, session, name, concealed=concealed, diagnostic=diagnostic,
+                deadline_monotonic=deadline,
+            )
+        finally:
+            session.execute_script("""
+window.__PT_SOCIAL_CAPTURE_WATCH__?.observer.disconnect();
+delete window.__PT_SOCIAL_CAPTURE_WATCH__;
+""")
 
     @staticmethod
     def capture_pending(rendering: Mapping[str, Any], concealed: bool) -> bool:

@@ -9,6 +9,8 @@ owns:
   - apps/mobile/src/pages/moments/MomentCommentsSection.tsx
   - apps/mobile/src/runtimes/privateMomentsRuntime.ts
   - apps/mobile/src/runtimes/privateMomentsRuntime.test.ts
+  - apps/mobile/src/runtimes/runtimeRegistry.ts
+  - apps/mobile/src/runtimes/runtimeRegistry.test.ts
   - apps/mobile/src/services/gateways/momentsGateway.ts
   - apps/mobile/src/services/mobileCommands.ts
   - apps/station/app/subserver/social/application/federated_private_interaction.go
@@ -225,6 +227,15 @@ refusal into `PRIVATE_SOCIAL_READ_UNAVAILABLE`. The feed therefore reported a
 failed Moments repair after every periodic reconciliation and kept mutation
 admission closed even though all lifecycle runtimes were ready.
 
+Social resume also reused any retained controller without checking the complete
+admitted identity it captured. A Session update while the old lifecycle context
+was fenced could skip the queued replacement, while Private Social activated
+the current scope. The retained Moments Gateway then correctly rejected its
+old session and Social repair never reopened. Registry identity also omitted
+device and authentication generation. Separately, the Gateway mapped a trusted
+`NOT_FOUND_OR_NOT_AUTHORIZED` read to unavailable instead of a hidden detail,
+turning a valid original authority denial into another failed repair.
+
 Native activation creates and binds the Private Social engine, but endpoint
 Content PreKey provisioning belongs to Native reconciliation. The mobile
 lifecycle published readiness immediately after activation and snapshot
@@ -333,6 +344,14 @@ briefly while Session refresh or Social ingress reconciliation completes.
   It returns a payload-free `PostDetailOutcome.DELETED` without another private
   content read. Missing projections, unavailable reads and stale sessions still
   fail; the original Runtime's content, media and mutation refusals remain closed.
+- Social resume reuses its retained controller only when its recorded complete
+  identity matches the current admitted session. A replacement tears down and
+  drains before starting under the current readiness context. Registry identity
+  uses the shared Station/Actor/device/generation scope plus session ID.
+- A trusted original `NOT_FOUND_OR_NOT_AUTHORIZED` read maps to a payload-free
+  hidden detail without comment reads or an inferred deletion. Authentication,
+  recovery and integrity failures remain unavailable; stale Gateway rejection
+  is unchanged.
 - Private Social lifecycle bootstrap now completes Native reconciliation before
   publishing the runtime as active. Reconciliation failure fails lifecycle
   readiness and tears down the exact Native generation.
@@ -406,6 +425,12 @@ briefly while Session refresh or Social ingress reconciliation completes.
   runs the real Gateway and feed reconciliation against the original Runtime
   tombstone. Terminal detail repair succeeds without another Native read, while
   a same-actor session switch still rejects the old Gateway.
+- `runtimeRegistry.test.ts` changes session, device and generation while the
+  old context is fenced and requires ordered replacement instead of old-owner
+  resume.
+- `repairs a retained private detail from an original typed denial without comments`
+  runs the real Private Runtime, Gateway and feed, requiring hidden detail,
+  successful repair, retained denied projection and zero comment reads.
 - `publishes readiness only after Content PreKey reconciliation` verifies that
   activation cannot become ready before Native provisioning succeeds, and
   `rejects readiness when a configured recovery pool is empty` verifies that
@@ -476,6 +501,11 @@ an operation whose production contract rejects terminal access. It may use the
 sanitized runtime snapshot for supporting terminal-state observation only when
 the same scenario still proves the receiver-visible absence and restart
 behavior required by the Feature contract.
+After Session resume, the Social controller's recorded identity must match
+the current admitted session before it is reused. Device and authentication
+generation changes cannot be ignored because Actor and session ID match.
+An original typed not-found/not-authorized result is a hidden detail; it must
+not become a transport failure or authorize old private content or comments.
 
 ## Crosswalks
 

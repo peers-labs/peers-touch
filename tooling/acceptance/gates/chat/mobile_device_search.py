@@ -203,8 +203,10 @@ return {
             {"loading"} if concealed else {"loading", "concealed"})
 
     def capture(self, artifacts: ArtifactSession, session: Any, name: str,
-                *, concealed: bool = False, diagnostic: bool = False) -> None:
-        deadline = time.monotonic() + 30
+                *, concealed: bool = False, diagnostic: bool = False,
+                deadline_monotonic: float | None = None) -> None:
+        deadline = (time.monotonic() + 30 if deadline_monotonic is None
+                    else deadline_monotonic)
         while True:
             rendering = self.surface(session)
             if self.capture_pending(rendering, concealed) and not diagnostic:

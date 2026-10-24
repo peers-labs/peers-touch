@@ -384,6 +384,48 @@ describe('privateMomentsRuntime projection', () => {
     }));
   });
 
+  it('repairs a retained private detail from an original typed denial without comments', async () => {
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    const session = authSession('session-1');
+    useAuthStore.setState({
+      session,
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    const gateway = createMomentsGateway(session);
+    commandMocks.readMoment.mockResolvedValue(
+      readProjection('post-a', '0', 'NOT_FOUND_OR_NOT_AUTHORIZED'),
+    );
+    const feed = createMomentsFeedStore({
+      ...gateway,
+      fetchFeed: async () => ({
+        ok: true,
+        data: {
+          posts: [], explanations: [], nextCursor: '', hasMore: false,
+          outcome: TimelinePageOutcome.EMPTY,
+        },
+      }),
+    });
+    try {
+      await feed.ensureMoment('post-a', {
+        sourceId: 'device.social', anchorCommentId: 'old-comment',
+      });
+      expect(feed.state().selectedDetail?.readback).toEqual({ kind: 'hidden' });
+      expect(await feed.reconcile()).toBe(true);
+      expect(readPrivateMomentsSnapshot().postsById['post-a']?.state)
+        .toBe('NOT_FOUND_OR_NOT_AUTHORIZED');
+      expect(commandMocks.comments).not.toHaveBeenCalled();
+      expect(commandMocks.readMoment).toHaveBeenCalledTimes(2);
+    } finally {
+      feed.teardown();
+    }
+  });
+
   it('persists ordered revocation and closes every private post operation', async () => {
     const ready = readProjection('post-a', '2', 'CONTENT_READY');
     const comment = {
