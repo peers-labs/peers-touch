@@ -170,8 +170,14 @@ def _prepare(repo_root: Path, *, task_id: str, budget_seconds: int) -> Path:
                 invocations=(first, final), needs_deployment=False,
                 require_attestation=True, expected_exact_replay=False,
             )
-        except BaseException:
-            transport.requiesce(request, budget_seconds=30)
+        except BaseException as error:
+            try:
+                transport.requiesce(request, budget_seconds=30)
+            except Exception as cleanup_error:
+                raise RuntimeError(
+                    f"schema activation failed: {error}; "
+                    f"Station re-quiescence failed: {cleanup_error}"
+                ) from error
             raise
     write_immutable_json(directory / "completed-reset-journal.json", journal)
     return write_immutable_json(
