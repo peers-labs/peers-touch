@@ -17,8 +17,9 @@ description: Publish or republish signed x-config channel catalogs (endpoint see
 - Guiding an operator who asks how to configure an internal channel.
 
 Do not use for: broker/Vercel or OAuth site work (see
-`pt-oauth2-client-2-vercel`), client-side directive evaluation, or snapshot
-verification only.
+`pt-oauth2-client-2-vercel`), deploying/upgrading the x-config service
+binary or runtime (see `pt-x-config-deploy`), client-side directive
+evaluation, or snapshot verification only.
 
 ## Required Discipline
 
