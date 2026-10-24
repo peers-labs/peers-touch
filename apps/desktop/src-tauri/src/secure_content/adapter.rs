@@ -649,6 +649,12 @@ fn station_client_error(
         },
         _ => NativeErrorDisposition::Terminal,
     };
+    tracing::warn!(
+        transport_error_kind = ?error.kind,
+        disposition = ?disposition,
+        mutation = matches!(semantics, RequestCommitSemantics::MayCommit),
+        "secure content Station request failed"
+    );
     NativeTransportError {
         http_status,
         stable_code: error_model::ErrorCode::Undefined as i32,
