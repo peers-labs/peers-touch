@@ -151,7 +151,8 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
 const coverage = document.querySelector('.mobile-search-coverage')?.innerText || '';
 return ['Private posts and comments acquired on this device', '本机已取得的私密动态与评论']
   .some(copy => coverage.includes(copy))
-  && ['Readable public posts and comments on this Station', '当前 Station 可读的公开动态与评论']
+  && ['Readable public posts and comments on this Station', '当前 Station 可读的公开动态与评论',
+      'Public search on this Station is incomplete; more content remains', '当前 Station 公开检索尚不完整，还有内容未检索']
     .some(copy => coverage.includes(copy));
 """, "original public and acquired-private source coverage")
         self.capture(artifacts, session, "social-mixed-results")

@@ -183,7 +183,8 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
             any(copy in self.receiver.find_element(".pt-search-footer").text for copy in copies)
             for copies in (
                 ("Private posts and comments acquired on this device", "本机已取得的私密动态与评论"),
-                ("Readable public posts and comments on this Station", "当前 Station 可读的公开动态与评论"),
+                ("Readable public posts and comments on this Station", "当前 Station 可读的公开动态与评论",
+                 "Public search on this Station is incomplete; more content remains", "当前 Station 公开检索尚不完整，还有内容未检索"),
             )
         ))
         self.select("messages")
