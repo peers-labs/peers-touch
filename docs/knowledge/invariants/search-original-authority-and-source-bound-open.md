@@ -120,6 +120,10 @@ be current, as required by Mobile lifecycle reconciliation. Global write
 admission alone does not clear `moments` or `social` staleness. Observe the
 original projection inside the existing bounded wait, then invoke once;
 do not retry mutations or reopen admission from the Gate.
+Private recovery-key preparation is a per-client Suite fixture operation.
+Prepare each receiver before scenarios begin; attach-only iOS/Android legs
+reuse that preparation. Recreating a random recovery phrase at the same epoch
+inside each leg violates the original Store's epoch-conflict contract.
 
 ## Why this matters
 

@@ -158,6 +158,8 @@ Promise.resolve(window.__PEERS_MOBILE_ACCEPTANCE__['moments.private.read']({
 
     def seed(self, journey: MobileMessagingJourney, sender_session: Any,
              receiver_session: Any, conversation: str, token: str) -> dict:
+        # Seed runs once per receiver before the Suite's attach-only scenarios.
+        self._prepare_private_keys(receiver_session)
         def send(text: str, **extra: Any) -> str:
             sent = self.mutate_when_admitted(sender_session, "messaging.send", {
                 "conversationId": conversation, "plaintext": text, **extra,
@@ -176,8 +178,6 @@ Promise.resolve(window.__PEERS_MOBILE_ACCEPTANCE__['moments.private.read']({
                 "reply": reply, "replyQuery": reply_query, "filler": filler, "token": token}
 
     def social_seed(self, session: Any, sender: Any, query: str) -> dict:
-        self._prepare_private_keys(session)
-        self._prepare_private_keys(sender)
         text = {
             "public": f"{query} 公开帖子", "private": f"{query} 私密帖子",
             "publicComment": f"{query} 历史公开评论",
