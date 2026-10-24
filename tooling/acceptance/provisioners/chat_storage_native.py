@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -139,6 +140,18 @@ class ChatStorageNativeProvisioner(HomeStationProvisioner):
                         "deployment identity"
                     ),
                     resource="profile:station",
+                )
+            if gate_id == "social-content-search-desktop-native-e2e":
+                from tooling.development.secure_content.runtime_schema import (
+                    prepare_private_social_runtime,
+                )
+                schema_path = prepare_private_social_runtime(
+                    REPO_ROOT, task_id=gate_id,
+                )
+                self.evidence_run.write_json(
+                    "runtime/canonical-private-schema-attestation.json",
+                    json.loads(schema_path.read_text()),
+                    role="social-private-schema-attestation",
                 )
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
             self.acquire_profile_lease(deployment_environment, owner)
