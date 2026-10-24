@@ -92,6 +92,9 @@ signatures remain one-source reads over the same read coordinator. Direct
 query also records issued references. Resolve requires a prior issued
 association for this partition, exact source, fusion identity, revision and
 full reference. Unknown, changed, expired or evicted associations fail closed.
+Before association lookup, the shared descriptor/resource validator rejects
+malformed references, undeclared kinds and authority namespaces as protocol
+errors. Valid unissued references remain unavailable without calling the owner.
 Only that source is called; no kind dispatch, public/private fallback, or
 resolver fan-out exists. Hosts still allowlist the returned resolver binding.
 
@@ -108,17 +111,30 @@ resolver fan-out exists. Hosts still allowlist the returned resolver binding.
 - Each source holds at most 100 unissued candidates. Pages default to 20 and
   reject limits above 100. Fusion uses source ranks, not raw engine scores;
   the original authority/kind/object identity determines deduplication.
-- All fan-out and hydration share the initial five-second operation budget.
-  Small end-of-budget publication reserves allow successful sources to be
-  returned alongside timeout coverage. Cancelled subscribers detach separately;
-  the last subscriber or deadline stops the shared read.
+- Each source completes query and authorized batch hydration in its own
+  pipeline, reusing `runtime::query_source`. Existing pending candidates enter
+  that source's hydration directly. All pipelines share the initial five-second
+  operation budget; the receiver has an absolute deadline with 100 ms reserved
+  for fusion and publication. Slow query or hydration yields source-local
+  timeout coverage while completed sources retain their results. Failed source
+  windows and continuations are discarded; a new attempt may retry the source.
+  Cancelled subscribers detach separately; the last subscriber or deadline
+  stops the shared read.
+- Hydration precedes cross-source fusion over the bounded candidate windows:
+  at most 100 references per source and 300 per operation, potentially more
+  than the final 20 rows. Existing valid projection caches reuse content;
+  no-store sources reauthorize every window. This trades bounded extra reads
+  for source independence. The RRF scores, deterministic tie-break, winning
+  source, final page limit and successful-window consumption remain unchanged.
 - Session storage is capped at 32 sessions, 640 candidate/issued entries and
   4 MiB. Native read storage, including active reply bytes and key copies, has
   a separate 4 MiB cap: retained native/session content is at most 8 MiB.
   Native displayed response retention is capped at 32 frames and 200 rows.
 - Sessions retain references/ranks, not a second result body cache. No-store
   projection reads are never reusable; continuing a no-store source
-  rehydrates its selected references through the original authority.
+  rehydrates its unissued candidate window through the original authority.
+  Authorized window projections are temporary operation values, never session
+  state or a source of resolution grants; only displayed items are issued.
 - Cursors are authenticated with an unpredictable runtime-incarnation key.
   They contain only a semantic digest and a session/step reference, not
   query text, object references or native continuation tokens. Source changes,

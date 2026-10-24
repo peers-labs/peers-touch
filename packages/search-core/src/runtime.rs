@@ -866,6 +866,8 @@ mod tests {
             authority_namespace: "station:one".into(),
             kind: "message".into(),
             id: "message".into(),
+            message_id: "message".into(),
+            conversation_id: "conversation".into(),
             content_revision: "one".into(),
             ..Default::default()
         };

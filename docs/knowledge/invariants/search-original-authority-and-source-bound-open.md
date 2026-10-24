@@ -150,6 +150,20 @@ original owner makes the same rules apply to ordinary point reads and Search.
 
 ## Executor boundary
 
+Source independence covers the complete query → authorized hydration pipeline,
+not just candidate lookup. Search design §4.1 requires a bounded absolute
+receiver deadline and the existing 100ms publication reserve inside the original
+five-second budget. A slow source cannot consume another source's hydration
+time. Failed windows and continuations must not survive as resumable candidates.
+Successful RRF ordering, winner identity and pagination stay deterministic.
+Hydration may read each bounded unissued window before fusion, but session
+storage remains metadata-only and only displayed references are issued.
+
+Resolution validates resource shape, declared kind and namespace before issued
+association lookup. A forged or undeclared namespace must be a protocol error;
+an otherwise valid unissued reference remains unavailable. Neither case invokes
+the original resolve owner or discovers another source to grant access.
+
 The host executor MUST NOT poll original-owner synchronous reads inside a
 Tokio asynchronous context. Follow Search design §4.1: use the existing
 `futures-lite` executor on the host's blocking worker. Entering Tokio while
@@ -180,6 +194,16 @@ Search publication order and can deadlock the native UI during reconciliation.
 - Search Core `current_issuance_survives_older_sessions_of_the_same_resource`
   covers overlapping sessions, rejection before a current issuance, and fresh
   owner denial after a valid issuance.
+- Search Core `slow_source_timeout_preserves_fast_source_within_total_budget`
+  must include nonzero fast-source hydration latency. The fast source retains
+  its authorized page when the slow query exhausts the unchanged budget.
+  `slow_hydration_does_not_block_another_sources_authorized_page` covers the
+  same outcome when candidate lookup succeeds but hydration is slow.
+- Search Core `malformed_or_outside_descriptor_resolution_is_protocol_before_issuance`
+  covers forged namespaces, prefix lookalikes, undeclared kinds and malformed
+  references before and after issuance, plus unavailable valid unissued refs.
+  `fused_pages_preserve_unissued_candidates_and_resolve_only_issuing_source`
+  must retain the original RRF scores and winning source through all pages.
 - Station `TestMomentReadPolicyOriginalAuthority` covers post/comment policy
   and parent revocation; `public_search_test.go` covers validator
   reauthorization and source-bound resolution.

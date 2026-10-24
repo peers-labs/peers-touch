@@ -12,12 +12,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::cache::{Operation, ReadKey};
-use crate::contributor::{narrow_intent, normalize_intent, same_resource};
+use crate::contributor::{
+    namespace_allowed, narrow_intent, normalize_intent, same_resource, validate_resource,
+};
 use crate::cursor::authenticated::AuthenticatedCursorCodec;
 use crate::model::wire::*;
 use crate::runtime::{
-    apply_observation, now_ms, ReadAuthority, SearchBinding, SearchExecutor, SearchRuntime,
-    READ_BUDGET,
+    now_ms, ReadAuthority, SearchBinding, SearchExecutor, SearchRuntime, READ_BUDGET,
 };
 use crate::{CancelToken, SearchError};
 
@@ -100,6 +101,22 @@ fn association(source: &str, resource: &ResourceRef) -> String {
 }
 
 impl Session {
+    fn prune_issued(&mut self) {
+        let issued: HashSet<_> = self
+            .issued
+            .values()
+            .map(|item| item.resource.fusion_key())
+            .collect();
+        for source in &mut self.sources {
+            source.pending.retain(|candidate| {
+                candidate
+                    .resource
+                    .as_ref()
+                    .is_some_and(|resource| !issued.contains(&resource.fusion_key()))
+            });
+        }
+    }
+
     fn measure(&self) -> (usize, usize) {
         let mut bytes = self.partition.len() + self.semantic.len() + 256;
         let mut items = self.issued.len();
@@ -292,6 +309,7 @@ fn semantic(partition: &str, input: &QueryIntent) -> String {
 
 fn failed(source: &mut SourceSnapshot, error: &SearchError) {
     source.started = true;
+    source.pending.clear();
     source.next.clear();
     source.coverage.state = SourceState::Unavailable as i32;
     source.coverage.detail_key = match error {
@@ -539,19 +557,11 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                 issued: HashMap::new(),
             }
         };
-        self.refill(bindings, &mut draft, operation)?;
-        let previously_issued: HashSet<_> = draft
-            .issued
-            .values()
-            .map(|i| i.resource.fusion_key())
-            .collect();
-        for source in &mut draft.sources {
-            source.pending.retain(|c| {
-                c.resource
-                    .as_ref()
-                    .is_some_and(|r| !previously_issued.contains(&r.fusion_key()))
-            });
-        }
+        draft.prune_issued();
+        let hydrated = self.read_sources(bindings, &mut draft, input.refresh, operation)?;
+        // A new source page can repeat an object issued by an earlier page or
+        // another source. Prune it before ranking and continuation admission.
+        draft.prune_issued();
         let mut ranked: HashMap<String, (f64, usize, ResourceRef)> = HashMap::new();
         for (index, source) in draft.sources.iter().enumerate() {
             for candidate in &source.pending {
@@ -571,71 +581,20 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         });
         ranked.truncate(input.limit as usize);
         let mut items = Vec::new();
-        // Hydration is also fan-out, with the same original operation deadline.
-        let (tx, rx) = mpsc::channel();
-        for (index, source) in draft.sources.iter().enumerate() {
-            let refs: Vec<_> = ranked
-                .iter()
-                .filter(|r| r.1 == index)
-                .map(|r| r.2.clone())
-                .collect();
-            if refs.is_empty() {
-                continue;
-            }
-            let binding = bindings
-                .iter()
-                .find(|b| b.source_id() == source.state.source_id)
-                .ok_or(SearchError::Protocol)?
-                .clone();
-            let runtime = self.clone();
-            let tx = tx.clone();
-            let cancel = operation.cancel.clone();
-            let deadline = operation.deadline - Duration::from_millis(20);
-            let refresh = input.refresh || source.state.no_store;
-            self.executor.spawn(Box::new(move || {
-                let _ = tx.send((
-                    index,
-                    runtime.hydrate(&binding, refs, refresh, &cancel, deadline),
-                ));
-            }));
-        }
-        drop(tx);
-        for (index, result) in rx.iter() {
-            match result {
-                Ok(hydrated) => {
-                    if draft.sources[index].authority == ReadAuthority::RemoteOwner
-                        && !hydrated.state.source_revision.is_empty()
-                    {
-                        let state = &mut draft.sources[index].state;
-                        state.source_revision = hydrated.state.source_revision;
-                        state.policy_revision = hydrated.state.policy_revision;
-                        state.read_scope = hydrated.state.read_scope;
-                    }
-                    items.extend(hydrated.items);
-                }
-                Err(error) => failed(&mut draft.sources[index], &error),
-            }
-        }
-        operation.check()?;
-        items.sort_by_key(|item| {
-            ranked
-                .iter()
-                .position(|r| {
+        for (score, index, resource) in &ranked {
+            // Keep the original RRF winner; another source cannot substitute
+            // its projection when that winner's owner denied the resource.
+            if let Some(item) = hydrated.get(index).and_then(|items| {
+                items.iter().find(|item| {
                     item.resource
                         .as_ref()
-                        .is_some_and(|ref_| same_resource(ref_, &r.2))
+                        .is_some_and(|reference| same_resource(reference, resource))
                 })
-                .unwrap_or(usize::MAX)
-        });
-        for item in &mut items {
-            item.score = ranked
-                .iter()
-                .find(|r| {
-                    item.resource
-                        .as_ref()
-                        .is_some_and(|ref_| same_resource(ref_, &r.2))
-                })
-                .map_or(0.0, |r| r.0);
+            }) {
+                let mut item = item.clone();
+                item.score = *score;
+                items.push(item);
+            }
         }
         let consumed: HashSet<_> = ranked.iter().map(|r| r.2.fusion_key()).collect();
         for source in &mut draft.sources {
@@ -719,15 +678,20 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         })
     }
 
-    fn refill<B: SearchBinding>(
+    /// Each source completes query and authorized hydration independently.
+    /// Temporary projections never enter the metadata-only session snapshot.
+    fn read_sources<B: SearchBinding>(
         &self,
         bindings: &[B],
         draft: &mut Session,
+        refresh: bool,
         operation: &Operation,
-    ) -> Result<(), SearchError> {
+    ) -> Result<HashMap<usize, Vec<ResultItem>>, SearchError> {
+        let deadline = operation.deadline - Duration::from_millis(100);
         let (tx, rx) = mpsc::channel();
+        let mut remaining = HashSet::new();
         for (index, source) in draft.sources.iter().enumerate() {
-            if !source.pending.is_empty() || (source.started && source.next.is_empty()) {
+            if source.pending.is_empty() && source.started && source.next.is_empty() {
                 continue;
             }
             let binding = bindings
@@ -738,59 +702,85 @@ impl<E: SearchExecutor> SearchRuntime<E> {
             let runtime = self.clone();
             let mut input = source.input.clone();
             input.cursor = source.next.clone();
-            input.refresh |= source.state.no_store;
+            input.refresh |= refresh || source.state.no_store;
+            let pending = source.pending.clone();
+            let refresh = refresh || source.state.no_store;
             let tx = tx.clone();
             let cancel = operation.cancel.clone();
-            let deadline = operation.deadline - Duration::from_millis(100);
+            remaining.insert(index);
             self.executor.spawn(Box::new(move || {
-                let _ = tx.send((
-                    index,
-                    runtime.source_page(&binding, input, &cancel, deadline),
-                ));
+                let result = if pending.is_empty() {
+                    runtime
+                        .query_source(&binding, input, &cancel, deadline)
+                        .map(|(page, hydrated)| (Some(page), hydrated))
+                } else {
+                    pending
+                        .into_iter()
+                        .map(|candidate| candidate.resource.ok_or(SearchError::Protocol))
+                        .collect::<Result<Vec<_>, _>>()
+                        .and_then(|references| {
+                            runtime.hydrate(&binding, references, refresh, &cancel, deadline)
+                        })
+                        .map(|hydrated| (None, hydrated))
+                };
+                let _ = tx.send((index, result));
             }));
         }
         drop(tx);
-        for (index, result) in rx.iter() {
+        let mut items = HashMap::new();
+        while !remaining.is_empty() {
+            operation.check()?;
+            let Ok((index, result)) =
+                rx.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            else {
+                break;
+            };
+            if !remaining.remove(&index) {
+                return Err(SearchError::Protocol);
+            }
             let source = &mut draft.sources[index];
             match result {
-                Ok(mut page) => {
-                    if source.started
-                        && !page.next_cursor.is_empty()
-                        && page.next_cursor == source.next
-                    {
-                        return Err(SearchError::Protocol);
+                Ok((page, hydrated)) => {
+                    if let Some(mut page) = page {
+                        if source.started
+                            && !page.next_cursor.is_empty()
+                            && page.next_cursor == source.next
+                        {
+                            return Err(SearchError::Protocol);
+                        }
+                        draft.expiry = draft.expiry.min(page.expires_at_unix_ms as u64);
+                        draft.until = draft.until.min(
+                            Instant::now()
+                                + Duration::from_millis(draft.expiry.saturating_sub(now_ms()?)),
+                        );
+                        source.started = true;
+                        source.next = page.next_cursor;
+                        source.coverage = page.coverage.ok_or(SearchError::Protocol)?;
+                        let cache = page.cache.as_ref().ok_or(SearchError::Protocol)?;
+                        source.state.no_store |= cache.no_store;
+                        source.fresh_until = crate::runtime::freshness(cache)?;
+                        for candidate in &mut page.candidates {
+                            candidate.source_rank += source.rank_offset as f64;
+                        }
+                        source.rank_offset += page.candidates.len();
+                        source.pending = page.candidates;
                     }
-                    draft.expiry = draft.expiry.min(page.expires_at_unix_ms as u64);
-                    draft.until = draft.until.min(
-                        Instant::now()
-                            + Duration::from_millis(draft.expiry.saturating_sub(now_ms()?)),
-                    );
-                    source.started = true;
-                    source.next = page.next_cursor;
-                    source.coverage = page.coverage.ok_or(SearchError::Protocol)?;
-                    source.state.no_store |= page.cache.as_ref().is_some_and(|c| c.no_store);
                     if source.authority == ReadAuthority::RemoteOwner {
-                        apply_observation(
-                            &mut source.state,
-                            page.cache.as_ref().ok_or(SearchError::Protocol)?,
-                        )?;
+                        source.state = hydrated.state;
                         source.state.state = source.coverage.state;
                         source.state.extent = source.coverage.extent;
                     }
-                    source.fresh_until = crate::runtime::freshness(
-                        page.cache.as_ref().ok_or(SearchError::Protocol)?,
-                    )?;
-                    for candidate in &mut page.candidates {
-                        candidate.source_rank += source.rank_offset as f64;
-                    }
-                    source.rank_offset += page.candidates.len();
-                    source.pending = page.candidates;
+                    items.insert(index, hydrated.items);
                 }
                 Err(SearchError::SourceChanged) => return Err(SearchError::SourceChanged),
                 Err(error) => failed(source, &error),
             }
         }
-        operation.check()
+        for index in remaining {
+            failed(&mut draft.sources[index], &SearchError::Timeout);
+        }
+        operation.check()?;
+        Ok(items)
     }
 
     fn validate_visible(&self, response: &SearchResponse) -> Result<(), SearchError> {
@@ -837,6 +827,14 @@ impl<E: SearchExecutor> SearchRuntime<E> {
             return Err(SearchError::Protocol);
         }
         let state = binding.read_state()?;
+        let source = self.source(binding)?;
+        let kind = validate_resource(&resource)?;
+        if resource.content_revision.is_empty()
+            || !source.descriptor().kinds.contains(&(kind as i32))
+            || !namespace_allowed(source.descriptor(), &resource.authority_namespace)
+        {
+            return Err(SearchError::Protocol);
+        }
         let slots: Vec<_> = self
             .sessions
             .slots

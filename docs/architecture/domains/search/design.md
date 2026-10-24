@@ -188,15 +188,31 @@ suggestions 只选 Device，主动提交明确允许 Device 与当前 Station。
 所有来源并发共用最初 5 秒 deadline。候选、已发 identity、各来源 continuation
 和首次 expiry 由有界客户端 session 持有，opaque authenticated cursor
 仅引用 session。来源改变或到期拒绝旧 continuation，串行推进避免重复/丢失。
+每个来源在独立 worker 内完成 query → 当前授权 batch hydrate，复用核心
+`query_source`；已有未发候选直接进入该来源的 hydrate。不存在先等待全体
+query 再开始 hydrate 的全局阶段屏障。接收器使用绝对 deadline，保留原预算
+末尾 100ms 用于融合、签发与发布；未完成来源返回 timeout coverage，失败的
+候选窗口与 continuation 一并放弃，新 attempt 可重新查询。身份、水位变化
+仍拒绝整轮发布，不能以 partial 绕过原 owner 屏障。
 跨来源使用 rank 融合，不比较 raw score；来源失败独立报告 coverage，
 成功来源结果继续可用。读缓存与 session 候选共享总内容上限 8 MiB，
 沿既有 200 展示行、32 frames、640 items 上限约束 admission。
+融合前授权每来源至多 100 个候选，因此单轮最多 300 个引用，可能多于最终
+20 条结果。有效原域投影缓存继续复用，no-store 来源每个未发窗口重新核权；
+临时授权投影仅活在当前 operation，session 不保存正文，只给实际展示结果
+登记签发。RRF 分数、tie-break、胜出来源、最终页上限和成功窗口消费位置
+保持一致；拒绝的胜出对象不得借另一来源投影替代。该有界额外读取成本换取
+来源独立性，现场吞吐与内存仍须测量，不能据此宣称产品性能通过。
 
 响应使用 source state 向量与逐项 read validity；来源失效只遮蔽对应投影。
 全局 resolve 经受信 composition 的原域 opener registry，未知 binding 拒绝，
 不返回任意 URL。SocialComment 使用独立 comment ID 与 typed SocialPost parent；
 同一资源可在多个有界查询 session 中被签发；resolve 必须寻找匹配当前
 认证分区、原来源 binding/content/policy 水位、资源和有效期的签发记录。
+签发查找之前，共同 descriptor/resource validator 拒绝结构错误、未声明
+kind 或 namespace，并返回 `SEARCH_PROTOCOL`；合法但未签发、到期、被淘汰或
+原 owner 拒绝的对象仍返回不可用。该校验不读取正文、不授予读权，也不调用
+其他来源解析。域外资源类型继续沿封闭域错误合同拒绝。
 旧 session 中相同内容的记录不得遮蔽当前有效签发；仅存在旧签发仍拒绝，
 匹配后的原域 resolve 继续实时核权。
 原域打开接口取得历史目标帖和有界评论 anchor 窗口，返回由 Search 保留上下文。

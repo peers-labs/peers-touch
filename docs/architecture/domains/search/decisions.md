@@ -333,6 +333,11 @@
 
 **建议**：交互 query、后台 scan/extraction/embedding、重建分优先级且都有上限；UI 按需挂载，来源 worker 由授权/runtime 持有。先返回可用来源，慢源显示 partial。
 
+当前共享核心每来源独立完成 query 与授权 batch hydration，再按原 RRF 融合；
+已有候选的 continuation 只重核该未发窗口。全部来源共用最初 5 秒预算，
+绝对接收 deadline 保留 100ms 发布余量。失败来源报告独立 coverage，放弃其
+未发窗口和 continuation，不能让慢来源阻止已完成来源形成可见结果。
+
 ### Rationale
 
 **理由**：打开搜索页不应触发整库解析；关闭页面也不应丢更新/删除。来源生命周期是资源合同，UI lifetime 不是数据一致性机制。
@@ -341,7 +346,16 @@
 
 **替代**：每次 query 全量扫描或挂载 Applet 页面会放大延迟/内存；没有预算的独立后台队列容易占满设备。
 
+全来源 query 后统一 hydrate 的阶段屏障会让快来源等待慢来源耗尽预算。
+延长全局 deadline 不满足来源独立性；另建协调器会复制取消、授权和分页。
+当前复用 `query_source`，只替换共享 session 的扇出路径。
+
 ### Consequences
+
+每来源授权至多 100 个候选，最多三个来源；融合前的读取可能超过最终页默认
+20 条。有效投影缓存减少正文重复读取，no-store 窗口始终重新核权，临时正文
+不进入 session。RRF 胜出来源与成功分页消费规则保持不变。以慢 query/慢
+hydrate、混合分页、否定授权与双端原生 Journey 复核；完整现场性能未证明。
 
 **代价**：worker 需 checkpoint、quota、公平性、暂停与取消；资源与延迟阈值待实测。发现后台工作挤占交互时先修复调度/预算，不靠缩小用户承诺范围掩盖。
 

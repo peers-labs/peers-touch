@@ -40,6 +40,8 @@ struct Source {
     hydrates: AtomicUsize,
     resolves: AtomicUsize,
     delay: Duration,
+    hydration_delay: Duration,
+    repeat_first_at: Option<usize>,
     fail: bool,
     no_store: bool,
     lease_ms: i64,
@@ -68,6 +70,8 @@ impl Source {
             hydrates: AtomicUsize::new(0),
             resolves: AtomicUsize::new(0),
             delay: Duration::ZERO,
+            hydration_delay: Duration::ZERO,
+            repeat_first_at: None,
             fail: false,
             no_store: false,
             lease_ms: 0,
@@ -82,7 +86,7 @@ impl Source {
     fn resource(&self, index: usize) -> ResourceRef {
         ResourceRef {
             kind: "knowledge".into(),
-            id: if index == 0 {
+            id: if index == 0 || self.repeat_first_at == Some(index) {
                 "shared".into()
             } else {
                 format!("{}-{index:03}", self.descriptor.source_id)
@@ -187,6 +191,11 @@ impl SearchContributor for Source {
         ctx: &'a SearchExecutionContext,
     ) -> SourceFuture<'a, HydrationReply> {
         Box::pin(async move {
+            let until = Instant::now() + self.hydration_delay;
+            while Instant::now() < until {
+                ctx.check()?;
+                std::thread::sleep(Duration::from_millis(2));
+            }
             ctx.check()?;
             self.hydrates.fetch_add(1, Ordering::SeqCst);
             self.observation.fetch_add(1, Ordering::SeqCst);
@@ -350,6 +359,9 @@ fn fused_pages_preserve_unissued_candidates_and_resolve_only_issuing_source() {
     let first = runtime.query_all(&bindings, intent(), &cancel).unwrap();
     assert_eq!(first.items.len(), 20);
     assert_eq!(first.items[0].resource.as_ref().unwrap().id, "shared");
+    assert_eq!(first.items[0].source_id, "device");
+    assert_eq!(first.items[0].score, 2.0 / 61.0);
+    assert_eq!(first.items[1].score, 1.0 / 62.0);
     assert!(first.has_more);
     let warm = runtime.query_all(&bindings, intent(), &cancel).unwrap();
     assert_eq!(warm, first);
@@ -388,6 +400,35 @@ fn fused_pages_preserve_unissued_candidates_and_resolve_only_issuing_source() {
     assert!(runtime
         .resolve_all(&bindings, "device", forged, &cancel)
         .is_err());
+}
+
+#[test]
+fn new_source_pages_cannot_reissue_a_prior_pages_object() {
+    let runtime = SearchRuntime::<Executor>::default();
+    let mut source = Source::new("device", SearchScope::Device);
+    source.repeat_first_at = Some(100);
+    let bindings = vec![Binding::new(source)];
+    let mut seen = std::collections::HashSet::new();
+    let mut cursor = String::new();
+    for page_index in 0..8 {
+        let page = runtime
+            .query_all(
+                &bindings,
+                QueryIntent { cursor, ..intent() },
+                &CancelToken::new(),
+            )
+            .unwrap();
+        for item in page.items {
+            assert!(seen.insert(item.resource.unwrap().fusion_key()));
+        }
+        cursor = page.next_cursor;
+        if cursor.is_empty() {
+            break;
+        }
+        assert!(page_index < 7, "continuation must exhaust");
+    }
+    assert_eq!(seen.len(), 119);
+    assert_eq!(bindings[0].source.query_reads.load(Ordering::SeqCst), 2);
 }
 
 #[test]
@@ -548,16 +589,17 @@ fn slow_source_timeout_preserves_fast_source_within_total_budget() {
     let runtime = SearchRuntime::<Executor>::default();
     let mut slow = Source::new("station", SearchScope::Station);
     slow.delay = Duration::from_secs(10);
-    let bindings = vec![
-        Binding::new(Source::new("device", SearchScope::Device)),
-        Binding::new(slow),
-    ];
+    let mut device = Source::new("device", SearchScope::Device);
+    device.hydration_delay = Duration::from_millis(300);
+    let bindings = vec![Binding::new(device), Binding::new(slow)];
     let start = Instant::now();
     let page = runtime
         .query_all(&bindings, intent(), &CancelToken::new())
         .unwrap();
     assert!(start.elapsed() < Duration::from_millis(5100));
     assert_eq!(page.items.len(), 20);
+    assert!(page.items.iter().all(|item| item.source_id == "device"));
+    assert_eq!(bindings[0].source.hydrates.load(Ordering::SeqCst), 1);
     assert_eq!(
         page.coverage
             .iter()
@@ -566,6 +608,71 @@ fn slow_source_timeout_preserves_fast_source_within_total_budget() {
             .detail_key,
         "search.coverage.source_timeout"
     );
+}
+
+#[test]
+fn slow_hydration_does_not_block_another_sources_authorized_page() {
+    let runtime = SearchRuntime::<Executor>::default();
+    let mut slow = Source::new("station", SearchScope::Station);
+    slow.hydration_delay = Duration::from_secs(10);
+    let mut device = Source::new("device", SearchScope::Device);
+    device.hydration_delay = Duration::from_millis(300);
+    let bindings = vec![Binding::new(device), Binding::new(slow)];
+    let start = Instant::now();
+    let page = runtime
+        .query_all(&bindings, intent(), &CancelToken::new())
+        .unwrap();
+    assert!(start.elapsed() < Duration::from_millis(5100));
+    assert_eq!(page.items.len(), 20);
+    assert!(page.items.iter().all(|item| item.source_id == "device"));
+    assert_eq!(
+        page.coverage
+            .iter()
+            .find(|c| c.source_id == "station")
+            .unwrap()
+            .detail_key,
+        "search.coverage.source_timeout"
+    );
+}
+
+#[test]
+fn malformed_or_outside_descriptor_resolution_is_protocol_before_issuance() {
+    for direct in [false, true] {
+        let runtime = SearchRuntime::<Executor>::default();
+        let binding = Binding::new(Source::new("device", SearchScope::Device));
+        let cancel = CancelToken::new();
+        let resolve = |resource| {
+            if direct {
+                runtime.resolve(&binding, resource, &cancel)
+            } else {
+                runtime.resolve_all(std::slice::from_ref(&binding), "device", resource, &cancel)
+            }
+        };
+        let reference = binding.source.resource(1);
+        let mut forged = reference.clone();
+        forged.authority_namespace = "station:forged".into();
+        assert_eq!(resolve(forged), Err(SearchError::Protocol));
+        let mut lookalike = reference.clone();
+        lookalike.authority_namespace = "authority-lookalike".into();
+        assert_eq!(resolve(lookalike), Err(SearchError::Protocol));
+        let mut wrong_kind = reference.clone();
+        wrong_kind.kind = "social-post".into();
+        assert_eq!(resolve(wrong_kind), Err(SearchError::Protocol));
+        let mut malformed = reference.clone();
+        malformed.id.clear();
+        assert_eq!(resolve(malformed), Err(SearchError::Protocol));
+        assert_eq!(resolve(reference), Err(SearchError::ResourceUnavailable));
+        assert_eq!(binding.source.resolves.load(Ordering::SeqCst), 0);
+        let page = runtime
+            .query_all(std::slice::from_ref(&binding), intent(), &cancel)
+            .unwrap();
+        let reference = page.items[0].resource.clone().unwrap();
+        let mut forged = reference.clone();
+        forged.authority_namespace = "station:forged".into();
+        assert_eq!(resolve(forged), Err(SearchError::Protocol));
+        resolve(reference).unwrap();
+        assert_eq!(binding.source.resolves.load(Ordering::SeqCst), 1);
+    }
 }
 
 #[test]
