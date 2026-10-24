@@ -1,6 +1,8 @@
 package application
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strconv"
 	"strings"
 	"time"
@@ -19,8 +21,11 @@ const (
 )
 
 func publicSearchReadValidity(viewer, observation string) *searchpb.ReadValidity {
+	// Native bindings hash exactly the Actor PTID bytes; the multipart
+	// cursor/observation hash has separators and is a different contract.
+	viewerDigest := sha256.Sum256([]byte(viewer))
 	return &searchpb.ReadValidity{
-		ReadScope:          PublicSearchSourceID + ":actor:" + publicSearchHash([]byte(viewer)),
+		ReadScope:          PublicSearchSourceID + ":actor:" + hex.EncodeToString(viewerDigest[:]),
 		PolicyRevision:     "pg-snapshot:" + publicSearchHash([]byte(observation)),
 		OwnerCheckRequired: true,
 	}

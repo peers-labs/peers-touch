@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import json
+import sys
 import uuid
 from typing import Any
 
 from selenium.webdriver.common.keys import Keys
 
 from tooling.acceptance.core import (
-    AcceptanceGate, GateError, RuntimeReuseContract, SuiteRuntimeAction,
+    AcceptanceGate, EphemeralGateClient, GateError, RuntimeReuseContract, SuiteRuntimeAction,
     SuiteRuntimeLedger, call_async_harness,
 )
 from tooling.acceptance.gates.chat.device_search_runner import DeviceSearchGate
@@ -33,6 +34,9 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
     phase = "Social content Search Desktop"
     bom = ("SOCIAL-CONTENT-FIND-OPEN",)
     spec = ("social-content-search",)
+    # This Suite proves mixed-source retrieval; the Chat history Gate retains
+    # its 55-message fixture and its original-window assertions.
+    history_count = 21
 
     def moments(self, actor: str, method: str, payload: dict) -> dict:
         return call_async_harness(
@@ -60,6 +64,22 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
                     if item["resource"]["id"] == resource_id)
 
     def seed_social(self) -> None:
+        # Social content keys belong to the original Secure Content owner.
+        # Messaging device enrollment does not establish this fixture readiness.
+        readiness = {}
+        for actor in ("alice", "bob"):
+            prepared = call_async_harness(
+                self.clients[actor], "prepareHistoricalRecoveryEpoch", {},
+                namespace="secure-content-fixture", script_timeout=60,
+            )
+            if any(not isinstance(prepared.get(key), int)
+                   or isinstance(prepared[key], bool) or prepared[key] < 1
+                   for key in ("recoveryEpoch", "recoveryPreKeyAvailable")):
+                raise GateError(f"{actor} original Social content keys are unavailable")
+            readiness[actor] = {key: prepared[key] for key in (
+                "recoveryEpoch", "recoveryPreKeyAvailable",
+            )}
+        self.report.runtime["search"]["socialKeyReadiness"] = readiness
         self.public_text = f"{self.query} 公开帖子"
         self.private_text = f"{self.query} 私密帖子"
         self.public_comment_text = f"{self.query} 历史公开评论"
@@ -202,7 +222,9 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
                          and any(copy in self.receiver.find_element(".pt-search-footer").text
                                  for copy in ("暂不可用", "unavailable")))
         self.report.runtime["search"]["stationOutage"] = (
-            SimulatorSocialGate._restart_source_bound_station(during_outage=unavailable)
+            SimulatorSocialGate._restart_source_bound_station(
+                during_outage=unavailable, capability_client=self.capability_client,
+            )
         )
         self.select("social")
         old = self.item(self.private_post)
@@ -259,7 +281,11 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
 
     def run(self) -> dict[str, Any]:
         ledger = None
+        self.capability_client: EphemeralGateClient | None = None
         try:
+            self.capability_client = EphemeralGateClient.from_environment()
+            if self.capability_client is None:
+                raise GateError("Social Search requires its source-bound outage capability")
             version = self.step("station.identity", lambda: read_station_version(self.station_url))
             self.station_peer_id = str(version.get("peer_id") or version.get("station_peer_id") or "")
             self.step("fixture.reset", self.verify_fixture_ready)
@@ -293,7 +319,22 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
             for actor in self.clients:
                 self.collect_client_evidence(actor)
         finally:
+            primary_error = sys.exc_info()[1]
             self.report.runtime["cleanup"] = self.cleanup_clients()
+            if self.capability_client is not None:
+                try:
+                    self.capability_client.close()
+                except Exception as error:
+                    self.report.runtime["cleanup"]["capabilityChannelClosed"] = False
+                    self.report.runtime["cleanup"]["cleanupErrors"].append(
+                        f"Social Search capability close failed: {type(error).__name__}"
+                    )
+                    if primary_error is None:
+                        raise
+                else:
+                    self.report.runtime["cleanup"]["capabilityChannelClosed"] = True
+                finally:
+                    self.capability_client = None
             if ledger:
                 ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
                 self.report.runtime["suiteRuntime"] = ledger.report()

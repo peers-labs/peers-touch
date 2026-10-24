@@ -141,6 +141,10 @@ No enforceable public read lease exists here. Every cache metadata object has
 `owner_check_required=true`, with an actor-bound read scope. Hydrate and resolve
 recheck the original owner. The client must carry `CacheMetadata.no_store` into
 its generated `SourceReadState.no_store` projection and renderer behavior.
+The public read scope is `station.social.public:actor:<digest>`, where `digest`
+is lowercase hexadecimal SHA-256 of the Actor PTID's exact UTF-8 bytes.
+Desktop, Mobile and Station use the same bytes without multipart separators;
+cursor and observation hashes retain their independent encoding.
 Neither a successful HTTP response nor a local client lock linearizes a
 concurrent Station mutation. SQLite fixtures never masquerade as a production
 revision provider.

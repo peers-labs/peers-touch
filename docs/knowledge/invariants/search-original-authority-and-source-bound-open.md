@@ -22,6 +22,8 @@ owns:
   - apps/station/app/subserver/social/application/public_read.go
   - apps/station/app/subserver/social/application/public_search_service.go
   - apps/station/app/subserver/social/application/public_search_hydration.go
+  - apps/station/app/subserver/social/application/public_search_projection.go
+  - apps/station/app/subserver/social/application/public_search_test.go
   - apps/station/app/subserver/social/application/private_read_policy.go
   - apps/station/app/subserver/social/infrastructure/private_read_policy.go
 referenced-by: []
@@ -74,6 +76,9 @@ original owner makes the same rules apply to ordinary point reads and Search.
   reauthorization and source-bound resolution.
 - Read the source adapter's generated `SourceReadState` mapping and confirm
   `no_store` survives IPC and presentation.
+- `TestPublicSearchReadScopeMatchesNativeBinding` checks the native read-scope
+  byte contract defined in `docs/station/social-search.md`; changing the
+  multipart cursor hash must not change that actor-bound scope.
 - Native UI proof must search, open the original post/comment, focus its exact
   anchor, return with the prior query and remove revoked content. Source tests
   alone leave that journey `UNPROVEN`.

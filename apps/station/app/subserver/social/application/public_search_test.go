@@ -11,6 +11,25 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestPublicSearchReadScopeMatchesNativeBinding(t *testing.T) {
+	const actor = "scope-contract-actor"
+	// SHA-256 of the UTF-8 Actor PTID, shared by Desktop and Mobile bindings.
+	const expected = "station.social.public:actor:61cf4d4c8c73db95ca3f0c4de9f365ce2031217e0aa144b39e705ff24a3670cf"
+	for _, observation := range []string{"first-observation", "later-observation"} {
+		cache := publicSearchCache(actor, observation, "validator")
+		if cache.ReadValidity.ReadScope != expected {
+			t.Fatalf("native read scope mismatch: %s", cache.ReadValidity.ReadScope)
+		}
+		if !cache.NoStore || !cache.ReadValidity.OwnerCheckRequired ||
+			cache.ReadValidity.LeaseUntilUnixMs != 0 || cache.ContentFreshUntilUnixMs != 0 {
+			t.Fatalf("read scope granted an offline lease: %+v", cache)
+		}
+	}
+	if publicSearchReadValidity("another-actor", "first-observation").ReadScope == expected {
+		t.Fatal("read scope is not actor-bound")
+	}
+}
+
 func TestPublicSearchFilteredCursorProgressAndBinding(t *testing.T) {
 	f := newFixture(t)
 	seedPublicReadRows(t, f, 130)

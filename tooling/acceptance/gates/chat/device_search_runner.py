@@ -70,6 +70,7 @@ class DeviceSearchGate(NativeTwoClientGate):
     phase = "chat-device-search"
     bom = ("SEARCH-DEVICE-FIND-OPEN",)
     spec = ("chat-device-search",)
+    history_count = 55
 
     def __init__(self) -> None:
         selected = selected_native_runtime(self.gate_id)
@@ -320,10 +321,10 @@ class DeviceSearchGate(NativeTwoClientGate):
         if not self.message or not self.reply:
             raise GateError("Search seed requires real committed message identities")
         filler = async_harness(self.clients["bob"], "sendInteractionMessageBatch", {
-            **payload, "prefix": f"filler-{self.token}", "count": 55,
+            **payload, "prefix": f"filler-{self.token}", "count": self.history_count,
         }, timeout=180)
-        if len(filler.get("messageIds", [])) != 55:
-            raise GateError("Search history must exceed the latest message window")
+        if len(filler.get("messageIds", [])) != self.history_count:
+            raise GateError("Search history fixture did not commit every required message")
         # Sender commits do not prove the receiver has synchronized the batch.
         # This native-owner receipt is Fixture readiness; Search still uses UI.
         self.report.runtime["search"]["resources"].update({
