@@ -55,6 +55,10 @@ Open MUST consume a reference issued by the current source session and its
 allowlisted resolver binding. Social comments retain their own canonical ID,
 typed parent and exact comment anchor. A caller URL, source ID alone, first
 timeline page or first comment page cannot establish target identity.
+An older query session MUST NOT shadow a current valid issuance of the same
+resource. Search design §4.1 owns the matching rule: all current binding,
+identity, resource and expiry checks still apply, followed by original-owner
+authorization. Finding only an older issuance cannot grant access.
 Original-owner invalidations hide the affected source immediately; they do
 not expose stale content while another source completes.
 Query invalidation MUST NOT cancel an Open because its original owner is
@@ -103,6 +107,9 @@ and panics; the outer IPC join can then report only `search cancelled`.
   repeated original commits, real content changes and denied-parent replay.
 - Mobile `secure_content::store::search` tests cover the same policy and
   original identity constraints.
+- Search Core `current_issuance_survives_older_sessions_of_the_same_resource`
+  covers overlapping sessions, rejection before a current issuance, and fresh
+  owner denial after a valid issuance.
 - Station `TestMomentReadPolicyOriginalAuthority` covers post/comment policy
   and parent revocation; `public_search_test.go` covers validator
   reauthorization and source-bound resolution.

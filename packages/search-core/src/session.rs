@@ -846,38 +846,40 @@ impl<E: SearchExecutor> SearchRuntime<E> {
             .filter(|s| s.partition == binding.partition() && s.until > Instant::now())
             .cloned()
             .collect();
-        let mut issued = None;
-        for slot in slots {
-            if let Ok(session) = slot.value.try_lock() {
-                if now_ms()? >= session.expiry || now_ms()? < session.created {
-                    continue;
-                }
-                if let Some(value) = session.issued.get(&association(source_id, &resource)) {
-                    issued = Some(value.clone());
-                    break;
-                }
-            }
-        }
-        let issued = issued.ok_or(SearchError::ResourceUnavailable)?;
-        let mut expected = issued.source.clone();
-        expected.no_store = state.no_store;
-        let same_binding = issued.authority == binding.read_authority()
-            && issued.binding_generation == binding.source_revision()
-            && match issued.authority {
-                ReadAuthority::LocalSnapshot => expected == state,
-                ReadAuthority::RemoteOwner => {
-                    state.no_store
-                        && expected.source_id == state.source_id
-                        && expected.binding_id == state.binding_id
-                        && expected.read_scope == state.read_scope
-                }
+        let association = association(source_id, &resource);
+        let now = now_ms()?;
+        let issued = slots.iter().any(|slot| {
+            let Ok(session) = slot.value.try_lock() else {
+                return false;
             };
-        if !same_binding || issued.resource != resource || issued.until <= Instant::now() {
-            return Err(SearchError::ResourceUnavailable);
-        }
-        if !issued.validity.owner_check_required
-            && issued.validity.lease_until_unix_ms <= now_ms()? as i64
-        {
+            if now >= session.expiry || now < session.created {
+                return false;
+            }
+            let Some(issued) = session.issued.get(&association) else {
+                return false;
+            };
+            let mut expected = issued.source.clone();
+            expected.no_store = state.no_store;
+            // An old query may contain the same unchanged resource. It must
+            // not shadow an issuance matching the current owner's snapshot.
+            let same_binding = issued.authority == binding.read_authority()
+                && issued.binding_generation == binding.source_revision()
+                && match issued.authority {
+                    ReadAuthority::LocalSnapshot => expected == state,
+                    ReadAuthority::RemoteOwner => {
+                        state.no_store
+                            && expected.source_id == state.source_id
+                            && expected.binding_id == state.binding_id
+                            && expected.read_scope == state.read_scope
+                    }
+                };
+            same_binding
+                && issued.resource == resource
+                && issued.until > Instant::now()
+                && (issued.validity.owner_check_required
+                    || issued.validity.lease_until_unix_ms > now as i64)
+        });
+        if !issued {
             return Err(SearchError::ResourceUnavailable);
         }
         binding.publish(|| cancel.check())?;

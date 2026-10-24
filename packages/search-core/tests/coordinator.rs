@@ -48,6 +48,7 @@ struct Source {
     observation: AtomicUsize,
     wrong_scope: AtomicBool,
     suggestions: bool,
+    revision: String,
 }
 impl Source {
     fn new(id: &str, scope: SearchScope) -> Self {
@@ -75,6 +76,7 @@ impl Source {
             observation: AtomicUsize::new(0),
             wrong_scope: AtomicBool::new(false),
             suggestions: true,
+            revision: "one".into(),
         }
     }
     fn resource(&self, index: usize) -> ResourceRef {
@@ -98,7 +100,7 @@ impl Source {
                     self.observation.load(Ordering::SeqCst)
                 )
             } else {
-                "one".into()
+                self.revision.clone()
             },
             validator: "one".into(),
             content_fresh_until_unix_ms: now_ms().unwrap() as i64 + 60_000,
@@ -838,6 +840,64 @@ fn remote_scope_retention_and_lease_claims_are_rejected_without_cross_source_los
             assert!(page.items.iter().all(|i| i.source_id == "device"));
             assert_eq!(bindings[1].source.hydrates.load(Ordering::SeqCst), 0);
         }
+    }
+}
+
+#[test]
+fn current_issuance_survives_older_sessions_of_the_same_resource() {
+    for sample in 0..12 {
+        let runtime = SearchRuntime::<Executor>::default();
+        let mut old_source = Source::new("device", SearchScope::Device);
+        old_source.no_store = true;
+        let old = Binding::new(old_source);
+        for query in 0..8 {
+            runtime
+                .query_all(
+                    std::slice::from_ref(&old),
+                    QueryIntent {
+                        text: format!("old {sample} {query}"),
+                        ..intent()
+                    },
+                    &CancelToken::new(),
+                )
+                .unwrap();
+        }
+        let mut source = Source::new("device", SearchScope::Device);
+        source.no_store = true;
+        source.revision = "two".into();
+        let mut current = Binding::new(source);
+        current.revision = "two".into();
+        let bindings = std::slice::from_ref(&current);
+        let unissued = current.source.resource(0);
+        assert_eq!(
+            runtime.resolve_all(bindings, "device", unissued, &CancelToken::new()),
+            Err(SearchError::ResourceUnavailable)
+        );
+        assert_eq!(current.source.resolves.load(Ordering::SeqCst), 0);
+        let presented = runtime
+            .query_all(
+                bindings,
+                QueryIntent {
+                    text: format!("current {sample}"),
+                    ..intent()
+                },
+                &CancelToken::new(),
+            )
+            .unwrap();
+        assert_eq!(presented.sources[0].source_revision, "two");
+        assert!(!presented.items.is_empty());
+        let resource = presented.items[0].resource.clone().unwrap();
+        let resolved = runtime
+            .resolve_all(bindings, "device", resource.clone(), &CancelToken::new())
+            .unwrap();
+        assert_eq!(resolved.resource, Some(resource.clone()));
+        assert_eq!(current.source.resolves.load(Ordering::SeqCst), 1);
+        current.source.deny_reads.store(true, Ordering::SeqCst);
+        assert_eq!(
+            runtime.resolve_all(bindings, "device", resource, &CancelToken::new()),
+            Err(SearchError::ResourceUnavailable)
+        );
+        assert_eq!(current.source.resolves.load(Ordering::SeqCst), 2);
     }
 }
 

@@ -195,6 +195,10 @@ suggestions 只选 Device，主动提交明确允许 Device 与当前 Station。
 响应使用 source state 向量与逐项 read validity；来源失效只遮蔽对应投影。
 全局 resolve 经受信 composition 的原域 opener registry，未知 binding 拒绝，
 不返回任意 URL。SocialComment 使用独立 comment ID 与 typed SocialPost parent；
+同一资源可在多个有界查询 session 中被签发；resolve 必须寻找匹配当前
+认证分区、原来源 binding/content/policy 水位、资源和有效期的签发记录。
+旧 session 中相同内容的记录不得遮蔽当前有效签发；仅存在旧签发仍拒绝，
+匹配后的原域 resolve 继续实时核权。
 原域打开接口取得历史目标帖和有界评论 anchor 窗口，返回由 Search 保留上下文。
 查询与原对象打开分别持有操作生命周期。来源失效立即遮蔽查询投影，但原域
 打开的读取/回填不取消自身；打开仍由原域当前读权、结果可用性及身份/用户
