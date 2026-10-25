@@ -255,6 +255,9 @@ impl ReadCache {
         if let Ok(mut state) = self.state.lock() {
             for flight in state.flights.values_mut() {
                 if matches(&flight.key) {
+                    log::debug!(target: "search",
+                        "Search source changed phase=cache_invalidation source={}",
+                        flight.key.source);
                     flight.cancel.cancel();
                     flight.result = Some(Err(SearchError::SourceChanged));
                 }

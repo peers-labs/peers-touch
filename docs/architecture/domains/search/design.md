@@ -514,6 +514,10 @@ Session/actor/Station/Federation 变化、锁定、模块卸载、权限事件�
 远端权限变化在断网设备无法瞬时得知。离线可读性遵循原域受保护缓存/有效授权租约政策；显示本机已同步范围与时间，不宣称全局最新撤权。已知撤权立即阻断，过期租约/不可确定的私密读取 fail closed；具体离线保留期限由原域确认。
 
 日志和指标不记录 query、snippet、正文、向量、token。记录匿名意图 ID、来源耗时/状态、数量语义、coverage lag、drop-stale/cancel 和权限否定事件；原始日志脱敏/留存遵循现有策略。
+共享核心在原失效分支记录 source 与 phase，版本变化只记录布尔标志，不输出
+实际版本、read scope、资源或认证分区。Mobile 使用 Tauri 官方日志适配器将
+严格限定的 `search` target 写入原生系统日志，不开启其他模块或正文文件日志；
+Android/iOS 的原生输出由该 SDK 适配。诊断不改变失败分类、发布屏障或读预算。
 
 ## 9. Ask 与 Agent 集成
 

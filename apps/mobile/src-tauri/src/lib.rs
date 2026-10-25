@@ -29,6 +29,16 @@ pub fn run() {
     let mobile_platform = MobilePlatform::from_compiled_target()
         .expect("failed to resolve the Mobile release target");
     let builder = tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Off)
+                .level_for("search", log::LevelFilter::Debug)
+                .filter(|metadata| metadata.target() == "search")
+                .targets([tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                )])
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_peers_platform_permissions::init())

@@ -316,10 +316,21 @@ impl<R: Runtime> SearchBinding for Binding<R> {
                                         if source.state == SourceState::Unavailable as i32 {
                                             publish()
                                         } else {
-                                            reader.with_search_revision(
+                                            let entered = std::cell::Cell::new(false);
+                                            let result = reader.with_search_revision(
                                                 &source.source_revision,
-                                                publish,
-                                            )
+                                                || {
+                                                    entered.set(true);
+                                                    publish()
+                                                },
+                                            );
+                                            if !entered.get()
+                                                && matches!(result, Err(SearchError::SourceChanged))
+                                            {
+                                                log::debug!(target: "search",
+                                                    "Search source changed phase=original_revision source=device.social");
+                                            }
+                                            result
                                         }
                                     });
                             }
@@ -341,10 +352,21 @@ impl<R: Runtime> SearchBinding for Binding<R> {
                                     if source.state == SourceState::Unavailable as i32 {
                                         publish_private()
                                     } else {
-                                        engine.with_search_revision(
+                                        let entered = std::cell::Cell::new(false);
+                                        let result = engine.with_search_revision(
                                             &source.source_revision,
-                                            publish_private,
-                                        )
+                                            || {
+                                                entered.set(true);
+                                                publish_private()
+                                            },
+                                        );
+                                        if !entered.get()
+                                            && matches!(result, Err(SearchError::SourceChanged))
+                                        {
+                                            log::debug!(target: "search",
+                                                "Search source changed phase=original_revision source=device.messaging");
+                                        }
+                                        result
                                     }
                                 });
                         }

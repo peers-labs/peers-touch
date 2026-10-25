@@ -541,6 +541,7 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                             }
                     })
             {
+                log::debug!(target: "search", "Search source changed phase=continuation_snapshot");
                 return Err(SearchError::SourceChanged);
             }
             session
@@ -775,7 +776,12 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                     }
                     items.insert(index, hydrated.items);
                 }
-                Err(SearchError::SourceChanged) => return Err(SearchError::SourceChanged),
+                Err(SearchError::SourceChanged) => {
+                    log::debug!(target: "search",
+                        "Search source changed phase=query_hydration source={}",
+                        source.state.source_id);
+                    return Err(SearchError::SourceChanged);
+                }
                 Err(error) => failed(source, &error),
             }
         }
@@ -802,6 +808,12 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                 || validity.policy_revision != source.policy_revision
                 || (!validity.owner_check_required && validity.lease_until_unix_ms <= now)
             {
+                log::debug!(target: "search",
+                    "Search source changed phase=visible_result source={} scope_changed={} policy_changed={} lease_expired={}",
+                    source.source_id,
+                    validity.read_scope != source.read_scope,
+                    validity.policy_revision != source.policy_revision,
+                    !validity.owner_check_required && validity.lease_until_unix_ms <= now);
                 return Err(SearchError::SourceChanged);
             }
         }

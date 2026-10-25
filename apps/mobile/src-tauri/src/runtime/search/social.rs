@@ -118,6 +118,8 @@ impl<R: Runtime> PublicReader<R> {
         ctx.check()?;
         let status = response.status().as_u16();
         if !(200..300).contains(&status) {
+            log::debug!(target: "search",
+                "Search original owner rejected read source=station.social.public operation={path} status={status}");
             return Err(match status {
                 400 | 422 => SearchError::InvalidQuery,
                 401 | 403 => SearchError::Cancelled,

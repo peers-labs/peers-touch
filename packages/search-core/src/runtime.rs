@@ -622,6 +622,9 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                         .as_ref()
                         .is_some_and(|previous| previous != &current)
                     {
+                        log::debug!(target: "search",
+                            "Search source changed phase=mixed_hydration source={}",
+                            binding.source_id());
                         return Err(SearchError::SourceChanged);
                     }
                     observed = Some(current);
@@ -700,6 +703,9 @@ pub(crate) fn validate_metadata(
             return Err(SearchError::Protocol);
         }
         if validity.read_scope != state.read_scope {
+            log::debug!(target: "search",
+                "Search source changed phase=remote_metadata_scope source={}",
+                state.source_id);
             return Err(SearchError::SourceChanged);
         }
         return Ok(());
@@ -709,6 +715,13 @@ pub(crate) fn validate_metadata(
         || validity.policy_revision != state.policy_revision
         || (!validity.owner_check_required && validity.lease_until_unix_ms <= now_ms()? as i64)
     {
+        log::debug!(target: "search",
+            "Search source changed phase=local_metadata source={} content_changed={} scope_changed={} policy_changed={} lease_expired={}",
+            state.source_id,
+            metadata.source_revision != state.source_revision,
+            validity.read_scope != state.read_scope,
+            validity.policy_revision != state.policy_revision,
+            !validity.owner_check_required && validity.lease_until_unix_ms <= now_ms()? as i64);
         return Err(SearchError::SourceChanged);
     }
     Ok(())
