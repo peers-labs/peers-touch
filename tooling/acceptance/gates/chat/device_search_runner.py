@@ -186,18 +186,22 @@ class DeviceSearchGate(NativeTwoClientGate):
                 ])),
             };
             result.opacity = getComputedStyle(modal).opacity;
+            result.motionActive = false;
             let visible = rect.width > 0 && rect.height > 0
                 && rect.left >= 0 && rect.top >= 0
                 && rect.right <= innerWidth && rect.bottom <= innerHeight;
             for (let node = field; node && visible; node = node.parentElement) {
                 const style = getComputedStyle(node);
+                result.motionActive ||= node.getAnimations().some(
+                    animation => animation.pending || animation.playState === 'running',
+                );
                 visible = style.display !== 'none' && style.visibility === 'visible'
                     && Number(style.opacity) >= 0.99;
             }
             const hit = document.elementFromPoint(
                 rect.left + rect.width / 2, rect.top + rect.height / 2,
             );
-            result.painted = visible && !modal.className.includes('prepare')
+            result.painted = visible && !result.motionActive && !modal.className.includes('prepare')
                 && !!hit && modal.contains(hit);
             return result;
         """)

@@ -134,8 +134,9 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
         if rendering.get("searchOpen"):
             require(
                 "prepare" not in rendering.get("modalClass", "")
+                and rendering.get("motionActive") is False
                 and float(rendering.get("opacity", "0")) >= 0.99,
-                f"{name} cannot use an invisible modal animation frame",
+                f"{name} cannot use an invisible or moving modal animation frame",
             )
         for suffix in ("screenshot", "dom"):
             ref = ArtifactRef.from_dict(ui[name].get(suffix))
