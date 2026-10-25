@@ -3,7 +3,7 @@ import { SearchErrorCode, SearchKind, SourceState, type SearchReadState, type Se
 import { RustCommandException } from '../services/desktop_api';
 import {
   captureSearchIdentity, concealChangedSearchSources, resourceIdentity, searchService,
-  searchResponseCurrent, searchResponseDeadline, sourceStateIdentity,
+  searchResponseCurrent, searchResponseDeadline, searchRowKey, sourceStateIdentity,
 } from '../services/search';
 import { useSearchStore, type SearchContentFilter, type SearchMode, type SearchTraversal } from '../store/search';
 
@@ -93,35 +93,23 @@ export function clearSearchQueries(): void {
   client.clear();
   ownerState = null;
   stateFlight = null;
-  useSearchStore.setState({ traversal: null });
+  useSearchStore.setState({ traversal: null, selectedKey: null, scrollTop: 0 });
   hide();
-}
-
-function rowKey(item: SearchResponse['items'][number]): string {
-  return JSON.stringify([resourceIdentity(item.resource), item.resource?.anchor]);
 }
 
 function presentationPosition(keys: string[], previousKeys: string[]) {
   const view = useSearchStore.getState();
   const stable = keys.length >= previousKeys.length
     && previousKeys.every((key, index) => key === keys[index]);
-  const selectedKey = previousKeys[view.selectedIndex];
-  const selectedIndex = selectedKey ? keys.indexOf(selectedKey) : -1;
   return {
-    selectedIndex: Math.max(0, selectedIndex),
-    cursorEngaged: view.cursorEngaged && selectedIndex >= 0,
+    selectedKey: view.selectedKey && keys.includes(view.selectedKey) ? view.selectedKey : null,
     scrollTop: stable ? view.scrollTop : 0,
   };
 }
 
 function conceal(response: SearchResponse | null): void {
-  const view = useSearchStore.getState();
-  const keys = response?.items.map(rowKey) ?? [];
-  const previousKeys = view.response?.items.map(rowKey) ?? view.traversal?.rowKeys ?? [];
-  useSearchStore.setState({
-    response, ...presentationPosition(keys, previousKeys),
-    traversal: view.traversal ? { ...view.traversal, rowKeys: keys } : null,
-  });
+  // Temporary loss of read authority is not a qualified empty-page observation.
+  useSearchStore.setState({ response });
 }
 
 export function invalidateSearchSources(sourceIds: readonly string[]): boolean {
@@ -209,7 +197,7 @@ function publish(frame: Frame): void {
   useSearchStore.setState({
     response: frame.response, displayedQuery: frame.query, displayedMode: frame.mode,
     displayedFilter: frame.filter, traversal: frame.traversal,
-    ...(changed ? { selectedIndex: 0, cursorEngaged: false, scrollTop: 0 }
+    ...(changed ? { selectedKey: null, scrollTop: 0 }
       : presentationPosition(frame.traversal.rowKeys, context.rowKeys)),
   });
   if (expiryTimer !== null) clearTimeout(expiryTimer);
@@ -323,7 +311,8 @@ export async function runSearchQuery(locale: string, refresh = false, more = fal
             query, mode, filter: view.contentFilter, response: value,
             traversal: {
               identity, query, mode, filter: view.contentFilter, locale, ordinal,
-              noStore: value.sources.some(source => source.noStore), rowKeys: value.items.map(rowKey),
+              noStore: value.sources.some(source => source.noStore),
+              rowKeys: value.items.map(item => searchRowKey(item.resource)),
             },
           });
           if (ordinal + 1 >= MAX_TRAVERSAL_PAGES) response = { ...response, hasMore: false, nextCursor: '' };

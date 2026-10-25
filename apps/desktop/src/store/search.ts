@@ -28,8 +28,7 @@ export interface SearchState {
   traversal: SearchTraversal | null;
   errorKey: string | null;
   opening: boolean;
-  selectedIndex: number;
-  cursorEngaged: boolean;
+  selectedKey: string | null;
   scrollTop: number;
   originPage: Page;
   returnAvailable: boolean;
@@ -41,7 +40,7 @@ export const emptySearchState = (): SearchState => ({
   traversal: null,
   displayedQuery: '', displayedMode: 'suggest', stalled: false,
   contentFilter: 'all', displayedFilter: 'all',
-  errorKey: null, opening: false, selectedIndex: 0, cursorEngaged: false,
+  errorKey: null, opening: false, selectedKey: null,
   scrollTop: 0, originPage: 'chat', returnAvailable: false,
 });
 

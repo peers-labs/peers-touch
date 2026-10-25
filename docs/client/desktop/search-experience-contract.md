@@ -51,6 +51,12 @@ items. Partial results do not become reusable complete cache entries.
 Resource row identity uses authority, object kind/id and navigation anchor,
 independent of mutable content revision. Same-session close/open restores
 readable data and scroll; it cannot bypass native validity checks.
+The store retains one selected row key; the overlay derives its rendered index.
+Temporary source concealment changes visible content only. It preserves the
+last qualified traversal, selected key and scroll, and DOM scroll clamping
+cannot overwrite that context. User selection among remaining readable rows
+remains authoritative. A qualified new intent resets context; a qualified
+same-intent page clears selection only if the selected key actually disappeared.
 
 ## Regression journey
 

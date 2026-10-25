@@ -6,7 +6,7 @@ import { ArrowUpRight, CircleSlash, Hash, Loader2, Lock, MessageCircle, Newspape
 import { SearchKind, SearchZone, SourceState, type ResultItem } from '../../gen/proto/domain/search/search_pb';
 import { useSearchStore } from '../../store/search';
 import { searchActions } from '../../runtimes/searchRuntime';
-import { resourceIdentity } from '../../services/search';
+import { searchRowKey } from '../../services/search';
 import type { Navigation } from '../../types/navigation';
 import { SEARCH_FUNCTIONS, openSearchFunction, type SearchFunction } from './functions';
 import { SearchResultMeta } from './SearchResultMeta';
@@ -14,14 +14,17 @@ import './SearchOverlay.css';
 
 type Row = { type: 'content'; item: ResultItem } | { type: 'function'; item: SearchFunction };
 
+function rowKey(row: Row): string {
+  return row.type === 'function' ? `function:${row.item.id}` : searchRowKey(row.item.resource);
+}
+
 export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   const { t } = useTranslation('search');
   const { token } = theme.useToken();
   const view = useSearchStore(useShallow(state => ({
     query: state.query, mode: state.mode, status: state.status, response: state.response,
     displayedQuery: state.displayedQuery, displayedMode: state.displayedMode, stalled: state.stalled,
-    errorKey: state.errorKey, opening: state.opening, selectedIndex: state.selectedIndex,
-    cursorEngaged: state.cursorEngaged,
+    errorKey: state.errorKey, opening: state.opening, selectedKey: state.selectedKey,
     contentFilter: state.contentFilter, displayedFilter: state.displayedFilter,
   })));
   const inputRef = useRef<HTMLInputElement>(null);
@@ -37,6 +40,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   const rows: Row[] = useMemo(() => view.mode === 'functions'
     ? functions.map(item => ({ type: 'function', item }))
     : (view.response?.items ?? []).map(item => ({ type: 'content', item })), [view.mode, functions, view.response]);
+  const selectedIndex = rows.findIndex(row => rowKey(row) === view.selectedKey);
   const displayedQuery = view.mode === 'functions' ? view.query : view.displayedQuery;
   const initial = !displayedQuery && view.mode !== 'functions';
   const draftMatches = view.query.trim() === view.displayedQuery && view.contentFilter === view.displayedFilter;
@@ -53,12 +57,13 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     if (bodyRef.current) bodyRef.current.scrollTop = useSearchStore.getState().scrollTop;
   }, [view.response]);
   useEffect(() => {
-    if (!view.cursorEngaged) return;
-    bodyRef.current?.querySelector(`#pt-search-option-${view.selectedIndex}`)?.scrollIntoView({ block: 'nearest' });
-  }, [view.selectedIndex, view.cursorEngaged]);
+    if (selectedIndex < 0) return;
+    bodyRef.current?.querySelector(`#pt-search-option-${selectedIndex}`)?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIndex, view.selectedKey]);
 
   async function openRow(row: Row): Promise<void> {
     if (view.opening) return;
+    useSearchStore.setState({ selectedKey: rowKey(row) });
     if (row.type === 'function') {
       navigating.current = true;
       searchActions.close();
@@ -76,15 +81,15 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       const delta = event.key === 'ArrowDown' ? 1 : -1;
+      const row = rows[selectedIndex >= 0
+        ? Math.max(0, Math.min(rows.length - 1, selectedIndex + delta)) : 0];
       useSearchStore.setState({
-        cursorEngaged: true,
-        selectedIndex: view.cursorEngaged
-          ? Math.max(0, Math.min(rows.length - 1, view.selectedIndex + delta)) : 0,
+        selectedKey: row ? rowKey(row) : null,
       });
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      const row = view.mode === 'functions' || (view.cursorEngaged && draftMatches)
-        ? rows[view.selectedIndex] : undefined;
+      const row = view.mode === 'functions' ? rows[Math.max(0, selectedIndex)]
+        : draftMatches ? rows[selectedIndex] : undefined;
       if (row) void openRow(row);
       else if (view.mode !== 'functions' && view.query.trim()) searchActions.submit();
     } else if (event.key === 'Escape') {
@@ -100,11 +105,11 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     const detail = row.type === 'function' ? t(row.item.detailKey) : row.item.snippet;
     const Icon = isFunction ? Wrench : content?.kind === SearchKind.CONVERSATION ? Hash
       : content?.kind === SearchKind.SOCIAL_POST || content?.kind === SearchKind.SOCIAL_COMMENT ? Newspaper : MessageCircle;
-    const selected = view.cursorEngaged && index === view.selectedIndex;
+    const selected = index === selectedIndex;
     const zoneKey = content?.zone === SearchZone.STATION ? 'search.zone.station'
       : content?.zone === SearchZone.FEDERATION ? 'search.zone.federation' : 'search.zone.device';
     return (
-      <button key={row.type === 'function' ? row.item.id : resourceIdentity(row.item.resource)}
+      <button key={rowKey(row)}
         type="button" className={`pt-search-row${selected ? ' active' : ''}`}
         data-resource-id={content?.resource?.id} data-source-id={content?.sourceId}
         data-resource-kind={content?.resource?.kind}
@@ -142,7 +147,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
           <input ref={inputRef} value={view.query} maxLength={512} placeholder={t('search.input.placeholder')}
             aria-label={t('search.label')} role="combobox" aria-autocomplete="list"
             aria-controls="pt-search-results" aria-expanded
-            aria-activedescendant={view.cursorEngaged && rows[view.selectedIndex] ? `pt-search-option-${view.selectedIndex}` : undefined}
+            aria-activedescendant={selectedIndex >= 0 ? `pt-search-option-${selectedIndex}` : undefined}
             onKeyDown={onKeyDown}
             onCompositionStart={() => { composing.current = true; }}
             onCompositionEnd={event => { composing.current = false; searchActions.query(event.currentTarget.value); }}
@@ -171,7 +176,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
       <div ref={bodyRef} className="pt-search-body" id="pt-search-results" role="listbox" aria-label={t('search.results')}
         aria-busy={view.status === 'loading'} data-displayed-query={displayedQuery}
         onScroll={event => {
-          useSearchStore.setState({ scrollTop: event.currentTarget.scrollTop });
+          searchActions.scroll(event.currentTarget.scrollTop);
         }}>
         {rows.length > 0 && <div className="pt-search-group">
           <div className="pt-search-group-title">{t(initial ? 'search.recent' : view.mode === 'functions' ? 'search.tab.functions' : view.displayedMode === 'suggest' ? 'search.suggestions' : 'search.results')} · {rows.length}</div>

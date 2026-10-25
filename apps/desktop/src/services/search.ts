@@ -54,6 +54,10 @@ export function resourceIdentity(resource: ResourceRef | undefined): string {
     : [resource.authorityNamespace, resource.kind, resource.id]);
 }
 
+export function searchRowKey(resource: ResourceRef | undefined): string {
+  return JSON.stringify([resourceIdentity(resource), resource?.anchor?.kind, resource?.anchor?.id]);
+}
+
 export function captureSearchIdentity(): string {
   const session = useSessionStore.getState();
   return session.authenticated && session.currentUser

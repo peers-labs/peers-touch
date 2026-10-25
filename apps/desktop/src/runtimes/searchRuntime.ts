@@ -1,5 +1,5 @@
 import type { ResultItem } from '../gen/proto/domain/search/search_pb';
-import { captureSearchIdentity, searchService } from '../services/search';
+import { captureSearchIdentity, searchRowKey, searchService } from '../services/search';
 import { emptySearchState, useSearchStore, type SearchContentFilter } from '../store/search';
 import { useSessionStore } from '../store/session';
 import type { RuntimeDescriptor } from '../kernel/runtime';
@@ -70,8 +70,17 @@ export const searchActions = {
   mode(mode: 'suggest' | 'functions'): void {
     stopRequest();
     clearSearchQueries();
-    useSearchStore.setState({ mode, status: 'idle', errorKey: null, scrollTop: 0, cursorEngaged: false });
+    useSearchStore.setState({ mode, status: 'idle', errorKey: null });
     void runSearchQuery(locale);
+  },
+  scroll(scrollTop: number): void {
+    const view = useSearchStore.getState();
+    const keys = view.traversal?.rowKeys;
+    if (view.mode !== 'functions' && (!keys || !view.response
+      || view.response.items.length !== keys.length
+      || !view.response.items.every((item, index) => searchRowKey(item.resource) === keys[index]))) return;
+    // Concealment may clamp the DOM viewport; it cannot overwrite qualified context.
+    useSearchStore.setState({ scrollTop });
   },
   filter(contentFilter: SearchContentFilter): void {
     stopRequest();

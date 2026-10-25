@@ -74,12 +74,12 @@ import {
   SearchReadStateSchema, SearchResponseSchema, SubmitRequestSchema, SourceState,
 } from '../gen/proto/domain/search/search_pb';
 import { emptySearchState, useSearchStore } from '../store/search';
-import { clearSearchQueries, reconcileSearchQuery, runSearchQuery } from '../runtimes/searchQueries';
+import { clearSearchQueries, invalidateSearchSources, reconcileSearchQuery, runSearchQuery } from '../runtimes/searchQueries';
 import { searchActions } from '../runtimes/searchRuntime';
 import { useMomentsNavigationStore } from '../store/momentsNavigation';
 import * as socialApi from '../services/social_api';
 import { QueryClient } from '@tanstack/query-core';
-import { searchService } from '../services/search';
+import { searchRowKey, searchService } from '../services/search';
 
 vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: vi.fn((path: string, protocol = 'asset') => (
@@ -203,6 +203,8 @@ describe('Desktop Search no-store page continuity', () => {
       sourceId: 'social-private', bindingId: 'private', readScope: 'alice',
       sourceRevision: '1', policyRevision: '1', state: SourceState.READY, noStore: true,
     };
+    const publicSource = { ...source, sourceId: 'social-public', bindingId: 'public' };
+    const sources = [source, publicSource];
     const submit = vi.fn(async (input: ReturnType<typeof fromBinary<typeof SubmitRequestSchema>>) => {
       let ordinal = 0;
       if (input.cursor) {
@@ -214,12 +216,12 @@ describe('Desktop Search no-store page continuity', () => {
       const nextCursor = ordinal + 1 < pages.length ? `${traversal}:${ordinal + 1}` : '';
       if (nextCursor) continuations.set(nextCursor, ordinal + 1);
       return bytesOk(SearchResponseSchema, {
-        partition: 'alice', sources: [source],
+        partition: 'alice', sources,
         expiresAtUnixMs: BigInt(Date.now() + 60_000),
-        coverage: [{ sourceId: source.sourceId, state: SourceState.READY }],
+        coverage: sources.map(item => ({ sourceId: item.sourceId, state: SourceState.READY })),
         nextCursor, hasMore: !!nextCursor,
         items: (pages[ordinal] ?? []).map(id => ({
-          sourceId: source.sourceId, title: id,
+          sourceId: id.startsWith('public-') ? publicSource.sourceId : source.sourceId, title: id,
           resource: {
             authorityNamespace: 'social-private:alice', kind: 'social-comment', id,
             contentRevision: String(traversal), anchor: { kind: 'comment', id },
@@ -231,7 +233,7 @@ describe('Desktop Search no-store page continuity', () => {
     invokeMock.mockImplementation(async (cmd, args) => {
       if (cmd === 'frontend_log' || cmd === 'search_cancel') return undefined;
       if (cmd === 'search_read_state') {
-        return bytesOk(SearchReadStateSchema, { partition: 'alice', sources: [source] });
+        return bytesOk(SearchReadStateSchema, { partition: 'alice', sources });
       }
       if (cmd === 'search_submit') {
         return submit(fromBinary(SubmitRequestSchema, Uint8Array.from(
@@ -244,6 +246,11 @@ describe('Desktop Search no-store page continuity', () => {
   }
 
   const resultIds = () => useSearchStore.getState().response?.items.map(item => item.resource?.id);
+  function selectResult(index: number): string {
+    const selectedKey = searchRowKey(useSearchStore.getState().response!.items[index].resource);
+    useSearchStore.setState({ selectedKey, scrollTop: 93 });
+    return selectedKey;
+  }
   async function settle() {
     await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('ready'));
   }
@@ -256,7 +263,7 @@ describe('Desktop Search no-store page continuity', () => {
     await runSearchQuery('en', false, true);
     await settle();
     expect(resultIds()).toEqual(['later-a', 'later-b']);
-    useSearchStore.setState({ selectedIndex: 1, cursorEngaged: true, scrollTop: 93 });
+    const selectedKey = selectResult(1);
 
     await reconcileSearchQuery('en');
     await settle();
@@ -264,7 +271,7 @@ describe('Desktop Search no-store page continuity', () => {
     expect(submit.mock.calls.map(([input]) => [input.cursor, input.refresh]))
       .toEqual([['', false], ['1:1', false], ['', true], ['2:1', false]]);
     expect(useSearchStore.getState()).toMatchObject({
-      selectedIndex: 1, cursorEngaged: true, scrollTop: 93,
+      selectedKey, scrollTop: 93,
     });
     const client = removals.mock.contexts[0] as QueryClient;
     expect(client.getQueryCache().getAll().some(entry =>
@@ -278,13 +285,13 @@ describe('Desktop Search no-store page continuity', () => {
     await settle();
     await runSearchQuery('en', false, true);
     await settle();
-    useSearchStore.setState({ selectedIndex: 1, cursorEngaged: true, scrollTop: 93 });
+    const selectedKey = selectResult(1);
     searchActions.close();
     expect(useSearchStore.getState().response).toBeNull();
     searchActions.open('moments', 'en');
     await settle();
     expect(resultIds()).toEqual(['later-a', 'later-b']);
-    expect(useSearchStore.getState()).toMatchObject({ selectedIndex: 1, scrollTop: 93 });
+    expect(useSearchStore.getState()).toMatchObject({ selectedKey, scrollTop: 93 });
   });
 
   it.each(['current', 'superseded'] as const)(
@@ -295,7 +302,7 @@ describe('Desktop Search no-store page continuity', () => {
       changePages([ids]);
       await runSearchQuery('en');
       await settle();
-      useSearchStore.setState({ selectedIndex: 3, cursorEngaged: true, scrollTop: 93 });
+      const selectedKey = selectResult(3);
       const before = useSearchStore.getState().traversal!;
       searchActions.close();
       expect(useSearchStore.getState().response).toBeNull();
@@ -325,7 +332,7 @@ describe('Desktop Search no-store page continuity', () => {
         identity: before.identity, ordinal: before.ordinal, rowKeys: before.rowKeys,
       });
       expect(useSearchStore.getState()).toMatchObject({
-        selectedIndex: 3, cursorEngaged: true, scrollTop: 93,
+        selectedKey, scrollTop: 93,
       });
     },
   );
@@ -334,14 +341,107 @@ describe('Desktop Search no-store page continuity', () => {
     const { changePages } = searchFixture();
     await runSearchQuery('en');
     await settle();
-    useSearchStore.setState({ selectedIndex: 0, cursorEngaged: true, scrollTop: 93 });
+    selectResult(0);
     searchActions.close();
     changePages([['replacement']]);
     searchActions.open('moments', 'en');
     await settle();
     expect(resultIds()).toEqual(['replacement']);
     expect(useSearchStore.getState()).toMatchObject({
-      selectedIndex: 0, cursorEngaged: false, scrollTop: 0,
+      selectedKey: null, scrollTop: 0,
+    });
+  });
+
+  it('retains addressed selection through source concealment and unchanged reacquisition', async () => {
+    searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    await runSearchQuery('en', false, true);
+    await settle();
+    const selectedKey = selectResult(1);
+    const before = useSearchStore.getState().traversal!;
+
+    expect(invalidateSearchSources(['social-private'])).toBe(true);
+    expect(resultIds()).toEqual([]);
+    expect(useSearchStore.getState().traversal).toEqual(before);
+    expect(useSearchStore.getState()).toMatchObject({
+      selectedKey, scrollTop: 93,
+    });
+    searchActions.close();
+    searchActions.open('moments', 'en');
+    await settle();
+    expect(resultIds()).toEqual(['later-a', 'later-b']);
+    expect(useSearchStore.getState()).toMatchObject({
+      selectedKey, scrollTop: 93,
+    });
+  });
+
+  it('ignores concealed viewport clamping and records scroll again after qualification', async () => {
+    searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    const selectedKey = selectResult(0);
+    invalidateSearchSources(['social-private']);
+    searchActions.scroll(0);
+    expect(useSearchStore.getState()).toMatchObject({ selectedKey, scrollTop: 93 });
+    searchActions.close();
+    searchActions.scroll(0);
+    expect(useSearchStore.getState().scrollTop).toBe(93);
+    searchActions.open('moments', 'en');
+    await settle();
+    searchActions.scroll(47);
+    expect(useSearchStore.getState()).toMatchObject({ selectedKey, scrollTop: 47 });
+  });
+
+  it.each(['private-a', 'public-b'])(
+    'keeps the user-selected %s authoritative across partial concealment',
+    async selectedId => {
+      const { changePages } = searchFixture();
+      changePages([['private-a', 'public-a', 'public-b']]);
+      await runSearchQuery('en');
+      await settle();
+      const selectedKey = selectResult(0);
+      const before = useSearchStore.getState().traversal!;
+      invalidateSearchSources(['social-private']);
+      expect(resultIds()).toEqual(['public-a', 'public-b']);
+      expect(useSearchStore.getState().traversal).toEqual(before);
+      expect(useSearchStore.getState().selectedKey).toBe(selectedKey);
+      const chosenKey = selectedId === 'public-b' ? selectResult(1) : selectedKey;
+      searchActions.scroll(0);
+      expect(useSearchStore.getState().scrollTop).toBe(93);
+      await runSearchQuery('en');
+      await settle();
+      expect(resultIds()).toEqual(['private-a', 'public-a', 'public-b']);
+      expect(useSearchStore.getState()).toMatchObject({ selectedKey: chosenKey, scrollTop: 93 });
+    },
+  );
+
+  it('clears a concealed selection only when the qualified final page loses that resource', async () => {
+    const { changePages } = searchFixture();
+    changePages([['private-a', 'public-a']]);
+    await runSearchQuery('en');
+    await settle();
+    const selectedKey = selectResult(0);
+    invalidateSearchSources(['social-private']);
+    expect(useSearchStore.getState().selectedKey).toBe(selectedKey);
+    changePages([['public-a']]);
+    await runSearchQuery('en');
+    await settle();
+    expect(resultIds()).toEqual(['public-a']);
+    expect(useSearchStore.getState()).toMatchObject({ selectedKey: null, scrollTop: 0 });
+  });
+
+  it('resets concealed browsing metadata on a qualified new query intent', async () => {
+    searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    selectResult(0);
+    invalidateSearchSources(['social-private']);
+    useSearchStore.setState({ query: 'different' });
+    await runSearchQuery('en');
+    await settle();
+    expect(useSearchStore.getState()).toMatchObject({
+      displayedQuery: 'different', selectedKey: null, scrollTop: 0,
     });
   });
 
@@ -351,22 +451,22 @@ describe('Desktop Search no-store page continuity', () => {
     await settle();
     await runSearchQuery('en', false, true);
     await settle();
-    useSearchStore.setState({ selectedIndex: 1, cursorEngaged: true, scrollTop: 93 });
+    const selectedKey = selectResult(1);
     changePages([['new-first'], ['later-b', 'new-later']]);
-    const publications: Array<{ ids: string[]; selected: number; scroll: number }> = [];
+    const publications: Array<{ ids: string[]; selected: string | null; scroll: number }> = [];
     const remove = useSearchStore.subscribe(state => {
       if (state.response?.items[0]?.resource?.id === 'later-b') publications.push({
         ids: state.response.items.map(item => item.resource!.id),
-        selected: state.selectedIndex, scroll: state.scrollTop,
+        selected: state.selectedKey, scroll: state.scrollTop,
       });
     });
     await reconcileSearchQuery('en');
     await settle();
     remove();
     expect(publications.length).toBeGreaterThan(0);
-    expect(publications.every(value => value.selected === 0 && value.scroll === 0)).toBe(true);
+    expect(publications.every(value => value.selected === selectedKey && value.scroll === 0)).toBe(true);
     expect(resultIds()).toEqual(['later-b', 'new-later']);
-    expect(useSearchStore.getState().cursorEngaged).toBe(true);
+    expect(useSearchStore.getState().selectedKey).toBe(selectedKey);
   });
 
   it('fails a shortened traversal without publishing its first page or losing the addressed ordinal', async () => {

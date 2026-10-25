@@ -23,6 +23,9 @@ owns:
   - apps/desktop/src/store/momentsNavigation.ts
   - apps/desktop/src/store/privateComments.ts
   - apps/desktop/src/store/search.ts
+  - apps/desktop/src/services/search.ts
+  - apps/desktop/src/components/search/SearchOverlay.tsx
+  - apps/desktop/src/test/moments-store.test.ts
   - apps/desktop/src/services/socialOpenResource.ts
   - apps/mobile/src-tauri/src/runtime/search.rs
   - apps/mobile/src-tauri/src/runtime/search/
@@ -133,6 +136,10 @@ Failed no-store reacquisition hides the response while retaining traversal,
 selection and scroll metadata, following Search design §4.1. It is not a
 completed empty-page observation; an authorized reply that actually loses the
 selected key must still disengage selection rather than select a replacement.
+Temporary source concealment MUST preserve that same metadata, following
+Search data-model §7 and Desktop Search continuity. The rendered index is
+derived from the single stored row key; neither concealment nor DOM viewport
+clamping may replace the last qualified traversal or erase selection.
 Continuation publication MUST release its issuance metadata guard before
 leaving the original authority guard, as defined by Search design §4.1.
 A successful reply must not lead to an immediate Open observing a locked
@@ -312,6 +319,10 @@ Search publication order and can deadlock the native UI during reconciliation.
   A current no-store Return failure followed by unchanged healthy reacquisition
   must restore the selected ResourceKey and scroll; a superseded failure cannot
   overwrite the newer frame. A genuinely missing selected key stays disengaged.
+  Desktop source-concealment regressions must retain the addressed page's
+  traversal and selected key, reject clamped DOM scroll writes, restore the
+  unchanged final page, and honor a new selection among remaining readable
+  rows. Final missing-key and new-intent replies must still reset as specified.
 - Desktop `privateComments.test.ts`, `moments-store.test.ts` and
   `momentsRuntime.test.ts` retain the active historical comment through periodic
   and event refreshes, release it on navigation and fence late reads. Equivalent
