@@ -126,6 +126,13 @@ resolver fan-out exists. Hosts still allowlist the returned resolver binding.
   no-store sources reauthorize every window. This trades bounded extra reads
   for source independence. The RRF scores, deterministic tie-break, winning
   source, final page limit and successful-window consumption remain unchanged.
+- LocalSnapshot hydration keeps independent resource flights and validated
+  projection reuse. RemoteOwner hydration shares one complete ordered batch
+  only with live identical-window subscribers; overlapping different windows
+  each call the owner with all references. The key includes every revision and
+  refresh mode. Completed no-store replies never supply later reads. Both
+  modes keep original publication guards, independent subscriber cancellation,
+  deadlines, byte admission and mixed-observation rejection.
 - Session storage is capped at 32 sessions, 640 candidate/issued entries and
   4 MiB. Native read storage, including active reply bytes and key copies, has
   a separate 4 MiB cap: retained native/session content is at most 8 MiB.

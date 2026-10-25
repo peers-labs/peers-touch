@@ -180,7 +180,14 @@ storage remains metadata-only and only displayed references are issued.
 Bounded hydration publication follows Search design §4.1's batch boundary.
 Do not reintroduce an original authentication/Store guard per resource or hold
 that guard across subscription waits, encoding, decoding or original reads.
-Per-resource operation fences and current consumption authority remain required.
+LocalSnapshot per-resource operation fences and current consumption authority
+remain required. RemoteOwner hydration MUST share only a complete identical
+ordered reference window, including content revisions and refresh mode, as
+one live operation. Overlapping different windows MUST NOT share individual
+resource flights: that splices independent original-owner observations.
+Completed no-store batches MUST NOT supply later callers or partial rereads.
+One subscriber cancelling MUST NOT cancel another subscriber's whole batch.
+Mixed observations supplied within one original reply still fail closed.
 
 Resolution validates resource shape, declared kind and namespace before issued
 association lookup. A forged or undeclared namespace must be a protocol error;
@@ -224,6 +231,14 @@ Search publication order and can deadlock the native UI during reconciliation.
   fences both publication boundaries; mixed remote owner observations must
   fail without issuing any resource in
   `hydration_batch_rejects_mixed_remote_owner_observations`.
+- Search Core
+  `remote_whole_batch_sharing_preserves_overlap_cancellation_and_no_store`
+  holds the original batch reads until both windows subscribe. Different
+  overlapping windows must each read all resources and preserve exact order;
+  identical windows must share, survive one subscriber's cancellation, then
+  reauthorize on the next query and deny after original-owner revocation.
+  Both local and remote modes must retain the commit/consumption fences in
+  `hydration_batch_rejects_revocation_and_cancellation_at_commit_or_consumption`.
 - Search Core `continuation_response_releases_issuance_guard_before_immediate_open`
   pauses the continuation publisher after authority release, then consumes
   that response and opens its newly issued reference before the publisher

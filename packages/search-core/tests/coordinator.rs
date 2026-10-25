@@ -50,6 +50,7 @@ struct Source {
     observation: AtomicUsize,
     wrong_scope: AtomicBool,
     mixed_observation: bool,
+    hydration_pause: Option<Arc<HydrationPause>>,
     suggestions: bool,
     revision: String,
 }
@@ -81,6 +82,7 @@ impl Source {
             observation: AtomicUsize::new(0),
             wrong_scope: AtomicBool::new(false),
             mixed_observation: false,
+            hydration_pause: None,
             suggestions: true,
             revision: "one".into(),
         }
@@ -193,6 +195,11 @@ impl SearchContributor for Source {
         ctx: &'a SearchExecutionContext,
     ) -> SourceFuture<'a, HydrationReply> {
         Box::pin(async move {
+            let batch = self
+                .hydration_pause
+                .as_ref()
+                .map(|pause| pause.hold(ctx))
+                .transpose()?;
             let until = Instant::now() + self.hydration_delay;
             while Instant::now() < until {
                 ctx.check()?;
@@ -215,13 +222,20 @@ impl SearchContributor for Source {
                         .collect(),
                 });
             }
+            // The original owner observes one fixed snapshot per batch even
+            // when other reads complete while this reply is being assembled.
+            let mut cache = self.cache();
+            if let Some(batch) = batch {
+                cache.source_revision = format!("batch:{batch}");
+                cache.read_validity.as_mut().unwrap().policy_revision = format!("policy:{batch}");
+            }
             Ok(HydrationReply {
                 outcomes: input
                     .items
                     .iter()
                     .enumerate()
                     .map(|(index, i)| {
-                        let mut cache = self.cache();
+                        let mut cache = cache.clone();
                         if self.mixed_observation && index == 0 {
                             cache.source_revision.push_str(":different");
                         }
@@ -362,6 +376,170 @@ fn intent() -> QueryIntent {
     }
 }
 
+#[derive(Default)]
+struct HydrationPause {
+    admissions: std::sync::Mutex<Vec<(usize, usize)>>,
+    changed: std::sync::Condvar,
+    released: AtomicBool,
+    batches: AtomicUsize,
+}
+impl HydrationPause {
+    fn hold(&self, ctx: &SearchExecutionContext) -> Result<usize, SearchError> {
+        let batch = self.batches.fetch_add(1, Ordering::SeqCst);
+        let mut admissions = self.admissions.lock().unwrap();
+        while !self.released.load(Ordering::SeqCst) {
+            ctx.check()?;
+            admissions = self
+                .changed
+                .wait_timeout(admissions, Duration::from_millis(10))
+                .unwrap()
+                .0;
+        }
+        Ok(batch)
+    }
+
+    fn wait_for(&self, count: usize) -> Vec<(usize, usize)> {
+        let (admissions, timed) = self
+            .changed
+            .wait_timeout_while(
+                self.admissions.lock().unwrap(),
+                Duration::from_secs(2),
+                |admissions| admissions.len() < count,
+            )
+            .unwrap();
+        assert!(!timed.timed_out(), "hydration subscribers did not arrive");
+        admissions.clone()
+    }
+
+    fn release(&self) {
+        self.released.store(true, Ordering::SeqCst);
+        self.changed.notify_all();
+    }
+}
+
+#[derive(Clone)]
+struct HydrationExecutor(Arc<HydrationPause>);
+impl Default for HydrationExecutor {
+    fn default() -> Self {
+        // Only the whole-batch regression uses this executor. The runtime's
+        // Default host factory and the test source share its bounded observer.
+        static PAUSE: std::sync::OnceLock<Arc<HydrationPause>> = std::sync::OnceLock::new();
+        Self(PAUSE.get_or_init(Default::default).clone())
+    }
+}
+impl SearchExecutor for HydrationExecutor {
+    fn spawn(&self, job: Box<dyn FnOnce() + Send>) {
+        Executor.spawn(job);
+    }
+    fn block_on<T: Send>(&self, future: SourceFuture<'_, T>) -> Result<T, SearchError> {
+        Executor.block_on(future)
+    }
+    fn observe_read(&self, _: bool, _: bool) {}
+    fn observe_hydration(&self, reads: usize, resources: usize, _: bool) {
+        self.0.admissions.lock().unwrap().push((reads, resources));
+        self.0.changed.notify_all();
+    }
+}
+
+#[test]
+fn remote_whole_batch_sharing_preserves_overlap_cancellation_and_no_store() {
+    for overlapping in [true, false] {
+        let pause = HydrationExecutor::default().0;
+        pause.admissions.lock().unwrap().clear();
+        pause.released.store(false, Ordering::SeqCst);
+        pause.batches.store(0, Ordering::SeqCst);
+        let mut source = Source::new("remote", SearchScope::Station);
+        source.remote = true;
+        source.no_store = true;
+        source.hydration_pause = Some(pause.clone());
+        let binding = Binding::new(source);
+        let runtime = SearchRuntime::<HydrationExecutor>::default();
+        let cancel = CancelToken::new();
+        let first = {
+            let binding = binding.clone();
+            let runtime = runtime.clone();
+            let cancel = cancel.clone();
+            std::thread::spawn(move || runtime.query(&binding, intent(), &cancel))
+        };
+        assert_eq!(pause.wait_for(1), [(20, 20)]);
+        let second = {
+            let binding = binding.clone();
+            let runtime = runtime.clone();
+            let mut input = intent();
+            // A distinct candidate query deterministically reaches hydration.
+            // Equal reference windows must share despite differing query text.
+            if overlapping {
+                input.cursor = "1".into();
+            } else {
+                input.text = "another query".into();
+            }
+            std::thread::spawn(move || runtime.query(&binding, input, &CancelToken::new()))
+        };
+        let expected_reads = if overlapping { 20 } else { 0 };
+        let admissions = pause.wait_for(2);
+        if !overlapping {
+            cancel.cancel();
+            assert_eq!(first.join().unwrap(), Err(SearchError::Cancelled));
+            pause.release();
+            let second = second.join().unwrap().unwrap();
+            assert_eq!(second.items.len(), 20);
+            assert_eq!(pause.batches.load(Ordering::SeqCst), 1);
+            assert!(second.sources[0].no_store);
+            let resource = second.items[0].resource.clone().unwrap();
+            assert_eq!(
+                runtime
+                    .resolve(&binding, resource.clone(), &CancelToken::new())
+                    .unwrap()
+                    .resource,
+                Some(resource.clone())
+            );
+            let fresh = runtime
+                .query(&binding, intent(), &CancelToken::new())
+                .unwrap();
+            assert_eq!(pause.batches.load(Ordering::SeqCst), 2);
+            assert_ne!(
+                fresh.sources[0].source_revision,
+                second.sources[0].source_revision
+            );
+            binding.source.deny_reads.store(true, Ordering::SeqCst);
+            assert!(runtime
+                .query(&binding, intent(), &CancelToken::new())
+                .unwrap()
+                .items
+                .is_empty());
+            assert_eq!(pause.batches.load(Ordering::SeqCst), 3);
+            assert_eq!(
+                runtime.resolve(&binding, resource, &CancelToken::new()),
+                Err(SearchError::ResourceUnavailable)
+            );
+        } else {
+            pause.release();
+            let first = first.join().unwrap().unwrap();
+            let second = second.join().unwrap().unwrap();
+            assert_eq!(pause.batches.load(Ordering::SeqCst), 2);
+            assert_ne!(
+                first.sources[0].source_revision,
+                second.sources[0].source_revision
+            );
+            assert_eq!(first.items.len(), 20);
+            assert_eq!(second.items.len(), 20);
+            for (index, item) in first.items.iter().enumerate() {
+                assert_eq!(
+                    item.resource.as_ref(),
+                    Some(&binding.source.resource(index))
+                );
+            }
+            for (index, item) in second.items.iter().enumerate() {
+                assert_eq!(
+                    item.resource.as_ref(),
+                    Some(&binding.source.resource(index + 1))
+                );
+            }
+        }
+        assert_eq!(admissions, [(20, 20), (expected_reads, 20)]);
+    }
+}
+
 #[derive(Clone)]
 struct GuardedBinding {
     inner: Binding,
@@ -490,26 +668,29 @@ fn bounded_hydration_publication_cost_preserves_three_source_results() {
 
 #[test]
 fn hydration_batch_rejects_revocation_and_cancellation_at_commit_or_consumption() {
-    for stop_at in [1, 2] {
-        for cancel_at_stop in [false, true] {
-            let runtime = SearchRuntime::<Executor>::default();
-            let mut source = Source::new("device", SearchScope::Device);
-            source.no_store = true;
-            let mut binding = GuardedBinding::new(source);
-            binding.stop_at = stop_at;
-            let cancel = CancelToken::new();
-            if cancel_at_stop {
-                binding.cancel_at_stop = Some(cancel.clone());
+    for remote in [false, true] {
+        for stop_at in [1, 2] {
+            for cancel_at_stop in [false, true] {
+                let runtime = SearchRuntime::<Executor>::default();
+                let mut source = Source::new("device", SearchScope::Device);
+                source.remote = remote;
+                source.no_store = true;
+                let mut binding = GuardedBinding::new(source);
+                binding.stop_at = stop_at;
+                let cancel = CancelToken::new();
+                if cancel_at_stop {
+                    binding.cancel_at_stop = Some(cancel.clone());
+                }
+                assert_eq!(
+                    runtime.query(&binding, intent(), &cancel),
+                    Err(SearchError::Cancelled)
+                );
+                assert_eq!(binding.inner.source.hydrates.load(Ordering::SeqCst), 1);
+                assert_eq!(
+                    binding.hydration_publications.load(Ordering::SeqCst),
+                    stop_at
+                );
             }
-            assert_eq!(
-                runtime.query(&binding, intent(), &cancel),
-                Err(SearchError::Cancelled)
-            );
-            assert_eq!(binding.inner.source.hydrates.load(Ordering::SeqCst), 1);
-            assert_eq!(
-                binding.hydration_publications.load(Ordering::SeqCst),
-                stop_at
-            );
         }
     }
 }

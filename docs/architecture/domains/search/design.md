@@ -189,9 +189,18 @@ suggestions 只选 Device，主动提交明确允许 Device 与当前 Station。
 和首次 expiry 由有界客户端 session 持有，opaque authenticated cursor
 仅引用 session。来源改变或到期拒绝旧 continuation，串行推进避免重复/丢失。
 同一来源的有界 hydrate 批次只分别在缓存提交和投影消费时取得一次原 authority
-发布锁，避免每个候选重复执行宿主认证/安全存储读取。逐项 operation 继续持有
-独立取消、deadline、容量和失败结果；批次 admission 失败使全部 leader 失败，
-某项提交失败不取消其余项。批次在取得锁前及锁内检查取消和绝对 deadline。
+发布锁，避免每个候选重复执行宿主认证/安全存储读取。本机 `LocalSnapshot`
+逐项 operation 持有独立取消、deadline、容量和失败结果；批次 admission
+失败使全部 leader 失败，某项提交失败不取消其余项。
+远端 `RemoteOwner` 以整个有序引用窗口作为一个 operation：键覆盖全部引用、
+content revision、认证绑定/read scope/policy 和 refresh mode。相同窗口可共享
+尚未完成的读取；不同窗口即使引用重叠，也各自调用原 owner 的完整 batch。
+不共享远端逐项 flight，不把多个服务器事务的观察拼成一个结果窗口。单个
+subscriber 取消只退出其订阅，最后订阅者、失效或 deadline 才终止完整读取。
+回复整体受既有 key/reply/flight 字节容量限制，完成后不进入正文缓存。
+这会增加不同重叠窗口的远端读取量；它保证每个窗口来自一次原 owner
+观察，不以复用率牺牲读权一致性，也不延长预算。
+批次在取得锁前及锁内检查取消和绝对 deadline。
 validator 替换、序列化、订阅等待、解码与原域读取都在锁外；锁内核对当前
 identity/source/policy metadata 并提交或形成可见结果。远端批次消费仍拒绝
 混合 owner observation，no-store 不进入可复用正文缓存。批量裁决不缓存身份、

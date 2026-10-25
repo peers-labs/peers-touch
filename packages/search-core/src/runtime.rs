@@ -406,8 +406,8 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         Ok(page)
     }
 
-    /// All misses enter one original-domain batch. Resources retain independent
-    /// shared operations, allowing other queries to reuse unchanged projections.
+    /// Local snapshots reuse resource operations. Remote observations belong
+    /// to one whole window: overlapping windows cannot splice owner snapshots.
     pub(crate) fn hydrate<B: SearchBinding>(
         &self,
         binding: &B,
@@ -416,6 +416,9 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         cancel: &CancelToken,
         deadline: Instant,
     ) -> Result<Hydrated, SearchError> {
+        if binding.read_authority() == ReadAuthority::RemoteOwner {
+            return self.hydrate_remote(binding, references, refresh, cancel, deadline);
+        }
         let source = self.source(binding)?;
         let state = binding.read_state()?;
         let mut subscriptions = Vec::new();
@@ -600,6 +603,133 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                 _ => return Err(SearchError::Protocol),
             }
         }
+        self.consume_hydration(binding, state, projections, cancel, deadline)
+    }
+
+    fn hydrate_remote<B: SearchBinding>(
+        &self,
+        binding: &B,
+        references: Vec<ResourceRef>,
+        refresh: bool,
+        cancel: &CancelToken,
+        deadline: Instant,
+    ) -> Result<Hydrated, SearchError> {
+        let source = self.source(binding)?;
+        let state = binding.read_state()?;
+        if references.len() > source.descriptor().max_batch as usize
+            || references.iter().any(|r| r.content_revision.is_empty())
+        {
+            return Err(SearchError::Protocol);
+        }
+        if references.is_empty() {
+            self.executor.observe_hydration(0, 0, refresh);
+            return self.consume_hydration(binding, state, Vec::new(), cancel, deadline);
+        }
+        // Stable ordinal IDs retain the original window order. The key covers
+        // every reference/revision and refresh mode, never an individual item.
+        let request = HydrationRequest {
+            items: references
+                .into_iter()
+                .enumerate()
+                .map(|(index, resource)| HydrationItem {
+                    item_id: index.to_string(),
+                    resource: Some(resource),
+                    fields: vec![ProjectionField::Result as i32],
+                    known_validator: String::new(),
+                })
+                .collect(),
+            refresh,
+        };
+        let mut read_key = key(binding, "hydrate_batch", &request);
+        read_key.read_scope = state.read_scope.clone();
+        read_key
+            .binding
+            .push_str(&format!(":{:?}", state.policy_revision));
+        // RemoteOwner has no lease: only live identical-window subscribers
+        // share bytes. Completed replies never become reusable payloads.
+        let (subscription, operation) = self.cache.subscribe(
+            read_key,
+            true,
+            deadline.saturating_duration_since(Instant::now()),
+        )?;
+        self.executor.observe_hydration(
+            if operation.is_some() {
+                request.items.len()
+            } else {
+                0
+            },
+            request.items.len(),
+            refresh,
+        );
+        if let Some(operation) = operation {
+            let binding = binding.clone();
+            let executor = self.executor.clone();
+            let request = request.clone();
+            let state = state.clone();
+            let ctx = context(&binding, &operation, &state)?;
+            self.executor.spawn(Box::new(move || {
+                let read = ctx
+                    .check()
+                    .and_then(|()| executor.block_on(source.hydrate(&request, &ctx)))
+                    .and_then(|reply| {
+                        validate_hydration(&request, &reply)?;
+                        let bytes = reply.encode_to_vec();
+                        ctx.check()?;
+                        binding.publish(|| {
+                            ctx.check()?;
+                            for outcome in &reply.outcomes {
+                                match &outcome.outcome {
+                                    Some(hydration_outcome::Outcome::Changed(projection)) => {
+                                        validate_metadata(
+                                            binding.read_authority(),
+                                            &state,
+                                            projection
+                                                .cache
+                                                .as_ref()
+                                                .ok_or(SearchError::Protocol)?,
+                                        )?;
+                                    }
+                                    Some(hydration_outcome::Outcome::Unavailable(_)) => {}
+                                    _ => return Err(SearchError::Protocol),
+                                }
+                            }
+                            operation.commit(bytes, Instant::now(), true)
+                        })
+                    });
+                if let Err(error) = read {
+                    operation.fail(error);
+                }
+            }));
+        }
+        let bytes = subscription.wait(cancel, deadline)?;
+        let reply = HydrationReply::decode(bytes.as_ref()).map_err(|_| SearchError::Protocol)?;
+        validate_hydration(&request, &reply)?;
+        let mut outcomes: HashMap<_, _> = reply
+            .outcomes
+            .into_iter()
+            .map(|outcome| (outcome.item_id, outcome.outcome))
+            .collect();
+        let mut projections = Vec::new();
+        for item in request.items {
+            match outcomes.remove(&item.item_id).flatten() {
+                Some(hydration_outcome::Outcome::Changed(projection)) => {
+                    projections.push(projection)
+                }
+                Some(hydration_outcome::Outcome::Unavailable(_)) => {}
+                _ => return Err(SearchError::Protocol),
+            }
+        }
+        self.consume_hydration(binding, state, projections, cancel, deadline)
+    }
+
+    fn consume_hydration<B: SearchBinding>(
+        &self,
+        binding: &B,
+        state: SourceReadState,
+        projections: Vec<AuthorizedProjection>,
+        cancel: &CancelToken,
+        deadline: Instant,
+    ) -> Result<Hydrated, SearchError> {
         let ctx = SearchExecutionContext {
             partition: binding.partition().into(),
             read_scope: state.read_scope.clone(),
