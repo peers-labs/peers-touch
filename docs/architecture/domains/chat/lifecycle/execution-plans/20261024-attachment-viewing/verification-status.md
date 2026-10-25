@@ -1,7 +1,9 @@
 # 文件预览实施与验证状态
 
 本轮按用户指令限定为：消息状态行布局修复与文件预览验证，通过后提交 PR。
-当前 macOS Native 文件预览功能检查为 `PASS_LOCAL_FIXTURE`。
+源码 `d2e1a7521` 的 macOS Native 文件预览功能检查为 `PASS_LOCAL_FIXTURE`。
+合并最新 master 后的 Native 复验为 `UNPROVEN`：后台测试窗口被完全遮挡时，
+WebKit 暂停绘制帧，PDF 无法完成该环境中的像素检查。当前 PR 保持草稿。
 完整原计划双方传输、系统文件动作与 Mobile Native 仍为 `UNPROVEN`。
 
 实际截图与逐项结果：
@@ -42,14 +44,14 @@ Desktop 原生退出在 worker 清理前撤销 grant；清理失败与 retained 
 
 ## 当前现场证据
 
-当前源码构建的 Desktop Debug Native，复用 sixwin 原有 Bob 测试身份进入 Chat。
+源码 `d2e1a7521` 构建的 Desktop Debug Native，复用 sixwin 原有 Bob 测试身份进入 Chat。
 使用精确隔离的离线消息投影夹具；文件字节、Native hash 校验与授权读取真实。
 这类检查不证明文件通过 Station 收发。
 
 14 类文件检查通过：PDF、DOCX、XLSX、PPTX、4800×3200 图片、中文/英文/emoji
 文本、65 MiB DOCX、旧 XLS/PPT、4 秒 M4A、1280×720 MP4、损坏 DOCX、
 横向含 BMP 的 Word 和 A2 PDF。
-当前 d2e1a7521 原生构建重新验证 14 类文件；24 张逐文件截图已按文件名、
+`d2e1a7521` 原生构建验证 14 类文件；24 张逐文件截图已按文件名、
 格式、页面、实际内容与弹窗审查。另有两张消息布局截图与两张大图侧栏/弹窗截图。
 消息行和 geometry 源码未变，原消息布局证据仅按这两个依赖的源码等价复用。
 Word/PPT 图片与布局可见；工作表末视口为 U101:Y110；视频控制条与播放进度真实。
@@ -91,6 +93,27 @@ Office preview 的当前源码结构审查无阻断；完整范围的功能结�
 `attachment-source-files-sha256:86b87dd508c153d306644a912a97c0d4732ee8172bfa6775ec122bd6b5176266`。
 该清单逐项记录当前任务源码和配置；证据保留 Native binary SHA-256、Git HEAD
 及每张截图摘要。历史批次未被升级为当前证明。
+
+## 当前 master 集成范围
+
+已合入 `b8c5414f0`。注册表在同一身份写锁内同时维护文件 activation 与 Search
+publication revision；同一 account/PTID/JWT 后台校验不失效，真实身份变更使
+读请求失效。原文件授权测试和 master Search revision 测试均保留，9 项通过。
+Mobile 保留统一搜索入口并挂载文件阅读 host，Chat/Search 双语资源同时加载；
+原型保留统一搜索和 canonical self identity。
+
+当前 Desktop/Mobile TypeScript、Mobile Rust、文件格式回归、35 项文件/像素
+契约测试和 38 项 Desktop 消息服务测试通过。Desktop 实际 Engine 的损坏缓存
+首次重试及 retained Engine 退出撤销回归通过。101 个 authored 文件的完整结构
+审查无阻断，strict review framework 通过。
+
+master 的 Native 启动输入策略保留。测试中前台进程没有改变，输入焦点未被
+抢占；完全遮挡窗口的 WebKit document visibility 为 hidden，PDF render
+等待绘制帧。此环境观察由 Native 验证环境负责，不能改写为当前候选预览通过。
+上述 14 类文件证据仍绑定原源码，不提升为集成后全客户端或传输 Acceptance。
+
+远端 Station 仅文件/认证接口源码与预览基线等价；Search/X-config 变更没有
+随本轮预览部署到远端，因此完整 Station source equivalence 为 `UNPROVEN`。
 
 ## 原型与清理
 
