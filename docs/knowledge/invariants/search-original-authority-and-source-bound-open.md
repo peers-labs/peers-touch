@@ -5,16 +5,25 @@ status: active
 owns:
   - packages/search-core/
   - apps/desktop/src-tauri/src/application/search/
+  - apps/desktop/src-tauri/src/application/station_runtime/client.rs
+  - apps/desktop/src-tauri/src/interface/tauri_commands/search.rs
   - apps/desktop/src-tauri/src/secure_content/search.rs
   - apps/desktop/src-tauri/src/secure_content/search_policy.rs
+  - apps/desktop/src-tauri/src/social/private_comment.rs
   - apps/desktop/src-tauri/src/social/search_projection.rs
   - apps/desktop/src/runtimes/searchRuntime.ts
   - apps/desktop/src/runtimes/searchQueries.ts
   - apps/desktop/src/runtimes/searchInvalidations.ts
   - apps/desktop/src/runtimes/searchOpeners.ts
+  - apps/desktop/src/runtimes/momentsRuntime.ts
+  - apps/desktop/src/store/moments.ts
+  - apps/desktop/src/store/momentsNavigation.ts
+  - apps/desktop/src/store/privateComments.ts
+  - apps/desktop/src/store/search.ts
   - apps/desktop/src/services/socialOpenResource.ts
   - apps/mobile/src-tauri/src/runtime/search.rs
   - apps/mobile/src-tauri/src/runtime/search/
+  - apps/mobile/src-tauri/src/commands/search.rs
   - apps/mobile/src-tauri/src/secure_content/store/search.rs
   - apps/mobile/src/runtimes/searchRuntime.ts
   - apps/mobile/src/runtimes/searchRuntime.test.ts
@@ -31,6 +40,7 @@ owns:
   - packages/locales/en/search.json
   - packages/locales/zh-CN/search.json
   - tooling/acceptance/gates/chat/device_search_capture_checks.py
+  - tooling/acceptance/gates/chat/device_search_runner.py
   - tooling/acceptance/gates/chat/mobile_device_search.py
   - tooling/acceptance/gates/social/content_search_contract.py
   - tooling/acceptance/gates/social/content_search_desktop.py
@@ -68,6 +78,28 @@ An older query session MUST NOT shadow a current valid issuance of the same
 resource. Search design §4.1 owns the matching rule: all current binding,
 identity, resource and expiry checks still apply, followed by original-owner
 authorization. Finding only an older issuance cannot grant access.
+Reusable query frames MUST retain their original issuance association, following
+Search data-model §7. Independent session capacity eviction cannot leave a
+successful cache hit whose references have no current issuance. Reacquire a
+missing first-page association once inside the unchanged budget; an evicted
+continuation fails as expired even when its old payload remains cached.
+Public Social MUST emit one-based ordinal ranks for its authorized temporal
+page. Shared RRF owns the continuation offset; constant first-place ranks
+discard source ordering and cannot be repaired by the client.
+Final native IPC MUST use the coordinator-qualified actual response vector;
+Open retains only its successfully qualified issuing source. Global identity,
+Station scope, request completion and consumed original-owner revision checks
+remain mandatory. Re-admitting unused bindings introduces unrelated vetoes.
+Full state-inventory requests intentionally check the complete composition.
+Public read adapters MUST link the shared operation check and original absolute
+deadline to the existing request cancellation token through admission, body
+consumption and SafeRead replay. Scoped watchers stop and join on every exit;
+one subscriber leaving cannot cancel a read still used by another subscriber.
+An unresolved Comment point-read absence without an acquired projection MUST
+remain an operation observation. UnknownOutcome may retry the exact command;
+CommittedPendingReadback remains pending. Neither may create irreversible
+resource denial. Acquired-resource absence and explicit authority failure retain
+the original purge and denial contract in Secure Content operations §2.1.
 Original-owner invalidations hide the affected source immediately; they do
 not expose stale content while another source completes.
 Current query and continuation cancellation must follow the response's actual
@@ -76,6 +108,14 @@ but must not cancel a qualified current query, clear its cursor or reread a
 healthy source. The displayed query, mode and filter must match current intent
 before using that vector; unknown or changed intent remains conservative.
 Mobile retains displayed mode so a prior suggestion cannot qualify a new submit.
+No-store reconciliation MUST retain the addressed display ordinal without
+replaying an advancing input cursor or reusing plaintext. Fresh reconstruction
+uses only newly issued continuations, publishes no intermediate page, and
+shares one unchanged five-second deadline across its at-most-32-page traversal.
+Only explicit Next consumes a currently unused continuation. Selected resource
+identity and stable scroll must survive an unchanged page; failure cannot
+silently substitute the first page. Request-owned timers must not be cleared
+or allowed to mutate a newer request by a superseded finalizer.
 Continuation publication MUST release its issuance metadata guard before
 leaving the original authority guard, as defined by Search design §4.1.
 A successful reply must not lead to an immediate Open observing a locked
@@ -91,8 +131,16 @@ or error projection over a current Open.
 The original target's focus must wait for the Search overlay focus boundary to
 release, as defined in Search design §4.1. The overlay must declare navigation
 before awaiting Open so its teardown cannot restore the old entry focus.
+Original comment projection owners retain the selected historical anchor for
+periodic and event reconciliation until navigation or scope teardown releases
+it. Equivalent in-flight reads share completion; a different refresh, cursor
+or anchor must complete its own read or supersede with fenced publication.
+Loading alone cannot make a distinct original-target read resolve successfully.
 Return proof MUST activate the original domain's actual Back control. A Social
 thread header cannot be located through an unrelated common page header.
+Desktop Search Return proof activates its actual return bar, not global Search
+reopen. Retain and compare the pre-Open selection and viewport context; a
+periodic baseline obtained only after return cannot prove that restoration.
 Native Search capture MUST wait for a stable terminal rendering inside its
 existing bounded capture deadline. A stable pending frame during original-owner
 revalidation is not terminal evidence. Diagnostics may record that frame, but
@@ -111,6 +159,18 @@ revision. Every retry waits for its own real paint frames inside the same
 30-second deadline. Settings and concealed results require the same sampling
 qualification as original Social targets; correct terminal DOM does not prove
 that the compositor has discarded the preceding private-result frame.
+Original-target qualification MUST inspect ancestor opacity, clipping and
+painted occlusion throughout the same capture. Hit testing alone misses opaque
+`pointer-events:none` covers. Controlled negative replays do not replace review
+of the immutable native pixels and matching DOM.
+Cleanup completion requires every mandatory release flag, no cleanup errors,
+and a successful resources-released assertion. Preserve an existing Journey
+failure while recording cleanup diagnostics; never publish cleanup-complete
+or native PASS for failed release.
+Account-cursor isolation probes retain exactly the issuing query selectors.
+A same-account continuation must succeed first; use a separate unconsumed
+cursor after account handoff. A kind/scope/locale/limit mismatch cannot prove
+account isolation by producing the same cursor-expired code.
 
 Coverage copy MUST come from the original source's generated `SourceCoverage`.
 Public Station scope must never fall back to acquired-device coverage;
@@ -218,12 +278,39 @@ Search publication order and can deadlock the native UI during reconciliation.
   invalidation: affected rows disappear immediately while the original Open
   and original-owner denial remain authoritative. New user intent and identity
   fencing must still cancel and suppress the old completion.
+- Desktop `moments-store.test.ts` and Mobile `searchRuntime.test.ts` rebuild
+  the addressed no-store page using fresh continuations. Require no intermediate
+  publication, unchanged context, explicit shortened-page failure, at most
+  32 pages and one five-second deadline, including unresolved native replies.
+  Superseded request timers and late replies must not change a newer request.
+- Desktop `privateComments.test.ts`, `moments-store.test.ts` and
+  `momentsRuntime.test.ts` retain the active historical comment through periodic
+  and event refreshes, release it on navigation and fence late reads. Equivalent
+  readers share actual completion; a distinct public anchor executes while
+  pagination is pending rather than resolving from the loading flag.
 - `backfill_releases_store_before_external_lifecycle_checks` requires both
   bounded backfill phases to permit Store acquisition from each external check.
   Native Social Search must still conceal and resume all four original targets.
 - Search Core `current_issuance_survives_older_sessions_of_the_same_resource`
   covers overlapping sessions, rejection before a current issuance, and fresh
   owner denial after a valid issuance.
+- Desktop final IPC regressions and Mobile `commands::search::tests::native_`
+  require healthy single-source queries/Open to survive unrelated owner changes,
+  while consumed revisions, identity and request cancellation still reject.
+- Desktop `bounded_proto_read_*` regressions require cancellation through queued
+  admission, SafeRead replay and body reads inside the absolute deadline,
+  surviving one subscriber's departure and releasing the watcher on completion.
+- Desktop `unresolved_comment_404_readback_preserves_exact_retry_and_acquisition`
+  checks exact retry bytes, pending known commit, unchanged Search revision and
+  successful later acquisition. `comment_authority_failure_still_purges_and_permanently_denies_acquisition`
+  requires acquired 404 and explicit 403/410 to keep original irreversible denial.
+- Search Core
+  `cached_first_page_reacquires_issuance_after_session_capacity_eviction`
+  fills independent 100-candidate sessions while retaining their cached pages,
+  then requires an original-owner reread and successful Open for the first page.
+  Its cached old continuation must still fail without restarting the query.
+  Station `TestPublicSearchFilteredCursorProgressAndBinding` requires distinct
+  ordinal ranks on its authorized result page before shared fusion.
 - Search Core `bounded_hydration_publication_cost_preserves_three_source_results`
   checks bounded original authority cost at three 100-candidate sources while
   retaining no-store, complete coverage, RRF score and winner identity.
@@ -276,6 +363,11 @@ Search publication order and can deadlock the native UI during reconciliation.
 - Replay a terminal/loading/terminal transition during the native screenshot:
   even when both terminal DOM samples are equal, capture must reject the first
   image, repeat within its existing deadline and release its mutation observer.
+- `device_search_capture_checks.py` rejects noninteractive opaque covers,
+  broken Back controls, changed pre-Open context, cleanup errors and false
+  release flags. Its exact-selector account control advances a separate
+  same-account cursor before testing an unconsumed handoff cursor. Native
+  captures must independently satisfy those observations on the current source.
 - `chat-device-search-contract` executes the source-only capture race replays
   in `device_search_capture_checks.py`: both platform Settings/concealment
   paint delays, Messaging/Social mutation-and-repaint, original pending/focus,

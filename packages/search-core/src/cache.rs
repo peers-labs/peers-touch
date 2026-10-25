@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::model::wire::SearchResponse;
+use crate::model::SessionCacheFrame;
 use crate::{CancelToken, SearchError};
 use prost::Message;
 
@@ -337,8 +337,10 @@ impl Operation {
         }
         if newest && !no_store && bytes.len() <= PARTITION_BYTES && fresh_until > Instant::now() {
             let items = if key.operation == "session" {
-                SearchResponse::decode(bytes.as_ref())
+                SessionCacheFrame::decode(bytes.as_ref())
                     .map_err(|_| SearchError::Protocol)?
+                    .response
+                    .ok_or(SearchError::Protocol)?
                     .items
                     .len()
             } else {

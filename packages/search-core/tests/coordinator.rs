@@ -53,6 +53,7 @@ struct Source {
     hydration_pause: Option<Arc<HydrationPause>>,
     suggestions: bool,
     revision: String,
+    query_specific: bool,
 }
 impl Source {
     fn new(id: &str, scope: SearchScope) -> Self {
@@ -85,6 +86,7 @@ impl Source {
             hydration_pause: None,
             suggestions: true,
             revision: "one".into(),
+            query_specific: false,
         }
     }
     fn resource(&self, index: usize) -> ResourceRef {
@@ -168,9 +170,15 @@ impl SearchContributor for Source {
             let end = (start + input.limit as usize).min(120);
             Ok(SourcePage {
                 candidates: (start..end)
-                    .map(|i| SourceCandidate {
-                        resource: Some(self.resource(i)),
-                        source_rank: (i - start + 1) as f64,
+                    .map(|i| {
+                        let mut resource = self.resource(i);
+                        if self.query_specific {
+                            resource.id = format!("{}:{}", input.text, resource.id);
+                        }
+                        SourceCandidate {
+                            resource: Some(resource),
+                            source_rank: (i - start + 1) as f64,
+                        }
                     })
                     .collect(),
                 next_cursor: if end < 120 {
@@ -1158,6 +1166,67 @@ fn simultaneous_refresh_and_continuation_cannot_advance_one_cursor_twice() {
         assert_eq!(successes.len(), 1);
         assert!(results.contains(&Err(SearchError::CursorExpired)));
     }
+}
+
+#[test]
+fn cached_first_page_reacquires_issuance_after_session_capacity_eviction() {
+    let runtime = SearchRuntime::<Executor>::default();
+    let mut source = Source::new("device", SearchScope::Device);
+    source.query_specific = true;
+    let binding = Binding::new(source);
+    let bindings = std::slice::from_ref(&binding);
+    let cancel = CancelToken::new();
+    let first = runtime.query_all(bindings, intent(), &cancel).unwrap();
+    runtime
+        .query_all(
+            bindings,
+            QueryIntent {
+                cursor: first.next_cursor.clone(),
+                ..intent()
+            },
+            &cancel,
+        )
+        .unwrap();
+    for i in 0..7 {
+        runtime
+            .query_all(
+                bindings,
+                QueryIntent {
+                    text: format!("independent query {i}"),
+                    ..intent()
+                },
+                &cancel,
+            )
+            .unwrap();
+    }
+    let old_resource = first.items[0].resource.clone().unwrap();
+    assert_eq!(
+        runtime.resolve_all(bindings, "device", old_resource, &cancel),
+        Err(SearchError::ResourceUnavailable)
+    );
+    let reads = binding.source.query_reads.load(Ordering::SeqCst);
+    let repeated = runtime.query_all(bindings, intent(), &cancel).unwrap();
+    assert!(binding.source.query_reads.load(Ordering::SeqCst) > reads);
+    assert_eq!(repeated.items, first.items);
+    let resource = repeated.items[0].resource.clone().unwrap();
+    assert_eq!(
+        runtime
+            .resolve_all(bindings, "device", resource.clone(), &cancel)
+            .unwrap()
+            .resource,
+        Some(resource)
+    );
+    assert_eq!(
+        runtime.query_all(
+            bindings,
+            QueryIntent {
+                cursor: first.next_cursor,
+                ..intent()
+            },
+            &cancel,
+        ),
+        Err(SearchError::CursorExpired)
+    );
 }
 
 #[test]

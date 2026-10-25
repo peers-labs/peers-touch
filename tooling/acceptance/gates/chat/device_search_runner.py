@@ -5,6 +5,7 @@ import json
 import math
 import re
 import tempfile
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -50,6 +51,182 @@ REQUIRED_STEPS = {
 } | {f"search.{name}" for name in UI_ASSERTIONS}
 
 GEOMETRY_REGIONS = ("panel", "field", "intents", "body", "footer", "coverage", "actions")
+
+CAPTURE_START_JS = """
+window.__PT_SEARCH_CAPTURE_WATCH__?.observer.disconnect();
+const watch = {revision: 0};
+watch.observer = new MutationObserver(() => { watch.revision += 1; });
+watch.observer.observe(document.body, {
+  childList: true, subtree: true, characterData: true, attributes: true,
+});
+window.__PT_SEARCH_CAPTURE_WATCH__ = watch;
+"""
+CAPTURE_END_JS = """
+window.__PT_SEARCH_CAPTURE_WATCH__?.observer.disconnect();
+delete window.__PT_SEARCH_CAPTURE_WATCH__;
+"""
+CAPTURE_PAINT_JS = """
+const done = arguments[arguments.length - 1];
+let finished = false;
+const finish = value => { if (!finished) { finished = true; done(value); } };
+const timeout = setTimeout(() => finish(false), arguments[0]);
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  clearTimeout(timeout);
+  finish(true);
+}));
+"""
+
+# Use the native WebView's styles, clipping and hit testing, never box size alone.
+TARGET_VISIBILITY_JS = """
+const targetVisibility = (element, fully = true) => {
+  if (!element?.isConnected) return {visible: false, reason: 'missing'};
+  const rect = element.getBoundingClientRect();
+  const viewport = window.visualViewport;
+  let left = viewport?.offsetLeft || 0, top = viewport?.offsetTop || 0;
+  let right = Math.min(innerWidth, left + (viewport?.width || innerWidth));
+  let bottom = Math.min(innerHeight, top + (viewport?.height || innerHeight));
+  let opacity = 1, motion = false;
+  for (let node = element; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    opacity *= Number(style.opacity);
+    motion ||= node.getAnimations().some(
+      animation => animation.pending || animation.playState === 'running');
+    if (style.display === 'none' || style.visibility !== 'visible'
+        || style.contentVisibility === 'hidden' || opacity < 0.99
+        || (style.clipPath && style.clipPath !== 'none')
+        || (style.clip && style.clip !== 'auto')) {
+      return {visible: false, reason: 'style', opacity, motion};
+    }
+    if (node !== element) {
+      const box = node.getBoundingClientRect();
+      if (['auto', 'scroll', 'hidden', 'clip', 'overlay'].includes(style.overflowX)) {
+        left = Math.max(left, box.left + node.clientLeft);
+        right = Math.min(right, box.left + node.clientLeft + node.clientWidth);
+      }
+      if (['auto', 'scroll', 'hidden', 'clip', 'overlay'].includes(style.overflowY)) {
+        top = Math.max(top, box.top + node.clientTop);
+        bottom = Math.min(bottom, box.top + node.clientTop + node.clientHeight);
+      }
+    }
+  }
+  const intersection = {
+    left: Math.max(left, rect.left), top: Math.max(top, rect.top),
+    right: Math.min(right, rect.right), bottom: Math.min(bottom, rect.bottom),
+  };
+  const fits = !fully || (rect.left >= left - 1 && rect.right <= right + 1
+    && rect.top >= top - 1 && rect.bottom <= bottom + 1);
+  if (motion || !fits || rect.width <= 0 || rect.height <= 0
+      || intersection.right <= intersection.left || intersection.bottom <= intersection.top) {
+    return {visible: false, reason: motion ? 'motion' : 'clipped', opacity, intersection};
+  }
+  const points = [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]];
+  const unobscured = points.every(([x, y]) => {
+    const hit = document.elementFromPoint(
+      intersection.left + (intersection.right - intersection.left) * x,
+      intersection.top + (intersection.bottom - intersection.top) * y);
+    return !!hit && (hit === element || element.contains(hit));
+  });
+  // Hit testing skips pointer-events:none paint. Inspect that paint independently,
+  // conservatively rejecting an overlapping layer not demonstrably behind us.
+  const stack = node => {
+    const chain = [];
+    for (let parent = node; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (parent === document.documentElement
+          || (style.zIndex !== 'auto' && style.zIndex
+            && (style.position !== 'static' || ['flex', 'grid'].includes(
+              getComputedStyle(parent.parentElement).display)))
+          || Number(style.opacity) < 1 || style.isolation === 'isolate'
+          || (style.transform && style.transform !== 'none')
+          || (style.filter && style.filter !== 'none')) chain.unshift(parent);
+    }
+    return chain;
+  };
+  const above = candidate => {
+    const front = stack(candidate), back = stack(element);
+    let index = 0;
+    while (front[index] && front[index] === back[index]) index++;
+    const a = front[index] || candidate, b = back[index] || element;
+    const az = Number.parseInt(getComputedStyle(a).zIndex) || 0;
+    const bz = Number.parseInt(getComputedStyle(b).zIndex) || 0;
+    if (az !== bz) return az > bz;
+    if (['absolute', 'fixed'].includes(getComputedStyle(a).position)
+        && getComputedStyle(b).position === 'static') return true;
+    return !(a.compareDocumentPosition(b) & 4);
+  };
+  const painted = (node, style) => {
+    const background = style.backgroundColor || '';
+    const transparent = background === 'transparent'
+      || /^(?:rgba\\(.+,|.+\\/)\\s*0(?:\\.0+)?\\s*\\)$/.test(background);
+    return (background && background !== 'transparent'
+        && !transparent)
+      || (style.backgroundImage && style.backgroundImage !== 'none')
+      || ['Top', 'Right', 'Bottom', 'Left'].some(edge =>
+        Number.parseFloat(style['border' + edge + 'Width']) > 0
+        && style['border' + edge + 'Style'] !== 'none')
+      || ['IMG', 'CANVAS', 'VIDEO', 'SVG'].includes(node.tagName)
+      || [...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim());
+  };
+  const noninteractiveCover = [...document.querySelectorAll('*')].some(node => {
+    if (node === element || node.contains(element) || element.contains(node)) return false;
+    const style = getComputedStyle(node);
+    if (style.pointerEvents !== 'none' || style.display === 'none'
+        || style.visibility !== 'visible') return false;
+    const pseudoPaint = ['::before', '::after'].some(pseudo => {
+      const value = getComputedStyle(node, pseudo);
+      return value.content && !['none', 'normal'].includes(value.content)
+        && Number(value.opacity) > 0 && value.display !== 'none' && painted(node, value);
+    });
+    if (!painted(node, style) && !pseudoPaint) return false;
+    let alpha = 1;
+    for (let parent = node; parent; parent = parent.parentElement) {
+      const ancestor = getComputedStyle(parent);
+      alpha *= Number(ancestor.opacity);
+      if (ancestor.display === 'none' || ancestor.visibility !== 'visible'
+          || ancestor.contentVisibility === 'hidden' || alpha <= 0) return false;
+    }
+    const box = node.getBoundingClientRect();
+    return box.right > intersection.left && box.left < intersection.right
+      && box.bottom > intersection.top && box.top < intersection.bottom && above(node);
+  });
+  return {visible: unobscured && !noninteractiveCover,
+    reason: noninteractiveCover ? 'noninteractive-cover' : unobscured ? '' : 'occluded',
+    opacity, intersection};
+};
+"""
+
+# Observe continuity across the existing 2s Search timer without invoking reconcile.
+SEARCH_CONTINUITY_START_JS = """
+const root = document.querySelector(arguments[0]);
+if (!root) return null;
+const rows = [...root.querySelectorAll(arguments[1])];
+const anchor = rows.find(row => row.getBoundingClientRect().bottom
+  > root.getBoundingClientRect().top);
+const snapshot = () => ({
+  items: rows.map(row => ({id: row.dataset.resourceId, text: row.innerText})),
+  scrollTop: root.scrollTop,
+  anchor: anchor?.dataset.resourceId || '',
+  anchorTop: anchor?.getBoundingClientRect().top ?? null,
+});
+window.__PT_SEARCH_CONTINUITY__ = {root, rows, anchor, started: performance.now()};
+return snapshot();
+"""
+SEARCH_CONTINUITY_END_JS = """
+const previous = window.__PT_SEARCH_CONTINUITY__;
+const root = document.querySelector(arguments[0]);
+const rows = root ? [...root.querySelectorAll(arguments[1])] : [];
+const anchor = rows.find(row => row.getBoundingClientRect().bottom
+  > root.getBoundingClientRect().top);
+return {
+  elapsedMs: previous ? performance.now() - previous.started : 0,
+  sameNodes: !!previous && root === previous.root && rows.length === previous.rows.length
+    && rows.every((row, index) => row === previous.rows[index]),
+  items: rows.map(row => ({id: row.dataset.resourceId, text: row.innerText})),
+  scrollTop: root?.scrollTop,
+  anchor: anchor?.dataset.resourceId || '',
+  anchorTop: anchor?.getBoundingClientRect().top ?? null,
+};
+"""
 
 
 def stable_search_geometry(samples: list[dict[str, Any]]) -> bool:
@@ -156,9 +333,12 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def surface(self) -> dict[str, Any]:
         return self.receiver.execute_script("""
+            const watch = window.__PT_SEARCH_CAPTURE_WATCH__;
+            if (watch && watch.observer.takeRecords().length) watch.revision += 1;
             const field = document.querySelector('.pt-search-field');
             const modal = field?.closest('.ant-modal');
             const result = {
+                domRevision: watch?.revision || 0,
                 searchOpen: !!field, painted: !field,
                 visibilityState: document.visibilityState,
                 modalClass: modal?.className || '',
@@ -317,6 +497,8 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def visible(self, name: str, predicate: Any, detail: Any = None) -> None:
         def observe() -> None:
+            deadline = time.monotonic() + 30
+            self.receiver.execute_script(CAPTURE_START_JS)
             with tempfile.TemporaryDirectory(prefix="search-capture-") as directory:
                 screenshot_path = Path(directory) / "frame.png"
                 dom_path = Path(directory) / "frame.html"
@@ -325,8 +507,15 @@ class DeviceSearchGate(NativeTwoClientGate):
                     rendering = self.surface()
                     if not rendering["painted"] or rendering["loading"] or rendering["busy"] or not predicate():
                         return None
+                    painted = self.receiver.execute_async_script(
+                        CAPTURE_PAINT_JS, max(1, int((deadline - time.monotonic()) * 1000)),
+                    )
+                    if not painted or time.monotonic() >= deadline:
+                        raise GateError(f"{name} native paint frames timed out")
                     self.receiver.save_screenshot(screenshot_path)
                     dom_path.write_text(self.receiver.get_page_source())
+                    if time.monotonic() >= deadline:
+                        raise GateError(f"{name} stable native capture timed out")
                     after = self.surface()
                     matched = bool(predicate())
                     if after != rendering or not matched:
@@ -344,6 +533,8 @@ class DeviceSearchGate(NativeTwoClientGate):
                         "dom": self.save_dom(self.receiver, f"{name}-capture-failure"),
                     }
                     raise
+                finally:
+                    self.receiver.execute_script(CAPTURE_END_JS)
                 screenshot = self.report.add_evidence_file(
                     f"{name}-screenshot", screenshot_path, destination_dir=self.evidence_dir,
                 )
@@ -358,6 +549,34 @@ class DeviceSearchGate(NativeTwoClientGate):
                 "query": rendering["query"],
             }
         self.step(f"search.{name}", observe, "alice")
+
+    def reconcile_continuity(self, name: str) -> None:
+        root, row = ".pt-search-body", ".pt-search-row"
+        before = self.receiver.execute_script(SEARCH_CONTINUITY_START_JS, root, row)
+        try:
+            if not before or not before["items"]:
+                raise GateError("Search continuity needs the current real result page")
+            self.wait_js(
+                "performance.now() - window.__PT_SEARCH_CONTINUITY__.started >= 2100",
+                "one scheduled Search reconcile interval",
+            )
+            self.settled()
+            after = self.receiver.execute_script(SEARCH_CONTINUITY_END_JS, root, row)
+            self.report.runtime["search"].setdefault("scheduledContinuity", {})[name] = {
+                "before": before, "after": after,
+            }
+            self.assert_condition(name + "_scheduled_continuity", (
+                after["elapsedMs"] >= 2100 and after["sameNodes"]
+                and after["items"] == before["items"]
+                and after["anchor"] == before["anchor"]
+                and abs(after["scrollTop"] - before["scrollTop"]) <= 1
+                and (before["anchorTop"] is None or (
+                    after["anchorTop"] is not None
+                    and abs(after["anchorTop"] - before["anchorTop"]) <= 1
+                ))
+            ))
+        finally:
+            self.receiver.execute_script("delete window.__PT_SEARCH_CONTINUITY__;")
 
     def counts(self) -> dict[str, int]:
         path = Path(self.receiver.log_path)
@@ -805,6 +1024,7 @@ class DeviceSearchGate(NativeTwoClientGate):
                 self.retain_pagination_failure()
                 raise
             self.visible("pagination", lambda: len(self.receiver.find_elements(".pt-search-row")) == 55)
+            self.reconcile_continuity("pagination")
             self.prove_cache()
             self.prove_responsive_geometry()
             self.open_target("historical_open", self.query, self.message, "data-message-ulid")

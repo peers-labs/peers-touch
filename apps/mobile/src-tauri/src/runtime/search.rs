@@ -85,6 +85,37 @@ impl Default for MobileSearchState {
     }
 }
 
+pub(crate) fn resolve_for_publication<B: SearchBinding>(
+    state: &MobileSearchState,
+    bindings: &[B],
+    source_id: &str,
+    resource: ResourceRef,
+    cancel: &search_core::CancelToken,
+) -> Result<(ResolvedResource, Vec<SourceReadState>), SearchError> {
+    // Only a successful coordinator resolution qualifies the caller's source:
+    // descriptor, current issuance and original-owner checks remain in core.
+    let resolved = state
+        .runtime
+        .resolve_all(bindings, source_id, resource, cancel)?;
+    let binding = bindings
+        .iter()
+        .find(|binding| binding.source_id() == source_id)
+        .ok_or(SearchError::Protocol)?;
+    let mut source = binding.read_state()?;
+    if binding.read_authority() == ReadAuthority::RemoteOwner {
+        let metadata = resolved.cache.as_ref().ok_or(SearchError::Protocol)?;
+        let validity = metadata
+            .read_validity
+            .as_ref()
+            .ok_or(SearchError::Protocol)?;
+        source.source_revision = metadata.source_revision.clone();
+        source.policy_revision = validity.policy_revision.clone();
+        source.read_scope = validity.read_scope.clone();
+        source.no_store |= metadata.no_store;
+    }
+    Ok((resolved, vec![source]))
+}
+
 struct Identity<R: Runtime> {
     app: AppHandle<R>,
     engine: Option<Arc<MobileMessagingEngine>>,

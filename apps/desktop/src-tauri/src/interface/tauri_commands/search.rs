@@ -3,7 +3,7 @@ use std::sync::Arc;
 use prost::Message;
 use search_core::model::wire::{
     CancelRequest, CancelResponse, QueryIntent, ResolveRequest, SearchErrorCode, SearchIntent,
-    SearchReadState, SearchScope, SubmitRequest, SuggestRequest,
+    SearchReadState, SearchScope, SourceReadState, SubmitRequest, SuggestRequest,
 };
 use search_core::runtime::{SearchBinding, SearchRuntime};
 use search_core::SearchError;
@@ -83,7 +83,7 @@ fn execute<M: Message>(
         &SearchRuntime<application_search::runtime::DesktopSearchExecutor>,
         &[application_search::runtime::Binding],
         &search_core::CancelToken,
-    ) -> Result<M, SearchError>,
+    ) -> Result<(M, Vec<SourceReadState>), SearchError>,
 ) -> AppResult<Vec<u8>> {
     let Admission {
         composition,
@@ -97,22 +97,26 @@ fn execute<M: Message>(
         Ok(response) => response,
         Err(error) => return failure(error),
     };
-    let source_states = match composition
-        .bindings
-        .iter()
-        .map(|binding| binding.read_state())
-        .collect::<Result<Vec<_>, _>>()
-    {
-        Ok(states) => states,
-        Err(error) => return failure(error),
-    };
-    match composition.bindings[0].publish_sources(&source_states, || {
-        request.complete()?;
-        Ok(response.encode_to_vec())
-    }) {
+    match publish_response(&composition.bindings, response, || request.complete()) {
         Ok(bytes) => AppResult::success(bytes),
         Err(error) => failure(error),
     }
+}
+
+fn publish_response<M: Message, B: SearchBinding>(
+    bindings: &[B],
+    (response, sources): (M, Vec<SourceReadState>),
+    complete: impl FnOnce() -> Result<(), SearchError>,
+) -> Result<Vec<u8>, SearchError> {
+    // The trusted coordinator/issuing binding supplies the actual vector.
+    // Re-admitting the composition would add unrelated source dependencies.
+    bindings
+        .first()
+        .ok_or(SearchError::Protocol)?
+        .publish_sources(&sources, || {
+            complete()?;
+            Ok(response.encode_to_vec())
+        })
 }
 
 #[tauri::command]
@@ -135,7 +139,7 @@ pub async fn search_suggest(
     };
     tauri::async_runtime::spawn_blocking(move || {
         execute(&state, &window, admission, |runtime, binding, cancel| {
-            runtime.query_all(
+            let response = runtime.query_all(
                 binding,
                 QueryIntent {
                     text: request.query,
@@ -152,7 +156,9 @@ pub async fn search_suggest(
                     ..Default::default()
                 },
                 cancel,
-            )
+            )?;
+            let sources = response.sources.clone();
+            Ok((response, sources))
         })
     })
     .await
@@ -182,7 +188,7 @@ pub async fn search_submit(
     };
     tauri::async_runtime::spawn_blocking(move || {
         execute(&state, &window, admission, |runtime, binding, cancel| {
-            runtime.query_all(
+            let response = runtime.query_all(
                 binding,
                 QueryIntent {
                     text: request.query,
@@ -201,7 +207,9 @@ pub async fn search_submit(
                     attachment_names_only: request.attachment_names_only,
                 },
                 cancel,
-            )
+            )?;
+            let sources = response.sources.clone();
+            Ok((response, sources))
         })
     })
     .await
@@ -231,7 +239,13 @@ pub async fn search_resolve(
     };
     tauri::async_runtime::spawn_blocking(move || {
         execute(&state, &window, admission, |runtime, binding, cancel| {
-            runtime.resolve_all(binding, &request.source_id, resource, cancel)
+            let response = runtime.resolve_all(binding, &request.source_id, resource, cancel)?;
+            let source = binding
+                .iter()
+                .find(|binding| binding.source_id() == request.source_id)
+                .ok_or(SearchError::ResourceUnavailable)?
+                .read_state()?;
+            Ok((response, vec![source]))
         })
     })
     .await
@@ -296,5 +310,171 @@ pub fn search_cancel(
             .encode_to_vec(),
         ),
         Err(error) => failure(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use search_core::model::wire::{ResolvedResource, SearchResponse};
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+
+    #[derive(Clone)]
+    struct PublicationBinding {
+        source: SourceReadState,
+        current: Arc<Mutex<HashMap<String, SourceReadState>>>,
+        identity_current: Arc<AtomicBool>,
+    }
+
+    impl SearchBinding for PublicationBinding {
+        fn partition(&self) -> &str {
+            "partition"
+        }
+        fn source_revision(&self) -> &str {
+            &self.source.source_revision
+        }
+        fn source_id(&self) -> &str {
+            &self.source.source_id
+        }
+        fn binding_id(&self) -> &str {
+            &self.source.binding_id
+        }
+        fn check(&self) -> Result<(), SearchError> {
+            self.publish(|| Ok(()))
+        }
+        fn publish<T>(
+            &self,
+            publish: impl FnOnce() -> Result<T, SearchError>,
+        ) -> Result<T, SearchError> {
+            self.publish_sources(std::slice::from_ref(&self.source), publish)
+        }
+        fn publish_sources<T>(
+            &self,
+            sources: &[SourceReadState],
+            publish: impl FnOnce() -> Result<T, SearchError>,
+        ) -> Result<T, SearchError> {
+            if !self.identity_current.load(Ordering::SeqCst) {
+                return Err(SearchError::Cancelled);
+            }
+            let current = self.current.lock().unwrap();
+            if sources
+                .iter()
+                .any(|source| current.get(&source.source_id) != Some(source))
+            {
+                return Err(SearchError::SourceChanged);
+            }
+            publish()
+        }
+        fn contributor(&self) -> Result<Arc<dyn search_core::SearchContributor>, SearchError> {
+            panic!("IPC publication must not read a contributor");
+        }
+    }
+
+    fn publication_bindings() -> Vec<PublicationBinding> {
+        let sources: Vec<_> = ["device.messaging", "device.social", "station.social.public"]
+            .into_iter()
+            .map(|id| SourceReadState {
+                source_id: id.into(),
+                source_revision: "original".into(),
+                ..Default::default()
+            })
+            .collect();
+        let current = Arc::new(Mutex::new(
+            sources
+                .iter()
+                .cloned()
+                .map(|s| (s.source_id.clone(), s))
+                .collect(),
+        ));
+        let identity_current = Arc::new(AtomicBool::new(true));
+        sources
+            .into_iter()
+            .map(|source| PublicationBinding {
+                source,
+                current: current.clone(),
+                identity_current: identity_current.clone(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn final_ipc_uses_actual_sources_without_readmitting_unrelated_bindings() {
+        for selected in 0..3 {
+            let bindings = publication_bindings();
+            let source = bindings[selected].source.clone();
+            for unrelated in bindings.iter().filter(|b| b.source_id() != source.source_id) {
+                bindings[0]
+                    .current
+                    .lock()
+                    .unwrap()
+                    .get_mut(unrelated.source_id())
+                    .unwrap()
+                    .source_revision = "advanced".into();
+            }
+            let response = SearchResponse {
+                sources: vec![source.clone()],
+                ..Default::default()
+            };
+            let bytes = publish_response(
+                &bindings,
+                (response.clone(), response.sources.clone()),
+                || Ok(()),
+            )
+            .unwrap();
+            assert_eq!(SearchResponse::decode(bytes.as_slice()).unwrap(), response);
+            // Resolve has only its successfully qualified issuing source.
+            let resolved = ResolvedResource::default();
+            assert_eq!(
+                publish_response(&bindings, (resolved.clone(), vec![source]), || Ok(())).unwrap(),
+                resolved.encode_to_vec(),
+            );
+        }
+    }
+
+    #[test]
+    fn final_ipc_retains_participating_owner_identity_and_request_fences() {
+        let bindings = publication_bindings();
+        let response = SearchResponse {
+            sources: vec![bindings[1].source.clone()],
+            ..Default::default()
+        };
+        assert_eq!(
+            publish_response(
+                &bindings,
+                (response.clone(), response.sources.clone()),
+                || Err(SearchError::Cancelled),
+            )
+            .unwrap_err(),
+            SearchError::Cancelled,
+        );
+        bindings[0].identity_current.store(false, Ordering::SeqCst);
+        assert_eq!(
+            publish_response(
+                &bindings,
+                (response.clone(), response.sources.clone()),
+                || Ok(()),
+            )
+            .unwrap_err(),
+            SearchError::Cancelled,
+        );
+        bindings[0].identity_current.store(true, Ordering::SeqCst);
+        bindings[0]
+            .current
+            .lock()
+            .unwrap()
+            .get_mut("device.social")
+            .unwrap()
+            .source_revision = "advanced".into();
+        assert_eq!(
+            publish_response(
+                &bindings,
+                (response.clone(), response.sources.clone()),
+                || Ok(()),
+            )
+            .unwrap_err(),
+            SearchError::SourceChanged,
+        );
     }
 }

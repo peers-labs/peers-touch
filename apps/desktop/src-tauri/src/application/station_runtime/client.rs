@@ -490,8 +490,8 @@ impl StationClient {
             .map_err(|error| map_transport_error(error, replay_policy))
     }
 
-    /// A generated read at an already authenticated Station scope. The caller
-    /// supplies its remaining operation budget; routing cannot extend it.
+    /// A generated read at an already authenticated Station scope, bounded by
+    /// the shared operation's cancellation and absolute deadline.
     pub fn request_bounded_proto_read<Req: Message, Resp: Message + Default>(
         &self,
         scope: &StationRequestScope,
@@ -499,7 +499,16 @@ impl StationClient {
         token: &str,
         body: &Req,
         deadline: std::time::Instant,
+        check: &(dyn Fn() -> Result<(), String> + Sync),
     ) -> Result<Resp, StationClientError> {
+        let cancelled = || {
+            StationClientError::new(
+                StationClientErrorKind::Cancelled,
+                "read cancelled or deadline expired",
+                None,
+            )
+        };
+        check().map_err(|_| cancelled())?;
         let (mut request, replay) = wire_request(
             Method::POST,
             path,
@@ -517,20 +526,44 @@ impl StationClient {
         request.timeout = deadline.saturating_duration_since(std::time::Instant::now());
         request.admission_timeout = request.admission_timeout.min(request.timeout);
         if request.timeout.is_zero() {
-            return Err(StationClientError::new(
-                StationClientErrorKind::Cancelled,
-                "read deadline expired",
-                None,
-            ));
+            return Err(cancelled());
         }
-        let response = buffer_response(path, self.execute_raw(request)?, &replay)?;
-        Resp::decode(response.body.as_slice()).map_err(|_| {
-            StationClientError::new(
-                StationClientErrorKind::Decode,
-                "invalid generated read response",
-                None,
-            )
-        })
+        let cancellation = request.cancellation.clone();
+        // Admission, response and SafeRead replay have separate transport
+        // budgets. One watcher bounds all of them, including body consumption.
+        let result = std::thread::scope(|scope| {
+            let (stop, stopped) = std::sync::mpsc::channel::<()>();
+            scope.spawn(move || loop {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() || check().is_err() {
+                    cancellation.cancel();
+                    break;
+                }
+                match stopped.recv_timeout(remaining.min(Duration::from_millis(10))) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                }
+            });
+            let result = self
+                .execute_raw(request)
+                .and_then(|response| buffer_response(path, response, &replay))
+                .and_then(|response| {
+                    Resp::decode(response.body.as_slice()).map_err(|_| {
+                        StationClientError::new(
+                            StationClientErrorKind::Decode,
+                            "invalid generated read response",
+                            None,
+                        )
+                    })
+                });
+            drop(stop);
+            result
+        });
+        check().map_err(|_| cancelled())?;
+        if std::time::Instant::now() >= deadline {
+            return Err(cancelled());
+        }
+        result
     }
 
     pub fn open_json_stream(
@@ -1796,6 +1829,205 @@ pub fn probe_station(url: &str) -> (bool, Option<String>, Option<String>, Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use search_core::model::wire::{HydrationRequest, QueryIntent, SearchResponse};
+
+    #[derive(Clone, Copy)]
+    enum ReadWait {
+        Admission,
+        Replay,
+        Body,
+        Reply,
+    }
+
+    fn await_read_cancellation(cancellation: &CancellationToken) {
+        let guard = std::time::Instant::now() + Duration::from_secs(1);
+        while !cancellation.is_cancelled() && std::time::Instant::now() < guard {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            cancellation.is_cancelled(),
+            "shared read did not cancel its transport"
+        );
+    }
+
+    struct CancelledReadBody(CancellationToken);
+
+    impl Read for CancelledReadBody {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            await_read_cancellation(&self.0);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "read cancelled",
+            ))
+        }
+    }
+
+    struct WaitingReadExecutor {
+        phase: ReadWait,
+        entered: std::sync::mpsc::Sender<CancellationToken>,
+    }
+
+    impl StationRequestExecutor for WaitingReadExecutor {
+        fn execute(&self, request: StationRequest) -> Result<StationResponse, StationTransportError> {
+            assert_eq!(request.expected_scope, self.active_scope());
+            assert_eq!(request.replay_policy, ReplayPolicy::SafeRead);
+            let cancellation = if matches!(self.phase, ReadWait::Replay) {
+                // RuntimeRequestExecutor's safe replay retains this same token
+                // and durations, even after the first attempt spent admission time.
+                std::thread::sleep(request.admission_timeout / 2);
+                request.replay_copy().unwrap().cancellation
+            } else {
+                request.cancellation.clone()
+            };
+            self.entered.send(cancellation.clone()).unwrap();
+            if matches!(self.phase, ReadWait::Body) {
+                Ok(StationResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    body: Box::new(CancelledReadBody(cancellation)),
+                })
+            } else if matches!(self.phase, ReadWait::Reply) {
+                Ok(StationResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    body: Box::new(Cursor::new(
+                        SearchResponse::default().encode_to_vec(),
+                    )),
+                })
+            } else {
+                await_read_cancellation(&cancellation);
+                Err(StationTransportError::new(
+                    StationTransportErrorKind::Cancelled,
+                    "read cancelled",
+                    matches!(self.phase, ReadWait::Replay),
+                ))
+            }
+        }
+
+        fn active_scope(&self) -> Option<StationRequestScope> {
+            Some(StationRequestScope {
+                station_peer_id: "station-1".into(),
+                lifecycle_generation: 1,
+            })
+        }
+
+        fn active_station_peer_id(&self) -> Option<String> {
+            Some("station-1".into())
+        }
+
+        fn active_endpoint_origin(&self) -> Option<String> {
+            Some("http://station.test".into())
+        }
+    }
+
+    #[test]
+    fn bounded_proto_read_cancels_admission_replay_and_body_at_absolute_deadline() {
+        for phase in [ReadWait::Admission, ReadWait::Replay, ReadWait::Body] {
+            let (entered, tokens) = std::sync::mpsc::channel();
+            let client = StationClient::new(Arc::new(WaitingReadExecutor { phase, entered }));
+            let deadline = std::time::Instant::now() + Duration::from_millis(200);
+            let result: Result<SearchResponse, _> = client.request_bounded_proto_read(
+                &client.active_scope().unwrap(),
+                "/api/v1/social/search/query",
+                "test-token",
+                &QueryIntent::default(),
+                deadline,
+                &|| Ok(()),
+            );
+            assert!(matches!(
+                result.unwrap_err().kind,
+                StationClientErrorKind::Cancelled
+            ));
+            assert!(tokens.try_recv().unwrap().is_cancelled());
+        }
+    }
+
+    #[test]
+    fn bounded_proto_read_only_cancels_when_last_shared_member_leaves() {
+        for phase in [ReadWait::Admission, ReadWait::Replay, ReadWait::Body] {
+            let (entered, tokens) = std::sync::mpsc::channel();
+            let client = StationClient::new(Arc::new(WaitingReadExecutor { phase, entered }));
+            let first = search_core::CancelToken::new();
+            let second = search_core::CancelToken::new();
+            let shared = search_core::CancelToken::all(vec![first.clone(), second.clone()]);
+            let (checked, checks) = std::sync::mpsc::channel();
+            std::thread::scope(|scope| {
+                let read = scope.spawn(|| {
+                    client.request_bounded_proto_read::<_, SearchResponse>(
+                        &client.active_scope().unwrap(),
+                        "/api/v1/social/search/hydrate",
+                        "test-token",
+                        &HydrationRequest::default(),
+                        std::time::Instant::now() + Duration::from_secs(1),
+                        &|| {
+                            if first.is_cancelled() && !second.is_cancelled() {
+                                let _ = checked.send(());
+                            }
+                            shared.check().map_err(|error| error.to_string())
+                        },
+                    )
+                });
+                let transport = tokens.recv_timeout(Duration::from_secs(1)).unwrap();
+                first.cancel();
+                checks.recv_timeout(Duration::from_secs(1)).unwrap();
+                assert!(!transport.is_cancelled());
+                second.cancel();
+                assert!(matches!(
+                    read.join().unwrap().unwrap_err().kind,
+                    StationClientErrorKind::Cancelled
+                ));
+                assert!(transport.is_cancelled());
+            });
+        }
+    }
+
+    #[test]
+    fn bounded_proto_read_stops_watcher_after_success_and_rejects_closed_admission() {
+        let (entered, tokens) = std::sync::mpsc::channel();
+        let client = StationClient::new(Arc::new(WaitingReadExecutor {
+            phase: ReadWait::Reply,
+            entered,
+        }));
+        let scope = client.active_scope().unwrap();
+        let input = QueryIntent::default();
+        let response: SearchResponse = client
+            .request_bounded_proto_read(
+                &scope,
+                "/api/v1/social/search/query",
+                "test-token",
+                &input,
+                std::time::Instant::now() + Duration::from_secs(1),
+                &|| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(response, SearchResponse::default());
+        assert!(!tokens.try_recv().unwrap().is_cancelled());
+        for expired in [false, true] {
+            let result = client.request_bounded_proto_read::<_, SearchResponse>(
+                &scope,
+                "/api/v1/social/search/query",
+                "test-token",
+                &input,
+                if expired {
+                    std::time::Instant::now()
+                } else {
+                    std::time::Instant::now() + Duration::from_secs(1)
+                },
+                &|| {
+                    if expired {
+                        Ok(())
+                    } else {
+                        Err("cancelled".into())
+                    }
+                },
+            );
+            assert!(matches!(
+                result.unwrap_err().kind,
+                StationClientErrorKind::Cancelled
+            ));
+            assert!(tokens.try_recv().is_err());
+        }
+    }
 
     struct FailingBody;
 

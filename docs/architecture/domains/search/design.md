@@ -155,11 +155,20 @@ Desktop 与 Mobile 原生宿主消费同一 `search-core::runtime::SearchRuntime
 `SearchBinding` 注入当前认证分区、原来源水位、Contributor 构造和发布锁。
 核心不 import AppState、Tauri、MessagingEngine 或 SQL 驱动。平台保留身份与
 原 Store 的锁顺序，缓存提交和最终 IPC bytes 发布都必须通过同一裁决。
+最终 IPC 直接消费共享协调器生成的实际 `SearchResponse.sources`；
+单对象 Open 只保留成功通过签发、descriptor 和原域 resolve 的来源。
+全局身份、Station scope、request completion 与实际参与的原 Store 屏障仍在
+发布内检查；不能再次读取未参与来源，将其变化变成当前响应的额外依赖。
+全量 read-state inventory 明确请求完整 composition，仍检查全部来源。
 
 宿主在阻塞线程上使用现有 `futures-lite` 驱动 Contributor Future，不进入
 Tokio 异步执行上下文。原 Station 传输提供同步响应读取；在 Tokio Future
 中调用该读取会触发 `blocking_recv` panic。Search 不替换原传输，也不为每个
 来源创建异步运行时；Desktop/Mobile 执行器共同承担这条适配边界。
+公开 Social 读取将共享 operation check 与最初绝对 deadline 接入既有
+Station request cancellation token，覆盖 admission、response body 和 SafeRead
+重放；复制剩余 duration 不能重新计算截止点。Desktop 沿既有私密 policy
+adapter 的有界 watcher 边界停止并 join，原读取退出时释放 watcher。
 
 认证分区来自平台 Session，独立于 MessagingEngine。当前生产 composition
 声明 `device.messaging`、`device.social`、`station.social.public`；

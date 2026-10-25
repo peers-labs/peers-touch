@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from tooling.acceptance.core import AcceptanceGate, ArtifactSession, EphemeralGateClient
+from tooling.acceptance.gates.chat.device_search_runner import TARGET_VISIBILITY_JS
 from tooling.acceptance.gates.chat.mobile_device_search import (
     MobileDeviceSearchGate, PAGE, ROW, require,
 )
@@ -25,25 +26,33 @@ class SocialContentSearchMobileGate(MobileDeviceSearchGate):
     @staticmethod
     def surface(session: Any) -> dict:
         rendering = MobileDeviceSearchGate.surface(session)
-        rendering["originalSocial"] = session.execute_script("""
+        rendering["originalSocial"] = session.execute_script(TARGET_VISIBILITY_JS + """
 const thread = document.querySelector('[data-acceptance-id="social-moment-thread"]');
 if (!thread) return null;
 const anchor = [...thread.querySelectorAll('[data-scroll-anchor-id]')]
   .find(row => row.dataset.scrollAnchorId === thread.dataset.anchorCommentId
     && row.dataset.searchHighlighted === 'true');
-const box = anchor?.getBoundingClientRect();
+const post = thread.querySelector('[data-acceptance-id="social-moment-card"]');
+const body = post?.querySelector('.moments-article-body > span');
+const commentBody = anchor?.querySelector('.moments-comment-item__content');
+const threadPaint = targetVisibility(thread, false);
+const postPaint = targetVisibility(body);
+const anchorPaint = targetVisibility(anchor);
+const commentPaint = targetVisibility(commentBody);
 return {
   postId: thread.dataset.postId,
-  sourceId: thread.dataset.sourceId || 'station.social.public',
+  sourceId: thread.dataset.sourceId || '',
+  bodyPostId: post?.dataset.postId || '',
+  threadVisible: threadPaint.visible,
+  postVisible: postPaint.visible,
   anchorCommentId: thread.dataset.anchorCommentId || '',
   pending: !!thread.querySelector('[data-product-surface="moments.detail-loading"],'
     + '[data-product-surface="moments.comments-loading"]'),
-  postText: thread.querySelector('[data-acceptance-id="social-moment-card"]')?.innerText || '',
-  anchorText: anchor?.innerText || '',
+  postText: body?.innerText || '',
+  anchorText: commentBody?.innerText || '',
   anchorFocused: !!anchor && document.activeElement === anchor,
-  anchorVisible: !!box && box.width > 0 && box.height > 0
-    && box.top >= 0 && box.bottom <= innerHeight
-    && box.left >= 0 && box.right <= innerWidth,
+  anchorVisible: anchorPaint.visible && commentPaint.visible,
+  visibility: {thread: threadPaint, post: postPaint, anchor: anchorPaint, comment: commentPaint},
 };
 """)
         return rendering
@@ -54,6 +63,8 @@ return {
         return MobileDeviceSearchGate.capture_pending(rendering, concealed) or bool(
             isinstance(original, Mapping) and (
                 original.get("pending")
+                or not original.get("threadVisible")
+                or (not original.get("anchorCommentId") and not original.get("postVisible"))
                 or (original.get("anchorCommentId") and (
                     not original.get("anchorFocused") or not original.get("anchorVisible")
                 ))
@@ -226,6 +237,8 @@ return [...document.querySelectorAll('[data-acceptance-id="social-moment-card"]'
         require(original.get("postId") == post_id
                 and original.get("sourceId") == (
                     "device.social" if "private" in name else "station.social.public")
+                and original.get("bodyPostId") == post_id
+                and original.get("threadVisible")
                 and not original.get("pending"),
                 "captured original Social target must match its issued parent and source")
         if "comment" in name:
@@ -234,7 +247,7 @@ return [...document.querySelectorAll('[data-acceptance-id="social-moment-card"]'
                     and text in original.get("anchorText", ""),
                     "captured historical comment must be visible, focused and exact")
         else:
-            require(text in original.get("postText", ""),
+            require(original.get("postVisible") and text in original.get("postText", ""),
                     "captured original post body must match")
         frame["assertionPassed"] = True
         self.click(session, '[data-acceptance-id="social-moment-thread"] '
@@ -246,6 +259,7 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
   && document.querySelector('[data-search-filter="social"]')?.getAttribute('aria-pressed') === 'true';
 """, query), "Social return must retain query and filter")
         self.capture(artifacts, session, f"social-{name}-return")
+        self.reconcile_continuity(artifacts, session, f"social-{name}-return")
 
     def block_policy(self, artifacts: ArtifactSession, session: Any,
                      sender: Any, query: str) -> None:
@@ -389,6 +403,7 @@ return ['Private posts and comments acquired on this device', '本机已取得�
         for resource_id in ids:
             self.has(session, resource_id, query)
         self.capture(artifacts, session, "social-content-filter")
+        self.reconcile_continuity(artifacts, session, "social-content-filter")
         original = self.issued_page(session, query, set(ids))
         references = {item["resource"]["id"]: item for item in original["items"]}
         artifacts.write_json(

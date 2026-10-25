@@ -13,7 +13,7 @@ from tooling.acceptance.core import (
     AcceptanceGate, EphemeralGateClient, GateError, RuntimeReuseContract, SuiteRuntimeAction,
     SuiteRuntimeLedger, call_async_harness,
 )
-from tooling.acceptance.gates.chat.device_search_runner import DeviceSearchGate
+from tooling.acceptance.gates.chat.device_search_runner import DeviceSearchGate, TARGET_VISIBILITY_JS
 from tooling.acceptance.gates.chat.native_support import (
     async_harness, is_native_tauri_url, runtime_station_service,
 )
@@ -30,6 +30,22 @@ REUSE = RuntimeReuseContract.from_dict({
     "allowClientReplacement": False,
 })
 
+RETURN_CONTEXT_JS = """
+const root = document.querySelector('.pt-search-body');
+const rows = root ? [...root.querySelectorAll('.pt-search-row')] : [];
+const anchor = rows.find(row => row.getBoundingClientRect().bottom
+  > root.getBoundingClientRect().top);
+return {
+  query: document.querySelector('.pt-search-field input')?.value || '',
+  filter: document.querySelector('[data-search-filter][aria-selected="true"]')?.dataset.searchFilter || '',
+  selected: root?.querySelector('[aria-selected="true"]')?.dataset.resourceId || '',
+  activeDescendant: document.querySelector('.pt-search-field input')?.getAttribute('aria-activedescendant') || '',
+  items: rows.map(row => ({id: row.dataset.resourceId, sourceId: row.dataset.sourceId})),
+  scrollTop: root?.scrollTop ?? null,
+  anchor: anchor?.dataset.resourceId || '', anchorTop: anchor?.getBoundingClientRect().top ?? null,
+};
+"""
+
 
 class SocialContentSearchDesktopGate(DeviceSearchGate):
     gate_id = GATE_ID
@@ -40,6 +56,125 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
     # This Suite proves mixed-source retrieval; the Chat history Gate retains
     # its 55-message fixture and its original-window assertions.
     history_count = 21
+
+    def surface(self) -> dict[str, Any]:
+        rendering = super().surface()
+        target = getattr(self, "original_social_target", None)
+        if not target or rendering["searchOpen"]:
+            return rendering
+        original = self.receiver.execute_script(TARGET_VISIBILITY_JS + """
+const postId = arguments[0], commentId = arguments[1], bodyText = arguments[2];
+const threads = [...document.querySelectorAll('[data-moments-comment-thread]')]
+  .filter(node => node.dataset.momentsCommentThread === postId);
+const thread = threads.length === 1 ? threads[0] : null;
+const root = thread?.closest('[data-moments-comments-region]')?.parentElement;
+const cards = root ? [...root.querySelectorAll('[data-acceptance-id="social-moment-card"]')]
+  .filter(node => node.dataset.postId === postId) : [];
+const card = cards.length === 1 ? cards[0] : null;
+const body = [...(card?.querySelectorAll('.ant-typography') || [])]
+  .find(node => node.innerText.includes(bodyText));
+const anchors = thread ? [...thread.querySelectorAll('[data-moments-comment]')]
+  .filter(node => node.dataset.momentsComment === commentId
+    && node.dataset.searchAnchor === 'true') : [];
+const anchor = anchors.length === 1 ? anchors[0] : null;
+const commentBody = anchor?.querySelector('div.ant-typography');
+const threadPaint = targetVisibility(root, false);
+const postPaint = targetVisibility(body);
+const anchorPaint = targetVisibility(anchor);
+const commentPaint = targetVisibility(commentBody);
+return {
+  postId: card?.dataset.postId || '',
+  commentParentId: thread?.dataset.momentsCommentThread || '',
+  postText: body?.innerText || '',
+  anchorCommentId: anchor?.dataset.momentsComment || '',
+  anchorText: commentBody?.innerText || '',
+  anchorFocused: !!anchor && document.activeElement === anchor,
+  threadVisible: threadPaint.visible, postVisible: postPaint.visible,
+  anchorVisible: anchorPaint.visible && commentPaint.visible,
+  pending: !!root?.querySelector('.ant-spin-spinning,[data-private-moment-state]:not('
+    + '[data-private-moment-state="REMOTE_DELIVERY_PENDING"]):not('
+    + '[data-private-moment-state="REMOTE_DELIVERY_RETRYING"])')
+    || !card || !thread,
+  visibility: {thread: threadPaint, post: postPaint, anchor: anchorPaint, comment: commentPaint},
+};
+""", target["postId"], target["commentId"], target["postText"])
+        # Desktop has no source attribute on the original card. Retain the
+        # actual presented issuance separately, rather than inventing DOM source.
+        original["issuedSourceId"] = target["item"]["sourceId"]
+        original["issuedResource"] = target["item"]["resource"]
+        rendering["originalSocial"] = original
+        rendering["painted"] = bool(
+            not original["pending"] and original["threadVisible"]
+            and (original["anchorVisible"] and original["anchorFocused"]
+                 if target["commentId"] else original["postVisible"])
+        )
+        return rendering
+
+    def original_matches(self, rendering: dict[str, Any]) -> bool:
+        target = self.original_social_target
+        original = rendering.get("originalSocial") or {}
+        return bool(
+            not rendering["searchOpen"] and rendering["painted"]
+            and original.get("postId") == target["postId"]
+            and original.get("commentParentId") == target["postId"]
+            and original.get("issuedSourceId") == target["item"]["sourceId"]
+            and original.get("issuedResource") == target["item"]["resource"]
+            and target["postText"] in original.get("postText", "")
+            and (not target["commentId"] or (
+                original.get("anchorCommentId") == target["commentId"]
+                and original.get("anchorFocused") and original.get("anchorVisible")
+                and target["text"] in original.get("anchorText", "")
+            ))
+        )
+
+    def remember_return_context(self, resource_id: str) -> dict:
+        rows = self.receiver.execute_script("""
+return [...document.querySelectorAll('.pt-search-row')].map(row => row.dataset.resourceId);
+""")
+        self.assert_condition("return_target_present", resource_id in rows)
+        # Real keyboard selection also establishes a non-default list position
+        # where the target requires it; no store or scroll mutation substitutes.
+        for _ in rows:
+            self.press(Keys.ARROW_UP)
+        for _ in range(rows.index(resource_id)):
+            self.press(Keys.ARROW_DOWN)
+        self.wait_js(
+            "document.querySelector('.pt-search-row[aria-selected=\"true\"]')"
+            f"?.dataset.resourceId === {json.dumps(resource_id)}",
+            "selected original resource before Open",
+        )
+        return self.receiver.execute_script(RETURN_CONTEXT_JS)
+
+    @staticmethod
+    def return_context_matches(before: dict, after: dict) -> bool:
+        return bool(
+            before.get("selected") and before.get("items") and before.get("anchor")
+            and all(before.get(key) == after.get(key) for key in (
+                "query", "filter", "selected", "activeDescendant", "items", "anchor",
+            ))
+            and before.get("scrollTop") is not None and after.get("scrollTop") is not None
+            and abs(before["scrollTop"] - after["scrollTop"]) <= 1
+            and before.get("anchorTop") is not None and after.get("anchorTop") is not None
+            and abs(before["anchorTop"] - after["anchorTop"]) <= 1
+        )
+
+    def return_search(self, name: str, before: dict, text: str) -> None:
+        self.receiver.find_element("[data-search-return] button:first-child", 20).click()
+        self.field()
+        self.wait_surface()
+        self.settled()
+        self.visible(name + "_return", lambda: (
+            self.surface()["query"] == self.query
+            and self.receiver.find_element('[data-search-filter="social"]')
+            .get_attribute("aria-selected") == "true" and text in self.rows()
+            and self.return_context_matches(
+                before, self.receiver.execute_script(RETURN_CONTEXT_JS),
+            )
+        ))
+        self.report.runtime["search"].setdefault("returnContext", {})[name] = {
+            "before": before, "after": self.receiver.execute_script(RETURN_CONTEXT_JS),
+        }
+        self.reconcile_continuity(name + "_return")
 
     def moments(self, actor: str, method: str, payload: dict) -> dict:
         return call_async_harness(
@@ -86,7 +221,9 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         self.open_search()
         self.receiver.find_element(f'[data-search-filter="{kind}"]', 20).click()
         self.fill(self.query)
-        self.press(Keys.ENTER)
+        # Reapply the real filter submit boundary: Enter on a retained keyboard
+        # selection opens that row instead of submitting the current query.
+        self.receiver.find_element(f'[data-search-filter="{kind}"]', 20).click()
         self.settled()
 
     def item(self, resource_id: str) -> dict:
@@ -201,7 +338,25 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         self.visible("social_filter", lambda: self.public_text in self.rows()
                      and self.private_text in self.rows()
                      and self.query + " 原始正文" not in self.rows())
+        self.reconcile_continuity("social_filter")
         self.report.runtime["search"]["socialCoverage"] = page.get("coverage", [])
+        original_query = self.query
+        try:
+            self.query = f"new-public-{self.token}"
+            self.select("social")
+            self.wait_js("document.querySelectorAll('.pt-search-row').length === 20",
+                         "first original no-store Social page", timeout=90)
+            self.receiver.find_element(".pt-search-more", 20).click()
+            self.wait_js("document.querySelectorAll('.pt-search-row').length === 2",
+                         "continued original no-store Social page")
+            self.reconcile_continuity("social_pagination")
+            self.visible("social_pagination", lambda: (
+                len(self.receiver.find_elements(".pt-search-row")) == 2
+                and self.query in self.rows()
+            ))
+        finally:
+            self.query = original_query
+        self.select("social")
 
     def original_open_return(self) -> None:
         for name, resource_id, text in (
@@ -212,7 +367,23 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         ):
             self.select("social")
             item = self.item(resource_id)
+            resource = item["resource"]
+            comment = "comment" in name
+            post_id = self.private_post if "private" in name else self.public_post
+            parent = resource.get("parent") or {}
+            self.assert_condition(name + "_issued_binding", (
+                item["sourceId"] == (
+                    "device.social" if "private" in name else "station.social.public")
+                and resource["id"] == resource_id
+                and (resource.get("kind") == "social-comment"
+                     and parent.get("kind") == "social-post" and parent.get("id") == post_id
+                     and parent.get("authorityNamespace") == resource.get("authorityNamespace")
+                     and resource.get("anchor") == {"kind": "comment", "id": resource_id}
+                     if comment else resource.get("kind") == "social-post"
+                     and resource["id"] == post_id and not parent)
+            ))
             self.report.runtime["search"].setdefault("socialReferences", {})[name] = item
+            before_return = self.remember_return_context(resource_id)
             row = self.receiver.find_element(f'[data-resource-id="{resource_id}"]', 20)
             row.click()
             self.wait_js("!document.querySelector('.pt-search-field')", "original Social route")
@@ -228,12 +399,16 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
                     f".some(node => node.innerText.includes({json.dumps(text)}))",
                     "original Moment body",
                 )
-            self.visible(name + "_open", lambda: not self.receiver.find_elements(".pt-search-field"))
-            self.open_search()
-            self.settled()
-            self.visible(name + "_return", lambda: self.surface()["query"] == self.query
-                         and self.receiver.find_element('[data-search-filter="social"]')
-                         .get_attribute("aria-selected") == "true" and text in self.rows())
+            self.original_social_target = {
+                "item": item, "postId": post_id, "commentId": resource_id if comment else "",
+                "postText": self.private_text if "private" in name else self.public_text,
+                "text": text,
+            }
+            try:
+                self.visible(name + "_open", lambda: self.original_matches(self.surface()))
+            finally:
+                del self.original_social_target
+            self.return_search(name, before_return, text)
 
     def block_policy(self) -> None:
         # Block permanently revokes existing private grants. Use fresh targets
@@ -424,26 +599,46 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
             for actor in self.clients:
                 self.collect_client_evidence(actor)
         finally:
-            primary_error = sys.exc_info()[1]
-            self.report.runtime["cleanup"] = self.cleanup_clients()
-            if self.capability_client is not None:
-                try:
-                    self.capability_client.close()
-                except Exception as error:
-                    self.report.runtime["cleanup"]["capabilityChannelClosed"] = False
-                    self.report.runtime["cleanup"]["cleanupErrors"].append(
-                        f"Social Search capability close failed: {type(error).__name__}"
-                    )
-                    if primary_error is None:
-                        raise
-                else:
-                    self.report.runtime["cleanup"]["capabilityChannelClosed"] = True
-                finally:
-                    self.capability_client = None
-            if ledger:
-                ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
-                self.report.runtime["suiteRuntime"] = ledger.report()
+            self.finish_cleanup(ledger, sys.exc_info()[1])
         return {"journey": self.journey_id}
+
+    def finish_cleanup(self, ledger: SuiteRuntimeLedger | None,
+                       primary_error: BaseException | None) -> None:
+        try:
+            cleanup = self.cleanup_clients()
+        except Exception as error:
+            cleanup = {key: False for key in (
+                "portsReleased", "processesReleased", "storageReleased", "logsReleased",
+            )}
+            cleanup["cleanupErrors"] = [f"client cleanup failed: {type(error).__name__}"]
+        self.report.runtime["cleanup"] = cleanup
+        cleanup.setdefault("cleanupErrors", [])
+        if self.capability_client is not None:
+            try:
+                self.capability_client.close()
+            except Exception as error:
+                cleanup["capabilityChannelClosed"] = False
+                cleanup["capabilityCloseError"] = type(error).__name__
+            else:
+                cleanup["capabilityChannelClosed"] = True
+            finally:
+                self.capability_client = None
+        released = all(cleanup.get(key) is True for key in (
+            "portsReleased", "processesReleased", "storageReleased", "logsReleased",
+        )) and not cleanup["cleanupErrors"] and cleanup.get("capabilityChannelClosed", True) is True
+        released = released and not any(
+            assertion.name == "resources_released" and not assertion.passed
+            for assertion in self.report.assertions
+        )
+        self.report.add_assertion("social_resources_released", released, json.dumps(cleanup))
+        if ledger:
+            if released:
+                ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
+            self.report.runtime["suiteRuntime"] = ledger.report()
+        if not released:
+            if primary_error is None:
+                raise GateError("Social Search cleanup failed; native proof remains unproven")
+            primary_error.add_note("Social Search cleanup also failed; see runtime.cleanup")
 
 
 if __name__ == "__main__":

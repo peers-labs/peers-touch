@@ -7,6 +7,7 @@ import {
   type PrivateCommentsNativeSnapshot,
 } from '../services/privateCommentsNative';
 import { usePrivateCommentsStore } from './privateComments';
+import { useMomentsNavigationStore } from './momentsNavigation';
 
 vi.mock('../services/privateMomentsNative', () => ({
   resolvePrivateMomentsPlatform: () => 'native',
@@ -68,8 +69,28 @@ describe('private Comment read completion and projection isolation', () => {
   });
 
   afterEach(() => {
+    useMomentsNavigationStore.getState().reset();
     store().reset();
     vi.restoreAllMocks();
+  });
+
+  it('retains the selected historical anchor for periodic and default refreshes until navigation', async () => {
+    const list = vi.spyOn(privateCommentsNative, 'list')
+      .mockImplementation(async input => page(input.anchorCommentId ?? 'default'));
+    useMomentsNavigationStore.getState().setView({
+      kind: 'detail', postId: 'post-1', commentId: 'historical', from: 'feed',
+    });
+    await store().loadComments('post-1', true, 'historical');
+    await store().reconcile(['post-1'], 'periodic', 1);
+    await store().loadComments('post-1', true);
+    const beforeNavigation = thread().comments.map(row => row.commentId);
+    useMomentsNavigationStore.getState().setView({ kind: 'tab', tab: 'feed' });
+    await store().loadComments('post-1', true);
+
+    expect(list.mock.calls.map(([input]) => input.anchorCommentId))
+      .toEqual(['historical', 'historical', 'historical', undefined]);
+    expect(beforeNavigation).toEqual(['historical']);
+    expect(thread().comments[0].commentId).toBe('default');
   });
 
   it('keeps equivalent readers pending until their shared Native page is applied', async () => {

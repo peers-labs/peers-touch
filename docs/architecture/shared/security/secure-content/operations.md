@@ -94,6 +94,14 @@ local projection. `UNKNOWN_OUTCOME` retries only after
 `ObjectTransferRecord` before begin, checkpoints each completed chunk, and
 resumes through `ObjectTransferWorker`; Social no longer owns a chunk loop.
 
+An unresolved Comment point-read `404` without an acquired original projection
+is `AuthoritativeAbsent`, not resource revocation. `UNKNOWN_OUTCOME` may then
+retry the exact persisted command; `COMMITTED_PENDING_READBACK` remains pending
+and cannot redispatch. Neither observation may create a permanent denial or
+advance the derived Search revision. A `404` for an acquired projection and
+explicit `403`/`410` authority failures still purge material, preserve denial,
+and terminate readback through the original owner.
+
 EC5A requires PostgreSQL receipt contention, pool/Actor lock ordering,
 profile-rotation and revocation races. Its runner requires a DSN, parses
 `go test -json`, and rejects missing, renamed, zero-match, skipped or non-pass

@@ -17,6 +17,7 @@ use crate::contributor::{
 };
 use crate::cursor::authenticated::AuthenticatedCursorCodec;
 use crate::model::wire::*;
+use crate::model::SessionCacheFrame;
 use crate::runtime::{
     now_ms, ReadAuthority, SearchBinding, SearchExecutor, SearchRuntime, READ_BUDGET,
 };
@@ -364,7 +365,7 @@ impl<E: SearchExecutor> SearchRuntime<E> {
     ) -> Result<SearchResponse, SearchError> {
         let deadline = Instant::now() + READ_BUDGET;
         cancel.check()?;
-        let input = normalize_intent(input)?;
+        let mut input = normalize_intent(input)?;
         let read_states = self.read_states(bindings)?;
         let partition = bindings[0].partition();
         let mut snapshots = Vec::new();
@@ -456,30 +457,56 @@ impl<E: SearchExecutor> SearchRuntime<E> {
             operation: "session".into(),
             semantic: bytes,
         };
-        let (subscription, operation) = self.cache.subscribe(
-            key,
-            input.refresh,
-            deadline.saturating_duration_since(Instant::now()),
-        )?;
-        if let Some(operation) = operation {
-            let runtime = self.clone();
-            let bindings = bindings.to_vec();
-            let input = input.clone();
-            self.executor.spawn(Box::new(move || {
-                if let Err(error) =
-                    runtime.advance(&bindings, input, snapshots, identity, &operation)
-                {
-                    operation.fail(error);
-                }
-            }));
-        }
-        let bytes = subscription.wait(cancel, deadline)?;
-        let response = SearchResponse::decode(bytes.as_ref()).map_err(|_| SearchError::Protocol)?;
-        bindings[0].publish_sources(&response.sources.clone(), || {
+        loop {
             cancel.check()?;
-            self.validate_visible(&response)?;
-            Ok(response)
-        })
+            if Instant::now() >= deadline {
+                return Err(SearchError::Timeout);
+            }
+            let (subscription, operation) = self.cache.subscribe(
+                key.clone(),
+                input.refresh,
+                deadline.saturating_duration_since(Instant::now()),
+            )?;
+            if let Some(operation) = operation {
+                let runtime = self.clone();
+                let bindings = bindings.to_vec();
+                let input = input.clone();
+                let snapshots = snapshots.clone();
+                let identity = identity.clone();
+                self.executor.spawn(Box::new(move || {
+                    if let Err(error) =
+                        runtime.advance(&bindings, input, snapshots, identity, &operation)
+                    {
+                        operation.fail(error);
+                    }
+                }));
+            }
+            let bytes = subscription.wait(cancel, deadline)?;
+            let frame =
+                SessionCacheFrame::decode(bytes.as_ref()).map_err(|_| SearchError::Protocol)?;
+            let response = frame.response.ok_or(SearchError::Protocol)?;
+            let result = bindings[0].publish_sources(&response.sources.clone(), || {
+                cancel.check()?;
+                // A reusable display frame must still have its original issuance
+                // owner. Never take the mutable session lock under this guard.
+                let slot = self.sessions.slot(frame.session_id)?;
+                if slot.partition != partition {
+                    return Err(SearchError::Protocol);
+                }
+                self.validate_visible(&response)?;
+                Ok(response)
+            });
+            if result == Err(SearchError::CursorExpired)
+                && input.cursor.is_empty()
+                && !input.refresh
+            {
+                // Reacquire a first page once within the original read budget.
+                // An expired continuation must never restart the query.
+                input.refresh = true;
+                continue;
+            }
+            return result;
+        }
     }
 
     fn advance<B: SearchBinding>(
@@ -635,7 +662,7 @@ impl<E: SearchExecutor> SearchRuntime<E> {
             partition: draft.partition.clone(),
             expires_at_unix_ms: draft.expiry as i64,
         };
-        bindings[0].publish_sources(&response.sources, || {
+        bindings[0].publish_sources(&response.sources.clone(), || {
             operation.check()?;
             self.validate_visible(&response)?;
             let until = response
@@ -661,7 +688,11 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                 .min(draft.until)
                 .min(Instant::now() + Duration::from_millis(until.saturating_sub(now_ms()?)));
             self.sessions.admit(&draft, slot.as_ref())?;
-            let commit = operation.commit(response.encode_to_vec(), fresh_until, no_store);
+            let frame = SessionCacheFrame {
+                session_id: draft.id,
+                response: Some(response),
+            };
+            let commit = operation.commit(frame.encode_to_vec(), fresh_until, no_store);
             if let Err(error) = commit {
                 if slot.is_none() {
                     self.sessions

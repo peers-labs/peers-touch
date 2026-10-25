@@ -55,6 +55,7 @@ interface PrivateCommentsState {
     rendererGeneration: number,
   ) => Promise<void>;
   loadComments: (postId: string, refresh?: boolean, anchorCommentId?: string) => Promise<void>;
+  setCommentTarget: (postId?: string, commentId?: string) => void;
   submitComment: (
     postId: string,
     text: string,
@@ -257,6 +258,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
     let draftMutationVersion = 0;
     const draftMutationVersionByPost = new Map<string, number>();
     const commentReads = new Map<string, PrivateCommentRead>();
+    let activeTarget: { postId: string; commentId?: string } | null = null;
     const isCurrentRead = (postId: string, read: PrivateCommentRead): boolean => {
       const scope = get().scope;
       return commentReads.get(postId) === read
@@ -421,6 +423,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
       ...initialData(),
 
       activateActor: (actorPtid, rendererGeneration) => {
+        activeTarget = null;
         commentReads.clear();
         set({
           ...initialData(rendererGeneration),
@@ -433,6 +436,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
       },
 
       deactivate: (rendererGeneration) => {
+        activeTarget = null;
         commentReads.clear();
         set(initialData(rendererGeneration));
       },
@@ -538,6 +542,24 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
         );
       },
 
+      setCommentTarget: (postId, commentId) => {
+        const nextPostId = postId?.trim();
+        const nextCommentId = commentId?.trim() || undefined;
+        if (activeTarget?.postId === nextPostId && activeTarget?.commentId === nextCommentId) return;
+        const previous = activeTarget?.postId;
+        activeTarget = nextPostId ? { postId: nextPostId, commentId: nextCommentId } : null;
+        for (const id of new Set([previous, nextPostId])) {
+          if (!id) continue;
+          commentReads.delete(id);
+          set(state => {
+            const thread = state.threadsByPost[id];
+            return thread?.loading
+              ? { threadsByPost: { ...state.threadsByPost, [id]: { ...thread, loading: false } } }
+              : state;
+          });
+        }
+      },
+
       loadComments: async (postId, refresh = false, anchorCommentId) => {
         const trimmedPostId = postId.trim();
         const scope = get().scope;
@@ -560,7 +582,8 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
         }
         const current = get().threadsByPost[trimmedPostId] ?? emptyThread();
         if (current.state === 'COMMENT_PARENT_UNAVAILABLE') return;
-        const anchor = anchorCommentId?.trim() || undefined;
+        const anchor = anchorCommentId?.trim()
+          || (refresh && activeTarget?.postId === trimmedPostId ? activeTarget.commentId : undefined);
         const replace = refresh || !!anchor;
         const cursor = replace ? '' : current.nextCursor;
         const pending = commentReads.get(trimmedPostId);
@@ -791,6 +814,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
       },
 
       markParentUnavailable: (postId, errorCode = 'COMMENT_PARENT_UNAVAILABLE') => {
+        if (activeTarget?.postId === postId) activeTarget = null;
         commentReads.delete(postId);
         set((state) => ({
           threadsByPost: {
@@ -809,6 +833,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
       },
 
       clearPost: (postId) => {
+        if (activeTarget?.postId === postId) activeTarget = null;
         commentReads.delete(postId);
         set((state) => {
           const threadsByPost = { ...state.threadsByPost };
@@ -821,6 +846,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
       },
 
       reset: () => {
+        activeTarget = null;
         commentReads.clear();
         draftMutationVersion += 1;
         draftMutationVersionByPost.clear();

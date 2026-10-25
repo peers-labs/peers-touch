@@ -257,6 +257,12 @@ Renderer 保留 32 个查询 frame / 640 项、最多 200 项可见结果；复�
 session 与原对象打开绑定见设计 §4.1；远端 read lease、content-stale 发布和
 其他来源的完整接入仍未证明。
 
+共享 runtime 的内存查询 frame 附带原 issuance session ID；业务响应仍使用
+生成的 `SearchResponse`，内部关联不形成读权或第二份 issuance。消费 frame 时
+先确认该 session 仍被保留且未到期，再执行既有来源与原域发布检查。容量淘汰
+导致首屏缓存失去关联时，在原五秒预算内只重新取得一次首屏；已淘汰 continuation
+返回 `CURSOR_EXPIRED`，包括仍在 payload cache 内的历史分页，不能静默重启查询。
+
 ### 7.1 缓存对象与复用键
 
 缓存角色共用 Search runtime 的有效性、失效和资源策略；物理存储按 D/S/F
@@ -299,6 +305,16 @@ cursor 绑定该 session、规范查询、认证分区/读范围、来源状态�
 由 session owner 串行推进 continuation/已发集合，各 subscriber 有独立浏览位置。
 session 或 cursor 不可复用时保留仍可读的已加载页，继续翻页前明确建立新
 分页上下文，不拼接不同快照、不延长旧 cursor。
+
+当前两端的 no-store 展示只保留已显示页序号、规范条件、选中引用、滚动和
+有界 continuation metadata，不保存可复用正文。周期核权、返回或 Previous
+需要重读时，从强制刷新的首屏建立新 traversal，仅沿本轮返回的 continuation
+前进到原展示序号，最多 32 页且共用一次五秒截止点。中间页不缓存、不发布；
+最终页与新 continuation 一起发布。目标序号已不存在时明确报告来源变化，
+超时则取消当前 native request，不能以首屏替代或增加单次操作预算。
+相同资源顺序保留选中对象和滚动；对象消失时不得把旧索引用于另一对象。
+用户主动 Next 只消费尚未使用的当前 continuation，新的输入/筛选/刷新仍
+沿既有操作显式重置分页上下文。
 
 ### 7.2 两项独立有效性与元数据
 

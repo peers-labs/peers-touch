@@ -63,7 +63,10 @@ func TestPublicSearchFilteredCursorProgressAndBinding(t *testing.T) {
 		next.Coverage.State != searchpb.SourceState_SOURCE_STATE_READY {
 		t.Fatalf("filtered source did not advance: %+v/%v", next, err)
 	}
-	for _, candidate := range next.Candidates {
+	for index, candidate := range next.Candidates {
+		if candidate.SourceRank != float64(index+1) {
+			t.Fatalf("source order lost before fusion: candidate %d has rank %v", index, candidate.SourceRank)
+		}
 		ref := candidate.Resource
 		if ref.Kind != "social-comment" || ref.Anchor.Kind != "comment" || ref.Anchor.Id != ref.Id ||
 			ref.Parent.Kind != "social-post" || ref.Parent.Id != "1001" ||

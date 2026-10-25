@@ -180,7 +180,9 @@ func (s *PublicSearchService) queryPage(
 		if result == nil {
 			continue
 		}
-		page.Candidates = append(page.Candidates, &searchpb.SourceCandidate{Resource: result.Resource, SourceRank: 1})
+		page.Candidates = append(page.Candidates, &searchpb.SourceCandidate{
+			Resource: result.Resource, SourceRank: float64(len(page.Candidates) + 1),
+		})
 		if len(page.Candidates) == limit {
 			more = more || index+1 < len(positions)
 			break

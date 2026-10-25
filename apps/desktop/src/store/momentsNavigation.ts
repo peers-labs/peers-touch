@@ -1,4 +1,6 @@
 import { createDesktopStore } from './createDesktopStore';
+import { useMomentsStore } from './moments';
+import { usePrivateCommentsStore } from './privateComments';
 
 export type MomentsTab = 'feed' | 'explore' | 'search' | 'circles';
 export type MomentsView =
@@ -12,9 +14,19 @@ interface MomentsNavigation {
   reset: () => void;
 }
 
-// Presentation only. The original Moments runtime still owns every read.
-export const useMomentsNavigationStore = createDesktopStore<MomentsNavigation>('moments-navigation', set => ({
-  view: { kind: 'tab', tab: 'feed' },
-  setView: next => set(state => ({ view: typeof next === 'function' ? next(state.view) : next })),
-  reset: () => set({ view: { kind: 'tab', tab: 'feed' } }),
-}));
+// Navigation communicates target lifetime, never performs original reads.
+export const useMomentsNavigationStore = createDesktopStore<MomentsNavigation>('moments-navigation', (set, get) => {
+  const setView = (next: MomentsView | ((previous: MomentsView) => MomentsView)) => {
+    const view = typeof next === 'function' ? next(get().view) : next;
+    const postId = view.kind === 'detail' ? view.postId : undefined;
+    const commentId = view.kind === 'detail' ? view.commentId : undefined;
+    useMomentsStore.getState().setCommentTarget(postId, commentId);
+    usePrivateCommentsStore.getState().setCommentTarget(postId, commentId);
+    set({ view });
+  };
+  return {
+    view: { kind: 'tab', tab: 'feed' },
+    setView,
+    reset: () => setView({ kind: 'tab', tab: 'feed' }),
+  };
+});

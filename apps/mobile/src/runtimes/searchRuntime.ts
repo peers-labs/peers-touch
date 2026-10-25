@@ -22,6 +22,7 @@ let identityKey = '';
 let retained: SearchResponse | null = null;
 let retainedKey = '';
 let stalledTimer: ReturnType<typeof setTimeout> | null = null;
+const QUERY_BUDGET_MS = 5_000;
 
 function active(): boolean {
   return !suspended && document.visibilityState !== 'hidden'
@@ -95,7 +96,7 @@ function errorKey(error: unknown): string {
   }
 }
 
-async function run(refresh = false): Promise<void> {
+async function run(refresh = false, forwardCursor = ''): Promise<void> {
   stop();
   if (!active()) return;
   const view = useMobileSearchStore.getState();
@@ -114,36 +115,78 @@ async function run(refresh = false): Promise<void> {
   const id = crypto.randomUUID();
   requestId = id;
   useMobileSearchStore.setState({ status: 'loading', errorKey: null });
-  stalledTimer = setTimeout(() => {
+  const admittedTimer = setTimeout(() => {
     if (current()) useMobileSearchStore.setState({ stalled: true });
   }, 200);
+  stalledTimer = admittedTimer;
+  const deadline = Date.now() + QUERY_BUDGET_MS;
+  let budgetExpired = false;
+  let rejectDeadline!: (error: unknown) => void;
+  const expired = new Promise<never>((_resolve, reject) => { rejectDeadline = reject; });
+  const budgetTimer = setTimeout(() => {
+    budgetExpired = true;
+    void mobileSearchService.cancel(id).catch(() => undefined);
+    rejectDeadline({ code: 'SEARCH_SOURCE_TIMEOUT' });
+  }, QUERY_BUDGET_MS);
+  const checkBudget = () => {
+    if (budgetExpired || Date.now() >= deadline) throw { code: 'SEARCH_SOURCE_TIMEOUT' };
+  };
   try {
     if (!scope) throw new Error('missing native scope');
-    const state = await mobileSearchService.readState();
+    checkBudget();
+    const state = await Promise.race([mobileSearchService.readState(), expired]);
     if (!current()) return;
+    checkBudget();
     const key = JSON.stringify([view.query, view.mode, view.filter, view.conversationId, view.locale, view.page]);
     if (view.response) useMobileSearchStore.setState({
       response: concealChangedMobileSearchSources(view.response, state),
     });
     let response = !refresh && retained && retainedKey === key && reusable(retained, state) ? retained : null;
+    let cursors = view.cursors;
     if (!response) {
-      response = view.mode === 'suggest'
-        ? await mobileSearchService.suggest(
+      if (view.mode === 'suggest') {
+        checkBudget();
+        response = await Promise.race([mobileSearchService.suggest(
           view.query, id, kinds(view.filter, view.conversationId), view.conversationId, view.filter === 'attachments',
-        )
-        : await mobileSearchService.submit(
-          view.query, id, view.locale, kinds(view.filter, view.conversationId), view.conversationId,
-          view.cursors[view.page], refresh, view.filter === 'attachments',
-        );
-      if (!current()) return;
-      const latest = await mobileSearchService.readState();
-      if (!current()) return;
-      if (!valid(response, latest)) throw { code: 'SEARCH_SOURCE_CHANGED' };
+        ), expired]);
+        if (!current()) return;
+        checkBudget();
+        const latest = await Promise.race([mobileSearchService.readState(), expired]);
+        if (!current()) return;
+        checkBudget();
+        if (!valid(response, latest)) throw { code: 'SEARCH_SOURCE_CHANGED' };
+      } else {
+        if (!Number.isInteger(view.page) || view.page < 0 || view.page > 31) throw { code: 'SEARCH_CURSOR_EXPIRED' };
+        // Only an explicit Next consumes an unused cursor. History is metadata,
+        // not replayable input; reauthorization/Previous rebuild this ordinal.
+        let cursor = !refresh && forwardCursor && view.response && valid(view.response, state) ? forwardCursor : '';
+        const firstPage = cursor ? view.page : 0;
+        cursors = cursor ? view.cursors.slice(0, view.page + 1) : [''];
+        for (let page = firstPage; page <= view.page; page++) {
+          checkBudget();
+          response = await Promise.race([mobileSearchService.submit(
+            view.query, id, view.locale, kinds(view.filter, view.conversationId), view.conversationId,
+            cursor, page === 0 && (refresh || view.page > 0), view.filter === 'attachments',
+          ), expired]);
+          if (!current()) return;
+          checkBudget();
+          const latest = await Promise.race([mobileSearchService.readState(), expired]);
+          if (!current()) return;
+          checkBudget();
+          if (!valid(response, latest)) throw { code: 'SEARCH_SOURCE_CHANGED' };
+          if (page < view.page) {
+            if (!response.hasMore || !response.nextCursor) throw { code: 'SEARCH_SOURCE_CHANGED' };
+            cursor = response.nextCursor;
+            cursors.push(cursor);
+          }
+        }
+      }
     }
+    if (!response) throw { code: 'SEARCH_SOURCE_CHANGED' };
     retained = response.sources.some(source => source.noStore) ? null : response;
     retainedKey = retained ? key : '';
     if (current()) useMobileSearchStore.setState({
-      response, status: 'ready', errorKey: null,
+      response, cursors, status: 'ready', errorKey: null,
       displayedQuery: view.query, displayedMode: view.mode, displayedFilter: view.filter,
     });
   } catch (error) {
@@ -152,8 +195,9 @@ async function run(refresh = false): Promise<void> {
       useMobileSearchStore.setState({ status: 'error', response: null, errorKey: errorKey(error) });
     }
   } finally {
-    if (stalledTimer) clearTimeout(stalledTimer);
-    stalledTimer = null;
+    clearTimeout(admittedTimer);
+    clearTimeout(budgetTimer);
+    if (stalledTimer === admittedTimer) stalledTimer = null;
     if (generation === admitted) useMobileSearchStore.setState({ stalled: false });
     if (requestId === id) requestId = null;
   }
@@ -222,13 +266,16 @@ export const mobileSearchActions = {
   page(direction: -1 | 1): void {
     const view = useMobileSearchStore.getState();
     const cursor = view.response?.nextCursor;
+    if (view.status === 'loading' || view.opening || view.mode !== 'submit'
+      || view.displayedQuery !== view.query || view.displayedMode !== view.mode
+      || view.displayedFilter !== view.filter) return;
     if (direction < 0 && view.page === 0 || direction > 0 && (!cursor || view.page >= 31)) return;
     retained = null;
     useMobileSearchStore.setState({
       page: view.page + direction, scrollTop: 0, selectedId: '',
       cursors: direction > 0 ? [...view.cursors.slice(0, view.page + 1), cursor!] : view.cursors,
     });
-    void run();
+    void run(false, direction > 0 ? cursor : '');
   },
   async open(item: ResultItem, onOpenDetail: (route: MobileDetailRoute) => void): Promise<void> {
     if (!item.resource || !item.sourceId) return;

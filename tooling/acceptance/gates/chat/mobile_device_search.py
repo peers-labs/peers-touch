@@ -17,6 +17,10 @@ from tooling.acceptance.core import (
     SuiteRuntimeLedger,
 )
 from tooling.acceptance.fixtures.chat_native_actors import ACTOR_PASSWORD
+from tooling.acceptance.gates.chat.device_search_runner import (
+    CAPTURE_END_JS, CAPTURE_PAINT_JS, CAPTURE_START_JS,
+    SEARCH_CONTINUITY_END_JS, SEARCH_CONTINUITY_START_JS,
+)
 from tooling.acceptance.gates.mobile.messaging_journey import MobileMessagingJourney
 from tooling.acceptance.gates.mobile.simulator_e2e import (
     _redacted_markup, _validate_runtime_identity, _validate_source_identity,
@@ -208,15 +212,7 @@ return {
     def capture(self, artifacts: ArtifactSession, session: Any, name: str,
                 *, concealed: bool = False, diagnostic: bool = False) -> None:
         deadline = time.monotonic() + 30
-        session.execute_script("""
-window.__PT_SEARCH_CAPTURE_WATCH__?.observer.disconnect();
-const watch = {revision: 0};
-watch.observer = new MutationObserver(() => { watch.revision += 1; });
-watch.observer.observe(document.body, {
-  childList: true, subtree: true, characterData: true, attributes: true,
-});
-window.__PT_SEARCH_CAPTURE_WATCH__ = watch;
-""")
+        session.execute_script(CAPTURE_START_JS)
         try:
             while True:
                 rendering = self.surface(session)
@@ -226,16 +222,9 @@ window.__PT_SEARCH_CAPTURE_WATCH__ = watch;
                     time.sleep(0.25)
                     continue
                 if not diagnostic:
-                    painted = session.execute_async_script("""
-const done = arguments[arguments.length - 1];
-let finished = false;
-const finish = value => { if (!finished) { finished = true; done(value); } };
-const timeout = setTimeout(() => finish(false), arguments[0]);
-requestAnimationFrame(() => requestAnimationFrame(() => {
-  clearTimeout(timeout);
-  finish(true);
-}));
-""", max(1, int((deadline - time.monotonic()) * 1000)))
+                    painted = session.execute_async_script(
+                        CAPTURE_PAINT_JS, max(1, int((deadline - time.monotonic()) * 1000)),
+                    )
                     require(painted and time.monotonic() < deadline,
                             f"{name} native paint frames timed out")
                 if session.platform == "android":
@@ -253,10 +242,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
                     break
                 time.sleep(0.25)
         finally:
-            session.execute_script("""
-window.__PT_SEARCH_CAPTURE_WATCH__?.observer.disconnect();
-delete window.__PT_SEARCH_CAPTURE_WATCH__;
-""")
+            session.execute_script(CAPTURE_END_JS)
         base = f"mobile-device-search/{session.client_id}/{name}"
         captured = {
             "clientId": session.client_id,
@@ -296,6 +282,35 @@ delete window.__PT_SEARCH_CAPTURE_WATCH__;
                         and box["bottom"] <= visual["top"] + visual["height"] + 1,
                         f"native keyboard obscures Search {field}")
         frame["assertionPassed"] = True
+
+    def reconcile_continuity(self, artifacts: ArtifactSession, session: Any, name: str) -> None:
+        root, row = ".mobile-search-viewport", ROW
+        before = session.execute_script(SEARCH_CONTINUITY_START_JS, root, row)
+        try:
+            require(before and before["items"], "Search continuity needs the current real page")
+            self.wait(session, """
+return performance.now() - window.__PT_SEARCH_CONTINUITY__.started >= 2100;
+""", "one scheduled Search reconcile interval")
+            self.wait(session, """
+return document.querySelector('[data-search-state]')?.dataset.searchState === 'ready';
+""", "terminal page after scheduled Search reconcile")
+            after = session.execute_script(SEARCH_CONTINUITY_END_JS, root, row)
+            artifacts.write_json(
+                f"mobile-device-search/{session.client_id}/{name}/scheduled-continuity.json",
+                {"before": before, "after": after},
+                role=f"mobile-search-scheduled-continuity/{session.client_id}/{name}",
+            )
+            require(after["elapsedMs"] >= 2100 and after["sameNodes"]
+                    and after["items"] == before["items"]
+                    and after["anchor"] == before["anchor"]
+                    and abs(after["scrollTop"] - before["scrollTop"]) <= 1
+                    and (before["anchorTop"] is None or (
+                        after["anchorTop"] is not None
+                        and abs(after["anchorTop"] - before["anchorTop"]) <= 1
+                    )), f"{name} scheduled reconcile replaced the page objects or viewport anchor")
+            self.capture(artifacts, session, name + "-scheduled")
+        finally:
+            session.execute_script("delete window.__PT_SEARCH_CONTINUITY__;")
 
     def tap_android_input(self, artifacts: ArtifactSession, session: Any,
                           markup: str, target: dict) -> None:
@@ -514,6 +529,30 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
                 f"native Search diagnostic query failed ({diagnostic_code})")
         return result["value"]
 
+    def account_cursor_request(self, session: Any, query: str) -> tuple[dict, dict]:
+        selectors = {
+            "kinds": [3], "limit": 20, "locale": "en", "conversationId": "",
+            "attachmentNamesOnly": False, "refresh": True,
+        }
+        issued = self.native_page(session, query, **selectors)
+        require(bool(issued.get("nextCursor")), "same-account paging cursor required")
+        control = self.native_page(session, query, cursor=issued["nextCursor"], **selectors)
+        require(bool(control.get("items")) and not (
+            {item["resource"]["id"] for item in issued["items"]}
+            & {item["resource"]["id"] for item in control["items"]}
+        ), "identical-selector same-account continuation must advance without duplicates")
+        # A consumed cursor cannot prove account fencing. Force an independent
+        # issuance through the original owner and do not consume it until handoff.
+        unconsumed = self.native_page(session, query, **selectors)
+        require(unconsumed.get("nextCursor")
+                and unconsumed["nextCursor"] != issued["nextCursor"],
+                "account denial needs a separate unconsumed cursor")
+        return (
+            {"query": query, **selectors, "cursor": unconsumed["nextCursor"]},
+            {"selectors": {"query": query, **selectors}, "issued": issued,
+             "sameAccountContinuation": control, "unconsumedIssuance": unconsumed},
+        )
+
     @staticmethod
     def mutate_when_admitted(session: Any, action: str, payload: dict) -> Any:
         # Observe full production admission and invoke in one WebView turn.
@@ -667,6 +706,7 @@ return {
         self.wait(session, "return document.querySelectorAll('.mobile-search-result').length === 5;",
                   "last bounded Search page")
         self.capture(artifacts, session, "page-two")
+        self.reconcile_continuity(artifacts, session, "page-two")
         self.fill(session, f'附件计划-{fixture["token"]}')
         self.click(session, '[data-search-filter="attachments"]')
         self.has(session, fixture["attachment"], fixture["filename"])
@@ -768,8 +808,13 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
                          observe_account: Callable[[], None] | None = None) -> dict:
         self.fill(session, fixture["replyQuery"])
         self.has(session, fixture["reply"], fixture["replyQuery"])
-        page = self.native_page(session, f'历史 {fixture["token"]}', limit=20)
-        require(bool(page.get("nextCursor")), "old-account paging cursor required")
+        cursor_request, cursor_control = self.account_cursor_request(
+            session, f'历史 {fixture["token"]}',
+        )
+        artifacts.write_json(
+            f"mobile-device-search/{session.client_id}/account-cursor-control.json",
+            cursor_control, role=f"mobile-search-account-cursor-control/{session.client_id}",
+        )
         before = session.call_action("search.state")
         session.call_action("session.logout", {"draftDisposition": "discard"})
         require(session.execute_script("return !document.querySelector('#mobile-search-input')"
@@ -782,9 +827,8 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
                 "account change must clear the Search query")
         after = session.call_action("search.state")
         require(before["partition"] != after["partition"], "account change must replace native scope")
-        self.denial(session, "old-account-cursor", "search.page", {
-            "query": f'历史 {fixture["token"]}', "limit": 20, "cursor": page["nextCursor"],
-        }, "SEARCH_CURSOR_EXPIRED")
+        self.denial(session, "old-account-cursor", "search.page", cursor_request,
+                    "SEARCH_CURSOR_EXPIRED")
         self.fill(session, fixture["replyQuery"])
         require(fixture["reply"] not in self.rows(session),
                 "new account must not reveal the old account's received result")

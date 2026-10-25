@@ -12,6 +12,16 @@ pub use wire::{
     SourceState as SourceStateKind,
 };
 
+/// Private memory-cache provenance. Business fields remain the generated response.
+/// The retained session owns issuance; these bytes confer no read or open rights.
+#[derive(Clone, PartialEq, prost::Message)]
+pub(crate) struct SessionCacheFrame {
+    #[prost(uint64, tag = "1")]
+    pub session_id: u64,
+    #[prost(message, optional, tag = "2")]
+    pub response: Option<wire::SearchResponse>,
+}
+
 impl ResourceRef {
     /// Stable fusion identity: the same object returned by several sources
     /// (message index, attachment projection, recents) must collapse to one.
