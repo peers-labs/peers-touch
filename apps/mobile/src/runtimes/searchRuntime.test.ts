@@ -1,7 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  ResolvedResourceSchema, ResultItemSchema, SearchKind, SearchReadStateSchema, SearchResponseSchema, SourceState,
+  CancelResponseSchema, ResolvedResourceSchema, ResultItemSchema, SearchKind, SearchReadStateSchema, SearchResponseSchema, SourceState,
   type ResolvedResource, type SearchResponse,
 } from '../gen/proto/domain/search/search_pb';
 
@@ -27,7 +27,9 @@ async function fixture() {
   });
   const service = {
     resolve: vi.fn(() => pending),
-    cancel: vi.fn(async () => undefined),
+    cancel: vi.fn<typeof import('../services/search').mobileSearchService.cancel>(
+      async () => create(CancelResponseSchema),
+    ),
     readState: vi.fn(async () => create(SearchReadStateSchema)),
     submit: vi.fn<typeof import('../services/search').mobileSearchService.submit>(
       async () => create(SearchResponseSchema),
@@ -370,7 +372,7 @@ describe('Mobile Search single-use traversal lifetime', () => {
     await vi.advanceTimersByTimeAsync(2_000);
     expect(f.service.submit).toHaveBeenCalledTimes(3);
     if (transition === 'back') f.navigate('detail:search');
-    else await f.runtime.resume();
+    else await f.runtime.resume(f.runtimeContext);
     await vi.advanceTimersByTimeAsync(0);
     expect(f.store.getState()).toMatchObject({
       query: 'post', filter: 'social', page: 2, selectedId: 'page-2', scrollTop: 480, status: 'ready',

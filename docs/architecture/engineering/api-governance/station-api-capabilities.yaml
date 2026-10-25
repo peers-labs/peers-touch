@@ -660,8 +660,8 @@ capabilities:
     canonical_route: { method: POST, path: /api/v1/social/moments/read-policy }
     request_proto: peers_touch.model.social.v1.CheckMomentReadPolicyRequest
     response_proto: peers_touch.model.social.v1.CheckMomentReadPolicyResponse
-    truth_stores: [social_private_posts, social_private_comments, social_private_recipient_grants, social_remote_private_resources]
-    allowed_dependencies: []
+    truth_stores: [social_private_posts, social_private_comments, social_private_recipient_grants]
+    allowed_dependencies: [social.private_moment.remote_projection_list]
     forbidden_aliases: []
     superseded_symbols: []
 
