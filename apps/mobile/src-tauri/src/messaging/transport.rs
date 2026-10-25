@@ -101,13 +101,33 @@ impl std::fmt::Display for MemberAuthorityTransportError {
 
 impl std::error::Error for MemberAuthorityTransportError {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RequestStage {
+    Build,
+    Send,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HttpFailureKind {
+    IncompleteMessage,
+    Closed,
+    Canceled,
+    Parse,
+    BodyWriteAborted,
+    Shutdown,
+    Other,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StationTransportError {
     Deadline,
     Network {
+        operation: &'static str,
+        stage: RequestStage,
         builder: bool,
         connect: bool,
         io_kind: Option<std::io::ErrorKind>,
+        http_kind: Option<HttpFailureKind>,
     },
     HttpStatus {
         status: u16,
@@ -126,12 +146,15 @@ impl std::fmt::Display for StationTransportError {
                 formatter.write_str("mobile messaging Station request exceeded its deadline")
             }
             Self::Network {
+                operation,
+                stage,
                 builder,
                 connect,
                 io_kind,
+                http_kind,
             } => write!(
                 formatter,
-                "mobile messaging Station network request failed [builder={builder}, connect={connect}, io={io_kind:?}]"
+                "mobile messaging Station network request failed [operation={operation}, stage={stage:?}, builder={builder}, connect={connect}, io={io_kind:?}, http={http_kind:?}]"
             ),
             Self::HttpStatus {
                 status,
@@ -2190,7 +2213,9 @@ where
     let client = reqwest::blocking::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .build()
-        .map_err(classify_request_error)?;
+        .map_err(|error| {
+            classify_request_error(error, std::any::type_name::<Request>(), RequestStage::Build)
+        })?;
     let response = client
         .get(format!("{}{path}", station_origin.trim_end_matches('/')))
         .bearer_auth(access_token)
@@ -2199,7 +2224,9 @@ where
         .header("Accept", "application/protobuf")
         .body(request.encode_to_vec())
         .send()
-        .map_err(classify_request_error)?;
+        .map_err(|error| {
+            classify_request_error(error, std::any::type_name::<Request>(), RequestStage::Send)
+        })?;
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = response.bytes().map_err(classify_response_error)?;
@@ -2272,14 +2299,22 @@ where
     let client = reqwest::blocking::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .build()
-        .map_err(classify_request_error)?;
+        .map_err(|error| {
+            classify_request_error(
+                error,
+                std::any::type_name::<Response>(),
+                RequestStage::Build,
+            )
+        })?;
     let response = client
         .get(format!("{}{path}", station_origin.trim_end_matches('/')))
         .bearer_auth(access_token)
         .header("X-Device-ID", device_id)
         .header(ACCEPT, "application/protobuf")
         .send()
-        .map_err(classify_request_error)?;
+        .map_err(|error| {
+            classify_request_error(error, std::any::type_name::<Response>(), RequestStage::Send)
+        })?;
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = response.bytes().map_err(classify_response_error)?;
@@ -2309,7 +2344,9 @@ where
     let client = reqwest::blocking::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .build()
-        .map_err(classify_request_error)?;
+        .map_err(|error| {
+            classify_request_error(error, std::any::type_name::<Request>(), RequestStage::Build)
+        })?;
     let response = client
         .post(format!("{}{path}", station_origin.trim_end_matches('/')))
         .bearer_auth(access_token)
@@ -2318,7 +2355,9 @@ where
         .header("Accept", "application/protobuf")
         .body(request.encode_to_vec())
         .send()
-        .map_err(classify_request_error)?;
+        .map_err(|error| {
+            classify_request_error(error, std::any::type_name::<Request>(), RequestStage::Send)
+        })?;
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = response.bytes().map_err(classify_response_error)?;
@@ -2448,32 +2487,62 @@ fn classify_member_authority_error(error: MemberAuthorityTransportError) -> Comm
     }
 }
 
-fn classify_request_error(error: reqwest::Error) -> StationTransportError {
+fn classify_request_error(
+    error: reqwest::Error,
+    operation: &'static str,
+    stage: RequestStage,
+) -> StationTransportError {
     if error.is_timeout() {
         StationTransportError::Deadline
     } else {
         // Error text and URLs may contain credentials. Preserve only SDK flags
-        // and the typed I/O cause; this does not change retry classification.
+        // and typed causes. Operation is a compiled type name, never a URL or
+        // caller input; this does not change retry classification.
+        let (io_kind, http_kind) = request_error_causes(&error);
         let failure = StationTransportError::Network {
+            operation,
+            stage,
             builder: error.is_builder(),
             connect: error.is_connect(),
-            io_kind: request_io_error_kind(&error),
+            io_kind,
+            http_kind,
         };
         log::warn!("{failure}");
         failure
     }
 }
 
-fn request_io_error_kind(error: &(dyn std::error::Error + 'static)) -> Option<std::io::ErrorKind> {
+fn request_error_causes(
+    error: &(dyn std::error::Error + 'static),
+) -> (Option<std::io::ErrorKind>, Option<HttpFailureKind>) {
+    let mut io_kind = None;
+    let mut http_kind = None;
     let mut cause = Some(error);
     for _ in 0..8 {
-        let current = cause?;
+        let Some(current) = cause else { break };
         if let Some(error) = current.downcast_ref::<std::io::Error>() {
-            return Some(error.kind());
+            io_kind.get_or_insert(error.kind());
+        }
+        if let Some(error) = current.downcast_ref::<hyper::Error>() {
+            http_kind.get_or_insert(if error.is_incomplete_message() {
+                HttpFailureKind::IncompleteMessage
+            } else if error.is_closed() {
+                HttpFailureKind::Closed
+            } else if error.is_canceled() {
+                HttpFailureKind::Canceled
+            } else if error.is_parse() {
+                HttpFailureKind::Parse
+            } else if error.is_body_write_aborted() {
+                HttpFailureKind::BodyWriteAborted
+            } else if error.is_shutdown() {
+                HttpFailureKind::Shutdown
+            } else {
+                HttpFailureKind::Other
+            });
         }
         cause = current.source();
     }
-    None
+    (io_kind, http_kind)
 }
 
 fn classify_response_error(error: reqwest::Error) -> StationTransportError {
@@ -3004,7 +3073,7 @@ mod tests {
             .header("invalid\nheader", "private-context")
             .build()
             .unwrap_err();
-        let failure = classify_request_error(error);
+        let failure = classify_request_error(error, "test.request", RequestStage::Build);
         assert!(matches!(
             failure,
             StationTransportError::Network { builder: true, .. }
@@ -3015,21 +3084,63 @@ mod tests {
         assert!(!detail.contains("station.example"));
         assert!(!detail.contains("/private"));
         assert_eq!(
-            request_io_error_kind(&std::io::Error::new(
+            request_error_causes(&std::io::Error::new(
                 std::io::ErrorKind::ConnectionReset,
                 "private-context",
             )),
-            Some(std::io::ErrorKind::ConnectionReset)
+            (Some(std::io::ErrorKind::ConnectionReset), None)
         );
+    }
+
+    #[test]
+    fn request_error_preserves_http_connection_closed_before_headers() {
+        use std::io::Read;
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = [0; 4096];
+            socket.read(&mut request).unwrap();
+            socket.shutdown(std::net::Shutdown::Both).unwrap();
+        });
+        let error = Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap()
+            .get(format!("http://{address}/private?secret=private-context"))
+            .send()
+            .unwrap_err();
+        peer.join().unwrap();
+        let failure = classify_request_error(error, "test.request", RequestStage::Send);
+        assert!(matches!(
+            failure,
+            StationTransportError::Network {
+                stage: RequestStage::Send,
+                builder: false,
+                connect: false,
+                http_kind: Some(HttpFailureKind::IncompleteMessage),
+                ..
+            }
+        ));
+        let detail = failure.to_string();
+        assert!(!detail.contains("private-context"));
+        assert!(!detail.contains(&address.to_string()));
     }
 
     #[test]
     fn command_error_classification_is_bounded() {
         assert!(matches!(
             classify_command_error(StationTransportError::Network {
+                operation: "test.request",
+                stage: RequestStage::Send,
                 builder: false,
                 connect: true,
                 io_kind: Some(std::io::ErrorKind::ConnectionReset),
+                http_kind: None,
             }),
             CommandSubmitFailure::Retryable { .. }
         ));
@@ -3068,9 +3179,12 @@ mod tests {
         assert!(session_forbidden.retryable);
         assert!(
             classify_delivery_receipt_failure(StationTransportError::Network {
+                operation: "test.request",
+                stage: RequestStage::Send,
                 builder: false,
                 connect: true,
                 io_kind: Some(std::io::ErrorKind::ConnectionReset),
+                http_kind: None,
             })
             .retryable
         );

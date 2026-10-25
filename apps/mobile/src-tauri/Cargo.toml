@@ -20,6 +20,7 @@ x-config-core = { path = "../../../packages/x-config-core" }
 ed25519-dalek = { version = "2", features = ["pem", "rand_core"] }
 hkdf = "0.12"
 hex = "0.4"
+hyper = { version = "1", default-features = false }
 libp2p-identity = { version = "=0.3.0", features = ["ed25519", "peerid"] }
 messaging-core = { path = "../../../packages/messaging-core" }
 messaging-native-filesystem = { path = "../../../packages/messaging-native-filesystem" }
