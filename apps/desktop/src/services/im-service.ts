@@ -826,7 +826,7 @@ const messagingService: MessagingServiceContract = {
 
   async listMessages(conversationId, options = {}) {
     const response = await cmd<
-      { conversation_id: string; before_sequence?: number; limit?: number },
+      { conversation_id: string; before_sequence?: number; limit?: number; anchor_message_id?: string },
       {
         messages: MessagingMessageWire[]
         has_more: boolean
@@ -836,6 +836,7 @@ const messagingService: MessagingServiceContract = {
       conversation_id: conversationId,
       before_sequence: options.beforeSequence,
       limit: options.limit,
+      anchor_message_id: options.anchorMessageId,
     })
     return {
       messages: response.messages.map(projectMessagingMessage),

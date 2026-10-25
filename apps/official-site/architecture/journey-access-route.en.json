@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Verified Access and Route Convergence",
+    "subtitle": "Route failure may switch Direct to Circuit, but never changes Station identity or Session authority.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/journey-access-route.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "Client Runtime",
+      "sublabel": "Desktop / Mobile",
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "trust",
+      "type": "security",
+      "label": "Identity + RouteLease",
+      "sublabel": "root · node · generation fence",
+      "sources": [
+        {
+          "path": "packages/station-trust/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "route",
+      "type": "external",
+      "label": "Direct / Relay",
+      "sublabel": "replaceable candidate",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/runtime/role/role.go",
+          "label": "role.go",
+          "line": 1,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "ingress",
+      "type": "backend",
+      "label": "Canonical Ingress",
+      "sublabel": "same Station scope",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/server/canonical_protobuf_handler.go",
+          "label": "canonical_protobuf_handler.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Access Gate",
+      "sublabel": "actor + device",
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "apps",
+      "type": "backend",
+      "label": "App Domains",
+      "sublabel": "scope-bound runtime",
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 270,
+      "label": "Verify"
+    },
+    {
+      "from": 280,
+      "to": 390,
+      "label": "Choose route"
+    },
+    {
+      "from": 400,
+      "to": 540,
+      "label": "Finalize access"
+    }
+  ],
+  "messages": [
+    {
+      "id": "load-binding",
+      "from": "client",
+      "to": "trust",
+      "y": 170,
+      "label": "verify Station root + route generation",
+      "variant": "security"
+    },
+    {
+      "id": "lease",
+      "from": "trust",
+      "to": "client",
+      "y": 205,
+      "label": "issue Station-scoped RouteLease",
+      "variant": "return"
+    },
+    {
+      "id": "direct-open",
+      "from": "client",
+      "to": "route",
+      "y": 295,
+      "label": "try verified Direct candidate",
+      "variant": "emphasis"
+    },
+    {
+      "id": "direct-failed",
+      "from": "route",
+      "to": "client",
+      "y": 330,
+      "label": "unreachable before request commit",
+      "variant": "return"
+    },
+    {
+      "id": "relay-open",
+      "from": "client",
+      "to": "route",
+      "y": 365,
+      "label": "fallback only if SafeRead / idempotent",
+      "variant": "dashed"
+    },
+    {
+      "id": "same-ingress",
+      "from": "route",
+      "to": "ingress",
+      "y": 420,
+      "label": "opaque Circuit to same Station",
+      "variant": "emphasis"
+    },
+    {
+      "id": "access-request",
+      "from": "ingress",
+      "to": "access",
+      "y": 455,
+      "label": "finalize actor + device + client class",
+      "variant": "security"
+    },
+    {
+      "id": "session",
+      "from": "access",
+      "to": "apps",
+      "y": 490,
+      "label": "inject Station-scoped Session context",
+      "variant": "security"
+    },
+    {
+      "id": "ready",
+      "from": "apps",
+      "to": "client",
+      "y": 525,
+      "label": "runtime ready at leased generation",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Identity invariant",
+      "items": [
+        "Fallback changes transport only; Station identity and scope remain fixed."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Replay invariant",
+      "items": [
+        "Unknown writes are not replayed. Automatic fallback requires SafeRead or an explicit idempotency key."
+      ]
+    }
+  ]
+}

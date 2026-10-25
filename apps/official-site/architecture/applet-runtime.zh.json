@@ -1,0 +1,281 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Applet 运行时架构",
+    "subtitle": "Applet UI 运行于沙箱化 Lynx Runtime；所有 Host Capability 均经过权限化、可审计 Gateway，持久服务状态仍由 Station 拥有。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/applet-runtime.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "client",
+        "focus": [
+          "catalog",
+          "host",
+          "lynx",
+          "bridge",
+          "gateway",
+          "device"
+        ],
+        "label": "Client Runtime",
+        "note": "沙箱化 UI 只能通过 Gateway 使用设备能力。"
+      },
+      {
+        "id": "service",
+        "focus": [
+          "catalog",
+          "host",
+          "lynx",
+          "bridge",
+          "gateway",
+          "service"
+        ],
+        "label": "Station Service",
+        "note": "Applet 持久状态与服务策略仍由 Station 拥有。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "catalog",
+      "type": "database",
+      "label": "Applet Catalog",
+      "sublabel": "Manifest · Version · Permission",
+      "tag": "声明",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/applets/README.md",
+          "label": "README.md",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "type": "frontend",
+      "label": "Applet Host",
+      "sublabel": "Surface · 生命周期 · 导航",
+      "tag": "Client Owner",
+      "pos": [
+        210,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+          "label": "AppletRuntimePage.tsx",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "lynx",
+      "type": "frontend",
+      "label": "Lynx Runtime",
+      "sublabel": "沙箱化 Applet UI",
+      "tag": "不受信 UI",
+      "pos": [
+        420,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/platform/applet-runtime/design.md",
+          "label": "design.md",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "bridge",
+      "type": "security",
+      "label": "Typed Bridge",
+      "sublabel": "已验证 Request / Response",
+      "tag": "契约边界",
+      "pos": [
+        640,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/platform/applet-runtime/design.md",
+          "label": "design.md",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "security",
+      "label": "Host Capability Gateway",
+      "sublabel": "Permission · Audit · Rate Limit",
+      "tag": "策略 Owner",
+      "pos": [
+        860,
+        220
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/platform/applet-runtime/design.md",
+          "label": "design.md",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "device",
+      "type": "external",
+      "label": "Device Capabilities",
+      "sublabel": "媒体 · 文件 · 通知",
+      "tag": "Host Port",
+      "pos": [
+        1090,
+        100
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "service",
+      "type": "backend",
+      "label": "Station Applet Service",
+      "sublabel": "Binding · 持久状态",
+      "tag": "业务 Owner",
+      "pos": [
+        1090,
+        340
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/applets/README.md",
+          "label": "README.md",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "host",
+        "lynx"
+      ],
+      "label": "Client Applet Runtime",
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "wraps": [
+        "bridge",
+        "gateway"
+      ],
+      "label": "权限与审计边界",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "catalog-host",
+      "from": "catalog",
+      "to": "host",
+      "variant": "emphasis",
+      "label": "加载 Grant"
+    },
+    {
+      "id": "host-lynx",
+      "from": "host",
+      "to": "lynx",
+      "variant": "emphasis",
+      "label": "建立沙箱"
+    },
+    {
+      "id": "lynx-bridge",
+      "from": "lynx",
+      "to": "bridge",
+      "variant": "security",
+      "label": "类型化请求"
+    },
+    {
+      "id": "bridge-gateway",
+      "from": "bridge",
+      "to": "gateway",
+      "variant": "security",
+      "label": "验证"
+    },
+    {
+      "id": "gateway-device",
+      "from": "gateway",
+      "to": "device",
+      "variant": "emphasis",
+      "label": "已授权 Port"
+    },
+    {
+      "id": "gateway-service",
+      "from": "gateway",
+      "to": "service",
+      "variant": "emphasis",
+      "label": "绑定 Service"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "无环境权威",
+      "items": [
+        "Applet 代码只获得 Manifest 声明的能力；禁止直接访问 OS 与 Station。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "审计边界",
+      "items": [
+        "Gateway 在分派前验证 Payload、Permission、Rate Limit 与 Audit Context。"
+      ]
+    }
+  ]
+}

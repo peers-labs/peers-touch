@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Agent Turn with Explicit Execution Placement",
+    "subtitle": "The Agent Domain authorizes and persists the turn, then dispatches either Station execution or a declared client capability without moving authority.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/journey-agent-execution.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "Client Surface",
+      "sublabel": "Desktop / Mobile"
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Station Context",
+      "sublabel": "identity + permissions",
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "Agent Domain",
+      "sublabel": "turn + session owner",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/agent/module.go",
+          "label": "module.go",
+          "line": 1,
+          "end_line": 34
+        }
+      ]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "Placement Router",
+      "sublabel": "Station or client",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/agent/handler/orchestration_handler.go",
+          "label": "orchestration_handler.go",
+          "line": 1,
+          "end_line": 92
+        }
+      ]
+    },
+    {
+      "id": "provider",
+      "type": "external",
+      "label": "Execution Adapter",
+      "sublabel": "provider / capability"
+    },
+    {
+      "id": "state",
+      "type": "database",
+      "label": "Durable State",
+      "sublabel": "session + result + event",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/store/rds.go",
+          "label": "rds.go",
+          "line": 1,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "type": "messagebus",
+      "label": "Client Events",
+      "sublabel": "typed stream",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "label": "events.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 290,
+      "label": "Authorize capability"
+    },
+    {
+      "from": 300,
+      "to": 440,
+      "label": "Execute"
+    },
+    {
+      "from": 450,
+      "to": 590,
+      "label": "Commit + project"
+    }
+  ],
+  "messages": [
+    {
+      "id": "invoke",
+      "from": "client",
+      "to": "access",
+      "y": 170,
+      "label": "typed Agent turn action",
+      "variant": "emphasis"
+    },
+    {
+      "id": "authorize",
+      "from": "access",
+      "to": "domain",
+      "y": 215,
+      "label": "scope + permission context",
+      "variant": "security"
+    },
+    {
+      "id": "plan",
+      "from": "domain",
+      "to": "runtime",
+      "y": 315,
+      "label": "persist turn + choose declared placement",
+      "variant": "emphasis"
+    },
+    {
+      "id": "call",
+      "from": "runtime",
+      "to": "provider",
+      "y": 360,
+      "label": "dispatch Station adapter or client capability",
+      "variant": "default"
+    },
+    {
+      "id": "result",
+      "from": "provider",
+      "to": "runtime",
+      "y": 405,
+      "label": "typed execution result",
+      "variant": "return"
+    },
+    {
+      "id": "commit",
+      "from": "runtime",
+      "to": "state",
+      "y": 470,
+      "label": "commit turn result + recovery cursor",
+      "variant": "emphasis"
+    },
+    {
+      "id": "append",
+      "from": "state",
+      "to": "events",
+      "y": 515,
+      "label": "append typed turn event",
+      "variant": "dashed"
+    },
+    {
+      "id": "project",
+      "from": "events",
+      "to": "client",
+      "y": 560,
+      "label": "resume product projection",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Authority stays put",
+      "items": [
+        "Execution adapters return results; Agent Domain remains the turn and session authority."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Recovery",
+      "items": [
+        "A durable turn state and cursor let clients resume after stream loss or process restart."
+      ]
+    }
+  ]
+}

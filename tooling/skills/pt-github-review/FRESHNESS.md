@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-25
-covered_docs_hash: 897029fca4cd7c42dee8a28b971c2d9f6c9ab66d0917a954f0cb0ff4ffc91ca8
+covered_docs_hash: d7f6faf493031a3f432a391ba36e459de2c1f7053c4bb0ad8e4d40c048f23cec
 
 covered_docs:
   - AGENTS.md
@@ -33,8 +33,8 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 
 ## Current Source Review
 
-The attachment-viewing range changes none of the covered upstream documents.
-The inherited source already contains the attach-only Mobile runtime evidence,
+The attachment-viewing changes add no covered upstream rules. The merged
+master source already contains the attach-only Mobile runtime evidence,
 current finalizer bootstrap inputs, Darwin shared-cache image identity, and
 archived release scope. The existing review policy requires exact source,
 native evidence at the declared strength, immutable publication, and explicit
@@ -44,6 +44,62 @@ This refresh binds that reviewed source set. It changes neither severity nor
 verification requirements. No new Skill rule or generic fixture is needed;
 the attachment change supplies focused native, cancellation, integrity, and
 completed-cache restoration regression evidence at their existing owners.
+
+## Desktop Search Continuity Review
+
+The Desktop runtime contract now delegates bounded query subscriptions and
+previous-result projection to one headless coordinator while native owners
+continue to control read validity, cancellation and opening. The interaction
+contract keeps draft input separate from displayed query and preserves results,
+selection and scroll until commit. Existing lifecycle, dependency and evidence
+rules cover this change; the business Gate owns the added rendered-frame
+assertion. Functional observations do not replace current formal native proof.
+
+## Generated Coverage Inventory Review
+
+The generated Acceptance inventory now includes the registered Desktop/Mobile
+Search and unified-client Features: 48 wired Features and zero global proven
+Features. These counts describe wiring, and retain unexecuted or stale evidence
+as unproven. They were checked against the Feature and Gate catalogs. Existing
+source-bound proof rules already require this distinction; no review rule,
+waiver, fixture deletion or severity change is introduced.
+
+## Search Source And SQLCipher Knowledge Integration
+
+The covered index changes add the canonical Desktop/Mobile closed-domain Search
+source and its precisely bound native evidence to `docs/README.md`, and the
+raw-byte SQLCipher key pitfall to `docs/knowledge/README.md`. The covered Desktop
+runtime contract makes Search session-scoped after Messaging, with an on-demand
+Shell overlay and identity/Station invalidation instead of a persistent page.
+These changes were reviewed against the existing domain ownership, runtime,
+current-source evidence, security and knowledge-delta rules. The current review
+Skill already requires those boundaries and rejects inherited PASS; no new
+review authority, waiver, `SKILL.md` rule or fixture is needed. The architecture
+registry fixture checks the exact Search module and capability IDs.
+
+## 2026-10-24 X-Config Service Deploy Skill Registration
+
+`AGENTS.md` registers the new `pt-x-config-deploy` skill for service
+binary/runtime deploy and rollback on the corpstable and preview hosts.
+The skill consumes the env-repository placement and git-crypt runtime env
+without changing review severity or the existing hard rules
+(`station-profile-bypass` remains Station-only; the deploy skill explicitly
+does not publish catalogs or touch the OAuth broker). No new review
+fixture is required: it introduces no new machine-detectable code pattern
+beyond the existing no-secret and unreviewed-topology rules.
+
+## 2026-10-24 X-Config Distribution And Knowledge Coverage Review
+
+`AGENTS.md` registers the new `pt-x-config-catalog-publish` skill, and the
+knowledge README indexes the new XCFG-D06 invariant and the mobile proto
+regen pitfall. Review now also performs Knowledge Coverage Review: a new
+cross-layer contract, runtime-semantic proto section, module path, or
+paid-for failure mode with zero matching knowledge must add a governing
+entry or record an explicit `no_growth_needed` waiver, and documentation
+must not restate decisions or describe persisted state that the code only
+derives. `SKILL.md` was updated with this checklist; the large-requirement
+documentation playbook carries the authoring-side steps, so no separate
+fixture is required for the documentation-consistency judgment.
 
 ## Mobile Origin Contract Review
 

@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Durable Cross-Station Social Delivery",
+    "subtitle": "Source accepted is not completion: target verification, deduplication, domain commit and receiver visibility are required.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/journey-cross-station.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "source",
+      "type": "backend",
+      "label": "Source + Outbox",
+      "sublabel": "source transaction",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/delivery/gorm_unit_of_work.go",
+          "label": "gorm_unit_of_work.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "delivery",
+      "type": "messagebus",
+      "label": "Dispatcher",
+      "sublabel": "retry + signed Frame",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/delivery/dispatcher.go",
+          "label": "dispatcher.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "transport",
+      "type": "messagebus",
+      "label": "Peer Transport",
+      "sublabel": "authenticated channel",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/transport.go",
+          "label": "transport.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "target",
+      "type": "backend",
+      "label": "Target Inbox + UoW",
+      "sublabel": "verify · dedupe · commit",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/delivery/gorm_unit_of_work.go",
+          "label": "gorm_unit_of_work.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "deviceInbox",
+      "type": "database",
+      "label": "Device Inbox",
+      "sublabel": "receiver cursor truth",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/conversation/production_realtime.go",
+          "label": "production_realtime.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Device Engine",
+      "sublabel": "pull · decrypt · commit",
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
+          "label": "lifecycle.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "visible",
+      "type": "frontend",
+      "label": "Receiver UI",
+      "sublabel": "visible result + ACK"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 280,
+      "label": "Source commit"
+    },
+    {
+      "from": 290,
+      "to": 430,
+      "label": "Authenticated delivery"
+    },
+    {
+      "from": 440,
+      "to": 590,
+      "label": "Target commit + visibility"
+    }
+  ],
+  "messages": [
+    {
+      "id": "source-commit",
+      "from": "source",
+      "to": "delivery",
+      "y": 170,
+      "label": "commit source state + durable Outbox",
+      "variant": "emphasis"
+    },
+    {
+      "id": "accepted",
+      "from": "delivery",
+      "to": "source",
+      "y": 215,
+      "label": "accepted at source",
+      "variant": "return"
+    },
+    {
+      "id": "frame",
+      "from": "delivery",
+      "to": "transport",
+      "y": 300,
+      "label": "retry signed idempotent Frame",
+      "variant": "emphasis"
+    },
+    {
+      "id": "deliver",
+      "from": "transport",
+      "to": "target",
+      "y": 350,
+      "label": "authenticated Station channel",
+      "variant": "emphasis"
+    },
+    {
+      "id": "target-commit",
+      "from": "target",
+      "to": "deviceInbox",
+      "y": 435,
+      "label": "verify + Inbox dedupe + domain commit",
+      "variant": "security"
+    },
+    {
+      "id": "pull",
+      "from": "engine",
+      "to": "deviceInbox",
+      "y": 490,
+      "label": "pull committed receiver event",
+      "variant": "emphasis"
+    },
+    {
+      "id": "apply",
+      "from": "deviceInbox",
+      "to": "engine",
+      "y": 535,
+      "label": "ordered encrypted event",
+      "variant": "return"
+    },
+    {
+      "id": "visible",
+      "from": "engine",
+      "to": "visible",
+      "y": 580,
+      "label": "local commit → visible → cursor ACK",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Three boundaries",
+      "items": [
+        "accepted at source → committed at target → visible on receiver device"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Retry safety",
+      "items": [
+        "Source Outbox retries; target Inbox dedupe and device cursor ACK prevent duplicate mutation or projection."
+      ]
+    }
+  ]
+}

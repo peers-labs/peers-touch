@@ -3,10 +3,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DevctlError, ERROR_CODES } from './errors.mjs';
+import { loadFlavorRegistry, resolveDistribution } from '../distribution/flavors.mjs';
 
-const DEFAULT_APP_ID = 'com.peers.touch.desktop.dev';
-const PRODUCT_NAME = 'Peers Dev';
-const DEEP_LINK_SCHEME = 'peers-touch-dev';
+// Local desktop installs are the registered `dev` flavor. XCFG-D05 keeps this
+// the single derivation point; PT_DESKTOP_APP_ID remains an override hatch.
+const DEV_IDENTITY = resolveDistribution(loadFlavorRegistry(), {
+  product: 'desktop',
+  flavor: 'dev',
+});
+const DEFAULT_APP_ID = DEV_IDENTITY.identifier;
+const PRODUCT_NAME = DEV_IDENTITY.displayName;
+const DEEP_LINK_SCHEME = DEV_IDENTITY.deepLinkScheme;
 
 const LINUX_PKG_CONFIG_REQUIREMENTS = [
   {

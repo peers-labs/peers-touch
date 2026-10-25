@@ -1,0 +1,340 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Home Station 权威中心",
+    "subtitle": "Frame / Touch 拥有平台机制；App Domains 拥有业务策略和跨设备持久真源。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/station-center.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "platform",
+        "focus": [
+          "edge",
+          "access"
+        ],
+        "label": "平台边界",
+        "note": "Frame / Touch 拥有接入、Session 与传输生命周期。"
+      },
+      {
+        "id": "business",
+        "focus": [
+          "apps",
+          "state",
+          "events",
+          "objects"
+        ],
+        "label": "业务权威",
+        "note": "App Domains 拥有策略、状态机与持久结果。"
+      },
+      {
+        "id": "federation",
+        "focus": [
+          "apps",
+          "delivery",
+          "peer"
+        ],
+        "label": "跨站投递",
+        "note": "Delivery 是业务 Owner 之下的执行机制。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Clients",
+      "sublabel": "Desktop · Mobile",
+      "tag": "签名接入",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "edge",
+      "type": "backend",
+      "label": "Network Edge",
+      "sublabel": "Canonical Ingress · Event",
+      "tag": "Station Scope",
+      "pos": [
+        170,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/server/canonical_protobuf_handler.go",
+          "label": "canonical_protobuf_handler.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Access Gate",
+      "sublabel": "Actor · Device · Client Class",
+      "tag": "Session 权威",
+      "pos": [
+        380,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "apps",
+      "type": "backend",
+      "label": "App Domain Owners",
+      "sublabel": "Social · Conversation · Agent · Applets",
+      "tag": "业务权威",
+      "pos": [
+        590,
+        220
+      ],
+      "size": [
+        200,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "state",
+      "type": "database",
+      "label": "Transactional State + UoW",
+      "sublabel": "业务 · Session · Inbox / Outbox",
+      "tag": "持久真源",
+      "pos": [
+        830,
+        130
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/store/rds.go",
+          "label": "rds.go",
+          "line": 1,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "type": "messagebus",
+      "label": "Wake + Recovery Stream",
+      "sublabel": "Commit 后提示 · Durable Cursor",
+      "tag": "不是业务真源",
+      "pos": [
+        830,
+        310
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "label": "events.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "objects",
+      "type": "cloud",
+      "label": "Object Backing",
+      "sublabel": "Local · Shared-FS · S3",
+      "tag": "对象存储",
+      "pos": [
+        1060,
+        130
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/facility/storage/storage.go",
+          "label": "storage.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "delivery",
+      "type": "messagebus",
+      "label": "Federation Delivery",
+      "sublabel": "签名 · 验签 · Inbox / UoW",
+      "tag": "跨 Station",
+      "pos": [
+        590,
+        400
+      ],
+      "size": [
+        200,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/runtime.go",
+          "label": "runtime.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "peer",
+      "type": "external",
+      "label": "Remote Station",
+      "sublabel": "独立权威",
+      "tag": "认证 Peer",
+      "pos": [
+        830,
+        400
+      ],
+      "size": [
+        190,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "edge",
+        "access"
+      ],
+      "label": "Frame / Touch 平台",
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "wraps": [
+        "apps",
+        "state",
+        "events",
+        "objects"
+      ],
+      "label": "Station 业务权威",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-edge",
+      "from": "client",
+      "to": "edge",
+      "variant": "emphasis",
+      "label": "类型化请求"
+    },
+    {
+      "id": "edge-access",
+      "from": "edge",
+      "to": "access",
+      "variant": "security",
+      "label": "认证"
+    },
+    {
+      "id": "access-apps",
+      "from": "access",
+      "to": "apps",
+      "variant": "security",
+      "label": "Scoped Session"
+    },
+    {
+      "id": "apps-state",
+      "from": "apps",
+      "to": "state",
+      "variant": "emphasis",
+      "label": "提交 UoW"
+    },
+    {
+      "id": "apps-events",
+      "from": "apps",
+      "to": "events",
+      "variant": "dashed",
+      "label": "Commit 后 Wake"
+    },
+    {
+      "id": "apps-objects",
+      "from": "apps",
+      "to": "objects",
+      "variant": "emphasis",
+      "label": "存储对象"
+    },
+    {
+      "id": "apps-delivery",
+      "from": "apps",
+      "to": "delivery",
+      "variant": "dashed",
+      "label": "入队"
+    },
+    {
+      "id": "delivery-peer",
+      "from": "delivery",
+      "to": "peer",
+      "variant": "emphasis",
+      "label": "Signed Frame"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "提交边界",
+      "items": [
+        "业务 Mutation、Inbox/Outbox 与必要 Event Fact 在 Owner Transaction 中提交。",
+        "SSE 或 Realtime Notification 是 Commit 后 Wake Hint，绝不是持久真源。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "硬依赖规则",
+      "items": [
+        "Frame/Touch 拥有接入、Session 与 Transport，不导入 App 业务语义。"
+      ]
+    }
+  ]
+}

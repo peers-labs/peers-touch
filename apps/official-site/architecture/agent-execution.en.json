@@ -1,0 +1,320 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agent Execution Architecture",
+    "subtitle": "Agent Domain owns sessions and durable orchestration; execution is explicitly placed at Station or a declared client capability.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/agent-execution.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "station",
+        "focus": [
+          "surface",
+          "context",
+          "domain",
+          "placement",
+          "station-runtime",
+          "providers",
+          "events"
+        ],
+        "label": "Station execution",
+        "note": "Provider-backed work executes under Station orchestration."
+      },
+      {
+        "id": "client",
+        "focus": [
+          "surface",
+          "context",
+          "domain",
+          "placement",
+          "client-runtime",
+          "events"
+        ],
+        "label": "Client capability",
+        "note": "Device-local capability executes only after an explicit placement decision."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "surface",
+      "type": "frontend",
+      "label": "Agent Surface",
+      "sublabel": "Desktop · Mobile",
+      "tag": "product entry",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/store/agent.ts",
+          "label": "agent.ts",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "context",
+      "type": "security",
+      "label": "Station Context",
+      "sublabel": "identity · Session · policy",
+      "tag": "authorization",
+      "pos": [
+        200,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "Agent Domain",
+      "sublabel": "sessions · memory · turn state",
+      "tag": "durable owner",
+      "pos": [
+        410,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/agent/module.go",
+          "label": "module.go",
+          "line": 1,
+          "end_line": 34
+        }
+      ]
+    },
+    {
+      "id": "placement",
+      "type": "security",
+      "label": "Execution Placement",
+      "sublabel": "STATION | CLIENT_CAPABILITY",
+      "tag": "explicit decision",
+      "pos": [
+        630,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/agent/design.md",
+          "label": "design.md",
+          "line": 1,
+          "end_line": 108
+        }
+      ]
+    },
+    {
+      "id": "station-runtime",
+      "type": "backend",
+      "label": "Station Runtime",
+      "sublabel": "provider adapters · tools",
+      "tag": "server execution",
+      "pos": [
+        860,
+        100
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/agent/handler/orchestration_handler.go",
+          "label": "orchestration_handler.go",
+          "line": 1,
+          "end_line": 92
+        }
+      ]
+    },
+    {
+      "id": "client-runtime",
+      "type": "frontend",
+      "label": "Client Capability",
+      "sublabel": "device tool · local context",
+      "tag": "client execution",
+      "pos": [
+        860,
+        340
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "providers",
+      "type": "external",
+      "label": "External Providers",
+      "sublabel": "model · tool · service",
+      "tag": "adapter boundary",
+      "pos": [
+        1090,
+        100
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "events",
+      "type": "messagebus",
+      "label": "Typed Turn Events",
+      "sublabel": "durable cursor · recovery",
+      "tag": "client projection",
+      "pos": [
+        1090,
+        340
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "label": "events.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "wraps": [
+        "context",
+        "domain",
+        "placement"
+      ],
+      "label": "Station Agent authority",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "station-runtime",
+        "client-runtime"
+      ],
+      "label": "Explicit execution locations",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "surface-context",
+      "from": "surface",
+      "to": "context",
+      "variant": "security",
+      "label": "typed turn"
+    },
+    {
+      "id": "context-domain",
+      "from": "context",
+      "to": "domain",
+      "variant": "security",
+      "label": "scopes"
+    },
+    {
+      "id": "domain-placement",
+      "from": "domain",
+      "to": "placement",
+      "variant": "security",
+      "label": "places"
+    },
+    {
+      "id": "placement-station",
+      "from": "placement",
+      "to": "station-runtime",
+      "variant": "emphasis",
+      "label": "dispatches Station execution"
+    },
+    {
+      "id": "placement-client",
+      "from": "placement",
+      "to": "client-runtime",
+      "variant": "dashed",
+      "label": "requests client capability"
+    },
+    {
+      "id": "station-providers",
+      "from": "station-runtime",
+      "to": "providers",
+      "variant": "emphasis",
+      "label": "adapts"
+    },
+    {
+      "id": "station-events",
+      "from": "station-runtime",
+      "to": "events",
+      "variant": "dashed",
+      "label": "commits event"
+    },
+    {
+      "id": "client-events",
+      "from": "client-runtime",
+      "to": "events",
+      "variant": "dashed",
+      "label": "returns result"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Single durable owner",
+      "items": [
+        "Agent Domain owns sessions, memory references, turn state and recovery cursor."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Placement invariant",
+      "items": [
+        "Execution location is explicit; a provider adapter or client capability never becomes business authority."
+      ]
+    }
+  ]
+}

@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { clearChatUnreadForParticipant } from '@peers-touch/client-chat-core';
 import type { DomainCacheRepository } from '@peers-touch/client-storage';
 
 import type { MobileAuthSession } from '../auth/authSession';
@@ -595,11 +594,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
             lastMessage: summary.lastMessage
               ? projectMessagingMessage(conversation.conversationId, summary.lastMessage)
               : undefined,
-            unreadCount: current.activeSessionUlid === conversation.conversationId
-              ? 0
-              : readCursors.get(conversation.conversationId) === readCursor
-                ? summary.unreadCount
-                : previous?.unreadCount ?? 0,
+            unreadCount: readCursors.get(conversation.conversationId) === readCursor
+              ? summary.unreadCount
+              : previous?.unreadCount ?? 0,
           }];
         }));
         return {
@@ -840,22 +837,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
   markActiveSessionRead: async (sessionUlid, upToUlid) => {
     const state = get();
+    const scope = state.authSession;
     const currentUserPtid = state.currentUserPtid;
     if (!currentUserPtid || state.activeSessionUlid !== sessionUlid) return;
-
-    readCursors.set(sessionUlid, {});
-    set((state) => ({
-      sessions: clearSessionUnreadForActor(state.sessions, sessionUlid, currentUserPtid),
-      conversationSummaries: state.conversationSummaries[sessionUlid]
-        ? {
-            ...state.conversationSummaries,
-            [sessionUlid]: {
-              ...state.conversationSummaries[sessionUlid],
-              unreadCount: 0,
-            },
-          }
-        : state.conversationSummaries,
-    }));
 
     const messages = state.messages[sessionUlid] ?? [];
     const target = upToUlid
@@ -868,6 +852,11 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       conversationId: sessionUlid,
       lastReadSequence: target.eventSequence,
     });
+    if (get().authSession !== scope || get().activeSessionUlid !== sessionUlid) return;
+
+    // A selected or hydrated conversation alone cannot acknowledge unread content.
+    readCursors.set(sessionUlid, {});
+    await get().refreshSessions();
   },
 
   loadMoreNotifications: async () => {
@@ -1392,11 +1381,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
               ...state.conversationSummaries,
               [sessionUlid]: {
                 lastMessage,
-                unreadCount: state.activeSessionUlid === sessionUlid
-                  ? 0
-                  : readCursors.get(sessionUlid) === readCursor
-                    ? unread
-                    : state.conversationSummaries[sessionUlid]?.unreadCount ?? 0,
+                unreadCount: readCursors.get(sessionUlid) === readCursor
+                  ? unread
+                  : state.conversationSummaries[sessionUlid]?.unreadCount ?? 0,
               },
             }
           : state.conversationSummaries,
@@ -1406,15 +1393,11 @@ export const useSocialStore = create<SocialState>((set, get) => ({
             lastMessage,
             lastMessageUlid: lastMessage?.ulid ?? '',
             lastMessageAt: lastMessage?.sentAt ?? session.lastMessageAt,
-            unreadCountA: state.activeSessionUlid === sessionUlid ? 0
-              : readCursors.get(sessionUlid) === readCursor ? unread : session.unreadCountA,
+            unreadCountA: readCursors.get(sessionUlid) === readCursor
+              ? unread : session.unreadCountA,
           } : session)
           : state.sessions,
       }));
-      const lastReadUlid = messages.at(-1)?.ulid;
-      if (lastReadUlid) {
-        await get().markActiveSessionRead(sessionUlid, lastReadUlid);
-      }
     } catch (error) {
       if (!isCurrent()) return;
       set({ error: normalizeError(error) });
@@ -2308,14 +2291,6 @@ function upsertFriendshipStatus(items: FriendshipStatus[], nextItem: FriendshipS
   return exists
     ? items.map((item) => (item.targetPtid === nextItem.targetPtid ? nextItem : item))
     : [nextItem, ...items];
-}
-
-function clearSessionUnreadForActor(
-  sessions: FriendChatSession[],
-  sessionUlid: string,
-  currentUserPtid: string,
-): FriendChatSession[] {
-  return clearChatUnreadForParticipant(sessions, sessionUlid, currentUserPtid);
 }
 
 function sessionFromMessaging(

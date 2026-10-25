@@ -1,6 +1,8 @@
-import { create, toBinary } from '@bufbuild/protobuf';
+import { create, fromJson, toBinary } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { invoke } from '@tauri-apps/api/core';
+import { SearchResponseSchema } from '../gen/proto/domain/search/search_pb';
+import { mobileSearchAcceptanceActions } from './searchActions';
 
 import {
   currentAccessGate,
@@ -160,7 +162,6 @@ import {
   messagingListConversations,
   messagingListMessages,
   messagingAttachmentAccess,
-  messagingSearchMessages,
   messagingSendMessage,
   messagingStageAttachment,
   messagingStatus,
@@ -950,19 +951,19 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     ),
   }),
 
-  'messaging.search': async (input) => sanitizeMessagingMessages(
-    await messagingSearchMessages({
-      ...requireMessagingAccount(),
-      conversationId: requireString(
-        input?.conversationId,
-        'messaging.search.conversationId',
-      ),
-      query: requireString(input?.query, 'messaging.search.query'),
-      limit: input?.limit === undefined
-        ? undefined
-        : requirePositiveInteger(input.limit, 'messaging.search.limit'),
-    }),
-  ),
+  ...mobileSearchAcceptanceActions,
+  'messaging.search': async (input) => {
+    const conversationId = requireString(input?.conversationId, 'messaging.search.conversationId');
+    const result = await mobileSearchAcceptanceActions['search.page']({
+      conversationId, query: requireString(input?.query, 'messaging.search.query'),
+      limit: input?.limit === undefined ? 50 : requirePositiveInteger(input.limit, 'messaging.search.limit'),
+    });
+    if (!result.accepted) throw new Error(result.errorCode);
+    const page = fromJson(SearchResponseSchema, result.value);
+    const ids = new Set(page.items.map(item => item.resource?.messageId || item.resource?.id));
+    const messages = await messagingListMessages({ ...requireMessagingAccount(), conversationId });
+    return sanitizeMessagingMessages(messages.filter(message => ids.has(message.messageId)));
+  },
 
   'messaging.projection.read': async (input) => {
     const account = requireMessagingAccount();

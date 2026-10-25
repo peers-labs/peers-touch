@@ -1,0 +1,331 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Mobile 产品中心",
+    "subtitle": "同一套 Mobile 产品模型运行在 Android 与 iOS Host 上，不分叉业务语义。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/mobile-center.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "product",
+        "focus": [
+          "user",
+          "surface",
+          "lifecycle"
+        ],
+        "label": "Mobile 产品",
+        "note": "Mobile 拥有触控、导航和生命周期策略。"
+      },
+      {
+        "id": "hosts",
+        "focus": [
+          "tauri",
+          "hosts",
+          "local",
+          "cores"
+        ],
+        "label": "Host 边界",
+        "note": "Android 与 iOS 只在 Platform Port 之后变化。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "Mobile 用户",
+      "sublabel": "触控 · 后台 · 推送",
+      "tag": "用户",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        135,
+        64
+      ]
+    },
+    {
+      "id": "surface",
+      "type": "frontend",
+      "label": "Mobile Surface",
+      "sublabel": "导航 · 触控策略",
+      "tag": "展示策略",
+      "pos": [
+        160,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "label": "App.tsx",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "lifecycle",
+      "type": "frontend",
+      "label": "Lifecycle Kernel",
+      "sublabel": "Runtime DAG · Generation Fence · 恢复",
+      "tag": "单一生命周期 Owner",
+      "pos": [
+        370,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src/app/lifecycle/MobileLifecycleKernel.ts",
+          "label": "MobileLifecycleKernel.ts",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "tauri",
+      "type": "backend",
+      "label": "Tauri Mobile",
+      "sublabel": "类型化 Command · Event",
+      "tag": "原生运行时",
+      "pos": [
+        590,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "route",
+      "type": "security",
+      "label": "Station Route",
+      "sublabel": "身份 · Direct / Circuit",
+      "tag": "已验证接入",
+      "pos": [
+        800,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/runtime/station_route.rs",
+          "label": "station_route.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "station",
+      "type": "external",
+      "label": "Home Station API",
+      "sublabel": "Canonical 类型化契约",
+      "tag": "外部权威",
+      "pos": [
+        1020,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "local",
+      "type": "database",
+      "label": "Mobile 本地状态",
+      "sublabel": "Checkpoint · 缓存 · 投影",
+      "tag": "单一 Live Consumer",
+      "pos": [
+        370,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/secure_content/store.rs",
+          "label": "store.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "cores",
+      "type": "backend",
+      "label": "Portable Cores",
+      "sublabel": "Messaging · Social · Reliability",
+      "tag": "嵌入式库",
+      "pos": [
+        590,
+        390
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/messaging/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 23
+        }
+      ]
+    },
+    {
+      "id": "hosts",
+      "type": "external",
+      "label": "Android / iOS Hosts",
+      "sublabel": "插件 · 安全存储 · 推送",
+      "tag": "平台 Host",
+      "pos": [
+        800,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/platform/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 14
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "surface",
+        "lifecycle"
+      ],
+      "label": "Mobile 产品面",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "tauri",
+        "route",
+        "cores",
+        "hosts"
+      ],
+      "label": "Mobile 原生运行时",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "user-surface",
+      "from": "user",
+      "to": "surface",
+      "variant": "emphasis",
+      "label": "操作"
+    },
+    {
+      "id": "surface-lifecycle",
+      "from": "surface",
+      "to": "lifecycle",
+      "variant": "emphasis",
+      "label": "Scoped Action"
+    },
+    {
+      "id": "lifecycle-tauri",
+      "from": "lifecycle",
+      "to": "tauri",
+      "variant": "emphasis",
+      "label": "Fenced Activation"
+    },
+    {
+      "id": "tauri-route",
+      "from": "tauri",
+      "to": "route",
+      "variant": "emphasis",
+      "label": "路径"
+    },
+    {
+      "id": "route-station",
+      "from": "route",
+      "to": "station",
+      "variant": "emphasis",
+      "label": "Canonical Call"
+    },
+    {
+      "id": "lifecycle-local",
+      "from": "lifecycle",
+      "to": "local",
+      "variant": "dashed",
+      "label": "Apply + ACK"
+    },
+    {
+      "id": "tauri-cores",
+      "from": "tauri",
+      "to": "cores",
+      "variant": "emphasis",
+      "label": "嵌入"
+    },
+    {
+      "id": "tauri-hosts",
+      "from": "tauri",
+      "to": "hosts",
+      "variant": "dashed",
+      "label": "Host Port"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "非连续生命周期",
+      "items": [
+        "Suspend、Resume 与进程重建会推进 Generation Fence。",
+        "过期工作不能修改当前 Runtime 或 Projection Checkpoint。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "单消费者规则",
+      "items": [
+        "Ready Projection Checkpoint 只有一个 Live Owner 负责 Apply 与确认。"
+      ]
+    }
+  ]
+}

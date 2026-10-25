@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Peers-Touch 产品世界",
+    "subtitle": "通过 Desktop 与 Mobile 进入同一个个人数字家园；能力可在 Client 或 Station 执行，Federation 连接彼此独立的数字家园。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/product-world.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "daily-use",
+        "focus": [
+          "person",
+          "desktop",
+          "mobile",
+          "station"
+        ],
+        "label": "日常使用",
+        "note": "一个人从两个产品中心进入同一 Home Station。"
+      },
+      {
+        "id": "open-network",
+        "focus": [
+          "station",
+          "federation",
+          "people",
+          "communities"
+        ],
+        "label": "开放网络",
+        "note": "独立 Station 通过 Federation 语境保持连接。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "person",
+      "type": "external",
+      "label": "你",
+      "sublabel": "同一个身份",
+      "tag": "用户",
+      "pos": [
+        10,
+        230
+      ],
+      "size": [
+        120,
+        64
+      ]
+    },
+    {
+      "id": "desktop",
+      "type": "frontend",
+      "label": "Desktop",
+      "sublabel": "工作 · 创作 · 管理",
+      "tag": "产品中心",
+      "pos": [
+        180,
+        130
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/pages/registry.ts",
+          "label": "registry.ts",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "mobile",
+      "type": "frontend",
+      "label": "Mobile",
+      "sublabel": "随时保持连接",
+      "tag": "产品中心",
+      "pos": [
+        180,
+        330
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "label": "App.tsx",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "station",
+      "type": "backend",
+      "label": "Home Station",
+      "sublabel": "身份 · 关系 · 消息 · 内容",
+      "tag": "你的数字家园",
+      "pos": [
+        430,
+        230
+      ],
+      "size": [
+        210,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "cloud",
+      "label": "个人 Agent",
+      "sublabel": "Station 或 Client 执行",
+      "tag": "受治理能力",
+      "pos": [
+        430,
+        70
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/agent/design.md",
+          "label": "design.md",
+          "line": 1,
+          "end_line": 108
+        }
+      ]
+    },
+    {
+      "id": "applets",
+      "type": "frontend",
+      "label": "Applets",
+      "sublabel": "Client Lynx Runtime + Station Service",
+      "tag": "可组合产品",
+      "pos": [
+        430,
+        390
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/applets/README.md",
+          "label": "README.md",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "federation",
+      "type": "security",
+      "label": "Federated Network",
+      "sublabel": "成员 · 治理 · 发现",
+      "tag": "开放社交拓扑",
+      "pos": [
+        720,
+        230
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/federation/README.md",
+          "label": "README.md",
+          "line": 1,
+          "end_line": 93
+        }
+      ]
+    },
+    {
+      "id": "people",
+      "type": "external",
+      "label": "朋友",
+      "sublabel": "位于独立 Station",
+      "tag": "关注 · 对话 · 分享",
+      "pos": [
+        1010,
+        130
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "communities",
+      "type": "external",
+      "label": "社区",
+      "sublabel": "共享 Federation 语境",
+      "tag": "发现 · 参与",
+      "pos": [
+        1010,
+        330
+      ],
+      "size": [
+        180,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "desktop",
+        "mobile"
+      ],
+      "label": "你的产品入口",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "station"
+      ],
+      "label": "你的 Home Station",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "federation",
+        "people",
+        "communities"
+      ],
+      "label": "开放网络",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "person-desktop",
+      "from": "person",
+      "to": "desktop",
+      "variant": "emphasis",
+      "label": "使用"
+    },
+    {
+      "id": "person-mobile",
+      "from": "person",
+      "to": "mobile",
+      "variant": "emphasis",
+      "label": "使用"
+    },
+    {
+      "id": "desktop-station",
+      "from": "desktop",
+      "to": "station",
+      "variant": "emphasis",
+      "label": "绑定个人权威"
+    },
+    {
+      "id": "mobile-station",
+      "from": "mobile",
+      "to": "station",
+      "variant": "emphasis",
+      "label": "绑定个人权威"
+    },
+    {
+      "id": "station-agent",
+      "from": "station",
+      "to": "agent",
+      "variant": "dashed",
+      "label": "提供语境与持久编排"
+    },
+    {
+      "id": "station-applets",
+      "from": "station",
+      "to": "applets",
+      "variant": "dashed",
+      "label": "绑定持久服务"
+    },
+    {
+      "id": "station-federation",
+      "from": "station",
+      "to": "federation",
+      "variant": "emphasis",
+      "label": "加入受治理拓扑"
+    },
+    {
+      "id": "federation-people",
+      "from": "federation",
+      "to": "people",
+      "variant": "emphasis",
+      "label": "发现独立身份"
+    },
+    {
+      "id": "federation-communities",
+      "from": "federation",
+      "to": "communities",
+      "variant": "emphasis",
+      "label": "发现共享语境"
+    },
+    {
+      "id": "desktop-applets",
+      "from": "desktop",
+      "to": "applets",
+      "variant": "dashed",
+      "label": "承载 Lynx UI"
+    },
+    {
+      "id": "mobile-applets",
+      "from": "mobile",
+      "to": "applets",
+      "variant": "dashed",
+      "label": "承载 Lynx UI"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "产品承诺",
+      "items": [
+        "两个一等产品进入同一个用户拥有的数字家园。",
+        "用户面对身份和社区，而不是服务器管理。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "部署位置不等于所有权",
+      "items": [
+        "Agent 工作可在 Station 或 Client Capability 执行。",
+        "Applet UI 运行于 Client Host，持久服务状态仍由 Station 拥有。"
+      ]
+    }
+  ]
+}

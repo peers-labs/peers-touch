@@ -1,0 +1,281 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Applet Runtime Architecture",
+    "subtitle": "Applet UI executes in a sandboxed Lynx runtime; every host capability crosses a permissioned, audited gateway while durable service state remains Station-owned.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/applet-runtime.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "client",
+        "focus": [
+          "catalog",
+          "host",
+          "lynx",
+          "bridge",
+          "gateway",
+          "device"
+        ],
+        "label": "Client runtime",
+        "note": "Sandboxed UI reaches device capabilities only through the Gateway."
+      },
+      {
+        "id": "service",
+        "focus": [
+          "catalog",
+          "host",
+          "lynx",
+          "bridge",
+          "gateway",
+          "service"
+        ],
+        "label": "Station service",
+        "note": "Durable applet state and service policy remain Station-owned."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "catalog",
+      "type": "database",
+      "label": "Applet Catalog",
+      "sublabel": "manifest · version · permissions",
+      "tag": "declaration",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/applets/README.md",
+          "label": "README.md",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "type": "frontend",
+      "label": "Applet Host",
+      "sublabel": "surface · lifecycle · navigation",
+      "tag": "client owner",
+      "pos": [
+        210,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+          "label": "AppletRuntimePage.tsx",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "lynx",
+      "type": "frontend",
+      "label": "Lynx Runtime",
+      "sublabel": "sandboxed applet UI",
+      "tag": "untrusted UI",
+      "pos": [
+        420,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/platform/applet-runtime/design.md",
+          "label": "design.md",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "bridge",
+      "type": "security",
+      "label": "Typed Bridge",
+      "sublabel": "validated request / response",
+      "tag": "contract boundary",
+      "pos": [
+        640,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/platform/applet-runtime/design.md",
+          "label": "design.md",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "security",
+      "label": "Host Capability Gateway",
+      "sublabel": "permission · audit · rate limit",
+      "tag": "policy owner",
+      "pos": [
+        860,
+        220
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/platform/applet-runtime/design.md",
+          "label": "design.md",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "device",
+      "type": "external",
+      "label": "Device Capabilities",
+      "sublabel": "media · file · notification",
+      "tag": "host ports",
+      "pos": [
+        1090,
+        100
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "service",
+      "type": "backend",
+      "label": "Station Applet Service",
+      "sublabel": "binding · durable state",
+      "tag": "business owner",
+      "pos": [
+        1090,
+        340
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/applets/README.md",
+          "label": "README.md",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "host",
+        "lynx"
+      ],
+      "label": "Client applet runtime",
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "wraps": [
+        "bridge",
+        "gateway"
+      ],
+      "label": "Permission and audit boundary",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "catalog-host",
+      "from": "catalog",
+      "to": "host",
+      "variant": "emphasis",
+      "label": "loads grants"
+    },
+    {
+      "id": "host-lynx",
+      "from": "host",
+      "to": "lynx",
+      "variant": "emphasis",
+      "label": "sandboxes"
+    },
+    {
+      "id": "lynx-bridge",
+      "from": "lynx",
+      "to": "bridge",
+      "variant": "security",
+      "label": "typed request"
+    },
+    {
+      "id": "bridge-gateway",
+      "from": "bridge",
+      "to": "gateway",
+      "variant": "security",
+      "label": "validates"
+    },
+    {
+      "id": "gateway-device",
+      "from": "gateway",
+      "to": "device",
+      "variant": "emphasis",
+      "label": "granted port"
+    },
+    {
+      "id": "gateway-service",
+      "from": "gateway",
+      "to": "service",
+      "variant": "emphasis",
+      "label": "bound service"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "No ambient authority",
+      "items": [
+        "Applet code receives only manifest-declared capabilities; direct OS and Station access are forbidden."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Audit boundary",
+      "items": [
+        "The Gateway validates payloads, permissions, rate limits and audit context before dispatch."
+      ]
+    }
+  ]
+}

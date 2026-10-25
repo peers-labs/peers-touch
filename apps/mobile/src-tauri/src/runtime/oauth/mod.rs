@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -245,7 +245,7 @@ impl Default for OAuthPublicProjection {
 
 pub struct OAuthCoordinator {
     transport: StationOAuthTransport,
-    operation_active: AtomicBool,
+    read_admission: Mutex<ReadAdmission>,
     #[cfg(feature = "acceptance-harness")]
     replay_vault: std::sync::Mutex<acceptance::CallbackReplayVault>,
 }
@@ -254,7 +254,7 @@ impl OAuthCoordinator {
     pub fn new() -> MobileResult<Self> {
         Ok(Self {
             transport: StationOAuthTransport::new()?,
-            operation_active: AtomicBool::new(false),
+            read_admission: Mutex::new(ReadAdmission::default()),
             #[cfg(feature = "acceptance-harness")]
             replay_vault: std::sync::Mutex::new(acceptance::CallbackReplayVault::default()),
         })
@@ -721,16 +721,41 @@ impl OAuthCoordinator {
     }
 
     fn begin_operation(&self) -> MobileResult<OperationGuard<'_>> {
-        if self
-            .operation_active
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        let mut admission = self
+            .read_admission
+            .lock()
+            .map_err(|_| oauth_error("oauthAdmissionPoisoned"))?;
+        if admission.operation_active {
             return Err(oauth_error("oauthOperationInProgress"));
         }
+        admission.revision = admission
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| oauth_error("oauthAdmissionExhausted"))?;
+        admission.operation_active = true;
         Ok(OperationGuard {
-            active: &self.operation_active,
+            admission: &self.read_admission,
         })
+    }
+
+    /// Serialize private native read admission/publication with OAuth writes.
+    /// Async operations never hold the mutex across network or storage work;
+    /// their active marker rejects reads until the operation guard is dropped.
+    pub(crate) fn with_read_admission<T>(
+        &self,
+        expected: Option<u64>,
+        read: impl FnOnce(u64) -> Result<T, search_core::SearchError>,
+    ) -> Result<T, search_core::SearchError> {
+        let admission = self
+            .read_admission
+            .lock()
+            .map_err(|_| search_core::SearchError::Cancelled)?;
+        if admission.operation_active
+            || expected.is_some_and(|revision| revision != admission.revision)
+        {
+            return Err(search_core::SearchError::Cancelled);
+        }
+        read(admission.revision)
     }
 }
 
@@ -739,13 +764,21 @@ pub struct OAuthLaunch {
     pub authorize_url: Option<String>,
 }
 
+#[derive(Default)]
+struct ReadAdmission {
+    revision: u64,
+    operation_active: bool,
+}
+
 struct OperationGuard<'a> {
-    active: &'a AtomicBool,
+    admission: &'a Mutex<ReadAdmission>,
 }
 
 impl Drop for OperationGuard<'_> {
     fn drop(&mut self) {
-        self.active.store(false, Ordering::Release);
+        if let Ok(mut admission) = self.admission.lock() {
+            admission.operation_active = false;
+        }
     }
 }
 

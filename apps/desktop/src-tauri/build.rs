@@ -1,3 +1,5 @@
+include!("../../../packages/x-config-core/dist-build.rs");
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -13,6 +15,7 @@ const AGENT_V2_PROTO_FILES: &[&str] = &[
 
 fn main() {
     emit_source_commit();
+    peers_distribution_emit_env();
     tauri_build::build();
     compile_protos();
 }

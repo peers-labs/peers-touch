@@ -1,0 +1,53 @@
+{
+  "id": "chat-mobile-device-search",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "packages/search-core/**",
+    "apps/mobile/src-tauri/src/runtime/search.rs",
+    "apps/mobile/src-tauri/src/commands/search.rs",
+    "apps/mobile/src-tauri/src/messaging/adapter/search.rs",
+    "apps/mobile/src/pages/SearchPage*",
+    "apps/mobile/src/runtimes/searchRuntime.ts",
+    "apps/mobile/src/features/search/**",
+    "apps/mobile/src/services/search.ts",
+    "apps/mobile/src/components/SearchEntry*",
+    "apps/mobile/src/acceptance/searchActions.ts",
+    "tooling/acceptance/gates/chat/mobile_device_search.py",
+    "tooling/acceptance/provisioners/mobile_search.py"
+  ],
+  "truth_sources": [
+    "Messaging authorized device projections and original-owner FTS",
+    "SearchContributor authority, revision and read-scope checks",
+    "source-bound native iOS and Android Search UI",
+    "original SearchExecutor read observations"
+  ],
+  "visible_surfaces": [
+    {"type": "native-mobile", "route": "Shell Search > received message > original Chat or thread"},
+    {"type": "native-mobile", "route": "Conversation actions > Search > all conversations"},
+    {"type": "native-mobile", "route": "Search > Functions > Settings"}
+  ],
+  "required_gates": ["chat-device-search-contract", "chat-mobile-device-search-native-e2e"],
+  "acceptance": {
+    "service": [
+      "both native platforms retain canonical Messaging authority and bounded paging",
+      "forged authority, stale content and old-account cursors return typed denials",
+      "repeat, reopen, backspace and return reuse authorized original-source reads"
+    ],
+    "visible": [
+      "each native receiver finds real Chinese messages, replies and long attachment filenames",
+      "opening old messages and thread replies focuses the actual Chat message",
+      "scoped search, paging, explicit refresh and invalid-query recovery use real controls",
+      "real content changes invalidate receiver Search",
+      "background conceals private results; resume revalidates the original owner",
+      "logout and same-process account switch clear query, results and old paging scope",
+      "Functions opens real Settings; localized copy and layout remain usable"
+    ]
+  },
+  "negative": [
+    "prototype, API, Harness and SQL fixtures cannot substitute for native query/open proof",
+    "each scenario must reuse the Suite clients and authentication",
+    "cleanup failure prevents a passing proof",
+    "physical-device behavior, Applet contributors, Station Search and Ask are outside this capability"
+  ]
+}

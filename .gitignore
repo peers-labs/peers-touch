@@ -111,8 +111,21 @@ apps/mobile/flutter/
 packages/messaging-core/target/
 packages/messaging-native-filesystem/target/
 packages/secure-content-core/target/
+packages/search-core/target/
+packages/x-config-core/target/
 tooling/acceptance/reports/
 apps/desktop/test-results/
 tooling/scripts/__pycache__/
 *.pyc
 .vercel
+
+# Generated third-party architecture diagram readers; architecture content is
+# maintained as repository source documents rather than large static HTML.
+apps/official-site/public/architecture-assets/
+
+# Local review / delivery artifacts — machine-local, never commit
+/.archify/
+/deliverables/
+/review-reports/
+/output/
+/tooling/distribution/build/

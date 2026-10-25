@@ -2,6 +2,40 @@
   "version": 1,
   "capabilities": [
     {
+      "id": "chat-device-search",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-device-search", "chat-mobile-device-search"],
+      "required_gates": ["chat-device-search-contract", "chat-device-search-native-e2e", "chat-mobile-device-search-native-e2e"],
+      "synthetic_paths": [
+        "packages/search-core/src/cache.rs",
+        "packages/search-core/src/contributor.rs",
+        "model/domain/search/search.proto",
+        "apps/desktop/src-tauri/src/application/search/runtime.rs",
+        "apps/desktop/src/components/search/SearchOverlay.tsx",
+        "apps/desktop/src/runtimes/searchRuntime.ts",
+        "apps/desktop/src/messaging/openResource.ts",
+        "tooling/acceptance/gates/chat/device_search_runner.py",
+        "apps/mobile/src/runtimes/searchRuntime.ts",
+        "apps/mobile/src/pages/SearchPage.tsx",
+        "apps/mobile/src-tauri/src/runtime/search.rs",
+        "tooling/acceptance/gates/chat/mobile_device_search.py"
+      ],
+      "evidence": {
+        "truth_sources": ["Messaging authorized device projections", "SearchContributor", "native Search UI"],
+        "surfaces": ["Desktop Global Search", "Mobile full-screen Search", "Chat message and thread anchors", "Settings"],
+        "proven_by": ["chat-device-search-contract", "chat-device-search-native-e2e", "chat-mobile-device-search-native-e2e"],
+        "proven_scope": [
+          "Native Chinese and attachment filename search with real received messages",
+          "Message and thread open, return, cached repeat/reopen/backspace and explicit refresh",
+          "Real edit/hide invalidation, stale-reference denial and same-window account isolation",
+          "Functions navigation, empty query results and invalid-query recovery",
+          "Mobile assertions require a current-source native iOS and Android receiver Suite"
+        ],
+        "unproven_scope": ["Applet contributors", "physical Mobile hardware", "Station Search", "Ask", "member-removal transport"]
+      }
+    },
+    {
       "id": "chat-proto-service-contract",
       "domain": "chat",
       "direction": "acceptance_validates_product",

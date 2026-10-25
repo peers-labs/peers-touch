@@ -4,6 +4,7 @@ export PATH := /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
 # ─── Include split modules ───────────────────────────────────────
 include tooling/make/local-dev.mk
+include tooling/make/distribution.mk
 include tooling/make/station-go.mk
 include tooling/make/monorepo.mk
 include tooling/make/proto.mk
@@ -57,6 +58,11 @@ help:
 	@echo "  make desktop                   Start Desktop App"
 	@echo "  make desktop-install           Build/install current source (macOS .app or Linux AppImage)"
 	@echo "  make mobile                    Start Mobile iOS Simulator"
+	@echo ""
+	@echo "Distribution packaging:"
+	@echo "  make package PRODUCT=desktop FLAVOR=geek [TARGET=dmg]"
+	@echo "  make package PRODUCT=mobile  FLAVOR=xx TARGET=android-apk [REGION=cn]"
+	@echo "  make package-dry-run ...       Print manifest, override, and build command"
 	@echo ""
 	@echo "Development workflow:"
 	@echo "  make dev-start TASK=<id> GOAL='<goal>' CONTRIBUTION='<contribution>'"
@@ -130,13 +136,15 @@ help-deploy:
 	@echo ""
 	@echo "Remote Deployment (pull model)"
 	@echo "=============================="
-	@echo "  make deploy ENV=<name>         Deploy to remote host"
-	@echo "  make deploy-repair ENV=<name>  Run reviewed non-reset repair command"
-	@echo "  make deploy ENV=<name> BRANCH=feat/x  Deploy specific branch"
-	@echo "  make deploy-status ENV=<name>  Check remote status"
-	@echo "  make deploy-logs ENV=<name>    Fetch remote logs"
+	@echo "  make deploy ENV=<env> SRV=<service>  Deploy one service in one environment"
+	@echo "  make deploy ENV=corpstable SRV=xconfig"
+	@echo "  make deploy ENV=<instance>             Legacy flat instance name"
+	@echo "  make deploy ENV=<env> SRV=<service> BRANCH=feat/x"
+	@echo "  make deploy-repair ENV=<env> SRV=<service>"
+	@echo "  make deploy-status ENV=<env> SRV=<service>  Check remote status"
+	@echo "  make deploy-logs ENV=<env> SRV=<service>    Fetch remote logs"
 	@echo ""
-	@echo "  Env files: .local/deploy/envs/<name>.env"
+	@echo "  Reviewed definitions: env repo peers-touch/**/deploy/<env>-<srv>.env.example"
 	@echo "  Required vars: PT_DEPLOY_HOST, PT_DEPLOY_USER,"
 	@echo "                 PT_DEPLOY_PATH, PT_DEPLOY_ROLE"
 	@echo ""

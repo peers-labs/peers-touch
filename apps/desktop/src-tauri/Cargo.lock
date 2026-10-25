@@ -4499,6 +4499,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "rand 0.8.5",
+ "search-core",
  "secure-content-core",
  "serde",
  "serde_json",
@@ -5606,6 +5607,7 @@ dependencies = [
  "reqwest 0.12.28",
  "rfd",
  "rusqlite",
+ "search-core",
  "secure-content-core",
  "serde",
  "serde_json",
@@ -5629,6 +5631,7 @@ dependencies = [
  "tracing-subscriber",
  "ulid",
  "urlencoding",
+ "uuid",
  "x-config-core",
  "x25519-dalek 2.0.1",
  "zeroize",
@@ -7006,6 +7009,20 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "search-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "hmac 0.12.1",
+ "prost",
+ "prost-build",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 1.0.69",
+]
 
 [[package]]
 name = "sec1"
@@ -10036,6 +10053,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek 2.2.0",
+ "hmac 0.12.1",
  "prost",
  "prost-build",
  "prost-types",

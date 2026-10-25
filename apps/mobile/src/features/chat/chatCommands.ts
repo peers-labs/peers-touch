@@ -7,59 +7,17 @@ import type {
 } from '../../services/mobileCommands';
 import {
   messagingForwardMessage,
-  messagingSearchMessages,
 } from '../../services/mobileCommands';
 import type { MobileAuthSession } from '../auth/authSession';
 import { blockSocialUser } from '../social/socialRuntime';
 import { wakeActiveMessagingSession } from '../../runtimes/messagingRuntime';
 import type { ChatActionState } from './chatActionState';
-import { projectMessagingMessage } from './messageProjection';
 
 export type ChatConversationKind = 'friend' | 'group';
 
 export interface ChatMessageSendContext {
   replyToMessageId?: string;
   threadRootMessageId?: string;
-}
-
-export interface ChatSearchCursor {
-  readonly beforeTimestampUnixMs: number;
-  readonly beforeMessageId: string;
-}
-
-export async function dispatchSearchMessages(
-  session: MobileAuthSession,
-  _kind: ChatConversationKind,
-  conversationId: string,
-  query: string,
-  cursor?: ChatSearchCursor,
-) {
-  const current = () => useSocialStore.getState().authSession === session;
-  if (!current()) throw new Error('mobile.social.notAuthenticated');
-  const rows = await messagingSearchMessages({
-    stationPeerId: session.stationPeerId,
-    actorPtid: session.actorRef.ptid,
-    conversationId,
-    query,
-    limit: 100,
-    ...cursor,
-  });
-  if (!current()) throw new Error('mobile.social.notAuthenticated');
-  const last = rows.at(-1);
-  const nextCursor = rows.length === 100 && last ? {
-    beforeTimestampUnixMs: last.timestampUnixMs,
-    beforeMessageId: last.messageId,
-  } : null;
-  if (nextCursor && cursor
-    && (nextCursor.beforeTimestampUnixMs > cursor.beforeTimestampUnixMs
-      || (nextCursor.beforeTimestampUnixMs === cursor.beforeTimestampUnixMs
-        && nextCursor.beforeMessageId >= cursor.beforeMessageId))) {
-    throw new Error('mobile.chat.searchFailed');
-  }
-  return {
-    messages: rows.map((message) => projectMessagingMessage(conversationId, message)),
-    nextCursor,
-  };
 }
 
 export async function dispatchLoadConversationHistory(

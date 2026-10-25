@@ -1,0 +1,320 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agent 执行架构",
+    "subtitle": "Agent Domain 拥有 Session 与持久编排；执行位置必须显式声明为 Station 或 Client Capability。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/agent-execution.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "station",
+        "focus": [
+          "surface",
+          "context",
+          "domain",
+          "placement",
+          "station-runtime",
+          "providers",
+          "events"
+        ],
+        "label": "Station 执行",
+        "note": "Provider-backed 工作在 Station 编排下执行。"
+      },
+      {
+        "id": "client",
+        "focus": [
+          "surface",
+          "context",
+          "domain",
+          "placement",
+          "client-runtime",
+          "events"
+        ],
+        "label": "Client Capability",
+        "note": "设备本地能力仅在显式 Placement Decision 后执行。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "surface",
+      "type": "frontend",
+      "label": "Agent Surface",
+      "sublabel": "Desktop · Mobile",
+      "tag": "产品入口",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/store/agent.ts",
+          "label": "agent.ts",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "context",
+      "type": "security",
+      "label": "Station Context",
+      "sublabel": "身份 · Session · Policy",
+      "tag": "授权",
+      "pos": [
+        200,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "Agent Domain",
+      "sublabel": "Session · Memory · Turn State",
+      "tag": "持久 Owner",
+      "pos": [
+        410,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/agent/module.go",
+          "label": "module.go",
+          "line": 1,
+          "end_line": 34
+        }
+      ]
+    },
+    {
+      "id": "placement",
+      "type": "security",
+      "label": "Execution Placement",
+      "sublabel": "STATION | CLIENT_CAPABILITY",
+      "tag": "显式决策",
+      "pos": [
+        630,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/agent/design.md",
+          "label": "design.md",
+          "line": 1,
+          "end_line": 108
+        }
+      ]
+    },
+    {
+      "id": "station-runtime",
+      "type": "backend",
+      "label": "Station Runtime",
+      "sublabel": "Provider Adapter · Tool",
+      "tag": "服务端执行",
+      "pos": [
+        860,
+        100
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/agent/handler/orchestration_handler.go",
+          "label": "orchestration_handler.go",
+          "line": 1,
+          "end_line": 92
+        }
+      ]
+    },
+    {
+      "id": "client-runtime",
+      "type": "frontend",
+      "label": "Client Capability",
+      "sublabel": "设备工具 · 本地语境",
+      "tag": "客户端执行",
+      "pos": [
+        860,
+        340
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "providers",
+      "type": "external",
+      "label": "External Providers",
+      "sublabel": "模型 · 工具 · 服务",
+      "tag": "Adapter 边界",
+      "pos": [
+        1090,
+        100
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "events",
+      "type": "messagebus",
+      "label": "Typed Turn Events",
+      "sublabel": "Durable Cursor · 恢复",
+      "tag": "Client 投影",
+      "pos": [
+        1090,
+        340
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "label": "events.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "wraps": [
+        "context",
+        "domain",
+        "placement"
+      ],
+      "label": "Station Agent 权威",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "station-runtime",
+        "client-runtime"
+      ],
+      "label": "显式执行位置",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "surface-context",
+      "from": "surface",
+      "to": "context",
+      "variant": "security",
+      "label": "类型化 Turn"
+    },
+    {
+      "id": "context-domain",
+      "from": "context",
+      "to": "domain",
+      "variant": "security",
+      "label": "限定 Scope"
+    },
+    {
+      "id": "domain-placement",
+      "from": "domain",
+      "to": "placement",
+      "variant": "security",
+      "label": "选择位置"
+    },
+    {
+      "id": "placement-station",
+      "from": "placement",
+      "to": "station-runtime",
+      "variant": "emphasis",
+      "label": "分派 Station 执行"
+    },
+    {
+      "id": "placement-client",
+      "from": "placement",
+      "to": "client-runtime",
+      "variant": "dashed",
+      "label": "请求 Client Capability"
+    },
+    {
+      "id": "station-providers",
+      "from": "station-runtime",
+      "to": "providers",
+      "variant": "emphasis",
+      "label": "适配"
+    },
+    {
+      "id": "station-events",
+      "from": "station-runtime",
+      "to": "events",
+      "variant": "dashed",
+      "label": "提交 Event"
+    },
+    {
+      "id": "client-events",
+      "from": "client-runtime",
+      "to": "events",
+      "variant": "dashed",
+      "label": "返回结果"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "单一持久 Owner",
+      "items": [
+        "Agent Domain 拥有 Session、Memory Reference、Turn State 与 Recovery Cursor。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Placement 不变量",
+      "items": [
+        "执行位置必须显式；Provider Adapter 或 Client Capability 永不成为业务权威。"
+      ]
+    }
+  ]
+}

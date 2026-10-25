@@ -1,4 +1,8 @@
 use crate::error::XConfigError;
+use crate::evaluation::{
+    directive_value_kind_pub, registered_directive_key, DirectiveValueKind, MAX_DIRECTIVES,
+    MAX_DIRECTIVE_RULES, MAX_ROLLOUT_PERMILLE, MAX_TARGET_VALUES,
+};
 use crate::proto::{XConfigSnapshotStatement, EndpointSeedKind, SignedXConfigSnapshot};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use base64::engine::general_purpose::STANDARD;
@@ -162,11 +166,13 @@ fn verify_snapshot_with_expiry_policy(
         || expires_at - issued_at > MAX_SNAPSHOT_LIFETIME_MS
         || statement.endpoint_seeds.len() > MAX_ENDPOINT_SEEDS
         || statement.releases.len() > MAX_RELEASES
+        || statement.directives.len() > MAX_DIRECTIVES
     {
         return Err(XConfigError::new("snapshot_statement_fields"));
     }
     validate_endpoint_seeds(&statement, now_unix_ms, expires_at)?;
     validate_releases(&statement, now_unix_ms, expires_at)?;
+    validate_directives(&statement)?;
     Ok(VerifiedSnapshot {
         envelope_bytes: envelope_bytes.to_vec(),
         statement_bytes: envelope.statement_bytes.clone(),
@@ -284,6 +290,138 @@ fn validate_releases(
             || published_at > snapshot_expires_at
         {
             return Err(XConfigError::new("snapshot_release"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_directives(statement: &XConfigSnapshotStatement) -> Result<(), XConfigError> {
+    use crate::proto::{ClientArchitecture, ClientPlatform};
+
+    let mut seed_kinds = BTreeMap::new();
+    for seed in &statement.endpoint_seeds {
+        if let Ok(kind) = EndpointSeedKind::try_from(seed.kind) {
+            seed_kinds.insert(seed.seed_id.as_str(), kind);
+        }
+    }
+    let mut keys = BTreeSet::new();
+    for directive in &statement.directives {
+        let spec = registered_directive_key(&directive.key)
+            .filter(|_| keys.insert(directive.key.as_str()))
+            .ok_or_else(|| XConfigError::new("snapshot_directive_key"))?;
+        if directive.rules.len() > MAX_DIRECTIVE_RULES {
+            return Err(XConfigError::new("snapshot_directive_rules"));
+        }
+        let fallback = directive
+            .fallback
+            .as_ref()
+            .ok_or_else(|| XConfigError::new("snapshot_directive_fallback"))?;
+        validate_directive_value(fallback, spec, &seed_kinds)?;
+        let mut rule_ids = BTreeSet::new();
+        for rule in &directive.rules {
+            if !bounded_identifier(&rule.id, 48) || !rule_ids.insert(rule.id.as_str())
+                || rule.rollout_permille > MAX_ROLLOUT_PERMILLE
+            {
+                return Err(XConfigError::new("snapshot_directive_rule"));
+            }
+            let rule_value = rule
+                .value
+                .as_ref()
+                .ok_or_else(|| XConfigError::new("snapshot_directive_value"))?;
+            validate_directive_value(rule_value, spec, &seed_kinds)?;
+            let clause = rule
+                .r#match
+                .as_ref()
+                .ok_or_else(|| XConfigError::new("snapshot_directive_clause"))?;
+            if clause.products.len() > MAX_TARGET_VALUES
+                || clause.platforms.len() > MAX_TARGET_VALUES
+                || clause.architectures.len() > MAX_TARGET_VALUES
+                || clause.flavors.len() > MAX_TARGET_VALUES
+                || clause.channels.len() > MAX_TARGET_VALUES
+                || clause.environments.len() > MAX_TARGET_VALUES
+                || clause.regions.len() > MAX_TARGET_VALUES
+                || clause.versions.len() > MAX_TARGET_VALUES
+                || clause.labels.len() > MAX_TARGET_VALUES
+            {
+                return Err(XConfigError::new("snapshot_directive_clause"));
+            }
+            for product in &clause.products {
+                if !matches!(product.as_str(), "desktop" | "mobile" | "station")
+                    || !bounded_identifier(product, 24)
+                {
+                    return Err(XConfigError::new("snapshot_directive_clause"));
+                }
+            }
+            for platform in &clause.platforms {
+                match ClientPlatform::try_from(*platform) {
+                    Ok(ClientPlatform::Macos)
+                    | Ok(ClientPlatform::Windows)
+                    | Ok(ClientPlatform::Linux)
+                    | Ok(ClientPlatform::Ios)
+                    | Ok(ClientPlatform::Android) => {}
+                    _ => return Err(XConfigError::new("snapshot_directive_clause")),
+                }
+            }
+            for architecture in &clause.architectures {
+                match ClientArchitecture::try_from(*architecture) {
+                    Ok(ClientArchitecture::Arm64)
+                    | Ok(ClientArchitecture::X8664)
+                    | Ok(ClientArchitecture::Universal) => {}
+                    _ => return Err(XConfigError::new("snapshot_directive_clause")),
+                }
+            }
+            for values in [
+                clause.flavors.as_slice(),
+                clause.channels.as_slice(),
+                clause.environments.as_slice(),
+                clause.regions.as_slice(),
+            ] {
+                for value in values {
+                    if !bounded_identifier(value, 32) {
+                        return Err(XConfigError::new("snapshot_directive_clause"));
+                    }
+                }
+            }
+            for constraint in &clause.versions {
+                if !matches!(constraint.comparator.as_str(), ">=" | "<" | "^")
+                    || Version::parse(&constraint.version).is_err()
+                {
+                    return Err(XConfigError::new("snapshot_directive_version"));
+                }
+            }
+            for matcher in &clause.labels {
+                if !bounded_identifier(&matcher.key, 64) || !bounded_text(&matcher.value, 32) {
+                    return Err(XConfigError::new("snapshot_directive_label"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_directive_value(
+    value: &crate::proto::DirectiveValue,
+    spec: crate::evaluation::DirectiveKeySpec,
+    seed_kinds: &BTreeMap<&str, EndpointSeedKind>,
+) -> Result<(), XConfigError> {
+    let kind = directive_value_kind_pub(value)
+        .ok_or_else(|| XConfigError::new("snapshot_directive_value"))?;
+    if kind != spec.value_kind {
+        return Err(XConfigError::new("snapshot_directive_value_kind"));
+    }
+    if kind == DirectiveValueKind::EndpointSeed {
+        if let Some(crate::proto::directive_value::Value::EndpointSeedId(seed_id)) =
+            &value.value
+        {
+            let actual = seed_kinds
+                .get(seed_id.as_str())
+                .ok_or_else(|| XConfigError::new("snapshot_directive_seed_ref"))?;
+            let expected = spec
+                .endpoint_kind
+                .ok_or_else(|| XConfigError::new("snapshot_directive_value_kind"))?;
+            if *actual != expected {
+                return Err(XConfigError::new("snapshot_directive_seed_kind"));
+            }
         }
     }
     Ok(())

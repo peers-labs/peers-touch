@@ -1,0 +1,700 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Peers-Touch 多中心网络架构",
+    "subtitle": "Desktop 与 Mobile 拥有产品体验；Home Station 拥有业务真源；Federation 拥有社交拓扑；Connectivity 只提供可达性。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/architecture.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "desktop-journey",
+        "label": "Desktop Journey",
+        "focus": [
+          "desktop-ui",
+          "desktop-runtime",
+          "desktop-route",
+          "station-edge",
+          "station-frame",
+          "station-apps",
+          "station-state"
+        ],
+        "note": "Desktop 通过已验证 Route 进入同一 Home Station。"
+      },
+      {
+        "id": "mobile-journey",
+        "label": "Mobile Journey",
+        "focus": [
+          "mobile-ui",
+          "mobile-runtime",
+          "mobile-route",
+          "station-edge",
+          "station-frame",
+          "station-apps",
+          "station-state"
+        ],
+        "note": "Mobile 拥有独立生命周期和本地状态，但共享 Station 业务真源。"
+      },
+      {
+        "id": "station-authority",
+        "label": "Station Authority",
+        "focus": [
+          "station-edge",
+          "station-frame",
+          "station-apps",
+          "station-state"
+        ],
+        "note": "平台接入、App 业务权威与持久状态保持边界。"
+      },
+      {
+        "id": "federation-topology",
+        "label": "Federation Topology",
+        "focus": [
+          "station-apps",
+          "federation-governance",
+          "federation-context",
+          "federation-members"
+        ],
+        "note": "持久成员、治理和发现语境组织独立 Station。"
+      },
+      {
+        "id": "cross-station-social",
+        "label": "跨 Station 社交动作",
+        "focus": [
+          "station-state",
+          "station-edge",
+          "peer-transport",
+          "federation-members"
+        ],
+        "note": "业务提交与认证 Peer 投递保持独立完成边界。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "desktop-ui",
+      "type": "frontend",
+      "label": "Desktop 产品体验",
+      "sublabel": "动态 · 对话 · Agent · Applets",
+      "tag": "产品中心",
+      "pos": [
+        60,
+        80
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/pages/registry.ts",
+          "label": "registry.ts",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "desktop-runtime",
+      "type": "backend",
+      "label": "Desktop 运行时",
+      "sublabel": "Tauri · React · Rust",
+      "tag": "独立安装实例",
+      "pos": [
+        60,
+        190
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/state/mod.rs",
+          "line": 20,
+          "end_line": 49,
+          "label": "mod.rs"
+        }
+      ]
+    },
+    {
+      "id": "desktop-local",
+      "type": "database",
+      "label": "Desktop 本地状态",
+      "sublabel": "草稿 · 缓存 · 投影 · 密钥",
+      "tag": "设备所有",
+      "pos": [
+        60,
+        300
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/secure_content/store.rs",
+          "label": "store.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "mobile-ui",
+      "type": "frontend",
+      "label": "Mobile 产品体验",
+      "sublabel": "动态 · 对话 · Agent · Applets",
+      "tag": "产品中心",
+      "pos": [
+        350,
+        80
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "label": "App.tsx",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "mobile-runtime",
+      "type": "backend",
+      "label": "Mobile 运行时",
+      "sublabel": "Tauri Mobile · 原生插件",
+      "tag": "独立安装实例",
+      "pos": [
+        350,
+        190
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "mobile-local",
+      "type": "database",
+      "label": "Mobile 本地状态",
+      "sublabel": "恢复 · 缓存 · 投影 · 密钥",
+      "tag": "设备所有",
+      "pos": [
+        350,
+        300
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/secure_content/store.rs",
+          "label": "store.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "station-state",
+      "type": "database",
+      "label": "Station 持久状态",
+      "sublabel": "业务真源 · Inbox / Outbox · 对象",
+      "tag": "权威中心",
+      "pos": [
+        640,
+        80
+      ],
+      "size": [
+        220,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/delivery/gorm_unit_of_work.go",
+          "line": 20,
+          "end_line": 113,
+          "label": "gorm_unit_of_work.go"
+        },
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "line": 70,
+          "end_line": 92,
+          "label": "events.go"
+        }
+      ]
+    },
+    {
+      "id": "station-apps",
+      "type": "backend",
+      "label": "Station App Domains",
+      "sublabel": "Social · Conversation · Agent · Applets",
+      "tag": "业务权威",
+      "pos": [
+        640,
+        190
+      ],
+      "size": [
+        220,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "line": 24,
+          "end_line": 86,
+          "label": "main.go"
+        }
+      ]
+    },
+    {
+      "id": "station-frame",
+      "type": "security",
+      "label": "Frame / Touch",
+      "sublabel": "接入 · Access · Session · 事件",
+      "tag": "平台边界",
+      "pos": [
+        640,
+        300
+      ],
+      "size": [
+        220,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
+          "line": 29,
+          "end_line": 126,
+          "label": "access_endpoint.go"
+        },
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "line": 45,
+          "end_line": 100,
+          "label": "session_finalizer.go"
+        }
+      ]
+    },
+    {
+      "id": "federation-governance",
+      "type": "database",
+      "label": "Governance Ledger",
+      "sublabel": "Manifest · Sequencer · Projection",
+      "tag": "持久网络",
+      "pos": [
+        940,
+        80
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/ledger_service.go",
+          "label": "ledger_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "federation-context",
+      "type": "security",
+      "label": "Federation Context",
+      "sublabel": "成员 · 角色 · Policy",
+      "tag": "网络治理",
+      "pos": [
+        940,
+        190
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/federation_service.go",
+          "label": "federation_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "federation-members",
+      "type": "external",
+      "label": "Member Stations",
+      "sublabel": "Catalog · 发现 · 独立权威",
+      "tag": "社交拓扑",
+      "pos": [
+        940,
+        300
+      ],
+      "size": [
+        230,
+        64
+      ]
+    },
+    {
+      "id": "desktop-route",
+      "type": "security",
+      "label": "Desktop Route",
+      "sublabel": "Station 身份 · Direct / Circuit",
+      "tag": "可达性",
+      "pos": [
+        60,
+        490
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+          "line": 11,
+          "end_line": 89,
+          "label": "mod.rs"
+        },
+        {
+          "path": "packages/station-trust/src/lib.rs",
+          "line": 48,
+          "end_line": 83,
+          "label": "lib.rs"
+        }
+      ]
+    },
+    {
+      "id": "mobile-route",
+      "type": "security",
+      "label": "Mobile Route",
+      "sublabel": "Station 身份 · Direct / Circuit",
+      "tag": "可达性",
+      "pos": [
+        350,
+        490
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/runtime/station_route.rs",
+          "label": "station_route.rs",
+          "line": 1,
+          "end_line": 120
+        },
+        {
+          "path": "packages/station-trust/src/lib.rs",
+          "line": 48,
+          "end_line": 83,
+          "label": "lib.rs"
+        }
+      ]
+    },
+    {
+      "id": "station-edge",
+      "type": "backend",
+      "label": "Station Network Edge",
+      "sublabel": "Canonical Ingress · Signed Frame",
+      "tag": "同一 Station Scope",
+      "pos": [
+        640,
+        490
+      ],
+      "size": [
+        220,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/server/canonical_protobuf_handler.go",
+          "label": "canonical_protobuf_handler.go",
+          "line": 1,
+          "end_line": 120
+        },
+        {
+          "path": "apps/station/frame/core/federation/runtime.go",
+          "line": 17,
+          "end_line": 55,
+          "label": "runtime.go"
+        }
+      ]
+    },
+    {
+      "id": "peer-transport",
+      "type": "messagebus",
+      "label": "Peer Transport",
+      "sublabel": "认证的 Station-to-Station 通道",
+      "tag": "无业务权威",
+      "pos": [
+        940,
+        490
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/transport.go",
+          "label": "transport.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Desktop 产品中心",
+      "wraps": [
+        "desktop-ui",
+        "desktop-runtime",
+        "desktop-local"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Mobile 产品中心",
+      "wraps": [
+        "mobile-ui",
+        "mobile-runtime",
+        "mobile-local"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Home Station 权威中心",
+      "wraps": [
+        "station-state",
+        "station-apps",
+        "station-frame"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Federation 网络中心",
+      "wraps": [
+        "federation-governance",
+        "federation-context",
+        "federation-members"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Connectivity 基座 · 身份、Direct、Relay 与认证 Peer",
+      "wraps": [
+        "desktop-route",
+        "mobile-route",
+        "station-edge",
+        "peer-transport"
+      ],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "desktop-ui-runtime",
+      "from": "desktop-ui",
+      "to": "desktop-runtime",
+      "variant": "emphasis",
+      "label": "挂载"
+    },
+    {
+      "id": "desktop-runtime-local",
+      "from": "desktop-runtime",
+      "to": "desktop-local",
+      "variant": "dashed",
+      "label": "拥有设备本地状态"
+    },
+    {
+      "id": "desktop-runtime-route",
+      "from": "desktop-runtime",
+      "to": "desktop-route",
+      "variant": "emphasis",
+      "label": "获取已验证 RouteLease"
+    },
+    {
+      "id": "mobile-ui-runtime",
+      "from": "mobile-ui",
+      "to": "mobile-runtime",
+      "variant": "emphasis",
+      "label": "挂载"
+    },
+    {
+      "id": "mobile-runtime-local",
+      "from": "mobile-runtime",
+      "to": "mobile-local",
+      "variant": "dashed",
+      "label": "拥有受 Fence 保护的恢复状态"
+    },
+    {
+      "id": "mobile-runtime-route",
+      "from": "mobile-runtime",
+      "to": "mobile-route",
+      "variant": "emphasis",
+      "label": "获取已验证 RouteLease"
+    },
+    {
+      "id": "station-edge-frame",
+      "from": "station-edge",
+      "to": "station-frame",
+      "variant": "emphasis",
+      "label": "进入平台边界"
+    },
+    {
+      "id": "station-frame-apps",
+      "from": "station-frame",
+      "to": "station-apps",
+      "variant": "security",
+      "label": "注入 Scoped Session Context"
+    },
+    {
+      "id": "station-apps-state",
+      "from": "station-apps",
+      "to": "station-state",
+      "variant": "emphasis",
+      "label": "提交业务真源"
+    },
+    {
+      "id": "federation-governance-context",
+      "from": "federation-governance",
+      "to": "federation-context",
+      "variant": "dashed",
+      "label": "物化已验证治理"
+    },
+    {
+      "id": "federation-context-members",
+      "from": "federation-context",
+      "to": "federation-members",
+      "variant": "dashed",
+      "label": "组织独立成员"
+    },
+    {
+      "id": "station-apps-context",
+      "from": "station-apps",
+      "to": "federation-context",
+      "variant": "security",
+      "label": "使用语境"
+    },
+    {
+      "id": "desktop-route-edge",
+      "from": "desktop-route",
+      "to": "station-edge",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          165,
+          625
+        ],
+        [
+          750,
+          625
+        ]
+      ],
+      "labelAt": [
+        460,
+        625
+      ],
+      "label": "Direct / 不透明 Circuit"
+    },
+    {
+      "id": "mobile-route-edge",
+      "from": "mobile-route",
+      "to": "station-edge",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight",
+      "label": "路径"
+    },
+    {
+      "id": "station-state-edge",
+      "from": "station-state",
+      "to": "station-edge",
+      "variant": "dashed",
+      "label": "恢复持久真源"
+    },
+    {
+      "id": "station-edge-peer",
+      "from": "station-edge",
+      "to": "peer-transport",
+      "variant": "emphasis",
+      "label": "打开认证 Peer Channel"
+    },
+    {
+      "id": "peer-members",
+      "from": "peer-transport",
+      "to": "federation-members",
+      "variant": "emphasis",
+      "label": "投递至独立权威"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "产品中心",
+      "items": [
+        "Desktop 与 Mobile 是独立产品，不是一张 Web 页的不同皮肤。",
+        "每个安装拥有本地生命周期、密钥、草稿、缓存与投影。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "权威中心",
+      "items": [
+        "Home Station 拥有跨设备业务真源、策略、Session 与持久状态。",
+        "Frame / Touch 平台机制与 App 业务语义保持分离。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "网络中心",
+      "items": [
+        "Federation 是独立 Station 组成的持久社交拓扑。",
+        "成员、治理、Catalog 与发现不属于 Transport。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "连接基座",
+      "items": [
+        "Identity、Direct、Relay 与认证 Peer Transport 只建立可达性。",
+        "Relay 永远不成为 Station 或 Federation Authority。"
+      ]
+    }
+  ]
+}

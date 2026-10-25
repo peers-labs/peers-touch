@@ -55,6 +55,8 @@ pub struct MessagingListMessagesInput {
     pub before_sequence: Option<i64>,
     #[serde(default = "default_message_page_limit")]
     pub limit: usize,
+    #[serde(default)]
+    pub anchor_message_id: Option<String>,
 }
 
 fn default_message_page_limit() -> usize {
@@ -605,7 +607,7 @@ pub(crate) fn messaging_update_member_settings_result(
     }
 }
 
-pub(super) fn active_engine(
+pub(crate) fn active_engine(
     state: &Arc<AppState>,
     window: &Window,
 ) -> Result<(String, String, Arc<crate::messaging::MessagingEngine>), AppResult<Value>> {
@@ -2666,11 +2668,22 @@ pub(crate) fn messaging_list_messages_result(
             None,
         );
     }
-    let page = match engine.conversation_message_page(
-        &input.conversation_id,
-        input.before_sequence,
-        input.limit,
-    ) {
+    if input.anchor_message_id.is_some() && input.before_sequence.is_some() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "anchor and cursor are mutually exclusive",
+            None,
+        );
+    }
+    let read = match input.anchor_message_id.as_deref() {
+        Some(anchor) => engine.message_anchor_page(&input.conversation_id, anchor, input.limit),
+        None => engine.conversation_message_page(
+            &input.conversation_id,
+            input.before_sequence,
+            input.limit,
+        ),
+    };
+    let page = match read {
         Ok(page) => page,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };

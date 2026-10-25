@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -40,6 +41,7 @@ type rawOperatorLogin struct {
 	SigningKeyID         string `json:"signing_key_id"`
 	SigningPrivateKeyB64 string `json:"signing_private_key_b64"`
 	RedeemSecretB64      string `json:"redeem_secret_b64"`
+	AllowPrivateHTTP     bool   `json:"allow_private_http,omitempty"`
 }
 
 type rawProviderLite struct {
@@ -425,65 +427,149 @@ func operatorLoginFromEnv() *rawOperatorLogin {
 		SigningKeyID:         strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_SIGNING_KEY_ID")),
 		SigningPrivateKeyB64: strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_SIGNING_PRIVATE_KEY_B64")),
 		RedeemSecretB64:      strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_REDEEM_SECRET_B64")),
+		AllowPrivateHTTP:     truthyEnv(os.Getenv("OAUTH_OPERATOR_LOGIN_ALLOW_PRIVATE_HTTP")),
 	}
 	if value.Audience == "" &&
 		value.CallbackURL == "" &&
 		value.SigningKeyID == "" &&
 		value.SigningPrivateKeyB64 == "" &&
-		value.RedeemSecretB64 == "" {
+		value.RedeemSecretB64 == "" &&
+		!value.AllowPrivateHTTP {
 		return nil
 	}
 	return value
+}
+
+// siteScopedOperatorLoginFromEnv resolves OAUTH_OPERATOR_LOGIN_<SITE>_*
+// variables so additional operator consoles (for example a corp-network
+// channel on a private IP) can be registered without widening the single-site
+// generic operator block. Site IDs map to [A-Z0-9_]+ segments; every other
+// rune becomes an underscore.
+func siteScopedOperatorLoginFromEnv(siteID string) *rawOperatorLogin {
+	segment := operatorLoginSiteEnvSegment(siteID)
+	if segment == "" {
+		return nil
+	}
+	prefix := "OAUTH_OPERATOR_LOGIN_" + segment + "_"
+	value := &rawOperatorLogin{
+		Audience:             strings.TrimSpace(os.Getenv(prefix + "AUDIENCE")),
+		CallbackURL:          strings.TrimSpace(os.Getenv(prefix + "CALLBACK_URL")),
+		SigningKeyID:         strings.TrimSpace(os.Getenv(prefix + "SIGNING_KEY_ID")),
+		SigningPrivateKeyB64: strings.TrimSpace(os.Getenv(prefix + "SIGNING_PRIVATE_KEY_B64")),
+		RedeemSecretB64:      strings.TrimSpace(os.Getenv(prefix + "REDEEM_SECRET_B64")),
+		AllowPrivateHTTP:     truthyEnv(os.Getenv(prefix + "ALLOW_PRIVATE_HTTP")),
+	}
+	if value.Audience == "" &&
+		value.CallbackURL == "" &&
+		value.SigningKeyID == "" &&
+		value.SigningPrivateKeyB64 == "" &&
+		value.RedeemSecretB64 == "" &&
+		!value.AllowPrivateHTTP {
+		return nil
+	}
+	return value
+}
+
+func operatorLoginSiteEnvSegment(siteID string) string {
+	var builder strings.Builder
+	for _, r := range strings.ToUpper(strings.TrimSpace(siteID)) {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			builder.WriteRune(r)
+		default:
+			builder.WriteByte('_')
+		}
+	}
+	return builder.String()
+}
+
+func truthyEnv(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// validOperatorCallbackURL accepts HTTPS on any host. HTTP is accepted only
+// when the site explicitly enables it and only for IP literals on loopback or
+// private corp networks. The operator handoff carries only a one-time
+// challenge; the signed operator assertion is exchanged over a separate
+// server-to-server redeem channel.
+func validOperatorCallbackURL(callback *url.URL, allowPrivateHTTP bool) bool {
+	if callback == nil ||
+		callback.Host == "" ||
+		callback.User != nil ||
+		callback.RawQuery != "" ||
+		callback.Fragment != "" {
+		return false
+	}
+	if callback.Scheme == "https" {
+		return true
+	}
+	if callback.Scheme != "http" || !allowPrivateHTTP {
+		return false
+	}
+	ip := net.ParseIP(callback.Hostname())
+	if ip == nil {
+		return false
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return v4.IsLoopback() || v4.IsPrivate() || v4.IsLinkLocalUnicast()
+	}
+	return ip.IsLoopback()
 }
 
 func buildOperatorLoginConfig(
 	siteID string,
 	raw *rawOperatorLogin,
 ) (*usecase.OperatorLoginSiteConfig, error) {
-	env := operatorLoginFromEnv()
-	envSiteID := strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_SITE_ID"))
-	if envSiteID != "" && envSiteID != siteID {
-		env = nil
+	siteID = strings.TrimSpace(siteID)
+	generic := operatorLoginFromEnv()
+	genericSiteID := strings.TrimSpace(os.Getenv("OAUTH_OPERATOR_LOGIN_SITE_ID"))
+	if genericSiteID != "" && genericSiteID != siteID {
+		generic = nil
 	}
+	siteScoped := siteScopedOperatorLoginFromEnv(siteID)
 	if raw == nil {
-		if envSiteID == "" || envSiteID != siteID {
+		switch {
+		case generic != nil:
+			raw = generic
+		case siteScoped != nil:
+			raw = siteScoped
+		default:
 			return nil, nil
 		}
-		raw = env
 	}
-	if raw == nil {
-		return nil, nil
+	sources := []*rawOperatorLogin{raw, generic, siteScoped}
+	pick := func(get func(*rawOperatorLogin) string) string {
+		for _, source := range sources {
+			if source == nil {
+				continue
+			}
+			if value := strings.TrimSpace(get(source)); value != "" {
+				return value
+			}
+		}
+		return ""
 	}
-	audience := strings.TrimSpace(raw.Audience)
-	callbackURL := strings.TrimSpace(raw.CallbackURL)
-	signingKeyID := strings.TrimSpace(raw.SigningKeyID)
-	signingPrivateKeyB64 := strings.TrimSpace(raw.SigningPrivateKeyB64)
-	redeemSecretB64 := strings.TrimSpace(raw.RedeemSecretB64)
-	if env != nil {
-		audience = firstNonEmpty(audience, env.Audience)
-		callbackURL = firstNonEmpty(callbackURL, env.CallbackURL)
-		signingKeyID = firstNonEmpty(signingKeyID, env.SigningKeyID)
-		signingPrivateKeyB64 = firstNonEmpty(
-			signingPrivateKeyB64,
-			env.SigningPrivateKeyB64,
-		)
-		redeemSecretB64 = firstNonEmpty(
-			redeemSecretB64,
-			env.RedeemSecretB64,
-		)
-	}
+	audience := pick(func(value *rawOperatorLogin) string { return value.Audience })
+	callbackURL := pick(func(value *rawOperatorLogin) string { return value.CallbackURL })
+	signingKeyID := pick(func(value *rawOperatorLogin) string { return value.SigningKeyID })
+	signingPrivateKeyB64 := pick(func(value *rawOperatorLogin) string { return value.SigningPrivateKeyB64 })
+	redeemSecretB64 := pick(func(value *rawOperatorLogin) string { return value.RedeemSecretB64 })
+	allowPrivateHTTP := raw.AllowPrivateHTTP ||
+		(generic != nil && generic.AllowPrivateHTTP) ||
+		(siteScoped != nil && siteScoped.AllowPrivateHTTP)
 	callback, err := url.Parse(callbackURL)
 	if err != nil ||
-		callback.Scheme != "https" ||
-		callback.Host == "" ||
-		callback.User != nil ||
-		callback.RawQuery != "" ||
-		callback.Fragment != "" ||
+		!validOperatorCallbackURL(callback, allowPrivateHTTP) ||
 		audience == "" ||
 		len(audience) > 128 ||
 		signingKeyID == "" ||
 		len(signingKeyID) > 128 ||
-		strings.TrimSpace(siteID) == "" {
+		siteID == "" {
 		return nil, errors.New("invalid_operator_login_configuration")
 	}
 	privateKeyBytes, err := decodeBase64Value(signingPrivateKeyB64, ed25519.SeedSize)

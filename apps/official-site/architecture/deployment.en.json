@@ -1,0 +1,392 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Runtime and Deployment Topology",
+    "subtitle": "Independent client installs connect to Station or Relay process roles; state providers and external services remain explicit.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/deployment.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "station-role",
+        "focus": [
+          "desktop",
+          "mobile",
+          "station",
+          "db",
+          "objects"
+        ],
+        "label": "Station deployment",
+        "note": "Station loads platform, business and durable providers."
+      },
+      {
+        "id": "relay-role",
+        "focus": [
+          "desktop",
+          "mobile",
+          "relay",
+          "remote"
+        ],
+        "label": "Relay deployment",
+        "note": "Relay is a mutually exclusive role with no App business."
+      },
+      {
+        "id": "external",
+        "focus": [
+          "oauth",
+          "livekit"
+        ],
+        "label": "External services",
+        "note": "External services never gain Station business authority."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "desktop",
+      "type": "frontend",
+      "label": "Desktop Install",
+      "sublabel": "WebView + Rust runtime",
+      "tag": "independent device",
+      "pos": [
+        0,
+        100
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/main.rs",
+          "label": "main.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "mobile",
+      "type": "frontend",
+      "label": "Mobile Install",
+      "sublabel": "Android / iOS host",
+      "tag": "independent device",
+      "pos": [
+        0,
+        300
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "station",
+      "type": "backend",
+      "label": "Station Process",
+      "sublabel": "Frame + Touch + App",
+      "tag": "PEERS_NODE_ROLE=station",
+      "pos": [
+        280,
+        180
+      ],
+      "size": [
+        210,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/runtime/role/role.go",
+          "label": "role.go",
+          "line": 1,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "type": "external",
+      "label": "Relay Process",
+      "sublabel": "enrollment · route · Circuit admission",
+      "tag": "PEERS_NODE_ROLE=relay",
+      "pos": [
+        280,
+        390
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/runtime/role/role.go",
+          "label": "role.go",
+          "line": 1,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Relational State",
+      "sublabel": "PostgreSQL / SQLite",
+      "tag": "durable provider",
+      "pos": [
+        590,
+        80
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/store/rds.go",
+          "label": "rds.go",
+          "line": 1,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "objects",
+      "type": "cloud",
+      "label": "Object Backing",
+      "sublabel": "local / shared-fs / S3",
+      "tag": "storage provider",
+      "pos": [
+        590,
+        210
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/facility/storage/storage.go",
+          "label": "storage.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "remote",
+      "type": "external",
+      "label": "Remote Stations",
+      "sublabel": "independent identity + state",
+      "tag": "peer runtimes",
+      "pos": [
+        590,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "oauth",
+      "type": "external",
+      "label": "OAuth Login Broker",
+      "sublabel": "independent service",
+      "tag": "login handoff",
+      "pos": [
+        870,
+        80
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/oauth2-client/cmd/server/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 61
+        }
+      ]
+    },
+    {
+      "id": "livekit",
+      "type": "external",
+      "label": "LiveKit",
+      "sublabel": "SFU + signed webhook",
+      "tag": "media service",
+      "pos": [
+        870,
+        210
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "model",
+      "type": "database",
+      "label": "Contract Artifacts",
+      "sublabel": "embedded TS / Rust / Go",
+      "tag": "not a process",
+      "pos": [
+        870,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "model/domain/peer/station_identity.proto",
+          "label": "station_identity.proto",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "station",
+        "db",
+        "objects"
+      ],
+      "label": "Home / NAS / Cloud Station deployment",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "oauth",
+        "livekit"
+      ],
+      "label": "External services",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "desktop-station",
+      "from": "desktop",
+      "to": "station",
+      "variant": "emphasis",
+      "label": "Station route"
+    },
+    {
+      "id": "mobile-station",
+      "from": "mobile",
+      "to": "station",
+      "variant": "emphasis",
+      "label": "Station route"
+    },
+    {
+      "id": "desktop-relay",
+      "from": "desktop",
+      "to": "relay",
+      "variant": "dashed",
+      "label": "Circuit"
+    },
+    {
+      "id": "mobile-relay",
+      "from": "mobile",
+      "to": "relay",
+      "variant": "dashed",
+      "label": "Circuit"
+    },
+    {
+      "id": "station-db",
+      "from": "station",
+      "to": "db",
+      "variant": "emphasis",
+      "label": "commits"
+    },
+    {
+      "id": "station-objects",
+      "from": "station",
+      "to": "objects",
+      "variant": "emphasis",
+      "label": "stores"
+    },
+    {
+      "id": "station-remote",
+      "from": "station",
+      "to": "remote",
+      "variant": "emphasis",
+      "label": "peer channel"
+    },
+    {
+      "id": "relay-remote",
+      "from": "relay",
+      "to": "remote",
+      "variant": "dashed",
+      "label": "opaque bytes"
+    },
+    {
+      "id": "desktop-oauth",
+      "from": "desktop",
+      "to": "oauth",
+      "variant": "dashed",
+      "label": "login handoff"
+    },
+    {
+      "id": "station-livekit",
+      "from": "station",
+      "to": "livekit",
+      "variant": "dashed",
+      "label": "media control"
+    },
+    {
+      "id": "model-station",
+      "from": "model",
+      "to": "station",
+      "variant": "dashed",
+      "label": "embeds"
+    },
+    {
+      "id": "model-desktop",
+      "from": "model",
+      "to": "desktop",
+      "variant": "dashed",
+      "label": "embeds"
+    },
+    {
+      "id": "model-mobile",
+      "from": "model",
+      "to": "mobile",
+      "variant": "dashed",
+      "label": "embeds"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Evidence boundary",
+      "items": [
+        "Source entry points prove composition, not production deployment.",
+        "Multi-node claims remain unproven without current runtime evidence."
+      ]
+    }
+  ]
+}

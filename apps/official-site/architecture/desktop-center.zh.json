@@ -1,0 +1,332 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Desktop 产品中心",
+    "subtitle": "Desktop 拥有产品面、运行时编排、本地状态和原生 Host 集成。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/desktop-center.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "product",
+        "focus": [
+          "user",
+          "shell",
+          "page-runtime"
+        ],
+        "label": "产品面",
+        "note": "Desktop 导航与交互由 Desktop 自己拥有。"
+      },
+      {
+        "id": "native",
+        "focus": [
+          "tauri",
+          "binding",
+          "local",
+          "cores",
+          "host"
+        ],
+        "label": "原生运行时",
+        "note": "原生能力位于类型化 Command 与 Runtime Port 之后。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "Desktop 用户",
+      "sublabel": "键盘 · 窗口 · 文件",
+      "tag": "用户",
+      "pos": [
+        0,
+        220
+      ],
+      "size": [
+        120,
+        64
+      ]
+    },
+    {
+      "id": "shell",
+      "type": "frontend",
+      "label": "Boot Pipeline + Shell",
+      "sublabel": "Readiness · 导航 · 工作区",
+      "tag": "展示 Owner",
+      "pos": [
+        160,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/kernel/PageHost.tsx",
+          "label": "PageHost.tsx",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "page-runtime",
+      "type": "frontend",
+      "label": "Page / Runtime Kernel",
+      "sublabel": "投影 Owner · Action · 生命周期",
+      "tag": "单一编排 Owner",
+      "pos": [
+        370,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/kernel/runtime.ts",
+          "label": "runtime.ts",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "tauri",
+      "type": "backend",
+      "label": "Tauri Commands",
+      "sublabel": "类型化原生边界",
+      "tag": "原生运行时",
+      "pos": [
+        590,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/state/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 51
+        }
+      ]
+    },
+    {
+      "id": "binding",
+      "type": "security",
+      "label": "Station Binding",
+      "sublabel": "身份 · RouteLease · Scope",
+      "tag": "已验证接入",
+      "pos": [
+        800,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "station",
+      "type": "external",
+      "label": "Home Station API",
+      "sublabel": "Canonical 类型化契约",
+      "tag": "外部权威",
+      "pos": [
+        1020,
+        220
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "local",
+      "type": "database",
+      "label": "Desktop 本地状态",
+      "sublabel": "草稿 · 缓存 · 投影",
+      "tag": "仅设备 Mutation Owner",
+      "pos": [
+        370,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/secure_content/store.rs",
+          "label": "store.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "cores",
+      "type": "backend",
+      "label": "Portable Cores",
+      "sublabel": "Messaging · Secure Content",
+      "tag": "嵌入式库",
+      "pos": [
+        590,
+        390
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "packages/messaging-core/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 18
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "type": "external",
+      "label": "Desktop Host",
+      "sublabel": "Keyring · 文件 · 媒体",
+      "tag": "系统能力",
+      "pos": [
+        800,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/main.rs",
+          "label": "main.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "shell",
+        "page-runtime"
+      ],
+      "label": "Desktop 产品面",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "tauri",
+        "binding",
+        "cores",
+        "host"
+      ],
+      "label": "Desktop 原生运行时",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "user-shell",
+      "from": "user",
+      "to": "shell",
+      "variant": "emphasis",
+      "label": "操作"
+    },
+    {
+      "id": "shell-page",
+      "from": "shell",
+      "to": "page-runtime",
+      "variant": "emphasis",
+      "label": "挂载"
+    },
+    {
+      "id": "page-tauri",
+      "from": "page-runtime",
+      "to": "tauri",
+      "variant": "emphasis",
+      "label": "类型化 Command"
+    },
+    {
+      "id": "tauri-binding",
+      "from": "tauri",
+      "to": "binding",
+      "variant": "emphasis",
+      "label": "RouteLease"
+    },
+    {
+      "id": "binding-station",
+      "from": "binding",
+      "to": "station",
+      "variant": "emphasis",
+      "label": "Canonical Call"
+    },
+    {
+      "id": "page-local",
+      "from": "page-runtime",
+      "to": "local",
+      "variant": "dashed",
+      "label": "设备状态"
+    },
+    {
+      "id": "tauri-cores",
+      "from": "tauri",
+      "to": "cores",
+      "variant": "emphasis",
+      "label": "嵌入"
+    },
+    {
+      "id": "tauri-host",
+      "from": "tauri",
+      "to": "host",
+      "variant": "dashed",
+      "label": "Host Port"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "生命周期所有权",
+      "items": [
+        "BootPipeline 在 Shell 挂载前证明依赖已就绪。",
+        "Page 与 Runtime Kernel 拥有投影和 Action 生命周期，页面不创建平行 Runtime。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "禁止所有权",
+      "items": [
+        "Desktop 缓存、草稿与投影绝不成为跨设备业务真源。"
+      ]
+    }
+  ]
+}

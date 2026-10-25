@@ -296,6 +296,11 @@ export function ChatMessageArea({
   }, []);
 
   useLayoutEffect(() => {
+    if (scrollToMessageUlid || highlightedMessageUlid) {
+      tailReconcilePendingRef.current = false;
+      tailPinnedRef.current = false;
+      return;
+    }
     if (prependRestoreRef.current && scrollContainerRef.current) {
       const { previousHeight } = prependRestoreRef.current;
       const container = scrollContainerRef.current;
@@ -464,17 +469,17 @@ export function ChatMessageArea({
 
   useEffect(() => {
     if (!scrollToMessageUlid || !activeUlid) return;
-    const hasMsg = currentMessages.some((m) => m.ulid === scrollToMessageUlid);
-    if (!hasMsg) return;
-    const raf = requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-message-ulid="${scrollToMessageUlid}"]`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setHighlightedMessageUlid(scrollToMessageUlid);
-      window.setTimeout(() => setHighlightedMessageUlid(null), 1800);
-      setScrollToMessageUlid(null);
-    });
-    return () => cancelAnimationFrame(raf);
+    if (!mainTimelineMessages.some((m) => m.ulid === scrollToMessageUlid)) return;
+    tailPinnedRef.current = false;
+    tailReconcilePendingRef.current = false;
+    setHighlightedMessageUlid(scrollToMessageUlid);
   }, [scrollToMessageUlid, activeUlid, currentMessages, setScrollToMessageUlid]);
+
+  useEffect(() => {
+    if (!highlightedMessageUlid) return;
+    const timer = window.setTimeout(() => setHighlightedMessageUlid(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [highlightedMessageUlid]);
 
   useEffect(() => {
     if (!activeUlid || newestAuthoritySequence <= 0) return;
@@ -1117,6 +1122,8 @@ export function ChatMessageArea({
             scrollContainerRef={scrollContainerRef}
             getSenderProfile={getIMSenderProfile}
             highlightedMessageUlid={highlightedMessageUlid}
+            scrollToMessageUlid={scrollToMessageUlid}
+            onAnchorReached={() => setScrollToMessageUlid(null)}
             isPinned={(message) => Boolean(pinnedMessages[message.ulid])}
             messages={mainTimelineMessages}
             onTimelineMeasured={handleTimelineMeasured}

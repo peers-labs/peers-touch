@@ -1,0 +1,52 @@
+{
+  "id": "chat-device-search",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "packages/search-core/**",
+    "model/domain/search/**",
+    "apps/desktop/src-tauri/src/application/search/**",
+    "apps/desktop/src-tauri/src/interface/tauri_commands/search.rs",
+    "apps/desktop/src/components/search/**",
+    "apps/desktop/src/runtimes/searchRuntime.ts",
+    "apps/desktop/src/runtimes/searchQueries.ts",
+    "docs/client/desktop/search-experience-contract.md",
+    "apps/desktop/src/store/search.ts",
+    "apps/desktop/src/services/search.ts",
+    "apps/desktop/src/messaging/openResource.ts",
+    "apps/desktop/src/acceptance/chat/harness.ts",
+    "tooling/acceptance/gates/chat/device_search_*.py"
+  ],
+  "truth_sources": [
+    "Messaging-owned authorized device projections and FTS",
+    "SearchContributor query, hydrate and resolve authorization",
+    "current native Desktop Search UI and final Search read diagnostics"
+  ],
+  "visible_surfaces": [
+    {"type": "native-desktop", "route": "Global Search > device results > Chat message or thread"},
+    {"type": "native-desktop", "route": "Global Search > Functions > Settings"}
+  ],
+  "required_gates": ["chat-device-search-contract", "chat-device-search-native-e2e"],
+  "acceptance": {
+    "service": [
+      "query, hydrate and resolve retain resource authority and content identity",
+      "cached reads remain bound to source revision and authenticated read scope",
+      "forged authority, stale content and previous-session paging cursors fail closed"
+    ],
+    "visible": [
+      "a received Chinese message and uploaded attachment filename appear in global Search",
+      "opening historical messages and thread replies focuses the actual Chat target",
+      "return, reopen, repeat and backspace restore results without another source query",
+      "pending input retains readable rows and their displayed query; newest draft commits atomically without moving the field or list",
+      "explicit refresh queries the source; real edits and actor hide update receiver Search",
+      "Functions opens real Settings; empty and invalid queries recover visibly",
+      "logout clears Search; switching accounts in the same native window isolates results"
+    ]
+  },
+  "negative": [
+    "development reports and SQL-written fixtures cannot substitute for formal native proof",
+    "Harness and API diagnostics cannot substitute for Search UI query and open actions",
+    "cached stale or hidden messages must not remain readable or resolvable",
+    "Applet, Mobile, Station Search and Ask are outside this capability"
+  ]
+}

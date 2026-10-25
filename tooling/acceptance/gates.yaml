@@ -1,6 +1,29 @@
 {
   "version": 1,
   "gates": {
+    "chat-device-search-contract": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.chat.device_search_contract"],
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate Search business injection, contributor authority, cache scope and native Journey proof obligations without claiming runtime proof."
+    },
+    "chat-device-search-native-e2e": {
+      "command": "RUST_LOG=info,search=debug PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.device_search_runner && PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.device_search_e2e",
+      "timeout_seconds": 2400,
+      "environment": "chat-storage-native",
+      "provisioner": "chat-storage-native",
+      "tier": "env-evidence",
+      "description": "Reuse one same-Station native Alice/Bob runtime for Chinese and attachment search, historical/thread open, cache return, real edit/hide invalidation, typed errors, functions and same-window account isolation; require exact-source UI and immutable evidence."
+    },
+    "chat-mobile-device-search-native-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.chat.mobile_device_search"],
+      "timeout_seconds": 2400,
+      "environment": "chat-mobile-search-simulator",
+      "provisioner": "chat-mobile-search-simulator",
+      "tier": "env-evidence",
+      "description": "Reuse one source-bound iOS/Android Suite for bilateral receiver Search, real message/thread anchors, long filenames, scoped paging, cost, content and lifecycle fences, Settings and terminal cleanup."
+    },
     "x-config-home-operator-login-e2e": {
       "argv": ["python3", "-m", "tooling.acceptance.gates.x_config.home_operator_login"],
       "timeout_seconds": 2400,

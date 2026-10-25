@@ -53,7 +53,6 @@ use crate::application::oss as app_oss;
 use crate::application::profile as app_profile;
 use crate::application::provider as app_provider;
 use crate::application::runtime_evidence as app_runtime_evidence;
-use crate::application::search as app_search;
 use crate::application::settings as app_settings;
 use crate::application::skills as app_skills;
 use crate::application::skills_market as app_skills_market;
@@ -4523,39 +4522,24 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             Ok((actor_ptid, _)) => to_json(app_tools::tools_list(&actor_ptid)),
             Err(error) => error,
         },
-        "tools_search_providers" => to_json(app_tools::tools_search_providers()),
-        "tools_set_search_primary" => {
-            let input = match parse_args::<SearchPrimaryInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_tools::tools_set_search_primary(input))
-        }
 
         // =================================================================
-        // Search (no state)
+        // Search — closed-domain device retrieval (SRCH-D03)
         // =================================================================
-        "help_get" => to_json(app_search::help_get()),
-        "search_sources" => to_json(app_search::search_sources()),
-        "search_query" => {
-            let input = match parse_args::<SearchQueryInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_search::search_query(input))
-        }
-        "search_ai" => {
-            let input = match parse_args::<AiSearchInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_search::search_ai(input))
-        }
+        // This development gateway has no caller-bound window authority.
+        // A shared logged-in gateway session cannot authorize private Search.
+        "search_suggest" | "search_submit" | "search_cancel" | "search_resolve" | "search_read_state" =>
+            to_json(AppResult::<Value>::fail(
+                ErrorCode::Unauthorized,
+                "private device search requires an authenticated native window",
+                None,
+            )),
 
         // =================================================================
-        // System (no state)
+        // System
         // =================================================================
-        "system_health" => to_json(app_system::system_health()),
+        "system_health" => to_json(app_system::system_health(Some(&state.meta))),
+        "client_meta" => to_json(app_system::client_meta(&state.meta)),
         "open_external_url" => {
             let input = match parse_args::<ExternalUrlInput>(args) {
                 Ok(v) => v,

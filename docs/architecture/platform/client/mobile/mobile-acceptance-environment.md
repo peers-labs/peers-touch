@@ -193,6 +193,14 @@ cross-Station or Relay evidence.
 
 ## 8. Harness Boundary
 
+Simulator and emulator Acceptance builds enable both
+`VITE_ACCEPTANCE_HARNESS=1` in the Web bundle and the Rust
+`acceptance-harness` feature. The shared Android build definition forwards
+`--features acceptance-harness`; the iOS static-bundle build owner enables the
+same feature. Each client must read its actual embedded identity through
+`build.identity` before business actions start. A Web Harness marker alone
+does not attest the native binary.
+
 The Acceptance Harness may:
 
 - invoke bounded production actions;

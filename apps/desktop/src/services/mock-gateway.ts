@@ -86,8 +86,8 @@ const MOCK_I18N_RESOURCES = {
       },
       search: {
         'search.tab.all': 'All',
-        'search.tab.aiAnswer': 'AI Answer',
-        'search.placeholder': 'Search…',
+        'search.tab.functions': 'Functions',
+        'search.input.placeholder': 'Search messages, conversations or functions…',
       },
       settings: {},
     },
@@ -164,7 +164,6 @@ export function mockInvoke(cmd: string, _args?: Record<string, unknown>): unknow
       return { ok: true, data: [{ id: 'openai', name: 'OpenAI', enabled: true, base_url: '' }] };
     case 'mcp_list_servers':
     case 'skill_list':
-    case 'search_sources':
     case 'applet_list':
     case 'oauth2_list_connections':
     case 'notification_list':

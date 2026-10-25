@@ -1,0 +1,72 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "search.reuse-topology",
+  "module": "search",
+  "viewpoint": "reuse-topology",
+  "layout": "composition",
+  "output": "architecture.svg",
+  "title": "Search 端侧复用拓扑",
+  "canvas": {"width": 1400, "height": 760},
+  "edgeMeaning": "箭头表示共享能力消费关系",
+  "scene": {
+    "rows": [
+      {
+        "id": "native-bindings",
+        "title": "CLIENT BINDINGS",
+        "y": 100,
+        "height": 145,
+        "tone": "secondary",
+        "modules": [
+          {"id": "desktop", "role": "module", "x": 105, "y": 150, "width": 430, "height": 70, "title": "Desktop Native Search", "caption": "window · identity · Store guard", "tone": "secondary"},
+          {"id": "mobile", "role": "module", "x": 665, "y": 150, "width": 430, "height": 70, "title": "Mobile Native Search", "caption": "OAuth · OS lifecycle · Store guard", "tone": "secondary"}
+        ]
+      },
+      {
+        "id": "portable-core",
+        "title": "SHARED QUERY OWNER",
+        "y": 265,
+        "height": 125,
+        "tone": "primary",
+        "modules": [
+          {"id": "core", "role": "module", "x": 250, "y": 305, "width": 700, "height": 65, "title": "search-core", "caption": "query · cursor · cache · cancellation", "tone": "primary"}
+        ]
+      },
+      {
+        "id": "contributor",
+        "title": "ORIGINAL DOMAIN ADAPTER",
+        "y": 415,
+        "height": 125,
+        "tone": "state",
+        "modules": [
+          {"id": "messaging", "role": "module", "x": 250, "y": 455, "width": 700, "height": 65, "title": "Messaging Search Contributor", "caption": "original authority · batch projection", "tone": "state"}
+        ]
+      },
+      {
+        "id": "stores",
+        "title": "DEVICE-PRIVATE TRUTH",
+        "y": 565,
+        "height": 155,
+        "tone": "muted",
+        "modules": [
+          {"id": "desktop-store", "role": "module", "x": 105, "y": 615, "width": 430, "height": 70, "title": "Desktop Messaging Store", "caption": "SQLCipher · original FTS", "tone": "muted"},
+          {"id": "mobile-store", "role": "module", "x": 665, "y": 615, "width": 430, "height": 70, "title": "Mobile Messaging Store", "caption": "SQLCipher · original FTS", "tone": "muted"}
+        ]
+      }
+    ],
+    "rail": {
+      "id": "model", "title": "MODEL CONTRACT", "x": 1176, "y": 100, "width": 180, "height": 620, "tone": "external",
+      "items": [
+        {"id": "proto", "role": "rail-item", "x": 1190, "y": 305, "width": 152, "height": 65, "title": "Search Proto", "caption": "generated", "tone": "external"}
+      ]
+    },
+    "relations": [
+      {"from": "desktop", "to": "core", "fromAnchor": "bottom", "toAnchor": "top", "label": null, "style": "primary", "via": [{"x": 320, "y": 255}, {"x": 600, "y": 255}]},
+      {"from": "mobile", "to": "core", "fromAnchor": "bottom", "toAnchor": "top", "label": null, "style": "primary", "via": [{"x": 880, "y": 255}, {"x": 600, "y": 255}]},
+      {"from": "core", "to": "proto", "fromAnchor": "right", "toAnchor": "left", "label": null, "style": "secondary", "via": []},
+      {"from": "messaging", "to": "core", "fromAnchor": "top", "toAnchor": "bottom", "label": null, "style": "primary", "via": []},
+      {"from": "desktop-store", "to": "messaging", "fromAnchor": "top", "toAnchor": "bottom", "label": null, "style": "primary", "via": [{"x": 320, "y": 550}, {"x": 600, "y": 550}]},
+      {"from": "mobile-store", "to": "messaging", "fromAnchor": "top", "toAnchor": "bottom", "label": null, "style": "primary", "via": [{"x": 880, "y": 550}, {"x": 600, "y": 550}]}
+    ]
+  }
+}

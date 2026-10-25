@@ -286,7 +286,7 @@ export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSett
             }}
           >
             <Command size={11} />
-            <span>K</span>
+            <span>⇧ K</span>
           </Flexbox>
         </Flexbox>
 
@@ -348,7 +348,6 @@ function getShortcutHint(pageId: string): string {
   const hints: Record<string, string> = {
     'page:home': '⌘1',
     'page:chat': '⌘2',
-    'page:search': '⌘3',
     'page:settings': '⌘,',
   };
   return hints[pageId] ?? '';

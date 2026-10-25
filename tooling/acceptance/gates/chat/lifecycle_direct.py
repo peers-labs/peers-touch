@@ -551,6 +551,28 @@ class LifecycleDirectGate(NativeTwoClientGate):
             timeout=STEP_TIMEOUT,
         )
 
+        original_plaintext = plaintext
+        plaintext = f"edited-{original_plaintext}"
+        async_harness(
+            client,
+            "editInteractionMessage",
+            {
+                "conversationId": conversation_id,
+                "kind": "friend",
+                "messageId": message_id,
+                "plaintext": plaintext,
+            },
+        )
+        wait_until(
+            lambda: message_id in async_harness(
+                client,
+                "searchMessages",
+                {"conversationId": conversation_id, "query": plaintext},
+            ).get("messageIds", []),
+            "edited Direct search projection",
+            timeout=STEP_TIMEOUT,
+        )
+
         client.find_element("[data-chat-detail-toggle]", STEP_TIMEOUT).click()
         client.find_element("[data-chat-detail-panel=\"open\"]", STEP_TIMEOUT)
         presence_snapshot = async_harness(
@@ -634,8 +656,9 @@ class LifecycleDirectGate(NativeTwoClientGate):
         )
         self.assert_condition(
             "direct_message_search",
-            result is not None,
-            f"conversation_id={conversation_id}; message_id={message_id}",
+            result is not None and plaintext in result.text,
+            f"conversation_id={conversation_id}; message_id={message_id}; "
+            f"expected_edited_text={plaintext}; visible={result.text if result else ''}",
         )
         self.assert_condition(
             "direct_search_clear_bounded",

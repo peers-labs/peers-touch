@@ -1745,7 +1745,7 @@ select,
   min-height: var(--header-height);
   padding: 0 18px;
   gap: 12px;
-  background: rgba(245, 246, 251, 0.92);
+  background: var(--brand-muted);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   position: sticky;
@@ -1791,10 +1791,10 @@ select,
   justify-content: center;
   width: 44px;
   height: 44px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--brand-border);
   background: var(--brand-surface);
   border-radius: 12px;
-  color: rgba(0, 0, 0, 0.62);
+  color: inherit;
   cursor: pointer;
   box-shadow: 0 8px 24px rgba(31, 41, 55, 0.08);
 }

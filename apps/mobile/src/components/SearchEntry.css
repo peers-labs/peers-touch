@@ -1,0 +1,11 @@
+.header-action.mobile-search-entry {
+  min-width: 44px;
+  min-height: 44px;
+  flex: none;
+  border-radius: 8px;
+}
+
+.mobile-search-entry:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: -2px;
+}

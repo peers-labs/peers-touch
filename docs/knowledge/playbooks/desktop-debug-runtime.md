@@ -43,6 +43,19 @@ Do not use hard packaged `.app` debugging by default. Packaging is only the righ
    - Local development defaults to `semantic-nonintrusive`; it must not
      activate the Desktop process, move the system pointer, redirect keyboard
      focus, or force the window above the operator's current application.
+   - macOS Acceptance WebViews disable initial window focus and use Tauri's
+     `BackgroundThrottlingPolicy::Disabled` before window creation. Semantic
+     windows also start invisible, and the application uses `Prohibited`
+     activation policy before the event loop starts: Tao's launch hook activates
+     visible windows and the application even when initial focus is disabled.
+     Once that hook finishes, main-thread setup switches to `Accessory` and
+     orders the windows behind the operator with `NSWindow.orderBack`.
+     Semantic startup and reopen must never call a focus or activation path.
+     Verify
+     actual background frame progress, fresh per-window screenshots, and
+     operator focus preservation; the SDK setting alone is not rendering proof.
+     A stalled frame remains `UNPROVEN`. Do not spoof document visibility,
+     override animation scheduling, or remove product animations to pass a Gate.
    - Native file panels, permission sheets, physical hover/drag and focus
      claims require `exclusive-native-input` in an `isolated-gui-session`.
      A shared user session must fail closed before global input.

@@ -13,8 +13,8 @@ use crate::platform::ios::{
     SystemActionState,
 };
 use crate::platform::lifecycle_bridge::{
-    self, LifecycleBridgeResult, NativeLifecycleEvent, NativeLifecycleSignal,
-    ResumeReconciliationReport,
+    self, LifecycleBridgeResult, NativeLifecycleEvent, NativeLifecyclePlatform,
+    NativeLifecycleSignal, NativeLifecycleState, ResumeReconciliationReport,
 };
 use crate::platform::media_picker::{
     self, MediaPickInput, MediaPickProjection, StagedMomentMediaInput,
@@ -213,6 +213,47 @@ pub fn lifecycle_advance_generation() -> u64 {
 #[command]
 pub fn lifecycle_process_event(input: NativeLifecycleEvent) -> MobileResult<LifecycleBridgeResult> {
     lifecycle_bridge::process_lifecycle_event(&input)
+}
+
+#[command]
+pub async fn lifecycle_observe<R: Runtime>(
+    app: AppHandle<R>,
+) -> MobileResult<LifecycleBridgeResult> {
+    let platform = app.try_state::<PlatformPermissions<R>>().ok_or_else(|| {
+        crate::error::MobileError::lifecycle("native platform plugin is not registered")
+    })?;
+    let observation = platform.observe_lifecycle().await.map_err(|error| {
+        crate::error::MobileError::lifecycle(format!("failed to observe native lifecycle: {error}"))
+    })?;
+    let platform = match observation.platform.as_str() {
+        "android" => NativeLifecyclePlatform::Android,
+        "ios" => NativeLifecyclePlatform::Ios,
+        _ => {
+            return Err(crate::error::MobileError::lifecycle(
+                "invalid lifecycle platform",
+            ))
+        }
+    };
+    let state = match observation.state.as_str() {
+        "foreground" => NativeLifecycleState::Foreground,
+        "background" => NativeLifecycleState::Background,
+        _ => {
+            return Err(crate::error::MobileError::lifecycle(
+                "invalid lifecycle state",
+            ))
+        }
+    };
+    // Initial OS observation establishes read admission; it is not a resume
+    // transition for an already-running business runtime.
+    Ok(
+        lifecycle_bridge::process_native_signal(&NativeLifecycleSignal {
+            platform,
+            state,
+            sequence: observation.sequence,
+            timestamp_ms: observation.timestamp_ms,
+        })?
+        .result,
+    )
 }
 
 #[command]

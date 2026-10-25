@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Typography } from 'antd';
 import {
   Ban, Bell, ChevronRight, Fingerprint, Globe,
@@ -13,7 +13,8 @@ import { IdentityAvatar } from '../components/IdentityAvatar';
 
 const { Text } = Typography;
 
-export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
+export function ProfilePage({ avatarState, onChangeStation, onSettingClick, headerActions }: {
+  headerActions?: ReactNode;
   avatarState: AvatarRenderState;
   onChangeStation: () => void;
   onSettingClick: (s: SettingEntry) => void;
@@ -57,6 +58,7 @@ export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
     <div className="mp-page">
       <header className="mp-header">
         <h1 className="mp-header-title">Me</h1>
+        {headerActions}
         <button type="button" className="mp-header-action" aria-label="Settings" onClick={() => onSettingClick({ id: 'account-info', label: 'Account Info', icon: User, tint: 'primary' })}>
           <SettingsIcon size={20} />
         </button>

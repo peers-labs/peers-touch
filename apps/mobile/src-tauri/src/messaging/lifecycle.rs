@@ -694,6 +694,34 @@ impl MobileMessagingRuntime {
         Ok(engine)
     }
 
+    /// Publication shares the active-runtime lock with suspend, resume and
+    /// replacement. Pointer identity rejects A→B→A engine reincarnations.
+    pub(crate) fn with_search_engine<T>(
+        &self,
+        engine: &Arc<MobileMessagingEngine>,
+        publish: impl FnOnce() -> Result<T, search_core::SearchError>,
+    ) -> Result<T, search_core::SearchError> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| search_core::SearchError::Cancelled)?;
+        let current = active.as_ref().ok_or(search_core::SearchError::Cancelled)?;
+        if !Arc::ptr_eq(&current.engine, engine)
+            || current
+                .worker
+                .phase()
+                .map_err(|_| search_core::SearchError::Cancelled)?
+                == MessagingWorkerPhase::Suspended
+            || !current
+                .worker
+                .is_active()
+                .map_err(|_| search_core::SearchError::Cancelled)?
+        {
+            return Err(search_core::SearchError::Cancelled);
+        }
+        publish()
+    }
+
     pub(crate) fn secure_content_runtime_identity(
         &self,
         station_peer_id: &str,
@@ -1061,6 +1089,24 @@ fn worker_loop(
             }
         };
 
+        // Local derived-index repair has no network prerequisite. Yield the
+        // Store lock between 128-row batches and recheck the lifecycle fence.
+        match engine.store().rebuild_search_index_batch() {
+            Ok(false) => {
+                let mut guard = match state.0.lock() {
+                    Ok(guard) => guard,
+                    Err(_) => return,
+                };
+                guard.cycle_running = false;
+                if validate_active_engine(&guard.lifecycle, fence, cancellation.as_ref()).is_ok() {
+                    guard.wake_pending = true;
+                }
+                state.1.notify_all();
+                continue;
+            }
+            Ok(true) => {}
+            Err(error) => log::warn!("mobile messaging index repair remains pending: {error}"),
+        }
         let (mut result, backlog, retry_deadline) = run_worker_batch(
             &state,
             engine.as_ref(),

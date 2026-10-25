@@ -126,6 +126,14 @@ readiness.
 
 ### Foreground
 
+- After native callback registration, read the current OS lifecycle state from
+  the same Android/iOS plugin. Rust admits that sequence-fenced observation
+  before dependent private reads and initial network observation. Registration
+  alone cannot establish foreground state; a cold start or WebView replacement
+  may have occurred before the listener existed.
+- Initial observation is a capability fact, not a business resume transition.
+  Unknown host state remains closed. Subsequent foreground/background callbacks
+  continue through the original generation and reconciliation owners.
 - event streams maintain low-latency freshness;
 - periodic or triggered reconciliation repairs missed events;
 - writes pass through bounded runtime admission;

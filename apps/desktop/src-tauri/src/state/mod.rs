@@ -1,5 +1,6 @@
-use crate::application::x_config::XConfigRuntime;
+use crate::application::meta::ClientMeta;
 use crate::application::station_runtime::StationRuntime;
+use crate::application::x_config::XConfigRuntime;
 use crate::infrastructure::event_stream::EventStreamRuntime;
 use crate::infrastructure::i18n::I18nService;
 use crate::infrastructure::storage::StorageLayout;
@@ -23,6 +24,9 @@ pub struct AppState {
     pub event_streams: EventStreamRuntime,
     pub storage: StorageLayout,
     pub i18n: I18nService,
+    /// Single owner of build identity and runtime context (region,
+    /// environment, stable client id) for targeting and debug surfaces.
+    pub meta: ClientMeta,
     /// App-scoped owner for signed public X Config cache, rollback
     /// watermark, release metadata, and non-authoritative Station suggestions.
     pub x_config: XConfigRuntime,
@@ -35,23 +39,48 @@ pub struct AppState {
     pub secure_content: SecureContentSupervisor,
     /// Sole in-process authority for authenticated Desktop sessions.
     pub sessions: WindowSessionRegistry,
+    pub search_requests: std::sync::Arc<search_core::requests::SearchRequests>,
+    pub search_runtime: std::sync::Arc<
+        search_core::runtime::SearchRuntime<
+            crate::application::search::runtime::DesktopSearchExecutor,
+        >,
+    >,
+    pub search_cursors:
+        std::sync::Arc<search_core::cursor::authenticated::AuthenticatedCursorCodec>,
 }
 
 impl AppState {
     pub fn new(layout: StorageLayout, i18n: I18nService, station: StationRuntime) -> Self {
         let messaging_engines = EngineRegistry::new(station.client().clone());
-        let x_config = XConfigRuntime::new(&layout);
+        let meta = ClientMeta::new(&layout);
+        let x_config = XConfigRuntime::new(&layout, meta.clone());
+        let search_runtime = std::sync::Arc::new(search_core::runtime::SearchRuntime::<
+            crate::application::search::runtime::DesktopSearchExecutor,
+        >::default());
+        let search_identity = search_runtime.clone();
         Self {
             identity_transition: Mutex::new(()),
             settings: Mutex::new(SettingsState::default()),
             event_streams: EventStreamRuntime::new(),
             storage: layout,
             i18n,
+            meta,
             x_config,
             station,
             messaging_engines,
             secure_content: SecureContentSupervisor::new(),
-            sessions: WindowSessionRegistry::new(),
+            sessions: WindowSessionRegistry::new().with_change_observer(std::sync::Arc::new(
+                move |window| {
+                    let prefix = format!("{window}\0");
+                    search_identity
+                        .invalidate_partitions(|partition| partition.starts_with(&prefix));
+                },
+            )),
+            search_requests: Default::default(),
+            search_runtime,
+            search_cursors: std::sync::Arc::new(
+                search_core::cursor::authenticated::AuthenticatedCursorCodec::new(rand::random()),
+            ),
         }
     }
 }

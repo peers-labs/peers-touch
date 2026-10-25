@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Input, Typography } from 'antd';
 import { ChevronRight, Search, UserPlus, Users } from 'lucide-react';
 import type { AvatarRenderState, Contact, GroupItem } from '../types';
@@ -18,7 +18,9 @@ const noRequestSamples: RequestRowSample[] = [];
 export function ContactsPage({
   contacts = demoContacts, groups = demoGroups, requests = noRequestSamples,
   listMemory, request, avatarState, onContactClick, onGroupClick, onAddContact, onCreateGroup,
+  headerActions,
 }: {
+  headerActions?: ReactNode;
   contacts?: Contact[];
   groups?: GroupItem[];
   requests?: RequestRowSample[];
@@ -53,6 +55,7 @@ export function ContactsPage({
     <div className="mp-page" data-prototype-page="contacts">
       <header className="mp-header">
         <h1 className="mp-header-title">{copy['mobile.contacts.title']}</h1>
+        {headerActions}
         <button type="button" className="mp-header-action" aria-label={copy['mobile.group.create']} onClick={() => onCreateGroup?.()}>
           <Users size={20} />
         </button>

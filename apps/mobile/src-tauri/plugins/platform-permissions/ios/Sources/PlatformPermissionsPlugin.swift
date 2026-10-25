@@ -315,6 +315,14 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     }
   }
 
+  @objc public func observeLifecycle(_ invoke: Invoke) {
+    DispatchQueue.main.async { [self] in
+      let state: LifecycleState = UIApplication.shared.applicationState == .active
+        ? .foreground : .background
+      invoke.resolve(makeLifecycleSignal(state))
+    }
+  }
+
   @objc public func observeCapability(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(CapabilityObservationArgs.self)
@@ -1070,16 +1078,19 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     )
   }
 
-  private func emitLifecycleSignal(_ state: LifecycleState) {
+  private func makeLifecycleSignal(_ state: LifecycleState) -> LifecycleSignal {
     lifecycleSequence += 1
-    let signal = LifecycleSignal(
+    return LifecycleSignal(
       platform: "ios",
       state: state,
       sequence: lifecycleSequence,
       timestampMs: Int(Date().timeIntervalSince1970 * 1_000)
     )
+  }
+
+  private func emitLifecycleSignal(_ state: LifecycleState) {
     do {
-      try trigger(lifecycleEvent, data: signal)
+      try trigger(lifecycleEvent, data: makeLifecycleSignal(state))
     } catch {
       Logger.error("platform-permissions lifecycle signal failed")
     }

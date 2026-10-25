@@ -375,6 +375,12 @@ function MessageInteractionRail({
 export function ChatMessageRowInteractionStyle() {
   const { token } = theme.useToken();
   const rowInteractionStyle = `
+    .msg-row[data-message-anchor-focused]:focus {
+      outline: none;
+    }
+    .msg-row[data-message-anchor-focused]:focus .msg-bubble {
+      box-shadow: 0 0 0 2px ${token.colorPrimaryBorder}, ${token.boxShadowSecondary} !important;
+    }
     .msg-row.highlighted .msg-bubble {
       box-shadow: 0 0 0 2px ${token.colorPrimaryBorder}, ${token.boxShadowSecondary} !important;
     }

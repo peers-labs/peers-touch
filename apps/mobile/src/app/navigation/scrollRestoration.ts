@@ -24,6 +24,7 @@ const MAX_SCROLL_AGE_MS = 30 * 60 * 1000; // 30 minutes
 export function resolveScrollOwner(element: Element | null): Element | null {
   if (!element) return null;
   return element.querySelector('[data-message-viewport]')
+    ?? element.querySelector('[data-search-viewport]')
     ?? element.querySelector('.page-container')
     ?? element;
 }

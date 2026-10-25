@@ -72,6 +72,13 @@ export const primaryTabDescriptors: readonly NavigationDescriptor[] = [
 
 export const detailDescriptors: readonly NavigationDescriptor[] = [
   {
+    routeId: 'detail:search',
+    labelKey: 'search.label',
+    layout: 'detail',
+    ownerRuntimeId: 'search',
+    keepAlive: false,
+  },
+  {
     routeId: 'detail:chat-conversation',
     labelKey: 'mobile.nav.chatConversation',
     layout: 'detail',
