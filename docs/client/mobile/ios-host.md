@@ -26,9 +26,21 @@ adapter returns `registered=false`; Rust preserves push activation and exposes
 Other scheduler failures and an unexpected work identifier remain errors.
 
 Station Runtime renews the signed route before its expiry and restores it on
-bootstrap and foreground resume. Native restore and renewal return one result
+bootstrap and foreground resume. The shared native route owner renews within
+60 seconds of expiry, matching the Station runtime timer, and serializes
+renewal so concurrent callers reuse the newly verified proof. Discovery runs
+outside selection locks; commit rechecks both the active selection and cached
+candidate. A failed discovery does not extend the old signed lifetime.
+Native restore and renewal return one result
 containing the verified route and its binding revision; the registry persists
 both before dependent runtimes use them. A same-process lifecycle restart must
-not decrease that revision. A changed Station, route generation, root key, node,
-or authorization epoch is rejected, and a late discovery result cannot replace
-a concurrently selected route. Renewal timers stop with the Station runtime.
+not decrease that revision. Renewal retains the Station, root key, node, route,
+source and endpoint with non-decreasing authorization epoch and route generation;
+restore rejects a different stored generation. A late discovery result cannot
+replace a concurrently selected or removed route. Renewal prepares a request
+before submission and never replays a submitted mutation. Renewal timers stop
+with the Station runtime.
+
+The existing Mobile logger exposes only fixed proxy stages and the standard
+transport's error kind and submission phase under `station-route`. It does not
+log route identities, URLs, queries, request bodies or transport error messages.

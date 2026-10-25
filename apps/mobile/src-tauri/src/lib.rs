@@ -33,7 +33,8 @@ pub fn run() {
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Off)
                 .level_for("search", log::LevelFilter::Debug)
-                .filter(|metadata| metadata.target() == "search")
+                .level_for("station-route", log::LevelFilter::Warn)
+                .filter(|metadata| matches!(metadata.target(), "search" | "station-route"))
                 .targets([tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::Stdout,
                 )])
