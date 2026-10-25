@@ -141,6 +141,12 @@ scope/revision/expiry，再恢复结果、筛选、选择、滚动和焦点。�
 
 Renderer 不建立第二个 TypeScript 查询执行引擎。取消、cursor 和完整 coverage 的执行闭环需要真实请求生命周期与 conformance，不能用 core 中存在相应类型代替。
 
+Search 业务验收的共享采样脚本唯一位于 `tooling/acceptance/search_capture.py`。
+Messaging 与 Social 的 Desktop/Mobile Gate 及源码回放直接消费该模块的绘制等待、
+DOM 变更观察、原目标可见性和连续性判据；Gate 不通过另一 Gate 导入或重导出
+这些脚本。业务断言、运行拓扑和生命周期仍由各 Journey owner 持有，
+domain-neutral Acceptance Core 不包含 Search 选择器或业务采样规则。
+
 ## 2. 原模块继续拥有的职责
 
 - **Messaging**：会话、消息投影、SQLCipher/FTS5、编辑撤回/隐藏、恢复进度、message/thread anchor。

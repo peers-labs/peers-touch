@@ -45,6 +45,7 @@ owns:
   - apps/station/app/subserver/social/infrastructure/private_read_policy.go
   - packages/locales/en/search.json
   - packages/locales/zh-CN/search.json
+  - tooling/acceptance/search_capture.py
   - tooling/acceptance/gates/chat/device_search_capture_checks.py
   - tooling/acceptance/gates/chat/device_search_runner.py
   - tooling/acceptance/gates/chat/mobile_device_search.py
@@ -186,6 +187,10 @@ revision. Every retry waits for its own real paint frames inside the same
 30-second deadline. Settings and concealed results require the same sampling
 qualification as original Social targets; correct terminal DOM does not prove
 that the compositor has discarded the preceding private-result frame.
+The shared scripts live only in the Search business utility
+`tooling/acceptance/search_capture.py`. Native runners and source replays consume
+that owner directly, never a Gate re-export; Search selectors and capture
+predicates must not enter domain-neutral Acceptance Core.
 Original-target qualification MUST inspect ancestor opacity, clipping and
 painted occlusion throughout the same capture. Hit testing alone misses opaque
 `pointer-events:none` covers. Controlled negative replays do not replace review

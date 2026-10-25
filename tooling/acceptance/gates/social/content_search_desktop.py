@@ -9,11 +9,12 @@ from typing import Any
 
 from selenium.webdriver.common.keys import Keys
 
+from tooling.acceptance import search_capture
 from tooling.acceptance.core import (
     AcceptanceGate, EphemeralGateClient, GateError, RuntimeReuseContract, SuiteRuntimeAction,
     SuiteRuntimeLedger, call_async_harness,
 )
-from tooling.acceptance.gates.chat.device_search_runner import DeviceSearchGate, TARGET_VISIBILITY_JS
+from tooling.acceptance.gates.chat.device_search_runner import DeviceSearchGate
 from tooling.acceptance.gates.chat.native_support import (
     async_harness, is_native_tauri_url, runtime_station_service,
 )
@@ -62,7 +63,7 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
         target = getattr(self, "original_social_target", None)
         if not target or rendering["searchOpen"]:
             return rendering
-        original = self.receiver.execute_script(TARGET_VISIBILITY_JS + """
+        original = self.receiver.execute_script(search_capture.TARGET_VISIBILITY_JS + """
 const postId = arguments[0], commentId = arguments[1], bodyText = arguments[2];
 const threads = [...document.querySelectorAll('[data-moments-comment-thread]')]
   .filter(node => node.dataset.momentsCommentThread === postId);

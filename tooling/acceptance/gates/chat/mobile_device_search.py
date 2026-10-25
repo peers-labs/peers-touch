@@ -12,15 +12,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any
 
+from tooling.acceptance import search_capture
 from tooling.acceptance.core import (
     AcceptanceGate, ArtifactSession, GateError, RuntimeReuseContract, SuiteRuntimeAction,
     SuiteRuntimeLedger,
 )
 from tooling.acceptance.fixtures.chat_native_actors import ACTOR_PASSWORD
-from tooling.acceptance.gates.chat.device_search_runner import (
-    CAPTURE_END_JS, CAPTURE_PAINT_JS, CAPTURE_START_JS,
-    SEARCH_CONTINUITY_END_JS, SEARCH_CONTINUITY_START_JS,
-)
 from tooling.acceptance.gates.mobile.messaging_journey import MobileMessagingJourney
 from tooling.acceptance.gates.mobile.simulator_e2e import (
     _redacted_markup, _validate_runtime_identity, _validate_source_identity,
@@ -212,7 +209,7 @@ return {
     def capture(self, artifacts: ArtifactSession, session: Any, name: str,
                 *, concealed: bool = False, diagnostic: bool = False) -> None:
         deadline = time.monotonic() + 30
-        session.execute_script(CAPTURE_START_JS)
+        session.execute_script(search_capture.CAPTURE_START_JS)
         try:
             while True:
                 rendering = self.surface(session)
@@ -223,7 +220,8 @@ return {
                     continue
                 if not diagnostic:
                     painted = session.execute_async_script(
-                        CAPTURE_PAINT_JS, max(1, int((deadline - time.monotonic()) * 1000)),
+                        search_capture.CAPTURE_PAINT_JS,
+                        max(1, int((deadline - time.monotonic()) * 1000)),
                     )
                     require(painted and time.monotonic() < deadline,
                             f"{name} native paint frames timed out")
@@ -242,7 +240,7 @@ return {
                     break
                 time.sleep(0.25)
         finally:
-            session.execute_script(CAPTURE_END_JS)
+            session.execute_script(search_capture.CAPTURE_END_JS)
         base = f"mobile-device-search/{session.client_id}/{name}"
         captured = {
             "clientId": session.client_id,
@@ -285,7 +283,7 @@ return {
 
     def reconcile_continuity(self, artifacts: ArtifactSession, session: Any, name: str) -> None:
         root, row = ".mobile-search-viewport", ROW
-        before = session.execute_script(SEARCH_CONTINUITY_START_JS, root, row)
+        before = session.execute_script(search_capture.SEARCH_CONTINUITY_START_JS, root, row)
         try:
             require(before and before["items"], "Search continuity needs the current real page")
             self.wait(session, """
@@ -294,7 +292,7 @@ return performance.now() - window.__PT_SEARCH_CONTINUITY__.started >= 2100;
             self.wait(session, """
 return document.querySelector('[data-search-state]')?.dataset.searchState === 'ready';
 """, "terminal page after scheduled Search reconcile")
-            after = session.execute_script(SEARCH_CONTINUITY_END_JS, root, row)
+            after = session.execute_script(search_capture.SEARCH_CONTINUITY_END_JS, root, row)
             artifacts.write_json(
                 f"mobile-device-search/{session.client_id}/{name}/scheduled-continuity.json",
                 {"before": before, "after": after},

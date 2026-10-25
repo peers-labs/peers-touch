@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from tooling.acceptance import search_capture
 from tooling.acceptance.core import AcceptanceGate, new_report
 from tooling.acceptance.gates.chat import mobile_device_search as shared
 from tooling.acceptance.gates.chat import device_search_runner as desktop
@@ -63,7 +64,7 @@ const make = parent => ({
 const parent = make(null), target = make(parent), cover = make(null);
 global.document = {elementFromPoint: () => target,
   querySelectorAll: () => [parent, target, cover]};
-""" + desktop.TARGET_VISIBILITY_JS + """
+""" + search_capture.TARGET_VISIBILITY_JS + """
 const cases = [];
 const negative = (name, reason, mutate, restore) => {
   mutate();
@@ -492,8 +493,8 @@ let rows = [make('historical')];
 const root = {scrollTop: 200, querySelectorAll: () => rows,
   getBoundingClientRect: () => ({top: 100, bottom: 500})};
 global.document = {querySelector: () => root};
-const start = new Function(""" + json.dumps(desktop.SEARCH_CONTINUITY_START_JS) + """);
-const end = new Function(""" + json.dumps(desktop.SEARCH_CONTINUITY_END_JS) + """);
+const start = new Function(""" + json.dumps(search_capture.SEARCH_CONTINUITY_START_JS) + """);
+const end = new Function(""" + json.dumps(search_capture.SEARCH_CONTINUITY_END_JS) + """);
 const before = start('root', 'rows'); now = 2100;
 assert.equal(end('root', 'rows').elapsedMs, 2100);
 assert.equal(end('root', 'rows').sameNodes, true);
@@ -615,7 +616,7 @@ def verify_desktop_capture() -> list[str]:
                 assert failure == "mutation-retry"
                 assert session.save_screenshot.call_count == 2
                 assert session.execute_async_script.call_count == 2
-            assert session.execute_script.call_args.args == (desktop.CAPTURE_END_JS,)
+            assert session.execute_script.call_args.args == (search_capture.CAPTURE_END_JS,)
         checks.append(failure)
     return checks
 

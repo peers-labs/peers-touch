@@ -6,8 +6,8 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+from tooling.acceptance import search_capture
 from tooling.acceptance.core import AcceptanceGate, ArtifactSession, EphemeralGateClient
-from tooling.acceptance.gates.chat.device_search_runner import TARGET_VISIBILITY_JS
 from tooling.acceptance.gates.chat.mobile_device_search import (
     MobileDeviceSearchGate, PAGE, ROW, require,
 )
@@ -26,7 +26,7 @@ class SocialContentSearchMobileGate(MobileDeviceSearchGate):
     @staticmethod
     def surface(session: Any) -> dict:
         rendering = MobileDeviceSearchGate.surface(session)
-        rendering["originalSocial"] = session.execute_script(TARGET_VISIBILITY_JS + """
+        rendering["originalSocial"] = session.execute_script(search_capture.TARGET_VISIBILITY_JS + """
 const thread = document.querySelector('[data-acceptance-id="social-moment-thread"]');
 if (!thread) return null;
 const anchor = [...thread.querySelectorAll('[data-scroll-anchor-id]')]
