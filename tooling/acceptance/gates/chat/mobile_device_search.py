@@ -121,6 +121,8 @@ return [...document.querySelectorAll('.mobile-search-result')].some(
     @staticmethod
     def surface(session: Any) -> dict:
         return session.execute_script("""
+const watch = window.__PT_SEARCH_CAPTURE_WATCH__;
+if (watch && watch.observer.takeRecords().length) watch.revision += 1;
 const page = document.querySelector('[data-product-surface="search.mobile"]')
   || document.querySelector('.page-container');
 const rect = page?.getBoundingClientRect();
@@ -164,6 +166,7 @@ const textContrast = node => {
   return (Math.max(front, back) + 0.05) / (Math.min(front, back) + 0.05);
 };
 return {
+  domRevision: watch?.revision || 0,
   painted: !!rect && rect.width > 0 && rect.height > 0,
   viewportWidth: innerWidth, viewportHeight: innerHeight,
   visualViewport: {top: visualViewport?.offsetTop || 0, height: visualViewport?.height || innerHeight},
@@ -203,29 +206,57 @@ return {
             {"loading"} if concealed else {"loading", "concealed"})
 
     def capture(self, artifacts: ArtifactSession, session: Any, name: str,
-                *, concealed: bool = False, diagnostic: bool = False,
-                deadline_monotonic: float | None = None) -> None:
-        deadline = (time.monotonic() + 30 if deadline_monotonic is None
-                    else deadline_monotonic)
-        while True:
-            rendering = self.surface(session)
-            if self.capture_pending(rendering, concealed) and not diagnostic:
-                require(time.monotonic() < deadline,
-                        f"{name} terminal native rendering timed out")
+                *, concealed: bool = False, diagnostic: bool = False) -> None:
+        deadline = time.monotonic() + 30
+        session.execute_script("""
+window.__PT_SEARCH_CAPTURE_WATCH__?.observer.disconnect();
+const watch = {revision: 0};
+watch.observer = new MutationObserver(() => { watch.revision += 1; });
+watch.observer.observe(document.body, {
+  childList: true, subtree: true, characterData: true, attributes: true,
+});
+window.__PT_SEARCH_CAPTURE_WATCH__ = watch;
+""")
+        try:
+            while True:
+                rendering = self.surface(session)
+                if self.capture_pending(rendering, concealed) and not diagnostic:
+                    require(time.monotonic() < deadline,
+                            f"{name} terminal native rendering timed out")
+                    time.sleep(0.25)
+                    continue
+                if not diagnostic:
+                    painted = session.execute_async_script("""
+const done = arguments[arguments.length - 1];
+let finished = false;
+const finish = value => { if (!finished) { finished = true; done(value); } };
+const timeout = setTimeout(() => finish(false), arguments[0]);
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  clearTimeout(timeout);
+  finish(true);
+}));
+""", max(1, int((deadline - time.monotonic()) * 1000)))
+                    require(painted and time.monotonic() < deadline,
+                            f"{name} native paint frames timed out")
+                if session.platform == "android":
+                    # The adapter binds nativeWebScreenshot: UiAutomator owns these pixels.
+                    screenshot = session.screenshot_bytes()
+                else:
+                    session.switch_to_native()
+                    try:
+                        screenshot = session.screenshot_bytes()
+                    finally:
+                        session.switch_to_app_webview()
+                markup = _redacted_markup(session.get_page_source())
+                require(time.monotonic() < deadline, f"{name} stable native capture timed out")
+                if self.surface(session) == rendering:
+                    break
                 time.sleep(0.25)
-                continue
-            if session.platform == "android":
-                # The adapter binds nativeWebScreenshot: UiAutomator owns these pixels.
-                screenshot = session.screenshot_bytes()
-            else:
-                session.switch_to_native()
-                screenshot = session.screenshot_bytes()
-                session.switch_to_app_webview()
-            markup = _redacted_markup(session.get_page_source())
-            if self.surface(session) == rendering:
-                break
-            require(time.monotonic() < deadline, f"{name} stable native capture timed out")
-            time.sleep(0.25)
+        finally:
+            session.execute_script("""
+window.__PT_SEARCH_CAPTURE_WATCH__?.observer.disconnect();
+delete window.__PT_SEARCH_CAPTURE_WATCH__;
+""")
         base = f"mobile-device-search/{session.client_id}/{name}"
         captured = {
             "clientId": session.client_id,

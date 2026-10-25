@@ -30,6 +30,7 @@ owns:
   - apps/station/app/subserver/social/infrastructure/private_read_policy.go
   - packages/locales/en/search.json
   - packages/locales/zh-CN/search.json
+  - tooling/acceptance/gates/chat/device_search_capture_checks.py
   - tooling/acceptance/gates/chat/mobile_device_search.py
   - tooling/acceptance/gates/social/content_search_contract.py
   - tooling/acceptance/gates/social/content_search_desktop.py
@@ -105,6 +106,11 @@ sampling, including queued mutation records. Two equal terminal snapshots can
 surround an intermediate loading frame; a mutation revision must invalidate
 that attempt. A capture-owned observer is always disconnected in finalization,
 and terminal capture waits for the WebView's paint frames before sampling.
+Messaging and Social MUST share that capture-owned paint wait and mutation
+revision. Every retry waits for its own real paint frames inside the same
+30-second deadline. Settings and concealed results require the same sampling
+qualification as original Social targets; correct terminal DOM does not prove
+that the compositor has discarded the preceding private-result frame.
 
 Coverage copy MUST come from the original source's generated `SourceCoverage`.
 Public Station scope must never fall back to acquired-device coverage;
@@ -255,6 +261,12 @@ Search publication order and can deadlock the native UI during reconciliation.
 - Replay a terminal/loading/terminal transition during the native screenshot:
   even when both terminal DOM samples are equal, capture must reject the first
   image, repeat within its existing deadline and release its mutation observer.
+- `chat-device-search-contract` executes the source-only capture race replays
+  in `device_search_capture_checks.py`: both platform Settings/concealment
+  paint delays, Messaging/Social mutation-and-repaint, original pending/focus,
+  bounded failure, observer/context finalization and unasserted diagnostics.
+  Native Settings and suspended screenshots must still be reviewed against
+  their immutable current DOM; those replays do not provide native pixel proof.
 - The same Journey must complete private Open after original projection
   materialization, reject unavailable targets and show distinct acquired-private
   and current-Station public coverage.

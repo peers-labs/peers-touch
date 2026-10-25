@@ -89,6 +89,10 @@ class DeviceSearchContractGate(AcceptanceGate):
             (REPO_ROOT / "apps/desktop/src/pages" / name).exists()
             for name in ("SearchPage.tsx", "SearchPageContainer.tsx", "useActiveSearchStore.ts")
         ))
+        from tooling.acceptance.gates.chat.device_search_capture_checks import verify_capture
+        capture_checks = verify_capture()
+        self.assert_condition("mobile_capture_race_replays", len(capture_checks) == 13
+                              and len(set(capture_checks)) == len(capture_checks))
         return {"verificationClass": "SOURCE_CONTRACT", "nativeProof": "UNPROVEN"}
 
 
