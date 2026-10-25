@@ -13,22 +13,47 @@ from tooling.acceptance.gates.social.content_search_desktop import SocialContent
 from tooling.acceptance.gates.social.content_search_mobile import SocialContentSearchMobileGate
 
 
+# CSSOM values shared by the existing controlled DOM adapters, not a paint oracle.
+PAINT_STYLE_JS = """
+const paintStyle = {display: 'block', visibility: 'visible', opacity: '1',
+  position: 'static', zIndex: 'auto', pointerEvents: 'auto',
+  backgroundColor: 'transparent', backgroundImage: 'none', boxShadow: 'none',
+  transform: 'none', translate: 'none', rotate: 'none', scale: 'none',
+  filter: 'none', perspective: 'none', backdropFilter: 'none',
+  overflowX: 'visible', overflowY: 'visible', clipPath: 'none', clip: 'auto',
+  boxSizing: 'border-box', width: 'auto', height: 'auto',
+  left: 'auto', right: 'auto', top: 'auto', bottom: 'auto'};
+for (const edge of ['Top', 'Right', 'Bottom', 'Left']) {
+  paintStyle['margin' + edge] = '0px';
+  paintStyle['padding' + edge] = '0px';
+  paintStyle['border' + edge + 'Width'] = '0px';
+  paintStyle['border' + edge + 'Style'] = 'none';
+}
+const fixedPseudo = () => ({...paintStyle, content: '""', position: 'fixed',
+  left: '0px', top: '0px', right: '0px', bottom: '0px',
+  zIndex: '2147483647', pointerEvents: 'none', backgroundColor: 'rgb(0, 0, 0)'});
+global.getComputedStyle = (node, pseudo) => pseudo
+  ? node.pseudos?.[pseudo] || {...paintStyle, content: 'none'}
+  : node.style;
+"""
+
+
 def verify_visibility() -> list[str]:
     # Controlled DOM adapters execute the actual capture predicate. These are
     # source-contract negatives, not a browser or native screenshot substitute.
     result = subprocess.run(
-        ["node", "-e", """
+        ["node", "-e", PAINT_STYLE_JS + """
 const assert = require('node:assert/strict');
 global.window = {visualViewport: null};
 global.innerWidth = 390; global.innerHeight = 800;
-global.getComputedStyle = node => node.style;
 const box = {left: 40, top: 100, right: 240, bottom: 150, width: 200, height: 50};
 const make = parent => ({
   isConnected: true, parentElement: parent,
-  style: {display: 'block', visibility: 'visible', opacity: '1',
-    overflowX: 'visible', overflowY: 'visible', clipPath: 'none', clip: 'auto'},
+  style: {...paintStyle},
   getBoundingClientRect: () => box, getAnimations: () => [],
+  getClientRects() { return [this.getBoundingClientRect()]; },
   clientLeft: 0, clientTop: 0, clientWidth: 200, clientHeight: 50,
+  scrollLeft: 0, scrollTop: 0,
   childNodes: [], tagName: 'DIV', compareDocumentPosition: () => 2,
   contains(hit) { for (let node = hit; node; node = node.parentElement) {
     if (node === this) return true; } return false; },
@@ -80,6 +105,106 @@ cover.style.backgroundColor = 'rgb(0, 0, 0)';
 cover.style.position = 'fixed'; cover.style.zIndex = '-1';
 assert.equal(targetVisibility(target).visible, true);
 cases.push('behind-cover-control');
+cover.style = {...paintStyle};
+parent.tagName = 'BODY';
+for (const pseudo of ['::before', '::after']) {
+  negative('ancestor-fixed-' + pseudo, 'noninteractive-cover',
+    () => parent.pseudos = {[pseudo]: fixedPseudo()},
+    () => delete parent.pseudos);
+}
+negative('target-fixed-pseudo', 'noninteractive-cover',
+  () => target.pseudos = {'::after': fixedPseudo()}, () => delete target.pseudos);
+cover.getBoundingClientRect = () => ({left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0});
+negative('zero-host-fixed-pseudo', 'noninteractive-cover',
+  () => cover.pseudos = {'::before': fixedPseudo()}, () => delete cover.pseudos);
+negative('unknown-pseudo-geometry', 'noninteractive-cover',
+  () => cover.pseudos = {'::after': {...fixedPseudo(), position: 'relative'}},
+  () => delete cover.pseudos);
+negative('unknown-pseudo-offset', 'noninteractive-cover',
+  () => cover.pseudos = {'::after': {...fixedPseudo(), left: 'calc(50% - 20px)',
+    right: 'auto', width: '100px'}}, () => delete cover.pseudos);
+for (const [name, change] of [
+  ['unresolved-left-with-right', {left: 'calc(50% - 100px)', right: '0px',
+    width: '100px', top: '100px', height: '50px'}],
+  ['unresolved-top-with-bottom', {top: 'calc(50% - 300px)', bottom: '0px',
+    height: '50px', left: '40px', width: '200px'}],
+]) {
+  negative(name, 'noninteractive-cover',
+    () => cover.pseudos = {'::after': {...fixedPseudo(), ...change}},
+    () => delete cover.pseudos);
+}
+for (const [name, change] of [
+  ['auto-left-with-right', {left: 'auto', right: '0px', width: '100px',
+    top: '100px', height: '50px'}],
+  ['auto-top-with-bottom', {top: 'auto', bottom: '0px', height: '50px',
+    left: '40px', width: '200px'}],
+]) {
+  cover.pseudos = {'::after': {...fixedPseudo(), ...change}};
+  assert.equal(targetVisibility(target).visible, true, name);
+  delete cover.pseudos;
+  cases.push(name);
+}
+negative('transformed-pseudo-geometry', 'noninteractive-cover',
+  () => cover.pseudos = {'::after': {...fixedPseudo(), transform: 'translateX(5px)'}},
+  () => delete cover.pseudos);
+negative('pseudo-style-unavailable', 'paint-unqualified',
+  () => cover.pseudos = {'::after': new Proxy({}, {get() {throw Error('CSSOM unavailable');}})},
+  () => delete cover.pseudos);
+negative('pseudo-overflow-text', 'noninteractive-cover',
+  () => cover.pseudos = {'::after': {...fixedPseudo(), content: '"long text"',
+    left: '500px', width: '1px', height: '1px'}}, () => delete cover.pseudos);
+negative('pseudo-shadow-outside-box', 'noninteractive-cover',
+  () => cover.pseudos = {'::after': {...fixedPseudo(), left: '500px',
+    width: '1px', height: '1px', boxShadow: '-500px 100px 100px black'}},
+  () => delete cover.pseudos);
+negative('transformed-containing-block', 'noninteractive-cover',
+  () => {parent.style.transform = 'translateX(0px)';
+    parent.pseudos = {'::before': fixedPseudo()};},
+  () => {parent.style.transform = 'none'; delete parent.pseudos;});
+target.style.position = 'relative'; target.style.zIndex = '1';
+negative('non-stacking-will-change', 'noninteractive-cover',
+  () => {cover.style.willChange = 'color'; cover.pseudos = {'::after': fixedPseudo()};},
+  () => {delete cover.style.willChange; delete cover.pseudos;});
+target.style = {...paintStyle};
+for (const host of [parent, cover]) {
+  for (const [name, change] of [
+    ['transparent', {backgroundColor: 'rgba(0, 0, 0, 0)'}],
+    ['opacity-zero', {opacity: '0'}],
+    ['hidden', {visibility: 'hidden'}],
+    ['behind', {zIndex: '-1'}],
+    ['outside', {left: '500px', width: '100px', height: '100px'}],
+  ]) {
+    host.pseudos = {'::before': {...fixedPseudo(), ...change}};
+    assert.equal(targetVisibility(target).visible, true, name + '/pseudo-control');
+    delete host.pseudos;
+    cases.push((host === parent ? 'ancestor/' : 'zero-host/') + name + '-pseudo-control');
+  }
+}
+// Match the product's positioned decoration below higher-z foreground content.
+parent.style.position = 'relative';
+target.style.position = 'relative'; target.style.zIndex = '3';
+parent.pseudos = {'::before': {...fixedPseudo(), position: 'absolute', zIndex: 'auto',
+  backgroundImage: 'linear-gradient(transparent, rgba(255,255,255,0.75))'}};
+assert.equal(targetVisibility(target).visible, true);
+cases.push('product-positioned-decoration-control');
+delete parent.pseudos;
+target.style = {...paintStyle}; parent.style = {...paintStyle};
+parent.pseudos = {'::before': {...fixedPseudo(), position: 'absolute', zIndex: '1',
+  left: '0px', right: '0px', top: '0px', bottom: '0px'}};
+parent.style.position = 'relative';
+negative('absolute-ancestor-pseudo', 'noninteractive-cover', () => {},
+  () => {delete parent.pseudos; parent.style = {...paintStyle};});
+cover.style = {...paintStyle, pointerEvents: 'none', backgroundColor: 'rgb(0, 0, 0)'};
+cover.getClientRects = () => [box];
+negative('ordinary-client-fragment', 'noninteractive-cover', () => {},
+  () => cover.style = {...paintStyle});
+cover.getClientRects = () => [{...box, left: NaN}];
+negative('ordinary-unknown-fragment', 'noninteractive-cover',
+  () => cover.style = {...paintStyle, pointerEvents: 'none', backgroundColor: 'black'},
+  () => cover.style = {...paintStyle});
+parent.style.pointerEvents = 'none'; parent.style.backgroundColor = 'black';
+assert.equal(targetVisibility(target).visible, true);
+cases.push('ordinary-ancestor-background-control');
 console.log(JSON.stringify(cases));
 """],
         check=True, capture_output=True, text=True, timeout=10,
@@ -109,18 +234,18 @@ def verify_original_surfaces() -> list[str]:
             gate.surface()
         source = session.execute_script.call_args_list[1].args[0]
         result = subprocess.run(
-            ["node", "-e", """
+            ["node", "-e", PAINT_STYLE_JS + """
 const assert = require('node:assert/strict');
 global.window = {visualViewport: null};
 global.innerWidth = 390; global.innerHeight = 800;
-global.getComputedStyle = node => node.style;
 const make = (parent, top = 0, bottom = 800) => ({
   isConnected: true, parentElement: parent, dataset: {}, innerText: '',
-  style: {display: 'block', visibility: 'visible', opacity: '1',
-    overflowX: 'visible', overflowY: 'visible', clipPath: 'none', clip: 'auto'},
+  style: {...paintStyle},
   getBoundingClientRect: () => ({left: 0, right: 390, top, bottom,
     width: 390, height: bottom - top}),
+  getClientRects() { return [this.getBoundingClientRect()]; },
   getAnimations: () => [], clientLeft: 0, clientTop: 0,
+  scrollLeft: 0, scrollTop: 0,
   clientWidth: 390, clientHeight: bottom - top,
   childNodes: [], tagName: 'DIV', compareDocumentPosition: () => 2,
   contains(hit) { for (let node = hit; node; node = node.parentElement) {
@@ -178,12 +303,59 @@ cover.style.pointerEvents = 'none'; cover.style.backgroundColor = 'rgb(0, 0, 0)'
 assert.equal(sample().threadVisible, false);
 assert.equal(sample().anchorVisible, false);
 cases.push('noninteractive-original-cover');
-console.log(JSON.stringify({cases, original}));
+cover.style = {...paintStyle};
+const rejected = [];
+for (const [name, host, pseudo, change] of [
+  ['body-fixed-before', root, '::before', {}],
+  ['body-fixed-after', root, '::after', {}],
+  ['zero-host-fixed-before', cover, '::before', {}],
+  ['unknown-pseudo-geometry', cover, '::after', {position: 'relative'}],
+  ['unresolved-left-with-right', cover, '::after', {left: 'calc(50% - 100px)',
+    right: '0px', width: '100px', top: '100px', height: '50px'}],
+  ['unresolved-top-with-bottom', cover, '::after', {top: 'calc(50% - 300px)',
+    bottom: '0px', height: '50px', left: '40px', width: '200px'}],
+]) {
+  root.tagName = 'BODY';
+  cover.getBoundingClientRect = () => ({left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0});
+  host.pseudos = {[pseudo]: {...fixedPseudo(), ...change}};
+  const observed = sample();
+  assert.equal(observed.threadVisible, false, name);
+  assert.equal(observed.postVisible, false, name);
+  assert.equal(observed.anchorVisible, false, name);
+  assert.equal(observed.anchorFocused, true, name);
+  rejected.push({name, observed});
+  delete host.pseudos;
+  assert.equal(sample().anchorVisible, true, name + '/restored');
+  cases.push(name);
+}
+for (const [name, change] of [
+  ['transparent', {backgroundColor: 'transparent'}], ['behind', {zIndex: '-1'}],
+]) {
+  root.pseudos = {'::before': {...fixedPseudo(), ...change}};
+  const control = sample();
+  assert.equal(control.threadVisible, true);
+  assert.equal(control.postVisible, true);
+  assert.equal(control.anchorVisible, true);
+  delete root.pseudos;
+  cases.push('ancestor-' + name + '-control');
+}
+console.log(JSON.stringify({cases, original, rejected}));
 """],
             check=True, capture_output=True, text=True, timeout=10,
         )
         observed = json.loads(result.stdout)
         checks.extend(f"{platform}/{case}" for case in observed["cases"])
+        for rejected in observed["rejected"]:
+            frame = {"searchOpen": False, "searchState": "ready", "painted": True,
+                     "originalSocial": rejected["observed"]}
+            if platform == "desktop":
+                frame["originalSocial"].update(
+                    issuedSourceId="device.social", issuedResource={"id": "comment"},
+                )
+                assert not gate.original_matches(frame)
+            else:
+                assert SocialContentSearchMobileGate.capture_pending(frame, False)
+            checks.append(f"{platform}/predicate-reject-{rejected['name']}")
         if platform == "desktop":
             original = {**observed["original"],
                         "issuedSourceId": "device.social", "issuedResource": {"id": "comment"}}
@@ -630,10 +802,10 @@ def verify_capture() -> list[str]:
     checks.append("diagnostic/unasserted")
     # Keep the existing contract Gate's 13 case IDs while expanding the
     # assertions within those cases. Detailed replay results are independently callable.
-    assert len(verify_visibility()) == 12
+    assert len(verify_visibility()) == 43
     assert len(verify_cleanup()) == 10
     assert len(verify_selectors()) == 6
-    assert len(verify_original_surfaces()) == 19
+    assert len(verify_original_surfaces()) == 47
     assert len(verify_continuity()) == 14
     assert len(verify_continuity_script()) == 7
     assert len(verify_return()) == 11

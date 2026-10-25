@@ -159,21 +159,27 @@ return [...document.querySelectorAll('.pt-search-row')].map(row => row.dataset.r
         )
 
     def return_search(self, name: str, before: dict, text: str) -> None:
-        self.receiver.find_element("[data-search-return] button:first-child", 20).click()
-        self.field()
-        self.wait_surface()
-        self.settled()
-        self.visible(name + "_return", lambda: (
-            self.surface()["query"] == self.query
-            and self.receiver.find_element('[data-search-filter="social"]')
-            .get_attribute("aria-selected") == "true" and text in self.rows()
-            and self.return_context_matches(
-                before, self.receiver.execute_script(RETURN_CONTEXT_JS),
-            )
-        ))
-        self.report.runtime["search"].setdefault("returnContext", {})[name] = {
-            "before": before, "after": self.receiver.execute_script(RETURN_CONTEXT_JS),
-        }
+        context = self.report.runtime["search"].setdefault("returnContext", {}).setdefault(
+            name, {"before": before},
+        )
+        try:
+            self.receiver.find_element("[data-search-return] button:first-child", 20).click()
+            self.field()
+            self.wait_surface()
+            self.settled()
+            self.visible(name + "_return", lambda: (
+                self.surface()["query"] == self.query
+                and self.receiver.find_element('[data-search-filter="social"]')
+                .get_attribute("aria-selected") == "true" and text in self.rows()
+                and self.return_context_matches(
+                    before, self.receiver.execute_script(RETURN_CONTEXT_JS),
+                )
+            ))
+        finally:
+            try:
+                context["after"] = self.receiver.execute_script(RETURN_CONTEXT_JS)
+            except Exception as error:
+                context["afterDiagnosticError"] = str(error)
         self.reconcile_continuity(name + "_return")
 
     def moments(self, actor: str, method: str, payload: dict) -> dict:
@@ -384,6 +390,9 @@ return [...document.querySelectorAll('.pt-search-row')].map(row => row.dataset.r
             ))
             self.report.runtime["search"].setdefault("socialReferences", {})[name] = item
             before_return = self.remember_return_context(resource_id)
+            self.report.runtime["search"].setdefault("returnContext", {})[name] = {
+                "before": before_return,
+            }
             row = self.receiver.find_element(f'[data-resource-id="{resource_id}"]', 20)
             row.click()
             self.wait_js("!document.querySelector('.pt-search-field')", "original Social route")

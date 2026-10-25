@@ -13,7 +13,8 @@ use sha2::{Digest, Sha256};
 
 use crate::cache::{Operation, ReadKey};
 use crate::contributor::{
-    namespace_allowed, narrow_intent, normalize_intent, same_resource, validate_resource,
+    namespace_allowed, narrow_intent, normalize_intent, same_resource, validate_descriptor,
+    validate_resource,
 };
 use crate::cursor::authenticated::AuthenticatedCursorCodec;
 use crate::model::wire::*;
@@ -366,68 +367,79 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         let deadline = Instant::now() + READ_BUDGET;
         cancel.check()?;
         let mut input = normalize_intent(input)?;
-        let read_states = self.read_states(bindings)?;
+        if bindings.is_empty() || bindings.len() > 3 {
+            return Err(SearchError::Protocol);
+        }
         let partition = bindings[0].partition();
+        let mut names = HashSet::new();
+        if bindings
+            .iter()
+            .any(|b| b.partition() != partition || !names.insert(b.source_id()))
+        {
+            return Err(SearchError::Protocol);
+        }
         let mut snapshots = Vec::new();
         for binding in bindings {
             if input.suggestions && binding.read_authority() == ReadAuthority::RemoteOwner {
                 continue;
             }
-            let state = read_states
-                .sources
-                .iter()
-                .find(|s| s.source_id == binding.source_id())
-                .ok_or(SearchError::Protocol)?
-                .clone();
-            match self.source(binding) {
+            // source() authenticates the frozen owner, so it cannot discover
+            // eligibility. A validated declaration selects, but never grants reads.
+            let declaration = binding.contributor().and_then(|source| {
+                let descriptor = source.descriptor();
+                validate_descriptor(descriptor)?;
+                if descriptor.source_id != binding.source_id()
+                    || descriptor.binding_id != binding.binding_id()
+                {
+                    return Err(SearchError::Protocol);
+                }
+                Ok(source)
+            });
+            let (mut narrowed, declaration_error) = match declaration {
                 Ok(source) => {
                     if input.suggestions && !source.supports_suggestions() {
                         continue;
                     }
-                    if let Some(mut narrowed) = narrow_intent(source.descriptor(), &input) {
-                        narrowed.cursor.clear();
-                        narrowed.limit = source.descriptor().max_batch.min(100);
-                        snapshots.push(SourceSnapshot {
-                            coverage: SourceCoverage {
-                                source_id: state.source_id.clone(),
-                                state: state.state,
-                                extent: state.extent,
-                                detail_key: String::new(),
-                            },
-                            started: state.state == SourceState::Unavailable as i32,
-                            state,
-                            authority: binding.read_authority(),
-                            binding_generation: binding.source_revision().into(),
-                            input: narrowed,
-                            pending: Vec::new(),
-                            next: String::new(),
-                            rank_offset: 0,
-                            fresh_until: Instant::now(),
-                        });
-                    }
-                }
-                Err(error) => {
-                    let mut snapshot = SourceSnapshot {
-                        coverage: SourceCoverage {
-                            source_id: state.source_id.clone(),
-                            state: state.state,
-                            extent: state.extent,
-                            detail_key: String::new(),
-                        },
-                        state,
-                        authority: binding.read_authority(),
-                        binding_generation: binding.source_revision().into(),
-                        input: input.clone(),
-                        pending: Vec::new(),
-                        next: String::new(),
-                        started: true,
-                        rank_offset: 0,
-                        fresh_until: Instant::now(),
+                    let Some(mut narrowed) = narrow_intent(source.descriptor(), &input) else {
+                        continue;
                     };
-                    failed(&mut snapshot, &error);
-                    snapshots.push(snapshot);
+                    narrowed.limit = source.descriptor().max_batch.min(100);
+                    (narrowed, None)
                 }
+                // Without a declaration, exclusion cannot be established.
+                // Retain the original authenticated source-failure coverage.
+                Err(error) => (input.clone(), Some(error)),
+            };
+            narrowed.cursor.clear();
+            let state = self
+                .read_states(std::slice::from_ref(binding))?
+                .sources
+                .remove(0);
+            let mut snapshot = SourceSnapshot {
+                coverage: SourceCoverage {
+                    source_id: state.source_id.clone(),
+                    state: state.state,
+                    extent: state.extent,
+                    detail_key: String::new(),
+                },
+                started: state.state == SourceState::Unavailable as i32,
+                state,
+                authority: binding.read_authority(),
+                binding_generation: binding.source_revision().into(),
+                input: narrowed,
+                pending: Vec::new(),
+                next: String::new(),
+                rank_offset: 0,
+                fresh_until: Instant::now(),
+            };
+            let admission = match declaration_error {
+                Some(error) => Err(error),
+                None => self.source(binding).map(|_| ()),
+            };
+            if let Err(error) = admission {
+                failed(&mut snapshot, &error);
             }
+            snapshots.push(snapshot);
         }
         snapshots.sort_by(|a, b| a.state.source_id.cmp(&b.state.source_id));
         let identity = semantic(partition, &input);

@@ -1522,3 +1522,329 @@ fn ineligible_suggestions_do_not_poison_source_vector_or_cache() {
         assert_eq!(bindings[1].source.hydrates.load(Ordering::SeqCst), 0);
     }
 }
+
+struct AdmissionContributor(Arc<Source>);
+impl SearchContributor for AdmissionContributor {
+    fn descriptor(&self) -> &SearchContributorDescriptor {
+        self.0.descriptor()
+    }
+    fn supports_suggestions(&self) -> bool {
+        self.0.supports_suggestions()
+    }
+    fn query<'a>(
+        &'a self,
+        input: &'a QueryIntent,
+        ctx: &'a SearchExecutionContext,
+    ) -> SourceFuture<'a, SourcePage> {
+        Box::pin(async move {
+            let mut page = self.0.query(input, ctx).await?;
+            if self.descriptor().kinds == [SearchKind::Message as i32] {
+                for candidate in &mut page.candidates {
+                    let resource = candidate.resource.as_mut().unwrap();
+                    resource.kind = "message".into();
+                    resource.message_id = resource.id.clone();
+                    resource.conversation_id = if input.conversation_id.is_empty() {
+                        "conversation".into()
+                    } else {
+                        input.conversation_id.clone()
+                    };
+                }
+            }
+            Ok(page)
+        })
+    }
+    fn hydrate<'a>(
+        &'a self,
+        input: &'a HydrationRequest,
+        ctx: &'a SearchExecutionContext,
+    ) -> SourceFuture<'a, HydrationReply> {
+        Box::pin(async move {
+            let mut reply = self.0.hydrate(input, ctx).await?;
+            for outcome in &mut reply.outcomes {
+                if let Some(hydration_outcome::Outcome::Changed(projection)) = &mut outcome.outcome
+                {
+                    projection.result.as_mut().unwrap().kind = self.descriptor().kinds[0];
+                }
+            }
+            Ok(reply)
+        })
+    }
+    fn resolve<'a>(
+        &'a self,
+        resource: &'a ResourceRef,
+        ctx: &'a SearchExecutionContext,
+    ) -> SourceFuture<'a, ResolvedResource> {
+        self.0.resolve(resource, ctx)
+    }
+}
+
+#[derive(Clone)]
+struct AdmissionBinding {
+    inner: Binding,
+    owner_revision: Arc<AtomicUsize>,
+    state_reads: Arc<AtomicUsize>,
+    state_error: Option<SearchError>,
+    construction_error: Option<SearchError>,
+    malformed_state: bool,
+}
+impl AdmissionBinding {
+    fn new(id: &str, kind: SearchKind) -> Self {
+        let mut source = Source::new(id, SearchScope::Device);
+        source.descriptor.kinds = vec![kind as i32];
+        Self {
+            inner: Binding::new(source),
+            owner_revision: Arc::new(AtomicUsize::new(1)),
+            state_reads: Default::default(),
+            state_error: None,
+            construction_error: None,
+            malformed_state: false,
+        }
+    }
+}
+impl SearchBinding for AdmissionBinding {
+    fn partition(&self) -> &str {
+        self.inner.partition()
+    }
+    fn source_revision(&self) -> &str {
+        self.inner.source_revision()
+    }
+    fn source_id(&self) -> &str {
+        self.inner.source_id()
+    }
+    fn binding_id(&self) -> &str {
+        self.inner.binding_id()
+    }
+    fn read_authority(&self) -> ReadAuthority {
+        self.inner.read_authority()
+    }
+    fn check(&self) -> Result<(), SearchError> {
+        self.inner.check()?;
+        if self.owner_revision.load(Ordering::SeqCst) != 1 {
+            return Err(SearchError::SourceChanged);
+        }
+        Ok(())
+    }
+    fn publish<T>(
+        &self,
+        publish: impl FnOnce() -> Result<T, SearchError>,
+    ) -> Result<T, SearchError> {
+        self.check()?;
+        publish()
+    }
+    fn publish_sources<T>(
+        &self,
+        sources: &[SourceReadState],
+        publish: impl FnOnce() -> Result<T, SearchError>,
+    ) -> Result<T, SearchError> {
+        self.inner.check()?;
+        if sources.iter().any(|s| s.source_id == self.source_id()) {
+            self.check()?;
+        }
+        publish()
+    }
+    fn read_state(&self) -> Result<SourceReadState, SearchError> {
+        self.state_reads.fetch_add(1, Ordering::SeqCst);
+        if let Some(error) = &self.state_error {
+            return Err(error.clone());
+        }
+        self.check()?;
+        let mut state = self.inner.read_state()?;
+        if self.malformed_state {
+            state.binding_id = "wrong-binding".into();
+        }
+        Ok(state)
+    }
+    fn contributor(&self) -> Result<Arc<dyn SearchContributor>, SearchError> {
+        if let Some(error) = &self.construction_error {
+            return Err(error.clone());
+        }
+        Ok(Arc::new(AdmissionContributor(self.inner.source.clone())))
+    }
+}
+
+#[test]
+fn query_admission_excluded_owner_cannot_veto_message_query_or_local_suggestion() {
+    for suggestions in [false, true] {
+        for excluded_first in [false, true] {
+            for error in [
+                None,
+                Some(SearchError::SourceChanged),
+                Some(SearchError::SourceUnavailable("original owner".into())),
+            ] {
+                let runtime = SearchRuntime::<Executor>::default();
+                let message = AdmissionBinding::new("device.messaging", SearchKind::Message);
+                let mut private = AdmissionBinding::new("device.social", SearchKind::Knowledge);
+                private.state_error = error;
+                // Native admission has captured revision one. The excluded
+                // original owner changes before coordinator read-state entry.
+                private.owner_revision.store(2, Ordering::SeqCst);
+                let bindings = if excluded_first {
+                    vec![private.clone(), message.clone()]
+                } else {
+                    vec![message.clone(), private.clone()]
+                };
+                let page = runtime
+                    .query_all(
+                        &bindings,
+                        QueryIntent {
+                            kinds: vec![SearchKind::Message as i32],
+                            scopes: vec![SearchScope::Device as i32],
+                            suggestions,
+                            ..intent()
+                        },
+                        &CancelToken::new(),
+                    )
+                    .expect("excluded original owner must not veto healthy Messaging");
+                assert_eq!(page.items.len(), 20);
+                assert_eq!(page.sources.len(), 1);
+                assert_eq!(page.sources[0].source_id, "device.messaging");
+                assert_eq!(page.coverage.len(), 1);
+                assert!(page.items.iter().all(|item| {
+                    item.source_id == "device.messaging" && item.kind == SearchKind::Message as i32
+                }));
+                assert_eq!(message.inner.source.query_reads.load(Ordering::SeqCst), 1);
+                assert_eq!(message.inner.source.hydrates.load(Ordering::SeqCst), 1);
+                assert_eq!(private.state_reads.load(Ordering::SeqCst), 0);
+                assert_eq!(private.inner.source.query_reads.load(Ordering::SeqCst), 0);
+                assert_eq!(private.inner.source.hydrates.load(Ordering::SeqCst), 0);
+                let resource = page.items[0].resource.clone().unwrap();
+                assert_eq!(
+                    runtime
+                        .resolve_all(
+                            &bindings,
+                            "device.messaging",
+                            resource.clone(),
+                            &CancelToken::new()
+                        )
+                        .unwrap()
+                        .resource,
+                    Some(resource)
+                );
+                assert!(runtime.read_states(&bindings).is_err());
+            }
+        }
+    }
+}
+
+#[test]
+fn query_admission_narrows_descriptor_modes_before_original_state_reads() {
+    for mode in 0..5 {
+        let runtime = SearchRuntime::<Executor>::default();
+        let message = AdmissionBinding::new("device.messaging", SearchKind::Message);
+        let mut source = Source::new("excluded", SearchScope::Device);
+        if mode == 2 {
+            source.descriptor.scopes = vec![SearchScope::Station as i32];
+        }
+        if mode >= 3 {
+            source.descriptor.kinds = vec![SearchKind::Message as i32];
+            source.suggestions = false;
+            source.remote = mode == 4;
+        }
+        let mut excluded = AdmissionBinding::new("excluded", SearchKind::Knowledge);
+        excluded.inner = Binding::new(source);
+        excluded.state_error = Some(SearchError::SourceChanged);
+        let page = runtime
+            .query_all(
+                &[message.clone(), excluded.clone()],
+                QueryIntent {
+                    scopes: vec![SearchScope::Device as i32],
+                    attachment_names_only: mode == 0,
+                    conversation_id: if mode == 1 {
+                        "conversation".into()
+                    } else {
+                        String::new()
+                    },
+                    suggestions: mode >= 3,
+                    ..intent()
+                },
+                &CancelToken::new(),
+            )
+            .unwrap();
+        assert_eq!(page.items.len(), 20);
+        assert_eq!(page.sources.len(), 1);
+        assert_eq!(excluded.state_reads.load(Ordering::SeqCst), 0);
+        assert_eq!(excluded.inner.source.query_reads.load(Ordering::SeqCst), 0);
+        assert_eq!(excluded.inner.source.hydrates.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[test]
+fn query_admission_included_owner_and_global_identity_still_reject() {
+    for identity_changed in [false, true] {
+        let runtime = SearchRuntime::<Executor>::default();
+        let message = AdmissionBinding::new("device.messaging", SearchKind::Message);
+        if identity_changed {
+            message.inner.active.store(false, Ordering::SeqCst);
+        } else {
+            message.owner_revision.store(2, Ordering::SeqCst);
+        }
+        assert_eq!(
+            runtime.query_all(&[message.clone()], intent(), &CancelToken::new()),
+            Err(if identity_changed {
+                SearchError::Cancelled
+            } else {
+                SearchError::SourceChanged
+            })
+        );
+        assert_eq!(message.inner.source.query_reads.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[test]
+fn query_admission_preserves_composition_and_participating_state_protocol_checks() {
+    for invalid in 0..5 {
+        let runtime = SearchRuntime::<Executor>::default();
+        let message = AdmissionBinding::new("device.messaging", SearchKind::Message);
+        let mut excluded = AdmissionBinding::new("device.social", SearchKind::Knowledge);
+        let bindings = match invalid {
+            0 => vec![],
+            1 => vec![message.clone(); 4],
+            2 => vec![message.clone(), message.clone()],
+            3 => {
+                excluded.inner.partition = "another actor".into();
+                vec![message.clone(), excluded]
+            }
+            _ => {
+                let mut malformed = message.clone();
+                malformed.malformed_state = true;
+                vec![malformed]
+            }
+        };
+        assert_eq!(
+            runtime.query_all(
+                &bindings,
+                QueryIntent {
+                    kinds: vec![SearchKind::Message as i32],
+                    ..intent()
+                },
+                &CancelToken::new()
+            ),
+            Err(SearchError::Protocol)
+        );
+        assert_eq!(message.inner.source.query_reads.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[test]
+fn query_admission_unknown_contributor_failure_is_coverage_not_silent_omission() {
+    let runtime = SearchRuntime::<Executor>::default();
+    let message = AdmissionBinding::new("device.messaging", SearchKind::Message);
+    let mut failed = AdmissionBinding::new("device.social", SearchKind::Knowledge);
+    failed.construction_error = Some(SearchError::SourceUnavailable("constructor".into()));
+    let bindings = [message.clone(), failed.clone()];
+    let page = runtime
+        .query_all(&bindings, intent(), &CancelToken::new())
+        .unwrap();
+    assert_eq!(page.items.len(), 20);
+    assert_eq!(page.sources.len(), 2);
+    let coverage = page
+        .coverage
+        .iter()
+        .find(|c| c.source_id == "device.social")
+        .unwrap();
+    assert_eq!(coverage.state, SourceState::Unavailable as i32);
+    assert_eq!(coverage.detail_key, "search.coverage.source_unavailable");
+    assert_eq!(failed.state_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(failed.inner.source.query_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(runtime.read_states(&bindings).unwrap().sources.len(), 2);
+}

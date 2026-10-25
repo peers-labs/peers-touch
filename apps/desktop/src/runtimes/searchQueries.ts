@@ -361,7 +361,7 @@ export async function runSearchQuery(locale: string, refresh = false, more = fal
           errorKey: result.isError ? searchErrorKey(result.error) : null,
         });
         if (!current()) return;
-        if (result.isError && freshTraversal) conceal(null);
+        if (result.isError && freshTraversal) hide();
         if (more && result.isSuccess && result.data && reusable(result.data.response)) client.setQueryData(baseKey, result.data);
         if (result.isSuccess && result.data?.traversal.noStore) {
           unsubscribe?.(); unsubscribe = null;

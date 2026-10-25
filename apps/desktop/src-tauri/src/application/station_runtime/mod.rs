@@ -301,12 +301,10 @@ impl RuntimeRequestExecutor {
             }
         }
     }
-}
-
-impl StationRequestExecutor for RuntimeRequestExecutor {
-    fn execute(
+    fn execute_request(
         &self,
         mut request: StationRequest,
+        deadline: Option<std::time::Instant>,
     ) -> Result<StationResponse, StationTransportError> {
         if self.stopped.load(Ordering::Acquire) {
             return Err(StationTransportError::new(
@@ -336,7 +334,10 @@ impl StationRequestExecutor for RuntimeRequestExecutor {
                 false,
             ));
         }
-        self.renew_route_before_submission(&request)?;
+        self.renew_route_before_submission(&request, deadline)?;
+        if let Some(deadline) = deadline {
+            request.bound_to_deadline(deadline)?;
+        }
         let replay = request.replay_copy();
         let replay_policy = request.replay_policy.clone();
         let route_policy = request.route_policy;
@@ -355,7 +356,7 @@ impl StationRequestExecutor for RuntimeRequestExecutor {
                     ) =>
             {
                 let RuntimeAttemptFailure { lease, error } = failure;
-                let Some(replay) = replay else {
+                let Some(mut replay) = replay else {
                     return Err(error);
                 };
                 if replay
@@ -368,13 +369,10 @@ impl StationRequestExecutor for RuntimeRequestExecutor {
                 let Some(stale) = lease else {
                     return Err(error);
                 };
-                let _transition = self.transition.lock().map_err(|_| {
-                    StationTransportError::new(
-                        StationTransportErrorKind::Shutdown,
-                        "Station transition lock unavailable",
-                        false,
-                    )
-                })?;
+                let _transition = self.request_transition(
+                    &replay,
+                    deadline.unwrap_or_else(|| std::time::Instant::now() + replay.timeout),
+                )?;
                 self.transport.close_route(&stale);
                 let hooks = RuntimeBindingHooks {
                     transport: &self.transport,
@@ -386,12 +384,29 @@ impl StationRequestExecutor for RuntimeRequestExecutor {
                     .map_err(binding_transport_error)?;
                 self.record_transition(&stale, &next);
                 retire_inactive_transport(&self.binding, &self.transport);
+                if let Some(deadline) = deadline {
+                    replay.bound_to_deadline(deadline)?;
+                }
                 self.execute_once(replay)
                     .map(|(_, response)| response)
                     .map_err(|failure| failure.error)
             }
             Err(failure) => Err(failure.error),
         }
+    }
+}
+
+impl StationRequestExecutor for RuntimeRequestExecutor {
+    fn execute(&self, request: StationRequest) -> Result<StationResponse, StationTransportError> {
+        self.execute_request(request, None)
+    }
+
+    fn execute_bounded(
+        &self,
+        request: StationRequest,
+        deadline: std::time::Instant,
+    ) -> Result<StationResponse, StationTransportError> {
+        self.execute_request(request, Some(deadline))
     }
 
     fn execute_for_station(
@@ -1072,6 +1087,227 @@ mod tests {
             canonical_origin: route.endpoint_origin.clone(),
             endpoint_public_key: vec![],
             routes: vec![route],
+        }
+    }
+
+    #[test]
+    fn bounded_read_pre_submission_discovery_cancels_headers_and_body() {
+        use std::io::{Read, Write};
+        use std::sync::mpsc;
+
+        for (body, expire) in [(false, false), (true, false), (true, true)] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let origin = format!("http://{}", listener.local_addr().unwrap());
+            let runtime = StationRuntime::start(&temp_dir(if body {
+                "bounded-discovery-body"
+            } else {
+                "bounded-discovery-headers"
+            }))
+            .unwrap();
+            let mut route = direct_route("route-a", origin);
+            route.expires_at_unix_ms = Some(current_unix_ms() + 10_000);
+            runtime.store_verified_routes(&[route]).unwrap();
+            runtime
+                .switch_station_with_teardown("station-one", Some("route-a"), &|_| Ok(()))
+                .unwrap();
+            runtime.binding().mark_bound().unwrap();
+            let before = runtime.binding().state();
+            let first = search_core::CancelToken::new();
+            let second = search_core::CancelToken::new();
+            let shared = search_core::CancelToken::all(vec![first.clone(), second.clone()]);
+            let (entered, entry) = mpsc::channel();
+            let (release, released) = mpsc::channel();
+            let (checked, checks) = mpsc::channel();
+            let (done, finished) = mpsc::channel();
+            let started = std::time::Instant::now();
+            let deadline = started + Duration::from_secs(5);
+            std::thread::scope(|threads| {
+                threads.spawn(move || {
+                    let (mut socket, _) = listener.accept().unwrap();
+                    socket
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut bytes = [0; 4096];
+                    let count = socket.read(&mut bytes).unwrap();
+                    assert!(String::from_utf8_lossy(&bytes[..count])
+                        .starts_with("POST /.well-known/peers-touch/access"));
+                    if body {
+                        socket
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n")
+                            .unwrap();
+                    }
+                    entered.send(()).unwrap();
+                    let _ = released.recv_timeout(Duration::from_secs(8));
+                });
+                threads.spawn(|| {
+                    let result = runtime
+                        .client()
+                        .request_bounded_proto_read::<_, search_core::model::wire::SearchResponse>(
+                            &runtime.client().active_scope().unwrap(),
+                            "/api/v1/social/search/query",
+                            "test-token",
+                            &search_core::model::wire::QueryIntent::default(),
+                            deadline,
+                            &|| {
+                                if first.is_cancelled() && !second.is_cancelled() {
+                                    let _ = checked.send(());
+                                }
+                                shared.check().map_err(|error| error.to_string())
+                            },
+                        );
+                    done.send(result).unwrap();
+                });
+                entry.recv_timeout(Duration::from_secs(2)).unwrap();
+                first.cancel();
+                checks.recv_timeout(Duration::from_secs(1)).unwrap();
+                assert!(
+                    finished.try_recv().is_err(),
+                    "remaining subscriber lost its read"
+                );
+                let cancelled_at = std::time::Instant::now();
+                if !expire {
+                    second.cancel();
+                }
+                let result = finished.recv_timeout(if expire {
+                    Duration::from_millis(5_500)
+                } else {
+                    Duration::from_millis(500)
+                });
+                release.send(()).unwrap();
+                assert!(
+                    result.is_ok(),
+                    "production discovery retained the cancelled worker"
+                );
+                assert!(matches!(
+                    result.unwrap().unwrap_err().kind,
+                    client::StationClientErrorKind::Cancelled
+                ));
+                if expire {
+                    assert!(started.elapsed() >= Duration::from_secs(5));
+                    assert!(started.elapsed() < Duration::from_millis(5_500));
+                } else {
+                    assert!(cancelled_at.elapsed() < Duration::from_secs(1));
+                }
+                assert!(
+                    runtime.transition.try_lock().is_ok(),
+                    "renewal retained transition lock"
+                );
+            });
+            assert_eq!(before, runtime.binding().state());
+            assert!(runtime.diagnostics().attempts.is_empty());
+            runtime.shutdown().unwrap();
+        }
+    }
+
+    #[test]
+    fn ordinary_timeout_can_failover_while_bounded_deadline_cannot() {
+        use std::sync::mpsc;
+        for bounded in [false, true] {
+            let stalled = TcpListener::bind("127.0.0.1:0").unwrap();
+            let origin = format!("http://{}", stalled.local_addr().unwrap());
+            let replacement = TcpListener::bind("127.0.0.1:0").unwrap();
+            let replacement_origin = format!("http://{}", replacement.local_addr().unwrap());
+            drop(replacement);
+            let runtime = StationRuntime::start(&temp_dir("timeout-replay-policy")).unwrap();
+            runtime
+                .store_verified_routes(&[
+                    direct_route("route-a", origin),
+                    direct_route("route-b", replacement_origin),
+                ])
+                .unwrap();
+            runtime
+                .switch_station_with_teardown("station-one", Some("route-a"), &|_| Ok(()))
+                .unwrap();
+            runtime.binding().mark_bound().unwrap();
+            let executor = renewal_executor(&runtime);
+            let mut request = renewal_request(&runtime);
+            request.timeout = Duration::from_millis(150);
+            request.admission_timeout = request.timeout;
+            request.replay_policy = ReplayPolicy::SafeRead;
+            let cancellation = request.cancellation.clone();
+            let (release, released) = mpsc::channel();
+            let started = std::time::Instant::now();
+            std::thread::scope(|threads| {
+                threads.spawn(move || {
+                    let (socket, _) = stalled.accept().unwrap();
+                    let _ = released.recv_timeout(Duration::from_secs(2));
+                    drop(socket);
+                });
+                let result = if bounded {
+                    executor.execute_bounded(request, started + Duration::from_millis(150))
+                } else {
+                    executor.execute(request)
+                };
+                release.send(()).unwrap();
+                let error = result
+                    .err()
+                    .expect("replacement is deliberately unavailable");
+                if bounded {
+                    assert_eq!(error.kind, StationTransportErrorKind::Timeout);
+                } else {
+                    assert_eq!(error.kind, StationTransportErrorKind::Unavailable);
+                }
+                assert!(
+                    !cancellation.is_cancelled(),
+                    "attempt cleanup cancelled caller scope"
+                );
+                assert!(started.elapsed() < Duration::from_secs(1));
+            });
+            let diagnostics = runtime.diagnostics();
+            assert_eq!(diagnostics.attempts.len(), if bounded { 1 } else { 2 });
+            assert_eq!(
+                diagnostics.attempts[0].error_code.as_deref(),
+                Some("station_transport_failed")
+            );
+            let failovers = diagnostics
+                .transitions
+                .iter()
+                .filter(|transition| transition.reason == "automatic_failover")
+                .count();
+            assert_eq!(failovers, usize::from(!bounded));
+            runtime.shutdown().unwrap();
+        }
+    }
+
+    #[test]
+    fn bounded_read_transition_admission_preserves_deadline_and_cancellation() {
+        for cancel in [false, true] {
+            let runtime = StationRuntime::start(&temp_dir("bounded-renewal-lock")).unwrap();
+            let mut route = direct_route("route-a", "http://127.0.0.1:4101".into());
+            route.expires_at_unix_ms = Some(current_unix_ms() + 10_000);
+            runtime.store_verified_routes(&[route]).unwrap();
+            runtime
+                .switch_station_with_teardown("station-one", Some("route-a"), &|_| Ok(()))
+                .unwrap();
+            runtime.binding().mark_bound().unwrap();
+            let before = runtime.binding().state();
+            let held = runtime.transition.lock().unwrap();
+            let executor = renewal_executor(&runtime);
+            let request = renewal_request(&runtime);
+            let token = request.cancellation.clone();
+            let started = std::time::Instant::now();
+            std::thread::scope(|threads| {
+                let read = threads.spawn(|| {
+                    executor.execute_bounded(request, started + Duration::from_millis(150))
+                });
+                if cancel {
+                    token.cancel();
+                }
+                let error = read.join().unwrap().err().unwrap();
+                assert_eq!(
+                    error.kind,
+                    if cancel {
+                        StationTransportErrorKind::Cancelled
+                    } else {
+                        StationTransportErrorKind::Timeout
+                    }
+                );
+                assert!(!error.submitted);
+                assert!(started.elapsed() < Duration::from_millis(500));
+            });
+            drop(held);
+            assert_eq!(before, runtime.binding().state());
+            assert!(runtime.diagnostics().attempts.is_empty());
         }
     }
 

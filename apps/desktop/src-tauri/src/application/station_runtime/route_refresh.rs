@@ -2,13 +2,17 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use prost::Message;
 use std::sync::atomic::Ordering;
+use std::sync::{MutexGuard, TryLockError};
+use std::time::{Duration, Instant};
 
 use super::client::{StationRequest, StationTransportError, StationTransportErrorKind};
 use super::{
     binding_transport_error, commit_verified_route_refresh, current_unix_ms, route_policy_permits,
     RuntimeRequestExecutor,
 };
-use crate::infrastructure::station_discovery::{discover_station_input, VerifiedEndpoint};
+use crate::infrastructure::station_discovery::{
+    discover_station_input, discover_station_input_bounded, VerifiedEndpoint,
+};
 use crate::infrastructure::station_registry::{
     StationEntry, StationRouteCandidate, StationRouteHealth, StationRouteType,
 };
@@ -22,19 +26,39 @@ impl RuntimeRequestExecutor {
     pub(super) fn renew_route_before_submission(
         &self,
         request: &StationRequest,
+        deadline: Option<Instant>,
     ) -> Result<(), StationTransportError> {
-        self.renew_route_with(request, |_entry, route| {
+        self.renew_route_with_deadline(request, deadline, |_entry, route| {
             let input = renewal_input(route)?;
-            discover_station_input(&input, |scope, message| {
+            let sign = |scope, message: &[u8]| {
                 self.transport
                     .sign_identity_proof(scope, message)
                     .map(|proof| (proof.public_key, proof.signature))
                     .map_err(|error| error.to_string())
+            };
+            match deadline {
+                Some(deadline) => {
+                    discover_station_input_bounded(&input, &request.cancellation, deadline, sign)
+                }
+                None => discover_station_input(&input, sign),
+            }
+            .map_err(|error| match error.code {
+                "station_discovery_cancelled" => StationTransportError::new(
+                    StationTransportErrorKind::Cancelled,
+                    error.message,
+                    false,
+                ),
+                "station_discovery_timeout" => StationTransportError::new(
+                    StationTransportErrorKind::Timeout,
+                    error.message,
+                    false,
+                ),
+                _ => renewal_error(error.message),
             })
-            .map_err(|error| renewal_error(error.message))
         })
     }
 
+    #[cfg(test)]
     pub(super) fn renew_route_with(
         &self,
         request: &StationRequest,
@@ -43,16 +67,31 @@ impl RuntimeRequestExecutor {
             &StationRouteCandidate,
         ) -> Result<VerifiedEndpoint, StationTransportError>,
     ) -> Result<(), StationTransportError> {
+        self.renew_route_with_deadline(request, Some(Instant::now() + request.timeout), discover)
+    }
+
+    fn renew_route_with_deadline(
+        &self,
+        request: &StationRequest,
+        deadline: Option<Instant>,
+        discover: impl FnOnce(
+            &StationEntry,
+            &StationRouteCandidate,
+        ) -> Result<VerifiedEndpoint, StationTransportError>,
+    ) -> Result<(), StationTransportError> {
+        if let Some(deadline) = deadline {
+            request.remaining(deadline)?;
+        }
         let Some(entry) = self.binding.committed_entry() else {
             return Ok(());
         };
         if !renewal_due(&entry, request) {
             return Ok(());
         }
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| renewal_error("Station transition lock unavailable"))?;
+        let _transition = self.request_transition(
+            request,
+            deadline.unwrap_or_else(|| Instant::now() + request.timeout),
+        )?;
         self.ensure_renewal_scope(request)?;
         let entry = self
             .binding
@@ -65,6 +104,9 @@ impl RuntimeRequestExecutor {
             .active_route()
             .ok_or_else(|| renewal_error("Station binding no longer has a route"))?;
         let endpoint = validate_renewal(&entry, route, discover(&entry, route)?)?;
+        if let Some(deadline) = deadline {
+            request.remaining(deadline)?;
+        }
         self.ensure_renewal_scope(request)?;
         commit_verified_route_refresh(
             &self.registry,
@@ -74,6 +116,30 @@ impl RuntimeRequestExecutor {
         )
         .map_err(binding_transport_error)?;
         Ok(())
+    }
+
+    pub(super) fn request_transition(
+        &self,
+        request: &StationRequest,
+        deadline: Instant,
+    ) -> Result<MutexGuard<'_, ()>, StationTransportError> {
+        loop {
+            let remaining = request.remaining(deadline)?;
+            self.ensure_renewal_scope(request)?;
+            match self.transition.try_lock() {
+                Ok(guard) => {
+                    request.remaining(deadline)?;
+                    self.ensure_renewal_scope(request)?;
+                    return Ok(guard);
+                }
+                Err(TryLockError::WouldBlock) => {
+                    std::thread::sleep(remaining.min(Duration::from_millis(5)));
+                }
+                Err(TryLockError::Poisoned(_)) => {
+                    return Err(renewal_error("Station transition lock unavailable"));
+                }
+            }
+        }
     }
 
     fn ensure_renewal_scope(&self, request: &StationRequest) -> Result<(), StationTransportError> {

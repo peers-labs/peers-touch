@@ -174,6 +174,52 @@ async function traversalBudgetFixture(filter: 'all' | 'social') {
   return { ...f, context, replies, published, release };
 }
 
+async function periodicBudgetFixture(filter: 'all' | 'social') {
+  const f = await paginatedFixture(filter);
+  f.actions.page(1);
+  await vi.advanceTimersByTimeAsync(0);
+  f.store.setState({ selectedId: 'page-1', scrollTop: 240, locale: 'zh-CN' });
+  const context = {
+    query: 'post', mode: 'submit', filter, page: 1, conversationId: '', locale: 'zh-CN',
+    selectedId: 'page-1', scrollTop: 240, cursors: [...f.store.getState().cursors],
+    displayedQuery: 'post', displayedMode: 'submit', displayedFilter: filter,
+  };
+  expect(f.store.getState()).toMatchObject({ ...context, status: 'ready' });
+  expect(f.store.getState().response?.sources[0].noStore).toBe(true);
+  const state = create(SearchReadStateSchema, {
+    partition: 'partition', sources: f.responseAt(1, 1).sources,
+  });
+  const firstState = deferred<typeof state>();
+  f.service.readState.mockClear().mockImplementationOnce(() => firstState.promise);
+  const read = f.service.submit.getMockImplementation()!;
+  const replies: Array<ReturnType<typeof deferred<SearchResponse>> & { response: SearchResponse }> = [];
+  f.service.submit.mockClear().mockImplementation(async (...args) => {
+    const response = await read(...args);
+    const reply = deferred<SearchResponse>();
+    replies.push({ ...reply, response });
+    return reply.promise;
+  });
+  f.service.cancel.mockClear();
+  f.service.suggest.mockClear();
+  const admissions = vi.spyOn(crypto, 'randomUUID');
+  const published: SearchResponse[] = [];
+  const release = f.store.subscribe((next, previous) => {
+    if (next.response && next.response !== previous.response) published.push(next.response);
+  });
+  const started = Date.now();
+  return {
+    ...f, context, state, firstState, replies, admissions, published, started,
+    async cleanup() {
+      release();
+      admissions.mockRestore();
+      await f.cleanup();
+      firstState.finish(state);
+      replies.forEach(reply => reply.finish(reply.response));
+      await vi.advanceTimersByTimeAsync(0);
+    },
+  };
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -714,6 +760,140 @@ describe('Mobile Search aggregate query budget', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(f.service.cancel).not.toHaveBeenCalled();
     await f.cleanup();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('Mobile Search periodic query budget', () => {
+  it.each(['all', 'social'] as const)('admits one %s periodic read before preflight and coalesces later intervals', async (filter) => {
+    const f = await periodicBudgetFixture(filter);
+    try {
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(f.service.readState).toHaveBeenCalledOnce();
+      expect.soft(f.admissions).toHaveBeenCalledOnce();
+      expect.soft(f.store.getState()).toMatchObject({ ...f.context, status: 'loading', errorKey: null });
+      expect(f.service.submit).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect.soft(f.service.readState).toHaveBeenCalledOnce();
+      expect.soft(f.admissions).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect.soft(f.service.readState).toHaveBeenCalledOnce();
+      expect.soft(f.admissions).toHaveBeenCalledOnce();
+      expect.soft(f.service.submit).not.toHaveBeenCalled();
+      expect(f.published).toEqual([]);
+      expect(f.service.suggest).not.toHaveBeenCalled();
+    } finally {
+      await f.cleanup();
+    }
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['all', 'social'] as const)('times out %s 5s from periodic entry without waiting for its first state reply', async (filter) => {
+    const f = await periodicBudgetFixture(filter);
+    try {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(f.service.cancel).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(Date.now() - f.started).toBe(7_000);
+      expect.soft(f.admissions).toHaveBeenCalledOnce();
+      expect.soft(f.service.cancel).toHaveBeenCalledExactlyOnceWith(f.admissions.mock.results[0]?.value);
+      expect.soft(f.store.getState()).toMatchObject({
+        ...f.context, status: 'error', errorKey: 'search.error.timeout', stalled: false, response: null,
+      });
+      expect.soft(vi.getTimerCount()).toBe(1);
+      const calls = [f.service.readState.mock.calls.length, f.service.submit.mock.calls.length];
+      await vi.advanceTimersByTimeAsync(200);
+      f.firstState.finish(f.state);
+      await vi.advanceTimersByTimeAsync(0);
+      expect([f.service.readState.mock.calls.length, f.service.submit.mock.calls.length]).toEqual(calls);
+      expect(f.published).toEqual([]);
+      expect.soft(f.store.getState()).toMatchObject({
+        ...f.context, status: 'error', errorKey: 'search.error.timeout', response: null,
+      });
+    } finally {
+      await f.cleanup();
+    }
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['all', 'social'] as const)('charges delayed %s preflight and reconstruction to the same periodic budget', async (filter) => {
+    const f = await periodicBudgetFixture(filter);
+    try {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(2_600);
+      expect.soft(f.service.submit).not.toHaveBeenCalled();
+      f.firstState.finish(f.state);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.replies).toHaveLength(1);
+      expect(f.service.submit.mock.calls[0]).toEqual([
+        'post', expect.any(String), 'zh-CN',
+        filter === 'social' ? [SearchKind.SOCIAL_POST, SearchKind.SOCIAL_COMMENT] : [],
+        '', '', true, false,
+      ]);
+      const id = f.service.submit.mock.calls[0][1];
+      await vi.advanceTimersByTimeAsync(2_399);
+      expect(f.service.cancel).not.toHaveBeenCalled();
+      expect(f.published).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(Date.now() - f.started).toBe(7_000);
+      expect.soft(f.service.cancel).toHaveBeenCalledExactlyOnceWith(id);
+      expect.soft(f.store.getState()).toMatchObject({
+        ...f.context, status: 'error', errorKey: 'search.error.timeout', stalled: false, response: null,
+      });
+      const calls = f.service.readState.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(200);
+      f.replies[0].finish(f.replies[0].response);
+      await vi.advanceTimersByTimeAsync(0);
+      expect.soft(f.service.submit).toHaveBeenCalledOnce();
+      expect.soft(f.service.readState).toHaveBeenCalledTimes(calls);
+      expect(f.published).toEqual([]);
+      expect.soft(f.store.getState()).toMatchObject({
+        ...f.context, status: 'error', errorKey: 'search.error.timeout', response: null,
+      });
+    } finally {
+      await f.cleanup();
+    }
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['all', 'social'] as const)('publishes only fresh %s page two when periodic preflight and traversal finish inside 5s', async (filter) => {
+    const f = await periodicBudgetFixture(filter);
+    try {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(1_500);
+      f.firstState.finish(f.state);
+      await vi.advanceTimersByTimeAsync(0);
+      for (let page = 0; page < 2; page++) {
+        expect(f.replies).toHaveLength(page + 1);
+        expect(f.published).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1_500);
+        f.replies[page].finish(f.replies[page].response);
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      expect(Date.now() - f.started).toBe(6_500);
+      expect(f.admissions).toHaveBeenCalledOnce();
+      const id = f.admissions.mock.results[0].value;
+      const selectedKinds = filter === 'social' ? [SearchKind.SOCIAL_POST, SearchKind.SOCIAL_COMMENT] : [];
+      expect(f.service.submit.mock.calls).toEqual([
+        ['post', id, 'zh-CN', selectedKinds, '', '', true, false],
+        ['post', id, 'zh-CN', selectedKinds, '', 'traversal-2-page-1', false, false],
+      ]);
+      expect(f.service.readState).toHaveBeenCalledTimes(3);
+      expect(f.store.getState()).toMatchObject({
+        ...f.context, cursors: ['', 'traversal-2-page-1'], status: 'ready', errorKey: null, stalled: false,
+      });
+      expect(f.published).toEqual([f.replies[1].response]);
+      expect(f.store.getState().response?.items[0].snippet).toBe('original-owner traversal 2 page 1');
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(501);
+      expect(f.service.cancel).not.toHaveBeenCalled();
+      expect(f.store.getState().status).toBe('ready');
+      expect(f.service.submit).toHaveBeenCalledTimes(2);
+      expect(f.service.suggest).not.toHaveBeenCalled();
+    } finally {
+      await f.cleanup();
+    }
     expect(vi.getTimerCount()).toBe(0);
   });
 });

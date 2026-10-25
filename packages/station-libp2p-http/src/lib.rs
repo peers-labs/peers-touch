@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use http::{HeaderMap, Method, Request as HttpRequest, StatusCode, Uri};
 use libp2p::futures::StreamExt;
-use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
+use libp2p::swarm::{dial_opts::DialOpts, ConnectionId, NetworkBehaviour, SwarmEvent};
 use libp2p::{
     identify, identity, noise, ping, relay, tcp, yamux, Multiaddr, PeerId, StreamProtocol, Swarm,
     SwarmBuilder,
@@ -19,7 +19,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::{OnceCell, Semaphore};
 use tokio::task::{JoinHandle as AsyncJoinHandle, JoinSet};
@@ -30,6 +30,7 @@ use x509_parser::parse_x509_certificate;
 
 const STATION_HTTP_PROTOCOL: &str = "/peers-touch/station-http/1.0.0";
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(15);
+const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const DEFAULT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(305);
 const COMMAND_CAPACITY: usize = 64;
 pub const MAX_IN_FLIGHT_REQUESTS: usize = 16;
@@ -455,7 +456,11 @@ impl TransportHandle {
         })
     }
 
-    pub fn round_trip(&self, route: &Route, request: Request) -> Result<Response, TransportError> {
+    pub fn round_trip(
+        &self,
+        route: &Route,
+        mut request: Request,
+    ) -> Result<Response, TransportError> {
         if !self.shared.accepting.load(Ordering::Acquire) {
             return Err(TransportError::new(
                 TransportErrorKind::Shutdown,
@@ -480,7 +485,13 @@ impl TransportHandle {
         let timeout = request.timeout;
         let response_timeout =
             timeout.saturating_add(request.admission_timeout.min(request.timeout));
+        let caller_cancellation = request.cancellation.clone();
+        // Attempt cleanup must not cancel the caller's replay/subscriber scope.
+        request.cancellation = caller_cancellation.child_token();
         let cancellation = request.cancellation.clone();
+        let started = Instant::now();
+        let dial_deadline = started + CONTROL_TIMEOUT.min(timeout);
+        let submitted = Arc::new(AtomicBool::new(false));
         let (dial_sender, dial_receiver) = mpsc::channel();
         self.shared
             .commands
@@ -488,25 +499,25 @@ impl TransportHandle {
                 peer,
                 address,
                 reply: dial_sender,
+                cancellation: cancellation.clone(),
+                deadline: dial_deadline,
             })
             .map_err(command_send_error)?;
-        dial_receiver
-            .recv_timeout(CONTROL_TIMEOUT)
-            .map_err(|_| {
-                cancellation.cancel();
-                TransportError::new(
-                    TransportErrorKind::Timeout,
-                    FailurePhase::BeforeSubmission,
-                    "Station route dial timed out",
-                )
-            })?
-            .map_err(|message| {
-                TransportError::new(
-                    TransportErrorKind::Unavailable,
-                    FailurePhase::BeforeSubmission,
-                    message,
-                )
-            })?;
+        receive_reply(
+            &dial_receiver,
+            &caller_cancellation,
+            &self.shared.shutdown,
+            dial_deadline,
+            &submitted,
+        )
+        .inspect_err(|_| cancellation.cancel())?
+        .map_err(|message| {
+            TransportError::new(
+                TransportErrorKind::Unavailable,
+                FailurePhase::BeforeSubmission,
+                message,
+            )
+        })?;
 
         let (reply_sender, reply_receiver) = mpsc::channel();
         self.shared
@@ -516,19 +527,17 @@ impl TransportHandle {
                 peer,
                 request,
                 reply: reply_sender,
+                submitted: submitted.clone(),
             })
             .map_err(command_send_error)?;
-        match reply_receiver.recv_timeout(response_timeout) {
-            Ok(result) => result,
-            Err(_) => {
-                cancellation.cancel();
-                Err(TransportError::new(
-                    TransportErrorKind::Timeout,
-                    FailurePhase::AfterSubmission,
-                    "Station HTTP response timed out",
-                ))
-            }
-        }
+        receive_reply(
+            &reply_receiver,
+            &caller_cancellation,
+            &self.shared.shutdown,
+            Instant::now() + response_timeout,
+            &submitted,
+        )
+        .inspect_err(|_| cancellation.cancel())?
     }
 
     pub fn close_route(&self, route: &Route) -> Result<(), TransportError> {
@@ -536,6 +545,63 @@ impl TransportHandle {
             .commands
             .try_send(DriverCommand::CloseRoute(route.clone()))
             .map_err(command_send_error)
+    }
+}
+
+fn receive_reply<T>(
+    receiver: &mpsc::Receiver<T>,
+    cancellation: &CancellationToken,
+    shutdown: &CancellationToken,
+    deadline: Instant,
+    submitted: &AtomicBool,
+) -> Result<T, TransportError> {
+    loop {
+        let failure = if shutdown.is_cancelled() {
+            Some((
+                TransportErrorKind::Shutdown,
+                "Station transport is shutting down",
+            ))
+        } else if cancellation.is_cancelled() {
+            Some((
+                TransportErrorKind::Cancelled,
+                "Station HTTP caller was cancelled",
+            ))
+        } else if Instant::now() >= deadline {
+            Some((
+                TransportErrorKind::Timeout,
+                "Station transport reply timed out",
+            ))
+        } else {
+            None
+        };
+        if let Some((kind, message)) = failure {
+            return Err(TransportError::new(
+                kind,
+                submission_phase(submitted),
+                message,
+            ));
+        }
+        match receiver.recv_timeout(
+            deadline
+                .saturating_duration_since(Instant::now())
+                .min(CANCELLATION_POLL_INTERVAL),
+        ) {
+            Ok(reply) => return Ok(reply),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                if cancellation.is_cancelled()
+                    || shutdown.is_cancelled()
+                    || Instant::now() >= deadline
+                {
+                    continue;
+                }
+                return Err(TransportError::new(
+                    TransportErrorKind::Unavailable,
+                    submission_phase(submitted),
+                    "Station transport reply channel closed",
+                ));
+            }
+        }
     }
 }
 
@@ -567,14 +633,28 @@ enum DriverCommand {
         peer: PeerId,
         address: Multiaddr,
         reply: mpsc::Sender<Result<(), String>>,
+        cancellation: CancellationToken,
+        deadline: Instant,
     },
     Request {
         route: Route,
         peer: PeerId,
         request: Request,
         reply: mpsc::Sender<Result<Response, TransportError>>,
+        submitted: Arc<AtomicBool>,
     },
     CloseRoute(Route),
+}
+
+struct DialWaiter {
+    reply: mpsc::Sender<Result<(), String>>,
+    cancellation: CancellationToken,
+    deadline: Instant,
+}
+
+struct PendingDial {
+    connection_id: ConnectionId,
+    waiters: Vec<DialWaiter>,
 }
 
 struct Driver {
@@ -582,7 +662,7 @@ struct Driver {
     stream_control: libp2p_stream::Control,
     commands: tokio_mpsc::Receiver<DriverCommand>,
     active: HashSet<PeerId>,
-    pending_dials: HashMap<PeerId, Vec<mpsc::Sender<Result<(), String>>>>,
+    pending_dials: HashMap<PeerId, PendingDial>,
     requests: JoinSet<()>,
     admission: Arc<Semaphore>,
     sessions: Arc<SessionPool>,
@@ -591,6 +671,7 @@ struct Driver {
 
 impl Driver {
     async fn run(mut self) {
+        let mut cancellation_poll = tokio::time::interval(CANCELLATION_POLL_INTERVAL);
         loop {
             tokio::select! {
                 _ = self.shutdown.cancelled() => break,
@@ -599,6 +680,9 @@ impl Driver {
                     self.handle_command(command);
                 }
                 event = self.swarm.select_next_some() => self.handle_event(event),
+                _ = cancellation_poll.tick(), if !self.pending_dials.is_empty() => {
+                    self.retire_cancelled_dials();
+                }
                 result = self.requests.join_next(), if !self.requests.is_empty() => {
                     if result.is_some_and(|result| result.is_err()) {
                         // The request result is delivered through its reply channel.
@@ -625,17 +709,36 @@ impl Driver {
                 peer,
                 address,
                 reply,
+                cancellation,
+                deadline,
             } => {
+                self.retire_cancelled_dials();
+                if cancellation.is_cancelled() || Instant::now() >= deadline {
+                    let _ = reply.send(Err("Station route dial was cancelled".to_string()));
+                    return;
+                }
                 if self.active.contains(&peer) {
                     let _ = reply.send(Ok(()));
                     return;
                 }
-                let pending = self.pending_dials.entry(peer).or_default();
-                pending.push(reply);
-                if pending.len() > 1 {
+                let waiter = DialWaiter {
+                    reply,
+                    cancellation,
+                    deadline,
+                };
+                if let Some(pending) = self.pending_dials.get_mut(&peer) {
+                    pending.waiters.push(waiter);
                     return;
                 }
-                if let Err(error) = self.swarm.dial(address) {
+                let options = DialOpts::peer_id(peer).addresses(vec![address]).build();
+                self.pending_dials.insert(
+                    peer,
+                    PendingDial {
+                        connection_id: options.connection_id(),
+                        waiters: vec![waiter],
+                    },
+                );
+                if let Err(error) = self.swarm.dial(options) {
                     self.finish_dial(peer, Err(error.to_string()));
                 }
             }
@@ -644,6 +747,7 @@ impl Driver {
                 peer,
                 request,
                 reply,
+                submitted,
             } => {
                 if !self.active.contains(&peer) {
                     let _ = reply.send(Err(TransportError::new(
@@ -660,6 +764,7 @@ impl Driver {
                 self.requests.spawn(async move {
                     execute_request(
                         control, sessions, route, peer, request, reply, admission, shutdown,
+                        submitted,
                     )
                     .await;
                 });
@@ -699,9 +804,20 @@ impl Driver {
                     });
                 }
             }
-            SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+            SwarmEvent::OutgoingConnectionError {
+                peer_id,
+                connection_id,
+                error,
+                ..
+            } => {
                 if let Some(peer_id) = peer_id {
-                    self.finish_dial(peer_id, Err(error.to_string()));
+                    if self
+                        .pending_dials
+                        .get(&peer_id)
+                        .is_some_and(|pending| pending.connection_id == connection_id)
+                    {
+                        self.finish_dial(peer_id, Err(error.to_string()));
+                    }
                 }
             }
             _ => {}
@@ -709,17 +825,36 @@ impl Driver {
     }
 
     fn finish_dial(&mut self, peer: PeerId, result: Result<(), String>) {
-        if let Some(waiters) = self.pending_dials.remove(&peer) {
-            for waiter in waiters {
-                let _ = waiter.send(result.clone());
+        if let Some(pending) = self.pending_dials.remove(&peer) {
+            for waiter in pending.waiters {
+                let _ = waiter.reply.send(result.clone());
             }
         }
     }
 
+    fn retire_cancelled_dials(&mut self) {
+        let now = Instant::now();
+        self.pending_dials.retain(|peer, pending| {
+            pending
+                .waiters
+                .retain(|waiter| !waiter.cancellation.is_cancelled() && now < waiter.deadline);
+            if pending.waiters.is_empty() {
+                // The driver has not admitted any request for this unconnected
+                // peer. Upstream aborts its pending connections as well.
+                let _ = self.swarm.disconnect_peer_id(*peer);
+                false
+            } else {
+                true
+            }
+        });
+    }
+
     fn fail_pending(&mut self) {
-        for (_, waiters) in self.pending_dials.drain() {
-            for waiter in waiters {
-                let _ = waiter.send(Err("Station transport is shutting down".to_string()));
+        for (_, pending) in self.pending_dials.drain() {
+            for waiter in pending.waiters {
+                let _ = waiter
+                    .reply
+                    .send(Err("Station transport is shutting down".to_string()));
             }
         }
         while let Ok(command) = self.commands.try_recv() {
@@ -952,11 +1087,11 @@ async fn execute_request(
     reply: mpsc::Sender<Result<Response, TransportError>>,
     admission: Arc<Semaphore>,
     shutdown: CancellationToken,
+    submitted: Arc<AtomicBool>,
 ) {
     let timeout = request.timeout;
     let admission_timeout = request.admission_timeout.min(timeout);
     let request_cancellation = request.cancellation.clone();
-    let submitted = Arc::new(AtomicBool::new(false));
     let permit = tokio::select! {
         _ = shutdown.cancelled() => Err(TransportError::new(
             TransportErrorKind::Shutdown,
@@ -1537,5 +1672,145 @@ mod tests {
         assert!(!production.contains(
             "result = tokio::time::timeout(\n            admission_timeout,\n            execute_request_inner"
         ));
+    }
+
+    #[test]
+    fn waiting_transport_reply_observes_cancellation_and_submission_phase() {
+        for was_submitted in [false, true] {
+            let (_sender, receiver) = mpsc::channel::<()>();
+            let cancellation = CancellationToken::new();
+            let submitted = AtomicBool::new(was_submitted);
+            let started = Instant::now();
+            std::thread::scope(|threads| {
+                let cancellation = &cancellation;
+                threads.spawn(move || {
+                    std::thread::sleep(Duration::from_millis(30));
+                    cancellation.cancel();
+                });
+                let error = receive_reply(
+                    &receiver,
+                    cancellation,
+                    &CancellationToken::new(),
+                    started + CONTROL_TIMEOUT,
+                    &submitted,
+                )
+                .unwrap_err();
+                assert_eq!(error.kind(), TransportErrorKind::Cancelled);
+                assert_eq!(
+                    error.phase(),
+                    if was_submitted {
+                        FailurePhase::AfterSubmission
+                    } else {
+                        FailurePhase::BeforeSubmission
+                    }
+                );
+                assert!(started.elapsed() < Duration::from_millis(300));
+            });
+        }
+    }
+
+    #[test]
+    fn waiting_transport_reply_expires_and_releases_caller() {
+        let (_sender, receiver) = mpsc::channel::<()>();
+        let cancellation = CancellationToken::new();
+        let started = Instant::now();
+        let error = receive_reply(
+            &receiver,
+            &cancellation,
+            &CancellationToken::new(),
+            started + Duration::from_millis(30),
+            &AtomicBool::new(false),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), TransportErrorKind::Timeout);
+        assert_eq!(error.phase(), FailurePhase::BeforeSubmission);
+        assert!(!cancellation.is_cancelled());
+        assert!(started.elapsed() < Duration::from_millis(300));
+    }
+
+    #[test]
+    fn shared_dial_cancellation_preserves_subscribers_and_fences_old_errors() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let swarm = build_swarm(identity::Keypair::generate_ed25519()).unwrap();
+            let stream_control = swarm.behaviour().streams.new_control();
+            let (_sender, commands) = tokio_mpsc::channel(COMMAND_CAPACITY);
+            let mut driver = Driver {
+                swarm,
+                stream_control,
+                commands,
+                active: HashSet::new(),
+                pending_dials: HashMap::new(),
+                requests: JoinSet::new(),
+                admission: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
+                sessions: Arc::new(SessionPool::default()),
+                shutdown: CancellationToken::new(),
+            };
+            let peer = PeerId::random();
+            let address = Multiaddr::from_str("/ip4/127.0.0.1/tcp/9").unwrap();
+            let add = |driver: &mut Driver| {
+                let (reply, receiver) = mpsc::channel();
+                let cancellation = CancellationToken::new();
+                driver.handle_command(DriverCommand::Dial {
+                    peer,
+                    address: address.clone(),
+                    reply,
+                    cancellation: cancellation.clone(),
+                    deadline: Instant::now() + CONTROL_TIMEOUT,
+                });
+                (cancellation, receiver)
+            };
+            let (first, first_reply) = add(&mut driver);
+            let (second, second_reply) = add(&mut driver);
+            let old_connection = driver.pending_dials[&peer].connection_id;
+            first.cancel();
+            driver.retire_cancelled_dials();
+            assert_eq!(driver.pending_dials[&peer].waiters.len(), 1);
+            assert_eq!(driver.pending_dials[&peer].connection_id, old_connection);
+            assert!(matches!(
+                first_reply.try_recv(),
+                Err(mpsc::TryRecvError::Disconnected)
+            ));
+            assert!(matches!(
+                second_reply.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+            second.cancel();
+            driver.retire_cancelled_dials();
+            assert!(driver.pending_dials.is_empty());
+            // Consume the upstream abort before admitting another dial.
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while driver
+                    .swarm
+                    .network_info()
+                    .connection_counters()
+                    .num_pending_outgoing()
+                    != 0
+                {
+                    let event = driver.swarm.select_next_some().await;
+                    driver.handle_event(event);
+                }
+            })
+            .await
+            .unwrap();
+            let (_third, third_reply) = add(&mut driver);
+            let new_connection = driver.pending_dials[&peer].connection_id;
+            assert_ne!(new_connection, old_connection);
+            driver.handle_event(SwarmEvent::OutgoingConnectionError {
+                connection_id: old_connection,
+                peer_id: Some(peer),
+                error: libp2p::swarm::DialError::Aborted,
+            });
+            assert_eq!(driver.pending_dials[&peer].connection_id, new_connection);
+            assert!(matches!(
+                third_reply.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+            driver.finish_dial(peer, Ok(()));
+            assert_eq!(third_reply.recv().unwrap(), Ok(()));
+        });
     }
 }

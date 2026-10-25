@@ -170,6 +170,38 @@ pub struct StationRequestScope {
 }
 
 impl StationRequest {
+    pub(crate) fn remaining(
+        &self,
+        deadline: std::time::Instant,
+    ) -> Result<Duration, StationTransportError> {
+        if self.cancellation.is_cancelled() {
+            return Err(StationTransportError::new(
+                StationTransportErrorKind::Cancelled,
+                "Station request was cancelled",
+                false,
+            ));
+        }
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(StationTransportError::new(
+                StationTransportErrorKind::Timeout,
+                "Station request deadline expired",
+                false,
+            ));
+        }
+        Ok(remaining)
+    }
+
+    pub(crate) fn bound_to_deadline(
+        &mut self,
+        deadline: std::time::Instant,
+    ) -> Result<(), StationTransportError> {
+        let remaining = self.remaining(deadline)?;
+        self.timeout = self.timeout.min(remaining);
+        self.admission_timeout = self.admission_timeout.min(remaining);
+        Ok(())
+    }
+
     pub fn replay_copy(&self) -> Option<Self> {
         Some(Self {
             method: self.method.clone(),
@@ -239,6 +271,15 @@ pub struct StationResponse {
 
 pub trait StationRequestExecutor: Send + Sync {
     fn execute(&self, request: StationRequest) -> Result<StationResponse, StationTransportError>;
+    fn execute_bounded(
+        &self,
+        mut request: StationRequest,
+        deadline: std::time::Instant,
+    ) -> Result<StationResponse, StationTransportError> {
+        request.bound_to_deadline(deadline)?;
+        self.execute(request)
+    }
+
     fn execute_for_station(
         &self,
         _station_peer_id: &str,
@@ -545,7 +586,9 @@ impl StationClient {
                 }
             });
             let result = self
-                .execute_raw(request)
+                .executor
+                .execute_bounded(request, deadline)
+                .map_err(|error| map_transport_error(error, replay.clone()))
                 .and_then(|response| buffer_response(path, response, &replay))
                 .and_then(|response| {
                     Resp::decode(response.body.as_slice()).map_err(|_| {
@@ -1868,7 +1911,10 @@ mod tests {
     }
 
     impl StationRequestExecutor for WaitingReadExecutor {
-        fn execute(&self, request: StationRequest) -> Result<StationResponse, StationTransportError> {
+        fn execute(
+            &self,
+            request: StationRequest,
+        ) -> Result<StationResponse, StationTransportError> {
             assert_eq!(request.expected_scope, self.active_scope());
             assert_eq!(request.replay_policy, ReplayPolicy::SafeRead);
             let cancellation = if matches!(self.phase, ReadWait::Replay) {
@@ -1890,9 +1936,7 @@ mod tests {
                 Ok(StationResponse {
                     status: 200,
                     headers: HeaderMap::new(),
-                    body: Box::new(Cursor::new(
-                        SearchResponse::default().encode_to_vec(),
-                    )),
+                    body: Box::new(Cursor::new(SearchResponse::default().encode_to_vec())),
                 })
             } else {
                 await_read_cancellation(&cancellation);

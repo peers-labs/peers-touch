@@ -128,33 +128,48 @@ const targetVisibility = (element, fully = true) => {
   });
   // Hit testing skips pointer-events:none paint. Inspect that paint independently,
   // conservatively rejecting an overlapping layer not demonstrably behind us.
-  const stack = node => {
+  const stack = (node, pseudoStyle) => {
     const chain = [];
+    const context = (parent, style) =>
+      parent === document.documentElement
+      || (style.zIndex !== 'auto' && style.zIndex
+        && (style.position !== 'static' || ['flex', 'grid', 'inline-flex', 'inline-grid'].includes(
+          getComputedStyle(parent.parentElement).display)))
+      || ['fixed', 'sticky'].includes(style.position)
+      || Number(style.opacity) < 1 || style.isolation === 'isolate'
+      || ['transform', 'translate', 'rotate', 'scale', 'perspective', 'filter',
+        'backdropFilter', 'clipPath', 'maskImage'].some(key => style[key] && style[key] !== 'none')
+      || (style.mixBlendMode && style.mixBlendMode !== 'normal')
+      || /paint|layout|strict|content/.test(style.contain || '')
+      || /transform|translate|rotate|scale|opacity|filter|perspective|clip-path|mask/.test(
+        style.willChange || '');
     for (let parent = node; parent; parent = parent.parentElement) {
       const style = getComputedStyle(parent);
-      if (parent === document.documentElement
-          || (style.zIndex !== 'auto' && style.zIndex
-            && (style.position !== 'static' || ['flex', 'grid'].includes(
-              getComputedStyle(parent.parentElement).display)))
-          || Number(style.opacity) < 1 || style.isolation === 'isolate'
-          || (style.transform && style.transform !== 'none')
-          || (style.filter && style.filter !== 'none')) chain.unshift(parent);
+      if (context(parent, style)) chain.unshift({node: parent, style});
+    }
+    if (pseudoStyle && context(node, pseudoStyle)) {
+      chain.push({node, style: pseudoStyle, pseudo: true});
     }
     return chain;
   };
-  const above = candidate => {
-    const front = stack(candidate), back = stack(element);
+  const above = (candidate, pseudoStyle) => {
+    const front = stack(candidate, pseudoStyle), back = stack(element);
     let index = 0;
-    while (front[index] && front[index] === back[index]) index++;
-    const a = front[index] || candidate, b = back[index] || element;
-    const az = Number.parseInt(getComputedStyle(a).zIndex) || 0;
-    const bz = Number.parseInt(getComputedStyle(b).zIndex) || 0;
+    while (front[index] && back[index] && front[index].node === back[index].node
+        && front[index].pseudo === back[index].pseudo) index++;
+    const a = front[index] || {node: candidate, style: pseudoStyle || getComputedStyle(candidate)};
+    const b = back[index] || {node: element, style: getComputedStyle(element)};
+    const az = front[index] ? Number.parseInt(a.style.zIndex) || 0 : 0;
+    const bz = back[index] ? Number.parseInt(b.style.zIndex) || 0 : 0;
     if (az !== bz) return az > bz;
-    if (['absolute', 'fixed'].includes(getComputedStyle(a).position)
-        && getComputedStyle(b).position === 'static') return true;
-    return !(a.compareDocumentPosition(b) & 4);
+    // An ancestor's generated child can paint above its own descendants.
+    // Equal-level generated paint is not proven behind by host DOM order.
+    if (pseudoStyle && (candidate === element || candidate.contains(element))) return true;
+    if (a.style.position !== 'static'
+        && b.style.position === 'static') return true;
+    return !(a.node.compareDocumentPosition(b.node) & 4);
   };
-  const painted = (node, style) => {
+  const painted = (node, style, pseudo = false) => {
     const background = style.backgroundColor || '';
     const transparent = background === 'transparent'
       || /^(?:rgba\\(.+,|.+\\/)\\s*0(?:\\.0+)?\\s*\\)$/.test(background);
@@ -163,32 +178,116 @@ const targetVisibility = (element, fully = true) => {
       || (style.backgroundImage && style.backgroundImage !== 'none')
       || ['Top', 'Right', 'Bottom', 'Left'].some(edge =>
         Number.parseFloat(style['border' + edge + 'Width']) > 0
-        && style['border' + edge + 'Style'] !== 'none')
-      || ['IMG', 'CANVAS', 'VIDEO', 'SVG'].includes(node.tagName)
-      || [...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim());
+        && !['none', 'hidden'].includes(style['border' + edge + 'Style']))
+      || (style.boxShadow && style.boxShadow !== 'none')
+      || (style.textShadow && style.textShadow !== 'none')
+      || (style.backdropFilter && style.backdropFilter !== 'none')
+      || Number.parseFloat(style.outlineWidth) > 0
+      || (pseudo ? !['""', "''"].includes(style.content)
+        : ['IMG', 'CANVAS', 'VIDEO', 'SVG'].includes(node.tagName)
+          || [...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim()));
   };
-  const noninteractiveCover = [...document.querySelectorAll('*')].some(node => {
-    if (node === element || node.contains(element) || element.contains(node)) return false;
-    const style = getComputedStyle(node);
-    if (style.pointerEvents !== 'none' || style.display === 'none'
-        || style.visibility !== 'visible') return false;
-    const pseudoPaint = ['::before', '::after'].some(pseudo => {
-      const value = getComputedStyle(node, pseudo);
-      return value.content && !['none', 'normal'].includes(value.content)
-        && Number(value.opacity) > 0 && value.display !== 'none' && painted(node, value);
-    });
-    if (!painted(node, style) && !pseudoPaint) return false;
+  const px = value => /^-?(?:\\d+\\.?\\d*|\\.\\d+)px$/.test(value)
+    ? Number.parseFloat(value) : null;
+  const pseudoBox = (node, style) => {
+    if (!['absolute', 'fixed'].includes(style.position)) return null;
+    let containing = null;
+    for (let parent = node; parent; parent = parent.parentElement) {
+      const value = getComputedStyle(parent);
+      if (['transform', 'translate', 'rotate', 'scale', 'perspective', 'filter',
+          'backdropFilter'].some(key => value[key] && value[key] !== 'none')
+          || /transform|filter|perspective/.test(value.willChange || '')
+          || /paint|layout|strict|content/.test(value.contain || '')
+          || (value.zoom && !['1', 'normal'].includes(value.zoom))) return null;
+      if (!containing && value.position !== 'static') containing = parent;
+    }
+    if (!['""', "''"].includes(style.content)
+        || ['transform', 'translate', 'rotate', 'scale', 'filter', 'boxShadow',
+          'textShadow', 'backdropFilter'].some(key => style[key] && style[key] !== 'none')
+        || Number.parseFloat(style.outlineWidth) > 0
+        || style.direction === 'rtl'
+        || (containing && (getComputedStyle(containing).display === 'contents'
+          || containing.getClientRects().length !== 1))) return null;
+    const base = style.position === 'absolute' && containing
+      ? {left: containing.getBoundingClientRect().left + containing.clientLeft
+            - containing.scrollLeft,
+         top: containing.getBoundingClientRect().top + containing.clientTop
+            - containing.scrollTop,
+         width: containing.clientWidth, height: containing.clientHeight}
+      : {left: 0, top: 0, width: document.documentElement?.clientWidth || innerWidth,
+         height: document.documentElement?.clientHeight || innerHeight};
+    const axis = (origin, extent, startValue, endValue, size, edges) => {
+      const start = px(startValue), end = px(endValue);
+      if ((start === null && startValue !== 'auto')
+          || (end === null && endValue !== 'auto')) return null;
+      const margins = edges.map(edge => px(style['margin' + edge]));
+      const extras = edges.map(edge => (
+        px(style['padding' + edge]) ?? NaN) + (px(style['border' + edge + 'Width']) ?? NaN));
+      if (margins.some(value => value === null) || extras.some(value => !Number.isFinite(value))) {
+        return null;
+      }
+      let length = px(size);
+      if (length !== null && style.boxSizing !== 'border-box') {
+        length += extras[0] + extras[1];
+      }
+      if (length === null && size === 'auto' && start !== null && end !== null) {
+        length = extent - start - end - margins[0] - margins[1];
+      }
+      if (length === null || !Number.isFinite(length) || length < 0) return null;
+      const offset = start !== null ? start + margins[0]
+        : end !== null ? extent - end - length - margins[1] : null;
+      return offset === null ? null : [origin + offset, origin + offset + length];
+    };
+    const x = axis(base.left, base.width, style.left, style.right,
+      style.width, ['Left', 'Right']);
+    const y = axis(base.top, base.height, style.top, style.bottom,
+      style.height, ['Top', 'Bottom']);
+    return x && y && [...x, ...y].every(Number.isFinite)
+      ? {left: x[0], right: x[1], top: y[0], bottom: y[1]} : null;
+  };
+  const overlaps = box => box.right > intersection.left && box.left < intersection.right
+    && box.bottom > intersection.top && box.top < intersection.bottom;
+  const paintCover = node => {
     let alpha = 1;
     for (let parent = node; parent; parent = parent.parentElement) {
       const ancestor = getComputedStyle(parent);
       alpha *= Number(ancestor.opacity);
-      if (ancestor.display === 'none' || ancestor.visibility !== 'visible'
+      if (!Number.isFinite(alpha)) return true;
+      if (ancestor.display === 'none'
           || ancestor.contentVisibility === 'hidden' || alpha <= 0) return false;
     }
-    const box = node.getBoundingClientRect();
-    return box.right > intersection.left && box.left < intersection.right
-      && box.bottom > intersection.top && box.top < intersection.bottom && above(node);
-  });
+    const style = getComputedStyle(node);
+    if (node !== element && !node.contains(element) && !element.contains(node)
+        && style.pointerEvents === 'none' && style.visibility === 'visible'
+        && painted(node, style) && above(node)) {
+      if (['boxShadow', 'textShadow', 'filter', 'backdropFilter'].some(
+          key => style[key] && style[key] !== 'none')
+          || Number.parseFloat(style.outlineWidth) > 0) return true;
+      const boxes = [...node.getClientRects()];
+      if (boxes.some(box => !['left', 'right', 'top', 'bottom'].every(
+          key => Number.isFinite(box[key])))) return true;
+      if (boxes.some(overlaps)) return true;
+    }
+    for (const pseudo of ['::before', '::after']) {
+      const value = getComputedStyle(node, pseudo);
+      if (!value.content) return true;
+      if (['none', 'normal'].includes(value.content) || value.display === 'none'
+          || value.visibility !== 'visible' || Number(value.opacity) <= 0) continue;
+      if (!Number.isFinite(Number(value.opacity))) return true;
+      if (!painted(node, value, true) || !above(node, value)) continue;
+      const box = pseudoBox(node, value);
+      // CSSOM has no portable pseudo-element rect API. Unresolved potentially
+      // front paint must fail closed, never fall back to the host's rectangle.
+      if (!box || overlaps(box)) return true;
+    }
+    return false;
+  };
+  let noninteractiveCover;
+  try {
+    noninteractiveCover = [...document.querySelectorAll('*')].some(paintCover);
+  } catch {
+    return {visible: false, reason: 'paint-unqualified', opacity, intersection};
+  }
   return {visible: unobscured && !noninteractiveCover,
     reason: noninteractiveCover ? 'noninteractive-cover' : unobscured ? '' : 'occluded',
     opacity, intersection};

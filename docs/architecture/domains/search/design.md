@@ -160,6 +160,9 @@ Desktop 与 Mobile 原生宿主消费同一 `search-core::runtime::SearchRuntime
 全局身份、Station scope、request completion 与实际参与的原 Store 屏障仍在
 发布内检查；不能再次读取未参与来源，将其变化变成当前响应的额外依赖。
 全量 read-state inventory 明确请求完整 composition，仍检查全部来源。
+查询入场先按声明 kind 与建议能力收窄参与来源，再读取这些来源的原水位；
+被排除来源的水位变化不能拒绝健康的单来源查询。认证分区、完整 composition
+结构与当前参与来源的原 authority 检查保持必需。
 
 宿主在阻塞线程上使用现有 `futures-lite` 驱动 Contributor Future，不进入
 Tokio 异步执行上下文。原 Station 传输提供同步响应读取；在 Tokio Future
@@ -169,6 +172,8 @@ Tokio 异步执行上下文。原 Station 传输提供同步响应读取；在 T
 Station request cancellation token，覆盖 admission、response body 和 SafeRead
 重放；复制剩余 duration 不能重新计算截止点。Desktop 沿既有私密 policy
 adapter 的有界 watcher 边界停止并 join，原读取退出时释放 watcher。
+提交前的 Station discovery 与路由续期同样消费该绝对 deadline 和取消检查，
+不能用独立 discovery timeout 延长 Search。被取消或超时的续期不提交新绑定。
 
 认证分区来自平台 Session，独立于 MessagingEngine。当前生产 composition
 声明 `device.messaging`、`device.social`、`station.social.public`；
@@ -292,7 +297,10 @@ checkpoint；事务提交后必须释放连接锁，才可调用外部生命周�
 前后生命周期检查与事务内 Session generation 检查共同保留挂起和取消屏障。
 Mobile Search 详情按需挂载，runtime 保留一个结果页及有界分页/输入/选择元数据。
 原生后台、内容变化或身份变化立即遮蔽结果；返回和恢复先核对原 owner
-scope/revision/expiry。相同身份的生命周期 generation 变化保留用户输入，
+scope/revision/expiry。相同身份的生命周期 generation 变化保留用户输入。
+Mobile 周期 no-store 重建在首次 read-state 等待前进入既有五秒查询所有者，
+避免外层 inventory 读取拖延入场并叠加定时回调。Desktop 重建失败隐藏正文，
+保留原展示元数据供同条件重试；失败不构成空页或对象已消失的观察。
 新身份清空全部私密投影。界面和原对象定位合同见
 [Mobile Search](../../../client/mobile/search-experience-contract.md)。
 

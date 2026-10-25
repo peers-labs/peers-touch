@@ -207,6 +207,11 @@ async function revalidate(): Promise<void> {
   if (!active() || requestId || debounce) return;
   const view = useMobileSearchStore.getState();
   if (view.filter === 'functions' || !view.query.trim()) return;
+  if (!view.response || view.response.sources.some(source => source.noStore)) {
+    // Reconstruction owns preflight and every page within the same deadline.
+    await run();
+    return;
+  }
   const admitted = generation;
   try {
     const state = await mobileSearchService.readState();

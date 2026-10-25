@@ -287,6 +287,64 @@ describe('Desktop Search no-store page continuity', () => {
     expect(useSearchStore.getState()).toMatchObject({ selectedIndex: 1, scrollTop: 93 });
   });
 
+  it.each(['current', 'superseded'] as const)(
+    'restores selected ResourceKey after a %s no-store Return read failure',
+    async failureOwner => {
+      const { submit, changePages } = searchFixture();
+      const ids = ['private-comment', 'public-comment', 'private-post', '360890531888234499'];
+      changePages([ids]);
+      await runSearchQuery('en');
+      await settle();
+      useSearchStore.setState({ selectedIndex: 3, cursorEngaged: true, scrollTop: 93 });
+      const before = useSearchStore.getState().traversal!;
+      searchActions.close();
+      expect(useSearchStore.getState().response).toBeNull();
+
+      let fail!: () => void;
+      submit.mockImplementationOnce(() => new Promise(resolve => {
+        fail = () => resolve({
+          ok: false, error: { code: 'INVALID_ARGUMENT', message: 'search cancelled' },
+        } as never);
+      }) as never);
+      searchActions.open('moments', 'en');
+      await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+      if (failureOwner === 'superseded') {
+        await runSearchQuery('en');
+        await settle();
+      }
+      fail();
+      if (failureOwner === 'current') {
+        await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('error'));
+        expect(useSearchStore.getState().response).toBeNull();
+        searchActions.close();
+        searchActions.open('moments', 'en');
+      }
+      await settle();
+      expect(resultIds()).toEqual(ids);
+      expect(useSearchStore.getState().traversal).toMatchObject({
+        identity: before.identity, ordinal: before.ordinal, rowKeys: before.rowKeys,
+      });
+      expect(useSearchStore.getState()).toMatchObject({
+        selectedIndex: 3, cursorEngaged: true, scrollTop: 93,
+      });
+    },
+  );
+
+  it('does not select another resource when an authorized Return page loses the selected key', async () => {
+    const { changePages } = searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    useSearchStore.setState({ selectedIndex: 0, cursorEngaged: true, scrollTop: 93 });
+    searchActions.close();
+    changePages([['replacement']]);
+    searchActions.open('moments', 'en');
+    await settle();
+    expect(resultIds()).toEqual(['replacement']);
+    expect(useSearchStore.getState()).toMatchObject({
+      selectedIndex: 0, cursorEngaged: false, scrollTop: 0,
+    });
+  });
+
   it('adjusts changed snapshot rows and ResourceKey selection in one publication', async () => {
     const { changePages } = searchFixture();
     await runSearchQuery('en');

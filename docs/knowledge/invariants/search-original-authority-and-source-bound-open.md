@@ -6,6 +6,9 @@ owns:
   - packages/search-core/
   - apps/desktop/src-tauri/src/application/search/
   - apps/desktop/src-tauri/src/application/station_runtime/client.rs
+  - apps/desktop/src-tauri/src/application/station_runtime/mod.rs
+  - apps/desktop/src-tauri/src/application/station_runtime/route_refresh.rs
+  - apps/desktop/src-tauri/src/infrastructure/station_discovery.rs
   - apps/desktop/src-tauri/src/interface/tauri_commands/search.rs
   - apps/desktop/src-tauri/src/secure_content/search.rs
   - apps/desktop/src-tauri/src/secure_content/search_policy.rs
@@ -91,10 +94,17 @@ Open retains only its successfully qualified issuing source. Global identity,
 Station scope, request completion and consumed original-owner revision checks
 remain mandatory. Re-admitting unused bindings introduces unrelated vetoes.
 Full state-inventory requests intentionally check the complete composition.
+Query admission must narrow declared kinds and suggestion capability before
+checking original revisions of participating sources. An excluded source's
+admission-time revision cannot veto a healthy single-source query; global
+identity and composition integrity still apply.
 Public read adapters MUST link the shared operation check and original absolute
 deadline to the existing request cancellation token through admission, body
 consumption and SafeRead replay. Scoped watchers stop and join on every exit;
 one subscriber leaving cannot cancel a read still used by another subscriber.
+Pre-submission Station discovery and route renewal consume that same original
+deadline and cancellation at their existing owner. A separate discovery timeout
+cannot extend the bounded Search operation.
 An unresolved Comment point-read absence without an acquired projection MUST
 remain an operation observation. UnknownOutcome may retry the exact command;
 CommittedPendingReadback remains pending. Neither may create irreversible
@@ -112,10 +122,17 @@ No-store reconciliation MUST retain the addressed display ordinal without
 replaying an advancing input cursor or reusing plaintext. Fresh reconstruction
 uses only newly issued continuations, publishes no intermediate page, and
 shares one unchanged five-second deadline across its at-most-32-page traversal.
+Periodic no-store reconciliation enters that budgeted owner before its first
+read-state await. An outer inventory read cannot delay admission indefinitely
+or accumulate overlapping interval callbacks.
 Only explicit Next consumes a currently unused continuation. Selected resource
 identity and stable scroll must survive an unchanged page; failure cannot
 silently substitute the first page. Request-owned timers must not be cleared
 or allowed to mutate a newer request by a superseded finalizer.
+Failed no-store reacquisition hides the response while retaining traversal,
+selection and scroll metadata, following Search design §4.1. It is not a
+completed empty-page observation; an authorized reply that actually loses the
+selected key must still disengage selection rather than select a replacement.
 Continuation publication MUST release its issuance metadata guard before
 leaving the original authority guard, as defined by Search design §4.1.
 A successful reply must not lead to an immediate Open observing a locked
@@ -163,6 +180,10 @@ Original-target qualification MUST inspect ancestor opacity, clipping and
 painted occlusion throughout the same capture. Hit testing alone misses opaque
 `pointer-events:none` covers. Controlled negative replays do not replace review
 of the immutable native pixels and matching DOM.
+Generated before/after paint must be checked independently of the host's
+pointer-events, ancestry and box size. A fixed pseudo on a zero-sized host can
+cover the viewport; unresolved potentially front paint fails qualification.
+Transparent or proven-behind decoration must remain admitted.
 Cleanup completion requires every mandatory release flag, no cleanup errors,
 and a successful resources-released assertion. Preserve an existing Journey
 failure while recording cleanup diagnostics; never publish cleanup-complete
@@ -283,6 +304,9 @@ Search publication order and can deadlock the native UI during reconciliation.
   publication, unchanged context, explicit shortened-page failure, at most
   32 pages and one five-second deadline, including unresolved native replies.
   Superseded request timers and late replies must not change a newer request.
+  A current no-store Return failure followed by unchanged healthy reacquisition
+  must restore the selected ResourceKey and scroll; a superseded failure cannot
+  overwrite the newer frame. A genuinely missing selected key stays disengaged.
 - Desktop `privateComments.test.ts`, `moments-store.test.ts` and
   `momentsRuntime.test.ts` retain the active historical comment through periodic
   and event refreshes, release it on navigation and fence late reads. Equivalent
@@ -368,6 +392,9 @@ Search publication order and can deadlock the native UI during reconciliation.
   release flags. Its exact-selector account control advances a separate
   same-account cursor before testing an unconsumed handoff cursor. Native
   captures must independently satisfy those observations on the current source.
+  The actual shared visibility JS and both Social consumers must reject opaque
+  ancestor pseudos and fixed pseudos on zero-sized hosts, while transparent,
+  hidden and proven-behind counterparts remain legal.
 - `chat-device-search-contract` executes the source-only capture race replays
   in `device_search_capture_checks.py`: both platform Settings/concealment
   paint delays, Messaging/Social mutation-and-repaint, original pending/focus,
