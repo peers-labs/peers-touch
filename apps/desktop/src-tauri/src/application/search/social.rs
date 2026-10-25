@@ -105,7 +105,14 @@ impl PublicReader {
             .station
             .client()
             .request_bounded_proto_read(&self.scope, path, token.as_str(), input, ctx.deadline)
-            .map_err(transport_error)?;
+            .map_err(|error| {
+                tracing::warn!(
+                    path,
+                    transport_error_kind = ?error.kind,
+                    "public Social Search read failed"
+                );
+                transport_error(error)
+            })?;
         ctx.check()?;
         Ok(response)
     }
