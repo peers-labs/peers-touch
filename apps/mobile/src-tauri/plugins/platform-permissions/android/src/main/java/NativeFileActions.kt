@@ -3,9 +3,11 @@ package com.peers.touch.mobile.platformpermissions
 import android.app.Activity
 import android.content.ClipData
 import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
+import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
@@ -132,7 +134,7 @@ class NativeFileActions(
             if (result.resultCode == Activity.RESULT_OK) {
                 result.data?.data?.let { uri ->
                     Thread {
-                        try { DocumentsContract.deleteDocument(activity.contentResolver, uri) } catch (_: Exception) {}
+                        discardCreatedDocument(uri)
                     }.start()
                 }
             }
@@ -167,20 +169,31 @@ class NativeFileActions(
                 handler.post {
                     if (action.cancelled.get()) {
                         Thread {
-                            try { DocumentsContract.deleteDocument(activity.contentResolver, uri) } catch (_: Exception) {}
+                            discardCreatedDocument(uri)
                         }.start()
                     } else {
                         finishFor(action, "completed", null)
                     }
                 }
             } catch (_: InterruptedException) {
-                try { DocumentsContract.deleteDocument(activity.contentResolver, uri) } catch (_: Exception) {}
+                discardCreatedDocument(uri)
                 handler.post { finishFor(action, "cancelled", null) }
             } catch (_: Exception) {
-                try { DocumentsContract.deleteDocument(activity.contentResolver, uri) } catch (_: Exception) {}
+                discardCreatedDocument(uri)
                 handler.post { finishFor(action, "failed", "file_export_failed") }
             }
         }.start()
+    }
+
+    private fun discardCreatedDocument(uri: Uri) {
+        try {
+            if (!DocumentsContract.deleteDocument(activity.contentResolver, uri)) {
+                Log.w("ChatFileActions", "Cancelled export document could not be removed")
+            }
+        } catch (_: Exception) {
+            // Do not log the destination URI or provider exception contents.
+            Log.w("ChatFileActions", "Cancelled export document cleanup failed")
+        }
     }
 
     fun cancel(requestId: String, reason: String? = null) {

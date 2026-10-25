@@ -203,4 +203,4 @@ await realMount(realSurface, url, realBytes.length, labels, realAbort.signal);
 assert.equal(realSurface.dataset.chatPreviewState, 'ready');
 assert.ok(realReads.length > 8 && realReads.every(length => length <= 1024 * 1024));
 realAbort.abort();
-console.log('Preview regression checks passed: text fidelity, BMP, landscape, PDF size/ranges, renamed Office limits');
+process.stdout.write('Preview regression checks passed: text fidelity, BMP, landscape, PDF size/ranges, renamed Office limits\n');

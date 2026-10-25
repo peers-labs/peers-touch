@@ -162,7 +162,7 @@ export async function checkMessageLayout({ browser, url, output, viewports }) {
   }
   const defects = captures.filter((c) => c.geometry.violations.length);
   await writeFile(resolve(output, 'message-layout.json'), JSON.stringify({ evidenceType: 'prototype-only', captures, interactions, errors, scaffoldErrors, defects }, null, 2));
-  console.log(JSON.stringify({ captures: captures.length, interactions: interactions.length, errors, defects: defects.map(({ filename, geometry }) => ({ filename, violations: geometry.violations })) }, null, 2));
+  process.stdout.write(JSON.stringify({ captures: captures.length, interactions: interactions.length, errors, defects: defects.map(({ filename, geometry }) => ({ filename, violations: geometry.violations })) }, null, 2) + '\n');
   assert.deepEqual(errors, [], 'no browser errors');
   assert.equal(defects.length, 0, 'message symmetry, alignment and rhythm');
 }

@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -20,7 +22,10 @@ func TestAccessSessionCredentialUsesCallerTransaction(t *testing.T) {
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	const secret = "public-access-session-transaction-test"
+	signingBytes := make([]byte, 32)
+	_, err = rand.Read(signingBytes)
+	require.NoError(t, err)
+	secret := hex.EncodeToString(signingBytes)
 	coreauth.Init(coreauth.Config{Secret: secret, AccessTTL: time.Hour})
 	keyring, err := coreauth.OpenStationAccessKeyring(context.Background(), database, secret, "")
 	require.NoError(t, err)
