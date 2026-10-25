@@ -156,6 +156,9 @@ bounded admission/operation duration, including before HTTP submission while
 dialing. Shared pending dials retain live subscribers; the driver aborts the
 upstream pending connection after the last subscriber leaves. Dial completion
 errors match the connection ID so a retired attempt cannot reject a newer dial.
+The driver admits a same-peer replacement with the upstream `Disconnected`
+condition: live driver waiters still share one dial, established peers are
+reused, and an aborted pool entry may drain after replacement admission.
 Transport errors preserve the actual HTTP submission phase.
 
 The transport owner starts during Tauri setup and shuts down from

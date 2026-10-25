@@ -40,6 +40,9 @@ multiple established connections.
   duration. Attempt cleanup cancels a child token, preserving the caller's
   retry scope. Shared pending dials abort through the upstream Swarm only after
   their last subscriber leaves; completion errors match the connection ID.
+  Swarm retains the aborted pool entry until it is polled. Same-peer replacement
+  therefore uses `PeerCondition::Disconnected`, with live-dial sharing owned by
+  the driver, so retirement cannot synchronously reject the next caller.
 
 ### What guards against regression
 
@@ -51,7 +54,9 @@ secondary Station route.
 SDK reply-wait regressions cover cancellation, timeout and actual submission
 phase. `shared_dial_cancellation_preserves_subscribers_and_fences_old_errors`
 checks subscriber retirement, upstream pending-connection abort and old-error
-isolation. Desktop's signed discovery-to-failover regression reaches a distinct
+isolation. It admits the replacement before polling the old abort, then verifies
+the real retired event leaves the replacement pending. Desktop's signed
+discovery-to-failover regression reaches a distinct
 replacement node with a stalled handshake inside the original Search deadline.
 `ordinary_timeout_can_failover_while_bounded_deadline_cannot` separately protects
 ordinary SafeRead replay and explicitly bounded Search semantics.

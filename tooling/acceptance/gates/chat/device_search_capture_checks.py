@@ -22,6 +22,8 @@ const paintStyle = {display: 'block', visibility: 'visible', opacity: '1',
   filter: 'none', perspective: 'none', backdropFilter: 'none',
   overflowX: 'visible', overflowY: 'visible', clipPath: 'none', clip: 'auto',
   boxSizing: 'border-box', width: 'auto', height: 'auto',
+  outlineWidth: '3px', outlineStyle: 'none', outlineColor: 'rgb(0, 0, 0)',
+  outlineOffset: '0px',
   left: 'auto', right: 'auto', top: 'auto', bottom: 'auto'};
 for (const edge of ['Top', 'Right', 'Bottom', 'Left']) {
   paintStyle['margin' + edge] = '0px';
@@ -205,6 +207,56 @@ negative('ordinary-unknown-fragment', 'noninteractive-cover',
 parent.style.pointerEvents = 'none'; parent.style.backgroundColor = 'black';
 assert.equal(targetVisibility(target).visible, true);
 cases.push('ordinary-ancestor-background-control');
+parent.style = {...paintStyle};
+cover.style = {...paintStyle, pointerEvents: 'none'};
+cover.getBoundingClientRect = () => box;
+cover.getClientRects = () => [cover.getBoundingClientRect()];
+assert.equal(targetVisibility(target).visible, true);
+cases.push('outline-none-cssom-control');
+cover.style.outlineStyle = 'solid';
+cover.style.outlineColor = 'rgba(0, 0, 0, 0)';
+assert.equal(targetVisibility(target).visible, true);
+cases.push('transparent-outline-control');
+negative('noninteractive-visible-outline', 'noninteractive-cover',
+  () => {cover.style.outlineColor = 'rgb(0, 0, 0)';
+    cover.getBoundingClientRect = () => ({left: 50, right: 60, top: 110,
+      bottom: 140, width: 10, height: 30});},
+  () => {cover.style.outlineColor = 'rgba(0, 0, 0, 0)';
+    cover.getBoundingClientRect = () => box;});
+cover.style.outlineColor = 'rgb(0, 0, 0)';
+assert.equal(targetVisibility(target).visible, true);
+cases.push('outline-transparent-interior-control');
+negative('negative-outline-offset', 'noninteractive-cover',
+  () => cover.style.outlineOffset = '-2px',
+  () => cover.style.outlineOffset = '0px');
+cover.getBoundingClientRect = () => ({left: 500, right: 550, top: 100,
+  bottom: 150, width: 50, height: 50});
+assert.equal(targetVisibility(target).visible, true);
+cases.push('outside-outline-control');
+negative('outline-edge-overlap', 'noninteractive-cover',
+  () => cover.getBoundingClientRect = () => ({left: 0, right: 39, top: 100,
+    bottom: 150, width: 39, height: 50}),
+  () => cover.getBoundingClientRect = () => ({left: 500, right: 550, top: 100,
+    bottom: 150, width: 50, height: 50}));
+negative('unknown-outline-offset', 'noninteractive-cover',
+  () => cover.style.outlineOffset = 'calc(10% + 1px)',
+  () => cover.style.outlineOffset = '0px');
+cover.style = {...paintStyle};
+cover.pseudos = {'::after': {...fixedPseudo(), backgroundColor: 'transparent'}};
+assert.equal(targetVisibility(target).visible, true);
+cases.push('pseudo-outline-none-control');
+cover.pseudos['::after'].outlineStyle = 'solid';
+assert.equal(targetVisibility(target).visible, true);
+cases.push('pseudo-outline-transparent-interior-control');
+negative('pseudo-outline-overlap', 'noninteractive-cover',
+  () => cover.pseudos['::after'] = {...fixedPseudo(), backgroundColor: 'transparent',
+    outlineStyle: 'solid', left: '0px', width: '39px', top: '100px', height: '50px'},
+  () => cover.pseudos['::after'] = {...fixedPseudo(), backgroundColor: 'transparent'});
+cover.pseudos['::after'] = {...fixedPseudo(), backgroundColor: 'transparent',
+  outlineStyle: 'solid', left: '500px', width: '50px', height: '50px'};
+assert.equal(targetVisibility(target).visible, true);
+cases.push('pseudo-outline-outside-control');
+delete cover.pseudos;
 console.log(JSON.stringify(cases));
 """],
         check=True, capture_output=True, text=True, timeout=10,
@@ -303,6 +355,20 @@ cover.style.pointerEvents = 'none'; cover.style.backgroundColor = 'rgb(0, 0, 0)'
 assert.equal(sample().threadVisible, false);
 assert.equal(sample().anchorVisible, false);
 cases.push('noninteractive-original-cover');
+cover.style = {...paintStyle};
+cover.style.pointerEvents = 'none';
+assert.equal(sample().postVisible, true);
+assert.equal(sample().anchorVisible, true);
+cases.push('outline-none-cssom-control');
+cover.style.outlineStyle = 'solid';
+assert.equal(sample().postVisible, true);
+assert.equal(sample().anchorVisible, true);
+cases.push('outline-transparent-interior-control');
+cover.getBoundingClientRect = () => ({left: 50, right: 60, top: 100,
+  bottom: 240, width: 10, height: 140});
+assert.equal(sample().postVisible, false);
+assert.equal(sample().anchorVisible, false);
+cases.push('visible-outline-original-cover');
 cover.style = {...paintStyle};
 const rejected = [];
 for (const [name, host, pseudo, change] of [
@@ -802,10 +868,10 @@ def verify_capture() -> list[str]:
     checks.append("diagnostic/unasserted")
     # Keep the existing contract Gate's 13 case IDs while expanding the
     # assertions within those cases. Detailed replay results are independently callable.
-    assert len(verify_visibility()) == 43
+    assert len(verify_visibility()) == 55
     assert len(verify_cleanup()) == 10
     assert len(verify_selectors()) == 6
-    assert len(verify_original_surfaces()) == 47
+    assert len(verify_original_surfaces()) == 53
     assert len(verify_continuity()) == 14
     assert len(verify_continuity_script()) == 7
     assert len(verify_return()) == 11

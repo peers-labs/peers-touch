@@ -184,6 +184,11 @@ Generated before/after paint must be checked independently of the host's
 pointer-events, ancestry and box size. A fixed pseudo on a zero-sized host can
 cover the viewport; unresolved potentially front paint fails qualification.
 Transparent or proven-behind decoration must remain admitted.
+CSSOM outline width alone does not establish paint: the style must draw an
+outline and its color must be visible. Qualify the actual edge bands including
+outline offset; a transparent outlined host does not cover its interior.
+Unresolved outline geometry remains unqualified. Ordinary fragments and
+generated paint must share this rule.
 Cleanup completion requires every mandatory release flag, no cleanup errors,
 and a successful resources-released assertion. Preserve an existing Journey
 failure while recording cleanup diagnostics; never publish cleanup-complete
@@ -395,6 +400,9 @@ Search publication order and can deadlock the native UI during reconciliation.
   The actual shared visibility JS and both Social consumers must reject opaque
   ancestor pseudos and fixed pseudos on zero-sized hosts, while transparent,
   hidden and proven-behind counterparts remain legal.
+  Default `outline-width: 3px` with `outline-style: none`, transparent outlines
+  and transparent outlined interiors must remain admitted; actual overlapping
+  outline bands and unresolved offsets must fail qualification in both consumers.
 - `chat-device-search-contract` executes the source-only capture race replays
   in `device_search_capture_checks.py`: both platform Settings/concealment
   paint delays, Messaging/Social mutation-and-repaint, original pending/focus,

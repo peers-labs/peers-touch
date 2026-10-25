@@ -169,12 +169,15 @@ const targetVisibility = (element, fully = true) => {
         && b.style.position === 'static') return true;
     return !(a.node.compareDocumentPosition(b.node) & 4);
   };
-  const painted = (node, style, pseudo = false) => {
+  const transparent = color => color === 'transparent'
+    || /^(?:rgba\\(.+,|.+\\/)\\s*0(?:\\.0+)?\\s*\\)$/.test(color || '');
+  const outlined = style => Number.parseFloat(style.outlineWidth) > 0
+    && !['none', 'hidden'].includes(style.outlineStyle)
+    && !transparent(style.outlineColor);
+  const painted = (node, style, pseudo = false, includeOutline = true) => {
     const background = style.backgroundColor || '';
-    const transparent = background === 'transparent'
-      || /^(?:rgba\\(.+,|.+\\/)\\s*0(?:\\.0+)?\\s*\\)$/.test(background);
     return (background && background !== 'transparent'
-        && !transparent)
+        && !transparent(background))
       || (style.backgroundImage && style.backgroundImage !== 'none')
       || ['Top', 'Right', 'Bottom', 'Left'].some(edge =>
         Number.parseFloat(style['border' + edge + 'Width']) > 0
@@ -182,7 +185,7 @@ const targetVisibility = (element, fully = true) => {
       || (style.boxShadow && style.boxShadow !== 'none')
       || (style.textShadow && style.textShadow !== 'none')
       || (style.backdropFilter && style.backdropFilter !== 'none')
-      || Number.parseFloat(style.outlineWidth) > 0
+      || (includeOutline && outlined(style))
       || (pseudo ? !['""', "''"].includes(style.content)
         : ['IMG', 'CANVAS', 'VIDEO', 'SVG'].includes(node.tagName)
           || [...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim()));
@@ -204,7 +207,6 @@ const targetVisibility = (element, fully = true) => {
     if (!['""', "''"].includes(style.content)
         || ['transform', 'translate', 'rotate', 'scale', 'filter', 'boxShadow',
           'textShadow', 'backdropFilter'].some(key => style[key] && style[key] !== 'none')
-        || Number.parseFloat(style.outlineWidth) > 0
         || style.direction === 'rtl'
         || (containing && (getComputedStyle(containing).display === 'contents'
           || containing.getClientRects().length !== 1))) return null;
@@ -247,6 +249,33 @@ const targetVisibility = (element, fully = true) => {
   };
   const overlaps = box => box.right > intersection.left && box.left < intersection.right
     && box.bottom > intersection.top && box.top < intersection.bottom;
+  const paintOverlaps = (box, node, style, pseudo = false) => {
+    if (!['left', 'right', 'top', 'bottom'].every(key => Number.isFinite(box[key]))
+        || box.right < box.left || box.bottom < box.top) return true;
+    if (painted(node, style, pseudo, false) && overlaps(box)) return true;
+    if (!outlined(style)) return false;
+    const width = px(style.outlineWidth), offset = px(style.outlineOffset);
+    if (width === null || offset === null) return true;
+    for (let parent = node; parent; parent = parent.parentElement) {
+      const value = getComputedStyle(parent);
+      if (['transform', 'translate', 'rotate', 'scale', 'perspective'].some(
+          key => value[key] && value[key] !== 'none')
+          || (value.zoom && !['1', 'normal'].includes(value.zoom))) return true;
+    }
+    const inner = {left: box.left - offset, right: box.right + offset,
+      top: box.top - offset, bottom: box.bottom + offset};
+    const outer = {left: inner.left - width, right: inner.right + width,
+      top: inner.top - width, bottom: inner.bottom + width};
+    if (![...Object.values(inner), ...Object.values(outer)].every(Number.isFinite)
+        || inner.right < inner.left || inner.bottom < inner.top) return true;
+    // An outline paints edge bands, never the transparent interior of its host.
+    return [
+      {left: outer.left, right: outer.right, top: outer.top, bottom: inner.top},
+      {left: outer.left, right: outer.right, top: inner.bottom, bottom: outer.bottom},
+      {left: outer.left, right: inner.left, top: inner.top, bottom: inner.bottom},
+      {left: inner.right, right: outer.right, top: inner.top, bottom: inner.bottom},
+    ].some(overlaps);
+  };
   const paintCover = node => {
     let alpha = 1;
     for (let parent = node; parent; parent = parent.parentElement) {
@@ -261,12 +290,9 @@ const targetVisibility = (element, fully = true) => {
         && style.pointerEvents === 'none' && style.visibility === 'visible'
         && painted(node, style) && above(node)) {
       if (['boxShadow', 'textShadow', 'filter', 'backdropFilter'].some(
-          key => style[key] && style[key] !== 'none')
-          || Number.parseFloat(style.outlineWidth) > 0) return true;
+          key => style[key] && style[key] !== 'none')) return true;
       const boxes = [...node.getClientRects()];
-      if (boxes.some(box => !['left', 'right', 'top', 'bottom'].every(
-          key => Number.isFinite(box[key])))) return true;
-      if (boxes.some(overlaps)) return true;
+      if (boxes.some(box => paintOverlaps(box, node, style))) return true;
     }
     for (const pseudo of ['::before', '::after']) {
       const value = getComputedStyle(node, pseudo);
@@ -278,7 +304,7 @@ const targetVisibility = (element, fully = true) => {
       const box = pseudoBox(node, value);
       // CSSOM has no portable pseudo-element rect API. Unresolved potentially
       // front paint must fail closed, never fall back to the host's rectangle.
-      if (!box || overlaps(box)) return true;
+      if (!box || paintOverlaps(box, node, value, true)) return true;
     }
     return false;
   };

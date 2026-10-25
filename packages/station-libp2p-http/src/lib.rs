@@ -1,7 +1,10 @@
 use bytes::Bytes;
 use http::{HeaderMap, Method, Request as HttpRequest, StatusCode, Uri};
 use libp2p::futures::StreamExt;
-use libp2p::swarm::{dial_opts::DialOpts, ConnectionId, NetworkBehaviour, SwarmEvent};
+use libp2p::swarm::{
+    dial_opts::{DialOpts, PeerCondition},
+    ConnectionId, NetworkBehaviour, SwarmEvent,
+};
 use libp2p::{
     identify, identity, noise, ping, relay, tcp, yamux, Multiaddr, PeerId, StreamProtocol, Swarm,
     SwarmBuilder,
@@ -730,7 +733,14 @@ impl Driver {
                     pending.waiters.push(waiter);
                     return;
                 }
-                let options = DialOpts::peer_id(peer).addresses(vec![address]).build();
+                // Retiring the last waiter aborts the upstream task, but its
+                // pending pool entry remains until Swarm polls the abort.
+                // The driver already excludes live shared dials and connected
+                // peers; permit replacement while that retired entry drains.
+                let options = DialOpts::peer_id(peer)
+                    .condition(PeerCondition::Disconnected)
+                    .addresses(vec![address])
+                    .build();
                 self.pending_dials.insert(
                     peer,
                     PendingDial {
@@ -1750,7 +1760,14 @@ mod tests {
                 shutdown: CancellationToken::new(),
             };
             let peer = PeerId::random();
-            let address = Multiaddr::from_str("/ip4/127.0.0.1/tcp/9").unwrap();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap();
+            let address = Multiaddr::from_str(&format!(
+                "/ip4/127.0.0.1/tcp/{}",
+                listener.local_addr().unwrap().port(),
+            ))
+            .unwrap();
             let add = |driver: &mut Driver| {
                 let (reply, receiver) = mpsc::channel();
                 let cancellation = CancellationToken::new();
@@ -1781,24 +1798,45 @@ mod tests {
             second.cancel();
             driver.retire_cancelled_dials();
             assert!(driver.pending_dials.is_empty());
-            // Consume the upstream abort before admitting another dial.
-            tokio::time::timeout(Duration::from_secs(1), async {
-                while driver
+            assert_eq!(
+                driver
                     .swarm
                     .network_info()
                     .connection_counters()
-                    .num_pending_outgoing()
-                    != 0
-                {
+                    .num_pending_outgoing(),
+                1,
+            );
+            let (_third, third_reply) = add(&mut driver);
+            assert!(
+                driver.pending_dials.contains_key(&peer),
+                "immediate replacement must be admitted before the old Swarm abort is polled",
+            );
+            let new_connection = driver.pending_dials[&peer].connection_id;
+            assert_ne!(new_connection, old_connection);
+            tokio::time::timeout(Duration::from_secs(1), async {
+                loop {
                     let event = driver.swarm.select_next_some().await;
+                    let retired = matches!(
+                        &event,
+                        SwarmEvent::OutgoingConnectionError { connection_id, .. }
+                            if *connection_id == old_connection
+                    );
                     driver.handle_event(event);
+                    if retired {
+                        break;
+                    }
                 }
             })
             .await
             .unwrap();
-            let (_third, third_reply) = add(&mut driver);
-            let new_connection = driver.pending_dials[&peer].connection_id;
-            assert_ne!(new_connection, old_connection);
+            assert_eq!(
+                driver
+                    .swarm
+                    .network_info()
+                    .connection_counters()
+                    .num_pending_outgoing(),
+                1,
+            );
             driver.handle_event(SwarmEvent::OutgoingConnectionError {
                 connection_id: old_connection,
                 peer_id: Some(peer),
