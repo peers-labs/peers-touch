@@ -321,7 +321,7 @@ describe('momentsRuntime identity fence', () => {
     eventBus.publish(EVENT.MOMENT_COMMENTED, wake);
     await vi.waitFor(() => {
       expect(mocks.privateMoments.readMoment).toHaveBeenCalledWith(postId);
-      expect(mocks.privateComments.loadComments).toHaveBeenCalledWith(postId, true);
+      expect(mocks.privateComments.loadComments).toHaveBeenCalledWith(postId, true, undefined);
     });
 
     eventBus.publish(EVENT.MOMENT_COMMENTED, wake);

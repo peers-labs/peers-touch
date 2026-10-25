@@ -174,6 +174,7 @@ Pick one based on intent:
 - [`invariants/desktop-vite-entry-readiness.md`](invariants/desktop-vite-entry-readiness.md) — Desktop startup and reuse require the Vite renderer entry module to respond successfully.
 - [`invariants/acceptance-suite-runtime-reuse.md`](invariants/acceptance-suite-runtime-reuse.md) — multi-scenario Acceptance provisions expensive resources once at Suite scope and keeps Scenarios attach-only.
 - [`invariants/desktop-sqlite-path-budget.md`](invariants/desktop-sqlite-path-budget.md) — Desktop database paths compact oversized identity-derived scopes without changing encryption identity or existing short paths.
+- [`invariants/private-comment-read-completion.md`](invariants/private-comment-read-completion.md) — private Comment Store reads share completion and reject stale scope, page, anchor, and removed-post publication.
 - [`invariants/x-config-origins-never-extend-trust.md`](invariants/x-config-origins-never-extend-trust.md) — x-config origin lists choose fetch transport only; publisher trust stays app-baked, key rotation requires a release.
 
 ### Pitfalls
