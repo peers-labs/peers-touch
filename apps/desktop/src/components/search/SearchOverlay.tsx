@@ -109,7 +109,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
         data-resource-id={content?.resource?.id} data-source-id={content?.sourceId}
         data-resource-kind={content?.resource?.kind}
         id={`pt-search-option-${index}`} role="option" aria-selected={selected} tabIndex={-1}
-        disabled={view.opening} onMouseEnter={() => useSearchStore.setState({ cursorEngaged: true, selectedIndex: index })}
+        disabled={view.opening}
         onClick={() => { void openRow(row); }}>
         <span className="pt-search-row-icon"><Icon size={15} /></span>
         <span className="pt-search-main">

@@ -346,7 +346,6 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
                     suggestion={s}
                     rowId={`search-opt-${idx}`}
                     active={cursorEngaged && idx === activeIndex}
-                    onHover={() => { setCursorEngaged(true); setActiveIndex(idx); }}
                     onOpen={() => openResult({ targetPage: s.targetPage, anchor: s.anchor, title: s.label })}
                   />
                 );
@@ -365,7 +364,6 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
             <ResultsState
               results={results}
               activeIndex={cursorEngaged ? activeIndex : -1}
-              onHover={(i) => { setCursorEngaged(true); setActiveIndex(i); }}
               onOpen={(r) => openResult(r)}
               query={submittedQuery}
             />
@@ -457,13 +455,11 @@ function InitialState({
 function ResultsState({
   results,
   activeIndex,
-  onHover,
   onOpen,
   query,
 }: {
   results: SearchResult[];
   activeIndex: number;
-  onHover: (i: number) => void;
   onOpen: (r: SearchResult) => void;
   query: string;
 }) {
@@ -489,7 +485,6 @@ function ResultsState({
                 key={r.id}
                 id={`search-opt-${idx}`}
                 className={`result-row ${idx === activeIndex ? 'active' : ''}`}
-                onMouseEnter={() => onHover(idx)}
                 onClick={() => onOpen(r)}
                 role="option"
                 aria-selected={idx === activeIndex}
@@ -522,13 +517,11 @@ function SuggestionRow({
   suggestion,
   active,
   rowId,
-  onHover,
   onOpen,
 }: {
   suggestion: ReturnType<typeof suggestions>[number];
   active: boolean;
   rowId: string;
-  onHover: () => void;
   onOpen: () => void;
 }) {
   return (
@@ -536,7 +529,6 @@ function SuggestionRow({
       type="button"
       id={rowId}
       className={`result-row ${active ? 'active' : ''}`}
-      onMouseEnter={onHover}
       onClick={onOpen}
       role="option"
       aria-selected={active}
