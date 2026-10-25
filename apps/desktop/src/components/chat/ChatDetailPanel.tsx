@@ -329,7 +329,7 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
     item.attachment,
     item.kind === 'media',
   );
-  const previewUrl = openUrl;
+  const previewUrl = item.isImage && openUrl ? `${openUrl}?representation=preview` : undefined;
   const filename = item.attachment.filename?.trim() || t('chat.social.detail.unnamedAttachment');
   const sizeLabel = formatChatAttachmentSize(item.attachment.size);
   const hasAttachmentIdentity = Boolean(

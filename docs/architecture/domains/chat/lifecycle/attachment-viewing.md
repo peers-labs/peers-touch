@@ -175,9 +175,14 @@ revocation epoch between bounded reads. Suspension disables new grants; resume
 keeps the old epoch invalid. IPC checks the captured Engine, owner and epoch
 again before returning and releases a rejected late grant directly.
 Mobile native adapters retain bounded cancellation identities so a cancellation
-that arrives before OS dispatch still fences the late action. After cache
-eviction, an explicit open queues restoration of the same completed download
-identity. A failed cache commitment stays unavailable until explicit retry
+that arrives before OS dispatch still fences the late action. Capacity compacts
+older identities behind the fixed issuance watermark and admits newly issued
+actions. Desktop profile teardown revokes grants before worker draining,
+including teardown failures and engines retained by in-flight operations.
+After cache eviction, an explicit open first finalizes descriptor-bound verified
+plaintext staging under the transfer permit. Only absence of completed local
+artifacts queues restoration of the same download identity.
+A failed cache commitment stays unavailable until explicit retry
 removes the corrupt cache and restores verified bytes.
 
 Native action issuance is fixed before authorization and cannot advance past a

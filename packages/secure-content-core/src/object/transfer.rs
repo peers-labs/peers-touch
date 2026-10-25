@@ -588,64 +588,16 @@ impl ObjectTransferWorker {
             }
         };
         let existing = self.required_transfer(transfer_id)?;
-        if existing.state == ObjectTransferState::Complete {
-            let plaintext_staging_ref = plaintext_staging_ref(cache_ref);
-            let validation = (|| -> Result<bool, ObjectTransferFailure> {
-                if existing.partial_local_ref == cache_ref
-                    || existing.partial_local_ref == plaintext_staging_ref
-                {
-                    return Err(integrity_failure(
-                        "secure content download artifact paths overlap",
-                    ));
-                }
-                let (_, descriptor_hash) =
-                    self.validate_download_descriptor(&existing, descriptor)?;
-                if existing.descriptor_sha256 != descriptor_hash {
-                    return Err(ObjectTransferFailure::terminal(
-                        ObjectTransferErrorCode::DescriptorMismatch,
-                        "secure content completed object descriptor commitment changed",
-                    ));
-                }
-                let cache_exists = self.blobs.exists(cache_ref)?;
-                let plaintext_staging_exists = self.blobs.exists(&plaintext_staging_ref)?;
-                if !cache_exists && !plaintext_staging_exists {
-                    self.blobs.remove(&existing.partial_local_ref)?;
-                    self.store.update_transfer_progress(
-                        transfer_id,
-                        ObjectTransferState::Queued,
-                        &existing.upload_id,
-                        existing.generation,
-                        &vec![0; descriptor.commitment.chunk_count.div_ceil(8) as usize],
-                        0,
-                        now_unix_ms,
-                        None,
-                        now_unix_ms,
-                    )?;
-                    return Ok(false);
-                }
-                self.finalize_completed_download_artifacts(
-                    cache_ref,
-                    &plaintext_staging_ref,
-                    &existing.partial_local_ref,
-                    expected_plaintext_sha256,
-                )?;
-                Ok(true)
-            })();
-            match validation {
-                Ok(true) => return Ok(ObjectTransferProgress::Complete),
-                Ok(false) => {}
-                Err(failure) => {
-                    if failure.retryable {
-                        return Err(failure);
-                    }
-                    return Err(self.cleanup_download_failure(
-                        failure,
-                        cache_ref,
-                        &plaintext_staging_ref,
-                        &existing.partial_local_ref,
-                    ));
-                }
-            }
+        if existing.state == ObjectTransferState::Complete
+            && self.restore_completed_download(
+                &existing,
+                descriptor,
+                expected_plaintext_sha256,
+                cache_ref,
+                now_unix_ms,
+            )?
+        {
+            return Ok(ObjectTransferProgress::Complete);
         }
         if let Some(progress) = self.preflight(transfer_id, now_unix_ms)? {
             return Ok(progress);
@@ -1038,6 +990,9 @@ impl ObjectTransferWorker {
     pub fn restore_download_cache(
         &self,
         transfer_id: &str,
+        descriptor: &ObjectDescriptor,
+        expected_plaintext_sha256: &[u8; 32],
+        cache_ref: &str,
         now_unix_ms: i64,
     ) -> Result<(), ObjectTransferFailure> {
         let _permit = self
@@ -1058,17 +1013,74 @@ impl ObjectTransferWorker {
                 "cache restoration requires a completed download",
             ));
         }
-        self.store.update_transfer_progress(
-            transfer_id,
-            ObjectTransferState::Queued,
-            "",
-            0,
-            &vec![0; transfer.completed_chunk_bitmap.len()],
-            transfer.attempt_count,
-            now_unix_ms,
-            None,
+        self.restore_completed_download(
+            &transfer,
+            descriptor,
+            expected_plaintext_sha256,
+            cache_ref,
             now_unix_ms,
         )
+        .map(|_| ())
+    }
+
+    /// Caller holds the transfer permit. Completion may still have verified
+    /// plaintext awaiting promotion; only actual eviction resets checkpoints.
+    fn restore_completed_download(
+        &self,
+        transfer: &ObjectTransferRecord,
+        descriptor: &ObjectDescriptor,
+        expected_plaintext_sha256: &[u8; 32],
+        cache_ref: &str,
+        now_unix_ms: i64,
+    ) -> Result<bool, ObjectTransferFailure> {
+        let staging_ref = plaintext_staging_ref(cache_ref);
+        let validation = (|| {
+            if transfer.partial_local_ref == cache_ref
+                || transfer.partial_local_ref == staging_ref
+            {
+                return Err(integrity_failure(
+                    "secure content download artifact paths overlap",
+                ));
+            }
+            let (_, descriptor_hash) = self.validate_download_descriptor(transfer, descriptor)?;
+            if transfer.descriptor_sha256 != descriptor_hash {
+                return Err(ObjectTransferFailure::terminal(
+                    ObjectTransferErrorCode::DescriptorMismatch,
+                    "secure content completed object descriptor commitment changed",
+                ));
+            }
+            if !self.blobs.exists(cache_ref)? && !self.blobs.exists(&staging_ref)? {
+                self.blobs.remove(&transfer.partial_local_ref)?;
+                self.store.update_transfer_progress(
+                    &transfer.transfer_id,
+                    ObjectTransferState::Queued,
+                    &transfer.upload_id,
+                    transfer.generation,
+                    &vec![0; descriptor.commitment.chunk_count.div_ceil(8) as usize],
+                    0,
+                    now_unix_ms,
+                    None,
+                    now_unix_ms,
+                )?;
+                return Ok(false);
+            }
+            self.finalize_completed_download_artifacts(
+                cache_ref,
+                &staging_ref,
+                &transfer.partial_local_ref,
+                expected_plaintext_sha256,
+            )?;
+            Ok(true)
+        })();
+        validation.map_err(|failure| {
+            if failure.retryable {
+                failure
+            } else {
+                self.cleanup_download_failure(
+                    failure, cache_ref, &staging_ref, &transfer.partial_local_ref,
+                )
+            }
+        })
     }
 
     pub fn retry(&self, transfer_id: &str, now_unix_ms: i64) -> Result<(), ObjectTransferFailure> {
@@ -2301,7 +2313,7 @@ mod tests {
         store.insert(download_record);
         blobs.reject_next_promotion();
         let worker =
-            ObjectTransferWorker::new(store.clone(), transport, blobs.clone(), Arc::new(TestCodec));
+            ObjectTransferWorker::new(store.clone(), transport.clone(), blobs.clone(), Arc::new(TestCodec));
         let plaintext_hash = Sha256::digest(&plaintext).into();
 
         let failure = worker
@@ -2323,6 +2335,20 @@ mod tests {
         assert!(blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
         assert!(blobs.exists(&partial).unwrap());
 
+        // Reopening must recover entirely from local artifacts even if the
+        // remote object can no longer be fetched.
+        let completed = store.record("promotion-recovery-transfer");
+        transport.chunks.lock().unwrap().clear();
+        blobs.reject_next_promotion();
+        assert!(worker.restore_download_cache(
+            "promotion-recovery-transfer", &descriptor, &plaintext_hash, &cache, 11,
+        ).unwrap_err().retryable);
+        assert_eq!(store.record("promotion-recovery-transfer"), completed);
+        assert!(blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+        worker.restore_download_cache(
+            "promotion-recovery-transfer", &descriptor, &plaintext_hash, &cache, 12,
+        ).unwrap();
+        assert_eq!(store.record("promotion-recovery-transfer"), completed);
         assert_eq!(
             worker
                 .run_download_once(
@@ -2999,7 +3025,10 @@ mod tests {
         let commitment = store.record("evicted-download-transfer").descriptor_sha256;
         blobs.remove(&cache).unwrap();
         worker
-            .restore_download_cache("evicted-download-transfer", 20)
+            .restore_download_cache(
+                "evicted-download-transfer", &descriptor,
+                &Sha256::digest(&plaintext).into(), &cache, 20,
+            )
             .unwrap();
         let queued = store.record("evicted-download-transfer");
         assert_eq!(queued.state, ObjectTransferState::Queued);

@@ -3314,8 +3314,21 @@ impl MobileMessagingEngine {
                         == messaging_core::proto::chat::AttachmentTransferState::Complete as i32
             })
         {
+            let descriptor = projection.metadata.object.as_ref()
+                .ok_or("FILE_DESCRIPTOR_UNAVAILABLE")?;
+            let plaintext_sha256 = projection.metadata.plaintext_sha256.as_slice()
+                .try_into().map_err(|_| "FILE_COMMITMENT_INVALID")?;
             self.attachment_transfer_worker()?
-                .restore_download_cache(attachment_id, now_unix_ms())?;
+                .restore_download_cache(
+                    attachment_id, descriptor, &plaintext_sha256,
+                    &self.attachment_cache_ref(attachment_id)?, now_unix_ms(),
+                )?;
+            transfer = self.store.attachment_transfer(attachment_id)?;
+            if let Some(access) = self.cached_attachment_access(
+                owner, &projection, transfer.as_ref(), retry,
+            )? {
+                return Ok(access);
+            }
         } else if retry
             && transfer.as_ref().is_some_and(|value| {
                 matches!(

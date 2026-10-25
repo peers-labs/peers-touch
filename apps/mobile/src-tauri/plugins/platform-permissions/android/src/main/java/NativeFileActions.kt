@@ -61,7 +61,7 @@ class NativeFileActions(
         val now = System.currentTimeMillis()
         cancellations.entries.removeAll { it.value + 300_000 <= now }
         if (cancellations.containsKey(args.requestId) ||
-            args.deadlineMs <= cancelledAllAt + 300_000 || cancellations.size >= 256) {
+            args.deadlineMs <= cancelledAllAt + 300_000) {
             resolve(invoke, args.requestId, "cancelled", "file_action_stale")
             return
         }
@@ -186,8 +186,12 @@ class NativeFileActions(
     fun cancel(requestId: String, reason: String? = null) {
         val now = System.currentTimeMillis()
         cancellations.entries.removeAll { it.value + 300_000 <= now }
-        if (requestId.isEmpty() || cancellations.size >= 256) {
+        if (requestId.isEmpty() ||
+            (!cancellations.containsKey(requestId) && cancellations.size >= 256)) {
+            // All retained cancellations precede this issuance watermark.
+            // Compact them without rejecting newly issued actions.
             cancelledAllAt = now
+            cancellations.clear()
         } else {
             cancellations[requestId] = now
         }

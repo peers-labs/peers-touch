@@ -1377,6 +1377,23 @@ impl MessagingEngine {
             }
         }
         let mut transfer = self.store.attachment_transfer(attachment_id)?;
+        if start_download && !cache.is_file()
+            && transfer.as_ref().is_some_and(|value| {
+                value.direction == 2 && value.state
+                    == messaging_core::proto::chat::AttachmentTransferState::Complete as i32
+            })
+        {
+            let descriptor = projection.metadata.object.as_ref()
+                .ok_or("FILE_DESCRIPTOR_UNAVAILABLE")?;
+            let plaintext_sha256 = projection.metadata.plaintext_sha256.as_slice()
+                .try_into().map_err(|_| "FILE_COMMITMENT_INVALID")?;
+            self.attachment_transfer_worker(token.to_string())?
+                .restore_download_cache(
+                    attachment_id, descriptor, &plaintext_sha256,
+                    &cache.to_string_lossy(), now_unix_ms(),
+                )?;
+            transfer = self.store.attachment_transfer(attachment_id)?;
+        }
         let mut access =
             attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
         if cache.is_file() {
@@ -1432,16 +1449,7 @@ impl MessagingEngine {
             }
         }
         transfer = self.store.attachment_transfer(attachment_id)?;
-        if start_download
-            && transfer.as_ref().is_some_and(|value| {
-                value.direction == 2
-                    && value.state
-                        == messaging_core::proto::chat::AttachmentTransferState::Complete as i32
-            })
-        {
-            self.attachment_transfer_worker(token.to_string())?
-                .restore_download_cache(attachment_id, now_unix_ms())?;
-        } else if retry
+        if retry
             && transfer.as_ref().is_some_and(|value| {
                 matches!(
                     messaging_core::proto::chat::AttachmentTransferState::try_from(value.state),
@@ -3754,7 +3762,7 @@ impl MessagingEngine {
 
 impl Drop for MessagingEngine {
     fn drop(&mut self) {
-        self.attachment_transfer_control.request_shutdown();
+        self.request_attachment_transfer_shutdown();
     }
 }
 
@@ -4061,6 +4069,10 @@ impl EngineRegistry {
             .profile_transition
             .lock()
             .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
+        // Fence cloned engines before draining workers, including stop failures.
+        if let Some(engine) = self.get(profile_id)? {
+            engine.request_attachment_transfer_shutdown();
+        }
         let worker = self
             .workers
             .lock()
@@ -4083,6 +4095,14 @@ impl EngineRegistry {
             .profile_transition
             .lock()
             .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
+        for engine in self
+            .engines
+            .lock()
+            .map_err(|_| "messaging engine registry lock poisoned".to_string())?
+            .values()
+        {
+            engine.request_attachment_transfer_shutdown();
+        }
         let workers = self
             .workers
             .lock()
@@ -5832,6 +5852,64 @@ mod tests {
             recovered.enrollment.certificate.signing_key_id,
             current_signing_key_id
         );
+    }
+
+    #[test]
+    fn registry_teardown_fences_file_operations_on_retained_engines() {
+        for (all_profiles, fail_worker_drain) in [(false, false), (true, false), (false, true), (true, true)] {
+            let registry = EngineRegistry::default();
+            let engine = Arc::new(
+                MessagingEngine::from_profile_store(
+                    StationClient::testing_unavailable(),
+                    "file-revocation-profile".to_string(),
+                    "ptid:alice".to_string(),
+                    &[17; 32],
+                    3,
+                    false,
+                    Arc::new(MessagingStore::in_memory().unwrap()),
+                ).unwrap(),
+            );
+            registry.engines.lock().unwrap()
+                .insert(engine.profile_id().to_string(), engine.clone());
+            let root = std::env::temp_dir().join(format!("chat-teardown-{}", Ulid::new()));
+            std::fs::create_dir_all(&root).unwrap();
+            let cache = root.join("cached.txt");
+            let bytes = b"verified attachment before logout";
+            std::fs::write(&cache, bytes).unwrap();
+            let handle = engine.attachment_file_access.grant(
+                "window", "attachment", &root, &cache, "report.txt", "text/plain",
+                bytes.len() as u64, &Sha256::digest(bytes),
+            ).unwrap();
+            let epoch = engine.attachment_file_access.epoch();
+            assert!(engine.attachment_file_access.read_asset(
+                "window", &handle, None, false,
+            ).is_ok());
+            if fail_worker_drain {
+                std::thread::scope(|scope| {
+                    let registry_ref = &registry;
+                    let _ = scope.spawn(move || {
+                        let _guard = registry_ref.workers.lock().unwrap();
+                        panic!("injected worker registry failure");
+                    }).join();
+                });
+            }
+            let result = if all_profiles {
+                registry.deactivate_all().map(|_| ())
+            } else {
+                registry.deactivate(engine.profile_id()).map(|_| ())
+            };
+            assert_eq!(result.is_err(), fail_worker_drain);
+            assert!(!engine.attachment_file_access.epoch_is_current(epoch));
+            assert!(engine.attachment_file_access.read_asset(
+                "window", &handle, None, false,
+            ).is_err());
+            let exported = root.join("exported.txt");
+            assert!(engine.attachment_file_access.save_copy(
+                "window", &handle, &exported,
+            ).is_err());
+            assert!(!exported.exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

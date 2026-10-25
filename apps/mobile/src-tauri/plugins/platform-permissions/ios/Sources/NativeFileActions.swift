@@ -50,7 +50,7 @@ final class NativeFileActions: NSObject, QLPreviewControllerDataSource,
     let now = UInt64(Date().timeIntervalSince1970 * 1000)
     cancellations = cancellations.filter { $0.value + 300_000 > now }
     guard cancellations[args.requestId] == nil,
-      args.deadlineMs > cancelledAllAt + 300_000, cancellations.count < 256
+      args.deadlineMs > cancelledAllAt + 300_000
     else {
       invoke.resolve(NativeFileActionResponse(
         requestId: args.requestId, state: "cancelled", reason: "file_action_stale"
@@ -118,12 +118,12 @@ final class NativeFileActions: NSObject, QLPreviewControllerDataSource,
   func cancel(_ requestId: String) {
     let now = UInt64(Date().timeIntervalSince1970 * 1000)
     cancellations = cancellations.filter { $0.value + 300_000 > now }
-    if requestId.isEmpty {
+    if requestId.isEmpty || (cancellations[requestId] == nil && cancellations.count >= 256) {
+      // Retained cancellations are fenced by this issuance watermark.
       cancelledAllAt = now
-    } else if cancellations.count < 256 {
-      cancellations[requestId] = now
+      cancellations.removeAll(keepingCapacity: true)
     } else {
-      cancelledAllAt = now
+      cancellations[requestId] = now
     }
     guard requestId.isEmpty || active?.args.requestId == requestId else { return }
     finish("cancelled", reason: nil, dismiss: true)
