@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/session"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
@@ -59,6 +60,10 @@ func FinalizeGrantedSession(
 
 	var response *model.LoginResponse
 	err = rds.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		keyring, err := coreauth.StationAccessKeyringInTransaction(tx)
+		if err != nil {
+			return err
+		}
 		var attempt dbmodel.AccessAttempt
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", attemptID).
@@ -99,7 +104,9 @@ func FinalizeGrantedSession(
 				record.AuthMethod != "access_gate" {
 				return errors.New("finalized Access Gate session binding mismatch")
 			}
-			response, err = touchauth.ResumeAccessGateSession(ctx, &actor, &record)
+			response, err = touchauth.ResumeAccessGateSession(
+				ctx, &actor, &record, coreauth.WithStationAccessKeyring(keyring),
+			)
 			return err
 		}
 
@@ -117,6 +124,7 @@ func FinalizeGrantedSession(
 			clientIP,
 			userAgent,
 			time.Now().UTC(),
+			coreauth.WithStationAccessKeyring(keyring),
 		)
 		if err != nil {
 			return err

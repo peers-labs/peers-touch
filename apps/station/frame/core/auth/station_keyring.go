@@ -62,6 +62,19 @@ type gormStationAccessKeyring struct {
 	db *gorm.DB
 }
 
+// StationAccessKeyringInTransaction reads the shared key authority through the
+// caller's active transaction. It never initializes or rotates keys and must
+// not escape the transaction that owns the connection.
+func StationAccessKeyringInTransaction(tx *gorm.DB) (StationAccessKeyring, error) {
+	if tx == nil || tx.Statement == nil {
+		return nil, errors.New("station access keyring requires an active transaction")
+	}
+	if _, ok := tx.Statement.ConnPool.(gorm.TxCommitter); !ok {
+		return nil, errors.New("station access keyring requires an active transaction")
+	}
+	return &gormStationAccessKeyring{db: tx}, nil
+}
+
 var (
 	stationAccessKeyringMu sync.RWMutex
 	stationAccessKeyring   StationAccessKeyring

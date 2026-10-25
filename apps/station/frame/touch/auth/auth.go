@@ -309,6 +309,7 @@ func PrepareAccessGateSession(
 	binding AccessGateSessionBinding,
 	clientIP, userAgent string,
 	now time.Time,
+	opts ...coreauth.Option,
 ) (*session.SessionRecord, *model.LoginResponse, error) {
 	if actor == nil {
 		return nil, nil, errors.New("cannot prepare Access Gate session without actor")
@@ -332,7 +333,7 @@ func PrepareAccessGateSession(
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate Access Gate session ID: %w", err)
 	}
-	response, err := issueSessionCredential(ctx, actor, sessionID)
+	response, err := issueSessionCredential(ctx, actor, sessionID, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -363,25 +364,27 @@ func ResumeAccessGateSession(
 	ctx context.Context,
 	actor *db.Actor,
 	record *session.SessionRecord,
+	opts ...coreauth.Option,
 ) (*model.LoginResponse, error) {
 	if actor == nil || record == nil ||
 		record.Revoked || !record.ExpiresAt.After(time.Now()) ||
 		strings.TrimSpace(record.SessionID) == "" {
 		return nil, errors.New("Access Gate session is unavailable")
 	}
-	return issueSessionCredential(ctx, actor, record.SessionID)
+	return issueSessionCredential(ctx, actor, record.SessionID, opts...)
 }
 
 func issueSessionCredential(
 	ctx context.Context,
 	actor *db.Actor,
 	sessionID string,
+	opts ...coreauth.Option,
 ) (*model.LoginResponse, error) {
 	ptid := strings.TrimSpace(actor.PTID)
 	if _, err := actoridentity.Parse(ptid); err != nil {
 		return nil, fmt.Errorf("cannot issue session for actor without valid PTID: %w", err)
 	}
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL, opts...)
 	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
 		SubjectID:  ptid,
 		SessionID:  sessionID,
