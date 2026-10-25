@@ -12,6 +12,20 @@ struct Reader {
     state: SourceReadState,
 }
 
+fn unavailable(operation: &'static str, error: String) -> SearchError {
+    let reason = match error.as_str() {
+        "private Social current read policy is unavailable" => "current_policy_unavailable",
+        "private Social search source changed" => "source_changed",
+        "private Social search binding is stale" => "binding_stale",
+        "private Social search binding or deadline is stale" => "binding_or_deadline_stale",
+        "private Social policy response is incomplete" => "policy_response_incomplete",
+        "private Social policy response is invalid" => "policy_response_invalid",
+        _ => "original_read_failed",
+    };
+    tracing::debug!(target: "search", operation, reason, "private Social Search read failed");
+    SearchError::SourceUnavailable(error)
+}
+
 impl ProjectedSearchReader for Reader {
     fn coverage_detail_key(&self, state: &SourceReadState) -> &str {
         if state.state == SourceState::Indexing as i32 {
@@ -28,13 +42,13 @@ impl ProjectedSearchReader for Reader {
     fn revision(&self) -> Result<String, SearchError> {
         self.owner
             .search_revision()
-            .map_err(SearchError::SourceUnavailable)
+            .map_err(|error| unavailable("revision", error))
     }
     fn read_state(&self) -> Result<SourceReadState, SearchError> {
         let metadata = self
             .owner
             .cache_metadata()
-            .map_err(SearchError::SourceUnavailable)?;
+            .map_err(|error| unavailable("metadata", error))?;
         let validity = metadata.read_validity.ok_or(SearchError::Protocol)?;
         Ok(SourceReadState {
             source_revision: metadata.source_revision,
@@ -72,7 +86,7 @@ impl ProjectedSearchReader for Reader {
             .search_documents_page(&input.text, &kinds, before, limit, ctx.deadline, &|| {
                 ctx.check().map_err(|e| e.to_string())
             })
-            .map_err(SearchError::SourceUnavailable)?;
+            .map_err(|error| unavailable("query", error))?;
         Ok(ProjectedPage {
             documents: page.documents,
             next_before: page.next_before,
@@ -87,7 +101,7 @@ impl ProjectedSearchReader for Reader {
             .search_read_resources(refs, ctx.deadline, &|| {
                 ctx.check().map_err(|e| e.to_string())
             })
-            .map_err(SearchError::SourceUnavailable)
+            .map_err(|error| unavailable("hydrate", error))
     }
 }
 

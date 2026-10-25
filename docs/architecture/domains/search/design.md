@@ -527,6 +527,9 @@ Session/actor/Station/Federation 变化、锁定、模块卸载、权限事件�
 实际版本、read scope、资源或认证分区。Mobile 使用 Tauri 官方日志适配器将
 严格限定的 `search` target 写入原生系统日志，不开启其他模块或正文文件日志；
 Android/iOS 的原生输出由该 SDK 适配。诊断不改变失败分类、发布屏障或读预算。
+Desktop 私密读适配器仅记录固定 operation 和失败类别：当前策略不可用、
+版本变化、绑定/预算失效、策略回复不完整或非法，以及其他原读失败。原始
+String、请求/回复、SQL、身份和资源不进入日志；原 typed 错误映射保持。
 
 ## 9. Ask 与 Agent 集成
 
