@@ -56,7 +56,7 @@ use tauri::{Emitter, Manager};
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
-fn show_acceptance_background_windows(app: &tauri::App) -> std::io::Result<()> {
+fn show_acceptance_background_windows(app: &tauri::AppHandle) -> std::io::Result<()> {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSWindow};
 
@@ -640,11 +640,6 @@ fn main() {
                     exclusive_native_input,
                 )?;
             }
-            #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
-            if !exclusive_native_input {
-                show_acceptance_background_windows(app)?;
-            }
-
             let resource_dir = app.path()
                 .resource_dir()
                 .unwrap_or_else(|e| {
@@ -1367,6 +1362,16 @@ fn main() {
         app
     };
     app.run(move |app, event| {
+        #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+        if !exclusive_native_input && matches!(event, tauri::RunEvent::Ready) {
+            // Launch stays prohibited until Tao finishes its activation path.
+            // Show behind the operator afterwards so WebKit can paint normally.
+            if let Err(error) = show_acceptance_background_windows(app) {
+                tracing::error!(error = %error, "acceptance background windows could not be shown");
+                app.exit(1);
+                return;
+            }
+        }
         // Closing the symmetric pair to AppLaunch (fired from the
         // frontend usePresence hook): when the user quits the app we
         // owe Station an explicit AppShutdown trigger per bound
