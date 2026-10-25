@@ -70,6 +70,11 @@ fn show_acceptance_background_windows(app: &tauri::AppHandle) -> std::io::Result
         ));
     }
     for window in app.webview_windows().values() {
+        // Initial visibility also hides Wry's WKWebView. Reveal only that view;
+        // showing the Tauri window would make it key and steal operator focus.
+        window.as_ref().show().map_err(|error| {
+            std::io::Error::other(format!("acceptance webview reveal failed: {error}"))
+        })?;
         let ns_window = window.ns_window().map_err(|error| {
             std::io::Error::other(format!("acceptance native window lookup failed: {error}"))
         })?;
