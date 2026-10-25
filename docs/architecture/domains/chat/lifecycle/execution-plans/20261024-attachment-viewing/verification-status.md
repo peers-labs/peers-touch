@@ -88,7 +88,7 @@ Office preview 的当前源码结构审查无阻断；完整范围的功能结�
 不能从单文件结构结果推导整体代码通过。
 
 源码清单标识：
-`attachment-source-files-sha256:3fb55c8f68ddef84cabcfb5c9a838235108f4a1153c1741c31af1cdac489e688`。
+`attachment-source-files-sha256:86b87dd508c153d306644a912a97c0d4732ee8172bfa6775ec122bd6b5176266`。
 该清单逐项记录当前任务源码和配置；证据保留 Native binary SHA-256、Git HEAD
 及每张截图摘要。历史批次未被升级为当前证明。
 
@@ -103,3 +103,12 @@ Desktop/Mobile 设计样本补上缩放及行列导航；Desktop 原型交互尚
 离线消息和精确文件缓存已删除，原身份和密钥保留。
 Portal 3200 按用户约定保留。未创建或切换 worktree、修改 env、
 部署或发布。用户已授权提交 PR；提交与流水线结果由交付记录单独说明。
+
+## 提交检查
+
+完整提交流水线在 539.634 秒内结束，29 个 CI Gate 中 18 个通过、11 个失败。
+缺失完整 Station/Relay/跨平台证据的聚合 Gate 保持 UNPROVEN；存量 storage、
+Mobile identity、provisioning 与 reset 检查仍有缺口。
+本次变更对应的 Messaging owner、文件访问、消息排序和 Native Driver 边界
+检查已修复，当前 86 项聚焦契约检查通过，完整源码结构审查无剩余阻断。
+完整流水线没有被报告为通过，交付使用列出上述缺口的草稿 PR。
