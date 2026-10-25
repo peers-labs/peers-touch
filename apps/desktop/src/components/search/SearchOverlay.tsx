@@ -198,11 +198,13 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
           disabled={view.status === 'loading' || !draftMatches} onClick={searchActions.more}>{t('search.more')}</button>}
       </div>
       <div className="pt-search-footer" aria-live="polite">
-        <span>{view.response?.coverage.map(source => t(source.detailKey
-          || (partial ? 'search.coverage.partial' : 'search.coverage.device'))).join(' · ') || t('search.coverage.device')}</span>
-        {view.mode === 'submit' && <button type="button" disabled={view.status === 'loading' || view.opening}
-          onClick={() => searchActions.submit(true)}>{t('search.refresh')}</button>}
-        {view.opening ? <span><Loader2 size={12} className="pt-search-spin" /> {t('search.opening')}</span> : <span>↑↓ · Enter · Esc</span>}
+        <div className="pt-search-coverage" tabIndex={0}>{view.response?.coverage.map(source => t(source.detailKey
+          || (partial ? 'search.coverage.partial' : 'search.coverage.device'))).join(' · ') || t('search.coverage.device')}</div>
+        <div className="pt-search-footer-actions">
+          {view.mode === 'submit' && <button type="button" disabled={view.status === 'loading' || view.opening}
+            onClick={() => searchActions.submit(true)}>{t('search.refresh')}</button>}
+          {view.opening ? <span><Loader2 size={12} className="pt-search-spin" /> {t('search.opening')}</span> : <span>↑↓ · Enter · Esc</span>}
+        </div>
       </div>
     </Modal>
   );

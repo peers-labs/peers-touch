@@ -36,7 +36,7 @@
 .search-overlay-panel {
   position: relative;
   width: min(720px, 100%);
-  height: min(760px, 100%);
+  height: min(560px, 100%);
   /* Relative to the positioned Shell root, not the viewport, so the panel
      stays inside the embedded Portal preview as well. */
   max-height: 100%;
@@ -64,6 +64,7 @@
 
 /* ---- Composite search field (one parent focus boundary) ---- */
 .search-input-area {
+  flex: none;
   padding: 14px 16px 6px;
 }
 
@@ -151,6 +152,7 @@
 
 /* ---- Intent tabs and type filters ---- */
 .search-intent-row {
+  flex: none;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -190,14 +192,18 @@
 }
 
 .search-kind-row {
+  box-sizing: border-box;
+  height: 35px;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 10px 16px 0;
-  flex-wrap: wrap;
+  overflow-x: auto;
 }
 
 .kind-chip {
+  flex: none;
   height: 25px;
   box-sizing: border-box;
   border: 1px solid #ececed;
@@ -424,8 +430,8 @@
 
 /* ---- Empty ---- */
 .search-empty {
-  height: 100%;
-  min-height: 380px;
+  box-sizing: border-box;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -461,19 +467,30 @@
 
 /* ---- Footer: source status + demo actor switch ---- */
 .search-footer {
+  box-sizing: border-box;
+  height: 88px;
+  flex: none;
   border-top: 1px solid #ececed;
   padding: 10px 16px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  gap: 6px;
   background: #fff;
 }
 
 .search-source-status {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  line-height: 16px;
   font-size: 11px;
   color: #8c8c8c;
   min-width: 0;
+}
+
+.search-source-status:focus-visible {
+  outline: 2px solid #6b5bd6; /* border.focus */
+  outline-offset: 2px;
 }
 
 .source-partial {
@@ -488,6 +505,7 @@
 }
 
 .search-actor-switch {
+  height: 24px;
   flex: none;
   display: flex;
   align-items: center;
@@ -533,10 +551,6 @@
     padding: 2px 0 4px;
   }
 
-  .search-footer {
-    flex-wrap: wrap;
-    row-gap: 8px;
-  }
 }
 
 /* Respect reduced motion: panel and spinner stay static. */

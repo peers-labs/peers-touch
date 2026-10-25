@@ -47,11 +47,18 @@ mock 世界是社交生活语境（好友、兴趣群、徒步/咖啡/胶片、�
 10. 键盘：↑↓ 移动选择（未移动前 Enter 始终提交检索），Enter 打开，Esc 关闭；输入为 combobox 语义并通过 `aria-activedescendant` 归属选中行。
 11. 同账号关闭/返回保留输入、意图、结果与滚动；已完成同词检索在有界 32 项内直接恢复，不重复加载动画。演示账号切换清除这些状态。
 
-## 视觉与定位合同（本轮修正）
+## 视觉与定位合同
 
 - 覆盖层相对 **Shell 根容器** 绝对定位（Shell 根 `position: relative`），在独立 dev server、Portal 全屏、Portal 内嵌 Live Preview 三种宿主下均相对产品表面居中；实测四场景中心偏差均为 0px。旧版用 `position: fixed` 相对视口居中，Portal 内嵌预览（Shell 位于居中内容列）时整体偏左。
 - 搜索框是一个复合字段，焦点环落在父容器（`data-focus-boundary`，复用共享 `focus.css` 合同），内部 input 不再单独画环；「Peers 内」标记与关闭按钮都在环内，不再出现焦点框穿过标记的问题。
 - Token 角色对齐 UI Identity：surface.subtle/raised、border.hairline、radius.md/lg、shadow.float、trust.local/remote/warning；图标按钮为圆角方形；功能结果不显示信任区 pill。
+- Search 继承 shared UI Identity，没有独立模块 skin。浮层高度为 Shell
+  可用空间内的固定 560px 上限；输入与意图栏不收缩，内容类型栏预留固定位置，
+  仅在提交后显示有效筛选。结果和空态在同一剩余区域内部滚动。
+  来源说明占独立可滚动槽，底部演示操作栏固定；说明换行、账号视角、
+  建议/提交/空态/功能切换不改变弹层、输入、列表或底栏几何。
+  产品对应合同为
+  [Desktop Search continuity](../../../../client/desktop/search-experience-contract.md)。
 
 ## 证据（L2 视觉，1440×900 unless noted）
 
@@ -114,5 +121,12 @@ L4 runtime：未做语义树/对比度自动化，UNPROVEN。
   退格、展示 query 与旧结果保留已同步
   [Desktop Search continuity](../../../../client/desktop/search-experience-contract.md)；
   新表现的视觉/动态证据必须单独验证，既有截图不证明本轮同步。
+- 固定高度、预留类型筛选与底部说明槽已通过当前 Portal 的 12 帧动态几何
+  检查（1440×900 / 900×640，初始、建议、结果、来源部分可用、空态、功能）。
+  同一窗口下八个区域位移不超过 1px，12 张截图已实际检查；
+  空态仍居中，长结果内部滚动，说明与视角操作均可见。
+  证据：`/tmp/peers-social-search/search-geometry-prototype-verified/result.json`
+  及 `contact-sheet.png`。这是原型验证，不替代原生产品证明。
+  语义树、对比度、所有主题与本地化扩展仍为 `UNPROVEN`。
 - 演示视角切换器是原型专用控件，落地时移除。
 - 背景 Chat 仍为既有 social-chat acceptance 夹具（英文 Release Room 等），属另一原型的测试语料，本原型不改动；Search 自身语料已全部社交生活化。

@@ -22,6 +22,12 @@ with the input as the action rail and the field as the loading-feedback owner.
 - A request lasting 200 ms displays a localized status indicator in a fixed
   input-field slot. Fast requests do not flash a spinner. Loading must not
   insert space above the result list or resize the overlay.
+- The panel has a state-independent height bounded by the current viewport.
+  The input and filter rails cannot shrink; results scroll within the remaining
+  space. Coverage has a reserved, keyboard-scrollable slot above a fixed action
+  row. Initial content, pending queries, results, empty/error states, coverage
+  changes, refresh and opening feedback must not move or resize these regions.
+  Full coverage copy remains readable even when it exceeds the reserved slot.
 - Errors preserve draft text. A background-query error may retain a result
   only while the native read validity still permits it.
 
@@ -57,7 +63,10 @@ Given a native Desktop account with synchronized Chinese message history:
 3. Repeat a cached query and close/reopen; validate readable result reuse and
    stable scroll. No delayed request may overwrite a later query.
 4. Measure a fast request and a delayed real response: the latter shows
-   status after 200 ms without moving the field or list (tolerance 1 CSS px).
+   status after 200 ms without moving the panel, field, filter rail, result
+   viewport, coverage or action row (tolerance 1 CSS px at a fixed viewport).
+   Compare initial, result, empty/error and source coverage/recovery frames;
+   resize checks compare stability separately at each actual native viewport.
 5. Exercise IME, no-hit, changed-draft Enter, pagination and original-message
    open. Validate that auth/expiry/invalidation immediately removes private
    content. A missing runtime cell remains `UNPROVEN`.

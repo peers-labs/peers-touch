@@ -304,8 +304,8 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
           </span>
         </div>
 
-        {intent === 'all' && displayedSubmitted && results.length > 0 && (
-          <div className="search-kind-row" role="group" aria-label="内容类型筛选">
+        <div className="search-kind-row" role="group" aria-label="内容类型筛选">
+          {intent === 'all' && displayedSubmitted && results.length > 0 && <>
             <KindChip label="全部" active={kindFilter === 'all'} onClick={() => setKindFilter('all')} />
             {CONTENT_KINDS.map((k) => {
               const n = counts.get(k) ?? 0;
@@ -319,8 +319,8 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
                 />
               );
             })}
-          </div>
-        )}
+          </>}
+        </div>
 
         {/* 结果区（各态共享等高容器，避免切换跳动） */}
         <div ref={bodyRef} onScroll={event => { scrollTop.current = event.currentTarget.scrollTop; }}
@@ -374,7 +374,7 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
 
         {/* 来源状态 + 演示用账号视角切换（权限链的用户可见表达） */}
         <div className="search-footer">
-          <div className="search-source-status">
+          <div className="search-source-status" tabIndex={0}>
             {unavailableSources.length > 0 ? (
               <span className="source-partial">
                 <CircleSlash size={12} />

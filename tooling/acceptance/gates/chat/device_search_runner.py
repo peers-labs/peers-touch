@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import tempfile
 import uuid
@@ -26,7 +27,7 @@ UI_ASSERTIONS = {
     "chinese_search", "attachment_filename", "historical_open", "thread_open",
     "pagination",
     "repeat_cache", "reopen_cache", "backspace_cache", "return_cache",
-    "input_continuity",
+    "input_continuity", "responsive_geometry",
     "explicit_refresh", "edit_invalidation", "hide_invalidation",
     "functions_navigation", "empty_state", "invalid_query_recovery",
     "logout_clears_search", "same_window_account_isolation",
@@ -37,6 +38,7 @@ RESULT_ASSERTIONS = UI_ASSERTIONS - {
 }
 REQUIRED_ASSERTIONS = UI_ASSERTIONS | {
     "native_runtime", "source_build_runtime_identity", "actor_isolation",
+    "search_geometry_stability",
     "forged_authority_denied", "stale_content_denied", "hidden_reference_denied",
     "previous_session_cursor_denied", "sender_session_revoked", "resources_released",
 }
@@ -46,6 +48,49 @@ REQUIRED_STEPS = {
     "conversation.open", "message.seed", "search.sender_session_revoked",
     "search.account_scope_seed", "search.account_scope_result",
 } | {f"search.{name}" for name in UI_ASSERTIONS}
+
+GEOMETRY_REGIONS = ("panel", "field", "intents", "body", "footer", "coverage", "actions")
+
+
+def stable_search_geometry(samples: list[dict[str, Any]]) -> bool:
+    """Compare real painted regions only within the same native viewport."""
+    baselines: dict[tuple[float, float], dict[str, Any]] = {}
+    if not samples:
+        return False
+    for sample in samples:
+        viewport = sample.get("viewport", {})
+        if not isinstance(viewport, dict):
+            return False
+        size = tuple(viewport.get(axis) for axis in ("width", "height"))
+        if not all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                   and math.isfinite(value) and value > 0 for value in size):
+            return False
+        baseline = baselines.setdefault(size, sample)
+        for region in GEOMETRY_REGIONS:
+            rect = sample.get(region, {})
+            reference = baseline.get(region, {})
+            if not isinstance(rect, dict) or not isinstance(reference, dict):
+                return False
+            for axis in ("x", "y", "width", "height"):
+                value, original = rect.get(axis), reference.get(axis)
+                if not isinstance(value, (int, float)) or isinstance(value, bool) \
+                        or not math.isfinite(value) or not isinstance(original, (int, float)) \
+                        or abs(value - original) > 1:
+                    return False
+            if rect["width"] <= 0 or rect["height"] <= 0:
+                return False
+        panel = sample["panel"]
+        if panel["x"] < 0 or panel["y"] < 0 \
+                or panel["x"] + panel["width"] > size[0] + 1 \
+                or panel["y"] + panel["height"] > size[1] + 1:
+            return False
+        for region in GEOMETRY_REGIONS[1:]:
+            rect = sample[region]
+            if rect["x"] < panel["x"] - 1 or rect["y"] < panel["y"] - 1 \
+                    or rect["x"] + rect["width"] > panel["x"] + panel["width"] + 1 \
+                    or rect["y"] + rect["height"] > panel["y"] + panel["height"] + 1:
+                return False
+    return True
 
 
 def read_counts(lines: list[str]) -> dict[str, int]:
@@ -129,6 +174,17 @@ class DeviceSearchGate(NativeTwoClientGate):
             if (!field || !modal) return result;
             const rect = field.getBoundingClientRect();
             result.bounds = rect.toJSON();
+            result.geometry = {
+                viewport: {width: innerWidth, height: innerHeight},
+                ...Object.fromEntries(Object.entries({
+                    panel: '.ant-modal-container', field: '.pt-search-field',
+                    intents: '.pt-search-intents', body: '.pt-search-body',
+                    footer: '.pt-search-footer', coverage: '.pt-search-coverage',
+                    actions: '.pt-search-footer-actions',
+                }).map(([region, selector]) => [
+                    region, modal.querySelector(selector)?.getBoundingClientRect().toJSON(),
+                ])),
+            };
             result.opacity = getComputedStyle(modal).opacity;
             let visible = rect.width > 0 && rect.height > 0
                 && rect.left >= 0 && rect.top >= 0
@@ -166,11 +222,19 @@ class DeviceSearchGate(NativeTwoClientGate):
                 '[data-pt-primary-nav="search"] [role="button"]', 20,
             ).click()
         self.field()
-        self.wait_surface()
+        self.record_geometry("surface_ready", self.wait_surface())
         self.assert_condition(
             "search_singleton",
             len(self.receiver.find_elements(".pt-search-field input")) == 1,
         )
+
+    def record_geometry(self, name: str, rendering: dict[str, Any]) -> None:
+        if not rendering.get("searchOpen"):
+            return
+        samples = self.report.runtime["search"].setdefault("geometry", [])
+        samples.append({"name": name, **rendering.get("geometry", {})})
+        self.assert_condition("search_geometry_stability", stable_search_geometry(samples),
+                              f"painted Search geometry across {len(samples)} observations")
 
     def settled(self) -> None:
         self.wait_js(
@@ -282,6 +346,7 @@ class DeviceSearchGate(NativeTwoClientGate):
                 dom = self.report.add_evidence_file(
                     f"{name}-dom", dom_path, destination_dir=self.evidence_dir,
                 )
+            self.record_geometry(name, rendering)
             self.assert_condition(name, rendering["assertionPassed"], json.dumps(detail))
             self.report.runtime["search"]["ui"][name] = {
                 "actor": "alice", "screenshot": screenshot, "dom": dom,
@@ -466,6 +531,12 @@ class DeviceSearchGate(NativeTwoClientGate):
                     marks: [...document.querySelectorAll('.pt-search-body mark')].map(mark => mark.textContent),
                     field: document.querySelector('.pt-search-field')?.getBoundingClientRect().toJSON(),
                     body: body?.getBoundingClientRect().toJSON(),
+                    viewport: {width: innerWidth, height: innerHeight},
+                    panel: document.querySelector('.pt-search-modal .ant-modal-container')?.getBoundingClientRect().toJSON(),
+                    intents: document.querySelector('.pt-search-intents')?.getBoundingClientRect().toJSON(),
+                    footer: document.querySelector('.pt-search-footer')?.getBoundingClientRect().toJSON(),
+                    coverage: document.querySelector('.pt-search-coverage')?.getBoundingClientRect().toJSON(),
+                    actions: document.querySelector('.pt-search-footer-actions')?.getBoundingClientRect().toJSON(),
                 });
                 requestAnimationFrame(sample);
             };
@@ -486,11 +557,7 @@ class DeviceSearchGate(NativeTwoClientGate):
             frame["rows"] == baseline["rows"] and frame["marks"] == baseline["marks"]
             for frame in pending
         )
-        geometry = all(
-            abs(frame[region][axis] - baseline[region][axis]) <= 1
-            for frame in frames for region in ("field", "body")
-            for axis in ("x", "y", "width", "height")
-        )
+        geometry = stable_search_geometry(frames)
         self.report.runtime["search"]["continuity"] = {"frames": frames}
         self.visible("input_continuity", lambda: (
             retained and geometry and self.surface()["displayedQuery"] == self.query
@@ -524,6 +591,52 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.visible("hide_invalidation", lambda: edited not in self.rows())
         self.denied("hidden_reference_denied", fresh, 8)
         self.report.runtime["search"]["resources"]["hiddenRef"] = fresh
+
+    def prove_responsive_geometry(self) -> None:
+        driver = self.receiver.driver
+        original = driver.get_window_rect()
+        viewport = self.receiver.execute_script(
+            "return {width: innerWidth, height: innerHeight, scale: devicePixelRatio};",
+        )
+        scale = viewport["scale"]
+        chrome = {
+            axis: original[axis] - round(viewport[axis] * scale)
+            for axis in ("width", "height")
+        }
+        observations = []
+        self.report.runtime["search"]["responsiveGeometry"] = observations
+        try:
+            for name, width, height in (("wide", 1200, 800), ("short", 860, 640)):
+                driver.set_window_size(round(width * scale) + chrome["width"],
+                                       round(height * scale) + chrome["height"])
+                self.wait_js(f"innerWidth === {width} && innerHeight === {height}",
+                             f"actual {name} native viewport", timeout=10)
+                self.submit(self.query)
+                before = self.wait_surface()
+                self.record_geometry(name + "_results", before)
+                self.fill(f"geometry-empty-{self.token}")
+                after = self.wait_surface()
+                self.record_geometry(name + "_empty", after)
+                observations.append({
+                    "name": name, "results": before, "empty": after,
+                    "screenshot": self.save_screenshot(self.receiver, name + "-geometry"),
+                    "dom": self.save_dom(self.receiver, name + "-geometry"),
+                })
+                self.assert_condition("search_geometry_stability", (
+                    self.query in before["resultText"]
+                    and after["resultCount"] == 0
+                    and "geometry-empty-" in after["bodyText"]
+                ))
+        finally:
+            driver.set_window_rect(**original)
+            self.wait_js(
+                f"innerWidth === {viewport['width']} && innerHeight === {viewport['height']}",
+                "restored original native viewport", timeout=10,
+            )
+        self.submit(self.query)
+        self.visible("responsive_geometry", lambda: (
+            len(observations) == 2 and self.query in self.rows()
+        ))
 
     def prove_states(self) -> None:
         self.fill(f"empty-{uuid.uuid4().hex}")
@@ -689,6 +802,7 @@ class DeviceSearchGate(NativeTwoClientGate):
                 raise
             self.visible("pagination", lambda: len(self.receiver.find_elements(".pt-search-row")) == 55)
             self.prove_cache()
+            self.prove_responsive_geometry()
             self.open_target("historical_open", self.query, self.message, "data-message-ulid")
             self.open_target("thread_open", f"线程 {self.token}", self.reply, "data-thread-message-id")
             self.upload()
