@@ -504,6 +504,7 @@ Current project skills:
 | `pt-local-dev-env` | Select and activate local development environment profiles |
 | `pt-oauth2-client-2-vercel` | Publish and verify the OAuth2 Client on Vercel with fail-closed provider, environment, callback, and persistence checks |
 | `pt-x-config-catalog-publish` | Publish/republish signed x-config channel catalogs (seeds, directives, releases) through the admin API; targets the corpstable/preview channels |
+| `pt-x-config-deploy` | Deploy/roll back the apps/x-config service runtime to corpstable (fiveArm) or preview (Home) via the env-repository Compose definition |
 | `pt-plan-and-document` | Persist accepted models into canonical frozen Plan Versions and validate them without creating runtime workspace occupancy |
 | `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
 | `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |

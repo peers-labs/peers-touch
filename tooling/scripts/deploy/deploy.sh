@@ -10,11 +10,17 @@
 #
 # Usage:
 #   deploy.sh <env-name> [BRANCH=main]
-#   deploy.sh repair <env-name>
+#   SRV=<service> ENV=<env-name> deploy.sh [BRANCH=main]
+#   deploy.sh repair <env-name>      (also honors SRV+ENV)
 #   deploy.sh status <env-name>
 #   deploy.sh logs <env-name>
 #   deploy.sh stop <env-name>
 #   deploy.sh resolve <env-name>
+#
+# ENV names the target environment (e.g. corpstable, home, preview); SRV
+# names the service role within it (e.g. station, relay, xconfig). When
+# SRV is set the resolved deploy instance is "<env-name>-<SRV>", matching
+# the reviewed definition peers-touch/**/deploy/<env>-<srv>.env.example.
 # ─────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -29,16 +35,22 @@ env_name="${2:-$cmd}"
 
 if [[ "$cmd" == "repair" || "$cmd" == "status" || "$cmd" == "logs" || "$cmd" == "stop" || "$cmd" == "resolve" ]]; then
   env_name="${2:-}"
-  if [[ -z "$env_name" ]]; then
-    echo "[ERROR] Usage: deploy.sh $cmd <env-name>"
-    exit 1
-  fi
 else
   env_name="$cmd"
 fi
 
+# Two-dimensional selection: SRV=<role> ENV=<environment> composes the
+# same <env>-<srv> instance name used by the reviewed definition file.
+if [[ -z "$env_name" && -n "${ENV:-}" ]]; then
+  env_name="$ENV"
+fi
+if [[ -n "$env_name" && -n "${SRV:-}" ]]; then
+  env_name="${env_name}-${SRV}"
+fi
+
 if [[ -z "$env_name" ]]; then
-  echo "[ERROR] Usage: deploy.sh <env-name> [BRANCH=main]"
+  echo "[ERROR] Usage: deploy.sh <env-name>  |  SRV=<service> ENV=<env-name> deploy.sh" >&2
+  echo "        Subcommands: repair|status|logs|stop|resolve <env-name>" >&2
   exit 1
 fi
 

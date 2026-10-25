@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-24
-covered_docs_hash: 8a324437ff7a6d02f3d06449326a112312a2715372a2b2a4746f8b88881bc3b1
+covered_docs_hash: 3accffe7bb37b272413d45b389ac4a38271cf488a2b1c93efcfc82b23a4ee9ae
 
 covered_docs:
   - AGENTS.md
@@ -62,6 +62,17 @@ current-source evidence, security and knowledge-delta rules. The current review
 Skill already requires those boundaries and rejects inherited PASS; no new
 review authority, waiver, `SKILL.md` rule or fixture is needed. The architecture
 registry fixture checks the exact Search module and capability IDs.
+
+## 2026-10-24 X-Config Service Deploy Skill Registration
+
+`AGENTS.md` registers the new `pt-x-config-deploy` skill for service
+binary/runtime deploy and rollback on the corpstable and preview hosts.
+The skill consumes the env-repository placement and git-crypt runtime env
+without changing review severity or the existing hard rules
+(`station-profile-bypass` remains Station-only; the deploy skill explicitly
+does not publish catalogs or touch the OAuth broker). No new review
+fixture is required: it introduces no new machine-detectable code pattern
+beyond the existing no-secret and unreviewed-topology rules.
 
 ## 2026-10-24 X-Config Distribution And Knowledge Coverage Review
 
