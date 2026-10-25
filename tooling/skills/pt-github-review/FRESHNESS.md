@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-25
-covered_docs_hash: d7f6faf493031a3f432a391ba36e459de2c1f7053c4bb0ad8e4d40c048f23cec
+last_verified_at: 2026-10-26
+covered_docs_hash: b2685c4d9530d01b048eaa0651c1c263b8c31aa4e62d56c53ee2fc2a90e1cca8
 
 covered_docs:
   - AGENTS.md
@@ -44,6 +44,11 @@ This refresh binds that reviewed source set. It changes neither severity nor
 verification requirements. No new Skill rule or generic fixture is needed;
 the attachment change supplies focused native, cancellation, integrity, and
 completed-cache restoration regression evidence at their existing owners.
+
+The generated Acceptance coverage inventory was regenerated for the current
+date. Its Feature/Gate counts and proof states are unchanged; only the generated
+date changed. Existing freshness and current-source rules remain sufficient,
+with no new Skill rule, fixture, or knowledge entry.
 
 ## Desktop Search Continuity Review
 
