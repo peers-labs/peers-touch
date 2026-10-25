@@ -1377,6 +1377,11 @@ impl MessagingEngine {
             }
         }
         let mut transfer = self.store.attachment_transfer(attachment_id)?;
+        if let Some(access) = self.cached_attachment_access(
+            owner, &projection, transfer.as_ref(), retry,
+        )? {
+            return Ok(access);
+        }
         if start_download && !cache.is_file()
             && transfer.as_ref().is_some_and(|value| {
                 value.direction == 2 && value.state
@@ -1393,41 +1398,14 @@ impl MessagingEngine {
                     &cache.to_string_lossy(), now_unix_ms(),
                 )?;
             transfer = self.store.attachment_transfer(attachment_id)?;
-        }
-        let mut access =
-            attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
-        if cache.is_file() {
-            let grant = self.attachment_file_access.grant(
-                owner,
-                attachment_id,
-                cache.parent().ok_or("FILE_ROOT_UNAVAILABLE")?,
-                &cache,
-                &projection.metadata.filename,
-                &projection.metadata.mime_type,
-                projection.metadata.plaintext_size,
-                &projection.metadata.plaintext_sha256,
-            );
-            match grant {
-                Ok(handle) => {
-                    access =
-                        attachment_access_projection(&projection.metadata, transfer.as_ref(), true);
-                    access.asset_url = attachment_asset_url(&handle);
-                    access.access_handle = handle;
-                    return Ok(access);
-                }
-                Err(error) if error == "FILE_INTEGRITY_FAILED" => {
-                    if retry {
-                        std::fs::remove_file(&cache).map_err(|_| "FILE_CACHE_CLEANUP_FAILED")?;
-                    } else {
-                        access.state = AttachmentAccessState::Failed as i32;
-                        access.error_code = messaging_core::proto::chat::AttachmentTransferErrorCode::IntegrityFailed as i32;
-                        access.retryable = true;
-                        return Ok(access);
-                    }
-                }
-                Err(error) => return Err(error),
+            if let Some(access) = self.cached_attachment_access(
+                owner, &projection, transfer.as_ref(), retry,
+            )? {
+                return Ok(access);
             }
         }
+        let access =
+            attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
         if start_download
             && !matches!(access.state, value if value == AttachmentAccessState::Cancelled as i32 || value == AttachmentAccessState::Failed as i32)
         {
@@ -1469,6 +1447,52 @@ impl MessagingEngine {
             transfer.as_ref(),
             false,
         ))
+    }
+
+    fn cached_attachment_access(
+        &self,
+        owner: &str,
+        projection: &AttachmentDownloadProjection,
+        transfer: Option<&AttachmentTransferRecord>,
+        retry: bool,
+    ) -> Result<Option<messaging_core::proto::chat::AttachmentAccessProjection>, String> {
+        use messaging_core::attachment::attachment_access_projection;
+        use messaging_core::proto::chat::AttachmentAccessState;
+        let attachment_id = &projection.metadata.attachment_id;
+        let cache = attachment_cache_path(&self.profile_id, attachment_id)?;
+        if !cache.is_file() {
+            return Ok(None);
+        }
+        match self.attachment_file_access.grant(
+            owner,
+            attachment_id,
+            cache.parent().ok_or("FILE_ROOT_UNAVAILABLE")?,
+            &cache,
+            &projection.metadata.filename,
+            &projection.metadata.mime_type,
+            projection.metadata.plaintext_size,
+            &projection.metadata.plaintext_sha256,
+        ) {
+            Ok(handle) => {
+                let mut access = attachment_access_projection(&projection.metadata, transfer, true);
+                access.asset_url = attachment_asset_url(&handle);
+                access.access_handle = handle;
+                Ok(Some(access))
+            }
+            Err(error) if error == "FILE_INTEGRITY_FAILED" => {
+                if retry {
+                    std::fs::remove_file(&cache).map_err(|_| "FILE_CACHE_CLEANUP_FAILED")?;
+                    Ok(None)
+                } else {
+                    let mut access = attachment_access_projection(&projection.metadata, transfer, false);
+                    access.state = AttachmentAccessState::Failed as i32;
+                    access.error_code = messaging_core::proto::chat::AttachmentTransferErrorCode::IntegrityFailed as i32;
+                    access.retryable = true;
+                    Ok(Some(access))
+                }
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub(crate) fn attachment_handoff_root(&self) -> Result<PathBuf, String> {
@@ -5447,6 +5471,96 @@ mod tests {
             )
             .unwrap()
         );
+    }
+
+    #[test]
+    fn corrupt_completed_attachment_retry_recovers_or_queues_in_the_same_call() {
+        let _guard = crate::infrastructure::storage::test_storage_env_lock();
+        for recoverable_staging in [true, false] {
+            let profile = format!("attachment-integrity-retry-{}", Ulid::new());
+            let fixture = std::env::temp_dir().join(&profile);
+            std::fs::create_dir_all(&fixture).unwrap();
+            let database = fixture.join("fixture.db");
+            let store = Arc::new(MessagingStore::from_connection(
+                rusqlite::Connection::open(&database).unwrap(),
+            ).unwrap());
+            let bytes = b"verified completed receiver attachment";
+            let material = AttachmentCryptoMaterial::generate(bytes.len() as u64).unwrap();
+            let encrypted = secure_content_core::object::encrypt_object_chunk(
+                &material, 0, bytes,
+            ).unwrap();
+            let descriptor = crate::model::chat::EncryptedObjectDescriptor {
+                object_id: "object".into(),
+                storage_ref: "opaque".into(),
+                ciphertext_size: encrypted.ciphertext.len() as u64,
+                ciphertext_sha256: encrypted.ciphertext_sha256.to_vec(),
+                media_type: "application/octet-stream".into(),
+                chunk_size: material.chunk_size(),
+                chunk_count: 1,
+                encryption_suite: 1,
+                tag_size: 16,
+                nonce_strategy: 1,
+                chunk_ciphertext_sha256: vec![encrypted.ciphertext_sha256.to_vec()],
+            };
+            let cache = attachment_cache_path(&profile, "attachment").unwrap();
+            std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+            std::fs::write(&cache, b"corrupt receiver bytes").unwrap();
+            if recoverable_staging {
+                std::fs::write(format!("{}.decrypting", cache.display()), bytes).unwrap();
+            }
+            let connection = rusqlite::Connection::open(&database).unwrap();
+            connection.execute_batch(
+                "INSERT INTO messaging_conversations
+                   (conversation_id,authority_station_id,federation_id,kind,name,owner_ptid,
+                    membership_epoch,mls_epoch,active,updated_at_unix_ms)
+                 VALUES ('conversation','station','federation',2,'fixture','ptid:alice',1,1,1,10);
+                 INSERT INTO messaging_message_projections
+                   (conversation_id,event_id,event_sequence,message_id,sender_ptid,
+                    sender_device_id,plaintext,delivery_state,committed_at_unix_ms)
+                 VALUES ('conversation','event',1,'message','ptid:alice','device','',
+                         'consumed',10);",
+            ).unwrap();
+            connection.execute(
+                "INSERT INTO messaging_attachment_projections
+                   (message_id,attachment_id,object_id,storage_ref,filename,mime_type,
+                    content_kind,plaintext_size,plaintext_sha256,object_key,base_nonce,
+                    descriptor_bytes,availability_state,local_cache_path)
+                 VALUES ('message','attachment','object','opaque','report.txt','text/plain',
+                         1,?1,?2,?3,?4,?5,'available',?6)",
+                rusqlite::params![
+                    bytes.len() as u64, Sha256::digest(bytes).as_slice(),
+                    material.object_key().as_slice(), material.base_nonce().as_slice(),
+                    descriptor.encode_to_vec(), cache.to_string_lossy().as_ref(),
+                ],
+            ).unwrap();
+            drop(connection);
+            let projection = store.attachment_download_projection("attachment").unwrap().unwrap();
+            let mut transfer = attachment_download_transfer(&profile, &projection, 10).unwrap();
+            transfer.state = AttachmentTransferState::Complete as i32;
+            transfer.descriptor_sha256 = Sha256::digest(descriptor.encode_to_vec()).to_vec();
+            transfer.completed_chunk_bitmap = vec![1];
+            store.create_attachment_transfer(&transfer).unwrap();
+            let engine = MessagingEngine::from_store(
+                StationClient::testing_unavailable(), profile.clone(), endpoint("device"), store,
+            ).unwrap();
+            let failed = engine.attachment_access("token", "window", "attachment", true, false).unwrap();
+            assert_eq!(failed.state, messaging_core::proto::chat::AttachmentAccessState::Failed as i32);
+            assert!(failed.retryable && cache.is_file());
+            let restored = engine.attachment_access("token", "window", "attachment", true, true).unwrap();
+            if recoverable_staging {
+                assert_eq!(restored.state, messaging_core::proto::chat::AttachmentAccessState::Ready as i32);
+                assert!(!restored.access_handle.is_empty());
+                assert_eq!(std::fs::read(&cache).unwrap(), bytes);
+            } else {
+                assert_eq!(restored.state, messaging_core::proto::chat::AttachmentAccessState::Downloading as i32);
+                assert_eq!(engine.store.next_due_attachment_download(i64::MAX).unwrap(),
+                           Some("attachment".into()));
+                assert!(!cache.exists());
+            }
+            drop(engine);
+            std::fs::remove_dir_all(fixture).unwrap();
+            std::fs::remove_dir_all(cache.parent().unwrap()).unwrap();
+        }
     }
 
     #[test]
