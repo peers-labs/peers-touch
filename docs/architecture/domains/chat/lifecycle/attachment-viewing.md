@@ -107,6 +107,10 @@ required for an external open or export.
   extends the existing `platform-permissions` plugin: iOS Quick Look and document
   export; Android FileProvider with temporary read grants, ACTION_VIEW and the
   Storage Access Framework. A URL opener is not a Mobile file adapter.
+- Acceptance's Native driver owns macOS document scripting and window/content
+  observations. Chat Gates retain attachment identity, selected UI actions,
+  integrity/eviction oracles and cleanup decisions; they contain no platform
+  scripting implementation.
 
 ## File safety and lifecycle
 

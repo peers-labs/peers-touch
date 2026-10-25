@@ -1549,8 +1549,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn(".asset_protocol_scope()", messaging)
         self.assertEqual(
             messaging.count("allow_attachment_preview(&window,"),
-            4,
+            3,
         )
+        file_commands = (
+            ROOT / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_files.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("pub async fn messaging_attachment_access", file_commands)
+        self.assertIn("register_uri_scheme_protocol(\"chat-file\"", self.desktop_main)
         preview_scope = messaging[
             messaging.index("fn allow_attachment_preview("):
             messaging.index(
@@ -1715,8 +1720,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         selection_source = self.native_file_picker[
             selection_start:selection_end
         ]
-        self.assertIn("control.main_window", selection_source)
-        self.assertIn("control.frontmost", selection_source)
+        self.assertIn("main_window_restored(control)", selection_source)
+        restored_start = self.native_file_picker.index("    def main_window_restored(")
+        restored_end = self.native_file_picker.index("    def panel_open(", restored_start)
+        restored_source = self.native_file_picker[restored_start:restored_end]
+        self.assertIn("control.main_window", restored_source)
+        self.assertIn("control.frontmost", restored_source)
         self.assertIn("control.focused_window", selection_source)
         self.assertNotIn('control.kind == "unknown"', selection_source)
         self.assertIn(
@@ -2441,10 +2450,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         anchor_index = self.message_row.index("data-message-action-anchor")
         bubble_index = self.message_row.index("data-message-content", anchor_index)
         rail_index = self.message_row.index("<MessageInteractionRail", bubble_index)
-        metadata_index = self.message_row.index("formatMsgTime(message.sentAtMs)", rail_index)
+        metadata_index = self.message_row.index("formatMsgTime(message.sentAtMs)", bubble_index)
         self.assertLess(anchor_index, bubble_index)
-        self.assertLess(bubble_index, rail_index)
-        self.assertLess(rail_index, metadata_index)
+        self.assertLess(bubble_index, metadata_index)
+        self.assertLess(metadata_index, rail_index)
+        self.assertIn("if (!hasContent) return null;", self.message_row)
         self.assertIn(
             "data-message-reaction={emoji}",
             self.message_row,

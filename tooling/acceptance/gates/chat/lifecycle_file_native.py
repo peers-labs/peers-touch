@@ -8,7 +8,6 @@ supporting integrity/eviction observations, not substitutes for the native UI.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import stat
 import subprocess
@@ -24,21 +23,20 @@ from tooling.acceptance.drivers.native import (
     NativeModifier,
 )
 from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.drivers.native.macos_documents import (
+    close_owned_text_editor_document,
+    document_contains,
+    document_windows,
+    require_text_editor_default,
+    text_editor_document,
+    text_editor_pid,
+    text_editor_running,
+)
 from tooling.acceptance.gates.chat.native_support import async_harness, wait_until
 
 
 def _hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _osascript(script: str) -> str:
-    result = subprocess.run(
-        ("/usr/bin/osascript", "-e", script),
-        capture_output=True, text=True, check=False, timeout=10,
-    )
-    if result.returncode:
-        raise GateError(f"Chat native document observation failed: {result.stderr.strip()}")
-    return result.stdout.strip()
 
 
 def _processes() -> dict[int, tuple[int, str]]:
@@ -52,20 +50,6 @@ def _processes() -> dict[int, tuple[int, str]]:
         if len(fields) == 3:
             processes[int(fields[0])] = (int(fields[1]), fields[2])
     return processes
-
-
-def _windows(pid: int) -> list[str]:
-    # Inspect only the process bound to this action, never the global AX tree.
-    value = _osascript(f"""
-        tell application "System Events"
-          if not (exists (application process whose unix id is {pid})) then return ""
-          set targetProcess to first application process whose unix id is {pid}
-          set titles to name of every window of targetProcess
-          set AppleScript's text item delimiters to linefeed
-          return titles as text
-        end tell
-    """)
-    return value.splitlines() if value else []
 
 
 class MacOSFileObservation:
@@ -179,29 +163,15 @@ def prove_native_file_preview(
             return matches[0] if matches else None
 
         preview_pid = wait_until(owned_preview, "owned Quick Look process", timeout=15)
-        def document_windows() -> list[str] | None:
-            values = _windows(preview_pid)
+        def selected_document_windows() -> list[str] | None:
+            values = document_windows(preview_pid)
             return values if any(source.name in title for title in values) else None
         titles = wait_until(
-            document_windows,
+            selected_document_windows,
             "Quick Look window for the selected original filename", timeout=20,
         )
         def document_content() -> bool:
-            value = _osascript(f"""
-                tell application "System Events"
-                  set targetProcess to first application process whose unix id is {preview_pid}
-                  set nodes to entire contents of window 1 of targetProcess
-                  if (count of nodes) > 1000 then error "preview AX tree exceeds bound"
-                  repeat with node in nodes
-                    try
-                      set content to value of attribute "AXValue" of node as text
-                      if content contains {json.dumps(expected_text)} then return "matched"
-                    end try
-                  end repeat
-                  return "unproven"
-                end tell
-            """)
-            return value == "matched"
+            return document_contains(preview_pid, expected_text)
         wait_until(document_content, "Quick Look decoded document content", timeout=20)
         _completed(client, detail)
         screenshot = observer.screenshot(evidence_root / "native-preview.png")
@@ -227,52 +197,6 @@ def prove_native_file_preview(
             observer.discard(copy)
 
 
-def _textedit_document(path: Path, operation: str = "read") -> str:
-    quoted = json.dumps(str(path))
-    commands = {
-        "read": "return text of targetDocument",
-        "close": "close targetDocument saving no",
-        # The live external application writes its own document. The client
-        # cache path is never supplied to this OS operation.
-        "edit": 'set text of targetDocument to "edited-by-external-application"\n'
-                "save targetDocument",
-    }
-    return _osascript(f"""
-        tell application id "com.apple.TextEdit"
-          set targetDocument to first document whose path is {quoted}
-          {commands[operation]}
-        end tell
-    """)
-
-
-def _require_textedit_default(source: Path) -> bool:
-    # Do not change the operator's default application or launch an unowned
-    # editor. Other default-app cells need their own native document oracle.
-    script = """
-        ObjC.import('AppKit');
-        function run(args) {
-            const file = $.NSURL.fileURLWithPath($(args[0]));
-            const app = $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL(file);
-            if (!app) return '';
-            return ObjC.unwrap($.NSBundle.bundleWithURL(app).bundleIdentifier);
-        }
-    """
-    result = subprocess.run(
-        ("/usr/bin/osascript", "-l", "JavaScript", "-e", script, str(source)),
-        capture_output=True, text=True, check=True, timeout=10,
-    )
-    if result.stdout.strip() != "com.apple.TextEdit":
-        raise BlockedError(
-            reason="Chat external-edit oracle requires TextEdit as the current text-file handler",
-            resource="desktop-macos-native:default-text-application",
-        )
-    return _osascript("""
-        tell application "System Events"
-          return exists (application process whose bundle identifier is "com.apple.TextEdit")
-        end tell
-    """) == "true"
-
-
 def prove_external_file_isolation(
     *, client: TauriSession, runtime_binding: NativeDesktopRuntimeBinding,
     attachment_id: str, source: Path, cache_path: Path, evidence_root: Path,
@@ -281,7 +205,7 @@ def prove_external_file_isolation(
     observer = MacOSFileObservation(client, runtime_binding)
     if not cache_path.resolve(strict=True).is_relative_to(observer.storage):
         raise GateError("external-copy oracle cache is outside the bound client")
-    already_running = _require_textedit_default(source)
+    already_running = require_text_editor_default(source)
     detail = _open_detail(client, attachment_id)
     before = observer.copies()
     copy = None
@@ -290,15 +214,10 @@ def prove_external_file_isolation(
         copy = observer.new_copy(before, source)
 
         def document() -> str | None:
-            running = _osascript("""
-                tell application "System Events"
-                  return exists (application process whose bundle identifier is "com.apple.TextEdit")
-                end tell
-            """)
-            if running != "true":
+            if not text_editor_running():
                 return None
             try:
-                return _textedit_document(copy)
+                return text_editor_document(copy)
             except GateError:
                 return None
 
@@ -306,16 +225,12 @@ def prove_external_file_isolation(
         if content != source.read_text().strip():
             raise GateError("external application displayed different attachment bytes")
         _completed(client, detail)
-        external_pid = int(_osascript("""
-            tell application "System Events"
-              return unix id of first application process whose bundle identifier is "com.apple.TextEdit"
-            end tell
-        """))
-        titles = _windows(external_pid)
+        external_pid = text_editor_pid()
+        titles = document_windows(external_pid)
         if not any(source.name in title for title in titles):
             raise GateError("external file has no visible native document window")
         screenshot = observer.screenshot(evidence_root / "external-document.png")
-        _textedit_document(copy, "edit")
+        text_editor_document(copy, "edit")
         wait_until(lambda: copy.read_text().strip() == "edited-by-external-application",
                    "external application persisted its private-copy edit", timeout=10)
         if _hash(cache_path) != _hash(source):
@@ -329,17 +244,7 @@ def prove_external_file_isolation(
             if copy is not None:
                 # An observation timeout may still have left the exact document
                 # open. Cleanup never addresses another window or document.
-                _osascript(f"""
-                    if application id "com.apple.TextEdit" is running then
-                      tell application id "com.apple.TextEdit"
-                        set matchingDocuments to every document whose path is {json.dumps(str(copy))}
-                        repeat with targetDocument in matchingDocuments
-                          close targetDocument saving no
-                        end repeat
-                        if not {str(already_running).lower()} and (count of documents) is 0 then quit
-                      end tell
-                    end if
-                """)
+                close_owned_text_editor_document(copy, already_running)
         finally:
             _close_detail(client, detail)
             if copy is not None:
