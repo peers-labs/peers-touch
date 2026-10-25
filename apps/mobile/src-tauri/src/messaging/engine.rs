@@ -91,6 +91,7 @@ use messaging_core::storage_governance::{
     measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
 };
 use messaging_core::store::MessagingRepository;
+use messaging_native_filesystem::file_access::{attachment_asset_url, AttachmentFileAccess};
 use messaging_native_filesystem::{path_ref, path_refs, NativeMessagingFilesystem};
 use prost::Message;
 use rand::rngs::OsRng;
@@ -124,6 +125,7 @@ use crate::runtime::reliability::{
 };
 
 const DRAIN_BATCH_LIMIT: u32 = 100;
+const SENDER_ATTACHMENT_SOURCE_INVALID: &str = "FILE_SOURCE_INVALID";
 const COMMAND_PLAN_CONVERGENCE_TIMEOUT: Duration = Duration::from_secs(15);
 const COMMAND_PLAN_CONVERGENCE_INTERVAL: Duration = Duration::from_millis(200);
 pub const ATTACHMENT_STAGE_CHUNK_SIZE: usize = 1024 * 1024;
@@ -412,6 +414,7 @@ pub struct MobileMessagingEngine {
     attachment_root: PathBuf,
     attachment_stages: Mutex<HashMap<String, StagedAttachment>>,
     attachment_source_lock: Mutex<()>,
+    pub(crate) attachment_file_access: AttachmentFileAccess,
     storage_governance_lock: Mutex<()>,
     attachment_transfer_control: Arc<AttachmentTransferControl>,
     actor_identity: Arc<IdentityKeyPair>,
@@ -610,6 +613,7 @@ impl MobileMessagingEngine {
             attachment_source_lock: Mutex::new(()),
             storage_governance_lock: Mutex::new(()),
             attachment_transfer_control: Arc::new(AttachmentTransferControl::new()),
+            attachment_file_access: AttachmentFileAccess::default(),
             actor_identity,
             mls_manager,
             consumer,
@@ -3250,6 +3254,167 @@ impl MobileMessagingEngine {
         Ok(cleaned)
     }
 
+    pub fn attachment_access(
+        &self,
+        owner: &str,
+        attachment_id: &str,
+        start_download: bool,
+        retry: bool,
+    ) -> Result<messaging_core::proto::chat::AttachmentAccessProjection, String> {
+        use messaging_core::attachment::attachment_access_projection;
+        use messaging_core::proto::chat::AttachmentAccessState;
+        let mut projection = self
+            .store
+            .attachment_download_projection(attachment_id)?
+            .ok_or("FILE_PROJECTION_UNAVAILABLE")?;
+        let mut transfer = self.store.attachment_transfer(attachment_id)?;
+        // A bad existing commitment is observable before sender promotion can
+        // remove it. Missing bytes and explicit retry have different intents.
+        if let Some(access) = self.cached_attachment_access(
+            owner, &projection, transfer.as_ref(), retry,
+        )? {
+            return Ok(access);
+        }
+        {
+            let _guard = self
+                .attachment_source_lock
+                .lock()
+                .map_err(|_| "FILE_SOURCE_UNAVAILABLE")?;
+            if let Some(source) = self
+                .store
+                .completed_sender_attachment_source(attachment_id)?
+            {
+                let blobs = self.attachment_blobs()?;
+                match self.promote_sender_attachment_cache(&blobs, &source) {
+                    Ok(_) => {
+                        projection = self.store
+                            .attachment_download_projection(attachment_id)?
+                            .ok_or("FILE_PROJECTION_UNAVAILABLE")?;
+                    }
+                    Err(error) if error == SENDER_ATTACHMENT_SOURCE_INVALID => {}
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        transfer = self.store.attachment_transfer(attachment_id)?;
+        if let Some(access) = self.cached_attachment_access(
+            owner, &projection, transfer.as_ref(), retry,
+        )? {
+            return Ok(access);
+        }
+        let access = attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
+        if start_download && access.state == AttachmentAccessState::Remote as i32 {
+            self.prepare_attachment_open(attachment_id)?;
+        }
+        transfer = self.store.attachment_transfer(attachment_id)?;
+        if start_download
+            && transfer.as_ref().is_some_and(|value| {
+                value.direction == 2
+                    && value.state
+                        == messaging_core::proto::chat::AttachmentTransferState::Complete as i32
+            })
+        {
+            self.attachment_transfer_worker()?
+                .restore_download_cache(attachment_id, now_unix_ms())?;
+        } else if retry
+            && transfer.as_ref().is_some_and(|value| {
+                matches!(
+                    messaging_core::proto::chat::AttachmentTransferState::try_from(value.state),
+                    Ok(
+                        messaging_core::proto::chat::AttachmentTransferState::Cancelled
+                            | messaging_core::proto::chat::AttachmentTransferState::RetryWait
+                    )
+                )
+            })
+        {
+            self.attachment_transfer_worker()?
+                .retry(attachment_id, now_unix_ms())?;
+        }
+        transfer = self.store.attachment_transfer(attachment_id)?;
+        Ok(attachment_access_projection(
+            &projection.metadata,
+            transfer.as_ref(),
+            false,
+        ))
+    }
+
+    fn cached_attachment_access(
+        &self,
+        owner: &str,
+        projection: &AttachmentDownloadProjection,
+        transfer: Option<&AttachmentTransferRecord>,
+        retry: bool,
+    ) -> Result<Option<messaging_core::proto::chat::AttachmentAccessProjection>, String> {
+        use messaging_core::attachment::attachment_access_projection;
+        use messaging_core::proto::chat::AttachmentAccessState;
+        let attachment_id = &projection.metadata.attachment_id;
+        let cache = PathBuf::from(self.attachment_cache_ref(attachment_id)?);
+        let mut access = attachment_access_projection(&projection.metadata, transfer, false);
+        if cache.is_file() {
+            let grant = self.attachment_file_access.grant(
+                owner,
+                attachment_id,
+                &self.attachment_root.join("cache"),
+                &cache,
+                &projection.metadata.filename,
+                &projection.metadata.mime_type,
+                projection.metadata.plaintext_size,
+                &projection.metadata.plaintext_sha256,
+            );
+            match grant {
+                Ok(handle) => {
+                    access = attachment_access_projection(&projection.metadata, transfer, true);
+                    access.asset_url = attachment_asset_url(&handle);
+                    access.access_handle = handle;
+                    return Ok(Some(access));
+                }
+                Err(error) if error == "FILE_INTEGRITY_FAILED" => {
+                    if retry {
+                        std::fs::remove_file(&cache).map_err(|_| "FILE_CACHE_CLEANUP_FAILED")?;
+                    } else {
+                        access.state = AttachmentAccessState::Failed as i32;
+                        access.error_code = messaging_core::proto::chat::AttachmentTransferErrorCode::IntegrityFailed as i32;
+                        access.retryable = true;
+                        return Ok(Some(access));
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(None)
+    }
+
+    pub(crate) fn attachment_handoff_root(&self) -> PathBuf {
+        self.attachment_root.join("file-handoff")
+    }
+
+    pub(crate) fn attachment_metadata(
+        &self,
+        attachment_id: &str,
+    ) -> Result<messaging_core::proto::chat::AttachmentPlaintextMetadata, String> {
+        self.store
+            .attachment_download_projection(attachment_id)?
+            .map(|projection| projection.metadata)
+            .ok_or_else(|| "FILE_PROJECTION_UNAVAILABLE".into())
+    }
+
+    pub(crate) fn validate_attachment_handle(
+        &self,
+        owner: &str,
+        handle: &str,
+        attachment_id: &str,
+    ) -> Result<(), String> {
+        if self.attachment_file_access.attachment_id(owner, handle)? != attachment_id
+            || self
+                .store
+                .attachment_download_projection(attachment_id)?
+                .is_none()
+        {
+            return Err("FILE_ACCESS_STALE".into());
+        }
+        Ok(())
+    }
+
     pub fn prepare_attachment_open(
         &self,
         attachment_id: &str,
@@ -3310,6 +3475,7 @@ impl MobileMessagingEngine {
     }
 
     pub fn request_attachment_transfer_shutdown(&self) {
+        self.attachment_file_access.revoke_all();
         self.attachment_transfer_control.request_shutdown();
     }
 
@@ -3668,7 +3834,7 @@ impl MobileMessagingEngine {
             if !blobs.exists(&source.source_local_ref)?
                 || blobs.sha256(&source.source_local_ref)? != expected_plaintext_sha256
             {
-                return Err("mobile messaging attachment source is invalid".to_string());
+                return Err(SENDER_ATTACHMENT_SOURCE_INVALID.to_string());
             }
             blobs.promote(&source.source_local_ref, &cache_ref)?;
         }

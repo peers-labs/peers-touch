@@ -1,4 +1,6 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
+import { create, toBinary } from '@bufbuild/protobuf';
+import { messagingAttachmentAccess } from '../../messaging/attachmentAccess';
 import { messagingDomainRuntime } from '../../messaging/runtime';
 import {
   chatStorageProjectionRuntime,
@@ -17,6 +19,11 @@ import { useSessionStore } from '../../store/session';
 import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
 import { messageGroupSeq, type SocialMessage } from '../../store/socialProjection';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
+import {
+  AttachmentAccessState,
+  AttachmentFileAction,
+  AttachmentFileActionRequestSchema,
+} from '../../gen/proto/domain/chat/attachment_pb';
 import { groupCallManager } from '../../modules/groupCall';
 import { callP2p } from '../../modules/p2p/callP2p';
 import { registerAcceptanceHarness } from '../registry';
@@ -452,6 +459,34 @@ export function installAcceptanceHarness(): void {
       actorPtid: string;
       attachmentId: string;
     }) => nativeAcceptanceBridge.openAttachment(input),
+
+    attachmentFileGrant: async (input: { actorPtid: string; attachmentId: string }) => {
+      if (requireCanonicalAcceptancePtid(input.actorPtid) !== activeActorPtid()) {
+        throw new Error('acceptance.chat.actorPtidMismatch');
+      }
+      if (messagingAttachmentAccess.selectedId() !== input.attachmentId) {
+        throw new Error('acceptance.chat.fileDetailNotSelected');
+      }
+      // Observe the actual selected UI grant. Never create, refresh or release
+      // a grant here: the negative oracle must replay the one revoked by UI.
+      const projection = messagingAttachmentAccess.snapshot(input.attachmentId).projection;
+      if (projection?.state !== AttachmentAccessState.READY
+        || !projection.accessHandle || !projection.assetUrl) {
+        throw new Error('acceptance.chat.fileDetailNotReady');
+      }
+      return {
+        attachmentId: projection.attachmentId,
+        assetUrl: projection.assetUrl,
+        requests: [
+          AttachmentFileAction.PREVIEW,
+          AttachmentFileAction.OPEN_EXTERNAL,
+          AttachmentFileAction.SAVE_COPY,
+        ].map(action => Array.from(toBinary(AttachmentFileActionRequestSchema, create(
+          AttachmentFileActionRequestSchema,
+          { attachmentId: projection.attachmentId, accessHandle: projection.accessHandle, action },
+        )))),
+      };
+    },
 
     identityState: () => nativeAcceptanceBridge.identityState(),
 

@@ -97,6 +97,7 @@ use messaging_core::storage_governance::retention::{
 use messaging_core::storage_governance::{
     measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
 };
+use messaging_native_filesystem::file_access::{attachment_asset_url, AttachmentFileAccess};
 use messaging_native_filesystem::{path_ref, path_refs, NativeMessagingFilesystem};
 use prost::Message;
 use reqwest::Method;
@@ -118,8 +119,6 @@ use zeroize::Zeroizing;
 const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
 const COMMAND_PLAN_CONVERGENCE_TIMEOUT: Duration = Duration::from_secs(15);
 const COMMAND_PLAN_CONVERGENCE_INTERVAL: Duration = Duration::from_millis(200);
-const ATTACHMENT_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
-const ATTACHMENT_OPEN_RETRY_FLOOR: Duration = Duration::from_millis(10);
 const PREKEY_INVENTORY_RECONCILIATION_INTERVAL_MS: i64 = 60_000;
 const SENDER_ATTACHMENT_SOURCE_INVALID: &str = "messaging sender attachment source is invalid";
 const MEMBER_AUTHORITY_COMMAND_LIFETIME_MS: i64 = 5 * 60 * 1_000;
@@ -465,37 +464,6 @@ fn checkpoint_fresh_direct_receiver(
     Ok(bootstrapped)
 }
 
-fn drive_attachment_open<F, S>(
-    deadline: Instant,
-    mut open_once: F,
-    mut sleep: S,
-) -> Result<String, String>
-where
-    F: FnMut() -> Result<AttachmentOpenProgress, String>,
-    S: FnMut(Duration),
-{
-    loop {
-        match open_once()? {
-            AttachmentOpenProgress::Ready(path) => return Ok(path),
-            AttachmentOpenProgress::Pending {
-                next_attempt_at_unix_ms,
-            } => {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
-                    return Err(
-                        "messaging attachment download did not complete before open deadline"
-                            .to_string(),
-                    );
-                }
-                let retry_delay_ms = next_attempt_at_unix_ms
-                    .saturating_sub(now_unix_ms())
-                    .max(ATTACHMENT_OPEN_RETRY_FLOOR.as_millis() as i64);
-                sleep(Duration::from_millis(retry_delay_ms as u64).min(remaining));
-            }
-        }
-    }
-}
-
 type CoreItemConsumer = MessagingItemConsumer<MessagingStore, MlsItemProcessor<MessagingStore>>;
 
 pub struct MessagingEngine {
@@ -513,6 +481,7 @@ pub struct MessagingEngine {
     membership_transition_lock: Mutex<()>,
     prekey_maintenance: Mutex<PreKeyMaintenanceState>,
     attachment_source_lock: Mutex<()>,
+    pub(crate) attachment_file_access: AttachmentFileAccess,
     storage_governance_lock: Mutex<()>,
     attachment_transfer_control: Arc<AttachmentTransferControl>,
     runtime_consumer_epoch: Arc<AtomicU64>,
@@ -767,6 +736,7 @@ impl MessagingEngine {
             attachment_source_lock: Mutex::new(()),
             storage_governance_lock: Mutex::new(()),
             attachment_transfer_control: Arc::new(AttachmentTransferControl::new()),
+            attachment_file_access: AttachmentFileAccess::default(),
             runtime_consumer_epoch: Arc::new(AtomicU64::new(0)),
             projection_notifier: Mutex::new(None),
         })
@@ -1241,6 +1211,7 @@ impl MessagingEngine {
     }
 
     pub fn request_attachment_transfer_shutdown(&self) {
+        self.attachment_file_access.revoke_all();
         self.attachment_transfer_control.request_shutdown();
     }
 
@@ -1362,12 +1333,172 @@ impl MessagingEngine {
         Ok(cleaned)
     }
 
-    pub fn open_attachment(&self, token: &str, attachment_id: &str) -> Result<String, String> {
-        drive_attachment_open(
-            Instant::now() + ATTACHMENT_OPEN_TIMEOUT,
-            || self.open_attachment_once(token, attachment_id),
-            std::thread::sleep,
+    pub fn attachment_access(
+        &self,
+        token: &str,
+        owner: &str,
+        attachment_id: &str,
+        start_download: bool,
+        retry: bool,
+    ) -> Result<messaging_core::proto::chat::AttachmentAccessProjection, String> {
+        use messaging_core::attachment::attachment_access_projection;
+        use messaging_core::proto::chat::AttachmentAccessState;
+        if attachment_id.is_empty()
+            || attachment_id == "."
+            || attachment_id == ".."
+            || attachment_id.contains(['/', '\\'])
+        {
+            return Err("FILE_ID_INVALID".into());
+        }
+        let mut projection = self
+            .store
+            .attachment_download_projection(attachment_id)?
+            .ok_or("FILE_PROJECTION_UNAVAILABLE")?;
+        let cache = attachment_cache_path(&self.profile_id, attachment_id)?;
+        {
+            let _guard = self
+                .attachment_source_lock
+                .lock()
+                .map_err(|_| "FILE_SOURCE_UNAVAILABLE")?;
+            if let Some(source) = self
+                .store
+                .completed_sender_attachment_source(attachment_id)?
+            {
+                match self.promote_sender_attachment_cache(&source) {
+                    Ok(_) => {
+                        projection = self
+                            .store
+                            .attachment_download_projection(attachment_id)?
+                            .ok_or("FILE_PROJECTION_UNAVAILABLE")?;
+                    }
+                    Err(error) if error == SENDER_ATTACHMENT_SOURCE_INVALID => {}
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        let mut transfer = self.store.attachment_transfer(attachment_id)?;
+        let mut access =
+            attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
+        if cache.is_file() {
+            let grant = self.attachment_file_access.grant(
+                owner,
+                attachment_id,
+                cache.parent().ok_or("FILE_ROOT_UNAVAILABLE")?,
+                &cache,
+                &projection.metadata.filename,
+                &projection.metadata.mime_type,
+                projection.metadata.plaintext_size,
+                &projection.metadata.plaintext_sha256,
+            );
+            match grant {
+                Ok(handle) => {
+                    access =
+                        attachment_access_projection(&projection.metadata, transfer.as_ref(), true);
+                    access.asset_url = attachment_asset_url(&handle);
+                    access.access_handle = handle;
+                    return Ok(access);
+                }
+                Err(error) if error == "FILE_INTEGRITY_FAILED" => {
+                    if retry {
+                        std::fs::remove_file(&cache).map_err(|_| "FILE_CACHE_CLEANUP_FAILED")?;
+                    } else {
+                        access.state = AttachmentAccessState::Failed as i32;
+                        access.error_code = messaging_core::proto::chat::AttachmentTransferErrorCode::IntegrityFailed as i32;
+                        access.retryable = true;
+                        return Ok(access);
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        if start_download
+            && !matches!(access.state, value if value == AttachmentAccessState::Cancelled as i32 || value == AttachmentAccessState::Failed as i32)
+        {
+            let download =
+                attachment_download_transfer(&self.profile_id, &projection, now_unix_ms())?;
+            let _guard = self
+                .attachment_source_lock
+                .lock()
+                .map_err(|_| "FILE_SOURCE_UNAVAILABLE")?;
+            match transfer.as_ref() {
+                Some(existing) if existing.direction == 1 => {
+                    self.store
+                        .replace_completed_upload_with_download(&download)?;
+                }
+                None => {
+                    self.store.create_attachment_transfer(&download)?;
+                }
+                _ => {}
+            }
+        }
+        transfer = self.store.attachment_transfer(attachment_id)?;
+        if start_download
+            && transfer.as_ref().is_some_and(|value| {
+                value.direction == 2
+                    && value.state
+                        == messaging_core::proto::chat::AttachmentTransferState::Complete as i32
+            })
+        {
+            self.attachment_transfer_worker(token.to_string())?
+                .restore_download_cache(attachment_id, now_unix_ms())?;
+        } else if retry
+            && transfer.as_ref().is_some_and(|value| {
+                matches!(
+                    messaging_core::proto::chat::AttachmentTransferState::try_from(value.state),
+                    Ok(
+                        messaging_core::proto::chat::AttachmentTransferState::Cancelled
+                            | messaging_core::proto::chat::AttachmentTransferState::RetryWait
+                    )
+                )
+            })
+        {
+            self.attachment_transfer_worker(token.to_string())?
+                .retry(attachment_id, now_unix_ms())?;
+        }
+        transfer = self.store.attachment_transfer(attachment_id)?;
+        Ok(attachment_access_projection(
+            &projection.metadata,
+            transfer.as_ref(),
+            false,
+        ))
+    }
+
+    pub(crate) fn attachment_handoff_root(&self) -> Result<PathBuf, String> {
+        let profile_hash = hex::encode(Sha256::digest(self.profile_id.as_bytes()));
+        let anchor = storage::app_file_path(
+            "desktop",
+            StorageKind::Cache,
+            &["file-handoff", &profile_hash, ".anchor"],
         )
+        .map_err(|_| "FILE_STAGING_UNAVAILABLE".to_string())?;
+        anchor
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or("FILE_STAGING_UNAVAILABLE".into())
+    }
+
+    pub(crate) fn validate_attachment_handle(
+        &self,
+        owner: &str,
+        handle: &str,
+        attachment_id: &str,
+    ) -> Result<(), String> {
+        if self.attachment_file_access.attachment_id(owner, handle)? != attachment_id
+            || self
+                .store
+                .attachment_download_projection(attachment_id)?
+                .is_none()
+        {
+            return Err("FILE_ACCESS_STALE".into());
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn acceptance_attachment_cache_path(&self, attachment_id: &str) -> Result<String, String> {
+        Ok(attachment_cache_path(&self.profile_id, attachment_id)?
+            .display()
+            .to_string())
     }
 
     fn open_attachment_once(
@@ -5270,47 +5401,6 @@ mod tests {
             pending_direct_receiver_checkpoint(&store, &endpoint, &direct)
                 .unwrap()
                 .is_none()
-        );
-    }
-
-    #[test]
-    fn attachment_open_retries_pending_transfer_until_ready() {
-        let mut attempts = VecDeque::from([
-            AttachmentOpenProgress::Pending {
-                next_attempt_at_unix_ms: now_unix_ms(),
-            },
-            AttachmentOpenProgress::Ready("/tmp/verified-cache".to_string()),
-        ]);
-        let mut sleeps = Vec::new();
-
-        let path = drive_attachment_open(
-            Instant::now() + Duration::from_secs(1),
-            || Ok(attempts.pop_front().expect("attachment open attempt")),
-            |delay| sleeps.push(delay),
-        )
-        .expect("pending attachment should become ready");
-
-        assert_eq!(path, "/tmp/verified-cache");
-        assert!(attempts.is_empty());
-        assert_eq!(sleeps, vec![ATTACHMENT_OPEN_RETRY_FLOOR]);
-    }
-
-    #[test]
-    fn attachment_open_stops_at_deadline() {
-        let error = drive_attachment_open(
-            Instant::now(),
-            || {
-                Ok(AttachmentOpenProgress::Pending {
-                    next_attempt_at_unix_ms: now_unix_ms(),
-                })
-            },
-            |_| panic!("expired attachment open must not sleep"),
-        )
-        .expect_err("expired attachment open must fail");
-
-        assert_eq!(
-            error,
-            "messaging attachment download did not complete before open deadline"
         );
     }
 

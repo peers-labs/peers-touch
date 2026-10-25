@@ -16,6 +16,7 @@ import {
 import { useNavigationBadgeStore } from '../store/navigationBadges';
 import { useSocialChatStore } from '../store/socialChat';
 import { log } from '../utils/logger';
+import { messagingAttachmentAccess } from '../messaging/attachmentAccess';
 
 const MESSAGING_PROJECTION_CHANGED_EVENT = 'messaging:projection-changed';
 const MAX_SEEN_INVALIDATIONS = 500;
@@ -200,6 +201,7 @@ export function installMessagingProjectionBridge(): Promise<void> {
       }
       const scope = messagingDomainRuntime.captureScope();
       if (!scope || !messagingDomainRuntime.matchesInvalidation(payload)) return;
+      messagingAttachmentAccess.refreshPending();
       refreshTail = refreshTail
         .then(async () => {
           if (!messagingDomainRuntime.isCurrent(scope)) return;

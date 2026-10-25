@@ -1078,6 +1078,7 @@ dependencies = [
  "hex",
  "messaging-core",
  "rustix",
+ "secure-content-core",
  "sha2",
  "ulid",
 ]

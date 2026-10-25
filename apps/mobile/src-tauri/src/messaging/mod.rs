@@ -2,6 +2,7 @@ pub mod adapter;
 pub mod attachment_blob;
 pub mod commands;
 pub mod engine;
+pub mod file_access;
 pub mod lifecycle;
 pub mod mls_leave_intent;
 pub mod recovery;

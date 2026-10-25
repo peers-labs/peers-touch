@@ -37,6 +37,12 @@ export const demoAvatarUrls = {
   henry: generatedAvatar('Chinese man in his mid thirties, product manager'),
 } as const;
 
+export const demoSelfIdentity = {
+  name: 'Alice Chen',
+  initials: 'AC',
+  avatarUrl: demoAvatarUrls.alice,
+} as const;
+
 export const demoMediaBackgrounds = {
   waterfront: generatedMedia('A calm urban waterfront park at golden hour, walking path, modern office skyline reflected in water'),
   rooftopSunset: generatedMedia('Sunset viewed from a modern office rooftop, warm sky over a dense city skyline'),

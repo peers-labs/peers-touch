@@ -4798,7 +4798,7 @@ impl MessagingStore {
                 "SELECT attachment_id
                  FROM messaging_attachment_transfers
                  WHERE direction = 2
-                   AND state IN (?1, ?2, ?3)
+                   AND state IN (?1, ?2, ?3, ?5)
                    AND next_attempt_at_unix_ms <= ?4
                  ORDER BY next_attempt_at_unix_ms ASC, updated_at_unix_ms ASC, attachment_id ASC
                  LIMIT 1",
@@ -4807,6 +4807,7 @@ impl MessagingStore {
                     AttachmentTransferState::Transferring as i32,
                     AttachmentTransferState::RetryWait as i32,
                     now_unix_ms,
+                    AttachmentTransferState::Verifying as i32,
                 ],
                 |row| row.get(0),
             )

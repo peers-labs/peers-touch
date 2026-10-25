@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Button, Modal } from '@lobehub/ui';
 import {
   AlertCircle,
   Check,
@@ -276,9 +277,33 @@ function VoiceNoteChip({ message, isOwn }: { message: MockMessage; isOwn: boolea
 function FileAttachmentCard({ message, isOwn }: { message: MockMessage; isOwn: boolean }) {
   const isImage = message.type === 'image';
   const Icon = isImage ? ImageIcon : FileText;
+  const [open, setOpen] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState<'remote' | 'downloading' | 'cancelled' | 'ready'>('remote');
+  const [feedback, setFeedback] = useState('');
+  useEffect(() => {
+    if (status !== 'downloading') return;
+    const timer = window.setInterval(() => {
+      setProgress((current) => Math.min(100, current + 20));
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, [status]);
+  useEffect(() => { if (progress === 100) setStatus('ready'); }, [progress]);
+  const select = () => {
+    setOpen(true);
+    setFeedback('');
+    if (status === 'remote') setStatus('downloading');
+  };
   return (
+    <>
     <div
       data-chat-attachment={message.attachmentName ?? ''}
+      role="button"
+      tabIndex={0}
+      onClick={(event) => { event.stopPropagation(); select(); }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); select(); }
+      }}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -289,6 +314,7 @@ function FileAttachmentCard({ message, isOwn }: { message: MockMessage; isOwn: b
         borderRadius: T.radiusMd,
         background: isOwn ? 'rgba(255,255,255,0.16)' : T.bg,
         border: `1px solid ${isOwn ? 'rgba(255,255,255,0.18)' : T.borderSubtle}`,
+        cursor: 'pointer',
       }}
     >
       <span
@@ -311,6 +337,27 @@ function FileAttachmentCard({ message, isOwn }: { message: MockMessage; isOwn: b
         </span>
       </span>
     </div>
+    {open ? <Modal open title={message.attachmentName || 'Attachment'} footer={null}
+      width={800} onCancel={() => setOpen(false)} destroyOnHidden>
+      <div data-chat-file-detail={message.id} style={{ display: 'grid', gap: T.space3, minWidth: 0 }}>
+        <span style={{ color: T.textTertiary, fontSize: T.fontSm }}>{message.attachmentMeta} · {
+          status === 'ready' ? 'Downloaded' : status === 'cancelled' ? 'Download cancelled' : 'Downloading…'
+        }</span>
+        {status === 'downloading' ? <progress aria-label="Downloading" value={progress} max={100} style={{ width: '100%' }} /> : null}
+        <div style={{ minHeight: 220, display: 'grid', placeItems: 'center', color: T.textTertiary }}>
+          <span>{status === 'ready' ? 'Preview unavailable' : status === 'cancelled' ? 'Download cancelled' : 'Preparing…'}</span>
+        </div>
+        <div style={{ display: 'flex', gap: T.space2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {status === 'downloading' ? <Button onClick={() => setStatus('cancelled')}>Cancel download</Button> : null}
+          {status === 'cancelled' ? <Button onClick={() => setStatus('downloading')}>Retry download</Button> : null}
+          <Button disabled={status !== 'ready'} onClick={() => setFeedback('No available app for this file')}>Preview</Button>
+          <Button disabled={status !== 'ready'} onClick={() => setFeedback('No available app for this file')}>Open with another app</Button>
+          <Button type="primary" disabled={status !== 'ready'} onClick={() => setFeedback('Cancelled')}>Save a copy</Button>
+        </div>
+        {feedback ? <span role="status">{feedback}</span> : null}
+      </div>
+    </Modal> : null}
+    </>
   );
 }
 

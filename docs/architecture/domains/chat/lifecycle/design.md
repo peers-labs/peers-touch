@@ -136,6 +136,10 @@ flowchart LR
 - Capture and preview remain local draft state until durable send admission.
 - Playback uses only the fully verified local cache.
 - Transfer progress and playback progress are separate typed states.
+- File consumption follows [attachment-viewing.md](./attachment-viewing.md).
+  Messaging Runtime owns scoped access and transfer readback; Native owns
+  preview grants, external handoff and export. System applications receive
+  verified copies with safe original basenames, never writable cache paths.
 
 ### 6.4 Groups
 

@@ -21,12 +21,15 @@ const extractedSources = [
 ].join('\n');
 
 describe('Chat component ownership boundaries', () => {
-  it('keeps store, command, attachment I/O, and navigation ownership in ChatPage', () => {
+  it('keeps store, command and navigation in ChatPage, with attachment I/O in Runtime', () => {
     expect(pageSource).toContain('useSocialStore');
     expect(pageSource).not.toContain('useGroupStore');
     expect(pageSource).toContain('useAuthStore');
     expect(pageSource).toContain('dispatchSendMessage');
-    expect(pageSource).toContain('messagingOpenAttachment');
+    expect(pageSource).toContain('MobileMessageAttachmentItem');
+    expect(pageSource).toContain('AttachmentDetailHost');
+    expect(pageSource).not.toContain('messagingOpenAttachment');
+    expect(source('../../runtimes/attachmentAccess.ts')).toContain('ChatAttachmentAccessController');
     expect(pageSource).toContain('saveRouteQuery');
 
     expect(extractedSources).not.toMatch(/\buse(?:Auth|Social|Group)Store\b/);

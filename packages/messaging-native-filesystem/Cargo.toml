@@ -8,7 +8,8 @@ description = "Native filesystem adapter for the portable Messaging Core"
 hex = "0.4"
 messaging-core = { path = "../messaging-core" }
 rustix = { version = "1.1", features = ["fs"] }
+secure-content-core = { path = "../secure-content-core" }
 sha2 = "0.10"
+ulid = "1"
 
 [dev-dependencies]
-ulid = "1"

@@ -29,6 +29,7 @@ pub mod key_exchange;
 pub mod mcp;
 pub mod memory;
 pub mod messaging;
+pub mod messaging_files;
 pub mod messaging_recovery;
 pub mod model_config;
 

@@ -7,10 +7,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "pnpm run build && node tests/im-projection-contract.test.mjs && node tests/storage-batch.test.mjs && node tests/shared-semantics.test.mjs"
+    "test": "pnpm run build && node tests/im-projection-contract.test.mjs && node tests/storage-batch.test.mjs && node tests/shared-semantics.test.mjs && node --test tests/attachment-access.test.mjs"
   },
   "dependencies": {
-    "@peers-touch/client-storage": "workspace:*"
+    "@peers-touch/client-storage": "workspace:*",
+    "pdfjs-dist": "6.4.299"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

@@ -29,7 +29,7 @@ use crate::runtime::reliability::{FriendRequestResolverTransport, FriendRequestT
 use crate::runtime::reliability_proto::peers_touch::model::mobile::v1::MobileDurableCommandState;
 
 use super::engine::{
-    MemberAuthorityCommandError, MessagingAttachmentOpenProgress, MessagingAttachmentStage,
+    MemberAuthorityCommandError, MessagingAttachmentStage,
     MobileMessagingEngine, PreparedSocialFriendRequestCommand, PreparedSocialRelationshipCommand,
     ProjectedMemberAuthority, ATTACHMENT_STAGE_CHUNK_SIZE,
 };
@@ -635,13 +635,6 @@ pub struct MessagingAttachmentStageProjection {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase", tag = "state")]
-pub enum MessagingAttachmentOpenResult {
-    Ready { local_path: String },
-    Pending { next_attempt_at_unix_ms: i64 },
-}
-
-#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessagingSubmissionResult {
     submitted: bool,
@@ -848,8 +841,14 @@ pub async fn messaging_recover_identity_with_native_input<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn messaging_suspend(runtime: State<'_, MobileMessagingRuntime>) -> MobileResult<()> {
-    runtime.suspend()
+pub async fn messaging_suspend<R: Runtime>(
+    app: AppHandle<R>,
+    runtime: State<'_, MobileMessagingRuntime>,
+) -> MobileResult<()> {
+    runtime.suspend()?;
+    app.state::<tauri_plugin_peers_platform_permissions::PlatformPermissions<R>>()
+        .cancel_file_action("").await
+        .map_err(|_| MobileError::messaging("FILE_CANCELLATION_FAILED"))
 }
 
 #[tauri::command]
@@ -2604,48 +2603,6 @@ pub async fn messaging_submit_typing(
 }
 
 #[tauri::command]
-pub async fn messaging_open_attachment(
-    runtime: State<'_, MobileMessagingRuntime>,
-    input: MessagingAttachmentTransferInput,
-) -> MobileResult<MessagingAttachmentOpenResult> {
-    let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
-    let first_engine = engine.clone();
-    let attachment_id = input.attachment_id.clone();
-    let first = tauri::async_runtime::spawn_blocking(move || {
-        first_engine.prepare_attachment_open(&attachment_id)
-    })
-    .await
-    .map_err(|error| MobileError::messaging(format!("join attachment open task: {error}")))?
-    .map_err(MobileError::messaging)?;
-    if matches!(first, MessagingAttachmentOpenProgress::Pending { .. }) {
-        let (waiter, cycle_id) =
-            runtime.request_reconcile(&input.station_peer_id, &input.actor_ptid)?;
-        tauri::async_runtime::spawn_blocking(move || waiter.wait_for_cycle(cycle_id))
-            .await
-            .map_err(|error| {
-                MobileError::messaging(format!("join attachment transfer cycle: {error}"))
-            })?
-            .map_err(MobileError::messaging)?;
-    }
-    let progress = tauri::async_runtime::spawn_blocking(move || {
-        engine.prepare_attachment_open(&input.attachment_id)
-    })
-    .await
-    .map_err(|error| MobileError::messaging(format!("join attachment readback task: {error}")))?
-    .map_err(MobileError::messaging)?;
-    Ok(match progress {
-        MessagingAttachmentOpenProgress::Ready { local_path } => {
-            MessagingAttachmentOpenResult::Ready { local_path }
-        }
-        MessagingAttachmentOpenProgress::Pending {
-            next_attempt_at_unix_ms,
-        } => MessagingAttachmentOpenResult::Pending {
-            next_attempt_at_unix_ms,
-        },
-    })
-}
-
-#[tauri::command]
 pub async fn messaging_cancel_attachment(
     runtime: State<'_, MobileMessagingRuntime>,
     input: MessagingAttachmentTransferInput,
@@ -2709,11 +2666,16 @@ pub async fn messaging_reconcile(
 }
 
 #[tauri::command]
-pub fn messaging_deactivate(
+pub async fn messaging_deactivate<R: Runtime>(
+    app: AppHandle<R>,
     runtime: State<'_, MobileMessagingRuntime>,
     input: MessagingAccountInput,
 ) -> MobileResult<MessagingRuntimeStatus> {
-    runtime.deactivate(&input.station_peer_id, &input.actor_ptid)
+    let result = runtime.deactivate(&input.station_peer_id, &input.actor_ptid)?;
+    app.state::<tauri_plugin_peers_platform_permissions::PlatformPermissions<R>>()
+        .cancel_file_action("").await
+        .map_err(|_| MobileError::messaging("FILE_CANCELLATION_FAILED"))?;
+    Ok(result)
 }
 
 #[cfg(test)]

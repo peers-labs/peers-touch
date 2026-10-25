@@ -292,7 +292,6 @@ export interface MessagingServiceContract {
       limit?: number
     },
   ): Promise<MessagingProjection[]>
-  openAttachment(attachmentId: string): Promise<string>
 }
 
 export type MessagingActorMembershipIntent =

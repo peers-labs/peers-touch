@@ -1,21 +1,14 @@
 // Render a single chat message attachment.
 //
-// Attachment bytes resolve through the Messaging Engine. The renderer
-// receives only a verified local cache path and never handles keys,
-// nonces, hashes, transfer checkpoints, or ciphertext URLs.
-//
-// Non-image attachments render as compact cards that open the
-// resolved URL in the system browser. Image attachments render as
-// images first; filename metadata is intentionally hidden.
+// Messaging Runtime owns scoped access and downloads. Selecting a file opens
+// the shared detail surface; recorded voice notes retain inline playback.
 
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography, Tooltip } from 'antd';
@@ -35,19 +28,19 @@ import {
 } from 'lucide-react';
 import {
   type ChatAttachmentLike,
+  CHAT_INLINE_IMAGE_LIMIT,
   chatAttachmentDurationMs,
   chatMediaKindForAttachment,
   formatChatAttachmentSize,
   isChatVoiceNoteAttachment,
 } from '@peers-touch/client-chat-core';
-import { imServiceV1 } from '../../services/im-service';
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
-import { log } from '../../utils/logger';
+import { useAttachmentAccess } from './useAttachmentAccess';
+import { messagingAttachmentAccess } from '../../messaging/attachmentAccess';
 
 const { Text } = Typography;
 
 type Attachment = ChatAttachmentLike;
-export type MessagingAttachmentOpenState = 'idle' | 'pending' | 'ready' | 'error';
 
 function messagingAttachmentId(attachment: Attachment): string {
   const explicit = (attachment as Attachment & { attachmentId?: string }).attachmentId?.trim();
@@ -62,43 +55,6 @@ function messagingAttachmentState(
   return state === 'uploading' || state === 'remote' || state === 'local' || state === 'failed'
     ? state
     : 'unknown';
-}
-
-export function useMessagingAttachmentUrl(
-  attachment: Attachment,
-  eager: boolean,
-): {
-  src: string | null;
-  openState: MessagingAttachmentOpenState;
-  resolve: () => Promise<string | null>;
-} {
-  const attachmentId = messagingAttachmentId(attachment);
-  const [src, setSrc] = useState<string | null>(null);
-  const [openState, setOpenState] = useState<MessagingAttachmentOpenState>('idle');
-  const resolve = useCallback(async () => {
-    if (!attachmentId) return null;
-    setOpenState('pending');
-    setSrc(null);
-    try {
-      const localPath = await imServiceV1.messaging.openAttachment(attachmentId);
-      const next = convertFileSrc(localPath);
-      setSrc(next);
-      setOpenState('ready');
-      return next;
-    } catch (error) {
-      setOpenState('error');
-      log.warn('chat', 'open Engine attachment failed', { attachmentId, error });
-      return null;
-    }
-  }, [attachmentId]);
-
-  useEffect(() => {
-    setSrc(null);
-    setOpenState('idle');
-    if (eager) void resolve();
-  }, [eager, resolve]);
-
-  return { src, openState, resolve };
 }
 
 export type ChatAttachmentVisibilityHint = 'public' | 'chat' | 'private';
@@ -288,6 +244,7 @@ function AttachmentDetails({
         <Tooltip title={openTitle}>
           <button
             type="button"
+            data-chat-attachment-open
             aria-label={openTitle}
             onClick={(ev) => {
               ev.stopPropagation();
@@ -338,11 +295,11 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const isVideo = attachmentKind === 'video';
   const isAudio = attachmentKind === 'audio';
   const isVoiceNote = isChatVoiceNoteAttachment(attachment);
-  const { src, openState, resolve } = useMessagingAttachmentUrl(
+  const { src, openState, open: openAttachment } = useAttachmentAccess(
     attachment,
-    isImage || isVideo || isAudio,
+    isImage || isVoiceNote,
   );
-  const canOpen = Boolean(attachmentId) && openState !== 'pending';
+  const canOpen = Boolean(attachmentId);
   const chip = visibilityChip(visibilityHint, t, isOwn, token);
   const showHint = chip !== null;
   const filename = attachment.filename?.trim() || t('chat.social.messageArea.attachmentUnnamed');
@@ -362,7 +319,8 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         : availabilityState === 'failed'
           ? t('chat.social.messageArea.attachmentStateFailed')
           : '';
-  const canPreviewImage = Boolean(isImage && src && !previewFailed);
+  const canPreviewImage = Boolean(isImage && src && !previewFailed
+    && Number(attachment.size) <= CHAT_INLINE_IMAGE_LIMIT);
   const cardBackground = isOwn
     ? hovered
       ? 'rgba(255,255,255,0.22)'
@@ -383,12 +341,6 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
     setAudioEnded(false);
     setAudioTerminal(false);
   }, [attachment.cid, src]);
-
-  const openAttachment = async () => {
-    if (openState === 'pending') return;
-    const resolved = src ?? await resolve();
-    if (resolved) window.open(resolved, '_blank');
-  };
 
   const handleKeyDown = (ev: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!canOpen) return;
@@ -457,6 +409,9 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             </Flexbox>
           )}
         </Flexbox>
+        <Text ellipsis style={{ maxWidth: 240, fontSize: 12 }}>
+          {filename}
+        </Text>
         {sizeLabel && (
           <Text style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', fontSize: 10, color: token.colorTextQuaternary }}>
             {sizeLabel}
@@ -526,7 +481,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
     );
   }
 
-  if (isAudio) {
+  if (isAudio && isVoiceNote) {
     const toggleAudioPlayback = () => {
       const audio = audioRef.current;
       if (!audio || !src || audioTerminal) return;
@@ -556,7 +511,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
       setAudioTerminal(false);
       setAudioEnded(false);
       setAudioPositionSeconds(0);
-      void resolve();
+      void messagingAttachmentAccess.retry(attachmentId);
     };
     const audioFailed = audioTerminal || openState === 'error' || availabilityState === 'failed';
     const audioPlaybackState = audioFailed

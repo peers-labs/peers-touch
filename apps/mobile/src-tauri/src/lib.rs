@@ -23,12 +23,17 @@ use runtime::oauth::OAuthCoordinator;
 use runtime::reliability::ReliabilityRuntime;
 use runtime::station_transport::StationTransportRuntime;
 use social::MobilePrivateSocialRuntime;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mobile_platform = MobilePlatform::from_compiled_target()
         .expect("failed to resolve the Mobile release target");
     let builder = tauri::Builder::default()
+        .register_uri_scheme_protocol("chat-file", |context, request| {
+            let runtime = context.app_handle().state::<MobileMessagingRuntime>();
+            messaging::file_access::asset_response(runtime.inner(), context.webview_label(), &request)
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_peers_platform_permissions::init())

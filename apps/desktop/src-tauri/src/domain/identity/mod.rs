@@ -95,6 +95,7 @@ pub struct LocalAccount {
 #[derive(Debug, Clone)]
 pub struct ActiveSession {
     pub window_label: String,
+    pub activation_id: String,
     pub account_id: String,
     pub actor: ActorRef,
     pub jwt: String,
@@ -109,6 +110,7 @@ impl ActiveSession {
     ) -> Self {
         Self {
             window_label: window_label.into(),
+            activation_id: ulid::Ulid::new().to_string(),
             account_id: account_id.into(),
             actor,
             jwt: jwt.into(),

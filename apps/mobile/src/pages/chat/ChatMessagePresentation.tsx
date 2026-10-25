@@ -219,10 +219,13 @@ export function MessageAttachmentPresentation({
         onClick={onOpen}
       >
         <img src={sourceUrl} alt={filename} />
+        <span className="mobile-attachment-info">
+          <span>{filename}</span><small>{stateLabel}</small>
+        </span>
       </button>
     );
   }
-  if (kind === 'audio' && sourceUrl) {
+  if (kind === 'audio' && sourceUrl && voiceDurationLabel) {
     return (
       <div className="mobile-attachment-audio" data-attachment-id={attachmentId}>
         <span className="mobile-attachment-audio-heading">
