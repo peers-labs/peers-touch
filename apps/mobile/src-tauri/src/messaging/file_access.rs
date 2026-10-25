@@ -228,6 +228,12 @@ pub fn asset_response(
             .attachment_file_access
             .attachment_id(&owner, handle)?;
         engine.validate_attachment_handle(&owner, handle, &attachment_id)?;
+        if let Some(query) = request.uri().query() {
+            if query != "representation=preview" {
+                return Err("FILE_REPRESENTATION_INVALID".into());
+            }
+            return engine.attachment_file_access.read_image_preview(&owner, handle, head);
+        }
         engine.attachment_file_access.read_asset(
             &owner,
             handle,
@@ -242,6 +248,7 @@ pub fn asset_response(
         .header("cache-control", "no-store")
         .header("x-content-type-options", "nosniff")
         .header("content-security-policy", "default-src 'none'; sandbox")
+        .header("access-control-expose-headers", "content-range, content-length, accept-ranges")
         .header("access-control-allow-origin", "*");
     match result {
         Ok(asset) => {

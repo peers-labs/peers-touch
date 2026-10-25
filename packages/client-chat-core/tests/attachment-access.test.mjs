@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ChatAttachmentAccessController, chatFilePreviewKind } from '../dist/attachmentAccess.js';
-import { readChatAttachmentPreview } from '../dist/attachmentPreview.js';
+import { AttachmentByteReader } from '../dist/attachmentByteReader.js';
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 function deferred() {
@@ -171,7 +171,12 @@ test('active content is never classified for executable inline preview', () => {
   for (const filename of ['a.svg', 'a.html', 'a.exe', 'a.js']) {
     assert.equal(chatFilePreviewKind({ filename, mimeType: 'image/png', size: 1 }), 'file');
   }
-  assert.equal(chatFilePreviewKind({ filename: 'a.txt', size: 512 * 1024 + 1 }), 'file');
+  for (const size of [0, 512 * 1024 + 1, 10 * 1024 ** 3]) {
+    assert.equal(chatFilePreviewKind({ filename: 'a.txt', size }), 'text');
+  }
+  for (const filename of ['a.docx', 'a.xlsx', 'a.xls', 'a.pptx', 'a.ppt']) {
+    assert.equal(chatFilePreviewKind({ filename, size: 10 * 1024 ** 3 }), 'office');
+  }
   assert.equal(chatFilePreviewKind({ filename: 'a.pdf', mimeType: 'application/octet-stream' }), 'pdf');
   for (const mimeType of ['audio/mp4', 'audio/m4a', 'audio/x-m4a']) {
     assert.equal(chatFilePreviewKind({ filename: 'sound.m4a', mimeType }), 'audio');
@@ -180,23 +185,46 @@ test('active content is never classified for executable inline preview', () => {
   assert.equal(chatFilePreviewKind({ filename: 'sound.wav', mimeType: 'audio/x-wav' }), 'audio');
 });
 
-test('preview assembly enforces byte bounds, exact ranges and cancellation', async (t) => {
+test('preview Range reads validate grant identity and consume only the selected bytes', async (t) => {
   const previous = globalThis.fetch;
   t.after(() => { globalThis.fetch = previous; });
   const requests = [];
+  const size = 10 * 1024 ** 3;
+  const url = 'http://chat-file.localhost/01ARZ3NDEKTSV4RRFFQ69G5FAV';
   globalThis.fetch = async (_url, request) => {
     requests.push(request.headers.Range);
     const [, start, end] = /bytes=(\d+)-(\d+)/.exec(request.headers.Range);
-    return new Response(new Uint8Array(Number(end) - Number(start) + 1));
+    return new Response(new Uint8Array(Number(end) - Number(start) + 1), {
+      status: 206, headers: { 'content-range': `bytes ${start}-${end}/${size}` },
+    });
   };
   const signal = new AbortController().signal;
-  const size = 4 * 1024 * 1024 + 7;
-  assert.equal((await readChatAttachmentPreview('scoped', size, size, signal)).size, size);
-  assert.deepEqual(requests, ['bytes=0-4194303', 'bytes=4194304-4194310']);
-  await assert.rejects(readChatAttachmentPreview('scoped', size, 10, signal), /TOO_LARGE/);
+  const reader = new AttachmentByteReader(url, size, signal);
+  assert.equal((await reader.read(size - 7, 7)).length, 7);
+  assert.equal((await reader.read(0, 0)).length, 0);
+  assert.deepEqual(requests, [`bytes=${size - 7}-${size - 1}`]);
+  for (const [start, length] of [[-1, 1], [0, -1], [size, 1], [0, 8 * 1024 ** 2 + 1], [0.5, 1]]) {
+    await assert.rejects(reader.read(start, length), /RANGE_INVALID/);
+  }
+  for (const invalid of ['https://evil.example/01ARZ3NDEKTSV4RRFFQ69G5FAV', 'file:///private/report', `${url}?path=secret`]) {
+    assert.throws(() => new AttachmentByteReader(invalid, size, signal), /ASSET_INVALID/);
+  }
+  assert.throws(() => new AttachmentByteReader(url, -1, signal), /ASSET_INVALID/);
   globalThis.fetch = async () => new Response(new Uint8Array(1));
-  await assert.rejects(readChatAttachmentPreview('scoped', 10, 10, signal), /INCOMPLETE/);
+  await assert.rejects(reader.read(0, 1), /IDENTITY_MISMATCH/);
+  globalThis.fetch = async () => new Response(new Uint8Array(1), {
+    status: 206, headers: { 'content-range': `bytes 0-9/${size}` },
+  });
+  await assert.rejects(reader.read(0, 10), /INCOMPLETE/);
+  globalThis.fetch = async () => new Response(new Uint8Array(11), {
+    status: 206, headers: { 'content-range': `bytes 0-9/${size}` },
+  });
+  await assert.rejects(reader.read(0, 10), /INCOMPLETE/);
+  globalThis.fetch = async () => new Response(new Uint8Array(10), {
+    status: 206, headers: { 'content-range': `bytes 0-9/${size - 1}` },
+  });
+  await assert.rejects(reader.read(0, 10), /IDENTITY_MISMATCH/);
   const aborted = new AbortController();
   aborted.abort();
-  await assert.rejects(readChatAttachmentPreview('scoped', 1, 10, aborted.signal), /aborted/i);
+  await assert.rejects(new AttachmentByteReader(url, size, aborted.signal).read(0, 1), /aborted/i);
 });

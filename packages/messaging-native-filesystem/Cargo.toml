@@ -6,6 +6,7 @@ description = "Native filesystem adapter for the portable Messaging Core"
 
 [dependencies]
 hex = "0.4"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 messaging-core = { path = "../messaging-core" }
 rustix = { version = "1.1", features = ["fs"] }
 secure-content-core = { path = "../secure-content-core" }

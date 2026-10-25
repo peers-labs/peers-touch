@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Modal, Typography } from 'antd';
 import { File } from 'lucide-react';
 import copy from '../../../../../locales/en/chat.json';
+import { AttachmentPreview } from './AttachmentPreview';
 
 export function AttachmentCard({ file }: { file: { name: string; size: string } }) {
   const [detailState, setDetailState] = useState<'closed' | 'open' | 'closing'>('closed');
@@ -42,12 +43,13 @@ export function AttachmentCard({ file }: { file: { name: string; size: string } 
         <span>{file.size} · {copy[`chat.attachment.${label}`]}</span>
         {status === 'downloading' ? <progress value={progress} max={100} aria-label={copy['chat.attachment.downloading']} style={{ width: '100%' }} /> : null}
         <div style={{ minHeight: 240, display: 'grid', placeItems: 'center' }}>
-          {copy[status === 'ready' ? 'chat.attachment.previewUnavailable' : status === 'cancelled' ? 'chat.attachment.cancelled' : 'chat.attachment.preparing']}
+          {status === 'ready' ? <AttachmentPreview key={file.name} filename={file.name} />
+            : copy[status === 'cancelled' ? 'chat.attachment.cancelled' : 'chat.attachment.preparing']}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {status === 'downloading' ? <Button style={{ minHeight: 44 }} onClick={() => setStatus('cancelled')}>{copy['chat.attachment.cancelDownload']}</Button> : null}
           {status === 'cancelled' ? <Button style={{ minHeight: 44 }} onClick={() => setStatus('downloading')}>{copy['chat.attachment.retry']}</Button> : null}
-          <Button style={{ minHeight: 44 }} disabled={status !== 'ready'} onClick={() => setFeedback(copy['chat.attachment.actionUnavailable'])}>{copy['chat.attachment.preview']}</Button>
+          <Button style={{ minHeight: 44 }} disabled={status !== 'ready'} onClick={() => setFeedback(copy['chat.attachment.actionUnavailable'])}>{copy['chat.attachment.systemPreview']}</Button>
           <Button style={{ minHeight: 44 }} disabled={status !== 'ready'} onClick={() => setFeedback(copy['chat.attachment.actionUnavailable'])}>{copy['chat.attachment.openExternal']}</Button>
           <Button style={{ minHeight: 44 }} type="primary" disabled={status !== 'ready'} onClick={() => setFeedback(copy['chat.attachment.actionCancelled'])}>{copy['chat.attachment.saveCopy']}</Button>
         </div>

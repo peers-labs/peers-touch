@@ -390,6 +390,12 @@ pub fn asset_response(
         if !head && request.method() != tauri::http::Method::GET {
             return Err("FILE_METHOD_INVALID".into());
         }
+        if let Some(query) = request.uri().query() {
+            if query != "representation=preview" {
+                return Err("FILE_REPRESENTATION_INVALID".into());
+            }
+            return engine.attachment_file_access.read_image_preview(&owner, handle, head);
+        }
         engine.attachment_file_access.read_asset(
             &owner,
             handle,
@@ -411,6 +417,7 @@ fn asset_http_response(
         .header("cache-control", "no-store")
         .header("x-content-type-options", "nosniff")
         .header("content-security-policy", "default-src 'none'; sandbox")
+        .header("access-control-expose-headers", "content-range, content-length, accept-ranges")
         .header("access-control-allow-origin", "*");
     match result {
         Ok(asset) => {
@@ -434,14 +441,17 @@ fn asset_http_response(
             }
             response.body(asset.bytes).expect("file asset response")
         }
-        Err(error) => response
-            .status(if error == "FILE_RANGE_INVALID" {
-                416
-            } else {
-                404
-            })
-            .body(Vec::new())
-            .expect("file asset error response"),
+        Err(error) => {
+            tracing::debug!(error_code = %error, "attachment asset read rejected");
+            response
+                .status(if error == "FILE_RANGE_INVALID" {
+                    416
+                } else {
+                    404
+                })
+                .body(Vec::new())
+                .expect("file asset error response")
+        }
     }
 }
 

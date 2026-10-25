@@ -50,6 +50,7 @@ pub struct AttachmentFileAccess {
     disabled: AtomicBool,
     epoch: AtomicU64,
     staging: Mutex<()>,
+    image_preview: Mutex<()>,
 }
 
 pub struct AttachmentAsset {
@@ -203,6 +204,28 @@ impl AttachmentFileAccess {
         })
     }
 
+    pub fn read_image_preview(
+        &self, owner: &str, handle: &str, head: bool,
+    ) -> Result<AttachmentAsset, String> {
+        // One decoder per Engine; concurrent images cannot multiply the budget.
+        let _decode = self.image_preview.try_lock().map_err(|_| "FILE_PREVIEW_BUSY")?;
+        self.with_grant(owner, handle, |grant| {
+            if !grant.mime_type.starts_with("image/") {
+                return Err("FILE_PREVIEW_CODEC_UNAVAILABLE".into());
+            }
+            let mut file = grant.file.lock().map_err(|_| "FILE_READ_FAILED")?;
+            file.rewind().map_err(|_| "FILE_READ_FAILED")?;
+            let reader = RevocableImageReader { file: &mut file, revoked: &grant.revoked };
+            let bytes = crate::image_preview::render(std::io::BufReader::new(reader), grant.size)?;
+            let total = bytes.len() as u64;
+            Ok(AttachmentAsset {
+                bytes: if head { Vec::new() } else { bytes },
+                mime_type: "image/png".into(), total, start: 0,
+                end: total.saturating_sub(1), partial: false,
+            })
+        })
+    }
+
     /// OS adapters receive only an independent, byte-verified disposable copy.
     /// Successful copies remain available for external readers until retention.
     pub fn stage_copy(
@@ -330,11 +353,11 @@ impl AttachmentFileAccess {
         if grant.revoked.load(Ordering::Acquire) {
             return Err("FILE_ACCESS_STALE".into());
         }
-        let result = operation(&grant)?;
+        let result = operation(&grant);
         if grant.revoked.load(Ordering::Acquire) {
             return Err("FILE_ACCESS_STALE".into());
         }
-        Ok(result)
+        result
     }
 }
 
@@ -344,10 +367,31 @@ struct ScopedCacheReader<'a> {
     epoch: u64,
 }
 
+struct RevocableImageReader<'a> {
+    file: &'a mut File,
+    revoked: &'a AtomicBool,
+}
+impl Read for RevocableImageReader<'_> {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        if self.revoked.load(Ordering::Acquire) {
+            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "file access revoked"));
+        }
+        self.file.read(bytes)
+    }
+}
+impl Seek for RevocableImageReader<'_> {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        if self.revoked.load(Ordering::Acquire) {
+            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "file access revoked"));
+        }
+        self.file.seek(position)
+    }
+}
+
 impl Read for ScopedCacheReader<'_> {
     fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
         if !self.access.epoch_is_current(self.epoch) {
-            return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "file access revoked"));
+            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "file access revoked"));
         }
         self.file.read(bytes)
     }

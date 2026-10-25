@@ -138,7 +138,7 @@ class LifecyclePresenceLayoutContractTest(unittest.TestCase):
             "session_unread_capped",
             "message_metadata_geometry_stable",
             "message_scroll_anchor_stable",
-            "message_pending_interaction_slot_reserved",
+            "message_metadata_attached_to_content",
             "message_emoji_geometry_bounded",
         ):
             self.assertIn(
@@ -236,10 +236,14 @@ class LifecyclePresenceLayoutContractTest(unittest.TestCase):
             "rows": {
                 "a": {
                     "row": {"top": 10, "bottom": 82, "height": 72},
+                    "content": {"top": 10, "bottom": 38, "width": 100, "height": 28},
+                    "meta": {"top": 42, "bottom": 58, "height": 16},
                     "rail": {"top": 58, "bottom": 82, "height": 24},
                 },
                 "b": {
                     "row": {"top": 82, "bottom": 154, "height": 72},
+                    "content": {"top": 82, "bottom": 110, "width": 100, "height": 28},
+                    "meta": {"top": 114, "bottom": 130, "height": 16},
                     "rail": {"top": 130, "bottom": 154, "height": 24},
                 },
             },
@@ -251,7 +255,7 @@ class LifecyclePresenceLayoutContractTest(unittest.TestCase):
         self.assertTrue(message_geometry_equal(before, after, ("a", "b")))
         self.assertTrue(scroll_anchor_equal(before, after))
 
-        after["rows"]["b"]["row"]["top"] = 85
+        after["rows"]["b"]["meta"]["top"] = 140
         self.assertFalse(message_geometry_equal(before, after, ("a", "b")))
         after = json.loads(json.dumps(before))
         after["scrollTop"] = 205

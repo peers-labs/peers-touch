@@ -1,7 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import {
   chatAttachmentAccessId,
-  CHAT_INLINE_IMAGE_LIMIT,
   chatMediaKindForAttachment,
   formatChatAttachmentSize,
 } from '@peers-touch/client-chat-core';
@@ -38,9 +37,8 @@ export function MobileMessageAttachmentItem({ attachment }: { attachment: Social
       kind={kind}
       filename={filename}
       stateLabel={`${formatChatAttachmentSize(projection?.plaintextSize ?? attachment.size)} · ${t(`chat.attachment.${stateKey}`)}`}
-      sourceUrl={state === AttachmentAccessState.READY
-        && (kind !== 'image' || Number(projection?.plaintextSize ?? attachment.size) <= CHAT_INLINE_IMAGE_LIMIT)
-        ? projection?.assetUrl ?? '' : ''}
+      sourceUrl={state === AttachmentAccessState.READY && projection?.assetUrl
+        ? kind === 'image' ? `${projection.assetUrl}?representation=preview` : projection.assetUrl : ''}
       voiceDurationLabel={voice ? `${Math.floor(duration / 60_000)}:${String(Math.round(duration / 1000) % 60).padStart(2, '0')}` : undefined}
       disabled={!id}
       onOpen={() => mobileAttachmentAccess.open(id, attachment)}

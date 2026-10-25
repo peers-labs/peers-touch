@@ -7,10 +7,18 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "pnpm run build && node tests/im-projection-contract.test.mjs && node tests/storage-batch.test.mjs && node tests/shared-semantics.test.mjs && node --test tests/attachment-access.test.mjs"
+    "test": "pnpm run build && node tests/im-projection-contract.test.mjs && node tests/storage-batch.test.mjs && node tests/shared-semantics.test.mjs && node --test tests/attachment-access.test.mjs && node tests/preview-rendering.test.mjs"
   },
   "dependencies": {
     "@peers-touch/client-storage": "workspace:*",
+    "@web-ppt/core": "0.4.5",
+    "@xmldom/xmldom": "0.9.12",
+    "@zip.js/zip.js": "2.24.0",
+    "docx-preview": "0.4.1",
+    "dompurify": "3.4.17",
+    "image-size": "2.0.2",
+    "linkedom": "0.18.12",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "pdfjs-dist": "6.4.299"
   },
   "devDependencies": {

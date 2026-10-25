@@ -28,9 +28,9 @@ import {
 } from 'lucide-react';
 import {
   type ChatAttachmentLike,
-  CHAT_INLINE_IMAGE_LIMIT,
   chatAttachmentDurationMs,
   chatMediaKindForAttachment,
+  chatAttachmentFileType,
   formatChatAttachmentSize,
   isChatVoiceNoteAttachment,
 } from '@peers-touch/client-chat-core';
@@ -157,17 +157,7 @@ function attachmentTypeLabel(
   if (kind === 'video') return t('chat.social.messageArea.attachmentTypeVideo');
   if (kind === 'audio') return t('chat.social.messageArea.attachmentTypeAudio');
 
-  const mimeType = attachment.mimeType?.trim();
-  if (mimeType) {
-    const [, subtype] = mimeType.split('/');
-    if (subtype) return subtype.split(/[+;]/)[0].replace(/[-_.]+/g, ' ').toUpperCase();
-  }
-
-  const filename = attachment.filename ?? '';
-  const extension = filename.includes('.') ? filename.split('.').pop() : '';
-  return extension
-    ? extension.toUpperCase()
-    : t('chat.social.messageArea.attachmentTypeFile');
+  return chatAttachmentFileType(attachment) || t('chat.social.messageArea.attachmentTypeFile');
 }
 
 interface AttachmentDetailsProps {
@@ -319,8 +309,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         : availabilityState === 'failed'
           ? t('chat.social.messageArea.attachmentStateFailed')
           : '';
-  const canPreviewImage = Boolean(isImage && src && !previewFailed
-    && Number(attachment.size) <= CHAT_INLINE_IMAGE_LIMIT);
+  const canPreviewImage = Boolean(isImage && src && !previewFailed);
   const cardBackground = isOwn
     ? hovered
       ? 'rgba(255,255,255,0.22)'
@@ -358,7 +347,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         data-messaging-attachment-kind={attachmentKind}
         data-messaging-attachment-open-state={openState}
         data-messaging-attachment-state={availabilityState}
-        style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}
+        style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', width: 'fit-content', maxWidth: 'min(240px, 100%)' }}
       >
         <Flexbox
           role={canOpen ? 'button' : undefined}
@@ -380,7 +369,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         >
           {canPreviewImage && src ? (
             <img
-              src={src}
+              src={`${src}?representation=preview`}
               alt={filename}
               loading="lazy"
               style={{
@@ -409,14 +398,16 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             </Flexbox>
           )}
         </Flexbox>
-        <Text ellipsis style={{ maxWidth: 240, fontSize: 12 }}>
-          {filename}
-        </Text>
-        {sizeLabel && (
-          <Text style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', fontSize: 10, color: token.colorTextQuaternary }}>
-            {sizeLabel}
+        <Flexbox gap={2} style={{ padding: '2px 6px', borderRadius: 4, background: token.colorBgContainer }}>
+          <Text ellipsis style={{ maxWidth: 228, fontSize: 12, color: token.colorText }}>
+            {filename}
           </Text>
-        )}
+          {sizeLabel && (
+            <Text style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', fontSize: 10, color: token.colorTextSecondary }}>
+              {sizeLabel}
+            </Text>
+          )}
+        </Flexbox>
         {transferStateLabel && <Text type="secondary" style={{ fontSize: 10 }}>{transferStateLabel}</Text>}
         {showHint && chip && <VisibilityBadge chip={chip} />}
       </Flexbox>

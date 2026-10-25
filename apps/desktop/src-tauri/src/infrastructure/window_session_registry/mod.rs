@@ -43,8 +43,7 @@ impl WindowSessionRegistry {
             .inner
             .write()
             .expect("WindowSessionRegistry write lock poisoned");
-        let label = session.window_label.clone();
-        map.insert(label, session)
+        Self::insert_session(&mut map, session)
     }
 
     /// Bind a session and remove any other window already bound to the same
@@ -84,12 +83,29 @@ impl WindowSessionRegistry {
                 kicked.push(prev);
             }
         }
-        let previous_window_session = map.insert(label.clone(), session);
+        let previous_window_session = Self::insert_session(&mut map, session);
         Ok(ExclusiveBindingCommit {
             window_label: label,
             previous_window_session,
             kicked,
         })
+    }
+
+    fn insert_session(
+        map: &mut HashMap<String, ActiveSession>,
+        mut session: ActiveSession,
+    ) -> Option<ActiveSession> {
+        if let Some(previous) = map.get(&session.window_label) {
+            // Background validation of the same session is not an activation.
+            // Retain the authority used by in-flight file reads and previews.
+            if previous.account_id == session.account_id
+                && previous.actor.ptid == session.actor.ptid
+                && previous.jwt == session.jwt
+            {
+                session.activation_id = previous.activation_id.clone();
+            }
+        }
+        map.insert(session.window_label.clone(), session)
     }
 
     pub fn rollback_exclusive(&self, commit: ExclusiveBindingCommit) -> Result<(), String> {
@@ -236,5 +252,56 @@ mod tests {
         assert!(reg.get("main").is_none());
         assert!(reg.get("second").is_some());
         assert!(reg.get("third").is_some());
+    }
+
+    #[test]
+    fn repeated_session_validation_preserves_attachment_owner() {
+        let reg = WindowSessionRegistry::new();
+        reg.bind_exclusive(sample("main", "password:alice", "ptid:test:alice"));
+        let activation = reg.get("main").unwrap().activation_id;
+
+        reg.bind_exclusive(sample("main", "password:alice", "ptid:test:alice"));
+        assert_eq!(reg.get("main").unwrap().activation_id, activation);
+        reg.bind(sample("main", "password:alice", "ptid:test:alice"));
+        assert_eq!(reg.get("main").unwrap().activation_id, activation);
+    }
+
+    #[test]
+    fn changed_authority_and_relogin_start_new_activations() {
+        let reg = WindowSessionRegistry::new();
+        reg.bind_exclusive(sample("main", "password:alice", "ptid:test:alice"));
+        let mut activation = reg.get("main").unwrap().activation_id;
+        let mut renewed = sample("main", "password:alice", "ptid:test:alice");
+        renewed.jwt = "renewed-token".into();
+        for next in [
+            renewed,
+            sample("main", "oauth:alice", "ptid:test:alice"),
+            sample("main", "oauth:alice", "ptid:test:bob"),
+        ] {
+            reg.bind_exclusive(next);
+            let current = reg.get("main").unwrap().activation_id;
+            assert_ne!(current, activation);
+            activation = current;
+        }
+        reg.unbind("main");
+        reg.bind_exclusive(sample("main", "oauth:alice", "ptid:test:bob"));
+        assert_ne!(reg.get("main").unwrap().activation_id, activation);
+    }
+
+    #[test]
+    fn failed_binding_rolls_back_activation_and_exclusivity() {
+        let reg = WindowSessionRegistry::new();
+        reg.bind(sample("main", "password:alice", "ptid:test:alice"));
+        reg.bind(sample("second", "password:bob", "ptid:test:bob"));
+        let original = reg.get("main").unwrap().activation_id;
+        let second = reg.get("second").unwrap().activation_id;
+        let commit = reg
+            .try_bind_exclusive(sample("main", "password:bob", "ptid:test:bob"))
+            .unwrap();
+        assert!(reg.get("second").is_none());
+        assert_ne!(reg.get("main").unwrap().activation_id, original);
+        reg.rollback_exclusive(commit).unwrap();
+        assert_eq!(reg.get("main").unwrap().activation_id, original);
+        assert_eq!(reg.get("second").unwrap().activation_id, second);
     }
 }

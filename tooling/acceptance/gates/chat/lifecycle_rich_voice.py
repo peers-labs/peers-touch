@@ -1101,13 +1101,41 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                     ),
                     f"{participant} {format_id} encrypted projection", timeout=60,
                 )
+                evidence_root = root / "file-format-evidence" / format_id / role
+                retained = {}
+                def retain_evidence(observed):
+                    for image in sorted(evidence_root.glob("*.png")):
+                        if str(image) in retained:
+                            continue
+                        retained[str(image)] = self.report.add_evidence_file(
+                            f"file-format-{format_id}-{role}-{image.name}", image,
+                            destination_dir=self.evidence_dir,
+                        )
+                    for record in sorted(evidence_root.glob("*.json")):
+                        if str(record) in retained:
+                            continue
+                        pixels = json.loads(record.read_text())
+                        for key in ("screenshot", "contentScreenshot", "headerScreenshot", "navigationScreenshot"):
+                            if pixels.get(key) in retained:
+                                pixels[key] = retained[pixels[key]]
+                        record.write_text(json.dumps(pixels, ensure_ascii=False, indent=2))
+                        retained[str(record)] = self.report.add_evidence_file(
+                            f"file-format-{format_id}-{role}-{record.name}", record,
+                            destination_dir=self.evidence_dir,
+                        )
+                    for pixels in (observed.get("pixelsEvidence", {}), observed.get("nextPixelsEvidence", {})):
+                        for key in ("screenshot", "contentScreenshot", "headerScreenshot", "navigationScreenshot"):
+                            if pixels.get(key) in retained:
+                                pixels[key] = retained[pixels[key]]
                 observed = prove_file_format_preview(
                     client=self.clients[participant],
                     attachment_id=attachment_id,
                     source=source,
                     format_id=format_id,
                     role=role,
+                    evidence_root=evidence_root,
                     assert_condition=self.assert_condition,
+                    retain_evidence=retain_evidence,
                 )
                 # Cache hashes supplement the actual card and decoder evidence.
                 path = self._open_attachment(participant, attachment_id)

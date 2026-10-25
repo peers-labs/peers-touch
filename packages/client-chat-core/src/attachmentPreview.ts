@@ -1,22 +1,7 @@
-import { CHAT_TEXT_PREVIEW_LIMIT, type ChatFilePreviewKind } from './attachmentAccess.js';
-
-export const CHAT_IMAGE_PREVIEW_LIMIT = 32 * 1024 * 1024;
-export const CHAT_PDF_PREVIEW_LIMIT = 64 * 1024 * 1024;
-export const CHAT_INLINE_IMAGE_LIMIT = 8 * 1024 * 1024;
-const RANGE_SIZE = 4 * 1024 * 1024;
-
-export interface ChatFilePreviewLabels {
-  preparing: string;
-  unavailable: string;
-  previousPage: string;
-  nextPage: string;
-  page: (page: number, total: number) => string;
-}
-
-export function setChatFilePreviewUnavailable(container: HTMLElement, label: string): void {
-  container.textContent = label;
-  container.setAttribute('data-chat-file-preview-unavailable', 'true');
-}
+import type { ChatFilePreviewKind } from './attachmentAccess.js';
+import { AttachmentByteReader } from './attachmentByteReader.js';
+import { setChatFilePreviewState, setChatFilePreviewUnavailable, type ChatFilePreviewLabels } from './previewSurface.js';
+export { setChatFilePreviewUnavailable, type ChatFilePreviewLabels } from './previewSurface.js';
 
 /** Platform renderers mount one selected resource; abort owns all disposal. */
 export async function mountChatAttachmentPreview(
@@ -30,65 +15,48 @@ export async function mountChatAttachmentPreview(
 ): Promise<void> {
   container.removeAttribute('data-chat-file-preview-unavailable');
   container.textContent = labels.preparing;
+  setChatFilePreviewState(container, 'loading');
+  container.dataset.chatPreviewKind = kind;
   signal.throwIfAborted();
+  const reader = new AttachmentByteReader(url, size, signal);
   if (kind === 'pdf') {
     const { mountChatPdfPreview } = await import('./pdfPreview.js');
     signal.throwIfAborted();
     return mountChatPdfPreview(container, url, size, labels, signal);
   }
-  if (kind === 'file' || kind === 'office') {
+  if (kind === 'office') {
+    const { mountChatOfficePreview } = await import('./officePreview.js');
+    signal.throwIfAborted();
+    return mountChatOfficePreview(container, reader, filename, labels);
+  }
+  if (kind === 'text') {
+    const { mountChatTextPreview } = await import('./textPreview.js');
+    signal.throwIfAborted();
+    return mountChatTextPreview(container, reader, labels);
+  }
+  if (kind === 'file') {
     setChatFilePreviewUnavailable(container, labels.unavailable);
     return;
   }
-  const node = document.createElement(kind === 'image' ? 'img' : kind === 'text' ? 'pre' : kind);
+  const node = document.createElement(kind === 'image' ? 'img' : kind);
+  const ready = () => {
+    if (!signal.aborted) setChatFilePreviewState(container, 'ready');
+  };
   node.addEventListener('error', () => setChatFilePreviewUnavailable(container, labels.unavailable), { signal });
   if (node instanceof HTMLMediaElement) {
+    node.addEventListener('loadeddata', ready, { signal, once: true });
     node.controls = true;
-    node.preload = 'metadata';
+    // A metadata-only preload need not emit loadeddata in WKWebView. Request
+    // the first decoded sample/frame while retaining native Range streaming.
+    node.preload = 'auto';
     node.src = url;
     signal.addEventListener('abort', () => { node.pause(); node.removeAttribute('src'); node.load(); }, { once: true });
-  } else {
-    const blob = await readChatAttachmentPreview(
-      url, size, kind === 'image' ? CHAT_IMAGE_PREVIEW_LIMIT : CHAT_TEXT_PREVIEW_LIMIT, signal,
-    );
-    signal.throwIfAborted();
-    if (node instanceof HTMLImageElement) {
-      node.alt = filename;
-      node.src = URL.createObjectURL(blob);
-      signal.addEventListener('abort', () => URL.revokeObjectURL(node.src), { once: true });
-    } else {
-      const text = await blob.text();
-      signal.throwIfAborted();
-      node.textContent = text;
-    }
+  } else if (node instanceof HTMLImageElement) {
+    node.addEventListener('load', ready, { signal, once: true });
+    node.alt = filename;
+    node.src = `${url}?representation=preview`;
+    signal.addEventListener('abort', () => node.removeAttribute('src'), { once: true });
   }
   container.replaceChildren(node);
   signal.addEventListener('abort', () => container.replaceChildren(), { once: true });
-}
-
-/** Assemble only a bounded preview; streaming media retains HTTP Range reads. */
-export async function readChatAttachmentPreview(
-  url: string,
-  size: number,
-  limit: number,
-  signal: AbortSignal,
-): Promise<Blob> {
-  signal.throwIfAborted();
-  if (!Number.isSafeInteger(size) || size < 0 || size > limit) throw new Error('FILE_PREVIEW_TOO_LARGE');
-  const parts: ArrayBuffer[] = [];
-  for (let offset = 0; offset < size; offset += RANGE_SIZE) {
-    const end = Math.min(size, offset + RANGE_SIZE) - 1;
-    const response = await fetch(url, {
-      headers: { Range: `bytes=${offset}-${end}` },
-      cache: 'no-store',
-      signal,
-    });
-    if (!response.ok) throw new Error('FILE_PREVIEW_UNAVAILABLE');
-    signal.throwIfAborted();
-    const bytes = await response.arrayBuffer();
-    if (bytes.byteLength !== end - offset + 1) throw new Error('FILE_PREVIEW_INCOMPLETE');
-    parts.push(bytes);
-  }
-  signal.throwIfAborted();
-  return new Blob(parts);
 }

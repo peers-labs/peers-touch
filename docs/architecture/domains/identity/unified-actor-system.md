@@ -71,6 +71,13 @@ ActiveSession            — per-window, in-memory: window_label, jwt, expires_a
 
 `LocalAccount` is the only persisted desktop projection. `ActiveSession` is volatile and MUST NOT be persisted.
 
+The per-window `activation_id` identifies the current authority lifetime.
+Rebinding the same window, local account, actor PTID and JWT during background
+validation preserves it atomically in `WindowSessionRegistry`. Changing any
+authority field, taking over another window, or logging out and back in starts
+a new lifetime. File grants remain usable through ordinary validation and
+remain fenced from replaced sessions.
+
 ### 2.3 Station projection
 
 `db.Actor` is the single persisted record per Actor:

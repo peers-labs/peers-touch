@@ -1,7 +1,6 @@
 import type { ChatAttachmentLike } from './index.js';
 
 export type ChatFilePreviewKind = 'image' | 'audio' | 'video' | 'pdf' | 'text' | 'office' | 'file';
-export const CHAT_TEXT_PREVIEW_LIMIT = 512 * 1024;
 
 /** Active formats never become executable WebView documents. */
 export function chatFilePreviewKind(attachment: ChatAttachmentLike): ChatFilePreviewKind {
@@ -20,8 +19,7 @@ export function chatFilePreviewKind(attachment: ChatAttachmentLike): ChatFilePre
   if (mime === 'application/pdf' || extension === 'pdf') return 'pdf';
   if (/^(docx?|xlsx?|pptx?|odt|ods|odp)$/.test(extension)) return 'office';
   if (
-    (mime === 'text/plain' || /^(txt|md|csv|tsv|log|json|yaml|yml)$/.test(extension))
-    && Number(attachment.size ?? 0) <= CHAT_TEXT_PREVIEW_LIMIT
+    mime === 'text/plain' || /^(txt|md|csv|tsv|log|json|yaml|yml)$/.test(extension)
   ) return 'text';
   return 'file';
 }

@@ -8,10 +8,10 @@ import struct
 import subprocess
 import wave
 import zipfile
-import zlib
 from pathlib import Path
 
 from tooling.acceptance.core import GateError
+from tooling.acceptance.gates.chat.lifecycle_file_documents import create_office_documents
 
 
 FILE_FORMAT_KINDS = {
@@ -22,9 +22,11 @@ FILE_FORMAT_KINDS = {
     "pdf": "pdf",
     "text": "text",
     "office": "office",
+    "workbook": "office",
+    "presentation": "office",
     "archive": "file",
     "unsupported": "file",
-    "oversized_text": "file",
+    "oversized_text": "text",
 }
 
 
@@ -37,7 +39,13 @@ def _write_pdf(path: Path) -> None:
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     ]
     for page in (1, 2):
-        content = f"BT /F1 18 Tf 25 350 Td (File viewing page {page}) Tj ET\n".encode()
+        content = (
+            f"BT /F1 18 Tf 25 350 Td (File viewing page {page}) Tj ET\n"
+            "0.12 0.4 0.42 rg 25 325 250 3 re f\n"
+            "0 0 0 rg BT /F1 12 Tf 25 300 Td (Content fidelity and local rendering) Tj ET\n"
+            "0.23 0.65 0.62 rg 25 180 70 80 re f\n"
+            "0.74 0.47 0.24 rg 120 180 140 80 re f\n"
+        ).encode()
         objects.append(f"<< /Length {len(content)} >>\nstream\n".encode() + content + b"endstream")
     data = bytearray(b"%PDF-1.4\n")
     offsets = [0]
@@ -55,6 +63,8 @@ def _write_pdf(path: Path) -> None:
 
 
 def create_file_format_fixtures(root: Path) -> dict[str, Path]:
+    from PIL import Image, ImageDraw
+
     root.mkdir(parents=True, exist_ok=True)
     files = {
         "image": root / "format-image.png",
@@ -64,34 +74,34 @@ def create_file_format_fixtures(root: Path) -> dict[str, Path]:
         "pdf": root / "format-report.pdf",
         "text": root / "format-report.txt",
         "office": root / "format-report.docx",
+        "workbook": root / "format-report.xlsx",
+        "presentation": root / "format-report.pptx",
         "archive": root / "format-report.zip",
         "unsupported": root / "format-active.html",
         "oversized_text": root / "format-oversized.txt",
     }
-    def png_chunk(kind: bytes, body: bytes) -> bytes:
-        return struct.pack(">I", len(body)) + kind + body + struct.pack(
-            ">I", zlib.crc32(kind + body) & 0xFFFFFFFF,
-        )
-    pixels = b"\x00" + b"\xff\x00\x00\xff\x00\x00\xff\xff"
-    pixels += b"\x00" + b"\x00\x00\xff\xff\xff\x00\x00\xff"
-    files["image"].write_bytes(
-        b"\x89PNG\r\n\x1a\n"
-        + png_chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0))
-        + png_chunk(b"IDAT", zlib.compress(pixels))
-        + png_chunk(b"IEND", b"")
-    )
+    image = Image.new("RGB", (4800, 3200), "#eaf3f3")
+    drawing = ImageDraw.Draw(image)
+    for x in range(0, 4800, 160):
+        drawing.rectangle((x, 0, x + 80, 3200), fill=(40 + x // 40, 130, 160))
+    drawing.rectangle((600, 500, 4200, 2700), fill="white", outline="#263c43", width=28)
+    drawing.text((850, 800), "4800 x 3200 / 15.36 megapixels", fill="#111111", font_size=170)
+    drawing.text((850, 1100), "HIGH RESOLUTION PREVIEW", fill="#111111", font_size=180)
+    drawing.rectangle((900, 1700, 1800, 2400), fill="#3aa6a0")
+    drawing.rectangle((2100, 1700, 3900, 2400), fill="#bd783f")
+    image.save(files["image"])
     with wave.open(str(files["audio"]), "wb") as audio:
-        audio.setparams((1, 2, 8000, 8000, "NONE", "not compressed"))
+        audio.setparams((1, 2, 8000, 32000, "NONE", "not compressed"))
         audio.writeframes(b"".join(
             struct.pack("<h", int(8000 * math.sin(index * math.tau * 440 / 8000)))
-            for index in range(8000)
+            for index in range(32000)
         ))
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise GateError("file-format fixture requires the real ffmpeg encoder")
     subprocess.run(
         (ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-         "-f", "lavfi", "-i", "testsrc=size=96x64:rate=5", "-t", "1",
+         "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=10", "-t", "4",
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
          str(files["video"])),
         check=True, timeout=30, capture_output=True,
@@ -103,23 +113,14 @@ def create_file_format_fixtures(root: Path) -> dict[str, Path]:
     )
     _write_pdf(files["pdf"])
     files["text"].write_text("Real encrypted file preview.\n", encoding="utf-8")
-    with zipfile.ZipFile(files["office"], "w", zipfile.ZIP_DEFLATED) as document:
-        document.writestr("[Content_Types].xml",
-            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-            '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
-            '</Types>')
-        document.writestr("_rels/.rels",
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
-            '</Relationships>')
-        document.writestr("word/document.xml",
-            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-            '<w:body><w:p><w:r><w:t>Real Office file preview.</w:t></w:r></w:p></w:body></w:document>')
+    create_office_documents(files, files["image"])
     with zipfile.ZipFile(files["archive"], "w", zipfile.ZIP_DEFLATED) as archive:
         archive.write(files["text"], "report.txt")
     files["unsupported"].write_text(
         '<html><script>window.__attachmentExecuted = true;</script></html>', encoding="utf-8",
     )
-    files["oversized_text"].write_bytes(b"x" * (512 * 1024 + 1))
+    files["oversized_text"].write_bytes(b"".join(
+        f"TEXT PAGE {page + 1:02} / unique content\n".encode().ljust(32 * 1024, bytes([65 + page]))
+        for page in range(16)
+    ) + b"FINAL PARTIAL PAGE\n")
     return files

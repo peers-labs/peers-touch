@@ -62,19 +62,68 @@
   "kind": "peers-touch-outcome-comparison-results",
   "schemaVersion": 1,
   "planId": "CAV-20261024",
-  "sourceIdentity": "attachment-source-files-sha256:34bfd1dd0b9e1be53ff709736b1da82713fb292a6420738674abadb17177dbce",
+  "sourceIdentity": "attachment-source-files-sha256:ba0a2699efca56eb52d3ffe69935d74e352e52b728faaac42bd8392fe6fad680",
   "items": [
-    {"id": "CAV-O01", "status": "UNPROVEN", "actualEffect": "双端详情和 Runtime 恢复已实现；关闭详情与离开 Chat 的真实 grant 撤销路径已注入", "evidenceRefs": ["verification-status.md", "/tmp/pt-attachment-checks/native-file-progress.json"], "deviation": "Native Development 准入停在 station-four commit mismatch；产品步骤未执行，clean source 与隔离 GUI 也未满足"},
-    {"id": "CAV-O02", "status": "UNPROVEN", "actualEffect": "Native 文件消费适配已落地；Android arm64 Debug APK 编译通过并包含文件适配器，双方 macOS 系统操作 oracle 已接入", "evidenceRefs": ["verification-status.md", "/tmp/pt-attachment-checks/native-file-progress.json", "/tmp/pt-attachment-checks/android-current-ranlib/result.json"], "deviation": "APK 编译及共享 renderer 不能证明双方系统文件任务；Android 无连接设备，Native OS 路径未执行"},
-    {"id": "CAV-O03", "status": "PARTIAL", "actualEffect": "共享 controller 和 Native epoch/取消 ownership 已检查；挂起、迟到 grant 与 Quick Look 具有撤销路径", "evidenceRefs": ["/tmp/pt-attachment-checks/final-source-checks.json", "/tmp/pt-attachment-checks/shared-behavior-final.log"], "deviation": "源码与有界复审不能替代 Native 生命周期和隐藏树性能证明"},
-    {"id": "CAV-O04", "status": "PARTIAL", "actualEffect": "六项文件系统与 36 项传输检查通过；验证、私有副本、取消屏障和恢复保持明确 ownership", "evidenceRefs": ["/tmp/pt-attachment-checks/final-source-checks.json", "/tmp/pt-attachment-checks/native-filesystem-current.log"], "deviation": "文件系统与 Core 结果不能替代系统预览、外部应用和目的地面板证明"},
-    {"id": "CAV-O05", "status": "UNPROVEN", "actualEffect": "三项系统文件 oracle 与关闭详情、离开 Chat 的局部 scope 路径已注入；当前类型、契约和结构检查通过，Development provisioner 清理通过", "evidenceRefs": ["verification-status.md", "/tmp/pt-attachment-checks/native-file-progress.json"], "deviation": "conversation/account/Station 切换尚未注入；Native 产品运行被 source mismatch 阻塞，mandatory scope aggregate 没有被局部边界代替"}
+    {
+      "id": "CAV-O01",
+      "status": "PARTIAL",
+      "actualEffect": "Native Desktop 14 类代表性文件的内容、导航、关闭重开与授权撤销通过；24 张文件截图和消息4px/8px布局及图片标签检查通过",
+      "evidenceRefs": [
+        "verification-status.md",
+        "deliverables/chat-attachment-preview/repair-verification-20261025/result.json",
+        "deliverables/chat-attachment-preview/repair-verification-20261025/source.json"
+      ],
+      "deviation": "用户将本轮范围收敛到进入程序与文件预览；使用离线本地投影夹具，下载中断恢复及完整双方 Journey 仍未证明"
+    },
+    {
+      "id": "CAV-O02",
+      "status": "PARTIAL",
+      "actualEffect": "Native Desktop 真实图文 Word/PPT、带坐标和列宽的工作表、1536 万像素图片、720p 视频、分页 PDF/文本、大 Word、旧格式及损坏降级通过",
+      "evidenceRefs": [
+        "verification-status.md",
+        "deliverables/chat-attachment-preview/repair-verification-20261025/result.json",
+        "deliverables/chat-attachment-preview/repair-verification-20261025/source.json"
+      ],
+      "deviation": "Native 本地预览不证明双方传输、移动端运行、系统打开或保存；这些仍为 UNPROVEN，不纳入本轮完成判断"
+    },
+    {
+      "id": "CAV-O03",
+      "status": "PARTIAL",
+      "actualEffect": "共享预览与 Native grant ownership 保持单一；WindowSessionRegistry 保留相同会话 generation，每类文件的后台验证及关闭后旧 grant 拒绝通过",
+      "evidenceRefs": [
+        "deliverables/chat-attachment-preview/repair-verification-20261025/result.json",
+        "deliverables/chat-attachment-preview/repair-verification-20261025/source.json"
+      ],
+      "deviation": "真实预览关闭与会话验证已检查；完整 scope 切换和隐藏树性能没有证明"
+    },
+    {
+      "id": "CAV-O04",
+      "status": "PARTIAL",
+      "actualEffect": "共享预览保留有界 Range 和可终止 worker；65 MiB Word 的图文内容、第二页及重开通过，完整性仍由 Native 校验",
+      "evidenceRefs": [
+        "deliverables/chat-attachment-preview/repair-verification-20261025/result.json",
+        "deliverables/chat-attachment-preview/repair-verification-20261025/source.json"
+      ],
+      "deviation": "该大文档含未使用填充，不代表复杂大文档性能；系统副本及目的地面板仍未执行"
+    },
+    {
+      "id": "CAV-O05",
+      "status": "PARTIAL",
+      "actualEffect": "当前 Native 内容像素、读取、授权与关闭重开检查通过，源码/二进制/截图摘要已收集；夹具改为代表性文件并补区域像素 oracle，任务资源已精确回收",
+      "evidenceRefs": [
+        "verification-status.md",
+        "deliverables/chat-attachment-preview/repair-verification-20261025/result.json",
+        "deliverables/chat-attachment-preview/repair-verification-20261025/source.json"
+      ],
+      "deviation": "这是用户收敛范围内的 FUNCTIONAL_CHECK，原计划完整 formal Acceptance 仍为 UNPROVEN，mandatory assertions 保持原要求"
+    }
   ]
 }
 ```
 
-sourceIdentity 是 `native-file-progress.json` 列出的 84 个本任务源码/配置文件摘要，
-不包含文档、无关目录和生成的 build output；它只标识局部检查的源码范围。
-先前检查保留各自的 `final-source-checks.json` 和单项日志范围，不提升为本轮整体 PASS。
-这不是完整 workspace/runtime attestation，也不提供正式 Acceptance PASS。
-状态依据与运行资源 disposition 见 [verification-status.md](./verification-status.md)。
+sourceIdentity 标识交付目录 `source.json` 中的当前任务源码/配置输入。
+本轮 Native 客户端预览检查使用真实文件与离线本地消息投影，不提供消息传输、
+OS 面板或移动端 Native 证明。原计划五项结果按完整目标仍为 PARTIAL；
+用户本轮收敛的 macOS 文件预览范围为 FUNCTIONAL_CHECK/PASS_LOCAL_FIXTURE；
+实际暗色主题、Mobile Native 和任意文档忠实度未证明。计划的预期段保持不变，见
+[verification-status.md](./verification-status.md)。

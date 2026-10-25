@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-10-24 | **Updated**: 2026-10-24
+> **Created**: 2026-10-24 | **Updated**: 2026-10-25
 > **Owner**: Chat Product Team
 
 Applies to Desktop and Mobile, sender and receiver, Direct and Group
@@ -16,20 +16,58 @@ file begins a resumable download; the surface displays progress, cancel, retry
 and an actionable terminal error. Reopening it resumes the same attachment.
 Closing the surface leaves the transfer under Messaging Runtime ownership.
 
-The detail surface previews supported images, audio, video, PDF and bounded
-plain text. Office documents use the platform document preview where available;
-otherwise the user explicitly chooses an external application. Archives show
-details and explicit open/save actions. Executable content is never launched
-automatically. Unsupported or unavailable preview remains a usable detail
-surface with its filename and actions.
+The detail surface previews supported images, audio, video, PDF, plain text and
+common Office documents. DOCX uses a local document renderer; XLSX and XLS use a
+local workbook parser with sheet selection and a bounded table viewport;
+PPTX and PPT use a local presentation parser with slide navigation. Older or
+decoder-unsupported Word/OpenDocument formats retain platform document preview
+and explicit external opening. Archives show details and explicit open/save
+actions. Executable content is never launched automatically. Unsupported or
+unavailable preview remains a usable detail surface with its filename and
+actions.
 
-Both clients use the same selected-resource preview lifecycle. Images assemble
-at most 32 MiB; text is limited to 512 KiB. PDF.js loads lazily in a bundled
-worker, reads at most 64 MiB and renders one page at a time to a canvas bounded
-to 4 megapixels. It does not instantiate a document frame, execute document
-scripts or enable XFA. Oversized or decoder-unsupported content retains native
-preview/open/save actions. Inline image cards fall back to a filename card
-above the asset protocol's 8 MiB read limit.
+Both clients use the same selected-resource preview lifecycle. File byte length
+does not decide whether PDF, text or image preview is available. PDF.js consumes
+authenticated Range reads, disables automatic full-file fetching and renders
+one page at a time to a canvas bounded to 4 megapixels. Text is read in bounded
+pages with Unicode-safe boundaries. Native image preview reads the verified
+cache, decodes within a resource budget and returns a reduced representation
+under the original revocable grant. Neither path assembles an arbitrarily large
+original in the WebView merely to show the first page.
+
+PDF.js may coalesce several demand chunks. Each such demand is read in 1 MiB
+native ranges and returned once, as required by its transport, with a 32 MiB
+contiguous-demand budget. Resource exhaustion preserves explicit system actions.
+The canvas raster budget does not change logical page size or zoom geometry.
+Native image admission includes encoded input, bit depth, codec working planes,
+reduced pixels and output; encoded decoder input is bounded to 32 MiB. JPEG
+progressive coefficients and WebP compositing have separate working-set
+reservations. JPEG EXIF rotation and mirroring are applied to the representation.
+
+Office parsers have independent limits for decoded archive bytes, entries,
+document nodes, cells and decoded image pixels. These protect parser resources;
+they are not sender upload or download quotas. ZIP metadata is read by Range
+and relevant parts are admitted before inflation. Parse cancellation, resource
+exhaustion and unsupported formats remain visible and keep native preview,
+external open and save available. Libraries load only when a selected file
+needs them. Closing, leaving Chat or changing scope cancels reads, terminates
+owned workers, releases document resources and removes the rendered surface.
+Document scripts, macros, active HTML parts and external resources are not
+executed or fetched. No document is uploaded to an online conversion service.
+
+Archive admission follows the actual ZIP signature, including OOXML files
+renamed to legacy extensions. Legacy binary paths require a CFB signature.
+Word inline BMP images and landscape sections preserve their SDK page geometry.
+
+Word parsing and rendering run in the same cancellable document worker, using
+the local SDK with an inert DOM implementation. The WebView receives one
+sanitized page at a time in a script-free sandbox. Workbook parsing and slide
+rendering use that same worker lifecycle. Archive inflation also checks actual
+written bytes, independently of declared ZIP sizes. Legacy XLS/PPT parsers use
+a bounded contiguous input; parser resource exhaustion preserves system actions.
+The existing encrypted-object transfer ceiling is 2 GiB, owned by
+`secure-content-core` object validation. This preview change does not change
+that protocol contract.
 
 Preview, Open externally and Save a copy are distinct intents. External opening
 uses a disposable copy with the original safe basename and extension. Saving
@@ -76,10 +114,56 @@ Cache identity is attachment identity, independent of mutable display names.
 Display/export filenames remove separators, control characters and traversal
 components, preserve a bounded extension, and supply a deterministic fallback.
 Asset reads must remain constrained to authenticated Engine-managed roots.
-Text preview is size bounded and renders text, never HTML or script.
+Text preview bounds the rendered page and renders text, never HTML or script.
+
+## Preview composition
+
+The selected file is the main reading subject. The detail header shows its
+filename, short format and size; raw MIME is supporting inspectable metadata.
+One bounded reading rectangle owns scrolling, with its navigation above content
+and the system action rail outside it. PDF has fit-width, fit-page and actual-size
+choices. Word pages preserve the local renderer's page dimensions. Workbooks
+show source row numbers, column letters, cell ranges and merged cells inside
+their bounded viewport. System preview is named separately from the in-app
+reader. Image cards request the same grant's reduced representation independent
+of original byte length, with readable text on their owning message surface.
+
+`data-chat-preview-state` publishes loading, ready or unavailable. PDF page
+identity becomes ready only after the current render promise finishes; Word
+and slide frames publish after their load and paint opportunity. Downloaded
+bytes and an allocated decoder node do not imply completed visible content.
+Evidence captures must match the selected attachment, filename, format and
+completed page. Each screenshot is inspected; a blank nonempty page, absent
+dialog, incorrect file or mismatched format invalidates that screenshot.
+Large-file byte tests and high-resolution image tests are separate obligations.
+
+The existing `client-chat-core` selected-resource mount is the sole format
+dispatcher. It composes local format adapters; Desktop and Mobile supply
+translated labels and preserve their existing modal, metadata, transfer,
+cancel/retry, system preview, external-open and save action hierarchy.
+Format navigation stays inside the preview rectangle. A document renderer
+cannot install a page, create a second Messaging Runtime, change selection
+ownership, resolve an unrestricted path or contact Station directly.
+
+The byte reader accepts only the Runtime-supplied opaque asset URL, validates
+Range identity and size, and shares the selected mount's abort signal. Derived
+image requests are representations of that same asset handle, not new grants
+or attachment metadata. Native revalidates Engine scope before reading or
+returning a representation. Grants and derivatives are revoked together.
+
+Reusable libraries own document format decoding. The integration owns worker
+lifetime, archive admission, disabled external relationships, rendered-content
+isolation, locale labels, viewport bounds and teardown. Library-internal
+document objects never become a new public business DTO or persistence model.
+User exports continue to contain the original verified bytes, never the
+preview's reduced representation.
 
 An access handle is bound to actor, Station, profile, device and activation
 generation. Native rejects stale handles and paths outside its owned roots.
+Background validation of the unchanged per-window account/PTID/JWT preserves
+the activation generation; it must not revoke an open file preview. The
+window session registry owns this atomic rebinding rule. Genuine authority
+replacement or logout continues to invalidate the previous generation.
 System handoff copies are owned by a bounded platform staging area, while
 user-selected exports are outside cache retention ownership. No cache cleanup
 removes a saved export.
