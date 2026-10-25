@@ -140,6 +140,9 @@ Temporary source concealment MUST preserve that same metadata, following
 Search data-model §7 and Desktop Search continuity. The rendered index is
 derived from the single stored row key; neither concealment nor DOM viewport
 clamping may replace the last qualified traversal or erase selection.
+Desktop Search continuity owns selection-driven scrolling: only an explicit
+arrow-key action scrolls to a row. Restoration or a changed derived index
+cannot override the retained viewport.
 Continuation publication MUST release its issuance metadata guard before
 leaving the original authority guard, as defined by Search design §4.1.
 A successful reply must not lead to an immediate Open observing a locked
@@ -323,6 +326,9 @@ Search publication order and can deadlock the native UI during reconciliation.
   traversal and selected key, reject clamped DOM scroll writes, restore the
   unchanged final page, and honor a new selection among remaining readable
   rows. Final missing-key and new-intent replies must still reset as specified.
+  Native public/private post and comment Return must compare the exact
+  pre-Open viewport as well as selection after concealment and reacquisition;
+  keyboard row navigation must still bring the chosen row into view.
 - Desktop `privateComments.test.ts`, `moments-store.test.ts` and
   `momentsRuntime.test.ts` retain the active historical comment through periodic
   and event refreshes, release it on navigation and fence late reads. Equivalent

@@ -56,10 +56,6 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   useLayoutEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = useSearchStore.getState().scrollTop;
   }, [view.response]);
-  useEffect(() => {
-    if (selectedIndex < 0) return;
-    bodyRef.current?.querySelector(`#pt-search-option-${selectedIndex}`)?.scrollIntoView({ block: 'nearest' });
-  }, [selectedIndex, view.selectedKey]);
 
   async function openRow(row: Row): Promise<void> {
     if (view.opening) return;
@@ -81,11 +77,15 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       const delta = event.key === 'ArrowDown' ? 1 : -1;
-      const row = rows[selectedIndex >= 0
-        ? Math.max(0, Math.min(rows.length - 1, selectedIndex + delta)) : 0];
+      const nextIndex = selectedIndex >= 0
+        ? Math.max(0, Math.min(rows.length - 1, selectedIndex + delta)) : 0;
+      const row = rows[nextIndex];
       useSearchStore.setState({
         selectedKey: row ? rowKey(row) : null,
       });
+      if (row) {
+        bodyRef.current?.querySelector(`#pt-search-option-${nextIndex}`)?.scrollIntoView({ block: 'nearest' });
+      }
     } else if (event.key === 'Enter') {
       event.preventDefault();
       const row = view.mode === 'functions' ? rows[Math.max(0, selectedIndex)]

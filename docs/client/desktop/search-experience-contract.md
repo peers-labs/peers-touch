@@ -57,6 +57,9 @@ last qualified traversal, selected key and scroll, and DOM scroll clamping
 cannot overwrite that context. User selection among remaining readable rows
 remains authoritative. A qualified new intent resets context; a qualified
 same-intent page clears selection only if the selected key actually disappeared.
+Arrow-key navigation scrolls the chosen row into view as part of that user
+action. Reacquisition, refreshed row positions and overlay remount restore
+the retained viewport; they do not scroll to the selected row.
 
 ## Regression journey
 
