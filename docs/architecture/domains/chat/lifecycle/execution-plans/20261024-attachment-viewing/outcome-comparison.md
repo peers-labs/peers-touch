@@ -62,7 +62,7 @@
   "kind": "peers-touch-outcome-comparison-results",
   "schemaVersion": 1,
   "planId": "CAV-20261024",
-  "sourceIdentity": "attachment-source-files-sha256:ba0a2699efca56eb52d3ffe69935d74e352e52b728faaac42bd8392fe6fad680",
+  "sourceIdentity": "attachment-source-files-sha256:3fb55c8f68ddef84cabcfb5c9a838235108f4a1153c1741c31af1cdac489e688",
   "items": [
     {
       "id": "CAV-O01",
@@ -89,12 +89,12 @@
     {
       "id": "CAV-O03",
       "status": "PARTIAL",
-      "actualEffect": "共享预览与 Native grant ownership 保持单一；WindowSessionRegistry 保留相同会话 generation，每类文件的后台验证及关闭后旧 grant 拒绝通过",
+      "actualEffect": "共享预览与 Native grant ownership 保持单一；当前原生14类文件的后台验证、关闭及logout后旧grant拒绝通过；1024次取消后的新操作、离线完成缓存恢复和首次完整性重试回归通过",
       "evidenceRefs": [
         "deliverables/chat-attachment-preview/repair-verification-20261025/result.json",
         "deliverables/chat-attachment-preview/repair-verification-20261025/source.json"
       ],
-      "deviation": "真实预览关闭与会话验证已检查；完整 scope 切换和隐藏树性能没有证明"
+      "deviation": "真实预览关闭、会话验证与原生logout已检查；移动系统动作、完整跨Station切换和隐藏树性能没有证明"
     },
     {
       "id": "CAV-O04",

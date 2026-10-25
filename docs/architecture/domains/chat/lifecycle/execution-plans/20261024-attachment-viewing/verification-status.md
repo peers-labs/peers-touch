@@ -30,6 +30,11 @@ Unicode；固定页面 transform 缩放避免 WebKit 小字号重排。PPT 只�
 
 Native 相同 window/account/PTID/JWT 的后台验证保留 activation generation；
 authority 变化与重新登录仍生成新标识。授权校验没有放宽。
+Desktop 原生退出在 worker 清理前撤销 grant；清理失败与 retained Engine
+回归通过。Mobile 取消记录在上限处压缩至 issuance watermark，1024 次释放后
+新操作可用，旧操作仍拒绝；Swift/Kotlin 源码逻辑编译检查通过。
+已完成下载优先恢复 verified plaintext staging，远端不可用和 promotion 再次失败
+仍保留完成记录。损坏缓存首次显式重试可直接 READY 或排队 Downloading。
 
 正文、时间/状态、反应栏、下一条消息按此顺序排布。状态行距正文 4px，
 消息之间 8px（compact 为 6px），空反应栏不挂载，失败重试允许状态行增高。
@@ -44,8 +49,9 @@ authority 变化与重新登录仍生成新标识。授权校验没有放宽。
 14 类文件检查通过：PDF、DOCX、XLSX、PPTX、4800×3200 图片、中文/英文/emoji
 文本、65 MiB DOCX、旧 XLS/PPT、4 秒 M4A、1280×720 MP4、损坏 DOCX、
 横向含 BMP 的 Word 和 A2 PDF。
-24 张逐文件截图已按文件名、格式、页面、实际内容与弹窗审查；
-另有两张消息布局截图和一次最终图片预览截图。
+当前 d2e1a7521 原生构建重新验证 14 类文件；24 张逐文件截图已按文件名、
+格式、页面、实际内容与弹窗审查。另有两张消息布局截图与两张大图侧栏/弹窗截图。
+消息行和 geometry 源码未变，原消息布局证据仅按这两个依赖的源码等价复用。
 Word/PPT 图片与布局可见；工作表末视口为 U101:Y110；视频控制条与播放进度真实。
 大 DOCX 含未使用填充，只证明该文件可预览，不能推导复杂大文档的性能。
 
@@ -54,6 +60,8 @@ Word/PPT 图片与布局可见；工作表末视口为 U101:Y110；视频控制�
 1191×1684 CSS 像素，raster 仍在 4 megapixel 以内，宽度模式与第二页通过。
 原生消息行实测正文到状态 4px、状态到下一正文 8px，无空反应栏。
 该离线夹具没有真实接收方已读事件，不据此宣称收发或已读业务通过。
+12 MiB PNG 在详情侧栏使用同一 grant 的 1600px 表示，实际内容和弹窗截图通过。
+原生 logout 后旧 asset 返回 404；恢复原测试身份成功。该项不证明系统导出面板。
 
 本轮使用 1200×769 WebView；实际暗色 Native 主题、最小移动设备、
 最新候选窄窗口与任意复杂文档仍未证明。
@@ -80,7 +88,7 @@ Office preview 的当前源码结构审查无阻断；完整范围的功能结�
 不能从单文件结构结果推导整体代码通过。
 
 源码清单标识：
-`attachment-source-files-sha256:ba0a2699efca56eb52d3ffe69935d74e352e52b728faaac42bd8392fe6fad680`。
+`attachment-source-files-sha256:3fb55c8f68ddef84cabcfb5c9a838235108f4a1153c1741c31af1cdac489e688`。
 该清单逐项记录当前任务源码和配置；证据保留 Native binary SHA-256、Git HEAD
 及每张截图摘要。历史批次未被升级为当前证明。
 

@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-22
-covered_docs_hash: fa9c1c918e1896f07dbdbb685d6d324782b83838277b9fee824a3a207bbee070
+last_verified_at: 2026-10-25
+covered_docs_hash: 897029fca4cd7c42dee8a28b971c2d9f6c9ab66d0917a954f0cb0ff4ffc91ca8
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,20 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Current Source Review
+
+The attachment-viewing range changes none of the covered upstream documents.
+The inherited source already contains the attach-only Mobile runtime evidence,
+current finalizer bootstrap inputs, Darwin shared-cache image identity, and
+archived release scope. The existing review policy requires exact source,
+native evidence at the declared strength, immutable publication, and explicit
+UNPROVEN scope, and remains consistent with those contracts.
+
+This refresh binds that reviewed source set. It changes neither severity nor
+verification requirements. No new Skill rule or generic fixture is needed;
+the attachment change supplies focused native, cancellation, integrity, and
+completed-cache restoration regression evidence at their existing owners.
 
 ## Mobile Origin Contract Review
 
