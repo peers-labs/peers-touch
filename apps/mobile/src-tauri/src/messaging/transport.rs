@@ -104,7 +104,11 @@ impl std::error::Error for MemberAuthorityTransportError {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StationTransportError {
     Deadline,
-    Network,
+    Network {
+        builder: bool,
+        connect: bool,
+        io_kind: Option<std::io::ErrorKind>,
+    },
     HttpStatus {
         status: u16,
         code: Option<String>,
@@ -121,7 +125,14 @@ impl std::fmt::Display for StationTransportError {
             Self::Deadline => {
                 formatter.write_str("mobile messaging Station request exceeded its deadline")
             }
-            Self::Network => formatter.write_str("mobile messaging Station network request failed"),
+            Self::Network {
+                builder,
+                connect,
+                io_kind,
+            } => write!(
+                formatter,
+                "mobile messaging Station network request failed [builder={builder}, connect={connect}, io={io_kind:?}]"
+            ),
             Self::HttpStatus {
                 status,
                 code,
@@ -802,7 +813,7 @@ impl DeliveryReceiptTransport for StationDeliveryReceiptTransport {
 fn classify_delivery_receipt_failure(error: StationTransportError) -> DeliveryReceiptSubmitFailure {
     let detail = error.to_string();
     match error {
-        StationTransportError::Deadline | StationTransportError::Network => {
+        StationTransportError::Deadline | StationTransportError::Network { .. } => {
             DeliveryReceiptSubmitFailure::retryable("transport", detail)
         }
         StationTransportError::HttpStatus { status, code, .. }
@@ -2395,7 +2406,7 @@ fn classify_command_error(error: StationTransportError) -> CommandSubmitFailure 
         StationTransportError::Deadline => CommandSubmitFailure::Retryable {
             code: "deadline".to_string(),
         },
-        StationTransportError::Network => CommandSubmitFailure::Retryable {
+        StationTransportError::Network { .. } => CommandSubmitFailure::Retryable {
             code: "network".to_string(),
         },
         StationTransportError::HttpStatus { status, .. }
@@ -2441,8 +2452,28 @@ fn classify_request_error(error: reqwest::Error) -> StationTransportError {
     if error.is_timeout() {
         StationTransportError::Deadline
     } else {
-        StationTransportError::Network
+        // Error text and URLs may contain credentials. Preserve only SDK flags
+        // and the typed I/O cause; this does not change retry classification.
+        let failure = StationTransportError::Network {
+            builder: error.is_builder(),
+            connect: error.is_connect(),
+            io_kind: request_io_error_kind(&error),
+        };
+        log::warn!("{failure}");
+        failure
     }
+}
+
+fn request_io_error_kind(error: &(dyn std::error::Error + 'static)) -> Option<std::io::ErrorKind> {
+    let mut cause = Some(error);
+    for _ in 0..8 {
+        let current = cause?;
+        if let Some(error) = current.downcast_ref::<std::io::Error>() {
+            return Some(error.kind());
+        }
+        cause = current.source();
+    }
+    None
 }
 
 fn classify_response_error(error: reqwest::Error) -> StationTransportError {
@@ -2967,9 +2998,39 @@ mod tests {
     }
 
     #[test]
+    fn request_error_diagnostics_exclude_url_and_error_text() {
+        let error = reqwest::blocking::Client::new()
+            .get("https://user:private-context@station.example/private?key=private-context")
+            .header("invalid\nheader", "private-context")
+            .build()
+            .unwrap_err();
+        let failure = classify_request_error(error);
+        assert!(matches!(
+            failure,
+            StationTransportError::Network { builder: true, .. }
+        ));
+        let detail = failure.to_string();
+        assert!(detail.contains("builder=true"));
+        assert!(!detail.contains("private-context"));
+        assert!(!detail.contains("station.example"));
+        assert!(!detail.contains("/private"));
+        assert_eq!(
+            request_io_error_kind(&std::io::Error::new(
+                std::io::ErrorKind::ConnectionReset,
+                "private-context",
+            )),
+            Some(std::io::ErrorKind::ConnectionReset)
+        );
+    }
+
+    #[test]
     fn command_error_classification_is_bounded() {
         assert!(matches!(
-            classify_command_error(StationTransportError::Network),
+            classify_command_error(StationTransportError::Network {
+                builder: false,
+                connect: true,
+                io_kind: Some(std::io::ErrorKind::ConnectionReset),
+            }),
             CommandSubmitFailure::Retryable { .. }
         ));
         assert!(matches!(
@@ -3005,7 +3066,14 @@ mod tests {
                 body: None,
             });
         assert!(session_forbidden.retryable);
-        assert!(classify_delivery_receipt_failure(StationTransportError::Network).retryable);
+        assert!(
+            classify_delivery_receipt_failure(StationTransportError::Network {
+                builder: false,
+                connect: true,
+                io_kind: Some(std::io::ErrorKind::ConnectionReset),
+            })
+            .retryable
+        );
     }
 
     #[test]
