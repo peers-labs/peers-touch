@@ -22,7 +22,7 @@ fn unavailable(operation: &'static str, error: String) -> SearchError {
         "private Social policy response is invalid" => "policy_response_invalid",
         _ => "original_read_failed",
     };
-    tracing::debug!(target: "search", operation, reason, "private Social Search read failed");
+    tracing::warn!(target: "search", operation, reason, "private Social Search read failed");
     SearchError::SourceUnavailable(error)
 }
 
