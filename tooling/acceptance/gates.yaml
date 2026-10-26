@@ -820,14 +820,14 @@
       "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
-      "tier": "ci-cheap",
+      "tier": "local-evidence",
       "description": "Require current-source DONE and PROVEN evidence for Relay role isolation, enrollment, signed discovery, standard Circuit admission, and native route security."
     },
     "unified-relay-station-access-aggregate-e2e": {
       "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
-      "tier": "ci-cheap",
+      "tier": "local-evidence",
       "description": "Require current-source DONE and PROVEN evidence for all Relay server, Dashboard, Desktop, Mobile, and security closure Gates."
     },
     "station-access-auth-e2e": {
@@ -1076,7 +1076,7 @@
       "command": "python3 -m tooling.acceptance.gates.station_access.lifecycle_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
-      "tier": "ci-cheap",
+      "tier": "local-evidence",
       "description": "Require current-source DONE and PROVEN evidence for every Station Access capability and release gate."
     },
     "station-messaging-unit": {
