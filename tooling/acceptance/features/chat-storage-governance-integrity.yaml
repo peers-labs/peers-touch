@@ -25,7 +25,7 @@
   ],
   "acceptance": {
     "service": [
-      "all nine legacy inventory dimensions contain zero current-source matches",
+      "all nine legacy inventory dimensions contain zero live business references; reviewed retirement protection references remain visible and bound to their complete source digest",
       "Desktop release and Mobile native applications build from the same clean source",
       "every preceding CSG Gate has current exact-source DONE and PROVEN evidence"
     ],
