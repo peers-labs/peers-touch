@@ -461,7 +461,7 @@ func (c *StationControl) IssueConnectionMaterial(
 	}
 	grantDigest := sha256.Sum256(grantBytes)
 	registered := &peerpb.RegisterStationConnectionGrantResponse{}
-	if err := c.postProtoLocked(
+	verifiedTLS, err := c.postProtoLocked(
 		ctx,
 		target,
 		"/api/v1/relay/grants",
@@ -475,7 +475,8 @@ func (c *StationControl) IssueConnectionMaterial(
 			ExpiresAtUnixMs: grantExpiresAt.UnixMilli(),
 		},
 		registered,
-	); err != nil {
+	)
+	if err != nil {
 		return nil, fmt.Errorf("register Station connection grant: %w", err)
 	}
 	if registered.GetGrantId() != grantID ||
@@ -493,11 +494,10 @@ func (c *StationControl) IssueConnectionMaterial(
 		return nil, fmt.Errorf("encode Station connection material: %w", err)
 	}
 	payload := base64.RawURLEncoding.EncodeToString(envelopeBytes)
-	bootstrapEndpoint, err := targetBootstrapEndpoint(target, now, grantExpiresAt)
+	bootstrapEndpoint, err := targetBootstrapEndpoint(target, verifiedTLS, now, grantExpiresAt)
 	if err != nil {
-		// An attachment may use a CA bundle that cannot fit the public single-CA
-		// contract. The signed connection envelope remains valid; reference
-		// consumers must use bounded inline material or report unsupported.
+		// Without verified retrieval trust, reference consumers must use bounded
+		// inline material or report unsupported. The signed envelope stays valid.
 		bootstrapEndpoint = nil
 	}
 	return &ConnectionMaterial{
@@ -541,7 +541,7 @@ func (c *StationControl) publishRouteLocked(
 		return nil, fmt.Errorf("sign Station Circuit route: %w", err)
 	}
 	published := &peerpb.PublishStationRouteResponse{}
-	if err := c.postProtoLocked(
+	if _, err := c.postProtoLocked(
 		ctx,
 		target,
 		"/api/v1/relay/routes",
@@ -765,7 +765,7 @@ func (c *StationControl) postJSONLocked(
 	if err != nil {
 		return err
 	}
-	return c.doLocked(
+	_, err = c.doLocked(
 		ctx,
 		target,
 		path,
@@ -774,6 +774,7 @@ func (c *StationControl) postJSONLocked(
 		encoded,
 		func(raw []byte) error { return json.Unmarshal(raw, output) },
 	)
+	return err
 }
 
 func (c *StationControl) postProtoLocked(
@@ -783,10 +784,10 @@ func (c *StationControl) postProtoLocked(
 	bearer string,
 	request proto.Message,
 	response proto.Message,
-) error {
+) (*tls.ConnectionState, error) {
 	encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	return c.doLocked(
 		ctx,
@@ -815,10 +816,10 @@ func (c *StationControl) doLocked(
 	bearer string,
 	body []byte,
 	decode func([]byte) error,
-) error {
+) (*tls.ConnectionState, error) {
 	client, err := c.httpClientLocked(target)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	request, err := http.NewRequestWithContext(
 		ctx,
@@ -827,7 +828,7 @@ func (c *StationControl) doLocked(
 		bytes.NewReader(body),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	request.Header.Set("Accept", contentType)
 	request.Header.Set("Content-Type", contentType)
@@ -836,25 +837,28 @@ func (c *StationControl) doLocked(
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("Relay control request failed: %w", err)
+		return nil, fmt.Errorf("Relay control request failed: %w", err)
 	}
 	defer response.Body.Close()
 	raw, err := io.ReadAll(
 		io.LimitReader(response.Body, maxControlResponseBytes+1),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(raw) > maxControlResponseBytes {
-		return fmt.Errorf("Relay control response exceeds size limit")
+		return nil, fmt.Errorf("Relay control response exceeds size limit")
 	}
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"Relay control request returned HTTP %d",
 			response.StatusCode,
 		)
 	}
-	return decode(raw)
+	if err := decode(raw); err != nil {
+		return nil, err
+	}
+	return response.TLS, nil
 }
 
 func (c *StationControl) httpClientLocked(target Target) (*http.Client, error) {

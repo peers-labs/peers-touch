@@ -3,9 +3,8 @@ package relay
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
-	"encoding/pem"
-	"os"
+	"crypto/sha256"
+	"crypto/tls"
 	"strings"
 	"time"
 
@@ -14,9 +13,9 @@ import (
 	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
 )
 
-// Public TLS material is projected from the same reviewed attachment used by
-// Station control. No operator invitation or enrollment credential is exported.
-func targetBootstrapEndpoint(target Target, issued, expires time.Time) (*peerpb.PublicEndpointConnectionMaterial, error) {
+// Public TLS trust comes from the verified grant-registration connection.
+// No operator invitation or enrollment credential is exported.
+func targetBootstrapEndpoint(target Target, verifiedTLS *tls.ConnectionState, issued, expires time.Time) (*peerpb.PublicEndpointConnectionMaterial, error) {
 	if !strings.HasPrefix(target.ControlOrigin, "https://") {
 		return nil, nil // plaintext discovery cannot retrieve possession secrets
 	}
@@ -27,20 +26,13 @@ func targetBootstrapEndpoint(target Target, issued, expires time.Time) (*peerpb.
 		IssuedAtUnixMs:           issued.UnixMilli(), ExpiresAtUnixMs: expires.UnixMilli(),
 	}
 	if target.TLSCAFile != "" {
-		raw, err := os.ReadFile(target.TLSCAFile)
-		if err != nil {
+		if verifiedTLS == nil || !verifiedTLS.HandshakeComplete ||
+			len(verifiedTLS.VerifiedChains) == 0 || len(verifiedTLS.PeerCertificates) == 0 {
 			return nil, ErrConnectionMaterialUnavailable
 		}
-		block, rest := pem.Decode(raw)
-		if block == nil || block.Type != "CERTIFICATE" || len(bytes.TrimSpace(rest)) != 0 {
-			return nil, ErrConnectionMaterialUnavailable
-		}
-		certificate, err := x509.ParseCertificate(block.Bytes)
-		if err != nil || !certificate.IsCA || len(block.Bytes) > 16*1024 {
-			return nil, ErrConnectionMaterialUnavailable
-		}
+		digest := sha256.Sum256(verifiedTLS.PeerCertificates[0].RawSubjectPublicKeyInfo)
 		material.EndpointTlsTrust = &peerpb.EndpointTlsTrust{
-			Trust: &peerpb.EndpointTlsTrust_CertificateAuthorityDer{CertificateAuthorityDer: block.Bytes},
+			Trust: &peerpb.EndpointTlsTrust_LeafSpkiSha256{LeafSpkiSha256: digest[:]},
 		}
 	}
 	if _, err := peerpb.VerifyPublicEndpointConnectionMaterial(material, true, issued); err != nil {
@@ -83,7 +75,7 @@ func (c *StationControl) PublishBootstrapBlob(
 	response := &peerpb.PublishBootstrapBlobResponse{}
 	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := c.postProtoLocked(bounded, target, bootstrapblob.PublishPath, credential.Token, request, response); err != nil {
+	if _, err := c.postProtoLocked(bounded, target, bootstrapblob.PublishPath, credential.Token, request, response); err != nil {
 		return nil, err
 	}
 	if !bytes.Equal(response.GetBlobDigest(), verified.Statement.GetBlobDigest()) ||
