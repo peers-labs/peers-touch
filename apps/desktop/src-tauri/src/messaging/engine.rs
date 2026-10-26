@@ -1189,6 +1189,15 @@ impl MessagingEngine {
         Ok(Some((key_id, ed25519_dalek::SigningKey::from_bytes(&seed))))
     }
 
+    /// Explicit native Identity transfer port. Never exposed as a command or
+    /// serialized projection; Device Link seals it before leaving the Host.
+    pub(crate) fn device_link_identity_seed(&self) -> Result<Zeroizing<[u8; 32]>, String> {
+        self.actor_identity
+            .as_ref()
+            .map(|identity| Zeroizing::new(identity.seed_bytes()))
+            .ok_or_else(|| "deviceLink.identityUnavailable".to_string())
+    }
+
     pub fn store(&self) -> &MessagingStore {
         self.store.as_ref()
     }

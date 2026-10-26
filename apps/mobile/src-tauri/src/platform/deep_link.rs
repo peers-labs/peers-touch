@@ -8,10 +8,6 @@ use crate::platform::native_events;
 use crate::platform::secure_storage::SecureStorage;
 use crate::runtime::oauth::OAuthCoordinator;
 
-const OAUTH_CALLBACK_SCHEME: &str = "peers-touch";
-const OAUTH_CALLBACK_HOST: &str = "oauth";
-const OAUTH_CALLBACK_PATH: &str = "/callback";
-
 pub fn install<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>> {
     let warm_app = app.handle().clone();
     app.deep_link().on_open_url(move |event| {
@@ -35,8 +31,34 @@ pub fn install<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::E
 /// All other deep links are emitted as native events to the TS layer
 /// and trigger a lifecycle generation advance for proper ordering.
 fn dispatch_deep_link<R: Runtime>(app: &AppHandle<R>, url: tauri::Url) {
+    if schema_core::parse(url.as_str()).is_err() {
+        let _ = native_events::emit_native_event_error(
+            app,
+            "route-deep-link",
+            "Invalid or unsupported link",
+        );
+        return;
+    }
     if is_oauth_callback(&url) {
         dispatch_oauth_callback(app, url);
+    } else if matches!(schema_core::parse(url.as_str()), Ok(schema_core::Link::Action(action))
+        if matches!(action.action, Some(schema_core::proto::schema_action::Action::DeviceLinkOffer(_)
+            | schema_core::proto::schema_action::Action::DeviceLinkLocator(_)))) {
+        let app = app.clone();
+        let epoch = app.state::<crate::runtime::device_link::MobileDeviceLinkRuntime>().epoch();
+        tauri::async_runtime::spawn(async move {
+            let result = crate::commands::device_link::receive(app.clone(),
+                zeroize::Zeroizing::new(url.to_string()), epoch).await;
+            match result {
+                Ok(projection) => {
+                    use tauri::Emitter;
+                    let _ = app.emit("mobile:device-link", projection);
+                }
+                Err(_) => {
+                    let _ = native_events::emit_native_event_error(&app, "device-link", "Device link unavailable");
+                }
+            }
+        });
     } else {
         dispatch_general_deep_link(app, url);
     }
@@ -97,12 +119,10 @@ fn handle_native_callback<R: Runtime>(app: &AppHandle<R>, url: tauri::Url) -> Mo
 }
 
 fn is_oauth_callback(url: &tauri::Url) -> bool {
-    url.scheme() == OAUTH_CALLBACK_SCHEME
-        && url.host_str() == Some(OAUTH_CALLBACK_HOST)
-        && url.path() == OAUTH_CALLBACK_PATH
-        && url.fragment().is_none()
-        && url.username().is_empty()
-        && url.password().is_none()
+    matches!(
+        schema_core::parse(url.as_str()),
+        Ok(schema_core::Link::OAuthCallback(_))
+    )
 }
 
 #[cfg(test)]

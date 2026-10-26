@@ -49,6 +49,9 @@ fn validate_key(key: &str) -> MobileResult<()> {
         || key.starts_with("peers-touch.mobile.reliability.")
         || key.starts_with("peers-touch.mobile.station-route-source.v1.")
         || key.starts_with("peers-touch.mobile.x-config.")
+        || key.starts_with("peers-touch.mobile.device-link.")
+        || key.starts_with("mobile-crypto-identity.")
+        || key.starts_with("messaging.v1.device-signing-seed.")
     {
         return Err(crate::error::MobileError::invalid_input(
             "secure storage key belongs to a Rust-owned namespace",

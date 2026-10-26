@@ -89,6 +89,46 @@ function runtime(options: {
 }
 
 describe('sessionRuntime', () => {
+  it.each(['fence', 'suspend', 'fail'])('discards a native restore completed after %s', async (action) => {
+    const read = deferred<NativeSessionProjection | null>();
+    const { controller, timers } = runtime({ read: () => read.promise });
+    const pending = controller.restore(station, granted);
+    if (action === 'fail') controller.fail(new Error('connection failed'));
+    else controller[action]();
+    read.resolve(nativeProjection());
+    expect(await pending).toBeNull();
+    expect(controller.getSnapshot().session).toBeNull();
+    expect(controller.getSnapshot().writesAllowed).toBe(false);
+    expect(timers).toHaveLength(0);
+  });
+
+  it('discards a refresh after fencing without restoring writes or timers', async () => {
+    const refresh = deferred<NativeSessionProjection>();
+    const { controller, timers } = runtime({ refresh: () => refresh.promise });
+    await controller.restore(station, granted);
+    const timerCount = timers.length;
+    const pending = controller.refresh('scheduled');
+    controller.fence();
+    refresh.resolve(nativeProjection({ sessionId: 'late-refresh' }));
+    await expect(pending).rejects.toThrow('sessionTransitionCancelled');
+    expect(controller.getSnapshot().session).toBeNull();
+    expect(controller.getSnapshot().writesAllowed).toBe(false);
+    expect(timers).toHaveLength(timerCount);
+  });
+
+  it('keeps a newer restore when an older native read completes last', async () => {
+    const read = deferred<NativeSessionProjection | null>();
+    let calls = 0;
+    const { controller } = runtime({
+      read: () => ++calls === 1 ? read.promise : Promise.resolve(nativeProjection({ sessionId: 'new' })),
+    });
+    const old = controller.restore(station, granted);
+    await controller.restore(station, granted);
+    read.resolve(nativeProjection({ sessionId: 'old' }));
+    expect(await old).toBeNull();
+    expect(controller.getSnapshot().session?.sessionId).toBe('new');
+  });
+
   it('activates native OAuth metadata without projecting credential material', async () => {
     const { controller, timers } = runtime();
 

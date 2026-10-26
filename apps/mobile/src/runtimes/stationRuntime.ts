@@ -237,6 +237,9 @@ export function bootstrapStationRuntime(): Promise<StoredStationRegistry> {
 async function restoreActiveStationRoute(): Promise<StoredStationRegistry> {
   if (routeRefreshInFlight) await routeRefreshInFlight.catch(() => undefined);
   let loaded = await stationRegistryRuntime.bootstrap();
+  // A pre-login link owns its native route until commit or cancellation.
+  const { hasPendingDeviceLink } = await import('./deviceLinkRuntime');
+  if (hasPendingDeviceLink()) return loaded;
   const station = activeStationEntry(loaded);
   const route = station ? activeStationRoute(station) : null;
   if (!station || !route) return loaded;

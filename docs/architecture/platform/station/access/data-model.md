@@ -175,7 +175,7 @@ Federation context is orthogonal to Relay route. Operations requiring
 Federation scope carry an explicit `federation_id`; route selection cannot
 create or infer one.
 
-## 7. Client-Class Session Slot
+## 7. Device Session Slot
 
 ```text
 ClientClass
@@ -183,7 +183,8 @@ ClientClass
   mobile
   web
 
-ActorSessionClassSlot
+ActorSessionDeviceSlot
+  station_peer_id
   actor_id
   client_class
   active_session_id
@@ -195,13 +196,16 @@ ActorSessionClassSlot
 
 Invariants:
 
-- one non-revoked Session per `(actor_id, client_class)`;
+- one non-revoked Session per `(station_peer_id, actor_id, device_id)`;
 - database partial unique index enforces the active slot;
-- new same-class activation and old-session `kicked` revoke are atomic;
-- different classes are excluded from the revoke set;
+- new same-device activation and old-session `kicked` revoke are atomic;
+- other installations are excluded from the revoke set, including the same class;
 - password, OAuth and takeover produce the same slot result;
 - historical aliases are normalized only by schema migration and cannot be
-  written at runtime.
+  written at runtime;
+- unbound historical active sessions are revoked as `device_binding_required`;
+- migration fences writers, removes the class index and creates the device index
+  in one transaction; neither IP nor User-Agent supplies missing device identity.
 
 ## 8. Capability References
 

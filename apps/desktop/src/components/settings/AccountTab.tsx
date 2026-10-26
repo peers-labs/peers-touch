@@ -40,6 +40,7 @@ import {
   resolveAccountLoginProvider,
 } from './accountIdentityPresentation';
 import { log } from '../../utils/logger';
+import { DeviceLinkPanel } from './DeviceLinkPanel';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -646,6 +647,7 @@ export function AccountTab() {
           />
         </Flexbox>
       </SettingsSection>
+      <DeviceLinkPanel />
       {/* ── Section 2: Public Profile (editable, auto-save) ── */}
       <SettingsSection
         title={t('provider.account.profile.title')}

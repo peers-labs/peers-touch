@@ -1,0 +1,33 @@
+{
+  "name": "@peers-touch/schema",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "generate": "node generate.mjs",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.10.2",
+    "qr-code-styling": "1.9.2"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@bufbuild/protoc-gen-es": "^2.10.2",
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "jsdom": "^26.1.0",
+    "jsqr": "^1.4.0",
+    "react-dom": "^19.2.0",
+    "sharp": "^0.34.5",
+    "typescript": "~5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

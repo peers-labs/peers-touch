@@ -16,6 +16,7 @@ pub mod chat_storage;
 pub mod x_config;
 pub mod cron;
 pub mod desktop_executor_worker;
+pub mod device_link;
 pub mod error_resolver;
 pub mod evaluation;
 pub mod federation;

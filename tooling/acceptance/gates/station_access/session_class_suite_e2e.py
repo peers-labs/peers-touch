@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One reusable Native Suite for Station Access Session-class behavior."""
+"""One reusable Native Suite for installation-scoped Station Sessions."""
 
 from __future__ import annotations
 
@@ -40,8 +40,8 @@ GATE_ID = "station-access-session-class-suite-e2e"
 SCENARIO_IDS = (
     "same-station-chat",
     "cross-class-coexistence",
-    "desktop-takeover",
-    "mobile-takeover",
+    "desktop-device-coexistence",
+    "mobile-device-coexistence",
 )
 STEP_TIMEOUT = float(
     os.environ.get("STATION_ACCESS_STEP_TIMEOUT_SECONDS", "120")
@@ -56,7 +56,7 @@ RUNTIME_REUSE_CONTRACT = RuntimeReuseContract.from_dict(
         "minWarmReuseRate": 0.75,
         "requireAttachOnlyScenarios": True,
         "requireReceiverVisibleProof": True,
-        "allowClientReplacement": True,
+        "allowClientReplacement": False,
     }
 )
 
@@ -128,7 +128,10 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
         conversation_id = ""
         try:
             for index, client_id in enumerate(
-                ("desktop-alice", "desktop-bob", "sim-ios")
+                (
+                    "desktop-alice", "desktop-bob", "desktop-bob-peer",
+                    "sim-ios", "sim-ios-peer",
+                )
             ):
                 started_at = time.monotonic()
                 self.runtime.start_client(
@@ -283,73 +286,37 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
             )
             scenario_results[scenario_id] = "PASS"
 
-            scenario_id = "desktop-takeover"
+            scenario_id = "desktop-device-coexistence"
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id=scenario_id,
             )
-            started_at = time.monotonic()
-            replacement_desktop = self.runtime.start_client(
-                "desktop-bob-peer",
-                window_slot=2,
-                window_count=3,
-            )
-            ledger.record(
-                SuiteRuntimeAction.CLIENT_REPLACEMENT,
-                scenario_id=scenario_id,
-                resource_id="client:desktop-bob-peer",
-                duration_seconds=time.monotonic() - started_at,
-            )
-            self.report.add_actor(
-                self.runtime.actor_runtime("desktop-bob-peer")
-            )
-            revoked_desktop = self.runtime.wait_until(
-                lambda: (
-                    state
-                    if (
-                        isinstance(
-                            state := self.runtime.call_action(
-                                "desktop-bob",
-                                "identityState",
-                                {},
-                            ),
-                            Mapping,
-                        )
-                        and state.get("authenticated") is False
-                        and state.get("reason") == "revoked"
-                    )
-                    else None
-                ),
-                "predecessor Desktop Session revocation",
-                timeout_seconds=STEP_TIMEOUT,
-            )
-            self.runtime.mark_desktop_auth_revoked("desktop-bob")
+            replacement_desktop = self.runtime.identities["desktop-bob-peer"]
             self.assert_condition(
-                "desktop_takeover_preserves_mobile",
+                "independent_desktop_devices_preserve_all_sessions",
                 (
                     replacement_desktop.ptid == desktop_bob.ptid
                     and replacement_desktop.device_id
                     != desktop_bob.device_id
+                    and self._desktop_authenticated("desktop-bob")
+                    and self._desktop_authenticated("desktop-bob-peer")
                     and self._mobile_authenticated("sim-ios")
                 ),
-                compact_json(revoked_desktop),
             )
-            text = f"micu-suite-desktop-takeover-{time.time_ns()}"
+            text = f"micu-suite-desktop-devices-{time.time_ns()}"
             message_id, ui_resource = self._send_desktop_ui(
                 "desktop-alice",
                 conversation_id,
                 text,
                 scenario_id,
             )
-            self.runtime.wait_for_message(
-                "desktop-bob-peer",
-                conversation_id,
-                message_id,
-                lambda value: value.get("plaintext") == text,
-                kind="direct",
-                timeout_seconds=STEP_TIMEOUT,
-                description="replacement Desktop receiver",
-            )
+            for client_id in ("desktop-bob", "desktop-bob-peer"):
+                self.runtime.wait_for_message(
+                    client_id, conversation_id, message_id,
+                    lambda value: value.get("plaintext") == text,
+                    kind="direct", timeout_seconds=STEP_TIMEOUT,
+                    description=f"{client_id} independent Desktop receiver",
+                )
             self.runtime.wait_for_message(
                 "sim-ios",
                 conversation_id,
@@ -359,11 +326,12 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
                 timeout_seconds=STEP_TIMEOUT,
                 description="surviving Mobile receiver",
             )
-            desktop_receiver = self._assert_desktop_receiver(
-                "desktop-bob-peer",
-                conversation_id,
-                text,
-                scenario_id,
+            desktop_receivers = tuple(
+                self._assert_desktop_receiver(
+                    client_id, conversation_id, text,
+                    f"{scenario_id}-{client_id}",
+                )
+                for client_id in ("desktop-bob", "desktop-bob-peer")
             )
             mobile_receiver = self._assert_mobile_receiver(
                 "sim-ios",
@@ -376,57 +344,31 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
                 ledger,
                 scenario_id,
                 ui_resource=ui_resource,
-                receiver_resources=(desktop_receiver, mobile_receiver),
-                supporting_resource=f"revocation:{desktop_bob.device_id}",
+                receiver_resources=(*desktop_receivers, mobile_receiver),
+                supporting_resource=f"message:{message_id}",
             )
             scenario_results[scenario_id] = "PASS"
 
-            scenario_id = "mobile-takeover"
+            scenario_id = "mobile-device-coexistence"
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id=scenario_id,
             )
-            started_at = time.monotonic()
-            replacement_mobile = self.runtime.start_client(
-                "sim-ios-peer",
-                window_slot=0,
-                window_count=1,
-            )
-            ledger.record(
-                SuiteRuntimeAction.CLIENT_REPLACEMENT,
-                scenario_id=scenario_id,
-                resource_id="client:sim-ios-peer",
-                duration_seconds=time.monotonic() - started_at,
-            )
-            self.report.add_actor(
-                self.runtime.actor_runtime("sim-ios-peer")
-            )
+            replacement_mobile = self.runtime.identities["sim-ios-peer"]
             self.runtime.set_mobile_suspended("sim-ios", True)
             self.runtime.set_mobile_suspended("sim-ios", False)
-            revoked_mobile = self.runtime.wait_until(
-                lambda: (
-                    scope
-                    if (
-                        (scope := self.runtime.scope_snapshot("sim-ios"))
-                        .get("actorPtid")
-                        is None
-                        and scope.get("runtimeStationPeerId") is None
-                    )
-                    else None
-                ),
-                "predecessor Mobile Session revocation",
-                timeout_seconds=STEP_TIMEOUT,
-            )
             self.assert_condition(
-                "mobile_takeover_preserves_desktop",
+                "independent_mobile_devices_preserve_all_sessions",
                 (
                     replacement_mobile.ptid == mobile_bob.ptid
                     and replacement_mobile.device_id != mobile_bob.device_id
+                    and self._mobile_authenticated("sim-ios")
+                    and self._mobile_authenticated("sim-ios-peer")
+                    and self._desktop_authenticated("desktop-bob")
                     and self._desktop_authenticated("desktop-bob-peer")
                 ),
-                compact_json(revoked_mobile),
             )
-            text = f"micu-suite-mobile-takeover-{time.time_ns()}"
+            text = f"micu-suite-mobile-devices-{time.time_ns()}"
             message_id, ui_resource = self._send_desktop_ui(
                 "desktop-alice",
                 conversation_id,
@@ -448,12 +390,19 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
                 text,
                 scenario_id,
             )
+            mobile_receivers = tuple(
+                self._assert_mobile_receiver(
+                    client_id, conversation_id, message_id, text,
+                    f"{scenario_id}-{client_id}",
+                )
+                for client_id in ("sim-ios", "sim-ios-peer")
+            )
             self._complete_scenario(
                 ledger,
                 scenario_id,
                 ui_resource=ui_resource,
-                receiver_resources=(desktop_receiver,),
-                supporting_resource=f"revocation:{mobile_bob.device_id}",
+                receiver_resources=(desktop_receiver, *mobile_receivers),
+                supporting_resource=f"message:{message_id}",
             )
             scenario_results[scenario_id] = "PASS"
         finally:
@@ -489,8 +438,8 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
             "proven_scope": [
                 "same-Station Desktop and Mobile Chat",
                 "same-actor Desktop and Mobile Session coexistence",
-                "same-class Desktop takeover",
-                "same-class Mobile takeover",
+                "multiple Desktop installation coexistence",
+                "multiple Mobile installation coexistence",
                 "one reusable Suite Runtime lifecycle",
             ],
             "unproven_scope": [

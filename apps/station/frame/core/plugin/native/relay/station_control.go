@@ -404,7 +404,7 @@ func (c *StationControl) IssueConnectionMaterial(
 	}
 
 	c.lock.Lock()
-	target, route, err := c.selectLiveRouteLocked(now)
+	target, route, err := c.selectLiveRouteLocked(now, request.RelayPeerID)
 	c.lock.Unlock()
 	if err != nil {
 		return nil, err
@@ -482,22 +482,30 @@ func (c *StationControl) IssueConnectionMaterial(
 		registered.GetRemainingUses() != maxUses {
 		return nil, fmt.Errorf("Relay returned an invalid connection grant result")
 	}
-	envelopeBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
-		&peerpb.StationConnectionEnvelope{
-			ProtocolVersion:  1,
-			RelayOrigin:      target.ControlOrigin,
-			RouteAttestation: attestation,
-			ConnectionGrant:  grant,
-		},
-	)
+	envelope := &peerpb.StationConnectionEnvelope{
+		ProtocolVersion:  1,
+		RelayOrigin:      target.ControlOrigin,
+		RouteAttestation: attestation,
+		ConnectionGrant:  grant,
+	}
+	envelopeBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
 	if err != nil {
 		return nil, fmt.Errorf("encode Station connection material: %w", err)
 	}
 	payload := base64.RawURLEncoding.EncodeToString(envelopeBytes)
+	bootstrapEndpoint, err := targetBootstrapEndpoint(target, now, grantExpiresAt)
+	if err != nil {
+		// An attachment may use a CA bundle that cannot fit the public single-CA
+		// contract. The signed connection envelope remains valid; reference
+		// consumers must use bounded inline material or report unsupported.
+		bootstrapEndpoint = nil
+	}
 	return &ConnectionMaterial{
-		Code:      connectionCodePrefix + payload,
-		DeepLink:  connectionDeepLink + payload,
-		ExpiresAt: grantExpiresAt,
+		Code:              connectionCodePrefix + payload,
+		DeepLink:          connectionDeepLink + payload,
+		ExpiresAt:         grantExpiresAt,
+		Envelope:          envelope,
+		BootstrapEndpoint: bootstrapEndpoint,
 	}, nil
 }
 
@@ -724,6 +732,7 @@ func (c *StationControl) signChallenge(
 
 func (c *StationControl) selectLiveRouteLocked(
 	now time.Time,
+	selected ...peer.ID,
 ) (Target, CircuitRoute, error) {
 	routes := c.liveRoutes(now)
 	if len(routes) == 0 {
@@ -734,6 +743,9 @@ func (c *StationControl) selectLiveRouteLocked(
 			routes[right].RelayPeerID.String()
 	})
 	for _, route := range routes {
+		if len(selected) != 0 && selected[0] != "" && selected[0] != route.RelayPeerID {
+			continue
+		}
 		if target, exists := c.targets[route.RelayPeerID]; exists {
 			return cloneTarget(target), route, nil
 		}

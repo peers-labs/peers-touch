@@ -7,6 +7,7 @@ import { installNavigationBadgeProjection, teardownNavigationBadgeProjection } f
 import { bootstrapRuntime, installRuntime, registerRuntime, teardownRuntime } from '../kernel/runtime';
 import { searchRuntime } from '../runtimes/searchRuntime';
 import { settingsRuntime } from '../runtimes/settingsRuntime';
+import { deviceLinkRuntime } from '../runtimes/deviceLinkRuntime';
 import { socialRuntime } from '../runtimes/socialRuntime';
 import { federationRuntime } from '../runtimes/federationRuntime';
 import { homeRuntime } from '../runtimes/homeRuntime';
@@ -41,6 +42,7 @@ export function registerKernelRuntimes(): void {
   registerRuntime(callRuntime);
   registerRuntime(searchRuntime);
   registerRuntime(settingsRuntime);
+  registerRuntime(deviceLinkRuntime);
   registerRuntime(federationRuntime);
   registerRuntime(homeRuntime);
   registerRuntime(appletsRuntime);
@@ -66,6 +68,7 @@ let criticalInstallInFlight: {
 function deferredAppRuntimeIds(): string[] {
   return [
     settingsRuntime.id,
+    deviceLinkRuntime.id,
     federationRuntime.id,
     ...(getDesktopHostPolicy().nativeSocialEnabled ? [momentsRuntime.id] : []),
   ];
@@ -172,6 +175,7 @@ export function teardownAppRuntime(): void {
   teardownRuntime(callRuntime.id);
   teardownRuntime(searchRuntime.id);
   teardownRuntime(settingsRuntime.id);
+  teardownRuntime(deviceLinkRuntime.id);
   teardownRuntime(federationRuntime.id);
   teardownRuntime(homeRuntime.id);
   teardownRuntime(appletsRuntime.id);

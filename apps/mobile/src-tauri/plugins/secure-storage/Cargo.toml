@@ -14,4 +14,4 @@ serde = { version = "1", features = ["derive"] }
 tauri = { version = "2.0.1", default-features = false }
 
 [build-dependencies]
-tauri-plugin = { version = "=2.5.4", features = ["build"] }
+tauri-plugin = { version = "=2.7.1", features = ["build"] }

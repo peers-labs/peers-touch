@@ -1,10 +1,13 @@
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine as _;
+#[cfg(test)]
+use crate::model::peer::StationConnectionEnvelope;
+#[cfg(test)]
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use libp2p_identity::PublicKey;
 use prost::Message;
 use rand::RngCore;
 use reqwest::redirect::Policy;
 use reqwest::Client;
+use schema_core::{proto::schema_action::Action as SchemaAction, Link as SchemaLink};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use station_trust::{
@@ -17,12 +20,12 @@ use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio_util::sync::CancellationToken;
 
-use crate::infrastructure::station::TransportIdentityScope;
 use crate::model::peer::{
     AccessEndpointOutcome, AccessEndpointRequest, AccessEndpointResponse, AccessEndpointRole,
-    AccessEndpointSourceProof, AccessEndpointSourceProofStatement, StationConnectionEnvelope,
-    StationConnectionGrantStatement, StationRouteAttestation, StationRouteStatement,
+    AccessEndpointSourceProof, AccessEndpointSourceProofStatement, StationConnectionGrantStatement,
+    StationRouteAttestation, StationRouteStatement,
 };
+use station_trust::transport_identity::TransportIdentityScope;
 
 const ACCESS_PATH: &str = "/.well-known/peers-touch/access";
 const ACCESS_ENDPOINT_DOMAIN: &[u8] = b"peers-touch/access-endpoint/v1\0";
@@ -622,25 +625,14 @@ struct ParsedInput {
 }
 
 fn parse_input(input: &str) -> Result<ParsedInput, StationDiscoveryError> {
-    let value = input.trim();
-    let encoded = value
-        .strip_prefix("ptc1:")
-        .or_else(|| value.strip_prefix("peers-touch://connect#"));
-    if let Some(encoded) = encoded {
-        let raw = URL_SAFE_NO_PAD
-            .decode(encoded)
-            .map_err(|_| invalid_discovery("Private Station connection material is malformed"))?;
-        let envelope = StationConnectionEnvelope::decode(raw.as_slice())
-            .map_err(|_| invalid_discovery("Private Station connection material is malformed"))?;
-        if envelope.protocol_version != ACCESS_PROTOCOL_VERSION
-            || envelope.relay_origin.trim().is_empty()
-            || envelope.connection_grant.is_none()
-            || envelope.route_attestation.is_none()
-        {
+    let link = schema_core::parse(input)
+        .map_err(|_| invalid_discovery("Station connection input is malformed"))?;
+    if let SchemaLink::Action(action) = &link {
+        let Some(SchemaAction::CircuitConnection(envelope)) = &action.action else {
             return Err(invalid_discovery(
-                "Private Station connection material is incomplete",
+                "This link is not Station connection material",
             ));
-        }
+        };
         let grant = envelope
             .connection_grant
             .as_ref()
@@ -660,7 +652,12 @@ fn parse_input(input: &str) -> Result<ParsedInput, StationDiscoveryError> {
             identity_scope: TransportIdentityScope::Relay(grant_statement.relay_peer_id),
         });
     }
-    let origin = normalize_origin(value)?;
+    let SchemaLink::WebUrl(value) = link else {
+        return Err(invalid_discovery(
+            "A Station origin or connection link is required",
+        ));
+    };
+    let origin = normalize_origin(&value)?;
     Ok(ParsedInput {
         identity_scope: TransportIdentityScope::ProvisionalEndpointOrigin(origin.clone()),
         origin,
@@ -815,7 +812,8 @@ mod tests {
         let node = Keypair::generate_ed25519();
         let authorization_time = unix_ms();
         let response_for = |challenge: &[u8], now: i64, port: u16, suffix: &str| {
-            let mut response = direct_response(&root, &node, challenge, &origin, authorization_time);
+            let mut response =
+                direct_response(&root, &node, challenge, &origin, authorization_time);
             let attestation = &mut response.station_routes[0];
             let mut statement =
                 StationRouteStatement::decode(attestation.statement_bytes.as_slice()).unwrap();
@@ -835,16 +833,21 @@ mod tests {
         let endpoint =
             verify_discovery_response(&origin, None, &[1; 32], initial, unix_ms(), None).unwrap();
         let replacement_node = Keypair::generate_ed25519();
-        let mut replacement = direct_response(&root, &replacement_node, &[2; 32], &origin, unix_ms());
+        let mut replacement =
+            direct_response(&root, &replacement_node, &[2; 32], &origin, unix_ms());
         let replacement_attestation = &mut replacement.station_routes[0];
         let mut replacement_statement =
-            StationRouteStatement::decode(replacement_attestation.statement_bytes.as_slice()).unwrap();
+            StationRouteStatement::decode(replacement_attestation.statement_bytes.as_slice())
+                .unwrap();
         replacement_statement.addresses = vec![format!(
-            "/ip4/127.0.0.1/tcp/{stalled_port}/p2p/{}", replacement_node.public().to_peer_id(),
+            "/ip4/127.0.0.1/tcp/{stalled_port}/p2p/{}",
+            replacement_node.public().to_peer_id(),
         )];
         replacement_attestation.statement_bytes = replacement_statement.encode_to_vec();
         replacement_attestation.node_signature = sign(
-            &replacement_node, STATION_ROUTE_DOMAIN, &replacement_attestation.statement_bytes,
+            &replacement_node,
+            STATION_ROUTE_DOMAIN,
+            &replacement_attestation.statement_bytes,
         );
         let replacement =
             verify_discovery_response(&origin, None, &[2; 32], replacement, unix_ms(), None)
@@ -915,10 +918,14 @@ mod tests {
             );
             release.send(()).unwrap();
             let error = result.unwrap_err();
-            assert!(matches!(
-                error.kind,
-                crate::application::station_runtime::client::StationClientErrorKind::Cancelled
-            ), "{error:?}; diagnostics={:?}", runtime.diagnostics());
+            assert!(
+                matches!(
+                    error.kind,
+                    crate::application::station_runtime::client::StationClientErrorKind::Cancelled
+                ),
+                "{error:?}; diagnostics={:?}",
+                runtime.diagnostics()
+            );
             entry.recv_timeout(Duration::from_secs(1)).unwrap();
             assert!(started.elapsed() >= Duration::from_secs(5));
             assert!(started.elapsed() < Duration::from_millis(5_500));
@@ -928,8 +935,11 @@ mod tests {
         assert_eq!(after.station_peer_id, before.station_peer_id);
         let diagnostics = runtime.diagnostics();
         assert_eq!(diagnostics.attempts.len(), 2);
-        let automatic = diagnostics.transitions.iter()
-            .filter(|transition| transition.reason == "automatic_failover").collect::<Vec<_>>();
+        let automatic = diagnostics
+            .transitions
+            .iter()
+            .filter(|transition| transition.reason == "automatic_failover")
+            .collect::<Vec<_>>();
         assert_eq!(automatic.len(), 1);
         assert!(automatic[0].previous_lease_cancelled);
         runtime.shutdown().unwrap();

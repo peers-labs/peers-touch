@@ -128,7 +128,8 @@ if [ ! -x "$PROTOC_GEN_ES" ]; then
 fi
 
 TS_TRAILING_NEWLINES=$(mktemp)
-trap 'rm -f "$TS_TRAILING_NEWLINES"' EXIT
+TS_STAGE=$(mktemp -d)
+trap 'rm -f "$TS_TRAILING_NEWLINES"; rm -rf "$TS_STAGE"' EXIT
 if [ -d "$TS_OUT" ]; then
     find "$TS_OUT" -type f -name '*_pb.ts' -print0 |
         while IFS= read -r -d '' file; do
@@ -138,15 +139,12 @@ if [ -d "$TS_OUT" ]; then
         done > "$TS_TRAILING_NEWLINES"
 fi
 
-rm -rf "$TS_OUT"
-mkdir -p "$TS_OUT"
-
 for file in $GO_PROTO_FILES; do
     REL_PATH="${file#$PROTO_ROOT/}"
     echo "  Generating $REL_PATH -> TS"
     protoc \
         --plugin=protoc-gen-es="$PROTOC_GEN_ES" \
-        --es_out="$TS_OUT" \
+        --es_out="$TS_STAGE" \
         --es_opt=target=ts \
         -I"$PROTO_ROOT" \
         "$file"
@@ -155,7 +153,7 @@ done
 # Preserve each tracked output's existing file ending so repeated generation
 # remains byte-for-byte stable.
 while IFS=$'\t' read -r relative_path trailing_newlines; do
-    generated_file="$TS_OUT/$relative_path"
+    generated_file="$TS_STAGE/$relative_path"
     if [ -f "$generated_file" ]; then
         TRAILING_NEWLINES="$trailing_newlines" \
             perl -0pi -e 's/\n*\z/"\n" x $ENV{TRAILING_NEWLINES}/e' \
@@ -165,14 +163,38 @@ done < "$TS_TRAILING_NEWLINES"
 
 # New generated files have no historical ending to preserve. Normalize them to
 # one trailing newline so adding a proto cannot introduce diff-check failures.
-find "$TS_OUT" -type f -name '*_pb.ts' -print0 |
+find "$TS_STAGE" -type f -name '*_pb.ts' -print0 |
     while IFS= read -r -d '' file; do
-        REL_PATH="${file#$TS_OUT/}"
+        REL_PATH="${file#$TS_STAGE/}"
         if ! awk -F '\t' -v path="$REL_PATH" '$1 == path { found = 1 } END { exit !found }' \
             "$TS_TRAILING_NEWLINES"; then
             perl -0pi -e 's/\n*\z/\n/' "$file"
         fi
     done
+
+# Publish only after every proto has generated successfully. A broken plugin
+# or invalid input must leave the existing consumer bindings intact.
+find "$TS_STAGE" -type f -name '*_pb.ts' -print0 |
+    while IFS= read -r -d '' file; do
+        REL_PATH="${file#$TS_STAGE/}"
+        destination="$TS_OUT/$REL_PATH"
+        if [ -f "$destination" ] && cmp -s "$file" "$destination"; then
+            continue
+        fi
+        mkdir -p "$(dirname "$destination")"
+        cp "$file" "$destination"
+    done
+if [ -d "$TS_OUT" ]; then
+    find "$TS_OUT" -type f -name '*_pb.ts' -print0 |
+        while IFS= read -r -d '' file; do
+            REL_PATH="${file#$TS_OUT/}"
+            if [ ! -f "$TS_STAGE/$REL_PATH" ]; then
+                rm "$file"
+            fi
+        done
+fi
+
+node "$PROJECT_ROOT/packages/schema/generate.mjs"
 
 echo ""
 echo "=== Proto generation complete ==="

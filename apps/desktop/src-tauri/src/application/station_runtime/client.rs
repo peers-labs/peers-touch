@@ -839,6 +839,22 @@ impl StationClient {
         })
     }
 
+    pub fn request_peers_proto_no_body_at_station<Payload: Message + Default>(
+        &self,
+        station_peer_id: &str,
+        method: Method,
+        path: &str,
+        token: &str,
+    ) -> Result<Payload, StationClientError> {
+        let response = self.execute_wire_for_station(
+            station_peer_id, method, path, None, Some(token), None,
+            Some("application/protobuf"), "application/protobuf",
+            StationRequestBody::Empty, StationTransportPolicy::Interactive,
+            TrafficClass::Interactive, None,
+        )?;
+        decode_peers_envelope(&response.body)
+    }
+
     pub fn request_peers_proto_no_body_for_device<Payload>(
         &self,
         method: Method,

@@ -7,6 +7,7 @@ packages:
   - apps/applets/*/frontend
   - apps/station/app/subserver/dashboard/web
   - packages/model
+  - packages/schema
   - packages/client-chat-core
   - packages/client-media-security
   - packages/client-storage

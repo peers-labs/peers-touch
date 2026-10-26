@@ -12,7 +12,7 @@
     "tooling/acceptance/gates/station_access/session_class_suite_e2e.py"
   ],
   "truth_sources": [
-    "Station canonical client-class Session slots",
+    "Station and Actor installation-scoped Session bindings",
     "Desktop and Mobile installation-scoped device identities",
     "current-source native receiver proof"
   ],
@@ -25,18 +25,18 @@
   ],
   "acceptance": {
     "service": [
-      "one Desktop and one Mobile Session for the same actor remain valid together",
-      "a newer Desktop Session revokes only the previous Desktop Session",
-      "a newer Mobile Session revokes only the previous Mobile Session",
+      "multiple Desktop and Mobile installations for the same actor remain valid together",
+      "a newer Session replaces only the same Station, actor and device binding",
+      "device revocation invalidates only that device's Sessions",
       "each installation retains its own device and storage identity while sharing Station and actor truth"
     ],
     "surface": [
-      "the unaffected cross-class client remains authenticated and can read and mutate Station state after same-class takeover",
-      "the replaced same-class client converges to the typed kicked or session-revoked state"
+      "both Desktop installations and both Mobile installations receive the same actor's new messages",
+      "each installation remains authenticated while another installation of the same class is active"
     ]
   },
   "negative": [
-    "device_id, window labels, runtime labels, and OS models must not create additional Session class slots",
+    "client class, window labels, runtime labels and OS models must not define Session uniqueness",
     "one simulator or one storage root must not represent two same-class Mobile installations",
     "independent regression Gates must not replace the one reusable Suite Runtime or its native receiver proof",
     "aggregate evidence must not replace any native receiver proof",

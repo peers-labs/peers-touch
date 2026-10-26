@@ -75,6 +75,34 @@ impl<'a> StorageDeviceSeedBackup<'a> {
     }
 }
 
+pub(crate) fn linked_device_seed(
+    storage: &SecureStorage,
+    station: &str,
+    actor: &str,
+    device: &str,
+) -> MobileResult<Option<Zeroizing<[u8; 32]>>> {
+    StorageDeviceSeedBackup::new(storage, station, actor, device)
+        .load().map(|seed| seed.map(Zeroizing::new)).map_err(MobileError::messaging)
+}
+
+pub(crate) fn import_linked_device_seed(
+    storage: &SecureStorage,
+    station: &str,
+    actor: &str,
+    device: &str,
+    seed: &[u8; 32],
+) -> MobileResult<()> {
+    let backup = StorageDeviceSeedBackup::new(storage, station, actor, device);
+    if backup.load().map_err(MobileError::messaging)?.is_some_and(|old| old != *seed) {
+        return Err(MobileError::messaging("deviceLink.deviceIdentityConflict"));
+    }
+    backup.store(seed).map_err(MobileError::messaging)?;
+    if backup.load().map_err(MobileError::messaging)? != Some(*seed) {
+        return Err(MobileError::messaging("deviceLink.devicePersistenceFailed"));
+    }
+    Ok(())
+}
+
 impl DeviceSigningSeedBackup for StorageDeviceSeedBackup<'_> {
     fn load(&self) -> Result<Option<[u8; 32]>, String> {
         let stored = self

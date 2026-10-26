@@ -195,6 +195,8 @@ export async function restoreAndRevalidateAccessRuntime(): Promise<void> {
   publishFromStore();
 
   try {
+    const { hasPendingDeviceLink } = await import('./deviceLinkRuntime');
+    if (hasPendingDeviceLink()) return;
     const station = activeStationEntry(await readStationRegistryProjection());
     if (!station) {
       return;
@@ -344,7 +346,7 @@ function isRevokedSessionError(message: string): boolean {
   );
 }
 
-function sanitizeAccessDecision(
+export function sanitizeAccessDecision(
   projection: OAuthAccessDecisionProjection,
 ): AccessDecision {
   return normalizeDecision({
@@ -352,6 +354,7 @@ function sanitizeAccessDecision(
     attemptId: projection.attemptId,
     currentGateId: projection.currentGateId,
     accessGrantId: projection.accessGrantId,
+    expiresAtUnixMs: projection.expiresAtUnixMs,
     message: projection.message,
     gates: projection.gates.map((gate) => ({
       gateId: gate.gateId,

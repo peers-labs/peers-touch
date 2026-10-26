@@ -1,5 +1,6 @@
 pub mod build_identity;
 pub mod draft;
+pub mod device_link;
 pub mod health;
 pub mod ledger;
 #[cfg(feature = "acceptance-harness")]
@@ -17,6 +18,10 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
     tauri::generate_handler![
         // Health
         health::mobile_health,
+        device_link::device_link_scan,
+        device_link::device_link_status,
+        device_link::device_link_submit,
+        device_link::device_link_cancel,
         // Distribution identity (XCFG-D05)
         build_identity::mobile_distribution_identity,
         search::search_submit,
@@ -185,6 +190,10 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         build_identity::mobile_distribution_identity,
         // Health
         health::mobile_health,
+        device_link::device_link_scan,
+        device_link::device_link_status,
+        device_link::device_link_submit,
+        device_link::device_link_cancel,
         search::search_submit,
         search::search_suggest,
         search::search_resolve,

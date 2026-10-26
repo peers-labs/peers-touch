@@ -1,4 +1,5 @@
 {
+  "chat.schema.qrUnavailable": "This code cannot fit here. Widen the window and try again.",
   "chat.clarification.other": "Other",
   "chat.clarification.submit": "Submit answer",
   "chat.agentReadiness.modelRequired": "Choose an available provider and model for this Topic before sending.",

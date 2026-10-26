@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package peers_touch.model.peer.v1;
+
+import "domain/peer/access_endpoint.proto";
+import "domain/peer/station_identity.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/peer;peer";
+
+// Only an enrolled Station Node can publish to its bound Relay. This is
+// connectivity control material; the Relay has no login or Actor authority.
+message BootstrapBlobStatement {
+  uint32 protocol_version = 1;
+  // SHA-256 of the locator; the hosting endpoint retains no plaintext locator.
+  bytes locator_digest = 2;
+  bytes blob_digest = 3;
+  string station_peer_id = 4;
+  string retrieval_endpoint_identity = 5;
+  int64 issued_at_unix_ms = 6;
+  int64 expires_at_unix_ms = 7;
+  uint32 max_sources = 8;
+}
+
+message PublishBootstrapBlobRequest {
+  bytes statement_bytes = 1;
+  bytes sealed_blob = 2;
+  bytes node_signature = 3;
+  StationNodeAuthorization node_authorization = 4;
+}
+
+message PublishBootstrapBlobResponse {
+  bytes blob_digest = 1;
+  int64 expires_at_unix_ms = 2;
+}
+
+message RetrieveBootstrapBlobRequest {
+  bytes locator = 1;
+  AccessEndpointSourceProof source_proof = 2;
+}
+
+message RetrieveBootstrapBlobResponse {
+  bytes statement_bytes = 1;
+  bytes sealed_blob = 2;
+  bytes node_signature = 3;
+  StationNodeAuthorization node_authorization = 4;
+}

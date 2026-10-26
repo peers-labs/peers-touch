@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '@lobehub/ui';
-import { QRCodeSVG } from 'qrcode.react';
+import { Schema } from '@peers-touch/schema';
 import {
   ArrowLeft,
   Check,
@@ -972,10 +972,11 @@ function PersonalAccessPanel({
             <p>{t('channels.v2.personal.pendingDescription')}</p>
             {authorization.verificationUrl ? (
               <div className="pt-channel-personal-qr">
-                <QRCodeSVG
-                  value={authorization.verificationUrl}
-                  size={184}
-                  level="M"
+                <Schema.QRCode
+                  content={{ kind: 'external-protocol', owner: 'channels.requester-authorization', value: authorization.verificationUrl }}
+                  constraints={{ size: 320, style: 'classic', errorCorrection: 'Q' }}
+                  title={t('channels.v2.personal.openAuthorization')}
+                  errorLabel={t('channels.schema.qrUnavailable')}
                 />
                 <Button
                   icon={<ExternalLink size={15} />}

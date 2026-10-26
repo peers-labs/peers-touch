@@ -1152,7 +1152,7 @@
   margin-bottom: 18px;
 }
 
-.pt-channel-personal-qr > svg {
+.pt-channel-personal-qr > [data-schema-qr] {
   background: #fff;
   border: 1px solid var(--channel-border);
   border-radius: 8px;

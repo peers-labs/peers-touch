@@ -19,6 +19,7 @@ import (
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/metrics"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/bootstrapblob"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/accessendpoint"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
@@ -104,6 +105,8 @@ func (h *relayHandler) handlers() []server.Handler {
 		server.NewHTTPHandler("relay-register", "/api/v1/relay/register", server.POST,
 			server.HTTPHandlerFunc(h.handleRegister), logID),
 		accessendpoint.Handler(h.sub, logID),
+		bootstrapblob.RetrievalHandler(h.sub, logID),
+		bootstrapblob.PublicationHandler(h.handlePublishBootstrapBlob, logID, routePublishJWT),
 
 		// Station only — requires a current Relay enrollment credential.
 		server.NewHTTPHandler(

@@ -16,6 +16,22 @@ func (s *SubServer) AccessEndpoint(
 	return s.svc.DiscoverEndpoint(ctx, req, s.opts.PublicBaseURL)
 }
 
+func (s *SubServer) RetrieveBootstrapBlob(
+	ctx context.Context, req *peerpb.RetrieveBootstrapBlobRequest,
+) (*peerpb.RetrieveBootstrapBlobResponse, error) {
+	return s.svc.RetrieveBootstrapBlob(ctx, req)
+}
+
+func (h *relayHandler) handlePublishBootstrapBlob(
+	ctx context.Context, req *peerpb.PublishBootstrapBlobRequest,
+) (*peerpb.PublishBootstrapBlobResponse, error) {
+	identity, ok := nodeIdentityFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("valid Relay enrollment identity is required")
+	}
+	return h.sub.svc.PublishBootstrapBlob(ctx, identity, req)
+}
+
 func (h *relayHandler) handlePublishStationRoute(
 	ctx context.Context,
 	req *peerpb.PublishStationRouteRequest,

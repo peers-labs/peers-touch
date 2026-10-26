@@ -22,3 +22,8 @@ platform boundary under `platform/station/access`.
 | Federated discovery | [federation-catalog.md](./federation-catalog.md) |
 | Presence lifecycle | [presence-supervisor.md](./presence-supervisor.md) |
 | Durable OAuth login handoff | [oauth-login-broker/](./oauth-login-broker/README.md) |
+
+## 3. Design Proposals
+
+- [Mobile Scan Login](./mobile-scan-login/README.md) — Desktop 展示登录码，
+  Mobile 自动接入同一 Station，经授权建立独立设备会话；待确认草案。

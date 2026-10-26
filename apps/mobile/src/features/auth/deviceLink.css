@@ -1,0 +1,58 @@
+.mobile-device-link-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding-block: 24px;
+  min-width: 0;
+}
+
+.mobile-device-link-identity > svg,
+.mobile-device-link-symbol {
+  color: var(--brand-primary);
+  flex-shrink: 0;
+}
+
+.mobile-device-link-account {
+  overflow-wrap: anywhere;
+  text-align: center;
+  max-width: 100%;
+}
+
+.mobile-device-link-code {
+  font: 600 28px ui-monospace, 'SF Mono', monospace;
+  letter-spacing: .16em;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: var(--brand-muted);
+  text-align: center;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.mobile-device-link-progress {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding-block: 12px;
+}
+
+.mobile-device-link-progress > svg {
+  flex-shrink: 0;
+  animation: mobile-device-link-progress 1s linear infinite;
+}
+
+.station-scan-entry {
+  margin-bottom: 20px;
+  min-height: 48px;
+}
+
+@keyframes mobile-device-link-progress {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-device-link-progress > svg { animation: none; }
+}

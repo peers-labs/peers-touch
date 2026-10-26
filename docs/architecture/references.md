@@ -17,7 +17,7 @@ image embeds targeting that exact asset are counted as diagram references.
 | `project.journey.route-convergence` | `project` | `dynamic-flow` | [source](./journey-route-convergence.svg) | 2 |
 | `project.journey.same-station` | `project` | `dynamic-flow` | [source](./journey-same-station.svg) | 2 |
 | `project.logical-layered-architecture` | `project` | `logical-layer` | [source](./architecture.svg) | 3 |
-| `project.runtime-topology` | `project` | `runtime-topology` | [source](./runtime-topology.svg) | 3 |
+| `project.runtime-topology` | `project` | `runtime-topology` | [source](./runtime-topology.svg) | 5 |
 | `project.system-context` | `project` | `system-context` | [source](./system-context.svg) | 2 |
 | `search.authority-map` | `search` | `authority-map` | [source](./domains/search/authority-map.svg) | 1 |
 | `search.device-query` | `search` | `dynamic-flow` | [source](./domains/search/device-query.svg) | 1 |
@@ -106,6 +106,8 @@ image embeds targeting that exact asset are counted as diagram references.
   - [docs/README.md](../README.md)
   - [docs/architecture/README.md](./README.md)
   - [docs/architecture/architecture.md](./architecture.md)
+  - [docs/architecture/domains/identity/mobile-scan-login/design.md](./domains/identity/mobile-scan-login/design.md)
+  - [docs/architecture/shared/schema/design.md](./shared/schema/design.md)
 
 ## `project.system-context`
 

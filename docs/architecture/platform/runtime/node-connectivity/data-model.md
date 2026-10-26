@@ -166,6 +166,27 @@ cannot revoke an active enrollment, recover admission, or affect a replacement.
 
 ## 5. Binding And Runtime State
 
+### Opaque Bootstrap Reference
+
+`bootstrap_blob.proto` owns the bounded sealed document. The hosting Node/Relay
+retains the locator's SHA-256 digest, exact signed statement, opaque ciphertext,
+source counters and the publishing owner's authorization generation. It stores
+no plaintext locator or unsealing key. The Node signature binds the ciphertext
+digest, logical Station, retrieval endpoint identity, lifetime and source limit.
+
+`bootstrapblob.Store` is volatile: maximum 256 entries, 16 per Node, 16 KiB per
+ciphertext, five-minute TTL and four sources. A source signs the locator digest
+in the existing source-proof contract; each source may retrieve at most 16
+times. Retry retains its slot. Publication cannot replace an existing locator
+or extend its TTL. Restart, Node revocation and stop discard outstanding blobs.
+
+Retrieval uses `POST /.well-known/peers-touch/bootstrap` on the authenticated
+HTTPS endpoint before grant redemption. It never creates a Circuit permit.
+Relay publication uses the enrolled Node's existing control credential at
+`POST /api/v1/relay/bootstrap-blobs`; enrollment generation and delegation epoch
+are checked on publication and retrieval. Station local publication is an
+in-process port, not another public upload API. There is no recursive reference.
+
 ```text
 StationBinding
   station_peer_id / pinned_station_root_public_key

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Card, Checkbox, Input, InputNumber, Select, Typography } from 'antd';
 import {
   AlertTriangle,
@@ -8,6 +8,7 @@ import {
   Mail,
   Server,
   ShieldAlert,
+  ScanLine,
 } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -104,6 +105,8 @@ export function AccessGateHost({
   rememberedAccounts,
   oauthOverride,
   forceSessionExpired = false,
+  onScan,
+  deviceLinkContext,
   onBack,
   onRefresh,
   onLogin,
@@ -118,6 +121,8 @@ export function AccessGateHost({
   rememberedAccounts: RememberedLoginAccount[];
   oauthOverride?: Partial<AuthRuntimeSnapshot>;
   forceSessionExpired?: boolean;
+  onScan?: () => void;
+  deviceLinkContext?: ReactNode;
   onBack: () => Promise<void>;
   onRefresh: () => Promise<void>;
   onLogin: (input: Omit<StationLoginInput, 'stationPeerId' | 'stationUrl'>) => Promise<void>;
@@ -150,6 +155,7 @@ export function AccessGateHost({
   const credentialGateActive = ready
     && !recoveryOnly
     && !isAccessGranted(decision)
+    && !deviceLinkContext
     && isLoginGate(currentGate);
   const credentialChoices = advertisedCredentialChoices(currentGate);
   const showEmailLogin = credentialGateActive && credentialChoices.emailPassword;
@@ -298,13 +304,20 @@ export function AccessGateHost({
           <img src={logo} alt="Peers" className="auth-gate-logo" />
           <div className="auth-gate-brand-copy">
             <Title level={1} className="auth-gate-title">
-              {pageTitle}
+              {deviceLinkContext ? t('mobile.deviceLink.title') : pageTitle}
             </Title>
             <Text type="secondary" className="auth-gate-subtitle">
-              {pageSubtitle}
+              {deviceLinkContext ? t('mobile.deviceLink.access') : pageSubtitle}
             </Text>
           </div>
         </section>
+
+        {deviceLinkContext}
+        {onScan ? (
+          <Button block size="large" icon={<ScanLine size={18} />} disabled={loading} onClick={onScan}>
+            {t('mobile.deviceLink.scan')}
+          </Button>
+        ) : null}
 
         {visibleExpiredSession && showLogin ? (
           <div
@@ -576,7 +589,7 @@ export function AccessGateHost({
               {t('mobile.auth.retryDecision')}
             </Button>
             <Button danger disabled={loading} onClick={() => void onBack()}>
-              {t('mobile.auth.changeStation')}
+              {t(deviceLinkContext ? 'common.action.cancel' : 'mobile.auth.changeStation')}
             </Button>
           </div>
         ) : null}
@@ -589,7 +602,7 @@ export function AccessGateHost({
         {!recoveryOnly ? (
           <div className={`auth-actions ${hasPrimaryAction ? '' : 'single'}`}>
             <Button icon={<ArrowLeft size={16} />} disabled={loading} onClick={() => void onBack()}>
-              {t('mobile.auth.changeStation')}
+              {t(deviceLinkContext ? 'common.action.cancel' : 'mobile.auth.changeStation')}
             </Button>
             {showInviteCode ? (
               <Button type="primary" loading={loading} disabled={!canSubmitInvite || loading} onClick={submitInvite}>
