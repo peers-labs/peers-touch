@@ -17,8 +17,6 @@ import { useShallow } from 'zustand/shallow';
 import {
   canSubmitChatComposerDraft,
   canEditChatMessage,
-  chatMediaKindForAttachment,
-  formatChatAttachmentSize,
   isRecalledChatMessage,
   shouldSendComposerEnter,
 } from '@peers-touch/client-chat-core';
@@ -29,6 +27,8 @@ import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestorat
 import { useChatSurfaceFixture } from '../acceptance/chatSurfaceFixture';
 import type { BoundedListHandle } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
+import { MobileMessageAttachmentItem } from '../features/chat/MessageAttachment';
+import { AttachmentDetailHost } from '../features/chat/AttachmentDetailHost';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import {
@@ -119,7 +119,6 @@ import {
 } from '../runtimes/chatStorageRuntime';
 import {
   messagingDiscardAttachmentStage,
-  messagingOpenAttachment,
   messagingStageAttachment,
   type MessagingAccountInput,
   type MessagingAttachmentStageProjection,
@@ -134,7 +133,6 @@ import {
   AttachmentDraftChip,
   ComposerToolButton,
   EncryptedAttachmentReferenceChip,
-  MessageAttachmentPresentation,
   MessageCommandStatus,
   MessageDeliveryStatus,
 } from './chat/ChatMessagePresentation';
@@ -1431,6 +1429,7 @@ function ChatPageInner({
         style={chatThreadStyle}
         tabBarVisible={chatBottomOcclusion.tabBarVisible}
       >
+        <AttachmentDetailHost />
         <header className="page-header chat-thread-header">
           <button className="header-action" type="button" onClick={() => {
             if (threadRootMessageUlid && !activeDetail?.messageId) {
@@ -1486,7 +1485,7 @@ function ChatPageInner({
                       </button>
                     </>
                   ) : null}
-                  <button className="header-action" type="button" onClick={() => setActionSheetOpen(true)} aria-label={t('mobile.chat.moreActions')}><MoreHorizontal size={20} /></button>
+                  <button data-chat-actions-open className="header-action" type="button" onClick={() => setActionSheetOpen(true)} aria-label={t('mobile.chat.moreActions')}><MoreHorizontal size={20} /></button>
                 </div>
               ) : null}
           </>
@@ -2033,77 +2032,15 @@ function MessageMetaRow({
   );
 }
 
-function MobileMessageAttachments({ attachments, isOwn, session }: {
+function MobileMessageAttachments({ attachments, isOwn }: {
   attachments: Array<SocialMessageAttachment>; isOwn: boolean; session: MobileAuthSession | null;
 }) {
   return (
     <div className={`mobile-message-attachments ${isOwn ? 'own' : 'peer'}`}>
       {attachments.map((attachment, index) => (
-        <MobileMessageAttachmentItem key={`${attachment.cid || attachment.filename}-${index}`} attachment={attachment} session={session} />
+        <MobileMessageAttachmentItem key={`${attachment.cid || attachment.filename}-${index}`} attachment={attachment} />
       ))}
     </div>
-  );
-}
-
-function MobileMessageAttachmentItem({ attachment, session }: { attachment: SocialMessageAttachment; session: MobileAuthSession | null }) {
-  const { t } = useMobileI18n();
-  const [sourceUrl, setSourceUrl] = useState('');
-  const [loadState, setLoadState] = useState<'idle' | 'loading' | 'pending' | 'failed' | 'ready'>('idle');
-  const kind = chatMediaKindForAttachment(attachment);
-  const filename = attachment.filename || t('mobile.chat.attachmentUnnamed');
-  const sizeLabel = formatChatAttachmentSize(Number(attachment.size ?? 0));
-
-  const loadAttachment = useCallback(async (openWhenReady: boolean) => {
-    if (!session || !attachment.cid) return;
-    setLoadState('loading');
-    try {
-      const result = await messagingOpenAttachment({
-        ...messagingAccountFromSession(session),
-        attachmentId: attachment.cid,
-      });
-      if (result.state === 'pending') {
-        setLoadState('pending');
-        return;
-      }
-      const url = convertFileSrc(result.localPath);
-      setSourceUrl(url);
-      setLoadState('ready');
-      if (openWhenReady && kind !== 'audio') window.open(url, '_blank');
-    } catch {
-      setLoadState('failed');
-    }
-  }, [attachment.cid, kind, session]);
-
-  useEffect(() => {
-    if (!['image', 'audio'].includes(kind) || !session || !attachment.cid) return undefined;
-    void loadAttachment(false);
-    return undefined;
-  }, [attachment.cid, attachmentAvailabilityState(attachment), kind, loadAttachment, session]);
-
-  const openAttachment = () => {
-    if (sourceUrl) {
-      window.open(sourceUrl, '_blank');
-      return;
-    }
-    void loadAttachment(true);
-  };
-  const stateLabel = loadState === 'loading' || loadState === 'pending'
-    ? t('chat.social.messageArea.attachmentStateDownloading')
-    : loadState === 'failed'
-      ? t('chat.social.messageArea.attachmentDownloadFailed')
-      : formatVoiceDuration(attachment.voiceNote?.durationMs) || sizeLabel || attachment.mimeType;
-
-  return (
-    <MessageAttachmentPresentation
-      attachmentId={attachment.cid}
-      kind={kind}
-      filename={filename}
-      stateLabel={stateLabel}
-      sourceUrl={sourceUrl}
-      voiceDurationLabel={formatVoiceDuration(attachment.voiceNote?.durationMs)}
-      disabled={!session || !attachment.cid || loadState === 'loading'}
-      onOpen={openAttachment}
-    />
   );
 }
 
@@ -2126,12 +2063,6 @@ function formatReleasedBytes(value: bigint): string {
 }
 
 function revokeObjectUrl(url: string) { if (url) URL.revokeObjectURL(url); }
-
-function formatVoiceDuration(durationMs: number | undefined): string {
-  if (!durationMs || !Number.isFinite(durationMs) || durationMs <= 0) return '';
-  const seconds = Math.max(1, Math.round(durationMs / 1000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-}
 
 function validateSendOutcome(
   outcome: MessagingSubmitCommandResult,
@@ -2189,10 +2120,4 @@ async function discardStagedAttachments(
         })]
       : []
   )));
-}
-
-function attachmentAvailabilityState(
-  attachment: SocialMessageAttachment,
-): 'remote' | 'local' | undefined {
-  return (attachment as { availabilityState?: 'remote' | 'local' }).availabilityState;
 }

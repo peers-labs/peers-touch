@@ -31,6 +31,7 @@ packages/secure-content-core/
     ├── aad.rs
     ├── payload.rs
     ├── envelope.rs
+    ├── file_access.rs            # safe basename and verified streams; Host owns paths
     ├── prekey.rs
     ├── recovery.rs
     ├── operation/
@@ -225,6 +226,12 @@ Retain in `messaging-core`:
 - Chat attachment projection and receipt integration;
 - Chat recovery records;
 - Conversation HTTP/transport adapter.
+
+File consumption reuses `secure-content-core::file_access` for safe filenames
+and size/hash-verified stream copying. The kernel performs no path resolution,
+file opening, destination selection or platform API calls. Native Hosts own
+staging, atomic publication and cleanup; Chat remains the authorization owner.
+See [Chat attachment viewing](../../../domains/chat/lifecycle/attachment-viewing.md).
 
 Move from Conversation Station code into the internal Go kernel:
 

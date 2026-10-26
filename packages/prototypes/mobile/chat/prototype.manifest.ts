@@ -6,7 +6,7 @@ const manifest = {
   site: 'mobile',
   host: 'mobile',
   kind: 'shell',
-  status: 'confirmed',
+  status: 'pending-review',
   module: 'mobile-shell',
   path: 'packages/prototypes/mobile/chat/',
   docs: 'docs/architecture/platform/client/mobile/prototype/README.md',

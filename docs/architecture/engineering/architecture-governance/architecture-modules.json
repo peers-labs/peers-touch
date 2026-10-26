@@ -1279,6 +1279,7 @@
           ],
           "allowedDependencies": [
             "client.messaging.portable-core",
+            "client.secure-content.portable-core",
             "rustix"
           ],
           "evidenceGates": [

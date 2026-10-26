@@ -368,6 +368,7 @@ impl MobileMessagingRuntime {
         }
         let previous_lifecycle =
             if let Some(ActiveMessagingRuntime { engine, worker }) = active.take() {
+                engine.attachment_file_access.revoke_all();
                 let lifecycle = worker.stop()?;
                 drop(engine);
                 Some(lifecycle)
@@ -554,6 +555,7 @@ impl MobileMessagingRuntime {
         let active_runtime = active
             .take()
             .ok_or_else(|| MobileError::messaging("mobile messaging runtime disappeared"))?;
+        active_runtime.engine.attachment_file_access.revoke_all();
         drop(active);
         let lifecycle = active_runtime
             .worker
@@ -571,6 +573,7 @@ impl MobileMessagingRuntime {
             .lock()
             .map_err(|_| MobileError::messaging("mobile messaging runtime lock poisoned"))?;
         if let Some(runtime) = active.as_ref() {
+            runtime.engine.attachment_file_access.revoke_all();
             runtime.worker.suspend().map_err(MobileError::messaging)?;
         }
         Ok(())
@@ -585,7 +588,9 @@ impl MobileMessagingRuntime {
             .as_ref()
             .ok_or_else(|| MobileError::messaging("mobile messaging runtime is not active"))?;
         validate_active_scope(&runtime.engine, station_peer_id, actor_ptid)?;
-        runtime.worker.resume().map_err(MobileError::messaging)
+        runtime.worker.resume().map_err(MobileError::messaging)?;
+        runtime.engine.attachment_file_access.resume();
+        Ok(())
     }
 
     pub fn wake(&self, station_peer_id: &str, actor_ptid: &str) -> MobileResult<u64> {
@@ -633,6 +638,44 @@ impl MobileMessagingRuntime {
         }
         let cycle_id = runtime.worker.wake().map_err(MobileError::messaging)?;
         Ok((runtime.worker.waiter(), cycle_id))
+    }
+
+    pub(crate) fn file_access_scope(
+        &self,
+        owner: &str,
+    ) -> MobileResult<(Arc<MobileMessagingEngine>, String)> {
+        self.file_access_context(owner, true)
+    }
+
+    pub(crate) fn file_release_scope(
+        &self,
+        owner: &str,
+    ) -> MobileResult<(Arc<MobileMessagingEngine>, String)> {
+        self.file_access_context(owner, false)
+    }
+
+    fn file_access_context(
+        &self,
+        owner: &str,
+        require_running: bool,
+    ) -> MobileResult<(Arc<MobileMessagingEngine>, String)> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| MobileError::messaging("FILE_SCOPE_UNAVAILABLE"))?;
+        let runtime = active
+            .as_ref()
+            .ok_or_else(|| MobileError::messaging("FILE_SCOPE_UNAVAILABLE"))?;
+        if require_running
+            && runtime.worker.phase().map_err(MobileError::messaging)? != MessagingWorkerPhase::Running
+        {
+            return Err(MobileError::messaging("FILE_SCOPE_UNAVAILABLE"));
+        }
+        let generation = runtime
+            .worker
+            .lifecycle_generation()
+            .map_err(MobileError::messaging)?;
+        Ok((runtime.engine.clone(), format!("{owner}:{generation}")))
     }
 
     pub(crate) fn active_engine(

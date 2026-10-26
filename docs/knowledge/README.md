@@ -176,6 +176,7 @@ Pick one based on intent:
 - [`invariants/desktop-sqlite-path-budget.md`](invariants/desktop-sqlite-path-budget.md) — Desktop database paths compact oversized identity-derived scopes without changing encryption identity or existing short paths.
 - [`invariants/private-comment-read-completion.md`](invariants/private-comment-read-completion.md) — private Comment Store reads share completion and reject stale scope, page, anchor, and removed-post publication.
 - [`invariants/x-config-origins-never-extend-trust.md`](invariants/x-config-origins-never-extend-trust.md) — x-config origin lists choose fetch transport only; publisher trust stays app-baked, key rotation requires a release.
+- [`invariants/x-config-must-not-block-local-startup.md`](invariants/x-config-must-not-block-local-startup.md) — optional configuration I/O cannot block local startup or readers; denied watermarks stay unknown and concurrent refreshes coalesce.
 
 ### Pitfalls
 

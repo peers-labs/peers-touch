@@ -72,19 +72,29 @@ Storage Governance 只作为 Device Messaging Engine 的子模块。
 ## 8. Baseline Schema
 
 1. 更新 canonical CREATE schema。
-2. 删除受影响的 `ALTER`、backfill、compat reader 和旧 archive reader。
-3. 对获批开发环境删除旧数据库与缓存。
+2. 删除恢复旧业务语义的 backfill、compat reader 和旧 archive reader。
+   Shared schema owner 的当前 column manifest 和安装语句保持唯一来源。
+3. Station production 委托 canonical persistence migration 删除退役列、
+   校验不兼容结构并保留已有 authority rows。开发数据库与缓存只能按已获批范围重置。
 4. 从空目录创建 Desktop/Mobile 数据。
 5. 新 archive 只写未清理内容、floor 与 tombstone。
 6. 运行 fresh install、Recovery 与 mixed-client E2E。
 
-不编写旧数据迁移，不保留 legacy version marker。
+不保留旧业务兼容 reader 或 legacy version marker。退役列删除和旧 schema
+拒绝由 canonical owner 及其回归测试证明，见
+`docs/knowledge/pitfalls/conversation-production-schema-migration-single-source.md`。
 
 ## 9. 删除证明
 
 `legacy-inventory.json` 是完整 baseline matcher，不是 seed allowlist。实现 Task 先对
-全 scanRoots 执行 matcher；新增命中扩展证据。命中只能删除，或证明为 canonical
-retained capability 后从 inventory 修订；不得 allowlist 隐藏。
+全 scanRoots 执行 matcher；新增命中扩展证据。旧业务引用必须删除；当前 canonical
+capability 不使用通用语法或变量名作为旧业务标识。
+
+删除退役列、拒绝旧 schema 及其回归测试是退役保护引用。逐个审查后，以 exact
+file、entry ID、closed role 和完整文件 SHA-256 登记在 `retirementProofs`，
+继续逐行扫描并在报告中单列。保护文件变化、缺失，或其他文件/entry 出现旧引用，
+均失败；不得按路径前缀、测试类型或通配符忽略。摘要更新必须重新审查该文件全部
+相关引用，不能自动重算摘要以消除失败。
 
 ## 10. 文档同步
 

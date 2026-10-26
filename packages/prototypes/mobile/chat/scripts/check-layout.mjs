@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkMessageLayout } from './message-layout.mjs';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const require = createRequire(resolve(repoRoot, 'apps/desktop/package.json'));
@@ -20,8 +21,14 @@ const viewports = [
 ];
 await mkdir(output, { recursive: true });
 const captures = [];
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  ...(process.env.PROTOTYPE_BROWSER_CHANNEL ? { channel: process.env.PROTOTYPE_BROWSER_CHANNEL } : {}),
+});
 try {
+  if (process.env.PROTOTYPE_MESSAGE_LAYOUT_ONLY === '1') {
+    await checkMessageLayout({ browser, url, output, viewports });
+  } else {
   for (const viewport of viewports) {
     const page = await browser.newPage({ viewport, colorScheme: 'light' });
     const errors = [];
@@ -816,6 +823,7 @@ try {
     0,
     'usable preview width and unclipped detail sections',
   );
+  }
 } finally {
   await browser.close();
 }

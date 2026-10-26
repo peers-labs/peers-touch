@@ -11,9 +11,11 @@ import {
 
 import enCommon from '../../../../packages/locales/en/common.json';
 import enMoments from '../../../../packages/locales/en/moments.json';
+import enChat from '../../../../packages/locales/en/chat.json';
 import enSearch from '../../../../packages/locales/en/search.json';
 import zhCommon from '../../../../packages/locales/zh-CN/common.json';
 import zhMoments from '../../../../packages/locales/zh-CN/moments.json';
+import zhChat from '../../../../packages/locales/zh-CN/chat.json';
 import zhSearch from '../../../../packages/locales/zh-CN/search.json';
 import { createMobileAppStorageRuntime } from '../storage/mobileClientStorage';
 
@@ -45,8 +47,8 @@ const languages: MobileLanguageOption[] = [
 ];
 
 const resources: Record<MobileLanguage, Record<string, string>> = {
-  en: { ...enCommon, ...enMoments, ...enSearch },
-  'zh-CN': { ...zhCommon, ...zhMoments, ...zhSearch },
+  en: { ...enCommon, ...enMoments, ...enChat, ...enSearch },
+  'zh-CN': { ...zhCommon, ...zhMoments, ...zhChat, ...zhSearch },
 };
 
 const MobileI18nContext = createContext<MobileI18nContextValue | null>(null);

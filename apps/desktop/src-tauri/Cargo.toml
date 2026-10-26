@@ -48,6 +48,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 rfd = "0.15"
+tauri-plugin-opener = "=2.5.4"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-util = "0.7"
 futures-lite = "2"
@@ -64,6 +65,8 @@ x-config-core = { path = "../../../packages/x-config-core" }
 [target.'cfg(target_os = "macos")'.dependencies]
 dispatch2 = "0.3.1"
 keyring = { version = "3", features = ["apple-native"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFData", "CFDictionary", "CFString", "CFNumber"] }
+objc2-security = { version = "0.3.2", default-features = false, features = ["std", "SecBase", "SecItem"] }
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["libc", "NSAccessibilityProtocols", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSDockTile"] }
 objc2-foundation = { version = "0.3.2", features = ["NSString", "NSDictionary", "NSBundle", "NSObject", "NSError"] }

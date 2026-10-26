@@ -163,7 +163,7 @@ import {
   messagingCreateGroup,
   messagingListConversations,
   messagingListMessages,
-  messagingOpenAttachment,
+  messagingAttachmentAccess,
   messagingSendMessage,
   messagingStageAttachment,
   messagingStatus,
@@ -828,19 +828,25 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   },
 
   'messaging.attachment.open': async (input) => {
-    const result = await messagingOpenAttachment({
-      ...requireMessagingAccount(),
+    const account = requireMessagingAccount();
+    const result = await messagingAttachmentAccess({
+      ...account,
       attachmentId: requireString(
         input?.attachmentId,
         'messaging.attachment.open.attachmentId',
       ),
     });
-    return result.state === 'ready'
+    if (result.accessHandle) {
+      await invoke('messaging_release_attachment', {
+        input: { ...account, accessHandle: result.accessHandle },
+      });
+    }
+    return result.state === 4
       ? { state: 'ready', available: true }
       : {
         state: 'pending',
         available: false,
-        nextAttemptAtUnixMs: result.nextAttemptAtUnixMs,
+        nextAttemptAtUnixMs: Number(result.nextAttemptAtUnixMs),
       };
   },
 

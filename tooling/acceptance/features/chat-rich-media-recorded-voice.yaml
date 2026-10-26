@@ -8,14 +8,31 @@
     "packages/messaging-core/src/store/schema.rs",
     "apps/desktop/src-tauri/src/messaging/**",
     "apps/desktop/src/components/chat/AttachmentItem.tsx",
+    "apps/desktop/src/components/chat/AttachmentDetailHost.tsx",
+    "apps/desktop/src/messaging/attachmentAccess.ts",
+    "apps/desktop/src/acceptance/chat/harness.ts",
+    "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_files.rs",
     "apps/desktop/src/components/chat/ChatComposer.tsx",
     "apps/desktop/src/components/chat/composer/**",
     "apps/desktop/src/services/im-service*.ts",
     "apps/desktop/src/store/socialChat.ts",
     "apps/mobile/src-tauri/src/messaging/**",
+    "apps/mobile/src/features/chat/AttachmentDetailHost.tsx",
+    "apps/mobile/src/runtimes/attachmentAccess.ts",
+    "apps/mobile/src-tauri/plugins/platform-permissions/**",
+    "packages/client-chat-core/src/attachmentAccess.ts",
+    "packages/client-chat-core/src/attachmentPreview.ts",
+    "packages/client-chat-core/src/pdfPreview.ts",
+    "packages/client-chat-core/src/office*.ts",
+    "packages/client-chat-core/src/attachmentByteReader.ts",
+    "packages/client-chat-core/src/textPreview.ts",
+    "packages/client-chat-core/src/preview*.ts",
+    "packages/messaging-native-filesystem/src/file_access.rs",
+    "packages/messaging-native-filesystem/src/image_preview.rs",
     "packages/client-chat-core/src/index.ts",
     "packages/prototypes/desktop/features/social-chat/**",
     "tooling/acceptance/fixtures/chat_attachment_fault_proxy.py",
+    "tooling/acceptance/gates/chat/lifecycle_file*.py",
     "tooling/acceptance/gates/chat/lifecycle_rich_voice*.py"
   ],
   "truth_sources": [
@@ -31,7 +48,9 @@
     {"type": "native-desktop", "selector": "[data-chat-voice-draft=\"preview\"]"},
     {"type": "native-desktop", "selector": "[data-chat-voice-note=\"true\"]"},
     {"type": "native-desktop", "selector": "[data-chat-voice-seek]"},
-    {"type": "native-desktop", "selector": "[data-chat-voice-retry]"}
+    {"type": "native-desktop", "selector": "[data-chat-voice-retry]"},
+    {"type": "native-desktop", "selector": "[data-chat-file-detail]"},
+    {"type": "mobile-web", "selector": "[data-chat-file-detail]"}
   ],
   "required_gates": [
     "proto-build",
@@ -44,14 +63,23 @@
     "service": [
       "voice-note kind and duration remain inside encrypted attachment plaintext metadata",
       "Desktop and Mobile persistence round-trip voice-note kind and duration without exposing them in the Station-visible encrypted object descriptor",
-      "only byte-verified Engine cache paths are returned for playback",
+      "production presentation receives only scoped opaque grants and bounded asset URLs over byte-verified Engine cache",
       "attachment upload and download retry retain durable transfer identity"
     ],
     "visible": [
       "screenshot cancellation and confirmation preserve native window and renderer geometry",
       "recording exposes permission, duration, cancel, stop, preview, discard, and explicit send states",
       "receiver playback exposes persisted duration, progress, seek, pause, terminal failure, and retry",
-      "attachment and voice bytes remain identical across sender, receiver, retry, and restart"
+      "attachment and voice bytes remain identical across sender, receiver, retry, and restart",
+      "sender and receiver file-card selection immediately opens original filename, type, size and actionable transfer state",
+      "download progress, cancel and explicit retry preserve attachment identity; closing detail does not cancel Runtime-owned transfer",
+      "supported image, audio, video, PDF, paged text, DOCX, XLS/XLSX and PPT/PPTX render in the selected detail; unsupported or resource-exhausted previews retain system and save actions",
+      "file byte length alone does not disable preview; PDF and text use bounded Range reads, images use a reduced Native representation, and Office has independent decoded-resource budgets",
+      "Word and slides navigate pages; workbooks select sheets and navigate bounded row and column viewports",
+      "native preview, external application opening and save-copy intents are distinct",
+      "external copies preserve safe filename and extension, are byte-identical and cannot modify the verified cache",
+      "a saved user copy survives Chat cache eviction",
+      "closing detail, leaving Chat or switching conversation, actor or Station fences late access and OS callbacks"
     ]
   },
   "negative": [
@@ -59,6 +87,10 @@
     "stopping a recording must not send before local preview confirmation",
     "a resumable attachment transfer must not be represented as live voice",
     "unverified ciphertext or a missing cache file must not be exposed to the media element",
+    "Office external relationships, active content and embedded scripts must not execute or fetch remote resources",
+    "closing or changing selection must terminate document workers and fence late decoder results",
+    "cache-path readback and byte hashes cannot substitute for visible detail, native preview, external handoff or destination-picker proof",
+    "unexecuted iOS, Android, Windows, Linux or cross-Station cells remain UNPROVEN",
     "compile, unit, API-only, or screenshot-only evidence cannot prove CHAT-J03"
   ]
 }

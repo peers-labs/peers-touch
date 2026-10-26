@@ -9,10 +9,47 @@ from unittest.mock import patch
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.mobile.identity_contract import (
     MobileIdentityContractGate,
+    _source_files,
+    validate_identity_contract,
 )
 
 
 class MobileIdentityContractGateTest(unittest.TestCase):
+    def test_external_provider_ids_do_not_allow_actor_or_numeric_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            proto = root / "model/domain/channel/channel.proto"
+            proto.parent.mkdir(parents=True)
+            for declaration, allowed in (
+                ("string provider_user_id = 1;", True),
+                ("string sender_id = 1;", True),
+                ("string actor_id = 1;", False),
+                ("uint64 provider_user_id = 1;", False),
+                ("uint64 sender_id = 1;", False),
+            ):
+                with self.subTest(declaration=declaration), patch(
+                    "tooling.acceptance.gates.mobile.identity_contract.REPO_ROOT",
+                    root,
+                ), patch(
+                    "tooling.acceptance.gates.mobile.identity_contract.IDENTITY_SOURCE_ROOTS",
+                    (),
+                ):
+                    proto.write_text(declaration, encoding="utf-8")
+                    if allowed:
+                        validate_identity_contract()
+                    else:
+                        with self.assertRaisesRegex(GateError, "public actor_id fields remain"):
+                            validate_identity_contract()
+
+    def test_source_scan_prunes_dependency_and_build_trees(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            for name in ("src/identity.ts", "node_modules/vendor/identity.ts", "target/cache.rs"):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("actor_did", encoding="utf-8")
+            self.assertEqual(list(_source_files(root)), [root / "src/identity.ts"])
+
     def test_failure_preserves_w1_traceability(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             report_path = Path(temporary_directory) / "report.json"

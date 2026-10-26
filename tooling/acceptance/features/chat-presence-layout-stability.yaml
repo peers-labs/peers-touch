@@ -45,14 +45,15 @@
       "both authenticated native peers remain online across focus changes and beyond one Station lease interval",
       "unavailable presence authority renders unknown",
       "zero, single-digit, and capped multi-digit unread states preserve conversation-row and text-column geometry",
-      "reaction, thread, pending-interaction, and emoji-only states preserve neighboring message geometry and the visible scroll anchor"
+      "time and read state remain directly below their own content with a separate following-message gap",
+      "reaction, thread, pending-interaction, and emoji-only states preserve body dimensions and the visible scroll anchor; absent interactions occupy no rail"
     ]
   },
   "negative": [
     "window blur, minimization, or a hidden Chat page must not mark a reachable actor offline",
     "missing or failed remote presence authority must not render offline",
     "unread count width must not resize a conversation row or its text column",
-    "message metadata must not resize neighboring rows or move the visible scroll anchor",
+    "message metadata must not change body dimensions, attach to a neighboring message, or move the visible scroll anchor",
     "fixed sleeps must not replace bounded observed presence, projection, or geometry transitions"
   ]
 }

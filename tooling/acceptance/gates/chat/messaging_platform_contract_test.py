@@ -152,7 +152,7 @@ class MessagingPlatformContractTest(unittest.TestCase):
             ROOT / "apps/desktop/src-tauri/src/messaging/store.rs"
         ).read_text(encoding="utf-8")
         desktop_event_projection = (
-            ROOT / "apps/desktop/src-tauri/src/messaging/conversation_state.rs"
+            ROOT / "apps/desktop/src-tauri/src/messaging/engine.rs"
         ).read_text(encoding="utf-8")
         desktop_lifecycle = (
             ROOT / "apps/desktop/src-tauri/src/messaging/lifecycle.rs"
@@ -214,7 +214,7 @@ class MessagingPlatformContractTest(unittest.TestCase):
         )
         self.assertIn("pub federation_id: String", desktop_store)
         self.assertIn(
-            "federation_id: post_state.federation_id.clone()",
+            "ConversationStateProcessor::new(store.clone()",
             desktop_event_projection,
         )
         self.assertIn(
@@ -310,7 +310,10 @@ class MessagingPlatformContractTest(unittest.TestCase):
             ROOT / "apps/desktop/src-tauri/src/messaging/transport.rs"
         ).read_text(encoding="utf-8")
         desktop_consumer = (
-            ROOT / "apps/desktop/src-tauri/src/messaging/consumer.rs"
+            ROOT / "apps/desktop/src-tauri/src/messaging/engine.rs"
+        ).read_text(encoding="utf-8")
+        portable_consumer = (
+            ROOT / "packages/messaging-core/src/inbox/consumer.rs"
         ).read_text(encoding="utf-8")
         portable_command_result = (
             ROOT / "packages/messaging-core/src/inbox/command_result.rs"
@@ -419,7 +422,7 @@ class MessagingPlatformContractTest(unittest.TestCase):
         )
         self.assertIn(
             "DeviceInboxPayloadType::CommandResult",
-            desktop_consumer,
+            portable_consumer,
         )
         self.assertIn(
             "CommandResultProcessor::new",

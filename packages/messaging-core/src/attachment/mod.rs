@@ -1,6 +1,8 @@
+mod access;
 mod mapping;
 mod transfer;
 
+pub use access::attachment_access_projection;
 pub use mapping::{
     validate_chat_attachment_transfer_record, validate_chat_encrypted_object_descriptor,
     validate_chat_encrypted_object_upload_spec,

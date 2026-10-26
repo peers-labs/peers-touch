@@ -45,7 +45,7 @@ use interface::tauri_commands::{
     agent_turn, agents, applets, auth, bot, capability_authority, channels, x_config,
     conversation, cron, crypto, desktop_capture, evaluation, federation, frontend_log,
     frontend_telemetry, home, host_events, i18n, ice, key_exchange, mcp, memory,
-    messaging as messaging_commands, messaging_recovery, model_config, native_surface, notebook,
+    messaging as messaging_commands, messaging_files, messaging_recovery, model_config, native_surface, notebook,
     notification, oauth2, oss, presence, profile, provider, realtime, runtime_evidence, search,
     settings, skills, skills_market, social as social_commands, station, system, tools, tts,
 };
@@ -489,6 +489,11 @@ fn main() {
     ));
 
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .register_uri_scheme_protocol("chat-file", |context, request| {
+            let state = context.app_handle().state::<Arc<state::AppState>>();
+            messaging_files::asset_response(state.inner(), context.webview_label(), &request)
+        })
         .register_uri_scheme_protocol("private-media", |context, request| {
             if request.method() != tauri::http::Method::GET {
                 return tauri::http::Response::builder()
@@ -604,6 +609,9 @@ fn main() {
         .manage(app_state)
         .manage(capability_worker_supervisor)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
+        .manage(Arc::new(
+            interface::tauri_commands::messaging_files::NativeFilePresentations::default(),
+        ))
         .manage(presence_supervisor)
         .manage(application::window_lifecycle::TrayResidency::default())
         .on_window_event(|window, event| {
@@ -1300,6 +1308,8 @@ fn main() {
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_current_endpoint,
             #[cfg(feature = "acceptance-webdriver")]
+            messaging_files::messaging_acceptance_attachment_readback,
+            #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_create_restorable_command,
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_prepare_submitted_command,
@@ -1327,7 +1337,10 @@ fn main() {
             messaging_commands::messaging_thread_counts,
             messaging_commands::messaging_get_member_settings,
             messaging_commands::messaging_update_member_settings,
-            messaging_commands::messaging_open_attachment,
+            messaging_files::messaging_attachment_access,
+            messaging_files::messaging_release_attachment,
+            messaging_files::messaging_cancel_attachment,
+            messaging_files::messaging_attachment_file_action,
             messaging_commands::messaging_search_messages,
             // Conversation query and settings commands
             conversation::conversation_list_events,
@@ -1406,6 +1419,10 @@ fn main() {
                     "messaging: failed to stop all profile workers during shutdown"
                 );
             }
+            app.state::<Arc<
+                interface::tauri_commands::messaging_files::NativeFilePresentations,
+            >>()
+            .shutdown();
             let supervisor = app.state::<Arc<application::presence::PresenceSupervisor>>();
             let sessions = state.sessions.snapshot_all();
             tracing::info!(

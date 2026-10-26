@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Inventory-driven zero-reference proof for Chat storage governance."""
+"""Inventory-driven zero-live-reference proof for Chat storage governance."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -21,7 +22,9 @@ INVENTORY_PATH = (
     REPO_ROOT
     / "docs"
     / "architecture"
-    / "chat-storage-governance"
+    / "domains"
+    / "chat"
+    / "storage-governance"
     / "legacy-inventory.json"
 )
 EXPECTED_DIMENSIONS: tuple[str, ...] = (
@@ -78,6 +81,7 @@ class Violation:
 class DimensionResult:
     files_scanned: int = 0
     violations: list[Violation] = field(default_factory=list)
+    retirement_references: list[Violation] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -100,6 +104,14 @@ class ScanResult:
     @property
     def files_scanned(self) -> int:
         return sum(item.files_scanned for item in self.dimensions.values())
+
+    @property
+    def retirement_references(self) -> list[Violation]:
+        return [
+            reference
+            for dimension in EXPECTED_DIMENSIONS
+            for reference in self.dimensions[dimension].retirement_references
+        ]
 
     @property
     def passed(self) -> bool:
@@ -227,6 +239,74 @@ def _selected_entries(
     return selected
 
 
+def _retirement_proofs(
+    inventory: dict[str, Any],
+    repo_root: Path,
+    roots: list[str],
+    entries: list[dict[str, Any]],
+    dimensions: dict[str, DimensionResult],
+) -> dict[str, set[str]]:
+    """Recognize only reviewed, immutable removal/rejection/regression source."""
+    proofs = inventory.get("retirementProofs", [])
+    if not isinstance(proofs, list):
+        raise ValueError("Chat storage retirement proofs must be a list")
+    all_ids = {entry["id"] for entry in inventory["entries"]}
+    selected_ids = {entry["id"] for entry in entries}
+    reviewed: dict[str, set[str]] = {}
+    seen: set[str] = set()
+    for proof in proofs:
+        if not isinstance(proof, dict):
+            raise ValueError("Chat storage retirement proof must be an object")
+        relative = proof.get("file")
+        digest = proof.get("sha256")
+        entry_ids = proof.get("entryIds")
+        if (
+            not isinstance(relative, str)
+            or Path(relative).is_absolute()
+            or ".." in Path(relative).parts
+            or relative in seen
+            or not _under_roots(relative, roots)
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            or not isinstance(entry_ids, list)
+            or not entry_ids
+            or any(not isinstance(value, str) or value not in all_ids for value in entry_ids)
+            or len(set(entry_ids)) != len(entry_ids)
+            or proof.get("role") not in {
+                "schema-retirement", "schema-rejection", "regression-proof",
+            }
+        ):
+            raise ValueError("Chat storage retirement proof contract is invalid")
+        seen.add(relative)
+        selected = set(entry_ids) & selected_ids
+        if not selected:
+            continue
+        path = repo_root / relative
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or path.suffix.lower() not in TEXT_SUFFIXES
+            or SKIP_DIRS & set(Path(relative).parts)
+        ):
+            actual = None
+        else:
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != digest:
+            dimensions[_dimension_for(relative)].violations.append(
+                Violation(
+                    entry_id=",".join(sorted(selected)),
+                    dimension=_dimension_for(relative),
+                    file=relative,
+                    line=1,
+                    pattern="retirement-proof-source",
+                    snippet="Reviewed retirement protection source changed or is missing",
+                )
+            )
+            continue
+        reviewed[relative] = selected
+    return reviewed
+
+
 def scan_repository(
     repo_root: Path = REPO_ROOT,
     inventory_path: Path = INVENTORY_PATH,
@@ -247,6 +327,9 @@ def scan_repository(
     dimensions = {
         dimension: DimensionResult() for dimension in EXPECTED_DIMENSIONS
     }
+    retirement_proofs = _retirement_proofs(
+        inventory, repo_root, roots, entries, dimensions,
+    )
     inventory_relative = inventory_path.relative_to(repo_root).as_posix()
 
     for relative_path in _tracked_paths(repo_root):
@@ -274,7 +357,12 @@ def scan_repository(
         for line_number, line in enumerate(lines, 1):
             for entry_id, label, pattern in patterns:
                 if pattern.search(line):
-                    dimensions[dimension].violations.append(
+                    references = (
+                        dimensions[dimension].retirement_references
+                        if entry_id in retirement_proofs.get(relative_path, set())
+                        else dimensions[dimension].violations
+                    )
+                    references.append(
                         Violation(
                             entry_id=entry_id,
                             dimension=dimension,
@@ -315,15 +403,20 @@ def _report(gate_id: str, result: ScanResult) -> dict[str, Any]:
         "inventory": INVENTORY_PATH.relative_to(REPO_ROOT).as_posix(),
         "filesScanned": result.files_scanned,
         "violationCount": len(result.violations),
+        "retirementReferenceCount": len(result.retirement_references),
         "dimensions": {
             name: {
                 "status": "PASS" if value.passed else "FAIL",
                 "filesScanned": value.files_scanned,
                 "violationCount": len(value.violations),
+                "retirementReferenceCount": len(value.retirement_references),
             }
             for name, value in result.dimensions.items()
         },
         "violations": [asdict(value) for value in result.violations],
+        "retirementReferences": [
+            asdict(value) for value in result.retirement_references
+        ],
     }
 
 
@@ -353,7 +446,8 @@ def main() -> int:
     stream = sys.stdout if result.passed else sys.stderr
     stream.write(
         f"{status}: {gate_id} scanned {result.files_scanned} "
-        f"dimension-file assignments with {len(result.violations)} violation(s)\n"
+        f"dimension-file assignments with {len(result.violations)} violation(s) "
+        f"and {len(result.retirement_references)} reviewed retirement reference(s)\n"
     )
     for violation in result.violations:
         stream.write(

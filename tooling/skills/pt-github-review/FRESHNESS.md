@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-25
-covered_docs_hash: 3accffe7bb37b272413d45b389ac4a38271cf488a2b1c93efcfc82b23a4ee9ae
+last_verified_at: 2026-10-26
+covered_docs_hash: e9cb9f685b0f22e8eddce5d26e2d2a038277e657436b880d2bd177eff55e9895
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,27 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Current Source Review
+
+The attachment-viewing changes add no covered upstream rules. The merged
+master source already contains the attach-only Mobile runtime evidence,
+current finalizer bootstrap inputs, Darwin shared-cache image identity, and
+archived release scope. The existing review policy requires exact source,
+native evidence at the declared strength, immutable publication, and explicit
+UNPROVEN scope, and remains consistent with those contracts.
+
+This refresh binds that reviewed source set. It changes neither severity nor
+verification requirements. No new Skill rule or generic fixture is needed;
+the attachment change supplies focused native, cancellation, integrity, and
+completed-cache restoration regression evidence at their existing owners.
+
+The generated Acceptance coverage inventory was regenerated for the current
+date. Its Feature/Gate counts and proof states are unchanged; only the generated
+date changed. Existing freshness and current-source rules remain sufficient,
+with no new Skill rule, fixture, or knowledge entry.
+
+## Social Search Delivery Review
 
 The Search delivery review retains the current upstream rule hash. The existing
 review policy already requires original authority, consumed-source publication,

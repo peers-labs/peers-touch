@@ -44,7 +44,7 @@ import { log } from '../../utils/logger';
 import { MemberRole } from '../../gen/proto/domain/chat/conversation_pb';
 import { ChatStorageOperationState } from '../../gen/proto/domain/chat/storage_pb';
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
-import { useMessagingAttachmentUrl } from './AttachmentItem';
+import { useAttachmentAccess } from './useAttachmentAccess';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
 import { SquareAvatar } from '../common/SquareAvatar';
 import { getGroupMemberControlState } from './chatGroupPermissions';
@@ -325,18 +325,18 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [previewFailed, setPreviewFailed] = useState(false);
-  const { src: openUrl, openState, resolve } = useMessagingAttachmentUrl(
+  const { src: openUrl, openState, open: handleOpen } = useAttachmentAccess(
     item.attachment,
     item.kind === 'media',
   );
-  const previewUrl = openUrl;
+  const previewUrl = item.isImage && openUrl ? `${openUrl}?representation=preview` : undefined;
   const filename = item.attachment.filename?.trim() || t('chat.social.detail.unnamedAttachment');
   const sizeLabel = formatChatAttachmentSize(item.attachment.size);
   const hasAttachmentIdentity = Boolean(
     (item.attachment as DetailAttachment & { attachmentId?: string }).attachmentId
       || item.attachment.cid?.startsWith('messaging:'),
   );
-  const canOpen = hasAttachmentIdentity && openState !== 'pending';
+  const canOpen = hasAttachmentIdentity;
   const isMedia = item.kind === 'media';
   const openStateLabel = openState === 'pending'
     ? t('chat.social.messageArea.attachmentStateDownloading')
@@ -356,12 +356,6 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
     });
     return () => cancelAnimationFrame(frame);
   }, [previewUrl, item.attachment.cid]);
-
-  const handleOpen = async () => {
-    if (openState === 'pending') return;
-    const resolved = openUrl ?? await resolve();
-    if (resolved) window.open(resolved, '_blank');
-  };
 
   if (isMedia) {
     return (

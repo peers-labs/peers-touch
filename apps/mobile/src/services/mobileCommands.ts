@@ -6,6 +6,10 @@ import {
   type MessageShape,
 } from '@bufbuild/protobuf';
 import { invoke } from '@tauri-apps/api/core';
+import {
+  AttachmentAccessProjectionSchema,
+  type AttachmentAccessProjection,
+} from '../gen/proto/domain/chat/attachment_pb';
 
 import {
   AcceptSocialFriendRequestResponseSchema,
@@ -516,10 +520,6 @@ export interface MessagingAttachmentStageProjection {
   completed: boolean;
   maxChunkBytes: number;
 }
-
-export type MessagingAttachmentOpenResult =
-  | { state: 'ready'; localPath: string }
-  | { state: 'pending'; nextAttemptAtUnixMs: number };
 
 export interface MessagingCommandStatusProjection {
   commandId: string;
@@ -1381,10 +1381,11 @@ export async function messagingForwardMessage(
   );
 }
 
-export async function messagingOpenAttachment(
+export async function messagingAttachmentAccess(
   input: MessagingAccountInput & { attachmentId: string },
-): Promise<MessagingAttachmentOpenResult> {
-  return invoke<MessagingAttachmentOpenResult>('messaging_open_attachment', { input });
+): Promise<AttachmentAccessProjection> {
+  const bytes = await invoke<number[]>('messaging_attachment_access', { input: { ...input, startDownload: true } });
+  return fromBinary(AttachmentAccessProjectionSchema, new Uint8Array(bytes));
 }
 
 export async function messagingCancelAttachment(

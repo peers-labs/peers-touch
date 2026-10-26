@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -199,6 +199,7 @@ pub struct ObjectTransferControl {
     shutdown: AtomicBool,
     active: AtomicUsize,
     active_transfer_ids: Mutex<HashSet<String>>,
+    cancelling_transfer_ids: Mutex<HashMap<String, bool>>,
     idle: Condvar,
 }
 
@@ -226,6 +227,7 @@ impl ObjectTransferControl {
             shutdown: AtomicBool::new(false),
             active: AtomicUsize::new(0),
             active_transfer_ids: Mutex::new(HashSet::new()),
+            cancelling_transfer_ids: Mutex::new(HashMap::new()),
             idle: Condvar::new(),
         }
     }
@@ -271,6 +273,57 @@ impl ObjectTransferControl {
         Ok(())
     }
 
+    fn check_transfer_running(&self, transfer_id: &str) -> Result<(), ObjectTransferFailure> {
+        self.check_running()?;
+        let cancelling = self.cancelling_transfer_ids.lock().map_err(|_| {
+            ObjectTransferFailure::from("secure content cancellation lock is poisoned".to_string())
+        })?;
+        if cancelling.contains_key(transfer_id) {
+            return Err(ObjectTransferFailure::from(
+                "secure content transfer cancellation requested".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn begin_cancel(&self, transfer_id: &str) -> Result<CancellationOperation<'_>, ObjectTransferFailure> {
+        self.begin_cancel_until(transfer_id, Instant::now() + Duration::from_secs(30))
+    }
+
+    fn begin_cancel_until(
+        &self,
+        transfer_id: &str,
+        deadline: Instant,
+    ) -> Result<CancellationOperation<'_>, ObjectTransferFailure> {
+        let mut cancelling = self.cancelling_transfer_ids.lock()
+            .map_err(|_| ObjectTransferFailure::from("cancellation lock is poisoned".to_string()))?;
+        if cancelling.get(transfer_id) == Some(&true) {
+            return Err(ObjectTransferFailure::from("transfer cancellation is already active".to_string()));
+        }
+        cancelling.insert(transfer_id.to_string(), true);
+        drop(cancelling);
+        let mut operation = CancellationOperation {
+            control: self, transfer_id: transfer_id.to_string(), drained: false,
+        };
+        let mut active = self.active_transfer_ids.lock().map_err(|_| {
+            ObjectTransferFailure::from("transfer admission lock is poisoned".to_string())
+        })?;
+        while active.contains(transfer_id) {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(ObjectTransferFailure::from(
+                    "transfer cancellation is pending".to_string(),
+                ));
+            }
+            let (guard, _) = self.idle.wait_timeout(active, remaining).map_err(|_| {
+                ObjectTransferFailure::from("transfer cancellation wait failed".to_string())
+            })?;
+            active = guard;
+        }
+        operation.drained = true;
+        Ok(operation)
+    }
+
     fn try_admit(&self, transfer_id: &str) -> Result<ObjectTransferPermit<'_>, AdmissionError> {
         self.check_running().map_err(AdmissionError::Failure)?;
         let mut active_transfer_ids = self.active_transfer_ids.lock().map_err(|_| {
@@ -281,6 +334,20 @@ impl ObjectTransferControl {
             ))
         })?;
         if active_transfer_ids.contains(transfer_id) {
+            return Err(AdmissionError::AlreadyActive);
+        }
+        // Cancellation is an admission deferral, not a failed attempt: another
+        // caller must never clean artifacts belonging to the draining worker.
+        if self
+            .cancelling_transfer_ids
+            .lock()
+            .map_err(|_| {
+                AdmissionError::Failure(ObjectTransferFailure::from(
+                    "cancellation lock is poisoned".to_string(),
+                ))
+            })?
+            .contains_key(transfer_id)
+        {
             return Err(AdmissionError::AlreadyActive);
         }
         let admitted = self
@@ -304,6 +371,26 @@ impl ObjectTransferControl {
     }
 }
 
+/// One caller owns cancellation publication. A timed-out wait leaves admission
+/// fenced; an explicit cancel/retry can claim and finish it after draining.
+struct CancellationOperation<'a> {
+    control: &'a ObjectTransferControl,
+    transfer_id: String,
+    drained: bool,
+}
+
+impl Drop for CancellationOperation<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut cancelling) = self.control.cancelling_transfer_ids.lock() {
+            if self.drained {
+                cancelling.remove(&self.transfer_id);
+            } else {
+                cancelling.insert(self.transfer_id.clone(), false);
+            }
+        }
+    }
+}
+
 impl Default for ObjectTransferControl {
     fn default() -> Self {
         Self::new()
@@ -320,9 +407,8 @@ impl Drop for ObjectTransferPermit<'_> {
         if let Ok(mut active_transfer_ids) = self.control.active_transfer_ids.lock() {
             active_transfer_ids.remove(&self.transfer_id);
         }
-        if self.control.active.fetch_sub(1, Ordering::AcqRel) == 1 {
-            self.control.idle.notify_all();
-        }
+        self.control.active.fetch_sub(1, Ordering::AcqRel);
+        self.control.idle.notify_all();
     }
 }
 
@@ -502,64 +588,16 @@ impl ObjectTransferWorker {
             }
         };
         let existing = self.required_transfer(transfer_id)?;
-        if existing.state == ObjectTransferState::Complete {
-            let plaintext_staging_ref = plaintext_staging_ref(cache_ref);
-            let validation = (|| -> Result<bool, ObjectTransferFailure> {
-                if existing.partial_local_ref == cache_ref
-                    || existing.partial_local_ref == plaintext_staging_ref
-                {
-                    return Err(integrity_failure(
-                        "secure content download artifact paths overlap",
-                    ));
-                }
-                let (_, descriptor_hash) =
-                    self.validate_download_descriptor(&existing, descriptor)?;
-                if existing.descriptor_sha256 != descriptor_hash {
-                    return Err(ObjectTransferFailure::terminal(
-                        ObjectTransferErrorCode::DescriptorMismatch,
-                        "secure content completed object descriptor commitment changed",
-                    ));
-                }
-                let cache_exists = self.blobs.exists(cache_ref)?;
-                let plaintext_staging_exists = self.blobs.exists(&plaintext_staging_ref)?;
-                if !cache_exists && !plaintext_staging_exists {
-                    self.blobs.remove(&existing.partial_local_ref)?;
-                    self.store.update_transfer_progress(
-                        transfer_id,
-                        ObjectTransferState::Queued,
-                        &existing.upload_id,
-                        existing.generation,
-                        &vec![0; descriptor.commitment.chunk_count.div_ceil(8) as usize],
-                        0,
-                        now_unix_ms,
-                        None,
-                        now_unix_ms,
-                    )?;
-                    return Ok(false);
-                }
-                self.finalize_completed_download_artifacts(
-                    cache_ref,
-                    &plaintext_staging_ref,
-                    &existing.partial_local_ref,
-                    expected_plaintext_sha256,
-                )?;
-                Ok(true)
-            })();
-            match validation {
-                Ok(true) => return Ok(ObjectTransferProgress::Complete),
-                Ok(false) => {}
-                Err(failure) => {
-                    if failure.retryable {
-                        return Err(failure);
-                    }
-                    return Err(self.cleanup_download_failure(
-                        failure,
-                        cache_ref,
-                        &plaintext_staging_ref,
-                        &existing.partial_local_ref,
-                    ));
-                }
-            }
+        if existing.state == ObjectTransferState::Complete
+            && self.restore_completed_download(
+                &existing,
+                descriptor,
+                expected_plaintext_sha256,
+                cache_ref,
+                now_unix_ms,
+            )?
+        {
+            return Ok(ObjectTransferProgress::Complete);
         }
         if let Some(progress) = self.preflight(transfer_id, now_unix_ms)? {
             return Ok(progress);
@@ -587,7 +625,7 @@ impl ObjectTransferWorker {
         transfer_id: &str,
         now_unix_ms: i64,
     ) -> Result<bool, ObjectTransferFailure> {
-        self.control.check_running()?;
+        self.control.check_transfer_running(transfer_id)?;
         let mut transfer = self.required_transfer(transfer_id)?;
         let material = material_from_transfer(&transfer).map_err(integrity_failure)?;
         let media_type = self.store.upload_media_type(transfer_id)?;
@@ -626,7 +664,7 @@ impl ObjectTransferWorker {
         }
 
         for chunk_index in 0..material.chunk_count() {
-            self.control.check_running()?;
+            self.control.check_transfer_running(transfer_id)?;
             if chunk_complete(&transfer.completed_chunk_bitmap, chunk_index) {
                 continue;
             }
@@ -646,6 +684,7 @@ impl ObjectTransferWorker {
                 ));
             }
             self.transport.put_upload_chunk(&transfer, &encrypted)?;
+            self.control.check_transfer_running(transfer_id)?;
             set_chunk_complete(&mut transfer.completed_chunk_bitmap, chunk_index);
             self.store.update_transfer_progress(
                 transfer_id,
@@ -659,6 +698,7 @@ impl ObjectTransferWorker {
                 now_unix_ms,
             )?;
         }
+        self.control.check_transfer_running(transfer_id)?;
         let descriptor = self.transport.complete_upload(&transfer, &prepared)?;
         validate_object_descriptor(&descriptor).map_err(integrity_failure)?;
         if descriptor.commitment.ciphertext_sha256 != prepared.object.ciphertext_sha256 {
@@ -694,7 +734,7 @@ impl ObjectTransferWorker {
                 ),
             ));
         }
-        if let Err(failure) = self.control.check_running() {
+        if let Err(failure) = self.control.check_transfer_running(transfer_id) {
             return Err(DownloadAttemptError::BeforeCompletion(
                 self.cleanup_download_failure(
                     failure,
@@ -734,7 +774,7 @@ impl ObjectTransferWorker {
                 .map_err(integrity_failure)?;
 
             for chunk_index in 0..descriptor.commitment.chunk_count {
-                self.control.check_running()?;
+                self.control.check_transfer_running(transfer_id)?;
                 if chunk_complete(&transfer.completed_chunk_bitmap, chunk_index) {
                     continue;
                 }
@@ -747,6 +787,7 @@ impl ObjectTransferWorker {
                     start,
                     start + ciphertext_size as u64 - 1,
                 )?;
+                self.control.check_transfer_running(transfer_id)?;
                 if ciphertext.len() != ciphertext_size {
                     return Err(integrity_failure(
                         "secure content downloaded chunk size mismatch",
@@ -774,6 +815,18 @@ impl ObjectTransferWorker {
                     now_unix_ms,
                 )?;
             }
+            self.control.check_transfer_running(transfer_id)?;
+            self.store.update_transfer_progress(
+                transfer_id,
+                ObjectTransferState::Verifying,
+                &transfer.upload_id,
+                transfer.generation,
+                &transfer.completed_chunk_bitmap,
+                transfer.attempt_count,
+                0,
+                None,
+                now_unix_ms,
+            )?;
             self.blobs.truncate(
                 &transfer.partial_local_ref,
                 descriptor.commitment.ciphertext_size,
@@ -792,7 +845,7 @@ impl ObjectTransferWorker {
                 ));
             }
             for chunk_index in 0..descriptor.commitment.chunk_count {
-                self.control.check_running()?;
+                self.control.check_transfer_running(transfer_id)?;
                 let expected_hash: [u8; 32] = descriptor.commitment.chunk_ciphertext_sha256
                     [chunk_index as usize]
                     .as_slice()
@@ -842,6 +895,16 @@ impl ObjectTransferWorker {
                 ))
             }
         };
+        if let Err(failure) = self.control.check_transfer_running(transfer_id) {
+            return Err(DownloadAttemptError::BeforeCompletion(
+                self.cleanup_download_failure(
+                    failure,
+                    cache_ref,
+                    &plaintext_staging_ref,
+                    &transfer.partial_local_ref,
+                ),
+            ));
+        }
         if let Err(failure) =
             self.store
                 .complete_download(&transfer, descriptor, cache_ref, now_unix_ms)
@@ -866,6 +929,17 @@ impl ObjectTransferWorker {
     }
 
     pub fn cancel(&self, transfer_id: &str, now_unix_ms: i64) -> Result<(), ObjectTransferFailure> {
+        // Fence new attempts, interrupt the active attempt at a chunk boundary,
+        // then delete partial bytes and publish cancellation without races.
+        let _operation = self.control.begin_cancel(transfer_id)?;
+        self.cancel_idle_transfer(transfer_id, now_unix_ms)
+    }
+
+    fn cancel_idle_transfer(
+        &self,
+        transfer_id: &str,
+        now_unix_ms: i64,
+    ) -> Result<(), ObjectTransferFailure> {
         let transfer = self.required_transfer(transfer_id)?;
         if transfer.state == ObjectTransferState::Complete
             && transfer.direction == ObjectTransferDirection::Download
@@ -903,9 +977,152 @@ impl ObjectTransferWorker {
             ObjectTransferState::Cancelled,
             &transfer.upload_id,
             transfer.generation,
-            &transfer.completed_chunk_bitmap,
+            &vec![0; transfer.completed_chunk_bitmap.len()],
             transfer.attempt_count,
             0,
+            None,
+            now_unix_ms,
+        )
+    }
+
+    /// Explicit cache restoration keeps the durable download identity after
+    /// eviction. Completion is not a failed transfer and must not use retry.
+    pub fn restore_download_cache(
+        &self,
+        transfer_id: &str,
+        descriptor: &ObjectDescriptor,
+        expected_plaintext_sha256: &[u8; 32],
+        cache_ref: &str,
+        now_unix_ms: i64,
+    ) -> Result<(), ObjectTransferFailure> {
+        let _permit = self
+            .control
+            .try_admit(transfer_id)
+            .map_err(|error| match error {
+                AdmissionError::AlreadyActive => {
+                    ObjectTransferFailure::from("transfer is active".to_string())
+                }
+                AdmissionError::Failure(failure) => failure,
+            })?;
+        let transfer = self.required_transfer(transfer_id)?;
+        if transfer.direction != ObjectTransferDirection::Download
+            || transfer.state != ObjectTransferState::Complete
+        {
+            return Err(ObjectTransferFailure::terminal(
+                ObjectTransferErrorCode::DescriptorMismatch,
+                "cache restoration requires a completed download",
+            ));
+        }
+        self.restore_completed_download(
+            &transfer,
+            descriptor,
+            expected_plaintext_sha256,
+            cache_ref,
+            now_unix_ms,
+        )
+        .map(|_| ())
+    }
+
+    /// Caller holds the transfer permit. Completion may still have verified
+    /// plaintext awaiting promotion; only actual eviction resets checkpoints.
+    fn restore_completed_download(
+        &self,
+        transfer: &ObjectTransferRecord,
+        descriptor: &ObjectDescriptor,
+        expected_plaintext_sha256: &[u8; 32],
+        cache_ref: &str,
+        now_unix_ms: i64,
+    ) -> Result<bool, ObjectTransferFailure> {
+        let staging_ref = plaintext_staging_ref(cache_ref);
+        let validation = (|| {
+            if transfer.partial_local_ref == cache_ref
+                || transfer.partial_local_ref == staging_ref
+            {
+                return Err(integrity_failure(
+                    "secure content download artifact paths overlap",
+                ));
+            }
+            let (_, descriptor_hash) = self.validate_download_descriptor(transfer, descriptor)?;
+            if transfer.descriptor_sha256 != descriptor_hash {
+                return Err(ObjectTransferFailure::terminal(
+                    ObjectTransferErrorCode::DescriptorMismatch,
+                    "secure content completed object descriptor commitment changed",
+                ));
+            }
+            if !self.blobs.exists(cache_ref)? && !self.blobs.exists(&staging_ref)? {
+                self.blobs.remove(&transfer.partial_local_ref)?;
+                self.store.update_transfer_progress(
+                    &transfer.transfer_id,
+                    ObjectTransferState::Queued,
+                    &transfer.upload_id,
+                    transfer.generation,
+                    &vec![0; descriptor.commitment.chunk_count.div_ceil(8) as usize],
+                    0,
+                    now_unix_ms,
+                    None,
+                    now_unix_ms,
+                )?;
+                return Ok(false);
+            }
+            self.finalize_completed_download_artifacts(
+                cache_ref,
+                &staging_ref,
+                &transfer.partial_local_ref,
+                expected_plaintext_sha256,
+            )?;
+            Ok(true)
+        })();
+        validation.map_err(|failure| {
+            if failure.retryable {
+                failure
+            } else {
+                self.cleanup_download_failure(
+                    failure, cache_ref, &staging_ref, &transfer.partial_local_ref,
+                )
+            }
+        })
+    }
+
+    pub fn retry(&self, transfer_id: &str, now_unix_ms: i64) -> Result<(), ObjectTransferFailure> {
+        let pending_cancellation = self.control.cancelling_transfer_ids.lock()
+            .map_err(|_| ObjectTransferFailure::from("cancellation lock is poisoned".to_string()))?
+            .contains_key(transfer_id);
+        if pending_cancellation {
+            self.cancel(transfer_id, now_unix_ms)?;
+        }
+        let _permit = self
+            .control
+            .try_admit(transfer_id)
+            .map_err(|error| match error {
+                AdmissionError::AlreadyActive => {
+                    ObjectTransferFailure::from("transfer is active".to_string())
+                }
+                AdmissionError::Failure(failure) => failure,
+            })?;
+        let transfer = self.required_transfer(transfer_id)?;
+        if !matches!(
+            transfer.state,
+            ObjectTransferState::Cancelled | ObjectTransferState::RetryWait
+        ) {
+            return Err(ObjectTransferFailure::terminal(
+                ObjectTransferErrorCode::DescriptorMismatch,
+                "transfer cannot be retried in its current state",
+            ));
+        }
+        let cancelled = transfer.state == ObjectTransferState::Cancelled;
+        let bitmap = if cancelled {
+            vec![0; transfer.completed_chunk_bitmap.len()]
+        } else {
+            transfer.completed_chunk_bitmap.clone()
+        };
+        self.store.update_transfer_progress(
+            transfer_id,
+            ObjectTransferState::Queued,
+            if cancelled { "" } else { &transfer.upload_id },
+            if cancelled { 0 } else { transfer.generation },
+            &bitmap,
+            transfer.attempt_count,
+            now_unix_ms,
             None,
             now_unix_ms,
         )
@@ -2096,7 +2313,7 @@ mod tests {
         store.insert(download_record);
         blobs.reject_next_promotion();
         let worker =
-            ObjectTransferWorker::new(store.clone(), transport, blobs.clone(), Arc::new(TestCodec));
+            ObjectTransferWorker::new(store.clone(), transport.clone(), blobs.clone(), Arc::new(TestCodec));
         let plaintext_hash = Sha256::digest(&plaintext).into();
 
         let failure = worker
@@ -2118,6 +2335,20 @@ mod tests {
         assert!(blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
         assert!(blobs.exists(&partial).unwrap());
 
+        // Reopening must recover entirely from local artifacts even if the
+        // remote object can no longer be fetched.
+        let completed = store.record("promotion-recovery-transfer");
+        transport.chunks.lock().unwrap().clear();
+        blobs.reject_next_promotion();
+        assert!(worker.restore_download_cache(
+            "promotion-recovery-transfer", &descriptor, &plaintext_hash, &cache, 11,
+        ).unwrap_err().retryable);
+        assert_eq!(store.record("promotion-recovery-transfer"), completed);
+        assert!(blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+        worker.restore_download_cache(
+            "promotion-recovery-transfer", &descriptor, &plaintext_hash, &cache, 12,
+        ).unwrap();
+        assert_eq!(store.record("promotion-recovery-transfer"), completed);
         assert_eq!(
             worker
                 .run_download_once(
@@ -2791,6 +3022,31 @@ mod tests {
         assert_eq!(blobs.bytes(&cache).unwrap(), plaintext);
         assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
         assert!(!blobs.exists(&partial).unwrap());
+        let commitment = store.record("evicted-download-transfer").descriptor_sha256;
+        blobs.remove(&cache).unwrap();
+        worker
+            .restore_download_cache(
+                "evicted-download-transfer", &descriptor,
+                &Sha256::digest(&plaintext).into(), &cache, 20,
+            )
+            .unwrap();
+        let queued = store.record("evicted-download-transfer");
+        assert_eq!(queued.state, ObjectTransferState::Queued);
+        assert_eq!(queued.completed_chunk_bitmap, vec![0]);
+        assert_eq!(queued.descriptor_sha256, commitment);
+        assert_eq!(
+            worker
+                .run_download_once(
+                    "evicted-download-transfer",
+                    &descriptor,
+                    &Sha256::digest(&plaintext).into(),
+                    &cache,
+                    20,
+                )
+                .unwrap(),
+            ObjectTransferProgress::Complete
+        );
+        assert_eq!(blobs.bytes(&cache).unwrap(), plaintext);
     }
 
     #[test]
@@ -2996,6 +3252,74 @@ mod tests {
             store.record("cancel-transfer").state,
             ObjectTransferState::Cancelled
         );
+    }
+
+    #[test]
+    fn cancelled_download_retry_clears_deleted_chunks_and_preserves_identity() {
+        let blobs = Arc::new(MemoryBlob::default());
+        let store = Arc::new(TestStore::default());
+        let mut transfer = record("retry-cancelled", "", "retry-partial", 1024, 1024);
+        transfer.direction = ObjectTransferDirection::Download;
+        transfer.completed_chunk_bitmap = vec![1];
+        blobs.put("retry-partial", vec![1; 1024]);
+        store.insert(transfer);
+        let worker = ObjectTransferWorker::new(
+            store.clone(),
+            Arc::new(MemoryTransport::new()),
+            blobs.clone(),
+            Arc::new(TestCodec),
+        );
+        worker.cancel("retry-cancelled", 10).unwrap();
+        assert!(!blobs.exists("retry-partial").unwrap());
+        assert_eq!(
+            store.record("retry-cancelled").completed_chunk_bitmap,
+            vec![0]
+        );
+        worker.retry("retry-cancelled", 20).unwrap();
+        let retried = store.record("retry-cancelled");
+        assert_eq!(retried.transfer_id, "retry-cancelled");
+        assert_eq!(retried.state, ObjectTransferState::Queued);
+        assert_eq!(retried.completed_chunk_bitmap, vec![0]);
+        assert_eq!(retried.next_attempt_at_unix_ms, 20);
+    }
+
+    #[test]
+    fn cancellation_waits_for_active_attempt_and_defers_new_admission() {
+        let control = Arc::new(ObjectTransferControl::new());
+        let permit = control.try_admit("active").unwrap();
+        let cancelling = control.clone();
+        let (ready, observed) = std::sync::mpsc::channel();
+        let waiter = std::thread::spawn(move || {
+            ready.send(()).unwrap();
+            cancelling.begin_cancel("active").unwrap();
+        });
+        observed.recv().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while control.check_transfer_running("active").is_ok() {
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert!(matches!(
+            control.try_admit("active"),
+            Err(AdmissionError::AlreadyActive)
+        ));
+        drop(permit);
+        waiter.join().unwrap();
+        assert!(control.try_admit("active").is_ok());
+    }
+
+    #[test]
+    fn timed_out_cancellation_keeps_admission_fenced_until_it_is_drained() {
+        let control = ObjectTransferControl::new();
+        let permit = control.try_admit("active").unwrap();
+        assert!(control.begin_cancel_until("active", Instant::now()).is_err());
+        assert!(control.check_transfer_running("active").is_err());
+        assert!(matches!(control.try_admit("active"), Err(AdmissionError::AlreadyActive)));
+        drop(permit);
+        let cancellation = control.begin_cancel("active").unwrap();
+        assert!(matches!(control.try_admit("active"), Err(AdmissionError::AlreadyActive)));
+        drop(cancellation);
+        assert!(control.try_admit("active").is_ok());
     }
 
     #[test]

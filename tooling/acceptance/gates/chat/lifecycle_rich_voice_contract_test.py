@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import runpy
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -86,6 +88,29 @@ class LifecycleRichVoiceContractTest(unittest.TestCase):
         self.assertNotIn("duration_ms", descriptor)
         self.assertIn("AttachmentContentKind content_kind = 9;", private_metadata)
         self.assertIn("uint32 duration_ms = 10;", private_metadata)
+
+    def test_each_preview_boundary_selects_native_file_proof(self) -> None:
+        scripts = str(REPO_ROOT / "tooling/scripts")
+        sys.path.insert(0, scripts)
+        try:
+            planner = runpy.run_path(str(REPO_ROOT / "tooling/scripts/acceptance-plan.py"))["plan"]
+        finally:
+            sys.path.remove(scripts)
+        for path in (
+            "packages/client-chat-core/src/attachmentPreview.css",
+            "packages/client-chat-core/src/attachmentFileType.ts",
+            "packages/client-chat-core/src/workbookTable.ts",
+            "apps/desktop/src/components/chat/attachmentDetail.css",
+            "apps/mobile/src/features/chat/attachmentDetail.css",
+            "apps/desktop/src-tauri/src/infrastructure/window_session_registry/mod.rs",
+            "tooling/acceptance/gates/chat/lifecycle_file_documents.py",
+            "tooling/acceptance/gates/chat/lifecycle_file_pixels.py",
+            "tooling/acceptance/gates/chat/lifecycle_file_pixels.swift",
+        ):
+            with self.subTest(path=path):
+                result = planner(REPO_ROOT / "tooling/acceptance", [path])
+                self.assertIn(GATE_ID, {gate["id"] for gate in result["selected_gates"]})
+                self.assertIn("chat-rich-media-recorded-voice", result["impacted_features"])
 
     def test_native_journey_requires_transport_loss_and_terminal_playback(self) -> None:
         self.assertFalse(is_current_profile_gate(GATE_ID))

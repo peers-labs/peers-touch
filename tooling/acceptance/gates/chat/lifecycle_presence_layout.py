@@ -46,7 +46,7 @@ REQUIRED_PRESENCE_LAYOUT_ASSERTIONS = {
     "session_unread_capped",
     "message_metadata_geometry_stable",
     "message_scroll_anchor_stable",
-    "message_pending_interaction_slot_reserved",
+    "message_metadata_attached_to_content",
     "message_emoji_geometry_bounded",
 }
 
@@ -99,18 +99,16 @@ def message_geometry_equal(
         current = after_rows.get(message_id)
         if not isinstance(previous, dict) or not isinstance(current, dict):
             return False
-        if not _rect_equal(
-            previous.get("row"),
-            current.get("row"),
-            keys=("top", "bottom", "height"),
-        ):
+        if not _rect_equal(previous.get("content"), current.get("content"), keys=("width", "height")):
             return False
-        if not _rect_equal(
-            previous.get("rail"),
-            current.get("rail"),
-            keys=("top", "bottom", "height"),
-        ):
+        if not _rect_equal(previous.get("meta"), current.get("meta"), keys=("height",)):
             return False
+        for observation in (previous, current):
+            content = observation.get("content") or {}
+            meta = observation.get("meta") or {}
+            gap = float(meta.get("top", 0)) - float(content.get("bottom", 0))
+            if not 0 <= gap <= 4 + GEOMETRY_TOLERANCE_PX:
+                return False
     return True
 
 
@@ -310,16 +308,18 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
               const rail = row?.querySelector(
                 `[data-message-metadata-rail="${CSS.escape(id)}"]`
               );
-              return [id, row && rail ? {
+              return [id, row ? {
                 row: rect(row),
+                content: rect(row.querySelector('[data-message-content]')),
+                meta: rect(row.querySelector('[data-message-meta]')),
                 rail: rect(rail),
                 railState:
-                  rail.getAttribute('data-message-metadata-state') || '',
-                reactionState: rail.querySelector(
+                  rail?.getAttribute('data-message-metadata-state') || 'absent',
+                reactionState: rail?.querySelector(
                   '[data-message-reaction-state]'
                 )?.getAttribute('data-message-reaction-state') || '',
                 reactionCount:
-                  rail.querySelectorAll('[data-message-reaction]').length,
+                  rail?.querySelectorAll('[data-message-reaction]').length || 0,
                 threadReplyCount: Number(
                   row.getAttribute('data-message-thread-reply-count') || '0'
                 ),
@@ -589,20 +589,16 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
         root_before = baseline["rows"][root_id]
         emoji_before = baseline["rows"][message_ids[2]]
         self.assert_condition(
-            "message_pending_interaction_slot_reserved",
-            root_before.get("railState") == "reserved"
-            and root_before.get("reactionState") == "idle"
-            and float((root_before.get("rail") or {}).get("height") or 0) > 0,
+            "message_metadata_attached_to_content",
+            root_before.get("railState") == "absent"
+            and message_geometry_equal(baseline, baseline, message_ids)
+            and float(emoji_before["content"]["top"]) - float(root_before["meta"]["bottom"]) >= 6,
             json.dumps(root_before, sort_keys=True),
         )
         self.assert_condition(
             "message_emoji_geometry_bounded",
-            emoji_before.get("railState") == "reserved"
-            and _rect_equal(
-                root_before.get("rail"),
-                emoji_before.get("rail"),
-                keys=("height",),
-            ),
+            emoji_before.get("railState") == "absent"
+            and float(emoji_before["meta"]["top"]) >= float(emoji_before["content"]["bottom"]),
             json.dumps(emoji_before, sort_keys=True),
         )
 

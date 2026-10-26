@@ -161,6 +161,12 @@ evidence:
 4. Interrupted upload/download resumes from durable checkpoints.
 5. Restart and fresh recovery preserve entitled attachment access.
 
+Sender and receiver follow [attachment-viewing.md](./attachment-viewing.md):
+file selection immediately displays filename/type/size and a recoverable detail
+surface, pending downloads show progress/cancel/retry, supported files preview,
+and external opening and saving are explicit native actions on isolated copies.
+Closing a detail surface or switching scope never causes a delayed system open.
+
 Screenshot capture keeps the Desktop window geometry and rendered layout
 stable before, during, and after the system selection UI. Hiding and restoring
 the window must not produce a visible resize or scale flash.

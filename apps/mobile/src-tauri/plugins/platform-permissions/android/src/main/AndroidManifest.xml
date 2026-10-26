@@ -11,6 +11,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <queries>
         <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="content" android:mimeType="*/*" />
+        </intent>
+        <intent>
             <action android:name="android.intent.action.OPEN_DOCUMENT" />
             <data android:mimeType="*/*" />
         </intent>
@@ -30,6 +34,15 @@
         </intent>
     </queries>
     <application>
+        <provider
+            android:name=".ChatFileProvider"
+            android:authorities="${applicationId}.chatfiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/chat_file_paths" />
+        </provider>
         <service
             android:name=".PeersFirebaseMessagingService"
             android:exported="false">

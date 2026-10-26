@@ -1034,13 +1034,6 @@ const messagingService: MessagingServiceContract = {
     }))
   },
 
-  async openAttachment(attachmentId) {
-    const response = await cmd<
-      { attachment_id: string },
-      { local_path: string }
-    >('messaging_open_attachment', { attachment_id: attachmentId })
-    return response.local_path
-  },
 }
 
 export const imServiceV1: IMServiceV1 = {

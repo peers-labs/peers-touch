@@ -1,4 +1,5 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
+import { invoke } from '@tauri-apps/api/core';
 import { runIdentityPipeline } from '../../services/identityPipeline';
 import { markLocalIdentityAction } from '../../services/identity_event';
 import {
@@ -7,6 +8,7 @@ import {
   type MessagingAcceptanceInteractionSnapshot,
   type MessagingAcceptancePreparedCommand,
   type MessagingAcceptanceRestorableCommand,
+  type RustCommandResult,
 } from '../../services/desktop_api';
 import {
   type MemberSettingsResult,
@@ -19,6 +21,20 @@ import type { DesktopServiceMessage } from '../../store/socialProjection';
 import { requireCanonicalAcceptancePtid } from './identity';
 
 export type { MessagingAcceptanceInteractionSnapshot } from '../../services/desktop_api';
+
+async function readNativeAttachmentEvidence(attachmentId: string): Promise<string> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const result = await invoke<RustCommandResult<{ state: string; localPath: string }>>(
+      'messaging_acceptance_attachment_readback',
+      { input: { attachment_id: attachmentId } },
+    );
+    if (!result.ok) throw new Error('acceptance.chat.attachmentReadbackFailed');
+    if (result.data?.state === 'ready' && result.data.localPath) return result.data.localPath;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error('acceptance.chat.attachmentReadbackTimeout');
+}
 
 export interface NativeAcceptanceActorInput {
   actorPtid: string;
@@ -383,8 +399,7 @@ export const nativeAcceptanceBridge = createNativeAcceptanceBridge({
     imServiceV1.messaging.listConversations(),
   readMemberSettings: (conversationId) =>
     imServiceV1.messaging.getMemberSettings(conversationId),
-  openAttachment: (attachmentId) =>
-    imServiceV1.messaging.openAttachment(attachmentId),
+  openAttachment: readNativeAttachmentEvidence,
   identityState: () => {
     const snapshot = identityRuntime.getSnapshot();
     const phase = snapshot.phase;

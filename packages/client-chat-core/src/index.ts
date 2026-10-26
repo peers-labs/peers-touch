@@ -1432,3 +1432,6 @@ export * from './chatStorageProjection.js';
 export * from './storageBatch.js';
 export * from './wireCodec.js';
 export * from './callId.js';
+export * from './attachmentAccess.js';
+export * from './attachmentFileType.js';
+export * from './attachmentPreview.js';

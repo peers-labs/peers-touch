@@ -81,16 +81,7 @@ impl WindowSessionRegistry {
             .inner
             .write()
             .expect("WindowSessionRegistry write lock poisoned");
-        let label = session.window_label.clone();
-        if let Some(existing) = map.get_mut(&label) {
-            if existing.same_authority(&session) {
-                return Some(std::mem::replace(&mut existing.session, session));
-            }
-        }
-        self.changed(&label);
-        let revision = self.revision.fetch_add(1, Ordering::SeqCst);
-        map.insert(label, SessionBinding { session, revision })
-            .map(|b| b.session)
+        self.insert_session(&mut map, session)
     }
 
     /// Bind a session and remove any other window already bound to the same
@@ -131,26 +122,32 @@ impl WindowSessionRegistry {
                 kicked.push(prev.session);
             }
         }
-        if let Some(existing) = map.get_mut(&label) {
-            if existing.same_authority(&session) {
-                let previous = std::mem::replace(&mut existing.session, session);
-                return Ok(ExclusiveBindingCommit {
-                    window_label: label,
-                    previous_window_session: Some(previous),
-                    kicked,
-                });
-            }
-        }
-        let revision = self.revision.fetch_add(1, Ordering::SeqCst);
-        self.changed(&label);
-        let previous_window_session = map
-            .insert(label.clone(), SessionBinding { session, revision })
-            .map(|b| b.session);
+        let previous_window_session = self.insert_session(&mut map, session);
         Ok(ExclusiveBindingCommit {
             window_label: label,
             previous_window_session,
             kicked,
         })
+    }
+
+    fn insert_session(
+        &self,
+        map: &mut HashMap<String, SessionBinding>,
+        mut session: ActiveSession,
+    ) -> Option<ActiveSession> {
+        let label = session.window_label.clone();
+        if let Some(existing) = map.get_mut(&label) {
+            if existing.same_authority(&session) {
+                // Background validation retains both file ownership and the
+                // search publication fence under the same identity lock.
+                session.activation_id = existing.activation_id.clone();
+                return Some(std::mem::replace(&mut existing.session, session));
+            }
+        }
+        self.changed(&label);
+        let revision = self.revision.fetch_add(1, Ordering::SeqCst);
+        map.insert(label, SessionBinding { session, revision })
+            .map(|b| b.session)
     }
 
     pub fn rollback_exclusive(&self, commit: ExclusiveBindingCommit) -> Result<(), String> {
@@ -333,6 +330,57 @@ mod tests {
     }
 
     #[test]
+    fn repeated_session_validation_preserves_attachment_owner() {
+        let reg = WindowSessionRegistry::new();
+        reg.bind_exclusive(sample("main", "password:alice", "ptid:test:alice"));
+        let activation = reg.get("main").unwrap().activation_id;
+
+        reg.bind_exclusive(sample("main", "password:alice", "ptid:test:alice"));
+        assert_eq!(reg.get("main").unwrap().activation_id, activation);
+        reg.bind(sample("main", "password:alice", "ptid:test:alice"));
+        assert_eq!(reg.get("main").unwrap().activation_id, activation);
+    }
+
+    #[test]
+    fn changed_authority_and_relogin_start_new_activations() {
+        let reg = WindowSessionRegistry::new();
+        reg.bind_exclusive(sample("main", "password:alice", "ptid:test:alice"));
+        let mut activation = reg.get("main").unwrap().activation_id;
+        let mut renewed = sample("main", "password:alice", "ptid:test:alice");
+        renewed.jwt = "renewed-token".into();
+        for next in [
+            renewed,
+            sample("main", "oauth:alice", "ptid:test:alice"),
+            sample("main", "oauth:alice", "ptid:test:bob"),
+        ] {
+            reg.bind_exclusive(next);
+            let current = reg.get("main").unwrap().activation_id;
+            assert_ne!(current, activation);
+            activation = current;
+        }
+        reg.unbind("main");
+        reg.bind_exclusive(sample("main", "oauth:alice", "ptid:test:bob"));
+        assert_ne!(reg.get("main").unwrap().activation_id, activation);
+    }
+
+    #[test]
+    fn failed_binding_rolls_back_activation_and_exclusivity() {
+        let reg = WindowSessionRegistry::new();
+        reg.bind(sample("main", "password:alice", "ptid:test:alice"));
+        reg.bind(sample("second", "password:bob", "ptid:test:bob"));
+        let original = reg.get("main").unwrap().activation_id;
+        let second = reg.get("second").unwrap().activation_id;
+        let commit = reg
+            .try_bind_exclusive(sample("main", "password:bob", "ptid:test:bob"))
+            .unwrap();
+        assert!(reg.get("second").is_none());
+        assert_ne!(reg.get("main").unwrap().activation_id, original);
+        reg.rollback_exclusive(commit).unwrap();
+        assert_eq!(reg.get("main").unwrap().activation_id, original);
+        assert_eq!(reg.get("second").unwrap().activation_id, second);
+    }
+
+    #[test]
     fn search_revision_is_window_scoped_and_never_reused_after_rebinding() {
         let reg = WindowSessionRegistry::new();
         reg.bind(sample("main", "alice", "ptid:test:alice"));
@@ -343,5 +391,30 @@ mod tests {
         reg.bind(sample("main", "bob", "ptid:test:bob"));
         reg.bind(sample("main", "alice", "ptid:test:alice"));
         assert_ne!(reg.get_with_revision("main").unwrap().1, original);
+    }
+
+    #[test]
+    fn validation_retains_file_owner_and_search_fence_without_invalidation() {
+        let changes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observer_changes = changes.clone();
+        let reg = WindowSessionRegistry::new().with_change_observer(Arc::new(move |window| {
+            observer_changes.lock().unwrap().push(window.to_string());
+        }));
+        reg.bind(sample("main", "alice", "ptid:test:alice"));
+        let (original, revision) = reg.get_with_revision("main").unwrap();
+        reg.bind(sample("main", "alice", "ptid:test:alice"));
+        reg.bind_exclusive(sample("main", "alice", "ptid:test:alice"));
+        let (validated, validated_revision) = reg.get_with_revision("main").unwrap();
+        assert_eq!(validated.activation_id, original.activation_id);
+        assert_eq!(validated_revision, revision);
+        assert_eq!(*changes.lock().unwrap(), vec!["main"]);
+
+        let mut renewed = sample("main", "alice", "ptid:test:alice");
+        renewed.jwt = "renewed-token".into();
+        reg.bind_exclusive(renewed);
+        let (rebound, rebound_revision) = reg.get_with_revision("main").unwrap();
+        assert_ne!(rebound.activation_id, original.activation_id);
+        assert_ne!(rebound_revision, revision);
+        assert_eq!(*changes.lock().unwrap(), vec!["main", "main"]);
     }
 }

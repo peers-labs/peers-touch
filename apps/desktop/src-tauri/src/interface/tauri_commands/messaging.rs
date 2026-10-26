@@ -128,11 +128,6 @@ pub struct MessagingEditInput {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct MessagingOpenAttachmentInput {
-    pub attachment_id: String,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct MessagingSearchMessagesInput {
     pub conversation_id: String,
     pub query: String,
@@ -2790,47 +2785,6 @@ pub fn messaging_update_member_settings(
         Err(error) => return error,
     };
     messaging_update_member_settings_result(state.station.client(), &token, &engine, input)
-}
-
-#[tauri::command]
-pub async fn messaging_open_attachment(
-    input: MessagingOpenAttachmentInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> Result<AppResult<Value>, String> {
-    if input.attachment_id.trim().is_empty() {
-        return Ok(AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "attachment_id is required",
-            None,
-        ));
-    }
-    let (_, token, engine) = match active_engine(state.inner(), &window) {
-        Ok(value) => value,
-        Err(error) => return Ok(error),
-    };
-    let attachment_id = input.attachment_id;
-    let local_path = match tauri::async_runtime::spawn_blocking(move || {
-        engine.open_attachment(&token, &attachment_id)
-    })
-    .await
-    {
-        Ok(Ok(value)) => value,
-        Ok(Err(error)) => return Ok(AppResult::fail(ErrorCode::InternalError, error, None)),
-        Err(error) => {
-            return Ok(AppResult::fail(
-                ErrorCode::InternalError,
-                format!("messaging attachment worker failed: {error}"),
-                None,
-            ))
-        }
-    };
-    if let Err(error) = allow_attachment_preview(&window, Path::new(&local_path)) {
-        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
-    }
-    Ok(AppResult::success(json!({
-        "local_path": local_path,
-    })))
 }
 
 #[tauri::command]

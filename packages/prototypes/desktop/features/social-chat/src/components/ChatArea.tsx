@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Button, Modal } from '@lobehub/ui';
 import {
   AlertCircle,
   Check,
@@ -276,9 +277,42 @@ function VoiceNoteChip({ message, isOwn }: { message: MockMessage; isOwn: boolea
 function FileAttachmentCard({ message, isOwn }: { message: MockMessage; isOwn: boolean }) {
   const isImage = message.type === 'image';
   const Icon = isImage ? ImageIcon : FileText;
+  const [open, setOpen] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState<'remote' | 'downloading' | 'cancelled' | 'ready'>('remote');
+  const [feedback, setFeedback] = useState('');
+  const [page, setPage] = useState(1);
+  const [sheet, setSheet] = useState('Report');
+  const [column, setColumn] = useState(1);
+  const [zoom, setZoom] = useState('width');
+  const document = /\.(docx|xlsx?|pptx?|pdf|txt|md)$/i.test(message.attachmentName || '');
+  const workbook = /\.xlsx?$/i.test(message.attachmentName || '');
+  useEffect(() => {
+    if (status !== 'downloading') return;
+    const timer = window.setInterval(() => {
+      setProgress((current) => Math.min(100, current + 20));
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, [status]);
+  useEffect(() => { if (progress === 100) setStatus('ready'); }, [progress]);
+  const select = () => {
+    setOpen(true);
+    setPage(1);
+    setColumn(1);
+    setZoom('width');
+    setFeedback('');
+    if (status === 'remote') setStatus('downloading');
+  };
   return (
+    <>
     <div
       data-chat-attachment={message.attachmentName ?? ''}
+      role="button"
+      tabIndex={0}
+      onClick={(event) => { event.stopPropagation(); select(); }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); select(); }
+      }}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -289,6 +323,7 @@ function FileAttachmentCard({ message, isOwn }: { message: MockMessage; isOwn: b
         borderRadius: T.radiusMd,
         background: isOwn ? 'rgba(255,255,255,0.16)' : T.bg,
         border: `1px solid ${isOwn ? 'rgba(255,255,255,0.18)' : T.borderSubtle}`,
+        cursor: 'pointer',
       }}
     >
       <span
@@ -311,6 +346,58 @@ function FileAttachmentCard({ message, isOwn }: { message: MockMessage; isOwn: b
         </span>
       </span>
     </div>
+    {open ? <Modal open title={message.attachmentName || 'Attachment'} footer={null}
+      width={1040} centered styles={{ body: { maxHeight: 'none', overflow: 'hidden' } }}
+      onCancel={() => setOpen(false)} destroyOnHidden>
+      <div data-chat-file-detail={message.id} style={{ display: 'grid', gap: T.space3, minWidth: 0 }}>
+        <span style={{ color: T.textTertiary, fontSize: T.fontSm }}>{message.attachmentMeta} · {
+          status === 'ready' ? 'Downloaded' : status === 'cancelled' ? 'Download cancelled' : 'Downloading…'
+        }</span>
+        {status === 'downloading' ? <progress aria-label="Downloading" value={progress} max={100} style={{ width: '100%' }} /> : null}
+        <div style={{ height: 'min(60vh, 620px)', overflow: 'auto', border: `1px solid ${T.borderSubtle}`, borderRadius: T.radiusMd, display: 'grid', color: T.text, background: T.bg }}>
+          {status === 'ready' && document ? <div data-prototype-document-preview style={{ width: '100%', minWidth: 0 }}>
+            {workbook ? <select aria-label="Worksheet" value={sheet} onChange={event => {
+              setSheet(event.target.value); setPage(1); setColumn(1);
+            }}><option>Report</option><option>Summary</option></select> : null}
+            {/\.(pdf|docx)$/i.test(message.attachmentName || '') ? <select aria-label="Zoom" value={zoom}
+              onChange={event => setZoom(event.target.value)}>
+              <option value="width">Fit width</option><option value="page">Fit page</option><option value="actual">Actual size</option>
+            </select> : null}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: T.space2 }}>
+              <Button disabled={page === 1} onClick={() => setPage(1)}>Previous page</Button>
+              <span role="status">Page {page} of 2</span>
+              <Button disabled={page === 2} onClick={() => setPage(2)}>Next page</Button>
+            </div>
+            {workbook ? <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: T.space2 }}>
+              <Button disabled={column === 1} onClick={() => setColumn(1)}>Previous columns</Button>
+              <span role="status">Columns {column} of 2</span>
+              <Button disabled={column === 2} onClick={() => setColumn(2)}>Next columns</Button>
+            </div> : null}
+            <div data-prototype-zoom={zoom} style={{ minHeight: 220, overflow: 'auto', padding: T.space3,
+              fontSize: zoom === 'page' ? 11 : zoom === 'actual' ? 16 : 14 }}>
+              {workbook ? <table aria-label={sheet}><caption>Cells {column === 1 ? 'A' : 'U'}{page === 1 ? '1' : '101'}:{column === 1 ? 'B' : 'V'}{page === 1 ? '2' : '102'}</caption><thead>
+                <tr><th /><th scope="col">{column === 1 ? 'A' : 'U'}</th><th scope="col">{column === 1 ? 'B' : 'V'}</th></tr></thead><tbody>
+                <tr><th scope="row">{page === 1 ? '1' : '101'}</th><td>{sheet}</td><td>Status</td></tr>
+                <tr><th scope="row">{page === 1 ? '2' : '102'}</th><td>{page === 1 ? 'Design review' : 'Release review'}</td><td>Ready</td></tr>
+              </tbody></table> : <>
+                <h3>{message.attachmentName}</h3>
+                <p>{page === 1 ? 'Design review' : 'Release review'}</p>
+                <p>This sample shows page navigation in the selected file detail.</p>
+              </>}
+            </div>
+          </div> : <span>{status === 'ready' ? 'Preview unavailable' : status === 'cancelled' ? 'Download cancelled' : 'Preparing…'}</span>}
+        </div>
+        <div style={{ display: 'flex', gap: T.space2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {status === 'downloading' ? <Button onClick={() => setStatus('cancelled')}>Cancel download</Button> : null}
+          {status === 'cancelled' ? <Button onClick={() => setStatus('downloading')}>Retry download</Button> : null}
+          <Button disabled={status !== 'ready'} onClick={() => setFeedback('No available app for this file')}>System preview</Button>
+          <Button disabled={status !== 'ready'} onClick={() => setFeedback('No available app for this file')}>Open with another app</Button>
+          <Button type="primary" disabled={status !== 'ready'} onClick={() => setFeedback('Cancelled')}>Save a copy</Button>
+        </div>
+        {feedback ? <span role="status">{feedback}</span> : null}
+      </div>
+    </Modal> : null}
+    </>
   );
 }
 

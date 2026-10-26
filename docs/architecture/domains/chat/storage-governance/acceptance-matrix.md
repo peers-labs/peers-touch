@@ -13,7 +13,8 @@
 - source check、unit test、截图或接口回读不能单独替代 E2E。
 - 清理前后读取真实文件/数据库字节，并验证可靠性状态未损坏。
 - `compaction_pending` 不算物理回收成功。
-- 任一旧符号在九个维度残留均失败。
+- 任一旧业务引用在九个维度残留均失败。退役列删除、schema 拒绝及回归保护
+  仅在完整文件摘要与审查清单一致时单独报告；变化或缺失仍失败。
 
 ## 2. Capability Crosswalk
 
@@ -61,7 +62,7 @@
 - 该会话旧投影与无引用媒体被删除，其他会话/设备/参与者不受影响。
 - 普通 sync/page 不恢复 floor 内明文，新消息继续进入。
 - checkpoint/compact 后真实物理字节下降。
-- 旧 `cleared_at` 与 24 小时 restore 零引用。
+- 旧 `cleared_at` 与 24 小时 restore 零业务引用；canonical 退役保护保持。
 
 ### CSG-G05：消息删除与 Recovery
 
@@ -74,9 +75,11 @@
 
 ### CSG-G06：零引用与聚合
 
-- `disappear_timer_seconds`、伪 `statistics_get` 和受影响 compatibility schema 零引用。
+- `disappear_timer_seconds`、伪 `statistics_get` 和受影响 compatibility schema
+  零业务引用。通用 shared schema 安装机制不作为旧业务标识。
 - Desktop/Mobile、same/cross-Station、多设备、restart、fresh Recovery 全部通过。
-- 九个维度无 allowlist suppression。
+- 九个维度无目录、文件类型或通配符 suppression；每条退役保护引用可见且
+  绑定审查过的完整源码。新增旧业务引用、保护源码变化与缺失均有负向证明。
 
 ### CSG-G07：批量会话清理
 

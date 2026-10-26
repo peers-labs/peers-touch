@@ -59,6 +59,8 @@ receiver, durable-readback, and cleanup evidence.
 |---|---|
 | [product-definition.md](./product-definition.md) | Product promise, capability scope, and platform claims |
 | [experience-contract.md](./experience-contract.md) | Complete user journeys and recovery paths |
+| [attachment-viewing.md](./attachment-viewing.md) | File details, resumable viewing, native open/export and cache isolation |
+| [Attachment viewing implementation](./execution-plans/20261024-attachment-viewing/plan.md) | Approved double-client file consumption and verification scope |
 | [product-state-model.md](./product-state-model.md) | User-visible state machines |
 | [acceptance-matrix.md](./acceptance-matrix.md) | Receiver-perspective evidence contract |
 | [current-capability-audit.md](./current-capability-audit.md) | Current source and evidence classification |
