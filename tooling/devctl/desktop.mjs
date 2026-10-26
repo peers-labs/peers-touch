@@ -358,7 +358,9 @@ function pnpmInvocation(pnpm) {
 
 export function desktopTauriArguments(configPath, environment = process.env) {
   const args = ['dev', '--no-watch'];
-  if (environment.PT_DESKTOP_E2E === 'true') {
+  if (environment.PT_ACCEPTANCE_NATIVE_DEV === '1') {
+    args.push('--features', 'acceptance-webdriver');
+  } else if (environment.PT_DESKTOP_E2E === 'true') {
     args.push('--features', 'e2e-testing');
   }
   args.push('--config', configPath);
@@ -723,6 +725,15 @@ export async function startDesktop(
     PT_GATEWAY_PORT: String(values.gatewayPort),
     VITE_GATEWAY_PORT: String(values.gatewayPort),
     CARGO_BUILD_JOBS: environment.CARGO_BUILD_JOBS ?? '1',
+    ...(environment.PT_ACCEPTANCE_NATIVE_DEV === '1'
+      ? {
+          TAURI_WEBDRIVER_PORT:
+            environment.PT_ACCEPTANCE_WEBDRIVER_PORT
+            ?? environment.TAURI_WEBDRIVER_PORT,
+          VITE_ACCEPTANCE_HARNESS: '1',
+          VITE_RUNTIME_EVIDENCE_HARNESS: '1',
+        }
+      : {}),
   });
 
   const vite = spawnManaged({
