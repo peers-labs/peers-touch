@@ -1022,9 +1022,9 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             / "provisioners"
             / "preset_actor.py"
         ).read_text(encoding="utf-8")
-        for provisioner in (
-            "home_station.py",
-            "native_tauri_current_profile.py",
+        for provisioner, resolver in (
+            ("home_station.py", "resolve_existing_preset_actor_identity"),
+            ("native_tauri_current_profile.py", "resolve_existing_preset_actor"),
         ):
             source = (
                 root
@@ -1034,7 +1034,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 / provisioner
             ).read_text(encoding="utf-8")
             self.assertNotIn("/actor/login", source)
-            self.assertIn("resolve_existing_preset_actor(", source)
+            self.assertIn(f"return {resolver}(", source)
         self.assertIn('"run", "./tests/access_client"', helper)
         self.assertIn("/actor/logout", helper)
 

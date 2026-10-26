@@ -46,11 +46,13 @@ class StorageGovernanceContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("pub fn measure_storage(", core)
-        self.assertIn("FileIdentity", core)
+        self.assertIn("pub trait StorageMeasurementPort", core)
+        self.assertIn("pub physical_identity: String", core)
+        self.assertIn(".entry(file.physical_identity)", core)
         self.assertNotIn("rusqlite", core)
         self.assertNotIn("tauri", core)
-        self.assertIn("measure_storage(StorageAccountingInput", desktop_engine)
-        self.assertIn("measure_storage(StorageAccountingInput", mobile_engine)
+        for engine in (desktop_engine, mobile_engine):
+            self.assertRegex(engine, r"measure_storage\(\s*StorageAccountingInput\s*\{")
 
     def test_both_clients_register_scope_fenced_snapshot_commands(self) -> None:
         desktop_command = (
@@ -276,6 +278,9 @@ class StorageGovernanceContractTest(unittest.TestCase):
         recovery = (
             ROOT / "apps/desktop/src-tauri/src/messaging/recovery.rs"
         ).read_text(encoding="utf-8")
+        recovery_types = (
+            ROOT / "packages/messaging-core/src/recovery/types.rs"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("message ChatStorageRetentionRequest", proto)
         for symbol in (
@@ -298,8 +303,10 @@ class StorageGovernanceContractTest(unittest.TestCase):
         self.assertIn("chat_storage_acceptance_seed_retention", mobile_registry)
         self.assertIn("data-chat-storage-retention-option", desktop_ui)
         self.assertIn("data-chat-storage-retention-option", mobile_ui)
-        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 4", recovery)
-        self.assertIn("retention_floors", recovery)
+        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 4", recovery_types)
+        self.assertIn("pub retention_floors: Vec<RecoveryRetentionFloor>", recovery_types)
+        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION", recovery)
+        self.assertIn("messaging_core::recovery", recovery)
 
     def test_retention_gate_uses_one_station_mobile_runtime(self) -> None:
         gates = json.loads(

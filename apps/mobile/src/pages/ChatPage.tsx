@@ -1485,7 +1485,7 @@ function ChatPageInner({
                       </button>
                     </>
                   ) : null}
-                  <button className="header-action" type="button" onClick={() => setActionSheetOpen(true)} aria-label={t('mobile.chat.moreActions')}><MoreHorizontal size={20} /></button>
+                  <button data-chat-actions-open className="header-action" type="button" onClick={() => setActionSheetOpen(true)} aria-label={t('mobile.chat.moreActions')}><MoreHorizontal size={20} /></button>
                 </div>
               ) : null}
           </>

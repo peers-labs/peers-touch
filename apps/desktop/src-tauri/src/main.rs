@@ -56,25 +56,39 @@ use tauri::{Emitter, Manager};
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
-fn show_acceptance_background_windows(app: &tauri::App) -> std::io::Result<()> {
+fn show_acceptance_background_windows(app: &tauri::AppHandle) -> std::io::Result<()> {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSWindow};
 
     let main_thread = MainThreadMarker::new()
         .ok_or_else(|| std::io::Error::other("acceptance setup requires the AppKit main thread"))?;
-    if !NSApplication::sharedApplication(main_thread)
-        .setActivationPolicy(NSApplicationActivationPolicy::Accessory)
-    {
+    let application = NSApplication::sharedApplication(main_thread);
+    if !application.setActivationPolicy(NSApplicationActivationPolicy::Accessory) {
         return Err(std::io::Error::other(
             "acceptance background activation policy was rejected",
         ));
     }
+    application.unhideWithoutActivation();
     for window in app.webview_windows().values() {
         let ns_window = window.ns_window().map_err(|error| {
             std::io::Error::other(format!("acceptance native window lookup failed: {error}"))
         })?;
-        // Order behind the operator without making the window key or activating the app.
-        unsafe { &*(ns_window as *mut NSWindow) }.orderBack(None);
+        // Reveal the WebView and order its host behind the operator; Window::show
+        // would make the host key and must not run in a shared GUI session.
+        window.as_ref().show().map_err(|error| {
+            std::io::Error::other(format!("acceptance native webview show failed: {error}"))
+        })?;
+        let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
+        ns_window.orderBack(None);
+        tracing::info!(
+            label = %window.label(),
+            app_hidden = application.isHidden(),
+            app_active = application.isActive(),
+            window_visible = ns_window.isVisible(),
+            window_key = ns_window.isKeyWindow(),
+            occlusion = ?ns_window.occlusionState(),
+            "acceptance background window ordered"
+        );
     }
     Ok(())
 }
@@ -640,11 +654,6 @@ fn main() {
                     exclusive_native_input,
                 )?;
             }
-            #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
-            if !exclusive_native_input {
-                show_acceptance_background_windows(app)?;
-            }
-
             let resource_dir = app.path()
                 .resource_dir()
                 .unwrap_or_else(|e| {
@@ -1367,6 +1376,16 @@ fn main() {
         app
     };
     app.run(move |app, event| {
+        #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+        if !exclusive_native_input && matches!(event, tauri::RunEvent::Ready) {
+            // Tao has now completed the launch hook that unconditionally activates
+            // the app. Clear launch suppression without taking operator focus.
+            if let Err(error) = show_acceptance_background_windows(app) {
+                tracing::error!(error = %error, "acceptance background window setup failed");
+                app.exit(1);
+                return;
+            }
+        }
         // Closing the symmetric pair to AppLaunch (fired from the
         // frontend usePresence hook): when the user quits the app we
         // owe Station an explicit AppShutdown trigger per bound

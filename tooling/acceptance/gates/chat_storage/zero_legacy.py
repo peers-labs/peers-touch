@@ -21,7 +21,9 @@ INVENTORY_PATH = (
     REPO_ROOT
     / "docs"
     / "architecture"
-    / "chat-storage-governance"
+    / "domains"
+    / "chat"
+    / "storage-governance"
     / "legacy-inventory.json"
 )
 EXPECTED_DIMENSIONS: tuple[str, ...] = (

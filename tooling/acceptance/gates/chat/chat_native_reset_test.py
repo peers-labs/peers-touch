@@ -497,7 +497,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                     "station-four",
                 )
 
-    def test_accepts_exact_environment_authorized_protected_stations(self) -> None:
+    def test_accepts_exact_environment_authorization_with_live_reset_lease(self) -> None:
         deployments = {
             "station-four": {
                 "PT_DEPLOY_HOST": "192.0.2.40",
@@ -537,6 +537,13 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             "tooling.acceptance.fixtures.chat_native_reset."
             "deploy_environment",
             side_effect=lambda name: deployments[name],
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "require_station_reset_authority",
+        ) as reset_authority, patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "active_profile_environment",
+            return_value={"PT_DEV_PROFILE": "four"},
         ):
             four = acceptance_station_environment(
                 "http://192.0.2.40:18080",
@@ -551,6 +558,8 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                 "station-five-arm",
             )
 
+        self.assertEqual(reset_authority.call_count, 3)
+        reset_authority.assert_called_with("mobile-station-lifecycle-alice")
         self.assertEqual(
             four["PT_ACCEPTANCE_STATION_URL"],
             "http://192.0.2.40:18080",
