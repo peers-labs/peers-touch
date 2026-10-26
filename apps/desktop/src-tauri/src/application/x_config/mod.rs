@@ -20,7 +20,7 @@ use reqwest::redirect::Policy;
 use serde::Serialize;
 use station_trust::proto::PublicEndpointConnectionMaterial;
 use std::io::Read;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, TryLockError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::infrastructure::storage::{StorageKind, StorageLayout};
@@ -33,114 +33,137 @@ const PUBLISHER_KEYS: &[u8] =
     include_bytes!("../../../../../x-config/public-keys/publisher-keys.json");
 
 pub struct XConfigRuntime {
+    /// Only refresh workers acquire this lock. Readers never wait for I/O.
     state: Mutex<RuntimeState>,
+    published: Mutex<Arc<PublishedState>>,
 }
 
 impl XConfigRuntime {
     pub fn new(layout: &StorageLayout, meta: ClientMeta) -> Self {
+        let state = RuntimeState::new(layout, meta);
+        let published = Arc::new(state.read_view());
         Self {
-            state: Mutex::new(RuntimeState::new(layout, meta)),
+            state: Mutex::new(state),
+            published: Mutex::new(published),
         }
     }
 
     pub fn projection(&self) -> Result<XConfigProjection, XConfigError> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| XConfigError::new("x_config_state_lock"))?;
-        Ok(state.projection(unix_ms()))
+        Ok(self.read_view()?.projection(unix_ms()))
     }
 
     pub fn refresh(&self, force: bool) -> Result<XConfigProjection, XConfigError> {
-        let plan = {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| XConfigError::new("x_config_state_lock"))?;
-            let now = unix_ms();
-            if state.refreshing || (!force && now < state.next_refresh_at_unix_ms) {
-                return Ok(state.projection(now));
-            }
-            let targets = state.refresh_targets();
-            if targets.is_empty() {
-                return Ok(state.projection(now));
-            }
-            state.refreshing = true;
-            state.last_refresh_attempt_at_unix_ms = Some(now);
-            RefreshPlan {
-                targets,
-                etag: state.etag.clone(),
-                has_current: state
-                    .coordinator
-                    .as_ref()
-                    .is_some_and(|coordinator| coordinator.current().is_some()),
+        self.refresh_with(force, fetch_snapshot)
+    }
+
+    fn refresh_with(
+        &self,
+        force: bool,
+        fetch: impl FnMut(&str, Option<&str>) -> Result<SnapshotFetch, XConfigError>,
+    ) -> Result<XConfigProjection, XConfigError> {
+        let mut state = match self.state.try_lock() {
+            Ok(state) => state,
+            Err(TryLockError::WouldBlock) => return self.projection(),
+            Err(TryLockError::Poisoned(_)) => {
+                return Err(XConfigError::new("x_config_state_lock"));
             }
         };
-
-        let outcome = fetch_with_failover(
-            &plan.urls(),
-            plan.etag.as_deref(),
-            plan.has_current,
-            |url, etag| fetch_snapshot(url, etag),
-            |bytes| {
-                let mut state = self
-                    .state
-                    .lock()
-                    .map_err(|_| XConfigError::new("x_config_state_lock"))?;
-                let coordinator = state
-                    .coordinator
-                    .as_mut()
-                    .ok_or_else(|| XConfigError::new("x_config_unavailable"))?;
-                coordinator.accept_remote(bytes, unix_ms())
-            },
-        );
-
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| XConfigError::new("x_config_state_lock"))?;
         let now = unix_ms();
-        state.refreshing = false;
-        match outcome {
-            Ok(FailoverSuccess::NotModified { origin_index, etag }) => {
-                state.active_origin = plan.origin_at(origin_index);
-                state.etag = etag.or(state.etag.take());
-                state.mark_success(now);
-            }
-            Ok(FailoverSuccess::Accepted { origin_index, etag }) => {
-                state.active_origin = plan.origin_at(origin_index);
-                state.source = Freshness::Current;
-                state.etag = etag;
-                state.mark_success(now);
-            }
-            Err(error) => state.record_failure(now, error.code),
+        if !force && now < state.next_refresh_at_unix_ms {
+            return self.projection();
         }
-        Ok(state.projection(now))
+        state.refreshing = true;
+        state.last_refresh_attempt_at_unix_ms = Some(now);
+        self.publish(&state)?;
+        let mut attempt = RefreshAttempt {
+            runtime: self,
+            state: &mut state,
+            completed: false,
+        };
+        match attempt.state.initialize() {
+            Ok(()) => {
+                // Cached local state is visible before any network wait.
+                self.publish(attempt.state)?;
+                attempt.state.refresh(fetch);
+            }
+            Err(error) => attempt.state.record_failure(unix_ms(), error.code),
+        }
+        attempt.completed = true;
+        drop(attempt);
+        self.projection()
+    }
+
+    fn read_view(&self) -> Result<Arc<PublishedState>, XConfigError> {
+        self.published
+            .lock()
+            .map(|view| Arc::clone(&view))
+            .map_err(|_| XConfigError::new("x_config_projection_lock"))
+    }
+
+    fn publish(&self, state: &RuntimeState) -> Result<(), XConfigError> {
+        let view = Arc::new(state.read_view());
+        *self
+            .published
+            .lock()
+            .map_err(|_| XConfigError::new("x_config_projection_lock"))? = view;
+        Ok(())
     }
 
     pub fn suggestion_material(
         &self,
         seed_id: &str,
     ) -> Result<PublicEndpointConnectionMaterial, XConfigError> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| XConfigError::new("x_config_state_lock"))?;
-        let now = unix_ms();
-        let snapshot = state
-            .coordinator
+        self.read_view()?.suggestion_material(seed_id, unix_ms())
+    }
+}
+
+/// Clears the published in-flight state even if a worker unwinds.
+struct RefreshAttempt<'a> {
+    runtime: &'a XConfigRuntime,
+    state: &'a mut RuntimeState,
+    completed: bool,
+}
+
+impl Drop for RefreshAttempt<'_> {
+    fn drop(&mut self) {
+        self.state.refreshing = false;
+        if !self.completed {
+            self.state
+                .record_failure(unix_ms(), "x_config_refresh_aborted");
+        }
+        let _ = self.runtime.publish(self.state);
+    }
+}
+
+struct PublishedState {
+    channel: String,
+    meta: ClientMeta,
+    snapshot: Option<Arc<x_config_core::VerifiedSnapshot>>,
+    source: Freshness,
+    refreshing: bool,
+    active_origin: Option<String>,
+    last_refresh_attempt_at_unix_ms: Option<i64>,
+    next_refresh_at_unix_ms: i64,
+    last_refresh_error: Option<String>,
+}
+
+impl PublishedState {
+    fn suggestion_material(
+        &self,
+        seed_id: &str,
+        now: i64,
+    ) -> Result<PublicEndpointConnectionMaterial, XConfigError> {
+        let snapshot = self
+            .snapshot
             .as_ref()
-            .and_then(SnapshotCoordinator::current)
             .ok_or_else(|| XConfigError::new("x_config_snapshot_unavailable"))?;
-        let freshness = effective_freshness(snapshot.expires_at_unix_ms, now, state.source);
+        let freshness = effective_freshness(snapshot.expires_at_unix_ms, now, self.source);
         let suggestion = project_suggestions(snapshot, now, freshness)
             .into_iter()
             .find(|suggestion| suggestion.seed_id == seed_id)
             .ok_or_else(|| XConfigError::new("x_config_suggestion_not_found"))?;
         if !suggestion.actionable {
-            return Err(XConfigError::new(
-                "x_config_suggestion_not_actionable",
-            ));
+            return Err(XConfigError::new("x_config_suggestion_not_actionable"));
         }
         snapshot
             .statement
@@ -156,6 +179,7 @@ struct RuntimeState {
     channel: String,
     meta: ClientMeta,
     coordinator: Option<SnapshotCoordinator<DesktopWatermarkStore, FileSnapshotCache>>,
+    initialized: bool,
     source: Freshness,
     /// Development override (`PEERS_X_CONFIG_URL`); always tried first.
     override_origin: Option<String>,
@@ -200,7 +224,6 @@ impl RuntimeState {
             .join("secure-store")
             .join("x-config");
         let cache = FileSnapshotCache::new(cache_dir, &channel);
-        let embedded = embedded_snapshot();
         let coordinator = PublisherKeyring::from_json(PUBLISHER_KEYS)
             .map(|keyring| {
                 SnapshotCoordinator::new(
@@ -211,10 +234,11 @@ impl RuntimeState {
                 )
             })
             .ok();
-        let mut state = Self {
+        Self {
             channel,
             meta,
             coordinator,
+            initialized: false,
             source: Freshness::Embedded,
             override_origin,
             baked_origins,
@@ -225,32 +249,94 @@ impl RuntimeState {
             last_refresh_attempt_at_unix_ms: None,
             next_refresh_at_unix_ms: 0,
             last_refresh_error: configuration_error,
-        };
-        if let Some(coordinator) = state.coordinator.as_mut() {
-            match coordinator.initialize(embedded.as_deref(), unix_ms()) {
-                Ok(Some(_)) => {
-                    state.source =
-                        if coordinator.current_origin() == Some(SnapshotOrigin::Persisted) {
-                            Freshness::Current
-                        } else {
-                            Freshness::Embedded
-                        };
-                }
-                Ok(None) => {}
-                Err(error) => state.last_refresh_error = Some(error.code.to_string()),
-            }
-        } else {
-            state.last_refresh_error = Some("publisher_keyring".to_string());
         }
-        state
     }
 
+    fn read_view(&self) -> PublishedState {
+        PublishedState {
+            channel: self.channel.clone(),
+            meta: self.meta.clone(),
+            snapshot: self
+                .coordinator
+                .as_ref()
+                .and_then(SnapshotCoordinator::current)
+                .map(|snapshot| Arc::new(snapshot.clone())),
+            source: self.source,
+            refreshing: self.refreshing,
+            active_origin: self.active_origin.clone(),
+            last_refresh_attempt_at_unix_ms: self.last_refresh_attempt_at_unix_ms,
+            next_refresh_at_unix_ms: self.next_refresh_at_unix_ms,
+            last_refresh_error: self.last_refresh_error.clone(),
+        }
+    }
+
+    fn initialize(&mut self) -> Result<(), XConfigError> {
+        if !self.initialized {
+            let coordinator = self
+                .coordinator
+                .as_mut()
+                .ok_or_else(|| XConfigError::new("publisher_keyring"))?;
+            coordinator.initialize(embedded_snapshot().as_deref(), unix_ms())?;
+            self.initialized = true;
+            self.source = if coordinator.current_origin() == Some(SnapshotOrigin::Persisted) {
+                Freshness::Current
+            } else {
+                Freshness::Embedded
+            };
+        }
+        Ok(())
+    }
+
+    fn refresh(
+        &mut self,
+        fetch: impl FnMut(&str, Option<&str>) -> Result<SnapshotFetch, XConfigError>,
+    ) {
+        let targets = self.refresh_targets();
+        if targets.is_empty() {
+            self.next_refresh_at_unix_ms = unix_ms().saturating_add(FOREGROUND_REFRESH_INTERVAL_MS);
+            return;
+        }
+        let plan = RefreshPlan {
+            targets,
+            etag: self.etag.clone(),
+            has_current: self
+                .coordinator
+                .as_ref()
+                .is_some_and(|coordinator| coordinator.current().is_some()),
+        };
+        let outcome = fetch_with_failover(
+            &plan.urls(),
+            plan.etag.as_deref(),
+            plan.has_current,
+            fetch,
+            |bytes| {
+                self.coordinator
+                    .as_mut()
+                    .ok_or_else(|| XConfigError::new("x_config_unavailable"))?
+                    .accept_remote(bytes, unix_ms())
+            },
+        );
+        let now = unix_ms();
+        match outcome {
+            Ok(FailoverSuccess::NotModified { origin_index, etag }) => {
+                self.active_origin = plan.origin_at(origin_index);
+                self.etag = etag.or(self.etag.take());
+                self.mark_success(now);
+            }
+            Ok(FailoverSuccess::Accepted { origin_index, etag }) => {
+                self.active_origin = plan.origin_at(origin_index);
+                self.source = Freshness::Current;
+                self.etag = etag;
+                self.mark_success(now);
+            }
+            Err(error) => self.record_failure(now, error.code),
+        }
+    }
+}
+
+impl PublishedState {
     fn projection(&self, now: i64) -> XConfigProjection {
-        let Some(snapshot) = self
-            .coordinator
-            .as_ref()
-            .and_then(SnapshotCoordinator::current)
-        else {
+        let Some(snapshot) = self.snapshot.as_ref() else {
             return XConfigProjection {
                 channel: self.channel.clone(),
                 sequence: None,
@@ -325,7 +411,10 @@ impl RuntimeState {
             let projected = ResolvedEndpointDefault {
                 seed_id: suggestion.seed_id.clone(),
                 display_name: suggestion.display_name.clone(),
-                canonical_origin: suggestion.connection_material.canonical_discovery_origin.clone(),
+                canonical_origin: suggestion
+                    .connection_material
+                    .canonical_discovery_origin
+                    .clone(),
                 matched_rule_id: resolved.matched_rule_id,
                 actionable: suggestion.actionable,
             };
@@ -337,7 +426,9 @@ impl RuntimeState {
         }
         defaults
     }
+}
 
+impl RuntimeState {
     fn record_failure(&mut self, now: i64, code: &str) {
         self.refresh_failures = self.refresh_failures.saturating_add(1);
         let exponent = self.refresh_failures.saturating_sub(1).min(8);
@@ -613,58 +704,4 @@ fn unix_ms() -> i64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn override_origin_must_be_a_bare_admitted_base_url() {
-        let _guard = crate::infrastructure::storage::test_storage_env_lock();
-        std::env::set_var("PEERS_X_CONFIG_URL", "https://distribution.example/");
-        assert_eq!(
-            configured_override_origin().unwrap().as_deref(),
-            Some("https://distribution.example")
-        );
-        std::env::set_var("PEERS_X_CONFIG_URL", "http://distribution.example");
-        assert!(configured_override_origin().is_err());
-        std::env::set_var("PEERS_X_CONFIG_URL", "https://distribution.example/base");
-        assert!(configured_override_origin().is_err());
-        std::env::set_var("PEERS_X_CONFIG_URL", "http://10.0.0.5:18082");
-        assert_eq!(
-            configured_override_origin().unwrap().as_deref(),
-            Some("http://10.0.0.5:18082")
-        );
-        std::env::remove_var("PEERS_X_CONFIG_URL");
-    }
-
-    #[test]
-    fn refresh_targets_compose_override_advertised_and_baked_origins() {
-        let targets: Vec<String> = effective_origins(
-            Some("http://127.0.0.1:18082"),
-            &["https://mirror.example.test".to_string()],
-            &["http://10.37.221.38:18082".to_string()],
-        )
-        .into_iter()
-        .filter_map(|origin| snapshot_url(&origin, "corpstable").map(|url| url.to_string()))
-        .collect();
-        assert_eq!(
-            targets,
-            vec![
-                "http://127.0.0.1:18082/channels/corpstable/latest.pb",
-                "https://mirror.example.test/channels/corpstable/latest.pb",
-                "http://10.37.221.38:18082/channels/corpstable/latest.pb",
-            ]
-        );
-    }
-
-    #[test]
-    fn platform_projection_never_executes_release_metadata() {
-        assert!(matches!(
-            current_platform(),
-            ClientPlatform::Macos | ClientPlatform::Windows | ClientPlatform::Linux
-        ));
-        assert!(matches!(
-            current_architecture(),
-            ClientArchitecture::Arm64 | ClientArchitecture::X8664 | ClientArchitecture::Unspecified
-        ));
-    }
-}
+mod tests;

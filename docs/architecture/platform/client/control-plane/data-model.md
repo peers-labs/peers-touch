@@ -307,7 +307,14 @@ or independent ledger state.
 
 ### 8.2 Client Refresh
 
+Desktop construction publishes `unavailable` without storage I/O. The async
+refresh worker first resolves the secure watermark and committed local cache.
+Unknown watermark remains unknown; it must not become sequence zero.
+
 ```text
+constructed_unavailable
+  -> initializing_local (worker)
+  -> ready_local (published independently of worker I/O)
 ready_local
   -> origin_list_built      # override ++ advertised ++ baked, validated
   -> fetching(origin[0])
@@ -320,10 +327,16 @@ fetching(origin[i]) -> origin_unreachable -> fetching(origin[i+1])
 fetching(last) -> backoff -> ready_local
 verifying -> rejected -> fetching(next origin) | ready_local
 accepted -> persistence_failed -> ready_local
+initializing_local -> storage_denied | decode_failed
+  -> advisory_unavailable + backoff
+  -> initializing_local (later retry)
 ```
 
 A refresh round only succeeds on a snapshot that passes keyring and watermark
 checks; individual origin failures never replace the current snapshot.
+Concurrent refresh requests coalesce to the current read view. Reads do not
+wait for the initialization/refresh owner, and expiry is evaluated at read
+time. Profile and verified Station state are not part of this state machine.
 
 ## 9. Error Model
 

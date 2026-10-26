@@ -1,11 +1,14 @@
-use x_config_core::{
-    XConfigError, SecureWatermark, SecureWatermarkStore, SnapshotCacheKey,
-    SnapshotCacheStore, MAX_ENVELOPE_BYTES,
-};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use x_config_core::{
+    SecureWatermark, SecureWatermarkStore, SnapshotCacheKey, SnapshotCacheStore, XConfigError,
+    MAX_ENVELOPE_BYTES,
+};
+
+#[cfg(target_os = "macos")]
+mod macos_keychain;
 
 const WATERMARK_SERVICE: &str = "peers-touch.desktop.x-config";
 
@@ -39,14 +42,11 @@ impl DesktopWatermarkStore {
                 Err(_) => Err(storage_error("watermark_read")),
             };
         }
-        let entry = keyring::Entry::new(WATERMARK_SERVICE, &watermark_account(&self.channel))
-            .map_err(|_| storage_error("watermark_keyring"))?;
-        match entry.get_password() {
-            Ok(value) => serde_json::from_str(&value)
+        match load_keychain_document(&self.channel)? {
+            Some(value) => serde_json::from_slice(&value)
                 .map(Some)
                 .map_err(|_| storage_error("watermark_decode")),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(_) => Err(storage_error("watermark_keyring")),
+            None => Ok(None),
         }
     }
 
@@ -55,13 +55,38 @@ impl DesktopWatermarkStore {
         if let Some(path) = self.debug_path.as_ref() {
             return atomic_write(path, &bytes).map_err(|_| storage_error("watermark_write"));
         }
-        let value = String::from_utf8(bytes).map_err(|_| storage_error("watermark_encode"))?;
-        let entry = keyring::Entry::new(WATERMARK_SERVICE, &watermark_account(&self.channel))
-            .map_err(|_| storage_error("watermark_keyring"))?;
-        entry
-            .set_password(&value)
-            .map_err(|_| storage_error("watermark_keyring"))
+        save_keychain_document(&self.channel, &bytes)
     }
+}
+
+#[cfg(target_os = "macos")]
+fn load_keychain_document(channel: &str) -> Result<Option<Vec<u8>>, XConfigError> {
+    macos_keychain::load(WATERMARK_SERVICE, &watermark_account(channel))
+}
+
+#[cfg(target_os = "macos")]
+fn save_keychain_document(channel: &str, bytes: &[u8]) -> Result<(), XConfigError> {
+    macos_keychain::save(WATERMARK_SERVICE, &watermark_account(channel), bytes)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn load_keychain_document(channel: &str) -> Result<Option<Vec<u8>>, XConfigError> {
+    let entry = keyring::Entry::new(WATERMARK_SERVICE, &watermark_account(channel))
+        .map_err(|_| storage_error("watermark_keyring"))?;
+    match entry.get_password() {
+        Ok(value) => Ok(Some(value.into_bytes())),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(_) => Err(storage_error("watermark_keyring")),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn save_keychain_document(channel: &str, bytes: &[u8]) -> Result<(), XConfigError> {
+    let value = std::str::from_utf8(bytes).map_err(|_| storage_error("watermark_encode"))?;
+    keyring::Entry::new(WATERMARK_SERVICE, &watermark_account(channel))
+        .map_err(|_| storage_error("watermark_keyring"))?
+        .set_password(value)
+        .map_err(|_| storage_error("watermark_keyring"))
 }
 
 impl SecureWatermarkStore for DesktopWatermarkStore {
