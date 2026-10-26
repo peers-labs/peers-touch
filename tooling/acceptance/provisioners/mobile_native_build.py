@@ -61,12 +61,12 @@ ANDROID_ACCEPTANCE_SIGNING_ROOT = Path(
 ANDROID_ACCEPTANCE_KEYSTORE = "acceptance-debug.keystore"
 ANDROID_GRADLE_LOCK_REQUIREMENTS = {
     "apps/mobile/src-tauri/gen/android/buildscript-gradle.lockfile": (
-        "com.android.tools.build:gradle:8.5.1",
+        "com.android.tools.build:gradle:8.9.1",
         "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25",
     ),
     "apps/mobile/src-tauri/gen/android/buildSrc/gradle.lockfile": (
-        "com.android.tools.build:gradle:8.5.1",
-        "org.jetbrains.kotlin:kotlin-stdlib:1.9.23",
+        "com.android.tools.build:gradle:8.9.1",
+        "org.jetbrains.kotlin:kotlin-stdlib:2.0.20",
     ),
     "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/app.lockfile": (
         "androidx.appcompat:appcompat:1.6.1",
@@ -76,6 +76,10 @@ ANDROID_GRADLE_LOCK_REQUIREMENTS = {
     "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-android.lockfile": (
         "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
     ),
+    "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-barcode-scanner.lockfile": (
+        "androidx.camera:camera-core:1.5.1",
+        "com.google.android.gms:play-services-mlkit-barcode-scanning:18.1.0",
+    ),
     "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-deep-link.lockfile": (
         "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
     ),
@@ -83,6 +87,9 @@ ANDROID_GRADLE_LOCK_REQUIREMENTS = {
         "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
     ),
     "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-peers-platform-permissions.lockfile": (
+        "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
+    ),
+    "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-peers-secure-input.lockfile": (
         "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
     ),
     "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-peers-secure-storage.lockfile": (
@@ -95,15 +102,15 @@ ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS = {
             "arm64DebugRuntimeClasspath",
             "arm64ReleaseRuntimeClasspath",
         ),
-        "androidx.lifecycle:lifecycle-runtime-ktx:2.6.1": (
+        "androidx.lifecycle:lifecycle-runtime-ktx:2.10.0": (
             "arm64DebugRuntimeClasspath",
             "arm64ReleaseRuntimeClasspath",
         ),
-        "androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.1": (
+        "androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0": (
             "arm64DebugRuntimeClasspath",
             "arm64ReleaseRuntimeClasspath",
         ),
-        "androidx.savedstate:savedstate-ktx:1.2.1": (
+        "androidx.savedstate:savedstate-ktx:1.4.0": (
             "arm64DebugRuntimeClasspath",
             "arm64ReleaseRuntimeClasspath",
         ),
@@ -132,7 +139,8 @@ CARGO_HOME_CONTROL_FILES = frozenset(
     }
 )
 ANDROID_CARGO_GRADLE_PROJECTS = (
-    (":tauri-android", "tauri", "2.10.3", "mobile/android"),
+    (":tauri-android", "tauri", "2.12.5", "mobile/android"),
+    (":tauri-plugin-barcode-scanner", "tauri-plugin-barcode-scanner", "2.5.3", "android"),
     (":tauri-plugin-deep-link", "tauri-plugin-deep-link", "2.4.9", "android"),
     (":tauri-plugin-opener", "tauri-plugin-opener", "2.5.4", "android"),
 )

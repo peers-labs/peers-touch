@@ -22,7 +22,7 @@ val firebaseResources = System.getenv("PT_ANDROID_FIREBASE_RESOURCES_JSON")
     ?.let { JsonSlurper().parseText(it) as Map<*, *> }
 
 android {
-    compileSdk = 34
+    compileSdk = 36
     namespace = "com.peers.touch.mobile"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"

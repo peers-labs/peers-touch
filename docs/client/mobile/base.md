@@ -126,6 +126,13 @@ apps/mobile/
         └── apple/                # iOS host project
 ```
 
+The Android host uses AGP 8.9.1, Gradle 8.11.1 and compileSdk 36.
+This matches the pinned barcode scanner's Android host and CameraX 1.5.1
+requirements. `minSdk` remains 24 and `targetSdk` remains 34; compilation
+support does not change Android runtime behavior policy.
+The root buildscript, buildSrc and every native plugin use tracked dependency
+locks; the native build owner validates the same Cargo and Gradle inputs.
+
 ## 5. Authority Boundaries
 
 - Shared contract truth: `model/domain/`

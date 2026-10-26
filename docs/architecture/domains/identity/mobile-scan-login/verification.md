@@ -1,6 +1,6 @@
 # Mobile Scan Login — 验证状态
 
-> **Status**: source checkpoint; product UNPROVEN
+> **Status**: native development iteration; product UNPROVEN
 > **Date**: 2026-10-27
 > **Worktree**: peers-relay / feat/mobile-scan-login
 > **Base**: b6e481c69b718c40644fe3c922a1a73daa38ca16
@@ -35,6 +35,34 @@ COMMITTED 后仍由当前 Access 决策、Session、PIN 和 lifecycle kernel 控
   `report.json` 引用图片和 renderer 源码指纹，`cleanup.json` 记录资源释放。
 - 路由 owner 的选择、恢复、更新及取消释放测试：20 项通过；
   包括显式重选相同 binding 后旧事务不得覆盖选择。
+- `one` Station 已部署本地 checkpoint
+  `c17bff3dadcef1cbf397ae026e872badab23b06f`；
+  `/app-meta/version` 的 `build_commit` 与其逐字相同。
+  原生 Desktop 经 `make desktop` 启动，使用嵌入式 WebDriver 操作：
+  添加并验证当前 Station、Alice 密码登录、创建/确认本地 PIN、
+  进入 Shell 与全局 Settings Account 均已现场执行。
+  这些前置步骤不等于 Mobile 扫码接纳通过。
+- 原生 Desktop 发码失败已复现：收到的 Schema action 是完整
+  `deviceLinkOffer`，链接 1,892 字节，固定 360 像素的 QR 生成返回
+  `PAYLOAD_TOO_DENSE`。去掉头像、扩大至 720 像素/版本 40 仍因
+  当前 Q 纠错容量失败；没有降低纠错要求。
+  当前响应未提供 locator。`one` 的 Direct origin 为 HTTP，而原生
+  sealed-blob retrieval 要求 HTTPS；Relay HTTPS 健康检查通过，
+  当前 Dashboard attachment 列表为空。部署包含 Relay pool overlay
+  与 CA 文件挂载；受认证邀请导入返回 503，Station 日志明确报
+  `x509: certificate signed by unknown authority`。失败邀请已通过
+  Relay owner 撤销。尚未证明 reservation 或短引用可用。
+- 两个本任务 Android API 35 Emulator 已成功启动，虚拟相机支持
+  `virtualscene-image` 动态图片输入，WebView 124 与 ChromeDriver 124
+  版本匹配。尚未安装本需求 APK，也未执行生产插件扫描。
+  原生构建先遇到 NDK `ranlib` 选择错误，使用已有的 `TARGET_RANLIB`
+  配置后通过 Rust 编译；随后发现未锁定的 CameraX/MLKit 依赖。
+  Android host 已同步至 AGP 8.9.1 / Gradle 8.11.1 / compileSdk 36，
+  对齐 barcode-scanner 2.5.3 的 SDK 36 和 CameraX 1.5.1 要求。
+  root/buildSrc 与应用、原生插件 classpath 的依赖锁已重新解析，
+  原生 build owner 同步 Cargo 2.12.5、扫码与 secure-input 插件输入。
+  `checkUniversalDebugAarMetadata` 与生产插件 `compileDebugKotlin`
+  均通过；完整 APK 构建和生产相机扫码尚未通过。
 - Suite 复用合同审查：PASS / runtime NOT_RUN。五客户端只在 Suite 预置一次、
   场景 attach-only 的合同成立，未执行该 Suite。
 - 正式 gap detector 未生成有效结果：外部 Evidence Store 没有本次正式
@@ -77,13 +105,15 @@ Android 本需求 App 的虚拟相机扫码尚未执行。
 当前工作区已按用户授权选择 `one` Profile。机器控制面确认 remote
 Station、`station-1` 部署绑定、slot 18，以及 `station.connect` /
 `station.deploy` 能力；Profile 定义为 tracked-clean。
-远端 exact-source 部署仍需要本地 checkpoint：现有 source-sync 只同步 HEAD，
-用户已授权创建本地 checkpoint，并继续在 `one` 实测。
-完整原生登录 Journey 尚未执行；部署后须核对 live build 与当前 checkpoint，
-不能把旧 HEAD 当作当前源码验证。
+用户已授权本地 checkpoint 和继续实测，Station 当前 live build 已核对。
+本轮 Android 依赖锁修改尚未形成下一 checkpoint；修改源码后应重新绑定
+构建身份，并按受影响 owner 重建/部署，不继承本轮前置步骤的结果。
+完整扫码登录 Journey 尚未执行。
 
-本次启动的 Desktop 和 Station 已通过 `make desktop-stop`、
-`make station-stop` 停止；不删除账户数据库、安全存储或证据。
+本轮 Desktop 已通过 `make desktop-stop` 停止，WebDriver session 已关闭；
+发码弹窗已关闭并交还取消 owner。两个本任务 Android Emulator 已停止，
+Appium 服务已停止；保留任务专属 AVD 和构建缓存供后续迭代复用。
+远端 Station 保持本次已核对的部署；不删除账户数据库、安全存储或证据。
 Xcode 构建已退出。独立图片探针已终止，三个本任务 Simulator 已关闭并删除；
 没有启动 `Peers.app`、占用真实相机或修改既有模拟器。
 本地 checkpoint 已获授权；无协作分支 push、PR、merge 或发布。
