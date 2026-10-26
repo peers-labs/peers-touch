@@ -56,39 +56,25 @@ use tauri::{Emitter, Manager};
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
-fn show_acceptance_background_windows(app: &tauri::AppHandle) -> std::io::Result<()> {
+fn show_acceptance_background_windows(app: &tauri::App) -> std::io::Result<()> {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSWindow};
 
     let main_thread = MainThreadMarker::new()
         .ok_or_else(|| std::io::Error::other("acceptance setup requires the AppKit main thread"))?;
-    let application = NSApplication::sharedApplication(main_thread);
-    if !application.setActivationPolicy(NSApplicationActivationPolicy::Accessory) {
+    if !NSApplication::sharedApplication(main_thread)
+        .setActivationPolicy(NSApplicationActivationPolicy::Accessory)
+    {
         return Err(std::io::Error::other(
             "acceptance background activation policy was rejected",
         ));
     }
-    application.unhideWithoutActivation();
     for window in app.webview_windows().values() {
         let ns_window = window.ns_window().map_err(|error| {
             std::io::Error::other(format!("acceptance native window lookup failed: {error}"))
         })?;
-        // Reveal the WebView and order its host behind the operator; Window::show
-        // would make the host key and must not run in a shared GUI session.
-        window.as_ref().show().map_err(|error| {
-            std::io::Error::other(format!("acceptance native webview show failed: {error}"))
-        })?;
-        let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
-        ns_window.orderBack(None);
-        tracing::info!(
-            label = %window.label(),
-            app_hidden = application.isHidden(),
-            app_active = application.isActive(),
-            window_visible = ns_window.isVisible(),
-            window_key = ns_window.isKeyWindow(),
-            occlusion = ?ns_window.occlusionState(),
-            "acceptance background window ordered"
-        );
+        // Order behind the operator without making the window key or activating the app.
+        unsafe { &*(ns_window as *mut NSWindow) }.orderBack(None);
     }
     Ok(())
 }
@@ -612,8 +598,6 @@ fn main() {
             window.focus = false;
             if !exclusive_native_input {
                 window.visible = false;
-                // Initial focus=false does not stop AppKit selecting a key window later.
-                window.focusable = false;
             }
             window.background_throttling =
                 Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
@@ -656,6 +640,11 @@ fn main() {
                     exclusive_native_input,
                 )?;
             }
+            #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+            if !exclusive_native_input {
+                show_acceptance_background_windows(app)?;
+            }
+
             let resource_dir = app.path()
                 .resource_dir()
                 .unwrap_or_else(|e| {
@@ -1378,18 +1367,6 @@ fn main() {
         app
     };
     app.run(move |app, event| {
-        #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
-        if !exclusive_native_input && matches!(event, tauri::RunEvent::Ready) {
-            // Ready is called inside Tao's applicationDidFinishLaunching callback.
-            // Keep launch prohibited until that callback returns to AppKit.
-            let background_app = app.clone();
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                if let Err(error) = show_acceptance_background_windows(&background_app) {
-                    tracing::error!(error = %error, "acceptance background window setup failed");
-                    background_app.exit(1);
-                }
-            });
-        }
         // Closing the symmetric pair to AppLaunch (fired from the
         // frontend usePresence hook): when the user quits the app we
         // owe Station an explicit AppShutdown trigger per bound
