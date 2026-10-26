@@ -1378,13 +1378,15 @@ fn main() {
     app.run(move |app, event| {
         #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
         if !exclusive_native_input && matches!(event, tauri::RunEvent::Ready) {
-            // Tao has now completed the launch hook that unconditionally activates
-            // the app. Clear launch suppression without taking operator focus.
-            if let Err(error) = show_acceptance_background_windows(app) {
-                tracing::error!(error = %error, "acceptance background window setup failed");
-                app.exit(1);
-                return;
-            }
+            // Ready is called inside Tao's applicationDidFinishLaunching callback.
+            // Keep launch prohibited until that callback returns to AppKit.
+            let background_app = app.clone();
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                if let Err(error) = show_acceptance_background_windows(&background_app) {
+                    tracing::error!(error = %error, "acceptance background window setup failed");
+                    background_app.exit(1);
+                }
+            });
         }
         // Closing the symmetric pair to AppLaunch (fired from the
         // frontend usePresence hook): when the user quits the app we
