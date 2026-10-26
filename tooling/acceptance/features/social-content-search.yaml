@@ -1,0 +1,59 @@
+{
+  "id": "social-content-search",
+  "status": "active",
+  "product_area": "social",
+  "owners": [
+    "apps/station/app/subserver/social/application/public_search*.go",
+    "apps/station/app/subserver/social/application/private_read_policy*.go",
+    "apps/station/app/subserver/social/infrastructure/private_read_policy.go",
+    "apps/desktop/src-tauri/src/application/search/social.rs",
+    "apps/desktop/src-tauri/src/application/search/private.rs",
+    "apps/desktop/src-tauri/src/secure_content/search*.rs",
+    "apps/desktop/src/runtimes/searchOpeners.ts",
+    "apps/desktop/src/runtimes/searchInvalidations.ts",
+    "apps/mobile/src-tauri/src/runtime/search/social*",
+    "apps/mobile/src-tauri/src/secure_content/store/search*.rs",
+    "apps/mobile/src/features/social/openSearchResource.ts",
+    "apps/mobile/src/runtimes/searchInvalidations.ts",
+    "tooling/acceptance/gates/social/content_search*"
+  ],
+  "truth_sources": [
+    "Original Station PublicReadPort, public rows and current policy",
+    "Original private Social authority and device SQLCipher projections",
+    "Current source-issued Search references and allowlisted owner resolvers"
+  ],
+  "visible_surfaces": [
+    {"type": "native-desktop", "route": "Global Search > Posts and comments > original Moment/comment > Search return"},
+    {"type": "native-mobile", "route": "Search detail > Posts and comments > original Moment/comment > Search return"}
+  ],
+  "required_gates": [
+    "social-content-search-contract",
+    "social-content-search-desktop-native-e2e",
+    "social-content-search-mobile-native-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "Public source intersects kinds and scope, requires authentication and never reads private rows",
+      "Private source searches only acquired authorized projections inside the original SQLCipher owner",
+      "query, hydrate and resolve recheck original current read policy even for unchanged validators",
+      "An unreadable parent suppresses every comment and exact old anchors do not require scanning the first page",
+      "Every operation has a shared deadline and cancellation; paging remains query, actor and source-session bound"
+    ],
+    "visible": [
+      "A submitted query can show mixed messages, public posts/comments and acquired private posts/comments with explicit source coverage",
+      "Messages and Posts and comments filters isolate their declared kinds",
+      "Opening a post or independent historical comment focuses the exact original target",
+      "Return preserves query, filter, selection and list position after current read validation",
+      "Delete, revoke or block removes affected source content and makes an old result reference unavailable",
+      "An unavailable Social source leaves successful Messaging results usable and reports incomplete coverage",
+      "Logout, account switch and background concealment prevent stale private result publication"
+    ]
+  },
+  "negative": [
+    "No private plaintext mirror, independent read authority, parallel Social Search subserver or arbitrary URL resolver",
+    "No public result suggestions before explicit submission",
+    "No offline Social read lease inferred from a PostgreSQL observation or successful response",
+    "No prototype, source-only, Harness-only or API-only substitute for required native UI query/open/return proof",
+    "Unrecovered private history, Federation-wide Search, Ask, physical-device behavior and field performance remain outside this claim"
+  ]
+}

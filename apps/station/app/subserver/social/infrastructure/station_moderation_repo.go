@@ -104,24 +104,53 @@ func (r *stationModerationRepository) IsBlockedStation(
 ) (bool, error) {
 	stationDomain = strings.TrimSpace(stationDomain)
 	stationPeerID = strings.TrimSpace(stationPeerID)
-	if stationDomain == "" && stationPeerID == "" {
-		return false, nil
+	domains, peers, err := r.BlockedStations(ctx, []string{stationDomain}, []string{stationPeerID})
+	return domains[stationDomain] || peers[stationPeerID], err
+}
+
+func (r *stationModerationRepository) BlockedStations(
+	ctx context.Context, domains, peerIDs []string,
+) (map[string]bool, map[string]bool, error) {
+	blockedDomains, blockedPeers := make(map[string]bool), make(map[string]bool)
+	domains, peerIDs = nonemptyStationKeys(domains), nonemptyStationKeys(peerIDs)
+	if len(domains)+len(peerIDs) == 0 {
+		return blockedDomains, blockedPeers, nil
 	}
 	q := r.db.WithContext(ctx).
 		Model(&db.SocialStationModerationPolicy{}).
 		Where("kind = ?", string(domain.StationModerationPolicyKindBlock))
-	if stationDomain != "" && stationPeerID != "" {
-		q = q.Where("station_domain = ? OR station_peer_id = ?", stationDomain, stationPeerID)
-	} else if stationDomain != "" {
-		q = q.Where("station_domain = ?", stationDomain)
+	if len(domains) > 0 && len(peerIDs) > 0 {
+		q = q.Where("station_domain IN ? OR station_peer_id IN ?", domains, peerIDs)
+	} else if len(domains) > 0 {
+		q = q.Where("station_domain IN ?", domains)
 	} else {
-		q = q.Where("station_peer_id = ?", stationPeerID)
+		q = q.Where("station_peer_id IN ?", peerIDs)
 	}
-	var count int64
-	if err := q.Count(&count).Error; err != nil {
-		return false, err
+	var rows []db.SocialStationModerationPolicy
+	if err := q.Select("station_domain", "station_peer_id").Find(&rows).Error; err != nil {
+		return nil, nil, err
 	}
-	return count > 0, nil
+	for _, row := range rows {
+		if row.StationDomain != "" {
+			blockedDomains[row.StationDomain] = true
+		}
+		if row.StationPeerID != "" {
+			blockedPeers[row.StationPeerID] = true
+		}
+	}
+	return blockedDomains, blockedPeers, nil
+}
+
+func nonemptyStationKeys(keys []string) []string {
+	out := make([]string, 0, len(keys))
+	seen := make(map[string]bool)
+	for _, key := range keys {
+		if key = strings.TrimSpace(key); key != "" && !seen[key] {
+			seen[key] = true
+			out = append(out, key)
+		}
+	}
+	return out
 }
 
 func (r *stationModerationRepository) ListBlockedStations(ctx context.Context) (map[string]*domain.StationModerationPolicy, error) {

@@ -119,6 +119,7 @@ export type StationTransportOperation =
     post_id: string;
     cursor?: string;
     limit: number;
+    anchor_comment_id?: string;
   }
   | {
     operationId: 'moments_comment_create';

@@ -470,12 +470,30 @@ func validateControlBinding(
 	declarationDigest string,
 	binding ResetInvocationBinding,
 ) error {
-	expectedTask, allowed := expectedResetTask(planID, intent, profileID)
-	if !allowed || taskID != expectedTask {
+	if strings.HasSuffix(strings.ToLower(profileID), "stable") {
 		return resetError(
 			ResetCodeUnauthorizedTarget,
-			"reset intent, profile, and task are not an accepted combination",
+			"stable profiles cannot be reset",
 		)
+	}
+	// A planless development reset derives authority from the exact OS-held
+	// Profile capability. Task and declaration are audit metadata only.
+	if planID == "" {
+		if intent != ResetIntentSchemaActivation ||
+			validateResetIdentifiers(taskID) != nil {
+			return resetError(
+				ResetCodeUnauthorizedTarget,
+				"development reset requires schema activation and a canonical audit task",
+			)
+		}
+	} else {
+		expectedTask, allowed := expectedResetTask(planID, intent, profileID)
+		if !allowed || taskID != expectedTask {
+			return resetError(
+				ResetCodeUnauthorizedTarget,
+				"reset intent, profile, and task are not an accepted combination",
+			)
+		}
 	}
 	expectedEnvironment, expectedScope, allowed := expectedResetTarget(profileID)
 	if !allowed ||
@@ -551,6 +569,8 @@ func expectedResetTask(
 
 func expectedResetTarget(profileID string) (string, string, bool) {
 	switch profileID {
+	case "three":
+		return "station-three", "station-three-social-private", true
 	case "four":
 		return "station-four", "station-four-social-private", true
 	case "chat-native-disposable":

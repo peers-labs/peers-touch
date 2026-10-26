@@ -1782,6 +1782,8 @@ pub struct SocialGetCommentsInput {
     pub cursor: Option<String>,
     #[serde(default)]
     pub limit: Option<i32>,
+    #[serde(default)]
+    pub anchor_comment_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

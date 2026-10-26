@@ -1,5 +1,6 @@
 pub mod adapter;
 pub(crate) mod private_reaction;
+pub mod search;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -219,6 +220,8 @@ pub struct PrivateSocialCommentListInput {
     post_id: String,
     #[serde(default)]
     cursor: String,
+    #[serde(default)]
+    anchor_comment_id: String,
     #[serde(default = "default_comment_limit")]
     limit: u32,
 }
@@ -751,13 +754,41 @@ impl PrivateSocialEngine {
         activation_generation: u64,
         post_id: &str,
         cursor: &str,
+        anchor_comment_id: &str,
         limit: u32,
     ) -> Result<PrivateCommentPage, String> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        self.ensure_activation_generation(activation_generation)?;
+        self.ensure_current()?;
+        if !anchor_comment_id.is_empty()
+            && (!cursor.is_empty()
+                || limit == 0
+                || limit > 100
+                || !crate::secure_content::receiver::canonical_identifier(post_id)
+                || !crate::secure_content::receiver::canonical_identifier(anchor_comment_id))
+        {
+            return Err("private Comment anchor window input is invalid".into());
+        }
+        if !anchor_comment_id.is_empty() {
+            let transport = NativeSocialTransport::for_search_read(
+                self.session.clone(),
+                Zeroizing::new(self.session.access_token().to_string()),
+                deadline,
+            )?;
+            return crate::secure_content::private_comment::list_acquired_anchor(
+                self.store.as_ref(),
+                &transport,
+                activation_generation,
+                post_id,
+                anchor_comment_id,
+                limit,
+                deadline,
+            );
+        }
         let _operation = self
             .operation_lock
             .lock()
             .map_err(|_| "private Social operation lock poisoned".to_string())?;
-        self.ensure_activation_generation(activation_generation)?;
         self.ensure_current()?;
         let transport = NativeSocialTransport::new(self.session.clone())?;
         list_private_comments(
@@ -1821,6 +1852,7 @@ pub fn social_private_comments(
             input.activation_generation,
             &input.post_id,
             &input.cursor,
+            &input.anchor_comment_id,
             input.limit,
         )
         .map_err(MobileError::social)
@@ -1984,6 +2016,7 @@ fn revoked_private_moment_projection(
 ) -> PrivateMomentReadProjection {
     PrivateMomentReadProjection {
         post_id: post_id.to_string(),
+        authority_namespace: String::new(),
         content_id: format!("unavailable:{post_id}"),
         generation: "0".to_string(),
         author_ptid: String::new(),

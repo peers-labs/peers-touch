@@ -6,7 +6,7 @@ from html.parser import HTMLParser
 from tooling.acceptance.core import ArtifactRef, ArtifactSession, EvidenceStore, REPO_ROOT
 from tooling.acceptance.gates.chat.device_search_runner import (
     GATE_ID, JOURNEY_ID, REQUIRED_ASSERTIONS, REQUIRED_STEPS, RESULT_ASSERTIONS,
-    UI_ASSERTIONS, read_counts,
+    UI_ASSERTIONS, read_counts, stable_search_geometry,
 )
 from tooling.acceptance.gates.chat.native_two_client_e2e import load_report, require, validate_report
 
@@ -47,8 +47,8 @@ def validate_account_scope(search: dict) -> None:
         "account isolation requires authoritative Bob identity in the receiving window",
     )
     require(
-        scope.get("emptyQuery") is True and bool(before.get("readScope"))
-        and bool(after.get("readScope")) and before["readScope"] != after["readScope"]
+        scope.get("emptyQuery") is True and bool(before.get("partition"))
+        and bool(after.get("partition")) and before["partition"] != after["partition"]
         and scope.get("originalPid") == scope.get("currentPid")
         and isinstance(scope.get("currentPid"), int) and scope["currentPid"] > 0,
         "account isolation must clear the query and replace scope in the same native process",
@@ -76,13 +76,40 @@ def validate_continuity(search: dict) -> None:
         frame.get("rows") == baseline["rows"] and frame.get("marks") == baseline["marks"]
         for frame in pending
     ), "pending draft must retain the prior rows and highlight query")
-    require(all(
-        isinstance(frame.get(region), dict)
-        and all(isinstance(frame[region].get(axis), (int, float))
-                and abs(frame[region][axis] - baseline[region][axis]) <= 1
-                for axis in ("x", "y", "width", "height"))
-        for frame in frames for region in ("field", "body")
-    ), "continuity must not move or resize the field or list")
+    require(stable_search_geometry(frames),
+            "continuity must not move or resize the panel, field, list or footer")
+
+
+def validate_geometry(search: dict) -> None:
+    samples = search.get("geometry")
+    require(isinstance(samples, list) and 1 < len(samples) <= 200,
+            "Search requires bounded initial and settled geometry observations")
+    require(stable_search_geometry(samples), "Search geometry changed across native UI states")
+    for name, evidence in search["ui"].items():
+        rendering = evidence["rendering"]
+        if rendering.get("searchOpen"):
+            require({"name": name, **rendering.get("geometry", {})} in samples,
+                    f"{name} geometry must match its captured native frame")
+    responsive = search.get("responsiveGeometry")
+    require(isinstance(responsive, list) and len(responsive) == 2,
+            "Search requires wide and short native-window observations")
+    for observation, name, width, height in zip(
+        responsive, ("wide", "short"), (1200, 860), (800, 640),
+    ):
+        require(observation.get("name") == name, "unexpected native resize observation")
+        for state in ("results", "empty"):
+            frame = observation.get(state, {})
+            require(frame.get("painted") is True and frame.get("busy") is False
+                    and frame.get("loading") is False,
+                    f"{name} {state} requires a settled painted native frame")
+            require(frame.get("geometry", {}).get("viewport") == {
+                "width": width, "height": height,
+            }, f"{name} must use the actual requested viewport")
+            require({"name": f"{name}_{state}", **frame.get("geometry", {})} in samples,
+                    f"{name} {state} must participate in geometry comparison")
+        require(observation["results"]["resultCount"] > 0
+                and observation["empty"]["resultCount"] == 0,
+                f"{name} must compare real results with a completed empty query")
 
 
 def validate_search_report(report: dict, source_ref: ArtifactRef, store: EvidenceStore) -> None:
@@ -107,8 +134,9 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
         if rendering.get("searchOpen"):
             require(
                 "prepare" not in rendering.get("modalClass", "")
+                and rendering.get("motionActive") is False
                 and float(rendering.get("opacity", "0")) >= 0.99,
-                f"{name} cannot use an invisible modal animation frame",
+                f"{name} cannot use an invisible or moving modal animation frame",
             )
         for suffix in ("screenshot", "dom"):
             ref = ArtifactRef.from_dict(ui[name].get(suffix))
@@ -162,6 +190,7 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
     )
     validate_account_scope(search)
     validate_continuity(search)
+    validate_geometry(search)
     resources = search.get("resources", {})
     require(bool(resources.get("messageId")) and bool(resources.get("replyId")), "real message IDs required")
     require(len(set(resources.get("fillerIds", []))) == 55, "history must exceed the latest window")

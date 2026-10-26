@@ -2,15 +2,19 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import tempfile
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 
+from tooling.acceptance import search_capture
 from tooling.acceptance.core import AcceptanceGate, GateError
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD, async_harness, is_native_tauri_url, selected_native_runtime,
@@ -25,7 +29,7 @@ UI_ASSERTIONS = {
     "chinese_search", "attachment_filename", "historical_open", "thread_open",
     "pagination",
     "repeat_cache", "reopen_cache", "backspace_cache", "return_cache",
-    "input_continuity",
+    "input_continuity", "responsive_geometry",
     "explicit_refresh", "edit_invalidation", "hide_invalidation",
     "functions_navigation", "empty_state", "invalid_query_recovery",
     "logout_clears_search", "same_window_account_isolation",
@@ -36,6 +40,7 @@ RESULT_ASSERTIONS = UI_ASSERTIONS - {
 }
 REQUIRED_ASSERTIONS = UI_ASSERTIONS | {
     "native_runtime", "source_build_runtime_identity", "actor_isolation",
+    "search_geometry_stability",
     "forged_authority_denied", "stale_content_denied", "hidden_reference_denied",
     "previous_session_cursor_denied", "sender_session_revoked", "resources_released",
 }
@@ -45,6 +50,49 @@ REQUIRED_STEPS = {
     "conversation.open", "message.seed", "search.sender_session_revoked",
     "search.account_scope_seed", "search.account_scope_result",
 } | {f"search.{name}" for name in UI_ASSERTIONS}
+
+GEOMETRY_REGIONS = ("panel", "field", "intents", "body", "footer", "coverage", "actions")
+
+
+def stable_search_geometry(samples: list[dict[str, Any]]) -> bool:
+    """Compare real painted regions only within the same native viewport."""
+    baselines: dict[tuple[float, float], dict[str, Any]] = {}
+    if not samples:
+        return False
+    for sample in samples:
+        viewport = sample.get("viewport", {})
+        if not isinstance(viewport, dict):
+            return False
+        size = tuple(viewport.get(axis) for axis in ("width", "height"))
+        if not all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                   and math.isfinite(value) and value > 0 for value in size):
+            return False
+        baseline = baselines.setdefault(size, sample)
+        for region in GEOMETRY_REGIONS:
+            rect = sample.get(region, {})
+            reference = baseline.get(region, {})
+            if not isinstance(rect, dict) or not isinstance(reference, dict):
+                return False
+            for axis in ("x", "y", "width", "height"):
+                value, original = rect.get(axis), reference.get(axis)
+                if not isinstance(value, (int, float)) or isinstance(value, bool) \
+                        or not math.isfinite(value) or not isinstance(original, (int, float)) \
+                        or abs(value - original) > 1:
+                    return False
+            if rect["width"] <= 0 or rect["height"] <= 0:
+                return False
+        panel = sample["panel"]
+        if panel["x"] < 0 or panel["y"] < 0 \
+                or panel["x"] + panel["width"] > size[0] + 1 \
+                or panel["y"] + panel["height"] > size[1] + 1:
+            return False
+        for region in GEOMETRY_REGIONS[1:]:
+            rect = sample[region]
+            if rect["x"] < panel["x"] - 1 or rect["y"] < panel["y"] - 1 \
+                    or rect["x"] + rect["width"] > panel["x"] + panel["width"] + 1 \
+                    or rect["y"] + rect["height"] > panel["y"] + panel["height"] + 1:
+                return False
+    return True
 
 
 def read_counts(lines: list[str]) -> dict[str, int]:
@@ -65,17 +113,19 @@ def read_counts(lines: list[str]) -> dict[str, int]:
 
 class DeviceSearchGate(NativeTwoClientGate):
     gate_id = GATE_ID
+    journey_id = JOURNEY_ID
     phase = "chat-device-search"
     bom = ("SEARCH-DEVICE-FIND-OPEN",)
     spec = ("chat-device-search",)
+    history_count = 55
 
     def __init__(self) -> None:
-        selected = selected_native_runtime(GATE_ID)
+        selected = selected_native_runtime(self.gate_id)
         if selected is None or selected.binding.cell_id != "desktop-macos-native":
             raise GateError("Search requires the selected native macOS runtime")
         super().__init__(
             manifest=selected.manifest, actor_manifest=selected.actor_manifest,
-            runtime_binding=selected.binding, gate_id=GATE_ID, journey_id=JOURNEY_ID,
+            runtime_binding=selected.binding, gate_id=self.gate_id, journey_id=self.journey_id,
         )
         # Bob sends the first content; creation must populate his native owner
         # before Alice can receive and project the conversation.
@@ -108,9 +158,12 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def surface(self) -> dict[str, Any]:
         return self.receiver.execute_script("""
+            const watch = window.__PT_SEARCH_CAPTURE_WATCH__;
+            if (watch && watch.observer.takeRecords().length) watch.revision += 1;
             const field = document.querySelector('.pt-search-field');
             const modal = field?.closest('.ant-modal');
             const result = {
+                domRevision: watch?.revision || 0,
                 searchOpen: !!field, painted: !field,
                 visibilityState: document.visibilityState,
                 modalClass: modal?.className || '',
@@ -126,19 +179,34 @@ class DeviceSearchGate(NativeTwoClientGate):
             if (!field || !modal) return result;
             const rect = field.getBoundingClientRect();
             result.bounds = rect.toJSON();
+            result.geometry = {
+                viewport: {width: innerWidth, height: innerHeight},
+                ...Object.fromEntries(Object.entries({
+                    panel: '.ant-modal-container', field: '.pt-search-field',
+                    intents: '.pt-search-intents', body: '.pt-search-body',
+                    footer: '.pt-search-footer', coverage: '.pt-search-coverage',
+                    actions: '.pt-search-footer-actions',
+                }).map(([region, selector]) => [
+                    region, modal.querySelector(selector)?.getBoundingClientRect().toJSON(),
+                ])),
+            };
             result.opacity = getComputedStyle(modal).opacity;
+            result.motionActive = false;
             let visible = rect.width > 0 && rect.height > 0
                 && rect.left >= 0 && rect.top >= 0
                 && rect.right <= innerWidth && rect.bottom <= innerHeight;
             for (let node = field; node && visible; node = node.parentElement) {
                 const style = getComputedStyle(node);
+                result.motionActive ||= node.getAnimations().some(
+                    animation => animation.pending || animation.playState === 'running',
+                );
                 visible = style.display !== 'none' && style.visibility === 'visible'
                     && Number(style.opacity) >= 0.99;
             }
             const hit = document.elementFromPoint(
                 rect.left + rect.width / 2, rect.top + rect.height / 2,
             );
-            result.painted = visible && !modal.className.includes('prepare')
+            result.painted = visible && !result.motionActive && !modal.className.includes('prepare')
                 && !!hit && modal.contains(hit);
             return result;
         """)
@@ -163,18 +231,26 @@ class DeviceSearchGate(NativeTwoClientGate):
                 '[data-pt-primary-nav="search"] [role="button"]', 20,
             ).click()
         self.field()
-        self.wait_surface()
+        self.record_geometry("surface_ready", self.wait_surface())
         self.assert_condition(
             "search_singleton",
             len(self.receiver.find_elements(".pt-search-field input")) == 1,
         )
+
+    def record_geometry(self, name: str, rendering: dict[str, Any]) -> None:
+        if not rendering.get("searchOpen"):
+            return
+        samples = self.report.runtime["search"].setdefault("geometry", [])
+        samples.append({"name": name, **rendering.get("geometry", {})})
+        self.assert_condition("search_geometry_stability", stable_search_geometry(samples),
+                              f"painted Search geometry across {len(samples)} observations")
 
     def settled(self) -> None:
         self.wait_js(
             "document.querySelector('.pt-search-field input')"
             " && document.querySelector('.pt-search-body')?.getAttribute('aria-busy') === 'false'"
             " && (document.querySelector('.pt-search-error')"
-            " || document.querySelector('.pt-search-intents button:nth-child(2)')?.getAttribute('aria-selected') === 'true'"
+            " || document.querySelector('[data-search-filter=\"functions\"]')?.getAttribute('aria-selected') === 'true'"
             " || document.querySelector('.pt-search-body')?.dataset.displayedQuery"
             " === document.querySelector('.pt-search-field input')?.value.trim())",
             "settled Search UI",
@@ -199,9 +275,9 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def submit(self, query: str) -> None:
         self.open_search()
-        all_results = self.receiver.find_elements(".pt-search-intents button")[0]
-        if all_results.get_attribute("aria-selected") != "true":
-            all_results.click()
+        messages = self.receiver.find_element('[data-search-filter="messages"]')
+        if messages.get_attribute("aria-selected") != "true":
+            messages.click()
         self.fill(query)
         self.press(Keys.ENTER)
         self.settled()
@@ -212,8 +288,42 @@ class DeviceSearchGate(NativeTwoClientGate):
             ".map(row => row.innerText).join('\\n');",
         ))
 
+    def retain_pagination_failure(self) -> None:
+        """Read the failed presentation without issuing another native query."""
+        diagnostic: dict[str, Any] = {"assertionPassed": False}
+        self.report.runtime["search"]["paginationFailure"] = diagnostic
+        try:
+            diagnostic["surface"] = self.receiver.execute_script("""
+                const body = document.querySelector('.pt-search-body');
+                const more = document.querySelector('.pt-search-more');
+                return {
+                    rowCount: document.querySelectorAll('.pt-search-row').length,
+                    busy: body?.getAttribute('aria-busy') === 'true',
+                    error: !!document.querySelector('.pt-search-error'),
+                    loading: !!document.querySelector('.pt-search-status'),
+                    hasMoreControl: !!more, moreDisabled: more?.disabled ?? null,
+                    visibilityState: document.visibilityState,
+                };
+            """)
+            view = async_harness(self.receiver, "deviceSearchPresentation", {}, timeout=5)
+            page = view.get("page") or {}
+            diagnostic["presentation"] = {
+                "open": view.get("open"), "status": view.get("status"),
+                "filter": view.get("filter"), "rowCount": len(page.get("items", [])),
+                "hasMore": page.get("hasMore", False),
+                "nextCursor": page.get("nextCursor", ""),
+                "sources": page.get("sources", []), "coverage": page.get("coverage", []),
+            }
+            diagnostic["screenshot"] = self.save_screenshot(self.receiver, "pagination-failure")
+            diagnostic["dom"] = self.save_dom(self.receiver, "pagination-failure")
+        except Exception as error:
+            # A diagnostic failure must never replace the original product failure.
+            diagnostic["errorType"] = type(error).__name__
+
     def visible(self, name: str, predicate: Any, detail: Any = None) -> None:
         def observe() -> None:
+            deadline = time.monotonic() + 30
+            self.receiver.execute_script(search_capture.CAPTURE_START_JS)
             with tempfile.TemporaryDirectory(prefix="search-capture-") as directory:
                 screenshot_path = Path(directory) / "frame.png"
                 dom_path = Path(directory) / "frame.html"
@@ -222,8 +332,16 @@ class DeviceSearchGate(NativeTwoClientGate):
                     rendering = self.surface()
                     if not rendering["painted"] or rendering["loading"] or rendering["busy"] or not predicate():
                         return None
+                    painted = self.receiver.execute_async_script(
+                        search_capture.CAPTURE_PAINT_JS,
+                        max(1, int((deadline - time.monotonic()) * 1000)),
+                    )
+                    if not painted or time.monotonic() >= deadline:
+                        raise GateError(f"{name} native paint frames timed out")
                     self.receiver.save_screenshot(screenshot_path)
                     dom_path.write_text(self.receiver.get_page_source())
+                    if time.monotonic() >= deadline:
+                        raise GateError(f"{name} stable native capture timed out")
                     after = self.surface()
                     matched = bool(predicate())
                     if after != rendering or not matched:
@@ -241,12 +359,15 @@ class DeviceSearchGate(NativeTwoClientGate):
                         "dom": self.save_dom(self.receiver, f"{name}-capture-failure"),
                     }
                     raise
+                finally:
+                    self.receiver.execute_script(search_capture.CAPTURE_END_JS)
                 screenshot = self.report.add_evidence_file(
                     f"{name}-screenshot", screenshot_path, destination_dir=self.evidence_dir,
                 )
                 dom = self.report.add_evidence_file(
                     f"{name}-dom", dom_path, destination_dir=self.evidence_dir,
                 )
+            self.record_geometry(name, rendering)
             self.assert_condition(name, rendering["assertionPassed"], json.dumps(detail))
             self.report.runtime["search"]["ui"][name] = {
                 "actor": "alice", "screenshot": screenshot, "dom": dom,
@@ -254,6 +375,34 @@ class DeviceSearchGate(NativeTwoClientGate):
                 "query": rendering["query"],
             }
         self.step(f"search.{name}", observe, "alice")
+
+    def reconcile_continuity(self, name: str) -> None:
+        root, row = ".pt-search-body", ".pt-search-row"
+        before = self.receiver.execute_script(search_capture.SEARCH_CONTINUITY_START_JS, root, row)
+        try:
+            if not before or not before["items"]:
+                raise GateError("Search continuity needs the current real result page")
+            self.wait_js(
+                "performance.now() - window.__PT_SEARCH_CONTINUITY__.started >= 2100",
+                "one scheduled Search reconcile interval",
+            )
+            self.settled()
+            after = self.receiver.execute_script(search_capture.SEARCH_CONTINUITY_END_JS, root, row)
+            self.report.runtime["search"].setdefault("scheduledContinuity", {})[name] = {
+                "before": before, "after": after,
+            }
+            self.assert_condition(name + "_scheduled_continuity", (
+                after["elapsedMs"] >= 2100 and after["sameNodes"]
+                and after["items"] == before["items"]
+                and after["anchor"] == before["anchor"]
+                and abs(after["scrollTop"] - before["scrollTop"]) <= 1
+                and (before["anchorTop"] is None or (
+                    after["anchorTop"] is not None
+                    and abs(after["anchorTop"] - before["anchorTop"]) <= 1
+                ))
+            ))
+        finally:
+            self.receiver.execute_script("delete window.__PT_SEARCH_CONTINUITY__;")
 
     def counts(self) -> dict[str, int]:
         path = Path(self.receiver.log_path)
@@ -289,7 +438,7 @@ class DeviceSearchGate(NativeTwoClientGate):
 
     def resolve(self, resource: dict[str, Any]) -> dict[str, Any]:
         return async_harness(self.receiver, "deviceSearchResolve", {
-            "resource": resource, "requestId": uuid.uuid4().hex,
+            "resource": resource, "sourceId": "device.messaging", "requestId": uuid.uuid4().hex,
         })
 
     def message_ref(self) -> dict[str, Any]:
@@ -318,10 +467,10 @@ class DeviceSearchGate(NativeTwoClientGate):
         if not self.message or not self.reply:
             raise GateError("Search seed requires real committed message identities")
         filler = async_harness(self.clients["bob"], "sendInteractionMessageBatch", {
-            **payload, "prefix": f"filler-{self.token}", "count": 55,
+            **payload, "prefix": f"filler-{self.token}", "count": self.history_count,
         }, timeout=180)
-        if len(filler.get("messageIds", [])) != 55:
-            raise GateError("Search history must exceed the latest message window")
+        if len(filler.get("messageIds", [])) != self.history_count:
+            raise GateError("Search history fixture did not commit every required message")
         # Sender commits do not prove the receiver has synchronized the batch.
         # This native-owner receipt is Fixture readiness; Search still uses UI.
         self.report.runtime["search"]["resources"].update({
@@ -431,6 +580,12 @@ class DeviceSearchGate(NativeTwoClientGate):
                     marks: [...document.querySelectorAll('.pt-search-body mark')].map(mark => mark.textContent),
                     field: document.querySelector('.pt-search-field')?.getBoundingClientRect().toJSON(),
                     body: body?.getBoundingClientRect().toJSON(),
+                    viewport: {width: innerWidth, height: innerHeight},
+                    panel: document.querySelector('.pt-search-modal .ant-modal-container')?.getBoundingClientRect().toJSON(),
+                    intents: document.querySelector('.pt-search-intents')?.getBoundingClientRect().toJSON(),
+                    footer: document.querySelector('.pt-search-footer')?.getBoundingClientRect().toJSON(),
+                    coverage: document.querySelector('.pt-search-coverage')?.getBoundingClientRect().toJSON(),
+                    actions: document.querySelector('.pt-search-footer-actions')?.getBoundingClientRect().toJSON(),
                 });
                 requestAnimationFrame(sample);
             };
@@ -451,11 +606,7 @@ class DeviceSearchGate(NativeTwoClientGate):
             frame["rows"] == baseline["rows"] and frame["marks"] == baseline["marks"]
             for frame in pending
         )
-        geometry = all(
-            abs(frame[region][axis] - baseline[region][axis]) <= 1
-            for frame in frames for region in ("field", "body")
-            for axis in ("x", "y", "width", "height")
-        )
+        geometry = stable_search_geometry(frames)
         self.report.runtime["search"]["continuity"] = {"frames": frames}
         self.visible("input_continuity", lambda: (
             retained and geometry and self.surface()["displayedQuery"] == self.query
@@ -490,6 +641,52 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.denied("hidden_reference_denied", fresh, 8)
         self.report.runtime["search"]["resources"]["hiddenRef"] = fresh
 
+    def prove_responsive_geometry(self) -> None:
+        driver = self.receiver.driver
+        original = driver.get_window_rect()
+        viewport = self.receiver.execute_script(
+            "return {width: innerWidth, height: innerHeight, scale: devicePixelRatio};",
+        )
+        scale = viewport["scale"]
+        chrome = {
+            axis: original[axis] - round(viewport[axis] * scale)
+            for axis in ("width", "height")
+        }
+        observations = []
+        self.report.runtime["search"]["responsiveGeometry"] = observations
+        try:
+            for name, width, height in (("wide", 1200, 800), ("short", 860, 640)):
+                driver.set_window_size(round(width * scale) + chrome["width"],
+                                       round(height * scale) + chrome["height"])
+                self.wait_js(f"innerWidth === {width} && innerHeight === {height}",
+                             f"actual {name} native viewport", timeout=10)
+                self.submit(self.query)
+                before = self.wait_surface()
+                self.record_geometry(name + "_results", before)
+                self.fill(f"geometry-empty-{self.token}")
+                after = self.wait_surface()
+                self.record_geometry(name + "_empty", after)
+                observations.append({
+                    "name": name, "results": before, "empty": after,
+                    "screenshot": self.save_screenshot(self.receiver, name + "-geometry"),
+                    "dom": self.save_dom(self.receiver, name + "-geometry"),
+                })
+                self.assert_condition("search_geometry_stability", (
+                    self.query in before["resultText"]
+                    and after["resultCount"] == 0
+                    and "geometry-empty-" in after["bodyText"]
+                ))
+        finally:
+            driver.set_window_rect(**original)
+            self.wait_js(
+                f"innerWidth === {viewport['width']} && innerHeight === {viewport['height']}",
+                "restored original native viewport", timeout=10,
+            )
+        self.submit(self.query)
+        self.visible("responsive_geometry", lambda: (
+            len(observations) == 2 and self.query in self.rows()
+        ))
+
     def prove_states(self) -> None:
         self.fill(f"empty-{uuid.uuid4().hex}")
         self.visible("empty_state", lambda: bool(self.receiver.find_elements(".pt-search-empty")))
@@ -501,12 +698,12 @@ class DeviceSearchGate(NativeTwoClientGate):
             self.token in self.rows() and not self.receiver.find_elements(".pt-search-error")
         ))
         self.fill("隐私")
-        self.receiver.find_elements(".pt-search-intents button")[1].click()
+        self.receiver.find_element('[data-search-filter="functions"]').click()
         self.receiver.find_element(".pt-search-row", 20).click()
         self.wait_js("!!document.querySelector('[data-pt-section-host=\"security\"]')", "real Settings")
         self.visible("functions_navigation", lambda: not self.receiver.find_elements('[data-page="search"]'))
 
-    def prove_account_scope(self) -> None:
+    def prove_account_scope(self, observe_account: Callable[[], None] | None = None) -> None:
         client = self.receiver
         self.submit(f"线程 {self.token}")
         self.wait_js(
@@ -570,6 +767,8 @@ class DeviceSearchGate(NativeTwoClientGate):
             ] = denied
             self.assert_condition("previous_session_cursor_denied",
                                   denied.get("accepted") is False and denied.get("errorCode") == 5)
+            if observe_account is not None:
+                observe_account()
             # This Bob device has not restored the original sender's history.
             # Search must prove content acquired by its own Messaging owner.
             query = f"账号切换 {self.token}"
@@ -603,7 +802,7 @@ class DeviceSearchGate(NativeTwoClientGate):
 
             self.step("search.account_scope_result", observe_current_device, "alice")
             self.visible("same_window_account_isolation", lambda: (
-                empty_query and before["readScope"] != after["readScope"]
+                empty_query and before["partition"] != after["partition"]
                 and identity.get("actorPtid") == self.ptids["bob"]
                 and client.process_id == original_pid and query in self.rows()
             ))
@@ -637,17 +836,23 @@ class DeviceSearchGate(NativeTwoClientGate):
             self.wait_js("!document.querySelector('.pt-search-field')", "Search closed")
             self.conversation = self.step("conversation.open", self.open_conversation)
             self.step("message.seed", self.seed, "bob")
-            self.submit(f"filler-{self.token}")
-            self.wait_js("document.querySelectorAll('.pt-search-row').length === 20",
-                         "first real Search page", timeout=90)
-            self.receiver.find_element(".pt-search-more", 20).click()
-            self.wait_js("document.querySelectorAll('.pt-search-row').length === 40",
-                         "second real Search page")
-            self.receiver.find_element(".pt-search-more", 20).click()
-            self.wait_js("document.querySelectorAll('.pt-search-row').length === 55",
-                         "all real filler messages received", timeout=90)
+            try:
+                self.submit(f"filler-{self.token}")
+                self.wait_js("document.querySelectorAll('.pt-search-row').length === 20",
+                             "first real Search page", timeout=90)
+                self.receiver.find_element(".pt-search-more", 20).click()
+                self.wait_js("document.querySelectorAll('.pt-search-row').length === 40",
+                             "second real Search page")
+                self.receiver.find_element(".pt-search-more", 20).click()
+                self.wait_js("document.querySelectorAll('.pt-search-row').length === 55",
+                             "all real filler messages received", timeout=90)
+            except GateError:
+                self.retain_pagination_failure()
+                raise
             self.visible("pagination", lambda: len(self.receiver.find_elements(".pt-search-row")) == 55)
+            self.reconcile_continuity("pagination")
             self.prove_cache()
+            self.prove_responsive_geometry()
             self.open_target("historical_open", self.query, self.message, "data-message-ulid")
             self.open_target("thread_open", f"线程 {self.token}", self.reply, "data-thread-message-id")
             self.upload()

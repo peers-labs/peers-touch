@@ -494,10 +494,44 @@ message GetMomentCommentResourceResponse {
   CommentResource comment = 1;
 }
 
+// Read authority for retained original-domain projections. This endpoint
+// carries no plaintext, encrypted payload, key material or Search cursor.
+message MomentReadPolicyTarget {
+  string item_id = 1;
+  string post_id = 2;
+  // Empty checks the post; a comment always checks its parent as well.
+  string comment_id = 3;
+}
+
+enum MomentReadDecision {
+  MOMENT_READ_DECISION_UNSPECIFIED = 0;
+  MOMENT_READ_DECISION_READABLE = 1;
+  MOMENT_READ_DECISION_UNAVAILABLE = 2;
+}
+
+message CheckMomentReadPolicyRequest {
+  // Maximum 100 targets, with unique nonempty item IDs.
+  repeated MomentReadPolicyTarget targets = 1;
+}
+
+message MomentReadPolicyOutcome {
+  string item_id = 1;
+  MomentReadDecision decision = 2;
+}
+
+message CheckMomentReadPolicyResponse {
+  // Exactly one outcome for each requested item. A snapshot check does not
+  // grant an offline lease; consumers recheck the original owner on reuse.
+  repeated MomentReadPolicyOutcome outcomes = 1;
+}
+
 message ListMomentCommentsRequest {
   string post_id = 1;
   string cursor = 2;
   uint32 limit = 3;
+  // Mutually exclusive with cursor; reads a bounded original-domain window
+  // containing this comment, after checking both parent and interaction policy.
+  string anchor_comment_id = 4;
 }
 
 message ListMomentCommentsResponse {

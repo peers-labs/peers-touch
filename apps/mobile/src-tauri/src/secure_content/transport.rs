@@ -111,6 +111,8 @@ enum CommitSemantics {
 pub struct NativeSocialTransport {
     session: Arc<NativeSocialSession>,
     client: Client,
+    read_credentials: Option<zeroize::Zeroizing<String>>,
+    read_deadline: Option<std::time::Instant>,
 }
 
 impl NativeSocialTransport {
@@ -118,6 +120,24 @@ impl NativeSocialTransport {
         Ok(Self {
             session,
             client: http_client()?,
+            read_credentials: None,
+            read_deadline: None,
+        })
+    }
+
+    pub(crate) fn for_search_read(
+        session: Arc<NativeSocialSession>,
+        access_token: zeroize::Zeroizing<String>,
+        deadline: std::time::Instant,
+    ) -> Result<Self, String> {
+        if access_token.trim().is_empty() || deadline <= std::time::Instant::now() {
+            return Err("private Social read admission is unavailable".into());
+        }
+        Ok(Self {
+            session,
+            client: http_client()?,
+            read_credentials: Some(access_token),
+            read_deadline: Some(deadline),
         })
     }
 
@@ -408,6 +428,31 @@ impl NativeSocialTransport {
         )
     }
 
+    pub fn check_moment_read_policy(
+        &self,
+        request: &social::CheckMomentReadPolicyRequest,
+    ) -> Result<social::CheckMomentReadPolicyResponse, TransportError> {
+        if request.targets.is_empty() || request.targets.len() > 100 {
+            return Err(local_error(20002));
+        }
+        let mut ids = std::collections::HashSet::new();
+        for target in &request.targets {
+            if target.item_id.is_empty()
+                || !ids.insert(target.item_id.as_str())
+                || !crate::secure_content::receiver::canonical_identifier(&target.post_id)
+                || (!target.comment_id.is_empty()
+                    && !crate::secure_content::receiver::canonical_identifier(&target.comment_id))
+            {
+                return Err(local_error(20002));
+            }
+        }
+        self.post_proto(
+            "/api/v1/social/moments/read-policy",
+            request,
+            CommitSemantics::ReadOnly,
+        )
+    }
+
     pub fn list_moment_comments(
         &self,
         post_id: &str,
@@ -606,13 +651,17 @@ impl NativeSocialTransport {
     where
         Resp: Message + Default,
     {
-        decode_proto_response(
+        let mut http_request =
             with_proto_content_negotiation(self.request(reqwest::Method::POST, path))
-                .body(request.to_vec())
-                .send()
-                .map_err(network_error)?,
-            semantics,
-        )
+                .body(request.to_vec());
+        if let Some(deadline) = self.read_deadline {
+            let remaining = deadline
+                .checked_duration_since(std::time::Instant::now())
+                .filter(|remaining| !remaining.is_zero())
+                .ok_or_else(|| local_error(20008))?;
+            http_request = http_request.timeout(remaining);
+        }
+        decode_proto_response(http_request.send().map_err(network_error)?, semantics)
     }
 
     fn get_proto<Resp>(
@@ -623,7 +672,7 @@ impl NativeSocialTransport {
     where
         Resp: Message + Default,
     {
-        let request = with_proto_content_negotiation(
+        let mut request = with_proto_content_negotiation(
             self.client
                 .request(
                     reqwest::Method::GET,
@@ -631,10 +680,23 @@ impl NativeSocialTransport {
                 )
                 .header(
                     AUTHORIZATION,
-                    format!("Bearer {}", self.session.access_token()),
+                    format!(
+                        "Bearer {}",
+                        self.read_credentials
+                            .as_deref()
+                            .map(|token| token.as_str())
+                            .unwrap_or_else(|| self.session.access_token())
+                    ),
                 )
                 .header("X-Device-ID", &self.session.scope.device_id),
         );
+        if let Some(deadline) = self.read_deadline {
+            let remaining = deadline
+                .checked_duration_since(std::time::Instant::now())
+                .filter(|remaining| !remaining.is_zero())
+                .ok_or_else(|| local_error(20008))?;
+            request = request.timeout(remaining);
+        }
         decode_proto_response(
             request.send().map_err(network_error)?,
             CommitSemantics::ReadOnly,
@@ -653,7 +715,13 @@ impl NativeSocialTransport {
             )
             .header(
                 AUTHORIZATION,
-                format!("Bearer {}", self.session.access_token()),
+                format!(
+                    "Bearer {}",
+                    self.read_credentials
+                        .as_deref()
+                        .map(|token| token.as_str())
+                        .unwrap_or_else(|| self.session.access_token())
+                ),
             )
             .header("X-Device-ID", &self.session.scope.device_id)
     }
@@ -663,6 +731,45 @@ fn with_proto_content_negotiation(request: RequestBuilder) -> RequestBuilder {
     request
         .header(CONTENT_TYPE, "application/protobuf")
         .header(ACCEPT, "application/protobuf")
+}
+
+pub(crate) fn validated_moment_read_decisions(
+    request: &social::CheckMomentReadPolicyRequest,
+    response: &social::CheckMomentReadPolicyResponse,
+) -> Result<Vec<bool>, String> {
+    let protocol = || "private Social read-policy protocol error".to_string();
+    if request.targets.is_empty()
+        || request.targets.len() > 100
+        || response.outcomes.len() != request.targets.len()
+    {
+        return Err(protocol());
+    }
+    let mut expected = std::collections::HashMap::new();
+    for (index, target) in request.targets.iter().enumerate() {
+        if target.item_id.is_empty() || expected.insert(target.item_id.as_str(), index).is_some() {
+            return Err(protocol());
+        }
+    }
+    let mut decisions = vec![None; request.targets.len()];
+    for outcome in &response.outcomes {
+        let index = *expected
+            .get(outcome.item_id.as_str())
+            .ok_or_else(protocol)?;
+        if decisions[index].is_some() {
+            return Err(protocol());
+        }
+        decisions[index] = Some(
+            match social::MomentReadDecision::try_from(outcome.decision) {
+                Ok(social::MomentReadDecision::Readable) => true,
+                Ok(social::MomentReadDecision::Unavailable) => false,
+                _ => return Err(protocol()),
+            },
+        );
+    }
+    decisions
+        .into_iter()
+        .map(|decision| decision.ok_or_else(protocol))
+        .collect()
 }
 
 pub fn resolve_trusted_station_signing_key(

@@ -199,8 +199,11 @@ func (r *Repository) Claim(
 		if err != nil {
 			return err
 		}
-		if request.ExpectedConsumerEpoch != 0 &&
-			request.ExpectedConsumerEpoch != lane.ActiveConsumerEpoch {
+		recoveringEpoch := request.ExpectedConsumerEpoch != 0 &&
+			request.ExpectedConsumerEpoch != lane.ActiveConsumerEpoch
+		if recoveringEpoch &&
+			(request.ExpectedConsumerEpoch > lane.ActiveConsumerEpoch ||
+				request.ConsumerID != lane.ActiveConsumerID) {
 			return application.NewError(
 				application.ErrorCodeConsumerFenced,
 				"delivery_repository.claim",
@@ -226,6 +229,11 @@ func (r *Repository) Claim(
 		result.ConsumerEpoch = lane.ActiveConsumerEpoch
 		result.LaneHead = lane.NextSequence
 		result.AckedThrough = lane.AckedThrough
+		if recoveringEpoch {
+			// A committed claim response may be lost. Let its still-active
+			// consumer observe the epoch without replaying or changing a lease.
+			return nil
+		}
 
 		var candidates []DeviceQueueItemModel
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).

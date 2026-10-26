@@ -45,6 +45,7 @@ export interface MomentCommentItem {
 
 interface CommentListProps {
   postId: string;
+  targetCommentId?: string;
   comments: MomentCommentItem[];
   loading?: boolean;
   hasMore?: boolean;
@@ -64,6 +65,7 @@ interface CommentListProps {
 
 export function CommentList({
   postId,
+  targetCommentId,
   comments,
   loading,
   hasMore,
@@ -192,7 +194,7 @@ export function CommentList({
       {comments.map((c) => {
         const isMine = !!viewerActorPtid && c.authorPtid === viewerActorPtid;
         return (
-          <MomentCommentRow key={c.id} comment={c}>
+          <MomentCommentRow key={c.id} comment={c} highlighted={c.id === targetCommentId}>
               <Space size={8} style={{ marginTop: 2 }}>
                 <Button
                   size="small"

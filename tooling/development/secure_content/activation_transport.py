@@ -140,6 +140,17 @@ def _remote_command(
     ]
 
 
+def _deployment_environment(budget_seconds: int) -> dict[str, str]:
+    # The parent owns the reset lease. Deployment acquires its own Profile lease
+    # and must not receive descriptor metadata that subprocess closes on exec.
+    environment = {
+        key: value for key, value in os.environ.items()
+        if not key.startswith("PT_MACHINE_LEASE_")
+    }
+    environment["PT_STATION_LEASE_BUDGET_SECONDS"] = str(budget_seconds)
+    return environment
+
+
 class ReviewedSchemaActivationTransport:
     def __init__(
         self,
@@ -379,10 +390,7 @@ class ReviewedSchemaActivationTransport:
             profile.get("PT_STATION_URL"),
             "PT_STATION_URL",
         )
-        command_environment = dict(os.environ)
-        command_environment["PT_STATION_LEASE_BUDGET_SECONDS"] = str(
-            budget_seconds
-        )
+        command_environment = _deployment_environment(budget_seconds)
         completed = self.command_runner(
             ["make", "station"],
             cwd=self.repo_root,
@@ -470,10 +478,7 @@ class ReviewedSchemaActivationTransport:
             "profile_id",
             pattern=IDENTIFIER,
         )
-        command_environment = dict(os.environ)
-        command_environment["PT_STATION_LEASE_BUDGET_SECONDS"] = str(
-            budget_seconds
-        )
+        command_environment = _deployment_environment(budget_seconds)
         selected = self.command_runner(
             ["make", "profile", f"PROFILE={profile_id}"],
             cwd=self.repo_root,

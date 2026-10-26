@@ -46,6 +46,7 @@ type subServer struct {
 	relationshipSvc   *application.RelationshipService
 	statsSvc          *application.StatsService
 	moderationSvc     *application.ModerationService
+	publicSearchSvc   *application.PublicSearchService
 	privateContentSvc *application.PrivateContentService
 	privateObjectSvc  *application.PrivateObjectService
 	database          *gorm.DB
@@ -97,6 +98,13 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	}
 	if err := infrastructure.MigrateInteractionSchema(rds); err != nil {
 		return fmt.Errorf("migrate social interaction schema: %w", err)
+	}
+	if err := infrastructure.MigratePublicSearchSchema(ctx, rds); err != nil {
+		return fmt.Errorf("migrate social public search indexes: %w", err)
+	}
+	s.publicSearchSvc, err = application.NewPublicSearchService(rds)
+	if err != nil {
+		return fmt.Errorf("initialize social public search: %w", err)
 	}
 
 	// Actor identity translation is owned by the persistence adapter.

@@ -509,6 +509,7 @@ export const privateCommentsNative = {
     postId: string;
     cursor?: string;
     limit?: number;
+    anchorCommentId?: string;
   }): Promise<PrivateCommentPage> {
     const limit = Number.isInteger(input.limit) && Number(input.limit) > 0
       ? Math.min(Number(input.limit), 100)
@@ -521,6 +522,7 @@ export const privateCommentsNative = {
         post_id: input.postId,
         cursor: input.cursor ?? '',
         limit,
+        anchor_comment_id: input.anchorCommentId ?? '',
       },
     ));
     if (page.postId !== input.postId) {

@@ -16,17 +16,18 @@
 /// n-grams rather than treated as one alphabetic word.
 fn is_segmented_script(c: char) -> bool {
     // `as u32` ranges are inclusive scalar-value ranges.
-    c.is_alphanumeric() && matches!(u32::from(c),
-        0x3041..=0x3096 |   // hiragana letters
-        0x309D..=0x309F |   // hiragana iteration/digraph letters
-        0x30A1..=0x30FA |   // katakana letters (exclude middle dot)
-        0x30FC..=0x30FF |   // length/iteration/digraph letters
-        0x3400..=0x4DBF |   // CJK Ext A
-        0x4E00..=0x9FFF |   // CJK unified
-        0xAC00..=0xD7AF |   // hangul syllables
-        0xF900..=0xFAFF |   // CJK compatibility ideographs
-        0x20000..=0x2A6DF  // CJK Ext B
-    )
+    c.is_alphanumeric()
+        && matches!(u32::from(c),
+            0x3041..=0x3096 |   // hiragana letters
+            0x309D..=0x309F |   // hiragana iteration/digraph letters
+            0x30A1..=0x30FA |   // katakana letters (exclude middle dot)
+            0x30FC..=0x30FF |   // length/iteration/digraph letters
+            0x3400..=0x4DBF |   // CJK Ext A
+            0x4E00..=0x9FFF |   // CJK unified
+            0xAC00..=0xD7AF |   // hangul syllables
+            0xF900..=0xFAFF |   // CJK compatibility ideographs
+            0x20000..=0x2A6DF  // CJK Ext B
+        )
 }
 
 /// Whether a code point continues a Latin/digit word. ASCII alphanumerics are

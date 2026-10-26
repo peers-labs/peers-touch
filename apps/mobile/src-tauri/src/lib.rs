@@ -34,6 +34,17 @@ pub fn run() {
             let runtime = context.app_handle().state::<MobileMessagingRuntime>();
             messaging::file_access::asset_response(runtime.inner(), context.webview_label(), &request)
         })
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Off)
+                .level_for("search", log::LevelFilter::Debug)
+                .level_for("station-route", log::LevelFilter::Warn)
+                .filter(|metadata| matches!(metadata.target(), "search" | "station-route"))
+                .targets([tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                )])
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_peers_platform_permissions::init())

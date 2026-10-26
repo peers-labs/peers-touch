@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+#[allow(clippy::large_enum_variant)]
 pub mod wire {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.model.search.v1.rs"));
 }
@@ -11,11 +12,21 @@ pub use wire::{
     SourceState as SourceStateKind,
 };
 
+/// Private memory-cache provenance. Business fields remain the generated response.
+/// The retained session owns issuance; these bytes confer no read or open rights.
+#[derive(Clone, PartialEq, prost::Message)]
+pub(crate) struct SessionCacheFrame {
+    #[prost(uint64, tag = "1")]
+    pub session_id: u64,
+    #[prost(message, optional, tag = "2")]
+    pub response: Option<wire::SearchResponse>,
+}
+
 impl ResourceRef {
     /// Stable fusion identity: the same object returned by several sources
     /// (message index, attachment projection, recents) must collapse to one.
     pub fn fusion_key(&self) -> String {
-        if self.message_id.is_empty() {
+        if self.kind != "message" || self.message_id.is_empty() {
             format!("{:?}", (&self.authority_namespace, &self.kind, &self.id))
         } else {
             format!(

@@ -1042,6 +1042,17 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             }
             Err(error) => {
                 self.ensure_current()?;
+                if error.http_status == Some(401)
+                    || matches!(
+                        error.disposition,
+                        NativeErrorDisposition::Retryable | NativeErrorDisposition::UnknownCommit
+                    )
+                {
+                    self.supervisor
+                        .with_current(&self.lease.session.key, |lease| {
+                            lease.store.invalidate_search_policy()
+                        })?;
+                }
                 if requires_private_resource_purge(&error) {
                     self.purge_private_resource(post_id, revoke_media)?;
                 }
@@ -1571,6 +1582,13 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     .ok_or_else(|| "committed private Moment cannot retry submit".to_string())
             }
             Err(error) => {
+                tracing::warn!(
+                    http_status = ?error.http_status,
+                    stable_code = error.stable_code,
+                    disposition = ?error.disposition,
+                    retry_after_seconds = ?error.retry_after_seconds,
+                    "private Moment submit did not confirm publication"
+                );
                 let completion = match error.disposition {
                     NativeErrorDisposition::Retryable => OperationCompletion::RetryAt(
                         operation_retry_deadline(error.retry_after_seconds),
@@ -1651,11 +1669,20 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             Err(error) if error.http_status == Some(404) => {
                 ReadbackObservation::AuthoritativeAbsent
             }
-            Err(error) => ReadbackObservation::Unavailable {
-                retry_after_unix_ms: error
-                    .retry_after_seconds
-                    .map(|seconds| operation_retry_deadline(Some(seconds))),
-            },
+            Err(error) => {
+                tracing::warn!(
+                    operation_state = ?command.state,
+                    http_status = ?error.http_status,
+                    stable_code = error.stable_code,
+                    disposition = ?error.disposition,
+                    "private Moment journal readback is unavailable"
+                );
+                ReadbackObservation::Unavailable {
+                    retry_after_unix_ms: error
+                        .retry_after_seconds
+                        .map(|seconds| operation_retry_deadline(Some(seconds))),
+                }
+            }
         };
         let operation = command.operation_record()?;
         let decision = match command.state {
@@ -2187,7 +2214,7 @@ fn apply_terminal_media_failure(
     };
 }
 
-fn scrub_persisted_media_projection(
+pub(super) fn scrub_persisted_media_projection(
     mut projection: PrivateMomentProjection,
 ) -> PrivateMomentProjection {
     match projection.content.as_mut() {

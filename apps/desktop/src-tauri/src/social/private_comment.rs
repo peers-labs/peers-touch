@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use prost::Message;
@@ -79,6 +80,8 @@ pub struct PrivateCommentListInput {
     pub post_id: String,
     #[serde(default)]
     pub cursor: String,
+    #[serde(default)]
+    pub anchor_comment_id: String,
     #[serde(default = "default_comment_limit")]
     pub limit: u32,
 }
@@ -111,7 +114,7 @@ impl PrivateCommentProjection {
         serde_json::to_vec(self).map_err(|error| error.to_string())
     }
 
-    fn decode_local(bytes: &[u8]) -> Result<Self, String> {
+    pub(crate) fn decode_local(bytes: &[u8]) -> Result<Self, String> {
         serde_json::from_slice(bytes).map_err(|error| error.to_string())
     }
 }
@@ -677,16 +680,35 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         if input.post_id.trim().is_empty()
             || input.limit == 0
             || input.limit > PRIVATE_COMMENT_LIMIT_MAX
+            || (!input.anchor_comment_id.is_empty()
+                && (!input.cursor.is_empty()
+                    || !super::projection::canonical_identifier(&input.anchor_comment_id)))
         {
             return Err(PrivateCommentFailure::failed(
                 "COMMENT_LIST_INVALID",
                 "private Comment list request is invalid",
             ));
         }
-        let response = self
-            .transport
-            .list_moment_comments(&input.post_id, &input.cursor, input.limit)
-            .map_err(PrivateCommentFailure::from_transport)?;
+        if !input.anchor_comment_id.is_empty() {
+            return self.list_retained_target(input);
+        }
+        let response =
+            match self
+                .transport
+                .list_moment_comments(&input.post_id, &input.cursor, input.limit)
+            {
+                Ok(response) => response,
+                Err(error) => {
+                    self.with_current_store("COMMENT_READ_POLICY_UNAVAILABLE", |store| {
+                        if matches!(error.http_status, Some(403 | 404 | 410)) {
+                            store.clear_comment_projections(&input.post_id)
+                        } else {
+                            store.invalidate_search_policy()
+                        }
+                    })?;
+                    return Err(PrivateCommentFailure::from_transport(error));
+                }
+            };
         self.ensure_current()?;
         let mut recovery_ids = HashSet::new();
         for resource in &response.comments {
@@ -747,6 +769,60 @@ impl<'a> PrivateCommentOrchestrator<'a> {
             next_cursor: response.next_cursor,
             has_more: response.has_more,
         })
+    }
+
+    fn list_retained_target(
+        &self,
+        input: &PrivateCommentListInput,
+    ) -> Result<PrivateCommentPage, PrivateCommentFailure> {
+        self.ensure_current()?;
+        let unavailable =
+            |detail| PrivateCommentFailure::failed("COMMENT_TARGET_UNAVAILABLE", detail);
+        let guard = self.lease.session.begin_request().map_err(unavailable)?;
+        let binding = self
+            .supervisor
+            .search_binding(
+                &self.lease.session.key.window_label,
+                &self.lease.session.account_id,
+                &self.lease.session.key.actor_ptid,
+                guard.token(),
+            )
+            .map_err(unavailable)?;
+        drop(guard);
+        let revision = binding.search_revision().map_err(unavailable)?;
+        let target = binding
+            .search_read_target_window(
+                &input.post_id,
+                Some(&input.anchor_comment_id),
+                input.limit as usize,
+                Instant::now() + Duration::from_secs(5),
+                &|| Ok(()),
+            )
+            .map_err(unavailable)?
+            .ok_or_else(|| {
+                unavailable("retained private Comment target is unavailable".to_string())
+            })?;
+        let comments = target
+            .comment_projections
+            .iter()
+            .map(|bytes| PrivateCommentProjection::decode_local(bytes))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(unavailable)?;
+        self.ensure_current()?;
+        self.supervisor
+            .with_current_search(&binding.key, |store| {
+                store.with_search_revision(&revision, || {
+                    Ok(PrivateCommentPage {
+                        post_id: input.post_id.clone(),
+                        comments,
+                        next_cursor: String::new(),
+                        has_more: false,
+                    })
+                })
+            })
+            .map_err(|_| {
+                unavailable("private Comment target changed before publication".to_string())
+            })
     }
 
     fn comment_recovery_entries(
@@ -899,9 +975,35 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 }
             }
             Err(error) if error.http_status == Some(404) => {
-                ReadbackObservation::AuthoritativeAbsent
+                // An unresolved command may not have committed yet. Absence
+                // denies only an already acquired resource, not a future retry.
+                let acquired = self.with_current_store("COMMENT_READ_POLICY_UNAVAILABLE", |store| {
+                    if store.comment_projection(&draft.post_id, &comment_id)?.is_some() {
+                        store.purge_private_comment_material(&draft.post_id, &comment_id)?;
+                        Ok(true)
+                    } else {
+                        Ok(false)
+                    }
+                })?;
+                if acquired {
+                    let failure = PrivateCommentFailure {
+                        state: CommentState::ParentUnavailable,
+                        code: "COMMENT_PARENT_UNAVAILABLE".to_string(),
+                        message: error.to_string(),
+                        retry_after_seconds: None,
+                        retry_not_before_unix_ms: None,
+                    };
+                    let detail = failure.message.clone();
+                    readback_failure = Some(failure);
+                    ReadbackObservation::Invalid { detail }
+                } else {
+                    ReadbackObservation::AuthoritativeAbsent
+                }
             }
             Err(error) if matches!(error.http_status, Some(403 | 410)) => {
+                self.with_current_store("COMMENT_READ_POLICY_UNAVAILABLE", |store| {
+                    store.purge_private_comment_material(&draft.post_id, &comment_id)
+                })?;
                 let failure = PrivateCommentFailure {
                     state: CommentState::ParentUnavailable,
                     code: "COMMENT_PARENT_UNAVAILABLE".to_string(),
@@ -2120,12 +2222,20 @@ impl From<String> for PrivateCommentFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::station_runtime::client::{
+        StationClient, StationRequest, StationRequestExecutor, StationRequestScope, StationResponse,
+        StationTransportError,
+    };
     use crate::secure_content::station_trust::TrustedStationSigningKey;
     use crate::secure_content::{SecureContentSession, SecureContentSessionKey};
     use ed25519_dalek::{Signer, SigningKey};
     use std::sync::Arc;
 
     fn session() -> SecureContentSession {
+        session_with_client(StationClient::testing_scoped("station-1", 1))
+    }
+
+    fn session_with_client(client: StationClient) -> SecureContentSession {
         let station_key = SigningKey::from_bytes(&[8; 32]);
         SecureContentSession::new(
             SecureContentSessionKey {
@@ -2138,10 +2248,7 @@ mod tests {
                 session_generation: 0,
             },
             "account-1".to_string(),
-            crate::application::station_runtime::client::StationClient::testing_scoped(
-                "station-1",
-                1,
-            ),
+            client,
             "token".to_string(),
             "device-key-1".to_string(),
             1,
@@ -2151,6 +2258,36 @@ mod tests {
                 verifying_key: station_key.verifying_key(),
             },
         )
+    }
+
+    struct CommentReadStatus(u16);
+
+    impl StationRequestExecutor for CommentReadStatus {
+        fn execute(&self, request: StationRequest) -> Result<StationResponse, StationTransportError> {
+            assert_eq!(request.method, reqwest::Method::GET);
+            assert!(request.path_and_query.contains("/comments/"));
+            assert_eq!(request.expected_scope, self.active_scope());
+            Ok(StationResponse {
+                status: self.0,
+                headers: reqwest::header::HeaderMap::new(),
+                body: Box::new(std::io::Cursor::new(Vec::<u8>::new())),
+            })
+        }
+
+        fn active_scope(&self) -> Option<StationRequestScope> {
+            Some(StationRequestScope {
+                station_peer_id: "station-1".into(),
+                lifecycle_generation: 1,
+            })
+        }
+
+        fn active_station_peer_id(&self) -> Option<String> {
+            Some("station-1".into())
+        }
+
+        fn active_endpoint_origin(&self) -> Option<String> {
+            Some("http://station.test".into())
+        }
     }
 
     #[test]
@@ -2443,6 +2580,9 @@ mod tests {
 
         draft.state = CommentState::Failed;
         draft.error_code = Some(PRIVATE_CONTENT_STALE_PLAN.to_string());
+        assert!(!comment_requires_reprepare(&draft).unwrap());
+
+        draft.publication_state = Some(OperationState::Terminal);
         assert!(comment_requires_reprepare(&draft).unwrap());
 
         draft.publication_state = Some(OperationState::UnknownOutcome);
@@ -2615,6 +2755,174 @@ mod tests {
                 DispatchCause::ReadbackAuthorizedRetry,
             )
             .is_err());
+    }
+
+    fn acquire_test_comment(
+        store: &SecureContentStore,
+        session_generation: u64,
+    ) -> AcquiredCommentSubmission {
+        let draft = comment_draft("draft-readback", session_generation);
+        store.reserve_comment_draft(&draft).unwrap();
+        let request = b"encrypted-comment-request";
+        store
+            .persist_comment_submission(
+                &draft.draft_id,
+                draft.draft_revision,
+                1,
+                "comment-submit-readback",
+                b"comment-plan",
+                request,
+                &Sha256::digest(request).into(),
+                &[9; 32],
+                session_generation,
+            )
+            .unwrap();
+        store
+            .acquire_comment_submission(
+                &draft.draft_id,
+                draft.draft_revision,
+                session_generation,
+                DispatchCause::ExplicitUserAction,
+            )
+            .unwrap()
+    }
+
+    fn test_decrypted_comment(draft: &StoredCommentDraft) -> DecryptedPrivateComment {
+        DecryptedPrivateComment {
+            projection: PrivateCommentProjection {
+                comment_id: draft.content_id.clone(),
+                content_id: draft.content_id.clone(),
+                generation: "1".into(),
+                post_id: draft.post_id.clone(),
+                reply_to_comment_id: String::new(),
+                author_ptid: "ptid:alice".into(),
+                author_acct: None,
+                state: CommentState::Posted.as_str().into(),
+                text: Some("private comment".into()),
+                mentions: Vec::new(),
+                reactions_count: 0,
+                replies_count: 0,
+                created_at_millis: Some(crate::social::crypto::now_unix_ms()),
+                updated_at_millis: None,
+            },
+            content_key: ContentKey::from_bytes([9; 32]),
+            consumed_prekey: None,
+        }
+    }
+
+    #[test]
+    fn unresolved_comment_404_readback_preserves_exact_retry_and_acquisition() {
+        for known_commit in [false, true] {
+            let supervisor = SecureContentSupervisor::new();
+            let store = Arc::new(SecureContentStore::in_memory().unwrap());
+            let lease = supervisor
+                .activate_with_store_for_test(
+                    session_with_client(StationClient::new(Arc::new(CommentReadStatus(404)))),
+                    1,
+                    store.clone(),
+                )
+                .unwrap();
+            let acquired = acquire_test_comment(&store, lease.session.key.session_generation);
+            let orchestrator = PrivateCommentOrchestrator {
+                supervisor: &supervisor,
+                transport: SecureContentTransport::new(lease.session.clone()).unwrap(),
+                lease,
+            };
+            let unresolved = if known_commit {
+                orchestrator
+                    .commit_comment_submit_response(&acquired)
+                    .unwrap()
+            } else {
+                assert!(store
+                    .complete_comment_submission(
+                        &acquired,
+                        OperationCompletion::UnknownOutcome,
+                        CommentState::Failed,
+                        "COMMENT_SUBMIT_RESULT_UNKNOWN",
+                        None,
+                        None,
+                    )
+                    .unwrap());
+                store.comment_draft("draft-readback", 1).unwrap().unwrap()
+            };
+            let revision = store.search_revision().unwrap();
+            let result = orchestrator.reconcile_comment_readback(unresolved.clone());
+            if known_commit {
+                assert_eq!(result.unwrap_err().code, COMMENT_READBACK_PENDING);
+                assert!(store
+                    .acquire_comment_submission(
+                        "draft-readback",
+                        1,
+                        unresolved.session_generation,
+                        DispatchCause::ReadbackAuthorizedRetry,
+                    )
+                    .is_err());
+            } else {
+                assert!(result.unwrap().is_none());
+                let retry = store
+                    .acquire_comment_submission(
+                        "draft-readback",
+                        1,
+                        unresolved.session_generation,
+                        DispatchCause::ReadbackAuthorizedRetry,
+                    )
+                    .unwrap();
+                assert_eq!(
+                    retry.draft.submit_command_id,
+                    acquired.draft.submit_command_id
+                );
+                assert_eq!(retry.draft.request_bytes, acquired.draft.request_bytes);
+                assert_eq!(retry.draft.content_id, acquired.draft.content_id);
+            }
+            assert_eq!(store.search_revision().unwrap(), revision);
+            let decrypted = test_decrypted_comment(&unresolved);
+            orchestrator.persist_decrypted(&decrypted).unwrap();
+            assert_eq!(
+                store
+                    .comment_projection(&unresolved.post_id, &unresolved.content_id)
+                    .unwrap()
+                    .unwrap(),
+                decrypted.projection.encode_local().unwrap(),
+            );
+        }
+    }
+
+    #[test]
+    fn comment_authority_failure_still_purges_and_permanently_denies_acquisition() {
+        for status in [403, 404, 410] {
+            let supervisor = SecureContentSupervisor::new();
+            let store = Arc::new(SecureContentStore::in_memory().unwrap());
+            let lease = supervisor
+                .activate_with_store_for_test(
+                    session_with_client(StationClient::new(Arc::new(CommentReadStatus(status)))),
+                    1,
+                    store.clone(),
+                )
+                .unwrap();
+            let acquired = acquire_test_comment(&store, lease.session.key.session_generation);
+            let orchestrator = PrivateCommentOrchestrator {
+                supervisor: &supervisor,
+                transport: SecureContentTransport::new(lease.session.clone()).unwrap(),
+                lease,
+            };
+            let committed = orchestrator
+                .commit_comment_submit_response(&acquired)
+                .unwrap();
+            let decrypted = test_decrypted_comment(&committed);
+            orchestrator.persist_decrypted(&decrypted).unwrap();
+            assert_eq!(
+                orchestrator
+                    .reconcile_comment_readback(committed.clone())
+                    .unwrap_err()
+                    .state,
+                CommentState::ParentUnavailable,
+            );
+            assert!(store
+                .comment_projection(&committed.post_id, &committed.content_id)
+                .unwrap()
+                .is_none());
+            assert!(orchestrator.persist_decrypted(&decrypted).is_err());
+        }
     }
 
     #[test]

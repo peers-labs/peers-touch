@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-26
-covered_docs_hash: b2685c4d9530d01b048eaa0651c1c263b8c31aa4e62d56c53ee2fc2a90e1cca8
+covered_docs_hash: e9cb9f685b0f22e8eddce5d26e2d2a038277e657436b880d2bd177eff55e9895
 
 covered_docs:
   - AGENTS.md
@@ -49,6 +49,18 @@ The generated Acceptance coverage inventory was regenerated for the current
 date. Its Feature/Gate counts and proof states are unchanged; only the generated
 date changed. Existing freshness and current-source rules remain sufficient,
 with no new Skill rule, fixture, or knowledge entry.
+
+## Social Search Delivery Review
+
+The Search delivery review retains the current upstream rule hash. The existing
+review policy already requires original authority, consumed-source publication,
+bounded cancellation, retained navigation context and successful cleanup.
+Search's existing knowledge invariant and source/native Gates now cover missing
+issuance retention, no-store page reconstruction, historical anchors, actual
+Back controls, paint sampling and exact-selector account probes. These are
+business-specific corrections under the existing review rules; no additional
+Review Skill or generic golden fixture is required. Source regressions remain
+distinct from current native product proof.
 
 ## Desktop Search Continuity Review
 

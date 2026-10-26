@@ -1,18 +1,16 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { MobileRuntimeDescriptor } from '../app/lifecycle/types';
-import { activeMobileDetailRoute, useMobileNavigationStore } from '../app/navigation';
+import { activeMobileDetailRoute, useMobileNavigationStore, type MobileDetailRoute } from '../app/navigation';
 import { isAccessGranted } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import { isMobileAuthSessionValid, mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
 import {
   emptyMobileSearch, useMobileSearchStore, type MobileSearchFilter,
 } from '../features/search/searchStore';
-import { SearchKind, type ResourceRef, type SearchReadState, type SearchResponse } from '../gen/proto/domain/search/search_pb';
-import { mobileSearchService } from '../services/search';
-import {
-  currentMessagingProjectionScope, subscribeMessagingProjectionScope,
-  MOBILE_MESSAGING_PROJECTION_CHANGED_EVENT, MOBILE_MESSAGING_RECONCILED_EVENT,
-} from './messagingRuntime';
+import { SearchKind, SourceState, type ResultItem, type SearchReadState, type SearchResponse } from '../gen/proto/domain/search/search_pb';
+import { concealChangedMobileSearchSources, mobileSearchResponseCurrent, mobileSearchService } from '../services/search';
+import { resolvedSearchDetailRoute } from '../features/search/openers';
+import { subscribeSearchInvalidations } from './searchInvalidations';
 
 let generation = 0;
 let requestId: string | null = null;
@@ -22,6 +20,9 @@ let scopeKey = '';
 let identityKey = '';
 // A single presentation frame, never an independent content/query cache.
 let retained: SearchResponse | null = null;
+let retainedKey = '';
+let stalledTimer: ReturnType<typeof setTimeout> | null = null;
+const QUERY_BUDGET_MS = 5_000;
 
 function active(): boolean {
   return !suspended && document.visibilityState !== 'hidden'
@@ -30,11 +31,8 @@ function active(): boolean {
 
 function currentScope(): string {
   const auth = useAuthStore.getState();
-  const scope = currentMessagingProjectionScope();
-  if (!isAccessGranted(auth.accessDecision) || !isMobileAuthSessionValid(auth.session) || !scope
-    || scope.actorPtid !== auth.session.actorRef.ptid
-    || scope.stationPeerId !== auth.session.stationPeerId) return '';
-  return JSON.stringify([mobileAuthScopeKey(auth.session), auth.session.sessionId, scope]);
+  if (!isAccessGranted(auth.accessDecision) || !isMobileAuthSessionValid(auth.session)) return '';
+  return JSON.stringify([mobileAuthScopeKey(auth.session), auth.session.sessionId]);
 }
 
 function currentIdentity(): string {
@@ -47,6 +45,9 @@ function stop(): void {
   generation++;
   if (debounce) clearTimeout(debounce);
   debounce = null;
+  if (stalledTimer) clearTimeout(stalledTimer);
+  stalledTimer = null;
+  useMobileSearchStore.setState({ stalled: false, opening: false });
   const id = requestId;
   requestId = null;
   if (id) void mobileSearchService.cancel(id).catch(() => undefined);
@@ -54,24 +55,33 @@ function stop(): void {
 
 function conceal(): void {
   stop();
-  retained = useMobileSearchStore.getState().response ?? retained;
+  const response = useMobileSearchStore.getState().response ?? retained;
+  retained = response?.sources.some(source => source.noStore) ? null : response;
   useMobileSearchStore.setState({ response: null, status: 'concealed', opening: false });
 }
 
 export function fenceMobileSearch(): void {
   stop();
   retained = null;
+  retainedKey = '';
   scopeKey = '';
   identityKey = '';
   useMobileSearchStore.setState(emptyMobileSearch());
 }
 
 function valid(response: SearchResponse, state: SearchReadState): boolean {
-  return response.sourceRevision === state.sourceRevision
-    && response.readValidity?.readScope === state.readScope
-    && Number(response.expiresAtUnixMs) > Date.now()
-    && (!response.readValidity.leaseUntilUnixMs
-      || Number(response.readValidity.leaseUntilUnixMs) > Date.now());
+  return mobileSearchResponseCurrent(response, state);
+}
+
+function reusable(response: SearchResponse, state: SearchReadState): boolean {
+  return valid(response, state) && !response.sources.some(source => source.noStore)
+    && response.coverage.every(source => source.state === SourceState.READY);
+}
+
+function kinds(filter: MobileSearchFilter, conversationId: string): SearchKind[] {
+  if (conversationId || filter === 'messages' || filter === 'attachments') return [SearchKind.MESSAGE];
+  if (filter === 'social') return [SearchKind.SOCIAL_POST, SearchKind.SOCIAL_COMMENT];
+  return [];
 }
 
 function errorKey(error: unknown): string {
@@ -86,7 +96,7 @@ function errorKey(error: unknown): string {
   }
 }
 
-async function run(refresh = false): Promise<void> {
+async function run(refresh = false, forwardCursor = ''): Promise<void> {
   stop();
   if (!active()) return;
   const view = useMobileSearchStore.getState();
@@ -104,34 +114,91 @@ async function run(refresh = false): Promise<void> {
   const current = () => generation === admitted && active() && !!scope && currentScope() === scope;
   const id = crypto.randomUUID();
   requestId = id;
-  useMobileSearchStore.setState({ status: 'loading', response: null, errorKey: null });
+  useMobileSearchStore.setState({ status: 'loading', errorKey: null });
+  const admittedTimer = setTimeout(() => {
+    if (current()) useMobileSearchStore.setState({ stalled: true });
+  }, 200);
+  stalledTimer = admittedTimer;
+  const deadline = Date.now() + QUERY_BUDGET_MS;
+  let budgetExpired = false;
+  let rejectDeadline!: (error: unknown) => void;
+  const expired = new Promise<never>((_resolve, reject) => { rejectDeadline = reject; });
+  const budgetTimer = setTimeout(() => {
+    budgetExpired = true;
+    void mobileSearchService.cancel(id).catch(() => undefined);
+    rejectDeadline({ code: 'SEARCH_SOURCE_TIMEOUT' });
+  }, QUERY_BUDGET_MS);
+  const checkBudget = () => {
+    if (budgetExpired || Date.now() >= deadline) throw { code: 'SEARCH_SOURCE_TIMEOUT' };
+  };
   try {
     if (!scope) throw new Error('missing native scope');
-    const state = await mobileSearchService.readState();
+    checkBudget();
+    const state = await Promise.race([mobileSearchService.readState(), expired]);
     if (!current()) return;
-    let response = !refresh && retained && valid(retained, state) ? retained : null;
+    checkBudget();
+    const key = JSON.stringify([view.query, view.mode, view.filter, view.conversationId, view.locale, view.page]);
+    if (view.response) useMobileSearchStore.setState({
+      response: concealChangedMobileSearchSources(view.response, state),
+    });
+    let response = !refresh && retained && retainedKey === key && reusable(retained, state) ? retained : null;
+    let cursors = view.cursors;
     if (!response) {
-      response = view.mode === 'suggest'
-        ? await mobileSearchService.suggest(
-          view.query, id, SearchKind.MESSAGE, view.conversationId, view.filter === 'attachments',
-        )
-        : await mobileSearchService.submit(
-          view.query, id, view.locale, SearchKind.MESSAGE, view.conversationId,
-          view.cursors[view.page], refresh, view.filter === 'attachments',
-        );
-      if (!current()) return;
-      const latest = await mobileSearchService.readState();
-      if (!current()) return;
-      if (!valid(response, latest)) throw { code: 'SEARCH_SOURCE_CHANGED' };
+      if (view.mode === 'suggest') {
+        checkBudget();
+        response = await Promise.race([mobileSearchService.suggest(
+          view.query, id, kinds(view.filter, view.conversationId), view.conversationId, view.filter === 'attachments',
+        ), expired]);
+        if (!current()) return;
+        checkBudget();
+        const latest = await Promise.race([mobileSearchService.readState(), expired]);
+        if (!current()) return;
+        checkBudget();
+        if (!valid(response, latest)) throw { code: 'SEARCH_SOURCE_CHANGED' };
+      } else {
+        if (!Number.isInteger(view.page) || view.page < 0 || view.page > 31) throw { code: 'SEARCH_CURSOR_EXPIRED' };
+        // Only an explicit Next consumes an unused cursor. History is metadata,
+        // not replayable input; reauthorization/Previous rebuild this ordinal.
+        let cursor = !refresh && forwardCursor && view.response && valid(view.response, state) ? forwardCursor : '';
+        const firstPage = cursor ? view.page : 0;
+        cursors = cursor ? view.cursors.slice(0, view.page + 1) : [''];
+        for (let page = firstPage; page <= view.page; page++) {
+          checkBudget();
+          response = await Promise.race([mobileSearchService.submit(
+            view.query, id, view.locale, kinds(view.filter, view.conversationId), view.conversationId,
+            cursor, page === 0 && (refresh || view.page > 0), view.filter === 'attachments',
+          ), expired]);
+          if (!current()) return;
+          checkBudget();
+          const latest = await Promise.race([mobileSearchService.readState(), expired]);
+          if (!current()) return;
+          checkBudget();
+          if (!valid(response, latest)) throw { code: 'SEARCH_SOURCE_CHANGED' };
+          if (page < view.page) {
+            if (!response.hasMore || !response.nextCursor) throw { code: 'SEARCH_SOURCE_CHANGED' };
+            cursor = response.nextCursor;
+            cursors.push(cursor);
+          }
+        }
+      }
     }
-    retained = response;
-    if (current()) useMobileSearchStore.setState({ response, status: 'ready', errorKey: null });
+    if (!response) throw { code: 'SEARCH_SOURCE_CHANGED' };
+    retained = response.sources.some(source => source.noStore) ? null : response;
+    retainedKey = retained ? key : '';
+    if (current()) useMobileSearchStore.setState({
+      response, cursors, status: 'ready', errorKey: null,
+      displayedQuery: view.query, displayedMode: view.mode, displayedFilter: view.filter,
+    });
   } catch (error) {
     if (current() || (generation === admitted && active() && !scope)) {
       retained = null;
       useMobileSearchStore.setState({ status: 'error', response: null, errorKey: errorKey(error) });
     }
   } finally {
+    clearTimeout(admittedTimer);
+    clearTimeout(budgetTimer);
+    if (stalledTimer === admittedTimer) stalledTimer = null;
+    if (generation === admitted) useMobileSearchStore.setState({ stalled: false });
     if (requestId === id) requestId = null;
   }
 }
@@ -140,12 +207,19 @@ async function revalidate(): Promise<void> {
   if (!active() || requestId || debounce) return;
   const view = useMobileSearchStore.getState();
   if (view.filter === 'functions' || !view.query.trim()) return;
+  if (!view.response || view.response.sources.some(source => source.noStore)) {
+    // Reconstruction owns preflight and every page within the same deadline.
+    await run();
+    return;
+  }
   const admitted = generation;
   try {
     const state = await mobileSearchService.readState();
     if (admitted !== generation || !active()) return;
-    if (view.response && valid(view.response, state)) return;
-    conceal();
+    if (view.response && reusable(view.response, state)) return;
+    if (view.response) useMobileSearchStore.setState({
+      response: concealChangedMobileSearchSources(view.response, state),
+    });
     await run();
   } catch {
     if (admitted === generation && active()) {
@@ -169,7 +243,7 @@ export const mobileSearchActions = {
     stop();
     retained = null;
     useMobileSearchStore.setState({
-      query, mode: 'suggest', response: null, errorKey: null, selectedId: '',
+      query, mode: 'suggest', errorKey: null, selectedId: '',
       scrollTop: 0, cursors: [''], page: 0, status: query.trim() ? 'loading' : 'idle',
     });
     debounce = setTimeout(() => { debounce = null; void run(); }, 120);
@@ -177,7 +251,10 @@ export const mobileSearchActions = {
   filter(filter: MobileSearchFilter): void {
     stop();
     retained = null;
-    useMobileSearchStore.setState({ filter, response: null, cursors: [''], page: 0, scrollTop: 0, selectedId: '' });
+    useMobileSearchStore.setState({
+      filter, mode: 'submit', conversationId: filter === 'social' ? '' : useMobileSearchStore.getState().conversationId,
+      cursors: [''], page: 0, scrollTop: 0, selectedId: '',
+    });
     void run();
   },
   allConversations(): void {
@@ -194,33 +271,35 @@ export const mobileSearchActions = {
   page(direction: -1 | 1): void {
     const view = useMobileSearchStore.getState();
     const cursor = view.response?.nextCursor;
+    if (view.status === 'loading' || view.opening || view.mode !== 'submit'
+      || view.displayedQuery !== view.query || view.displayedMode !== view.mode
+      || view.displayedFilter !== view.filter) return;
     if (direction < 0 && view.page === 0 || direction > 0 && (!cursor || view.page >= 31)) return;
     retained = null;
     useMobileSearchStore.setState({
       page: view.page + direction, scrollTop: 0, selectedId: '',
       cursors: direction > 0 ? [...view.cursors.slice(0, view.page + 1), cursor!] : view.cursors,
     });
-    void run();
+    void run(false, direction > 0 ? cursor : '');
   },
-  async resolve(resource: ResourceRef): Promise<ResourceRef | null> {
+  async open(item: ResultItem, onOpenDetail: (route: MobileDetailRoute) => void): Promise<void> {
+    if (!item.resource || !item.sourceId) return;
     stop();
     const admitted = generation;
     const scope = currentScope();
     const current = () => admitted === generation && active() && !!scope && currentScope() === scope;
-    if (!current()) return null;
+    if (!current()) return;
     const id = crypto.randomUUID();
     requestId = id;
-    useMobileSearchStore.setState({ opening: true, selectedId: resource.id, errorKey: null });
+    useMobileSearchStore.setState({ opening: true, selectedId: item.resource.id, errorKey: null });
     try {
-      const resolved = await mobileSearchService.resolve(resource, id);
-      if (!current()) return null;
-      if (resolved.resolverBinding !== 'messaging.device.open' || !resolved.resource) {
-        throw { code: 'SEARCH_RESOURCE_UNAVAILABLE' };
-      }
-      return resolved.resource;
+      const resolved = await mobileSearchService.resolve(item.resource, item.sourceId, id);
+      if (!current()) return;
+      const route = resolvedSearchDetailRoute(resolved);
+      useMobileSearchStore.setState({ opening: false });
+      onOpenDetail(route);
     } catch (error) {
       if (current()) useMobileSearchStore.setState({ errorKey: errorKey(error) });
-      return null;
     } finally {
       if (current()) useMobileSearchStore.setState({ opening: false });
       if (requestId === id) requestId = null;
@@ -248,7 +327,21 @@ export function createSearchRuntimeDescriptor(): MobileRuntimeDescriptor {
     scopeKey = next;
     if (active()) void run();
   };
-  const invalidated = () => { conceal(); void run(); };
+  const invalidated = (sourceIds: readonly string[]) => {
+    const view = useMobileSearchStore.getState();
+    const response = view.response;
+    if (response?.sources.length && view.displayedQuery === view.query
+      && view.displayedMode === view.mode && view.displayedFilter === view.filter
+      && !response.sources.some(source => sourceIds.includes(source.sourceId))) return;
+    const opening = view.opening;
+    if (!opening) stop();
+    retained = null;
+    if (response) useMobileSearchStore.setState({ response: {
+      ...response, items: response.items.filter(item => !sourceIds.includes(item.sourceId)),
+      nextCursor: '', hasMore: false,
+    } });
+    if (!opening) void run();
+  };
   const visibility = () => {
     conceal();
     if (document.visibilityState !== 'hidden') void run();
@@ -256,30 +349,21 @@ export function createSearchRuntimeDescriptor(): MobileRuntimeDescriptor {
   return {
     id: 'search',
     title: 'Search',
-    responsibility: 'Owns private Search presentation, original-owner revalidation and cancellation.',
-    dependsOn: ['messaging'],
+    responsibility: 'Owns Search presentation, source validity and cancellation under the native Session.',
+    dependsOn: [],
     async bootstrap() {
       suspended = false;
       scopeChanged();
-      releases.push(subscribeMessagingProjectionScope(scopeChanged));
       releases.push(useAuthStore.subscribe(scopeChanged));
       releases.push(useMobileNavigationStore.subscribe((state, previous) => {
         if (activeMobileDetailRoute(state)?.routeId === activeMobileDetailRoute(previous)?.routeId) return;
         conceal();
         if (active()) void run();
       }));
-      nativeRelease = await listen<{
-        stationPeerId: string; actorPtid: string; activationGeneration: number;
-      }>(MOBILE_MESSAGING_PROJECTION_CHANGED_EVENT, ({ payload }) => {
-        const scope = currentMessagingProjectionScope();
-        if (scope && scope.stationPeerId === payload.stationPeerId
-          && scope.actorPtid === payload.actorPtid
-          && scope.activationGeneration === payload.activationGeneration) invalidated();
-      });
+      nativeRelease = await subscribeSearchInvalidations(invalidated);
       lifecycleRelease = await listen<{ state: string }>('mobile:lifecycle', ({ payload }) => {
         if (payload.state === 'background') { suspended = true; conceal(); }
       });
-      window.addEventListener(MOBILE_MESSAGING_RECONCILED_EVENT, invalidated);
       document.addEventListener('visibilitychange', visibility);
       timer = setInterval(() => { scopeChanged(); void revalidate(); }, 2_000);
     },
@@ -291,7 +375,6 @@ export function createSearchRuntimeDescriptor(): MobileRuntimeDescriptor {
       releases.splice(0).forEach(release => release());
       nativeRelease?.(); lifecycleRelease?.();
       if (timer) clearInterval(timer);
-      window.removeEventListener(MOBILE_MESSAGING_RECONCILED_EVENT, invalidated);
       document.removeEventListener('visibilitychange', visibility);
       fenceMobileSearch();
       return { runtimeId: 'search', success: true, durationMs: performance.now() - start };

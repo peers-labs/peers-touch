@@ -25,4 +25,8 @@
   .mp-global-search-state { display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 160px; padding: 24px; text-align: center; color: var(--mp-gray-500); font-size: 13px; line-height: 1.6; }
   .mp-global-search button:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: -2px; }
   .mp-thread-reply-item[data-search-target="true"] { background: var(--mp-primary-light); box-shadow: inset 3px 0 var(--mp-primary); }
+  .mp-social-moment[data-search-target="true"],
+  .mp-moment-comment[data-search-target="true"] {
+    background: var(--mp-primary-light); outline: 2px solid var(--mp-primary); outline-offset: -2px;
+  }
 }

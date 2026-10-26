@@ -13,11 +13,12 @@ export interface MobileSearchAcceptanceContracts {
     input: {
       query: string; requestId?: string; conversationId?: string; cursor?: string;
       locale?: string; refresh?: boolean; attachmentNamesOnly?: boolean; limit?: number;
+      kinds?: SearchKind[];
     };
     output: ReadResult;
   };
   'search.resolve': {
-    input: { resource: JsonObject; requestId?: string };
+    input: { resource: JsonObject; sourceId: string; requestId?: string };
     output: ReadResult;
   };
   'search.state': { input: undefined; output: JsonObject };
@@ -42,12 +43,12 @@ export const mobileSearchAcceptanceActions = {
   'search.page': (input: MobileSearchAcceptanceContracts['search.page']['input']) => read(async () =>
     toJson(SearchResponseSchema, await mobileSearchService.submit(
       input.query, input.requestId ?? crypto.randomUUID(), input.locale ?? 'en',
-      SearchKind.MESSAGE, input.conversationId ?? '', input.cursor ?? '', input.refresh ?? false,
+      input.kinds ?? [], input.conversationId ?? '', input.cursor ?? '', input.refresh ?? false,
       input.attachmentNamesOnly ?? false, input.limit ?? 100,
     )) as JsonObject),
   'search.resolve': (input: MobileSearchAcceptanceContracts['search.resolve']['input']) => read(async () =>
     toJson(ResolvedResourceSchema, await mobileSearchService.resolve(
-      fromJson(ResourceRefSchema, input.resource), input.requestId ?? crypto.randomUUID(),
+      fromJson(ResourceRefSchema, input.resource), input.sourceId, input.requestId ?? crypto.randomUUID(),
     )) as JsonObject),
   'search.state': async () => toJson(SearchReadStateSchema, await mobileSearchService.readState()) as JsonObject,
   'search.reads': async () => invoke<MobileSearchAcceptanceContracts['search.reads']['output']>('search_read_diagnostics'),

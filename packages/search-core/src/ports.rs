@@ -1,11 +1,11 @@
 //! Source ports and cancellation.
 //!
 //! The coordinator executes one semantic query over ports owned by the
-//! messaging/application layers. Ports are traits only: this crate never
+//! original application layers. Ports are traits only: this crate never
 //! opens a database, calls Tauri, or speaks to a Station. The device
-//! milestone implements message, conversation, attachment-name, and function
-//! catalog ports against existing owners; Station and federation ports are
-//! later plans and must be rejected at admission if named here prematurely.
+//! and Station contributors are admitted through trusted host bindings and
+//! generated descriptor scopes. Federation is not admitted by the current
+//! production composition. No port creates credentials or source grants.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -45,6 +45,9 @@ impl SearchExecutionContext {
 /// No database, UI lifetime, endpoint, Describe or per-source Cancel API.
 pub trait SearchContributor: Send + Sync {
     fn descriptor(&self) -> &SearchContributorDescriptor;
+    fn supports_suggestions(&self) -> bool {
+        true
+    }
     fn query<'a>(
         &'a self,
         input: &'a QueryIntent,

@@ -2,6 +2,37 @@
   "version": 1,
   "rules": [
     {
+      "id": "social-content-search",
+      "features": ["social-content-search"],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/social/application/public_search*.go",
+          "apps/station/app/subserver/social/application/private_read_policy*.go",
+          "apps/station/app/subserver/social/infrastructure/private_read_policy.go",
+          "apps/station/app/subserver/social/search_handler*.go",
+          "apps/station/app/subserver/social/read_policy_handler.go",
+          "apps/desktop/src-tauri/src/application/search/social.rs",
+          "apps/desktop/src-tauri/src/application/search/private.rs",
+          "apps/desktop/src-tauri/src/secure_content/search*.rs",
+          "apps/desktop/src/runtimes/searchOpeners.ts",
+          "apps/desktop/src/runtimes/searchInvalidations.ts",
+          "apps/desktop/src/services/socialOpenResource.ts",
+          "apps/mobile/src-tauri/src/runtime/search/social.rs",
+          "apps/mobile/src-tauri/src/runtime/search/social/**",
+          "apps/mobile/src-tauri/src/secure_content/store/search*.rs",
+          "apps/mobile/src/features/social/openSearchResource.ts",
+          "apps/mobile/src/runtimes/searchInvalidations.ts",
+          "tooling/acceptance/features/social-content-search.yaml",
+          "tooling/acceptance/gates/social/content_search*"
+        ]
+      },
+      "require": [
+        "social-content-search-contract",
+        "social-content-search-desktop-native-e2e",
+        "social-content-search-mobile-native-e2e"
+      ]
+    },
+    {
       "id": "chat-device-search",
       "features": ["chat-device-search"],
       "when": {

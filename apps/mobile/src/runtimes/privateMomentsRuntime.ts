@@ -578,6 +578,12 @@ export async function reconcilePrivateMoments(): Promise<PrivateSocialReconcilia
     const revokedPostIds = deletedOrRevokedPostIds(postsById);
     setSnapshot({
       ...snapshot,
+      active: true,
+      stationPeerId: scope.stationPeerId,
+      actorPtid: scope.actorPtid,
+      deviceId: scope.deviceId,
+      lifecycleGeneration: String(scope.lifecycleGeneration),
+      activationGeneration: scope.activationGeneration,
       reconciling: false,
       projections: mergeProjectionLists(
         snapshot.projections,

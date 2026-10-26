@@ -2,18 +2,11 @@ syntax = "proto3";
 
 package peers_touch.model.search.v1;
 
-// Search domain contract (decision D-19: closed search domain).
-//
-// This file declares no Go package option: Desktop and Mobile generate
-// TypeScript (build.sh skips Go generation when the option is absent).
-// The query universe is the Peers domain on the current device; Station S-zone
-// and federation F-zone adapters, Ask, and semantic retrieval are later plans
-// and reuse these shapes without renegotiating the wire contract.
-//
-// Scope enforcement: requests carrying anything other than DEVICE scope in
-// the device milestone must be rejected at admission with
-// SCOPE_OUTSIDE_SEARCH_DOMAIN. There is intentionally no web/os/connector
-// scope anywhere in this enum.
+option go_package = "github.com/peers-labs/peers-touch/station/app/model/search;search";
+
+// Closed Peers-domain reads. Hosts authenticate the source set; contributors
+// narrow scope and retain original-domain read authority. Federation, Ask and
+// external connectors are not admitted by the current production composition.
 
 // What the user is trying to do. FIND retrieves content; OPEN resolves a
 // known resource (used by deep links and recent items).
@@ -33,6 +26,7 @@ enum SearchKind {
   SEARCH_KIND_KNOWLEDGE = 6;
   SEARCH_KIND_ATTACHMENT = 7;
   SEARCH_KIND_FUNCTION = 8;
+  SEARCH_KIND_SOCIAL_COMMENT = 9;
 }
 
 // Trust zone of a result. FUNCTION shortcuts are local navigation and leave
@@ -41,8 +35,7 @@ enum SearchZone {
   SEARCH_ZONE_UNSPECIFIED = 0;
   // Device-only end-to-end encrypted content, never leaves the device.
   SEARCH_ZONE_DEVICE_E2EE = 1;
-  // Station-held content visible under the actor read policy. Reserved; not
-  // produced by the device milestone.
+  // Station-held content visible under the actor read policy.
   SEARCH_ZONE_STATION = 2;
   // Federated content authorized within an existing federation context.
   // Reserved; not produced by the device milestone.
@@ -52,7 +45,6 @@ enum SearchZone {
 enum SearchScope {
   SEARCH_SCOPE_UNSPECIFIED = 0;
   SEARCH_SCOPE_DEVICE = 1;
-  // Reserved values for later milestones; admission rejects them for now.
   SEARCH_SCOPE_STATION = 2;
   SEARCH_SCOPE_FEDERATION = 3;
 }
@@ -63,6 +55,15 @@ enum SourceState {
   SOURCE_STATE_PARTIAL = 2;
   SOURCE_STATE_UNAVAILABLE = 3;
   SOURCE_STATE_INDEXING = 4;
+}
+
+enum CoverageExtent {
+  COVERAGE_EXTENT_UNSPECIFIED = 0;
+  // Complete within the source's declared, currently authorized scope.
+  COVERAGE_EXTENT_DECLARED_SCOPE = 1;
+  // Only projections already acquired by this device.
+  COVERAGE_EXTENT_ACQUIRED_LOCAL = 2;
+  COVERAGE_EXTENT_RECOVERING = 3;
 }
 
 enum SearchErrorCode {
@@ -94,6 +95,9 @@ message ResourceRef {
   string authority_namespace = 6;
   string content_revision = 7;
   ResourceAnchor anchor = 8;
+  // Independent comment identity with its canonical post parent. No content,
+  // endpoint or authorization grant is carried by this relationship.
+  ResourceRef parent = 9;
 }
 
 message ResourceAnchor {
@@ -111,6 +115,7 @@ message SearchContributorDescriptor {
   string descriptor_revision = 6;
   bool supports_paging = 7;
   uint32 max_batch = 8;
+  repeated SearchScope scopes = 9;
 }
 
 enum ProjectionField {
@@ -120,8 +125,10 @@ enum ProjectionField {
 
 message QueryIntent {
   string text = 1;
-  SearchKind kind = 2;
-  SearchScope scope = 3;
+  // Empty selects all kinds allowed by the trusted source composition.
+  repeated SearchKind kinds = 2;
+  // Explicit scopes; suggestions are Device-only. No scope grants read rights.
+  repeated SearchScope scopes = 3;
   uint32 limit = 4;
   string cursor = 5;
   string locale = 6;
@@ -219,19 +226,38 @@ message ResolvedResource {
 message ResolveRequest {
   ResourceRef resource = 1;
   string request_id = 2;
+  // Selects a trusted mounted source; the host verifies that this source issued
+  // the reference in the current query session before dispatching. In
+  // particular, a private reference must never be tried against a Station.
+  string source_id = 3;
 }
 
-// Local original-owner reconciliation. This checks state, not search content.
+// A source-specific original-owner state; no content or private cursor.
+message SourceReadState {
+  string source_id = 1;
+  string binding_id = 2;
+  string source_revision = 3;
+  string read_scope = 4;
+  string policy_revision = 5;
+  SourceState state = 6;
+  CoverageExtent extent = 7;
+  // Owner metadata does not permit reusable content. Renderer caches must
+  // observe the same restriction as the native read cache.
+  bool no_store = 8;
+}
+
+// Trusted authentication partition and independent source state vector.
 message SearchReadState {
-  string source_revision = 1;
-  string read_scope = 2;
+  reserved 1, 2;
+  repeated SourceReadState sources = 3;
+  string partition = 4;
 }
 
 // Local suggestion request: exact objects available on the device without a
 // full retrieval pass. Must never trigger a network request.
 message SuggestRequest {
   string query = 1;
-  SearchKind kind = 2;
+  repeated SearchKind kinds = 2;
   int32 limit = 3;
   // Client-generated id used to cancel an in-flight suggestion.
   string request_id = 4;
@@ -242,8 +268,8 @@ message SuggestRequest {
 message SubmitRequest {
   string query = 1;
   SearchIntent intent = 2;
-  SearchKind kind = 3;
-  SearchScope scope = 4;
+  repeated SearchKind kinds = 3;
+  repeated SearchScope scopes = 4;
   // Empty on first page; pass the opaque cursor from the previous response.
   string cursor = 5;
   int32 limit = 6;
@@ -271,6 +297,9 @@ message ResultItem {
   int64 created_at_unix_ms = 8;
   // Producer-local relevance, fused by the coordinator; not user-visible.
   double score = 9;
+  string source_id = 10;
+  // Read authority belongs to this item/source, never to another source's lease.
+  ReadValidity read_validity = 11;
 }
 
 message SourceCoverage {
@@ -278,6 +307,7 @@ message SourceCoverage {
   SourceState state = 2;
   // i18n key in packages/locales; the wire never carries display copy.
   string detail_key = 3;
+  CoverageExtent extent = 4;
 }
 
 message SearchResponse {
@@ -286,8 +316,9 @@ message SearchResponse {
   bool has_more = 3;
   repeated SourceCoverage coverage = 4;
   int64 expires_at_unix_ms = 5;
-  ReadValidity read_validity = 6;
-  string source_revision = 7;
+  reserved 6, 7;
+  repeated SourceReadState sources = 8;
+  string partition = 9;
 }
 
 message CancelResponse {

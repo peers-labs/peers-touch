@@ -15,6 +15,9 @@ import { MobileLifecycleKernel } from '../app/lifecycle/MobileLifecycleKernel';
 import type { MobileRuntimeDescriptor } from '../app/lifecycle/types';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
+import { createMomentsFeedStore } from '../features/social/momentsFeedStore';
+import { createMomentsGateway } from '../services/gateways/momentsGateway';
+import { PostDetailOutcome, TimelinePageOutcome } from '../gen/proto/domain/social/post_pb';
 
 const commandMocks = vi.hoisted(() => ({
   activate: vi.fn(),
@@ -272,6 +275,32 @@ describe('privateMomentsRuntime projection', () => {
     expect(readPrivateMomentsSnapshot().projections).toEqual([]);
   });
 
+  it('rebinds original scope metadata after a same-session projection fence on resume', async () => {
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    const session = authSession('session-1');
+    useAuthStore.setState({
+      session,
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED', attemptId: 'attempt-1', gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    await activeDescriptor.suspend();
+    fencePrivateMomentsRuntimeProjection();
+    await activeDescriptor.resume(runtimeContext);
+    expect(commandMocks.activate).toHaveBeenCalledOnce();
+    expect(readPrivateMomentsSnapshot()).toMatchObject({
+      active: true, stationPeerId: 'station-1', actorPtid: 'ptid:alice',
+      deviceId: 'device-1', lifecycleGeneration: '1', activationGeneration: 7,
+    });
+    commandMocks.readMoment.mockResolvedValue(
+      readProjection('post-a', '1', 'CONTENT_READY'),
+    );
+    await expect(createMomentsGateway(session).getPost('post-a', 'device.social'))
+      .resolves.toMatchObject({ ok: true, data: { outcome: PostDetailOutcome.AVAILABLE } });
+  });
+
   it('preserves projections while suspended and reconciles before resume completes', async () => {
     commandMocks.activate.mockResolvedValue(activeStatus(1));
     useAuthStore.setState({
@@ -379,6 +408,48 @@ describe('privateMomentsRuntime projection', () => {
       state: 'NOT_FOUND_OR_NOT_AUTHORIZED',
       content: undefined,
     }));
+  });
+
+  it('repairs a retained private detail from an original typed denial without comments', async () => {
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    const session = authSession('session-1');
+    useAuthStore.setState({
+      session,
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    const gateway = createMomentsGateway(session);
+    commandMocks.readMoment.mockResolvedValue(
+      readProjection('post-a', '0', 'NOT_FOUND_OR_NOT_AUTHORIZED'),
+    );
+    const feed = createMomentsFeedStore({
+      ...gateway,
+      fetchFeed: async () => ({
+        ok: true,
+        data: {
+          posts: [], explanations: [], nextCursor: '', hasMore: false,
+          outcome: TimelinePageOutcome.EMPTY,
+        },
+      }),
+    });
+    try {
+      await feed.ensureMoment('post-a', {
+        sourceId: 'device.social', anchorCommentId: 'old-comment',
+      });
+      expect(feed.state().selectedDetail?.readback).toEqual({ kind: 'hidden' });
+      expect(await feed.reconcile()).toBe(true);
+      expect(readPrivateMomentsSnapshot().postsById['post-a']?.state)
+        .toBe('NOT_FOUND_OR_NOT_AUTHORIZED');
+      expect(commandMocks.comments).not.toHaveBeenCalled();
+      expect(commandMocks.readMoment).toHaveBeenCalledTimes(2);
+    } finally {
+      feed.teardown();
+    }
   });
 
   it('persists ordered revocation and closes every private post operation', async () => {
@@ -505,6 +576,31 @@ describe('privateMomentsRuntime projection', () => {
     expect(commandMocks.openMedia).not.toHaveBeenCalled();
     expect(commandMocks.commentSubmit).not.toHaveBeenCalled();
     expect(commandMocks.react).not.toHaveBeenCalled();
+
+    const gateway = createMomentsGateway(authSession('session-1'));
+    await expect(gateway.getPost('post-a', 'device.social')).resolves.toEqual({
+      ok: true,
+      data: { outcome: PostDetailOutcome.DELETED },
+    });
+    const feed = createMomentsFeedStore({
+      ...gateway,
+      fetchFeed: async () => ({
+        ok: true,
+        data: {
+          posts: [], explanations: [], nextCursor: '', hasMore: false,
+          outcome: TimelinePageOutcome.EMPTY,
+        },
+      }),
+    });
+    await feed.ensureMoment('post-a', { sourceId: 'device.social' });
+    await expect(feed.reconcile()).resolves.toBe(true);
+    expect(feed.state().selectedDetail?.readback).toEqual({ kind: 'deleted' });
+    expect(commandMocks.readMoment).not.toHaveBeenCalled();
+    feed.teardown();
+
+    useAuthStore.setState({ session: authSession('session-2') });
+    await expect(gateway.getPost('post-a', 'device.social'))
+      .resolves.toMatchObject({ ok: false });
   });
 
   it('purges the readable Web projection when device access is revoked', async () => {

@@ -3,11 +3,11 @@
 > **Status**: active
 > **Created**: 2026-10-22
 > **Owner**: Search / Client / Station
-> **Review state**: Desktop 与 Mobile 端侧 Find/Open 已落地；所选 macOS/iOS Simulator/Android Emulator 原生证明见 [证据快照](./acceptance-evidence.md)。后续源码须重新验收。
+> **Review state**: Desktop/Mobile 通用多来源 Find/Open 与 Social 接入已实施，当前源码原生验收进行中；既有消息搜索的所选 macOS/iOS Simulator/Android Emulator 证明见 [证据快照](./acceptance-evidence.md)，不能继承为新源码或 Social 证明。
 
 ## 范围
 
-Search 的目标是按需唤起的统一搜索入口，**检索宇宙封闭在 Peers-Touch 域内**：端上私密对象、Station 业务对象以及联邦授权上下文中可见的对端对象，并只返回当前 actor 当前有权限读取的内容；另含域内功能直达。公网搜索、Peers 之外的 OS 文件/目录、外部 connector 不属于检索域（决策 D-19）。本期已实施 Desktop/Mobile 本机消息「找回 + 打开」；Station、联邦与 Ask 后置。Desktop 使用 Chat 默认落点和 singleton Search overlay；Mobile 使用既有 Shell 的按需 Search 详情。
+Search 的目标是按需唤起的统一搜索入口，**检索宇宙封闭在 Peers-Touch 域内**：端上私密对象、Station 业务对象以及联邦授权上下文中可见的对端对象，并只返回当前 actor 当前有权限读取的内容；另含域内功能直达。公网搜索、Peers 之外的 OS 文件/目录、外部 connector 不属于检索域（决策 D-19）。当前实施包括 Desktop/Mobile 本机消息、当前 Station 公开 Social 帖子/评论，以及本机已获得且当前可读的私密 Social 帖子/评论「找回 + 打开」；全联邦与 Ask 后置。Desktop 使用 Chat 默认落点和 singleton Search overlay；Mobile 使用既有 Shell 的按需 Search 详情。
 
 它拥有检索产品与派生索引合同，不拥有 Chat、Social、Agent、Note、Applet 或附件存储的业务真源和写操作。门户、建议快捷搜索和模块内检索共享查询、内容类型、权限与打开语义。各模块是否可搜、哪些字段可搜、内容属于 D/S/F 哪个信任区、撤权/删除如何生效，必须通过内容接入协议声明。
 
@@ -33,6 +33,7 @@ Search 的目标是按需唤起的统一搜索入口，**检索宇宙封闭在 P
 12. [执行计划：Desktop 端侧「找回 + 打开」](./execution-plans/20261022-device-search-find-open/plan.md)（SRCH-20261022，冻结的 Desktop 切片；后续已授权 Mobile 范围见其独立体验与验收合同，不改写冻结计划）。
 13. [Desktop Search Acceptance](./acceptance.md)：专用 Feature/Gates、连续原生 Journey、证据与授权边界。
 14. [Mobile Search Acceptance](./mobile-acceptance.md)与[证明快照](./acceptance-evidence.md)：双端模拟器 Journey、共享 Desktop 回归及精确未证明范围。
+15. [Social 内容检索验收声明](../../../../tooling/acceptance/features/social-content-search.yaml)：混合来源、原帖/历史评论打开、覆盖范围、当前读权和会话隔离的业务合同。
 
 ## 当前设计位置
 
@@ -62,12 +63,20 @@ D05 真实功能目录、D06 ToolsTab 搜索商链清理均已落地。当前原
 正式 native run、源码绑定与范围见[证明快照](./acceptance-evidence.md)；
 早期 worktree `tmp/search-native/` 只属于开发证据。
 
-当前 native 命令使用生成的 protobuf bytes；Submit 只接受 DEVICE/FIND，
-支持本机消息 keyset 分页与会话名读取，其他 scope/intent/不支持的 kind 拒绝。
-Suggest 使用会话名和消息候选，消息按时间顺序；RRF 是核心资产，本期单来源
-不宣称混合排序质量。共享核心管理分区/request ID 的订阅取消，session revision 与 Engine
-身份校验阻止失效结果发布。未鉴权 HTTP gateway 拒绝私有 Search。
-其他来源、完整混合检索、跨设备恢复及实机/OS 后台锁屏保持 UNPROVEN。
+当前 native 命令使用生成的 protobuf bytes；Submit 使用 generated kinds/scopes
+集合，在 FIND 下协调 Messaging、本机私密 Social 与 Station 公开 Social 三个
+受信来源，各来源声明并校验自己的支持范围。Suggest 仅使用本机 Messaging
+候选；Social 查询由主动提交或内容筛选触发。共享核心有界合并候选、管理
+source-state 向量与聚合分页，不比较各来源原始相关性分数；混合排序质量尚未证明。
+原域 contributor 唯一拥有 query/hydrate/resolve 的读权，原域 opener 唯一拥有
+原对象及评论锚点导航。共享核心管理分区/request ID 的订阅取消，身份与来源
+有效性屏障阻止失效结果发布；原对象打开中的投影收敛不取消同一有效意图。
+未鉴权 HTTP gateway 拒绝私有 Search。
+
+公开覆盖限于当前 Station 可检索集合，私密覆盖限于本机已获得且当前可读
+对象；未投递、未解密和未恢复历史不宣称完整收录。当前组成上限为三个来源，
+不宣称任意数量扩展已验证。Social 与新源码完整混合检索的原生证明正在取得；
+其他来源、跨设备恢复及实机/OS 后台锁屏保持 UNPROVEN。
 所选 native Acceptance 的 PASS 只对证据索引内的源码与环境成立。
 
 ## 相关真源

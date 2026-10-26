@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
     loadCircleMembers: vi.fn<() => Promise<void>>(),
     loadPost: vi.fn<() => Promise<undefined>>(),
     loadComments: vi.fn<() => Promise<void>>(),
+    setCommentTarget: vi.fn(),
     loadUserFeed: vi.fn<() => Promise<void>>(),
     reset: vi.fn(),
   };
@@ -39,6 +40,7 @@ const mocks = vi.hoisted(() => {
     purgeMoment: vi.fn<() => Promise<void>>(),
   };
   const privateComments = {
+    setCommentTarget: vi.fn(),
     activateActor: vi.fn(),
     deactivate: vi.fn(),
     bootstrap: vi.fn<() => Promise<void>>(),
@@ -163,6 +165,7 @@ import {
   prepareRemotePrivateRecipient,
 } from './momentsRuntime';
 import { EVENT, eventBus } from '../kernel/events';
+import { useMomentsNavigationStore } from '../store/momentsNavigation';
 
 let intervalCallbacks: Array<() => void>;
 
@@ -242,6 +245,53 @@ afterEach(() => {
 });
 
 describe('momentsRuntime identity fence', () => {
+  it('does not start an obsolete historical comment read after Back during the parent read', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    mocks.moments.loadComments.mockClear();
+    let release!: (value: undefined) => void;
+    mocks.moments.loadPost.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    useMomentsNavigationStore.getState().setView({
+      kind: 'detail', postId: 'pending-post', commentId: 'old-comment', from: 'feed',
+    });
+    eventBus.publish(EVENT.MOMENT_COMMENTED, {
+      eventId: 'pending-anchor', targetActorPtid: 'ptid:alice', sessionEpoch: 1,
+      stationPeerId: 'station-a', stationUrl: 'https://station-a.test',
+      postId: 'pending-post', authorActorPtid: 'ptid:alice', commentId: 'new-comment',
+      commentAuthorActorPtid: 'ptid:bob', occurredAtUnixMs: 1,
+    });
+    await vi.waitFor(() => expect(release).toBeDefined());
+    useMomentsNavigationStore.getState().setView({ kind: 'tab', tab: 'feed' });
+    release(undefined);
+    await flushRuntime();
+    expect(mocks.moments.loadComments).not.toHaveBeenCalled();
+    expect(mocks.privateComments.loadComments).not.toHaveBeenCalled();
+  });
+
+  it('retains the exact active comment on events and periodic refresh, then clears on navigation', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    const postId = 'historical-post';
+    mocks.moments.loadPost.mockResolvedValue({ id: postId, audience: { kind: 1 } } as never);
+    useMomentsNavigationStore.getState().setView({
+      kind: 'detail', postId, commentId: 'old-comment', from: 'feed',
+    });
+    eventBus.publish(EVENT.MOMENT_REACTED, {
+      eventId: 'anchor-refresh', targetActorPtid: 'ptid:alice', sessionEpoch: 1,
+      stationPeerId: 'station-a', stationUrl: 'https://station-a.test',
+      postId, authorActorPtid: 'ptid:alice', reactionActorPtid: 'ptid:bob',
+      kind: 'REACTION_LIKE', removed: false, occurredAtUnixMs: 1,
+    });
+    await flushRuntime();
+    expect(mocks.moments.loadComments).toHaveBeenLastCalledWith(postId, true, 'old-comment');
+    intervalCallbacks[0]();
+    await flushRuntime();
+    expect(mocks.moments.loadComments).toHaveBeenLastCalledWith(postId, true, 'old-comment');
+    useMomentsNavigationStore.getState().setView({ kind: 'tab', tab: 'feed' });
+    expect(mocks.moments.setCommentTarget).toHaveBeenLastCalledWith(undefined, undefined);
+    expect(mocks.privateComments.setCommentTarget).toHaveBeenLastCalledWith(undefined, undefined);
+  });
+
   it('hydrates visible public and private Moment authors in the runtime', async () => {
     mocks.moments.postsById = {
       public: {
@@ -321,7 +371,7 @@ describe('momentsRuntime identity fence', () => {
     eventBus.publish(EVENT.MOMENT_COMMENTED, wake);
     await vi.waitFor(() => {
       expect(mocks.privateMoments.readMoment).toHaveBeenCalledWith(postId);
-      expect(mocks.privateComments.loadComments).toHaveBeenCalledWith(postId, true);
+      expect(mocks.privateComments.loadComments).toHaveBeenCalledWith(postId, true, undefined);
     });
 
     eventBus.publish(EVENT.MOMENT_COMMENTED, wake);

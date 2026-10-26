@@ -742,6 +742,15 @@ SSE/push wake
 
 若本地 transaction 未 commit，Station item 保持 unacked，lane 停在该 sequence。
 
+Claim 已提交但响应丢失时，同一仍然 active 的 consumer 可携带较低的非零
+expected epoch 观察当前 lane metadata。Station 先校验 cursor 不越过
+`acked_through`，然后只返回当前 epoch、lane head 和 acked-through，items 为空；
+不重放 payload，不延长 lease，不改变 item、attempt count、consumer 或 ACK。
+Engine 使用现有 epoch observer 接收 metadata，随后沿原 lease 到期和新 Claim
+路径恢复；每个新 delivery attempt 仍须推进 epoch。代价是一次 metadata 请求和
+既有 lease 的剩余等待时间，不新增轮询周期或放宽超时。未来 epoch、被其他
+consumer 替换的旧 epoch，以及旧 attempt 的 ACK/Reject 继续被 fencing 拒绝。
+
 `ConversationUpdated`、`ConversationDissolved` 和
 `MemberAuthorityCommitted` 的 `PUBLIC_EVENT` 也属于此消费路径。
 Desktop 必须校验 marker 与 Authority event 的绑定，原子提交名称、描述、头像、

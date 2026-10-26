@@ -4615,7 +4615,7 @@ fn map_friend_request_transport_error(
         StationTransportError::Decode | StationTransportError::Invalid => {
             FriendRequestTransportFailure::ResponseDecode
         }
-        StationTransportError::Network | StationTransportError::HttpStatus { .. } => {
+        StationTransportError::Network { .. } | StationTransportError::HttpStatus { .. } => {
             FriendRequestTransportFailure::Transport
         }
     }
@@ -4627,7 +4627,7 @@ fn map_relationship_transport_error(error: StationTransportError) -> Relationshi
         StationTransportError::Decode | StationTransportError::Invalid => {
             RelationshipTransportFailure::ResponseDecode
         }
-        StationTransportError::Network | StationTransportError::HttpStatus { .. } => {
+        StationTransportError::Network { .. } | StationTransportError::HttpStatus { .. } => {
             RelationshipTransportFailure::Transport
         }
     }
