@@ -612,6 +612,8 @@ fn main() {
             window.focus = false;
             if !exclusive_native_input {
                 window.visible = false;
+                // Initial focus=false does not stop AppKit selecting a key window later.
+                window.focusable = false;
             }
             window.background_throttling =
                 Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
