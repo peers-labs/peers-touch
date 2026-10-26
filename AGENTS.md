@@ -607,6 +607,10 @@ boundary instead of silently creating one.
    version/schema bump and worktree topology), a missing external resource, or
    a material product/architecture/security/privacy/compatibility/rollout
    choice that accepted sources cannot resolve.
+   Current-worktree rebuildable compilation cache cleanup and exact-scope
+   reviewed non-stable development data reset are authorized maintenance.
+   Apply `docs/global/workflow.md` and the original cleanup owner, exclude
+   concurrent writers, then continue work without another permission prompt.
 6. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN.
    Mutating fixes enter EXECUTE through `pt-dev-workflow`, which dispatches
    `pt-small-fix-discipline`; only a trivial text-only correction may invoke

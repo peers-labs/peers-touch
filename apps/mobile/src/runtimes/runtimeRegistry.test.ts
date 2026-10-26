@@ -455,6 +455,52 @@ describe('mobile runtime registry', () => {
     );
   });
 
+  it.each([
+    { sessionId: 'replacement-session' },
+    { deviceId: 'replacement-device' },
+    { lifecycleGeneration: 2 },
+  ])('replaces suspended Social owner after its admitted identity changes: %j', async (change) => {
+    const order: string[] = [];
+    socialRuntimeMocks.startSocialRuntime.mockImplementation(async (session) => {
+      const key = `${session.sessionId}/${session.deviceId}/${session.lifecycleGeneration}`;
+      order.push(`start:${key}`);
+      return {
+        suspend: vi.fn(async () => undefined),
+        resume: vi.fn(async () => { order.push(`resume:${key}`); }),
+        teardown: vi.fn(async () => { order.push(`teardown:${key}`); }),
+        drain: vi.fn(async () => { order.push(`drain:${key}`); }),
+      };
+    });
+    const original = mobileSession('ptid:alice', 'session-alice');
+    const replacement = { ...original, ...change };
+    const originalKey = 'session-alice/device-1/1';
+    const replacementKey = `${replacement.sessionId}/${replacement.deviceId}/${replacement.lifecycleGeneration}`;
+    let oldContextCurrent = true;
+    const oldContext = runtimeContext();
+    oldContext.beginReadinessUpdate = () => ({
+      isCurrent: () => oldContextCurrent,
+      waitForDependencies: async () => true,
+      ready: () => undefined,
+      fail: () => undefined,
+    });
+    useAuthStore.setState({ session: original, accessDecision: grantedDecision() });
+    const social = createMobileRuntimeDescriptors().find(row => row.id === 'social')!;
+    try {
+      await social.bootstrap(oldContext);
+      await social.suspend();
+      // Kernel invalidates the old descriptor context before Session resumes.
+      oldContextCurrent = false;
+      useAuthStore.setState({ session: replacement });
+      await social.resume(runtimeContext());
+      expect(order).toEqual([
+        `start:${originalKey}`, `teardown:${originalKey}`, `drain:${originalKey}`,
+        `start:${replacementKey}`,
+      ]);
+    } finally {
+      await social.teardown({ reason: 'app-unmount' });
+    }
+  });
+
   it('tears down and drains the old Social controller before session replacement', async () => {
     vi.stubGlobal('window', { dispatchEvent: vi.fn() });
     vi.stubGlobal('CustomEvent', class {

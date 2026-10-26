@@ -2,6 +2,37 @@
   "version": 1,
   "capabilities": [
     {
+      "id": "social-content-search",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-content-search"],
+      "required_gates": [
+        "social-content-search-contract",
+        "social-content-search-desktop-native-e2e",
+        "social-content-search-mobile-native-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/application/search/social.rs",
+        "apps/mobile/src-tauri/src/runtime/search/social/private.rs"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Original PublicReadPort and private Social read authority",
+          "Device SQLCipher Social projections and source-issued Search sessions"
+        ],
+        "surfaces": ["Native Desktop, iOS Simulator and Android Emulator Search and original Social targets"],
+        "proven_by": [
+          "social-content-search-desktop-native-e2e",
+          "social-content-search-mobile-native-e2e"
+        ],
+        "proven_scope": ["Named runtime cells only when current-source native Gates pass"],
+        "unproven_scope": [
+          "Physical devices, background/lock-screen and assistive technology",
+          "Federation-wide Search, unrecovered history and field performance"
+        ]
+      }
+    },
+    {
       "id": "social-private-explicit-audience",
       "domain": "social",
       "direction": "acceptance_validates_product",

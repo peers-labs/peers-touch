@@ -29,7 +29,12 @@ import {
   type ReactionSummary,
 } from '../../gen/proto/domain/social/post_pb';
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
-import type { MomentsGateway, MomentsFeedPage } from '../../services/gateways/momentsGateway';
+import type {
+  MomentDetailReadOptions,
+  MomentReadSource,
+  MomentsGateway,
+  MomentsFeedPage,
+} from '../../services/gateways/momentsGateway';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -105,6 +110,8 @@ export type MomentDetailReadback =
 
 export interface SelectedMomentDetailState {
   readonly postId: string;
+  readonly sourceId?: MomentReadSource;
+  readonly anchorCommentId?: string;
   readonly readback: MomentDetailReadback;
 }
 
@@ -125,6 +132,9 @@ export interface MomentsFeedState {
 
 export interface CommentsState {
   readonly postId: string;
+  readonly sourceId?: MomentReadSource;
+  readonly anchorCommentId?: string;
+  readonly initialized?: boolean;
   readonly comments: readonly Comment[];
   readonly cursor: string;
   readonly hasMore: boolean;
@@ -189,10 +199,10 @@ export interface MomentsFeedStoreController {
   rollbackReaction: (token: ReactionMutationToken, errorMessage: string) => void;
 
   /** Ensure authoritative detail and comments exist without replacing retained state. */
-  ensureMoment: (postId: string) => Promise<void>;
+  ensureMoment: (postId: string, options?: MomentDetailReadOptions) => Promise<void>;
 
   /** Force authoritative detail and comments reload after retry or mutation. */
-  reloadMoment: (postId: string) => Promise<boolean>;
+  reloadMoment: (postId: string, options?: MomentDetailReadOptions) => Promise<boolean>;
 
   /** Reload the authoritative first comment page for a post. */
   loadComments: (postId: string) => Promise<boolean>;
@@ -243,8 +253,11 @@ export function resolveMomentPolicyState(
 export async function readAuthoritativeMomentDetail(
   gateway: MomentsGateway,
   postId: string,
+  sourceId: MomentReadSource = 'station.social.public',
 ): Promise<MomentDetailReadback> {
-  const result = await gateway.getPost(postId);
+  const result = sourceId === 'station.social.public'
+    ? await gateway.getPost(postId)
+    : await gateway.getPost(postId, sourceId);
   if (!result.ok) {
     return { kind: 'unavailable', reason: result.error.message };
   }
@@ -378,9 +391,15 @@ export function createMomentsFeedStore(
     );
   }
 
-  function emptyCommentsState(postId: string): CommentsState {
+  function emptyCommentsState(
+    postId: string,
+    options: MomentDetailReadOptions = {},
+  ): CommentsState {
     return {
       postId,
+      sourceId: options.sourceId ?? 'station.social.public',
+      anchorCommentId: options.anchorCommentId ?? '',
+      initialized: false,
       comments: [],
       cursor: '',
       hasMore: true,
@@ -620,10 +639,10 @@ export function createMomentsFeedStore(
   }
 
   async function reconcile(): Promise<boolean | null> {
-    const selectedPostId = feedState.selectedDetail?.postId;
+    const selected = feedState.selectedDetail;
     const feedRequest = refreshFeed();
-    const detailRequest = selectedPostId
-      ? reloadMomentProjection(selectedPostId)
+    const detailRequest = selected
+      ? reloadMomentProjection(selected.postId, selected)
       : Promise.resolve(true);
     const feedRequestId = activeFeedRequestId;
     const detailRequestId = activeDetailRequestId;
@@ -710,6 +729,8 @@ export function createMomentsFeedStore(
   function removePostProjection(postId: string, terminal: boolean): void {
     if (torn) return;
     if (terminal) terminalPostIds.add(postId);
+    postRequestSequences.delete(postId);
+    commentRequestSequences.delete(postId);
     const postIndex = feedState.postIndex.get(postId);
     const retainedPost = postIndex === undefined ? undefined : feedState.posts[postIndex];
     const filtered = feedState.posts.filter((p) => p.id !== postId);
@@ -717,8 +738,6 @@ export function createMomentsFeedStore(
     let selectedDetail = priorSelectedDetail;
     if (priorSelectedDetail?.postId === postId) {
       activeDetailRequestId = ++detailRequestSequence;
-      postRequestSequences.delete(postId);
-      commentRequestSequences.delete(postId);
       if (terminal) {
         const selectedPost = priorSelectedDetail.readback.kind === 'available'
           || priorSelectedDetail.readback.kind === 'deleted'
@@ -727,6 +746,7 @@ export function createMomentsFeedStore(
             ? retainedPost
             : undefined;
         selectedDetail = {
+          ...priorSelectedDetail,
           postId,
           readback: {
             kind: 'deleted',
@@ -735,6 +755,7 @@ export function createMomentsFeedStore(
         };
       } else {
         selectedDetail = {
+          ...priorSelectedDetail,
           postId,
           readback: { kind: 'blocked' },
         };
@@ -795,6 +816,7 @@ export function createMomentsFeedStore(
     }
     if (detailPost) {
       selectedDetail = {
+        ...selectedDetail,
         postId,
         readback: {
           kind: 'available',
@@ -908,8 +930,16 @@ export function createMomentsFeedStore(
 
   async function loadMomentDetail(
     postId: string,
+    options: MomentDetailReadOptions = {},
   ): Promise<MomentDetailReadback | null> {
     if (torn || !postId) return null;
+    const sourceId = options.sourceId ?? 'station.social.public';
+    const anchorCommentId = options.anchorCommentId ?? '';
+    const target = {
+      postId,
+      ...(sourceId === 'device.social' ? { sourceId } : {}),
+      ...(anchorCommentId ? { anchorCommentId } : {}),
+    };
     if (terminalPostIds.has(postId)) {
       const retained = feedState.selectedDetail?.postId === postId
         ? feedState.selectedDetail.readback
@@ -919,7 +949,7 @@ export function createMomentsFeedStore(
         : { kind: 'deleted' };
       feedState = {
         ...feedState,
-        selectedDetail: { postId, readback },
+        selectedDetail: { ...target, readback },
       };
       emit();
       return readback;
@@ -932,58 +962,74 @@ export function createMomentsFeedStore(
       ...feedState,
       reactionMutations: retainReactionMutations(feedState.posts, postId),
       selectedDetail: {
-        postId,
+        ...target,
         readback: { kind: 'loading' },
       },
     };
     emit();
 
-    const readback = await readAuthoritativeMomentDetail(gateway, postId);
+    const readback = await readAuthoritativeMomentDetail(gateway, postId, sourceId);
     if (!isDetailRequestCurrent(requestLifecycle, requestId)) return null;
 
     feedState = {
       ...feedState,
-      selectedDetail: { postId, readback },
+      selectedDetail: { ...target, readback },
     };
     emit();
     return readback;
   }
 
-  async function ensureMoment(postId: string): Promise<void> {
+  async function ensureMoment(
+    postId: string,
+    options: MomentDetailReadOptions = {},
+  ): Promise<void> {
     if (torn || !postId) return;
     const selected = feedState.selectedDetail;
-    if (selected?.postId === postId) {
+    const sourceId = options.sourceId ?? 'station.social.public';
+    const anchorCommentId = options.anchorCommentId ?? '';
+    const comments = feedState.commentsByPost.get(postId);
+    const commentsMatch = Boolean(comments?.initialized
+      && (comments.sourceId ?? 'station.social.public') === sourceId
+      && (comments.anchorCommentId ?? '') === anchorCommentId);
+    if (
+      selected?.postId === postId
+      && (selected.sourceId ?? 'station.social.public') === sourceId
+      && (selected.anchorCommentId ?? '') === anchorCommentId
+    ) {
       if (
         selected.readback.kind === 'available'
-        && !feedState.commentsByPost.has(postId)
+        && !commentsMatch && !comments?.loading
       ) {
-        await loadComments(postId);
+        await reloadComments(postId, options);
       }
       return;
     }
 
-    const readback = await loadMomentDetail(postId);
-    if (
-      readback?.kind === 'available'
-      && !feedState.commentsByPost.has(postId)
-    ) {
-      await loadComments(postId);
+    const readback = await loadMomentDetail(postId, options);
+    if (readback?.kind === 'available') {
+      await reloadComments(postId, options);
     }
   }
 
-  async function reloadMoment(postId: string): Promise<boolean> {
-    return await reloadMomentProjection(postId) === true;
+  async function reloadMoment(
+    postId: string,
+    options: MomentDetailReadOptions = {},
+  ): Promise<boolean> {
+    return await reloadMomentProjection(postId, options) === true;
   }
 
-  async function reloadMomentProjection(postId: string): Promise<boolean | null> {
+  async function reloadMomentProjection(
+    postId: string,
+    options: MomentDetailReadOptions = {},
+  ): Promise<boolean | null> {
     if (torn || !postId) return null;
-    const detailRequest = loadMomentDetail(postId);
+    const detailRequest = loadMomentDetail(postId, options);
     const requestId = activeDetailRequestId;
     const readback = await detailRequest;
     if (!readback) return null;
     if (readback.kind === 'unavailable') return false;
     if (readback?.kind === 'available') {
-      const commentsReady = await reloadComments(postId);
+      const commentsReady = await reloadComments(postId, options);
       return !torn && activeDetailRequestId === requestId ? commentsReady : null;
     }
     return true;
@@ -993,20 +1039,31 @@ export function createMomentsFeedStore(
     return await reloadComments(postId) === true;
   }
 
-  async function reloadComments(postId: string): Promise<boolean | null> {
+  async function reloadComments(
+    postId: string,
+    options: MomentDetailReadOptions = {},
+  ): Promise<boolean | null> {
     if (torn || !postId || terminalPostIds.has(postId)) return null;
     const requestLifecycle = lifecycleRevision;
     const requestId = ++commentRequestSequence;
     commentRequestSequences.set(postId, requestId);
-    const existing = feedState.commentsByPost.get(postId)
-      ?? emptyCommentsState(postId);
+    const sourceId = options.sourceId ?? 'station.social.public';
+    const anchorCommentId = options.anchorCommentId ?? '';
+    const retained = feedState.commentsByPost.get(postId);
+    const existing = retained
+      && (retained.sourceId ?? 'station.social.public') === sourceId
+      && (retained.anchorCommentId ?? '') === anchorCommentId
+      ? retained : emptyCommentsState(postId, options);
     publishCommentsState({
       ...existing,
+      comments: anchorCommentId || sourceId === 'device.social' ? [] : existing.comments,
       loading: true,
       errorMessage: '',
     });
 
-    const result = await gateway.fetchComments(postId, '', DEFAULT_COMMENT_PAGE_SIZE);
+    const result = options.sourceId === 'device.social' || options.anchorCommentId
+      ? await gateway.fetchComments(postId, '', DEFAULT_COMMENT_PAGE_SIZE, options)
+      : await gateway.fetchComments(postId, '', DEFAULT_COMMENT_PAGE_SIZE);
     if (!isCommentRequestCurrent(postId, requestLifecycle, requestId)) return null;
     commentRequestSequences.delete(postId);
 
@@ -1019,6 +1076,9 @@ export function createMomentsFeedStore(
       }).slice(0, MAX_COMMENTS_PER_POST);
       publishCommentsState({
         postId,
+        sourceId,
+        anchorCommentId,
+        initialized: true,
         comments,
         cursor: result.data.nextCursor,
         hasMore: result.data.hasMore,
@@ -1030,6 +1090,8 @@ export function createMomentsFeedStore(
 
     publishCommentsState({
       ...existing,
+      comments: anchorCommentId || sourceId === 'device.social' ? [] : existing.comments,
+      initialized: true,
       loading: false,
       errorMessage: result.error.message,
     });
@@ -1051,11 +1113,11 @@ export function createMomentsFeedStore(
       errorMessage: '',
     });
 
-    const result = await gateway.fetchComments(
-      postId,
-      cursor,
-      DEFAULT_COMMENT_PAGE_SIZE,
-    );
+    const result = existing.sourceId === 'device.social'
+      ? await gateway.fetchComments(postId, cursor, DEFAULT_COMMENT_PAGE_SIZE, {
+          sourceId: existing.sourceId,
+        })
+      : await gateway.fetchComments(postId, cursor, DEFAULT_COMMENT_PAGE_SIZE);
     if (!isCommentRequestCurrent(postId, requestLifecycle, requestId)) return;
     commentRequestSequences.delete(postId);
 

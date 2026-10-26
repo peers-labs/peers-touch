@@ -7,6 +7,7 @@ import { restoreAndRevalidateAccessRuntime } from '../../runtimes/accessRuntime'
 import {
   MOBILE_MESSAGING_RUNTIME_ERROR_EVENT,
   wakeActiveMessagingSession,
+  type MessagingWakeOptions,
 } from '../../runtimes/messagingRuntime';
 import {
   applyReliabilityProjectionCheckpoints,
@@ -587,9 +588,9 @@ async function drainPendingOperations(
   }
 }
 
-async function wakeMessaging(): Promise<void> {
+async function wakeMessaging(options?: MessagingWakeOptions): Promise<void> {
   try {
-    await wakeActiveMessagingSession();
+    await wakeActiveMessagingSession(options);
   } catch (error) {
     reportSocialRuntimeError('social-realtime-wake', error);
     throw error;

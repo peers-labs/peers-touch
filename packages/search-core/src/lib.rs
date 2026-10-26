@@ -17,13 +17,16 @@ pub mod contributor;
 pub mod cursor;
 pub mod model;
 pub mod ports;
+pub mod projected;
 pub mod query;
 pub mod ranking;
+pub mod remote;
 pub mod requests;
 pub mod runtime;
+mod session;
 pub mod tokenize;
 
-pub use cursor::{decode_cursor, encode_cursor, CursorError, PageCursor};
+pub use cursor::CursorError;
 pub use model::{ResourceRef, ResultKind, ScoredDocument, SourceCoverage, SourceStateKind};
 pub use ports::{
     CancelToken, SearchContributor, SearchError, SearchExecutionContext, SourceFuture,

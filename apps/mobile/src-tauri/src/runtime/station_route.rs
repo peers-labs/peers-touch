@@ -56,6 +56,7 @@ const ACCESS_ENDPOINT_SOURCE_PROOF_DOMAIN: &[u8] = b"peers-touch/access-endpoint
 const ACCESS_PROTOCOL_VERSION: u32 = 1;
 const CHALLENGE_SIZE: usize = 32;
 const CLOCK_SKEW_MS: i64 = 60_000;
+const ROUTE_RENEWAL_WINDOW_MS: i64 = 60_000;
 const MAX_DISCOVERY_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_PROXY_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 const ROUTE_SOURCE_KEY_PREFIX: &str = "peers-touch.mobile.station-route-source.v1.";
@@ -189,6 +190,7 @@ pub struct VerifiedStationIdentity {
 struct RouteRuntime {
     discovered: RwLock<HashMap<(String, String), CachedRoute>>,
     active: RwLock<Option<ActiveRoute>>,
+    renewal: Mutex<()>,
     proxy_origin: Mutex<Option<String>>,
     standard_transport: Mutex<Option<StandardTransportRuntime>>,
 }
@@ -259,12 +261,33 @@ impl RouteRuntime {
             .ok_or_else(|| route_error("routeNotActive"))
     }
 
-    fn renew_expired_route_with(
+    fn renew_route_with(
         &self,
+        expected: Option<&StationRouteSelectionInput>,
         discover: impl FnOnce(&str) -> MobileResult<VerifiedDiscovery>,
     ) -> MobileResult<ActiveRoute> {
+        // A waiter reads the committed proof after the preceding renewal.
+        // Discovery is bounded by its client timeout; selection/removal remain
+        // free to invalidate this snapshot while discovery is in flight.
+        let _renewal = self
+            .renewal
+            .lock()
+            .map_err(|_| route_error("runtimeLock"))?;
         let snapshot = self.active_snapshot()?;
-        if ensure_route_current(&snapshot.candidate).is_ok() {
+        if expected.is_some_and(|expected| {
+            snapshot.candidate.station_peer_id != expected.station_peer_id
+                || snapshot.candidate.route_id != expected.route_id
+                || snapshot.route_revision != expected.route_revision
+        }) {
+            return Err(route_error("routeChanged"));
+        }
+        if !snapshot
+            .candidate
+            .attestation_expires_at_unix_ms
+            .is_some_and(|expiry| {
+                expiry <= (unix_ms() as i64).saturating_add(ROUTE_RENEWAL_WINDOW_MS)
+            })
+        {
             return Ok(snapshot);
         }
         let cached = self.cached(
@@ -305,7 +328,14 @@ impl RouteRuntime {
             .active
             .write()
             .map_err(|_| route_error("runtimeLock"))?;
-        if active.as_ref() != Some(&snapshot) {
+        if active.as_ref() != Some(&snapshot)
+            || routes
+                .get(&(
+                    snapshot.candidate.station_peer_id.clone(),
+                    snapshot.candidate.route_id.clone(),
+                ))
+                .is_none_or(|current| current.candidate != cached.candidate)
+        {
             return Err(route_error("routeChanged"));
         }
         self.retire_standard_route(&snapshot)?;
@@ -550,17 +580,9 @@ pub async fn station_route_refresh(
     input: StationRouteSelectionInput,
 ) -> MobileResult<StationRouteRefreshProjection> {
     tauri::async_runtime::spawn_blocking(move || {
-        let previous = ROUTES.active_snapshot()?;
-        if previous.candidate.station_peer_id != input.station_peer_id
-            || previous.candidate.route_id != input.route_id
-            || previous.route_revision != input.route_revision
-        {
-            return Err(route_error("routeChanged"));
-        }
-        // Returns the current route when it is still fresh; otherwise renews
-        // the cached route with optimistic concurrency against `previous`.
-        let refreshed = ROUTES
-            .renew_expired_route_with(|source| discover_station_input(source, true))?;
+        // Validate the requested selection after acquiring renewal ownership.
+        let refreshed =
+            ROUTES.renew_route_with(Some(&input), |source| discover_station_input(source, true))?;
         Ok(StationRouteRefreshProjection {
             binding: binding_projection(&refreshed, ROUTES.ensure_proxy()?),
             route: refreshed.candidate,
@@ -1104,7 +1126,7 @@ fn binding_projection(
 }
 
 fn fetch_station_identity() -> MobileResult<VerifiedStationIdentity> {
-    let route = ROUTES.renew_expired_route_with(|source| discover_station_input(source, true))?;
+    let route = ROUTES.renew_route_with(None, |source| discover_station_input(source, true))?;
     let mut challenge = [0_u8; CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
     let request = StationIdentityRequest {
@@ -1198,29 +1220,43 @@ fn serve_proxy(listener: TcpListener) {
             break;
         };
         std::thread::spawn(move || {
-            if let Err(error) = serve_proxy_connection(connection) {
-                log::warn!("mobile Station route proxy request failed: {error}");
-            }
+            let _ = serve_proxy_connection(connection);
         });
     }
 }
 
+fn proxy_stage<T>(stage: &'static str, result: MobileResult<T>) -> MobileResult<T> {
+    result.map_err(|error| {
+        log::warn!(target: "station-route", "proxy failed stage={stage}");
+        error
+    })
+}
+
 fn serve_proxy_connection(mut connection: TcpStream) -> MobileResult<()> {
-    let route = ROUTES.renew_expired_route_with(|source| discover_station_input(source, true))?;
+    let route = proxy_stage(
+        "renewal",
+        ROUTES.renew_route_with(None, |source| discover_station_input(source, true)),
+    )?;
     let timeout = Duration::from_secs(305);
-    connection
-        .set_read_timeout(Some(timeout))
-        .and_then(|_| connection.set_write_timeout(Some(timeout)))
-        .map_err(|_| route_error("proxyTimeout"))?;
-    let request = read_http_request(&mut connection)?;
-    match open_standard_response(&route, &request) {
+    proxy_stage(
+        "connection_timeout",
+        connection
+            .set_read_timeout(Some(timeout))
+            .and_then(|_| connection.set_write_timeout(Some(timeout)))
+            .map_err(|_| route_error("proxyTimeout")),
+    )?;
+    let request = proxy_stage("request_read", read_http_request(&mut connection))?;
+    match proxy_stage("round_trip", open_standard_response(&route, &request)) {
         Ok(response) => write_standard_response(&mut connection, &route, response),
         Err(_) => {
             if !request_allows_automatic_failover(&request) {
                 return Err(route_error("standardRoundTrip"));
             }
-            let alternate = ROUTES.activate_alternate(&route)?;
-            let response = open_standard_response(&alternate, &request)?;
+            let alternate = proxy_stage("alternate_selection", ROUTES.activate_alternate(&route))?;
+            let response = proxy_stage(
+                "alternate_round_trip",
+                open_standard_response(&alternate, &request),
+            )?;
             write_standard_response(&mut connection, &alternate, response)
         }
     }
@@ -1288,7 +1324,13 @@ fn open_standard_response(route: &ActiveRoute, request: &[u8]) -> MobileResult<S
     }
     transport
         .round_trip(&route_spec, standard_request)
-        .map_err(|_| route_error("standardRoundTrip"))
+        .map_err(|error| {
+            log::warn!(
+                target: "station-route",
+                "transport failed kind={:?} phase={:?}", error.kind(), error.phase()
+            );
+            route_error("standardRoundTrip")
+        })
 }
 
 fn write_standard_response(
@@ -1296,39 +1338,57 @@ fn write_standard_response(
     route: &ActiveRoute,
     mut response: StandardResponse,
 ) -> MobileResult<()> {
-    ROUTES.assert_current(route)?;
-    write!(
-        connection,
-        "HTTP/1.1 {} {}\r\n",
-        response.status.as_u16(),
-        response.status.canonical_reason().unwrap_or("")
-    )
-    .map_err(|_| route_error("proxyWrite"))?;
+    proxy_stage("response_binding", ROUTES.assert_current(route))?;
+    proxy_stage(
+        "response_write",
+        write!(
+            connection,
+            "HTTP/1.1 {} {}\r\n",
+            response.status.as_u16(),
+            response.status.canonical_reason().unwrap_or("")
+        )
+        .map_err(|_| route_error("proxyWrite")),
+    )?;
     for (name, value) in &response.headers {
         if name.as_str().eq_ignore_ascii_case("connection")
             || name.as_str().eq_ignore_ascii_case("transfer-encoding")
         {
             continue;
         }
-        let value = value.to_str().map_err(|_| route_error("responseInvalid"))?;
-        write!(connection, "{}: {}\r\n", name.as_str(), value)
-            .map_err(|_| route_error("proxyWrite"))?;
+        let value = proxy_stage(
+            "response_headers",
+            value.to_str().map_err(|_| route_error("responseInvalid")),
+        )?;
+        proxy_stage(
+            "response_write",
+            write!(connection, "{}: {}\r\n", name.as_str(), value)
+                .map_err(|_| route_error("proxyWrite")),
+        )?;
     }
-    write!(connection, "Connection: close\r\n\r\n").map_err(|_| route_error("proxyWrite"))?;
+    proxy_stage(
+        "response_write",
+        write!(connection, "Connection: close\r\n\r\n").map_err(|_| route_error("proxyWrite")),
+    )?;
     let mut buffer = [0_u8; 16 * 1024];
     loop {
-        let count = response
-            .body
-            .read(&mut buffer)
-            .map_err(|_| route_error("standardResponseRead"))?;
+        let count = proxy_stage(
+            "response_read",
+            response
+                .body
+                .read(&mut buffer)
+                .map_err(|_| route_error("standardResponseRead")),
+        )?;
         if count == 0 {
             return Ok(());
         }
-        ROUTES.assert_current(route)?;
-        connection
-            .write_all(&buffer[..count])
-            .and_then(|_| connection.flush())
-            .map_err(|_| route_error("proxyWrite"))?;
+        proxy_stage("response_binding", ROUTES.assert_current(route))?;
+        proxy_stage(
+            "response_write",
+            connection
+                .write_all(&buffer[..count])
+                .and_then(|_| connection.flush())
+                .map_err(|_| route_error("proxyWrite")),
+        )?;
     }
 }
 
@@ -1614,7 +1674,7 @@ mod tests {
     fn expired_route_renews_exact_binding_without_changing_revision() {
         let (runtime, original) = expired_route_runtime();
         let refreshed = runtime
-            .renew_expired_route_with(|source| {
+            .renew_route_with(None, |source| {
                 assert_eq!(source, "https://station.example");
                 let mut candidate = original.candidate.clone();
                 candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
@@ -1627,15 +1687,128 @@ mod tests {
         assert_eq!(refreshed.candidate.attestation_bytes, Some(vec![8]));
         assert_eq!(runtime.active_snapshot().unwrap(), refreshed);
         assert!(runtime
-            .renew_expired_route_with(|_| panic!("fresh route rediscovered"))
+            .renew_route_with(None, |_| panic!("fresh route rediscovered"))
             .is_ok());
+    }
+
+    #[test]
+    fn route_renews_inside_the_frontend_preexpiry_window() {
+        let (runtime, original) = expired_route_runtime();
+        let mut near = original.candidate.clone();
+        near.attestation_expires_at_unix_ms = Some(unix_ms() as i64 + 30_000);
+        runtime.register(&route_discovery(near.clone())).unwrap();
+        runtime.active.write().unwrap().as_mut().unwrap().candidate = near;
+        let refreshed = runtime
+            .renew_route_with(None, |_| {
+                let mut candidate = original.candidate.clone();
+                candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
+                candidate.attestation_bytes = Some(vec![8]);
+                Ok(route_discovery(candidate))
+            })
+            .unwrap();
+        assert_eq!(refreshed.candidate.attestation_bytes, Some(vec![8]));
+        assert_eq!(refreshed.route_revision, original.route_revision);
+    }
+
+    #[test]
+    fn concurrent_route_renewal_reuses_one_verified_result() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{mpsc, Arc, Barrier};
+
+        let (runtime, original) = expired_route_runtime();
+        let runtime = Arc::new(runtime);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let start = Arc::new(Barrier::new(3));
+        let (sender, receiver) = mpsc::channel();
+        let mut workers = Vec::new();
+        for _ in 0..2 {
+            let runtime = runtime.clone();
+            let calls = calls.clone();
+            let start = start.clone();
+            let sender = sender.clone();
+            let mut candidate = original.candidate.clone();
+            candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
+            candidate.attestation_bytes = Some(vec![8]);
+            workers.push(std::thread::spawn(move || {
+                start.wait();
+                let result = runtime.renew_route_with(None, |_| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(30));
+                    Ok(route_discovery(candidate))
+                });
+                sender.send(result).unwrap();
+            }));
+        }
+        start.wait();
+        let first = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap();
+        let second = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(first, second);
+        assert_eq!(first.route_revision, original.route_revision);
+        for worker in workers {
+            worker.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn route_refresh_validates_expected_selection_before_discovery() {
+        let (runtime, original) = expired_route_runtime();
+        for mutation in 0..3 {
+            let mut expected = StationRouteSelectionInput {
+                station_peer_id: original.candidate.station_peer_id.clone(),
+                route_id: original.candidate.route_id.clone(),
+                route_revision: original.route_revision,
+            };
+            match mutation {
+                0 => expected.station_peer_id = "other-station".to_string(),
+                1 => expected.route_id = "other-route".to_string(),
+                _ => expected.route_revision += 1,
+            }
+            assert!(runtime
+                .renew_route_with(Some(&expected), |_| panic!("stale selection rediscovered"))
+                .is_err());
+        }
+        assert_eq!(runtime.active_snapshot().unwrap(), original);
+    }
+
+    #[test]
+    fn route_renewal_does_not_revive_a_removed_route_or_extend_failed_proof() {
+        let (runtime, original) = expired_route_runtime();
+        assert!(runtime
+            .renew_route_with(None, |_| Err(discovery_error("endpointUnavailable")))
+            .is_err());
+        assert_eq!(runtime.active_snapshot().unwrap(), original);
+        assert!(runtime
+            .renew_route_with(None, |_| {
+                runtime.remove(
+                    &original.candidate.station_peer_id,
+                    &original.candidate.route_id,
+                )?;
+                let mut candidate = original.candidate.clone();
+                candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
+                Ok(route_discovery(candidate))
+            })
+            .is_err());
+        assert!(runtime.active_snapshot().is_err());
+        assert!(runtime
+            .cached(
+                &original.candidate.station_peer_id,
+                &original.candidate.route_id
+            )
+            .is_err());
     }
 
     #[test]
     fn expired_route_accepts_monotonic_authorization_rotation() {
         let (runtime, original) = expired_route_runtime();
         let refreshed = runtime
-            .renew_expired_route_with(|_| {
+            .renew_route_with(None, |_| {
                 let mut candidate = original.candidate.clone();
                 candidate.authorization_epoch += 1;
                 candidate.route_generation += 1;
@@ -1658,9 +1831,9 @@ mod tests {
 
     #[test]
     fn route_renewal_rejects_revocation_and_concurrent_selection() {
-        for mutation in 0..7 {
+        for mutation in 0..12 {
             let (runtime, original) = expired_route_runtime();
-            let result = runtime.renew_expired_route_with(|_| {
+            let result = runtime.renew_route_with(None, |_| {
                 let mut candidate = original.candidate.clone();
                 candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
                 match mutation {
@@ -1670,7 +1843,7 @@ mod tests {
                     3 => candidate.endpoint_origin = "https://other.example".to_string(),
                     4 => candidate.authorization_epoch -= 1,
                     5 => candidate.station_root_public_key = vec![9],
-                    _ => {
+                    6 => {
                         runtime
                             .active
                             .write()
@@ -1678,6 +1851,15 @@ mod tests {
                             .as_mut()
                             .unwrap()
                             .route_revision += 1
+                    }
+                    7 => candidate.route_id = "other-route".to_string(),
+                    8 => candidate.transport = "unsupported".to_string(),
+                    9 => candidate.relay_peer_id = Some("other-relay".to_string()),
+                    10 => candidate.source_ref = "other-source".to_string(),
+                    _ => {
+                        let mut other = candidate.clone();
+                        other.authorization_epoch += 1;
+                        runtime.register(&route_discovery(other)).unwrap();
                     }
                 }
                 Ok(route_discovery(candidate))

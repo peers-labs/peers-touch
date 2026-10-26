@@ -214,6 +214,9 @@ describe('Messaging projection hydration', () => {
 
   it('publishes a failed worker cycle to lifecycle readiness and clears it after recovery', async () => {
     await start();
+    ports.reconcile.mockClear();
+    await wakeActiveMessagingSession({ onlyIfFailed: true });
+    expect(ports.reconcile).not.toHaveBeenCalled();
     ports.beginReadinessUpdate.mockClear();
     ports.readinessFail.mockClear();
     ports.readinessReady.mockClear();
@@ -227,9 +230,18 @@ describe('Messaging projection hydration', () => {
     );
     expect(ports.readinessReady).not.toHaveBeenCalled();
 
-    await wakeActiveMessagingSession();
+    ports.reconcile.mockRejectedValueOnce(new Error('messaging service unavailable'));
+    await expect(wakeActiveMessagingSession({ onlyIfFailed: true })).rejects.toThrow(
+      'messaging service unavailable',
+    );
+    expect(ports.readinessReady).not.toHaveBeenCalled();
+
+    await wakeActiveMessagingSession({ onlyIfFailed: true });
     expect(ports.readinessReady).toHaveBeenCalledOnce();
     expect(ports.beginReadinessUpdate).toHaveBeenCalledTimes(2);
+    expect(ports.reconcile).toHaveBeenCalledTimes(3);
+    await wakeActiveMessagingSession({ onlyIfFailed: true });
+    expect(ports.reconcile).toHaveBeenCalledTimes(3);
   });
 
   it('does not assign Social stream ownership failures to Messaging readiness', async () => {

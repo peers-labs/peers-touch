@@ -9,7 +9,7 @@ use secure_content_core::operation::{
     OperationErrorCode, OperationFailure, OperationOutcome, OperationState, ReadbackDecision,
     ReadbackObservation,
 };
-use secure_content_core::ports::{ContentKeyMaterial, OperationClock};
+use secure_content_core::ports::{ContentKeyMaterial, LifecycleCancellation, OperationClock};
 use secure_content_core::recovery::RecoveryMaster;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -56,6 +56,14 @@ impl PrivateSocialRuntime {
     }
 
     pub fn reconcile(&self) -> Result<PrivateSocialReconciliationReport, String> {
+        while !self.store.backfill_search_index(&|| {
+            if self.store.is_cancelled() {
+                Err("private Social search backfill was cancelled".into())
+            } else {
+                crate::platform::lifecycle_bridge::with_visible_generation(None, |_| Ok(()))
+                    .map_err(|_| "private Social search backfill is suspended".to_string())
+            }
+        })? {}
         self.reconcile_prekey_publications()?;
         let endpoint_prekeys_available =
             self.maintain_prekey_pool(ContentPreKeyPoolKind::Endpoint)?;

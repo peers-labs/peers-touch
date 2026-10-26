@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -12,6 +13,7 @@ from tooling.acceptance.core.attestation import (
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core import EphemeralGateLaunchContext
 from tooling.acceptance.core.provisioning import (
     EnvironmentContract,
     ProvisioningState,
@@ -31,6 +33,7 @@ GATE_IDS = frozenset(
         "chat-storage-desktop-batch-clear-e2e",
         "chat-storage-redaction-recovery-e2e",
         "chat-device-search-native-e2e",
+        "social-content-search-desktop-native-e2e",
     }
 )
 
@@ -42,6 +45,41 @@ class ChatStorageNativeProvisioner(HomeStationProvisioner):
 
     def __init__(self, contract: EnvironmentContract) -> None:
         super().__init__(contract)
+
+    def create_gate_launch_context(
+        self, *, gate_id: str, evidence_run_id: str,
+        provisioning_run_id: str, required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext:
+        from tooling.acceptance.provisioners.mobile_simulator import (
+            MOBILE_STATION_OUTAGE_CAPABILITY_ID, MobileStationOutageCapabilityHandler,
+        )
+        manifest = self._manifest
+        if (
+            gate_id != "social-content-search-desktop-native-e2e"
+            or required_capabilities != (MOBILE_STATION_OUTAGE_CAPABILITY_ID,)
+            or manifest is None or not manifest.is_ready()
+            or evidence_run_id != self.evidence_run.run_id
+            or provisioning_run_id != manifest.run_id
+        ):
+            raise BlockedError(
+                reason="Social Search outage requires the current source-bound native Suite",
+                resource="social-content-search:station-outage",
+            )
+        station = manifest.services["station"]
+        handler = MobileStationOutageCapabilityHandler(
+            deployment_environment=station.deployment_environment,
+            expected_commit=station.live_commit,
+        )
+        context = EphemeralGateLaunchContext(
+            required_capabilities=required_capabilities, request_timeout_seconds=240,
+        )
+        context.register_capability(MOBILE_STATION_OUTAGE_CAPABILITY_ID, handler)
+        def restore() -> None:
+            result = handler.close()
+            if not result.closed or not result.secrets_zeroized:
+                raise RuntimeError("Social Search Station outage was not restored")
+        self.register_cleanup("social-search-station-outage", restore)
+        return context
 
     @staticmethod
     def _run_preflight_command(
@@ -102,6 +140,18 @@ class ChatStorageNativeProvisioner(HomeStationProvisioner):
                         "deployment identity"
                     ),
                     resource="profile:station",
+                )
+            if gate_id == "social-content-search-desktop-native-e2e":
+                from tooling.development.secure_content.runtime_schema import (
+                    prepare_private_social_runtime,
+                )
+                schema_path = prepare_private_social_runtime(
+                    REPO_ROOT, task_id=gate_id,
+                )
+                self.evidence_run.write_json(
+                    "runtime/canonical-private-schema-attestation.json",
+                    json.loads(schema_path.read_text()),
+                    role="social-private-schema-attestation",
                 )
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
             self.acquire_profile_lease(deployment_environment, owner)
@@ -188,7 +238,10 @@ class ChatStorageNativeProvisioner(HomeStationProvisioner):
                 manifest.run_id,
                 slot,
             )
-            if gate_id == "chat-device-search-native-e2e":
+            if gate_id in {
+                "chat-device-search-native-e2e",
+                "social-content-search-desktop-native-e2e",
+            }:
                 # Actor keys follow canonical Actor identity across account
                 # switches; each client retains independent device/data storage.
                 identity_root = (

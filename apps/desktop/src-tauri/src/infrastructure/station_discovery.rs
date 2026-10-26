@@ -3,8 +3,8 @@ use base64::Engine as _;
 use libp2p_identity::PublicKey;
 use prost::Message;
 use rand::RngCore;
-use reqwest::blocking::Client;
 use reqwest::redirect::Policy;
+use reqwest::Client;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use station_trust::{
@@ -14,7 +14,8 @@ use station_trust::{
 };
 #[cfg(any(test, feature = "acceptance-webdriver"))]
 use std::path::Path;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio_util::sync::CancellationToken;
 
 use crate::infrastructure::station::TransportIdentityScope;
 use crate::model::peer::{
@@ -90,7 +91,33 @@ where
     F: FnOnce(TransportIdentityScope, &[u8]) -> Result<(Vec<u8>, Vec<u8>), String>,
 {
     let parsed = parse_input(input)?;
-    discover_parsed(parsed, None, sign_source_proof)
+    tauri::async_runtime::block_on(discover_parsed(parsed, None, sign_source_proof))
+}
+
+pub fn discover_station_input_bounded<F>(
+    input: &str,
+    cancellation: &CancellationToken,
+    deadline: Instant,
+    sign_source_proof: F,
+) -> Result<VerifiedEndpoint, StationDiscoveryError>
+where
+    F: FnOnce(TransportIdentityScope, &[u8]) -> Result<(Vec<u8>, Vec<u8>), String>,
+{
+    let parsed = parse_input(input)?;
+    // Dropping the async request stops both header and body waits. The existing
+    // host runtime drives I/O; no detached blocking discovery worker survives.
+    tauri::async_runtime::block_on(async {
+        tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => Err(StationDiscoveryError::new(
+                "station_discovery_cancelled", "Station discovery was cancelled", false,
+            )),
+            _ = tokio::time::sleep_until(deadline.into()) => Err(StationDiscoveryError::new(
+                "station_discovery_timeout", "Station discovery deadline expired", true,
+            )),
+            result = discover_parsed(parsed, None, sign_source_proof) => result,
+        }
+    })
 }
 
 pub fn discover_station_public_material<F>(
@@ -116,10 +143,10 @@ where
             expected.canonical_discovery_origin.clone(),
         ),
     };
-    discover_parsed(parsed, Some(&expected), sign_source_proof)
+    tauri::async_runtime::block_on(discover_parsed(parsed, Some(&expected), sign_source_proof))
 }
 
-fn discover_parsed<F>(
+async fn discover_parsed<F>(
     parsed: ParsedInput,
     expected: Option<&VerifiedPublicEndpointConnectionMaterial>,
     sign_source_proof: F,
@@ -180,6 +207,7 @@ where
         .header("Content-Type", "application/protobuf")
         .body(request.encode_to_vec())
         .send()
+        .await
         .map_err(|error| {
             StationDiscoveryError::new(
                 "station_unreachable",
@@ -194,7 +222,7 @@ where
             response.status().is_server_error(),
         ));
     }
-    let bytes = response.bytes().map_err(|error| {
+    let bytes = response.bytes().await.map_err(|error| {
         StationDiscoveryError::new(
             "station_discovery_invalid",
             format!("Could not read endpoint discovery response: {error}"),
@@ -766,6 +794,146 @@ mod tests {
             }],
             node_authorization: Some(authorization),
         }
+    }
+
+    #[test]
+    fn bounded_read_signed_discovery_and_failover_share_original_deadline() {
+        use crate::application::station_runtime::StationRuntime;
+        use search_core::model::wire::{QueryIntent, SearchResponse};
+        use std::net::TcpListener;
+        use std::sync::mpsc;
+
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", server.server_addr());
+        let failed = TcpListener::bind("127.0.0.1:0").unwrap();
+        let failed_port = failed.local_addr().unwrap().port();
+        drop(failed);
+        let stalled = TcpListener::bind("127.0.0.1:0").unwrap();
+        stalled.set_nonblocking(true).unwrap();
+        let stalled_port = stalled.local_addr().unwrap().port();
+        let root = Keypair::generate_ed25519();
+        let node = Keypair::generate_ed25519();
+        let authorization_time = unix_ms();
+        let response_for = |challenge: &[u8], now: i64, port: u16, suffix: &str| {
+            let mut response = direct_response(&root, &node, challenge, &origin, authorization_time);
+            let attestation = &mut response.station_routes[0];
+            let mut statement =
+                StationRouteStatement::decode(attestation.statement_bytes.as_slice()).unwrap();
+            statement.issued_at_unix_ms = now;
+            statement.expires_at_unix_ms = now + 60_000;
+            statement.route_id.push_str(suffix);
+            statement.addresses = vec![format!(
+                "/ip4/127.0.0.1/tcp/{port}/p2p/{}",
+                node.public().to_peer_id()
+            )];
+            attestation.statement_bytes = statement.encode_to_vec();
+            attestation.node_signature =
+                sign(&node, STATION_ROUTE_DOMAIN, &attestation.statement_bytes);
+            response
+        };
+        let initial = response_for(&[1; 32], unix_ms() - 50_000, failed_port, "");
+        let endpoint =
+            verify_discovery_response(&origin, None, &[1; 32], initial, unix_ms(), None).unwrap();
+        let replacement_node = Keypair::generate_ed25519();
+        let mut replacement = direct_response(&root, &replacement_node, &[2; 32], &origin, unix_ms());
+        let replacement_attestation = &mut replacement.station_routes[0];
+        let mut replacement_statement =
+            StationRouteStatement::decode(replacement_attestation.statement_bytes.as_slice()).unwrap();
+        replacement_statement.addresses = vec![format!(
+            "/ip4/127.0.0.1/tcp/{stalled_port}/p2p/{}", replacement_node.public().to_peer_id(),
+        )];
+        replacement_attestation.statement_bytes = replacement_statement.encode_to_vec();
+        replacement_attestation.node_signature = sign(
+            &replacement_node, STATION_ROUTE_DOMAIN, &replacement_attestation.statement_bytes,
+        );
+        let replacement =
+            verify_discovery_response(&origin, None, &[2; 32], replacement, unix_ms(), None)
+                .unwrap();
+        let directory = std::env::temp_dir().join(format!(
+            "peers-signed-discovery-budget-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let runtime = StationRuntime::start(&directory).unwrap();
+        runtime.store_verified_routes(&endpoint.routes).unwrap();
+        runtime.store_verified_routes(&replacement.routes).unwrap();
+        let route = &endpoint.routes[0];
+        runtime
+            .switch_station_with_teardown(
+                &route.station_peer_id,
+                Some(&route.route_id),
+                &|_| Ok(()),
+            )
+            .unwrap();
+        runtime.binding().mark_bound().unwrap();
+        let before = runtime.binding().state();
+        let (release, released) = mpsc::channel();
+        let (entered, entry) = mpsc::channel();
+        let started = Instant::now();
+        std::thread::scope(|threads| {
+            threads.spawn(|| {
+                let mut request = server
+                    .recv_timeout(Duration::from_secs(2))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(request.url(), ACCESS_PATH);
+                let mut body = Vec::new();
+                request.as_reader().read_to_end(&mut body).unwrap();
+                let request_body = AccessEndpointRequest::decode(body.as_slice()).unwrap();
+                std::thread::sleep(Duration::from_secs(1));
+                let response = response_for(&request_body.challenge, unix_ms(), failed_port, "");
+                request
+                    .respond(tiny_http::Response::from_data(response.encode_to_vec()))
+                    .unwrap();
+            });
+            threads.spawn(move || {
+                let until = Instant::now() + Duration::from_secs(7);
+                let socket = loop {
+                    match stalled.accept() {
+                        Ok((socket, _)) => break socket,
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::WouldBlock
+                                && Instant::now() < until =>
+                        {
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("replacement transport did not connect: {error}"),
+                    }
+                };
+                entered.send(()).unwrap();
+                let _ = released.recv_timeout(Duration::from_secs(7));
+                drop(socket);
+            });
+            let result: Result<SearchResponse, _> = runtime.client().request_bounded_proto_read(
+                &runtime.client().active_scope().unwrap(),
+                "/api/v1/social/search/query",
+                "test-token",
+                &QueryIntent::default(),
+                started + Duration::from_secs(5),
+                &|| Ok(()),
+            );
+            release.send(()).unwrap();
+            let error = result.unwrap_err();
+            assert!(matches!(
+                error.kind,
+                crate::application::station_runtime::client::StationClientErrorKind::Cancelled
+            ), "{error:?}; diagnostics={:?}", runtime.diagnostics());
+            entry.recv_timeout(Duration::from_secs(1)).unwrap();
+            assert!(started.elapsed() >= Duration::from_secs(5));
+            assert!(started.elapsed() < Duration::from_millis(5_500));
+        });
+        let after = runtime.binding().state();
+        assert_eq!(after.lifecycle_generation, before.lifecycle_generation);
+        assert_eq!(after.station_peer_id, before.station_peer_id);
+        let diagnostics = runtime.diagnostics();
+        assert_eq!(diagnostics.attempts.len(), 2);
+        let automatic = diagnostics.transitions.iter()
+            .filter(|transition| transition.reason == "automatic_failover").collect::<Vec<_>>();
+        assert_eq!(automatic.len(), 1);
+        assert!(automatic[0].previous_lease_cancelled);
+        runtime.shutdown().unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

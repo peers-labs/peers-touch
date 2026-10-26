@@ -8891,6 +8891,7 @@ class MobileDirectSimulatorProvisioner(
     station_profile_keys = MOBILE_DIRECT_STATION_PROFILE_KEYS
     actor_manifest_kind = "mobile-direct-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-direct-simulator-actors.json"
+    station_outage_gate_ids = frozenset({MOBILE_RECOVERY_GATE_ID})
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -8953,7 +8954,7 @@ class MobileDirectSimulatorProvisioner(
         required_capabilities: tuple[str, ...],
     ) -> EphemeralGateLaunchContext:
         if (
-            gate_id != MOBILE_RECOVERY_GATE_ID
+            gate_id not in self.station_outage_gate_ids
             or required_capabilities
             != (MOBILE_STATION_OUTAGE_CAPABILITY_ID,)
         ):

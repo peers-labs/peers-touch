@@ -56,6 +56,15 @@ const TAG = 'moments-store';
 const EMPTY_COMMENTS: Comment[] = [];
 const MAX_PROTO_UINT64 = 18_446_744_073_709_551_615n;
 let storeGeneration = 0;
+interface PublicCommentRead {
+  generation: number;
+  cursor: string;
+  refresh: boolean;
+  anchorCommentId?: string;
+  completion: Promise<void>;
+}
+const commentReads = new Map<string, PublicCommentRead>();
+let activeCommentTarget: { postId: string; commentId?: string } | null = null;
 
 // All proto-shaped types in this store come straight from the
 // `apps/desktop/src/gen/proto/domain/social/*` bundle, which is a
@@ -421,7 +430,8 @@ interface MomentsState {
   createPost: (draft: MomentDraft) => Promise<string>;
   deletePost: (postId: string) => Promise<void>;
 
-  loadComments: (postId: string, refresh?: boolean) => Promise<void>;
+  loadComments: (postId: string, refresh?: boolean, anchorCommentId?: string) => Promise<void>;
+  setCommentTarget: (postId?: string, commentId?: string) => void;
   createComment: (
     postId: string,
     content: string,
@@ -844,6 +854,8 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const generation = storeGeneration;
     await socialDeleteMoment(postId);
     if (generation !== storeGeneration) return;
+    commentReads.delete(postId);
+    if (activeCommentTarget?.postId === postId) activeCommentTarget = null;
     try {
       await usePrivateMomentsStore.getState().purgeMoment(postId);
     } catch (error) {
@@ -882,37 +894,70 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // Comments
   // -------------------------------------------------------------------------
 
-  loadComments: async (postId, refresh = false) => {
+  setCommentTarget: (postId, commentId) => {
+    const nextPostId = postId?.trim();
+    const nextCommentId = commentId?.trim() || undefined;
+    if (activeCommentTarget?.postId === nextPostId && activeCommentTarget?.commentId === nextCommentId) return;
+    const previous = activeCommentTarget?.postId;
+    activeCommentTarget = nextPostId ? { postId: nextPostId, commentId: nextCommentId } : null;
+    for (const id of new Set([previous, nextPostId])) {
+      if (!id) continue;
+      commentReads.delete(id);
+      set(state => state.commentsLoading[id]
+        ? { commentsLoading: { ...state.commentsLoading, [id]: false } } : state);
+    }
+  },
+
+  loadComments: async (postId, refresh = false, anchorCommentId) => {
+    postId = postId.trim();
+    if (!postId) return;
     const generation = storeGeneration;
-    const loading = get().commentsLoading[postId];
-    if (loading) return;
+    const anchor = anchorCommentId?.trim()
+      || (refresh && activeCommentTarget?.postId === postId ? activeCommentTarget.commentId : undefined);
+    const replace = refresh || !!anchor;
+    const cursor = replace ? '' : (get().commentsCursor[postId] ?? '');
+    const current = (read: PublicCommentRead) =>
+      read.generation === storeGeneration && commentReads.get(postId) === read;
+    const pending = commentReads.get(postId);
+    if (pending && current(pending) && pending.cursor === cursor
+      && pending.refresh === replace && pending.anchorCommentId === anchor) return pending.completion;
+    const completion = Promise.resolve().then(async () => {
+      if (!current(read)) return;
+      try {
+        const resp = await socialGetComments(postId, cursor || undefined, 20, anchor);
+        if (!current(read)) return;
+        const page = resp.comments.map(publicCommentFromResource);
+        set((s) => {
+          const prev = replace ? [] : (s.comments[postId] ?? []);
+          const seen = new Set(prev.map((c) => c.id));
+          const merged = [...prev, ...page.filter((c) => !seen.has(c.id))];
+          return {
+            comments: { ...s.comments, [postId]: merged },
+            commentsCursor: { ...s.commentsCursor, [postId]: resp.nextCursor },
+            commentsHasMore: { ...s.commentsHasMore, [postId]: resp.hasMore },
+            commentsLoading: { ...s.commentsLoading, [postId]: false },
+          };
+        });
+      } catch (err) {
+        if (!current(read)) return;
+        log.warn(TAG, 'loadComments failed', { err: String(err) });
+        set((s) => ({
+          commentsLoading: { ...s.commentsLoading, [postId]: false },
+        }));
+        throw err;
+      } finally {
+        if (commentReads.get(postId) === read) commentReads.delete(postId);
+      }
+    });
+    const read: PublicCommentRead = {
+      generation, cursor, refresh: replace, anchorCommentId: anchor, completion,
+    };
+    // Register completion before notifying reentrant projection subscribers.
+    commentReads.set(postId, read);
     set((s) => ({
       commentsLoading: { ...s.commentsLoading, [postId]: true },
     }));
-    const cursor = refresh ? '' : (get().commentsCursor[postId] ?? '');
-    try {
-      const resp = await socialGetComments(postId, cursor || undefined);
-      if (generation !== storeGeneration) return;
-      const page = resp.comments.map(publicCommentFromResource);
-      set((s) => {
-        const prev = refresh ? [] : (s.comments[postId] ?? []);
-        const seen = new Set(prev.map((c) => c.id));
-        const merged = [...prev, ...page.filter((c) => !seen.has(c.id))];
-        return {
-          comments: { ...s.comments, [postId]: merged },
-          commentsCursor: { ...s.commentsCursor, [postId]: resp.nextCursor },
-          commentsHasMore: { ...s.commentsHasMore, [postId]: resp.hasMore },
-          commentsLoading: { ...s.commentsLoading, [postId]: false },
-        };
-      });
-    } catch (err) {
-      if (generation !== storeGeneration) return;
-      log.warn(TAG, 'loadComments failed', { err: String(err) });
-      set((s) => ({
-        commentsLoading: { ...s.commentsLoading, [postId]: false },
-      }));
-      throw err;
-    }
+    return completion;
   },
 
   createComment: async (postId, content, replyToCommentId) => {
@@ -1118,6 +1163,8 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
 
   reset: () => {
     storeGeneration += 1;
+    commentReads.clear();
+    activeCommentTarget = null;
     set({ ...initialState });
   },
 }));

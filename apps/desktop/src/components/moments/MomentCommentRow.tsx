@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Space, Typography } from 'antd';
+import { Space, Typography, theme } from 'antd';
 import { actorDisplayName } from '../../store/socialProfileProjection';
 import { useActorIdentity } from '../common/useActorIdentity';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -9,10 +9,12 @@ import type { MomentCommentItem } from './CommentList';
 interface MomentCommentRowProps {
   comment: MomentCommentItem;
   children: ReactNode;
+  highlighted?: boolean;
 }
 
-export function MomentCommentRow({ comment, children }: MomentCommentRowProps) {
+export function MomentCommentRow({ comment, children, highlighted = false }: MomentCommentRowProps) {
   const { t } = useTranslation('moments');
+  const { token } = theme.useToken();
   const identity = useActorIdentity(comment.authorPtid, {
     requireCanonicalProfile: true,
   });
@@ -24,7 +26,12 @@ export function MomentCommentRow({ comment, children }: MomentCommentRowProps) {
   return (
     <div
       data-moments-comment={comment.id}
-      style={{ display: 'flex', gap: 10, padding: '2px 0' }}
+      data-search-anchor={highlighted || undefined}
+      tabIndex={-1}
+      style={{
+        display: 'flex', gap: 10, padding: '2px 0',
+        ...(highlighted ? { background: token.colorPrimaryBg, outlineColor: token.colorPrimary } : {}),
+      }}
     >
       <UserSquareAvatar
         remoteUrl={identity.avatarUrl || undefined}

@@ -65,6 +65,41 @@ describe('Mobile Acceptance social actions', () => {
     vi.clearAllMocks();
   });
 
+  it('reads original Moments failure facts without refreshing or exposing content', async () => {
+    const state = {
+      loadState: 'idle', pageOutcome: 1, errorMessage: '', posts: [{ text: 'private-body' }],
+      selectedDetail: {
+        postId: 'post-private', sourceId: 'device.social', anchorCommentId: 'old-comment',
+        readback: { kind: 'unavailable', reason: 'original-read-unavailable' },
+      },
+      commentsByPost: new Map([['post-private', {
+        postId: 'post-private', sourceId: 'device.social', anchorCommentId: 'old-comment',
+        loading: false, initialized: true, errorMessage: 'original-comment-unavailable',
+        comments: [{ text: 'private-comment' }],
+      }]]),
+    };
+    const home = { state: vi.fn(() => state), reconcile: vi.fn() };
+    const explore = { state: vi.fn(() => ({ ...state, selectedDetail: null })), reconcile: vi.fn() };
+    projectionMocks.readCurrentActiveMomentsRuntime.mockReturnValueOnce({
+      feeds: { home, explore },
+    });
+    const projection = await mobileAcceptanceActions['social.projection.read']();
+    expect(projection.moments.home.selectedDetail).toMatchObject({
+      postId: 'post-private', state: 'unavailable', reason: 'original-read-unavailable',
+    });
+    expect(projection.moments.home.commentThreads[0]).toMatchObject({
+      commentCount: 1, errorMessage: 'original-comment-unavailable',
+    });
+    expect(JSON.stringify(projection)).not.toMatch(/private-body|private-comment/);
+    expect(home.state).toHaveBeenCalledOnce();
+    expect(explore.state).toHaveBeenCalledOnce();
+    expect(home.reconcile).not.toHaveBeenCalled();
+    expect(explore.reconcile).not.toHaveBeenCalled();
+    projectionMocks.readCurrentActiveMomentsRuntime.mockReturnValueOnce(null);
+    await expect(mobileAcceptanceActions['social.projection.read']())
+      .resolves.toMatchObject({ moments: null });
+  });
+
   it('uses the explicit Federation context for a people search', async () => {
     socialMocks.readFederationContexts.mockResolvedValue([{
       federationId: 'federation-1',

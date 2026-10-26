@@ -4,14 +4,17 @@ pub mod barrier;
 pub mod object_runtime;
 pub mod prekey_runtime;
 pub mod recovery;
+pub mod search;
+mod search_policy;
 pub mod station_trust;
 pub mod store;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use secure_content_core::object::ObjectTransferControl;
 use secure_content_core::operation::{OperationErrorCode, OperationFailure};
@@ -52,6 +55,8 @@ pub struct SecureContentSession {
     secrets: RwLock<SecureContentSessionSecrets>,
     requests: Mutex<SecureContentRequestState>,
     requests_drained: Condvar,
+    search_expires_at_unix_ms: i64,
+    search_deadline: Option<Instant>,
 }
 
 struct SecureContentSessionSecrets {
@@ -129,6 +134,18 @@ impl SecureContentSession {
         signing_key: SigningKey,
         trusted_station_signing_key: TrustedStationSigningKey,
     ) -> Self {
+        let search_expires_at_unix_ms = token
+            .split('.')
+            .nth(1)
+            .and_then(|payload| URL_SAFE_NO_PAD.decode(payload).ok())
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|claims| claims.get("exp").and_then(serde_json::Value::as_i64))
+            .and_then(|seconds| seconds.checked_mul(1000))
+            .unwrap_or(0);
+        let remaining = search_expires_at_unix_ms.saturating_sub(search_now_ms());
+        let search_deadline = (remaining > 0)
+            .then(|| Instant::now().checked_add(Duration::from_millis(remaining as u64)))
+            .flatten();
         Self {
             key,
             account_id,
@@ -147,7 +164,17 @@ impl SecureContentSession {
                 active: 0,
             }),
             requests_drained: Condvar::new(),
+            search_expires_at_unix_ms,
+            search_deadline,
         }
+    }
+
+    fn search_is_authorized(&self) -> bool {
+        !self.cancellation_requested.load(Ordering::Acquire)
+            && search_now_ms() < self.search_expires_at_unix_ms
+            && self
+                .search_deadline
+                .is_some_and(|deadline| Instant::now() < deadline)
     }
 
     pub(crate) fn station_client(&self) -> &StationClient {
@@ -311,6 +338,35 @@ pub struct SecureContentLease {
     pub store: Arc<SecureContentStore>,
     pub transfer_control: Arc<ObjectTransferControl>,
     pub renderer_generation: u64,
+}
+
+/// Headless read binding, exposing neither credentials nor content keys.
+#[derive(Clone)]
+pub struct SecureContentSearchBinding {
+    pub key: SecureContentSessionKey,
+    pub store: Arc<SecureContentStore>,
+    pub expires_at_unix_ms: i64,
+    session: Arc<SecureContentSession>,
+}
+
+impl SecureContentSearchBinding {
+    pub fn read_validity(&self) -> Result<search_core::model::wire::ReadValidity, String> {
+        if !self.session.search_is_authorized() {
+            return Err("private Social search binding is stale".to_string());
+        }
+        Ok(search_core::model::wire::ReadValidity {
+            read_scope: format!(
+                "social:{}:{}:{}:{}",
+                self.key.station_peer_id,
+                self.key.actor_ptid,
+                self.key.device_id,
+                self.key.session_generation
+            ),
+            policy_revision: self.store.search_policy_revision()?,
+            lease_until_unix_ms: 0,
+            owner_check_required: true,
+        })
+    }
 }
 
 impl ContentKeyMaterial for SecureContentLease {
@@ -525,7 +581,82 @@ impl SecureContentSupervisor {
         if let Some(previous) = previous {
             retire_runtime(previous, self.app_handle().as_ref())?;
         }
+        let recovery_lease = lease.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let check = || {
+                if LifecycleCancellation::is_cancelled(recovery_lease.session.as_ref()) {
+                    Err("private Social index recovery was cancelled".to_string())
+                } else {
+                    Ok(())
+                }
+            };
+            loop {
+                match recovery_lease
+                    .store
+                    .search_backfill_batch(search::SEARCH_BACKFILL_MAX, &check)
+                {
+                    Ok(progress) if !progress.ready => std::thread::yield_now(),
+                    Ok(_) => break,
+                    Err(_) => {
+                        if !LifecycleCancellation::is_cancelled(recovery_lease.session.as_ref()) {
+                            tracing::warn!("private Social index recovery is unavailable");
+                        }
+                        break;
+                    }
+                }
+            }
+        });
         Ok(lease)
+    }
+
+    /// Resolve from trusted Session data, independent of the Social page's
+    /// renderer generation. Never activates keys or a MessagingEngine.
+    pub fn search_binding(
+        &self,
+        window_label: &str,
+        account_id: &str,
+        actor_ptid: &str,
+        token: &str,
+    ) -> Result<SecureContentSearchBinding, String> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| "secure content supervisor lock poisoned".to_string())?;
+        let lease = active
+            .get(window_label)
+            .map(|runtime| &runtime.lease)
+            .ok_or_else(|| "private Social search is unavailable".to_string())?;
+        if lease.session.account_id != account_id
+            || lease.session.key.actor_ptid != actor_ptid
+            || !lease.session.matches_token(token)?
+            || !lease.session.search_is_authorized()
+        {
+            return Err("private Social search binding is stale".to_string());
+        }
+        Ok(SecureContentSearchBinding {
+            key: lease.session.key.clone(),
+            store: lease.store.clone(),
+            expires_at_unix_ms: lease.session.search_expires_at_unix_ms,
+            session: lease.session.clone(),
+        })
+    }
+
+    /// Search publication lock order: host identity -> supervisor -> Store.
+    pub fn with_current_search<T>(
+        &self,
+        key: &SecureContentSessionKey,
+        operation: impl FnOnce(&SecureContentStore) -> Result<T, search_core::SearchError>,
+    ) -> Result<T, search_core::SearchError> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| search_core::SearchError::Cancelled)?;
+        let lease = active
+            .get(&key.window_label)
+            .map(|runtime| &runtime.lease)
+            .filter(|lease| lease.session.key == *key && lease.session.search_is_authorized())
+            .ok_or(search_core::SearchError::Cancelled)?;
+        operation(&lease.store)
     }
 
     pub fn lease(
@@ -791,6 +922,11 @@ fn retire_runtime(
     let mut errors = Vec::new();
     runtime.lease.transfer_control.request_shutdown();
     runtime.lease.session.cancel_and_zeroize();
+    if let Err(error) = runtime.lease.store.invalidate_search_policy() {
+        errors.push(format!(
+            "invalidate private Social reads during teardown: {error}"
+        ));
+    }
     let cache_dir = object_runtime::secure_cache_dir(
         &runtime.lease.session.key.actor_ptid,
         runtime.lease.session.key.session_generation,
@@ -847,6 +983,14 @@ impl Default for SecureContentSupervisor {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn search_now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .unwrap_or(i64::MAX)
 }
 
 #[cfg(test)]
@@ -991,6 +1135,68 @@ mod tests {
         assert!(supervisor
             .with_current(&first.session.key, |_| Ok(()))
             .is_err());
+    }
+
+    #[test]
+    fn secure_content_search_binding_is_headless_and_authentication_fenced() {
+        let supervisor = SecureContentSupervisor::new();
+        let base = session("ptid:alice");
+        let expiry = search_now_ms() / 1000 + 60;
+        let token = format!(
+            "header.{}.signature",
+            URL_SAFE_NO_PAD.encode(format!(r#"{{"session_id":"session-1","exp":{expiry}}}"#))
+        );
+        let session = SecureContentSession::new(
+            base.key.clone(),
+            base.account_id.clone(),
+            base.station_client.clone(),
+            token.clone(),
+            base.signing_key_id.clone(),
+            base.profile_version,
+            SigningKey::from_bytes(&[7; 32]),
+            base.trusted_station_signing_key.clone(),
+        );
+        let store = Arc::new(SecureContentStore::in_memory().unwrap());
+        let lease = supervisor
+            .activate_with_store(session, 77, store.clone())
+            .unwrap();
+        let binding = supervisor
+            .search_binding("main", "account-1", "ptid:alice", &token)
+            .unwrap();
+        assert_eq!(binding.key, lease.session.key);
+        assert!(Arc::ptr_eq(&binding.store, &store));
+        let validity = binding.read_validity().unwrap();
+        assert!(validity.owner_check_required);
+        assert_eq!(validity.lease_until_unix_ms, 0);
+        assert!(supervisor
+            .search_binding("main", "account-1", "ptid:bob", &token)
+            .is_err());
+        assert!(supervisor
+            .search_binding("main", "account-1", "ptid:alice", "wrong")
+            .is_err());
+        supervisor
+            .with_current_search(&binding.key, |_| Ok(()))
+            .unwrap();
+        supervisor.teardown_actor("ptid:alice").unwrap();
+        assert!(supervisor
+            .with_current_search(&binding.key, |_| Ok(()))
+            .is_err());
+        assert!(supervisor
+            .search_binding("main", "account-1", "ptid:alice", &token)
+            .is_err());
+    }
+
+    #[test]
+    fn secure_content_search_authentication_deadline_cannot_be_extended_by_clock_rollback() {
+        let mut session = session("ptid:alice");
+        assert!(!session.search_is_authorized());
+        session.search_expires_at_unix_ms = search_now_ms() + 60_000;
+        session.search_deadline = Some(Instant::now() - Duration::from_secs(1));
+        assert!(!session.search_is_authorized());
+        session.search_deadline = Some(Instant::now() + Duration::from_secs(60));
+        assert!(session.search_is_authorized());
+        session.cancel_and_zeroize();
+        assert!(!session.search_is_authorized());
     }
 
     #[test]

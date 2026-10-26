@@ -56,6 +56,11 @@ Do not use hard packaged `.app` debugging by default. Packaging is only the righ
      operator focus preservation; the SDK setting alone is not rendering proof.
      A stalled frame remains `UNPROVEN`. Do not spoof document visibility,
      override animation scheduling, or remove product animations to pass a Gate.
+   - Before recording overlay geometry, wait for animations on the measured
+     surface and its ancestors to finish through the native Web Animations
+     lifecycle. Opacity `1` and removal of a prepare class do not imply a
+     finished transform: Modal zoom can still scale every measured region.
+     Preserve the product animation and the original geometry tolerance.
    - Native file panels, permission sheets, physical hover/drag and focus
      claims require `exclusive-native-input` in an `isolated-gui-session`.
      A shared user session must fail closed before global input.

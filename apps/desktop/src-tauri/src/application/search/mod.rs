@@ -1,3 +1,5 @@
-//! Device Search host binding. The portable core knows only contributor contracts.
+//! Trusted Desktop composition of original Search read owners.
 pub mod messaging;
+mod private;
 pub mod runtime;
+mod social;

@@ -25,6 +25,7 @@ import {
   type ProfileProjectionController,
 } from './profileProjectionDescriptor';
 import { bindMobileMutationAdmission } from './mutationAdmission';
+import type { MessagingWakeOptions } from './messagingRuntime';
 import { getRecoveryProjection } from './recoveryProjection';
 import {
   createSocialEventIngress,
@@ -72,7 +73,7 @@ export interface ActiveProfileRuntime {
 }
 
 export interface SocialProjectionRuntimeDependencies {
-  readonly wakeMessaging: () => Promise<void>;
+  readonly wakeMessaging: (options?: MessagingWakeOptions) => Promise<void>;
   readonly revalidateSession: () => Promise<void>;
   readonly ingestCallSignal: (
     event: Extract<RealtimeWireEvent, { kind: 'call-signal' }>,
@@ -233,6 +234,20 @@ export function createSocialProjectionRuntime(
     checkpointCursor: string,
   ): Promise<void> {
     if (torn) return;
+    let messagingReady = true;
+    if (shouldReconcileMessaging(reason)) {
+      try {
+        if (reason === 'periodic') {
+          await dependencies.wakeMessaging({ onlyIfFailed: true });
+        } else {
+          await dependencies.wakeMessaging();
+        }
+      } catch (error) {
+        messagingReady = false;
+        dependencies.reportError(`reconcile:messaging:${reason}`, error);
+      }
+    }
+    if (torn) return;
     const uniqueDomains = [...new Set(domains)];
     const results = await Promise.all(uniqueDomains.map(async (domain) => {
       try {
@@ -254,15 +269,6 @@ export function createSocialProjectionRuntime(
         return false;
       }
     }));
-    let messagingReady = true;
-    if (!torn && shouldReconcileMessaging(reason)) {
-      try {
-        await dependencies.wakeMessaging();
-      } catch (error) {
-        messagingReady = false;
-        dependencies.reportError(`reconcile:messaging:${reason}`, error);
-      }
-    }
     if (!torn && messagingReady && results.every(Boolean)) {
       ingress.reopenAdmission();
     }
@@ -547,6 +553,7 @@ function shouldReconcileMessaging(reason: string): boolean {
     || reason === 'cursor-repair'
     || reason === 'explicit-request'
     || reason === 'host-wakeup'
+    || reason === 'periodic'
     || reason === 'resync-required'
     || reason === 'runtime_resume'
     || reason === 'stream-reconnect';

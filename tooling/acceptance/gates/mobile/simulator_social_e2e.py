@@ -4581,8 +4581,9 @@ return {
     def _restart_source_bound_station(
         *,
         during_outage: Callable[[], None],
+        capability_client: EphemeralGateClient | None = None,
     ) -> dict[str, Any]:
-        client = EphemeralGateClient.from_environment()
+        client = capability_client or EphemeralGateClient.from_environment()
         if client is None:
             raise GateError(
                 "Mobile Station outage capability is unavailable"
@@ -4611,7 +4612,8 @@ return {
                 f"{redact_text(str(error))}"
             ) from error
         finally:
-            client.close()
+            if capability_client is None:
+                client.close()
         if (
             stopped.get("stopped") is not True
             or restored.get("restored") is not True

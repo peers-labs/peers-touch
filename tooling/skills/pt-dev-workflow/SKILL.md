@@ -155,7 +155,9 @@ Run findings-first completion review from explicit obligations and current
 source. Only after required verification and Acceptance may the Agent present
 the result as staged delivery. Report implemented, proven, unverified, and
 blocked scope separately. Push, PR, merge, publish/release, history rewrite,
-worktree lifecycle, and destructive cleanup remain separately governed.
+worktree lifecycle, and source/business-data destruction remain separately
+governed. Current-worktree compilation cache cleanup follows the existing
+development authority in the human operating standard.
 
 For a Plan with an outcome comparison, deliver the completed report and bind
 its full-file SHA-256 in the completion or aggregate evidence. Call out every
@@ -202,6 +204,17 @@ For development and test Profiles, this authority is complete:
   them automatically and must never treat them as additional human permission;
 - only stable protection, a missing capability, an unknown target/scope, or a
   real external side effect may require user input.
+
+For compilation cache maintenance, apply `docs/global/workflow.md` section
+“编译缓存与开发环境清理” through `pt-debug-space-clean`. Clean verified
+rebuildable caches in the current worktree autonomously, including complete
+profiles when disk pressure requires a cold rebuild. Recheck exact paths,
+artifact role, active writers, open files and build locks; preserve sources,
+evidence and unrelated resources. Missing optional task metadata or a scanner's
+report-only cleanup mode does not add a human permission requirement.
+After cleanup, rebuild the affected output and continue the authorized Journey
+and delivery work without another prompt. Other-worktree cleanup needs its
+own scope grant; honor an existing grant without asking again.
 
 ## Goal And Concurrency
 
@@ -260,6 +273,8 @@ task-owned resources are `released` or explicitly `retained`.
 - Infer authorization from Plan existence, task state, or test success.
 - Ask for confirmation before resetting an exact non-stable development/test
   Profile scope already granted by the workspace capability.
+- Ask again for current-worktree rebuildable compilation cache cleanup, or
+  stop the development run after authorized cache/data maintenance.
 - Use stale builds, another worktree, mocks, or arbitrary PASS files as current
   product proof.
 - Stop after analysis when implementation is authorized and feasible.

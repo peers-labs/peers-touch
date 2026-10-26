@@ -44,6 +44,7 @@ const (
 	routeSocialMomentCommentResource = "/api/v1/social/moments/:post_id/comments/:comment_id"
 	routeSocialPreparePrivateMoment  = "/api/v1/social/moments/prepare-private"
 	routeSocialSubmitPrivateMoment   = "/api/v1/social/moments/submit-private"
+	routeSocialMomentReadPolicy      = "/api/v1/social/moments/read-policy"
 	routeSocialPreparePrivateComment = "/api/v1/social/moments/:post_id/comments/prepare-private"
 	routeSocialSubmitPrivateComment  = "/api/v1/social/moments/:post_id/comments/submit-private"
 	routeSocialObjectUploadBegin     = "/api/v1/social/moments/objects/uploads/begin"
@@ -115,6 +116,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-create-moment", routeSocialMoments, server.POST, s.handleCreatePost, cw, jw),
 		server.NewStrictTypedHandler("social-prepare-private-moment", routeSocialPreparePrivateMoment, server.POST, s.handlePreparePrivateMoment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 		server.NewStrictTypedHandler("social-submit-private-moment", routeSocialSubmitPrivateMoment, server.POST, s.handleSubmitPrivateMoment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
+		server.NewStrictTypedHandler("social-moment-read-policy", routeSocialMomentReadPolicy, server.POST, s.handleMomentReadPolicy, socialSearchReadWrapper, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 		server.NewStrictTypedHandler("social-private-object-upload-begin", routeSocialObjectUploadBegin, server.POST, s.handleBeginPrivateObjectUpload, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 		server.NewHTTPHandler("social-private-object-upload-status", routeSocialObjectUploadStatus, server.GET, socialObjectRawHandler(s.handlePrivateObjectUploadStatus), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 		server.NewHTTPHandler("social-private-object-upload-chunk", routeSocialObjectUploadChunk, server.PUT, socialObjectRawHandler(s.handlePrivateObjectChunk), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
@@ -156,6 +158,9 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-lookup-relationship-result", routeSocialResult, server.POST, s.handleLookupSocialRelationshipCommandResult, cw, jw),
 
 		// User search / me
+		server.NewStrictTypedHandler("social-search-query", routeSocialSearchQuery, server.POST, s.handlePublicSearchQuery, cw, privateContentAuthenticationFailureWrapper, privateContentJWTWrapper, socialSearchReadWrapper),
+		server.NewStrictTypedHandler("social-search-hydrate", routeSocialSearchHydrate, server.POST, s.handlePublicSearchHydrate, cw, privateContentAuthenticationFailureWrapper, privateContentJWTWrapper, socialSearchReadWrapper),
+		server.NewStrictTypedHandler("social-search-resolve", routeSocialSearchResolve, server.POST, s.handlePublicSearchResolve, cw, privateContentAuthenticationFailureWrapper, privateContentJWTWrapper, socialSearchReadWrapper),
 		server.NewTypedHandler("social-search-users", routeSocialUserSearch, server.GET, s.handleSearchUsers, cw, jw),
 		server.NewTypedHandler("social-get-me", routeSocialUserMe, server.GET, s.handleGetMe, cw, jw),
 		server.NewTypedHandler("social-my-stats", routeSocialMyStats, server.GET, s.handleGetMyStats, cw, jw),
@@ -1589,6 +1594,9 @@ func (s *subServer) handleListMomentCommentsWithReader(
 	if req == nil || req.GetPostId() == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
+	if req.GetAnchorCommentId() != "" && req.GetCursor() != "" {
+		return nil, server.BadRequest("cursor and anchor_comment_id are mutually exclusive")
+	}
 	if req.GetLimit() == 0 {
 		req.Limit = 20
 	}
@@ -1600,6 +1608,14 @@ func (s *subServer) handleListMomentCommentsWithReader(
 		viewerPTID = ptid
 	}
 	if postID, ok := canonicalPublicSocialID(req.GetPostId()); ok {
+		var anchor uint64
+		if req.GetAnchorCommentId() != "" {
+			var valid bool
+			anchor, valid = canonicalPublicSocialID(req.GetAnchorCommentId())
+			if !valid {
+				return nil, momentCommentNotFound()
+			}
+		}
 		parent, err := s.momentSvc.GetMoment(ctx, req.GetPostId(), viewerPTID)
 		if err != nil {
 			return nil, server.InternalErrorWithCause(
@@ -1610,14 +1626,15 @@ func (s *subServer) handleListMomentCommentsWithReader(
 		if parent == nil || !domain.IsPublic(parent.GetAudience()) {
 			return nil, momentCommentNotFound()
 		}
-		legacy, err := s.commentSvc.ListByPost(
-			ctx,
-			postID,
-			viewerPTID,
-			req.GetCursor(),
-			int(req.GetLimit()),
-		)
+		var anchors []uint64
+		if anchor != 0 {
+			anchors = append(anchors, anchor)
+		}
+		legacy, err := s.commentSvc.ListByPost(ctx, postID, viewerPTID, req.GetCursor(), int(req.GetLimit()), anchors...)
 		if err != nil {
+			if errors.Is(err, application.ErrPublicCommentUnavailable) {
+				return nil, momentCommentNotFound()
+			}
 			return nil, server.InternalErrorWithCause(
 				"failed to list public comments",
 				err,
@@ -1639,6 +1656,9 @@ func (s *subServer) handleListMomentCommentsWithReader(
 			NextCursor: legacy.GetNextCursor(),
 			HasMore:    legacy.GetHasMore(),
 		}, nil
+	}
+	if req.GetAnchorCommentId() != "" {
+		return nil, server.BadRequest("anchor_comment_id is not supported for private comment lists")
 	}
 	if err := domain.ValidatePrivateContentID(
 		req.GetPostId(),

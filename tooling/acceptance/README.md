@@ -14,6 +14,9 @@ run for a changed path, and which artifacts should be produced for human review.
 - `gates.yaml` defines gate commands, timeouts, environments, tiers, and artifact expectations.
 - `features/` contains product feature contracts.
 - `gates/` contains stable cross-system acceptance implementations.
+- `search_capture.py` owns shared Search capture scripts for Messaging and
+  Social Desktop/Mobile Gates and source-contract replays. Consumers import
+  this business utility directly; domain-neutral Core owns no Search selectors.
 - [`gates/mobile/README.md`](./gates/mobile/README.md) records the Mobile
   native E2E driver selection, Desktop comparison, hybrid context model, and
   simulator-versus-physical proof boundary.

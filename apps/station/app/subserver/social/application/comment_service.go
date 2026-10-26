@@ -2,13 +2,16 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 // CommentService handles comments on Moments. v1 supports at most one
@@ -159,55 +162,36 @@ func (s *CommentService) GetByPost(
 	commentID uint64,
 	viewerPTID string,
 ) (*model.Comment, error) {
-	parent, err := s.moments.GetMoment(
-		ctx,
-		fmt.Sprintf("%d", parentPostID),
-		viewerPTID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("lookup parent post: %w", err)
-	}
-	if parent == nil {
-		return nil, nil
-	}
-	if blocked, err := postAuthorStationModerated(
-		ctx,
-		s.repos.Moderation,
-		parent,
-	); err != nil {
-		return nil, err
-	} else if blocked {
-		return nil, nil
-	}
-	comment, err := s.repos.Comments.GetByID(ctx, commentID)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	batch, err := NewPublicReadPort(s.repos).Read(ctx, viewerPTID, nil, []uint64{commentID})
 	if err != nil {
 		return nil, err
 	}
+	comment := batch.Comments[commentID]
 	if comment == nil ||
-		comment.PostID != parentPostID ||
-		comment.PostClass != domain.PostClassPublic {
+		comment.PostID != parentPostID {
 		return nil, nil
 	}
-	visibility, err := buildInteractionVisibility(
-		ctx,
-		s.repos,
-		viewerPTID,
-		parent.GetAuthorPtid(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("build interaction visibility: %w", err)
-	}
-	if !visibility.CanSeeActor(comment.AuthorPTID) {
-		return nil, nil
-	}
-	return s.commentToProto(ctx, comment), nil
+	return s.commentToProtoWith(comment, batch.Authors[comment.AuthorPTID]), nil
 }
 
 // ListByPost returns one page of comments for a parent post. Parent post
 // readability is checked here, then each comment actor is filtered by
 // InteractionVisibility so third-party replies are only shown to common
 // connections.
-func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, viewerPTID string, cursor string, limit int) (*model.GetCommentsResponse, error) {
+var ErrPublicCommentUnavailable = errors.New("public comment unavailable")
+
+func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, viewerPTID string, cursor string, limit int, anchors ...uint64) (*model.GetCommentsResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var anchor uint64
+	if len(anchors) > 1 || (len(anchors) == 1 && cursor != "") {
+		return nil, fmt.Errorf("cursor and anchor are mutually exclusive")
+	}
+	if len(anchors) == 1 {
+		anchor = anchors[0]
+	}
 	c, err := domain.DecodeCursor(cursor)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cursor: %w", err)
@@ -216,43 +200,42 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, vi
 		limit = 20
 	}
 
-	parent, err := s.moments.GetMoment(ctx, fmt.Sprintf("%d", parentPostID), viewerPTID)
-	if err != nil {
-		return nil, fmt.Errorf("lookup parent post: %w", err)
+	scanLimit := min(limit*3, 100)
+	var rows []*domain.Comment
+	if anchor != 0 {
+		rows, err = s.repos.Comments.ListPublicWindow(ctx, parentPostID, anchor, scanLimit+1)
+	} else {
+		rows, err = s.repos.Comments.ListByPost(ctx, parentPostID, c, scanLimit+1)
 	}
-	if parent == nil {
-		return nil, fmt.Errorf("parent post %d not found or not readable", parentPostID)
-	}
-	if blocked, err := postAuthorStationModerated(ctx, s.repos.Moderation, parent); err != nil {
-		return nil, err
-	} else if blocked {
-		return nil, fmt.Errorf("parent post %d not found or not readable", parentPostID)
-	}
-	visibility, err := buildInteractionVisibility(ctx, s.repos, viewerPTID, parent.GetAuthorPtid())
-	if err != nil {
-		return nil, fmt.Errorf("build interaction visibility: %w", err)
-	}
-
-	rows, err := s.repos.Comments.ListByPost(ctx, parentPostID, c, limit*3+1)
 	if err != nil {
 		return nil, err
+	}
+	hasMore := len(rows) > scanLimit
+	if hasMore {
+		rows = rows[:scanLimit]
+	}
+	batch, err := NewPublicReadPort(s.repos).readWithComments(ctx, viewerPTID, []uint64{parentPostID}, rows)
+	if err != nil {
+		return nil, err
+	}
+	if batch.Posts[parentPostID] == nil || (anchor != 0 && batch.Comments[anchor] == nil) {
+		return nil, ErrPublicCommentUnavailable
 	}
 	comments := make([]*model.Comment, 0, len(rows))
-	var lastVisible *domain.Comment
-	for _, row := range rows {
-		if !visibility.CanSeeActor(row.AuthorPTID) {
-			continue
+	var lastScanned *domain.Comment
+	for index, row := range rows {
+		lastScanned = row
+		if batch.Comments[row.ID] != nil {
+			comments = append(comments, s.commentToProtoWith(row, batch.Authors[row.AuthorPTID]))
+			if len(comments) == limit {
+				hasMore = hasMore || index+1 < len(rows)
+				break
+			}
 		}
-		if len(comments) >= limit {
-			break
-		}
-		comments = append(comments, s.commentToProto(ctx, row))
-		lastVisible = row
 	}
-	hasMore := len(rows) > limit*3 || len(comments) == limit
 	var nextCursor string
-	if hasMore && lastVisible != nil {
-		nextCursor = domain.Cursor{LastID: lastVisible.ID, CreatedAt: lastVisible.CreatedAt}.Encode()
+	if hasMore && lastScanned != nil {
+		nextCursor = domain.Cursor{LastID: lastScanned.ID, CreatedAt: lastScanned.CreatedAt}.Encode()
 	}
 	return &model.GetCommentsResponse{
 		Comments:   comments,
@@ -261,15 +244,9 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, vi
 	}, nil
 }
 
-func (s *CommentService) commentToProto(
-	ctx context.Context,
-	comment *domain.Comment,
-) *model.Comment {
+func (s *CommentService) commentToProtoWith(comment *domain.Comment, authorRecord *db.Actor) *model.Comment {
 	result := s.conv.CommentToProto(comment)
-	if authorRecord, err := actor.GetActorByPTID(
-		ctx,
-		comment.AuthorPTID,
-	); err == nil && authorRecord != nil {
+	if authorRecord != nil {
 		result.Author = &model.PostAuthor{
 			Id:                authorRecord.PTID,
 			Username:          authorRecord.PreferredUsername,

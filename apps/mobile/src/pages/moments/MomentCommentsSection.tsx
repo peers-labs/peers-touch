@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Typography, message } from 'antd';
 import { ArrowLeft, MessageCircle, Send, X } from 'lucide-react';
 
@@ -20,6 +20,7 @@ import {
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
 import type { Post } from '../../gen/proto/domain/social/post_pb';
 import type { PrivateCommentProjection } from '../../services/mobileCommands';
+import type { MomentReadSource } from '../../services/gateways/momentsGateway';
 import { MomentFeedItem } from './MomentFeedItem';
 import {
   MomentsFeedLoading,
@@ -39,6 +40,8 @@ export type CommentView =
 
 interface MomentCommentsSectionProps {
   readonly postId: string;
+  readonly sourceId?: MomentReadSource;
+  readonly commentId?: string;
   readonly post?: Post;
   readonly mode?: 'inline' | 'detail';
   readonly intents: Pick<
@@ -107,6 +110,8 @@ export async function deleteMomentCommentAndReload(
 
 export function MomentCommentsSection({
   postId,
+  sourceId,
+  commentId,
   post,
   mode = 'inline',
   intents,
@@ -119,18 +124,20 @@ export function MomentCommentsSection({
 }: MomentCommentsSectionProps) {
   const { t } = useMobileI18n();
   const { facade, projection } = useSocialExperience();
-  const privateRoute = Boolean(
+  const privateRoute = sourceId === 'device.social' || (!sourceId && Boolean(
     post?.audience && !isPublicSocialAudience(post.audience),
-  );
+  ));
+  const usePrivateThread = privateRoute && !sourceId;
   const publicDetail = useMomentDetail(
-    privateRoute ? null : (facade?.feed ?? null),
+    usePrivateThread ? null : (facade?.feed ?? null),
     postId,
+    { sourceId, anchorCommentId: commentId },
   );
   const privateThread =
     projection?.runtime.privateSocial?.commentThreadsByPostId[postId];
   const comments = useMemo<CommentView[]>(
     () =>
-      privateRoute
+      usePrivateThread
         ? (privateThread?.comments ?? []).map((comment) => ({
             route: 'PRIVATE' as const,
             comment,
@@ -139,21 +146,21 @@ export function MomentCommentsSection({
             route: 'PUBLIC' as const,
             comment,
           })),
-    [privateRoute, privateThread?.comments, publicDetail.comments],
+    [usePrivateThread, privateThread?.comments, publicDetail.comments],
   );
-  const loading = privateRoute
+  const loading = usePrivateThread
     ? (privateThread?.loading ?? false)
     : publicDetail.loading;
-  const initialized = privateRoute
+  const initialized = usePrivateThread
     ? (privateThread?.initialized ?? false)
     : publicDetail.detail.kind !== 'loading';
-  const hasMore = privateRoute
+  const hasMore = usePrivateThread
     ? (privateThread?.hasMore ?? true)
     : publicDetail.hasMore;
-  const errorMessage = privateRoute
+  const errorMessage = usePrivateThread
     ? (privateThread?.errorMessage ?? '')
     : publicDetail.errorMessage;
-  const detailPost = privateRoute
+  const detailPost = usePrivateThread
     ? post
     : publicDetail.detail.kind === 'available'
       ? publicDetail.detail.post
@@ -166,19 +173,20 @@ export function MomentCommentsSection({
   );
   const [commentDraftId, setCommentDraftId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(Boolean(commentId));
   const [sendError, setSendError] = useState(false);
+  const commentAnchorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setExpanded(false);
+    setExpanded(Boolean(commentId));
     setReplyTarget(null);
     setCommentText('');
     setCommentDraftId(null);
     setSendError(false);
-  }, [postId]);
+  }, [postId, sourceId, commentId]);
 
   useEffect(() => {
-    if (!privateRoute || privateThread?.initialized || privateThread?.loading)
+    if (!usePrivateThread || privateThread?.initialized || privateThread?.loading)
       return;
     void intents
       .readPrivateComments(postId, '', INITIAL_COMMENT_COUNT)
@@ -186,7 +194,7 @@ export function MomentCommentsSection({
   }, [
     intents,
     postId,
-    privateRoute,
+    usePrivateThread,
     privateThread?.initialized,
     privateThread?.loading,
   ]);
@@ -256,7 +264,7 @@ export function MomentCommentsSection({
   ]);
 
   const handleLoadMore = useCallback(() => {
-    if (privateRoute) {
+    if (usePrivateThread) {
       void intents
         .readPrivateComments(
           postId,
@@ -267,7 +275,7 @@ export function MomentCommentsSection({
       return;
     }
     publicDetail.loadMore();
-  }, [intents, postId, privateRoute, privateThread?.nextCursor, publicDetail]);
+  }, [intents, postId, usePrivateThread, privateThread?.nextCursor, publicDetail]);
 
   const handleDelete = useCallback(
     async (commentId: string) => {
@@ -283,9 +291,21 @@ export function MomentCommentsSection({
     ? comments
     : comments.slice(0, INITIAL_COMMENT_COUNT);
   const replyAuthorName = replyTarget?.authorName ?? '';
-  const canRenderThread = privateRoute
+  const canRenderThread = usePrivateThread
     ? Boolean(post)
     : publicDetail.detail.kind === 'available';
+  const anchorVisible = Boolean(commentId && visibleComments.some(
+    (comment) => commentViewId(comment) === commentId,
+  ));
+  useEffect(() => {
+    if (!anchorVisible || loading || !canRenderThread) return;
+    const frame = requestAnimationFrame(() => {
+      const target = commentAnchorRef.current;
+      target?.scrollIntoView({ block: 'center', behavior: 'auto' });
+      target?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [anchorVisible, loading, canRenderThread, postId, sourceId, commentId]);
 
   return (
     <section
@@ -293,6 +313,8 @@ export function MomentCommentsSection({
       data-acceptance-id="social-moment-thread"
       data-product-surface="moments.detail-comments"
       data-post-id={postId}
+      data-source-id={sourceId}
+      data-anchor-comment-id={commentId}
       aria-label={t('mobile.moments.comment.title')}
     >
       {mode === 'detail' && (
@@ -309,17 +331,17 @@ export function MomentCommentsSection({
       )}
 
       <div className="moments-comments-list">
-        {!privateRoute && publicDetail.detail.kind === 'loading' && (
+        {!usePrivateThread && publicDetail.detail.kind === 'loading' && (
           <MomentsFeedLoading productSurface="moments.detail-loading" />
         )}
-        {!privateRoute && publicDetail.detail.kind === 'unavailable' && (
+        {!usePrivateThread && publicDetail.detail.kind === 'unavailable' && (
           <MomentsUnavailable
             reason={publicDetail.detail.reason}
-            onRetry={() => void retryMomentDetailRuntime(intents)}
+            onRetry={() => void publicDetail.reloadMoment()}
             productSurface="moments.detail-unavailable"
           />
         )}
-        {!privateRoute &&
+        {!usePrivateThread &&
           (publicDetail.detail.kind === 'hidden' ||
             publicDetail.detail.kind === 'blocked') && (
             <MomentsPolicyViolation
@@ -327,7 +349,7 @@ export function MomentCommentsSection({
               productSurface="moments.detail-hidden"
             />
           )}
-        {!privateRoute &&
+        {!usePrivateThread &&
           publicDetail.detail.kind === 'deleted' &&
           !publicDetail.detail.post && (
             <div
@@ -387,12 +409,12 @@ export function MomentCommentsSection({
             <Button
               size="small"
               onClick={() => {
-                if (privateRoute) {
+                if (usePrivateThread) {
                   void intents
                     .readPrivateComments(postId, '', INITIAL_COMMENT_COUNT)
                     .catch(() => undefined);
                 } else {
-                  void retryMomentDetailRuntime(intents);
+                  void publicDetail.reloadMoment();
                 }
               }}
             >
@@ -411,6 +433,12 @@ export function MomentCommentsSection({
               <div
                 key={commentViewId(comment)}
                 data-scroll-anchor-id={commentViewId(comment)}
+                data-search-highlighted={commentViewId(comment) === commentId || undefined}
+                ref={commentViewId(comment) === commentId ? commentAnchorRef : undefined}
+                tabIndex={commentViewId(comment) === commentId ? -1 : undefined}
+                style={commentViewId(comment) === commentId ? {
+                  outline: '2px solid var(--brand-primary)',
+                } : undefined}
               >
                 <CommentItem
                   comment={comment}
@@ -419,7 +447,7 @@ export function MomentCommentsSection({
                     setReplyTarget({ comment: target, authorName })
                   }
                   onDelete={
-                    comment.route === 'PUBLIC' ? handleDelete : undefined
+                    !privateRoute && comment.route === 'PUBLIC' ? handleDelete : undefined
                   }
                 />
               </div>

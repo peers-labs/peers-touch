@@ -21,6 +21,7 @@ import {
   SocialSection,
 } from '../../components/moments/surfaces';
 import { useActiveDiscoverySlice, useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
+import { useMomentsNavigationStore, type MomentsTab } from '../../store/momentsNavigation';
 
 // MomentsApp — the single page registered in the module registry.
 //
@@ -35,17 +36,13 @@ import { useActiveDiscoverySlice, useActiveMomentsSlice } from '../../components
 //     using antd Card but with token-aligned styling — the visual
 //     surface is a separate concern from the content rail.
 
-type MainTab = 'feed' | 'explore' | 'search' | 'circles';
-
-type MomentsView =
-  | { kind: 'tab'; tab: MainTab }
-  | { kind: 'detail'; postId: string; from: MainTab }
-  | { kind: 'user'; actorPtid: string; from: MainTab };
+type MainTab = MomentsTab;
 
 export function MomentsApp() {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
-  const [view, setView] = useState<MomentsView>({ kind: 'tab', tab: 'feed' });
+  const view = useMomentsNavigationStore(state => state.view);
+  const setView = useMomentsNavigationStore(state => state.setView);
   const [composerOpen, setComposerOpen] = useState(false);
   const [layoutWidth, setLayoutWidth] = useState(1080);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -170,6 +167,7 @@ export function MomentsApp() {
         <MomentDetailView
           key={view.postId}
           postId={view.postId}
+          commentId={view.commentId}
           viewerActorPtid={me?.id}
           onBack={goBack}
           onAuthorClick={goUser}

@@ -172,6 +172,8 @@ function renderPage(
       return (
         <MomentsPage
           activePostId={activeDetail?.routeId === 'detail:moment' ? activeDetail.postId : null}
+          activeCommentId={activeDetail?.routeId === 'detail:moment' ? activeDetail.commentId : undefined}
+          activeReadSource={activeDetail?.routeId === 'detail:moment' ? activeDetail.readSource : undefined}
           onOpenProfile={(actorPtid, federationId) => onOpenDetail({
             routeId: 'detail:social-profile',
             actorPtid,

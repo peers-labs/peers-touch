@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-24
-covered_docs_hash: d7f6faf493031a3f432a391ba36e459de2c1f7053c4bb0ad8e4d40c048f23cec
+last_verified_at: 2026-10-25
+covered_docs_hash: 3accffe7bb37b272413d45b389ac4a38271cf488a2b1c93efcfc82b23a4ee9ae
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,16 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+The Search delivery review retains the current upstream rule hash. The existing
+review policy already requires original authority, consumed-source publication,
+bounded cancellation, retained navigation context and successful cleanup.
+Search's existing knowledge invariant and source/native Gates now cover missing
+issuance retention, no-store page reconstruction, historical anchors, actual
+Back controls, paint sampling and exact-selector account probes. These are
+business-specific corrections under the existing review rules; no additional
+Review Skill or generic golden fixture is required. Source regressions remain
+distinct from current native product proof.
 
 ## Desktop Search Continuity Review
 

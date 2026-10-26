@@ -103,6 +103,7 @@ import {
   UnfollowResponseSchema,
   UnblockSocialActorResponseSchema,
   GetRelationshipResponseSchema,
+  GetSocialRelationshipStatusResponseSchema,
   GetFollowersResponseSchema,
   GetFollowingResponseSchema,
   type BlockSocialActorResponse,
@@ -110,6 +111,7 @@ import {
   type UnfollowResponse,
   type UnblockSocialActorResponse,
   type GetRelationshipResponse,
+  type GetSocialRelationshipStatusResponse,
   type GetFollowersResponse,
   type GetFollowingResponse,
 } from '../gen/proto/domain/social/relationship_pb';
@@ -498,6 +500,7 @@ export async function socialGetComments(
   postId: string,
   cursor?: string,
   limit?: number,
+  anchorCommentId?: string,
 ): Promise<ListMomentCommentsResponse> {
   const boundedLimit = Number.isInteger(limit) && Number(limit) > 0
     ? Math.min(Number(limit), 100)
@@ -507,12 +510,14 @@ export async function socialGetComments(
       post_id: ListMomentCommentsRequest['postId'];
       cursor?: ListMomentCommentsRequest['cursor'];
       limit: ListMomentCommentsRequest['limit'];
+      anchor_comment_id?: ListMomentCommentsRequest['anchorCommentId'];
     },
     ListMomentCommentsResponse
   >('social_get_comments', ListMomentCommentsResponseSchema, {
     post_id: postId,
     cursor,
     limit: boundedLimit,
+    anchor_comment_id: anchorCommentId,
   });
 }
 
@@ -634,6 +639,17 @@ export interface SocialRelationshipMutationInput {
   targetActorPtid: string;
   targetHomeStationPeerId: string;
   observedRevision: number;
+}
+
+export async function socialGetRelationshipStatus(
+  targetActorPtid: string,
+): Promise<GetSocialRelationshipStatusResponse> {
+  return invokeRustProto<
+    { target_actor_ptid: string },
+    GetSocialRelationshipStatusResponse
+  >('social_get_relationship_status', GetSocialRelationshipStatusResponseSchema, {
+    target_actor_ptid: targetActorPtid,
+  });
 }
 
 export async function socialBlockActor(

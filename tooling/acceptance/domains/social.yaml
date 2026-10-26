@@ -4,6 +4,7 @@
   "description": "Social is a managed product domain for Public and end-to-end encrypted Private Moments. Its required proof covers same-Station Native behavior, same-Federation cross-Station Native Desktop journeys, and Desktop-to-iOS interoperability while Browser Social, Android cross-platform parity, cross-mobile interoperability, and cross-Federation private delivery remain explicitly unproven.",
   "capabilities": [
     "acceptance-framework-self-consistency",
+    "social-content-search",
     "social-private-explicit-audience",
     "social-private-confidentiality",
     "social-private-object-authorization",

@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::model::SessionCacheFrame;
 use crate::{CancelToken, SearchError};
+use prost::Message;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ReadKey {
@@ -21,10 +23,24 @@ pub struct ReadKey {
     pub semantic: Vec<u8>,
 }
 
+impl ReadKey {
+    fn bytes(&self) -> usize {
+        self.partition.len()
+            + self.source.len()
+            + self.binding.len()
+            + self.read_scope.len()
+            + self.dependency.len()
+            + self.operation.len()
+            + self.semantic.len()
+            + 128
+    }
+}
+
 struct Payload {
     bytes: Arc<[u8]>,
     fresh_until: Instant,
     used: u64,
+    items: usize,
 }
 
 struct Flight {
@@ -43,6 +59,30 @@ struct State {
     pending: HashMap<ReadKey, u64>,
     // Retained until every overlapping read finishes, independently of LRU.
     newest: HashMap<ReadKey, u64>,
+}
+
+impl State {
+    fn flight_bytes(&self) -> usize {
+        self.flights
+            .values()
+            .map(|f| {
+                // Include the pending, operation and subscription key copies.
+                f.key.bytes() * 5
+                    + f.result
+                        .as_ref()
+                        .and_then(|r| r.as_ref().ok())
+                        .map_or(0, |b| b.len())
+            })
+            .sum::<usize>()
+            + self.newest.keys().map(ReadKey::bytes).sum::<usize>()
+    }
+
+    fn payload_bytes(&self) -> usize {
+        self.payloads
+            .iter()
+            .map(|(key, p)| key.bytes() + p.bytes.len())
+            .sum()
+    }
 }
 
 #[derive(Default)]
@@ -71,7 +111,9 @@ const MAX_ENTRIES: usize = 128;
 const MAX_BYTES: usize = 4 * 1024 * 1024;
 const PARTITION_ENTRIES: usize = 64;
 const PARTITION_BYTES: usize = 2 * 1024 * 1024;
-const MAX_FLIGHTS: usize = 128;
+const MAX_FLIGHTS: usize = 320;
+const MAX_SESSION_FRAMES: usize = 32;
+const MAX_DISPLAY_ITEMS: usize = 200;
 
 fn semantic_key(key: &ReadKey) -> ReadKey {
     let mut key = key.clone();
@@ -145,6 +187,34 @@ impl ReadCache {
         if state.flights.len() >= MAX_FLIGHTS {
             return Err(SearchError::SourceUnavailable("read capacity".into()));
         }
+        let admission_bytes = key.bytes() * 6;
+        if state.flight_bytes() + admission_bytes > MAX_BYTES {
+            return Err(SearchError::SourceUnavailable("read key capacity".into()));
+        }
+        while state.payload_bytes() + state.flight_bytes() + admission_bytes > MAX_BYTES {
+            if let Some(victim) = state
+                .payloads
+                .iter()
+                .min_by_key(|(_, p)| p.used)
+                .map(|(k, _)| k.clone())
+            {
+                state.payloads.remove(&victim);
+            } else {
+                break;
+            }
+        }
+        if key.operation.starts_with("session")
+            && state
+                .flights
+                .values()
+                .filter(|f| f.key.operation.starts_with("session"))
+                .count()
+                >= MAX_SESSION_FRAMES
+        {
+            return Err(SearchError::SourceUnavailable(
+                "session read capacity".into(),
+            ));
+        }
         state.clock += 1;
         let id = state.clock;
         state.newest.insert(semantic_key(&key), id);
@@ -185,6 +255,9 @@ impl ReadCache {
         if let Ok(mut state) = self.state.lock() {
             for flight in state.flights.values_mut() {
                 if matches(&flight.key) {
+                    log::debug!(target: "search",
+                        "Search source changed phase=cache_invalidation source={}",
+                        flight.key.source);
                     flight.cancel.cancel();
                     flight.result = Some(Err(SearchError::SourceChanged));
                 }
@@ -226,6 +299,25 @@ impl Operation {
             .state
             .lock()
             .map_err(|_| SearchError::Cancelled)?;
+        if bytes.len() > PARTITION_BYTES {
+            return Err(SearchError::SourceUnavailable("reply capacity".into()));
+        }
+        let flight_bytes = state.flight_bytes();
+        if flight_bytes + bytes.len() > MAX_BYTES {
+            return Err(SearchError::SourceUnavailable("read byte capacity".into()));
+        }
+        while state.payload_bytes() + flight_bytes + bytes.len() > MAX_BYTES {
+            let victim = state
+                .payloads
+                .iter()
+                .min_by_key(|(_, p)| p.used)
+                .map(|(k, _)| k.clone());
+            if let Some(victim) = victim {
+                state.payloads.remove(&victim);
+            } else {
+                break;
+            }
+        }
         let flight = state
             .flights
             .get_mut(&self.id)
@@ -244,34 +336,58 @@ impl Operation {
             state.payloads.remove(&key);
         }
         if newest && !no_store && bytes.len() <= PARTITION_BYTES && fresh_until > Instant::now() {
+            let items = if key.operation == "session" {
+                SessionCacheFrame::decode(bytes.as_ref())
+                    .map_err(|_| SearchError::Protocol)?
+                    .response
+                    .ok_or(SearchError::Protocol)?
+                    .items
+                    .len()
+            } else {
+                0
+            };
             state.clock += 1;
             let used = state.clock;
             state.payloads.insert(
                 key.clone(),
                 Payload {
-                    bytes,
+                    bytes: bytes.clone(),
                     fresh_until,
                     used,
+                    items,
                 },
             );
             loop {
-                let total: usize = state.payloads.values().map(|p| p.bytes.len()).sum();
+                let total = state.payload_bytes();
                 let scoped: Vec<_> = state
                     .payloads
                     .iter()
                     .filter(|(k, _)| k.partition == key.partition && k.source == key.source)
                     .collect();
-                let scoped_bytes: usize = scoped.iter().map(|(_, p)| p.bytes.len()).sum();
+                let scoped_bytes: usize =
+                    scoped.iter().map(|(k, p)| k.bytes() + p.bytes.len()).sum();
                 let scoped_over =
                     scoped.len() > PARTITION_ENTRIES || scoped_bytes > PARTITION_BYTES;
-                if !scoped_over && state.payloads.len() <= MAX_ENTRIES && total <= MAX_BYTES {
+                let session_over = state
+                    .payloads
+                    .iter()
+                    .filter(|(k, _)| k.operation == "session")
+                    .count()
+                    > MAX_SESSION_FRAMES
+                    || state.payloads.values().map(|p| p.items).sum::<usize>() > MAX_DISPLAY_ITEMS;
+                if !scoped_over
+                    && !session_over
+                    && state.payloads.len() <= MAX_ENTRIES
+                    && total + flight_bytes + bytes.len() <= MAX_BYTES
+                {
                     break;
                 }
                 let victim = state
                     .payloads
                     .iter()
                     .filter(|(k, _)| {
-                        !scoped_over || (k.partition == key.partition && k.source == key.source)
+                        (!scoped_over || (k.partition == key.partition && k.source == key.source))
+                            && (!session_over || k.operation == "session")
                     })
                     .min_by_key(|(_, p)| p.used)
                     .map(|(k, _)| k.clone());
@@ -316,6 +432,9 @@ impl Subscription {
                 .lock()
                 .map_err(|_| SearchError::Cancelled)?;
             let flight = state.flights.get(&self.id).ok_or(SearchError::Cancelled)?;
+            if matches!(flight.result, Some(Err(SearchError::SourceChanged))) {
+                return Err(SearchError::SourceChanged);
+            }
             if flight.cancel.is_cancelled() {
                 return Err(SearchError::Cancelled);
             }

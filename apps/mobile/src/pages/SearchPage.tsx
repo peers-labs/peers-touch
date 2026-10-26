@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { Button, Input, Spin, Typography } from 'antd';
-import { ArrowLeft, ChevronRight, FileText, MessageCircle, RefreshCw, Search, Settings } from 'lucide-react';
+import { ArrowLeft, ChevronRight, FileText, MessageCircle, Newspaper, RefreshCw, Search, Settings } from 'lucide-react';
 import { useMobileI18n } from '../app/mobileI18n';
 import { useVisualKeyboardOverlap } from '../app/layout/useVisualKeyboardOverlap';
 import type { MobileDetailRoute } from '../app/navigation';
@@ -10,12 +10,13 @@ import { useMobileSearchStore, type MobileSearchFilter } from '../features/searc
 import { resolveSocialActorIdentity } from '../features/social/useSocialActorIdentity';
 import { actorDisplayName } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
-import { SearchKind, SourceState, type ResultItem } from '../gen/proto/domain/search/search_pb';
+import { SearchKind, SearchZone, SourceState, type ResultItem } from '../gen/proto/domain/search/search_pb';
 import { mobileSearchActions } from '../runtimes/searchRuntime';
+import { mobileSearchResourceIdentity } from '../services/search';
 import './SearchPage.css';
 
-const FILTERS: readonly MobileSearchFilter[] = ['all', 'messages', 'attachments', 'functions'];
-const itemKey = (item: ResultItem) => `${item.resource?.kind}:${item.resource?.id}`;
+const FILTERS: readonly MobileSearchFilter[] = ['all', 'messages', 'social', 'attachments', 'functions'];
+const itemKey = (item: ResultItem) => mobileSearchResourceIdentity(item.resource);
 
 function SearchResult({
   item, selected, opening, onOpen,
@@ -35,6 +36,7 @@ function SearchResult({
       ? session.participantBDisplayName : session?.participantADisplayName, '')
     || t('mobile.chat.title');
   const timestamp = Number(item.createdAtUnixMs);
+  const isSocial = item.kind === SearchKind.SOCIAL_POST || item.kind === SearchKind.SOCIAL_COMMENT;
   return (
     <button
       type="button" className={`mobile-search-result${selected ? ' selected' : ''}`}
@@ -43,12 +45,16 @@ function SearchResult({
       disabled={opening} onClick={onOpen}
     >
       <span className="mobile-search-result__icon" aria-hidden="true">
-        {item.kind === SearchKind.ATTACHMENT ? <FileText size={20} /> : <MessageCircle size={20} />}
+        {isSocial ? <Newspaper size={20} /> : item.kind === SearchKind.ATTACHMENT ? <FileText size={20} /> : <MessageCircle size={20} />}
       </span>
       <span className="mobile-search-result__body">
         <span className="mobile-search-result__title">{item.snippet || item.title}</span>
+        {item.kind === SearchKind.SOCIAL_COMMENT && item.title ? (
+          <span className="mobile-search-result__meta">{item.title}</span>
+        ) : null}
         <span className="mobile-search-result__meta">
-          <span>{conversationTitle} · {name}</span>
+          <span>{isSocial ? t(item.kind === SearchKind.SOCIAL_COMMENT ? 'search.kind.socialComment' : 'search.kind.socialPost') : conversationTitle} · {name}</span>
+          <span>{t(item.zone === SearchZone.STATION ? 'search.zone.station' : 'search.zone.device')}</span>
           {timestamp > 0 ? <time dateTime={new Date(timestamp).toISOString()}>
             {new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(timestamp)}
           </time> : null}
@@ -68,10 +74,10 @@ export function SearchPage({
   const keyboardOverlapHeight = useVisualKeyboardOverlap();
   const style = { '--mobile-search-keyboard-overlap': `${keyboardOverlapHeight}px` } as CSSProperties;
   const viewport = useRef<HTMLDivElement>(null);
-  const items = view.status === 'ready' ? view.response?.items ?? [] : [];
+  const items = view.status === 'concealed' ? [] : view.response?.items ?? [];
   const functions = findMobileSearchFunctions(view.query);
   const showFunctions = view.filter === 'all' || view.filter === 'functions';
-  const surfaceKey = `mobile-search:${view.query}:${view.filter}:${view.conversationId}:${view.page}`;
+  const surfaceKey = `mobile-search:${view.displayedQuery}:${view.displayedFilter}:${view.conversationId}:${view.page}`;
 
   useLayoutEffect(() => {
     const root = viewport.current;
@@ -83,23 +89,7 @@ export function SearchPage({
   }, [view.status, view.selectedId]);
 
   async function open(item: ResultItem) {
-    if (!item.resource) return;
-    const resource = await mobileSearchActions.resolve(item.resource);
-    if (!resource) return;
-    const social = useSocialStore.getState();
-    const conversation = social.messagingConversations.find(row => row.conversationId === resource.conversationId);
-    const direct = social.sessions.some(row => row.ulid === resource.conversationId);
-    if (!conversation && !direct) {
-      useMobileSearchStore.setState({ errorKey: 'search.error.resourceUnavailable' });
-      return;
-    }
-    const anchor = {
-      messageId: resource.kind === 'message' ? resource.messageId || resource.id : undefined,
-      threadRootMessageId: resource.anchor?.kind === 'thread' ? resource.anchor.id : undefined,
-    };
-    onOpenDetail(conversation?.kind === 2
-      ? { routeId: 'detail:group-conversation', groupUlid: resource.conversationId, ...anchor }
-      : { routeId: 'detail:chat-conversation', sessionUlid: resource.conversationId, ...anchor });
+    await mobileSearchActions.open(item, onOpenDetail);
   }
 
   return (
@@ -130,6 +120,7 @@ export function SearchPage({
         </div>
         <div className="mobile-search-filters" role="group" aria-label={t('search.range')}>
           {FILTERS.map(filter => <button type="button" key={filter} aria-pressed={view.filter === filter}
+            data-search-filter={filter}
             onClick={() => mobileSearchActions.filter(filter)}>{t(`search.tab.${filter}`)}</button>)}
         </div>
         <div className="mobile-search-scope">
@@ -143,12 +134,12 @@ export function SearchPage({
           <span>{t(view.errorKey)}</span>
           <Button onClick={() => mobileSearchActions.submit()}>{t('common.action.retry')}</Button>
         </div> : null}
-        {view.status === 'loading' || view.status === 'concealed' ? (
+        {view.status === 'concealed' || view.status === 'loading' && view.stalled ? (
           <div className="mobile-search-state" role="status" aria-busy="true">
             <Spin /><span>{t(view.status === 'concealed' ? 'search.mobile.concealed' : 'search.loading')}</span>
           </div>
         ) : view.status === 'idle' ? <div className="mobile-search-state" role="status">{t('search.mobile.initial')}</div> : null}
-        {view.status === 'ready' && view.response ? <>
+        {view.status !== 'concealed' && view.response ? <>
           <div className="mobile-search-coverage" role="status">
             <span>{t('search.coverage.historyBoundary')}</span>
             {view.response.coverage.map(source => <span key={source.sourceId} data-source-state={source.state}>
@@ -161,13 +152,13 @@ export function SearchPage({
               onOpen={() => { void open(item); }} />)}
           </BoundedList>
           {items.length === 0 ? <div className="mobile-search-state" role="status">
-            <strong>{t('search.empty.title', { query: view.query })}</strong>
+            <strong>{t('search.empty.title', { query: view.displayedQuery })}</strong>
             <span>{t('search.empty.detail')}</span>
           </div> : null}
           {view.mode === 'submit' && (view.page > 0 || view.response.hasMore) ? (
             <div className="mobile-search-pagination">
-              <Button disabled={view.page === 0} onClick={() => mobileSearchActions.page(-1)}>{t('mobile.list.previous')}</Button>
-              <Button disabled={!view.response.hasMore || view.page >= 31} onClick={() => mobileSearchActions.page(1)}>{t('mobile.list.next')}</Button>
+              <Button disabled={view.page === 0 || view.status === 'loading'} onClick={() => mobileSearchActions.page(-1)}>{t('mobile.list.previous')}</Button>
+              <Button disabled={!view.response.hasMore || view.page >= 31 || view.status === 'loading'} onClick={() => mobileSearchActions.page(1)}>{t('mobile.list.next')}</Button>
             </div>
           ) : null}
         </> : null}

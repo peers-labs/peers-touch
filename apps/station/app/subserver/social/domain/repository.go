@@ -14,6 +14,7 @@ import (
 type PublicPostRepository interface {
 	Create(ctx context.Context, p *Post) error
 	GetByID(ctx context.Context, id uint64) (*Post, error)
+	GetByIDs(ctx context.Context, ids []uint64) ([]*Post, error)
 	ProbeRecordState(ctx context.Context, id uint64) (PostRecordState, error)
 	Delete(ctx context.Context, id uint64, authorPTID string) error
 
@@ -98,6 +99,8 @@ type MomentsStatsRepository interface {
 type CommentRepository interface {
 	Create(ctx context.Context, c *Comment) error
 	GetByID(ctx context.Context, id uint64) (*Comment, error)
+	GetPublicByIDs(ctx context.Context, ids []uint64) ([]*Comment, error)
+	ListPublicWindow(ctx context.Context, postID, anchorCommentID uint64, limit int) ([]*Comment, error)
 	Delete(ctx context.Context, id uint64, authorPTID string) error
 	ListByPost(ctx context.Context, postID uint64, c Cursor, limit int) ([]*Comment, error)
 	CountByPost(ctx context.Context, postID uint64) (int64, error)
@@ -181,5 +184,6 @@ type StationModerationRepository interface {
 	Delete(ctx context.Context, stationDomain, stationPeerID string, kind StationModerationPolicyKind) error
 	List(ctx context.Context, kind StationModerationPolicyKind, c Cursor, limit int) ([]*StationModerationPolicy, error)
 	IsBlockedStation(ctx context.Context, stationDomain, stationPeerID string) (bool, error)
+	BlockedStations(ctx context.Context, domains, peerIDs []string) (map[string]bool, map[string]bool, error)
 	ListBlockedStations(ctx context.Context) (map[string]*StationModerationPolicy, error)
 }
