@@ -54,7 +54,8 @@ func onAfterStart() error {
 			log.Warnf(ctx, "seed preset actors: %v", err)
 		}
 
-		// Auto-friend the first 3 preset users (alice, bob, carol).
+		// Auto-friend the first 3 preset users (alice, bob, carol) as a fully
+		// connected group.
 		if len(presets) >= 3 {
 			devFriends := make([]string, 3)
 			for i := 0; i < 3; i++ {
@@ -62,6 +63,22 @@ func onAfterStart() error {
 			}
 			if err := actor.SeedDevFriendships(ctx, devFriends); err != nil {
 				log.Warnf(ctx, "seed dev friendships: %v", err)
+			}
+		}
+
+		// dave is a fourth preset actor who is friends with bob and carol but
+		// NOT alice, so the seeded mixed group contains a stranger from
+		// alice's view. Pairing the subset seeds only the missing dave edges;
+		// the bob<->carol edge already exists from the first friendship seed.
+		daveFriends := make([]string, 0, 3)
+		for _, p := range presets {
+			if p.Username == "bob" || p.Username == "carol" || p.Username == "dave" {
+				daveFriends = append(daveFriends, p.Username)
+			}
+		}
+		if len(daveFriends) == 3 {
+			if err := actor.SeedDevFriendships(ctx, daveFriends); err != nil {
+				log.Warnf(ctx, "seed dave friendships: %v", err)
 			}
 		}
 

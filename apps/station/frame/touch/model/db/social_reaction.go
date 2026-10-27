@@ -9,10 +9,9 @@ import "time"
 // each kind per (actor, post)" — the same actor can LOVE *and* LIKE the same
 // post, but cannot LIKE it twice.
 //
-// Note: this is named SocialReaction (not Reaction) to disambiguate from the
-// existing `Reaction` struct in `reaction.go` which lives on the `touch_reaction`
-// table and stores chat-message reactions. Two distinct domains, two distinct
-// tables.
+// Note: this stores social (Moments) reactions only. Chat-message reactions
+// belong to the conversation authority and are modelled as
+// ReactionCommittedFact conversation events, not a table in this package.
 type SocialReaction struct {
 	PostID    string    `gorm:"column:post_id;size:128;primaryKey"`
 	ActorID   uint64    `gorm:"column:actor_id;primaryKey;autoIncrement:false;index:idx_sreaction_actor"`
