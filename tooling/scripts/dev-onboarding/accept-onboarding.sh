@@ -83,22 +83,23 @@ EOF
 }
 
 # dev-up needs two login sessions when it creates the docker group membership.
+# make maps a recipe exit code to 2, so membership state (not exit code) is
+# the signal: the entry exists in /etc/group but the current SSH session was
+# created before the change.
 do_dev_up() {
-  log "dev-up pass 1 (install toolchain; exit 3 = relogin required)"
-  set +e
+  log "dev-up pass 1 (bootstrap toolchain)"
   rexec <<EOF
 $(remote_script)
+set -e
 cd "\$ROOT"
-make dev-up \${REG_ARGS[@]+"\${REG_ARGS[@]}"}
+make dev-up \${REG_ARGS[@]+"\${REG_ARGS[@]}"} || \\
+  if id -nG | grep -qw docker; then exit 0; \\
+  elif getent group docker | grep -qw "\$USER"; then echo "relogin required"; else exit 1; fi
 EOF
-  local code=$?
-  set -e
-  if [ "$code" -ne 0 ] && [ "$code" -ne 3 ]; then
-    fail "dev-up pass 1 failed ($code)"
-  fi
   log "dev-up pass 2 (fresh login session, starts Station)"
   rexec <<EOF
 $(remote_script)
+set -e
 cd "\$ROOT"
 make dev-up \${REG_ARGS[@]+"\${REG_ARGS[@]}"}
 EOF
