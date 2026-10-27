@@ -562,9 +562,15 @@ impl RouteRuntime {
         let storage = storage
             .as_ref()
             .ok_or_else(|| route_error("secureStorageUnavailable"))?;
-        let keypair = crate::platform::transport_identity::keypair(storage, scope)?;
+        let keypair = crate::platform::transport_identity::keypair(storage, scope).map_err(|error| {
+            log::warn!(target: "station-route", "transport admission failed stage=identity code={}", error.code);
+            error
+        })?;
         let owner = StandardTransportOwner::start_with_identity(keypair)
-            .map_err(|_| route_error("standardTransportStart"))?;
+            .map_err(|error| {
+                log::warn!(target: "station-route", "transport admission failed stage=start kind={:?} phase={:?}", error.kind(), error.phase());
+                route_error("standardTransportStart")
+            })?;
         let handle = owner.handle();
         transport.insert(
             scope.clone(),

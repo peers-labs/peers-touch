@@ -43,6 +43,14 @@ Mobile在camera host adapter增加成熟QR解码能力。Android与iOS只分化H
 载荷解析、安全状态、重试、claim与网络决策在共享Rust/core完成。
 相机帧不上传，不依赖WebView `BarcodeDetector`作为两端唯一生产实现。
 
+Mobile scoped transport identity 的安全存储键使用 dot 分隔的规范 scope，
+满足 Android 的字符与长度合同；Direct、Relay 和 provisional origin
+仍保持各自独立身份。该命名空间仅由 Rust owner 读写，renderer 的通用
+安全存储命令不能读取、覆盖或删除传输 seed。
+扫码失败且尚无持久化事务时，后台 reconciliation 不能清除失败反馈或
+重新打开相机。显式 Retry 先读取 native Flow；有 Flow 则恢复原 Claim，
+无 Flow 才重新扫码。取消、挂起或 teardown 后的迟到读取不能打开相机。
+
 Mobile 原生请求使用固定 Station/root、route ID/generation/revision 的
 libp2p HTTP 路线对象提交，不通过随全局选择变化的 loopback proxy 提交敏感正文。
 连接转换先保存原生安全存储中的转换意图，再准入专用路线和暂存 Session，

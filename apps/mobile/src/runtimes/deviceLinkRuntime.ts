@@ -63,6 +63,13 @@ function errorKey(error: unknown): string {
 
 async function apply(projection: DeviceLinkProjection, observed: number) {
   if (observed !== epoch) return;
+  const current = useDeviceLinkStore.getState();
+  if (projection.phase === 'idle' && current.phase === 'failed' && !current.projection) {
+    // No native flow means there is nothing to recover automatically. Keep
+    // the failed intent visible until the user retries or cancels.
+    emptyRetries += 1;
+    return;
+  }
   if (projection.phase === 'committed') {
     if (!projection.route || !projection.session
       || projection.session.stationPeerId !== projection.stationPeerId
@@ -123,11 +130,11 @@ async function apply(projection: DeviceLinkProjection, observed: number) {
   });
 }
 
-function operate(action: () => Promise<DeviceLinkProjection>): Promise<void> {
+function operate(action: () => Promise<DeviceLinkProjection>, clearError = true): Promise<void> {
   if (inFlight) return inFlight;
   const observed = epoch;
   stopTimer();
-  useDeviceLinkStore.setState({ busy: true, errorKey: null });
+  useDeviceLinkStore.setState({ busy: true, ...(clearError ? { errorKey: null } : {}) });
   const operation = (async () => {
     try {
       await apply(await action(), observed);
@@ -153,7 +160,18 @@ function operate(action: () => Promise<DeviceLinkProjection>): Promise<void> {
 }
 
 export function refreshMobileDeviceLink(): Promise<void> {
-  return operate(readDeviceLink);
+  return operate(readDeviceLink, false);
+}
+
+export function retryMobileDeviceLink(): Promise<void> {
+  if (inFlight) return inFlight;
+  const observed = epoch;
+  return operate(async () => {
+    const projection = await readDeviceLink();
+    if (observed !== epoch || projection.phase !== 'idle') return projection;
+    useDeviceLinkStore.setState({ phase: 'scanning', projection: null });
+    return scanDeviceLink();
+  });
 }
 
 export function wakeMobileDeviceLink(): void {

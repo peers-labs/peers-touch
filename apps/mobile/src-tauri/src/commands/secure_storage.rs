@@ -48,6 +48,7 @@ fn validate_key(key: &str) -> MobileResult<()> {
         || key == "peers-touch.mobile.auth-active-scope.v1"
         || key.starts_with("peers-touch.mobile.reliability.")
         || key.starts_with("peers-touch.mobile.station-route-source.v1.")
+        || key.starts_with("peers-touch.mobile.station-transport.v1.")
         || key.starts_with("peers-touch.mobile.x-config.")
         || key.starts_with("peers-touch.mobile.device-link.")
         || key.starts_with("mobile-crypto-identity.")
@@ -77,5 +78,22 @@ mod tests {
         assert!(validate_key("peers-touch.mobile.reliability.scope-key-inventory.v1").is_err());
         assert!(validate_key("peers-touch.mobile.station-route-source.v1.deadbeef").is_err());
         assert!(validate_key("peers-touch.mobile.x-config.watermark.v1.stable").is_err());
+    }
+
+    #[test]
+    fn web_storage_cannot_read_write_or_remove_scoped_transport_identity() {
+        use station_trust::transport_identity::TransportIdentityScope;
+        for scope in [
+            TransportIdentityScope::DirectStation("station".into()),
+            TransportIdentityScope::Relay("relay".into()),
+            TransportIdentityScope::ProvisionalEndpointOrigin("https://relay.example".into()),
+        ] {
+            let key = crate::platform::transport_identity::storage_key(&scope);
+            let error = validate_key(&key).unwrap_err();
+            assert_eq!(
+                error.message,
+                "secure storage key belongs to a Rust-owned namespace"
+            );
+        }
     }
 }

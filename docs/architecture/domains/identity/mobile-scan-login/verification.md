@@ -14,7 +14,8 @@ COMMITTED 后仍由当前 Access 决策、Session、PIN 和 lifecycle kernel 控
 
 ## 当前检查
 
-- Mobile Device Link、Session 和真实 descriptor 生命周期测试：26 项通过。
+- Mobile Device Link、Session 和真实 descriptor 生命周期测试：29 项通过，
+  覆盖扫码失败反馈保留、显式重扫与持久化 Claim 恢复。
 - Desktop 原生取消接纳、终态恢复与原请求 lookup 回归测试：11 项通过；
   Station Device Link application 模块测试通过，覆盖终态持久化、摘要冲突
   拒绝及新登录清理失效原 Session 的旧 offer。
@@ -36,33 +37,41 @@ COMMITTED 后仍由当前 Access 决策、Session、PIN 和 lifecycle kernel 控
 - 路由 owner 的选择、恢复、更新及取消释放测试：20 项通过；
   包括显式重选相同 binding 后旧事务不得覆盖选择。
 - `one` Station 已部署本地 checkpoint
-  `c17bff3dadcef1cbf397ae026e872badab23b06f`；
+  `0fc8de6b9c309f290cc701d6f5d6f26201f7bfb6`；
   `/app-meta/version` 的 `build_commit` 与其逐字相同。
   原生 Desktop 经 `make desktop` 启动，使用嵌入式 WebDriver 操作：
   添加并验证当前 Station、Alice 密码登录、创建/确认本地 PIN、
   进入 Shell 与全局 Settings Account 均已现场执行。
   这些前置步骤不等于 Mobile 扫码接纳通过。
-- 原生 Desktop 发码失败已复现：收到的 Schema action 是完整
-  `deviceLinkOffer`，链接 1,892 字节，固定 360 像素的 QR 生成返回
-  `PAYLOAD_TOO_DENSE`。去掉头像、扩大至 720 像素/版本 40 仍因
-  当前 Q 纠错容量失败；没有降低纠错要求。
-  当前响应未提供 locator。`one` 的 Direct origin 为 HTTP，而原生
-  sealed-blob retrieval 要求 HTTPS；Relay HTTPS 健康检查通过，
-  当前 Dashboard attachment 列表为空。部署包含 Relay pool overlay
-  与 CA 文件挂载；受认证邀请导入返回 503，Station 日志明确报
-  `x509: certificate signed by unknown authority`。失败邀请已通过
-  Relay owner 撤销。尚未证明 reservation 或短引用可用。
-- 两个本任务 Android API 35 Emulator 已成功启动，虚拟相机支持
-  `virtualscene-image` 动态图片输入，WebView 124 与 ChromeDriver 124
-  版本匹配。尚未安装本需求 APK，也未执行生产插件扫描。
-  原生构建先遇到 NDK `ranlib` 选择错误，使用已有的 `TARGET_RANLIB`
-  配置后通过 Rust 编译；随后发现未锁定的 CameraX/MLKit 依赖。
-  Android host 已同步至 AGP 8.9.1 / Gradle 8.11.1 / compileSdk 36，
-  对齐 barcode-scanner 2.5.3 的 SDK 36 和 CameraX 1.5.1 要求。
-  root/buildSrc 与应用、原生插件 classpath 的依赖锁已重新解析，
-  原生 build owner 同步 Cargo 2.12.5、扫码与 secure-input 插件输入。
-  `checkUniversalDebugAarMetadata` 与生产插件 `compileDebugKotlin`
-  均通过；完整 APK 构建和生产相机扫码尚未通过。
+- Relay 已通过 Make 部署与公开 TLS 健康检查，本任务 attachment 为 active。
+  原生 Desktop 生成 `deviceLinkLocator`：534 字节、Q 纠错、版本 22、
+  360 CSS 像素，生产 SVG 为 ready。原生 DOM 导出的 PNG 经独立
+  解码器逐字验证；Desktop 屏幕截图未包含当前弹窗，因此光学屏幕证明
+  仍为 UNPROVEN。
+- Android host 使用 AGP 8.9.1 / Gradle 8.11.1 / compileSdk 36、
+  Cargo 2.12.5、barcode-scanner 2.5.3 / CameraX 1.5.1，以及 APK 内置
+  MLKit barcode-scanning 17.3.0。依赖锁 preflight、AAR metadata、
+  Kotlin 与完整 APK 构建通过。两个本任务 Android API 35 Emulator
+  的已安装 APK 与构建摘要逐字一致：
+  `d5145690d16a04b1d096d4e7ecce9a876a59d01c0954398862e5c72bd28b1214`。
+- Emulator 36.6.11 的 `imagefile` 输入已送入生产相机。使用原生 DOM
+  的同一生产 SVG 导出 720 像素 PNG，置于 RGBA 1280×960 图像的
+  `(0,40)`，相机原始帧中的码图为 840×840、8 像素/module。
+  独立解码器和已安装 APK 内的 MLKit 均读出完整 534 字节载荷。
+  同 APK 的 MLKit 对原始授权码 PNG、低密度 URL 和两个旋转方向均
+  解码通过。该原生诊断不替代 App 登录 Journey。
+- 生产 `device_link_scan` 已通过真实 CameraX/MLKit 读取 locator，
+  原生接纳在短引用 source proof 阶段返回
+  `MOBILE_DEVICE_LINK / deviceLink.sourceProofUnavailable`。
+  Desktop 未收到 Claim；批准、Access/PIN/Shell 与双手机共存尚未执行。
+  源码定位到 transport identity key 的 `/` 和 `:` 不符合 Android
+  SecureStorage 的键字符合同；原生存储命令对该格式现场返回
+  `MOBILE_INVALID_INPUT`，dot 格式探针返回 absent。
+  已将 scoped key 转为 dot 格式，并将其命名空间限制为 Rust owner。
+  扫码失败被后台 idle 读取清除的源码回归已复现并修复；
+  新 APK 尚待重建，完整生产 Journey 仍未证实。
+  当前诊断与源码身份见工作区外
+  `/tmp/peers-relay-msl-native-20261027/native-camera-source-proof-failure.json`。
 - Suite 复用合同审查：PASS / runtime NOT_RUN。五客户端只在 Suite 预置一次、
   场景 attach-only 的合同成立，未执行该 Suite。
 - 正式 gap detector 未生成有效结果：外部 Evidence Store 没有本次正式
@@ -98,7 +107,7 @@ MSL-A01—MSL-A09 继续 UNPROVEN：
 现场资源核查发现一台已配对可用 iPhone；未对该 iPhone 安装或启动本需求 App。
 Android SDK 位于 `/opt/homebrew/share/android-commandlinetools/`，包含 Emulator、
 API 35 system image 和 NDK；Emulator 提供虚拟场景 poster 图片输入选项。
-Android 本需求 App 的虚拟相机扫码尚未执行。
+Android 本需求 App 已执行虚拟相机扫码，短引用接纳仍失败。
 
 ## 运行边界与清理
 
@@ -106,9 +115,9 @@ Android 本需求 App 的虚拟相机扫码尚未执行。
 Station、`station-1` 部署绑定、slot 18，以及 `station.connect` /
 `station.deploy` 能力；Profile 定义为 tracked-clean。
 用户已授权本地 checkpoint 和继续实测，Station 当前 live build 已核对。
-本轮 Android 依赖锁修改尚未形成下一 checkpoint；修改源码后应重新绑定
+当前 APK、Desktop 与 Station 绑定上述 checkpoint；修改源码后应重新绑定
 构建身份，并按受影响 owner 重建/部署，不继承本轮前置步骤的结果。
-完整扫码登录 Journey 尚未执行。
+完整扫码登录 Journey 尚未通过。
 
 本轮 Desktop 已通过 `make desktop-stop` 停止，WebDriver session 已关闭；
 发码弹窗已关闭并交还取消 owner。两个本任务 Android Emulator 已停止，

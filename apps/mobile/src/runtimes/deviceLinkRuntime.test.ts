@@ -43,6 +43,7 @@ import {
   createDeviceLinkRuntimeDescriptor,
   hasPendingDeviceLink,
   refreshMobileDeviceLink,
+  retryMobileDeviceLink,
   startMobileDeviceLink,
 } from './deviceLinkRuntime';
 
@@ -145,6 +146,36 @@ describe('Mobile Device Link lifecycle fences', () => {
     const reads = mocks.read.mock.calls.length;
     await vi.advanceTimersByTimeAsync(10_000);
     expect(mocks.read).toHaveBeenCalledTimes(reads);
+  });
+
+  it('keeps scan failure visible when background reconciliation finds no native flow', async () => {
+    mocks.scan.mockRejectedValue({ message: 'deviceLink.sourceProofUnavailable' });
+    await startMobileDeviceLink();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(useDeviceLinkStore.getState()).toMatchObject({
+      phase: 'failed', projection: null, errorKey: 'mobile.deviceLink.retry', busy: false,
+    });
+    expect(mocks.scan).toHaveBeenCalledOnce();
+    await cancelMobileDeviceLink();
+    expect(useDeviceLinkStore.getState().phase).toBe('idle');
+  });
+
+  it('opens the camera again only on explicit retry after native flow reconciliation', async () => {
+    mocks.scan.mockRejectedValueOnce({ message: 'deviceLink.cameraDenied' })
+      .mockResolvedValueOnce({ ...idle, phase: 'linking', state: DeviceLinkState.CLAIMS_PENDING });
+    await startMobileDeviceLink();
+    await retryMobileDeviceLink();
+    expect(mocks.scan).toHaveBeenCalledTimes(2);
+    expect(useDeviceLinkStore.getState().phase).toBe('linking');
+  });
+
+  it('recovers a persisted claim on retry without opening another camera', async () => {
+    mocks.scan.mockRejectedValue({ message: 'deviceLink.transportUnavailable' });
+    await startMobileDeviceLink();
+    mocks.read.mockResolvedValue({ ...idle, phase: 'linking', state: DeviceLinkState.CLAIMS_PENDING });
+    await retryMobileDeviceLink();
+    expect(mocks.scan).toHaveBeenCalledOnce();
+    expect(useDeviceLinkStore.getState().phase).toBe('linking');
   });
 
   it('adopts the acknowledged route through the original Session owner without blocking kernel teardown', async () => {

@@ -7,6 +7,7 @@ import { DeviceLinkState } from '../../gen/proto/domain/auth/device_link_pb';
 import {
   cancelMobileDeviceLink,
   refreshMobileDeviceLink,
+  retryMobileDeviceLink,
   submitMobileDeviceLink,
 } from '../../runtimes/deviceLinkRuntime';
 import { sanitizeAccessDecision } from '../../runtimes/accessRuntime';
@@ -114,7 +115,7 @@ export function DeviceLinkScreen() {
             {t('common.action.cancel')}
           </Button>
           {errorKey && !needsNewComparison ? (
-            <Button type="primary" loading={busy} onClick={() => void refreshMobileDeviceLink()}>
+            <Button type="primary" loading={busy} onClick={() => void retryMobileDeviceLink()}>
               {t('common.action.retry')}
             </Button>
           ) : null}

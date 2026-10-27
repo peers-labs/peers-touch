@@ -9,13 +9,17 @@ use crate::error::{MobileError, MobileResult};
 
 const PREFIX: &str = "peers-touch.mobile.station-transport.v1";
 
+pub(crate) fn storage_key(scope: &TransportIdentityScope) -> String {
+    format!("{PREFIX}.{}", scope.stable_id().replace(':', "."))
+}
+
 /// The caller serializes creation with transport admission. A corrupt or
 /// unavailable secure-store entry fails closed; it never silently rotates.
 pub(crate) fn keypair(
     storage: &SecureStorage,
     scope: &TransportIdentityScope,
 ) -> MobileResult<Keypair> {
-    let key = format!("{PREFIX}/{}", scope.stable_id());
+    let key = storage_key(scope);
     let stored = match storage.get(&key)? {
         Some(stored) => Zeroizing::new(stored),
         None => {
@@ -46,4 +50,28 @@ pub(crate) fn keypair(
     }
     Keypair::ed25519_from_bytes(decoded.as_mut_slice())
         .map_err(|_| MobileError::secure_storage("invalid station transport key"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scoped_keys_fit_the_android_store_without_collapsing_roles_or_endpoints() {
+        let scopes = [
+            TransportIdentityScope::DirectStation("peer-a".into()),
+            TransportIdentityScope::Relay("peer-a".into()),
+            TransportIdentityScope::Relay("peer-b".into()),
+            TransportIdentityScope::ProvisionalEndpointOrigin("https://peer-a.example".into()),
+        ];
+        let keys = scopes.iter().map(storage_key).collect::<Vec<_>>();
+        for (index, key) in keys.iter().enumerate() {
+            assert!(key.len() <= 256);
+            assert!(key
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')));
+            assert_eq!(key, &storage_key(&scopes[index]));
+            assert!(!keys[..index].contains(key));
+        }
+    }
 }
