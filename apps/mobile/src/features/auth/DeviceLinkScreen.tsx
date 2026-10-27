@@ -22,6 +22,7 @@ const { Text, Title } = Typography;
 export function DeviceLinkScreen() {
   const { t } = useMobileI18n();
   const { phase, projection, busy, errorKey } = useDeviceLinkStore();
+  const cameraOverlay = phase === 'scanning' || phase === 'cancelling';
   const needsNewComparison = errorKey === 'mobile.deviceLink.comparisonChanged';
   const pending = useRef<{ key: string; id: string } | null>(null);
   const decision = projection?.accessDecision
@@ -87,7 +88,10 @@ export function DeviceLinkScreen() {
         : projection?.state === DeviceLinkState.CLAIMS_PENDING ? 'mobile.deviceLink.waiting'
           : 'mobile.deviceLink.connecting';
   return (
-    <main className="auth-gate-screen" data-product-surface="entry.device-link">
+    <main
+      className={`auth-gate-screen${cameraOverlay ? ' mobile-device-link-scanner' : ''}`}
+      data-product-surface="entry.device-link"
+    >
       <div className="auth-gate-toolbar"><LanguageSwitcher /></div>
       <Card className="auth-gate-card" variant="borderless">
         <section className="auth-gate-brand">

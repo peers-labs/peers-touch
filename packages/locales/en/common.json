@@ -1052,7 +1052,7 @@
   "mobile.deviceLink.subtitle": "Scan the sign-in code in your computer's account settings.",
   "mobile.deviceLink.compare": "Check that this code matches your computer, then confirm there.",
   "mobile.deviceLink.code": "Verification code",
-  "mobile.deviceLink.scanning": "Opening the camera…",
+  "mobile.deviceLink.scanning": "Point your camera at the sign-in code.",
   "mobile.deviceLink.connecting": "Connecting to your account…",
   "mobile.deviceLink.waiting": "Waiting for confirmation on your computer",
   "mobile.deviceLink.access": "Complete your network's sign-in requirements.",

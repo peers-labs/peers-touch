@@ -183,6 +183,9 @@ Mobile 验证证书、offer 绑定和短码，不能把 HPKE Base 模式当作�
   Android 使用官方 Tauri barcode-scanner 的 CameraX/ML Kit 路径，应用直接
   依赖 `com.google.mlkit:barcode-scanning:17.3.0`，将模型随 APK 打包。
   首次扫描不依赖 Play Services 下载；应用和插件 classpath 由 Gradle 锁固定。
+  扫描及相机取消期间，原生预览位于透明 WebView 后方，HTML 根节点与扫描页
+  保持透明。说明和取消按钮集中在底部卡片，中央区域留给相机；退出该阶段后
+  自动恢复认证页背景。扫描提示描述对码动作，不将整个等待期间标作相机启动。
 
 候选 API：`/auth/device-link/{create,claim,approve,deny,cancel,status,material,ack}`。
 生成 protobuf 请求/响应；每个接口的身份、幂等与限制见

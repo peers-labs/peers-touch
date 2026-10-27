@@ -1,3 +1,24 @@
+.mobile-device-link-scanner.auth-gate-screen {
+  align-items: flex-end;
+  background: transparent;
+}
+
+html:has(.mobile-device-link-scanner),
+body:has(.mobile-device-link-scanner),
+#root:has(.mobile-device-link-scanner) {
+  background: transparent;
+}
+
+.mobile-device-link-scanner .auth-gate-card {
+  min-height: 0;
+  height: auto;
+}
+
+.mobile-device-link-scanner .auth-gate-card > .ant-card-body {
+  display: flex;
+  padding: 16px !important;
+}
+
 .mobile-device-link-identity {
   display: flex;
   flex-direction: column;
