@@ -414,18 +414,18 @@ function validateLocalProfileFile(workspaceRoot, file) {
   }
 }
 
-function resolveEnvRepository(workspaceRoot, requestedEnvRepo) {
+// Worktree-local (compose/local) profiles are self-contained, so the sibling
+// tracked env repository is optional for them. Remote deploy definitions
+// require it and validate the non-null result at the call site.
+function tryResolveEnvRepository(workspaceRoot, requestedEnvRepo) {
   const candidate = requestedEnvRepo
     ? path.resolve(requestedEnvRepo)
     : path.join(path.dirname(workspaceRoot), 'env');
   let canonical;
   try {
     canonical = realpathSync(candidate);
-  } catch (error) {
-    fail('PROFILE_UNAVAILABLE', 'environment repository is unavailable', {
-      envRepo: candidate,
-      cause: String(error),
-    });
+  } catch {
+    return null;
   }
   if (
     gitValue(
@@ -527,34 +527,36 @@ export function resolveProfileDefinition(options) {
   const workspaceRoot = captureWorkspace(options.workspaceRoot ?? repoRoot)
     .canonicalRoot;
   const profile = requiredIdentifier(options.profile, 'profile');
-  const envRepo = resolveEnvRepository(workspaceRoot, options.envRepo);
+  const envRepo = tryResolveEnvRepository(workspaceRoot, options.envRepo);
   const relativeDirectory = `peers-touch/${profile}`;
   const relativeProfile = `${relativeDirectory}/profile.env.example`;
-  let profileFile = path.join(envRepo, relativeProfile);
+  const localProfileFile = path.join(
+    workspaceRoot,
+    '.local',
+    'dev',
+    'profiles',
+    `${profile}.env`,
+  );
+  let profileFile;
   let sourceState = 'tracked-clean';
 
-  if (existsSync(profileFile)) {
+  if (envRepo && existsSync(path.join(envRepo, relativeProfile))) {
+    profileFile = path.join(envRepo, relativeProfile);
     trackedFile(envRepo, relativeProfile, 'profile definition');
     requireCleanDefinition(envRepo, relativeDirectory, profile);
-  } else {
-    profileFile = path.join(
-      workspaceRoot,
-      '.local',
-      'dev',
-      'profiles',
-      `${profile}.env`,
-    );
-    if (!existsSync(profileFile)) {
-      fail('PROFILE_UNAVAILABLE', 'selected profile does not exist', {
-        profile,
-        expected: [
-          path.join(envRepo, relativeProfile),
-          profileFile,
-        ],
-      });
-    }
-    profileFile = validateLocalProfileFile(workspaceRoot, profileFile);
+  } else if (existsSync(localProfileFile)) {
+    profileFile = validateLocalProfileFile(workspaceRoot, localProfileFile);
     sourceState = 'local';
+  } else {
+    fail('PROFILE_UNAVAILABLE', 'selected profile does not exist', {
+      profile,
+      expected: envRepo
+        ? [path.join(envRepo, relativeProfile), localProfileFile]
+        : [localProfileFile],
+      hint: envRepo
+        ? undefined
+        : 'create a worktree-local profile with "make profile-init <name>" (no sibling env repository required)',
+    });
   }
 
   const values = parseEnvFile(profileFile, {
@@ -586,6 +588,13 @@ export function resolveProfileDefinition(options) {
   let deploy = null;
   if (deployEnvironment) {
     requiredIdentifier(deployEnvironment, 'PT_STATION_DEPLOY_ENV');
+    if (!envRepo) {
+      fail(
+        'PROFILE_UNAVAILABLE',
+        'PT_STATION_DEPLOY_ENV requires the tracked environment repository',
+        { profile, expectedRepository: '../env' },
+      );
+    }
     deploy = resolveDeployDefinition(envRepo, deployEnvironment);
   }
 
