@@ -50,6 +50,12 @@ echo "== Code structure signals =="
 node tooling/skills/pt-code-structure-review/scripts/structure-signals.mjs \
   --range "$diff_range"
 
+# Advisory only: knip output is contextual input for the semantic structure
+# decision. It never gates the pipeline and SKIPs without the toolchain.
+echo
+echo "== Dead code advisory (non-blocking) =="
+node tooling/scripts/review/dead-code-advisory.mjs || true
+
 if rg -q '^\[code-structure\]$' <<< "$route_output"; then
   echo
   echo "== Code structure decision =="
