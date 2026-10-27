@@ -21,6 +21,58 @@ message Bot {
   string name = 3;
   BotState state = 4;
   peers_touch.model.chat.v1.MessagePublishingGrant publishing_grant = 5;
+  // agent_binding is set only when the bot is bound to a Station Agent for
+  // automatic replies; an unbound bot only receives inbound messages.
+  BotAgentBinding agent_binding = 6;
+}
+
+// BotAgentBinding binds a bot's inbound publishing messages to a Station
+// Agent. The binding is the single switch for automatic replies; it defaults
+// to absent (no reply). Historical turns are never rewritten when it changes.
+message BotAgentBinding {
+  string bot_ptid = 1;
+  string owner_ptid = 2;
+  string agent_id = 3;
+  bool enabled = 4;
+  int64 version = 5;
+  string created_at = 6;
+  string updated_at = 7;
+}
+
+message SetBotAgentBindingRequest {
+  string bot_ptid = 1;
+  string agent_id = 2;
+  bool enabled = 3;
+  int64 expected_version = 4;
+}
+
+message SetBotAgentBindingResponse {
+  BotAgentBinding binding = 1;
+}
+
+message GetBotAgentBindingRequest {
+  string bot_ptid = 1;
+}
+
+message GetBotAgentBindingResponse {
+  // binding is empty (zero value) when the bot is not bound.
+  BotAgentBinding binding = 1;
+  bool bound = 2;
+}
+
+message ListBotAgentBindingsRequest {}
+
+message ListBotAgentBindingsResponse {
+  repeated BotAgentBinding bindings = 1;
+}
+
+message DeleteBotAgentBindingRequest {
+  string bot_ptid = 1;
+  int64 expected_version = 2;
+}
+
+message DeleteBotAgentBindingResponse {
+  bool deleted = 1;
 }
 
 message CreateBotRequest {

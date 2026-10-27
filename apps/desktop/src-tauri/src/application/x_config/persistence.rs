@@ -1,11 +1,11 @@
-use x_config_core::{
-    XConfigError, SecureWatermark, SecureWatermarkStore, SnapshotCacheKey,
-    SnapshotCacheStore, MAX_ENVELOPE_BYTES,
-};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use x_config_core::{
+    SecureWatermark, SecureWatermarkStore, SnapshotCacheKey, SnapshotCacheStore, XConfigError,
+    MAX_ENVELOPE_BYTES,
+};
 
 const WATERMARK_SERVICE: &str = "peers-touch.desktop.x-config";
 

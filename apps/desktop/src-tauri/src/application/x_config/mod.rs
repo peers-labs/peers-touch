@@ -138,9 +138,7 @@ impl XConfigRuntime {
             .find(|suggestion| suggestion.seed_id == seed_id)
             .ok_or_else(|| XConfigError::new("x_config_suggestion_not_found"))?;
         if !suggestion.actionable {
-            return Err(XConfigError::new(
-                "x_config_suggestion_not_actionable",
-            ));
+            return Err(XConfigError::new("x_config_suggestion_not_actionable"));
         }
         snapshot
             .statement
@@ -325,7 +323,10 @@ impl RuntimeState {
             let projected = ResolvedEndpointDefault {
                 seed_id: suggestion.seed_id.clone(),
                 display_name: suggestion.display_name.clone(),
-                canonical_origin: suggestion.connection_material.canonical_discovery_origin.clone(),
+                canonical_origin: suggestion
+                    .connection_material
+                    .canonical_discovery_origin
+                    .clone(),
                 matched_rule_id: resolved.matched_rule_id,
                 actionable: suggestion.actionable,
             };

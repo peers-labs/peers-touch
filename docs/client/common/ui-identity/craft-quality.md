@@ -124,8 +124,11 @@ Before implementation, record:
    layers.
 4. **Module envelope**: inherited rules, adjustable expression, and the one
    allowed signature feature.
-5. **State model**: default, empty, loading, pending, partial, success,
-   failure, recovery, offline/degraded, long-content, and narrow states.
+5. **Journey-visible state model**: `entry`, `empty`, `loading`, `waiting`,
+   `pending`, `partial-success`, `success`, `failure`, `unknown-outcome`,
+   `recovery`, `cancelled`, `offline`, `degraded`, `restored`,
+   `long-content`, and `narrow`. Component interaction states such as hover,
+   focus and pressed are a separate component-state namespace.
 6. **Input model**: pointer, keyboard, touch, assistive technology, and
    reduced motion.
 7. **Performance budget**: layout-stability expectation, long-list strategy,
@@ -146,7 +149,7 @@ Use the existing prototype evidence levels:
 
 ### L2 Visual
 
-- Real rendered default and critical states.
+- Real rendered `entry` and critical states.
 - Wide and narrow viewports.
 - Light/dark themes when claimed.
 - Long content and localization expansion.

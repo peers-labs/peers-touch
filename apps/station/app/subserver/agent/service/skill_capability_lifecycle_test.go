@@ -264,6 +264,8 @@ func newSkillCapabilityTestServices(
 		&persistence.Agent{},
 		&persistence.Skill{},
 		&persistence.SkillVersion{},
+		&persistence.SkillResource{},
+		&persistence.ImmutableContentBlob{},
 		&persistence.CapabilityManifest{},
 		&persistence.AgentCapabilityBinding{},
 		&persistence.CapabilityBindingCommand{},

@@ -1077,6 +1077,28 @@ impl StationClient {
         Ok(())
     }
 
+    pub fn download_owned_oss_file(
+        &self,
+        token: &str,
+        key: &str,
+    ) -> Result<Vec<u8>, StationClientError> {
+        let query = [("key", key.to_string())];
+        let response = self.execute_wire(
+            Method::GET,
+            "/sub-oss/file",
+            Some(&query),
+            Some(token),
+            self.device_id().as_deref(),
+            None,
+            "application/octet-stream",
+            StationRequestBody::Empty,
+            StationTransportPolicy::TurnExecution,
+            TrafficClass::Bulk,
+            Some(ReplayPolicy::SafeRead),
+        )?;
+        Ok(response.body)
+    }
+
     pub fn probe_station(&self, url: &str) -> (bool, Option<String>, Option<String>, Option<u32>) {
         probe_station(url)
     }

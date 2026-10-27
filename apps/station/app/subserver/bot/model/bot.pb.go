@@ -85,8 +85,11 @@ type Bot struct {
 	Name            string                       `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	State           BotState                     `protobuf:"varint,4,opt,name=state,proto3,enum=peers_touch.model.bot.v1.BotState" json:"state,omitempty"`
 	PublishingGrant *chat.MessagePublishingGrant `protobuf:"bytes,5,opt,name=publishing_grant,json=publishingGrant,proto3" json:"publishing_grant,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// agent_binding is set only when the bot is bound to a Station Agent for
+	// automatic replies; an unbound bot only receives inbound messages.
+	AgentBinding  *BotAgentBinding `protobuf:"bytes,6,opt,name=agent_binding,json=agentBinding,proto3" json:"agent_binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Bot) Reset() {
@@ -154,6 +157,493 @@ func (x *Bot) GetPublishingGrant() *chat.MessagePublishingGrant {
 	return nil
 }
 
+func (x *Bot) GetAgentBinding() *BotAgentBinding {
+	if x != nil {
+		return x.AgentBinding
+	}
+	return nil
+}
+
+// BotAgentBinding binds a bot's inbound publishing messages to a Station
+// Agent. The binding is the single switch for automatic replies; it defaults
+// to absent (no reply). Historical turns are never rewritten when it changes.
+type BotAgentBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BotPtid       string                 `protobuf:"bytes,1,opt,name=bot_ptid,json=botPtid,proto3" json:"bot_ptid,omitempty"`
+	OwnerPtid     string                 `protobuf:"bytes,2,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
+	AgentId       string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Enabled       bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Version       int64                  `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
+	CreatedAt     string                 `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     string                 `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BotAgentBinding) Reset() {
+	*x = BotAgentBinding{}
+	mi := &file_domain_bot_bot_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BotAgentBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BotAgentBinding) ProtoMessage() {}
+
+func (x *BotAgentBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BotAgentBinding.ProtoReflect.Descriptor instead.
+func (*BotAgentBinding) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *BotAgentBinding) GetBotPtid() string {
+	if x != nil {
+		return x.BotPtid
+	}
+	return ""
+}
+
+func (x *BotAgentBinding) GetOwnerPtid() string {
+	if x != nil {
+		return x.OwnerPtid
+	}
+	return ""
+}
+
+func (x *BotAgentBinding) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *BotAgentBinding) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *BotAgentBinding) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *BotAgentBinding) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *BotAgentBinding) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+type SetBotAgentBindingRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	BotPtid         string                 `protobuf:"bytes,1,opt,name=bot_ptid,json=botPtid,proto3" json:"bot_ptid,omitempty"`
+	AgentId         string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Enabled         bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	ExpectedVersion int64                  `protobuf:"varint,4,opt,name=expected_version,json=expectedVersion,proto3" json:"expected_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SetBotAgentBindingRequest) Reset() {
+	*x = SetBotAgentBindingRequest{}
+	mi := &file_domain_bot_bot_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetBotAgentBindingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetBotAgentBindingRequest) ProtoMessage() {}
+
+func (x *SetBotAgentBindingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetBotAgentBindingRequest.ProtoReflect.Descriptor instead.
+func (*SetBotAgentBindingRequest) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SetBotAgentBindingRequest) GetBotPtid() string {
+	if x != nil {
+		return x.BotPtid
+	}
+	return ""
+}
+
+func (x *SetBotAgentBindingRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *SetBotAgentBindingRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *SetBotAgentBindingRequest) GetExpectedVersion() int64 {
+	if x != nil {
+		return x.ExpectedVersion
+	}
+	return 0
+}
+
+type SetBotAgentBindingResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Binding       *BotAgentBinding       `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetBotAgentBindingResponse) Reset() {
+	*x = SetBotAgentBindingResponse{}
+	mi := &file_domain_bot_bot_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetBotAgentBindingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetBotAgentBindingResponse) ProtoMessage() {}
+
+func (x *SetBotAgentBindingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetBotAgentBindingResponse.ProtoReflect.Descriptor instead.
+func (*SetBotAgentBindingResponse) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SetBotAgentBindingResponse) GetBinding() *BotAgentBinding {
+	if x != nil {
+		return x.Binding
+	}
+	return nil
+}
+
+type GetBotAgentBindingRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BotPtid       string                 `protobuf:"bytes,1,opt,name=bot_ptid,json=botPtid,proto3" json:"bot_ptid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBotAgentBindingRequest) Reset() {
+	*x = GetBotAgentBindingRequest{}
+	mi := &file_domain_bot_bot_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBotAgentBindingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBotAgentBindingRequest) ProtoMessage() {}
+
+func (x *GetBotAgentBindingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBotAgentBindingRequest.ProtoReflect.Descriptor instead.
+func (*GetBotAgentBindingRequest) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetBotAgentBindingRequest) GetBotPtid() string {
+	if x != nil {
+		return x.BotPtid
+	}
+	return ""
+}
+
+type GetBotAgentBindingResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// binding is empty (zero value) when the bot is not bound.
+	Binding       *BotAgentBinding `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
+	Bound         bool             `protobuf:"varint,2,opt,name=bound,proto3" json:"bound,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBotAgentBindingResponse) Reset() {
+	*x = GetBotAgentBindingResponse{}
+	mi := &file_domain_bot_bot_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBotAgentBindingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBotAgentBindingResponse) ProtoMessage() {}
+
+func (x *GetBotAgentBindingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBotAgentBindingResponse.ProtoReflect.Descriptor instead.
+func (*GetBotAgentBindingResponse) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetBotAgentBindingResponse) GetBinding() *BotAgentBinding {
+	if x != nil {
+		return x.Binding
+	}
+	return nil
+}
+
+func (x *GetBotAgentBindingResponse) GetBound() bool {
+	if x != nil {
+		return x.Bound
+	}
+	return false
+}
+
+type ListBotAgentBindingsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBotAgentBindingsRequest) Reset() {
+	*x = ListBotAgentBindingsRequest{}
+	mi := &file_domain_bot_bot_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBotAgentBindingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBotAgentBindingsRequest) ProtoMessage() {}
+
+func (x *ListBotAgentBindingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBotAgentBindingsRequest.ProtoReflect.Descriptor instead.
+func (*ListBotAgentBindingsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{6}
+}
+
+type ListBotAgentBindingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Bindings      []*BotAgentBinding     `protobuf:"bytes,1,rep,name=bindings,proto3" json:"bindings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBotAgentBindingsResponse) Reset() {
+	*x = ListBotAgentBindingsResponse{}
+	mi := &file_domain_bot_bot_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBotAgentBindingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBotAgentBindingsResponse) ProtoMessage() {}
+
+func (x *ListBotAgentBindingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBotAgentBindingsResponse.ProtoReflect.Descriptor instead.
+func (*ListBotAgentBindingsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ListBotAgentBindingsResponse) GetBindings() []*BotAgentBinding {
+	if x != nil {
+		return x.Bindings
+	}
+	return nil
+}
+
+type DeleteBotAgentBindingRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	BotPtid         string                 `protobuf:"bytes,1,opt,name=bot_ptid,json=botPtid,proto3" json:"bot_ptid,omitempty"`
+	ExpectedVersion int64                  `protobuf:"varint,2,opt,name=expected_version,json=expectedVersion,proto3" json:"expected_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DeleteBotAgentBindingRequest) Reset() {
+	*x = DeleteBotAgentBindingRequest{}
+	mi := &file_domain_bot_bot_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteBotAgentBindingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteBotAgentBindingRequest) ProtoMessage() {}
+
+func (x *DeleteBotAgentBindingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteBotAgentBindingRequest.ProtoReflect.Descriptor instead.
+func (*DeleteBotAgentBindingRequest) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *DeleteBotAgentBindingRequest) GetBotPtid() string {
+	if x != nil {
+		return x.BotPtid
+	}
+	return ""
+}
+
+func (x *DeleteBotAgentBindingRequest) GetExpectedVersion() int64 {
+	if x != nil {
+		return x.ExpectedVersion
+	}
+	return 0
+}
+
+type DeleteBotAgentBindingResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deleted       bool                   `protobuf:"varint,1,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteBotAgentBindingResponse) Reset() {
+	*x = DeleteBotAgentBindingResponse{}
+	mi := &file_domain_bot_bot_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteBotAgentBindingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteBotAgentBindingResponse) ProtoMessage() {}
+
+func (x *DeleteBotAgentBindingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteBotAgentBindingResponse.ProtoReflect.Descriptor instead.
+func (*DeleteBotAgentBindingResponse) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DeleteBotAgentBindingResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
 type CreateBotRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -164,7 +654,7 @@ type CreateBotRequest struct {
 
 func (x *CreateBotRequest) Reset() {
 	*x = CreateBotRequest{}
-	mi := &file_domain_bot_bot_proto_msgTypes[1]
+	mi := &file_domain_bot_bot_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -176,7 +666,7 @@ func (x *CreateBotRequest) String() string {
 func (*CreateBotRequest) ProtoMessage() {}
 
 func (x *CreateBotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_bot_bot_proto_msgTypes[1]
+	mi := &file_domain_bot_bot_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -189,7 +679,7 @@ func (x *CreateBotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBotRequest.ProtoReflect.Descriptor instead.
 func (*CreateBotRequest) Descriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{1}
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CreateBotRequest) GetName() string {
@@ -217,7 +707,7 @@ type CreateBotResponse struct {
 
 func (x *CreateBotResponse) Reset() {
 	*x = CreateBotResponse{}
-	mi := &file_domain_bot_bot_proto_msgTypes[2]
+	mi := &file_domain_bot_bot_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -229,7 +719,7 @@ func (x *CreateBotResponse) String() string {
 func (*CreateBotResponse) ProtoMessage() {}
 
 func (x *CreateBotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_bot_bot_proto_msgTypes[2]
+	mi := &file_domain_bot_bot_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -242,7 +732,7 @@ func (x *CreateBotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBotResponse.ProtoReflect.Descriptor instead.
 func (*CreateBotResponse) Descriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{2}
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CreateBotResponse) GetBot() *Bot {
@@ -275,7 +765,7 @@ type RotateBotSecretRequest struct {
 
 func (x *RotateBotSecretRequest) Reset() {
 	*x = RotateBotSecretRequest{}
-	mi := &file_domain_bot_bot_proto_msgTypes[3]
+	mi := &file_domain_bot_bot_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -287,7 +777,7 @@ func (x *RotateBotSecretRequest) String() string {
 func (*RotateBotSecretRequest) ProtoMessage() {}
 
 func (x *RotateBotSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_bot_bot_proto_msgTypes[3]
+	mi := &file_domain_bot_bot_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -300,7 +790,7 @@ func (x *RotateBotSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateBotSecretRequest.ProtoReflect.Descriptor instead.
 func (*RotateBotSecretRequest) Descriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{3}
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RotateBotSecretRequest) GetBotPtid() string {
@@ -319,7 +809,7 @@ type RotateBotSecretResponse struct {
 
 func (x *RotateBotSecretResponse) Reset() {
 	*x = RotateBotSecretResponse{}
-	mi := &file_domain_bot_bot_proto_msgTypes[4]
+	mi := &file_domain_bot_bot_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -331,7 +821,7 @@ func (x *RotateBotSecretResponse) String() string {
 func (*RotateBotSecretResponse) ProtoMessage() {}
 
 func (x *RotateBotSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_bot_bot_proto_msgTypes[4]
+	mi := &file_domain_bot_bot_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -344,7 +834,7 @@ func (x *RotateBotSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateBotSecretResponse.ProtoReflect.Descriptor instead.
 func (*RotateBotSecretResponse) Descriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{4}
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RotateBotSecretResponse) GetSecret() string {
@@ -364,7 +854,7 @@ type SetBotStateRequest struct {
 
 func (x *SetBotStateRequest) Reset() {
 	*x = SetBotStateRequest{}
-	mi := &file_domain_bot_bot_proto_msgTypes[5]
+	mi := &file_domain_bot_bot_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -376,7 +866,7 @@ func (x *SetBotStateRequest) String() string {
 func (*SetBotStateRequest) ProtoMessage() {}
 
 func (x *SetBotStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_bot_bot_proto_msgTypes[5]
+	mi := &file_domain_bot_bot_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -389,7 +879,7 @@ func (x *SetBotStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBotStateRequest.ProtoReflect.Descriptor instead.
 func (*SetBotStateRequest) Descriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{5}
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SetBotStateRequest) GetBotPtid() string {
@@ -415,7 +905,7 @@ type SetBotStateResponse struct {
 
 func (x *SetBotStateResponse) Reset() {
 	*x = SetBotStateResponse{}
-	mi := &file_domain_bot_bot_proto_msgTypes[6]
+	mi := &file_domain_bot_bot_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -427,7 +917,7 @@ func (x *SetBotStateResponse) String() string {
 func (*SetBotStateResponse) ProtoMessage() {}
 
 func (x *SetBotStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_bot_bot_proto_msgTypes[6]
+	mi := &file_domain_bot_bot_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -440,7 +930,7 @@ func (x *SetBotStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBotStateResponse.ProtoReflect.Descriptor instead.
 func (*SetBotStateResponse) Descriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{6}
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SetBotStateResponse) GetBot() *Bot {
@@ -458,7 +948,7 @@ type ListMyBotsRequest struct {
 
 func (x *ListMyBotsRequest) Reset() {
 	*x = ListMyBotsRequest{}
-	mi := &file_domain_bot_bot_proto_msgTypes[7]
+	mi := &file_domain_bot_bot_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -470,7 +960,7 @@ func (x *ListMyBotsRequest) String() string {
 func (*ListMyBotsRequest) ProtoMessage() {}
 
 func (x *ListMyBotsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_bot_bot_proto_msgTypes[7]
+	mi := &file_domain_bot_bot_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -483,7 +973,7 @@ func (x *ListMyBotsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMyBotsRequest.ProtoReflect.Descriptor instead.
 func (*ListMyBotsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{7}
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{16}
 }
 
 type ListMyBotsResponse struct {
@@ -495,7 +985,7 @@ type ListMyBotsResponse struct {
 
 func (x *ListMyBotsResponse) Reset() {
 	*x = ListMyBotsResponse{}
-	mi := &file_domain_bot_bot_proto_msgTypes[8]
+	mi := &file_domain_bot_bot_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -507,7 +997,7 @@ func (x *ListMyBotsResponse) String() string {
 func (*ListMyBotsResponse) ProtoMessage() {}
 
 func (x *ListMyBotsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_bot_bot_proto_msgTypes[8]
+	mi := &file_domain_bot_bot_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -520,7 +1010,7 @@ func (x *ListMyBotsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMyBotsResponse.ProtoReflect.Descriptor instead.
 func (*ListMyBotsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{8}
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListMyBotsResponse) GetBots() []*Bot {
@@ -540,7 +1030,7 @@ type SetBotProfileRequest struct {
 
 func (x *SetBotProfileRequest) Reset() {
 	*x = SetBotProfileRequest{}
-	mi := &file_domain_bot_bot_proto_msgTypes[9]
+	mi := &file_domain_bot_bot_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -552,7 +1042,7 @@ func (x *SetBotProfileRequest) String() string {
 func (*SetBotProfileRequest) ProtoMessage() {}
 
 func (x *SetBotProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_bot_bot_proto_msgTypes[9]
+	mi := &file_domain_bot_bot_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -565,7 +1055,7 @@ func (x *SetBotProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBotProfileRequest.ProtoReflect.Descriptor instead.
 func (*SetBotProfileRequest) Descriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{9}
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SetBotProfileRequest) GetBotPtid() string {
@@ -591,7 +1081,7 @@ type SetBotProfileResponse struct {
 
 func (x *SetBotProfileResponse) Reset() {
 	*x = SetBotProfileResponse{}
-	mi := &file_domain_bot_bot_proto_msgTypes[10]
+	mi := &file_domain_bot_bot_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -603,7 +1093,7 @@ func (x *SetBotProfileResponse) String() string {
 func (*SetBotProfileResponse) ProtoMessage() {}
 
 func (x *SetBotProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_bot_bot_proto_msgTypes[10]
+	mi := &file_domain_bot_bot_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -616,7 +1106,7 @@ func (x *SetBotProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBotProfileResponse.ProtoReflect.Descriptor instead.
 func (*SetBotProfileResponse) Descriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{10}
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SetBotProfileResponse) GetBot() *Bot {
@@ -630,14 +1120,46 @@ var File_domain_bot_bot_proto protoreflect.FileDescriptor
 
 const file_domain_bot_bot_proto_rawDesc = "" +
 	"\n" +
-	"\x14domain/bot/bot.proto\x12\x18peers_touch.model.bot.v1\x1a\x1cdomain/chat/publishing.proto\"\xeb\x01\n" +
+	"\x14domain/bot/bot.proto\x12\x18peers_touch.model.bot.v1\x1a\x1cdomain/chat/publishing.proto\"\xbb\x02\n" +
 	"\x03Bot\x12\x19\n" +
 	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\x12\x1d\n" +
 	"\n" +
 	"owner_ptid\x18\x02 \x01(\tR\townerPtid\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x128\n" +
 	"\x05state\x18\x04 \x01(\x0e2\".peers_touch.model.bot.v1.BotStateR\x05state\x12\\\n" +
-	"\x10publishing_grant\x18\x05 \x01(\v21.peers_touch.model.chat.v1.MessagePublishingGrantR\x0fpublishingGrant\"N\n" +
+	"\x10publishing_grant\x18\x05 \x01(\v21.peers_touch.model.chat.v1.MessagePublishingGrantR\x0fpublishingGrant\x12N\n" +
+	"\ragent_binding\x18\x06 \x01(\v2).peers_touch.model.bot.v1.BotAgentBindingR\fagentBinding\"\xd8\x01\n" +
+	"\x0fBotAgentBinding\x12\x19\n" +
+	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\x12\x1d\n" +
+	"\n" +
+	"owner_ptid\x18\x02 \x01(\tR\townerPtid\x12\x19\n" +
+	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12\x18\n" +
+	"\aenabled\x18\x04 \x01(\bR\aenabled\x12\x18\n" +
+	"\aversion\x18\x05 \x01(\x03R\aversion\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\a \x01(\tR\tupdatedAt\"\x96\x01\n" +
+	"\x19SetBotAgentBindingRequest\x12\x19\n" +
+	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x18\n" +
+	"\aenabled\x18\x03 \x01(\bR\aenabled\x12)\n" +
+	"\x10expected_version\x18\x04 \x01(\x03R\x0fexpectedVersion\"a\n" +
+	"\x1aSetBotAgentBindingResponse\x12C\n" +
+	"\abinding\x18\x01 \x01(\v2).peers_touch.model.bot.v1.BotAgentBindingR\abinding\"6\n" +
+	"\x19GetBotAgentBindingRequest\x12\x19\n" +
+	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\"w\n" +
+	"\x1aGetBotAgentBindingResponse\x12C\n" +
+	"\abinding\x18\x01 \x01(\v2).peers_touch.model.bot.v1.BotAgentBindingR\abinding\x12\x14\n" +
+	"\x05bound\x18\x02 \x01(\bR\x05bound\"\x1d\n" +
+	"\x1bListBotAgentBindingsRequest\"e\n" +
+	"\x1cListBotAgentBindingsResponse\x12E\n" +
+	"\bbindings\x18\x01 \x03(\v2).peers_touch.model.bot.v1.BotAgentBindingR\bbindings\"d\n" +
+	"\x1cDeleteBotAgentBindingRequest\x12\x19\n" +
+	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\x12)\n" +
+	"\x10expected_version\x18\x02 \x01(\x03R\x0fexpectedVersion\"9\n" +
+	"\x1dDeleteBotAgentBindingResponse\x12\x18\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted\"N\n" +
 	"\x10CreateBotRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\x06avatar\x18\x02 \x01(\tH\x00R\x06avatar\x88\x01\x01B\t\n" +
@@ -685,35 +1207,48 @@ func file_domain_bot_bot_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_bot_bot_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_bot_bot_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_domain_bot_bot_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_domain_bot_bot_proto_goTypes = []any{
-	(BotState)(0),                       // 0: peers_touch.model.bot.v1.BotState
-	(*Bot)(nil),                         // 1: peers_touch.model.bot.v1.Bot
-	(*CreateBotRequest)(nil),            // 2: peers_touch.model.bot.v1.CreateBotRequest
-	(*CreateBotResponse)(nil),           // 3: peers_touch.model.bot.v1.CreateBotResponse
-	(*RotateBotSecretRequest)(nil),      // 4: peers_touch.model.bot.v1.RotateBotSecretRequest
-	(*RotateBotSecretResponse)(nil),     // 5: peers_touch.model.bot.v1.RotateBotSecretResponse
-	(*SetBotStateRequest)(nil),          // 6: peers_touch.model.bot.v1.SetBotStateRequest
-	(*SetBotStateResponse)(nil),         // 7: peers_touch.model.bot.v1.SetBotStateResponse
-	(*ListMyBotsRequest)(nil),           // 8: peers_touch.model.bot.v1.ListMyBotsRequest
-	(*ListMyBotsResponse)(nil),          // 9: peers_touch.model.bot.v1.ListMyBotsResponse
-	(*SetBotProfileRequest)(nil),        // 10: peers_touch.model.bot.v1.SetBotProfileRequest
-	(*SetBotProfileResponse)(nil),       // 11: peers_touch.model.bot.v1.SetBotProfileResponse
-	(*chat.MessagePublishingGrant)(nil), // 12: peers_touch.model.chat.v1.MessagePublishingGrant
+	(BotState)(0),                         // 0: peers_touch.model.bot.v1.BotState
+	(*Bot)(nil),                           // 1: peers_touch.model.bot.v1.Bot
+	(*BotAgentBinding)(nil),               // 2: peers_touch.model.bot.v1.BotAgentBinding
+	(*SetBotAgentBindingRequest)(nil),     // 3: peers_touch.model.bot.v1.SetBotAgentBindingRequest
+	(*SetBotAgentBindingResponse)(nil),    // 4: peers_touch.model.bot.v1.SetBotAgentBindingResponse
+	(*GetBotAgentBindingRequest)(nil),     // 5: peers_touch.model.bot.v1.GetBotAgentBindingRequest
+	(*GetBotAgentBindingResponse)(nil),    // 6: peers_touch.model.bot.v1.GetBotAgentBindingResponse
+	(*ListBotAgentBindingsRequest)(nil),   // 7: peers_touch.model.bot.v1.ListBotAgentBindingsRequest
+	(*ListBotAgentBindingsResponse)(nil),  // 8: peers_touch.model.bot.v1.ListBotAgentBindingsResponse
+	(*DeleteBotAgentBindingRequest)(nil),  // 9: peers_touch.model.bot.v1.DeleteBotAgentBindingRequest
+	(*DeleteBotAgentBindingResponse)(nil), // 10: peers_touch.model.bot.v1.DeleteBotAgentBindingResponse
+	(*CreateBotRequest)(nil),              // 11: peers_touch.model.bot.v1.CreateBotRequest
+	(*CreateBotResponse)(nil),             // 12: peers_touch.model.bot.v1.CreateBotResponse
+	(*RotateBotSecretRequest)(nil),        // 13: peers_touch.model.bot.v1.RotateBotSecretRequest
+	(*RotateBotSecretResponse)(nil),       // 14: peers_touch.model.bot.v1.RotateBotSecretResponse
+	(*SetBotStateRequest)(nil),            // 15: peers_touch.model.bot.v1.SetBotStateRequest
+	(*SetBotStateResponse)(nil),           // 16: peers_touch.model.bot.v1.SetBotStateResponse
+	(*ListMyBotsRequest)(nil),             // 17: peers_touch.model.bot.v1.ListMyBotsRequest
+	(*ListMyBotsResponse)(nil),            // 18: peers_touch.model.bot.v1.ListMyBotsResponse
+	(*SetBotProfileRequest)(nil),          // 19: peers_touch.model.bot.v1.SetBotProfileRequest
+	(*SetBotProfileResponse)(nil),         // 20: peers_touch.model.bot.v1.SetBotProfileResponse
+	(*chat.MessagePublishingGrant)(nil),   // 21: peers_touch.model.chat.v1.MessagePublishingGrant
 }
 var file_domain_bot_bot_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.bot.v1.Bot.state:type_name -> peers_touch.model.bot.v1.BotState
-	12, // 1: peers_touch.model.bot.v1.Bot.publishing_grant:type_name -> peers_touch.model.chat.v1.MessagePublishingGrant
-	1,  // 2: peers_touch.model.bot.v1.CreateBotResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
-	0,  // 3: peers_touch.model.bot.v1.SetBotStateRequest.target_state:type_name -> peers_touch.model.bot.v1.BotState
-	1,  // 4: peers_touch.model.bot.v1.SetBotStateResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
-	1,  // 5: peers_touch.model.bot.v1.ListMyBotsResponse.bots:type_name -> peers_touch.model.bot.v1.Bot
-	1,  // 6: peers_touch.model.bot.v1.SetBotProfileResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
-	7,  // [7:7] is the sub-list for method output_type
-	7,  // [7:7] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	21, // 1: peers_touch.model.bot.v1.Bot.publishing_grant:type_name -> peers_touch.model.chat.v1.MessagePublishingGrant
+	2,  // 2: peers_touch.model.bot.v1.Bot.agent_binding:type_name -> peers_touch.model.bot.v1.BotAgentBinding
+	2,  // 3: peers_touch.model.bot.v1.SetBotAgentBindingResponse.binding:type_name -> peers_touch.model.bot.v1.BotAgentBinding
+	2,  // 4: peers_touch.model.bot.v1.GetBotAgentBindingResponse.binding:type_name -> peers_touch.model.bot.v1.BotAgentBinding
+	2,  // 5: peers_touch.model.bot.v1.ListBotAgentBindingsResponse.bindings:type_name -> peers_touch.model.bot.v1.BotAgentBinding
+	1,  // 6: peers_touch.model.bot.v1.CreateBotResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
+	0,  // 7: peers_touch.model.bot.v1.SetBotStateRequest.target_state:type_name -> peers_touch.model.bot.v1.BotState
+	1,  // 8: peers_touch.model.bot.v1.SetBotStateResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
+	1,  // 9: peers_touch.model.bot.v1.ListMyBotsResponse.bots:type_name -> peers_touch.model.bot.v1.Bot
+	1,  // 10: peers_touch.model.bot.v1.SetBotProfileResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_domain_bot_bot_proto_init() }
@@ -721,15 +1256,15 @@ func file_domain_bot_bot_proto_init() {
 	if File_domain_bot_bot_proto != nil {
 		return
 	}
-	file_domain_bot_bot_proto_msgTypes[1].OneofWrappers = []any{}
-	file_domain_bot_bot_proto_msgTypes[9].OneofWrappers = []any{}
+	file_domain_bot_bot_proto_msgTypes[10].OneofWrappers = []any{}
+	file_domain_bot_bot_proto_msgTypes[18].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_bot_bot_proto_rawDesc), len(file_domain_bot_bot_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

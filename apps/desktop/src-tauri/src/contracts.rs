@@ -461,11 +461,6 @@ pub struct CronRunsInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CronParseScheduleInput {
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfigKeyInput {
     pub key: String,
 }
@@ -658,13 +653,6 @@ pub struct MemoryImportInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryPersonaInput {
     pub agent_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TtsInput {
-    pub text: String,
-    pub voice: Option<String>,
-    pub speed: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1053,6 +1041,25 @@ pub struct AgentTurnDiagnosticsInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTurnAttributionsInput {
     pub turn_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnArtifactListInput {
+    pub conversation_id: String,
+    #[serde(default)]
+    pub turn_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnArtifactInput {
+    pub artifact_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnArtifactLocalInput {
+    pub client_local_ref: String,
+    #[serde(default)]
+    pub reveal: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1478,11 +1485,6 @@ pub struct ConfigSectionSetInput {
 pub struct ConfigFieldResetInput {
     pub section: String,
     pub field: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConfigPostgresTestInput {
-    pub dsn: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

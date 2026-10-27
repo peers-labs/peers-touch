@@ -18,6 +18,8 @@ import {
   catalogEntryToSearchResult,
   findPeopleScopePresentation,
   friendRequestFederationId,
+  localActorToSearchResult,
+  mergeActorSearchResults,
   resolvedProfileToSearchResult,
   type ActorSearchResult,
 } from './findPeopleIdentity';
@@ -160,30 +162,53 @@ export function FindPeopleModal({ open, onClose }: Props) {
         return;
       }
       const query = parsed.localPart || trimmed.replace(/^@/, '');
-      if (searchScope !== 'all') {
-        if (!activeFederationId) {
-          setSearchError(t('chat.social.findPeople.catalogNoFederation'));
-          return;
-        }
-        const response = await api.federationCatalogSearch({
-          federation_id: activeFederationId,
-          prefix: query,
-          page_size: 20,
-        });
-        rememberCatalogEntries(response.entries ?? []);
-        setResults((response.entries ?? []).map(catalogEntryToSearchResult));
+      let localSearchError: unknown;
+      let catalogSearchError: unknown;
+      // A specific federation scope searches the catalog only; "all" fans out
+      // to local actors and the catalog in parallel, degrading gracefully
+      // when either side is unavailable instead of failing the whole search.
+      const wantCatalog = searchScope !== 'all' || Boolean(activeFederationId);
+      const wantLocal = searchScope === 'all';
+      if (!wantCatalog && !wantLocal) {
+        setSearchError(t('chat.social.findPeople.catalogNoFederation'));
         return;
       }
-      const response = await api.actorSearchActors(query);
-      setResults(
-        response.items.map((actor) => ({
-          id: String(actor.actorPtid ?? ''),
-          username: String(actor.username ?? ''),
-          displayName: String(actor.displayName ?? ''),
-          avatar: String(actor.avatar ?? ''),
-          homeStationPeerId: String(actor.homeStationPeerId ?? ''),
-        })),
-      );
+      const [localSearch, catalogSearch] = await Promise.all([
+        wantLocal
+          ? api.actorSearchActors(query).catch((error: unknown) => {
+            localSearchError = error;
+            return null;
+          })
+          : Promise.resolve(null),
+        wantCatalog && activeFederationId
+          ? api.federationCatalogSearch({
+            federation_id: activeFederationId,
+            prefix: query,
+            page_size: 20,
+          }).catch((error: unknown) => {
+            catalogSearchError = error;
+            return null;
+          })
+          : Promise.resolve(null),
+      ]);
+
+      if (!wantCatalog && activeFederationId == null) {
+        setSearchError(t('chat.social.findPeople.catalogNoFederation'));
+        return;
+      }
+      if (!localSearch && !catalogSearch) {
+        throw localSearchError || catalogSearchError || new Error('Search unavailable');
+      }
+
+      const localResults = (localSearch?.items ?? [])
+        .map(localActorToSearchResult)
+        .filter((item): item is ActorSearchResult => item !== null);
+      const catalogEntries = catalogSearch?.entries ?? [];
+      rememberCatalogEntries(catalogEntries);
+      setResults(mergeActorSearchResults(
+        localResults,
+        catalogEntries.map(catalogEntryToSearchResult),
+      ));
     } catch (e: unknown) {
       const fallback = parsed.isFederated && parsed.hasHost
         ? t('chat.social.findPeople.resolveFailed', { handle: parsed.canonical })

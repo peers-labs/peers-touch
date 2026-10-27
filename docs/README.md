@@ -252,6 +252,12 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
 - 架构模块治理：`architecture/engineering/architecture-governance/README.md`
   （active；定义架构模块内容完整性、正向能力登记、编辑前上下文回执，以及
   Plan、Review、CI 共享的 fail-closed 校验）
+- Experience Design 控制面：
+  `architecture/engineering/experience-design/README.md`
+  （active；定义 Agent 从 Product Intent、内容语义、信息架构、任务路径、
+  状态恢复、动作表达和 Wireflow 到 UI Grammar、L1-L4 证据的可执行合同，
+  并以内置推理内核执行 source-fenced Journey、信任、恢复和 Finding 排序；
+  评估器只产出 findings，不自批）
 - 联邦 IM 历史架构：`context/architecture/chat/federated-im/README.md`（superseded；保留
   consolidation 前的决策与实现证据，当前 Chat 架构以 Messaging Platform 和
   API Ownership 为准）
@@ -321,6 +327,7 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
 ### 4.2 平台层真源
 
 - 客户端 UX 方法论：`client/common/ux-design-methodology.md`
+- 客户端交互设计方法论：`client/common/interaction-design-methodology.md`
 - 客户端 UI Identity：`client/common/ui-identity/README.md`
 - 客户端前端组件树 / Alive 标准：`client/common/ui-identity/frontend-component-tree.md`
 - 客户端前端组件树 Alive 登记表：`client/common/ui-identity/frontend-component-tree-registry.md`

@@ -13,7 +13,7 @@ import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, Tag, toast } from '@lobehub/ui';
 import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, RefreshCw, Search, ServerCog, Slash, Square } from 'lucide-react';
+import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, RefreshCw, Search, ServerCog, Slash } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
@@ -135,8 +135,6 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const { t } = useTranslation('chat');
 
   const sendMessage = useChatStore(s => s.sendMessage);
-  const stopStreaming = useChatStore(s => s.stopStreaming);
-  const isStreaming = useChatStore(s => s.isStreaming);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const input = useChatStore(
     (state) => state.composerDrafts[state.currentSessionKey] ?? '',
@@ -228,7 +226,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     retryDraft,
   } = useAgentAttachmentDrafts({
     conversationId: currentSessionKey,
-    disabled: isStreaming,
+    disabled: false,
     fallbackName: t('chat.input.attachmentFallbackName'),
   });
   const currentModelId = selectedModel || defaultModel;
@@ -428,7 +426,6 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     );
     if (
       (!text && readyAttachments.length === 0)
-      || isStreaming
       || uploading
       || failed
       || latestAgentState.saveStateByAgentId[latestAgent.id] === 'saving'
@@ -450,7 +447,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         );
       },
     });
-  }, [input, readyAttachments, isStreaming, uploading, failed, sendMessage, toComposerAttachments, clearDrafts, clearMentions, rejectDraft]);
+  }, [input, readyAttachments, uploading, failed, sendMessage, toComposerAttachments, clearDrafts, clearMentions, rejectDraft]);
 
   // Scan the draft for "@" triggers whenever it changes, driving the popup.
   const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -581,7 +578,6 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
   const sendDisabled =
     (!input.trim() && readyAttachments.length === 0)
-    || isStreaming
     || uploading
     || failed
     || !readinessCanSend
@@ -996,35 +992,20 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         </div>
 
         <Flexbox horizontal align="center" gap={8} justify="flex-end">
-          {isStreaming ? (
-            <ActionIcon
-              data-pt-agent-stop
-              icon={Square}
-              onClick={stopStreaming}
-              title={t('chat.input.stop')}
-              size={{ blockSize: 34, size: 16 }}
-              style={{
-                borderRadius: 10,
-                background: token.colorError,
-                color: '#ffffff',
-              }}
-            />
-          ) : (
-            <ActionIcon
-              data-pt-agent-composer-send
-              icon={ArrowUp}
-              onClick={handleSend}
-              disabled={sendDisabled}
-              title={t('chat.input.send')}
-              size={{ blockSize: 34, size: 16 }}
-              style={{
-                borderRadius: 10,
-                background: sendDisabled ? COMPOSER_COLORS.primaryDisabled : token.colorPrimary,
-                color: sendDisabled ? COMPOSER_COLORS.textTertiary : '#ffffff',
-                cursor: sendDisabled ? 'default' : 'pointer',
-              }}
-            />
-          )}
+          <ActionIcon
+            data-pt-agent-composer-send
+            icon={ArrowUp}
+            onClick={handleSend}
+            disabled={sendDisabled}
+            title={t('chat.input.send')}
+            size={{ blockSize: 34, size: 16 }}
+            style={{
+              borderRadius: 10,
+              background: sendDisabled ? COMPOSER_COLORS.primaryDisabled : token.colorPrimary,
+              color: sendDisabled ? COMPOSER_COLORS.textTertiary : '#ffffff',
+              cursor: sendDisabled ? 'default' : 'pointer',
+            }}
+          />
         </Flexbox>
       </Flexbox>
 

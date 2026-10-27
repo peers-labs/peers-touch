@@ -47,7 +47,15 @@ func (h *SkillHandlers) HandleListSkills(ctx context.Context, req *model.ListSki
 		if cat != "" && !strings.EqualFold(manifests[i].Category, cat) {
 			continue
 		}
-		out = append(out, skillManifestToProto(&manifests[i]))
+		protoManifest := skillManifestToProto(&manifests[i])
+		resources, resourceErr := h.skillService.ListSkillResources(
+			ctx, manifests[i].AgentID, manifests[i].SkillID, manifests[i].Version,
+		)
+		if resourceErr != nil {
+			return nil, toHandlerError(resourceErr)
+		}
+		protoManifest.Resources = resources
+		out = append(out, protoManifest)
 	}
 
 	return &model.ListSkillsResponse{Skills: out}, nil
@@ -70,10 +78,35 @@ func (h *SkillHandlers) HandleGetSkill(ctx context.Context, req *model.GetSkillR
 		return nil, toHandlerError(err)
 	}
 
+	protoManifest := skillManifestToProto(manifest)
+	resources, err := h.skillService.ListSkillResources(
+		ctx, req.GetAgentId(), req.GetSkillId(), manifest.Version,
+	)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	protoManifest.Resources = resources
 	return &model.GetSkillResponse{
-		Skill:       skillManifestToProto(manifest),
+		Skill:       protoManifest,
 		FileContent: manifest.Content,
 	}, nil
+}
+
+func (h *SkillHandlers) HandleReadSkillResource(
+	ctx context.Context,
+	req *model.ReadSkillResourceRequest,
+) (*model.ReadSkillResourceResponse, error) {
+	if req.GetAgentId() == "" || req.GetSkillId() == "" || req.GetPath() == "" {
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400,
+			"agent_id, skill_id and path are required", nil))
+	}
+	resource, content, err := h.skillService.ReadSkillResource(
+		ctx, req.GetAgentId(), req.GetSkillId(), int(req.GetVersion()), req.GetPath(),
+	)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.ReadSkillResourceResponse{Resource: resource, Content: content}, nil
 }
 
 // HandleInstallSkill creates a new skill with security scanning.
@@ -97,6 +130,7 @@ func (h *SkillHandlers) HandleInstallSkill(ctx context.Context, req *model.Insta
 		"",
 		req.GetContent(),
 		trust,
+		req.GetResources()...,
 	)
 	if err != nil {
 		logger.Errorf(ctx, "HandleInstallSkill failed: agent_id=%s, name=%s, err=%v",
@@ -127,7 +161,21 @@ func (h *SkillHandlers) HandleUpdateSkill(ctx context.Context, req *model.Update
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "skill_id is required", nil))
 	}
 
-	manifest, scanResult, err := h.skillService.UpdateSkill(
+	update := h.skillService.UpdateSkill
+	if len(req.GetResources()) > 0 {
+		update = func(
+			ctx context.Context,
+			agentID, skillID string,
+			name *string,
+			description *string,
+			content *string,
+		) (*domain.SkillManifest, *domain.ScanResult, error) {
+			return h.skillService.UpdateSkillWithResources(
+				ctx, agentID, skillID, name, description, content, req.GetResources(),
+			)
+		}
+	}
+	manifest, scanResult, err := update(
 		ctx,
 		req.GetAgentId(),
 		req.GetSkillId(),

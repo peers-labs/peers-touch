@@ -19,26 +19,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // #region debug-point A:react-component-stack
-    void fetch('http://127.0.0.1:7777/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'post-login-update-loop',
-        runId: 'post-fix',
-        hypothesisId: 'A',
-        location: 'kernel/ErrorBoundary.tsx:componentDidCatch',
-        msg: '[DEBUG] React render crash',
-        data: {
-          message: error.message,
-          stack: error.stack,
-          componentStack: info.componentStack,
-          hash: window.location.hash,
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-    log.error('app', 'React render crash', { error: error.message, stack: error.stack });
+    log.error('app', 'React render crash', {
+      error: error.message,
+      stack: error.stack,
+      componentStack: info.componentStack,
+    });
   }
 
   render() {

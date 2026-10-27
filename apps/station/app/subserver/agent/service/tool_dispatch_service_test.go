@@ -40,6 +40,7 @@ func newToolDispatchFixture(t *testing.T) toolDispatchFixture {
 	if err := db.AutoMigrate(
 		&persistence.ToolCall{},
 		&persistence.ClientCapabilityLease{},
+		&persistence.ClientCapabilityResourceGrant{},
 		&persistence.ToolBatch{},
 		&persistence.ToolDecisionCommand{},
 		&persistence.ToolDispatchOutbox{},
@@ -121,6 +122,7 @@ func newToolDispatchFixture(t *testing.T) toolDispatchFixture {
 	if err != nil {
 		t.Fatalf("register capability lease: %v", err)
 	}
+	seedLiveActorSession(t, db, "auth-session-1", now)
 	fixture.session = response.GetLease()
 	return fixture
 }
@@ -1536,6 +1538,8 @@ func TestTurnServicePersistsAppliedSkillBodyInContextLedger(t *testing.T) {
 	if err := fixture.db.AutoMigrate(
 		&persistence.Skill{},
 		&persistence.SkillVersion{},
+		&persistence.SkillResource{},
+		&persistence.ImmutableContentBlob{},
 	); err != nil {
 		t.Fatalf("migrate Skill persistence: %v", err)
 	}
@@ -4217,6 +4221,49 @@ func TestToolDispatchServiceToolBatchBarrier(t *testing.T) {
 	}
 }
 
+func TestToolDispatchServicePullRepinsStaleLeaseRevision(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.propose(t, "stale-revision")
+	callID := proposal.Calls[0].ToolCallID
+
+	// A routine renewal bumps the lease revision after the call was already
+	// dispatched (outbox pinned to revision 1).
+	if err := fixture.db.Model(&persistence.ClientCapabilityLease{}).
+		Where("session_id = ?", fixture.session.GetCapabilitySessionId()).
+		Update("lease_revision", 2).Error; err != nil {
+		t.Fatalf("renew lease revision: %v", err)
+	}
+
+	pulled, err := fixture.service.PullCapabilityRequests(
+		context.Background(),
+		fixture.actorID,
+		fixture.deviceID,
+		fixture.signedPullRequest(t, "stale-revision", 9),
+	)
+	if err != nil {
+		t.Fatalf("pull capability requests: %v", err)
+	}
+	if len(pulled.GetRequests()) != 1 {
+		t.Fatalf("expected one re-pinned request, got %d", len(pulled.GetRequests()))
+	}
+	if pulled.Requests[0].GetCapabilityLeaseRevision() != 2 {
+		t.Fatalf(
+			"re-pinned envelope revision = %d, want 2",
+			pulled.Requests[0].GetCapabilityLeaseRevision(),
+		)
+	}
+
+	var deliverable int64
+	if err := fixture.db.Model(&persistence.ToolDispatchOutbox{}).
+		Where("tool_call_id = ? AND invalidated_at IS NULL", callID).
+		Count(&deliverable).Error; err != nil {
+		t.Fatalf("count deliverable outbox rows: %v", err)
+	}
+	if deliverable != 1 {
+		t.Fatalf("deliverable outbox rows = %d, want 1", deliverable)
+	}
+}
+
 func TestToolDispatchServiceConcurrentFinalReceiptCreatesOneContinuation(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
 	sqlDB, err := fixture.db.DB()
@@ -4486,6 +4533,7 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 	}
 	pinnedBudget := &model.RuntimeBudget{
 		MaxAttempts:           3,
+		MaxAgentSteps:         50,
 		MaxToolCalls:          7,
 		MaxIdenticalToolCalls: 2,
 	}
@@ -4850,6 +4898,7 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 	}
 	pinnedBudget := &model.RuntimeBudget{
 		MaxAttempts:           3,
+		MaxAgentSteps:         50,
 		MaxToolCalls:          7,
 		MaxIdenticalToolCalls: 2,
 	}

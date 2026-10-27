@@ -4,15 +4,17 @@
  */
 import './providers';
 import './model-service';
-import './tts';
+import './voice';
 import './account';
 import './skills';
 import './mcp';
 import './channels';
 import './bots';
 import './cron';
+import './agentGrowth';
 import './command-menu';
 import './discover';
+import './knowledge';
 import './memory';
 import './oss';
 import './logs';

@@ -1,14 +1,21 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"gorm.io/gorm"
 )
 
 const (
@@ -160,4 +167,113 @@ func hasProviderControlCharacter(value string) bool {
 		}
 	}
 	return false
+}
+
+// RuntimeDefaultService owns the actor-scoped explicit default provider/model.
+type RuntimeDefaultService struct{}
+
+func NewRuntimeDefaultService() *RuntimeDefaultService {
+	return &RuntimeDefaultService{}
+}
+
+// GetRuntimeDefault returns the actor's default row. A missing row is reported
+// as found=false, not as an error.
+func (s *RuntimeDefaultService) GetRuntimeDefault(
+	ctx context.Context,
+	actorPTID string,
+) (*persistence.AgentRuntimeDefault, bool, error) {
+	db, err := runtimeDefaultDB(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	var row persistence.AgentRuntimeDefault
+	if err := db.WithContext(ctx).
+		Where("actor_ptid = ?", actorPTID).
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to read runtime default", err)
+	}
+	return &row, true, nil
+}
+
+// SetRuntimeDefault upserts the actor's default under optimistic revision
+// control. expectedRevision 0 creates the first selection; any other value
+// must match the current revision.
+func (s *RuntimeDefaultService) SetRuntimeDefault(
+	ctx context.Context,
+	actorPTID string,
+	providerID string,
+	modelID string,
+	expectedRevision int64,
+) (*persistence.AgentRuntimeDefault, error) {
+	db, err := runtimeDefaultDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	var existing persistence.AgentRuntimeDefault
+	findErr := db.WithContext(ctx).
+		Where("actor_ptid = ?", actorPTID).
+		First(&existing).Error
+	switch {
+	case findErr == nil:
+		if expectedRevision != 0 && existing.Revision != expectedRevision {
+			return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
+				fmt.Sprintf("runtime default revision conflict: current=%d submitted=%d",
+					existing.Revision, expectedRevision), nil)
+		}
+		updates := map[string]any{
+			"default_provider_id": providerID,
+			"default_model_id":    modelID,
+			"revision":            gorm.Expr("revision + 1"),
+			"updated_at":          now,
+		}
+		if err := db.WithContext(ctx).
+			Model(&persistence.AgentRuntimeDefault{}).
+			Where("id = ?", existing.ID).
+			Updates(updates).Error; err != nil {
+			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+				"failed to update runtime default", err)
+		}
+		if err := db.WithContext(ctx).
+			Where("id = ?", existing.ID).
+			First(&existing).Error; err != nil {
+			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+				"failed to reload runtime default", err)
+		}
+		return &existing, nil
+	case errors.Is(findErr, gorm.ErrRecordNotFound):
+		if expectedRevision != 0 {
+			return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
+				"runtime default does not exist for the submitted revision", nil)
+		}
+		row := &persistence.AgentRuntimeDefault{
+			ActorPTID:         actorPTID,
+			DefaultProviderID: providerID,
+			DefaultModelID:    modelID,
+			Revision:          1,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		}
+		if err := db.WithContext(ctx).Create(row).Error; err != nil {
+			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+				"failed to persist runtime default", err)
+		}
+		return row, nil
+	default:
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to query runtime default", findErr)
+	}
+}
+
+func runtimeDefaultDB(ctx context.Context) (*gorm.DB, error) {
+	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
+	if err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"database unavailable", err)
+	}
+	return db, nil
 }

@@ -12,6 +12,13 @@ import {
   AlertTriangle,
   RotateCcw,
   Workflow,
+  Globe,
+  ListChecks,
+  Circle,
+  CircleDot,
+  FilePenLine,
+  FilePlus2,
+  TerminalSquare,
 } from 'lucide-react';
 import type { ToolCallInfo, DelegationTaskInfo } from '../../store/chat';
 import { ToolExecutionOwner } from '../../gen/proto/domain/agent/agent_pb';
@@ -64,6 +71,308 @@ function ToolGovernanceRow({
       >
         {value}
       </span>
+    </Flexbox>
+  );
+}
+
+// --- Station builtin tool cards (web_fetch / todo) ---
+
+type TodoCardItem = {
+  id?: string;
+  content: string;
+  status?: string;
+  position?: number;
+};
+
+function parseTodoPayload(raw: string | undefined): TodoCardItem[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as { items?: TodoCardItem[] };
+    if (!Array.isArray(parsed.items)) return undefined;
+    return [...parsed.items].sort(
+      (a, b) => (a.position ?? 0) - (b.position ?? 0),
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+function TodoToolCard({ tool }: { tool: ToolCallInfo }) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const items =
+    parseTodoPayload(tool.result) ?? parseTodoPayload(tool.args) ?? [];
+  const doneCount = items.filter((item) => item.status === 'completed').length;
+
+  return (
+    <Flexbox gap={6} style={{ marginBottom: 8 }} data-pt-agent-tool="todo">
+      <Flexbox horizontal align="center" gap={6}>
+        <ListChecks size={13} style={{ color: token.colorTextSecondary }} />
+        <span style={{ fontWeight: 500, color: token.colorTextSecondary }}>
+          {t('chat.message.toolCall.todo.title')}
+        </span>
+        <Tag bordered={false} style={{ margin: 0, fontSize: 11 }}>
+          {t('chat.message.toolCall.todo.progress', {
+            done: doneCount,
+            total: items.length,
+          })}
+        </Tag>
+      </Flexbox>
+      {items.length === 0 && (
+        <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+          {t('chat.message.toolCall.todo.empty')}
+        </span>
+      )}
+      <Flexbox gap={4}>
+        {items.map((item, index) => {
+          const completed = item.status === 'completed';
+          const inProgress = item.status === 'in_progress';
+          return (
+            <Flexbox
+              key={item.id || `${item.content}-${index}`}
+              horizontal
+              align="center"
+              gap={8}
+              style={{
+                border: `1px solid ${token.colorBorderSecondary}`,
+                borderRadius: 6,
+                background: token.colorBgContainer,
+                padding: '5px 8px',
+              }}
+            >
+              {completed ? (
+                <CheckCircle2 size={13} style={{ color: token.colorSuccess, flexShrink: 0 }} />
+              ) : inProgress ? (
+                <CircleDot size={13} style={{ color: token.colorPrimary, flexShrink: 0 }} />
+              ) : (
+                <Circle size={13} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
+              )}
+              <span
+                style={{
+                  fontSize: 12,
+                  color: completed ? token.colorTextTertiary : token.colorText,
+                  textDecoration: completed ? 'line-through' : 'none',
+                }}
+              >
+                {item.content}
+              </span>
+            </Flexbox>
+          );
+        })}
+      </Flexbox>
+    </Flexbox>
+  );
+}
+
+function WebFetchToolCard({ tool }: { tool: ToolCallInfo }) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+
+  let requestedUrl = '';
+  try {
+    requestedUrl = (JSON.parse(tool.args || '{}') as { url?: string }).url || '';
+  } catch {
+    requestedUrl = '';
+  }
+  let fetched: {
+    url?: string;
+    status?: number;
+    content_type?: string;
+    truncated?: boolean;
+  } = {};
+  try {
+    fetched = JSON.parse(tool.result || '{}') as typeof fetched;
+  } catch {
+    fetched = {};
+  }
+  const displayUrl = fetched.url || requestedUrl;
+
+  return (
+    <Flexbox gap={4} style={{ marginBottom: 8 }} data-pt-agent-tool="web-fetch">
+      <Flexbox horizontal align="center" gap={6}>
+        <Globe size={13} style={{ color: token.colorTextSecondary }} />
+        <span style={{ fontWeight: 500, color: token.colorTextSecondary }}>
+          {t('chat.message.toolCall.webFetch.title')}
+        </span>
+        {fetched.status ? (
+          <Tag bordered={false} color="success" style={{ margin: 0, fontSize: 11 }}>
+            {t('chat.message.toolCall.webFetch.status', {
+              status: fetched.status,
+            })}
+          </Tag>
+        ) : null}
+      </Flexbox>
+      {displayUrl && (
+        <a
+          href={displayUrl}
+          target="_blank"
+          rel="noreferrer"
+          style={{ fontSize: 12, color: token.colorPrimary, overflowWrap: 'anywhere' }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {displayUrl}
+        </a>
+      )}
+      {fetched.truncated && (
+        <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+          {t('chat.message.toolCall.webFetch.truncated')}
+        </span>
+      )}
+    </Flexbox>
+  );
+}
+
+function parseToolJSON(raw: string | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function clientToolOutput(raw: string | undefined): Record<string, unknown> | undefined {
+  const envelope = parseToolJSON(raw);
+  if (envelope && typeof envelope.output === 'object' && envelope.output !== null) {
+    return envelope.output as Record<string, unknown>;
+  }
+  return envelope;
+}
+
+function WorkspaceFileCard({ tool }: { tool: ToolCallInfo }) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const args = parseToolJSON(tool.args);
+  const output = clientToolOutput(tool.result);
+  const isEdit = tool.name === 'local_file_edit';
+  const path = asString(args?.path) || asString(output?.path);
+  const oldText = asString(args?.old_string);
+  const newText = asString(args?.new_string);
+  const writeContent = asString(args?.content);
+
+  return (
+    <Flexbox gap={6} style={{ marginBottom: 8 }} data-pt-agent-tool="workspace-file">
+      <Flexbox horizontal align="center" gap={6}>
+        {isEdit ? (
+          <FilePenLine size={13} style={{ color: token.colorTextSecondary }} />
+        ) : (
+          <FilePlus2 size={13} style={{ color: token.colorTextSecondary }} />
+        )}
+        <span style={{ fontWeight: 500, color: token.colorTextSecondary }}>
+          {t(
+            isEdit
+              ? 'chat.message.toolCall.workspace.edit'
+              : 'chat.message.toolCall.workspace.write',
+          )}
+        </span>
+        <span style={{ fontSize: 11, color: token.colorTextTertiary, overflowWrap: 'anywhere' }}>
+          {path}
+        </span>
+      </Flexbox>
+      {isEdit && oldText && (
+        <pre
+          style={{
+            margin: 0,
+            padding: '4px 8px',
+            borderRadius: 4,
+            background: token.colorErrorBg,
+            color: token.colorErrorText,
+            fontSize: 11,
+            maxHeight: 96,
+            overflow: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {oldText}
+        </pre>
+      )}
+      {(isEdit ? newText : writeContent) && (
+        <pre
+          style={{
+            margin: 0,
+            padding: '4px 8px',
+            borderRadius: 4,
+            background: token.colorSuccessBg,
+            color: token.colorSuccessText,
+            fontSize: 11,
+            maxHeight: 96,
+            overflow: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {isEdit ? newText : writeContent}
+        </pre>
+      )}
+    </Flexbox>
+  );
+}
+
+function WorkspaceShellCard({ tool }: { tool: ToolCallInfo }) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const args = parseToolJSON(tool.args);
+  const command = asString(args?.command);
+  const argList = Array.isArray(args?.args)
+    ? (args!.args as unknown[]).map((value) => asString(value)).filter(Boolean)
+    : [];
+  const output = clientToolOutput(tool.result);
+  const exitCode =
+    output && (typeof output.exit_code === 'number' ? output.exit_code : undefined);
+
+  return (
+    <Flexbox gap={4} style={{ marginBottom: 8 }} data-pt-agent-tool="workspace-shell">
+      <Flexbox horizontal align="center" gap={6}>
+        <TerminalSquare size={13} style={{ color: token.colorTextSecondary }} />
+        <span style={{ fontWeight: 500, color: token.colorTextSecondary }}>
+          {t('chat.message.toolCall.workspace.shell')}
+        </span>
+        <code
+          style={{
+            fontSize: 11,
+            color: token.colorText,
+            background: token.colorFillQuaternary,
+            borderRadius: 4,
+            padding: '1px 6px',
+          }}
+        >
+          {[command, ...argList].join(' ')}
+        </code>
+        {typeof exitCode === 'number' && (
+          <Tag
+            bordered={false}
+            color={exitCode === 0 ? 'success' : 'error'}
+            style={{ margin: 0, fontSize: 11 }}
+          >
+            {t('chat.message.toolCall.workspace.exit', { code: exitCode })}
+          </Tag>
+        )}
+      </Flexbox>
+      {typeof output?.stdout === 'string' && output.stdout && (
+        <pre
+          style={{
+            margin: 0,
+            padding: '4px 8px',
+            borderRadius: 4,
+            background: token.colorFillQuaternary,
+            fontSize: 11,
+            maxHeight: 120,
+            overflow: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {output.stdout}
+        </pre>
+      )}
     </Flexbox>
   );
 }
@@ -305,7 +614,20 @@ export function ToolCallItem({
           color: token.colorTextTertiary,
         }}>
           {tool.name === 'ask_user' && <ClarificationQuestion key={tool.id} tool={tool} />}
-          {tool.args && tool.name !== 'ask_user' && (
+          {(tool.name === 'todo_write' || tool.name === 'todo_update') && (
+            <TodoToolCard key={tool.id} tool={tool} />
+          )}
+          {tool.name === 'web_fetch' && <WebFetchToolCard key={tool.id} tool={tool} />}
+          {(tool.name === 'local_file_write' || tool.name === 'local_file_edit') && (
+            <WorkspaceFileCard key={tool.id} tool={tool} />
+          )}
+          {tool.name === 'local_shell_exec' && (
+            <WorkspaceShellCard key={tool.id} tool={tool} />
+          )}
+          {tool.args && tool.name !== 'ask_user' && tool.name !== 'todo_write' &&
+            tool.name !== 'todo_update' && tool.name !== 'web_fetch' &&
+            tool.name !== 'local_file_write' && tool.name !== 'local_file_edit' &&
+            tool.name !== 'local_shell_exec' && (
             <div style={{ marginBottom: 4 }}>
               <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.arguments')}</div>
               <pre style={{
@@ -534,7 +856,10 @@ export function ToolCallItem({
           {delegationResults.length > 0 && (
             <DelegationResultsBlock results={delegationResults} />
           )}
-          {tool.result && tool.name !== 'ask_user' && (
+          {tool.result && tool.name !== 'ask_user' && tool.name !== 'todo_write' &&
+            tool.name !== 'todo_update' && tool.name !== 'web_fetch' &&
+            tool.name !== 'local_file_write' && tool.name !== 'local_file_edit' &&
+            tool.name !== 'local_shell_exec' && (
             <div>
               <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.result')}</div>
               <pre style={{
@@ -614,6 +939,8 @@ export function ToolCallsBlock({
   return (
     <div
       data-pt-agent-tool-call-group={turnId}
+      data-pt-agent-tool-call-total={toolCalls.length}
+      data-pt-agent-tool-call-pending={pendingCount}
       style={{
         borderRadius: 8,
         border: `1px solid ${token.colorBorderSecondary}`,

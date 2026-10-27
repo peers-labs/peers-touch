@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { create } from '@bufbuild/protobuf';
+import { timestampFromDate } from '@bufbuild/protobuf/wkt';
+import { TurnArtifactSchema } from '../gen/proto/domain/agent/agent_pb';
 import { extractMessageArtifacts, type ChatMessage } from './chat';
+import { projectTurnArtifact } from './chatArtifacts';
 
 function assistantMessage(content: string): ChatMessage {
   return {
@@ -10,8 +14,8 @@ function assistantMessage(content: string): ChatMessage {
   };
 }
 
-describe('chat message artifacts', () => {
-  it('extracts code, diagram, and structured artifacts from fenced blocks', () => {
+describe('chat code-block presentations', () => {
+  it('extracts code, diagram, and structured presentations from fenced blocks', () => {
     const artifacts = extractMessageArtifacts(assistantMessage([
       'Here are outputs:',
       '```ts',
@@ -60,5 +64,36 @@ describe('chat message artifacts', () => {
     });
 
     expect(artifacts).toEqual([]);
+  });
+});
+
+describe('Station turn artifact projection', () => {
+  it('marks only the producing device local while preserving the Station copy', () => {
+    const artifact = create(TurnArtifactSchema, {
+      artifactId: 'artifact-1',
+      turnId: 'turn-1',
+      agentId: 'agent-1',
+      toolCallId: 'tool-1',
+      kind: 1,
+      name: 'report.md',
+      size: 42n,
+      sha256: 'a'.repeat(64),
+      locator: {
+        clientLocalRef: 'artifact-local-1',
+        clientDeviceId: 'device-origin',
+        stationObjectRef: 'cas/aa/report.md',
+      },
+      createdAt: timestampFromDate(new Date('2026-10-25T00:00:00Z')),
+    });
+
+    expect(projectTurnArtifact(artifact, 'device-origin')).toMatchObject({
+      id: 'artifact-1',
+      localAvailable: true,
+      stationObjectRef: 'cas/aa/report.md',
+    });
+    expect(projectTurnArtifact(artifact, 'device-other')).toMatchObject({
+      localAvailable: false,
+      stationObjectRef: 'cas/aa/report.md',
+    });
   });
 });

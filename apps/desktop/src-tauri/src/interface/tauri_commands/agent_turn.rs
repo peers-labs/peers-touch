@@ -9,7 +9,8 @@ use crate::contracts::{
     AgentSelectActiveBranchInput, AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput,
     AgentTaskStatusInput, AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput,
     AgentThreadCreateInput, AgentThreadListInput, AgentThreadMessagesInput,
-    AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnAttributionsInput,
+    AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnArtifactInput,
+    AgentTurnArtifactListInput, AgentTurnArtifactLocalInput, AgentTurnAttributionsInput,
     AgentTurnDiagnosticsInput, AgentTurnQueueCancelInput, AgentTurnQueueListInput,
     AgentTurnReplayStreamCancelInput, AgentTurnReplayStreamInput, AgentTurnStreamCancelInput,
     AgentTurnTraceGetInput, AgentTurnTraceListInput, AgentTurnTransportCancelInput, StubPayload,
@@ -261,6 +262,101 @@ pub fn agent_turn_attributions_get(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     application_agent_turn::agent_turn_attributions_get(state.station.client(), input, &token)
+}
+
+#[tauri::command]
+pub fn agent_turn_artifact_list(
+    input: AgentTurnArtifactListInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_turn_artifact_list(state.station.client(), input, &token)
+}
+
+#[tauri::command]
+pub fn agent_turn_artifact_upload(
+    input: AgentTurnArtifactInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() || actor_ptid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_turn_artifact_upload(
+        state.station.client(),
+        &actor_ptid,
+        input,
+        &token,
+    )
+}
+
+#[tauri::command]
+pub fn agent_turn_artifact_open_local(
+    input: AgentTurnArtifactLocalInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    if actor_ptid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_turn_artifact_open_local(
+        state.station.client(),
+        &actor_ptid,
+        input,
+    )
+}
+
+#[tauri::command]
+pub fn agent_turn_artifact_download(
+    input: AgentTurnArtifactInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    let download = match application_agent_turn::agent_turn_artifact_download(
+        state.station.client(),
+        input,
+        &token,
+    ) {
+        Ok(download) => download,
+        Err(failure) => {
+            return AppResult {
+                ok: false,
+                data: None,
+                error: failure.error,
+            }
+        }
+    };
+    let Some(path) = rfd::FileDialog::new()
+        .set_file_name(&download.name)
+        .save_file()
+    else {
+        return AppResult::success(StubPayload {
+            command: "agent_turn_artifact_download".to_string(),
+            status: serde_json::json!({"downloaded": false}).to_string(),
+        });
+    };
+    if let Err(error) = std::fs::write(&path, download.bytes) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("failed to save artifact: {error}"),
+            None,
+        );
+    }
+    AppResult::success(StubPayload {
+        command: "agent_turn_artifact_download".to_string(),
+        status: serde_json::json!({"downloaded": true}).to_string(),
+    })
 }
 
 #[tauri::command]

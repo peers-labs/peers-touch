@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "packageId": "EDX-HOLDOUT-20261019-V2",
+  "runId": "EDX-RUN-20261019-V2-01",
+  "status": "sealed",
+  "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+  "sourceBlobAlgorithm": "git-sha1",
+  "runnerCommonInputs": [
+    "README.md",
+    "rubric.md",
+    "manifest.json",
+    "seal.json",
+    "docs/architecture/engineering/experience-design/data-model.md",
+    "tooling/scripts/experience-design/validator.mjs",
+    "tooling/scripts/experience-design/source-fence.mjs",
+    "tooling/scripts/experience-design/experience-review.mjs"
+  ],
+  "reviewerOnlyInputs": [
+    "reviewer-only/README.md",
+    "reviewer-only/answer-key.md"
+  ],
+  "kernelBlobs": [
+    {
+      "path": "docs/architecture/engineering/experience-design/data-model.md",
+      "digest": "771132b6fefa0c316769cdc26fba1932b93cda01"
+    },
+    {
+      "path": "tooling/scripts/experience-design/experience-review.mjs",
+      "digest": "004162552e18e67bb5aa7f90356c40e12b5cee1c"
+    },
+    {
+      "path": "tooling/scripts/experience-design/source-fence.mjs",
+      "digest": "35057631b2f66e1000863c5a9dcdac867cc8fc6e"
+    },
+    {
+      "path": "tooling/scripts/experience-design/validator.mjs",
+      "digest": "6f285fedb90da64b84ccd2054cd442485367a07b"
+    }
+  ],
+  "cases": [
+    {
+      "id": "EDX-H01",
+      "platform": "desktop-production",
+      "title": "Attach a connected Connector to an Agent",
+      "path": "cases/EDX-H01.md",
+      "reportPath": "reports/EDX-H01.json",
+      "sourceBlobs": [
+        {
+          "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+          "digest": "cf269e8f45177928a902194823d35897266937ae"
+        },
+        {
+          "path": "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+          "digest": "bb1da678b9923a016d7bb19d6232d3d9482b77ae"
+        },
+        {
+          "path": "docs/architecture/domains/agent/modern-chat-agent/experience-contract.md",
+          "digest": "be742e512f34d9e5c3c9bd3382215898c6dd0f57"
+        },
+        {
+          "path": "docs/client/common/ui-identity/interaction.md",
+          "digest": "8e7f54058696bb93ee31a7c0daa9c50b7141944b"
+        }
+      ]
+    },
+    {
+      "id": "EDX-H02",
+      "platform": "mobile-production",
+      "title": "Resolve a Station identity change on Mobile",
+      "path": "cases/EDX-H02.md",
+      "reportPath": "reports/EDX-H02.json",
+      "sourceBlobs": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "digest": "d5032848da90c90baae6185310a344b465bbc244"
+        },
+        {
+          "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+          "digest": "83482342b5fc7fe047e05b0fc7b4316c82366507"
+        },
+        {
+          "path": "apps/mobile/src/runtimes/recoveryProjection.ts",
+          "digest": "e55b0789d2fa73ff43cf3738963fb9c9627c1932"
+        },
+        {
+          "path": "docs/architecture/platform/client/mobile/experience-contract.md",
+          "digest": "5bf67d0011ad97dfb9934c337dc68518a0a3f706"
+        },
+        {
+          "path": "docs/architecture/platform/client/mobile/product-state-model.md",
+          "digest": "8239c494f11a4f729afc59e8925ab07ac1196fe9"
+        },
+        {
+          "path": "docs/client/mobile/lifecycle.md",
+          "digest": "c1a72cb6149a9055f5a3a69a186f1d06b04228f8"
+        }
+      ]
+    },
+    {
+      "id": "EDX-H03",
+      "platform": "desktop-production",
+      "title": "Recover from an Applet materialization failure",
+      "path": "cases/EDX-H03.md",
+      "reportPath": "reports/EDX-H03.json",
+      "sourceBlobs": [
+        {
+          "path": "apps/desktop/src/applet/AppletContainerShell.tsx",
+          "digest": "d5ee99f3307405f4f0e8124178f45226e5d4cbb8"
+        },
+        {
+          "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+          "digest": "01be82f3515352d36216ec1294ae8e3ede3ed165"
+        },
+        {
+          "path": "apps/desktop/src/store/applets.ts",
+          "digest": "35de0241d00c73e12ec5edbd3bc9f3d6b627bbae"
+        },
+        {
+          "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+          "digest": "bfaf25b4be12cb0b454b7b8714d524a51d5a80a4"
+        },
+        {
+          "path": "docs/client/common/ui-identity/interaction.md",
+          "digest": "8e7f54058696bb93ee31a7c0daa9c50b7141944b"
+        }
+      ]
+    },
+    {
+      "id": "EDX-H04",
+      "platform": "desktop-production",
+      "title": "Inspect and install a Marketplace package",
+      "path": "cases/EDX-H04.md",
+      "reportPath": "reports/EDX-H04.json",
+      "sourceBlobs": [
+        {
+          "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+          "digest": "5adede8885afa0976c727b026f61e4cf4cd9def9"
+        },
+        {
+          "path": "apps/desktop/src/pages/marketplace/PackageCard.tsx",
+          "digest": "18c9d20a13edd29ac378fe0fab806b24d0feab3d"
+        },
+        {
+          "path": "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+          "digest": "bb1da678b9923a016d7bb19d6232d3d9482b77ae"
+        },
+        {
+          "path": "tooling/acceptance/features/agent-trusted-package-catalog.yaml",
+          "digest": "93f762682a78b95751640fc90ac29ab638b0de31"
+        }
+      ]
+    },
+    {
+      "id": "EDX-H05",
+      "platform": "desktop-production",
+      "title": "Wait for an Applet to become ready",
+      "path": "cases/EDX-H05.md",
+      "reportPath": "reports/EDX-H05.json",
+      "sourceBlobs": [
+        {
+          "path": "apps/desktop/src/applet/LynxContainer.tsx",
+          "digest": "8722e63a914f775e0d2e9ad54fb5a2aa4b581186"
+        },
+        {
+          "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+          "digest": "01be82f3515352d36216ec1294ae8e3ede3ed165"
+        },
+        {
+          "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+          "digest": "bfaf25b4be12cb0b454b7b8714d524a51d5a80a4"
+        },
+        {
+          "path": "docs/architecture/platform/applet-runtime/development-runtime-readiness-report.md",
+          "digest": "182c5e7e5cb2bb12bb6dbd38f7c13ce6fb9b0f8a"
+        }
+      ]
+    },
+    {
+      "id": "EDX-H06",
+      "platform": "desktop-mobile-production",
+      "title": "Clear local Chat data on Desktop and Mobile",
+      "path": "cases/EDX-H06.md",
+      "reportPath": "reports/EDX-H06.json",
+      "sourceBlobs": [
+        {
+          "path": "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+          "digest": "c8c0ba82a2ba33b9ea853f629e2e42e46df467be"
+        },
+        {
+          "path": "apps/mobile/src/pages/ChatPage.tsx",
+          "digest": "24fbef5c55e6a55f8e366f843086bd41971d24bd"
+        },
+        {
+          "path": "apps/mobile/src/pages/chat/ChatOverlayHost.tsx",
+          "digest": "cbf64a881cbcc47d06b0fac8a06e3d1432e46cc0"
+        },
+        {
+          "path": "docs/architecture/domains/chat/lifecycle/experience-contract.md",
+          "digest": "87cb2c16f2b46e0e8f27eb9db6123b490c5c7f48"
+        },
+        {
+          "path": "docs/client/chat/chat-ux-contract.md",
+          "digest": "ea8f18dbc597e9c20821dca082898c996dfc2696"
+        },
+        {
+          "path": "docs/client/mobile/chat-layout-contract.md",
+          "digest": "3555f62c42d40cae33b42fcde85bb1b894ee1002"
+        },
+        {
+          "path": "packages/locales/en/chat.json",
+          "digest": "73e1ff2af03eeb0bae223cc97fcd5e761e7f296b"
+        },
+        {
+          "path": "packages/locales/en/common.json",
+          "digest": "9e1fbdbc42818ac293c80542eb939cfad5b73302"
+        }
+      ]
+    }
+  ]
+}

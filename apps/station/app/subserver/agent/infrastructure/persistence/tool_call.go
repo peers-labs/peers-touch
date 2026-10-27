@@ -200,6 +200,43 @@ type ClientCapabilityLease struct {
 
 func (ClientCapabilityLease) TableName() string { return "agent_client_capability_leases" }
 
+// ActiveLeaseParentAuthSessionCondition constrains an unaliased
+// agent_client_capability_leases query to leases whose parent actor session
+// is still live. A client capability lease is a child credential of the
+// actor session that registered it: a renderer reload, takeover, logout, or
+// expiry revokes the parent even when the client never delivers an explicit
+// lease revoke, so every "is this lease active / routable" decision must pass
+// this predicate instead of trusting revoked_at/expires_at on the lease row.
+//
+// The single time argument is the authoritative evaluation instant.
+const ActiveLeaseParentAuthSessionCondition = `EXISTS (
+    SELECT 1 FROM actor_sessions parent_actor_session
+    WHERE parent_actor_session.session_id = agent_client_capability_leases.auth_session_id
+      AND parent_actor_session.revoked = false
+      AND parent_actor_session.expires_at > ?
+)`
+
+// ClientCapabilityResourceGrant persists one opaque workspace resource grant
+// that a device declared for an active capability session. Station pins the
+// grant onto dispatched client capability envelopes; the device-local path
+// behind the opaque reference never leaves the client.
+type ClientCapabilityResourceGrant struct {
+	SessionID         string    `gorm:"primaryKey;type:varchar(64)"`
+	CapabilityID      string    `gorm:"primaryKey;type:varchar(100)"`
+	ActorID           string    `gorm:"not null;type:varchar(255);index:idx_capability_resource_lookup,priority:1"`
+	DeviceID          string    `gorm:"not null;type:varchar(255);index:idx_capability_resource_lookup,priority:2"`
+	ResourceRef       string    `gorm:"not null;type:varchar(255)"`
+	PermissionGrantID string    `gorm:"not null;type:varchar(255)"`
+	IntegrityHash     string    `gorm:"not null;type:varchar(128)"`
+	ExpiresAt         time.Time `gorm:"not null;index"`
+	CreatedAt         time.Time `gorm:"not null"`
+	UpdatedAt         time.Time `gorm:"not null"`
+}
+
+func (ClientCapabilityResourceGrant) TableName() string {
+	return "agent_client_capability_resource_grants"
+}
+
 type ToolBatch struct {
 	ID                  string     `gorm:"primaryKey;type:varchar(64)"`
 	ActorID             string     `gorm:"not null;type:varchar(255);index"`
@@ -262,6 +299,7 @@ type ToolDispatchOutbox struct {
 	ExecutionDeadline       time.Time  `gorm:"not null;index"`
 	ReconciliationDeadline  time.Time  `gorm:"not null;index"`
 	AcknowledgedAt          *time.Time `gorm:"type:timestamp"`
+	InvalidatedAt           *time.Time `gorm:"type:timestamp"`
 	CreatedAt               time.Time  `gorm:"not null"`
 }
 

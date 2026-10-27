@@ -38,7 +38,6 @@ use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
 use crate::application::capability_authority as app_capability_authority;
 use crate::application::channels as app_channels;
-use crate::application::cron as app_cron;
 use crate::application::evaluation as app_evaluation;
 use crate::application::federation as app_federation;
 use crate::application::home as app_home;
@@ -58,7 +57,6 @@ use crate::application::skills as app_skills;
 use crate::application::skills_market as app_skills_market;
 use crate::application::system as app_system;
 use crate::application::tools as app_tools;
-use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
 use crate::application::station_runtime::client::{
@@ -4528,12 +4526,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // =================================================================
         // This development gateway has no caller-bound window authority.
         // A shared logged-in gateway session cannot authorize private Search.
-        "search_suggest" | "search_submit" | "search_cancel" | "search_resolve" | "search_read_state" =>
-            to_json(AppResult::<Value>::fail(
-                ErrorCode::Unauthorized,
-                "private device search requires an authenticated native window",
-                None,
-            )),
+        "search_suggest" | "search_submit" | "search_cancel" | "search_resolve"
+        | "search_read_state" => to_json(AppResult::<Value>::fail(
+            ErrorCode::Unauthorized,
+            "private device search requires an authenticated native window",
+            None,
+        )),
 
         // =================================================================
         // System
@@ -4626,14 +4624,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_system::config_field_reset(input))
         }
-        "config_test_postgres" => {
-            let input = match parse_args::<ConfigPostgresTestInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_system::config_test_postgres(input))
-        }
-        "embedding_models_list" => to_json(app_system::embedding_models_list()),
         "visitor_heartbeat" => to_json(app_system::visitor_heartbeat()),
         "visitor_online" => to_json(app_system::visitor_online()),
         "context_snapshot_get" => {
@@ -5508,61 +5498,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(error) => error,
             }
         }
-        // =================================================================
-        // Cron (no state)
-        // Cron (no state)
-        // =================================================================
-        "cron_status" => to_json(app_cron::cron_status()),
-        "cron_list_jobs" => to_json(app_cron::cron_list_jobs()),
-        "cron_create_job" => {
-            let input = match parse_args::<CronCreateInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_cron::cron_create_job(input))
-        }
-        "cron_update_job" => {
-            let input = match parse_args::<CronUpdateInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_cron::cron_update_job(input))
-        }
-        "cron_delete_job" => {
-            let input = match parse_args::<CronIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_cron::cron_delete_job(input))
-        }
-        "cron_toggle_job" => {
-            let input = match parse_args::<CronToggleInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_cron::cron_toggle_job(input))
-        }
-        "cron_run_job" => {
-            let input = match parse_args::<CronIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_cron::cron_run_job(input))
-        }
-        "cron_list_runs" => {
-            let input = match parse_args::<CronRunsInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_cron::cron_list_runs(input))
-        }
-        "cron_parse_schedule" => {
-            let input = match parse_args::<CronParseScheduleInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_cron::cron_parse_schedule(input))
-        }
+        // User scheduled jobs are Station-authoritative; the Desktop Tauri
+        // commands proxy /agent/scheduled-job/* with an authenticated token.
+        // The stateless web gateway intentionally exposes no fake surface.
 
         // =================================================================
         // Model Config (no state)
@@ -6450,18 +6388,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_memory::memory_reembed(state.station.client(), &token))
         }
-
-        // =================================================================
-        // TTS (no state)
-        // =================================================================
-        "tts_synthesize" => {
-            let input = match parse_args::<TtsInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_tts::tts_synthesize(input))
-        }
-        "tts_voices" => to_json(app_tts::tts_voices()),
 
         // =================================================================
         // Social Friend Requests (state-dependent, station proto API)

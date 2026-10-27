@@ -17,6 +17,7 @@ import {
   type RecoveredTurnTerminal,
   useChatStore,
 } from '../store/chat';
+import { isAgentDraftKey } from '../store/agentDraft';
 import { terminalReasonFromStreamData } from '../store/streaming/handler';
 import { log } from '../utils/logger';
 
@@ -102,6 +103,8 @@ let actorId: string | null = null;
 let actorBootstrapSequence = 0;
 let unsubscribeStream: (() => void) | null = null;
 let unsubscribeRecoveryRetry: (() => void) | null = null;
+let unsubscribeTurnAdmitted: (() => void) | null = null;
+let unsubscribeTurnQueueCancelled: (() => void) | null = null;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let persistence:
   | ReturnType<typeof createDesktopClientStorageRuntime>['repositories']['runtimeProjection']
@@ -542,6 +545,12 @@ async function consumeRecoveryEvent(
       void persistActiveRecords();
     }
   }
+  if (terminalClosesRecovery) {
+    // The conversation slot is free; promote the next FIFO head immediately
+    // instead of waiting for the periodic queue sync, so its first events are
+    // never missed beyond replay catch-up.
+    void syncPendingTurnQueues().catch(() => undefined);
+  }
 }
 
 function recoverTurn(
@@ -599,6 +608,90 @@ function recoverTurn(
   );
 }
 
+const admittingTurns = new Set<string>();
+
+/**
+ * Tail the Turn pre-bound to a FIFO queue head. The Turn exists from enqueue
+ * time on and the replay stream tolerates a not-yet-started Turn (empty
+ * snapshot, long poll), so attaching while queued means the first execution
+ * event and every approval arrive the moment the queue worker admits it,
+ * without an identity-resolution handshake.
+ */
+function followAdmittedTurn(params: {
+  conversationId: string;
+  agentId: string;
+  turnId: string;
+}): void {
+  const currentActorId = actorId;
+  if (!currentActorId) return;
+  const { conversationId, agentId, turnId } = params;
+  const followKey = `${conversationId}:${turnId}`;
+  if (admittingTurns.has(followKey)) return;
+  const existing = activeRecords()[conversationId];
+  if (existing?.turnId === turnId) return;
+  admittingTurns.add(followKey);
+  try {
+    // Any replay transport opens with a per-session generation greater than
+    // the execute stream's, so a unit seed is always older and gets advanced.
+    const record = useAgentTurnRecoveryStore.getState().admit({
+      actorId: currentActorId,
+      conversationId,
+      agentId,
+      turnId,
+      streamGeneration: 1,
+    });
+    void persistActiveRecords();
+    // A new queue head supersedes any still-open replay subscription the
+    // previous turn's tail left on this conversation; force the switch so its
+    // approval events cannot be projected onto the wrong Turn.
+    recoverTurn(record, 'queued-admission', true);
+  } finally {
+    admittingTurns.delete(followKey);
+  }
+}
+
+/**
+ * Close the tail of a Turn cancelled while still queued. Station appends no
+ * terminal events for such Turns, so the waiting replay stream must be torn
+ * down from the cancel result rather than observed.
+ */
+function cancelQueuedTurnFollow(params: {
+  conversationId: string;
+  turnId: string;
+}): void {
+  const { conversationId, turnId } = params;
+  const existing = activeRecords()[conversationId];
+  if (!existing || existing.turnId !== turnId) return;
+  admittingTurns.delete(`${conversationId}:${turnId}`);
+  stopRecoverySubscription(conversationId);
+  useAgentTurnRecoveryStore.getState().clear(conversationId, turnId);
+  void persistActiveRecords();
+}
+
+/**
+ * Queue facts live in the chat store; keep polling a conversation while it
+ * holds an awaiting-admission operation or visible queue entries so an
+ * admitted entry is detected without a page reload.
+ */
+async function syncPendingTurnQueues(): Promise<void> {
+  if (!actorId) return;
+  const state = useChatStore.getState();
+  const conversationIds = new Set<string>();
+  for (const [key, queue] of Object.entries(state.turnQueues)) {
+    if ((queue.entries?.length ?? 0) > 0) conversationIds.add(key);
+  }
+  for (const operation of Object.values(state.operations)) {
+    if (operation.awaitingAdmission && operation.conversationId) {
+      conversationIds.add(operation.conversationId);
+    }
+  }
+  await Promise.all(
+    Array.from(conversationIds)
+      .filter((conversationId) => !isAgentDraftKey(conversationId))
+      .map((conversationId) => state.syncTurnQueue(conversationId)),
+  );
+}
+
 function consumeLiveEvent(payload: AgentTurnStreamEventPayload): void {
   if ((payload as Partial<SourceBoundReplayDelivery>).deliveryOnly) return;
   const currentActorId = actorId;
@@ -652,6 +745,11 @@ function installTimer(): void {
   if (reconcileTimer) return;
   reconcileTimer = setInterval(() => {
     reconcileActiveTurns('periodic');
+    void syncPendingTurnQueues().catch((error) => {
+      log.warn('chatRuntime', 'Periodic turn-queue sync failed', {
+        error: String(error),
+      });
+    });
   }, RECOVERY_RECONCILE_INTERVAL_MS);
 }
 
@@ -805,6 +903,18 @@ export const chatRuntime: RuntimeDescriptor = {
       EVENT.AGENT_TURN_RECOVERY_RETRY_REQUESTED,
       ({ conversationId }) => retryAgentTurnRecovery(conversationId),
     );
+    unsubscribeTurnAdmitted = eventBus.subscribe(
+      EVENT.AGENT_TURN_ADMITTED,
+      ({ conversationId, agentId, turnId }) => {
+        followAdmittedTurn({ conversationId, agentId, turnId });
+      },
+    );
+    unsubscribeTurnQueueCancelled = eventBus.subscribe(
+      EVENT.AGENT_TURN_QUEUE_CANCELLED,
+      ({ conversationId, turnId }) => {
+        cancelQueuedTurnFollow({ conversationId, turnId });
+      },
+    );
     installTimer();
   },
   teardown() {
@@ -815,8 +925,13 @@ export const chatRuntime: RuntimeDescriptor = {
     unsubscribeStream = null;
     unsubscribeRecoveryRetry?.();
     unsubscribeRecoveryRetry = null;
+    unsubscribeTurnAdmitted?.();
+    unsubscribeTurnAdmitted = null;
+    unsubscribeTurnQueueCancelled?.();
+    unsubscribeTurnQueueCancelled = null;
     if (reconcileTimer) clearInterval(reconcileTimer);
     reconcileTimer = null;
+    admittingTurns.clear();
     for (const conversationId of recoverySubscriptions.keys()) {
       stopRecoverySubscription(conversationId);
     }

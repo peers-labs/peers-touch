@@ -1,9 +1,8 @@
 use crate::contracts::{
-    ConfigFieldResetInput, ConfigPostgresTestInput, ConfigSectionInput, ConfigSectionSetInput,
-    ContextActionDispatchInput, ContextSnapshotGetInput, ExternalUrlInput, LogsTailInput,
-    OAuthCreateBotSessionInput, OAuthSessionInput, OAuthSimulateStartInput, OnboardingSetInput,
-    PreferencesSetInput, ShareIdInput, ShareSessionInput, StubPayload, WizardExecuteApiInput,
-    WizardStepInput,
+    ConfigFieldResetInput, ConfigSectionInput, ConfigSectionSetInput, ContextActionDispatchInput,
+    ContextSnapshotGetInput, ExternalUrlInput, LogsTailInput, OAuthCreateBotSessionInput,
+    OAuthSessionInput, OAuthSimulateStartInput, OnboardingSetInput, PreferencesSetInput,
+    ShareIdInput, ShareSessionInput, StubPayload, WizardExecuteApiInput, WizardStepInput,
 };
 use crate::error::AppResult;
 
@@ -108,14 +107,6 @@ pub fn config_section_set(input: ConfigSectionSetInput) -> AppResult<StubPayload
 #[tauri::command]
 pub fn config_field_reset(input: ConfigFieldResetInput) -> AppResult<StubPayload> {
     application_system::config_field_reset(input)
-}
-#[tauri::command]
-pub fn config_test_postgres(input: ConfigPostgresTestInput) -> AppResult<StubPayload> {
-    application_system::config_test_postgres(input)
-}
-#[tauri::command]
-pub fn embedding_models_list() -> AppResult<StubPayload> {
-    application_system::embedding_models_list()
 }
 #[tauri::command]
 pub fn visitor_heartbeat() -> AppResult<StubPayload> {

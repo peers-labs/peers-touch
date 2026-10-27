@@ -39,6 +39,7 @@ WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标�
 | [module-layout.md](./module-layout.md) | Model、Station、Desktop 与 Acceptance 的模块职责 |
 | [integration.md](./integration.md) | 跨运行时集成、证据和迁移边界 |
 | [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent accepted product + architecture** — LobeHub benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前最小交付由 Minimum Usable Agent Chat Plan 管理 |
+| [agent-usability-depth/design.md](./agent-usability-depth/design.md) | **execution-active（2026-10-27）** — AgentBox 可用性水平的整体实现设计：V01–V06 任务执行深度（预算/写执行/Skill 资源/队列/恢复/产物）与 V07–V14 能力供给面真实化（Knowledge/Memory/MCP/Provider/Cron/Lark/Bot/身份）；实施 Plan 与逐条证据见 [execution-plans/20261025-agent-usability-depth](./execution-plans/20261025-agent-usability-depth/plan.md)（TD-J01…J05 原生 Journey 仍 UNPROVEN） |
 | [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
 | [provider-station-ownership/](./provider-station-ownership/) | **Provider Station Ownership** — Station 是所有 AI Provider 的唯一执行者和配置所有者；Desktop/Mobile 是编辑入口 + SSE 消费端；per-actor 凭证隔离；版本号防脑裂 |
 | [agent-lobehub-blueprint.md](./agent-lobehub-blueprint.md) | **当前 Agent 重构正式设计** — 以 LobeHub 为蓝本的 UI/UX、Tool、MCP、Skill、后端能力映射与目标架构 |
@@ -58,6 +59,14 @@ WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标�
 ## 4. 执行计划
 
 当前执行入口为
+[Agent 可用性深度 V01–V14（execution-active，2026-10-27 源码门禁通过；TD-Journey UNPROVEN）](./execution-plans/20261025-agent-usability-depth/plan.md)：
+以 TD-C01…TD-C06 任务结果为北极星，连续执行预算、CLIENT 写/命令工具、
+Skill 资源包、运行中队列、过程恢复、真实文件产物，以及 Knowledge/Memory/
+MCP/Provider/Cron/Lark/Bot/身份八条能力供给垂直；Task Depth 修订案与
+[agent-usability-depth/design.md](./agent-usability-depth/design.md)
+是其产品与架构输入。
+
+上一执行入口为
 [Linux Desktop 与 Agent 深度闭环 V2](./execution-plans/20261020-agent-depth-linux-desktop-v2/plan.md)：
 在不增加参考工程 CUT 能力的前提下，完成 Linux 用户态 Native 安装、
 类型化 AgentDefinition、Station-backed Commands & Skills 和 Turn Attribution。

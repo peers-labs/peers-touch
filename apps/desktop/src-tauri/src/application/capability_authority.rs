@@ -41,7 +41,10 @@ const OPERATION_CLEANUP_TAKEOVER_PATH: &str =
 const KNOWLEDGE_DESCRIPTOR_CREATE_PATH: &str = "/sub-agent/agent/knowledge/descriptor/create";
 const KNOWLEDGE_DESCRIPTOR_UPDATE_PATH: &str = "/sub-agent/agent/knowledge/descriptor/update";
 const KNOWLEDGE_DESCRIPTOR_LIST_PATH: &str = "/sub-agent/agent/knowledge/descriptor/list";
+const KNOWLEDGE_DESCRIPTOR_CONTENT_READ_PATH: &str =
+    "/sub-agent/agent/knowledge/descriptor/content/read";
 const KNOWLEDGE_DESCRIPTOR_TOMBSTONE_PATH: &str = "/sub-agent/agent/knowledge/descriptor/tombstone";
+const SKILL_RESOURCE_READ_PATH: &str = "/sub-agent/agent/skill/resource/read";
 const AGENT_PACKAGE_EXPORT_PATH: &str = "/sub-agent/agent/package/export";
 const AGENT_PACKAGE_IMPORT_PATH: &str = "/sub-agent/agent/package/import";
 
@@ -562,6 +565,24 @@ pub fn list_knowledge_descriptors(
     )
 }
 
+pub fn read_knowledge_descriptor_content(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::ReadKnowledgeResourceContentRequest,
+        agent::ReadKnowledgeResourceContentResponse,
+    >(
+        station_client,
+        KNOWLEDGE_DESCRIPTOR_CONTENT_READ_PATH,
+        input,
+        token,
+        "agent.knowledgeDescriptorContentReadFailed",
+        "agent.knowledgeDescriptorRequestInvalid",
+    )
+}
+
 pub fn tombstone_knowledge_descriptor(
     station_client: &StationClient,
     input: EncodedRequestInput,
@@ -577,6 +598,21 @@ pub fn tombstone_knowledge_descriptor(
         token,
         "agent.knowledgeDescriptorTombstoneFailed",
         "agent.knowledgeDescriptorRequestInvalid",
+    )
+}
+
+pub fn read_skill_resource(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    request_encoded::<agent::ReadSkillResourceRequest, agent::ReadSkillResourceResponse>(
+        station_client,
+        SKILL_RESOURCE_READ_PATH,
+        input,
+        token,
+        "agent.skillResourceReadFailed",
+        "agent.skillResourceRequestInvalid",
     )
 }
 

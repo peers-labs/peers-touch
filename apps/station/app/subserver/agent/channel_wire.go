@@ -29,18 +29,18 @@ func (s *agentSubServer) wireChannelTurnExecutor(
 	capabilities *agentsvc.CapabilityAuthorityService,
 	registry *agentsvc.ToolRegistryService,
 	growth *agentsvc.GrowthMetricsService,
-) {
+) *agentsvc.ChannelTurnExecutor {
 	serverOptions := server.GetOptions()
 	if serverOptions == nil {
-		return
+		return nil
 	}
 	instance := serverOptions.SubserverInstances["channel"]
 	if instance == nil {
-		return
+		return nil
 	}
 	target, ok := instance.(channelTurnExecutorTarget)
 	if !ok {
-		return
+		return nil
 	}
 	var requesterTools channelsvc.RequesterToolExecutor
 	if source, ok := instance.(channelRequesterToolTarget); ok {
@@ -51,10 +51,10 @@ func (s *agentSubServer) wireChannelTurnExecutor(
 	if ossInstance := serverOptions.SubserverInstances["oss"]; ossInstance != nil {
 		attachments, _ = ossInstance.(agentsvc.ChannelAttachmentStore)
 	}
-	target.SetTurnExecutor(
-		agentsvc.NewChannelTurnExecutor(
-			turns, convs, admission, attachments, agents, capabilities,
-			registry, growth,
-		),
+	executor := agentsvc.NewChannelTurnExecutor(
+		turns, convs, admission, attachments, agents, capabilities,
+		registry, growth,
 	)
+	target.SetTurnExecutor(executor)
+	return executor
 }

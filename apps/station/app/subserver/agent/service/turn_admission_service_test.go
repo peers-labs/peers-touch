@@ -344,18 +344,20 @@ func TestTurnAdmissionIdempotencyAndCapacity(t *testing.T) {
 		}
 	}
 
+	if firstQueued == nil || firstQueued.GetQueueEntry() == nil {
+		t.Fatal("first queued admission is missing")
+	}
+
 	replayed, err := svc.Admit(
 		context.Background(),
 		"ptid:actor-1",
 		admissionRequest("queued-0", "queued-0"),
 	)
 	if err != nil ||
-		replayed.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_REPLAYED ||
+		replayed.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED ||
+		replayed.GetTurnId() != firstQueued.GetTurnId() ||
 		replayed.GetQueueEntry().GetQueuePosition() != 1 {
-		t.Fatalf("same-payload replay failed: admission=%+v err=%v", replayed, err)
-	}
-	if firstQueued == nil || firstQueued.GetQueueEntry() == nil {
-		t.Fatal("first queued admission is missing")
+		t.Fatalf("same-payload resubmit must resolve to the queued turn: admission=%+v err=%v", replayed, err)
 	}
 	_, err = svc.Admit(
 		context.Background(),
@@ -412,6 +414,18 @@ func TestTurnAdmissionCancelAndAdmitNext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("queue turn: %v", err)
 	}
+	if queued.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED ||
+		queued.GetTurnId() == "" ||
+		queued.GetTurnId() != queued.GetQueueEntry().GetAdmittedTurnId() {
+		t.Fatalf("queued admission must carry the pre-bound turn id: %+v", queued)
+	}
+	var preBoundTurn persistence.AgentTurn
+	if err := db.First(&preBoundTurn, "id = ?", queued.GetTurnId()).Error; err != nil {
+		t.Fatalf("pre-bound queued turn not created at enqueue: %v", err)
+	}
+	if preBoundTurn.Status != string(domain.TurnStatusQueued) {
+		t.Fatalf("pre-bound turn status = %q, want queued", preBoundTurn.Status)
+	}
 	var conversation persistence.Conversation
 	if err := db.First(&conversation, "id = ?", "conversation-1").Error; err != nil {
 		t.Fatalf("load conversation: %v", err)
@@ -442,6 +456,13 @@ func TestTurnAdmissionCancelAndAdmitNext(t *testing.T) {
 	if err != nil || !replayedCancel.GetReplayed() {
 		t.Fatalf("cancel replay must ignore the advanced version: response=%+v err=%v", replayedCancel, err)
 	}
+	if err := db.First(&preBoundTurn, "id = ?", queued.GetTurnId()).Error; err != nil {
+		t.Fatalf("reload cancelled pre-bound turn: %v", err)
+	}
+	if preBoundTurn.Status != string(domain.TurnStatusCancelled) || preBoundTurn.EndedAt == nil {
+		t.Fatalf("cancelled pre-bound turn = status %q ended %v, want cancelled with ended_at",
+			preBoundTurn.Status, preBoundTurn.EndedAt)
+	}
 
 	nextQueued, err := svc.Admit(
 		context.Background(),
@@ -469,9 +490,17 @@ func TestTurnAdmissionCancelAndAdmitNext(t *testing.T) {
 	}
 	if next == nil ||
 		next.Admission.GetTurnId() == "" ||
+		next.Admission.GetTurnId() != nextQueued.GetTurnId() ||
 		next.Admission.GetQueueEntry().GetQueueEntryId() != nextQueued.GetQueueEntry().GetQueueEntryId() ||
 		next.Request.GetUserInput() != "next" {
 		t.Fatalf("unexpected next admission: %+v", next)
+	}
+	var promotedTurn persistence.AgentTurn
+	if err := db.First(&promotedTurn, "id = ?", next.Admission.GetTurnId()).Error; err != nil {
+		t.Fatalf("load promoted turn: %v", err)
+	}
+	if promotedTurn.Status != string(domain.TurnStatusRunning) {
+		t.Fatalf("promoted pre-bound turn status = %q, want running", promotedTurn.Status)
 	}
 }
 
@@ -520,12 +549,25 @@ func TestTurnAdmissionCancelsQueuedEntryWhenAttachmentExpiresBeforeDequeue(t *te
 	if entry.Status != queueStatusCancelled {
 		t.Fatalf("queue status = %q, want %q", entry.Status, queueStatusCancelled)
 	}
-	var turnCount int64
-	if err := db.Model(&persistence.AgentTurn{}).Count(&turnCount).Error; err != nil {
-		t.Fatalf("count turns: %v", err)
+	var rejectedTurn persistence.AgentTurn
+	if err := db.First(&rejectedTurn, "id = ?", queued.GetTurnId()).Error; err != nil {
+		t.Fatalf("load rejected pre-bound turn: %v", err)
 	}
-	if turnCount != 1 {
-		t.Fatalf("invalid queued attachment created a turn: count=%d", turnCount)
+	if rejectedTurn.Status != string(domain.TurnStatusCancelled) || rejectedTurn.EndedAt == nil {
+		t.Fatalf("rejected pre-bound turn = status %q ended %v, want cancelled with ended_at",
+			rejectedTurn.Status, rejectedTurn.EndedAt)
+	}
+	var runningCount int64
+	if err := db.Model(&persistence.AgentTurn{}).
+		Where("status IN ?", []string{
+			string(domain.TurnStatusRunning),
+			string(domain.TurnStatusWaitingLocalTool),
+		}).
+		Count(&runningCount).Error; err != nil {
+		t.Fatalf("count active turns: %v", err)
+	}
+	if runningCount != 0 {
+		t.Fatalf("rejected queued attachment left active turns: %d", runningCount)
 	}
 	var conversation persistence.Conversation
 	if err := db.First(&conversation, "id = ?", "conversation-1").Error; err != nil {

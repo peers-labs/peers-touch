@@ -1,0 +1,704 @@
+{
+  "kind": "peers-touch-experience-review-result",
+  "schemaVersion": 1,
+  "authorId": "edx-blind-runner-v2",
+  "verdict": "NO_BLOCKING_FINDING",
+  "evaluationBinding": {
+    "packageId": "EDX-HOLDOUT-20261019-V2",
+    "runEnvelopeDigest": "sha256:5ff0a02a8009e7cbb8deb92965d7172f97585c357a58c43864d3d743f0c63ee3",
+    "caseDigest": "sha256:17915a4c6fac4e91e0b5eb178da25b8e17f713ca2b5e2798c01cf9e54cc5c690",
+    "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+    "manifestDigest": "sha256:6d8c7328bb64ad1d7c9c255a61daaf9186cd20451778f45f7f2c8765b2e468ce",
+    "rubricDigest": "sha256:2f31bcd9bbac2dd5a9280051b8917a1bc4c63da30d4d4e6c8fafaf9069b2ef84",
+    "sourceBlobAlgorithm": "git-sha1",
+    "sourceBlobs": [
+      {
+        "path": "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+        "digest": "c8c0ba82a2ba33b9ea853f629e2e42e46df467be"
+      },
+      {
+        "path": "apps/mobile/src/pages/ChatPage.tsx",
+        "digest": "24fbef5c55e6a55f8e366f843086bd41971d24bd"
+      },
+      {
+        "path": "apps/mobile/src/pages/chat/ChatOverlayHost.tsx",
+        "digest": "cbf64a881cbcc47d06b0fac8a06e3d1432e46cc0"
+      },
+      {
+        "path": "docs/architecture/domains/chat/lifecycle/experience-contract.md",
+        "digest": "87cb2c16f2b46e0e8f27eb9db6123b490c5c7f48"
+      },
+      {
+        "path": "docs/client/chat/chat-ux-contract.md",
+        "digest": "ea8f18dbc597e9c20821dca082898c996dfc2696"
+      },
+      {
+        "path": "docs/client/mobile/chat-layout-contract.md",
+        "digest": "3555f62c42d40cae33b42fcde85bb1b894ee1002"
+      },
+      {
+        "path": "packages/locales/en/chat.json",
+        "digest": "73e1ff2af03eeb0bae223cc97fcd5e761e7f296b"
+      },
+      {
+        "path": "packages/locales/en/common.json",
+        "digest": "9e1fbdbc42818ac293c80542eb939cfad5b73302"
+      }
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C-H06-CURRENT-DEVICE-CLEAR",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/domains/chat/lifecycle/experience-contract.md",
+        "lineStart": 81,
+        "lineEnd": 113
+      },
+      "clause": "CHAT-J02.13 and Success",
+      "statement": "After explicit confirmation, clearing removes the current device's conversation data, removed plaintext remains absent after restart, later messages continue to arrive, and terminal state is truthful and actionable."
+    },
+    {
+      "id": "C-H06-CONVERSATION-ACTION-SURFACE",
+      "authority": "accepted-client",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/client/chat/chat-ux-contract.md",
+        "lineStart": 122,
+        "lineEnd": 132
+      },
+      "clause": "Conversation-level action surfaces",
+      "statement": "Current-device data clearing belongs to the conversation action surface; Mobile uses a bottom sheet or settings page, Desktop may use a side panel, and destructive actions are visually separated from reversible preferences."
+    },
+    {
+      "id": "C-H06-MOBILE-ACTION-SHEET",
+      "authority": "accepted-client",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/client/mobile/chat-layout-contract.md",
+        "lineStart": 112,
+        "lineEnd": 128
+      },
+      "clause": "Required mobile behavior",
+      "statement": "Mobile conversation actions use a bottom sheet with modal backdrop, safe-area and scrolling behavior; destructive actions are grouped separately and confirmed when they remove conversation context."
+    },
+    {
+      "id": "C-H06-DESKTOP-COPY",
+      "authority": "accepted-client",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "packages/locales/en/chat.json",
+        "lineStart": 498,
+        "lineEnd": 502
+      },
+      "clause": "Desktop clear-local-data copy",
+      "statement": "Desktop names local chat data clearing, explains permanent removal of local messages, search entries, and unreferenced media from this device, states other devices and participants are unaffected, and reports released bytes."
+    },
+    {
+      "id": "C-H06-MOBILE-COPY",
+      "authority": "accepted-client",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "packages/locales/en/common.json",
+        "lineStart": 299,
+        "lineEnd": 302
+      },
+      "clause": "Mobile clear-local-data copy",
+      "statement": "Mobile uses the same destructive scope explanation and reports released bytes on this device after success."
+    }
+  ],
+  "facts": [
+    {
+      "id": "F-H06-DESKTOP-CLEAR-ACTION",
+      "stateId": "S-H06-ACTION-SURFACE",
+      "source": {
+        "path": "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+        "lineStart": 1683,
+        "lineEnd": 1710,
+        "symbol": "ChatDetailPanel"
+      },
+      "statement": "Desktop places Clear local chat data in a named danger zone, uses destructive styling, and disables and loads that control while its history action is pending.",
+      "visibleAction": "Choose Clear local chat data from the Desktop conversation detail danger zone.",
+      "visibleResponse": "The destructive action is separated from ordinary conversation preferences."
+    },
+    {
+      "id": "F-H06-MOBILE-CLEAR-ACTION",
+      "stateId": "S-H06-ACTION-SURFACE",
+      "source": {
+        "path": "apps/mobile/src/pages/chat/ChatOverlayHost.tsx",
+        "lineStart": 329,
+        "lineEnd": 383,
+        "symbol": "ChatActionSheet"
+      },
+      "statement": "Mobile uses a modal action sheet and places Clear History in a separate danger group below search, reversible preferences, background, and group management.",
+      "visibleAction": "Choose Clear local chat data from the Mobile conversation action sheet.",
+      "visibleResponse": "The destructive action is grouped separately while the underlying conversation is blocked by a modal backdrop."
+    },
+    {
+      "id": "F-H06-DESKTOP-CONFIRM",
+      "stateId": "S-H06-CONFIRM",
+      "source": {
+        "path": "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+        "lineStart": 986,
+        "lineEnd": 995,
+        "symbol": "confirmClearHistory"
+      },
+      "statement": "Desktop opens a destructive confirmation modal with localized title, consequence body, explicit Clear action, Cancel, and a danger-styled confirm button.",
+      "visibleResponse": "Desktop requires explicit destructive confirmation before clearing."
+    },
+    {
+      "id": "F-H06-MOBILE-CONFIRM",
+      "stateId": "S-H06-CONFIRM",
+      "source": {
+        "path": "apps/mobile/src/pages/chat/ChatOverlayHost.tsx",
+        "lineStart": 386,
+        "lineEnd": 438,
+        "symbol": "ChatDestructiveConfirmSheet"
+      },
+      "statement": "Mobile opens a modal alert-dialog sheet with localized title and body, Cancel, destructive Clear, busy loading, and a Cancel-blocking backdrop while pending.",
+      "visibleResponse": "Mobile requires explicit destructive confirmation before clearing."
+    },
+    {
+      "id": "F-H06-SCOPE-COPY-DESKTOP",
+      "stateId": "S-H06-CONFIRM",
+      "source": {
+        "path": "packages/locales/en/chat.json",
+        "lineStart": 498,
+        "lineEnd": 502
+      },
+      "statement": "Desktop confirmation states that local messages, search entries, and unreferenced media are permanently removed only from this device and that other devices and participants are unaffected."
+    },
+    {
+      "id": "F-H06-SCOPE-COPY-MOBILE",
+      "stateId": "S-H06-CONFIRM",
+      "source": {
+        "path": "packages/locales/en/common.json",
+        "lineStart": 299,
+        "lineEnd": 302
+      },
+      "statement": "Mobile confirmation states the same removed data and current-device-only consequence, including unaffected other devices and participants."
+    },
+    {
+      "id": "F-H06-CANCEL-ACTION",
+      "stateId": "S-H06-CONFIRM",
+      "source": {
+        "path": "apps/mobile/src/pages/ChatPage.tsx",
+        "lineStart": 1658,
+        "lineEnd": 1667,
+        "symbol": "ChatPage"
+      },
+      "statement": "Mobile Cancel closes destructive confirmation only while clear is not busy.",
+      "visibleAction": "Cancel the clear-local-data confirmation."
+    },
+    {
+      "id": "F-H06-CANCEL-RESPONSE",
+      "stateId": "S-H06-CANCELLED",
+      "source": {
+        "path": "apps/mobile/src/pages/ChatPage.tsx",
+        "lineStart": 1658,
+        "lineEnd": 1667,
+        "symbol": "ChatPage"
+      },
+      "statement": "Cancel sets clearHistoryConfirmOpen=false and does not invoke clearConversationData.",
+      "visibleResponse": "The destructive sheet closes without starting clear."
+    },
+    {
+      "id": "F-H06-CONFIRM-ACTION",
+      "stateId": "S-H06-CONFIRM",
+      "source": {
+        "path": "apps/mobile/src/pages/ChatPage.tsx",
+        "lineStart": 1658,
+        "lineEnd": 1667,
+        "symbol": "ChatPage"
+      },
+      "statement": "Mobile Confirm invokes clearConversationData.",
+      "visibleAction": "Confirm Clear local chat data."
+    },
+    {
+      "id": "F-H06-DESKTOP-PENDING",
+      "stateId": "S-H06-PENDING",
+      "source": {
+        "path": "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+        "lineStart": 843,
+        "lineEnd": 847,
+        "symbol": "clearConversationData"
+      },
+      "statement": "Desktop sets the history action pending before invoking the current-device storage projection runtime.",
+      "visibleResponse": "The Desktop danger-zone control becomes loading and disabled."
+    },
+    {
+      "id": "F-H06-MOBILE-PENDING",
+      "stateId": "S-H06-PENDING",
+      "source": {
+        "path": "apps/mobile/src/pages/ChatPage.tsx",
+        "lineStart": 1203,
+        "lineEnd": 1210,
+        "symbol": "clearConversationData"
+      },
+      "statement": "Mobile closes the general action sheet, clears prior local error, marks clear-history busy, and invokes the current-device storage projection runtime.",
+      "visibleResponse": "The Mobile destructive confirm action displays busy loading and Cancel cannot close it."
+    },
+    {
+      "id": "F-H06-DESKTOP-SUCCESS",
+      "stateId": "S-H06-SUCCEEDED",
+      "source": {
+        "path": "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+        "lineStart": 847,
+        "lineEnd": 867,
+        "symbol": "clearConversationData"
+      },
+      "statement": "Desktop requires a succeeded storage operation, refreshes messages and conversation previews, and reports formatted released bytes in success feedback.",
+      "visibleResponse": "Desktop reports local chat data cleared and the amount of storage released."
+    },
+    {
+      "id": "F-H06-MOBILE-SUCCESS",
+      "stateId": "S-H06-SUCCEEDED",
+      "source": {
+        "path": "apps/mobile/src/pages/ChatPage.tsx",
+        "lineStart": 1209,
+        "lineEnd": 1235,
+        "symbol": "clearConversationData"
+      },
+      "statement": "Mobile requires a succeeded storage operation, reloads the active session, closes confirmation, and opens success feedback with released bytes.",
+      "visibleResponse": "Mobile reports local chat data cleared and the amount of storage released on this device."
+    },
+    {
+      "id": "F-H06-DESKTOP-FAILURE",
+      "stateId": "S-H06-FAILED",
+      "source": {
+        "path": "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+        "lineStart": 868,
+        "lineEnd": 881,
+        "symbol": "clearConversationData"
+      },
+      "statement": "Desktop logs a scoped failure, presents a mapped conversation-action error, rethrows to the confirmation flow, and clears pending state.",
+      "visibleResponse": "Desktop presents failure and re-enables the local destructive action."
+    },
+    {
+      "id": "F-H06-MOBILE-FAILURE",
+      "stateId": "S-H06-FAILED",
+      "source": {
+        "path": "apps/mobile/src/pages/ChatPage.tsx",
+        "lineStart": 1236,
+        "lineEnd": 1240,
+        "symbol": "clearConversationData"
+      },
+      "statement": "Mobile formats the operation failure into localActionError and clears busy state without closing destructive confirmation.",
+      "visibleResponse": "The clear attempt fails without claiming success and the confirmation remains recoverable."
+    },
+    {
+      "id": "F-H06-FAILURE-RETRY",
+      "stateId": "S-H06-FAILED",
+      "source": {
+        "path": "apps/mobile/src/pages/chat/ChatOverlayHost.tsx",
+        "lineStart": 427,
+        "lineEnd": 434,
+        "symbol": "ChatDestructiveConfirmSheet"
+      },
+      "statement": "When busy returns false, the destructive confirmation again exposes Cancel and Clear.",
+      "visibleAction": "Retry Clear local chat data or Cancel after failure."
+    },
+    {
+      "id": "F-H06-LATER-MESSAGES",
+      "stateId": "S-H06-LATER-MESSAGES",
+      "source": {
+        "path": "docs/architecture/domains/chat/lifecycle/experience-contract.md",
+        "lineStart": 106,
+        "lineEnd": 113
+      },
+      "statement": "The accepted journey requires later messages to continue arriving after current-device data clearing.",
+      "visibleResponse": "Later messages appear in the same logical conversation without restoring cleared plaintext."
+    },
+    {
+      "id": "F-H06-REMAIN-ACTION",
+      "stateId": "S-H06-SUCCEEDED",
+      "source": {
+        "path": "docs/architecture/domains/chat/lifecycle/experience-contract.md",
+        "lineStart": 106,
+        "lineEnd": 113
+      },
+      "statement": "After successful local clearing, the user remains able to continue the conversation journey.",
+      "visibleAction": "Remain in the conversation and receive a later message."
+    }
+  ],
+  "inferences": [
+    {
+      "id": "I-H06-SHARED-SCOPE",
+      "factIds": [
+        "F-H06-DESKTOP-CONFIRM",
+        "F-H06-MOBILE-CONFIRM",
+        "F-H06-SCOPE-COPY-DESKTOP",
+        "F-H06-SCOPE-COPY-MOBILE"
+      ],
+      "contractIds": [
+        "C-H06-CURRENT-DEVICE-CLEAR",
+        "C-H06-DESKTOP-COPY",
+        "C-H06-MOBILE-COPY"
+      ],
+      "statement": "Desktop modal and Mobile confirmation sheet use the same current-device-only destructive meaning and explicitly preserve other devices and participants."
+    },
+    {
+      "id": "I-H06-PLATFORM-ADAPTED",
+      "factIds": [
+        "F-H06-DESKTOP-CLEAR-ACTION",
+        "F-H06-MOBILE-CLEAR-ACTION",
+        "F-H06-DESKTOP-PENDING",
+        "F-H06-MOBILE-PENDING"
+      ],
+      "contractIds": [
+        "C-H06-CONVERSATION-ACTION-SURFACE",
+        "C-H06-MOBILE-ACTION-SHEET"
+      ],
+      "statement": "Desktop uses its detail danger zone while Mobile uses a modal bottom sheet, but both separate destruction, require confirmation, block duplicate input while pending, and preserve shell context."
+    },
+    {
+      "id": "I-H06-TERMINAL-PARITY",
+      "factIds": [
+        "F-H06-DESKTOP-SUCCESS",
+        "F-H06-MOBILE-SUCCESS",
+        "F-H06-DESKTOP-FAILURE",
+        "F-H06-MOBILE-FAILURE",
+        "F-H06-FAILURE-RETRY"
+      ],
+      "contractIds": [
+        "C-H06-CURRENT-DEVICE-CLEAR",
+        "C-H06-DESKTOP-COPY",
+        "C-H06-MOBILE-COPY"
+      ],
+      "statement": "Both platforms require an actual succeeded storage operation before success, report released local storage, and retain a recoverable action surface after failure."
+    }
+  ],
+  "journeyStateGraph": {
+    "entryStateId": "S-H06-ACTION-SURFACE",
+    "states": [
+      {
+        "id": "S-H06-ACTION-SURFACE",
+        "origin": "starting",
+        "inScope": true,
+        "source": {
+          "path": "docs/client/chat/chat-ux-contract.md",
+          "lineStart": 122,
+          "lineEnd": 132
+        },
+        "visibleMeaning": "The conversation action surface is open and current-device data clearing is separated from reversible preferences using the platform's native interaction pattern."
+      },
+      {
+        "id": "S-H06-CONFIRM",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 1,
+        "source": {
+          "path": "apps/mobile/src/pages/chat/ChatOverlayHost.tsx",
+          "lineStart": 386,
+          "lineEnd": 438,
+          "symbol": "ChatDestructiveConfirmSheet"
+        },
+        "visibleMeaning": "The user reviews permanent current-device scope and chooses Cancel or destructive Clear."
+      },
+      {
+        "id": "S-H06-CANCELLED",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 2,
+        "source": {
+          "path": "apps/mobile/src/pages/ChatPage.tsx",
+          "lineStart": 1658,
+          "lineEnd": 1667,
+          "symbol": "ChatPage"
+        },
+        "visibleMeaning": "The confirmation closes and no clear operation starts."
+      },
+      {
+        "id": "S-H06-PENDING",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 3,
+        "source": {
+          "path": "apps/mobile/src/pages/ChatPage.tsx",
+          "lineStart": 1203,
+          "lineEnd": 1210,
+          "symbol": "clearConversationData"
+        },
+        "visibleMeaning": "The current-device storage projection clear is pending and destructive controls prevent duplicate input."
+      },
+      {
+        "id": "S-H06-SUCCEEDED",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 4,
+        "source": {
+          "path": "apps/mobile/src/pages/ChatPage.tsx",
+          "lineStart": 1209,
+          "lineEnd": 1235,
+          "symbol": "clearConversationData"
+        },
+        "visibleMeaning": "The clear operation succeeded, local projections refresh, and released bytes are reported."
+      },
+      {
+        "id": "S-H06-FAILED",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 5,
+        "source": {
+          "path": "apps/mobile/src/pages/ChatPage.tsx",
+          "lineStart": 1236,
+          "lineEnd": 1240,
+          "symbol": "clearConversationData"
+        },
+        "visibleMeaning": "The clear operation failed without a success claim and the destructive decision remains retryable or cancellable."
+      },
+      {
+        "id": "S-H06-LATER-MESSAGES",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 6,
+        "source": {
+          "path": "docs/architecture/domains/chat/lifecycle/experience-contract.md",
+          "lineStart": 106,
+          "lineEnd": 113
+        },
+        "visibleMeaning": "New messages continue to arrive after earlier current-device plaintext and index data were cleared."
+      }
+    ],
+    "edges": [
+      {
+        "id": "E-H06-ACTION-CONFIRM",
+        "fromStateId": "S-H06-ACTION-SURFACE",
+        "toStateId": "S-H06-CONFIRM",
+        "actionFactId": "F-H06-MOBILE-CLEAR-ACTION",
+        "responseFactId": "F-H06-MOBILE-CONFIRM",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/pages/chat/ChatOverlayHost.tsx",
+            "lineStart": 329,
+            "lineEnd": 438
+          }
+        ]
+      },
+      {
+        "id": "E-H06-CONFIRM-CANCEL",
+        "fromStateId": "S-H06-CONFIRM",
+        "toStateId": "S-H06-CANCELLED",
+        "actionFactId": "F-H06-CANCEL-ACTION",
+        "responseFactId": "F-H06-CANCEL-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/pages/ChatPage.tsx",
+            "lineStart": 1658,
+            "lineEnd": 1667
+          }
+        ]
+      },
+      {
+        "id": "E-H06-CONFIRM-PENDING",
+        "fromStateId": "S-H06-CONFIRM",
+        "toStateId": "S-H06-PENDING",
+        "actionFactId": "F-H06-CONFIRM-ACTION",
+        "responseFactId": "F-H06-MOBILE-PENDING",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/pages/ChatPage.tsx",
+            "lineStart": 1203,
+            "lineEnd": 1210
+          },
+          {
+            "path": "apps/mobile/src/pages/ChatPage.tsx",
+            "lineStart": 1658,
+            "lineEnd": 1667
+          }
+        ]
+      },
+      {
+        "id": "E-H06-CONFIRM-SUCCESS",
+        "fromStateId": "S-H06-CONFIRM",
+        "toStateId": "S-H06-SUCCEEDED",
+        "actionFactId": "F-H06-CONFIRM-ACTION",
+        "responseFactId": "F-H06-MOBILE-SUCCESS",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/pages/ChatPage.tsx",
+            "lineStart": 1203,
+            "lineEnd": 1235
+          }
+        ]
+      },
+      {
+        "id": "E-H06-CONFIRM-FAILURE",
+        "fromStateId": "S-H06-CONFIRM",
+        "toStateId": "S-H06-FAILED",
+        "actionFactId": "F-H06-CONFIRM-ACTION",
+        "responseFactId": "F-H06-MOBILE-FAILURE",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/pages/ChatPage.tsx",
+            "lineStart": 1203,
+            "lineEnd": 1240
+          }
+        ]
+      },
+      {
+        "id": "E-H06-FAILURE-RETRY",
+        "fromStateId": "S-H06-FAILED",
+        "toStateId": "S-H06-PENDING",
+        "actionFactId": "F-H06-FAILURE-RETRY",
+        "responseFactId": "F-H06-MOBILE-PENDING",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/pages/ChatPage.tsx",
+            "lineStart": 1203,
+            "lineEnd": 1240
+          },
+          {
+            "path": "apps/mobile/src/pages/chat/ChatOverlayHost.tsx",
+            "lineStart": 386,
+            "lineEnd": 438
+          }
+        ]
+      },
+      {
+        "id": "E-H06-SUCCESS-LATER-MESSAGE",
+        "fromStateId": "S-H06-SUCCEEDED",
+        "toStateId": "S-H06-LATER-MESSAGES",
+        "actionFactId": "F-H06-REMAIN-ACTION",
+        "responseFactId": "F-H06-LATER-MESSAGES",
+        "sourceRefs": [
+          {
+            "path": "docs/architecture/domains/chat/lifecycle/experience-contract.md",
+            "lineStart": 106,
+            "lineEnd": 113
+          }
+        ]
+      }
+    ]
+  },
+  "trustBoundaryChecks": [],
+  "recoveryPaths": [
+    {
+      "id": "R-H06-CANCEL",
+      "contractIds": [
+        "C-H06-CURRENT-DEVICE-CLEAR",
+        "C-H06-MOBILE-ACTION-SHEET"
+      ],
+      "sourceStateId": "S-H06-CONFIRM",
+      "reason": "The user declines permanent current-device clearing before any storage mutation begins.",
+      "entryActionVisible": true,
+      "distance": "same-surface",
+      "preservedState": [
+        "current-conversation",
+        "local-transcript",
+        "search-index",
+        "referenced-media"
+      ],
+      "returnStateId": "S-H06-CANCELLED",
+      "returnTarget": {
+        "kind": "touch-anchor",
+        "targetId": "mobile-conversation-action-surface"
+      }
+    },
+    {
+      "id": "R-H06-RETRY",
+      "contractIds": [
+        "C-H06-CURRENT-DEVICE-CLEAR",
+        "C-H06-MOBILE-ACTION-SHEET"
+      ],
+      "sourceStateId": "S-H06-FAILED",
+      "reason": "The current-device clear did not reach a succeeded terminal state, so confirmation remains available for retry or cancellation.",
+      "entryActionVisible": true,
+      "distance": "same-surface",
+      "preservedState": [
+        "current-conversation",
+        "destructive-scope-copy"
+      ],
+      "returnStateId": "S-H06-PENDING",
+      "returnTarget": {
+        "kind": "touch-anchor",
+        "targetId": "mobile-clear-local-chat-data"
+      }
+    }
+  ],
+  "candidateLedger": [],
+  "primaryFinding": null,
+  "secondaryFindings": [],
+  "minorObservations": [],
+  "statesChecked": [
+    "S-H06-ACTION-SURFACE",
+    "S-H06-CONFIRM",
+    "S-H06-CANCELLED",
+    "S-H06-PENDING",
+    "S-H06-SUCCEEDED",
+    "S-H06-FAILED",
+    "S-H06-LATER-MESSAGES"
+  ],
+  "exitAndRetryPaths": [
+    {
+      "id": "X-H06-CANCEL",
+      "sourceStateId": "S-H06-CONFIRM",
+      "actionFactId": "F-H06-CANCEL-ACTION",
+      "destinationStateId": "S-H06-CANCELLED",
+      "recoveryPathId": "R-H06-CANCEL"
+    },
+    {
+      "id": "X-H06-RETRY",
+      "sourceStateId": "S-H06-FAILED",
+      "actionFactId": "F-H06-FAILURE-RETRY",
+      "destinationStateId": "S-H06-PENDING",
+      "recoveryPathId": "R-H06-RETRY"
+    }
+  ],
+  "unproven": [
+    {
+      "id": "U-H06-MOBILE-FAILURE-COPY",
+      "contractIds": [
+        "C-H06-CURRENT-DEVICE-CLEAR",
+        "C-H06-MOBILE-ACTION-SHEET"
+      ],
+      "requirement": "Mobile visibly associates formatted clear failure with the still-open destructive confirmation and its retry action.",
+      "reason": "The supplied source stores localActionError and leaves confirmation recoverable, but the excerpt does not show where that error string is rendered.",
+      "requiredEvidenceLevel": "L3_DYNAMIC",
+      "requiredFor": [
+        "high-fidelity",
+        "production"
+      ]
+    },
+    {
+      "id": "U-H06-RESTART-DURABILITY",
+      "contractIds": [
+        "C-H06-CURRENT-DEVICE-CLEAR"
+      ],
+      "requirement": "Cleared plaintext and search entries remain absent after process restart while later messages continue to arrive.",
+      "reason": "The supplied source proves UI invocation and immediate projection refresh, not storage durability or later receiver-visible delivery.",
+      "requiredEvidenceLevel": "L4_RUNTIME",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H06-CROSS-DEVICE-SCOPE",
+      "contractIds": [
+        "C-H06-CURRENT-DEVICE-CLEAR",
+        "C-H06-DESKTOP-COPY",
+        "C-H06-MOBILE-COPY"
+      ],
+      "requirement": "Other devices and participants retain their data and the operation releases only unreferenced media on the current device.",
+      "reason": "The consequence is explicit and consistent in both UIs, but the storage projection and multi-device runtime outcome are outside these excerpts.",
+      "requiredEvidenceLevel": "L4_RUNTIME",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H06-MOBILE-GEOMETRY",
+      "contractIds": [
+        "C-H06-MOBILE-ACTION-SHEET"
+      ],
+      "requirement": "The Mobile action and confirmation sheets clear the safe area, scroll internally for long content, keep close available, and block underlying interaction.",
+      "reason": "The semantic DOM and modal backdrop are source-backed, but CSS geometry and device-safe-area behavior require rendered inspection.",
+      "requiredEvidenceLevel": "L2_VISUAL",
+      "requiredFor": [
+        "high-fidelity",
+        "production"
+      ]
+    }
+  ]
+}

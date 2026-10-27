@@ -1,0 +1,604 @@
+{
+  "kind": "peers-touch-experience-review-result",
+  "schemaVersion": 1,
+  "authorId": "edx-blind-runner-v2",
+  "verdict": "FINDINGS",
+  "evaluationBinding": {
+    "packageId": "EDX-HOLDOUT-20261019-V2",
+    "runEnvelopeDigest": "sha256:5ff0a02a8009e7cbb8deb92965d7172f97585c357a58c43864d3d743f0c63ee3",
+    "caseDigest": "sha256:4a30b8b313170e760c6215930e351c96347582fe5288f5358842d86740ddb505",
+    "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+    "manifestDigest": "sha256:6d8c7328bb64ad1d7c9c255a61daaf9186cd20451778f45f7f2c8765b2e468ce",
+    "rubricDigest": "sha256:2f31bcd9bbac2dd5a9280051b8917a1bc4c63da30d4d4e6c8fafaf9069b2ef84",
+    "sourceBlobAlgorithm": "git-sha1",
+    "sourceBlobs": [
+      {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "digest": "8722e63a914f775e0d2e9ad54fb5a2aa4b581186"
+      },
+      {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "digest": "01be82f3515352d36216ec1294ae8e3ede3ed165"
+      },
+      {
+        "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+        "digest": "bfaf25b4be12cb0b454b7b8714d524a51d5a80a4"
+      },
+      {
+        "path": "docs/architecture/platform/applet-runtime/development-runtime-readiness-report.md",
+        "digest": "182c5e7e5cb2bb12bb6dbd38f7c13ce6fb9b0f8a"
+      }
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C-H05-READY-TRANSITION",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+        "lineStart": 100,
+        "lineEnd": 119
+      },
+      "clause": "Applet state transitions",
+      "statement": "An Applet is materializing until SDK reportReady and surface mount jointly transition it to visible, where interaction is allowed."
+    },
+    {
+      "id": "C-H05-FAILURE-RECOVERY",
+      "authority": "accepted-product",
+      "caseCoverage": "supporting",
+      "source": {
+        "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+        "lineStart": 121,
+        "lineEnd": 127
+      },
+      "clause": "Applet exceptional states",
+      "statement": "Manifest validation failure and bundle timeout leave materializing, report error, and provide retry where the failure is recoverable."
+    },
+    {
+      "id": "C-H05-EVIDENCE-BOUNDARY",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/platform/applet-runtime/development-runtime-readiness-report.md",
+        "lineStart": 815,
+        "lineEnd": 823
+      },
+      "clause": "Readiness conclusion",
+      "statement": "Visible bundle content does not establish that the runtime exists; complex Applet capability and business value remain unproven without the required evidence and Gate results."
+    }
+  ],
+  "facts": [
+    {
+      "id": "F-H05-LOADING-ACTION",
+      "stateId": "S-H05-LOADING",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 28,
+        "lineEnd": 38,
+        "symbol": "LynxContainer"
+      },
+      "statement": "The container contract says it reflects readiness as loading overlay to visible and receives ready, load, and error signals from SurfaceManager.",
+      "visibleAction": "Wait for the opened Applet to establish readiness."
+    },
+    {
+      "id": "F-H05-SLOT-BOUND",
+      "stateId": "S-H05-LOADING",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 97,
+        "lineEnd": 116,
+        "symbol": "LynxContainer"
+      },
+      "statement": "Binding the Host slot resets ready, timeout, error, and load-notified state before SurfaceManager attaches the Host.",
+      "visibleResponse": "The Applet readiness surface returns to its loading state."
+    },
+    {
+      "id": "F-H05-LOADING-OVERLAY",
+      "stateId": "S-H05-LOADING",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 172,
+        "lineEnd": 209,
+        "symbol": "LynxContainer"
+      },
+      "statement": "Until ready is true, an opaque loading overlay covers the Host slot and the slot remains at zero opacity.",
+      "visibleResponse": "The user sees localized Applet loading and cannot see the Host slot."
+    },
+    {
+      "id": "F-H05-READY-SIGNAL",
+      "stateId": "S-H05-READY",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 77,
+        "lineEnd": 95,
+        "symbol": "handlers"
+      },
+      "statement": "SurfaceManager onReady sets ready, clears timeout, records ready reception, and notifies load with lifecycle.reportReady.",
+      "visibleResponse": "The loading overlay disappears in response to the Applet readiness signal."
+    },
+    {
+      "id": "F-H05-HOST-FALLBACK",
+      "stateId": "S-H05-SILENT-HOST-FALLBACK",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 118,
+        "lineEnd": 127,
+        "symbol": "LynxContainer"
+      },
+      "statement": "If no error or ready signal arrives, a 2500 ms timer sets ready=true and notifies load with host-render-fallback.",
+      "visibleResponse": "The loading overlay disappears after 2.5 seconds even though lifecycle.reportReady was not received."
+    },
+    {
+      "id": "F-H05-READY-DEADLINE",
+      "stateId": "S-H05-READY-TIMEOUT",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 129,
+        "lineEnd": 136,
+        "symbol": "LynxContainer"
+      },
+      "statement": "A separate 8000 ms timer would set timedOut while neither error nor ready is present.",
+      "visibleResponse": "The Applet reaches a readiness-timeout state only if ready remains false for eight seconds."
+    },
+    {
+      "id": "F-H05-TIMEOUT-PREEMPTED",
+      "stateId": "S-H05-SILENT-HOST-FALLBACK",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 23,
+        "lineEnd": 24,
+        "symbol": "APPLET_READY_TIMEOUT_MS"
+      },
+      "statement": "The host-render fallback deadline is 2500 ms while the readiness timeout deadline is 8000 ms."
+    },
+    {
+      "id": "F-H05-HOST-ERROR",
+      "stateId": "S-H05-HOST-ERROR",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 86,
+        "lineEnd": 90,
+        "symbol": "handlers"
+      },
+      "statement": "A Host error stores the error and forwards it to the page callback.",
+      "visibleResponse": "The Applet leaves loading for a typed Host error fallback."
+    },
+    {
+      "id": "F-H05-ERROR-RECOVERY",
+      "stateId": "S-H05-HOST-ERROR",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 144,
+        "lineEnd": 155,
+        "symbol": "LynxContainer"
+      },
+      "statement": "The Host error fallback identifies inability to display, shows failure detail, and exposes Retry and Back.",
+      "visibleAction": "Activate Retry after a Host error."
+    },
+    {
+      "id": "F-H05-TIMEOUT-RECOVERY",
+      "stateId": "S-H05-READY-TIMEOUT",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 158,
+        "lineEnd": 169,
+        "symbol": "LynxContainer"
+      },
+      "statement": "The readiness timeout fallback identifies the eight-second deadline and exposes Retry and Back.",
+      "visibleAction": "Activate Retry after readiness timeout."
+    },
+    {
+      "id": "F-H05-RETRY-RESET",
+      "stateId": "S-H05-LOADING",
+      "source": {
+        "path": "apps/desktop/src/applet/LynxContainer.tsx",
+        "lineStart": 138,
+        "lineEnd": 142,
+        "symbol": "retry"
+      },
+      "statement": "Retry increments the binding key and sends a show command for the same Applet instance.",
+      "visibleResponse": "The same Applet Host slot is rebound and loading state restarts."
+    },
+    {
+      "id": "F-H05-PRODUCT-EVIDENCE",
+      "stateId": "S-H05-SILENT-HOST-FALLBACK",
+      "source": {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "lineStart": 212,
+        "lineEnd": 221,
+        "symbol": "handleAppletLoaded"
+      },
+      "statement": "Every load notification records product.rendered.report, marks the route visible with its readySource, and reports rendered evidence through the API.",
+      "visibleResponse": "host-render-fallback is emitted as product-shell rendered evidence and the route is marked visible."
+    },
+    {
+      "id": "F-H05-E2E-CLOSE",
+      "stateId": "S-H05-SILENT-HOST-FALLBACK",
+      "source": {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "lineStart": 222,
+        "lineEnd": 238,
+        "symbol": "handleAppletLoaded"
+      },
+      "statement": "In product-window E2E mode, the same load notification may schedule Applet close-after-render."
+    }
+  ],
+  "inferences": [
+    {
+      "id": "I-H05-FALSE-READY",
+      "factIds": [
+        "F-H05-HOST-FALLBACK",
+        "F-H05-TIMEOUT-PREEMPTED",
+        "F-H05-PRODUCT-EVIDENCE",
+        "F-H05-E2E-CLOSE"
+      ],
+      "contractIds": [
+        "C-H05-READY-TRANSITION",
+        "C-H05-EVIDENCE-BOUNDARY"
+      ],
+      "statement": "Silent Host content is promoted to ready and product-rendered at 2.5 seconds without SDK readiness; setting ready also prevents the later eight-second timeout, so visible Host presence substitutes for the required readiness evidence."
+    }
+  ],
+  "journeyStateGraph": {
+    "entryStateId": "S-H05-LOADING",
+    "states": [
+      {
+        "id": "S-H05-LOADING",
+        "origin": "starting",
+        "inScope": true,
+        "source": {
+          "path": "apps/desktop/src/applet/LynxContainer.tsx",
+          "lineStart": 97,
+          "lineEnd": 116,
+          "symbol": "LynxContainer"
+        },
+        "visibleMeaning": "The Host slot is bound, its readiness state is reset, and an opaque loading overlay covers the slot."
+      },
+      {
+        "id": "S-H05-READY",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 1,
+        "source": {
+          "path": "apps/desktop/src/applet/LynxContainer.tsx",
+          "lineStart": 77,
+          "lineEnd": 85,
+          "symbol": "handlers"
+        },
+        "visibleMeaning": "The Applet reports lifecycle readiness and the Host surface becomes visible."
+      },
+      {
+        "id": "S-H05-SILENT-HOST-FALLBACK",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 2,
+        "source": {
+          "path": "apps/desktop/src/applet/LynxContainer.tsx",
+          "lineStart": 118,
+          "lineEnd": 127,
+          "symbol": "LynxContainer"
+        },
+        "visibleMeaning": "The Host exists but the Applet remains silent; after 2.5 seconds the implementation nevertheless exposes the Host and emits rendered evidence."
+      },
+      {
+        "id": "S-H05-READY-TIMEOUT",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 3,
+        "source": {
+          "path": "apps/desktop/src/applet/LynxContainer.tsx",
+          "lineStart": 129,
+          "lineEnd": 169,
+          "symbol": "LynxContainer"
+        },
+        "visibleMeaning": "The readiness deadline passes and the intended fallback offers Retry and Back."
+      },
+      {
+        "id": "S-H05-HOST-ERROR",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 4,
+        "source": {
+          "path": "apps/desktop/src/applet/LynxContainer.tsx",
+          "lineStart": 86,
+          "lineEnd": 90,
+          "symbol": "handlers"
+        },
+        "visibleMeaning": "The Host reports an error and the local fallback offers Retry and Back."
+      }
+    ],
+    "edges": [
+      {
+        "id": "E-H05-LOADING-READY",
+        "fromStateId": "S-H05-LOADING",
+        "toStateId": "S-H05-READY",
+        "actionFactId": "F-H05-LOADING-ACTION",
+        "responseFactId": "F-H05-READY-SIGNAL",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/applet/LynxContainer.tsx",
+            "lineStart": 77,
+            "lineEnd": 85
+          },
+          {
+            "path": "apps/desktop/src/applet/LynxContainer.tsx",
+            "lineStart": 172,
+            "lineEnd": 209
+          }
+        ]
+      },
+      {
+        "id": "E-H05-LOADING-SILENT-FALLBACK",
+        "fromStateId": "S-H05-LOADING",
+        "toStateId": "S-H05-SILENT-HOST-FALLBACK",
+        "actionFactId": "F-H05-LOADING-ACTION",
+        "responseFactId": "F-H05-HOST-FALLBACK",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/applet/LynxContainer.tsx",
+            "lineStart": 118,
+            "lineEnd": 127
+          },
+          {
+            "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+            "lineStart": 212,
+            "lineEnd": 221
+          }
+        ]
+      },
+      {
+        "id": "E-H05-LOADING-TIMEOUT",
+        "fromStateId": "S-H05-LOADING",
+        "toStateId": "S-H05-READY-TIMEOUT",
+        "actionFactId": "F-H05-LOADING-ACTION",
+        "responseFactId": "F-H05-READY-DEADLINE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/applet/LynxContainer.tsx",
+            "lineStart": 129,
+            "lineEnd": 169
+          }
+        ]
+      },
+      {
+        "id": "E-H05-LOADING-ERROR",
+        "fromStateId": "S-H05-LOADING",
+        "toStateId": "S-H05-HOST-ERROR",
+        "actionFactId": "F-H05-LOADING-ACTION",
+        "responseFactId": "F-H05-HOST-ERROR",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/applet/LynxContainer.tsx",
+            "lineStart": 86,
+            "lineEnd": 90
+          },
+          {
+            "path": "apps/desktop/src/applet/LynxContainer.tsx",
+            "lineStart": 144,
+            "lineEnd": 155
+          }
+        ]
+      },
+      {
+        "id": "E-H05-TIMEOUT-RETRY",
+        "fromStateId": "S-H05-READY-TIMEOUT",
+        "toStateId": "S-H05-LOADING",
+        "actionFactId": "F-H05-TIMEOUT-RECOVERY",
+        "responseFactId": "F-H05-RETRY-RESET",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/applet/LynxContainer.tsx",
+            "lineStart": 97,
+            "lineEnd": 116
+          },
+          {
+            "path": "apps/desktop/src/applet/LynxContainer.tsx",
+            "lineStart": 138,
+            "lineEnd": 169
+          }
+        ]
+      },
+      {
+        "id": "E-H05-ERROR-RETRY",
+        "fromStateId": "S-H05-HOST-ERROR",
+        "toStateId": "S-H05-LOADING",
+        "actionFactId": "F-H05-ERROR-RECOVERY",
+        "responseFactId": "F-H05-RETRY-RESET",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/applet/LynxContainer.tsx",
+            "lineStart": 97,
+            "lineEnd": 116
+          },
+          {
+            "path": "apps/desktop/src/applet/LynxContainer.tsx",
+            "lineStart": 138,
+            "lineEnd": 155
+          }
+        ]
+      }
+    ]
+  },
+  "trustBoundaryChecks": [],
+  "recoveryPaths": [
+    {
+      "id": "R-H05-TIMEOUT-RETRY",
+      "contractIds": [
+        "C-H05-FAILURE-RECOVERY"
+      ],
+      "sourceStateId": "S-H05-READY-TIMEOUT",
+      "reason": "The Applet did not establish readiness by the deadline, so the same Host slot must be rebound before another readiness attempt.",
+      "entryActionVisible": true,
+      "distance": "same-surface",
+      "preservedState": [
+        "requested-applet-identity",
+        "product-shell-navigation"
+      ],
+      "returnStateId": "S-H05-LOADING",
+      "returnTarget": {
+        "kind": "keyboard-focus",
+        "targetId": "applet-runtime-loading"
+      }
+    },
+    {
+      "id": "R-H05-ERROR-RETRY",
+      "contractIds": [
+        "C-H05-FAILURE-RECOVERY"
+      ],
+      "sourceStateId": "S-H05-HOST-ERROR",
+      "reason": "The Host reported an error, so the local fallback rebinds and shows the same Applet instance again.",
+      "entryActionVisible": true,
+      "distance": "same-surface",
+      "preservedState": [
+        "requested-applet-identity",
+        "product-shell-navigation"
+      ],
+      "returnStateId": "S-H05-LOADING",
+      "returnTarget": {
+        "kind": "keyboard-focus",
+        "targetId": "applet-runtime-loading"
+      }
+    }
+  ],
+  "candidateLedger": [
+    {
+      "candidate": {
+        "id": "FC-H05-HOST-CONTENT-FALSE-READY",
+        "stateId": "S-H05-SILENT-HOST-FALLBACK",
+        "factIds": [
+          "F-H05-LOADING-ACTION",
+          "F-H05-HOST-FALLBACK",
+          "F-H05-TIMEOUT-PREEMPTED",
+          "F-H05-PRODUCT-EVIDENCE",
+          "F-H05-E2E-CLOSE"
+        ],
+        "contractIds": [
+          "C-H05-READY-TRANSITION",
+          "C-H05-EVIDENCE-BOUNDARY"
+        ],
+        "inferenceIds": [
+          "I-H05-FALSE-READY"
+        ],
+        "severity": "major",
+        "impact": "visible-contradiction",
+        "confidence": "high",
+        "brokenPromise": "Applet visible and product-rendered states require Applet readiness, not merely an attached Host that remained silent.",
+        "causalMechanism": "The 2.5-second fallback sets the same ready boolean used to reveal content and invokes the same load callback used for lifecycle.reportReady; this precedes and cancels the eight-second timeout path.",
+        "userImpact": "The user sees an Applet presented as ready for interaction and product evidence records rendered completion even though the Applet never established readiness.",
+        "ownerLayer": "Desktop Applet Host readiness projection and product evidence boundary",
+        "correctionDirection": "Keep Host attachment separate from Applet readiness, reveal and report product-rendered only after lifecycle.reportReady plus mounted surface, and let the readiness deadline lead to the existing retry fallback."
+      },
+      "eligible": true,
+      "ineligibleReasons": [],
+      "priorityTuple": [
+        0,
+        3,
+        2,
+        0,
+        1,
+        0,
+        "FC-H05-HOST-CONTENT-FALSE-READY"
+      ]
+    }
+  ],
+  "primaryFinding": {
+    "candidateId": "FC-H05-HOST-CONTENT-FALSE-READY",
+    "factIds": [
+      "F-H05-LOADING-ACTION",
+      "F-H05-HOST-FALLBACK",
+      "F-H05-TIMEOUT-PREEMPTED",
+      "F-H05-PRODUCT-EVIDENCE",
+      "F-H05-E2E-CLOSE"
+    ],
+    "contractIds": [
+      "C-H05-READY-TRANSITION",
+      "C-H05-EVIDENCE-BOUNDARY"
+    ],
+    "inferenceIds": [
+      "I-H05-FALSE-READY"
+    ],
+    "severity": "major",
+    "earliestStateId": "S-H05-SILENT-HOST-FALLBACK",
+    "brokenPromise": "Applet visible and product-rendered states require Applet readiness, not merely an attached Host that remained silent.",
+    "causalMechanism": "The 2.5-second fallback sets the same ready boolean used to reveal content and invokes the same load callback used for lifecycle.reportReady; this precedes and cancels the eight-second timeout path.",
+    "userImpact": "The user sees an Applet presented as ready for interaction and product evidence records rendered completion even though the Applet never established readiness.",
+    "ownerLayer": "Desktop Applet Host readiness projection and product evidence boundary",
+    "correctionDirection": "Keep Host attachment separate from Applet readiness, reveal and report product-rendered only after lifecycle.reportReady plus mounted surface, and let the readiness deadline lead to the existing retry fallback.",
+    "confidence": "high",
+    "priorityBasis": [
+      0,
+      3,
+      2,
+      0,
+      1,
+      0,
+      "FC-H05-HOST-CONTENT-FALSE-READY"
+    ]
+  },
+  "secondaryFindings": [],
+  "minorObservations": [],
+  "statesChecked": [
+    "S-H05-LOADING",
+    "S-H05-READY",
+    "S-H05-SILENT-HOST-FALLBACK",
+    "S-H05-READY-TIMEOUT",
+    "S-H05-HOST-ERROR"
+  ],
+  "exitAndRetryPaths": [
+    {
+      "id": "X-H05-TIMEOUT-RETRY",
+      "sourceStateId": "S-H05-READY-TIMEOUT",
+      "actionFactId": "F-H05-TIMEOUT-RECOVERY",
+      "destinationStateId": "S-H05-LOADING",
+      "recoveryPathId": "R-H05-TIMEOUT-RETRY"
+    },
+    {
+      "id": "X-H05-ERROR-RETRY",
+      "sourceStateId": "S-H05-HOST-ERROR",
+      "actionFactId": "F-H05-ERROR-RECOVERY",
+      "destinationStateId": "S-H05-LOADING",
+      "recoveryPathId": "R-H05-ERROR-RETRY"
+    }
+  ],
+  "unproven": [
+    {
+      "id": "U-H05-APPLET-INTERACTIVITY",
+      "contractIds": [
+        "C-H05-READY-TRANSITION",
+        "C-H05-EVIDENCE-BOUNDARY"
+      ],
+      "requirement": "The Applet is actually interactive when the product surface removes loading and claims rendered completion.",
+      "reason": "The supplied source proves signal handling and the false Host fallback but does not inspect Applet event handling or business content at runtime.",
+      "requiredEvidenceLevel": "L4_RUNTIME",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H05-RETRY-RUNTIME",
+      "contractIds": [
+        "C-H05-FAILURE-RECOVERY"
+      ],
+      "requirement": "Retry after Host error or readiness timeout successfully rebinds the same surface and can reach a fresh readiness outcome.",
+      "reason": "The code increments retryKey and sends show, but no exact-source runtime retry observation is supplied.",
+      "requiredEvidenceLevel": "L4_RUNTIME",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H05-FOCUS-RETURN",
+      "contractIds": [
+        "C-H05-FAILURE-RECOVERY"
+      ],
+      "requirement": "Retry and Back remain keyboard reachable and focus returns coherently when loading resumes.",
+      "reason": "The fallback callbacks are source-backed, but focus behavior and rendered geometry are not supplied.",
+      "requiredEvidenceLevel": "L3_DYNAMIC",
+      "requiredFor": [
+        "high-fidelity",
+        "production"
+      ]
+    }
+  ]
+}

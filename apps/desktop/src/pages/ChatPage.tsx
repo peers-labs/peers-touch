@@ -16,6 +16,7 @@ import { Flexbox } from 'react-layout-kit';
 import { ChatInput } from '../components/ChatInput';
 import { MessageList } from '../components/MessageList';
 import { OpStatusTray } from '../components/OpStatusTray';
+import { TurnQueueTray } from '../components/chat/TurnQueueTray';
 import { resolveI18nValue } from '../i18n';
 import { useAgentStore } from '../store/agent';
 import { extractMessageArtifacts, useChatStore } from '../store/chat';
@@ -394,6 +395,7 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
             </button>
           </div>
         )}
+        <TurnQueueTray />
         <div style={{ marginBottom: 8 }}>
           <OpStatusTray />
         </div>

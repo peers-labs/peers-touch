@@ -15,7 +15,6 @@ import { AssistantMessage } from './messages/AssistantMessage';
 import { UserMessage } from './messages/UserMessage';
 import { chatMarkdownProps } from './messages/markdownConfig';
 import { MiniButton, timeAgo, fullTime } from './messages/shared';
-import { usePortalStore } from '../store/portal';
 
 interface Props {
   message: ChatMessage;
@@ -147,5 +146,5 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
   }
 
   // --- Assistant message (default) ---
-  return <AssistantMessage message={message} onOpenArtifact={onOpenArtifact || usePortalStore.getState().openArtifact} />;
+  return <AssistantMessage message={message} onOpenArtifact={onOpenArtifact} />;
 }

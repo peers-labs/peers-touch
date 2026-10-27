@@ -15,15 +15,19 @@ interface TaskIndicatorProps {
 export function TaskIndicator({ agentId, onClick }: TaskIndicatorProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const activeTasks = useTaskStore((s) =>
-    s.tasks.filter((task) => task.agentId === agentId && (task.status === 'running' || task.status === 'pending')),
+  // Selector returns a primitive: a fresh filtered array per selection would
+  // force an endless useSyncExternalStore rerender loop (React #185).
+  const activeTaskCount = useTaskStore(
+    (s) => s.tasks.filter(
+      (task) => task.agentId === agentId && (task.status === 'running' || task.status === 'pending'),
+    ).length,
   );
 
-  if (activeTasks.length === 0) return null;
+  if (activeTaskCount === 0) return null;
 
   return (
     <Badge
-      count={activeTasks.length}
+      count={activeTaskCount}
       size="small"
       title={t('agent.tasks.active')}
       style={{ cursor: 'pointer' }}

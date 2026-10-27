@@ -63,8 +63,17 @@ interface AgentTurnRecoveryState {
     phase: AgentTurnRecoveryPhase,
     failureKey?: string,
   ) => ActiveAgentTurnRecovery | null;
+  admit: (params: AdmittedTurnInput) => ActiveAgentTurnRecovery;
   clear: (conversationId: string, turnId: string) => void;
   reset: () => void;
+}
+
+export interface AdmittedTurnInput {
+  actorId: string;
+  conversationId: string;
+  agentId: string;
+  turnId: string;
+  streamGeneration: number;
 }
 
 const TERMINAL_EVENTS = new Set(['done', 'error', 'cancelled']);
@@ -485,6 +494,35 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
         );
       }
       return next;
+    },
+
+    admit: ({ actorId: admittedActorId, conversationId, agentId, turnId, streamGeneration }) => {
+      const now = Date.now();
+      const current = get().active[conversationId];
+      if (current && current.turnId === turnId && current.actorId === admittedActorId) {
+        return current;
+      }
+      const record: ActiveAgentTurnRecovery = {
+        actorId: admittedActorId,
+        conversationId,
+        agentId,
+        turnId,
+        // The execute stream closed on the queued event; attach from the
+        // beginning of the admitted turn via replay, so a fresh stream id is
+        // assigned when the replay transport opens.
+        streamId: '',
+        streamGeneration,
+        cursor: 0,
+        phase: 'CONNECTED',
+        startedAt: now,
+        updatedAt: now,
+        recoveryEpoch: 0,
+      };
+      set((state) => ({
+        actorId: state.actorId ?? admittedActorId,
+        active: { ...state.active, [conversationId]: record },
+      }));
+      return record;
     },
 
     clear: (conversationId, turnId) => {

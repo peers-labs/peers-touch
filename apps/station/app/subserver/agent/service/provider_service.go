@@ -229,6 +229,7 @@ type ProviderCallRequest struct {
 	RuntimeAuthorityMode            providerRuntimeAuthorityMode
 	PinnedRuntimeCapabilities       *model.RuntimeCapabilitySnapshot
 	BeforeDispatch                  func(context.Context) error
+	DispatchClass                   providerDispatchClass
 	AllowedRoots                    []string
 }
 

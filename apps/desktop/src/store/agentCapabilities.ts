@@ -21,6 +21,7 @@ import {
   api,
   projectAgentTypedErrorPayload,
   RustCommandException,
+  type AgentCapabilitySessionList,
   type AgentTypedErrorPayload,
 } from '../services/desktop_api';
 import { log } from '../utils/logger';
@@ -74,6 +75,11 @@ export interface AgentCapabilityState extends RevalidationState {
   knowledgeDescriptors: KnowledgeResourceDescriptor[];
   bindingsByAgentId: Record<string, AgentCapabilityBinding[]>;
   readinessByAgentId: Record<string, CapabilityReadinessSnapshot | undefined>;
+  // Latest Station-truth list of capability sessions for the actor. Turn
+  // dispatch validates the readiness-selected session against it so a session
+  // orphaned by renderer reload (parent auth session kicked) can never pin a
+  // dead executor.
+  capabilitySessions: AgentCapabilitySessionList['sessions'];
   commandSnapshotsByAgentId: Record<
     string,
     AgentCommandCapabilitySnapshot | undefined
@@ -109,6 +115,9 @@ export interface AgentCapabilityState extends RevalidationState {
   tombstoneKnowledgeDescriptor: (
     request: TombstoneKnowledgeResourceDescriptorRequest,
   ) => Promise<KnowledgeResourceDescriptor>;
+  setCapabilitySessions: (
+    sessions: AgentCapabilitySessionList['sessions'],
+  ) => void;
   reset: () => void;
 }
 
@@ -163,6 +172,7 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
     knowledgeDescriptors: [],
     bindingsByAgentId: {},
     readinessByAgentId: {},
+    capabilitySessions: [],
     commandSnapshotsByAgentId: {},
     commandSnapshotStateByAgentId: {},
     readinessInputByAgentId: {},
@@ -611,6 +621,10 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
       }
     },
 
+    setCapabilitySessions: (sessions) => {
+      set({ capabilitySessions: [...sessions] });
+    },
+
     reset: () => {
       projectionEpoch += 1;
       catalogLoadSequence += 1;
@@ -623,6 +637,7 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
         knowledgeDescriptors: [],
         bindingsByAgentId: {},
         readinessByAgentId: {},
+        capabilitySessions: [],
         commandSnapshotsByAgentId: {},
         commandSnapshotStateByAgentId: {},
         readinessInputByAgentId: {},

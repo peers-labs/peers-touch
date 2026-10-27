@@ -347,6 +347,15 @@ export interface EventPayloadMap {
   [EVENT.AGENT_BUILDER_STREAM_ENDED]: void;
   [EVENT.AGENT_TURN_STREAM_EVENT]: AgentTurnStreamEventPayload;
   [EVENT.AGENT_TURN_RECOVERY_RETRY_REQUESTED]: { conversationId: string };
+  [EVENT.AGENT_TURN_ADMITTED]: {
+    conversationId: string;
+    agentId: string;
+    turnId: string;
+  };
+  [EVENT.AGENT_TURN_QUEUE_CANCELLED]: {
+    conversationId: string;
+    turnId: string;
+  };
   [EVENT.EVALUATION_PROJECTION_INVALIDATED]: {
     reason: string;
     runId?: string;

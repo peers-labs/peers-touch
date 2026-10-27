@@ -9,7 +9,6 @@ import {
   type GrowthSnapshot,
   type MemoryItem,
   type SkillItem,
-  type SchedulerStatusResponse,
   type AgentExecuteTurnInput,
   type AgentTurnStreamError,
   type AgentTurnStreamController,
@@ -80,21 +79,6 @@ export class AgentService {
   ): Promise<void> {
     const { submitAgentFeedback } = await import('./desktop_api');
     await submitAgentFeedback(agentId, turnId, conversationId, signal, comment);
-  }
-
-  async startScheduler(agentId: string): Promise<void> {
-    const { startAgentScheduler } = await import('./desktop_api');
-    return startAgentScheduler(agentId);
-  }
-
-  async stopScheduler(): Promise<void> {
-    const { stopAgentScheduler } = await import('./desktop_api');
-    return stopAgentScheduler();
-  }
-
-  async getSchedulerStatus(): Promise<SchedulerStatusResponse> {
-    const { getAgentSchedulerStatus } = await import('./desktop_api');
-    return getAgentSchedulerStatus();
   }
 
   streamTurn(

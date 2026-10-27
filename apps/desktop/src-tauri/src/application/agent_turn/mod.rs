@@ -8,7 +8,7 @@ use crate::application::error_resolver::ProviderKind;
 use crate::application::station_runtime::client::{
     self as station_client, ReplayPolicy, StationClient,
 };
-use crate::application::{agent_workspace, error_resolver, tools};
+use crate::application::{agent_workspace, desktop_executor_worker, error_resolver, tools};
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
     AgentConversationListInput, AgentConversationMessagesInput, AgentConversationRestoreInput,
@@ -18,7 +18,8 @@ use crate::contracts::{
     AgentSelectActiveBranchInput, AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput,
     AgentTaskStatusInput, AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput,
     AgentThreadCreateInput, AgentThreadListInput, AgentThreadMessagesInput,
-    AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnAttributionsInput,
+    AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnArtifactInput,
+    AgentTurnArtifactListInput, AgentTurnArtifactLocalInput, AgentTurnAttributionsInput,
     AgentTurnDiagnosticsInput, AgentTurnQueueCancelInput, AgentTurnQueueListInput,
     AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput,
     TopicCommentDeleteInput, TopicCommentListInput,
@@ -33,6 +34,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::{BufRead, Read};
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -612,6 +614,222 @@ pub fn agent_turn_trace_list(
             tracing::error!(command = "agent_turn_trace_list", error = %err, "Turn trace list query failed");
             err.into_app_result("Failed to list agent turn traces")
         }
+    }
+}
+
+pub fn agent_turn_artifact_list(
+    station_client: &StationClient,
+    input: AgentTurnArtifactListInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    let request = agent::ListTurnArtifactsRequest {
+        conversation_id: input.conversation_id,
+        turn_ids: input.turn_ids,
+    };
+    match station_client.request_proto::<_, agent::ListTurnArtifactsResponse>(
+        Method::POST,
+        "/sub-agent/agent/turn/artifact/list",
+        token,
+        None,
+        Some(&request),
+    ) {
+        Ok(response) => AppResult::success(response.encode_to_vec()),
+        Err(error) => error.into_app_result("agent.turnArtifactListFailed"),
+    }
+}
+
+pub fn agent_turn_artifact_upload(
+    station_client: &StationClient,
+    actor_ptid: &str,
+    input: AgentTurnArtifactInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    let prepare_request = agent::PrepareTurnArtifactUploadRequest {
+        artifact_id: input.artifact_id.clone(),
+        content_type: "application/octet-stream".to_string(),
+    };
+    let prepared = match station_client
+        .request_proto::<_, agent::PrepareTurnArtifactUploadResponse>(
+            Method::POST,
+            "/sub-agent/agent/turn/artifact/upload/prepare",
+            token,
+            None,
+            Some(&prepare_request),
+        ) {
+        Ok(response) => response,
+        Err(error) => return error.into_app_result("agent.turnArtifactUploadPrepareFailed"),
+    };
+    let artifact = match prepared.artifact {
+        Some(artifact) => artifact,
+        None => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Station returned no turn artifact",
+                None,
+            )
+        }
+    };
+    let Some(locator) = artifact.locator.as_ref() else {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "artifact locator is missing",
+            None,
+        );
+    };
+    let device_id = station_client.device_id().unwrap_or_default();
+    if locator.client_device_id != device_id || locator.client_local_ref.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "artifact is not available on this device",
+            None,
+        );
+    }
+    let local = match desktop_executor_worker::resolve_local_artifact(
+        actor_ptid,
+        &device_id,
+        &locator.client_local_ref,
+    ) {
+        Ok(local) => local,
+        Err(error) => return AppResult::fail(ErrorCode::NotFound, error, None),
+    };
+    let uploaded = match station_client.upload_multipart(
+        &prepared.upload_endpoint,
+        token,
+        &local.locator,
+        "personal",
+        "private",
+        None,
+    ) {
+        Ok(uploaded) => uploaded,
+        Err(error) => return error.into_app_result("agent.turnArtifactUploadFailed"),
+    };
+    let Some(object_ref) = uploaded.get("key").and_then(Value::as_str) else {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "OSS upload returned no object key",
+            None,
+        );
+    };
+    let complete = agent::CompleteTurnArtifactUploadRequest {
+        artifact_id: input.artifact_id,
+        station_object_ref: object_ref.to_string(),
+    };
+    match station_client.request_proto::<_, agent::CompleteTurnArtifactUploadResponse>(
+        Method::POST,
+        &prepared.complete_endpoint,
+        token,
+        None,
+        Some(&complete),
+    ) {
+        Ok(response) => AppResult::success(response.encode_to_vec()),
+        Err(error) => error.into_app_result("agent.turnArtifactUploadCompleteFailed"),
+    }
+}
+
+pub struct TurnArtifactDownload {
+    pub name: String,
+    pub bytes: Vec<u8>,
+}
+
+pub fn agent_turn_artifact_download(
+    station_client: &StationClient,
+    input: AgentTurnArtifactInput,
+    token: &str,
+) -> Result<TurnArtifactDownload, AppResult<Vec<u8>>> {
+    let request = agent::GetTurnArtifactDownloadRequest {
+        artifact_id: input.artifact_id,
+    };
+    let response = station_client
+        .request_proto::<_, agent::GetTurnArtifactDownloadResponse>(
+            Method::POST,
+            "/sub-agent/agent/turn/artifact/download",
+            token,
+            None,
+            Some(&request),
+        )
+        .map_err(|error| error.into_app_result("agent.turnArtifactDownloadFailed"))?;
+    let artifact = response.artifact.ok_or_else(|| {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            "Station returned no turn artifact",
+            None,
+        )
+    })?;
+    let object_ref = artifact
+        .locator
+        .as_ref()
+        .map(|locator| locator.station_object_ref.trim())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "artifact has no Station copy",
+                None,
+            )
+        })?;
+    let bytes = station_client
+        .download_owned_oss_file(token, object_ref)
+        .map_err(|error| error.into_app_result("agent.turnArtifactDownloadFailed"))?;
+    Ok(TurnArtifactDownload {
+        name: artifact.name,
+        bytes,
+    })
+}
+
+pub fn agent_turn_artifact_open_local(
+    station_client: &StationClient,
+    actor_ptid: &str,
+    input: AgentTurnArtifactLocalInput,
+) -> AppResult<StubPayload> {
+    let device_id = station_client.device_id().unwrap_or_default();
+    let artifact = match desktop_executor_worker::resolve_local_artifact(
+        actor_ptid,
+        &device_id,
+        &input.client_local_ref,
+    ) {
+        Ok(artifact) => artifact,
+        Err(error) => return AppResult::fail(ErrorCode::NotFound, error, None),
+    };
+    let path = std::path::Path::new(&artifact.locator);
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        if input.reveal {
+            command.arg("-R");
+        }
+        command.arg(path);
+        command
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("explorer");
+        if input.reveal {
+            command.arg(format!("/select,{}", path.display()));
+        } else {
+            command.arg(path);
+        }
+        command
+    };
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(if input.reveal {
+            path.parent().unwrap_or(path)
+        } else {
+            path
+        });
+        command
+    };
+    match command.spawn() {
+        Ok(_) => success_payload(
+            "agent_turn_artifact_open_local",
+            json!({"opened": true, "revealed": input.reveal}),
+        ),
+        Err(error) => AppResult::fail(
+            ErrorCode::InternalError,
+            format!("failed to open local artifact: {error}"),
+            None,
+        ),
     }
 }
 

@@ -461,4 +461,47 @@ describe('Agent turn recovery projection', () => {
     expect(reduction.accepted).toBe(false);
     expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
   });
+
+  describe('admit', () => {
+    it('seeds a CONNECTED recovery record for an admitted queued turn', () => {
+      useAgentTurnRecoveryStore.getState().beginActor('ptid:person:alice');
+
+      const record = useAgentTurnRecoveryStore.getState().admit({
+        actorId: 'ptid:person:alice',
+        conversationId: 'conversation-queued',
+        agentId: 'agent-1',
+        turnId: 'turn-admitted',
+        streamGeneration: 1,
+      });
+
+      expect(record).toMatchObject({
+        conversationId: 'conversation-queued',
+        turnId: 'turn-admitted',
+        phase: 'CONNECTED',
+        cursor: 0,
+      });
+    });
+
+    it('is idempotent for the same admitted turn', () => {
+      useAgentTurnRecoveryStore.getState().beginActor('ptid:person:alice');
+      const store = useAgentTurnRecoveryStore.getState();
+
+      const first = store.admit({
+        actorId: 'ptid:person:alice',
+        conversationId: 'conversation-queued',
+        agentId: 'agent-1',
+        turnId: 'turn-admitted',
+        streamGeneration: 1,
+      });
+      const second = store.admit({
+        actorId: 'ptid:person:alice',
+        conversationId: 'conversation-queued',
+        agentId: 'agent-1',
+        turnId: 'turn-admitted',
+        streamGeneration: 1,
+      });
+
+      expect(second).toBe(first);
+    });
+  });
 });

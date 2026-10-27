@@ -9,6 +9,7 @@ covered_docs:
   - AGENTS.md
   - docs/README.md
   - docs/global/code-review-framework.md
+  - docs/architecture/engineering/experience-design
   - docs/architecture/engineering/quality
   - docs/architecture/engineering/acceptance
   - docs/architecture/engineering/development-workflow
@@ -86,6 +87,62 @@ must not restate decisions or describe persisted state that the code only
 derives. `SKILL.md` was updated with this checklist; the large-requirement
 documentation playbook carries the authoring-side steps, so no separate
 fixture is required for the documentation-consistency judgment.
+
+Current Experience admission validates package references and current source at
+the final boundary. Graph recovery requires an executable route and state
+ordering is total. Immutable historical holdout integrity is separate from
+current reevaluation and reciprocal promotion binding. Prototype/Quality
+consumers and negative regression fixtures cover these refinements; GitHub
+Review keeps its existing stale-proof and independent-judgment requirements.
+
+## 2026-10-22 Comparative Experience Review Integration
+
+Experience Design now includes one comparative subsystem: a frozen Outcome
+Oracle, two identity-neutral and independently reviewed Journey observations,
+deterministic paired differentials, a blind semantic review, sealed identity
+reveal, independent Peers disposition and proposal-only Target Contract
+projection.
+
+`pt-product-design-methodology`, `pt-prototype-design` and `pt-quality-check`
+consume the canonical compare CLI. Positive, negative and boundary calibration
+plus source tests cover stale bindings, author overlap, graph closure,
+deterministic priority, causal overclaim and unauthorized projection.
+Framework incremental value remains `UNPROVEN` until a separate Quality-owned
+sealed blind A/B.
+
+GitHub Review already rejects stale evidence, overlapping authors, missing
+proof and self-approved product claims. Its `SKILL.md` and generic hard-rule
+fixtures do not need CER schema or ranking copies; review should consume the
+Quality evidence projection and preserve the same claim boundary.
+
+## 2026-10-20 Experience Identity Contract Review
+
+Experience Cases and independent review receipts now use stable workflow
+principal IDs, exact canonical digest binding and reviewer non-overlap. The
+control plane no longer owns Ed25519 signatures, a trusted issuer registry or a
+user-managed key path. Content-addressed holdouts retain immutable
+case/result/review chains.
+
+This makes ordinary Agent injection executable without weakening current-input
+or independent-review checks. `pt-product-design-methodology`,
+`pt-prototype-design` and `pt-quality-check` were updated to consume the new
+identity contract. GitHub Review already rejects stale, overlapping and
+unproven evidence, so its `SKILL.md` and generic fixtures require no semantic
+change. Closed-schema tests explicitly reject the removed attestation shape.
+
+## 2026-10-20 Experience Design Control Plane Integration Review
+
+The canonical Experience Design Control Plane now includes Product-to-Wireflow
+contracts, UI Grammar, deterministic evaluation, exact evidence matching,
+independent review receipts and the subordinate source-fenced Reasoning Kernel.
+Quality owns blind packages, exposure, scoring and retirement; the Kernel owns
+Journey, trust, recovery and deterministic primary selection inside the
+control-plane boundary.
+
+`pt-product-design-methodology`, `pt-prototype-design` and `pt-quality-check`
+consume the canonical CLI. GitHub Review continues to own final merge judgment
+and already treats missing, stale or unproven evidence as a hold, so its
+`SKILL.md` does not copy the Experience schema or ranking policy.
 
 ## Mobile Origin Contract Review
 
@@ -212,6 +269,30 @@ The Acceptance README now links the frozen 0.0.1 Mobile iOS and Desktop
 release plan. The plan itself remains excluded from the freshness digest and
 does not change review severity, evidence policy, or implementation ownership.
 No `SKILL.md`, fixture, or knowledge update is required.
+
+Current Experience admission validates package references and current source at
+the final boundary. Graph recovery requires an executable route and state
+ordering is total. Immutable historical holdout integrity is separate from
+current reevaluation and reciprocal promotion binding. Prototype/Quality
+consumers and negative regression fixtures cover these refinements; GitHub
+Review keeps its existing stale-proof and independent-judgment requirements.
+
+## 2026-10-20 Experience Identity Contract Review
+
+Experience Cases and independent review receipts now use stable workflow
+principal IDs, exact canonical digest binding and reviewer non-overlap. The
+control plane no longer owns Ed25519 signatures, a trusted issuer registry or a
+user-managed key path. Content-addressed holdouts retain immutable
+case/result/review chains.
+
+This makes ordinary Agent injection executable without weakening current-input
+or independent-review checks. `pt-product-design-methodology`,
+`pt-prototype-design` and `pt-quality-check` were updated to consume the new
+identity contract. GitHub Review already rejects stale, overlapping and
+unproven evidence, so its `SKILL.md` and generic fixtures require no semantic
+change. Closed-schema tests explicitly reject the removed attestation shape.
+
+## 2026-10-20 Experience Design Control Plane Integration Review
 
 ## 2026-10-16 Bot Module Governance Review
 

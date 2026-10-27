@@ -1,8 +1,8 @@
 # Engineering Control Planes
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-10-05 | **Updated**: 2026-10-05
+> **Version**: v1.1
+> **Created**: 2026-10-05 | **Updated**: 2026-10-19
 > **Owner**: Architecture Team
 
 ---
@@ -20,6 +20,7 @@ end-user business truth.
 | Architecture governance | [architecture-governance/](./architecture-governance/README.md) |
 | API governance | [api-governance/](./api-governance/README.md) |
 | Development workflow | [development-workflow/](./development-workflow/README.md) |
+| Experience Design | [experience-design/](./experience-design/README.md) |
 | Local development | [local-dev/](./local-dev/README.md) |
 | Acceptance | [acceptance/](./acceptance/README.md) |
 | Quality | [quality/](./quality/README.md) |

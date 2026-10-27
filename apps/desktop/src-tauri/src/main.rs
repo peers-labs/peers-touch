@@ -41,13 +41,13 @@ pub mod peers_touch {
 }
 
 use interface::tauri_commands::{
-    account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
-    agent_turn, agents, applets, auth, bot, capability_authority, channels, x_config,
-    conversation, cron, crypto, desktop_capture, evaluation, federation, frontend_log,
-    frontend_telemetry, home, host_events, i18n, ice, key_exchange, mcp, memory,
-    messaging as messaging_commands, messaging_recovery, model_config, native_surface, notebook,
-    notification, oauth2, oss, presence, profile, provider, realtime, runtime_evidence, search,
-    settings, skills, skills_market, social as social_commands, station, system, tools, tts,
+    account, actor, admin, agent_events, agent_growth, agent_orchestration,
+    agent_turn, agents, applets, auth, bot, capability_authority, channels, conversation, cron,
+    crypto, desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home,
+    host_events, i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands,
+    messaging_recovery, model_config, native_surface, notebook, notification, oauth2, oss,
+    presence, profile, provider, realtime, runtime_evidence, search, settings, skills,
+    skills_market, social as social_commands, station, system, tools, x_config,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -584,6 +584,18 @@ fn main() {
     #[cfg(feature = "acceptance-webdriver")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
+    // Dev-only socket bridge for the tauri-playwright e2e transport
+    // (apps/desktop/e2e). The socket path defaults to the fixtures' path and
+    // can be overridden per cell via PT_PLAYWRIGHT_SOCKET.
+    #[cfg(feature = "acceptance-playwright")]
+    let builder = {
+        let socket_path = std::env::var("PT_PLAYWRIGHT_SOCKET")
+            .unwrap_or_else(|_| "/tmp/peers-ai-agent-agent.sock".to_string());
+        builder.plugin(tauri_plugin_playwright::init_with_config(
+            tauri_plugin_playwright::PluginConfig::default().socket_path(socket_path),
+        ))
+    };
+
     let context = tauri::generate_context!();
     #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
     let context = {
@@ -875,6 +887,8 @@ fn main() {
             admin::admin_network_probe,
             admin::admin_execute_action,
             provider::provider_list,
+            provider::provider_runtime_default_get,
+            provider::provider_runtime_default_set,
             provider::provider_get,
             provider::provider_update,
             provider::provider_check,
@@ -934,6 +948,10 @@ fn main() {
             agent_turn::agent_turn_trace_get,
             agent_turn::agent_turn_diagnostics_export,
             agent_turn::agent_turn_attributions_get,
+            agent_turn::agent_turn_artifact_list,
+            agent_turn::agent_turn_artifact_upload,
+            agent_turn::agent_turn_artifact_open_local,
+            agent_turn::agent_turn_artifact_download,
             agent_turn::agent_submit_tool_decision,
             runtime_evidence::agent_runtime_profile_effective,
             capability_authority::agent_capability_manifest_list,
@@ -960,7 +978,9 @@ fn main() {
             capability_authority::agent_knowledge_descriptor_create,
             capability_authority::agent_knowledge_descriptor_update,
             capability_authority::agent_knowledge_descriptor_list,
+            capability_authority::agent_knowledge_descriptor_content_read,
             capability_authority::agent_knowledge_descriptor_tombstone,
+            capability_authority::agent_skill_resource_read,
             capability_authority::agent_package_export,
             capability_authority::agent_package_import,
             runtime_evidence::agent_capability_sessions,
@@ -1038,8 +1058,6 @@ fn main() {
             system::config_section_get,
             system::config_section_set,
             system::config_field_reset,
-            system::config_test_postgres,
-            system::embedding_models_list,
             system::visitor_heartbeat,
             system::visitor_online,
             system::context_snapshot_get,
@@ -1060,6 +1078,7 @@ fn main() {
             skills_market::skills_import_github,
             skills_market::skills_import_zip,
             skills_market::skills_validate_zip,
+            skills_market::skills_managed_resource_read,
             skills_market::skills_market_dir,
             skills_market::skills_market_open_dir,
             skills_market::skills_market_list,
@@ -1109,7 +1128,6 @@ fn main() {
             mcp::agent_capability_operation_reconcile,
             mcp::agent_capability_operation_takeover,
             mcp::agent_capability_operation_cleanup_takeover,
-            cron::cron_status,
             cron::cron_list_jobs,
             cron::cron_create_job,
             cron::cron_update_job,
@@ -1117,7 +1135,6 @@ fn main() {
             cron::cron_toggle_job,
             cron::cron_run_job,
             cron::cron_list_runs,
-            cron::cron_parse_schedule,
             model_config::model_config_list,
             model_config::model_config_get,
             model_config::model_config_set,
@@ -1214,8 +1231,6 @@ fn main() {
             memory::memory_import,
             memory::memory_embedding_status,
             memory::memory_reembed,
-            tts::tts_synthesize,
-            tts::tts_voices,
             realtime::realtime_stream_start,
             realtime::realtime_stream_stop,
             realtime::realtime_call_resolution_get,
@@ -1241,10 +1256,6 @@ fn main() {
             agent_growth::agent_submit_feedback,
             agent_growth::agent_list_turn_feedback,
             agent_growth::agent_quick_completion,
-            agent_scheduler::agent_scheduler_start,
-            agent_scheduler::agent_scheduler_stop,
-            agent_scheduler::agent_scheduler_status,
-            agent_scheduler::agent_scheduler_add_job,
             notification::notification_list,
             bot::bot_list,
             bot::bot_create,
@@ -1252,6 +1263,9 @@ fn main() {
             bot::bot_set_state,
             bot::bot_set_profile,
             bot::bot_upload_avatar,
+            bot::bot_agent_binding_set,
+            bot::bot_agent_binding_list,
+            bot::bot_agent_binding_delete,
             notification::notification_unread_counts,
             notification::notification_mark_read,
             notification::notification_mark_all_read,

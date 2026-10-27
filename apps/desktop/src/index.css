@@ -59,6 +59,11 @@ input, textarea, [contenteditable="true"] {
   to { transform: rotate(360deg); }
 }
 
+@keyframes pt-onboarding-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -191,6 +196,10 @@ input, textarea, [contenteditable="true"] {
   height: 32px !important;
   padding: 0 !important;
   border-radius: 8px !important;
+}
+
+.login-oauth-action__cancel:not(:hover):not(:focus-visible) {
+  background: transparent !important;
 }
 
 .pt-network-intro {

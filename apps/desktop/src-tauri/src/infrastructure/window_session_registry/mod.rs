@@ -270,12 +270,27 @@ impl WindowSessionRegistry {
     /// Used for process shutdown and for routing account-scoped native
     /// projection invalidations to the windows bound to that account.
     /// Request paths must still go through `get` / `actor` / `token`.
+    ///
+    /// Ordering is deterministic: newest binding revision first, then the
+    /// window label. Consumers reconciling one worker per account (the
+    /// capability supervisor) resolve overlapping windows to the newest
+    /// binding instead of relying on HashMap iteration order.
     pub fn snapshot_all(&self) -> Vec<ActiveSession> {
         let map = self
             .inner
             .read()
             .expect("WindowSessionRegistry read lock poisoned");
-        map.values().map(|b| b.session.clone()).collect()
+        let mut bindings: Vec<&SessionBinding> = map.values().collect();
+        bindings.sort_by(|left, right| {
+            right
+                .revision
+                .cmp(&left.revision)
+                .then_with(|| left.session.window_label.cmp(&right.session.window_label))
+        });
+        bindings
+            .into_iter()
+            .map(|binding| binding.session.clone())
+            .collect()
     }
 }
 
@@ -330,6 +345,34 @@ mod tests {
         assert!(reg.get("main").is_none());
         assert!(reg.get("second").is_some());
         assert!(reg.get("third").is_some());
+    }
+
+    #[test]
+    fn snapshot_all_orders_by_newest_binding_revision() {
+        let reg = WindowSessionRegistry::default();
+        // Revision is a process-monotonic publication fence; a later binding
+        // always outranks an earlier one regardless of window label.
+        reg.bind_exclusive(sample("other", "password:bob", "ptid:test:bob"));
+        reg.bind_exclusive(sample("main", "password:alice", "ptid:test:alice"));
+        reg.bind_exclusive(sample("main", "password:alice", "ptid:test:alice"));
+
+        let labels: Vec<String> = reg
+            .snapshot_all()
+            .iter()
+            .map(|s| s.window_label.clone())
+            .collect();
+        assert_eq!(labels, vec!["main".to_string(), "other".to_string()]);
+
+        reg.unbind("main");
+        reg.unbind("other");
+        reg.bind_exclusive(sample("alpha", "password:dave", "ptid:test:dave"));
+        reg.bind_exclusive(sample("zeta", "password:carol", "ptid:test:carol"));
+        let labels: Vec<String> = reg
+            .snapshot_all()
+            .iter()
+            .map(|s| s.window_label.clone())
+            .collect();
+        assert_eq!(labels, vec!["zeta".to_string(), "alpha".to_string()]);
     }
 
     #[test]

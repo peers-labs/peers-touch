@@ -1,7 +1,7 @@
-use x_config_core::XConfigError;
 use serde::Deserialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
+use x_config_core::XConfigError;
 
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
@@ -21,10 +21,7 @@ pub struct XConfigSuggestionInput {
 
 #[tauri::command]
 pub fn x_config_projection(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    projection_result(
-        "x_config_projection",
-        state.x_config.projection(),
-    )
+    projection_result("x_config_projection", state.x_config.projection())
 }
 
 #[tauri::command]
@@ -33,9 +30,7 @@ pub async fn x_config_refresh(
     app: AppHandle,
 ) -> AppResult<StubPayload> {
     let state = Arc::clone(app.state::<Arc<AppState>>().inner());
-    match tauri::async_runtime::spawn_blocking(move || state.x_config.refresh(input.force))
-        .await
-    {
+    match tauri::async_runtime::spawn_blocking(move || state.x_config.refresh(input.force)).await {
         Ok(result) => projection_result("x_config_refresh", result),
         Err(error) => AppResult::fail(
             ErrorCode::InternalError,

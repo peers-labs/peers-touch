@@ -9,6 +9,7 @@ use super::resource_registry::ResourceRegistry;
 use super::station_transport::{
     CapabilityNegativeControl, CapabilityNegativeControlStationFact, CapabilityStationTransport,
 };
+use super::workspace_grants;
 use crate::application::oauth2;
 use crate::application::station_runtime::client::{StationClient, StationRequestScope};
 use crate::domain::identity::ActiveSession;
@@ -21,6 +22,7 @@ use crate::state::AppState;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -407,6 +409,7 @@ struct ActiveWorker {
     ledger: Option<ReceiptLedger>,
     resources: Option<ResourceRegistry>,
     executor: Option<LocalCapabilityExecutor>,
+    workspace_root: Option<PathBuf>,
     pull_cursor: u64,
     surface: ClientSurface,
     paused: bool,
@@ -438,18 +441,66 @@ impl ActiveWorker {
         )?;
         let lease = transport.register(advertisement(&context, &contracts, surface))?;
         ensure_lease_identity(&context, &lease)?;
+        let workspace_root = match resources.as_ref() {
+            Some(registry) => {
+                let root = workspace_grants::provision_actor_workspace(
+                    &context.actor_ptid,
+                    &context.device_id,
+                )?;
+                let grants = workspace_grants::build_workspace_grants(&lease, &root)?;
+                workspace_grants::register_workspace_grants(
+                    registry,
+                    &lease.capability_session_id,
+                    &grants,
+                )?;
+                if !grants.is_empty() {
+                    let references = grants
+                        .iter()
+                        .map(|grant| grant.reference.clone())
+                        .collect::<Vec<_>>();
+                    transport.declare_resource_grants(&lease.capability_session_id, &references)?;
+                }
+                Some(root)
+            }
+            None => None,
+        };
         Ok(Self {
             ledger,
             resources,
             context,
             lease,
             executor,
+            workspace_root,
             pull_cursor: 0,
             surface,
             paused: false,
             connector_projection_epoch,
             mcp_projection_epoch,
         })
+    }
+
+    /// Re-registers and re-declares workspace grants against the renewed
+    /// lease so the opaque roots remain valid while the worker stays online.
+    fn refresh_workspace_grants(&mut self) -> Result<(), String> {
+        let (Some(root), Some(registry)) = (&self.workspace_root, &self.resources) else {
+            return Ok(());
+        };
+        let grants = workspace_grants::build_workspace_grants(&self.lease, root)?;
+        if grants.is_empty() {
+            return Ok(());
+        }
+        workspace_grants::register_workspace_grants(
+            registry,
+            &self.lease.capability_session_id,
+            &grants,
+        )?;
+        let references = grants
+            .iter()
+            .map(|grant| grant.reference.clone())
+            .collect::<Vec<_>>();
+        self.transport()?
+            .declare_resource_grants(&self.lease.capability_session_id, &references)?;
+        Ok(())
     }
 
     fn same_identity(&self, candidate: &WorkerContext) -> bool {
@@ -553,7 +604,7 @@ impl ActiveWorker {
             return Err("CLIENT_CAPABILITY_RENEW_RESPONSE_MISMATCH".to_string());
         }
         self.lease = renewed;
-        Ok(())
+        self.refresh_workspace_grants()
     }
 
     fn revoke(&mut self, reason: ClientCapabilityLeaseRevokeReason) -> Result<(), String> {
@@ -626,7 +677,11 @@ fn run_supervisor(
             }
         }
         for account in replace_accounts {
-            workers.remove(&account);
+            discard_worker(
+                &mut workers,
+                &account,
+                ClientCapabilityLeaseRevokeReason::WorkerShutdown,
+            );
         }
         if let Err(error) = publish_worker_snapshot(&snapshot, &workers) {
             tracing::warn!(
@@ -1106,7 +1161,7 @@ fn reconcile_workers(
         .cloned()
         .collect::<Vec<_>>();
     for account in stale_accounts {
-        stop_worker(
+        discard_worker(
             workers,
             &account,
             ClientCapabilityLeaseRevokeReason::UserLogout,
@@ -1127,7 +1182,7 @@ fn reconcile_workers(
             worker.mcp_projection_epoch != crate::application::mcp::mcp_projection_epoch()
         });
         if identity_changed || connector_projection_changed || mcp_projection_changed {
-            stop_worker(
+            discard_worker(
                 workers,
                 &account_id,
                 if identity_changed {
@@ -1174,7 +1229,13 @@ fn connector_projection_changed(registered_epoch: u64, current_epoch: u64) -> bo
     registered_epoch != current_epoch
 }
 
-fn stop_worker(
+// Removes a worker and closes both sides of its capability scope: a
+// best-effort Station revoke plus deletion of the reusable local session
+// grants. Local cleanup runs even when the parent auth session is already
+// dead and Station rejects the revoke (renderer reload takeover), so a
+// replaced or expired worker can never leave grants a stale session could
+// resolve; Station-side lease expiry remains the final backstop.
+fn discard_worker(
     workers: &mut HashMap<String, ActiveWorker>,
     account_id: &str,
     reason: ClientCapabilityLeaseRevokeReason,
@@ -1188,6 +1249,21 @@ fn stop_worker(
                 "client capability lease revoke failed; Station expiry remains authoritative"
             );
         }
+        // Remove the reusable local lease grants so a stale session cannot be
+        // resolved after teardown; expiry sweep remains the backstop.
+        if let Some(resources) = worker.resources.as_ref() {
+            if let Err(error) =
+                resources.delete_session_grants(&worker.lease.capability_session_id)
+            {
+                tracing::warn!(
+                    actor = %worker.context.actor_ptid,
+                    device = %worker.context.device_id,
+                    session = %worker.lease.capability_session_id,
+                    error = %error,
+                    "client capability grant cleanup failed; expiry sweep remains authoritative"
+                );
+            }
+        }
     }
 }
 
@@ -1197,7 +1273,7 @@ fn stop_all(
 ) {
     let accounts = workers.keys().cloned().collect::<Vec<_>>();
     for account in accounts {
-        stop_worker(workers, &account, reason);
+        discard_worker(workers, &account, reason);
     }
 }
 
@@ -1296,9 +1372,8 @@ fn advertisement_from_capabilities(
 
 fn permission_kind_for_capability(capability_id: &str) -> CapabilityPermissionKind {
     match capability_id {
-        "filesystem.read" | "filesystem.list" | "shell.execute" => {
-            CapabilityPermissionKind::Filesystem
-        }
+        "filesystem.read" | "filesystem.list" | "filesystem.write" | "filesystem.edit"
+        | "shell.execute" | "shell.allowlist" => CapabilityPermissionKind::Filesystem,
         "clipboard.read" | "clipboard.write" => CapabilityPermissionKind::Clipboard,
         _ => CapabilityPermissionKind::Unspecified,
     }
@@ -1314,9 +1389,13 @@ fn local_contracts(
             [
                 "filesystem.read",
                 "filesystem.list",
+                "filesystem.write",
+                "filesystem.edit",
                 "clipboard.read",
                 "clipboard.write",
                 "shell.execute",
+                "shell.allowlist",
+                "skill.resource.read",
             ]
             .into_iter()
             .map(|capability_id| CapabilityContract {
@@ -1361,9 +1440,8 @@ fn local_contracts(
 
 fn resource_kinds(capability_id: &str) -> Vec<String> {
     match capability_id {
-        "filesystem.read" | "filesystem.list" | "shell.execute" => {
-            vec!["workspace".to_string()]
-        }
+        "filesystem.read" | "filesystem.list" | "filesystem.write" | "filesystem.edit"
+        | "shell.execute" | "shell.allowlist" => vec!["workspace".to_string()],
         _ => Vec::new(),
     }
 }
@@ -1599,6 +1677,7 @@ mod tests {
             ledger: None,
             resources: None,
             executor: None,
+            workspace_root: None,
             pull_cursor: 0,
             surface: ClientSurface::Desktop,
             paused: false,
@@ -1685,7 +1764,27 @@ mod tests {
                 == (cfg!(feature = "acceptance-webdriver")
                     && contract.capability_id == "clipboard.read")
         }));
-        assert_eq!(contracts.len(), 5);
+        let capability_ids: Vec<&str> = contracts
+            .iter()
+            .map(|contract| contract.capability_id.as_str())
+            .collect();
+        for expected in [
+            "filesystem.read",
+            "filesystem.list",
+            "filesystem.write",
+            "filesystem.edit",
+            "clipboard.read",
+            "clipboard.write",
+            "shell.execute",
+            "shell.allowlist",
+            "skill.resource.read",
+        ] {
+            assert!(
+                capability_ids.contains(&expected),
+                "Desktop must advertise {expected}; got {capability_ids:?}"
+            );
+        }
+        assert_eq!(contracts.len(), 9);
     }
 
     #[test]

@@ -55,7 +55,7 @@ describe('Agent workbench ownership contract', () => {
     expect(chatSource).toContain('data-pt-agent-conversation-header');
     expect(chatSource).toContain('highlightedMessageId={highlightedMessageId}');
     expect(messageListSource).toContain('virtualizer.scrollToIndex(messageIndex');
-    expect(chatSource).not.toContain('TurnQueueTray');
+    expect(chatSource).toContain('<TurnQueueTray />');
     expect(chatSource).not.toContain('ChatTerminalPanel');
     expect(chatSource).not.toContain('TerminalToggleButton');
     expect(chatSource).not.toContain('data-pt-agent-portal-toggle');

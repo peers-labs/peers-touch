@@ -32,6 +32,7 @@ func openConversationAuthorityDB(t *testing.T, name string) *gorm.DB {
 	); err != nil {
 		t.Fatalf("migrate conversation authority database: %v", err)
 	}
+	migrateActorSessionLiveness(t, db)
 	injectOrchestrationServiceTestStore(t, db)
 	return db
 }

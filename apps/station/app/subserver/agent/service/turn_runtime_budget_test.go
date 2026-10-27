@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -379,14 +380,14 @@ func TestWallTimeDeadlineRetainsTypedBudgetExhaustion(t *testing.T) {
 	}
 }
 
-func TestResumeReadyToolContinuationDoesNotResetMaxAttempts(t *testing.T) {
-	db := openConversationAuthorityDB(t, "continuation_provider_attempt_budget")
+func TestProviderDispatchBudgetSeparatesContinuationRetryAuxiliary(t *testing.T) {
+	db := openConversationAuthorityDB(t, "provider_dispatch_budget_classes")
 	now := time.Now().UTC()
 	if err := db.Create(&persistence.Conversation{
-		ID:        "conversation-attempt-budget",
+		ID:        "conversation-dispatch-budget",
 		AgentID:   "agent-1",
 		ActorPTID: "ptid:person:owner",
-		Title:     "Attempt budget",
+		Title:     "Dispatch budget",
 		Status:    "active",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -394,38 +395,130 @@ func TestResumeReadyToolContinuationDoesNotResetMaxAttempts(t *testing.T) {
 		t.Fatalf("seed conversation: %v", err)
 	}
 	if err := db.Create(&persistence.AgentTurn{
-		ID:                   "turn-attempt-budget",
-		ConversationID:       "conversation-attempt-budget",
-		AgentID:              "agent-1",
-		ProviderAttemptCount: 1,
-		Status:               "waiting_local_tool",
-		StartedAt:            now,
+		ID:             "turn-dispatch-budget",
+		ConversationID: "conversation-dispatch-budget",
+		AgentID:        "agent-1",
+		Status:         "running",
+		StartedAt:      now,
 	}).Error; err != nil {
 		t.Fatalf("seed turn: %v", err)
 	}
 	service := &TurnService{}
 	config := &TurnConfig{
-		TurnID:        "turn-attempt-budget",
-		RuntimeBudget: &model.RuntimeBudget{MaxAttempts: 1},
+		TurnID: "turn-dispatch-budget",
+		RuntimeBudget: &model.RuntimeBudget{
+			MaxAttempts:   3,
+			MaxAgentSteps: 6,
+		},
+	}
+	ctx := context.Background()
+	expectExhausted := func(err error, reason, kind, limit string) {
+		t.Helper()
+		var budgetErr *errcode.BizError
+		if !errors.As(err, &budgetErr) ||
+			budgetErr.Code != errcode.AgentToolBudgetExhausted ||
+			budgetErr.Message != reason {
+			t.Fatalf("want %s exhaustion, got %T %v", reason, err, err)
+		}
+		details := budgetErr.Payload.GetDetails()
+		if details["budget_kind"] != kind || details["limit"] != limit {
+			t.Fatalf("budget details = %v, want kind=%s limit=%s", details, kind, limit)
+		}
 	}
 
-	err := service.reserveProviderAttempt(context.Background(), config)
-	var budgetErr *errcode.BizError
-	if !errors.As(err, &budgetErr) ||
-		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
-		budgetErr.Message != maxAttemptsExhaustedReason ||
-		len(budgetErr.Payload.GetDetails()) != 3 ||
-		budgetErr.Payload.GetDetails()["turn_id"] != config.TurnID ||
-		budgetErr.Payload.GetDetails()["budget_kind"] != "attempts" ||
-		budgetErr.Payload.GetDetails()["limit"] != "1" {
-		t.Fatalf("continuation reset provider-attempt budget: %T %v", err, err)
+	// Six normal tool-result continuations must succeed even though the
+	// legacy shared cap allowed only three provider dispatches.
+	for i := 0; i < 6; i++ {
+		if err := service.reserveProviderDispatch(ctx, config, providerDispatchContinuation); err != nil {
+			t.Fatalf("continuation %d rejected: %v", i+1, err)
+		}
 	}
+	expectExhausted(
+		service.reserveProviderDispatch(ctx, config, providerDispatchContinuation),
+		maxProviderContinuationsExhaustedReason,
+		"provider_continuations",
+		"6",
+	)
+
+	// Transient retries own the MaxAttempts cap independently.
+	for i := 0; i < 3; i++ {
+		if err := service.reserveProviderDispatch(ctx, config, providerDispatchRetry); err != nil {
+			t.Fatalf("retry %d rejected: %v", i+1, err)
+		}
+	}
+	expectExhausted(
+		service.reserveProviderDispatch(ctx, config, providerDispatchRetry),
+		maxAttemptsExhaustedReason,
+		"attempts",
+		"3",
+	)
+
+	// Auxiliary calls (compression/follow-up/review) neither consume the
+	// continuation chain nor the retry cap.
+	for i := 0; i < int(maxAuxiliaryProviderCalls); i++ {
+		if err := service.reserveProviderDispatch(ctx, config, providerDispatchAuxiliary); err != nil {
+			t.Fatalf("auxiliary %d rejected: %v", i+1, err)
+		}
+	}
+	expectExhausted(
+		service.reserveProviderDispatch(ctx, config, providerDispatchAuxiliary),
+		maxAuxiliaryCallsExhaustedReason,
+		"provider_auxiliary",
+		fmt.Sprintf("%d", maxAuxiliaryProviderCalls),
+	)
+
 	var turn persistence.AgentTurn
 	if err := db.First(&turn, "id = ?", config.TurnID).Error; err != nil {
 		t.Fatalf("load turn: %v", err)
 	}
-	if turn.ProviderAttemptCount != 1 {
-		t.Fatalf("provider attempt count = %d, want 1", turn.ProviderAttemptCount)
+	if turn.ProviderContinuationCount != 6 {
+		t.Fatalf("continuation count = %d, want 6", turn.ProviderContinuationCount)
+	}
+	if turn.ProviderRetryCount != 3 {
+		t.Fatalf("retry count = %d, want 3", turn.ProviderRetryCount)
+	}
+	if turn.ProviderAuxiliaryCount != maxAuxiliaryProviderCalls {
+		t.Fatalf("auxiliary count = %d, want %d", turn.ProviderAuxiliaryCount, maxAuxiliaryProviderCalls)
+	}
+	if want := uint32(6 + 3 + maxAuxiliaryProviderCalls); turn.ProviderAttemptCount != want {
+		t.Fatalf("total dispatch count = %d, want %d", turn.ProviderAttemptCount, want)
+	}
+}
+
+func TestReserveAuxiliaryProviderDispatchWithoutTurnConfig(t *testing.T) {
+	db := openConversationAuthorityDB(t, "provider_auxiliary_standalone")
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Conversation{
+		ID:        "conversation-aux-standalone",
+		AgentID:   "agent-1",
+		ActorPTID: "ptid:person:owner",
+		Title:     "Aux standalone",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             "turn-aux-standalone",
+		ConversationID: "conversation-aux-standalone",
+		AgentID:        "agent-1",
+		Status:         "running",
+		StartedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed turn: %v", err)
+	}
+	service := &TurnService{}
+	ctx := context.Background()
+	for i := 0; i < int(maxAuxiliaryProviderCalls); i++ {
+		if err := service.ReserveAuxiliaryProviderDispatch(ctx, "turn-aux-standalone"); err != nil {
+			t.Fatalf("auxiliary %d rejected: %v", i+1, err)
+		}
+	}
+	err := service.ReserveAuxiliaryProviderDispatch(ctx, "turn-aux-standalone")
+	var budgetErr *errcode.BizError
+	if !errors.As(err, &budgetErr) || budgetErr.Message != maxAuxiliaryCallsExhaustedReason {
+		t.Fatalf("want auxiliary exhaustion, got %v", err)
 	}
 }
 

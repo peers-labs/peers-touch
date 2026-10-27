@@ -808,12 +808,15 @@ func (s *ToolDispatchService) ListCapabilitySessions(
 	if err != nil {
 		return nil, err
 	}
+	now := s.now()
 	var rows []persistence.ClientCapabilityLease
 	if err := db.WithContext(ctx).
 		Where(
-			"actor_id = ? AND revoked_at IS NULL AND expires_at > ?",
+			"actor_id = ? AND revoked_at IS NULL AND expires_at > ? AND "+
+				persistence.ActiveLeaseParentAuthSessionCondition,
 			actorID,
-			s.now(),
+			now,
+			now,
 		).
 		Order("created_at ASC").
 		Find(&rows).Error; err != nil {
@@ -844,13 +847,16 @@ func (s *ToolDispatchService) GetActiveCapabilitySession(
 	if err != nil {
 		return nil, err
 	}
+	now := s.now()
 	var row persistence.ClientCapabilityLease
 	queryErr := db.WithContext(ctx).
 		Where(
-			"actor_id = ? AND session_id = ? AND revoked_at IS NULL AND expires_at > ?",
+			"actor_id = ? AND session_id = ? AND revoked_at IS NULL AND expires_at > ? AND "+
+				persistence.ActiveLeaseParentAuthSessionCondition,
 			actorID,
 			sessionID,
-			s.now(),
+			now,
+			now,
 		).
 		First(&row).Error
 	if errors.Is(queryErr, gorm.ErrRecordNotFound) {
@@ -1856,6 +1862,81 @@ func (s *ToolDispatchService) SubmitDecision(
 	return response, err
 }
 
+// refreshStaleLeaseDispatchTx re-pins envelopes dispatched under an earlier
+// lease revision to the current lease. Routine renewals keep the same session
+// and authority lineage but bump the revision, so delivered envelopes would
+// otherwise be rejected forever as authority mismatches until their deadline.
+// Non-deliverable calls get their stale outbox rows invalidated.
+func (s *ToolDispatchService) refreshStaleLeaseDispatchTx(
+	tx *gorm.DB,
+	leaseRow *persistence.ClientCapabilityLease,
+	actorID string,
+	deviceID string,
+	now time.Time,
+) error {
+	var stale []persistence.ToolDispatchOutbox
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"actor_id = ? AND capability_session_id = ? AND target_device_id = ? "+
+				"AND invalidated_at IS NULL "+
+				"AND execution_deadline > ? AND capability_lease_revision < ?",
+			actorID,
+			leaseRow.SessionID,
+			deviceID,
+			now,
+			leaseRow.LeaseRevision,
+		).
+		Find(&stale).Error; err != nil {
+		return internalToolError("load stale capability dispatches", err)
+	}
+	refreshed := make(map[string]struct{}, len(stale))
+	for _, row := range stale {
+		if _, seen := refreshed[row.ToolCallID]; seen {
+			continue
+		}
+		refreshed[row.ToolCallID] = struct{}{}
+		invalidate := tx.Model(&persistence.ToolDispatchOutbox{}).
+			Where(
+				"tool_call_id = ? AND invalidated_at IS NULL",
+				row.ToolCallID,
+			).
+			Update("invalidated_at", now)
+		if invalidate.Error != nil {
+			return internalToolError("invalidate stale capability dispatch", invalidate.Error)
+		}
+
+		var call persistence.ToolCall
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tool_call_id = ? AND actor_id = ?", row.ToolCallID, actorID).
+			First(&call).Error; err != nil {
+			return notFoundToolError("tool call for stale capability dispatch", err)
+		}
+		deliverable := call.Status == persistence.ToolCallStatusDispatchCommitted &&
+			!call.ResultPersisted &&
+			call.ExecutionDeadline != nil &&
+			call.ReconciliationDeadline != nil &&
+			call.ExecutionDeadline.After(now) &&
+			call.ReconciliationDeadline.After(now)
+		if !deliverable {
+			continue
+		}
+		// Re-issue with a new sequence, fence and envelope against the
+		// current lease. The call identity, approval and claim are retained.
+		if err := s.issueCapabilityRequestTx(
+			tx,
+			&call,
+			leaseRow,
+			now,
+			persistence.ToolCallStatusDispatchCommitted,
+			call.FencingToken,
+			"",
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *ToolDispatchService) PullCapabilityRequests(
 	ctx context.Context,
 	actorID string,
@@ -1982,12 +2063,22 @@ func (s *ToolDispatchService) PullCapabilityRequests(
 				"capability session does not belong to authenticated device",
 			)
 		}
+		// Routine renewals bump the lease revision while approved calls wait
+		// for delivery. Re-pin any stale pending envelope to the current
+		// revision; otherwise the executor rejects it as an authority mismatch
+		// until the call deadline expires.
+		if err := s.refreshStaleLeaseDispatchTx(tx, &leaseRow, actorID, deviceID, now); err != nil {
+			return err
+		}
 		if err := tx.Where(
-			"actor_id = ? AND capability_session_id = ? AND target_device_id = ? AND dispatch_sequence > ?",
+			"actor_id = ? AND capability_session_id = ? AND target_device_id = ? "+
+				"AND dispatch_sequence > ? AND invalidated_at IS NULL "+
+				"AND execution_deadline > ?",
 			actorID,
 			request.GetCapabilitySessionId(),
 			deviceID,
 			request.GetAfterSequence(),
+			now,
 		).
 			Order("dispatch_sequence ASC").
 			Limit(limit).
@@ -3846,10 +3937,12 @@ func (s *ToolDispatchService) dispatchCallTx(
 ) error {
 	var leaseRow persistence.ClientCapabilityLease
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("session_id = ? AND actor_id = ? AND device_id = ? AND revoked_at IS NULL AND expires_at > ?",
+		Where("session_id = ? AND actor_id = ? AND device_id = ? AND revoked_at IS NULL AND expires_at > ? AND "+
+			persistence.ActiveLeaseParentAuthSessionCondition,
 			call.CapabilitySessionID,
 			call.ActorID,
 			call.TargetDeviceID,
+			now,
 			now,
 		).
 		First(&leaseRow).Error; err != nil {
@@ -3883,10 +3976,12 @@ func clientExecutorAvailableTx(
 	var leaseRow persistence.ClientCapabilityLease
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where(
-			"session_id = ? AND actor_id = ? AND device_id = ? AND revoked_at IS NULL AND expires_at > ?",
+			"session_id = ? AND actor_id = ? AND device_id = ? AND revoked_at IS NULL AND expires_at > ? AND "+
+				persistence.ActiveLeaseParentAuthSessionCondition,
 			call.CapabilitySessionID,
 			call.ActorID,
 			call.TargetDeviceID,
+			now,
 			now,
 		).
 		First(&leaseRow).Error
@@ -3900,12 +3995,31 @@ func clientExecutorAvailableTx(
 	if err := proto.Unmarshal(leaseRow.LeasePayload, &lease); err != nil {
 		return false, internalToolError("decode capability lease", err)
 	}
-	return leaseAllowsCapability(
+	if !leaseAllowsCapability(
 		&lease,
 		call.CapabilityID,
 		call.SchemaVersion,
 		len(call.BoundedArguments),
-	), nil
+	) {
+		return false, nil
+	}
+	if leasedCapabilityDeclaresWorkspaceGrant(&lease, call.CapabilityID) {
+		var count int64
+		if err := tx.Model(&persistence.ClientCapabilityResourceGrant{}).
+			Where(
+				"session_id = ? AND capability_id = ? AND expires_at > ?",
+				lease.GetCapabilitySessionId(),
+				call.CapabilityID,
+				now,
+			).
+			Count(&count).Error; err != nil {
+			return false, internalToolError("count active capability resource grant", err)
+		}
+		if count == 0 {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func pinnedToolBindingActiveTx(
@@ -3976,10 +4090,12 @@ func (s *ToolDispatchService) issueCapabilityRequestTx(
 	sequenceUpdate := tx.Model(&persistence.ClientCapabilityLease{}).
 		Where(
 			"session_id = ? AND lease_revision = ? AND dispatch_sequence = ? "+
-				"AND revoked_at IS NULL AND expires_at > ?",
+				"AND revoked_at IS NULL AND expires_at > ? AND "+
+				persistence.ActiveLeaseParentAuthSessionCondition,
 			leaseRow.SessionID,
 			leaseRow.LeaseRevision,
 			leaseRow.DispatchSequence-1,
+			now,
 			now,
 		).
 		Updates(map[string]interface{}{
@@ -3999,12 +4115,21 @@ func (s *ToolDispatchService) issueCapabilityRequestTx(
 	call.FencingToken++
 	call.DispatchSequence = leaseRow.DispatchSequence
 
-	resourceRefs := &model.ClientCapabilityRequest{}
-	if len(call.ResourceRefs) > 0 {
-		if err := proto.Unmarshal(call.ResourceRefs, resourceRefs); err != nil {
-			return internalToolError("decode client resource references", err)
+	var envelopeResourceRefs []*model.ClientResourceRef
+	if leasedCapabilityDeclaresWorkspaceGrant(&lease, call.CapabilityID) {
+		grant, err := activeResourceGrantTx(tx, &lease, call.CapabilityID, now)
+		if err != nil {
+			return err
 		}
+		envelopeResourceRefs = []*model.ClientResourceRef{grant}
 	}
+	marshaledResourceRefs, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&model.ClientCapabilityRequest{ResourceRefs: envelopeResourceRefs},
+	)
+	if err != nil {
+		return internalToolError("encode client resource references", err)
+	}
+	call.ResourceRefs = marshaledResourceRefs
 	envelope := &model.ClientCapabilityRequest{
 		RequestId:               generateID("capability_request"),
 		TurnId:                  call.TurnID,
@@ -4012,7 +4137,7 @@ func (s *ToolDispatchService) issueCapabilityRequestTx(
 		CapabilitySessionId:     call.CapabilitySessionID,
 		CapabilityId:            call.CapabilityID,
 		SchemaVersion:           call.SchemaVersion,
-		ResourceRefs:            resourceRefs.GetResourceRefs(),
+		ResourceRefs:            envelopeResourceRefs,
 		BoundedArguments:        append([]byte(nil), call.BoundedArguments...),
 		ApprovalId:              call.ApprovalID,
 		Sequence:                call.DispatchSequence,
@@ -4136,6 +4261,7 @@ func (s *ToolDispatchService) issueCapabilityRequestTx(
 			"dispatch_committed_at":          now,
 			"payload_hash":                   envelope.GetPayloadHash(),
 			"capability_lease_revision":      call.CapabilityLeaseRevision,
+			"resource_refs":                  call.ResourceRefs,
 			"receipt_recovery_credential_id": credentialID,
 			"execution_attempt_count":        gorm.Expr("execution_attempt_count + ?", 1),
 			"side_effect_receipt":            "",
@@ -4221,9 +4347,78 @@ func (s *ToolDispatchService) commitTerminalReceiptTx(
 	if err != nil {
 		return err
 	}
+	if resultStatus == persistence.ToolReceiptStatusApplied {
+		if err := persistTurnArtifactsTx(tx, call, receipt, now); err != nil {
+			return err
+		}
+	}
 	response.Accepted = true
 	response.ResultId = commit.ResultID
 	response.ContinuationId = commit.ContinuationID
+	return nil
+}
+
+func persistTurnArtifactsTx(
+	tx *gorm.DB,
+	call *persistence.ToolCall,
+	receipt *model.ClientCapabilityReceipt,
+	now time.Time,
+) error {
+	artifacts := receipt.GetArtifacts()
+	if len(artifacts) == 0 {
+		return nil
+	}
+	if call.ToolName != "local_file_write" && call.ToolName != "local_file_edit" {
+		return invalidToolRequest("only successful filesystem write/edit receipts may declare artifacts")
+	}
+	var batch persistence.ToolBatch
+	if err := tx.Where("id = ?", call.ToolBatchID).First(&batch).Error; err != nil {
+		return internalToolError("load artifact tool batch", err)
+	}
+	for _, artifact := range artifacts {
+		if artifact == nil || artifact.GetLocator() == nil {
+			return invalidToolRequest("turn artifact metadata is incomplete")
+		}
+		name := strings.TrimSpace(artifact.GetName())
+		sha := strings.ToLower(strings.TrimSpace(artifact.GetSha256()))
+		localRef := strings.TrimSpace(artifact.GetLocator().GetClientLocalRef())
+		if strings.TrimSpace(artifact.GetArtifactId()) == "" ||
+			artifact.GetKind() != model.TurnArtifactKind_TURN_ARTIFACT_KIND_FILE ||
+			name == "" ||
+			strings.ContainsAny(name, `/\`) ||
+			len(sha) != 64 ||
+			localRef == "" ||
+			artifact.GetTurnId() != call.TurnID ||
+			artifact.GetToolCallId() != call.ToolCallID {
+			return invalidToolRequest("turn artifact metadata is invalid")
+		}
+		if _, err := hex.DecodeString(sha); err != nil {
+			return invalidToolRequest("turn artifact sha256 is invalid")
+		}
+		createdAt := now
+		if artifact.GetCreatedAt() != nil && artifact.GetCreatedAt().IsValid() {
+			createdAt = artifact.GetCreatedAt().AsTime().UTC()
+		}
+		row := &persistence.TurnArtifact{
+			ID:             artifact.GetArtifactId(),
+			ActorPTID:      call.ActorID,
+			ConversationID: batch.ConversationID,
+			TurnID:         call.TurnID,
+			AgentID:        batch.AgentID,
+			ToolCallID:     call.ToolCallID,
+			Kind:           "file",
+			Name:           name,
+			Size:           artifact.GetSize(),
+			SHA256:         sha,
+			ClientLocalRef: localRef,
+			ClientDeviceID: call.TargetDeviceID,
+			CreatedAt:      createdAt,
+			UpdatedAt:      now,
+		}
+		if err := tx.Create(row).Error; err != nil {
+			return internalToolError("persist turn artifact", err)
+		}
+	}
 	return nil
 }
 
@@ -4563,7 +4758,8 @@ func loadActiveCapabilityLeaseTx(
 ) (*model.ClientCapabilityLease, error) {
 	var row persistence.ClientCapabilityLease
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("session_id = ? AND actor_id = ? AND revoked_at IS NULL AND expires_at > ?", sessionID, actorID, now).
+		Where("session_id = ? AND actor_id = ? AND revoked_at IS NULL AND expires_at > ? AND "+
+			persistence.ActiveLeaseParentAuthSessionCondition, sessionID, actorID, now, now).
 		First(&row).Error; err != nil {
 		return nil, notFoundToolError("active capability lease", err)
 	}

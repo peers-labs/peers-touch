@@ -26,7 +26,7 @@ func (s *TurnService) executeExternalRuntimeTurn(
 	if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
 		return "", nil, false, err
 	}
-	if err := s.reserveProviderAttempt(ctx, config); err != nil {
+	if err := s.reserveProviderDispatch(ctx, config, providerDispatchContinuation); err != nil {
 		return "", nil, false, err
 	}
 

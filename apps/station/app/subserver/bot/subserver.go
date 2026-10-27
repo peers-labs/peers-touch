@@ -45,6 +45,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		infrastructure.NewActorMinter(),
 		infrastructure.NewLazyPublishingManager(),
 		registry.WithProfileChangePublisher(infrastructure.NewProfileChangePublisher()),
+		registry.WithAgentRoster(infrastructure.NewLazyAgentRoster()),
 	)
 	return nil
 }
@@ -75,5 +76,9 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("bot-rotate-secret", "/bot/rotate-secret", server.POST, s.handleRotateSecret, s.jwtWrapper),
 		server.NewTypedHandler("bot-set-state", "/bot/set-state", server.POST, s.handleSetState, s.jwtWrapper),
 		server.NewTypedHandler("bot-set-profile", "/bot/set-profile", server.POST, s.handleSetProfile, s.jwtWrapper),
+		server.NewTypedHandler("bot-agent-binding-set", "/bot/agent-binding/set", server.POST, s.handleSetAgentBinding, s.jwtWrapper),
+		server.NewTypedHandler("bot-agent-binding-get", "/bot/agent-binding/get", server.POST, s.handleGetAgentBinding, s.jwtWrapper),
+		server.NewTypedHandler("bot-agent-binding-list", "/bot/agent-binding/list", server.POST, s.handleListAgentBindings, s.jwtWrapper),
+		server.NewTypedHandler("bot-agent-binding-delete", "/bot/agent-binding/delete", server.POST, s.handleDeleteAgentBinding, s.jwtWrapper),
 	}
 }

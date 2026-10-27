@@ -2,17 +2,19 @@
 // @generated from file domain/agent/skill.proto (package peers_touch.model.agent.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { ToolExecutionOwner } from "./agent_pb";
+import { file_domain_agent_agent } from "./agent_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/agent/skill.proto.
  */
 export const file_domain_agent_skill: GenFile = /*@__PURE__*/
-  fileDesc("Chhkb21haW4vYWdlbnQvc2tpbGwucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxIooDCg1Ta2lsbE1hbmlmZXN0EhAKCHNraWxsX2lkGAEgASgJEhAKCGFnZW50X2lkGAIgASgJEgwKBG5hbWUYAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSEAoIY2F0ZWdvcnkYBSABKAkSEQoJcGxhdGZvcm1zGAYgAygJEj8KCmNvbmRpdGlvbnMYByABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbENvbmRpdGlvbnMSDwoHY29udGVudBgIIAEoCRIOCgZzb3VyY2UYCSABKAkSEwoLdHJ1c3RfbGV2ZWwYCiABKAkSFAoMc2Nhbl92ZXJkaWN0GAsgASgJEg8KB3ZlcnNpb24YDCABKAUSLgoKY3JlYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHZW5hYmxlZBgPIAEoCCJICg9Ta2lsbENvbmRpdGlvbnMSHQoVZmFsbGJhY2tfZm9yX3Rvb2xzZXRzGAEgAygJEhYKDnJlcXVpcmVzX3Rvb2xzGAIgAygJIoYBCgxTa2lsbEZpbmRpbmcSEgoKcGF0dGVybl9pZBgBIAEoCRIQCghzZXZlcml0eRgCIAEoCRIQCghjYXRlZ29yeRgDIAEoCRIMCgRmaWxlGAQgASgJEgwKBGxpbmUYBSABKAUSDQoFbWF0Y2gYBiABKAkSEwoLZGVzY3JpcHRpb24YByABKAki2AEKD1NraWxsU2NhblJlc3VsdBISCgpza2lsbF9uYW1lGAEgASgJEg4KBnNvdXJjZRgCIAEoCRITCgt0cnVzdF9sZXZlbBgDIAEoCRIPCgd2ZXJkaWN0GAQgASgJEjoKCGZpbmRpbmdzGAUgAygLMigucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxGaW5kaW5nEi4KCnNjYW5uZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB3N1bW1hcnkYByABKAkiNwoRTGlzdFNraWxsc1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSEAoIY2F0ZWdvcnkYAiABKAkiTwoSTGlzdFNraWxsc1Jlc3BvbnNlEjkKBnNraWxscxgBIAMoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlNraWxsTWFuaWZlc3QiSAoPR2V0U2tpbGxSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEhEKCWZpbGVfcGF0aBgCIAEoCRIQCghhZ2VudF9pZBgDIAEoCSJiChBHZXRTa2lsbFJlc3BvbnNlEjgKBXNraWxsGAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxNYW5pZmVzdBIUCgxmaWxlX2NvbnRlbnQYAiABKAkiawoTSW5zdGFsbFNraWxsUmVxdWVzdBIQCghhZ2VudF9pZBgBIAEoCRIOCgZzb3VyY2UYAiABKAkSDAoEbmFtZRgDIAEoCRIPCgdjb250ZW50GAQgASgJEhMKC3RydXN0X2xldmVsGAUgASgJIo4BChRJbnN0YWxsU2tpbGxSZXNwb25zZRIQCghza2lsbF9pZBgBIAEoCRIPCgd2ZXJkaWN0GAIgASgJEkAKC3NjYW5fcmVzdWx0GAMgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxTY2FuUmVzdWx0EhEKCWluc3RhbGxlZBgEIAEoCCKvAQoSVXBkYXRlU2tpbGxSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhAKCHNraWxsX2lkGAIgASgJEhEKBG5hbWUYAyABKAlIAIgBARIYCgtkZXNjcmlwdGlvbhgEIAEoCUgBiAEBEhQKB2NvbnRlbnQYBSABKAlIAogBAUIHCgVfbmFtZUIOCgxfZGVzY3JpcHRpb25CCgoIX2NvbnRlbnRKBAgGEAdSB2VuYWJsZWQiogEKE1VwZGF0ZVNraWxsUmVzcG9uc2USOAoFc2tpbGwYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbE1hbmlmZXN0EkAKC3NjYW5fcmVzdWx0GAIgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxTY2FuUmVzdWx0Eg8KB3N1Y2Nlc3MYAyABKAgiOAoSRGVsZXRlU2tpbGxSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhAKCHNraWxsX2lkGAIgASgJIiYKE0RlbGV0ZVNraWxsUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCJNChFQYXRjaFNraWxsUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCRISCgpvbGRfc3RyaW5nGAIgASgJEhIKCm5ld19zdHJpbmcYAyABKAkiXwoSUGF0Y2hTa2lsbFJlc3BvbnNlEjgKBXNraWxsGAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxNYW5pZmVzdBIPCgdzdWNjZXNzGAIgASgIQktaSWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvYWdlbnQvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Chhkb21haW4vYWdlbnQvc2tpbGwucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxIsgDCg1Ta2lsbE1hbmlmZXN0EhAKCHNraWxsX2lkGAEgASgJEhAKCGFnZW50X2lkGAIgASgJEgwKBG5hbWUYAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSEAoIY2F0ZWdvcnkYBSABKAkSEQoJcGxhdGZvcm1zGAYgAygJEj8KCmNvbmRpdGlvbnMYByABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbENvbmRpdGlvbnMSDwoHY29udGVudBgIIAEoCRIOCgZzb3VyY2UYCSABKAkSEwoLdHJ1c3RfbGV2ZWwYCiABKAkSFAoMc2Nhbl92ZXJkaWN0GAsgASgJEg8KB3ZlcnNpb24YDCABKAUSLgoKY3JlYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHZW5hYmxlZBgPIAEoCBI8CglyZXNvdXJjZXMYECADKAsyKS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbFJlc291cmNlIkgKD1NraWxsQ29uZGl0aW9ucxIdChVmYWxsYmFja19mb3JfdG9vbHNldHMYASADKAkSFgoOcmVxdWlyZXNfdG9vbHMYAiADKAkixwEKDVNraWxsUmVzb3VyY2USDAoEcGF0aBgBIAEoCRIUCgxjb250ZW50X2hhc2gYAiABKAkSDAoEc2l6ZRgDIAEoBBI7CgRraW5kGAQgASgOMi0ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxSZXNvdXJjZUtpbmQSRwoPZXhlY3V0aW9uX293bmVyGAUgASgOMi4ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVG9vbEV4ZWN1dGlvbk93bmVyIrkBChJTa2lsbFJlc291cmNlSW5wdXQSDAoEcGF0aBgBIAEoCRIPCgdjb250ZW50GAIgASgMEjsKBGtpbmQYAyABKA4yLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbFJlc291cmNlS2luZBJHCg9leGVjdXRpb25fb3duZXIYBCABKA4yLi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ub29sRXhlY3V0aW9uT3duZXIihgEKDFNraWxsRmluZGluZxISCgpwYXR0ZXJuX2lkGAEgASgJEhAKCHNldmVyaXR5GAIgASgJEhAKCGNhdGVnb3J5GAMgASgJEgwKBGZpbGUYBCABKAkSDAoEbGluZRgFIAEoBRINCgVtYXRjaBgGIAEoCRITCgtkZXNjcmlwdGlvbhgHIAEoCSLYAQoPU2tpbGxTY2FuUmVzdWx0EhIKCnNraWxsX25hbWUYASABKAkSDgoGc291cmNlGAIgASgJEhMKC3RydXN0X2xldmVsGAMgASgJEg8KB3ZlcmRpY3QYBCABKAkSOgoIZmluZGluZ3MYBSADKAsyKC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbEZpbmRpbmcSLgoKc2Nhbm5lZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHc3VtbWFyeRgHIAEoCSI3ChFMaXN0U2tpbGxzUmVxdWVzdBIQCghhZ2VudF9pZBgBIAEoCRIQCghjYXRlZ29yeRgCIAEoCSJPChJMaXN0U2tpbGxzUmVzcG9uc2USOQoGc2tpbGxzGAEgAygLMikucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxNYW5pZmVzdCJICg9HZXRTa2lsbFJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkSEQoJZmlsZV9wYXRoGAIgASgJEhAKCGFnZW50X2lkGAMgASgJImIKEEdldFNraWxsUmVzcG9uc2USOAoFc2tpbGwYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbE1hbmlmZXN0EhQKDGZpbGVfY29udGVudBgCIAEoCSJdChhSZWFkU2tpbGxSZXNvdXJjZVJlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSEAoIc2tpbGxfaWQYAiABKAkSDwoHdmVyc2lvbhgDIAEoBRIMCgRwYXRoGAQgASgJImkKGVJlYWRTa2lsbFJlc291cmNlUmVzcG9uc2USOwoIcmVzb3VyY2UYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbFJlc291cmNlEg8KB2NvbnRlbnQYAiABKAwirgEKE0luc3RhbGxTa2lsbFJlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSDgoGc291cmNlGAIgASgJEgwKBG5hbWUYAyABKAkSDwoHY29udGVudBgEIAEoCRITCgt0cnVzdF9sZXZlbBgFIAEoCRJBCglyZXNvdXJjZXMYBiADKAsyLi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbFJlc291cmNlSW5wdXQijgEKFEluc3RhbGxTa2lsbFJlc3BvbnNlEhAKCHNraWxsX2lkGAEgASgJEg8KB3ZlcmRpY3QYAiABKAkSQAoLc2Nhbl9yZXN1bHQYAyABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbFNjYW5SZXN1bHQSEQoJaW5zdGFsbGVkGAQgASgIIvIBChJVcGRhdGVTa2lsbFJlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSEAoIc2tpbGxfaWQYAiABKAkSEQoEbmFtZRgDIAEoCUgAiAEBEhgKC2Rlc2NyaXB0aW9uGAQgASgJSAGIAQESFAoHY29udGVudBgFIAEoCUgCiAEBEkEKCXJlc291cmNlcxgIIAMoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlNraWxsUmVzb3VyY2VJbnB1dEIHCgVfbmFtZUIOCgxfZGVzY3JpcHRpb25CCgoIX2NvbnRlbnRKBAgGEAdSB2VuYWJsZWQiogEKE1VwZGF0ZVNraWxsUmVzcG9uc2USOAoFc2tpbGwYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbE1hbmlmZXN0EkAKC3NjYW5fcmVzdWx0GAIgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxTY2FuUmVzdWx0Eg8KB3N1Y2Nlc3MYAyABKAgiOAoSRGVsZXRlU2tpbGxSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhAKCHNraWxsX2lkGAIgASgJIiYKE0RlbGV0ZVNraWxsUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCJNChFQYXRjaFNraWxsUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCRISCgpvbGRfc3RyaW5nGAIgASgJEhIKCm5ld19zdHJpbmcYAyABKAkiXwoSUGF0Y2hTa2lsbFJlc3BvbnNlEjgKBXNraWxsGAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxNYW5pZmVzdBIPCgdzdWNjZXNzGAIgASgIKt4BChFTa2lsbFJlc291cmNlS2luZBIjCh9TS0lMTF9SRVNPVVJDRV9LSU5EX1VOU1BFQ0lGSUVEEAASIAocU0tJTExfUkVTT1VSQ0VfS0lORF9ET0NVTUVOVBABEiEKHVNLSUxMX1JFU09VUkNFX0tJTkRfUkVGRVJFTkNFEAISIAocU0tJTExfUkVTT1VSQ0VfS0lORF9URU1QTEFURRADEh0KGVNLSUxMX1JFU09VUkNFX0tJTkRfQVNTRVQQBBIeChpTS0lMTF9SRVNPVVJDRV9LSU5EX1NDUklQVBAFQktaSWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvYWdlbnQvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_google_protobuf_timestamp, file_domain_agent_agent]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SkillManifest
@@ -92,6 +94,11 @@ export type SkillManifest = Message<"peers_touch.model.agent.v1.SkillManifest"> 
    * @generated from field: bool enabled = 15;
    */
   enabled: boolean;
+
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.SkillResource resources = 16;
+   */
+  resources: SkillResource[];
 };
 
 /**
@@ -122,6 +129,75 @@ export type SkillConditions = Message<"peers_touch.model.agent.v1.SkillCondition
  */
 export const SkillConditionsSchema: GenMessage<SkillConditions> = /*@__PURE__*/
   messageDesc(file_domain_agent_skill, 1);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SkillResource
+ */
+export type SkillResource = Message<"peers_touch.model.agent.v1.SkillResource"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from field: string content_hash = 2;
+   */
+  contentHash: string;
+
+  /**
+   * @generated from field: uint64 size = 3;
+   */
+  size: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.SkillResourceKind kind = 4;
+   */
+  kind: SkillResourceKind;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.ToolExecutionOwner execution_owner = 5;
+   */
+  executionOwner: ToolExecutionOwner;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SkillResource.
+ * Use `create(SkillResourceSchema)` to create a new message.
+ */
+export const SkillResourceSchema: GenMessage<SkillResource> = /*@__PURE__*/
+  messageDesc(file_domain_agent_skill, 2);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SkillResourceInput
+ */
+export type SkillResourceInput = Message<"peers_touch.model.agent.v1.SkillResourceInput"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from field: bytes content = 2;
+   */
+  content: Uint8Array;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.SkillResourceKind kind = 3;
+   */
+  kind: SkillResourceKind;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.ToolExecutionOwner execution_owner = 4;
+   */
+  executionOwner: ToolExecutionOwner;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SkillResourceInput.
+ * Use `create(SkillResourceInputSchema)` to create a new message.
+ */
+export const SkillResourceInputSchema: GenMessage<SkillResourceInput> = /*@__PURE__*/
+  messageDesc(file_domain_agent_skill, 3);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SkillFinding
@@ -168,7 +244,7 @@ export type SkillFinding = Message<"peers_touch.model.agent.v1.SkillFinding"> & 
  * Use `create(SkillFindingSchema)` to create a new message.
  */
 export const SkillFindingSchema: GenMessage<SkillFinding> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 2);
+  messageDesc(file_domain_agent_skill, 4);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SkillScanResult
@@ -215,7 +291,7 @@ export type SkillScanResult = Message<"peers_touch.model.agent.v1.SkillScanResul
  * Use `create(SkillScanResultSchema)` to create a new message.
  */
 export const SkillScanResultSchema: GenMessage<SkillScanResult> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 3);
+  messageDesc(file_domain_agent_skill, 5);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ListSkillsRequest
@@ -237,7 +313,7 @@ export type ListSkillsRequest = Message<"peers_touch.model.agent.v1.ListSkillsRe
  * Use `create(ListSkillsRequestSchema)` to create a new message.
  */
 export const ListSkillsRequestSchema: GenMessage<ListSkillsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 4);
+  messageDesc(file_domain_agent_skill, 6);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ListSkillsResponse
@@ -254,7 +330,7 @@ export type ListSkillsResponse = Message<"peers_touch.model.agent.v1.ListSkillsR
  * Use `create(ListSkillsResponseSchema)` to create a new message.
  */
 export const ListSkillsResponseSchema: GenMessage<ListSkillsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 5);
+  messageDesc(file_domain_agent_skill, 7);
 
 /**
  * @generated from message peers_touch.model.agent.v1.GetSkillRequest
@@ -283,7 +359,7 @@ export type GetSkillRequest = Message<"peers_touch.model.agent.v1.GetSkillReques
  * Use `create(GetSkillRequestSchema)` to create a new message.
  */
 export const GetSkillRequestSchema: GenMessage<GetSkillRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 6);
+  messageDesc(file_domain_agent_skill, 8);
 
 /**
  * @generated from message peers_touch.model.agent.v1.GetSkillResponse
@@ -305,7 +381,61 @@ export type GetSkillResponse = Message<"peers_touch.model.agent.v1.GetSkillRespo
  * Use `create(GetSkillResponseSchema)` to create a new message.
  */
 export const GetSkillResponseSchema: GenMessage<GetSkillResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 7);
+  messageDesc(file_domain_agent_skill, 9);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ReadSkillResourceRequest
+ */
+export type ReadSkillResourceRequest = Message<"peers_touch.model.agent.v1.ReadSkillResourceRequest"> & {
+  /**
+   * @generated from field: string agent_id = 1;
+   */
+  agentId: string;
+
+  /**
+   * @generated from field: string skill_id = 2;
+   */
+  skillId: string;
+
+  /**
+   * @generated from field: int32 version = 3;
+   */
+  version: number;
+
+  /**
+   * @generated from field: string path = 4;
+   */
+  path: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ReadSkillResourceRequest.
+ * Use `create(ReadSkillResourceRequestSchema)` to create a new message.
+ */
+export const ReadSkillResourceRequestSchema: GenMessage<ReadSkillResourceRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_skill, 10);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ReadSkillResourceResponse
+ */
+export type ReadSkillResourceResponse = Message<"peers_touch.model.agent.v1.ReadSkillResourceResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.SkillResource resource = 1;
+   */
+  resource?: SkillResource | undefined;
+
+  /**
+   * @generated from field: bytes content = 2;
+   */
+  content: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ReadSkillResourceResponse.
+ * Use `create(ReadSkillResourceResponseSchema)` to create a new message.
+ */
+export const ReadSkillResourceResponseSchema: GenMessage<ReadSkillResourceResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_skill, 11);
 
 /**
  * @generated from message peers_touch.model.agent.v1.InstallSkillRequest
@@ -335,6 +465,11 @@ export type InstallSkillRequest = Message<"peers_touch.model.agent.v1.InstallSki
    * @generated from field: string trust_level = 5;
    */
   trustLevel: string;
+
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.SkillResourceInput resources = 6;
+   */
+  resources: SkillResourceInput[];
 };
 
 /**
@@ -342,7 +477,7 @@ export type InstallSkillRequest = Message<"peers_touch.model.agent.v1.InstallSki
  * Use `create(InstallSkillRequestSchema)` to create a new message.
  */
 export const InstallSkillRequestSchema: GenMessage<InstallSkillRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 8);
+  messageDesc(file_domain_agent_skill, 12);
 
 /**
  * @generated from message peers_touch.model.agent.v1.InstallSkillResponse
@@ -374,7 +509,7 @@ export type InstallSkillResponse = Message<"peers_touch.model.agent.v1.InstallSk
  * Use `create(InstallSkillResponseSchema)` to create a new message.
  */
 export const InstallSkillResponseSchema: GenMessage<InstallSkillResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 9);
+  messageDesc(file_domain_agent_skill, 13);
 
 /**
  * @generated from message peers_touch.model.agent.v1.UpdateSkillRequest
@@ -404,6 +539,11 @@ export type UpdateSkillRequest = Message<"peers_touch.model.agent.v1.UpdateSkill
    * @generated from field: optional string content = 5;
    */
   content?: string | undefined;
+
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.SkillResourceInput resources = 8;
+   */
+  resources: SkillResourceInput[];
 };
 
 /**
@@ -411,7 +551,7 @@ export type UpdateSkillRequest = Message<"peers_touch.model.agent.v1.UpdateSkill
  * Use `create(UpdateSkillRequestSchema)` to create a new message.
  */
 export const UpdateSkillRequestSchema: GenMessage<UpdateSkillRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 10);
+  messageDesc(file_domain_agent_skill, 14);
 
 /**
  * @generated from message peers_touch.model.agent.v1.UpdateSkillResponse
@@ -438,7 +578,7 @@ export type UpdateSkillResponse = Message<"peers_touch.model.agent.v1.UpdateSkil
  * Use `create(UpdateSkillResponseSchema)` to create a new message.
  */
 export const UpdateSkillResponseSchema: GenMessage<UpdateSkillResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 11);
+  messageDesc(file_domain_agent_skill, 15);
 
 /**
  * @generated from message peers_touch.model.agent.v1.DeleteSkillRequest
@@ -460,7 +600,7 @@ export type DeleteSkillRequest = Message<"peers_touch.model.agent.v1.DeleteSkill
  * Use `create(DeleteSkillRequestSchema)` to create a new message.
  */
 export const DeleteSkillRequestSchema: GenMessage<DeleteSkillRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 12);
+  messageDesc(file_domain_agent_skill, 16);
 
 /**
  * @generated from message peers_touch.model.agent.v1.DeleteSkillResponse
@@ -477,7 +617,7 @@ export type DeleteSkillResponse = Message<"peers_touch.model.agent.v1.DeleteSkil
  * Use `create(DeleteSkillResponseSchema)` to create a new message.
  */
 export const DeleteSkillResponseSchema: GenMessage<DeleteSkillResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 13);
+  messageDesc(file_domain_agent_skill, 17);
 
 /**
  * @generated from message peers_touch.model.agent.v1.PatchSkillRequest
@@ -504,7 +644,7 @@ export type PatchSkillRequest = Message<"peers_touch.model.agent.v1.PatchSkillRe
  * Use `create(PatchSkillRequestSchema)` to create a new message.
  */
 export const PatchSkillRequestSchema: GenMessage<PatchSkillRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 14);
+  messageDesc(file_domain_agent_skill, 18);
 
 /**
  * @generated from message peers_touch.model.agent.v1.PatchSkillResponse
@@ -526,4 +666,45 @@ export type PatchSkillResponse = Message<"peers_touch.model.agent.v1.PatchSkillR
  * Use `create(PatchSkillResponseSchema)` to create a new message.
  */
 export const PatchSkillResponseSchema: GenMessage<PatchSkillResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 15);
+  messageDesc(file_domain_agent_skill, 19);
+
+/**
+ * @generated from enum peers_touch.model.agent.v1.SkillResourceKind
+ */
+export enum SkillResourceKind {
+  /**
+   * @generated from enum value: SKILL_RESOURCE_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SKILL_RESOURCE_KIND_DOCUMENT = 1;
+   */
+  DOCUMENT = 1,
+
+  /**
+   * @generated from enum value: SKILL_RESOURCE_KIND_REFERENCE = 2;
+   */
+  REFERENCE = 2,
+
+  /**
+   * @generated from enum value: SKILL_RESOURCE_KIND_TEMPLATE = 3;
+   */
+  TEMPLATE = 3,
+
+  /**
+   * @generated from enum value: SKILL_RESOURCE_KIND_ASSET = 4;
+   */
+  ASSET = 4,
+
+  /**
+   * @generated from enum value: SKILL_RESOURCE_KIND_SCRIPT = 5;
+   */
+  SCRIPT = 5,
+}
+
+/**
+ * Describes the enum peers_touch.model.agent.v1.SkillResourceKind.
+ */
+export const SkillResourceKindSchema: GenEnum<SkillResourceKind> = /*@__PURE__*/
+  enumDesc(file_domain_agent_skill, 0);
