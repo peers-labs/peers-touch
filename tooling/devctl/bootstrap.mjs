@@ -336,8 +336,8 @@ function installRust() {
   return true;
 }
 
-function aptUpdated() {
-  if (process.env.PT_BOOTSTRAP_APT_UPDATED === '1') return;
+function aptUpdated(force = false) {
+  if (!force && process.env.PT_BOOTSTRAP_APT_UPDATED === '1') return;
   log('apt-get update');
   sudo(['apt-get', 'update', '-qq']);
   process.env.PT_BOOTSTRAP_APT_UPDATED = '1';
@@ -408,7 +408,8 @@ function bootstrapDebian(root, options, platform) {
 
   if (!toolPresent('docker')) {
     configureDockerApt(platform.codename || 'bookworm');
-    aptUpdated();
+    // The docker source was added after the first apt update, so refresh.
+    aptUpdated(true);
     aptInstall(APT_DOCKER_PACKAGES);
     sudo(['systemctl', 'enable', '--now', 'docker']);
     actions.push('docker-installed');
