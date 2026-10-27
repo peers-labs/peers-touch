@@ -198,21 +198,26 @@ do_teardown() {
   rexec <<'EOF'
 set +e
 sudo systemctl disable --now docker 2>/dev/null
-# Purge only packages the bootstrap owns. build-essential is part of the
-# stock system image and is intentionally left installed.
-sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
-  docker-compose-plugin docker-ce-rootless-extras docker-client docker-client-latest \
-  docker-common docker-engine docker.io \
-  protobuf-compiler libprotobuf-dev libprotobuf32 \
-  libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev \
-  2>/dev/null || true
+# Purge only packages actually installed: apt aborts the whole purge when a
+# name is unknown, and build-essential is stock image content we keep.
+pkgs=$(dpkg -l | awk '/^ii/ {print $2}' | grep -E \
+  '^(docker-ce|docker-ce-cli|containerd.io|docker-buildx-plugin|docker-compose-plugin|docker-ce-rootless-extras|docker.io|protobuf-compiler|libprotobuf[0-9-]*|libwebkit2gtk-4.1-dev|libxdo-dev|libayatana-appindicator3-dev|librsvg2-dev)$' || true)
+if [ -n "$pkgs" ]; then sudo apt-get purge -y $pkgs; fi
 sudo apt-get autoremove -y 2>/dev/null
 sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg /etc/docker/daemon.json \
   /etc/apt/apt.conf.d/99peers-bootstrap
 sudo rm -rf /opt/peers-dev /etc/profile.d/peers-dev.sh /var/lib/docker /etc/docker
 sudo gpasswd -d "$USER" docker 2>/dev/null || true
+# Go module cache is read-only by design; sudo is required to remove it.
+sudo rm -rf "$HOME/go"
 rm -rf "$HOME/.cargo" "$HOME/.rustup" "$HOME/.npmrc" "$HOME/.cache/go-build" \
-       "$HOME/.config/go" "$HOME/go" "$HOME/.local/share/pnpm"
+       "$HOME/.config/go" "$HOME/.local/share/pnpm"
+# The machine is a dedicated acceptance host: once its registrations are
+# gone, remove the whole local-dev state directory.
+if [ -f "$HOME/.peers-touch/dev/registry.json" ] \
+   && [ "$(python3 -c 'import json,pathlib;print(len(json.loads(pathlib.Path.home().joinpath(".peers-touch/dev/registry.json").read_text()).get("registrations",[])))')" = "0" ]; then
+  rm -rf "$HOME/.peers-touch"
+fi
 sudo apt-get update -qq
 set -e
 echo "teardown complete"
