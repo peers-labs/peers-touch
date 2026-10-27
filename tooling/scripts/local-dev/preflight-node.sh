@@ -70,16 +70,13 @@ esac
 
 version="${BOOTSTRAP_NODE_VERSION:-}"
 if [ -z "$version" ]; then
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "python3 is required to resolve the latest Node LTS; set BOOTSTRAP_NODE_VERSION explicitly" >&2
-    exit 1
-  fi
-  version="$(curl -fsSL --retry 3 "$NODE_BASE/index.json" | python3 -c '
-import json, sys
-entries = json.load(sys.stdin)
-lts = [e["version"] for e in entries if e.get("lts")]
-print(max(lts, key=lambda v: [int(p) for p in v.lstrip("v").split(".")]))
-')"
+  # Resolve the highest Node LTS with coreutils only (no python, no node):
+  # one object per line, keep string-LTS entries ("lts":"Name"), take max.
+  version="$(curl -fsSL --retry 3 "$NODE_BASE/index.json" \
+    | tr '{' '\n' \
+    | grep '"lts":"' \
+    | sed -nE 's/.*"version":"(v[0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' \
+    | sort -V | tail -1)"
   if [ -z "$version" ]; then
     echo "cannot resolve latest Node LTS from $NODE_BASE/index.json" >&2
     echo "set BOOTSTRAP_NODE_VERSION explicitly" >&2
