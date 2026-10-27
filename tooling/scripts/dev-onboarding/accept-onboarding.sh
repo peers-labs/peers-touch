@@ -167,20 +167,26 @@ fi
 set -e
 rm -rf "\$ROOT"
 rm -f "\$HOME"/.peers-touch/dev/runtime/local/pids/*.pid 2>/dev/null || true
-# Remove this clone's machine registration without touching other workspaces.
+# Remove exactly this clone's registration and workspace state, preserving
+# any unrelated registrations in the shared machine registry.
 python3 - "\$ROOT" <<'PY'
-import json, os, sys, glob, pathlib
+import json, os, pathlib, shutil, sys
 root = os.path.realpath(sys.argv[1])
-home = pathlib.Path.home() / '.peers-touch' / 'dev'
-for path in glob.glob(str(home / '**' / '*.json'), recursive=True):
-    try:
-        data = json.loads(pathlib.Path(path).read_text())
-    except Exception:
-        continue
-    blob = json.dumps(data)
-    if root in blob:
-        pathlib.Path(path).unlink()
-        print('removed registration', path)
+dev = pathlib.Path.home() / '.peers-touch' / 'dev'
+registry = dev / 'registry.json'
+if registry.exists():
+    data = json.loads(registry.read_text())
+    kept = [r for r in data.get('registrations', [])
+            if os.path.realpath(r.get('canonicalRoot', '')) != root]
+    removed = [r for r in data.get('registrations', []) if r not in kept]
+    data['registrations'] = kept
+    registry.write_text(json.dumps(data, indent=2) + '\n')
+    for reg in removed:
+        ws = dev / 'workspaces' / reg.get('workspaceId', '')
+        if ws.parent == dev / 'workspaces' and ws.exists():
+            shutil.rmtree(ws)
+            print('removed workspace', ws)
+    print(f'removed {len(removed)} registration(s)')
 PY
 EOF
   log "reset complete"
@@ -192,12 +198,14 @@ do_teardown() {
   rexec <<'EOF'
 set +e
 sudo systemctl disable --now docker 2>/dev/null
+# Purge only packages the bootstrap owns. build-essential is part of the
+# stock system image and is intentionally left installed.
 sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
   docker-compose-plugin docker-ce-rootless-extras docker-client docker-client-latest \
   docker-common docker-engine docker.io \
   protobuf-compiler libprotobuf-dev libprotobuf32 \
   libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev \
-  build-essential 2>/dev/null || true
+  2>/dev/null || true
 sudo apt-get autoremove -y 2>/dev/null
 sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg /etc/docker/daemon.json \
   /etc/apt/apt.conf.d/99peers-bootstrap
