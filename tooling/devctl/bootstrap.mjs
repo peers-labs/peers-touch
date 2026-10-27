@@ -27,7 +27,8 @@ const PROFILE_D_CONTENT = [
   '',
 ].join('\n');
 
-const ALIYUN_DOCKER_APT = 'https://mirrors.aliyun.com/docker-ce/linux/debian';
+const ALIYUN_DOCKER_APT = process.env.BOOTSTRAP_DOCKER_APT
+  || 'https://mirrors.aliyun.com/docker-ce/linux/debian';
 const ALIYUN_GO_BASE = process.env.BOOTSTRAP_GO_BASE || 'https://mirrors.aliyun.com/golang';
 const NODE_DIST_BASE = process.env.BOOTSTRAP_NODE_BASE
   || 'https://npmmirror.com/mirrors/node';
@@ -336,6 +337,24 @@ function installRust() {
   return true;
 }
 
+function ensureAptRobustness() {
+  // CDN connections for large packages can stall on restricted networks;
+  // bounded timeouts plus retries turn that into a self-healing download.
+  const aptConf = '/etc/apt/apt.conf.d/99peers-bootstrap';
+  const content = [
+    'Acquire::Retries "5";',
+    'Acquire::http::Timeout "20";',
+    'Acquire::https::Timeout "20";',
+    '',
+  ].join('\n');
+  const tmp = path.join(os.tmpdir(), '99peers-bootstrap');
+  fs.writeFileSync(tmp, content, { mode: 0o644 });
+  sudo(['install', '-m', '0644', tmp, aptConf]);
+  fs.rmSync(tmp, { force: true });
+  // Repair a previous interrupted apt/dpkg run, if any.
+  sudo(['dpkg', '--configure', '-a']);
+}
+
 function aptUpdated(force = false) {
   if (!force && process.env.PT_BOOTSTRAP_APT_UPDATED === '1') return;
   log('apt-get update');
@@ -404,6 +423,7 @@ function bootstrapDebian(root, options, platform) {
     );
   }
 
+  ensureAptRobustness();
   aptInstall(APT_BASE_PACKAGES);
 
   if (!toolPresent('docker')) {
