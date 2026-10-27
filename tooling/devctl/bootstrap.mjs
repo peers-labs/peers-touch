@@ -27,8 +27,10 @@ const PROFILE_D_CONTENT = [
   '',
 ].join('\n');
 
-const ALIYUN_DOCKER_APT = process.env.BOOTSTRAP_DOCKER_APT
-  || 'https://mirrors.aliyun.com/docker-ce/linux/debian';
+// tuna measured far faster than aliyun on restricted office networks;
+// override with BOOTSTRAP_DOCKER_APT=https://mirrors.aliyun.com/docker-ce/linux/debian
+const DOCKER_APT_SOURCE = process.env.BOOTSTRAP_DOCKER_APT
+  || 'https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/debian';
 const ALIYUN_GO_BASE = process.env.BOOTSTRAP_GO_BASE || 'https://mirrors.aliyun.com/golang';
 const NODE_DIST_BASE = process.env.BOOTSTRAP_NODE_BASE
   || 'https://npmmirror.com/mirrors/node';
@@ -286,9 +288,18 @@ function enableCorepackAndPnpm() {
   }
   // corepack shims live next to the node binaries (root-owned directory).
   const corepack = path.join(nodeBin, 'corepack');
-  const result = run('sudo', ['-n', 'env', `COREPACK_NPM_REGISTRY=${process.env.BOOTSTRAP_NPM_REGISTRY || 'https://registry.npmmirror.com'}`, corepack, 'enable'], { capture: true, env });
+  // sudo resets PATH to secure_path, so pass the toolchain PATH explicitly:
+  // corepack is a node script whose shebang resolves node from PATH.
+  const result = run('sudo', [
+    '-n',
+    'env',
+    `PATH=${env.PATH}`,
+    `COREPACK_NPM_REGISTRY=${process.env.BOOTSTRAP_NPM_REGISTRY || 'https://registry.npmmirror.com'}`,
+    corepack,
+    'enable',
+  ], { capture: true, env });
   if (result.status !== 0) {
-    throw new BootError('corepack enable failed', result.stderr);
+    throw new BootError('corepack enable failed', result.stderr || result.stdout);
   }
   // Persist a China-reachable npm registry for corepack/npm downloads.
   const npmrc = path.join(os.homedir(), '.npmrc');
@@ -372,16 +383,16 @@ function configureDockerApt(codename) {
   const keyring = '/etc/apt/keyrings/docker.gpg';
   const list = '/etc/apt/sources.list.d/docker.list';
   if (fs.existsSync(list)) return;
-  log('configuring docker-ce apt repository (aliyun mirror)');
+  log('configuring docker-ce apt repository');
   sudo(['install', '-m', '0755', '-d', '/etc/apt/keyrings']);
   const key = path.join(os.tmpdir(), 'docker.asc');
-  run('curl', ['-fsSL', '--retry', '3', '-o', key, `${ALIYUN_DOCKER_APT}/gpg`]);
+  run('curl', ['-fsSL', '--retry', '3', '-o', key, `${DOCKER_APT_SOURCE}/gpg`]);
   sudo(['bash', '-c', `gpg --dearmor < ${key} > ${keyring}`]);
   fs.rmSync(key, { force: true });
   sudo(['chmod', 'a+r', keyring]);
   const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
   sudo(['bash', '-c',
-    `echo "deb [arch=${arch} signed-by=${keyring}] ${ALIYUN_DOCKER_APT} ${codename} stable" > ${list}`]);
+    `echo "deb [arch=${arch} signed-by=${keyring}] ${DOCKER_APT_SOURCE} ${codename} stable" > ${list}`]);
 }
 
 function configureDockerDaemon(insecureRegistries) {
