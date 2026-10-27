@@ -111,7 +111,8 @@ config:
 # local Docker/Go requirements for remote profiles). Set TOOLCHAIN=1 to
 # force the toolchain-only report.
 doctor:
-	@$(DEVCTL) doctor $(if $(filter 1 true,$(TOOLCHAIN)),--toolchain)
+	@command -v node >/dev/null 2>&1 || bash $(LOCAL_DEV_SCRIPTS)/preflight-node.sh
+	@PATH="/opt/peers-dev/go/bin:/opt/peers-dev/node/bin:$$HOME/.cargo/bin:$$PATH" $(DEVCTL) doctor $(if $(filter 1 true,$(TOOLCHAIN)),--toolchain)
 
 # One-shot onboarding: check toolchain, install missing pieces (idempotent),
 # create/activate a worktree-local profile, generate tooling/docker/.env, and
@@ -126,7 +127,8 @@ doctor:
 #   INSECURE_REGISTRY=<host> add docker daemon insecure-registry (repeatable)
 #   PROFILE=<name> SLOT=<n>
 dev-up:
-	@$(DEVCTL) dev-up \
+	@command -v node >/dev/null 2>&1 || bash $(LOCAL_DEV_SCRIPTS)/preflight-node.sh
+	@PATH="/opt/peers-dev/go/bin:/opt/peers-dev/node/bin:$$HOME/.cargo/bin:$$PATH" $(DEVCTL) dev-up \
 		$(if $(filter 1 true,$(CHECK_ONLY)),--check-only) \
 		$(if $(filter 1 true,$(NO_INSTALL)),--no-install) \
 		$(if $(filter-out 0 false,$(or $(CLIENT_DEPS),1)),--client-deps) \
