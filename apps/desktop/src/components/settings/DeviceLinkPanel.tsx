@@ -17,7 +17,6 @@ export function DeviceLinkPanel() {
   const busy = useDeviceLinkStore((s) => s.busy);
   const error = useDeviceLinkStore((s) => s.error);
   const projection = useDeviceLinkStore((s) => s.projection);
-  const avatar = useDeviceLinkStore((s) => s.avatar);
   const selectedId = useDeviceLinkStore((s) => s.selectedClaimId);
   const user = useSessionStore((s) => s.currentUser);
   const [failedQrOffer, setFailedQrOffer] = useState<string | null>(null);
@@ -29,6 +28,9 @@ export function DeviceLinkPanel() {
   const parsed = projection?.qrLink ? Schema.parse(projection.qrLink) : null;
   const content = parsed?.status === 'recognized' && parsed.link.kind === 'action' ? parsed.link : null;
   const label = (key: string) => t(`provider.deviceLink.${key}`);
+  const showQr = !complete && !terminal && !waiting && !selected;
+  const status = complete ? label('complete') : terminal ? label('expired')
+    : waiting ? label('finishing') : selected ? label('approvePrompt') : label('scanHint');
 
   return (
     <SettingsSection title={label('devices')} subtitle={label('description')}>
@@ -38,62 +40,95 @@ export function DeviceLinkPanel() {
         </Button>
       </div>
       {open && (
-        <Modal open title={label('start')} width={440} footer={null}
+        <Modal open title={label('start')} width={360} footer={null}
+          styles={{ body: { display: 'grid', gap: token.marginSM, paddingBlock: token.paddingSM } }}
           onCancel={() => { void deviceLinkActions.close(); }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
-            gap: token.marginMD, paddingBlock: token.paddingSM, minWidth: 0 }}>
-            <UserSquareAvatar name={user?.name} remoteUrl={user?.avatarUrl} size={48} />
-            <Typography.Text strong style={{ maxWidth: '100%', overflowWrap: 'anywhere', textAlign: 'center' }}>
-              {user?.name}
-            </Typography.Text>
-            <Typography.Text type="secondary">
-              {projection?.stationName || label('station')}
-            </Typography.Text>
-            <div data-pt-device-link-code style={{ width: '100%', maxWidth: 360, aspectRatio: '1',
-              display: 'grid', placeItems: 'center', background: token.colorBgContainer,
+          <div style={{ display: 'flex', alignItems: 'center', gap: token.marginSM, minWidth: 0 }}>
+            <UserSquareAvatar name={user?.name} remoteUrl={user?.avatarUrl} size={32} />
+            <div style={{ minWidth: 0, display: 'grid', gap: 2 }}>
+              <Typography.Text strong ellipsis style={{ maxWidth: 260 }}>
+                {user?.name}
+              </Typography.Text>
+              <Typography.Text type="secondary" ellipsis style={{ fontSize: token.fontSizeSM, maxWidth: 260 }}>
+                {projection?.stationName || label('station')}
+              </Typography.Text>
+            </div>
+          </div>
+
+          {showQr && (
+            <div data-pt-device-link-code style={{ width: '100%', maxWidth: 280, justifySelf: 'center',
+              aspectRatio: '1', display: 'grid', placeItems: 'center', background: token.colorBgContainer,
               borderRadius: token.borderRadiusLG, overflow: 'hidden' }}>
-              {complete ? <CheckCircle2 size={48} color={token.colorSuccess} /> :
-                terminal ? <Typography.Text>{label('expired')}</Typography.Text> :
+              {qrFailed ? <Typography.Text type="danger" style={{ textAlign: 'center' }}>{label('qrFailed')}</Typography.Text> :
                 content ? <Schema.QRCode content={content} title={label('qrLabel')}
                   onError={() => setFailedQrOffer(projection!.offerId)}
-                  errorLabel={label('qrFailed')} constraints={{ size: 360, style: 'peers',
-                    maxVersion: 24, minModulePixels: 3,
-                    ...(avatar ? { avatar: { asset: avatar, shape: 'rounded' as const } } : {}) }} /> :
-                waiting ? <Smartphone size={48} color={token.colorPrimary} /> : <Spin />}
+                  errorLabel={label('qrFailed')}
+                  constraints={{ size: 280, style: 'peers', maxVersion: 17, minModulePixels: 3 }} /> :
+                <Spin size="small" />}
             </div>
-            <div role="status" aria-live="polite" style={{ textAlign: 'center', minHeight: token.fontSize * 2 }}>
-              {complete ? label('complete') : terminal ? label('expired') :
-                waiting ? label('finishing') : selected ? label('approvePrompt') : label('scanHint')}
-            </div>
-            {projection && projection.claims.length > 1 && (
-              <Radio.Group value={selectedId} onChange={(e) => deviceLinkActions.select(e.target.value)}
-                style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: token.marginSM }}>
-                {projection.claims.map((claim) => (
-                  <Radio key={claim.id} value={claim.id}>
-                    {claim.deviceLabel || label(claim.platform)}
-                  </Radio>
-                ))}
-              </Radio.Group>
-            )}
-            {selected && (
-              <>
-                <Typography.Text>{selected.deviceLabel || label(selected.platform)}</Typography.Text>
-                <Typography.Text style={{ fontSize: token.fontSizeHeading2, letterSpacing: '0.16em',
-                  fontVariantNumeric: 'tabular-nums' }} aria-label={`${label('comparison')} ${selected.comparisonCode}`}>
-                  {selected.comparisonCode}
-                </Typography.Text>
-                <Typography.Text type="secondary">{label('compareHint')}</Typography.Text>
+          )}
+
+          {selected && !waiting && !complete && !terminal && (
+            <div style={{ display: 'grid', justifyItems: 'center', gap: token.marginXS, paddingBlock: token.paddingXS }}>
+              {projection && projection.claims.length > 1 && (
+                <Radio.Group value={selectedId} size="small"
+                  onChange={(event) => deviceLinkActions.select(event.target.value)}
+                  style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: token.marginXS }}>
+                  {projection.claims.map((claim) => (
+                    <Radio key={claim.id} value={claim.id}>
+                      {claim.deviceLabel || label(claim.platform)}
+                    </Radio>
+                  ))}
+                </Radio.Group>
+              )}
+              <Typography.Text strong>{selected.deviceLabel || label(selected.platform)}</Typography.Text>
+              <Typography.Text style={{ fontSize: token.fontSizeHeading2, letterSpacing: '0.16em',
+                fontVariantNumeric: 'tabular-nums' }} aria-label={`${label('comparison')} ${selected.comparisonCode}`}>
+                {selected.comparisonCode}
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: token.fontSizeSM, textAlign: 'center' }}>
+                {label('compareHint')}
+              </Typography.Text>
+              <div style={{ display: 'flex', gap: token.marginSM, width: '100%' }}>
                 <Button block type="primary" loading={busy}
                   onClick={() => { void deviceLinkActions.decide(selected, true); }}>{label('allow')}</Button>
                 <Button block disabled={busy}
                   onClick={() => { void deviceLinkActions.decide(selected, false); }}>{label('deny')}</Button>
-              </>
-            )}
-            {error && <Typography.Text role="alert" type="danger">{label('failed')}</Typography.Text>}
-            {(complete || terminal || qrFailed || (error && !projection)) && (
-              <Button block type="primary" loading={busy}
-                onClick={() => { void deviceLinkActions.start(); }}>
-                {complete ? label('addAnother') : label('refresh')}
+              </div>
+            </div>
+          )}
+
+          {waiting && (
+            <div style={{ height: 120, display: 'grid', placeItems: 'center' }}>
+              <Spin />
+            </div>
+          )}
+
+          {complete && (
+            <div style={{ height: 120, display: 'grid', placeItems: 'center' }}>
+              <CheckCircle2 size={44} color={token.colorSuccess} />
+            </div>
+          )}
+
+          {terminal && (
+            <div style={{ height: 120, display: 'grid', placeItems: 'center' }}>
+              <Typography.Text type="secondary">{label('expired')}</Typography.Text>
+            </div>
+          )}
+
+          <div role="status" aria-live="polite" style={{ textAlign: 'center', minHeight: token.fontSize * 1.6,
+            fontSize: token.fontSizeSM }}>
+            {status}
+          </div>
+          {error && <Typography.Text role="alert" type="danger" style={{ textAlign: 'center' }}>{label('failed')}</Typography.Text>}
+          <div style={{ display: 'flex', gap: token.marginSM }}>
+            {complete && <>
+              <Button block type="primary" onClick={() => { void deviceLinkActions.close(); }}>{label('done')}</Button>
+              <Button block loading={busy} onClick={() => { void deviceLinkActions.start(); }}>{label('addAnother')}</Button>
+            </>}
+            {(terminal || qrFailed || (error && !projection)) && (
+              <Button block type="primary" loading={busy} onClick={() => { void deviceLinkActions.start(); }}>
+                {label('refresh')}
               </Button>
             )}
             {error && projection && !terminal && !complete && (

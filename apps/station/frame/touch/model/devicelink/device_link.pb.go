@@ -521,21 +521,24 @@ func (x *SignedDeviceLinkOffer) GetNodeAuthorization() *peer.StationNodeAuthoriz
 	return nil
 }
 
-// A reference has one fixed retrieval endpoint and no recursive references.
-// unsealing_key must stay in the QR fragment and is never sent to the endpoint.
+// One immutable reference. Raw Ed25519 keys derive canonical libp2p PeerIDs.
+// bootstrap_secret stays in the fragment and is never sent to the endpoint.
+// HKDF-SHA256 binds the canonical message with bootstrap_secret cleared.
+// Lookup and unseal outputs have distinct purpose domains.
 type DeviceLinkLocator struct {
-	state                protoimpl.MessageState                 `protogen:"open.v1"`
-	ProtocolVersion      uint32                                 `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
-	StationPeerId        string                                 `protobuf:"bytes,2,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
-	StationRootPublicKey []byte                                 `protobuf:"bytes,3,opt,name=station_root_public_key,json=stationRootPublicKey,proto3" json:"station_root_public_key,omitempty"`
-	Locator              []byte                                 `protobuf:"bytes,4,opt,name=locator,proto3" json:"locator,omitempty"`
-	UnsealingKey         []byte                                 `protobuf:"bytes,5,opt,name=unsealing_key,json=unsealingKey,proto3" json:"unsealing_key,omitempty"`
-	OfferDigest          []byte                                 `protobuf:"bytes,6,opt,name=offer_digest,json=offerDigest,proto3" json:"offer_digest,omitempty"`
-	RetrievalEndpoint    *peer.PublicEndpointConnectionMaterial `protobuf:"bytes,7,opt,name=retrieval_endpoint,json=retrievalEndpoint,proto3" json:"retrieval_endpoint,omitempty"`
-	DesktopHpkePublicKey []byte                                 `protobuf:"bytes,8,opt,name=desktop_hpke_public_key,json=desktopHpkePublicKey,proto3" json:"desktop_hpke_public_key,omitempty"`
-	ExpiresAtUnixMs      int64                                  `protobuf:"varint,9,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state                    protoimpl.MessageState  `protogen:"open.v1"`
+	ProtocolVersion          uint32                  `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
+	OfferDigest              []byte                  `protobuf:"bytes,6,opt,name=offer_digest,json=offerDigest,proto3" json:"offer_digest,omitempty"`
+	ExpiresAtUnixMs          int64                   `protobuf:"varint,9,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	StationRootEd25519       []byte                  `protobuf:"bytes,10,opt,name=station_root_ed25519,json=stationRootEd25519,proto3" json:"station_root_ed25519,omitempty"`
+	BootstrapSecret          []byte                  `protobuf:"bytes,11,opt,name=bootstrap_secret,json=bootstrapSecret,proto3" json:"bootstrap_secret,omitempty"`
+	CanonicalDiscoveryOrigin string                  `protobuf:"bytes,12,opt,name=canonical_discovery_origin,json=canonicalDiscoveryOrigin,proto3" json:"canonical_discovery_origin,omitempty"`
+	EndpointRole             peer.AccessEndpointRole `protobuf:"varint,13,opt,name=endpoint_role,json=endpointRole,proto3,enum=peers_touch.model.peer.v1.AccessEndpointRole" json:"endpoint_role,omitempty"`
+	// Present only for Relay. Direct discovery proves a root-authorized Node.
+	RelayEd25519     []byte                 `protobuf:"bytes,14,opt,name=relay_ed25519,json=relayEd25519,proto3" json:"relay_ed25519,omitempty"`
+	EndpointTlsTrust *peer.EndpointTlsTrust `protobuf:"bytes,15,opt,name=endpoint_tls_trust,json=endpointTlsTrust,proto3" json:"endpoint_tls_trust,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *DeviceLinkLocator) Reset() {
@@ -575,51 +578,9 @@ func (x *DeviceLinkLocator) GetProtocolVersion() uint32 {
 	return 0
 }
 
-func (x *DeviceLinkLocator) GetStationPeerId() string {
-	if x != nil {
-		return x.StationPeerId
-	}
-	return ""
-}
-
-func (x *DeviceLinkLocator) GetStationRootPublicKey() []byte {
-	if x != nil {
-		return x.StationRootPublicKey
-	}
-	return nil
-}
-
-func (x *DeviceLinkLocator) GetLocator() []byte {
-	if x != nil {
-		return x.Locator
-	}
-	return nil
-}
-
-func (x *DeviceLinkLocator) GetUnsealingKey() []byte {
-	if x != nil {
-		return x.UnsealingKey
-	}
-	return nil
-}
-
 func (x *DeviceLinkLocator) GetOfferDigest() []byte {
 	if x != nil {
 		return x.OfferDigest
-	}
-	return nil
-}
-
-func (x *DeviceLinkLocator) GetRetrievalEndpoint() *peer.PublicEndpointConnectionMaterial {
-	if x != nil {
-		return x.RetrievalEndpoint
-	}
-	return nil
-}
-
-func (x *DeviceLinkLocator) GetDesktopHpkePublicKey() []byte {
-	if x != nil {
-		return x.DesktopHpkePublicKey
 	}
 	return nil
 }
@@ -629,6 +590,48 @@ func (x *DeviceLinkLocator) GetExpiresAtUnixMs() int64 {
 		return x.ExpiresAtUnixMs
 	}
 	return 0
+}
+
+func (x *DeviceLinkLocator) GetStationRootEd25519() []byte {
+	if x != nil {
+		return x.StationRootEd25519
+	}
+	return nil
+}
+
+func (x *DeviceLinkLocator) GetBootstrapSecret() []byte {
+	if x != nil {
+		return x.BootstrapSecret
+	}
+	return nil
+}
+
+func (x *DeviceLinkLocator) GetCanonicalDiscoveryOrigin() string {
+	if x != nil {
+		return x.CanonicalDiscoveryOrigin
+	}
+	return ""
+}
+
+func (x *DeviceLinkLocator) GetEndpointRole() peer.AccessEndpointRole {
+	if x != nil {
+		return x.EndpointRole
+	}
+	return peer.AccessEndpointRole(0)
+}
+
+func (x *DeviceLinkLocator) GetRelayEd25519() []byte {
+	if x != nil {
+		return x.RelayEd25519
+	}
+	return nil
+}
+
+func (x *DeviceLinkLocator) GetEndpointTlsTrust() *peer.EndpointTlsTrust {
+	if x != nil {
+		return x.EndpointTlsTrust
+	}
+	return nil
 }
 
 // Fixed RFC 9180 suite: X25519/HKDF-SHA256/ChaCha20Poly1305.
@@ -2746,17 +2749,18 @@ const file_domain_auth_device_link_proto_rawDesc = "" +
 	"\x15SignedDeviceLinkOffer\x12'\n" +
 	"\x0fstatement_bytes\x18\x01 \x01(\fR\x0estatementBytes\x12%\n" +
 	"\x0enode_signature\x18\x02 \x01(\fR\rnodeSignature\x12b\n" +
-	"\x12node_authorization\x18\x03 \x01(\v23.peers_touch.model.peer.v1.StationNodeAuthorizationR\x11nodeAuthorization\"\xcf\x03\n" +
+	"\x12node_authorization\x18\x03 \x01(\v23.peers_touch.model.peer.v1.StationNodeAuthorizationR\x11nodeAuthorization\"\xa1\x04\n" +
 	"\x11DeviceLinkLocator\x12)\n" +
-	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12&\n" +
-	"\x0fstation_peer_id\x18\x02 \x01(\tR\rstationPeerId\x125\n" +
-	"\x17station_root_public_key\x18\x03 \x01(\fR\x14stationRootPublicKey\x12\x18\n" +
-	"\alocator\x18\x04 \x01(\fR\alocator\x12#\n" +
-	"\runsealing_key\x18\x05 \x01(\fR\funsealingKey\x12!\n" +
-	"\foffer_digest\x18\x06 \x01(\fR\vofferDigest\x12j\n" +
-	"\x12retrieval_endpoint\x18\a \x01(\v2;.peers_touch.model.peer.v1.PublicEndpointConnectionMaterialR\x11retrievalEndpoint\x125\n" +
-	"\x17desktop_hpke_public_key\x18\b \x01(\fR\x14desktopHpkePublicKey\x12+\n" +
-	"\x12expires_at_unix_ms\x18\t \x01(\x03R\x0fexpiresAtUnixMs\"\xb9\x01\n" +
+	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12!\n" +
+	"\foffer_digest\x18\x06 \x01(\fR\vofferDigest\x12+\n" +
+	"\x12expires_at_unix_ms\x18\t \x01(\x03R\x0fexpiresAtUnixMs\x120\n" +
+	"\x14station_root_ed25519\x18\n" +
+	" \x01(\fR\x12stationRootEd25519\x12)\n" +
+	"\x10bootstrap_secret\x18\v \x01(\fR\x0fbootstrapSecret\x12<\n" +
+	"\x1acanonical_discovery_origin\x18\f \x01(\tR\x18canonicalDiscoveryOrigin\x12R\n" +
+	"\rendpoint_role\x18\r \x01(\x0e2-.peers_touch.model.peer.v1.AccessEndpointRoleR\fendpointRole\x12#\n" +
+	"\rrelay_ed25519\x18\x0e \x01(\fR\frelayEd25519\x12Y\n" +
+	"\x12endpoint_tls_trust\x18\x0f \x01(\v2+.peers_touch.model.peer.v1.EndpointTlsTrustR\x10endpointTlsTrustJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\a\x10\bJ\x04\b\b\x10\t\"\xb9\x01\n" +
 	"\x16DeviceLinkHpkeEnvelope\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12)\n" +
 	"\x10encapsulated_key\x18\x02 \x01(\fR\x0fencapsulatedKey\x12\x1e\n" +
@@ -3024,10 +3028,12 @@ var file_domain_auth_device_link_proto_goTypes = []any{
 	(*model.ActorRef)(nil),                        // 38: peers_touch.model.actor.v1.ActorRef
 	(*model.ActorDeviceCertificate)(nil),          // 39: peers_touch.model.actor.v1.ActorDeviceCertificate
 	(*peer.StationNodeAuthorization)(nil),         // 40: peers_touch.model.peer.v1.StationNodeAuthorization
-	(*model.LoginResponse)(nil),                   // 41: peers_touch.model.auth.v1.LoginResponse
-	(*accessgate.AccessDecision)(nil),             // 42: peers_touch.model.access_gate.v1.AccessDecision
-	(*model.EnrollActorDeviceRequest)(nil),        // 43: peers_touch.model.actor.v1.EnrollActorDeviceRequest
-	(*accessgate.SubmitAccessGateRequest)(nil),    // 44: peers_touch.model.access_gate.v1.SubmitAccessGateRequest
+	(peer.AccessEndpointRole)(0),                  // 41: peers_touch.model.peer.v1.AccessEndpointRole
+	(*peer.EndpointTlsTrust)(nil),                 // 42: peers_touch.model.peer.v1.EndpointTlsTrust
+	(*model.LoginResponse)(nil),                   // 43: peers_touch.model.auth.v1.LoginResponse
+	(*accessgate.AccessDecision)(nil),             // 44: peers_touch.model.access_gate.v1.AccessDecision
+	(*model.EnrollActorDeviceRequest)(nil),        // 45: peers_touch.model.actor.v1.EnrollActorDeviceRequest
+	(*accessgate.SubmitAccessGateRequest)(nil),    // 46: peers_touch.model.access_gate.v1.SubmitAccessGateRequest
 }
 var file_domain_auth_device_link_proto_depIdxs = []int32{
 	36, // 0: peers_touch.model.auth.device_link.v1.DeviceLinkConnectionCandidate.direct:type_name -> peers_touch.model.peer.v1.PublicEndpointConnectionMaterial
@@ -3036,47 +3042,48 @@ var file_domain_auth_device_link_proto_depIdxs = []int32{
 	2,  // 3: peers_touch.model.auth.device_link.v1.DeviceLinkOfferStatement.connections:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkConnectionCandidate
 	39, // 4: peers_touch.model.auth.device_link.v1.DeviceLinkOfferStatement.desktop_certificate:type_name -> peers_touch.model.actor.v1.ActorDeviceCertificate
 	40, // 5: peers_touch.model.auth.device_link.v1.SignedDeviceLinkOffer.node_authorization:type_name -> peers_touch.model.peer.v1.StationNodeAuthorization
-	36, // 6: peers_touch.model.auth.device_link.v1.DeviceLinkLocator.retrieval_endpoint:type_name -> peers_touch.model.peer.v1.PublicEndpointConnectionMaterial
-	0,  // 7: peers_touch.model.auth.device_link.v1.DeviceLinkClaim.state:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkState
-	38, // 8: peers_touch.model.auth.device_link.v1.DeviceLinkApprovalTranscript.actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	41, // 9: peers_touch.model.auth.device_link.v1.DeviceLinkCredentialMaterial.login:type_name -> peers_touch.model.auth.v1.LoginResponse
-	11, // 10: peers_touch.model.auth.device_link.v1.DeviceLinkCredentialMaterial.transcript:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkCredentialTranscript
-	2,  // 11: peers_touch.model.auth.device_link.v1.DeviceLinkCredentialMaterial.connections:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkConnectionCandidate
-	39, // 12: peers_touch.model.auth.device_link.v1.CreateDeviceLinkRequest.desktop_certificate:type_name -> peers_touch.model.actor.v1.ActorDeviceCertificate
-	4,  // 13: peers_touch.model.auth.device_link.v1.CreateDeviceLinkResponse.offer:type_name -> peers_touch.model.auth.device_link.v1.SignedDeviceLinkOffer
-	5,  // 14: peers_touch.model.auth.device_link.v1.CreateDeviceLinkResponse.locator:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkLocator
-	8,  // 15: peers_touch.model.auth.device_link.v1.ClaimDeviceLinkResponse.claim:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaim
-	6,  // 16: peers_touch.model.auth.device_link.v1.ApproveDeviceLinkRequest.identity_material:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkHpkeEnvelope
-	17, // 17: peers_touch.model.auth.device_link.v1.CancelDeviceLinkRequest.claim_authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
-	17, // 18: peers_touch.model.auth.device_link.v1.GetDeviceLinkStatusRequest.claim_authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
-	0,  // 19: peers_touch.model.auth.device_link.v1.DeviceLinkStatus.state:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkState
-	8,  // 20: peers_touch.model.auth.device_link.v1.DeviceLinkStatus.claims:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaim
-	1,  // 21: peers_touch.model.auth.device_link.v1.DeviceLinkStatus.reason:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkErrorCode
-	42, // 22: peers_touch.model.auth.device_link.v1.DeviceLinkStatus.access_decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
-	22, // 23: peers_touch.model.auth.device_link.v1.ApproveDeviceLinkResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
-	22, // 24: peers_touch.model.auth.device_link.v1.DenyDeviceLinkResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
-	22, // 25: peers_touch.model.auth.device_link.v1.CancelDeviceLinkResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
-	22, // 26: peers_touch.model.auth.device_link.v1.GetDeviceLinkStatusResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
-	22, // 27: peers_touch.model.auth.device_link.v1.ProveDeviceLinkDeviceResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
-	22, // 28: peers_touch.model.auth.device_link.v1.SubmitDeviceLinkAccessActionResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
-	22, // 29: peers_touch.model.auth.device_link.v1.AcknowledgeDeviceLinkResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
-	17, // 30: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialRequest.authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
-	22, // 31: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
-	6,  // 32: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialResponse.identity_material:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkHpkeEnvelope
-	6,  // 33: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialResponse.credential_material:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkHpkeEnvelope
-	40, // 34: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialResponse.node_authorization:type_name -> peers_touch.model.peer.v1.StationNodeAuthorization
-	17, // 35: peers_touch.model.auth.device_link.v1.ProveDeviceLinkDeviceRequest.authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
-	43, // 36: peers_touch.model.auth.device_link.v1.ProveDeviceLinkDeviceRequest.enrollment:type_name -> peers_touch.model.actor.v1.EnrollActorDeviceRequest
-	17, // 37: peers_touch.model.auth.device_link.v1.SubmitDeviceLinkAccessActionRequest.authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
-	44, // 38: peers_touch.model.auth.device_link.v1.SubmitDeviceLinkAccessActionRequest.submission:type_name -> peers_touch.model.access_gate.v1.SubmitAccessGateRequest
-	17, // 39: peers_touch.model.auth.device_link.v1.AcknowledgeDeviceLinkRequest.authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
-	1,  // 40: peers_touch.model.auth.device_link.v1.DeviceLinkError.code:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkErrorCode
-	22, // 41: peers_touch.model.auth.device_link.v1.DeviceLinkError.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
-	42, // [42:42] is the sub-list for method output_type
-	42, // [42:42] is the sub-list for method input_type
-	42, // [42:42] is the sub-list for extension type_name
-	42, // [42:42] is the sub-list for extension extendee
-	0,  // [0:42] is the sub-list for field type_name
+	41, // 6: peers_touch.model.auth.device_link.v1.DeviceLinkLocator.endpoint_role:type_name -> peers_touch.model.peer.v1.AccessEndpointRole
+	42, // 7: peers_touch.model.auth.device_link.v1.DeviceLinkLocator.endpoint_tls_trust:type_name -> peers_touch.model.peer.v1.EndpointTlsTrust
+	0,  // 8: peers_touch.model.auth.device_link.v1.DeviceLinkClaim.state:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkState
+	38, // 9: peers_touch.model.auth.device_link.v1.DeviceLinkApprovalTranscript.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	43, // 10: peers_touch.model.auth.device_link.v1.DeviceLinkCredentialMaterial.login:type_name -> peers_touch.model.auth.v1.LoginResponse
+	11, // 11: peers_touch.model.auth.device_link.v1.DeviceLinkCredentialMaterial.transcript:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkCredentialTranscript
+	2,  // 12: peers_touch.model.auth.device_link.v1.DeviceLinkCredentialMaterial.connections:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkConnectionCandidate
+	39, // 13: peers_touch.model.auth.device_link.v1.CreateDeviceLinkRequest.desktop_certificate:type_name -> peers_touch.model.actor.v1.ActorDeviceCertificate
+	4,  // 14: peers_touch.model.auth.device_link.v1.CreateDeviceLinkResponse.offer:type_name -> peers_touch.model.auth.device_link.v1.SignedDeviceLinkOffer
+	5,  // 15: peers_touch.model.auth.device_link.v1.CreateDeviceLinkResponse.locator:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkLocator
+	8,  // 16: peers_touch.model.auth.device_link.v1.ClaimDeviceLinkResponse.claim:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaim
+	6,  // 17: peers_touch.model.auth.device_link.v1.ApproveDeviceLinkRequest.identity_material:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkHpkeEnvelope
+	17, // 18: peers_touch.model.auth.device_link.v1.CancelDeviceLinkRequest.claim_authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
+	17, // 19: peers_touch.model.auth.device_link.v1.GetDeviceLinkStatusRequest.claim_authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
+	0,  // 20: peers_touch.model.auth.device_link.v1.DeviceLinkStatus.state:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkState
+	8,  // 21: peers_touch.model.auth.device_link.v1.DeviceLinkStatus.claims:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaim
+	1,  // 22: peers_touch.model.auth.device_link.v1.DeviceLinkStatus.reason:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkErrorCode
+	44, // 23: peers_touch.model.auth.device_link.v1.DeviceLinkStatus.access_decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
+	22, // 24: peers_touch.model.auth.device_link.v1.ApproveDeviceLinkResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
+	22, // 25: peers_touch.model.auth.device_link.v1.DenyDeviceLinkResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
+	22, // 26: peers_touch.model.auth.device_link.v1.CancelDeviceLinkResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
+	22, // 27: peers_touch.model.auth.device_link.v1.GetDeviceLinkStatusResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
+	22, // 28: peers_touch.model.auth.device_link.v1.ProveDeviceLinkDeviceResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
+	22, // 29: peers_touch.model.auth.device_link.v1.SubmitDeviceLinkAccessActionResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
+	22, // 30: peers_touch.model.auth.device_link.v1.AcknowledgeDeviceLinkResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
+	17, // 31: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialRequest.authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
+	22, // 32: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialResponse.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
+	6,  // 33: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialResponse.identity_material:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkHpkeEnvelope
+	6,  // 34: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialResponse.credential_material:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkHpkeEnvelope
+	40, // 35: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialResponse.node_authorization:type_name -> peers_touch.model.peer.v1.StationNodeAuthorization
+	17, // 36: peers_touch.model.auth.device_link.v1.ProveDeviceLinkDeviceRequest.authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
+	45, // 37: peers_touch.model.auth.device_link.v1.ProveDeviceLinkDeviceRequest.enrollment:type_name -> peers_touch.model.actor.v1.EnrollActorDeviceRequest
+	17, // 38: peers_touch.model.auth.device_link.v1.SubmitDeviceLinkAccessActionRequest.authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
+	46, // 39: peers_touch.model.auth.device_link.v1.SubmitDeviceLinkAccessActionRequest.submission:type_name -> peers_touch.model.access_gate.v1.SubmitAccessGateRequest
+	17, // 40: peers_touch.model.auth.device_link.v1.AcknowledgeDeviceLinkRequest.authorization:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkClaimAuthorization
+	1,  // 41: peers_touch.model.auth.device_link.v1.DeviceLinkError.code:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkErrorCode
+	22, // 42: peers_touch.model.auth.device_link.v1.DeviceLinkError.status:type_name -> peers_touch.model.auth.device_link.v1.DeviceLinkStatus
+	43, // [43:43] is the sub-list for method output_type
+	43, // [43:43] is the sub-list for method input_type
+	43, // [43:43] is the sub-list for extension type_name
+	43, // [43:43] is the sub-list for extension extendee
+	0,  // [0:43] is the sub-list for field type_name
 }
 
 func init() { file_domain_auth_device_link_proto_init() }

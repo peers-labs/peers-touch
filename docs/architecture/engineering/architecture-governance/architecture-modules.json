@@ -1500,7 +1500,7 @@
             "apps/desktop/package.json",
             "apps/mobile/package.json"
           ],
-          "allowedDependencies": ["model.domain", "qr-code-styling", "react"],
+          "allowedDependencies": ["model.domain", "qrcode-generator", "react"],
           "evidenceGates": ["schema-independent-decoder", "schema-browser-renderer", "MSL-A07"],
           "reuseLayer": "shared-ts-core"
         }

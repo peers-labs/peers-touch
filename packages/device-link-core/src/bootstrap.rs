@@ -4,7 +4,7 @@ use crate::{
     canonical, crypto,
     offer::{self, VerifiedOffer},
     proto::{DeviceLinkLocator, SignedDeviceLinkOffer},
-    Error,
+    reference, Error,
 };
 use prost::Message;
 use rand::RngCore;
@@ -49,33 +49,22 @@ where
     let deadline = Instant::now() + Duration::from_secs(15);
     let now = unix_ms();
     if locator.protocol_version != 1
-        || locator.locator.len() != 32
-        || locator.unsealing_key.len() != 32
-        || locator.offer_digest.len() != 32
-        || locator.desktop_hpke_public_key.len() != 32
         || locator.expires_at_unix_ms <= now
         || locator.expires_at_unix_ms
             > now.saturating_add(crate::MAX_OFFER_MS + station_trust::CLOCK_SKEW_MS)
     {
         return Err(Error("invalidLocator"));
     }
-    let material = locator
-        .retrieval_endpoint
-        .as_ref()
-        .ok_or(Error("missingRetrievalEndpoint"))?;
+    let reference = reference::derive(locator)?;
+    let material = &reference.endpoint;
     let endpoint = verify_public_connection_material(material, true, now)
         .map_err(|_| Error("invalidRetrievalEndpoint"))?;
     if !endpoint.canonical_discovery_origin.starts_with("https://")
         || (endpoint.expected_endpoint_role == AccessEndpointRole::DirectStation
-            && (endpoint.expected_endpoint_identity != locator.station_peer_id
+            && (endpoint.expected_endpoint_identity != reference.station_peer_id
                 || endpoint.station_root_public_key.as_deref()
-                    != Some(locator.station_root_public_key.as_slice())))
+                    != Some(reference.station_root.as_slice())))
     {
-        return Err(Error("stationRootMismatch"));
-    }
-    let root = libp2p_identity::PublicKey::try_decode_protobuf(&locator.station_root_public_key)
-        .map_err(|_| Error("stationRootMismatch"))?;
-    if root.to_peer_id().to_string() != locator.station_peer_id {
         return Err(Error("stationRootMismatch"));
     }
     let origin = reqwest::Url::parse(&endpoint.canonical_discovery_origin)
@@ -123,7 +112,7 @@ where
         return Err(Error("offerExpired"));
     }
     let statement = source_statement(
-        &locator.locator,
+        reference.lookup.as_slice(),
         &endpoint.expected_endpoint_identity,
         &challenge,
     )
@@ -131,7 +120,7 @@ where
     let statement_bytes = statement.encode_to_vec();
     let scope = match endpoint.expected_endpoint_role {
         AccessEndpointRole::DirectStation => {
-            TransportIdentityScope::DirectStation(locator.station_peer_id.clone())
+            TransportIdentityScope::DirectStation(reference.station_peer_id.clone())
         }
         AccessEndpointRole::Relay => {
             TransportIdentityScope::Relay(endpoint.expected_endpoint_identity.clone())
@@ -141,7 +130,7 @@ where
     let (source_public_key, source_signature) =
         sign(&scope, &[SOURCE_DOMAIN, &statement_bytes].concat())?;
     let request = RetrieveBootstrapBlobRequest {
-        locator: locator.locator.clone(),
+        locator: reference.lookup.to_vec(),
         source_proof: Some(AccessEndpointSourceProof {
             statement_bytes,
             source_public_key,
@@ -157,23 +146,22 @@ where
     )?;
     let sealed = verify_retrieved_blob(
         &response,
-        &locator.locator,
-        &locator.station_peer_id,
-        &locator.station_root_public_key,
+        reference.lookup.as_slice(),
+        &reference.station_peer_id,
+        &reference.station_root,
         &endpoint,
         unix_ms(),
     )
     .map_err(|_| Error("invalidBootstrapBlob"))?;
-    let bytes = crypto::unseal_offer(&locator.unsealing_key, &locator.offer_digest, &sealed)?;
+    let bytes = crypto::unseal_offer(reference.unseal.as_slice(), &locator.offer_digest, &sealed)?;
     let signed: SignedDeviceLinkOffer = canonical(&bytes)?;
     let offer = offer::verify(
         &signed,
-        &locator.station_peer_id,
-        &locator.station_root_public_key,
+        &reference.station_peer_id,
+        &reference.station_root,
         unix_ms(),
     )?;
     if offer.digest.as_slice() != locator.offer_digest
-        || offer.statement.desktop_hpke_public_key != locator.desktop_hpke_public_key
         || offer.statement.expires_at_unix_ms != locator.expires_at_unix_ms
     {
         return Err(Error("offerDigestMismatch"));

@@ -16,19 +16,23 @@ import { Schema } from '@peers-touch/schema';
 ```
 
 `Schema.encode` accepts a URL, registered navigation or generated `SchemaAction`.
-`Schema.parse` returns `recognized`, `malformed` or `unsupported`. Device Link
-actions use `peers-touch://device/link#`; ordinary typed actions use
-`peers-touch://action/v1#`. Existing `pt://`, connection and OAuth routes retain
-their own semantics. Callers dispatch only the recognized kind they own.
+`Schema.parse` returns `recognized`, `malformed` or `unsupported`. Inline Device
+Link offers use `peers-touch://device/link#`; compact locator references use
+`peers-touch://device/link#B32:` with canonical unpadded Base32. Ordinary typed
+actions use `peers-touch://action/v1#`. Existing `pt://`, connection and OAuth
+routes retain their own semantics. Callers dispatch only the recognized kind
+they own.
 
 External safety-number and channel payloads use `external-protocol` with a
 declared owner. Their UTF-8 bytes remain unchanged and are never executable link
 actions. QR diagnostics include a digest, density and fallback reason; no payload.
 
-Classic and Peers use pinned `qr-code-styling` 1.9.2. Peers decoration restores all
-function regions from that encoder's actual matrix. Avatar input is a caller-owned
-bitmap Blob, rasterized without metadata and checked for function-region overlap.
-Unsafe avatar placement falls back without an avatar at ECC H.
+Classic and Peers use pinned `qrcode-generator` 1.5.2 through its public
+Byte/Alphanumeric segment API. Device Link references split the URI prefix from
+the Base32 body, while Schema renders SVG/PNG itself and restores function regions
+from the encoder's actual matrix. Avatar input is a caller-owned bitmap Blob,
+rasterized without metadata and checked for function-region overlap. Unsafe
+avatar placement falls back without an avatar at ECC H.
 
 The component measures its actual display width. It invalidates the old image on
 resize instead of shrinking modules or clipping the quiet zone. `prepareQr`

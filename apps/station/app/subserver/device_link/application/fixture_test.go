@@ -40,9 +40,9 @@ type fixtureNetwork struct {
 
 func (n fixtureNetwork) Prepare(_ context.Context, expires time.Time, _ uint32) (*link.NetworkBundle, error) {
 	direct := &peerpb.PublicEndpointConnectionMaterial{SchemaVersion: 1,
-		CanonicalDiscoveryOrigin: "https://station.example.test:443", ExpectedEndpointRole: peerpb.AccessEndpointRole_ACCESS_ENDPOINT_ROLE_DIRECT_STATION,
+		CanonicalDiscoveryOrigin: "https://station.example.test", ExpectedEndpointRole: peerpb.AccessEndpointRole_ACCESS_ENDPOINT_ROLE_DIRECT_STATION,
 		ExpectedEndpointIdentity: n.station, ExpectedStationRootPublicKey: n.authority.StationRootPublicKey,
-		IssuedAtUnixMs: time.Now().UnixMilli(), ExpiresAtUnixMs: expires.UnixMilli()}
+		IssuedAtUnixMs: expires.Add(-5 * time.Minute).UnixMilli(), ExpiresAtUnixMs: expires.UnixMilli()}
 	return &link.NetworkBundle{StationPeerID: n.station, Root: n.authority.StationRootPublicKey,
 		Connections: []*pb.DeviceLinkConnectionCandidate{{Material: &pb.DeviceLinkConnectionCandidate_Direct{Direct: direct}}}, Retrieval: direct}, nil
 }

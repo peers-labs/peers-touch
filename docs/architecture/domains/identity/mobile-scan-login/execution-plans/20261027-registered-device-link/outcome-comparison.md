@@ -42,7 +42,7 @@ SOURCE_FACT：原 active Session 索引按 actor 与 client class 唯一。
 ### MSL-O03：统一 Schema 与既有领域真源
 
 SOURCE_FACT：旧 DeepURL 与三个 qrcode.react 消费者分散在各入口。
-目标使用 typed proto、共享 codec 和 qr-code-styling 单一引擎，删除旧 helper
+目标使用 typed proto、共享 codec 和 qrcode-generator 公开分段编码与 Schema 自有 SVG/PNG 渲染，删除旧 helper
 与依赖。Device Link 仅协调，Access、Session、Actor Identity 和 Connectivity
 继续各自拥有决策与真源；无双写、平行设备表或中心短链。
 预期链接质量和二维码安全约束只维护一次，外部载荷保留原字节。

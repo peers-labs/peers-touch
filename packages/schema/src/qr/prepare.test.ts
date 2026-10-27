@@ -1,7 +1,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { create } from '@bufbuild/protobuf';
 import { JSDOM } from 'jsdom';
 import jsQR from 'jsqr';
 import sharp from 'sharp';
+import { encode } from '../link';
+import { SchemaActionSchema } from '../gen/domain/schema/schema_pb';
+import { DeviceLinkLocatorSchema } from '../gen/domain/auth/device_link_pb';
 import { prepareQr } from './prepare';
 import { protectedModules } from './protectedModules';
 
@@ -32,6 +36,34 @@ describe('independent QR decode', () => {
       }
     });
   }
+  it('keeps compact Device Link Base32 references independently decodable at 280px', async () => {
+    const reference = create(DeviceLinkLocatorSchema, {
+      protocolVersion: 1,
+      offerDigest: new Uint8Array(32).fill(1),
+      expiresAtUnixMs: BigInt(Date.now() + 300_000),
+      stationRootEd25519: new Uint8Array(32).fill(2),
+      bootstrapSecret: new Uint8Array(32).fill(3),
+      canonicalDiscoveryOrigin: 'https://station.example',
+      endpointRole: 1,
+    });
+    const content = { kind: 'action' as const, value: create(SchemaActionSchema, {
+      protocolVersion: 1, action: { case: 'deviceLinkLocator' as const, value: reference },
+    }) };
+    const payload = encode(content);
+    expect(payload).toContain('#B32:');
+    const artifact = await prepareQr(content, {
+      size: 280, style: 'peers', maxVersion: 17, minModulePixels: 3
+    });
+    try {
+      const svg = await artifact.export('svg');
+      const { data, info } = await sharp(Buffer.from(await svg.arrayBuffer())).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const decoded = jsQR(new Uint8ClampedArray(data), info.width, info.height);
+      expect(decoded?.binaryData).toEqual([...new TextEncoder().encode(payload)]);
+      expect(artifact.diagnostics.version).toBeLessThanOrEqual(17);
+      expect(artifact.diagnostics.modulePixels).toBe(3);
+      expect(artifact.diagnostics.errorCorrection).toBe('Q');
+    } finally { artifact.dispose(); }
+  });
   it('retains safety-number and provider payload bytes as presentation only', async () => {
     for (const [owner, value] of [
       ['identity.safety-number.v1', 'peers-touch:safety/v1?l_fp=aa&p_fp=bb'],

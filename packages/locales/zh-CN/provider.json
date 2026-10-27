@@ -793,6 +793,7 @@
   "provider.deviceLink.ios": "iPhone",
   "provider.deviceLink.finishing": "正在完成手机登录",
   "provider.deviceLink.complete": "手机已登录",
+  "provider.deviceLink.done": "完成",
   "provider.deviceLink.addAnother": "添加另一台设备",
   "provider.deviceLink.expired": "登录码已失效",
   "provider.deviceLink.refresh": "刷新登录码",

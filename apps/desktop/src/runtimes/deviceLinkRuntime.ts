@@ -1,6 +1,4 @@
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { deviceLinkCommands, type DeviceLinkClaim, type DeviceLinkProjection } from '../services/deviceLink';
-import { api } from '../services/desktop_api';
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import { useDeviceLinkStore } from '../store/deviceLink';
 import { useSessionStore } from '../store/session';
@@ -35,16 +33,6 @@ async function refresh() {
   operation = job;
   await job;
 }
-async function avatarAsset(source?: string): Promise<Blob | null> {
-  if (!source) return null;
-  try {
-    const path = (await api.avatarResolveLocal(source)).local_path;
-    if (!path) return null;
-    const response = await fetch(convertFileSrc(path), { signal: AbortSignal.timeout(3_000) });
-    const blob = await response.blob();
-    return response.ok && blob.size <= 1024 * 1024 && blob.type.startsWith('image/') ? blob : null;
-  } catch { return null; }
-}
 async function start() {
   if (state().busy) return;
   const generation = ++epoch;
@@ -53,7 +41,7 @@ async function start() {
   const previous = operation;
   const previousCancellation = cancellation;
   stopTimer();
-  set({ open: true, busy: true, error: false, projection: null, selectedClaimId: null, avatar: null });
+  set({ open: true, busy: true, error: false, projection: null, selectedClaimId: null });
   // Native Create serializes cancellation before new allocation. In-flight
   // projection reads settle before another command can replace this scope.
   const job = (async () => {
@@ -65,10 +53,8 @@ async function start() {
         await deviceLinkCommands.cancel();
         if (generation !== epoch || !state().open || useSessionStore.getState().sessionEpoch !== sessionEpoch) return;
       }
-      const [projection, avatar] = await Promise.all([
-        deviceLinkCommands.create(), avatarAsset(useSessionStore.getState().currentUser?.avatarUrl),
-      ]);
-      if (generation === epoch && state().open) { publish(projection); set({ avatar }); }
+      const projection = await deviceLinkCommands.create();
+      if (generation === epoch && state().open) publish(projection);
     } catch { if (generation === epoch) set({ error: true }); }
     finally { if (generation === epoch) set({ busy: false }); }
   })();
@@ -80,7 +66,7 @@ async function start() {
 async function close() {
   const generation = ++epoch;
   stopTimer();
-  set({ open: false, busy: false, projection: null, avatar: null, selectedClaimId: null, error: false });
+  set({ open: false, busy: false, projection: null, selectedClaimId: null, error: false });
   // Native cancellation also invalidates an in-flight create immediately.
   const job = deviceLinkCommands.cancel().then(() => undefined).catch(() => {
     if (generation === epoch) set({ error: true });

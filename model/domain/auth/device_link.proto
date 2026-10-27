@@ -86,18 +86,22 @@ message SignedDeviceLinkOffer {
   peers_touch.model.peer.v1.StationNodeAuthorization node_authorization = 3;
 }
 
-// A reference has one fixed retrieval endpoint and no recursive references.
-// unsealing_key must stay in the QR fragment and is never sent to the endpoint.
+// One immutable reference. Raw Ed25519 keys derive canonical libp2p PeerIDs.
+// bootstrap_secret stays in the fragment and is never sent to the endpoint.
+// HKDF-SHA256 binds the canonical message with bootstrap_secret cleared.
+// Lookup and unseal outputs have distinct purpose domains.
 message DeviceLinkLocator {
   uint32 protocol_version = 1;
-  string station_peer_id = 2;
-  bytes station_root_public_key = 3;
-  bytes locator = 4;
-  bytes unsealing_key = 5;
+  reserved 2, 3, 4, 5, 7, 8;
   bytes offer_digest = 6;
-  peers_touch.model.peer.v1.PublicEndpointConnectionMaterial retrieval_endpoint = 7;
-  bytes desktop_hpke_public_key = 8;
   int64 expires_at_unix_ms = 9;
+  bytes station_root_ed25519 = 10;
+  bytes bootstrap_secret = 11;
+  string canonical_discovery_origin = 12;
+  peers_touch.model.peer.v1.AccessEndpointRole endpoint_role = 13;
+  // Present only for Relay. Direct discovery proves a root-authorized Node.
+  bytes relay_ed25519 = 14;
+  peers_touch.model.peer.v1.EndpointTlsTrust endpoint_tls_trust = 15;
 }
 
 // Fixed RFC 9180 suite: X25519/HKDF-SHA256/ChaCha20Poly1305.

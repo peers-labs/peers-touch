@@ -118,9 +118,26 @@ Desktop注册设备签署immutable approval transcript，Mobile验证来源及�
 
 ### Decision
 
-使用受验证Station/已绑定Relay的短时sealed bootstrap blob。二维码保留最小
-endpoint/root trust、locator、解封key和offer digest。无引用能力时使用预算内
+使用受验证Station/已绑定Relay的短时sealed bootstrap blob。二维码保留原始
+Station Ed25519公钥、单一规范origin、端点role、Relay独立原始公钥（仅Relay）、
+原端点的TLS信任材料、完整offer digest、expires和一个256位bootstrap secret。
+PeerID由官方libp2p API从公钥派生。无引用能力时使用预算内
 单路线内联，仍超限则拒绝出码。
+
+secret通过既有随机Station keyring、唯一offer ID和`bootstrap`域生成可恢复的
+伪随机32字节能力。HKDF-SHA256以
+`SHA-256("peers-touch/device-link/bootstrap-context/v1\0" || canonical locator
+with bootstrap_secret cleared)`为salt；`lookup`与`unseal`分别使用
+`peers-touch/device-link/bootstrap/<purpose>/v1\0`作为info。完整公开上下文
+绑定root、origin、role、Relay、TLS、digest、协议和期限，不受展示参数影响。
+hosting endpoint只能看到lookup和密文，无法从lookup派生解密key。
+保留原ChaCha20Poly1305的offer digest AAD和解封后完整摘要验证。
+Desktop HPKE公钥只保留在digest覆盖的签名offer中。
+
+Device Link reference使用`peers-touch://device/link#B32:`和无padding大写RFC4648
+Base32；URI前缀Byte、其余Alphanumeric分段编码。解析必须回编码一致、
+拒绝未知字段和非规范表示。旧瞬时reference形状不再发行或接纳，原5分钟TTL
+自然终止；不重写已持久化的Flow、Session或数据库。内联offer保留原协议。
 
 ### Rationale
 

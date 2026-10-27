@@ -13,10 +13,12 @@ auth/peer/domain proto拥有。外观参数是共享组件typed presentation合�
 - `WebUrl`：传统HTTP(S)链接；保留URL语义，展示不等于自动打开。
 - `NavigationLink`：当前`pt://`内部导航语法，单一registry映射owner。
 - `ConnectionLink`：现有`peers-touch://connect#<base64url(proto)>`。
-- `DeviceLink`：候选`peers-touch://device/link#<base64url(proto)>`，
-  payload是inline offer或locator的生成oneof。
+- `DeviceLinkOffer`：`peers-touch://device/link#<base64url(proto)>`，
+  payload是完整inline offer。
+- `DeviceLinkReference`：`peers-touch://device/link#B32:<base32-no-pad(DeviceLinkLocator)>`，
+  使用canonical大写Base32；旧base64 locator形状不再接纳。
 - `TypedAction`：`peers-touch://action/v1#<base64url(SchemaAction)>`，
-  只接受非 Device Link 的注册动作，不能通过换 route 绕过 kind 分派。
+  只接受非 Device Link locator 的注册动作，不能通过换 route 绕过 kind 分派。
 - `PublicConnectionMaterial`：现有 `ptm1:` 外壳的 typed 公共连接材料；
   owner 仍必须验证来源、签名、实际 endpoint TLS 与 route。
 - `OAuthCallback`：现有严格`peers-touch://oauth/callback?...`；

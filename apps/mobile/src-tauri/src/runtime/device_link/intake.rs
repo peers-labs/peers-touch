@@ -52,7 +52,7 @@ impl MobileDeviceLinkRuntime {
                             .map_err(|_| device_link_core::Error("sourceProofUnavailable"))
                     },
                 ));
-                locator.unsealing_key.zeroize();
+                locator.bootstrap_secret.zeroize();
                 result?.signed.clone()
             }
             _ => return Err(error("invalidQr")),

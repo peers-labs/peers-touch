@@ -6,6 +6,7 @@ use url::Url;
 
 pub const MAX_LINK_BYTES: usize = 32_768;
 const DEVICE_PREFIX: &str = "peers-touch://device/link#";
+const DEVICE_REFERENCE_PREFIX: &str = "peers-touch://device/link#B32:";
 const ACTION_PREFIX: &str = "peers-touch://action/v1#";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +73,14 @@ fn validate(action: &SchemaAction) -> Result<(), SchemaError> {
 }
 pub fn encode_action(action: &SchemaAction) -> Result<String, SchemaError> {
     validate(action)?;
+    if let Some(Action::DeviceLinkLocator(locator)) = &action.action {
+        let value = format!(
+            "{DEVICE_REFERENCE_PREFIX}{}",
+            data_encoding::BASE32_NOPAD.encode(&locator.encode_to_vec())
+        );
+        parse(&value)?;
+        return Ok(value);
+    }
     let prefix = if device_action(action) {
         DEVICE_PREFIX
     } else {
@@ -137,6 +146,31 @@ fn navigation(value: &str) -> Result<Navigation, SchemaError> {
 }
 pub fn parse(value: &str) -> Result<Link, SchemaError> {
     bounded(value)?;
+    if let Some(encoded) = value.strip_prefix(DEVICE_REFERENCE_PREFIX) {
+        let bytes = data_encoding::BASE32_NOPAD
+            .decode(encoded.as_bytes())
+            .map_err(|_| SchemaError::InvalidLink)?;
+        let locator = crate::proto::device_link::DeviceLinkLocator::decode(bytes.as_slice())
+            .map_err(|_| SchemaError::InvalidLink)?;
+        if data_encoding::BASE32_NOPAD.encode(&bytes) != encoded
+            || locator.encode_to_vec() != bytes
+            || locator.protocol_version != 1
+            || locator.bootstrap_secret.len() != 32
+            || locator.station_root_ed25519.len() != 32
+            || locator.offer_digest.len() != 32
+            || locator.canonical_discovery_origin.is_empty()
+            || locator.expires_at_unix_ms <= 0
+            || !matches!(locator.endpoint_role, 1 | 2)
+            || locator.relay_ed25519.len() != if locator.endpoint_role == 2 { 32 } else { 0 }
+            || (locator.endpoint_role == 2 && locator.relay_ed25519 == locator.station_root_ed25519)
+        {
+            return Err(SchemaError::InvalidLink);
+        }
+        return Ok(Link::Action(SchemaAction {
+            protocol_version: 1,
+            action: Some(Action::DeviceLinkLocator(locator)),
+        }));
+    }
     if let Some(path) = value.strip_prefix("pt://") {
         return Ok(Link::Navigation(navigation(path)?));
     }
@@ -147,6 +181,7 @@ pub fn parse(value: &str) -> Result<Link, SchemaError> {
                 SchemaAction::decode(bytes.as_slice()).map_err(|_| SchemaError::InvalidLink)?;
             validate(&action)?;
             if action.encode_to_vec() != bytes
+                || matches!(action.action, Some(Action::DeviceLinkLocator(_)))
                 || device_action(&action) != (prefix == DEVICE_PREFIX)
             {
                 return Err(SchemaError::InvalidLink);

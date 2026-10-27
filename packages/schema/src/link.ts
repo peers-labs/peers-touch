@@ -2,9 +2,12 @@ import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { SchemaActionSchema, type SchemaAction } from './gen/domain/schema/schema_pb';
 import { StationConnectionEnvelopeSchema, PublicEndpointConnectionMaterialSchema } from './gen/domain/peer/access_endpoint_pb';
 import { SchemaError } from './errors';
+import { base32, unbase32 } from './base32';
+import { DeviceLinkLocatorSchema } from './gen/domain/auth/device_link_pb';
 
 export const MAX_LINK_BYTES = 32_768;
 const DEVICE_PREFIX = 'peers-touch://device/link#';
+export const DEVICE_REFERENCE_PREFIX = `${DEVICE_PREFIX}B32:`;
 const ACTION_PREFIX = 'peers-touch://action/v1#';
 const encoder = new TextEncoder();
 
@@ -91,6 +94,23 @@ export function parseNavigation(value: string): NavigationLink | null {
 
 function parseRecognized(value: string): ParsedLink {
   bounded(value);
+  if (value.startsWith(DEVICE_REFERENCE_PREFIX)) {
+    const bytes = unbase32(value.slice(DEVICE_REFERENCE_PREFIX.length));
+    const reference = fromBinary(DeviceLinkLocatorSchema, bytes, { readUnknownFields: false });
+    const canonical = toBinary(DeviceLinkLocatorSchema, reference);
+    if (reference.protocolVersion !== 1 || reference.bootstrapSecret.length !== 32
+      || reference.stationRootEd25519.length !== 32 || reference.offerDigest.length !== 32
+      || !reference.canonicalDiscoveryOrigin || reference.expiresAtUnixMs <= 0n
+      || (reference.endpointRole !== 1 && reference.endpointRole !== 2)
+      || reference.relayEd25519.length !== (reference.endpointRole === 2 ? 32 : 0)
+      || (reference.endpointRole === 2 && reference.relayEd25519.every((byte, i) => byte === reference.stationRootEd25519[i]))
+      || canonical.length !== bytes.length || canonical.some((byte, i) => byte !== bytes[i])) {
+      throw new SchemaError('INVALID_LINK');
+    }
+    return { kind: 'action', value: create(SchemaActionSchema, {
+      protocolVersion: 1, action: { case: 'deviceLinkLocator', value: reference },
+    }) };
+  }
   if (value.startsWith('pt://')) {
     const navigation = parseNavigation(value);
     if (!navigation) throw new SchemaError('INVALID_LINK');
@@ -99,6 +119,7 @@ function parseRecognized(value: string): ParsedLink {
   for (const prefix of [DEVICE_PREFIX, ACTION_PREFIX]) {
     if (!value.startsWith(prefix)) continue;
     const action = canonicalAction(unbase64url(value.slice(prefix.length)));
+    if (action.action.case === 'deviceLinkLocator') throw new SchemaError('INVALID_LINK');
     if (isDeviceAction(action) !== (prefix === DEVICE_PREFIX)) throw new SchemaError('INVALID_LINK');
     return { kind: 'action', value: action };
   }
@@ -160,7 +181,9 @@ export function encode(input: LinkInput): string {
   let value: string;
   if (input.kind === 'action') {
     validateAction(input.value);
-    value = (isDeviceAction(input.value) ? DEVICE_PREFIX : ACTION_PREFIX) + base64url(toBinary(SchemaActionSchema, input.value));
+    value = input.value.action.case === 'deviceLinkLocator'
+      ? DEVICE_REFERENCE_PREFIX + base32(toBinary(DeviceLinkLocatorSchema, input.value.action.value))
+      : (isDeviceAction(input.value) ? DEVICE_PREFIX : ACTION_PREFIX) + base64url(toBinary(SchemaActionSchema, input.value));
   } else if (input.kind === 'navigation') {
     const navigation = input.value;
     value = `pt://${navigation.resource}`;

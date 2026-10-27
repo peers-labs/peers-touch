@@ -18,6 +18,7 @@
   {"value":"peers-touch://action/v1#CAEyA2FiYx","status":"malformed"},
   {"value":"peers-touch://action/v1#CAEyA2FiYwgB","status":"malformed"},
   {"value":"peers-touch://action/v1#CAEyA2FiY0gB","status":"malformed"},
+  {"value":"peers-touch://device/link#B32:BAATEIABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAFEOBR4DYOYTIURAAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBFUIADAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDANRBO2DUORYHGORPF5ZXIYLUNFXW4LTFPBQW24DMMVUAC","status":"recognized","kind":"action"},
   {"value":"peers-touch://device/link#CAEyA2FiYw","status":"malformed"},
   {"value":"peers-touch://action/v1#CAk","status":"unsupported"},
   {"value":"peers-touch://oauth/callback?code=abc&state=def","status":"recognized","kind":"oauth-callback"},

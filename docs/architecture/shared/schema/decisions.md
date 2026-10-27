@@ -51,8 +51,9 @@ Rust/TS 由同一 proto 和同一测试向量约束，移除重复 helper。
 
 ### Decision
 
-classic 与 peers 使用 MIT 的 `qr-code-styling` 单引擎。
-保护定位、timing、alignment、format/version 功能模块；SDK 不满足保护要求时降级。
+classic 与 peers 使用 MIT 的 `qrcode-generator` 1.5.2公开API作为唯一标准编码引擎。
+Schema自行生成SVG/PNG并保护定位、timing、alignment、format/version功能模块；
+需要Alphanumeric压缩时使用公开分段API，不访问私有矩阵状态。
 
 ### Rationale
 
@@ -64,7 +65,7 @@ classic 与 peers 使用 MIT 的 `qr-code-styling` 单引擎。
 
 ### Consequences
 
-迁移所有消费者后删除 `qrcode.react`。SDK 版本升级需要独立解码与功能区验证；
+不保留装饰型QR SDK的私有适配层。编码库版本升级需要独立解码、分段编码与功能区验证；
 样式和头像的降级不能改变载荷内容。
 
 ## SCH-D03：外观不能削弱协议

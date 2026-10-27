@@ -793,6 +793,7 @@
   "provider.deviceLink.ios": "iPhone",
   "provider.deviceLink.finishing": "Completing phone sign-in",
   "provider.deviceLink.complete": "Phone signed in",
+  "provider.deviceLink.done": "Done",
   "provider.deviceLink.addAnother": "Add another device",
   "provider.deviceLink.expired": "Sign-in code is no longer valid",
   "provider.deviceLink.refresh": "Refresh code",

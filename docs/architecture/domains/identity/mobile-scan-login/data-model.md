@@ -21,8 +21,11 @@ peer 网络扩展仍由 `model/domain/peer/` 拥有。不能先写手工 TS/Go/R
 root→Node authorization。使用独立 domain separator，签名覆盖完整 statement；
 摘要验证不能把解析后重编码当成原签名材料。通用 Schema外壳不签发业务权限。
 
-`DeviceLinkLocator` 是短码候选：预期 root PeerID、locator随机值、解封密钥、
-offer digest、retrieval endpoint的最小 trust、Desktop临时公钥与expires。
+`DeviceLinkLocator` 是短码引用：原始Station Ed25519公钥、offer digest、
+canonical discovery origin、endpoint role、Relay独立原始公钥（仅Relay）、
+端点TLS信任材料、expires和256位bootstrap secret。canonical序列化不得超过301字节，
+保证Q纠错、4模块quiet zone和280 CSS px展示预算下模块不少于3 CSS px。
+PeerID在各端由官方libp2p API从原始公钥派生；Desktop HPKE公钥只保留在签名offer内，不进入二维码。
 二维码的带外来源认证此引导；单靠下载文档的自签名不能证明操作者身份。
 
 `ConnectionBundle` 最多4个候选，引用当前生成的
@@ -31,14 +34,14 @@ offer digest、retrieval endpoint的最小 trust、Desktop临时公钥与expires
 签署既有 `AccessEndpointSourceProof`，同源兑换幂等。扫码前的引导grant最多4个
 source名额，与claim上限一致；获批source的后续材料不与其他扫码者共享。
 
-网络引用使用独立 `SealedBootstrapBlob`：随机 locator、blob bytes/digest/TTL、
+网络引用使用独立 `SealedBootstrapBlob`：HKDF lookup、blob bytes/digest/TTL、
 上传源 Node授权与 source proof；其中没有 Session或Actor私钥明文。
 完整解封 offer不允许再引用下一层。
 实际peer合同为`BootstrapBlobStatement`和publish/retrieve消息；
-声明只含locator摘要，hosting owner不持久化明文locator或解封密钥。
+声明只含lookup摘要，hosting owner不持久化bootstrap secret、lookup或解封密钥。
 
 sealed offer格式固定为`PTSO1\0 || nonce[12] || ciphertext || tag[16]`，
-使用ChaCha20Poly1305和每offer独立的随机32字节解封密钥。
+使用ChaCha20Poly1305和每offer独立的HKDF解封密钥。
 AAD为`peers-touch/device-link/sealed-offer/v1\0 || SHA256(signed_offer_bytes)`；
 加密前执行16KiB总长度上限，解封后再校验完整offer摘要与Node签名。
 
@@ -86,10 +89,11 @@ Station签发独立刷新凭据。`access_token`与其兼容别名必须保持�
 - offer/Actor/Station/原Session与Desktop device绑定、issued/expires、revision；
 - bounded claim集合、selected claim、Access attempt/candidate引用；
 - 授权与交付状态、密文摘要/密文、delivery/ack摘要、终态原因；
-- 所有秘密 locator/claim凭证仅保存哈希；需要恢复的密文有独立TTL。
+- 所有秘密 bootstrap/claim凭证仅保存哈希；需要恢复的密文有独立TTL。
 
-Station使用现有keyring和独立用途domain，以随机offer/claim ID为输入派生32字节
-scan、claim、locator与解封capability；持久化其哈希和key ID，不保存明文秘密。
+Station使用现有keyring和独立用途domain，以唯一offer/claim ID为输入派生32字节
+scan、claim与bootstrap capability；bootstrap capability再通过绑定完整公开
+reference上下文的HKDF分离出lookup与解封key。持久化只保存其哈希和key ID，不保存明文秘密。
 offer公开存储去掉scan字段，完整签名offer仅在sealed blob内保留。
 同request重试重建原始字节；keyring退休或hash不匹配时拒绝恢复，不能重新生成
 同ID的授权秘密或续期。终态保留24小时幂等窗口，然后按有限批次删除本事务记录。

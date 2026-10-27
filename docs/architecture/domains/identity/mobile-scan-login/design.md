@@ -96,21 +96,22 @@ endpoint-scoped trust 路径；缺少生产支持时返回明确能力缺失。
 头像只进入渲染参数，永不进入 wire。
 
 默认使用短引用；内联仅在 Schema 密度预算内使用。引用仍携带**最小可信引导**：
-预期 root 标识、一个受验证的 retrieval endpoint 身份/TLS 材料、
-随机 locator 与解封密钥、完整 offer 的摘要、Desktop 临时公钥及期限。
-不能把它简化为“先连上私有 Station 才能下载连接私有 Station 的材料”。
+原始Station Ed25519公钥、一个受验证的canonical retrieval endpoint身份/TLS材料、
+独立Relay公钥（仅Relay）、完整offer摘要、期限和bootstrap secret。
+lookup与解封密钥只在native由绑定公开上下文的HKDF派生；Desktop临时公钥留在
+digest覆盖的签名offer中。不能把它简化为“先连上私有 Station 才能下载连接私有 Station 的材料”。
 
 完整 offer：
 
 - Direct 场景由可公开接触的 Station bootstrap 提供。
 - 私有 Station 场景可由已绑定 Relay 的 control listener 托管短时 sealed blob。
   Relay 的新职责只限于 enrolled Station 上传的网络引导 blob：
-  定长配额、TTL、源 proof、随机 locator；无 Actor、审批、Session API。
+  定长配额、TTL、源 proof、HKDF lookup；无 Actor、审批、Session API。
 - 该扩展属于 Node Connectivity，**当前不存在**。不能将它归为 Schema HTTP
   服务，也不能在 App 中绕过 Relay role allowlist。
-- 先验证 retrieval endpoint，再发送 locator/source proof；从 HTTPS/scoped
+- 先验证 retrieval endpoint，再发送 lookup/source proof；从 HTTPS/scoped
   encrypted control 取得 blob，解封并核对摘要、签名和预期 root，随后兑换 grant。
-  QR 解封密钥不进入 URL query、Referer 或服务器请求。
+  QR bootstrap secret与解封密钥不进入 URL query、Referer 或服务器请求。
 - 不使用中心短链、网页统计重定向、任意 URL 下载或递归引用。
 - retrieval只允许引导材料里的canonical endpoint和固定control路径，禁止redirect。
   不探测网段、不使用loopback/云metadata地址；明确的LAN候选按本机网络权限处理。

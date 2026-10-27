@@ -66,15 +66,18 @@ dark UI仍使用可扫描亮底码。头像未加载不阻止出码；payload和
 模块数为`21 + 4 × (version - 1)`；含quiet zone尺寸为
 `(modules + 8) × modulePixels`。SVG也必须按**显示尺寸**满足密度预算。
 
-候选展示profile：默认320CSS px、最少3CSS px/module、四边4modules；
+通用展示profile：默认320CSS px、最少3CSS px/module、四边4modules；
+Device Link紧凑引导优先280CSS px（允许260至280，实际矩阵决定能否出码），
 标准码ECC Q、头像码ECC H；头像边长起始上限为symbol边长12%。
 这些是待真机校准的预算，不是安全证明。完整offer超预算优先owner提供的短引用；
 再去头像、增大允许显示尺寸；仍不满足则报PAYLOAD_TOO_DENSE。
 不能降低最低ECC、裁quiet zone、缩模块或伪造“扫码可用”。
 
-二维码render使用单一`qr-code-styling` SDK，classic也走同一个引擎；
-Schema封装功能模块保护/密度校验和avatar降级。若SDK不能安全保留功能模块，
-Peers风格在该profile降级为标准码，不能靠页面手工挖空矩阵。
+二维码编码使用单一`qrcode-generator` 1.5.2公开API，支持Byte与Alphanumeric
+分段。Device Link reference的URI前缀使用Byte，`B32:`与大写Base32体使用
+Alphanumeric；其他载荷按原UTF-8字节编码。Schema根据该SDK实际矩阵生成
+SVG/PNG：功能模块保持方形，Peers只圆角数据模块，头像继续受功能区mask约束。
+不接触SDK私有字段，不以异步替换矩阵实现分段。
 不维护自己的Reed–Solomon、mask或finder算法。
 
 ## 5. 生命周期、错误与验收

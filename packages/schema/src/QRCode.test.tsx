@@ -9,7 +9,15 @@ describe('generated Device Link inputs', () => {
   it('renders a parsed locator with lossless protobuf timestamps', () => {
     const value = create(SchemaActionSchema, {
       protocolVersion: 1,
-      action: { case: 'deviceLinkLocator', value: { expiresAtUnixMs: 9_007_199_254_740_993n } },
+      action: { case: 'deviceLinkLocator', value: {
+        protocolVersion: 1,
+        offerDigest: new Uint8Array(32).fill(1),
+        expiresAtUnixMs: 9_007_199_254_740_993n,
+        stationRootEd25519: new Uint8Array(32).fill(2),
+        bootstrapSecret: new Uint8Array(32).fill(3),
+        canonicalDiscoveryOrigin: 'https://station.example',
+        endpointRole: 1,
+      } },
     });
     const parsed = parse(encode({ kind: 'action', value }));
     expect(parsed.status).toBe('recognized');

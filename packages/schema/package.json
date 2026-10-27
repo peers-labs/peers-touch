@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.10.2",
-    "qr-code-styling": "1.9.2"
+    "qrcode-generator": "1.5.2"
   },
   "peerDependencies": {
     "react": "^19.2.0"

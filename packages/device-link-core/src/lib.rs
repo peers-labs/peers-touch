@@ -3,6 +3,7 @@ pub mod bootstrap;
 pub mod crypto;
 pub mod material;
 pub mod offer;
+pub mod reference;
 pub mod transcript;
 
 pub use schema_core::proto::device_link as proto;

@@ -1055,6 +1055,7 @@ name = "schema-core"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "data-encoding",
  "prost",
  "prost-build",
  "prost-types",

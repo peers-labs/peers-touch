@@ -3,7 +3,10 @@ package application
 import (
 	"bytes"
 	"context"
+	"time"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 	link "github.com/peers-labs/peers-touch/station/app/subserver/device_link/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/device_link/infrastructure"
 	pb "github.com/peers-labs/peers-touch/station/frame/touch/model/devicelink"
@@ -54,16 +57,22 @@ func (s *Service) buildOffer(sc *scope, request *pb.CreateDeviceLinkRequest, bun
 	if err != nil || bundle.Retrieval == nil {
 		return err
 	}
-	key := link.Capability(sc.key.Material, "unseal", sc.offer.ID)
-	sealed, err := infrastructure.SealOffer(key, signed)
+	template, err := bootstrapReference(bundle, link.Digest(signed), sc.now, sc.offer.ExpiresAt)
 	if err != nil {
 		return err
 	}
-	locator := link.Capability(sc.key.Material, "locator", sc.offer.ID)
-	template := &pb.DeviceLinkLocator{
-		ProtocolVersion: 1, StationPeerId: bundle.StationPeerID, StationRootPublicKey: bundle.Root,
-		OfferDigest: link.Digest(signed), RetrievalEndpoint: bundle.Retrieval,
-		DesktopHpkePublicKey: request.GetDesktopHpkePublicKey(), ExpiresAtUnixMs: sc.offer.ExpiresAt.UnixMilli(),
+	template.BootstrapSecret = link.Capability(sc.key.Material, "bootstrap", sc.offer.ID)
+	if raw, err := link.Encode(template); err != nil || len(raw) > link.MaxCompactReferenceBytes {
+		return link.Reject(pb.DeviceLinkErrorCode_DEVICE_LINK_ERROR_CODE_BOOTSTRAP_UNSUPPORTED)
+	}
+	locator, key, err := link.BootstrapKeys(template)
+	if err != nil {
+		return err
+	}
+	template.BootstrapSecret = nil
+	sealed, err := infrastructure.SealOffer(key, signed)
+	if err != nil {
+		return err
 	}
 	sc.offer.LocatorTemplate, err = link.Encode(template)
 	if err != nil {
@@ -101,14 +110,66 @@ func (s *Service) createResponse(sc *scope) (*pb.CreateDeviceLinkResponse, *peer
 	if err := link.Decode(sc.offer.LocatorTemplate, locator); err != nil {
 		return nil, nil, err
 	}
-	locator.Locator = link.Capability(sc.key.Material, "locator", sc.offer.ID)
-	locator.UnsealingKey = link.Capability(sc.key.Material, "unseal", sc.offer.ID)
+	locator.BootstrapSecret = link.Capability(sc.key.Material, "bootstrap", sc.offer.ID)
 	response.Locator = locator
 	publication := &peerpb.PublishBootstrapBlobRequest{}
 	if err := link.Decode(sc.offer.BootstrapPublication, publication); err != nil {
 		return nil, nil, err
 	}
 	return response, publication, nil
+}
+
+func bootstrapReference(bundle *NetworkBundle, digest []byte, now, expires time.Time) (*pb.DeviceLinkLocator, error) {
+	invalid := func() (*pb.DeviceLinkLocator, error) {
+		return nil, link.Reject(pb.DeviceLinkErrorCode_DEVICE_LINK_ERROR_CODE_BOOTSTRAP_UNSUPPORTED)
+	}
+	endpoint := bundle.Retrieval
+	if endpoint == nil {
+		return invalid()
+	}
+	verifiedEndpoint, err := peerpb.VerifyPublicEndpointConnectionMaterial(endpoint, true, now)
+	if err != nil || verifiedEndpoint.ExpiresAt.UnixMilli() < expires.UnixMilli() {
+		return invalid()
+	}
+	root, err := crypto.UnmarshalPublicKey(bundle.Root)
+	if err != nil || root.Type() != crypto.Ed25519 {
+		return invalid()
+	}
+	rootID, err := peer.IDFromPublicKey(root)
+	if err != nil || rootID.String() != bundle.StationPeerID {
+		return invalid()
+	}
+	raw, err := root.Raw()
+	if err != nil || len(raw) != 32 {
+		return invalid()
+	}
+	reference := &pb.DeviceLinkLocator{ProtocolVersion: 1, OfferDigest: digest,
+		ExpiresAtUnixMs: expires.UnixMilli(), StationRootEd25519: raw,
+		CanonicalDiscoveryOrigin: endpoint.GetCanonicalDiscoveryOrigin(),
+		EndpointRole:             endpoint.GetExpectedEndpointRole(), EndpointTlsTrust: endpoint.GetEndpointTlsTrust()}
+	switch reference.EndpointRole {
+	case peerpb.AccessEndpointRole_ACCESS_ENDPOINT_ROLE_DIRECT_STATION:
+		if endpoint.GetExpectedEndpointIdentity() != bundle.StationPeerID ||
+			!bytes.Equal(endpoint.GetExpectedStationRootPublicKey(), bundle.Root) {
+			return invalid()
+		}
+	case peerpb.AccessEndpointRole_ACCESS_ENDPOINT_ROLE_RELAY:
+		id, err := peer.Decode(endpoint.GetExpectedEndpointIdentity())
+		if err != nil {
+			return invalid()
+		}
+		public, err := id.ExtractPublicKey()
+		if err != nil || public.Type() != crypto.Ed25519 || id.String() != endpoint.GetExpectedEndpointIdentity() {
+			return invalid()
+		}
+		reference.RelayEd25519, err = public.Raw()
+		if err != nil || len(reference.RelayEd25519) != 32 || bytes.Equal(reference.RelayEd25519, raw) {
+			return invalid()
+		}
+	default:
+		return invalid()
+	}
+	return reference, nil
 }
 
 // Republish restores connectivity-only volatile hosting after a Node restart.
