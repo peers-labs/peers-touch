@@ -7,6 +7,7 @@ import {
   Empty,
   Input as AntdInput,
   message,
+  Modal,
   Pagination,
   Popconfirm,
   Select,
@@ -22,6 +23,7 @@ import {
   User,
   Activity,
   Trash2,
+  Pencil,
   Clock,
   Database,
   RefreshCw,
@@ -145,6 +147,9 @@ export function MemorySettingsSection() {
   const { t } = useTranslation('memory');
   const [stats, setStats] = useState<MemoryStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [mutationVersion, setMutationVersion] = useState(0);
+
+  const notifyMutation = useCallback(() => setMutationVersion((v) => v + 1), []);
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
@@ -160,7 +165,7 @@ export function MemorySettingsSection() {
 
   useEffect(() => {
     loadStats();
-  }, [loadStats]);
+  }, [loadStats, mutationVersion]);
 
   return (
     <Flexbox
@@ -211,7 +216,7 @@ export function MemorySettingsSection() {
                   {t('memory.tab.browse')}
                 </Flexbox>
               ),
-              children: <BrowseTab onDelete={loadStats} />,
+              children: <BrowseTab onDelete={loadStats} onMutate={notifyMutation} />,
             },
             {
               key: 'search',
@@ -221,7 +226,7 @@ export function MemorySettingsSection() {
                   {t('memory.tab.search')}
                 </Flexbox>
               ),
-              children: <SearchTab />,
+              children: <SearchTab mutationVersion={mutationVersion} onMutate={notifyMutation} />,
             },
             {
               key: 'persona',
@@ -241,7 +246,7 @@ export function MemorySettingsSection() {
                   {t('memory.tab.events')}
                 </Flexbox>
               ),
-              children: <EventsTab />,
+              children: <EventsTab mutationVersion={mutationVersion} />,
             },
             {
               key: 'configuration',
@@ -262,7 +267,7 @@ export function MemorySettingsSection() {
 
 /* ─── Browse Tab ─── */
 
-function BrowseTab({ onDelete }: { onDelete: () => void }) {
+function BrowseTab({ onDelete, onMutate }: { onDelete: () => void; onMutate: () => void }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('memory');
   const agents = useAgentStore(s => s.agents);
@@ -277,6 +282,9 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
   const [groupBy, setGroupBy] = useState<TimelineGroupBy>('day');
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Memory | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [saving, setSaving] = useState(false);
   const pageSize = 20;
 
   useEffect(() => { loadAgents(); }, [loadAgents]);
@@ -313,10 +321,36 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
       message.success(t('memory.browse.deleteSuccess'));
       load();
       onDelete();
+      onMutate();
     } catch (err: unknown) {
       message.error(
         err instanceof Error ? err.message : t('memory.browse.deleteFailed'),
       );
+    }
+  };
+
+  const openEdit = (memory: Memory) => {
+    setEditing(memory);
+    setEditContent(
+      typeof memory.content === 'string'
+        ? memory.content
+        : JSON.stringify(memory.content, null, 2),
+    );
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      await api.updateMemory(editing.id, editContent);
+      message.success(t('memory.browse.editSuccess'));
+      setEditing(null);
+      load();
+      onMutate();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : t('memory.browse.editFailed'));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -362,21 +396,31 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
             </pre>
           )}
         </Flexbox>
-        <Popconfirm
-          title={t('memory.browse.deleteConfirm')}
-          onConfirm={(e) => {
-            e?.stopPropagation();
-            handleDelete(m.id);
-          }}
-          onCancel={(e) => e?.stopPropagation()}
-        >
+        <Flexbox horizontal gap={4}>
           <Button
             size="small"
-            danger
-            icon={<Trash2 size={14} />}
-            onClick={(e) => e.stopPropagation()}
+            icon={<Pencil size={14} />}
+            onClick={(e) => {
+              e.stopPropagation();
+              openEdit(m);
+            }}
           />
-        </Popconfirm>
+          <Popconfirm
+            title={t('memory.browse.deleteConfirm')}
+            onConfirm={(e) => {
+              e?.stopPropagation();
+              handleDelete(m.id);
+            }}
+            onCancel={(e) => e?.stopPropagation()}
+          >
+            <Button
+              size="small"
+              danger
+              icon={<Trash2 size={14} />}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </Popconfirm>
+        </Flexbox>
       </Flexbox>
     </Card>
   );
@@ -517,13 +561,40 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
           )}
         </Flexbox>
       )}
+
+      <Modal
+        open={!!editing}
+        title={t('memory.browse.editTitle')}
+        onCancel={() => setEditing(null)}
+        onOk={handleSaveEdit}
+        confirmLoading={saving}
+        okText={t('memory.browse.editSave')}
+        cancelText={t('memory.browse.editCancel')}
+        destroyOnClose
+      >
+        {editing && (
+          <Flexbox gap={10}>
+            <Flexbox horizontal gap={8}>
+              <Tag color={LAYER_COLORS[editing.layer] || 'default'}>{editing.layer}</Tag>
+              <Tag>{editing.source}</Tag>
+              {editing.summary && <Text type="secondary" style={{ fontSize: 12 }}>{editing.summary}</Text>}
+            </Flexbox>
+            <AntdInput.TextArea
+              rows={8}
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              style={{ fontFamily: 'monospace', fontSize: 12 }}
+            />
+          </Flexbox>
+        )}
+      </Modal>
     </Flexbox>
   );
 }
 
 /* ─── Search Tab ─── */
 
-function SearchTab() {
+function SearchTab({ mutationVersion, onMutate }: { mutationVersion: number; onMutate: () => void }) {
   const agents = useAgentStore(s => s.agents);
   const loadAgents = useAgentStore(s => s.loadAgents);
   const { t } = useTranslation('memory');
@@ -553,6 +624,22 @@ function SearchTab() {
       setLoading(false);
     }
   }, [query, agentFilter, timeWindow]);
+
+  // Re-run the latest search after an edit/delete so results stay truthful.
+  useEffect(() => {
+    if (mutationVersion > 0 && query.trim()) handleSearch();
+  }, [mutationVersion]);
+
+  const handleCardDelete = async (id: string) => {
+    try {
+      await api.deleteMemory(id);
+      message.success(t('memory.browse.deleteSuccess'));
+      onMutate();
+      handleSearch();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : t('memory.browse.deleteFailed'));
+    }
+  };
 
   return (
     <Flexbox gap={16}>
@@ -620,6 +707,12 @@ function SearchTab() {
                     {`F:${(explain.final_score * 100).toFixed(0)}%`}
                   </Text>
                 )}
+                <Popconfirm
+                  title={t('memory.browse.deleteConfirm')}
+                  onConfirm={() => handleCardDelete(memory.id)}
+                >
+                  <Button size="small" danger icon={<Trash2 size={14} />} />
+                </Popconfirm>
               </Flexbox>
             </Card>
           ))}
@@ -705,7 +798,7 @@ function PersonaTab() {
 
 /* ─── Events Tab ─── */
 
-function EventsTab() {
+function EventsTab({ mutationVersion }: { mutationVersion: number }) {
   const agents = useAgentStore(s => s.agents);
   const loadAgents = useAgentStore(s => s.loadAgents);
   const { t } = useTranslation('memory');
@@ -737,6 +830,10 @@ function EventsTab() {
     const id = setInterval(load, 10000);
     return () => clearInterval(id);
   }, [load]);
+
+  useEffect(() => {
+    if (mutationVersion > 0) load();
+  }, [mutationVersion]);
 
   return (
     <Flexbox gap={16}>

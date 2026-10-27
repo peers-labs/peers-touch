@@ -1,0 +1,655 @@
+{
+  "kind": "peers-touch-experience-review-result",
+  "schemaVersion": 1,
+  "authorId": "edx-blind-runner-v2",
+  "verdict": "FINDINGS",
+  "evaluationBinding": {
+    "packageId": "EDX-HOLDOUT-20261019-V2",
+    "runEnvelopeDigest": "sha256:5ff0a02a8009e7cbb8deb92965d7172f97585c357a58c43864d3d743f0c63ee3",
+    "caseDigest": "sha256:1d33da060e5ec421e657da7cc4b4c437493dc3ecc11210ed3b856f8017ac8746",
+    "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+    "manifestDigest": "sha256:6d8c7328bb64ad1d7c9c255a61daaf9186cd20451778f45f7f2c8765b2e468ce",
+    "rubricDigest": "sha256:2f31bcd9bbac2dd5a9280051b8917a1bc4c63da30d4d4e6c8fafaf9069b2ef84",
+    "sourceBlobAlgorithm": "git-sha1",
+    "sourceBlobs": [
+      {
+        "path": "apps/desktop/src/applet/AppletContainerShell.tsx",
+        "digest": "d5ee99f3307405f4f0e8124178f45226e5d4cbb8"
+      },
+      {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "digest": "01be82f3515352d36216ec1294ae8e3ede3ed165"
+      },
+      {
+        "path": "apps/desktop/src/store/applets.ts",
+        "digest": "35de0241d00c73e12ec5edbd3bc9f3d6b627bbae"
+      },
+      {
+        "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+        "digest": "bfaf25b4be12cb0b454b7b8714d524a51d5a80a4"
+      },
+      {
+        "path": "docs/client/common/ui-identity/interaction.md",
+        "digest": "8e7f54058696bb93ee31a7c0daa9c50b7141944b"
+      }
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C-H03-LIFECYCLE",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+        "lineStart": 100,
+        "lineEnd": 120
+      },
+      "clause": "Applet state transitions",
+      "statement": "Opening an Applet transitions cold to materializing, SDK readiness plus a mounted surface transitions to visible, and explicit close transitions a non-cold Applet to destroyed."
+    },
+    {
+      "id": "C-H03-PRE-SURFACE-FAILURE",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+        "lineStart": 121,
+        "lineEnd": 127
+      },
+      "clause": "Applet exceptional states",
+      "statement": "Manifest validation failure destroys the materializing Applet with error reporting, and bundle load timeout destroys it with retry available."
+    },
+    {
+      "id": "C-H03-LOCAL-FEEDBACK",
+      "authority": "accepted-client",
+      "caseCoverage": "supporting",
+      "source": {
+        "path": "docs/client/common/ui-identity/interaction.md",
+        "lineStart": 55,
+        "lineEnd": 64
+      },
+      "clause": "Feedback",
+      "statement": "Pending, success, and error feedback is local to the affected surface before global feedback."
+    },
+    {
+      "id": "C-H03-RECOVERY",
+      "authority": "accepted-client",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/client/common/ui-identity/interaction.md",
+        "lineStart": 66,
+        "lineEnd": 80
+      },
+      "clause": "Recovery",
+      "statement": "A failed action states what and which object failed, whether user state is preserved, whether retry is available, and whether the failure is local, runtime, Station, network, permission, or policy."
+    }
+  ],
+  "facts": [
+    {
+      "id": "F-H03-LAUNCH-ACTION",
+      "stateId": "S-H03-LAUNCH",
+      "source": {
+        "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+        "lineStart": 107,
+        "lineEnd": 113
+      },
+      "statement": "The launch event is the user or system opening an Applet and moves it from cold to materializing.",
+      "visibleAction": "Open the installed Applet from the product shell."
+    },
+    {
+      "id": "F-H03-PROJECTION-LOADING",
+      "stateId": "S-H03-PROJECTION-LOADING",
+      "source": {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "lineStart": 240,
+        "lineEnd": 246,
+        "symbol": "AppletRuntimePage"
+      },
+      "statement": "While page data is loading and no runtime Applet exists, the page renders a centered large spinner.",
+      "visibleResponse": "The Applet projection shows an indeterminate loading spinner."
+    },
+    {
+      "id": "F-H03-MATERIALIZING",
+      "stateId": "S-H03-MATERIALIZING",
+      "source": {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "lineStart": 277,
+        "lineEnd": 287,
+        "symbol": "AppletRuntimePage"
+      },
+      "statement": "When the runtime Applet exists but is not active, the runtime surface shows a spinner and localized preparing copy.",
+      "visibleResponse": "The Applet shell shows a preparing state before surface start."
+    },
+    {
+      "id": "F-H03-SURFACE-STARTED",
+      "stateId": "S-H03-VISIBLE",
+      "source": {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "lineStart": 288,
+        "lineEnd": 299,
+        "symbol": "AppletRuntimePage"
+      },
+      "statement": "Without runtime error and after preparation, the page mounts LynxContainer with load, back, navigation, UI, and device handlers.",
+      "visibleResponse": "The Lynx Applet surface starts inside the product shell."
+    },
+    {
+      "id": "F-H03-LOAD-PIPELINE",
+      "stateId": "S-H03-LAUNCH",
+      "source": {
+        "path": "apps/desktop/src/store/applets.ts",
+        "lineStart": 337,
+        "lineEnd": 398,
+        "symbol": "loadApplet"
+      },
+      "statement": "A load invocation clears the prior per-Applet runtime error, refreshes or installs the Applet, materializes a Station bundle when needed, loads it through AppletManager, and marks it active."
+    },
+    {
+      "id": "F-H03-ERROR-CAPTURE",
+      "stateId": "S-H03-FAILED",
+      "source": {
+        "path": "apps/desktop/src/store/applets.ts",
+        "lineStart": 399,
+        "lineEnd": 412,
+        "symbol": "loadApplet"
+      },
+      "statement": "A load rejection stores both normalized error detail and the localized runtime load-failed key for the requested Applet, then rethrows.",
+      "visibleResponse": "The requested Applet enters a load-failed projection."
+    },
+    {
+      "id": "F-H03-FAILURE-SURFACE",
+      "stateId": "S-H03-FAILED",
+      "source": {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "lineStart": 277,
+        "lineEnd": 282,
+        "symbol": "AppletRuntimePage"
+      },
+      "statement": "When runtimeErrorKey exists, runtime content is only an Empty component with the localized error-key description.",
+      "visibleResponse": "The Applet shell shows a generic load-failed empty state."
+    },
+    {
+      "id": "F-H03-NO-RETRY-CONTROL",
+      "stateId": "S-H03-FAILED",
+      "source": {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "lineStart": 277,
+        "lineEnd": 320,
+        "symbol": "AppletRuntimePage"
+      },
+      "statement": "The load-failed runtime content receives no retry control or loadApplet callback; the shell callbacks cover close, immersive mode, standalone opening, pinning, and controls only.",
+      "visibleAction": "Look for a retry action on the failed Applet surface."
+    },
+    {
+      "id": "F-H03-SHELL-IDENTITY",
+      "stateId": "S-H03-FAILED",
+      "source": {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "lineStart": 301,
+        "lineEnd": 320,
+        "symbol": "AppletRuntimePage"
+      },
+      "statement": "The containing shell retains Applet name, description, version, and onClose while rendering failed runtime content."
+    },
+    {
+      "id": "F-H03-CLOSE-ACTION",
+      "stateId": "S-H03-FAILED",
+      "source": {
+        "path": "apps/desktop/src/applet/AppletContainerShell.tsx",
+        "lineStart": 61,
+        "lineEnd": 101,
+        "symbol": "AppletContainerShell"
+      },
+      "statement": "In contained mode the PageHeader shows Applet identity and a Close button wired to onClose.",
+      "visibleAction": "Activate Close to leave the failed Applet."
+    },
+    {
+      "id": "F-H03-EXIT-HANDOFF",
+      "stateId": "S-H03-EXIT",
+      "source": {
+        "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "lineStart": 301,
+        "lineEnd": 320,
+        "symbol": "AppletRuntimePage"
+      },
+      "statement": "AppletRuntimePage passes its handleClose callback into the persistent product-shell container.",
+      "visibleResponse": "The close command is handed back to product-shell navigation."
+    }
+  ],
+  "inferences": [
+    {
+      "id": "I-H03-RETRY-MISSING",
+      "factIds": [
+        "F-H03-LOAD-PIPELINE",
+        "F-H03-ERROR-CAPTURE",
+        "F-H03-FAILURE-SURFACE",
+        "F-H03-NO-RETRY-CONTROL"
+      ],
+      "contractIds": [
+        "C-H03-PRE-SURFACE-FAILURE",
+        "C-H03-RECOVERY"
+      ],
+      "statement": "The store supports a clean repeated load attempt, but the recoverable pre-surface failure UI exposes no action that invokes it."
+    },
+    {
+      "id": "I-H03-FAILURE-DETAIL-HIDDEN",
+      "factIds": [
+        "F-H03-ERROR-CAPTURE",
+        "F-H03-FAILURE-SURFACE",
+        "F-H03-SHELL-IDENTITY"
+      ],
+      "contractIds": [
+        "C-H03-LOCAL-FEEDBACK",
+        "C-H03-RECOVERY"
+      ],
+      "statement": "The failure remains local and the Applet is identified by the shell, but the captured detail and failure domain are absent from the visible error projection."
+    }
+  ],
+  "journeyStateGraph": {
+    "entryStateId": "S-H03-LAUNCH",
+    "states": [
+      {
+        "id": "S-H03-LAUNCH",
+        "origin": "starting",
+        "inScope": true,
+        "source": {
+          "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+          "lineStart": 107,
+          "lineEnd": 113
+        },
+        "visibleMeaning": "The user opens the requested installed Applet from the product shell."
+      },
+      {
+        "id": "S-H03-PROJECTION-LOADING",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 1,
+        "source": {
+          "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+          "lineStart": 240,
+          "lineEnd": 246,
+          "symbol": "AppletRuntimePage"
+        },
+        "visibleMeaning": "Applet projection data is still loading and no runtime Applet is available."
+      },
+      {
+        "id": "S-H03-MATERIALIZING",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 2,
+        "source": {
+          "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+          "lineStart": 277,
+          "lineEnd": 287,
+          "symbol": "AppletRuntimePage"
+        },
+        "visibleMeaning": "Bundle and runtime preparation is in progress before the Lynx surface starts."
+      },
+      {
+        "id": "S-H03-VISIBLE",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 3,
+        "source": {
+          "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+          "lineStart": 288,
+          "lineEnd": 299,
+          "symbol": "AppletRuntimePage"
+        },
+        "visibleMeaning": "Loading succeeds and the Lynx surface starts."
+      },
+      {
+        "id": "S-H03-FAILED",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 4,
+        "source": {
+          "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+          "lineStart": 277,
+          "lineEnd": 282,
+          "symbol": "AppletRuntimePage"
+        },
+        "visibleMeaning": "Pre-surface loading fails and the shell shows the load-failed empty state."
+      },
+      {
+        "id": "S-H03-EXIT",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 5,
+        "source": {
+          "path": "apps/desktop/src/applet/AppletContainerShell.tsx",
+          "lineStart": 92,
+          "lineEnd": 99,
+          "symbol": "AppletContainerShell"
+        },
+        "visibleMeaning": "The user leaves the failed Applet through the product-shell close command."
+      }
+    ],
+    "edges": [
+      {
+        "id": "E-H03-LAUNCH-LOADING",
+        "fromStateId": "S-H03-LAUNCH",
+        "toStateId": "S-H03-PROJECTION-LOADING",
+        "actionFactId": "F-H03-LAUNCH-ACTION",
+        "responseFactId": "F-H03-PROJECTION-LOADING",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+            "lineStart": 240,
+            "lineEnd": 246
+          },
+          {
+            "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+            "lineStart": 107,
+            "lineEnd": 113
+          }
+        ]
+      },
+      {
+        "id": "E-H03-LAUNCH-MATERIALIZING",
+        "fromStateId": "S-H03-LAUNCH",
+        "toStateId": "S-H03-MATERIALIZING",
+        "actionFactId": "F-H03-LAUNCH-ACTION",
+        "responseFactId": "F-H03-MATERIALIZING",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+            "lineStart": 277,
+            "lineEnd": 287
+          },
+          {
+            "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+            "lineStart": 107,
+            "lineEnd": 113
+          }
+        ]
+      },
+      {
+        "id": "E-H03-LAUNCH-VISIBLE",
+        "fromStateId": "S-H03-LAUNCH",
+        "toStateId": "S-H03-VISIBLE",
+        "actionFactId": "F-H03-LAUNCH-ACTION",
+        "responseFactId": "F-H03-SURFACE-STARTED",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+            "lineStart": 288,
+            "lineEnd": 299
+          },
+          {
+            "path": "docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md",
+            "lineStart": 107,
+            "lineEnd": 113
+          }
+        ]
+      },
+      {
+        "id": "E-H03-LAUNCH-FAILED",
+        "fromStateId": "S-H03-LAUNCH",
+        "toStateId": "S-H03-FAILED",
+        "actionFactId": "F-H03-LAUNCH-ACTION",
+        "responseFactId": "F-H03-FAILURE-SURFACE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+            "lineStart": 277,
+            "lineEnd": 282
+          },
+          {
+            "path": "apps/desktop/src/store/applets.ts",
+            "lineStart": 399,
+            "lineEnd": 412
+          }
+        ]
+      },
+      {
+        "id": "E-H03-FAILED-EXIT",
+        "fromStateId": "S-H03-FAILED",
+        "toStateId": "S-H03-EXIT",
+        "actionFactId": "F-H03-CLOSE-ACTION",
+        "responseFactId": "F-H03-EXIT-HANDOFF",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/applet/AppletContainerShell.tsx",
+            "lineStart": 92,
+            "lineEnd": 99
+          },
+          {
+            "path": "apps/desktop/src/pages/AppletRuntimePage.tsx",
+            "lineStart": 301,
+            "lineEnd": 320
+          }
+        ]
+      }
+    ]
+  },
+  "trustBoundaryChecks": [],
+  "recoveryPaths": [
+    {
+      "id": "R-H03-EXIT",
+      "contractIds": [
+        "C-H03-LIFECYCLE",
+        "C-H03-RECOVERY"
+      ],
+      "sourceStateId": "S-H03-FAILED",
+      "reason": "The failed pre-surface runtime cannot continue, so the user leaves through the persistent product-shell navigation.",
+      "entryActionVisible": true,
+      "distance": "same-surface",
+      "preservedState": [
+        "product-shell-navigation",
+        "requested-applet-identity"
+      ],
+      "returnStateId": "S-H03-EXIT",
+      "returnTarget": {
+        "kind": "navigation",
+        "targetId": "desktop-applet-list"
+      }
+    }
+  ],
+  "candidateLedger": [
+    {
+      "candidate": {
+        "id": "FC-H03-RECOVERABLE-LOAD-NO-RETRY",
+        "stateId": "S-H03-FAILED",
+        "factIds": [
+          "F-H03-LAUNCH-ACTION",
+          "F-H03-LOAD-PIPELINE",
+          "F-H03-ERROR-CAPTURE",
+          "F-H03-FAILURE-SURFACE",
+          "F-H03-NO-RETRY-CONTROL"
+        ],
+        "contractIds": [
+          "C-H03-PRE-SURFACE-FAILURE",
+          "C-H03-RECOVERY"
+        ],
+        "inferenceIds": [
+          "I-H03-RETRY-MISSING"
+        ],
+        "severity": "major",
+        "impact": "recovery-absent",
+        "confidence": "high",
+        "brokenPromise": "A recoverable pre-surface bundle load failure must expose retry for the same requested Applet.",
+        "causalMechanism": "The load store can clear the per-Applet error and repeat materialization, but the failure branch renders only Empty text and passes no retry action into runtime content or the shell.",
+        "userImpact": "The user must abandon the Applet and rediscover it in the list even when retrying the same materialization could recover immediately.",
+        "ownerLayer": "Desktop Applet runtime-page recovery projection",
+        "correctionDirection": "Add a local Retry action bound to loadApplet for the same Applet ID, keep Close as the adjacent exit, and preserve pending/error state on that surface."
+      },
+      "eligible": true,
+      "ineligibleReasons": [],
+      "priorityTuple": [
+        0,
+        2,
+        4,
+        0,
+        1,
+        0,
+        "FC-H03-RECOVERABLE-LOAD-NO-RETRY"
+      ]
+    },
+    {
+      "candidate": {
+        "id": "FC-H03-FAILURE-DOMAIN-HIDDEN",
+        "stateId": "S-H03-FAILED",
+        "factIds": [
+          "F-H03-LAUNCH-ACTION",
+          "F-H03-ERROR-CAPTURE",
+          "F-H03-FAILURE-SURFACE",
+          "F-H03-SHELL-IDENTITY"
+        ],
+        "contractIds": [
+          "C-H03-LOCAL-FEEDBACK",
+          "C-H03-RECOVERY"
+        ],
+        "inferenceIds": [
+          "I-H03-FAILURE-DETAIL-HIDDEN"
+        ],
+        "severity": "minor",
+        "impact": "material-ambiguity",
+        "confidence": "high",
+        "brokenPromise": "The local failed state should distinguish what failed and its failure domain.",
+        "causalMechanism": "The store retains normalized detail, but the page projects only the shared loadFailed locale key.",
+        "userImpact": "The shell identifies the Applet, but the user cannot distinguish materialization, integrity, availability, or runtime-load failure.",
+        "ownerLayer": "Desktop Applet runtime-page failure copy",
+        "correctionDirection": "Map the typed pre-surface failure category to concise localized copy and keep raw diagnostics outside primary UI."
+      },
+      "eligible": true,
+      "ineligibleReasons": [],
+      "priorityTuple": [
+        0,
+        4,
+        4,
+        0,
+        2,
+        0,
+        "FC-H03-FAILURE-DOMAIN-HIDDEN"
+      ]
+    }
+  ],
+  "primaryFinding": {
+    "candidateId": "FC-H03-RECOVERABLE-LOAD-NO-RETRY",
+    "factIds": [
+      "F-H03-LAUNCH-ACTION",
+      "F-H03-LOAD-PIPELINE",
+      "F-H03-ERROR-CAPTURE",
+      "F-H03-FAILURE-SURFACE",
+      "F-H03-NO-RETRY-CONTROL"
+    ],
+    "contractIds": [
+      "C-H03-PRE-SURFACE-FAILURE",
+      "C-H03-RECOVERY"
+    ],
+    "inferenceIds": [
+      "I-H03-RETRY-MISSING"
+    ],
+    "severity": "major",
+    "earliestStateId": "S-H03-FAILED",
+    "brokenPromise": "A recoverable pre-surface bundle load failure must expose retry for the same requested Applet.",
+    "causalMechanism": "The load store can clear the per-Applet error and repeat materialization, but the failure branch renders only Empty text and passes no retry action into runtime content or the shell.",
+    "userImpact": "The user must abandon the Applet and rediscover it in the list even when retrying the same materialization could recover immediately.",
+    "ownerLayer": "Desktop Applet runtime-page recovery projection",
+    "correctionDirection": "Add a local Retry action bound to loadApplet for the same Applet ID, keep Close as the adjacent exit, and preserve pending/error state on that surface.",
+    "confidence": "high",
+    "priorityBasis": [
+      0,
+      2,
+      4,
+      0,
+      1,
+      0,
+      "FC-H03-RECOVERABLE-LOAD-NO-RETRY"
+    ]
+  },
+  "secondaryFindings": [],
+  "minorObservations": [
+    {
+      "candidateId": "FC-H03-FAILURE-DOMAIN-HIDDEN",
+      "factIds": [
+        "F-H03-LAUNCH-ACTION",
+        "F-H03-ERROR-CAPTURE",
+        "F-H03-FAILURE-SURFACE",
+        "F-H03-SHELL-IDENTITY"
+      ],
+      "contractIds": [
+        "C-H03-LOCAL-FEEDBACK",
+        "C-H03-RECOVERY"
+      ],
+      "inferenceIds": [
+        "I-H03-FAILURE-DETAIL-HIDDEN"
+      ],
+      "severity": "minor",
+      "earliestStateId": "S-H03-FAILED",
+      "brokenPromise": "The local failed state should distinguish what failed and its failure domain.",
+      "causalMechanism": "The store retains normalized detail, but the page projects only the shared loadFailed locale key.",
+      "userImpact": "The shell identifies the Applet, but the user cannot distinguish materialization, integrity, availability, or runtime-load failure.",
+      "ownerLayer": "Desktop Applet runtime-page failure copy",
+      "correctionDirection": "Map the typed pre-surface failure category to concise localized copy and keep raw diagnostics outside primary UI.",
+      "confidence": "high",
+      "priorityBasis": [
+        0,
+        4,
+        4,
+        0,
+        2,
+        0,
+        "FC-H03-FAILURE-DOMAIN-HIDDEN"
+      ]
+    }
+  ],
+  "statesChecked": [
+    "S-H03-LAUNCH",
+    "S-H03-PROJECTION-LOADING",
+    "S-H03-MATERIALIZING",
+    "S-H03-VISIBLE",
+    "S-H03-FAILED",
+    "S-H03-EXIT"
+  ],
+  "exitAndRetryPaths": [
+    {
+      "id": "X-H03-EXIT",
+      "sourceStateId": "S-H03-FAILED",
+      "actionFactId": "F-H03-CLOSE-ACTION",
+      "destinationStateId": "S-H03-EXIT",
+      "recoveryPathId": "R-H03-EXIT"
+    }
+  ],
+  "unproven": [
+    {
+      "id": "U-H03-CLOSE-DESTINATION",
+      "contractIds": [
+        "C-H03-LIFECYCLE",
+        "C-H03-RECOVERY"
+      ],
+      "requirement": "Close returns to the Applet list with a usable navigation and focus target.",
+      "reason": "The supplied source proves the visible Close control and callback wiring but does not supply handleClose or inspect the resulting shell route and focus.",
+      "requiredEvidenceLevel": "L3_DYNAMIC",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H03-RETRY-SUCCESS",
+      "contractIds": [
+        "C-H03-PRE-SURFACE-FAILURE",
+        "C-H03-RECOVERY"
+      ],
+      "requirement": "A future local retry repeats the same Applet materialization safely and reaches preparing or visible without stale error state.",
+      "reason": "The store is structurally repeatable, but no visible retry exists and no exact-source runtime retry was observed.",
+      "requiredEvidenceLevel": "L4_RUNTIME",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H03-VIEWPORT-GEOMETRY",
+      "contractIds": [
+        "C-H03-LOCAL-FEEDBACK"
+      ],
+      "requirement": "Failure copy and recovery controls remain visible and non-obstructed in contained and immersive Desktop layouts.",
+      "reason": "Static source does not establish rendered geometry; immersive failure controls also require inspected behavior.",
+      "requiredEvidenceLevel": "L2_VISUAL",
+      "requiredFor": [
+        "high-fidelity",
+        "production"
+      ]
+    }
+  ]
+}

@@ -4,7 +4,6 @@ import {
   Form,
   Select,
   InputNumber,
-  Segmented,
   Typography,
   message,
   Checkbox,
@@ -14,18 +13,15 @@ import {
 } from 'antd';
 import { Input, Tag, Button, TextArea } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
-import { Sparkles, Terminal, Bot, ChevronDown } from 'lucide-react';
+import { Sparkles, Bot, ChevronDown } from 'lucide-react';
 import { ModelSelect } from './ModelSelect';
 import { findUniqueAvailableModelById } from '../utils/modelIdentity';
-import type { ModelRef } from '../services/desktop_api';
+import type { ModelRef, CronJob, CronJobCreate } from '../services/desktop_api';
+import { parseSchedulePhrase } from '../services/scheduled-task-parser';
 import {
   api,
   type Agent,
   type AvailableModel,
-  type ChannelBindingInfo,
-  type ChannelChat,
-  type CronJob,
-  type CronJobCreate,
 } from '../services/desktop_api';
 import { useTranslation } from 'react-i18next';
 import { AgentIconTile } from './agent/AgentIconTile';
@@ -44,10 +40,6 @@ function parseCronFields(expr: string) {
   };
 }
 
-function buildCronExpr(fields: { minute: string; hour: string; dom: string; month: string; dow: string }) {
-  return `${fields.minute} ${fields.hour} ${fields.dom} ${fields.month} ${fields.dow}`;
-}
-
 function parseFieldValues(field: string, min: number, max: number): number[] | 'all' {
   if (field === '*') return 'all';
   const values: number[] = [];
@@ -62,13 +54,13 @@ function parseFieldValues(field: string, min: number, max: number): number[] | '
       values.push(parseInt(part));
     }
   }
-  return values.filter((v) => !isNaN(v));
+  return values.filter((v) => !Number.isNaN(v));
 }
 
-function buildFieldFromValues(values: number[] | 'all', _min: number, max: number): string {
+function buildFieldFromValues(values: number[] | 'all', min: number, max: number): string {
   if (values === 'all') return '*';
   if (values.length === 0) return '*';
-  const total = max - _min + 1;
+  const total = max - min + 1;
   if (values.length === total) return '*';
   const sorted = [...values].sort((a, b) => a - b);
   return sorted.join(',');
@@ -81,7 +73,7 @@ interface CronScheduleSelectorProps {
 
 function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps) {
   const { t } = useTranslation('cron');
-  const fields = parseCronFields(cronExpr || '0 * * * *');
+  const fields = parseCronFields(cronExpr || '0 9 * * *');
 
   const DAYS_OF_WEEK = [
     { label: t('cron.drawer.cron.dayMon'), value: 1 },
@@ -109,7 +101,13 @@ function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps)
   ];
 
   const updateField = (key: keyof typeof fields, value: string) => {
-    onChange(buildCronExpr({ ...fields, [key]: value }));
+    onChange([
+      key === 'minute' ? value : fields.minute,
+      key === 'hour' ? value : fields.hour,
+      key === 'dom' ? value : fields.dom,
+      key === 'month' ? value : fields.month,
+      key === 'dow' ? value : fields.dow,
+    ].join(' '));
   };
 
   const hourValues = parseFieldValues(fields.hour, 0, 23);
@@ -120,14 +118,14 @@ function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps)
   return (
     <Flexbox gap={12}>
       <Flexbox horizontal gap={4} style={{ flexWrap: 'wrap' }}>
-        {CRON_TEMPLATES.map((t) => (
+        {CRON_TEMPLATES.map((template) => (
           <Tag
-            key={t.expr}
+            key={template.expr}
             style={{ cursor: 'pointer', margin: 0 }}
-            color={cronExpr === t.expr ? 'blue' : undefined}
-            onClick={() => onChange(t.expr)}
+            color={cronExpr === template.expr ? 'blue' : undefined}
+            onClick={() => onChange(template.expr)}
           >
-            {t.label}
+            {template.label}
           </Tag>
         ))}
       </Flexbox>
@@ -209,10 +207,6 @@ function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps)
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   Section card wrapper for visual grouping (mirrors OpenClaw's fieldsets)
-   ────────────────────────────────────────────────────────────────── */
-
 function SectionCard({ title, description, children }: {
   title: string;
   description?: string;
@@ -248,23 +242,25 @@ function parseModelOverride(raw: string, models: AvailableModel[]): ModelRef | u
   return found ? { provider: found.provider_id, model: found.id } : undefined;
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   Main Drawer component
-   Sections mirror OpenClaw's form structure:
-   1. Basics     — name, description, agent, enabled
-   2. Schedule   — when to run (interval / cron / once)
-   3. Execution  — what to run (shell / agent), prompt, timeout
-   4. Advanced   — delete after run, model override
+function inferIntervalUnit(sec: number): string {
+  if (sec >= 86400 && sec % 86400 === 0) return 'days';
+  if (sec >= 3600 && sec % 3600 === 0) return 'hours';
+  return 'minutes';
+}
 
-   Hidden OpenClaw concepts (kept in backend, not exposed in UI):
-   - Session target (main/isolated): always "isolated", no heartbeat system
-   - Wake mode: always "now", no heartbeat
-   - Account ID: no multi-account
-   - Session key: auto-generated as "cron:<jobId>"
-   - Light context: OpenClaw-specific
-   - Failure alerts: deferred
-   - Thinking level: not yet supported by orchestrator
-   ────────────────────────────────────────────────────────────────── */
+function inferIntervalValue(sec: number): number {
+  if (sec >= 86400 && sec % 86400 === 0) return sec / 86400;
+  if (sec >= 3600 && sec % 3600 === 0) return sec / 3600;
+  return sec / 60;
+}
+
+function toLocalDateTimeInput(iso: string): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
 interface CronJobDrawerProps {
   open: boolean;
@@ -279,38 +275,17 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
   const [saving, setSaving] = useState(false);
   const [aiParsing, setAiParsing] = useState(false);
   const [aiInput, setAiInput] = useState('');
+  const [parseError, setParseError] = useState('');
   const [scheduleKind, setScheduleKind] = useState<string>('interval');
-  const [execKind, setExecKind] = useState<string>('agent');
   const [cronExpr, setCronExpr] = useState('0 9 * * *');
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [channels, setChannels] = useState<ChannelBindingInfo[]>([]);
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [cronDefaultRef, setCronDefaultRef] = useState<ModelRef | null>(null);
   const [modelOverride, setModelOverride] = useState<string>('');
-  const [deliveryTargets, setDeliveryTargets] = useState<ChannelChat[]>([]);
-  const [deliveryTargetId, setDeliveryTargetId] = useState<string>('');
-  const [deliveryTargetType, setDeliveryTargetType] = useState<string>('');
-  const [loadingTargets, setLoadingTargets] = useState(false);
   const advancedRef = useRef<HTMLDivElement>(null);
 
   const handleModelChange = useCallback((ref: ModelRef) => {
     setModelOverride(`${ref.provider}/${ref.model}`);
-  }, []);
-
-  const loadDeliveryTargets = useCallback(async (channelId: string) => {
-    if (!channelId) {
-      setDeliveryTargets([]);
-      return;
-    }
-    setLoadingTargets(true);
-    try {
-      const chats = await api.listChannelChats(channelId);
-      setDeliveryTargets(chats);
-    } catch {
-      setDeliveryTargets([]);
-    } finally {
-      setLoadingTargets(false);
-    }
   }, []);
 
   const modelValue = parseModelOverride(modelOverride, availableModels) || cronDefaultRef || undefined;
@@ -318,7 +293,6 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
   useEffect(() => {
     if (open) {
       api.listAgents().then(setAgents).catch(() => {});
-      api.listChannelBindings().then(setChannels).catch(() => {});
       api.listAvailableModels().then((r) => setAvailableModels(r.models || [])).catch(() => {});
       api.getModelConfig('cronDefault').then((r) => {
         setCronDefaultRef(r.ref || r.resolved || null);
@@ -332,98 +306,72 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
           cronExpr: editingJob.cronExpr,
           intervalUnit: inferIntervalUnit(editingJob.intervalSec),
           intervalValue: inferIntervalValue(editingJob.intervalSec),
-          runAt: editingJob.runAt,
-          timezone: editingJob.timezone,
-          execKind: editingJob.execKind,
-          shellCmd: editingJob.shellCmd,
-          agentPrompt: editingJob.agentPrompt,
-          agentName: editingJob.agentName || 'assistant',
+          runAt: toLocalDateTimeInput(editingJob.runAt),
+          timezone: editingJob.timezone || undefined,
+          prompt: editingJob.agentPrompt,
+          agentId: editingJob.agentId || 'assistant',
+          effort: editingJob.effortOverride || 'medium',
           timeoutSec: editingJob.timeoutSec || 0,
           deleteAfterRun: editingJob.deleteAfterRun || false,
-          deliveryMode: editingJob.deliveryMode || 'none',
-          deliveryChannelId: editingJob.deliveryChannelId || '',
-          failureChannelId: editingJob.failureChannelId || '',
           enabled: editingJob.enabled,
         });
-        setModelOverride(editingJob.modelOverride || '');
-        setDeliveryTargetId(editingJob.deliveryTargetId || '');
-        setDeliveryTargetType(editingJob.deliveryTargetType || '');
+        setModelOverride(
+          editingJob.modelOverride && editingJob.providerOverride
+            ? `${editingJob.providerOverride}/${editingJob.modelOverride}`
+            : editingJob.modelOverride || '',
+        );
         setScheduleKind(editingJob.scheduleKind);
-        setExecKind(editingJob.execKind);
         setCronExpr(editingJob.cronExpr || '0 9 * * *');
-        if (editingJob.deliveryChannelId) {
-          loadDeliveryTargets(editingJob.deliveryChannelId);
-        }
       } else {
         form.resetFields();
         form.setFieldsValue({
           scheduleKind: 'interval',
-          execKind: 'agent',
           intervalUnit: 'hours',
           intervalValue: 1,
-          agentName: 'assistant',
+          agentId: 'assistant',
+          effort: 'medium',
           enabled: true,
           deleteAfterRun: false,
-          deliveryMode: 'none',
-          deliveryChannelId: '',
-          failureChannelId: '',
           timeoutSec: 0,
         });
         setModelOverride('');
-        setDeliveryTargetId('');
-        setDeliveryTargetType('');
-        setDeliveryTargets([]);
         setScheduleKind('interval');
-        setExecKind('agent');
         setCronExpr('0 9 * * *');
       }
       setAiInput('');
+      setParseError('');
     }
   }, [open, editingJob, form]);
 
-  const handleAiParse = async () => {
+  const handleAiParse = () => {
     if (!aiInput.trim()) return;
     setAiParsing(true);
+    setParseError('');
     try {
-      const result = await api.parseCronSchedule(aiInput);
-      if (result.scheduleKind) {
-        setScheduleKind(result.scheduleKind);
-        form.setFieldsValue({ scheduleKind: result.scheduleKind });
+      const result = parseSchedulePhrase(aiInput);
+      if (!result) {
+        setParseError(t('cron.drawer.ai.unparsed'));
+        return;
       }
+      setScheduleKind(result.scheduleKind);
+      form.setFieldsValue({ scheduleKind: result.scheduleKind });
       if (result.cronExpr) {
         setCronExpr(result.cronExpr);
         form.setFieldsValue({ cronExpr: result.cronExpr });
       }
       if (result.intervalSec) {
-        const unit = inferIntervalUnit(result.intervalSec);
-        const value = inferIntervalValue(result.intervalSec);
-        form.setFieldsValue({ intervalUnit: unit, intervalValue: value });
+        form.setFieldsValue({
+          intervalUnit: inferIntervalUnit(result.intervalSec),
+          intervalValue: inferIntervalValue(result.intervalSec),
+        });
       }
       if (result.runAt) {
-        form.setFieldsValue({ runAt: result.runAt });
+        form.setFieldsValue({ runAt: toLocalDateTimeInput(result.runAt) });
       }
-      if (result.timezone) {
-        form.setFieldsValue({ timezone: result.timezone });
-      }
-      if (result.name && !editingJob) {
-        form.setFieldsValue({ name: result.name });
-      }
-      if (result.description) {
-        form.setFieldsValue({ description: result.description });
-      }
-      if (result.execKind) {
-        form.setFieldsValue({ execKind: result.execKind });
-      }
-      if (result.agentPrompt) {
-        form.setFieldsValue({ agentPrompt: result.agentPrompt });
-      }
-      const parsed: string[] = [];
-      if (result.scheduleKind) parsed.push('schedule');
-      if (result.name) parsed.push('name');
-      if (result.agentPrompt) parsed.push('task');
-      message.success(t('cron.drawer.ai.parseSuccess', { fields: parsed.join(', ') || 'schedule' }));
-    } catch (err: any) {
-      message.error(t('cron.drawer.ai.parseFailed', { message: err.message }));
+      if (result.timezone) form.setFieldsValue({ timezone: result.timezone });
+      if (result.name && !editingJob) form.setFieldsValue({ name: result.name });
+      if (result.prompt) form.setFieldsValue({ prompt: result.prompt });
+      message.success(t('cron.drawer.ai.parseSuccess', { fields: 'schedule' }));
     } finally {
       setAiParsing(false);
     }
@@ -433,54 +381,58 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
     try {
       const values = await form.validateFields();
 
-      if (values.deliveryMode === 'channel' && values.deliveryChannelId && !deliveryTargetId) {
-        message.error(t('cron.drawer.field.deliveryTargetSelectError'));
-        return;
-      }
-
       setSaving(true);
 
       let intervalSec = 0;
       if (values.scheduleKind === 'interval') {
-        const unit = values.intervalUnit || 'hours';
-        const val = values.intervalValue || 1;
         const multipliers: Record<string, number> = { minutes: 60, hours: 3600, days: 86400 };
-        intervalSec = val * (multipliers[unit] || 3600);
+        intervalSec = (values.intervalValue || 1) * (multipliers[values.intervalUnit] || 3600);
       }
-
+      let runAt = '';
+      if (values.scheduleKind === 'once' && values.runAt) {
+        const instant = new Date(values.runAt);
+        if (Number.isNaN(instant.getTime())) {
+          message.error(t('cron.drawer.field.runAtInvalid'));
+          return;
+        }
+        runAt = instant.toISOString();
+      }
+      const modelRef = parseModelOverride(modelOverride, availableModels);
       const data: CronJobCreate = {
+        agentId: values.agentId || 'assistant',
         name: values.name,
         description: values.description || '',
         scheduleKind: values.scheduleKind,
         cronExpr: values.scheduleKind === 'cron' ? cronExpr : '',
         intervalSec: values.scheduleKind === 'interval' ? intervalSec : 0,
-        runAt: values.scheduleKind === 'once' ? values.runAt : '',
+        runAt,
         timezone: values.timezone || '',
-        execKind: values.execKind,
-        shellCmd: values.execKind === 'shell' ? values.shellCmd : '',
-        agentPrompt: values.execKind === 'agent' ? values.agentPrompt : '',
-        agentName: values.execKind === 'agent' ? (values.agentName || 'assistant') : '',
-        modelOverride: modelOverride,
-        timeoutSec: values.timeoutSec || 0,
+        prompt: values.prompt,
+        runtimeOverride: {
+          model: modelRef?.model || '',
+          provider: modelRef?.provider || '',
+          effort: values.effort && values.effort !== 'medium' ? values.effort : '',
+          timeoutSec: values.timeoutSec || 0,
+        },
         deleteAfterRun: values.deleteAfterRun || false,
-        deliveryMode: values.deliveryMode || 'none',
-        deliveryChannelId: values.deliveryChannelId || '',
-        deliveryTargetId: values.deliveryMode === 'channel' ? deliveryTargetId : '',
-        deliveryTargetType: values.deliveryMode === 'channel' ? deliveryTargetType : '',
-        failureChannelId: values.failureChannelId || '',
+        enabled: values.enabled ?? true,
       };
 
       if (editingJob) {
-        await api.updateCronJob(editingJob.id, data);
+        await api.updateCronJob(editingJob.id, {
+          ...data,
+          expectedRevision: editingJob.revision,
+        });
         message.success(t('cron.drawer.jobUpdated'));
       } else {
         await api.createCronJob(data);
         message.success(t('cron.drawer.jobCreated'));
       }
       onSaved();
-    } catch (err: any) {
-      if (err.errorFields) return;
-      message.error(err.message);
+    } catch (err: unknown) {
+      const error = err as { errorFields?: unknown; message?: string };
+      if (error.errorFields) return;
+      message.error(error.message || 'failed to save scheduled job');
     } finally {
       setSaving(false);
     }
@@ -503,7 +455,7 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
         {' '}{t('cron.drawer.required')}
       </Text>
 
-      {/* AI Schedule Parser */}
+      {/* Local deterministic schedule phrase parser */}
       <div
         style={{
           background: 'linear-gradient(135deg, #f0f5ff 0%, #f6f0ff 100%)',
@@ -515,9 +467,7 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
         <Flexbox horizontal gap={8} align="flex-start">
           <Sparkles size={16} style={{ marginTop: 4, color: '#7c3aed', flexShrink: 0 }} />
           <Flexbox gap={8} style={{ flex: 1 }}>
-            <Text style={{ fontSize: 12, fontWeight: 500 }}>
-              {t('cron.drawer.ai.title')}
-            </Text>
+            <Text style={{ fontSize: 12, fontWeight: 500 }}>{t('cron.drawer.ai.title')}</Text>
             <Flexbox horizontal gap={8}>
               <Input
                 size="small"
@@ -537,12 +487,14 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                 {t('cron.drawer.ai.parseButton')}
               </Button>
             </Flexbox>
+            {parseError && (
+              <Text type="danger" style={{ fontSize: 11 }}>{parseError}</Text>
+            )}
           </Flexbox>
         </Flexbox>
       </div>
 
       <Form form={form} layout="vertical" size="middle">
-        {/* ── Section 1: Basics ── */}
         <SectionCard title={t('cron.drawer.section.basics')} description={t('cron.drawer.section.basicsDesc')}>
           <Flexbox horizontal gap={12}>
             <Form.Item
@@ -560,20 +512,20 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
 
           <Flexbox horizontal gap={12} align="flex-end">
             <Form.Item
-              name="agentName"
+              name="agentId"
               label={t('cron.drawer.field.agent')}
               style={{ flex: 1, marginBottom: 0 }}
               extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.agentHint')}</Text>}
             >
               <Select
-                options={agents.map((a) => ({
+                options={agents.map((agent) => ({
                   label: (
                     <Flexbox horizontal align="center" gap={8}>
-                      <AgentIconTile agent={a} size={20} subtle />
-                      <span>{a.title || a.name}{a.isDefault ? ` ${t('cron.drawer.field.defaultSuffix')}` : ''}</span>
+                      <AgentIconTile agent={agent} size={20} subtle />
+                      <span>{agent.title || agent.name}{agent.isDefault ? ` ${t('cron.drawer.field.defaultSuffix')}` : ''}</span>
                     </Flexbox>
                   ),
-                  value: a.name,
+                  value: agent.id,
                 }))}
                 optionLabelProp="label"
               />
@@ -584,7 +536,6 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
           </Flexbox>
         </SectionCard>
 
-        {/* ── Section 2: Schedule ── */}
         <SectionCard title={t('cron.drawer.section.schedule')} description={t('cron.drawer.section.scheduleDesc')}>
           <Form.Item name="scheduleKind" label={t('cron.drawer.field.scheduleKind')} style={{ marginBottom: 12 }}>
             <Select
@@ -626,8 +577,13 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
           )}
 
           {scheduleKind === 'once' && (
-            <Form.Item name="runAt" label={t('cron.drawer.field.runAt')} rules={[{ required: true }]} style={{ marginBottom: 12 }}>
-              <Input placeholder={t('cron.drawer.field.runAtPlaceholder')} />
+            <Form.Item
+              name="runAt"
+              label={t('cron.drawer.field.runAt')}
+              rules={[{ required: true }]}
+              style={{ marginBottom: 12 }}
+            >
+              <Input type="datetime-local" />
             </Form.Item>
           )}
 
@@ -651,217 +607,95 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
           )}
         </SectionCard>
 
-        {/* ── Section 3: Execution ── */}
         <SectionCard title={t('cron.drawer.section.execution')} description={t('cron.drawer.section.executionDesc')}>
-          <Form.Item name="execKind" label={t('cron.drawer.field.whatShouldRun')} style={{ marginBottom: 12 }}>
-            <Segmented
-              block
-              options={[
-                {
-                  label: (
-                    <Flexbox horizontal align="center" gap={6} style={{ padding: '2px 0' }}>
-                      <Bot size={14} /> {t('cron.drawer.field.execAgent')}
-                    </Flexbox>
-                  ),
-                  value: 'agent',
-                },
-                {
-                  label: (
-                    <Flexbox horizontal align="center" gap={6} style={{ padding: '2px 0' }}>
-                      <Terminal size={14} /> {t('cron.drawer.field.execShell')}
-                    </Flexbox>
-                  ),
-                  value: 'shell',
-                },
-              ]}
-              onChange={(val) => setExecKind(val as string)}
-            />
+          <Flexbox horizontal align="center" gap={6} style={{ marginBottom: 12 }}>
+            <Bot size={14} style={{ color: '#7c3aed' }} />
+            <Text style={{ fontSize: 12 }} type="secondary">{t('cron.drawer.field.execAgentOnly')}</Text>
+          </Flexbox>
+
+          <Form.Item
+            name="prompt"
+            label={t('cron.drawer.field.promptLabel')}
+            rules={[{ required: true, message: t('cron.drawer.field.promptRequired') }]}
+            extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.promptHint')}</Text>}
+            style={{ marginBottom: 12 }}
+          >
+            <TextArea rows={4} placeholder={t('cron.drawer.field.promptPlaceholder')} />
           </Form.Item>
 
-          {execKind === 'agent' && (
-            <>
-              <Form.Item
-                name="agentPrompt"
-                label={t('cron.drawer.field.promptLabel')}
-                rules={[{ required: true, message: t('cron.drawer.field.promptRequired') }]}
-                extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.promptHint')}</Text>}
-                style={{ marginBottom: 12 }}
-              >
-                <TextArea
-                  rows={4}
-                  placeholder={t('cron.drawer.field.promptPlaceholder')}
-                />
-              </Form.Item>
-
-              <Flexbox horizontal gap={12}>
-                <Form.Item
-                  name="timeoutSec"
-                  label={t('cron.drawer.field.timeoutLabel')}
-                  style={{ flex: 1, marginBottom: 0 }}
-                  extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.timeoutHint')}</Text>}
-                >
-                  <InputNumber min={0} max={3600} style={{ width: '100%' }} placeholder="0" />
-                </Form.Item>
-                <Form.Item
-                  label={t('cron.drawer.field.modelLabel')}
-                  style={{ flex: 1, marginBottom: 0 }}
-                  extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.modelHint')}</Text>}
-                >
-                  <ModelSelect
-                    models={availableModels}
-                    value={modelValue}
-                    onChange={(next) => {
-                      if (next) handleModelChange(next);
-                      else setModelOverride('');
-                    }}
-                    placeholder={t('cron.drawer.field.modelPlaceholder')}
-                  />
-                </Form.Item>
-              </Flexbox>
-            </>
-          )}
-
-          {execKind === 'shell' && (
+          <Flexbox horizontal gap={12}>
             <Form.Item
-              name="shellCmd"
-              label={t('cron.drawer.field.commandLabel')}
-              rules={[{ required: true, message: t('cron.drawer.field.commandRequired') }]}
-              style={{ marginBottom: 0 }}
+              name="timeoutSec"
+              label={t('cron.drawer.field.timeoutLabel')}
+              style={{ flex: 1, marginBottom: 0 }}
+              extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.timeoutHint')}</Text>}
             >
-              <TextArea
-                rows={3}
-                placeholder={t('cron.drawer.field.commandPlaceholder')}
-                style={{ fontFamily: 'monospace', fontSize: 13 }}
+              <InputNumber min={0} max={3600} style={{ width: '100%' }} placeholder="0" />
+            </Form.Item>
+            <Form.Item name="effort" label={t('cron.drawer.field.effortLabel')} style={{ flex: 1, marginBottom: 0 }}>
+              <Select
+                options={[
+                  { label: t('cron.drawer.field.effortLow'), value: 'low' },
+                  { label: t('cron.drawer.field.effortMedium'), value: 'medium' },
+                  { label: t('cron.drawer.field.effortHigh'), value: 'high' },
+                ]}
               />
             </Form.Item>
-          )}
+            <Form.Item
+              label={t('cron.drawer.field.modelLabel')}
+              style={{ flex: 1, marginBottom: 0 }}
+              extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.modelHint')}</Text>}
+            >
+              <ModelSelect
+                models={availableModels}
+                value={modelValue}
+                onChange={(next) => {
+                  if (next) handleModelChange(next);
+                  else setModelOverride('');
+                }}
+                placeholder={t('cron.drawer.field.modelPlaceholder')}
+              />
+            </Form.Item>
+          </Flexbox>
         </SectionCard>
 
-        {/* ── Section 4: Advanced (collapsible) ── */}
         <div ref={advancedRef}>
-        <Collapse
-          ghost
-          expandIcon={({ isActive }) => <ChevronDown size={14} style={{ transform: isActive ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s' }} />}
-          style={{ marginBottom: 16 }}
-          onChange={(keys) => {
-            if (Array.isArray(keys) && keys.includes('advanced')) {
-              setTimeout(() => advancedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
-            }
-          }}
-          items={[{
-            key: 'advanced',
-            label: <Text strong style={{ fontSize: 13 }}>{t('cron.drawer.section.advanced')}</Text>,
-            children: (
-              <Flexbox gap={4}>
-                <Text type="secondary" style={{ fontSize: 11, marginBottom: 8 }}>
-                  {t('cron.drawer.advancedDesc')}
-                </Text>
-
-                <Form.Item name="deleteAfterRun" valuePropName="checked" style={{ marginBottom: 8 }}>
-                  <Checkbox>
-                    <Flexbox>
-                      <Text style={{ fontSize: 13 }}>{t('cron.drawer.field.deleteAfterRun')}</Text>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        {t('cron.drawer.field.deleteAfterRunHint')}
-                      </Text>
-                    </Flexbox>
-                  </Checkbox>
-                </Form.Item>
-
-                <Flexbox style={{ marginTop: 8 }}>
-                  <Text strong style={{ fontSize: 13, marginBottom: 4 }}>{t('cron.drawer.field.deliveryTitle')}</Text>
+          <Collapse
+            ghost
+            expandIcon={({ isActive }) => <ChevronDown size={14} style={{ transform: isActive ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s' }} />}
+            style={{ marginBottom: 16 }}
+            onChange={(keys) => {
+              if (Array.isArray(keys) && keys.includes('advanced')) {
+                setTimeout(() => advancedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+              }
+            }}
+            items={[{
+              key: 'advanced',
+              label: <Text strong style={{ fontSize: 13 }}>{t('cron.drawer.section.advanced')}</Text>,
+              children: (
+                <Flexbox gap={4}>
                   <Text type="secondary" style={{ fontSize: 11, marginBottom: 8 }}>
-                    {t('cron.drawer.field.deliveryDesc')}
+                    {t('cron.drawer.advancedDesc')}
+                  </Text>
+                  <Form.Item name="deleteAfterRun" valuePropName="checked" style={{ marginBottom: 8 }}>
+                    <Checkbox>
+                      <Flexbox>
+                        <Text style={{ fontSize: 13 }}>{t('cron.drawer.field.deleteAfterRun')}</Text>
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {t('cron.drawer.field.deleteAfterRunHint')}
+                        </Text>
+                      </Flexbox>
+                    </Checkbox>
+                  </Form.Item>
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {t('cron.drawer.field.deliveryHidden')}
                   </Text>
                 </Flexbox>
-
-                <Form.Item name="deliveryMode" label={t('cron.drawer.field.resultDelivery')} style={{ marginBottom: 8 }}>
-                  <Select>
-                    <Select.Option value="none">{t('cron.drawer.field.deliveryNone')}</Select.Option>
-                    <Select.Option value="channel">{t('cron.drawer.field.deliverySendToChannel')}</Select.Option>
-                  </Select>
-                </Form.Item>
-
-                <Form.Item noStyle shouldUpdate={(prev, cur) => prev.deliveryMode !== cur.deliveryMode}>
-                  {({ getFieldValue }) =>
-                    getFieldValue('deliveryMode') === 'channel' ? (
-                      <>
-                        <Form.Item name="deliveryChannelId" label={t('cron.drawer.field.deliveryChannel')} style={{ marginBottom: 8 }}>
-                          <Select
-                            placeholder={t('cron.drawer.field.deliveryChannelPlaceholder')}
-                            allowClear
-                            options={channels.filter((c) => c.enabled).map((c) => ({
-                              value: c.bindingId,
-                              label: `${c.name} (${c.providerKind})`,
-                            }))}
-                            onChange={(val) => {
-                              setDeliveryTargetId('');
-                              setDeliveryTargetType('');
-                              if (val) loadDeliveryTargets(val);
-                              else setDeliveryTargets([]);
-                            }}
-                          />
-                        </Form.Item>
-
-                        <Form.Item
-                          label={t('cron.drawer.field.deliveryTarget')}
-                          style={{ marginBottom: 8 }}
-                          required
-                          help={
-                            !deliveryTargetId && !loadingTargets
-                              ? t('cron.drawer.field.deliveryTargetRequired')
-                              : undefined
-                          }
-                          validateStatus={!deliveryTargetId && !loadingTargets ? 'error' : undefined}
-                        >
-                          <Select
-                            placeholder={loadingTargets ? t('cron.drawer.field.deliveryTargetLoading') : t('cron.drawer.field.deliveryTargetPlaceholder')}
-                            loading={loadingTargets}
-                            value={deliveryTargetId || undefined}
-                            onChange={(val) => {
-                              setDeliveryTargetId(val || '');
-                              const target = deliveryTargets.find((t) => t.chatId === val);
-                              setDeliveryTargetType(target?.chatType || '');
-                            }}
-                            options={deliveryTargets.map((t) => ({
-                              value: t.chatId,
-                              label: t.chatType === 'p2p' ? `DM: ${t.name}` : t.name,
-                            }))}
-                          />
-                        </Form.Item>
-
-                        <Form.Item name="failureChannelId" label={t('cron.drawer.field.failureChannel')} style={{ marginBottom: 8 }}>
-                          <Select
-                            placeholder={t('cron.drawer.field.failureChannelPlaceholder')}
-                            allowClear
-                            options={channels.filter((c) => c.enabled).map((c) => ({
-                              value: c.bindingId,
-                              label: `${c.name} (${c.providerKind})`,
-                            }))}
-                          />
-                        </Form.Item>
-                      </>
-                    ) : null
-                  }
-                </Form.Item>
-              </Flexbox>
-            ),
-          }]}
-        />
+              ),
+            }]}
+          />
         </div>
       </Form>
     </Drawer>
   );
-}
-
-function inferIntervalUnit(sec: number): string {
-  if (sec >= 86400 && sec % 86400 === 0) return 'days';
-  if (sec >= 3600 && sec % 3600 === 0) return 'hours';
-  return 'minutes';
-}
-
-function inferIntervalValue(sec: number): number {
-  if (sec >= 86400 && sec % 86400 === 0) return sec / 86400;
-  if (sec >= 3600 && sec % 3600 === 0) return sec / 3600;
-  return sec / 60;
 }

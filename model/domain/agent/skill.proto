@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.agent.v1;
 
 import "google/protobuf/timestamp.proto";
+import "domain/agent/agent.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
 
@@ -22,11 +23,36 @@ message SkillManifest {
   google.protobuf.Timestamp created_at = 13;
   google.protobuf.Timestamp updated_at = 14;
   bool enabled = 15;
+  repeated SkillResource resources = 16;
 }
 
 message SkillConditions {
   repeated string fallback_for_toolsets = 1;
   repeated string requires_tools = 2;
+}
+
+enum SkillResourceKind {
+  SKILL_RESOURCE_KIND_UNSPECIFIED = 0;
+  SKILL_RESOURCE_KIND_DOCUMENT = 1;
+  SKILL_RESOURCE_KIND_REFERENCE = 2;
+  SKILL_RESOURCE_KIND_TEMPLATE = 3;
+  SKILL_RESOURCE_KIND_ASSET = 4;
+  SKILL_RESOURCE_KIND_SCRIPT = 5;
+}
+
+message SkillResource {
+  string path = 1;
+  string content_hash = 2;
+  uint64 size = 3;
+  SkillResourceKind kind = 4;
+  ToolExecutionOwner execution_owner = 5;
+}
+
+message SkillResourceInput {
+  string path = 1;
+  bytes content = 2;
+  SkillResourceKind kind = 3;
+  ToolExecutionOwner execution_owner = 4;
 }
 
 message SkillFinding {
@@ -70,12 +96,25 @@ message GetSkillResponse {
   string file_content = 2;
 }
 
+message ReadSkillResourceRequest {
+  string agent_id = 1;
+  string skill_id = 2;
+  int32 version = 3;
+  string path = 4;
+}
+
+message ReadSkillResourceResponse {
+  SkillResource resource = 1;
+  bytes content = 2;
+}
+
 message InstallSkillRequest {
   string agent_id = 1;
   string source = 2;
   string name = 3;
   string content = 4;
   string trust_level = 5;
+  repeated SkillResourceInput resources = 6;
 }
 
 message InstallSkillResponse {
@@ -94,6 +133,7 @@ message UpdateSkillRequest {
   optional string name = 3;
   optional string description = 4;
   optional string content = 5;
+  repeated SkillResourceInput resources = 8;
 }
 
 message UpdateSkillResponse {

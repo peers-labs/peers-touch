@@ -627,8 +627,15 @@ func MigrateFencedClientExecution(db *gorm.DB) error {
 		if err := migrateToolReceiptAttemptColumns(tx); err != nil {
 			return err
 		}
-		if err := tx.AutoMigrate(&ReceiptRecoveryCredential{}, &ClientCapabilityCommand{}); err != nil {
+		if err := tx.AutoMigrate(
+			&ReceiptRecoveryCredential{},
+			&ClientCapabilityCommand{},
+			&ClientCapabilityResourceGrant{},
+		); err != nil {
 			return fmt.Errorf("migrate fenced client execution ledgers: %w", err)
+		}
+		if err := migrateTurnTodoPrimaryKey(tx); err != nil {
+			return err
 		}
 
 		now := time.Now().UTC()
@@ -787,6 +794,78 @@ func MigrateExecutorLeaseFencing(db *gorm.DB) error {
 	})
 }
 
+// migrateTurnTodoPrimaryKey scopes checklist item identity to one turn.
+// Models reuse semantic ids across turns (for example "create-initial"),
+// so a global primary key on id alone blocks every later turn that picks
+// the same identifier. Fresh AutoMigrate installs the composite key; only
+// existing Postgres databases need this constraint replacement.
+func migrateTurnTodoPrimaryKey(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "sqlite" ||
+		!tx.Migrator().HasTable(&AgentTurnTodo{}) {
+		return nil
+	}
+	var keyColumns int64
+	if err := tx.Raw(`
+		SELECT count(*) FROM information_schema.key_column_usage
+		WHERE constraint_name = 'agent_turn_todos_pkey'
+		  AND table_name = 'agent_turn_todos'`).Scan(&keyColumns).Error; err != nil {
+		return fmt.Errorf("inspect agent_turn_todos key column usage: %w", err)
+	}
+	// AutoMigrate on fresh databases already installs the composite key;
+	// the conversation ordering index is reconciled separately below.
+	if keyColumns >= 2 {
+		return migrateTurnTodoConversationIndex(tx)
+	}
+	if err := tx.Exec(`DELETE FROM agent_turn_todos a
+		USING agent_turn_todos b
+		WHERE a.ctid < b.ctid
+		  AND a.turn_id = b.turn_id
+		  AND a.id = b.id`).Error; err != nil {
+		return fmt.Errorf("deduplicate agent_turn_todos before rekey: %w", err)
+	}
+	if err := tx.Exec(
+		`ALTER TABLE agent_turn_todos DROP CONSTRAINT IF EXISTS agent_turn_todos_pkey`,
+	).Error; err != nil {
+		return fmt.Errorf("drop legacy agent_turn_todos primary key: %w", err)
+	}
+	if err := tx.Exec(
+		`ALTER TABLE agent_turn_todos ADD CONSTRAINT agent_turn_todos_pkey PRIMARY KEY (turn_id, id)`,
+	).Error; err != nil {
+		return fmt.Errorf("add scoped agent_turn_todos primary key: %w", err)
+	}
+	return migrateTurnTodoConversationIndex(tx)
+}
+
+// migrateTurnTodoConversationIndex scopes checklist ordering to one
+// conversation: the model keeps a single checklist across turns in the same
+// working session instead of restarting it on every turn.
+func migrateTurnTodoConversationIndex(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "sqlite" ||
+		!tx.Migrator().HasTable(&AgentTurnTodo{}) {
+		return nil
+	}
+	if tx.Migrator().HasIndex(&AgentTurnTodo{}, "idx_todo_conversation_order") {
+		return nil
+	}
+	if err := tx.Exec(`DELETE FROM agent_turn_todos a
+		USING agent_turn_todos b
+		WHERE a.conversation_id = b.conversation_id
+		  AND a.position = b.position
+		  AND a.ctid < b.ctid`).Error; err != nil {
+		return fmt.Errorf("deduplicate conversation todo order: %w", err)
+	}
+	if err := tx.Migrator().DropIndex(&AgentTurnTodo{}, "idx_turn_todo_order"); err != nil {
+		return fmt.Errorf("drop turn-scoped todo order index: %w", err)
+	}
+	if err := tx.Exec(
+		`CREATE UNIQUE INDEX idx_todo_conversation_order
+		 ON agent_turn_todos (conversation_id, position)`,
+	).Error; err != nil {
+		return fmt.Errorf("create conversation todo order index: %w", err)
+	}
+	return nil
+}
+
 func migrateClientCapabilityLeaseColumns(tx *gorm.DB) error {
 	if !tx.Migrator().HasTable(&ClientCapabilityLease{}) {
 		return nil
@@ -926,6 +1005,11 @@ func migrateToolDispatchOutboxColumns(tx *gorm.DB) error {
 			ALTER COLUMN reconciliation_deadline SET NOT NULL
 		`).Error; err != nil {
 			return fmt.Errorf("enforce outbox reconciliation deadline: %w", err)
+		}
+	}
+	if !tx.Migrator().HasColumn("agent_tool_dispatch_outbox", "invalidated_at") {
+		if err := tx.Migrator().AddColumn(&ToolDispatchOutbox{}, "InvalidatedAt"); err != nil {
+			return fmt.Errorf("add agent_tool_dispatch_outbox.invalidated_at: %w", err)
 		}
 	}
 	return nil

@@ -51,6 +51,7 @@
 | `api-ownership` | engineering | Architecture Team | [design.md](./engineering/api-governance/design.md) | [1](./engineering/architecture-governance/architecture-modules.json) |
 | `architecture-module-governance` | engineering | Architecture Team | [design.md](./engineering/architecture-governance/design.md) | [20](./engineering/architecture-governance/architecture-modules.json) |
 | `development-workflow` | engineering | Platform Team | [design.md](./engineering/development-workflow/design.md) | [34](./engineering/architecture-governance/architecture-modules.json) |
+| `experience-design` | engineering | Developer Experience / Product Design | [design.md](./engineering/experience-design/design.md) | [7](./engineering/architecture-governance/architecture-modules.json) |
 | `local-dev-control-plane` | engineering | Platform Team | [design.md](./engineering/local-dev/design.md) | [26](./engineering/architecture-governance/architecture-modules.json) |
 | `x-config` | platform | Client Platform | [design.md](./platform/client/control-plane/design.md) | [11](./engineering/architecture-governance/architecture-modules.json) |
 | `cross-client-runtime` | platform | Client Platform Team | [cross-client-runtime.reuse-topology](./platform/client/cross-client-runtime/architecture.svg) | [20](./engineering/architecture-governance/architecture-modules.json) |

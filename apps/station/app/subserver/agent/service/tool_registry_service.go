@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
@@ -84,6 +85,21 @@ func (r *ToolRegistryService) registerDesktopLocalBuiltinTools() {
 			name:        "local_shell_safe",
 			description: "Run an allow-listed Desktop workspace operation without arbitrary shell execution.",
 			schema:      `{"type":"object","properties":{"operation":{"type":"string","enum":["pwd","list_dir"]},"path":{"type":"string"}},"required":["operation"]}`,
+		},
+		{
+			name:        "local_file_write",
+			description: "Create or overwrite a UTF-8 file inside the approved Desktop workspace after user approval.",
+			schema:      `{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative file path"},"content":{"type":"string","description":"Complete UTF-8 content, max 64KiB"}},"required":["path","content"]}`,
+		},
+		{
+			name:        "local_file_edit",
+			description: "Replace one exact text occurrence in an existing workspace file after user approval.",
+			schema:      `{"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string","description":"Must occur exactly once"},"new_string":{"type":"string"}},"required":["path","old_string","new_string"]}`,
+		},
+		{
+			name:        "local_shell_exec",
+			description: "Run an allow-listed read-only or build command (find/grep/rg/cat/ls/make/pnpm/npm/go/cargo/git) inside the approved workspace after user approval.",
+			schema:      `{"type":"object","properties":{"command":{"type":"string","enum":["find","grep","rg","cat","ls","make","pnpm","npm","go","cargo","git"]},"args":{"type":"array","items":{"type":"string"}}},"required":["command"]}`,
 		},
 	}
 
@@ -606,6 +622,56 @@ func (r *ToolRegistryService) registerSkillManageTool(svc *SkillService) {
 			}, nil
 		}
 	}
+
+	r.Register(&domain.ToolDefinition{
+		Name: "skill_resource_read",
+		Description: `Load a specific text resource (references, templates, guides) from an authorized versioned Skill package.
+
+Reads are pinned to the Skill version authorized for this Turn via capability manifest.
+The relative path must stay inside that Skill version. Path traversal, absolute paths,
+client-owned resources and unbound Skills are rejected. This never executes scripts;
+scripts can only be invoked by the fenced Desktop executor through its allowlist.`,
+		JSONSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "skill_name": {"type":"string","description":"Name of the authorized Skill"},
+    "path": {"type":"string","description":"Package-relative resource path, e.g. references/api.md"}
+  },
+  "required": ["skill_name","path"]
+}`),
+		Handler: func(ctx context.Context, meta *domain.ToolCallMeta, raw json.RawMessage) (*domain.ToolResult, error) {
+			var input struct {
+				SkillName string `json:"skill_name"`
+				Path      string `json:"path"`
+			}
+			if err := json.Unmarshal(raw, &input); err != nil {
+				return nil, fmt.Errorf("invalid skill_resource_read arguments: %v", err)
+			}
+			ref, ok := meta.AuthorizedSkills[input.SkillName]
+			if !ok {
+				return nil, fmt.Errorf("skill_resource_read rejected: Skill is not authorized for this Turn")
+			}
+			resource, content, err := svc.ReadSkillResource(
+				ctx, meta.AgentID, ref.SkillID, ref.Version, input.Path,
+			)
+			if err != nil {
+				return nil, err
+			}
+			if resource.GetExecutionOwner() != model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION {
+				return nil, fmt.Errorf("skill_resource_read rejected: resource is client-owned")
+			}
+			return &domain.ToolResult{
+				Content: fmt.Sprintf(
+					"# Skill resource: %s @ v%d — %s\n\n%s",
+					input.SkillName,
+					ref.Version,
+					resource.GetPath(),
+					string(content),
+				),
+				IsError: false,
+			}, nil
+		},
+	})
 
 	r.Register(&domain.ToolDefinition{
 		Name: "skill_manage",

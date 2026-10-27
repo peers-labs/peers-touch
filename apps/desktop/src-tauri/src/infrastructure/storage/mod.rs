@@ -94,8 +94,10 @@ fn apply_sqlcipher_passphrase(
 }
 
 fn verify_sqlcipher_key(conn: &Connection) -> bool {
-    conn.query_row("SELECT count(*) FROM sqlite_master;", [], |row| row.get::<_, i64>(0))
-        .is_ok()
+    conn.query_row("SELECT count(*) FROM sqlite_master;", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .is_ok()
 }
 
 /// Opens an existing database encrypted with the pre-fix lossy passphrase and
@@ -104,8 +106,8 @@ fn migrate_legacy_lossy_key(
     path: &std::path::Path,
     key: &KeyMaterial,
 ) -> Result<Connection, StorageError> {
-    let conn = Connection::open(path)
-        .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    let conn =
+        Connection::open(path).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
     apply_sqlcipher_passphrase(&conn, &legacy_lossy_passphrase_bytes(key), false)?;
     if !verify_sqlcipher_key(&conn) {
         return Err(StorageError::WriteFailed(
@@ -116,16 +118,16 @@ fn migrate_legacy_lossy_key(
     // Bundled SQLCipher can return SQLITE_OK after a rolled-back rekey while
     // this connection still reads with its old key. Never reuse that context.
     drop(conn);
-    let verified = Connection::open(path)
-        .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    let verified =
+        Connection::open(path).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
     apply_sqlcipher_passphrase(&verified, &sqlcipher_passphrase_bytes(key), false)?;
     if !verify_sqlcipher_key(&verified) {
         return Err(StorageError::WriteFailed(
             "database key migration to raw passphrase failed verification".to_string(),
         ));
     }
-    let stale = Connection::open(path)
-        .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    let stale =
+        Connection::open(path).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
     apply_sqlcipher_passphrase(&stale, &legacy_lossy_passphrase_bytes(key), false)?;
     if verify_sqlcipher_key(&stale) {
         return Err(StorageError::WriteFailed(
@@ -554,6 +556,13 @@ fn append_migration_log(app_name: &str, message: &str) -> Result<(), StorageErro
     writeln!(file, "{}", entry).map_err(|error| StorageError::WriteFailed(error.to_string()))
 }
 
+/// Directory root for durable per-profile application data, peer of the
+/// encrypted database root. Callers place only data that may stay local to
+/// this device.
+pub fn application_data_root() -> Result<PathBuf, StorageError> {
+    Ok(resolve_storage_root()?.0)
+}
+
 fn resolve_storage_root() -> Result<(PathBuf, String), StorageError> {
     if let Ok(path) = std::env::var("PEERS_STORAGE_ROOT") {
         let trimmed = path.trim();
@@ -620,12 +629,14 @@ fn default_platform_root() -> Result<PathBuf, StorageError> {
 mod tests {
     use super::{
         apply_sqlcipher_passphrase, compact_database_scope, legacy_lossy_passphrase_bytes,
-        migrate_legacy_lossy_key, open_database, sqlcipher_passphrase_bytes, sqlite_compatible_path,
-        sqlite_path_has_journal_headroom, verify_sqlcipher_key, StorageError,
-        SQLITE_JOURNAL_SUFFIX_BYTES, SQLITE_PATH_LIMIT_BYTES,
+        migrate_legacy_lossy_key, open_database, sqlcipher_passphrase_bytes,
+        sqlite_compatible_path, sqlite_path_has_journal_headroom, verify_sqlcipher_key,
+        StorageError, SQLITE_JOURNAL_SUFFIX_BYTES, SQLITE_PATH_LIMIT_BYTES,
     };
     use crate::domain::storage::database::{DatabaseOpenSpec, EncryptionLevel};
-    use crate::domain::storage::key_management::{KeyErrorCode, KeyMaterial, KeyProvider, KeyProviderError};
+    use crate::domain::storage::key_management::{
+        KeyErrorCode, KeyMaterial, KeyProvider, KeyProviderError,
+    };
     use rusqlite::Connection;
     use std::path::{Path, PathBuf};
 
@@ -747,7 +758,10 @@ mod tests {
             _key_ref: &str,
             _next_version: i32,
         ) -> Result<KeyMaterial, KeyProviderError> {
-            Err(KeyProviderError::internal("test/key", "rotate unsupported in test"))
+            Err(KeyProviderError::internal(
+                "test/key",
+                "rotate unsupported in test",
+            ))
         }
     }
 
@@ -883,8 +897,7 @@ mod tests {
         }
 
         // Direct migration helper is idempotently unavailable on raw databases.
-        let re_migrate: Result<Connection, StorageError> =
-            migrate_legacy_lossy_key(&db_path, &key);
+        let re_migrate: Result<Connection, StorageError> = migrate_legacy_lossy_key(&db_path, &key);
         assert!(re_migrate.is_err());
 
         std::fs::remove_dir_all(&root).ok();
@@ -898,19 +911,29 @@ mod tests {
         let key = FixedKeyProvider::new(non_utf8_key()).key;
         let writer = Connection::open(&path).unwrap();
         apply_sqlcipher_passphrase(&writer, &legacy_lossy_passphrase_bytes(&key), false).unwrap();
-        writer.execute_batch(
-            "CREATE TABLE probe(note TEXT);
+        writer
+            .execute_batch(
+                "CREATE TABLE probe(note TEXT);
              INSERT INTO probe VALUES ('preserved');
              BEGIN IMMEDIATE;",
-        ).unwrap();
+            )
+            .unwrap();
         assert!(migrate_legacy_lossy_key(&path, &key).is_err());
         writer.execute_batch("ROLLBACK").unwrap();
-        assert_eq!(writer.query_row("SELECT note FROM probe", [], |r| r.get::<_, String>(0))
-            .unwrap(), "preserved");
+        assert_eq!(
+            writer
+                .query_row("SELECT note FROM probe", [], |r| r.get::<_, String>(0))
+                .unwrap(),
+            "preserved"
+        );
         drop(writer);
         let fresh = migrate_legacy_lossy_key(&path, &key).unwrap();
-        assert_eq!(fresh.query_row("SELECT note FROM probe", [], |r| r.get::<_, String>(0))
-            .unwrap(), "preserved");
+        assert_eq!(
+            fresh
+                .query_row("SELECT note FROM probe", [], |r| r.get::<_, String>(0))
+                .unwrap(),
+            "preserved"
+        );
         drop(fresh);
         std::fs::remove_dir_all(root).unwrap();
     }

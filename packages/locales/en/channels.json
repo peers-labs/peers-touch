@@ -314,6 +314,16 @@
 
   "channels.v2.automations.title": "Automations",
   "channels.v2.automations.description": "Act on a schedule, message, or document change and deliver the result in Lark.",
+
+  "channels.v2.topics.title": "Channel Topics",
+  "channels.v2.topics.entryDescription": "Station conversations owned by the Agents on this connection.",
+  "channels.v2.topics.description": "Read-only projection of Station conversations for every Agent bound to this connection: default responder, routing rules, and automations.",
+  "channels.v2.topics.heading": "Agent conversations from Station",
+  "channels.v2.topics.readonly": "Topics are created by inbound messages; this surface only reads Station truth.",
+  "channels.v2.topics.refresh": "Refresh",
+  "channels.v2.topics.loadFailed": "Some Topics could not be loaded. Refresh to retry.",
+  "channels.v2.topics.noAgents": "Choose a responder Agent before its Topics can appear here.",
+  "channels.v2.topics.empty": "No Topics yet. Incoming messages start new Topics here.",
   "channels.v2.automations.saved": "{{count}} automations",
   "channels.v2.automations.empty": "No automations yet",
   "channels.v2.automations.summary": "Each automation keeps its trigger, Agent, destination, and latest result together.",

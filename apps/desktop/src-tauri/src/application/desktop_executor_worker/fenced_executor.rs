@@ -1,12 +1,18 @@
 use super::receipt_ledger::{ReceiptLedger, ReceiptRecord};
 use super::recovery_signer::sign_terminal_recovery;
-use super::resource_registry::{LocalResource, ResourceRegistry};
+use super::resource_registry::{
+    LocalArtifact, LocalResource, RegisterResource, ResourceRegistry, RESOURCE_KIND_CLAIM,
+    RESOURCE_KIND_GRANT,
+};
 use crate::model::agent::{
     ClientCapabilityReceipt, ClientCapabilityReceiptStatus, ClientCapabilityRequest,
-    ClientExecutionReplayPolicy, ClientResourceRef, ReceiptRecoveryScopePayload,
+    ClientExecutionReplayPolicy, ClientResourceRef, ReceiptRecoveryScopePayload, TurnArtifact,
+    TurnArtifactKind, TurnArtifactLocator,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 const INVALID_RESOURCE_REFERENCE_ERROR: &str = "CLIENT_INVALID_RESOURCE_REFERENCE";
 pub(crate) const STATION_TAKEOVER_REQUIRED: &str = "CLIENT_CAPABILITY_STATION_TAKEOVER_REQUIRED";
@@ -311,6 +317,12 @@ impl<'a> FencedExecutor<'a> {
             idempotency_key,
             &mut record_side_effect_start,
         );
+        let mut artifacts = Vec::new();
+        let executed = executed.and_then(|mut result| {
+            artifacts =
+                self.materialize_turn_artifacts(envelope, resources, &mut result, now_unix_ms())?;
+            Ok(result)
+        });
         if self
             .ledger
             .load(&envelope.tool_call_id, envelope.fencing_token)?
@@ -319,7 +331,7 @@ impl<'a> FencedExecutor<'a> {
             interrupt_at(hook, ACCEPTANCE_BARRIER_EFFECT_BEFORE_APPLIED, envelope)?;
         }
         let terminal_at_ms = now_unix_ms().max(prepared_at_ms);
-        let receipt = match executed {
+        let mut receipt = match executed {
             Ok(result) if result.len() <= contract.max_result_bytes => terminal_receipt(
                 envelope,
                 side_effect_receipt_id,
@@ -345,7 +357,85 @@ impl<'a> FencedExecutor<'a> {
                 terminal_at_ms,
             ),
         };
+        receipt.artifacts = artifacts;
         self.commit_and_submit_terminal(envelope, receipt, duplicate, true, terminal_at_ms, hook)
+    }
+
+    fn materialize_turn_artifacts(
+        &self,
+        envelope: &ClientCapabilityRequest,
+        resources: &[LocalResource],
+        result: &mut Vec<u8>,
+        now_ms: i64,
+    ) -> Result<Vec<TurnArtifact>, String> {
+        if !matches!(
+            envelope.capability_id.as_str(),
+            "filesystem.write" | "filesystem.edit"
+        ) {
+            return Ok(Vec::new());
+        }
+        let mut payload: serde_json::Value = serde_json::from_slice(result)
+            .map_err(|_| "CLIENT_CAPABILITY_ARTIFACT_RESULT_INVALID".to_string())?;
+        // Builtin local tools wrap their payload under `output`; MCP tools
+        // return the artifact array at the top level. Accept both.
+        let candidates = match artifact_candidates_mut(&mut payload) {
+            Some(candidates) => candidates,
+            None => {
+                return Err("CLIENT_CAPABILITY_ARTIFACT_RESULT_MISSING".to_string());
+            }
+        };
+        let mut artifacts = Vec::with_capacity(candidates.len());
+        for candidate in candidates {
+            let object = candidate
+                .as_object_mut()
+                .ok_or_else(|| "CLIENT_CAPABILITY_ARTIFACT_RESULT_INVALID".to_string())?;
+            let name = artifact_string(object, "name")?;
+            let claimed_ref = artifact_string(object, "client_local_ref")?;
+            let claimed_sha = artifact_string(object, "sha256")?;
+            let claimed_size = object
+                .get("size")
+                .and_then(serde_json::Value::as_u64)
+                .ok_or_else(|| "CLIENT_CAPABILITY_ARTIFACT_RESULT_INVALID".to_string())?;
+            let locator = resolve_artifact_locator(&claimed_ref, resources)?;
+            let bytes = fs::read(&locator)
+                .map_err(|_| "CLIENT_CAPABILITY_ARTIFACT_READ_FAILED".to_string())?;
+            let sha256 = hex::encode(Sha256::digest(&bytes));
+            if bytes.len() as u64 != claimed_size || sha256 != claimed_sha {
+                return Err("CLIENT_CAPABILITY_ARTIFACT_INTEGRITY_MISMATCH".to_string());
+            }
+            let artifact_id = format!("artifact_{}", ulid::Ulid::new());
+            let local = LocalArtifact {
+                artifact_ref: artifact_id.clone(),
+                locator: locator.to_string_lossy().to_string(),
+                name: name.clone(),
+                sha256: sha256.clone(),
+                size: claimed_size,
+            };
+            self.resources.register_artifact(&local)?;
+            object.insert(
+                "client_local_ref".to_string(),
+                serde_json::Value::String(artifact_id.clone()),
+            );
+            artifacts.push(TurnArtifact {
+                artifact_id,
+                turn_id: envelope.turn_id.clone(),
+                agent_id: String::new(),
+                tool_call_id: envelope.tool_call_id.clone(),
+                kind: TurnArtifactKind::File as i32,
+                name,
+                size: claimed_size,
+                sha256,
+                locator: Some(TurnArtifactLocator {
+                    client_local_ref: local.artifact_ref,
+                    client_device_id: self.lease.device_id.clone(),
+                    station_object_ref: String::new(),
+                }),
+                created_at: Some(timestamp_from_ms(now_ms)),
+            });
+        }
+        *result = serde_json::to_vec(&payload)
+            .map_err(|_| "CLIENT_CAPABILITY_ARTIFACT_RESULT_ENCODING_FAILED".to_string())?;
+        Ok(artifacts)
     }
 
     fn commit_and_submit_terminal(
@@ -507,13 +597,85 @@ impl<'a> FencedExecutor<'a> {
     }
 
     fn cleanup_resources(&self, envelope: &ClientCapabilityRequest) -> Result<(), String> {
-        let opaque_refs = envelope
-            .resource_refs
-            .iter()
-            .map(|reference| reference.resource_ref.clone())
-            .collect::<Vec<_>>();
-        self.resources.delete(&opaque_refs)
+        for reference in &envelope.resource_refs {
+            self.resources.delete(
+                &reference.resource_ref,
+                &reference.capability_session_id,
+                &reference.capability_id,
+            )?;
+        }
+        Ok(())
     }
+}
+
+/// Extracts the mutable artifact candidate array from a local-tool result.
+/// Builtin tools wrap their payload under `output`; MCP tools return the
+/// array at the document root.
+fn artifact_candidates_mut(
+    payload: &mut serde_json::Value,
+) -> Option<&mut Vec<serde_json::Value>> {
+    if payload
+        .get("artifacts")
+        .and_then(serde_json::Value::as_array)
+        .is_some()
+    {
+        return payload
+            .get_mut("artifacts")
+            .and_then(serde_json::Value::as_array_mut);
+    }
+    payload
+        .pointer_mut("/output/artifacts")
+        .and_then(serde_json::Value::as_array_mut)
+}
+
+fn artifact_string(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &str,
+) -> Result<String, String> {
+    object
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| "CLIENT_CAPABILITY_ARTIFACT_RESULT_INVALID".to_string())
+}
+
+fn resolve_artifact_locator(
+    claimed_ref: &str,
+    resources: &[LocalResource],
+) -> Result<PathBuf, String> {
+    for resource in resources {
+        if claimed_ref == resource.opaque_ref {
+            return Ok(PathBuf::from(&resource.locator));
+        }
+        let Some(suffix) = claimed_ref.strip_prefix(&resource.opaque_ref) else {
+            continue;
+        };
+        let relative = suffix.trim_start_matches(['/', '\\']);
+        if relative.is_empty() || relative.split(['/', '\\']).any(|part| part == "..") {
+            return Err("CLIENT_CAPABILITY_ARTIFACT_REF_INVALID".to_string());
+        }
+        return Ok(PathBuf::from(&resource.locator).join(relative));
+    }
+    // Local write/edit tools report the written file as a canonical absolute
+    // path. Accept it only when the resolved file lives inside a granted
+    // resource root; the claim is replaced by an opaque artifact id before
+    // the result leaves the device.
+    let claimed_path = Path::new(claimed_ref);
+    if claimed_path.is_absolute() {
+        let canonical_claim = fs::canonicalize(claimed_path)
+            .map_err(|_| "CLIENT_CAPABILITY_ARTIFACT_REF_INVALID".to_string())?;
+        for resource in resources {
+            let Ok(root) = fs::canonicalize(&resource.locator) else {
+                continue;
+            };
+            if canonical_claim != root && canonical_claim.starts_with(&root) {
+                return Ok(canonical_claim);
+            }
+        }
+    }
+    Err("CLIENT_CAPABILITY_ARTIFACT_REF_INVALID".to_string())
 }
 
 fn interrupt_at(
@@ -539,9 +701,9 @@ impl InvalidResourceReference {
 
 fn required_resource_kind(capability_id: &str) -> Option<&'static str> {
     match capability_id {
-        "filesystem.read" => Some("file"),
+        "filesystem.read" | "filesystem.write" | "filesystem.edit" => Some("file"),
         "filesystem.list" => Some("folder"),
-        "shell.execute" => Some("workspace"),
+        "shell.execute" | "shell.allowlist" => Some("workspace"),
         _ => None,
     }
 }
@@ -738,6 +900,7 @@ fn receipt_base(
         result_id: String::new(),
         tool_batch_id: envelope.tool_batch_id.clone(),
         recovery_proof: None,
+        artifacts: Vec::new(),
     }
 }
 
@@ -776,7 +939,6 @@ fn now_unix_ms() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::super::resource_registry::RegisterResource;
     use super::*;
     use crate::model::agent::ReceiptRecoveryCredential;
     use std::path::PathBuf;
@@ -1151,6 +1313,7 @@ mod tests {
                 integrity_hash: &valid_reference.integrity_hash,
                 locator: "/private/alice/workspace",
                 expires_at_ms: TEST_NOW_MS + 30_000,
+                resource_kind: RESOURCE_KIND_CLAIM,
             })
             .unwrap();
         let mut mismatched_reference = valid_reference.clone();
@@ -1212,6 +1375,7 @@ mod tests {
                 integrity_hash: &reference.integrity_hash,
                 locator: "/private/alice/workspace",
                 expires_at_ms: TEST_NOW_MS + 30_000,
+                resource_kind: RESOURCE_KIND_CLAIM,
             })
             .unwrap();
         let request = envelope(
@@ -1267,6 +1431,7 @@ mod tests {
                 integrity_hash: &reference.integrity_hash,
                 locator: "/private/alice/workspace",
                 expires_at_ms: TEST_NOW_MS + 30_000,
+                resource_kind: RESOURCE_KIND_CLAIM,
             })
             .unwrap();
         let request = envelope(
@@ -1326,6 +1491,7 @@ mod tests {
                 integrity_hash: &reference.integrity_hash,
                 locator: "/private/alice/workspace",
                 expires_at_ms: TEST_NOW_MS + 30_000,
+                resource_kind: RESOURCE_KIND_CLAIM,
             })
             .unwrap();
         let mut request = envelope(
@@ -1410,6 +1576,7 @@ mod tests {
                 integrity_hash: &reference.integrity_hash,
                 locator: "/private/alice/workspace",
                 expires_at_ms: TEST_NOW_MS + 30_000,
+                resource_kind: RESOURCE_KIND_CLAIM,
             })
             .unwrap();
         let request = envelope(
@@ -1453,5 +1620,60 @@ mod tests {
             1
         );
         assert_eq!(reporter.receipts().len(), 2);
+    }
+
+    #[test]
+    fn artifact_candidates_support_wrapped_builtin_output() {
+        let mut wrapped: serde_json::Value =
+            serde_json::from_str(r#"{"ok":true,"output":{"artifacts":[{"name":"a.md"}]}}"#)
+                .unwrap();
+        assert_eq!(
+            artifact_candidates_mut(&mut wrapped)
+                .unwrap()
+                .first()
+                .unwrap()
+                .get("name")
+                .and_then(serde_json::Value::as_str),
+            Some("a.md")
+        );
+
+        let mut top_level: serde_json::Value =
+            serde_json::from_str(r#"{"artifacts":[{"name":"b.md"}]}"#).unwrap();
+        assert_eq!(
+            artifact_candidates_mut(&mut top_level)
+                .unwrap()
+                .first()
+                .unwrap()
+                .get("name")
+                .and_then(serde_json::Value::as_str),
+            Some("b.md")
+        );
+
+        let mut missing: serde_json::Value =
+            serde_json::from_str(r#"{"ok":true,"output":{}}"#).unwrap();
+        assert!(artifact_candidates_mut(&mut missing).is_none());
+    }
+
+    #[test]
+    fn artifact_locator_resolves_absolute_path_inside_granted_root() {
+        let root = std::env::temp_dir().join(format!(
+            "peers-artifact-locator-{}",
+            ulid::Ulid::new()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("report.md");
+        std::fs::write(&file, b"# Report").unwrap();
+        let canonical_root = root.canonicalize().unwrap();
+        let resources = vec![LocalResource {
+            opaque_ref: "wks-test".to_string(),
+            locator: canonical_root.to_string_lossy().to_string(),
+            permission_grant_id: "grant-1".to_string(),
+            integrity_hash: "hash".to_string(),
+        }];
+        let resolved =
+            resolve_artifact_locator(&file.canonicalize().unwrap().to_string_lossy(), &resources)
+                .unwrap();
+        assert_eq!(resolved, file.canonicalize().unwrap());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

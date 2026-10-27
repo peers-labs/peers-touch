@@ -1,6 +1,6 @@
 mod attachment_transfer;
-mod direct_session;
 mod device_identity_backup;
+mod direct_session;
 mod engine;
 mod group_genesis;
 mod lifecycle;

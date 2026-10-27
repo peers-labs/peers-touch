@@ -107,7 +107,9 @@ impl ClientMeta {
             environment: inner.environment.clone(),
             region: inner.region.clone(),
             version,
-            labels: identity.map(|value| value.labels.clone()).unwrap_or_default(),
+            labels: identity
+                .map(|value| value.labels.clone())
+                .unwrap_or_default(),
             device_id: inner.device_id.clone(),
         })
     }
@@ -122,7 +124,10 @@ impl ClientMeta {
             version: inner.identity.as_ref().map(|value| value.version.clone()),
             build_number: inner.identity.as_ref().map(|value| value.build_number),
             commit: inner.identity.as_ref().map(|value| value.commit.clone()),
-            identifier: inner.identity.as_ref().map(|value| value.identifier.clone()),
+            identifier: inner
+                .identity
+                .as_ref()
+                .map(|value| value.identifier.clone()),
             default_region: inner
                 .identity
                 .as_ref()

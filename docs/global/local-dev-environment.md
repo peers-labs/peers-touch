@@ -184,6 +184,10 @@ reset remains forbidden.
 | `PT_DESKTOP_APP_WEB_PORT` | yes | `3210` | Desktop Tauri web port |
 | `PT_MOBILE_WEB_PORT` | if mobile | `5173` | Mobile dev server port |
 
+Addresses in this document use RFC 5737 TEST-NET ranges. Real deployment
+coordinates belong only to the sibling environment repository or machine-local
+profile state.
+
 ### 2.5 Deploy Env Files
 
 Canonical definitions live at

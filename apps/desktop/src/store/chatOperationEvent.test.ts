@@ -160,6 +160,17 @@ describe('Agent turn event identity projection', () => {
           selectedClientSessionId: 'session-desktop',
         }),
       },
+      capabilitySessions: [{
+        session_id: 'session-desktop',
+        ptid: 'ptid:actor-1',
+        device_id: 'device-1',
+        platform: 'CLIENT_PLATFORM_DESKTOP',
+        typed_capabilities: [],
+        expires_at: { seconds: Math.floor(Date.now() / 1000) + 3600, nanos: 0 },
+        connection_id: 'connection-1',
+        lease_id: 'lease-1',
+        lease_revision: 1,
+      }],
     });
 
     try {
@@ -173,6 +184,68 @@ describe('Agent turn event identity projection', () => {
         .toBe('request-1');
       expect(streamSpy.mock.calls[0]?.[0].client_capability_session_id)
         .toBe('session-desktop');
+    } finally {
+      streamSpy.mockRestore();
+      useChatStore.getState().reset();
+      useAgentCapabilityStore.getState().reset();
+      useAgentStore.setState(previousAgentState);
+    }
+  });
+
+  it('never pins a readiness-selected session that Station no longer lists as live', () => {
+    const previousAgentState = useAgentStore.getState();
+    const streamSpy = vi.spyOn(agentService, 'streamTurn').mockImplementation(
+      () => {
+        const controller = new AbortController() as AgentTurnStreamController;
+        Object.defineProperty(controller, 'streamGeneration', {
+          value: 1,
+          enumerable: true,
+        });
+        return controller;
+      },
+    );
+    useChatStore.getState().reset();
+    useChatStore.setState({ currentSessionKey: 'conversation-1' });
+    useAgentStore.setState({
+      selectedAgent: 'assistant',
+      agents: [{
+        id: 'agent-1',
+        name: 'assistant',
+        provider: 'provider-1',
+        model: 'model-1',
+      } as Agent],
+    });
+    // Renderer reload: the cached readiness snapshot still names the orphaned
+    // session, while Station lists only the newly registered lease.
+    useAgentCapabilityStore.setState({
+      readinessByAgentId: {
+        'agent-1': create(CapabilityReadinessSnapshotSchema, {
+          snapshotId: 'snapshot-stale',
+          agentId: 'agent-1',
+          selectedClientSessionId: 'session-orphan',
+        }),
+      },
+      capabilitySessions: [{
+        session_id: 'session-live',
+        ptid: 'ptid:actor-1',
+        device_id: 'device-1',
+        platform: 'CLIENT_PLATFORM_DESKTOP',
+        typed_capabilities: [],
+        expires_at: { seconds: Math.floor(Date.now() / 1000) + 3600, nanos: 0 },
+        connection_id: 'connection-1',
+        lease_id: 'lease-1',
+        lease_revision: 1,
+      }],
+    });
+
+    try {
+      expect(useChatStore.getState().sendMessage(
+        'post-reload input',
+        [],
+        { clientIdempotencyKey: 'request-2' },
+      )).toBe(true);
+      expect(streamSpy.mock.calls[0]?.[0].client_capability_session_id)
+        .toBe('session-live');
     } finally {
       streamSpy.mockRestore();
       useChatStore.getState().reset();
@@ -1339,6 +1412,103 @@ describe('Agent turn event identity projection', () => {
       ).map((message) => message.content)).toEqual(['reduced input']);
       expect(state.operations[draftKey]?.status).toBe('completed');
       expect(state.sessionBuffers[draftKey]).toBeUndefined();
+    } finally {
+      streamSpy.mockRestore();
+      useChatStore.getState().reset();
+      useAgentStore.setState(previousAgentState);
+    }
+  });
+
+  it('keeps concurrent sends as independent operations and keeps a queued operation active', async () => {
+    const previousAgentState = useAgentStore.getState();
+    const draftKey = 'draft:agent-1:parallel';
+    const streams: Array<{
+      controller: AgentTurnStreamController;
+      onEvent: (event: StreamEvent) => void;
+      onDone: () => void;
+      onError: (error: AgentTurnStreamError) => void;
+    }> = [];
+    let streamGeneration = 0;
+    const streamSpy = vi.spyOn(agentService, 'streamTurn').mockImplementation(
+      (_input, onEvent, onDone, onError) => {
+        const controller = new AbortController() as AgentTurnStreamController;
+        streamGeneration += 1;
+        Object.defineProperty(controller, 'streamGeneration', {
+          value: streamGeneration,
+          enumerable: true,
+        });
+        Object.defineProperty(controller, 'disconnectTransport', {
+          value: () => undefined,
+          enumerable: true,
+        });
+        streams.push({ controller, onEvent, onDone, onError });
+        return controller;
+      },
+    );
+    const agent: Agent = {
+      id: 'agent-1',
+      name: 'assistant',
+      title: 'Assistant',
+      description: '',
+      avatar: '',
+      backgroundColor: '',
+      systemPrompt: '',
+      soulMd: '',
+      agentsMd: '',
+      model: 'model-1',
+      provider: 'provider-1',
+      effort: '',
+      visibility: 'private',
+      isolationEnabled: false,
+      isolationMode: '',
+      isolationRetentionDays: 0,
+      workspaceMode: '',
+      allowedRoots: '',
+      tags: '',
+      pinned: false,
+      favorite: false,
+      sortOrder: 0,
+      openingMessage: '',
+      openingQuestions: '',
+      chatConfig: '{}',
+      isDefault: true,
+      version: 1,
+      createdAt: '',
+      updatedAt: '',
+    };
+    useChatStore.getState().reset();
+    useChatStore.setState({ currentSessionKey: draftKey });
+    useAgentStore.setState({ selectedAgent: agent.name, agents: [agent] });
+
+    try {
+      expect(useChatStore.getState().sendMessage('first')).toBe(true);
+      expect(useChatStore.getState().sendMessage('second')).toBe(true);
+      const activeOperations = Object.values(useChatStore.getState().operations)
+        .filter((operation) => operation.sessionKey === draftKey);
+      expect(activeOperations).toHaveLength(2);
+      expect(useChatStore.getState().isStreaming).toBe(true);
+
+      streams[1].onEvent({
+        event: 'queued',
+        data: {
+          streamGeneration: 2,
+          queue: { queue_entry: { queue_position: 1 } },
+        },
+      });
+      const queuedOperation = Object.values(useChatStore.getState().operations)
+        .find((operation) => operation.streamGeneration === 2);
+      const runningOperation = Object.values(useChatStore.getState().operations)
+        .find((operation) => operation.streamGeneration === 1);
+      expect(queuedOperation?.awaitingAdmission).toBe(true);
+      expect(queuedOperation?.runState).toBe('reconciling');
+      expect(runningOperation?.runState).toBe('streaming');
+
+      streams[1].onDone();
+      await Promise.resolve();
+      const queuedAfterDone = Object.values(useChatStore.getState().operations)
+        .find((operation) => operation.streamGeneration === 2);
+      expect(queuedAfterDone?.runState).toBe('reconciling');
+      expect(useChatStore.getState().sessionBuffers[draftKey]).toHaveLength(4);
     } finally {
       streamSpy.mockRestore();
       useChatStore.getState().reset();

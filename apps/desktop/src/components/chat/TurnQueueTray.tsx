@@ -1,6 +1,7 @@
 import { ActionIcon } from '@lobehub/ui';
+import { Tag } from 'antd';
 import { theme } from 'antd';
-import { Clock3, X } from 'lucide-react';
+import { Clock3, Pencil, X } from 'lucide-react';
 import { Flexbox } from 'react-layout-kit';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../../store/chat';
@@ -11,7 +12,13 @@ export function TurnQueueTray() {
   const currentSessionKey = useChatStore((state) => state.currentSessionKey);
   const queue = useChatStore((state) => state.turnQueues[state.currentSessionKey]);
   const cancelQueuedTurn = useChatStore((state) => state.cancelQueuedTurn);
+  const setComposerDraft = useChatStore((state) => state.setComposerDraft);
   const entries = queue?.entries ?? [];
+
+  const cancelAndEdit = async (entryId: string, text: string) => {
+    await cancelQueuedTurn(currentSessionKey, entryId);
+    setComposerDraft(currentSessionKey, text);
+  };
 
   if (entries.length === 0) return null;
 
@@ -60,6 +67,13 @@ export function TurnQueueTray() {
             {t('chat.queue.position', { position: entry.queue_position })}
           </span>
           <span
+            data-pt-agent-queue-locate-message={entry.queue_entry_id}
+            title={t('chat.queue.showInConversation')}
+            onClick={() => {
+              document
+                .querySelector(`[data-pt-agent-message-queue-entry="${entry.queue_entry_id}"]`)
+                ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }}
             style={{
               minWidth: 0,
               flex: 1,
@@ -68,11 +82,27 @@ export function TurnQueueTray() {
               fontSize: 12,
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
+              cursor: 'pointer',
             }}
           >
             {entry.user_input}
           </span>
+          {entry.client_capability_session_id && (
+            <Tag style={{ marginInlineEnd: 0 }}>
+              {t('chat.queue.snapshot')}: {entry.client_capability_session_id.slice(0, 10)}
+            </Tag>
+          )}
           <ActionIcon
+            data-pt-agent-queue-edit={entry.queue_entry_id}
+            icon={Pencil}
+            size={{ blockSize: 24, size: 13 }}
+            title={t('chat.queue.cancelAndEdit')}
+            onClick={() => {
+              void cancelAndEdit(entry.queue_entry_id, entry.user_input);
+            }}
+          />
+          <ActionIcon
+            data-pt-agent-queue-cancel={entry.queue_entry_id}
             icon={X}
             size={{ blockSize: 24, size: 13 }}
             title={t('chat.queue.cancel')}

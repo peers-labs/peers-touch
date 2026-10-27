@@ -72,10 +72,12 @@ func (s *ToolDispatchService) ReconcileApprovedClientDispatches(
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 				Where(
 					"session_id = ? AND actor_id = ? AND device_id = ? "+
-						"AND revoked_at IS NULL AND expires_at > ?",
+						"AND revoked_at IS NULL AND expires_at > ? AND "+
+						persistence.ActiveLeaseParentAuthSessionCondition,
 					call.CapabilitySessionID,
 					call.ActorID,
 					call.TargetDeviceID,
+					s.now(),
 					s.now(),
 				).
 				First(&lease).Error; err != nil {
@@ -110,7 +112,8 @@ func (s *ToolDispatchService) ReconcilePreparedCapabilityTakeovers(
 	now := s.now()
 	var leases []persistence.ClientCapabilityLease
 	if err := db.WithContext(ctx).
-		Where("revoked_at IS NULL AND expires_at > ?", now).
+		Where("revoked_at IS NULL AND expires_at > ? AND "+
+			persistence.ActiveLeaseParentAuthSessionCondition, now, now).
 		Order("created_at DESC, session_id DESC").
 		Find(&leases).Error; err != nil {
 		return 0, internalToolError("load active capability leases for takeover", err)

@@ -1,0 +1,161 @@
+{
+  "kind": "peers-touch-experience-holdout-seal",
+  "schemaVersion": 1,
+  "packageId": "EDX-HOLDOUT-20261019-V2",
+  "runId": "EDX-RUN-20261019-V2-01",
+  "state": "sealed",
+  "sealedAt": "2026-10-19T11:40:13Z",
+  "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+  "sourceBlobAlgorithm": "git-sha1",
+  "inputDigests": [
+    {
+      "path": "README.md",
+      "digest": "sha256:40e84d3ce184c136e7458c7dd25887083bb097f678cb7d440f76ed34438d21fb"
+    },
+    {
+      "path": "cases/EDX-H01.md",
+      "digest": "sha256:7850e37e4a2a5cff78e5965882fffdd4ca773c436144e3f54256e692b1b22729"
+    },
+    {
+      "path": "cases/EDX-H02.md",
+      "digest": "sha256:a210d2eff9b2b701abd5433adb989205ef24c8d3b21ed25f640af1aa701244e1"
+    },
+    {
+      "path": "cases/EDX-H03.md",
+      "digest": "sha256:1d33da060e5ec421e657da7cc4b4c437493dc3ecc11210ed3b856f8017ac8746"
+    },
+    {
+      "path": "cases/EDX-H04.md",
+      "digest": "sha256:5ddfb09e265a3b4b6ed09492ee360638802326d3feb141498bb3cb58fe9a6f28"
+    },
+    {
+      "path": "cases/EDX-H05.md",
+      "digest": "sha256:4a30b8b313170e760c6215930e351c96347582fe5288f5358842d86740ddb505"
+    },
+    {
+      "path": "cases/EDX-H06.md",
+      "digest": "sha256:17915a4c6fac4e91e0b5eb178da25b8e17f713ca2b5e2798c01cf9e54cc5c690"
+    },
+    {
+      "path": "manifest.json",
+      "digest": "sha256:6d8c7328bb64ad1d7c9c255a61daaf9186cd20451778f45f7f2c8765b2e468ce"
+    },
+    {
+      "path": "reviewer-only/README.md",
+      "digest": "sha256:a912df9827aaa2e0a284f4d441df81e72380106636c92870a90474136b04ca9c"
+    },
+    {
+      "path": "reviewer-only/answer-key.md",
+      "digest": "sha256:419e8c1d9369cd7e118aa4666f13896891d79b15903d985ee219ab8a2bb1a931"
+    },
+    {
+      "path": "rubric.md",
+      "digest": "sha256:2f31bcd9bbac2dd5a9280051b8917a1bc4c63da30d4d4e6c8fafaf9069b2ef84"
+    }
+  ],
+  "caseDigests": [
+    {
+      "caseId": "EDX-H01",
+      "digest": "sha256:7850e37e4a2a5cff78e5965882fffdd4ca773c436144e3f54256e692b1b22729"
+    },
+    {
+      "caseId": "EDX-H02",
+      "digest": "sha256:a210d2eff9b2b701abd5433adb989205ef24c8d3b21ed25f640af1aa701244e1"
+    },
+    {
+      "caseId": "EDX-H03",
+      "digest": "sha256:1d33da060e5ec421e657da7cc4b4c437493dc3ecc11210ed3b856f8017ac8746"
+    },
+    {
+      "caseId": "EDX-H04",
+      "digest": "sha256:5ddfb09e265a3b4b6ed09492ee360638802326d3feb141498bb3cb58fe9a6f28"
+    },
+    {
+      "caseId": "EDX-H05",
+      "digest": "sha256:4a30b8b313170e760c6215930e351c96347582fe5288f5358842d86740ddb505"
+    },
+    {
+      "caseId": "EDX-H06",
+      "digest": "sha256:17915a4c6fac4e91e0b5eb178da25b8e17f713ca2b5e2798c01cf9e54cc5c690"
+    }
+  ],
+  "exposureLedger": {
+    "kind": "peers-touch-experience-exposure-ledger",
+    "schemaVersion": 1,
+    "revision": 1,
+    "entries": [
+      {
+        "caseDigest": "sha256:295fdccd1d755a9400b5955d04e4566c4a1b10434b6c0ab3a39ed6ad102cc7f9",
+        "firstRunId": "EDX-BLIND-20261019",
+        "exposedAtState": "sealed",
+        "disposition": "training"
+      },
+      {
+        "caseDigest": "sha256:fb564b971cff4f3fdc48b0ed6a918ab84b8513953dffb21315e8ad2ccff89365",
+        "firstRunId": "EDX-BLIND-20261019",
+        "exposedAtState": "sealed",
+        "disposition": "training"
+      },
+      {
+        "caseDigest": "sha256:d533885fe3f4c05585f421e8c030a1d40d760527cd0987816c0c5c1dfb6840e2",
+        "firstRunId": "EDX-BLIND-20261019",
+        "exposedAtState": "sealed",
+        "disposition": "training"
+      },
+      {
+        "caseDigest": "sha256:9d81d6738bcaa7fcac18dd339a6c53186451604d36192c727b0d5a6890e2b28f",
+        "firstRunId": "EDX-BLIND-20261019",
+        "exposedAtState": "sealed",
+        "disposition": "training"
+      },
+      {
+        "caseDigest": "sha256:20575c45ad202ec1d9c7f5b19ab1ecac5de8c84d303b2ae9bff6bd25f6d847ec",
+        "firstRunId": "EDX-BLIND-20261019",
+        "exposedAtState": "sealed",
+        "disposition": "training"
+      },
+      {
+        "caseDigest": "sha256:03c26e350db7de46bbade2ace6d292bfd9dd82660bd451fc2d0b888d637b7c62",
+        "firstRunId": "EDX-BLIND-20261019",
+        "exposedAtState": "sealed",
+        "disposition": "training"
+      },
+      {
+        "caseDigest": "sha256:7850e37e4a2a5cff78e5965882fffdd4ca773c436144e3f54256e692b1b22729",
+        "firstRunId": "EDX-RUN-20261019-V2-01",
+        "exposedAtState": "sealed",
+        "disposition": "exposed"
+      },
+      {
+        "caseDigest": "sha256:a210d2eff9b2b701abd5433adb989205ef24c8d3b21ed25f640af1aa701244e1",
+        "firstRunId": "EDX-RUN-20261019-V2-01",
+        "exposedAtState": "sealed",
+        "disposition": "exposed"
+      },
+      {
+        "caseDigest": "sha256:1d33da060e5ec421e657da7cc4b4c437493dc3ecc11210ed3b856f8017ac8746",
+        "firstRunId": "EDX-RUN-20261019-V2-01",
+        "exposedAtState": "sealed",
+        "disposition": "exposed"
+      },
+      {
+        "caseDigest": "sha256:5ddfb09e265a3b4b6ed09492ee360638802326d3feb141498bb3cb58fe9a6f28",
+        "firstRunId": "EDX-RUN-20261019-V2-01",
+        "exposedAtState": "sealed",
+        "disposition": "exposed"
+      },
+      {
+        "caseDigest": "sha256:4a30b8b313170e760c6215930e351c96347582fe5288f5358842d86740ddb505",
+        "firstRunId": "EDX-RUN-20261019-V2-01",
+        "exposedAtState": "sealed",
+        "disposition": "exposed"
+      },
+      {
+        "caseDigest": "sha256:17915a4c6fac4e91e0b5eb178da25b8e17f713ca2b5e2798c01cf9e54cc5c690",
+        "firstRunId": "EDX-RUN-20261019-V2-01",
+        "exposedAtState": "sealed",
+        "disposition": "exposed"
+      }
+    ]
+  }
+}

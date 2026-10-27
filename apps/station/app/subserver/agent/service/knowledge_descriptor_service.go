@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -373,6 +374,71 @@ func (s *KnowledgeResourceService) List(
 		)
 	}
 	return descriptors, nextCursor, nil
+}
+
+// ReadContent returns an immutable Station-owned Knowledge revision by exact
+// resource/revision identity. Client-owned refs remain unreadable here and are
+// resolved only through the fenced client capability that owns the bytes.
+func (s *KnowledgeResourceService) ReadContent(
+	ctx context.Context,
+	ptid string,
+	req *model.ReadKnowledgeResourceContentRequest,
+) (*model.ReadKnowledgeResourceContentResponse, error) {
+	ptid = strings.TrimSpace(ptid)
+	if ptid == "" || req == nil ||
+		strings.TrimSpace(req.GetResourceId()) == "" || req.GetRevision() == 0 {
+		return nil, capabilityInvalid("ptid, resource_id and revision are required")
+	}
+	var head persistence.KnowledgeResourceHead
+	if err := s.db.WithContext(ctx).Where(
+		"resource_id = ? AND ptid = ?",
+		strings.TrimSpace(req.GetResourceId()),
+		ptid,
+	).First(&head).Error; err != nil {
+		return nil, capabilityRecordError("knowledge descriptor", err)
+	}
+	if head.TombstonedAt != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"knowledge descriptor is tombstoned",
+			nil,
+		)
+	}
+	var revision persistence.KnowledgeResourceRevision
+	if err := s.db.WithContext(ctx).Where(
+		"resource_id = ? AND revision = ? AND ptid = ?",
+		strings.TrimSpace(req.GetResourceId()),
+		req.GetRevision(),
+		ptid,
+	).First(&revision).Error; err != nil {
+		return nil, capabilityRecordError("knowledge descriptor revision", err)
+	}
+	if revision.LocatorKind != "station" ||
+		model.KnowledgeResourceAvailability(revision.Availability) !=
+			model.KnowledgeResourceAvailability_KNOWLEDGE_RESOURCE_AVAILABILITY_READY {
+		return nil, capabilityStateError("knowledge revision content is not Station-readable", nil)
+	}
+	var content persistence.KnowledgeContentRevision
+	if err := s.db.WithContext(ctx).Where(
+		"content_ref = ? AND resource_id = ? AND revision = ? AND ptid = ?",
+		revision.StationContentRef,
+		revision.ResourceID,
+		revision.Revision,
+		ptid,
+	).First(&content).Error; err != nil {
+		return nil, capabilityStateError("knowledge revision content is unavailable", err)
+	}
+	sum := sha256.Sum256(content.Content)
+	actualHash := hex.EncodeToString(sum[:])
+	if actualHash != revision.ContentHash || actualHash != content.ContentHash ||
+		revision.IndexRevision != content.IndexRevision {
+		return nil, capabilityStateError("knowledge revision content integrity mismatch", nil)
+	}
+	return &model.ReadKnowledgeResourceContentResponse{
+		Descriptor_: knowledgeDescriptorModelWithHead(&revision, &head),
+		Content:     append([]byte(nil), content.Content...),
+	}, nil
 }
 
 func (s *KnowledgeResourceService) Tombstone(

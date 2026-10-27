@@ -53,10 +53,23 @@ fn bot_to_value(bot: Option<&botpb::Bot>) -> Value {
                     value.seconds.saturating_mul(1_000)
                         .saturating_add(i64::from(value.nanos) / 1_000_000)
                 }).unwrap_or_default(),
+                "agentBinding": b.agent_binding.as_ref().map(binding_to_value),
             })
         }
         None => Value::Null,
     }
+}
+
+fn binding_to_value(binding: &botpb::BotAgentBinding) -> Value {
+    json!({
+        "botPtid": binding.bot_ptid,
+        "ownerPtid": binding.owner_ptid,
+        "agentId": binding.agent_id,
+        "enabled": binding.enabled,
+        "version": binding.version,
+        "createdAt": binding.created_at,
+        "updatedAt": binding.updated_at,
+    })
 }
 
 #[tauri::command]
@@ -290,4 +303,114 @@ pub async fn bot_upload_avatar(
             None,
         )
     })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BotAgentBindingSetInput {
+    pub bot_ptid: String,
+    pub agent_id: String,
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub expected_version: i64,
+}
+
+#[tauri::command]
+pub fn bot_agent_binding_set(
+    input: BotAgentBindingSetInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let body = botpb::SetBotAgentBindingRequest {
+        bot_ptid: input.bot_ptid,
+        agent_id: input.agent_id,
+        enabled: input.enabled,
+        expected_version: input.expected_version,
+    };
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<botpb::SetBotAgentBindingRequest, botpb::SetBotAgentBindingResponse>(
+            Method::POST,
+            "/bot/agent-binding/set",
+            &token,
+            None,
+            Some(&body),
+        ) {
+        Ok(r) => r,
+        Err(e) => return e.into_app_result("Failed to bind bot to an Agent"),
+    };
+    stub(
+        "bot_agent_binding_set",
+        json!({ "binding": resp.binding.as_ref().map(binding_to_value) }),
+    )
+}
+
+#[tauri::command]
+pub fn bot_agent_binding_list(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<botpb::ListBotAgentBindingsRequest, botpb::ListBotAgentBindingsResponse>(
+            Method::POST,
+            "/bot/agent-binding/list",
+            &token,
+            None,
+            Some(&botpb::ListBotAgentBindingsRequest {}),
+        ) {
+        Ok(r) => r,
+        Err(e) => return e.into_app_result("Failed to list bot bindings"),
+    };
+    let bindings: Vec<Value> = resp.bindings.iter().map(|b| binding_to_value(b)).collect();
+    stub("bot_agent_binding_list", json!({ "bindings": bindings }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BotAgentBindingDeleteInput {
+    pub bot_ptid: String,
+    pub expected_version: i64,
+}
+
+#[tauri::command]
+pub fn bot_agent_binding_delete(
+    input: BotAgentBindingDeleteInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let body = botpb::DeleteBotAgentBindingRequest {
+        bot_ptid: input.bot_ptid,
+        expected_version: input.expected_version,
+    };
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<botpb::DeleteBotAgentBindingRequest, botpb::DeleteBotAgentBindingResponse>(
+            Method::POST,
+            "/bot/agent-binding/delete",
+            &token,
+            None,
+            Some(&body),
+        ) {
+        Ok(r) => r,
+        Err(e) => return e.into_app_result("Failed to unbind bot"),
+    };
+    stub(
+        "bot_agent_binding_delete",
+        json!({ "deleted": resp.deleted }),
+    )
 }

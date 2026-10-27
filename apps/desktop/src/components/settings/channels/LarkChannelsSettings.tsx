@@ -474,6 +474,12 @@ function Detail({
                 onClick={() => onPanelChange('automations')}
               />
               <IntentRow
+                icon={MessageSquareText}
+                title={t('channels.v2.topics.title')}
+                description={t('channels.v2.topics.entryDescription')}
+                onClick={() => onPanelChange('topics')}
+              />
+              <IntentRow
                 icon={UserRound}
                 title={t('channels.v2.personal.title')}
                 description={t('channels.v2.personal.description')}

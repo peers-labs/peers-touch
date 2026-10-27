@@ -3,23 +3,28 @@ import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Typography, Modal, Form, theme, Divider, Avatar, Radio, Select, Switch } from 'antd';
 import { Input, Button, TextArea, InputPassword, Tag, toast } from '@lobehub/ui';
-import { Search, Plus, Brain, TerminalSquare } from 'lucide-react';
+import { Search, Plus, Brain, TerminalSquare, Star } from 'lucide-react';
 import { ProviderIcon } from './ProviderIcon';
 import { useTranslation } from 'react-i18next';
-import { isProviderUsable } from '../../store/providerReadiness';
+import { isProviderUsable, mapProviderUIStatus } from '../../store/providerReadiness';
+import type { ProviderReadinessStatus } from '../../store/providerReadiness';
 import { useActiveProviderSlice, useActiveSettingsSlice } from './useActiveSettingsStores';
+import { useAgentStore } from '../../store/agent';
 
 const { Text } = Typography;
 
 export function ProviderMenu() {
   const { t } = useTranslation('provider');
-  const { providers, selectedId, selectProvider, createProvider, readinessById } = useActiveProviderSlice((s) => ({
+  const { providers, selectedId, selectProvider, createProvider, readinessById, runtimeDefault, setRuntimeDefault } = useActiveProviderSlice((s) => ({
     providers: s.providers,
     selectedId: s.selectedId,
     selectProvider: s.selectProvider,
     createProvider: s.createProvider,
     readinessById: s.readinessById,
+    runtimeDefault: s.runtimeDefault,
+    setRuntimeDefault: s.setRuntimeDefault,
   }));
+  const availableModels = useAgentStore((state) => state.availableModels);
   const { showUsableOnly, setShowUsableOnly } = useActiveSettingsSlice((state) => ({
     showUsableOnly: state.showUsableProvidersOnly,
     setShowUsableOnly: state.setShowUsableProvidersOnly,
@@ -58,9 +63,30 @@ export function ProviderMenu() {
     selectedRow?.scrollIntoView({ block: 'nearest' });
   }, [selectedId, selectedProviderIsListed]);
 
+  const makeDefault = async (providerId: string) => {
+    const model = availableModels.find((candidate) =>
+      candidate.provider_id === providerId
+      && candidate.enabled
+      && (candidate.type === 'chat' || !candidate.type),
+    );
+    if (!model) {
+      toast.error(t('provider.menu.defaultNeedsModel'));
+      return;
+    }
+    try {
+      await setRuntimeDefault(providerId, model.id);
+      toast.success(t('provider.menu.defaultSet'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'set runtime default failed');
+    }
+  };
+
   const renderItem = (p: typeof providers[0]) => {
     const isSelected = p.id === selectedId;
-    const dotColor = p.enabled ? '#52c41a' : token.colorTextQuaternary;
+    const readiness = readinessById[p.id];
+    const status = readiness?.status ?? mapProviderUIStatus(p).status;
+    const dotColor = statusColor(status, token);
+    const isDefaultProvider = runtimeDefault?.providerId === p.id;
 
     return (
       <Flexbox
@@ -98,7 +124,27 @@ export function ProviderMenu() {
             </Tag>
           </Flexbox>
         </Flexbox>
+        <Button
+          size="small"
+          type="text"
+          data-default-provider={isDefaultProvider ? 'true' : 'false'}
+          icon={(
+            <Star
+              size={14}
+              fill={isDefaultProvider ? token.colorWarning : 'none'}
+              color={isDefaultProvider ? token.colorWarning : token.colorTextTertiary}
+            />
+          )}
+          title={isDefaultProvider
+            ? t('provider.menu.defaultCurrent')
+            : t('provider.menu.setDefault')}
+          onClick={(event) => {
+            event.stopPropagation();
+            void makeDefault(p.id);
+          }}
+        />
         <div
+          title={t(`provider.menu.status.${status}`)}
           style={{
             width: 8,
             height: 8,
@@ -182,6 +228,33 @@ export function ProviderMenu() {
       />
     </Flexbox>
   );
+}
+
+function statusColor(status: ProviderReadinessStatus, token: {
+  colorSuccess: string;
+  colorError: string;
+  colorWarning: string;
+  colorTextTertiary: string;
+  colorTextQuaternary: string;
+  colorInfo: string;
+}): string {
+  switch (status) {
+    case 'ready':
+      return token.colorSuccess;
+    case 'invalid':
+    case 'error':
+      return token.colorError;
+    case 'unconfigured':
+      return token.colorWarning;
+    case 'checking':
+    case 'loading':
+      return token.colorInfo;
+    case 'unavailable':
+      return token.colorTextQuaternary;
+    case 'unverified':
+    default:
+      return token.colorTextTertiary;
+  }
 }
 
 function SectionTitle({ children }: { children: ReactNode }) {

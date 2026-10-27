@@ -126,7 +126,7 @@ pub fn agent_growth_snapshot(
         model::agent::GetGrowthSnapshotResponse,
     >(
         Method::POST,
-        "/agent/growth/snapshot",
+        "/sub-agent/agent/growth/snapshot",
         token,
         None,
         Some(&req),
@@ -166,7 +166,7 @@ pub fn agent_memory_list(
     match station_client
         .request_proto::<model::agent::ListMemoriesRequest, model::agent::ListMemoriesResponse>(
             Method::POST,
-            "/agent/memory/list",
+            "/sub-agent/agent/memory/list",
             token,
             None,
             Some(&req),

@@ -55,6 +55,81 @@ If no target is available, ask for one. Do not produce a generic checklist.
    make quality-evidence REVIEW_RANGE=<base>...<head>
    ```
 
+4A. When the change contains material UI, a prototype confirmation, or the
+Experience Design Control Plane itself, read
+`docs/architecture/engineering/experience-design/README.md` and verify the
+task-owned ReviewResult:
+
+   ```bash
+   node tooling/scripts/experience-design/experience-design.mjs \
+     review-verify <review-result.json> \
+     --repo-root <repo-root> \
+     --package-root <package-root> \
+     --run-envelope <package-relative-run-envelope> \
+     --case <package-relative-case> \
+     --manifest <package-relative-manifest> \
+     --rubric <package-relative-rubric>
+   node tooling/scripts/experience-design/experience-design.mjs \
+     review-admission <review-result.json> <independent-review.json> \
+     --repo-root <repo-root> \
+     --package-root <package-root> \
+     --run-envelope <package-relative-run-envelope> \
+     --case <package-relative-case> \
+     --manifest <package-relative-manifest> \
+     --rubric <package-relative-rubric>
+   ```
+
+Record current binding, verdict, primary candidate/tuple, independent review,
+admission result and scoped `UNPROVEN` entries. `NO_BLOCKING_FINDING` is not an
+approval by itself.
+
+Admission revalidates current package links and source bytes. Canonical
+calibration/holdout commands consume `--package-root` for external fixtures;
+historical blind integrity and current reevaluation are distinct results.
+
+For a Quality-owned blind run, verify the sealed package and Exposure Ledger
+before execution, the complete report hash before `scoring`, and the score plus
+promotion decision before `retired`. Never expose the answer key before
+`scoring`. EDX-B01 through EDX-B06 are training inputs and are permanently
+ineligible for fresh promotion.
+
+4B. When the change claims a benchmark gap or consumes a CER Target Contract,
+read
+`docs/architecture/engineering/experience-design/comparative-experience-review.md`
+and validate the complete current chain:
+
+```bash
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-review-blind <paired-case.json> <comparison-evaluation.json> \
+  <blinded-deltas.json> <blind-review.json> \
+  --package-root <package-root>
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-review-disposition <paired-case.json> <comparison-evaluation.json> \
+  <blinded-deltas.json> <blind-review.json> <identity-map.json> \
+  <causal-deltas.json> <disposition-review.json> \
+  --package-root <package-root>
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-project-target <paired-case.json> <comparison-evaluation.json> \
+  <blinded-deltas.json> <blind-review.json> <identity-map.json> \
+  <causal-deltas.json> <disposition-review.json> \
+  --package-root <package-root>
+```
+
+Report:
+
+- Oracle and Comparison Context digests;
+- A/B leg review decisions and exact `UNPROVEN` assertions;
+- deterministic material-delta priority;
+- blind review and identity leakage status;
+- revealed Peers EDX binding freshness;
+- disposition review and projected Target Contract IDs;
+- intervention-confirmed evidence, when claimed;
+- framework incremental-value status.
+
+Calibration proves source mechanics only. Do not claim CER outperforms the
+control workflow without a Quality-owned sealed blind A/B whose answer key,
+exposure, score and hard-failure result are frozen independently.
+
 5. Read the external Evidence Store artifacts through the canonical operator
    interface:
 
@@ -86,6 +161,23 @@ If no target is available, ask for one. Do not produce a generic checklist.
    their proven/unproven scope into the report.
 10. Invoke `pt-acceptance-gap-detector` for the exact readiness claim. A
    detector gap makes `Ready for pt-github-review: no`.
+11. When the range changes material UI or its Product/Prototype contracts,
+    consume the Experience Design Control Plane artifacts named by the change:
+    case, evaluator result, independent review receipt, and exact evidence
+    cells. Run:
+
+    ```bash
+    node tooling/scripts/experience-design/experience-design.mjs check
+    node tooling/scripts/experience-design/experience-design.mjs evaluate \
+      <case.json>
+    node tooling/scripts/experience-design/experience-design.mjs \
+      validate-review <case.json> <result.json> <receipt.json>
+    ```
+
+    Report canonical finding IDs and owners, review decision, matched/unproven
+    L1-L4 cells, drift status, and claim boundary. The canonical method is
+    `docs/client/common/interaction-design-methodology.md`; do not duplicate
+    its Rule Catalog or UI Grammar in this Skill.
 
 For Acceptance Infra changes, classify capability evidence by direction:
 
@@ -97,6 +189,12 @@ For Acceptance Infra changes, classify capability evidence by direction:
 ## Evidence Rules
 
 - A gate that did not run is `unproven`, never `passed`.
+- Zero Experience Design findings is only
+  `ready-for-independent-review`; an absent, stale, author-overlapping, or
+  digest-mismatched receipt is not acceptance.
+- Screenshot or artifact existence never proves visual, dynamic,
+  accessibility, performance, or runtime cells without an exact current-source
+  evidence match.
 - A dry run is planning evidence, not product evidence.
 - `knowledge-match.sh` only proves knowledge entries were selected; semantic
   knowledge delta belongs to review.
@@ -108,6 +206,10 @@ For Acceptance Infra changes, classify capability evidence by direction:
 - Environment-dependent gates (registered remote runtime, Desktop gateway,
   browser, simulator) are evidence requests unless the environment is actually
   available.
+- Missing, stale, non-independent, or non-admitted Experience Review evidence
+  makes material UI scope unproven.
+- A visible calibration fixture or previously exposed blind case cannot prove
+  fresh Experience Reasoning promotion.
 - Business `FAILED/BLOCKED/UNPROVEN` is not an Acceptance Infra failure.
 
 ## Output
@@ -126,8 +228,11 @@ Use this shape:
 - Gates not run:
 - Matched knowledge:
 - Deterministic checks:
+- Experience Review binding / verdict / admission / unproven:
 - Product proven scope:
 - Product unproven scope:
+- Experience case/result/review status and finding owners:
+- Experience L1/L2/L3/L4 matched and unproven cells:
 - Human/owner hard-boundary evidence needed:
 
 ## Evidence Gaps

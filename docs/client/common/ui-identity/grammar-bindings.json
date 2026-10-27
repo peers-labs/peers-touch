@@ -1,0 +1,543 @@
+{
+  "kind": "peers-touch-ui-grammar-bindings",
+  "schemaVersion": 1,
+  "sourceDocuments": [
+    "docs/client/common/ui-identity/components.md",
+    "docs/client/common/ui-identity/interaction.md",
+    "docs/client/common/ui-identity/layout.md",
+    "docs/client/common/ui-identity/accessibility.md",
+    "docs/client/common/ui-identity/craft-quality.md"
+  ],
+  "actionRoles": {
+    "primary_commitment": {
+      "representations": {
+        "text-primary-button": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        }
+      },
+      "maxPerSurface": 1,
+      "allowedMutations": [
+        "local",
+        "external-reversible",
+        "external-irreversible"
+      ],
+      "allowedOptionCardinality": [
+        "none"
+      ],
+      "confirmation": "contract-owned",
+      "desktopAdapters": [
+        "header-action",
+        "form-submit"
+      ],
+      "mobileAdapters": [
+        "header-action",
+        "bottom-action",
+        "form-submit"
+      ],
+      "browserAdapters": [
+        "header-action",
+        "form-submit"
+      ],
+      "dashboardAdapters": [
+        "header-action",
+        "form-submit"
+      ]
+    },
+    "secondary_command": {
+      "representations": {
+        "text-secondary-button": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "icon-text-button": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "text-action": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        }
+      },
+      "maxPerSurface": null,
+      "allowedMutations": [
+        "none",
+        "local",
+        "external-reversible"
+      ],
+      "allowedOptionCardinality": [
+        "none"
+      ],
+      "confirmation": "contract-owned",
+      "desktopAdapters": [
+        "toolbar-action",
+        "inline-action",
+        "menu-item"
+      ],
+      "mobileAdapters": [
+        "inline-action",
+        "menu-item",
+        "bottom-sheet-action"
+      ],
+      "browserAdapters": [
+        "toolbar-action",
+        "inline-action",
+        "menu-item"
+      ],
+      "dashboardAdapters": [
+        "toolbar-action",
+        "inline-action",
+        "menu-item"
+      ]
+    },
+    "icon_tool": {
+      "representations": {
+        "icon-button": {
+          "iconOnly": true,
+          "accessibleLabel": true,
+          "tooltip": true,
+          "canonicalIconMeaning": true,
+          "repeatedTool": true
+        }
+      },
+      "maxPerSurface": null,
+      "allowedMutations": [
+        "none",
+        "local"
+      ],
+      "allowedOptionCardinality": [
+        "none"
+      ],
+      "confirmation": "none",
+      "desktopAdapters": [
+        "toolbar-icon",
+        "row-icon"
+      ],
+      "mobileAdapters": [
+        "toolbar-icon",
+        "row-icon"
+      ],
+      "browserAdapters": [
+        "toolbar-icon",
+        "row-icon"
+      ],
+      "dashboardAdapters": [
+        "toolbar-icon",
+        "row-icon"
+      ]
+    },
+    "destructive_command": {
+      "representations": {
+        "text-danger-button": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "icon-text-danger-button": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "danger-menu-item": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        }
+      },
+      "maxPerSurface": null,
+      "allowedMutations": [
+        "external-reversible",
+        "external-irreversible"
+      ],
+      "allowedOptionCardinality": [
+        "none"
+      ],
+      "confirmation": "required-when-irreversible",
+      "desktopAdapters": [
+        "danger-zone-action",
+        "danger-menu-item"
+      ],
+      "mobileAdapters": [
+        "danger-zone-action",
+        "bottom-sheet-danger-action"
+      ],
+      "browserAdapters": [
+        "danger-zone-action",
+        "danger-menu-item"
+      ],
+      "dashboardAdapters": [
+        "danger-zone-action",
+        "danger-menu-item"
+      ]
+    },
+    "binary_setting": {
+      "representations": {
+        "switch": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "checkbox": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        }
+      },
+      "maxPerSurface": null,
+      "allowedMutations": [
+        "local",
+        "external-reversible"
+      ],
+      "allowedOptionCardinality": [
+        "binary"
+      ],
+      "confirmation": "contract-owned",
+      "desktopAdapters": [
+        "settings-switch",
+        "form-checkbox"
+      ],
+      "mobileAdapters": [
+        "settings-switch",
+        "form-checkbox"
+      ],
+      "browserAdapters": [
+        "settings-switch",
+        "form-checkbox"
+      ],
+      "dashboardAdapters": [
+        "settings-switch",
+        "form-checkbox"
+      ]
+    },
+    "mode_selector": {
+      "representations": {
+        "tabs": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "segmented-control": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        }
+      },
+      "maxPerSurface": 1,
+      "allowedMutations": [
+        "none"
+      ],
+      "allowedOptionCardinality": [
+        "multiple"
+      ],
+      "confirmation": "none",
+      "desktopAdapters": [
+        "tabs",
+        "segmented-control"
+      ],
+      "mobileAdapters": [
+        "tabs",
+        "segmented-control"
+      ],
+      "browserAdapters": [
+        "tabs",
+        "segmented-control"
+      ],
+      "dashboardAdapters": [
+        "tabs",
+        "segmented-control"
+      ]
+    },
+    "option_selector": {
+      "representations": {
+        "menu": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "select": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "radio-group": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        }
+      },
+      "maxPerSurface": null,
+      "allowedMutations": [
+        "none",
+        "local"
+      ],
+      "allowedOptionCardinality": [
+        "multiple"
+      ],
+      "confirmation": "none",
+      "desktopAdapters": [
+        "popover-menu",
+        "select",
+        "radio-group"
+      ],
+      "mobileAdapters": [
+        "bottom-sheet-menu",
+        "select",
+        "radio-group"
+      ],
+      "browserAdapters": [
+        "popover-menu",
+        "select",
+        "radio-group"
+      ],
+      "dashboardAdapters": [
+        "popover-menu",
+        "select",
+        "radio-group"
+      ]
+    },
+    "numeric_value": {
+      "representations": {
+        "number-input": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "stepper": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "slider": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        }
+      },
+      "maxPerSurface": null,
+      "allowedMutations": [
+        "local"
+      ],
+      "allowedOptionCardinality": [
+        "numeric"
+      ],
+      "confirmation": "none",
+      "desktopAdapters": [
+        "number-input",
+        "stepper",
+        "slider"
+      ],
+      "mobileAdapters": [
+        "number-input",
+        "stepper",
+        "slider"
+      ],
+      "browserAdapters": [
+        "number-input",
+        "stepper",
+        "slider"
+      ],
+      "dashboardAdapters": [
+        "number-input",
+        "stepper",
+        "slider"
+      ]
+    },
+    "navigation_back": {
+      "representations": {
+        "icon-button": {
+          "iconOnly": true,
+          "accessibleLabel": true,
+          "tooltip": true,
+          "canonicalIconMeaning": true,
+          "repeatedTool": true
+        },
+        "icon-text-button": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": true,
+          "repeatedTool": true
+        }
+      },
+      "maxPerSurface": 1,
+      "allowedMutations": [
+        "none"
+      ],
+      "allowedOptionCardinality": [
+        "none"
+      ],
+      "confirmation": "contract-owned",
+      "desktopAdapters": [
+        "header-back"
+      ],
+      "mobileAdapters": [
+        "header-back"
+      ],
+      "browserAdapters": [
+        "header-back"
+      ],
+      "dashboardAdapters": [
+        "header-back"
+      ]
+    },
+    "recovery_action": {
+      "representations": {
+        "text-primary-button": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "text-secondary-button": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        },
+        "text-action": {
+          "iconOnly": false,
+          "accessibleLabel": true,
+          "tooltip": false,
+          "canonicalIconMeaning": false,
+          "repeatedTool": false
+        }
+      },
+      "maxPerSurface": 1,
+      "allowedMutations": [
+        "none",
+        "local",
+        "external-reversible"
+      ],
+      "allowedOptionCardinality": [
+        "none"
+      ],
+      "confirmation": "none",
+      "desktopAdapters": [
+        "inline-recovery",
+        "recovery-surface-action"
+      ],
+      "mobileAdapters": [
+        "inline-recovery",
+        "recovery-surface-action"
+      ],
+      "browserAdapters": [
+        "inline-recovery",
+        "recovery-surface-action"
+      ],
+      "dashboardAdapters": [
+        "inline-recovery",
+        "recovery-surface-action"
+      ]
+    }
+  },
+  "regionRoles": {
+    "content": {
+      "requiresSubject": true
+    },
+    "action": {
+      "requiresSubject": true
+    },
+    "trust": {
+      "requiresSubject": true
+    },
+    "floating": {
+      "requiresSubject": true
+    },
+    "recovery": {
+      "requiresSubject": true
+    },
+    "navigation": {
+      "requiresSubject": false
+    }
+  },
+  "stateRoles": {
+    "entry": {
+      "requiresVisibleMeaning": true
+    },
+    "empty": {
+      "requiresVisibleMeaning": true
+    },
+    "loading": {
+      "requiresVisibleMeaning": true
+    },
+    "waiting": {
+      "requiresVisibleMeaning": true
+    },
+    "pending": {
+      "requiresVisibleMeaning": true
+    },
+    "partial-success": {
+      "requiresVisibleMeaning": true
+    },
+    "success": {
+      "requiresVisibleMeaning": true
+    },
+    "failure": {
+      "requiresVisibleMeaning": true
+    },
+    "unknown-outcome": {
+      "requiresVisibleMeaning": true
+    },
+    "recovery": {
+      "requiresVisibleMeaning": true
+    },
+    "cancelled": {
+      "requiresVisibleMeaning": true
+    },
+    "offline": {
+      "requiresVisibleMeaning": true
+    },
+    "degraded": {
+      "requiresVisibleMeaning": true
+    },
+    "restored": {
+      "requiresVisibleMeaning": true
+    },
+    "long-content": {
+      "requiresVisibleMeaning": true
+    },
+    "narrow": {
+      "requiresVisibleMeaning": true
+    }
+  }
+}

@@ -241,7 +241,6 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
             onDeleteAndRegenerate: () => { /* Not applicable for user messages */ },
             onTranslate: () => { /* Not applicable for user messages */ },
             onThread: () => { /* Not applicable for user messages */ },
-            onReadAloud: () => { /* Not applicable for user messages */ },
             onExport: () => { /* Not applicable for user messages */ },
             onForward: () => setForwardOpen(true),
           }}

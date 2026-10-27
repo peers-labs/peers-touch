@@ -15,10 +15,35 @@ func NewWorkspaceOSSHandlers(ossService *service.WorkspaceOSSService) *Workspace
 	return &WorkspaceOSSHandlers{ossService: ossService}
 }
 
-func (h *WorkspaceOSSHandlers) HandleGetUploadPresignedURL(ctx context.Context, req *model.GetWorkspaceFileUploadUrlRequest) (*model.GetWorkspaceFileUploadUrlResponse, error) {
-	return h.ossService.GetUploadPresignedURL(ctx, req)
+func (h *WorkspaceOSSHandlers) HandlePrepareArtifactUpload(
+	ctx context.Context,
+	req *model.PrepareTurnArtifactUploadRequest,
+) (*model.PrepareTurnArtifactUploadResponse, error) {
+	response, err := h.ossService.PrepareArtifactUpload(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return response, nil
 }
 
-func (h *WorkspaceOSSHandlers) HandleGetDownloadPresignedURL(ctx context.Context, req *model.GetWorkspaceFileDownloadUrlRequest) (*model.GetWorkspaceFileDownloadUrlResponse, error) {
-	return h.ossService.GetDownloadPresignedURL(ctx, req)
+func (h *WorkspaceOSSHandlers) HandleCompleteArtifactUpload(
+	ctx context.Context,
+	req *model.CompleteTurnArtifactUploadRequest,
+) (*model.CompleteTurnArtifactUploadResponse, error) {
+	response, err := h.ossService.CompleteArtifactUpload(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return response, nil
+}
+
+func (h *WorkspaceOSSHandlers) HandleGetArtifactDownload(
+	ctx context.Context,
+	req *model.GetTurnArtifactDownloadRequest,
+) (*model.GetTurnArtifactDownloadResponse, error) {
+	response, err := h.ossService.GetArtifactDownload(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return response, nil
 }

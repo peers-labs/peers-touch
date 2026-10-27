@@ -134,6 +134,7 @@ func TestCatalogModelToggleMaterializesAndProjectsOverride(t *testing.T) {
 		service.NewRuntimeAdmissionResolver(providerConfig, modelConfig),
 		runtimeModels,
 		service.NewProviderModelDiscoveryService(runtimeModels),
+		service.NewRuntimeDefaultService(),
 	)
 	ctx := coreauth.WithSubject(
 		context.Background(),
@@ -225,6 +226,7 @@ func TestCLIProviderModelMutationsAreRejectedBeforePersistence(t *testing.T) {
 		service.NewRuntimeAdmissionResolver(providerConfig, modelConfig),
 		runtimeModels,
 		service.NewProviderModelDiscoveryService(runtimeModels),
+		service.NewRuntimeDefaultService(),
 	)
 	ctx := context.Background()
 

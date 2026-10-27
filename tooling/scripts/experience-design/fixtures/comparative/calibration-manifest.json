@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "material-gap",
+      "class": "positive",
+      "mode": "evaluation",
+      "options": {},
+      "expectedDisposition": "material-differences",
+      "expectedMaterialDifferentialIds": [
+        "differential.outcome.complete",
+        "differential.outcome.recoverable"
+      ]
+    },
+    {
+      "id": "equivalent-outcome",
+      "class": "boundary",
+      "mode": "evaluation",
+      "options": {
+        "successfulA": true,
+        "successfulB": true
+      },
+      "expectedDisposition": "no-material-difference",
+      "expectedMaterialDifferentialIds": []
+    },
+    {
+      "id": "unproven-leg",
+      "class": "boundary",
+      "mode": "evaluation",
+      "options": {
+        "unprovenA": true
+      },
+      "expectedDisposition": "unproven",
+      "expectedMaterialDifferentialIds": [],
+      "expectedUnprovenAssertionIds": [
+        "outcome.complete",
+        "outcome.recoverable"
+      ]
+    },
+    {
+      "id": "reviewer-overlap",
+      "class": "negative",
+      "mode": "validation-error",
+      "options": {},
+      "mutation": "reviewer-overlap",
+      "expectedErrorCode": "EDX_COMPARE_REVIEW_REQUIRED"
+    }
+  ]
+}

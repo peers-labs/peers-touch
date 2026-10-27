@@ -59,6 +59,13 @@ func (h *KnowledgeDescriptorHandlers) HandleList(
 	}, nil
 }
 
+func (h *KnowledgeDescriptorHandlers) HandleReadContent(
+	ctx context.Context,
+	req *model.ReadKnowledgeResourceContentRequest,
+) (*model.ReadKnowledgeResourceContentResponse, error) {
+	return h.service.ReadContent(ctx, subjectActorID(ctx), req)
+}
+
 func (h *KnowledgeDescriptorHandlers) HandleTombstone(
 	ctx context.Context,
 	req *model.TombstoneKnowledgeResourceDescriptorRequest,

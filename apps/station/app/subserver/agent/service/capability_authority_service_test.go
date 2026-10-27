@@ -1318,6 +1318,7 @@ func TestCapabilityOperationStartAndCancelAreAtomicAndIdempotent(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed capability lease: %v", err)
 	}
+	seedLiveActorSession(t, authority.db, "auth-1", now)
 	operations := NewCapabilityOperationService(authority.db)
 	operations.now = authority.now
 	start := &model.StartCapabilityOperationRequest{
@@ -1412,6 +1413,7 @@ func TestCapabilityOperationRejectsActorAndRevisionMismatch(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed lease: %v", err)
 	}
+	seedLiveActorSession(t, authority.db, "auth-1", now)
 	operations := NewCapabilityOperationService(authority.db)
 	operations.now = authority.now
 	start := &model.StartCapabilityOperationRequest{
@@ -1531,6 +1533,7 @@ func TestCapabilityOperationTakeoverIncrementsIndependentFences(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed takeover capability lease: %v", err)
 	}
+	seedLiveActorSession(t, db, "auth-2", now)
 	operations.now = func() time.Time { return now.Add(defaultOperationLeaseTTL + time.Second) }
 	taken, err := operations.TakeOver(
 		ctx,
@@ -1576,6 +1579,7 @@ func TestCapabilityOperationTakeoverRequiresCompatibleCapabilityLease(t *testing
 	}).Error; err != nil {
 		t.Fatalf("seed incompatible takeover capability lease: %v", err)
 	}
+	seedLiveActorSession(t, db, "auth-2", now)
 	operations.now = func() time.Time {
 		return now.Add(defaultOperationLeaseTTL + time.Second)
 	}
@@ -1618,6 +1622,7 @@ func TestCapabilityOperationTakeoverDoesNotTrustCallerIdempotencyAfterSideEffect
 	}).Error; err != nil {
 		t.Fatalf("seed takeover capability lease: %v", err)
 	}
+	seedLiveActorSession(t, db, "auth-2", now)
 	operations.now = func() time.Time {
 		return now.Add(defaultOperationLeaseTTL + time.Second)
 	}
@@ -1655,6 +1660,7 @@ func TestCapabilityOperationLeaseExpiryProjectsDisconnectedBeforeDeadline(t *tes
 	}).Error; err != nil {
 		t.Fatalf("seed takeover capability lease: %v", err)
 	}
+	seedLiveActorSession(t, db, "auth-2", now)
 	operations.now = func() time.Time {
 		return now.Add(defaultOperationLeaseTTL + time.Second)
 	}
@@ -1978,6 +1984,7 @@ func newCapabilityAuthorityTestService(
 	); err != nil {
 		t.Fatalf("migrate test db: %v", err)
 	}
+	migrateActorSessionLiveness(t, db)
 	service := NewCapabilityAuthorityService(db)
 	service.now = func() time.Time {
 		return time.Date(2026, time.August, 27, 12, 0, 0, 0, time.UTC)
@@ -2197,6 +2204,7 @@ func newCapabilityOperationTestFixture(
 	}).Error; err != nil {
 		t.Fatalf("seed fixture capability lease: %v", err)
 	}
+	seedLiveActorSession(t, authority.db, "auth-1", now)
 	operations := NewCapabilityOperationService(authority.db)
 	operations.now = authority.now
 	created, err := operations.Start(ctx, "ptid:person:owner", &model.StartCapabilityOperationRequest{

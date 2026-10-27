@@ -27,6 +27,78 @@ message Turn {
   google.protobuf.Timestamp ended_at = 9;
 }
 
+enum TurnArtifactKind {
+  TURN_ARTIFACT_KIND_UNSPECIFIED = 0;
+  TURN_ARTIFACT_KIND_FILE = 1;
+}
+
+message TurnArtifactLocator {
+  // Opaque Desktop resource reference. Station must never receive a local path.
+  string client_local_ref = 1;
+  string client_device_id = 2;
+  // Actor-owned OSS object key. Empty until the local file is uploaded.
+  string station_object_ref = 3;
+}
+
+message TurnArtifact {
+  string artifact_id = 1;
+  string turn_id = 2;
+  string agent_id = 3;
+  string tool_call_id = 4;
+  TurnArtifactKind kind = 5;
+  string name = 6;
+  uint64 size = 7;
+  string sha256 = 8;
+  TurnArtifactLocator locator = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message ListTurnArtifactsRequest {
+  string conversation_id = 1;
+  repeated string turn_ids = 2;
+}
+
+message ListTurnArtifactsResponse {
+  repeated TurnArtifact artifacts = 1;
+}
+
+message GetTurnArtifactRequest {
+  string artifact_id = 1;
+}
+
+message GetTurnArtifactResponse {
+  TurnArtifact artifact = 1;
+}
+
+message PrepareTurnArtifactUploadRequest {
+  string artifact_id = 1;
+  string content_type = 2;
+}
+
+message PrepareTurnArtifactUploadResponse {
+  TurnArtifact artifact = 1;
+  string upload_endpoint = 2;
+  string complete_endpoint = 3;
+}
+
+message CompleteTurnArtifactUploadRequest {
+  string artifact_id = 1;
+  string station_object_ref = 2;
+}
+
+message CompleteTurnArtifactUploadResponse {
+  TurnArtifact artifact = 1;
+}
+
+message GetTurnArtifactDownloadRequest {
+  string artifact_id = 1;
+}
+
+message GetTurnArtifactDownloadResponse {
+  TurnArtifact artifact = 1;
+  string download_url = 2;
+}
+
 message ToolCallRecord {
   string tool_name = 1;
   string arguments = 2;
@@ -880,14 +952,21 @@ message TurnQueueEntry {
   TurnQueueStatus status = 5;
   uint64 queue_sequence = 6;
   uint32 queue_position = 7;
+  // Stable Turn identity pre-bound at enqueue time. It exists while the entry
+  // is still pending and never changes on admission; admission only flips the
+  // Turn status from queued to running.
   string admitted_turn_id = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
   string user_input = 11;
+  // Pinned client capability lease/snapshot authorized for this exact queued Turn.
+  string client_capability_session_id = 12;
 }
 
 message TurnAdmission {
   TurnAdmissionStatus status = 1;
+  // Populated for STARTED and QUEUED admissions: a queued request owns its
+  // Turn from enqueue time, so clients can tail its events before execution.
   string turn_id = 2;
   TurnQueueEntry queue_entry = 3;
   uint32 queue_capacity = 4;
@@ -1105,6 +1184,7 @@ message ClientCapabilityReceipt {
   string result_id = 19;
   string tool_batch_id = 20;
   ReceiptRecoveryProof recovery_proof = 21;
+  repeated TurnArtifact artifacts = 22;
 }
 
 enum ClientCapabilityCommandDomain {
@@ -1118,6 +1198,7 @@ enum ClientCapabilityCommandDomain {
   CLIENT_CAPABILITY_COMMAND_DOMAIN_REPORT_OPERATION_EVENT = 7;
   CLIENT_CAPABILITY_COMMAND_DOMAIN_TAKE_OVER_OPERATION = 8;
   CLIENT_CAPABILITY_COMMAND_DOMAIN_TAKE_OVER_CLEANUP = 9;
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_DECLARED_RESOURCE_GRANTS = 10;
 }
 
 message ClientCapabilityCommandProof {
@@ -1222,6 +1303,22 @@ message PullClientCapabilityRequestsResponse {
   repeated ClientCapabilityRequest requests = 1;
   uint64 last_sequence = 2;
   ClientCapabilityCommandErrorCode error_code = 3;
+}
+
+// Declares the opaque workspace resource grants the local capability worker
+// resolved on this device for one active capability session. Station pins
+// declared grants onto dispatched client capability envelopes; it never
+// receives local absolute paths.
+message DeclareClientResourceGrantsRequest {
+  string capability_session_id = 1;
+  string device_id = 2;
+  repeated ClientResourceRef grants = 3;
+  ClientCapabilityCommandProof command_proof = 4;
+}
+
+message DeclareClientResourceGrantsResponse {
+  ClientCapabilityCommandErrorCode error_code = 1;
+  uint32 accepted_count = 2;
 }
 
 enum ClientCapabilityReceiptErrorCode {
@@ -1647,4 +1744,177 @@ message RecordFeedbackResponse {
   string id = 1;
   TurnFeedback feedback = 2;
   bool replayed = 3;
+}
+
+// ============================================================================
+// Persistent user scheduled jobs (V11)
+//
+// User-visible scheduling has a single source of truth: ScheduledJob rows
+// swept by Station next_due_at workers. The in-memory scheduler service
+// remains internal (silent review / dogfood) and never backs this API.
+// ============================================================================
+
+enum ScheduledJobScheduleKind {
+  SCHEDULED_JOB_SCHEDULE_KIND_UNSPECIFIED = 0;
+  SCHEDULED_JOB_SCHEDULE_KIND_CRON = 1;
+  SCHEDULED_JOB_SCHEDULE_KIND_INTERVAL = 2;
+  SCHEDULED_JOB_SCHEDULE_KIND_ONCE = 3;
+}
+
+message ScheduledRuntimeOverride {
+  optional string model = 1;
+  optional string provider = 2;
+  optional string effort = 3;
+  optional uint32 timeout_sec = 4;
+}
+
+message ScheduledJob {
+  string job_id = 1;
+  string agent_id = 2;
+  string name = 3;
+  string description = 4;
+  ScheduledJobScheduleKind schedule_kind = 5;
+  // Five-field POSIX cron expression for schedule_kind=CRON.
+  string cron_expr = 6;
+  // Fixed gap in seconds (>= 60) for schedule_kind=INTERVAL.
+  int64 interval_sec = 7;
+  // IANA timezone for CRON wall-clock evaluation.
+  string timezone = 8;
+  // RFC3339 instant for schedule_kind=ONCE.
+  string run_at = 21;
+  string prompt = 9;
+  ScheduledRuntimeOverride runtime_override = 10;
+  bool delete_after_run = 11;
+  bool enabled = 12;
+  // Dedicated conversation that owns every turn triggered by this job.
+  string conversation_id = 13;
+  google.protobuf.Timestamp next_due_at = 14;
+  google.protobuf.Timestamp last_run_at = 15;
+  string last_status = 16;
+  string last_error = 17;
+  google.protobuf.Timestamp created_at = 18;
+  google.protobuf.Timestamp updated_at = 19;
+  uint64 revision = 20;
+}
+
+enum ScheduledJobRunStatus {
+  SCHEDULED_JOB_RUN_STATUS_UNSPECIFIED = 0;
+  SCHEDULED_JOB_RUN_STATUS_PENDING = 1;
+  SCHEDULED_JOB_RUN_STATUS_RUNNING = 2;
+  SCHEDULED_JOB_RUN_STATUS_SUCCESS = 3;
+  SCHEDULED_JOB_RUN_STATUS_FAILED = 4;
+}
+
+message ScheduledJobRun {
+  string run_id = 1;
+  string job_id = 2;
+  string agent_id = 3;
+  string conversation_id = 4;
+  string turn_id = 5;
+  ScheduledJobRunStatus status = 6;
+  // "schedule" for due sweeps, "manual" for explicit trigger.
+  string trigger = 7;
+  string error_message = 8;
+  google.protobuf.Timestamp scheduled_for = 9;
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp finished_at = 11;
+  int64 duration_ms = 12;
+}
+
+message CreateScheduledJobRequest {
+  string agent_id = 1;
+  string name = 2;
+  string description = 3;
+  ScheduledJobScheduleKind schedule_kind = 4;
+  string cron_expr = 5;
+  int64 interval_sec = 6;
+  string timezone = 7;
+  string run_at = 13;
+  string prompt = 8;
+  ScheduledRuntimeOverride runtime_override = 10;
+  bool delete_after_run = 11;
+  bool enabled = 12;
+  string idempotency_key = 9;
+}
+
+message CreateScheduledJobResponse {
+  ScheduledJob job = 1;
+  string conversation_id = 2;
+}
+
+message UpdateScheduledJobRequest {
+  string job_id = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional ScheduledJobScheduleKind schedule_kind = 4;
+  optional string cron_expr = 5;
+  optional int64 interval_sec = 6;
+  optional string timezone = 7;
+  optional string run_at = 13;
+  optional string prompt = 8;
+  optional ScheduledRuntimeOverride runtime_override = 10;
+  optional bool delete_after_run = 11;
+  optional bool enabled = 12;
+  uint64 expected_revision = 9;
+}
+
+message UpdateScheduledJobResponse {
+  ScheduledJob job = 1;
+}
+
+message DeleteScheduledJobRequest {
+  string job_id = 1;
+}
+
+message DeleteScheduledJobResponse {
+  bool ok = 1;
+  // The dedicated conversation and its history are intentionally retained.
+  bool conversation_retained = 2;
+}
+
+message ListScheduledJobsRequest {
+  string agent_id = 1;
+  bool include_paused = 2;
+}
+
+message ListScheduledJobsResponse {
+  repeated ScheduledJob jobs = 1;
+}
+
+message ToggleScheduledJobRequest {
+  string job_id = 1;
+  bool enabled = 2;
+}
+
+message ToggleScheduledJobResponse {
+  ScheduledJob job = 1;
+}
+
+message TriggerScheduledJobRequest {
+  string job_id = 1;
+  string idempotency_key = 2;
+}
+
+message TriggerScheduledJobResponse {
+  ScheduledJobRun run = 1;
+}
+
+message ListScheduledJobRunsRequest {
+  string job_id = 1;
+  int32 limit = 2;
+}
+
+message ListScheduledJobRunsResponse {
+  repeated ScheduledJobRun runs = 1;
+}
+
+// Quick one-shot completion used by in-product assist surfaces. Proto-first
+// replacement for the legacy ad-hoc JSON /agent/quick-completion contract.
+message QuickCompletionRequest {
+  string agent_id = 1;
+  string prompt = 2;
+}
+
+message QuickCompletionResponse {
+  string content = 1;
 }

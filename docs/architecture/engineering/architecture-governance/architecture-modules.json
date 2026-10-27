@@ -179,6 +179,115 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "experience-design",
+      "root": "docs/architecture/engineering/experience-design",
+      "status": "active",
+      "owner": "Developer Experience / Product Design",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": false,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "EDX-D01",
+        "EDX-D02",
+        "EDX-D03",
+        "EDX-D04",
+        "EDX-D05",
+        "EDX-D06",
+        "EDX-D07",
+        "EDX-D08",
+        "EDX-RK-D01",
+        "EDX-RK-D02",
+        "EDX-RK-D03",
+        "EDX-RK-D04",
+        "EDX-RK-D05",
+        "EDX-RK-D06",
+        "EDX-RK-D07",
+        "EDX-RK-D08",
+        "CER-D01",
+        "CER-D02",
+        "CER-D03",
+        "CER-D04",
+        "CER-D05",
+        "CER-D06",
+        "CER-D07"
+      ],
+      "governedPaths": [
+        "docs/architecture/engineering/experience-design",
+        "docs/client/common/interaction-design-methodology.md",
+        "docs/client/common/ui-identity/grammar-bindings.json",
+        "tooling/scripts/experience-design",
+        "tooling/skills/pt-product-design-methodology",
+        "tooling/skills/pt-prototype-design",
+        "tooling/skills/pt-quality-check"
+      ],
+      "capabilities": [
+        {
+          "id": "experience.design.evaluate",
+          "owner": "experience.design",
+          "contractRoots": [
+            "docs/architecture/engineering/experience-design",
+            "docs/client/common/interaction-design-methodology.md",
+            "docs/client/common/ui-identity/grammar-bindings.json",
+            "tooling/scripts/experience-design"
+          ],
+          "consumers": [
+            "tooling/skills/pt-product-design-methodology/SKILL.md",
+            "tooling/skills/pt-prototype-design/SKILL.md",
+            "tooling/skills/pt-quality-check/SKILL.md"
+          ],
+          "allowedDependencies": [
+            "node.crypto",
+            "node.fs",
+            "node.path",
+            "node.url"
+          ],
+          "evidenceGates": [
+            "experience-design-control-plane"
+          ]
+        },
+        {
+          "id": "experience.design.compare",
+          "owner": "experience.design",
+          "contractRoots": [
+            "docs/architecture/engineering/experience-design/comparative-experience-review.md",
+            "docs/architecture/engineering/experience-design/data-model.md",
+            "docs/client/common/interaction-design-methodology.md",
+            "tooling/scripts/experience-design"
+          ],
+          "consumers": [
+            "tooling/skills/pt-product-design-methodology/SKILL.md",
+            "tooling/skills/pt-prototype-design/SKILL.md",
+            "tooling/skills/pt-quality-check/SKILL.md"
+          ],
+          "allowedDependencies": [
+            "node.crypto",
+            "node.fs",
+            "node.os",
+            "node.path",
+            "node.url"
+          ],
+          "evidenceGates": [
+            "experience-design-control-plane"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "development-workflow",
       "root": "docs/architecture/engineering/development-workflow",
       "status": "active",

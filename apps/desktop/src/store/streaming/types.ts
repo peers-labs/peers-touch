@@ -47,6 +47,8 @@ export interface Operation {
   conversationId?: string;
   streamGeneration?: number;
   lastEventSeq?: number;
+  clientIdempotencyKey?: string;
+  awaitingAdmission?: boolean;
 }
 
 export interface PendingApproval {

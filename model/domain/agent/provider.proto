@@ -201,3 +201,22 @@ message GetCredentialStatusResponse { CredentialStatusInfo status = 1; }
 
 message ResolveCredentialRequest { string provider_id = 1; }
 message ResolveCredentialResponse { CredentialResolveInfo credential = 1; }
+
+// Actor-scoped explicit default provider/model. Unlike the per-provider
+// runtime_config.default_model, this selects which provider supplies new
+// Topics. Historical turns keep their recorded provider attribution.
+message RuntimeDefault {
+  string provider_id = 1;
+  string model_id = 2;
+  int64 revision = 3;
+}
+
+message GetRuntimeDefaultRequest {}
+message GetRuntimeDefaultResponse { RuntimeDefault runtime_default = 1; }
+
+message SetRuntimeDefaultRequest {
+  string provider_id = 1;
+  string model_id = 2;
+  int64 expected_revision = 3;
+}
+message SetRuntimeDefaultResponse { RuntimeDefault runtime_default = 1; }

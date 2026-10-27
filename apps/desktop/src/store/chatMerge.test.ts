@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  foldToolMessages,
   isMessageRetryBlocked,
   mergeServerMessages,
   type ChatMessage,
@@ -451,4 +452,77 @@ describe('isMessageRetryBlocked', () => {
       ).toBe(true);
     },
   );
+});
+
+describe('foldToolMessages', () => {
+  it('coalesces all assistant legs of one Turn into a single bubble', () => {
+    const messages: ChatMessage[] = [
+      msg('user-1', 'user', 'run the task', { turnId: 'turn-1' }),
+      msg('leg-1', 'assistant', '', {
+        turnId: 'turn-1',
+        toolCalls: [{ id: 'call-1', name: 'todo_write', pending: false }],
+      }),
+      msg('tool-1', 'tool', '**todo_write** created list'),
+      msg('leg-2', 'assistant', '', {
+        turnId: 'turn-1',
+        toolCalls: [{ id: 'call-2', name: 'local_file_write', pending: false }],
+      }),
+      msg('tool-2', 'tool', '**local_file_write** wrote file'),
+      msg('leg-3', 'assistant', 'Done.', {
+        turnId: 'turn-1',
+        terminalStatus: 'completed',
+      }),
+    ];
+
+    const folded = foldToolMessages(messages);
+
+    expect(folded.map((m) => m.id)).toEqual(['user-1', 'leg-1']);
+    const assistant = folded[1];
+    expect(assistant.content).toBe('Done.');
+    expect(assistant.terminalStatus).toBe('completed');
+    expect(assistant.loading).toBe(false);
+    expect(assistant.toolCalls?.map((call) => call.id)).toEqual([
+      'call-1',
+      'tool-1',
+      'call-2',
+      'tool-2',
+    ]);
+  });
+
+  it('keeps distinct turns separate and preserves an interrupted leg', () => {
+    const messages: ChatMessage[] = [
+      msg('leg-a', 'assistant', '', {
+        turnId: 'turn-a',
+        terminalStatus: 'completed',
+        content: 'first',
+      }),
+      msg('leg-b-1', 'assistant', '', { turnId: 'turn-b', loading: true }),
+      msg('leg-b-2', 'assistant', '', {
+        turnId: 'turn-b',
+        terminalStatus: 'interrupted',
+        typedError: {
+          error_type: 'LIFECYCLE_INTERRUPTED',
+          locale_key: 'agent.error.interrupted',
+          terminal: true,
+        } as ChatMessage['typedError'],
+      }),
+    ];
+
+    const folded = foldToolMessages(messages);
+
+    expect(folded.map((m) => m.id)).toEqual(['leg-a', 'leg-b-1']);
+    expect(folded[1].terminalStatus).toBe('interrupted');
+    expect(folded[1].typedError?.error_type).toBe('LIFECYCLE_INTERRUPTED');
+  });
+
+  it('does not fold assistant rows without a turn id', () => {
+    const messages: ChatMessage[] = [
+      msg('opt-1', 'assistant', '', { queued: true, queueEntryId: 'queue-1' }),
+      msg('opt-2', 'assistant', '', { queued: true, queueEntryId: 'queue-2' }),
+    ];
+
+    const folded = foldToolMessages(messages);
+
+    expect(folded.map((m) => m.id)).toEqual(['opt-1', 'opt-2']);
+  });
 });

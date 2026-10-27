@@ -84,6 +84,18 @@ type ReviewService struct {
 	skillService    *SkillService
 	toolRegistry    *ToolRegistryService
 	growthMetrics   *GrowthMetricsService
+	// reserveAuxiliary bounds review LLM calls against the per-turn
+	// auxiliary provider budget. Wired after TurnService construction;
+	// nil keeps review running in tests without a persistence layer.
+	reserveAuxiliary func(ctx context.Context, turnID string) error
+}
+
+// SetAuxiliaryDispatchReserver wires the per-turn auxiliary provider
+// budget reservation used before every review LLM dispatch.
+func (s *ReviewService) SetAuxiliaryDispatchReserver(
+	reserver func(ctx context.Context, turnID string) error,
+) {
+	s.reserveAuxiliary = reserver
 }
 
 // NewReviewService creates a ReviewService with all required domain
@@ -237,7 +249,7 @@ func (s *ReviewService) runReview(
 	})
 
 	// --- Step 3: Provider call with single retry on retryable errors -----
-	assistantResponse, callErr := s.callProvider(ctx, credential.CredentialID, model, provider, reviewMessages)
+	assistantResponse, callErr := s.callProvider(ctx, turnID, credential.CredentialID, model, provider, reviewMessages)
 	if callErr != nil {
 		classified := s.errorClassifier.Classify(callErr, provider, model, 0, 0)
 
@@ -267,7 +279,7 @@ func (s *ReviewService) runReview(
 			}
 
 			// Retry the LLM call once.
-			assistantResponse, callErr = s.callProvider(ctx, credential.CredentialID, model, provider, reviewMessages)
+			assistantResponse, callErr = s.callProvider(ctx, turnID, credential.CredentialID, model, provider, reviewMessages)
 		}
 
 		if callErr != nil {
@@ -329,7 +341,7 @@ func (s *ReviewService) runReview(
 		}
 
 		// Re-invoke the provider to let the review agent continue or stop.
-		nextResponse, nextErr := s.callProvider(ctx, credential.CredentialID, model, provider, reviewMessages)
+		nextResponse, nextErr := s.callProvider(ctx, turnID, credential.CredentialID, model, provider, reviewMessages)
 		if nextErr != nil {
 			logger.Warnf(ctx, "review re-call failed at iteration %d: turn_id=%s err=%v",
 				iteration+1, turnID, nextErr)
@@ -381,10 +393,15 @@ func (s *ReviewService) runReview(
 
 func (s *ReviewService) callProvider(
 	ctx context.Context,
-	credentialID, model, providerType string,
+	turnID, credentialID, model, providerType string,
 	messages []domain.Message,
 ) (string, error) {
 
+	if s.reserveAuxiliary != nil {
+		if err := s.reserveAuxiliary(ctx, turnID); err != nil {
+			return "", err
+		}
+	}
 	resp, err := s.providerService.Call(ctx, &ProviderCallRequest{
 		ProviderID:   credentialID,
 		Model:        model,

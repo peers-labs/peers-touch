@@ -1,3 +1,4 @@
+pub(crate) mod managed_package;
 mod trusted_catalog;
 
 use crate::application::skills::{SKILL_DELETE_PATH, SKILL_INSTALL_PATH, SKILL_LIST_PATH};
@@ -19,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::{Cursor, Read};
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
@@ -395,7 +396,7 @@ fn fetch_text(url: &str) -> Result<String, String> {
 
 fn fetch_catalog_text(url: &str) -> Result<String, String> {
     const MAX_REMOTE_CATALOG_BYTES: u64 = 2 * 1024 * 1024;
-    let response = http_client()?
+    let mut response = http_client()?
         .get(url)
         .header("Accept", "application/json")
         .send()
@@ -411,8 +412,7 @@ fn fetch_catalog_text(url: &str) -> Result<String, String> {
         return Err("catalog source exceeds 2 MiB".to_string());
     }
     let mut bytes = Vec::new();
-    response
-        .take(MAX_REMOTE_CATALOG_BYTES + 1)
+    std::io::Read::take(&mut response, MAX_REMOTE_CATALOG_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| format!("failed to read catalog source: {error}"))?;
     if bytes.len() as u64 > MAX_REMOTE_CATALOG_BYTES {
@@ -485,6 +485,7 @@ fn install_skill(
     source: String,
     content: String,
     token: &str,
+    resources: Vec<model::agent::SkillResourceInput>,
 ) -> AppResult<StubPayload> {
     let outcome = match install_skill_at_station(
         station_client,
@@ -494,6 +495,7 @@ fn install_skill(
         content,
         "community".to_string(),
         token,
+        resources,
     ) {
         Ok(outcome) => outcome,
         Err(result) => return result,
@@ -518,6 +520,7 @@ fn install_skill_at_station(
     content: String,
     trust_level: String,
     token: &str,
+    resources: Vec<model::agent::SkillResourceInput>,
 ) -> Result<SkillInstallOutcome, AppResult<StubPayload>> {
     if token.trim().is_empty() {
         return Err(AppResult::fail(
@@ -532,6 +535,7 @@ fn install_skill_at_station(
         name: name.clone(),
         content,
         trust_level,
+        resources,
     };
     match station_client
         .request_proto::<model::agent::InstallSkillRequest, model::agent::InstallSkillResponse>(
@@ -548,52 +552,6 @@ fn install_skill_at_station(
         }),
         Err(err) => Err(station_error("skills_import", err)),
     }
-}
-
-fn zip_skill_content(bytes: &[u8]) -> Result<(String, String), String> {
-    let reader = Cursor::new(bytes);
-    let mut archive =
-        zip::ZipArchive::new(reader).map_err(|error| format!("invalid ZIP package: {error}"))?;
-    let mut candidates: Vec<(String, String)> = Vec::new();
-
-    for index in 0..archive.len() {
-        let mut file = archive
-            .by_index(index)
-            .map_err(|error| format!("failed to read ZIP entry: {error}"))?;
-        if file.is_dir() {
-            continue;
-        }
-        let name = file.name().to_string();
-        let lower = name.to_lowercase();
-        if !(lower.ends_with("skill.md")
-            || lower.ends_with(".skill.md")
-            || lower.ends_with("skill.yml")
-            || lower.ends_with("skill.yaml"))
-        {
-            continue;
-        }
-        let mut content = String::new();
-        file.read_to_string(&mut content)
-            .map_err(|error| format!("failed to read skill file as UTF-8: {error}"))?;
-        candidates.push((name, content));
-    }
-
-    let Some((path, content)) = candidates
-        .into_iter()
-        .find(|(path, _)| path.to_lowercase().ends_with("skill.md"))
-        .or_else(|| None)
-    else {
-        return Err("ZIP package must contain SKILL.md".to_string());
-    };
-    let fallback = path
-        .rsplit('/')
-        .next()
-        .unwrap_or("Skill")
-        .trim_end_matches(".md")
-        .trim_end_matches(".yml")
-        .trim_end_matches(".yaml");
-    let name = validate_skill_content(&content, fallback)?;
-    Ok((name, content))
 }
 
 fn market_skill_to_json(
@@ -1046,6 +1004,7 @@ pub fn skills_import_url(
         input.address,
         content,
         token,
+        Vec::new(),
     )
 }
 
@@ -1085,6 +1044,7 @@ pub fn skills_import_github(
         url,
         content,
         token,
+        Vec::new(),
     )
 }
 
@@ -1106,18 +1066,106 @@ pub fn skills_import_zip(
             )
         }
     };
-    let (name, content) = match zip_skill_content(&bytes) {
+    let package = match managed_package::extract_skill_zip(&bytes) {
         Ok(value) => value,
         Err(error) => return AppResult::fail(ErrorCode::InvalidArgument, error, None),
     };
-    install_skill(
+    let package = match validate_skill_content(&package.skill_content, &package.name) {
+        Ok(validated_name) => managed_package::ExtractedSkillPackage {
+            name: validated_name,
+            ..package
+        },
+        Err(error) => return AppResult::fail(ErrorCode::InvalidArgument, error, None),
+    };
+    let resources = managed_package::station_resource_inputs(&package.files);
+    let agent = agent_id(input.agent_id);
+    let result = install_skill(
         station_client,
-        agent_id(input.agent_id),
-        name,
+        agent.clone(),
+        package.name,
         input.file_name,
-        content,
+        package.skill_content.clone(),
         token,
-    )
+        resources,
+    );
+    if let Some(payload) = result.data.as_ref() {
+        let installed_skill_id = payload
+            .status
+            .parse::<serde_json::Value>()
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("id")
+                    .and_then(|id| id.as_str())
+                    .map(str::to_string)
+            });
+        if let Some(skill_id) = installed_skill_id {
+            if let Err(error) = managed_package::materialize_managed_package(
+                &skill_id,
+                1,
+                &package.files,
+                &package.skill_content,
+            ) {
+                // A ZIP Skill without its local package cannot execute any
+                // client-owned resource. Best-effort roll the Station install
+                // back so no orphan binding survives the failed cutover.
+                let rollback = station_client
+                    .request_proto::<
+                        model::agent::DeleteSkillRequest,
+                        model::agent::DeleteSkillResponse,
+                    >(
+                        Method::POST,
+                        crate::application::skills::SKILL_DELETE_PATH,
+                        token,
+                        None,
+                        Some(&model::agent::DeleteSkillRequest {
+                            agent_id: agent,
+                            skill_id,
+                        }),
+                    );
+                if let Err(rollback_error) = rollback {
+                    tracing::error!(
+                        error = %rollback_error,
+                        "failed to roll back Station Skill after local materialization failure"
+                    );
+                }
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    format!("Skill installed at Station but local managed package materialization failed: {error}"),
+                    None,
+                );
+            }
+        }
+    }
+    result
+}
+
+pub fn skills_managed_resource_read(
+    skill_id: String,
+    version: i64,
+    path: String,
+    content_hash: Option<String>,
+) -> AppResult<StubPayload> {
+    match managed_package::read_managed_resource(&skill_id, version, &path, content_hash.as_deref())
+    {
+        Ok(content) => {
+            let text = match String::from_utf8(content) {
+                Ok(text) => text,
+                Err(_) => {
+                    return AppResult::fail(
+                        ErrorCode::InvalidArgument,
+                        "managed Skill resource is not UTF-8 text",
+                        None,
+                    )
+                }
+            };
+            success_payload(
+                "skills_managed_resource_read",
+                json!({ "path": path, "version": version, "content": text }),
+            )
+        }
+        Err(error) => AppResult::fail(ErrorCode::NotFound, error, None),
+    }
 }
 
 pub fn skills_validate_zip(input: SkillImportZipInput) -> AppResult<StubPayload> {
@@ -1133,10 +1181,16 @@ pub fn skills_validate_zip(input: SkillImportZipInput) -> AppResult<StubPayload>
             )
         }
     };
-    match zip_skill_content(&bytes) {
-        Ok((name, _)) => success_payload(
+    match managed_package::extract_skill_zip(&bytes) {
+        Ok(package) => success_payload(
             "skills_validate_zip",
-            json!({ "valid": true, "skillPath": "SKILL.md", "skillName": name, "skillCount": 1 }),
+            json!({
+                "valid": true,
+                "skillPath": "SKILL.md",
+                "skillName": package.name,
+                "skillCount": 1,
+                "resourceCount": package.files.len()
+            }),
         ),
         Err(error) => success_payload(
             "skills_validate_zip",
@@ -1771,6 +1825,7 @@ pub fn skills_market_install(
         content,
         station_marketplace_skill_trust_level(),
         token,
+        Vec::new(),
     ) {
         Ok(outcome) => outcome,
         Err(result) => return result,

@@ -94,6 +94,9 @@ Read before designing:
 - For client UI: `docs/client/common/ux-design-methodology.md`, shared UI
   Identity, `docs/client/common/ui-identity/craft-quality.md`, and the closest
   module/platform contracts.
+- For material UI interaction:
+  `docs/client/common/interaction-design-methodology.md` and
+  `docs/architecture/engineering/experience-design/README.md`.
 
 External products provide evidence, not authority. Record exact observed
 behavior and preserve Peers-Touch ownership, privacy, federation, and
@@ -174,6 +177,67 @@ The authoritative craft dimensions and evidence levels are defined in
 benchmark brands provide evidence vocabulary only; they never establish
 readiness.
 
+### Step 2B. Define The Experience Design Contract
+
+For material UI, emit the Product-owned portion of the canonical Experience
+Case before Prototype work:
+
+- content semantics and scoped concept budgets;
+- surface subject and region ownership;
+- Journey-owned path-cost vectors;
+- visible state, recovery, preservation, focus, return, and authority
+  requirements;
+- action intent, risk, mutation, representation role, and platform adaptation;
+- accepted trace and required L1-L4 evidence cells for the claimed scope.
+
+Use the closed model in
+`docs/architecture/engineering/experience-design/data-model.md` and the method
+in `docs/client/common/interaction-design-methodology.md`. Do not copy their
+field or rule tables into this Skill. Product Design owns the accepted
+contract; Prototype Design later supplies the candidate Wireflow and evidence.
+
+Run the canonical source check before handoff:
+
+```bash
+node tooling/scripts/experience-design/experience-design.mjs validate-sources
+```
+
+Missing, conflicting, or unattributed Product intent remains
+`PRODUCT_DESIGN_INCOMPLETE`; do not let Prototype Design infer or repair it.
+
+### Step 2C. Run Comparative Experience Review When Claiming A Gap
+
+When benchmark evidence is used to claim that Peers is materially better or
+worse, use
+`docs/architecture/engineering/experience-design/comparative-experience-review.md`.
+Do not compare feature names, pages or screenshots directly.
+
+Product Design owns:
+
+- the bounded Journey and identity-neutral task prompt;
+- the frozen Outcome Oracle and Comparison Context;
+- benchmark behavior disposition candidates;
+- the post-reveal adopt / adapt / reject / defer review;
+- acceptance or rejection of any projected Target Contract proposal.
+
+Evidence owners supply the two Journey observations. CER tooling validates the
+paired package, blind delta, identity reveal and current Peers EDX binding.
+Reference behavior never becomes Peers Product truth automatically.
+
+Canonical entry:
+
+```bash
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-validate <paired-case.json> --package-root <package-root>
+node tooling/scripts/experience-design/experience-design.mjs \
+  compare-evaluate <paired-case.json> --package-root <package-root>
+```
+
+Missing comparability or evidence remains `UNPROVEN`. A Target Contract
+proposal is not accepted Product scope until the Product owner reviews it.
+Source calibration does not prove CER incremental value; that remains a
+separate Quality-owned blind A/B.
+
 ### Step 3. Freeze The Product Capability Profile
 
 Assign stable capability IDs and classify each as:
@@ -234,6 +298,22 @@ Shared business outcomes must remain coherent while device capabilities may
 differ. Do not require Mobile to imitate Desktop-only filesystem, shell,
 window, or stdio behavior. Unsupported paths fail before the user commits work.
 
+### Step 6A. Prepare Experience Review Semantics
+
+For material UI, make the accepted Product / Client contract consumable by the
+Experience Reasoning Kernel without copying its schema or ranking rules:
+
+- mark clauses that explicitly define the bounded Journey outcome;
+- name visible actions, responses and reachable states;
+- for trust transitions, separate diagnostic evidence from identity evidence
+  and define scope effect, next Gate and failure meaning;
+- for recoverable blockers, define the visible entry, allowed locality,
+  preserved state, return state and platform-appropriate return target;
+- identify evidence required for review, high fidelity and production.
+
+The Kernel reviews these semantics; it does not invent or amend them. Missing
+trust or recovery truth remains a Product contract gap, not a rubric default.
+
 ### Step 7. Require An Executable Prototype When UI Is Material
 
 Invoke `pt-prototype-design` when journeys depend on layout, interaction,
@@ -242,6 +322,8 @@ information hierarchy, or state transitions that text cannot settle.
 The prototype must:
 
 - Trace surfaces and states to product capability/journey IDs.
+- Assemble the accepted contract and candidate Wireflow into one closed
+  Experience Case, then run the canonical evaluator before high fidelity.
 - Cover critical success, waiting, error, recovery, and degraded states.
 - Use Peers-Touch UI Identity and the production component system.
 - Implement the accepted craft contract, including positive and negative
@@ -311,6 +393,10 @@ Return `PRODUCT_READY_FOR_ARCHITECTURE` only when:
 - Material UI has a confirmed or explicitly review-blocked prototype.
 - Material UI has an evidence-backed craft contract with no award guarantee,
   numeric self-score, or unresolved blocking accessibility/recovery defect.
+- Material UI has a closed Experience Design contract covering semantics,
+  information architecture, path, state/recovery, action, trace, and required
+  evidence; its Product-owned source is independently reviewed and exposes the
+  Journey, trust and recovery semantics required by the Reasoning Kernel.
 - Every required capability has a repository-backed feasibility closure and
   executable proof.
 - Every required capability maps to receiver-perspective acceptance.
@@ -346,6 +432,8 @@ The handoff package is:
 - Required, optional, degraded, unsupported, and deferred scope.
 - Benchmark disposition ledger.
 - Visible state and recovery contracts.
+- Explicit Experience Review clauses and their review/high-fidelity evidence
+  requirements.
 - Confirmed prototype paths/status where applicable.
 - Product acceptance matrix and required runtime/platform cells.
 - Explicitly accepted product risks and non-goals.

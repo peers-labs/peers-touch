@@ -18,7 +18,6 @@ import {
   Pause,
   Trash2,
   Clock,
-  Terminal,
   Bot,
   Edit2,
   RefreshCw,
@@ -245,11 +244,7 @@ export function CronJobsSettings() {
                 <Flexbox gap={6} style={{ flex: 1, minWidth: 0 }}>
                   {/* Row 1: Icon + Name + Tags */}
                   <Flexbox horizontal align="center" gap={8}>
-                    {job.execKind === 'agent' ? (
-                      <Bot size={16} style={{ color: '#7c3aed', flexShrink: 0 }} />
-                    ) : (
-                      <Terminal size={16} style={{ color: '#059669', flexShrink: 0 }} />
-                    )}
+                    <Bot size={16} style={{ color: '#7c3aed', flexShrink: 0 }} />
                     <Text
                       strong
                       style={{
@@ -270,9 +265,9 @@ export function CronJobsSettings() {
                         {scheduleLabel(job, t)}
                       </Flexbox>
                     </Tag>
-                    {job.execKind === 'agent' && job.agentName && job.agentName !== 'assistant' && (
+                    {job.agentId && job.agentId !== 'assistant' && (
                       <Tag color="purple" style={{ fontSize: 11, lineHeight: '18px' }} bordered={false}>
-                        {job.agentName}
+                        {job.agentId}
                       </Tag>
                     )}
                   </Flexbox>

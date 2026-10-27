@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@lobehub/ui';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -8,6 +8,7 @@ import {
   Download,
   ExternalLink,
   HeartPulse,
+  MessageSquareText,
   Pencil,
   Play,
   Plus,
@@ -27,6 +28,7 @@ import {
 import {
   api,
   type Agent,
+  type AgentConversation,
   type ChannelAutomation,
   type ChannelBindingInfo,
   type ChannelRoute,
@@ -40,6 +42,7 @@ import type {
   ChannelRouteDraft,
 } from './channelDrafts';
 import { channelAgentLabel } from './channelLabels';
+import { boundTopicAgentIds, formatTopicDate } from './channelTopics';
 import {
   DEFAULT_LARK_REQUESTER_DOMAINS,
   LARK_REQUESTER_DOMAIN_GROUPS,
@@ -48,6 +51,7 @@ import {
 export type ChannelManagementPanel =
   | 'routes'
   | 'automations'
+  | 'topics'
   | 'personal'
   | 'access'
   | 'health'
@@ -755,6 +759,9 @@ function AutomationPanel({
                 {channelAgentLabel(agents, automation.agentId)}
                 {' · '}
                 {automation.lastRunStatus || t('channels.v2.neverRun')}
+                {automation.lastRunAtUnixMs
+                  ? ` · ${new Date(Number(automation.lastRunAtUnixMs)).toLocaleString()}`
+                  : ''}
               </em>
             </span>
             <span className="pt-channel-row-actions">
@@ -1303,6 +1310,118 @@ function ActivityPanel({
   );
 }
 
+function TopicsPanel({
+  binding,
+  detail,
+  agents,
+  onBack,
+}: {
+  binding: ChannelBindingInfo;
+  detail: ChannelDetailProjection | null;
+  agents: Agent[];
+  onBack: () => void;
+}) {
+  const { t } = useTranslation('channels');
+  const agentIds = useMemo(
+    () => boundTopicAgentIds(binding, detail),
+    [binding, detail],
+  );
+  const [records, setRecords] = useState<Record<string, AgentConversation[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    const settled = await Promise.allSettled(
+      agentIds.map((agentId) =>
+        api
+          .listAgentConversations(agentId, { status: 'active', pageSize: 50 })
+          .then((conversations) => [agentId, conversations] as const),
+      ),
+    );
+    const next: Record<string, AgentConversation[]> = {};
+    let failed = false;
+    settled.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        next[result.value[0]] = result.value[1];
+      } else {
+        failed = true;
+      }
+    });
+    setRecords(next);
+    setLoadError(failed);
+    setLoading(false);
+  }, [agentIds]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <section className="pt-channel-panel" data-testid="channel-topics-panel">
+      <PanelHeader
+        title={t('channels.v2.topics.title')}
+        description={t('channels.v2.topics.description')}
+        onBack={onBack}
+      />
+      <div className="pt-channel-collection-header">
+        <div>
+          <b>{t('channels.v2.topics.heading')}</b>
+          <small>{t('channels.v2.topics.readonly')}</small>
+        </div>
+        <Button icon={RefreshCw} loading={loading} onClick={() => void load()}>
+          {t('channels.v2.topics.refresh')}
+        </Button>
+      </div>
+      {loadError ? (
+        <div className="pt-channel-notice is-warning" role="alert">
+          <CircleAlert size={16} />
+          <span>{t('channels.v2.topics.loadFailed')}</span>
+        </div>
+      ) : null}
+      {loading && Object.keys(records).length === 0 ? (
+        <div className="pt-channel-panel-loading">
+          <RefreshCw className="is-spinning" size={16} />
+          <span>{t('channels.v2.loading')}</span>
+        </div>
+      ) : agentIds.length === 0 ? (
+        <div className="pt-channel-inline-empty">
+          <MessageSquareText size={18} />
+          <span>{t('channels.v2.topics.noAgents')}</span>
+        </div>
+      ) : (
+        <div className="pt-channel-topic-groups">
+          {agentIds.map((agentId) => {
+            const topics = records[agentId] ?? [];
+            return (
+              <section key={agentId} className="pt-channel-topic-group">
+                <h4>{channelAgentLabel(agents, agentId)}</h4>
+                {loading && !(agentId in records) ? (
+                  <p className="pt-channel-topic-empty">{t('channels.v2.loading')}</p>
+                ) : topics.length === 0 ? (
+                  <p className="pt-channel-topic-empty">{t('channels.v2.topics.empty')}</p>
+                ) : (
+                  <ul className="pt-channel-topic-list">
+                    {topics.map((topic) => (
+                      <li key={topic.conversation_id}>
+                        <span className="pt-channel-topic-name">{topic.title}</span>
+                        <span className="pt-channel-topic-date">
+                          {formatTopicDate(topic.created_at)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AppPanel({
   binding,
   onBack,
@@ -1502,6 +1621,16 @@ export function ChannelManagementPanels({
     return <PersonalAccessPanel binding={binding} detail={detail} onBack={onBack} />;
   }
   if (panel === 'access') return <AccessPanel binding={binding} detail={detail} onBack={onBack} />;
+  if (panel === 'topics') {
+    return (
+      <TopicsPanel
+        binding={binding}
+        detail={detail}
+        agents={agents}
+        onBack={onBack}
+      />
+    );
+  }
   if (panel === 'health') return <HealthPanel binding={binding} detail={detail} onBack={onBack} />;
   if (panel === 'activity') return <ActivityPanel binding={binding} detail={detail} onBack={onBack} />;
   if (panel === 'app') return <AppPanel binding={binding} onBack={onBack} />;
