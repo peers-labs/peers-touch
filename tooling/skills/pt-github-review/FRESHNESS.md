@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-27
-covered_docs_hash: 3c6f072fbd8fc82f2cbc680e955ba945246e69c680134dc5a612ace188dc5baf
+covered_docs_hash: 6a1d528c274e550f2f3fc4c6c35f4ce3a69fb53015a9c7828e6f0daf90c75456
 
 covered_docs:
   - AGENTS.md
@@ -51,6 +51,25 @@ No covered upstream document changed, so the `covered_docs_hash` is unchanged.
 changed directly; the existing registry fixture and the decision unit tests
 own executable coverage, so no new generic fixture or knowledge entry is
 required.
+
+## 2026-10-27 Desktop Upload Modal / Device Link Merge Review
+
+The cross-branch merge brings instant image upload preview, the stable
+device-link modal, and same-account mobile scan login onto the attachment
+line, adding the `@peers-touch/schema` workspace package, the
+`schema-core`/`device-link-core` portable crates, the `device_link` Station
+subserver, and the `mobile-scan-login`/`shared-schema` architecture modules.
+Covered-doc changes are limited to the doc index, local-dev environment
+doc, Mobile client base, and the knowledge index; they change no review
+severity, fixture, or hard-rule set. One real cross-branch defect hidden by
+auto-merge was fixed during integration (a new background upload caller
+passed the pre-refactor argument count to the progress-sink
+`upload_multipart` signature), plus merge-only hygiene fixes the incoming
+branch did not carry (hard-rule line layout in two mobile unit tests and
+new crates absent from root `.gitignore`). `SKILL.md` needs no new rule; the
+existing source-bound, no-mock, clean-tree, and boundary checks already
+cover the integration. This refresh rebinds the hash to the merged
+covered-doc set.
 
 ## 2026-10-27 Agent Usability Depth Merge Review
 
