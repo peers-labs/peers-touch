@@ -62,7 +62,7 @@
   "failureBehavior": [
     "check 不得在无密钥时返回成功；外部 provider 不可达时三态显式失败，不缓存为永久失败标签",
     "默认变更不影响历史 Turn 的 provider 归因（不可变）",
-    "不引入 sidecar/任务模型字段；不复制 AgentBox 六 CLI tab",
+    "不引入 sidecar/任务模型字段；不复制参考客户端六 CLI tab",
     "Station API 若不支持 default provider 落库，先补 proto/handler 再做 UI，不做本地默认真相"
   ],
   "updatedAt": "2026-10-25T00:00:00.000Z"

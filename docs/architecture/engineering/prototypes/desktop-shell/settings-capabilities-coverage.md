@@ -18,7 +18,7 @@
 - Memory、Knowledge、Skills、MCP 下沉到 **Settings → AI**；
   Channel 能力在 **Settings → Channels** 做深；定时任务留在 **Settings → Advanced**。
   Plugins、Hooks 于 2026-10-24 defer（无消费面，见 §4.5/4.6）；Discover 节同日撤下。
-- 参考工程（AgentBox `http://127.0.0.1:8436` 实例 #6，2026-10-23 live 走查）只作为
+- 外部参考客户端（实例 #6，`http://127.0.0.1:8436`，2026-10-23 live 走查）只作为
   信息架构、字段分组、状态表达与操作反馈基准；其一级 nav 形态、视觉皮肤、品牌不进入原型。
 - 参考工程有而本文 IN 未列入的能力不得因"对齐"进入原型；本文 IN 而参考工程放在别处的能力，
   按本文归属实现，不机械复制其入口。
@@ -323,7 +323,7 @@ Vector/Keyword 权重。
 L2 截图集合：每个新/改 section 的 default / 空态 / 详情或弹层 / 430 窄宽，
 全部实际打开目验后才能进入 pending-review。收口审计的 41 项全绿运行与
 `settings-cap-01..15` 截图（含 09 catalog-single-owner、10 catalog-persistence）
-存于 `.dev-local/evidence/agentbox-live-gap-20261023/p1/full-qa-closure/`
+存于 `.dev-local/evidence/reference-client-live-gap-20261023/p1/full-qa-closure/`
 （任务本地证据，非仓库产物）。
 
 ## 9. 现场证据（2026-10-23 live）
@@ -334,7 +334,7 @@ L2 截图集合：每个新/改 section 的 default / 空态 / 详情或弹层 /
 - 参考工程：`inventory/inv-memory.png`、`inv-knowledge.png`、`inv-cron-jobs.png`、
   `inv-channels.png`，`deep5/ab-cap-skill.png`、`ab-cap-plugin.png`、
   `ab-cap-hook.png`、`ab-cap-mcp.png`。
-- 证据根目录：`.dev-local/evidence/agentbox-live-gap-20261023/`（任务本地，非仓库产物）；
+- 证据根目录：`.dev-local/evidence/reference-client-live-gap-20261023/`（任务本地，非仓库产物）；
   差距叙述见 `gap-list.md` §6.5。
 - 2026-10-24 Skills 专项深遍历（`#/capabilities/skill` 包网格/查看抽屉/五种导入/
   Add skill/Edit package）与逐项裁决：`skills-benchmark-disposition.md`（SK-B01…SK-B24）。
@@ -342,7 +342,7 @@ L2 截图集合：每个新/改 section 的 default / 空态 / 详情或弹层 /
 ## 10. 状态
 
 **implemented，全盘竞品台账 A/B 两批收口（2026-10-24）**：AI 六节（Providers/Models/Memory/Skills/
-MCP/Knowledge）+ Channels + Advanced Scheduled Tasks/About 落地；全模块先遍历 AgentBox #6 再逐项
+MCP/Knowledge）+ Channels + Advanced Scheduled Tasks/About 落地；全模块先遍历参考客户端 #6 再逐项
 adopt/adapt/reject/defer，台账见 `settings-benchmark-disposition.md`。Skills 按 SK-B01…SK-B24
 台账从扁平列表/Market mock 重做为包网格 + 查看抽屉 + 五种安装来源 + 自建编辑闭环；
 Cron 重做为右侧抽屉（NL Parse/interval/completion footer/runtime override/一次性任务）；

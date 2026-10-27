@@ -55,7 +55,7 @@
 
 ### AUD-O04：开箱具备读、写、受控命令、联网取证与任务清单能力
 
-- Before: 默认工具仅文件读/目录列举/剪贴板、shell 仅 pwd/list_dir；无写文件、无真实命令、无 web、无 todo；AgentBox 对照下 Agent 无法独立完成修改/构建/取证类任务。
+- Before: 默认工具仅文件读/目录列举/剪贴板、shell 仅 pwd/list_dir；无写文件、无真实命令、无 web、无 todo；参考客户端对照下 Agent 无法独立完成修改/构建/取证类任务。
 - Target: AUD-02 提供 STATION 侧 web_fetch（SSRF 约束）与 todo（progress 持久化）；AUD-03 提供 workspace 内 write/edit 与 shell allowlist，经审批与围栏执行；首次任务环境段说明能力与阻塞。
 - Expected effect: 普通用户无需自行配置 executor，Agent 即可在沙箱工作目录完成“读-改-验证-修正”闭环并引用网页证据。
 - Non-claim: 不开放任意外壳、不出根写、不提供进程托管/PDF 解析；allowlist 是受限清单而非通用终端。
@@ -113,7 +113,7 @@
 
 - Before: 单模块门禁可全绿而整体故事断裂（原型阶段已发生：名册分裂、选择器被遮罩层盖住但语义门禁全绿）；生产端仍有假 cron、假 TTS、死 mock-gateway。
 - Target: AUD-16 以普通用户路径（make desktop，无 Harness 注入）证明 TD-J01…J05：连续交付文档、修改并验证文件、运行中补充、介入与恢复、长任务与产物迭代；同时完成假面清理与原型/coverage/i18n 同步。
-- Expected effect: “整体 Agent 能力达到 AgentBox 可用性水平”成为有当前源码证据的命题，而不是入口数量或 Gate 数量。
+- Expected effect: “整体 Agent 能力达到参考客户端可用性水平”成为有当前源码证据的命题，而不是入口数量或 Gate 数量。
 - Non-claim: 不替代正式 Acceptance/Station Suite（保持 UNPROVEN）；无同模型对照的性能数值结论；Owner 亲自验收前不提交 MR。
 
 ### 明确不变与非目标

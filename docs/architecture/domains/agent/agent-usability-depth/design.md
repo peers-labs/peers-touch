@@ -30,7 +30,7 @@ executor，就能交付一个**需要连续调用能力的真实任务**：运�
 Scheduled Tasks）的每一项配置都在同一条 Station 真相链上真实生效，而不是
 "入口存在、配置保存、正文可读"的剧场。
 
-本文把"整体 agent 能力达到 AgentBox 实例 #6 的可用性水平"翻译为
+本文把"整体 agent 能力达到参考客户端实例 #6 的可用性水平"翻译为
 十四条可验证的垂直闭环（§5，通用闭环模型见 §4），并明确排除团队/企业级
 功能（§6）。
 
@@ -38,7 +38,7 @@ Scheduled Tasks）的每一项配置都在同一条 Station 真相链上真实�
 
 - Peers 源码：rebase 后分支 `feat/paos-active-cancellation`，HEAD `f5fac8ce1`，
   工作树含已验证的 Settings 原型深化（未提交，四套门禁全绿）。
-- 参考实现：AgentBox #6（`self-build c5c0913`，`127.0.0.1:8436`），其
+- 参考客户端：实例 #6（`self-build c5c0913`，`127.0.0.1:8436`），其
   Settings 全盘台账见 settings-benchmark-disposition.md；其任务执行深度
   取证见 TD 修订案 §2（基线 commit 46cc0784）。
 - 本文事实来自对 Station Go、Desktop Rust、Desktop React、model/domain
@@ -566,7 +566,7 @@ canonicalize 沙箱）。产物、脚本、素材都在该根内闭环；出根�
 |---|---|---|
 | Evaluation Lab 扩展（benchmark/dataset/run 实验面） | **defer（保留已建代码，不投投入、不进主工作面）** | MCA V2 曾列 required；Owner 本轮按"非团队级"排除则正式降级，见 Q4 |
 | 商业市场 / Agent Hub / 社区共享 / Curator / 一键安装他人 Agent | defer | 信任与联邦治理需独立产品设计；个人 signed catalog（Discover 已建）保留 |
-| AgentBox Cloud / 远程设备 / Remote Access 入口 | reject placement | 对应物是 Network→Your Station/Federation；云侧执行是 Station 未来合同 |
+| 参考客户端 Cloud / 远程设备 / Remote Access 入口 | reject placement | 对应物是 Network→Your Station/Federation；云侧执行是 Station 未来合同 |
 | Workflow templates / Dynamic workflow | defer | 无 workflow 运行时与消费构造 |
 | Plugins / Hooks CRUD | defer | 无执行消费面（2026-10-24 已裁决） |
 | 进程 status/kill、PDF/二进制文件读取 | defer | 需要进程托管与解析器；filesystem.read 仅文本 |
