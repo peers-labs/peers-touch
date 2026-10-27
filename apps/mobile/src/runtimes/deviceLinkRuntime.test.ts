@@ -68,8 +68,10 @@ describe('Mobile Device Link lifecycle fences', () => {
     mocks.cancel.mockResolvedValue(idle);
     mocks.activate.mockResolvedValue({});
     mocks.access.mockResolvedValue({ state: 3, attemptId: 'session-access', gates: [] });
-    mocks.update.mockImplementation(async (update: (registry: StoredStationRegistry) => StoredStationRegistry) =>
-      update({ activeStationPeerId: '', entries: [] }));
+    mocks.update.mockImplementation(
+      async (update: (registry: StoredStationRegistry) => StoredStationRegistry) =>
+        update({ activeStationPeerId: '', entries: [] }),
+    );
     mocks.reconcile.mockResolvedValue(undefined);
     runtime = createDeviceLinkRuntimeDescriptor();
     await runtime.bootstrap({} as never);

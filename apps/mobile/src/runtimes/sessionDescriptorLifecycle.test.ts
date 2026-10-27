@@ -49,7 +49,11 @@ describe('Session descriptor invalidates awaited registry observations', () => {
     };
     mocks.invoke.mockResolvedValue(session);
     mocks.registry.mockResolvedValue(registry);
-    mocks.auth.mockReturnValue({ phase: 'active_session', stationPeerId: 'station-a', session });
+    mocks.auth.mockReturnValue({
+      phase: 'active_session',
+      stationPeerId: 'station-a',
+      session,
+    });
     useAuthStore.setState({
       accessDecision: { state: 'ACCESS_DECISION_STATE_GRANTED', attemptId: 'access-a', gates: [] },
     });
