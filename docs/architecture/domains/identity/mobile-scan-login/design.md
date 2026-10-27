@@ -180,6 +180,9 @@ Mobile 验证证书、offer 绑定和短码，不能把 HPKE Base 模式当作�
 - **Schema**：纯编码、严格解析与二维码渲染；不能拿 Session、调用批准或自动登录。
 - **Mobile Native QR Adapter**：Android/iOS系统相机和成熟解码库；只回传载荷，
   不持有认证/账号真源。Web预览只能证明交互，不证明原生扫码。
+  Android 使用官方 Tauri barcode-scanner 的 CameraX/ML Kit 路径，应用直接
+  依赖 `com.google.mlkit:barcode-scanning:17.3.0`，将模型随 APK 打包。
+  首次扫描不依赖 Play Services 下载；应用和插件 classpath 由 Gradle 锁固定。
 
 候选 API：`/auth/device-link/{create,claim,approve,deny,cancel,status,material,ack}`。
 生成 protobuf 请求/响应；每个接口的身份、幂等与限制见

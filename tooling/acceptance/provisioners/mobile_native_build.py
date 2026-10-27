@@ -72,6 +72,7 @@ ANDROID_GRADLE_LOCK_REQUIREMENTS = {
         "androidx.appcompat:appcompat:1.6.1",
         "androidx.webkit:webkit:1.6.1",
         "com.google.android.material:material:1.8.0",
+        "com.google.mlkit:barcode-scanning:17.3.0",
     ),
     "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-android.lockfile": (
         "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
