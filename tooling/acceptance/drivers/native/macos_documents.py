@@ -22,10 +22,16 @@ def run_document_script(script: str) -> str:
 
 
 def document_windows(pid: int) -> list[str]:
+    # `exists (application process whose unix id is ...)` returns
+    # errAEEventFailed (-1728) on current macOS releases even when the
+    # process exists; resolve the process reference directly instead.
     value = run_document_script(f"""
         tell application "System Events"
-          if not (exists (application process whose unix id is {pid})) then return ""
-          set targetProcess to first application process whose unix id is {pid}
+          set targetProcess to missing value
+          try
+            set targetProcess to first application process whose unix id is {pid}
+          end try
+          if targetProcess is missing value then return ""
           set titles to name of every window of targetProcess
           set AppleScript's text item delimiters to linefeed
           return titles as text
@@ -100,9 +106,12 @@ def text_editor_document(path: Path, operation: str = "read") -> str:
 
 
 def text_editor_running() -> bool:
+    # Direct process lookup works across macOS releases; the
+    # `exists (application process whose bundle identifier is ...)`
+    # predicate fails with -1728 on current System Events.
     return run_document_script("""
         tell application "System Events"
-          return exists (application process whose bundle identifier is "com.apple.TextEdit")
+          return exists application process "TextEdit"
         end tell
     """) == "true"
 
