@@ -175,6 +175,12 @@ def resolve_machine_profile_environment(
             ),
         )
     declared_profile = values.get("PT_DEV_PROFILE", "")
+    expected_profile = os.environ.get("PT_ACCEPTANCE_PROFILE", "").strip()
+    if expected_profile and expected_profile != profile_name:
+        raise BlockedError(
+            reason=f"Acceptance Profile {expected_profile!r} differs from active {profile_name!r}",
+            resource="profile:identity",
+        )
     if require_identity_match and declared_profile != profile_name:
         raise BlockedError(
             reason=(

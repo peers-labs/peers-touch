@@ -3,10 +3,8 @@
 
 from __future__ import annotations
 
-import errno
 import json
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -50,6 +48,9 @@ from tooling.acceptance.provisioners import (
     get_provisioner,
 )
 from tooling.acceptance.remote_platform import RemotePlatform
+from tooling.acceptance.tests.synthetic_git import (
+    run_synthetic_git, synthetic_git_environment,
+)
 
 
 def fixture_actor_record(account: str, station: str) -> chat_native_reset.FixtureActorRecord:
@@ -73,35 +74,19 @@ def fixture_actor_record(account: str, station: str) -> chat_native_reset.Fixtur
 
 class StationAttestationOwnerTests(unittest.TestCase):
     def test_proto_digest_uses_only_git_tracked_contract_artifacts(self) -> None:
-        native_git_environment = {
-            key: value
-            for key, value in os.environ.items()
-            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
-        }
-        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
-        root = Path(tempfile.mkdtemp())
-        try:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = synthetic_git_environment()
             with patch.dict(
                 os.environ,
-                native_git_environment,
+                environment,
                 clear=True,
             ):
-                subprocess.run(
-                    ["git", "init"],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
-                subprocess.run(
-                    ["git", "config", "user.email", "acceptance@test.invalid"],
-                    cwd=root,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "config", "user.name", "Acceptance Test"],
-                    cwd=root,
-                    check=True,
-                )
+                run_synthetic_git(root, "init", environment=environment)
+                run_synthetic_git(root, "config", "user.email", "acceptance@test.invalid",
+                                  environment=environment)
+                run_synthetic_git(root, "config", "user.name", "Acceptance Test",
+                                  environment=environment)
                 proto = root / "model/domain/test.proto"
                 generated = (
                     root
@@ -120,17 +105,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     "// not a protocol artifact\n",
                     encoding="utf-8",
                 )
-                subprocess.run(
-                    ["git", "add", "model", "apps"],
-                    cwd=root,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "commit", "-m", "base"],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
+                run_synthetic_git(root, "add", "model", "apps", environment=environment)
+                run_synthetic_git(root, "commit", "-m", "base", environment=environment)
                 baseline = source_proto_digest(root)
 
                 station_dashboard.write_text(
@@ -149,15 +125,6 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
                 generated.write_text("// generated changed\n", encoding="utf-8")
                 self.assertNotEqual(source_proto_digest(root), baseline)
-        finally:
-            for attempt in range(20):
-                try:
-                    shutil.rmtree(root)
-                    break
-                except OSError as error:
-                    if error.errno != errno.ENOTEMPTY or attempt == 19:
-                        raise
-                    time.sleep(0.05)
 
     def test_remote_attestation_excludes_only_deployment_bare_repo(self) -> None:
         from tooling.acceptance.provisioners.remote_source_identity import (
@@ -489,99 +456,47 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertEqual(str(known_hosts), target.known_hosts_file)
 
     def test_workspace_digest_binds_file_content(self) -> None:
-        # The IDE git wrapper writes .git/ai asynchronously; use native Git so
-        # TemporaryDirectory cleanup is deterministic.
-        native_git_environment = {
-            key: value
-            for key, value in os.environ.items()
-            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
-        }
-        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
-        root = Path(tempfile.mkdtemp())
-        try:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = synthetic_git_environment()
             with patch.dict(
                 os.environ,
-                native_git_environment,
+                environment,
                 clear=True,
             ):
-                subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
-                subprocess.run(
-                    ["git", "config", "user.email", "acceptance@test.invalid"],
-                    cwd=root,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "config", "user.name", "Acceptance Test"],
-                    cwd=root,
-                    check=True,
-                )
+                run_synthetic_git(root, "init", environment=environment)
+                run_synthetic_git(root, "config", "user.email", "acceptance@test.invalid",
+                                  environment=environment)
+                run_synthetic_git(root, "config", "user.name", "Acceptance Test",
+                                  environment=environment)
                 source = root / "source.txt"
                 source.write_text("base\n", encoding="utf-8")
-                subprocess.run(["git", "add", "source.txt"], cwd=root, check=True)
-                subprocess.run(
-                    [
-                        "git",
-                        "-c",
-                        "maintenance.auto=false",
-                        "-c",
-                        "gc.auto=0",
-                        "commit",
-                        "-m",
-                        "base",
-                    ],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
+                run_synthetic_git(root, "add", "source.txt", environment=environment)
+                run_synthetic_git(root, "commit", "-m", "base", environment=environment)
                 self.assertEqual(source_workspace_digest(root), "clean")
                 source.write_text("first\n", encoding="utf-8")
                 first = source_workspace_digest(root)
                 source.write_text("second\n", encoding="utf-8")
                 second = source_workspace_digest(root)
-        finally:
-            for attempt in range(20):
-                try:
-                    shutil.rmtree(root)
-                    break
-                except OSError as error:
-                    if error.errno != errno.ENOTEMPTY or attempt == 19:
-                        raise
-                    time.sleep(0.05)
 
         self.assertTrue(first.startswith("sha256:"))
         self.assertTrue(second.startswith("sha256:"))
         self.assertNotEqual(first, second)
 
     def test_workspace_digest_ignores_generated_coverage_report(self) -> None:
-        native_git_environment = {
-            key: value
-            for key, value in os.environ.items()
-            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
-        }
-        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
-        root = Path(tempfile.mkdtemp())
-        try:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = synthetic_git_environment()
             with patch.dict(
                 os.environ,
-                native_git_environment,
+                environment,
                 clear=True,
             ):
-                subprocess.run(
-                    ["git", "init"],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
-                subprocess.run(
-                    ["git", "config", "user.email", "acceptance@test.invalid"],
-                    cwd=root,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "config", "user.name", "Acceptance Test"],
-                    cwd=root,
-                    check=True,
-                )
+                run_synthetic_git(root, "init", environment=environment)
+                run_synthetic_git(root, "config", "user.email", "acceptance@test.invalid",
+                                  environment=environment)
+                run_synthetic_git(root, "config", "user.name", "Acceptance Test",
+                                  environment=environment)
                 report = (
                     root
                     / "docs"
@@ -594,17 +509,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 report.write_text("old\n", encoding="utf-8")
                 source = root / "source.txt"
                 source.write_text("base\n", encoding="utf-8")
-                subprocess.run(
-                    ["git", "add", "docs", "source.txt"],
-                    cwd=root,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "commit", "-m", "base"],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
+                run_synthetic_git(root, "add", "docs", "source.txt", environment=environment)
+                run_synthetic_git(root, "commit", "-m", "base", environment=environment)
 
                 report.write_text("new\n", encoding="utf-8")
                 self.assertEqual(source_workspace_digest(root), "clean")
@@ -613,15 +519,6 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 self.assertTrue(
                     source_workspace_digest(root).startswith("sha256:")
                 )
-        finally:
-            for attempt in range(20):
-                try:
-                    shutil.rmtree(root)
-                    break
-                except OSError as error:
-                    if error.errno != errno.ENOTEMPTY or attempt == 19:
-                        raise
-                    time.sleep(0.05)
 
     def test_producer_writes_source_bound_attestation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1516,7 +1413,7 @@ class ProfileActivationContractTests(unittest.TestCase):
             registry_source,
         )
         self.assertIn(
-            '"$PT_DEV_PROFILE" != "$PT_MACHINE_PROFILE"',
+            '"$PT_DEV_PROFILE" != "$PT_MACHINE_TARGET_PROFILE"',
             runtime_source,
         )
 

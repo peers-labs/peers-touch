@@ -111,6 +111,7 @@ class DirectRouteFaultProxy:
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._listener.bind(("127.0.0.1", 0))
+        self._port = int(self._listener.getsockname()[1])
         self._listener.listen()
         self._listener.settimeout(0.2)
         self._stop = threading.Event()
@@ -124,7 +125,7 @@ class DirectRouteFaultProxy:
 
     @property
     def port(self) -> int:
-        return int(self._listener.getsockname()[1])
+        return self._port
 
     @property
     def multiaddr(self) -> str:
@@ -170,7 +171,8 @@ class DirectRouteFaultProxy:
             except OSError:
                 pass
             connection.close()
-        self._thread.join(timeout=5)
+        if self._thread.ident is not None:
+            self._thread.join(timeout=5)
 
     def _serve(self) -> None:
         while not self._stop.is_set():

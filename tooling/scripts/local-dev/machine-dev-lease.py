@@ -212,6 +212,9 @@ class MachineLease:
             "PT_MACHINE_LEASE_SOURCE_BRANCH": self.request["source"]["branch"],
             "PT_MACHINE_LEASE_SOURCE_HEAD": self.request["source"]["head"],
         }
+        if self.request.get("targetProfile"):
+            values["PT_MACHINE_LEASE_TARGET_PROFILE"] = self.request["targetProfile"]
+            values["PT_DEV_TARGET_PROFILE"] = self.request["targetProfile"]
         if self.reset_scope:
             values["PT_MACHINE_LEASE_RESET_SCOPE"] = self.reset_scope
         return values
@@ -244,6 +247,7 @@ def run_with_lease(args):
                 "workspaceId": args.workspace_id,
                 "budgetSeconds": args.budget_seconds,
                 "source": {"branch": args.expected_branch, "head": args.expected_head},
+                "targetProfile": args.target_profile,
             },
             validation_command,
             reset_scope=args.reset_scope,
@@ -452,6 +456,7 @@ def parser():
     run.add_argument("--budget-seconds", required=True, type=int)
     run.add_argument("--expected-branch", required=True)
     run.add_argument("--expected-head", required=True)
+    run.add_argument("--target-profile")
     run.add_argument("--validation-command-json", required=True)
     run.add_argument("--reset-scope")
     run.add_argument("command", nargs=argparse.REMAINDER)

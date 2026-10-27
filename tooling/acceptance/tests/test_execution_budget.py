@@ -25,6 +25,9 @@ from tooling.acceptance.core.execution_budget import (
 )
 from tooling.acceptance.core.launch_context import GateLaunchSpec, GateProcessLauncher
 from tooling.acceptance.core.errors import EphemeralLaunchTimeout
+from tooling.acceptance.tests.synthetic_git import (
+    run_synthetic_git, synthetic_git_environment,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -496,6 +499,141 @@ raise SystemExit(runner.main())
                     report["executionBudget"]["stop"]["reason"],
                     "OWNER_INTERRUPTED" if interruption else "EXECUTION_BUDGET_STOP",
                 )
+                references = [
+                    json.loads(line.removeprefix("execution-session-manifest: "))
+                    for line in completed.stdout.splitlines()
+                    if line.startswith("execution-session-manifest: ")
+                ]
+                self.assertEqual(len(references), 1, output)
+                from tooling.acceptance.core import ArtifactRef, EvidenceStore
+
+                store = EvidenceStore(root / "evidence", worktree=REPO_ROOT)
+                reference = ArtifactRef.from_dict(references[0])
+                manifest = store.read_run_manifest(reference, manifest_sha256=reference.sha256)
+                ledger = store.read_json(ArtifactRef.from_dict(manifest["artifacts"]["execution-session"]))
+                self.assertEqual(ledger["state"], "PAUSED_REPAIR_REQUIRED")
+
+    def test_request_expiry_before_gate_acquisition_retains_a_resumable_session(self):
+        from tooling.acceptance.core import ArtifactRef, EvidenceStore
+
+        for during_capture in (False, True):
+            with self.subTest(during_capture=during_capture), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                source_root = root / "source"
+                source_root.mkdir()
+                (source_root / "README.md").write_text("Synthetic source capture fixture\n")
+                (source_root / ".gitignore").write_text(".local/\n")
+                git_environment = synthetic_git_environment()
+                for arguments in (
+                    ("init", "-q"), ("add", "README.md", ".gitignore"),
+                    ("-c", "user.name=Synthetic Budget",
+                     "-c", "user.email=budget@example.invalid",
+                     "commit", "-qm", "fixture"),
+                ):
+                    run_synthetic_git(source_root, *arguments, environment=git_environment)
+                calls, second, third, expired = (
+                    root / name for name in ("calls", "second", "third", "expired")
+                )
+                catalog, policy = root / "catalog.json", root / "policy.json"
+                catalog.write_text(json.dumps({"gates": {
+                    "first": {
+                        "argv": [sys.executable, "-c",
+                            f"from pathlib import Path;p=Path({str(calls)!r});"
+                            "p.write_text(p.read_text()+'x' if p.exists() else 'x')"],
+                        "tier": "ci-cheap", "executionInputs": {"environmentKeys": []},
+                    },
+                    "second": {
+                        "argv": [sys.executable, "-c",
+                            f"from pathlib import Path;Path({str(second)!r}).touch()"],
+                        "tier": "ci-cheap",
+                    },
+                    "third": {
+                        "dependsOn": ["first", "second"],
+                        "argv": [sys.executable, "-c",
+                            f"from pathlib import Path;Path({str(third)!r}).touch()"],
+                        "tier": "ci-cheap",
+                    },
+                }}))
+                policy.write_text(json.dumps({
+                    "requestSeconds": 20, "planningSeconds": 5,
+                    "lifecycle": {"cleanupSeconds": 1, "publishSeconds": 1}, "gates": {},
+                }))
+                program = f"""
+import importlib.util, sys, time
+from pathlib import Path
+import tooling.acceptance.core as core
+spec = importlib.util.spec_from_file_location("bounded_runner", "tooling/scripts/acceptance-run.py")
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+runner.REPO_ROOT = Path({str(source_root)!r})
+original_init = runner.GateExecution.__init__
+original_source = core.source_identity
+delayed = False
+def elapsed_request(self, gate_id, budget, request_deadline):
+    global delayed
+    delayed = False
+    if gate_id == "second" and not Path({str(expired)!r}).exists():
+        Path({str(expired)!r}).touch()
+        delayed = {during_capture!r}
+        request_deadline = time.monotonic() + (0.1 if delayed else -0.01)
+    original_init(self, gate_id, budget, request_deadline)
+def observed_source(root):
+    if delayed:
+        time.sleep(0.3)
+    return original_source(root)
+runner.GateExecution.__init__ = elapsed_request
+core.source_identity = observed_source
+sys.argv = ["acceptance-run.py", *sys.argv[1:]]
+raise SystemExit(runner.main())
+"""
+                command = [
+                    sys.executable, "-B", "-c", program, "--gates", str(catalog),
+                    "--gate", "third", "--execution-budget", str(policy),
+                ]
+                environment = {
+                    **git_environment, "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "evidence"),
+                }
+                completed = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                           capture_output=True, text=True, timeout=10)
+                output = completed.stdout + completed.stderr
+                self.assertNotEqual(completed.returncode, 0, output)
+                self.assertTrue(calls.exists(), output)
+                self.assertEqual(calls.read_text(), "x")
+                self.assertFalse(second.exists())
+                self.assertFalse(third.exists())
+                store = EvidenceStore(root / "evidence", worktree=source_root)
+                references = [
+                    ArtifactRef.from_dict(json.loads(line.removeprefix("execution-session-manifest: ")))
+                    for line in completed.stdout.splitlines()
+                    if line.startswith("execution-session-manifest: ")
+                ]
+                self.assertEqual(len(references), 1, output)
+                reference = references[0]
+                manifest = store.read_run_manifest(reference, manifest_sha256=reference.sha256)
+                session = store.read_json(ArtifactRef.from_dict(manifest["artifacts"]["execution-session"]))
+                report = store.read_json(ArtifactRef.from_dict(manifest["artifacts"]["run"]))
+                self.assertEqual(session["state"], "PAUSED_REQUEST_EXHAUSTED")
+                self.assertEqual(report["executionBudget"]["dispatchedGateCount"], 1)
+                self.assertEqual([item["id"] for item in report["results"]], ["first", "second", "third"])
+                self.assertEqual(report["results"][1]["cleanupStatus"], "not-required")
+                self.assertNotIn("runManifest", report["results"][1])
+                self.assertNotIn("terminalObservation", report)
+                resume = root / "resume.json"
+                resume.write_text(json.dumps(reference.to_dict()))
+                continued = subprocess.run(
+                    command + ["--resume-session", str(resume)], cwd=REPO_ROOT,
+                    env=environment, capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(continued.returncode, 0, continued.stdout + continued.stderr)
+                self.assertEqual(calls.read_text(), "x")
+                self.assertTrue(second.exists())
+                self.assertTrue(third.exists())
+                latest = store.latest("acceptance-run")
+                current = store.read_json(ArtifactRef.from_dict(latest["artifacts"]["run"]))
+                self.assertEqual(current["results"][0]["runManifest"], report["results"][0]["runManifest"])
+                ledger = store.read_json(ArtifactRef.from_dict(latest["artifacts"]["execution-session"]))
+                self.assertEqual(ledger["state"], "QUALIFIED")
+                self.assertEqual(ledger["requests"][1]["validatedGateIds"], ["first"])
 
     def test_locked_initialization_interrupt_preserves_full_unproven_scope(self):
         with tempfile.TemporaryDirectory() as temporary:

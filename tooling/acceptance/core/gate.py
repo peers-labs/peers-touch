@@ -123,6 +123,8 @@ class AcceptanceGate(ABC):
                     runtime_binding.binding_proof_evidence()
                 )
             self.report.status = "PASS"
+            if self.report.to_dict()["proofStatus"] != "PROVEN":
+                raise GateError("Gate returned without complete passing assertions")
             if isinstance(result, dict):
                 self.report.runtime.update({k: v for k, v in result.items()
                                              if k not in ("gate", "status", "evidence", "error", "assertions")})

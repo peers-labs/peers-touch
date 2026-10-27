@@ -18,16 +18,23 @@ from typing import Any, Mapping, Protocol, Sequence, cast
 from urllib.parse import urlsplit
 
 from tooling.acceptance.core._paths import REPO_ROOT
-from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
-from tooling.acceptance.core.errors import ClientBindingError, DriverError
+from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore, source_identity
+from tooling.acceptance.core.errors import (
+    BlockedError, ClientBindingError, DriverError, ProvisioningError,
+)
+from tooling.acceptance.core.execution_budget import ExecutionDeadline, deadline
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.provisioning import (
     BindingProofRecord,
     ClientRuntimeIdentity,
+    load_json_artifact,
     persist_client_binding_observation,
     require_runtime_client_service,
     validate_binding_proof_closure,
 )
-from tooling.acceptance.core.runtime_cell import RuntimeCellLifecycle
+from tooling.acceptance.core.runtime_cell import (
+    CellFileChooserIdentity, RuntimeCellLifecycle, runtime_source_matches,
+)
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
@@ -36,6 +43,7 @@ from tooling.acceptance.drivers.native.base import (
     NativeInputMode,
     NativeKey,
     NativeModifier,
+    NativeOperatorObservation,
     NativeWindowBounds,
     NativeWindowSnapshot,
     NativeWindowStack,
@@ -45,7 +53,6 @@ from tooling.acceptance.drivers.tauri import (
     LocalTauriLauncher,
     MakeDesktopLauncher,
     TauriSession,
-    find_app_binary,
 )
 
 
@@ -220,6 +227,10 @@ class NativeDesktopRuntimeBinding(ABC):
     @property
     def input_mode(self) -> NativeInputMode:
         return self.native_adapter.input_mode
+
+    def begin_file_chooser(self) -> NativeOperatorObservation | None:
+        self.native_adapter.require_exclusive_input("select file through native chooser")
+        return None
 
     def binding_proof_evidence(self) -> dict[str, Any]:
         if self._runtime_manifest is None:
@@ -944,6 +955,8 @@ class NativeDesktopRuntimeBinding(ABC):
         self,
         sessions: Sequence[TauriSession],
         client_specs: Mapping[str, Mapping[str, Any]],
+        *,
+        timeout_seconds: float = 30,
     ) -> dict[str, Any]:
         ...
 
@@ -1404,6 +1417,21 @@ class RemoteNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         self,
         sessions: Sequence[TauriSession],
         client_specs: Mapping[str, Mapping[str, Any]],
+        *,
+        timeout_seconds: float = 30,
+    ) -> dict[str, Any]:
+        if timeout_seconds <= 0:
+            raise ExecutionDeadline(self.cell_id, "native-resource-cleanup", "cleanup")
+        with deadline(
+            timeout_seconds,
+            ExecutionDeadline(self.cell_id, "native-resource-cleanup", "cleanup"),
+        ):
+            return self._finalize_cleanup(sessions, client_specs)
+
+    def _finalize_cleanup(
+        self,
+        sessions: Sequence[TauriSession],
+        client_specs: Mapping[str, Mapping[str, Any]],
     ) -> dict[str, Any]:
         del client_specs
         self._transport_overrides.clear()
@@ -1496,11 +1524,11 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             "PT_ACCEPTANCE_NATIVE_DEV",
             "",
         ) == "1"
-        self._binary = (
-            None
-            if self._use_make
-            else Path(find_app_binary()).resolve()
-        )
+        self._source_snapshot = source_identity(REPO_ROOT)
+        self._binary: Path | None = None
+        self._binary_sha256: str | None = None
+        self._prepared_cell: dict[str, Any] | None = None
+        self._make_binary_hashes: dict[str, str] = {}
         requested_input_mode = os.environ.get(
             "PT_ACCEPTANCE_DESKTOP_INPUT_MODE"
         )
@@ -1511,6 +1539,8 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             )
         )
         self._native_file_staging: tempfile.TemporaryDirectory[str] | None = None
+        if not self._use_make:
+            self._consume_prepared_binary()
 
     @property
     def cell_id(self) -> str:
@@ -1520,12 +1550,55 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
     def native_adapter(self) -> NativeDesktopAdapter:
         return self._native_adapter
 
+    def begin_file_chooser(self) -> NativeOperatorObservation | None:
+        if self.input_mode is NativeInputMode.EXCLUSIVE_NATIVE_INPUT:
+            return super().begin_file_chooser()
+        self._verify_source_snapshot()
+        cell = self._prepared_cell
+        try:
+            if cell is None:
+                raise ProvisioningError("prepared Cell is missing")
+            qualifier = CellFileChooserIdentity.from_dict(
+                cell["nativeAdapter"].get("fileChooser"),
+            )
+            qualifier.validate(
+                cell_id=self.cell_id, run_id=cell["runId"], source=cell["source"],
+            )
+            if qualifier.backend != "macos-accessibility":
+                raise ProvisioningError("file chooser backend differs from this Driver")
+            if self._binary is None or _file_sha256(self._binary) != self._binary_sha256:
+                raise ProvisioningError("qualified executable changed")
+        except ProvisioningError as error:
+            raise BlockedError(
+                reason=f"Process-scoped native file chooser is unqualified: {error}",
+                resource="runtime-cell-file-chooser",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="local-macos-runtime-binding",
+                    resource="runtime-cell-file-chooser",
+                    expected={"capability": "process-scoped-file-chooser", "cellId": self.cell_id},
+                    observed={
+                        "inputMode": self.input_mode.value,
+                        "preparedCellPresent": cell is not None,
+                        "qualificationError": str(error),
+                    },
+                    recovery_action=(
+                        "Equip and qualify the real chooser in the current parent "
+                        "Runtime Cell. Do not infer this capability from a Profile "
+                        "or input-mode flag, or substitute physical input."
+                    ),
+                ),
+            ) from error
+        return self.native_adapter.observe_operator()
+
     def _create_session(
         self,
         client_role: str,
         client_spec: Mapping[str, Any],
         environment: Mapping[str, str],
     ) -> TauriSession:
+        self._verify_source_snapshot()
+        if Path(str(client_spec["worktree"])).resolve() != REPO_ROOT.resolve():
+            raise DriverError("Native clients must use the selected candidate worktree")
         environment = dict(environment)
         actor_identity_root = str(
             client_spec.get("actor_identity_root") or ""
@@ -1549,9 +1622,8 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                     environment=environment,
                 )
             )
-        del client_role
-        if self._binary is None:
-            raise DriverError("Native Acceptance binary is unavailable")
+        if _file_sha256(self._binary) != self._binary_sha256:
+            raise DriverError("Native Acceptance binary changed after preparation")
         return TauriSession(
             LocalTauriLauncher(
                 app_binary=str(self._binary),
@@ -1562,6 +1634,52 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 environment=environment,
             )
         )
+
+    def _consume_prepared_binary(self) -> None:
+        raw_path = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL_MANIFEST", "").strip()
+        if not raw_path:
+            raise DriverError("Native launch requires its prepared Runtime Cell manifest")
+        cell = load_json_artifact(Path(raw_path), "acceptance-runtime-cell-manifest")
+        source = cell.get("source")
+        lease = cell.get("lease")
+        platform = cell.get("platform")
+        adapter = cell.get("nativeAdapter")
+        gate_id = os.environ.get("PT_ACCEPTANCE_GATE_ID", "")
+        if (
+            not gate_id or cell.get("gateId") != gate_id
+            or cell.get("cellId") != self.cell_id or cell.get("state") != "LEASED"
+            or not isinstance(lease, dict) or not cell.get("runId")
+            or lease.get("ownerRunId") != cell["runId"]
+            or not isinstance(platform, dict) or platform.get("os") != "macos"
+            or not isinstance(adapter, dict) or adapter.get("inputMode") != self.input_mode.value
+            or not runtime_source_matches(self._source_snapshot, source)
+            or source.get("mode") != "local-worktree"
+            or source.get("artifactKind") != "acceptance-binary"
+            or source.get("canonicalRoot") != str(REPO_ROOT.resolve())
+        ):
+            raise DriverError("Prepared Native Runtime Cell identity differs from the candidate")
+        raw_binary = source.get("binaryPath")
+        if not isinstance(raw_binary, str) or not raw_binary:
+            raise DriverError("Prepared Native Runtime Cell has no executable")
+        binary = Path(raw_binary)
+        if (
+            not binary.is_absolute() or binary.is_symlink()
+            or not binary.resolve().is_relative_to((REPO_ROOT / ".local").resolve())
+            or not binary.is_file() or not os.access(binary, os.X_OK)
+            or _file_sha256(binary) != source.get("binarySha256")
+        ):
+            raise DriverError("Prepared Native executable identity is invalid")
+        self._verify_source_snapshot()
+        if adapter.get("fileChooser") is not None:
+            try:
+                CellFileChooserIdentity.from_dict(adapter["fileChooser"]).validate(
+                    cell_id=self.cell_id, run_id=cell["runId"], source=source,
+                )
+            except ProvisioningError as error:
+                raise DriverError("Prepared file chooser qualification is invalid") from error
+        self._binary = binary.resolve()
+        self._binary_sha256 = source["binarySha256"]
+        self._prepared_cell = cell
 
     def _expose_transport_endpoint(self, url: str) -> tuple[str, str]:
         return url, f"local-direct-{secrets.token_hex(8)}"
@@ -1694,7 +1812,12 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         target.invoke_app_result("acceptance_request_activation")
         return True
 
+    def _verify_source_snapshot(self) -> None:
+        if source_identity(REPO_ROOT) != self._source_snapshot:
+            raise DriverError("Native candidate source changed after runtime preparation")
+
     def binary_identity(self) -> dict[str, str]:
+        self._verify_source_snapshot()
         if self._use_make:
             binaries: dict[str, str] = {}
             for session in self._sessions_by_client.values():
@@ -1704,7 +1827,12 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                         "development Native session is not owned by make desktop"
                     )
                 binary = launcher.runtime_binary_path()
-                binaries[str(binary)] = _file_sha256(binary)
+                path = str(binary)
+                value = _file_sha256(binary)
+                previous = self._make_binary_hashes.setdefault(path, value)
+                if previous != value:
+                    raise DriverError("Running Make binary changed after attestation")
+                binaries[path] = value
             if not binaries:
                 raise DriverError(
                     "make Desktop runtime binary identity is unavailable"
@@ -1721,35 +1849,28 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 "path": ",".join(sorted(binaries)),
                 "sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
                 "instances": canonical,
-                "sourceCommit": subprocess.run(
-                    ("git", "rev-parse", "HEAD"),
-                    cwd=REPO_ROOT,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                ).stdout.strip(),
+                "sourceCommit": self._source_snapshot["commit"],
+                "workspaceDigest": self._source_snapshot["workspaceDigest"],
             }
         if self._binary is None:
             raise DriverError("Native Acceptance binary is unavailable")
+        if _file_sha256(self._binary) != self._binary_sha256:
+            raise DriverError("Native Acceptance binary changed after preparation")
         return {
             "path": str(self._binary),
-            "sha256": _file_sha256(self._binary),
-            "sourceCommit": subprocess.run(
-                ("git", "rev-parse", "HEAD"),
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout.strip(),
+            "sha256": self._binary_sha256,
+            "sourceCommit": self._source_snapshot["commit"],
+            "workspaceDigest": self._source_snapshot["workspaceDigest"],
         }
 
     def runtime_identity(self) -> dict[str, Any]:
-        from tooling.acceptance.core.evidence_store import (
-            source_identity,
-        )
-
-        source = source_identity(REPO_ROOT)
+        self._verify_source_snapshot()
+        source = self._source_snapshot
         binary = self.binary_identity()
+        if not self._use_make:
+            if self._prepared_cell is None:
+                raise DriverError("Prepared Native Runtime Cell is unavailable")
+            return dict(self._prepared_cell)
         return {
             "artifactKind": "acceptance-runtime-cell-manifest",
             "cellId": self.cell_id,
@@ -1774,6 +1895,8 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         self,
         sessions: Sequence[TauriSession],
         client_specs: Mapping[str, Mapping[str, Any]],
+        *,
+        timeout_seconds: float = 30,
     ) -> dict[str, Any]:
         self._transport_overrides.clear()
         self._sessions_by_client.clear()
@@ -1827,7 +1950,26 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             for session in sessions
             if session.log_path is not None
         )
-        storage_errors = _remove_paths(released_storage_roots)
+        release_state = {
+            "portsReleased": False,
+            "processesReleased": False,
+        }
+
+        def resources_released() -> bool:
+            release_state["portsReleased"] = all(_port_is_free(port) for port in ports)
+            release_state["processesReleased"] = all(
+                _pid_is_stopped(pid) for pid in process_ids
+            )
+            return all(release_state.values())
+
+        if not resources_released():
+            _wait_for(resources_released, timeout=max(0.0, timeout_seconds))
+        processes_stopped = release_state["processesReleased"]
+        storage_errors = (
+            _remove_paths(released_storage_roots)
+            if processes_stopped
+            else [{"resource": "native-processes", "error": "owned processes remain live"}]
+        )
         storage_errors.extend(storage_policy_errors)
         for path in retained_storage_roots:
             if not path.is_dir() or path.is_symlink():
@@ -1846,7 +1988,7 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             else []
         )
         staging_errors: list[dict[str, str]] = []
-        if self._native_file_staging is not None:
+        if self._native_file_staging is not None and processes_stopped:
             try:
                 self._native_file_staging.cleanup()
             except OSError as error:
@@ -1858,7 +2000,7 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 )
             finally:
                 self._native_file_staging = None
-        log_errors = _remove_paths(log_paths)
+        log_errors = _remove_paths(log_paths) if processes_stopped else []
         return {
             "ports": ports,
             "pids": process_ids,
@@ -1879,14 +2021,7 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 *log_errors,
             ],
             "logs": [str(path) for path in log_paths],
-            "portsReleased": _wait_for(
-                lambda: all(_port_is_free(port) for port in ports),
-                timeout=30,
-            ),
-            "processesReleased": _wait_for(
-                lambda: all(_pid_is_stopped(pid) for pid in process_ids),
-                timeout=30,
-            ),
+            **release_state,
             "storageReleased": (
                 not storage_errors
                 and all(not path.exists() for path in released_storage_roots)
@@ -1899,7 +2034,8 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 for path in retained_storage_roots
             ),
             "logsReleased": (
-                not log_errors
+                processes_stopped
+                and not log_errors
                 and all(not path.exists() for path in log_paths)
             ),
         }
@@ -1923,7 +2059,7 @@ def _wait_for(predicate: Any, *, timeout: float) -> bool:
     while time.monotonic() < deadline:
         if predicate():
             return True
-        time.sleep(0.1)
+        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
     return bool(predicate())
 
 

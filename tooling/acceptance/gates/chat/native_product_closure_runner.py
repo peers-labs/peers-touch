@@ -34,6 +34,7 @@ from tooling.acceptance.core import (
     call_async_harness,
 )
 from tooling.acceptance.core.evidence_store import write_current_artifact
+from tooling.acceptance.core.execution_budget import ExecutionDeadline, deadline
 from tooling.acceptance.core.provisioning import load_runtime_manifest
 from tooling.acceptance.drivers.native import (
     MouseAction,
@@ -52,7 +53,7 @@ from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
     active_direct_route_multiaddr,
     cleanup_preserving_primary_failure,
-    commits_match,
+    native_runtime_source_identity,
     read_station_version,
     runtime_station_service,
     verify_runtime_fixture_ready,
@@ -529,6 +530,7 @@ class NativeProductClosureGate(AcceptanceGate):
             NativeLaunchOptions(
                 window_slot=window_actors.index(actor),
                 window_count=len(window_actors),
+                restore_session=restore_session,
             ),
         )
         attempt = {
@@ -2485,7 +2487,7 @@ class NativeProductClosureGate(AcceptanceGate):
             reaction_emoji,
         )
         attachments = {
-            message_id: self.attachment_message(actor, count, message_id)
+            message_id: self.recovered_attachment_message(actor, count, message_id)
             for message_id, count in attachment_messages.items()
         }
         if not reaction_visible:
@@ -2983,9 +2985,6 @@ class NativeProductClosureGate(AcceptanceGate):
         self.reaction_transport_override = self.runtime_binding.create_transport_override(
             "alice", "station", proxy.multiaddr,
         )
-        self.runtime_binding.apply_verified_direct_route_override(
-            "alice", "station", self.reaction_transport_override,
-        )
 
         def command_snapshot(command_id: str = "") -> dict[str, Any]:
             value = call_async_harness(
@@ -3021,6 +3020,11 @@ class NativeProductClosureGate(AcceptanceGate):
                     "messaging_acceptance_pause_lifecycle",
                     {"input": {"expected_actor_ptid": self.ptids["alice"]}},
                 ),
+            )
+            # Route replacement closes the old connection. Join the worker first
+            # so an in-flight inbox claim cannot lose its consumer-epoch response.
+            self.runtime_binding.apply_verified_direct_route_override(
+                "alice", "station", self.reaction_transport_override,
             )
             failure_emoji = self.prove_keyboard_reaction_picker(
                 "alice",
@@ -3379,8 +3383,7 @@ class NativeProductClosureGate(AcceptanceGate):
         snapshots: dict[str, dict[str, Any]] = {}
         for actor in ("alice", "bob"):
             def capture_phase(required_surfaces: set[str]) -> dict[str, Any]:
-                def ready() -> dict[str, Any] | None:
-                    snapshot = self.identity_snapshot(actor)
+                def ready(snapshot: dict[str, Any]) -> bool:
                     identities = snapshot.get("identities", {})
                     for ptid in self.ptids.values():
                         entries = identities.get(ptid, [])
@@ -3393,12 +3396,18 @@ class NativeProductClosureGate(AcceptanceGate):
                             if not surface_entries or not all(
                                 entry.get("loaded") for entry in surface_entries
                             ):
-                                return None
-                    return snapshot
+                                return False
+                    return True
 
-                return wait_until(
-                    ready,
+                return self.wait_step(
+                    lambda: self.identity_snapshot(actor),
                     f"{actor} loaded avatar surfaces {sorted(required_surfaces)}",
+                    expected={
+                        "actorPtids": sorted(set(self.ptids.values())),
+                        "surfaces": sorted(required_surfaces),
+                        "allImagesLoaded": True,
+                    },
+                    ready=ready,
                     timeout=30,
                 )
 
@@ -3753,7 +3762,9 @@ class NativeProductClosureGate(AcceptanceGate):
         self.click(actor, '[data-chat-conversation-action="background"]')
         client.find_element("[data-chat-background-select]", 15)
 
-    def wait_for_dialogs_to_stop_intercepting(self, actor: str) -> None:
+    def wait_for_dialogs_to_stop_intercepting(
+        self, actor: str, next_selector: str,
+    ) -> None:
         client = self.clients[actor]
         WebDriverWait(
             client.driver,
@@ -3763,23 +3774,25 @@ class NativeProductClosureGate(AcceptanceGate):
             lambda driver: bool(
                 driver.execute_script(
                     """
-                    return !Array.from(
-                      document.querySelectorAll('[role="dialog"]')
-                    ).some((dialog) => {
-                      const style = getComputedStyle(dialog);
-                      const rect = dialog.getBoundingClientRect();
-                      return (
-                        style.display !== 'none'
-                        && style.visibility !== 'hidden'
-                        && style.pointerEvents !== 'none'
-                        && rect.width > 0
-                        && rect.height > 0
-                      );
-                    });
-                    """
+                    const target = document.querySelector(arguments[0]);
+                    if (!target || !target.isConnected || target.disabled) return false;
+                    const style = getComputedStyle(target);
+                    const rect = target.getBoundingClientRect();
+                    if (
+                      style.display === 'none'
+                      || style.visibility === 'hidden'
+                      || style.pointerEvents === 'none'
+                      || rect.width <= 0 || rect.height <= 0
+                    ) return false;
+                    const hit = document.elementFromPoint(
+                      rect.left + rect.width / 2, rect.top + rect.height / 2,
+                    );
+                    return hit === target || target.contains(hit);
+                    """,
+                    next_selector,
                 )
             ),
-            "dialog remained hit-testable after dismissal",
+            "next Journey control remained intercepted after dismissal",
         )
 
     def select_second_background(self, actor: str) -> None:
@@ -3993,7 +4006,9 @@ class NativeProductClosureGate(AcceptanceGate):
             json.dumps({"ui": final_state, "station": normalized}),
         )
         self.capture_visible_localization("settings", ("alice",))
-        self.wait_for_dialogs_to_stop_intercepting("alice")
+        self.wait_for_dialogs_to_stop_intercepting(
+            "alice", "[data-chat-detail-toggle]",
+        )
         return {
             "ui": final_state,
             "station": normalized,
@@ -4101,7 +4116,9 @@ class NativeProductClosureGate(AcceptanceGate):
             "failed attachment draft removed before the success journey",
             timeout=30,
         )
-        self.wait_for_dialogs_to_stop_intercepting("alice")
+        self.wait_for_dialogs_to_stop_intercepting(
+            "alice", "[data-chat-attachment-picker]",
+        )
 
     def attachment_message(
         self,
@@ -4145,6 +4162,43 @@ class NativeProductClosureGate(AcceptanceGate):
             message_id,
         )
         return value if isinstance(value, dict) and value.get("id") else None
+
+    def recovered_attachment_message(
+        self,
+        actor: str,
+        expected_count: int,
+        message_id: str,
+    ) -> dict[str, Any]:
+        return self.wait_step(
+            lambda: self.attachment_message(actor, expected_count, message_id),
+            f"{actor}.recovered-attachment-render:{message_id}",
+            expected={
+                "messageId": message_id,
+                "attachmentCount": expected_count,
+                "imagesLoaded": True,
+            },
+            ready=lambda value: (
+                isinstance(value, dict)
+                and value.get("id") == message_id
+                and value.get("count") == expected_count
+                and len(value.get("attachments", [])) == expected_count
+                and len({
+                    item.get("id") for item in value.get("attachments", [])
+                }) == expected_count
+                and all(
+                    item.get("id")
+                    and (
+                        item.get("kind") != "image"
+                        or (
+                            int(item.get("imageCount") or 0) > 0
+                            and item.get("imageLoaded") is True
+                        )
+                    )
+                    for item in value.get("attachments", [])
+                )
+            ),
+            timeout=180,
+        )
 
     def prove_attachments(
         self,
@@ -4594,16 +4648,36 @@ class NativeProductClosureGate(AcceptanceGate):
         }
 
     def open_existing_group(self, actor: str, group_id: str) -> None:
-        self.enter_chat_page(actor)
-        self.clients[actor].find_element(
-            f'[data-chat-group-ulid="{group_id}"]',
-            180,
-        )
+        client = self.clients[actor]
+
+        def wait_for_surface(selector: str, boundary: str) -> None:
+            self.wait_step(
+                lambda: client.execute_script(
+                    """
+                    return {
+                      present: Boolean(document.querySelector(arguments[0])),
+                      chatRoute: location.href.endsWith('#/chat'),
+                      groups: Array.from(
+                        document.querySelectorAll('[data-chat-group-ulid]'),
+                      ).map(item => item.getAttribute('data-chat-group-ulid')),
+                      panes: Array.from(
+                        document.querySelectorAll('[data-chat-conversation-pane]'),
+                      ).map(item => item.getAttribute('data-chat-conversation-pane')),
+                    };
+                    """,
+                    selector,
+                ),
+                f"{actor}.group.{boundary}",
+                expected={"selector": selector, "present": True},
+                ready=lambda value: value["present"],
+                timeout=180,
+                interval=0.5,
+            )
+
+        self.step(f"{actor}.group.enter-chat", lambda: self.enter_chat_page(actor))
+        wait_for_surface(f'[data-chat-group-ulid="{group_id}"]', "item")
         self.click(actor, f'[data-chat-group-ulid="{group_id}"]')
-        self.clients[actor].find_element(
-            f'[data-chat-conversation-pane="{group_id}"]',
-            180,
-        )
+        wait_for_surface(f'[data-chat-conversation-pane="{group_id}"]', "pane")
 
     def prove_offline_recovery(
         self,
@@ -4635,22 +4709,22 @@ class NativeProductClosureGate(AcceptanceGate):
         self.composer_send("alice", offline_text)
         self.wait_message_text("alice", offline_text)
 
-        self.restore_actor_after_restart("bob")
+        self.step("bob.offline.restore", lambda: self.restore_actor_after_restart("bob"))
         self.open_existing_group("bob", group_id)
-        wait_until(
-            lambda: (
-                value
-                if (
-                    (value := self.transcript("bob"))
-                    == self.transcript("alice")
-                    and any(
-                        offline_text in str(item.get("content") or "")
-                        for item in value
-                    )
+        self.wait_step(
+            lambda: {
+                "receiver": self.transcript("bob"),
+                "sender": self.transcript("alice"),
+            },
+            "bob.offline.exact-transcript",
+            expected={"transcriptsEqual": True, "offlineMessage": offline_text},
+            ready=lambda value: (
+                value["receiver"] == value["sender"]
+                and any(
+                    offline_text in str(item.get("content") or "")
+                    for item in value["receiver"]
                 )
-                else None
             ),
-            "Bob offline exact transcript recovery",
             timeout=180,
         )
         after = {
@@ -5157,6 +5231,19 @@ class NativeProductClosureGate(AcceptanceGate):
             self.save_app_log(self.clients[actor], f"{actor}-final")
 
     def cleanup_clients(self) -> dict[str, Any]:
+        prior = self.report.runtime.get("cleanup")
+        if isinstance(prior, dict):
+            failure = getattr(self, "_cleanup_failure", None)
+            if failure is not None:
+                raise failure
+            return prior
+        cleanup_end = time.monotonic() + 30
+        with deadline(
+            30, ExecutionDeadline(self.gate_id, "native-client-cleanup", "cleanup"),
+        ):
+            return self._cleanup_clients(cleanup_end)
+
+    def _cleanup_clients(self, cleanup_end: float) -> dict[str, Any]:
         reaction_proxy_port = (
             self.reaction_proxy.port
             if self.reaction_proxy is not None
@@ -5217,6 +5304,7 @@ class NativeProductClosureGate(AcceptanceGate):
         result = self.runtime_binding.finalize_cleanup(
             self.runtime_instances,
             self.client_specs,
+            timeout_seconds=max(0.0, cleanup_end - time.monotonic()),
         )
         if self.reaction_proxy is not None:
             try:
@@ -5232,7 +5320,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 proxy_released = bool(wait_until(
                     lambda: port_is_free(reaction_proxy_port),
                     "reaction proxy port release",
-                    timeout=30,
+                    timeout=max(0.0, cleanup_end - time.monotonic()),
                 ))
             except GateError:
                 proxy_released = False
@@ -5274,109 +5362,19 @@ class NativeProductClosureGate(AcceptanceGate):
         self.report.runtime["cleanup"] = result
         failed = [name for name, passed in assertions.items() if not passed]
         if failed:
-            raise GateError(f"cleanup assertions failed: {failed}; {detail}")
+            self._cleanup_failure = GateError(f"cleanup assertions failed: {failed}; {detail}")
+            raise self._cleanup_failure
         return result
 
     def source_identity(self) -> dict[str, Any]:
-        source = self.manifest.get("source")
-        station = runtime_station_service(self.manifest, "alice")
-        station_live = read_station_version(self.station_url)
-        runtime_cell = self.runtime_binding.runtime_identity()
-        binary = self.runtime_binding.binary_identity()
-        identity = {
-            "orchestrator": source,
-            "station": station,
-            "stationLive": station_live,
-            "runtimeCell": runtime_cell,
-            "binary": binary,
-        }
-        self.report.runtime["runtimeCellRunId"] = runtime_cell.get("runId")
-
-        source_commit = str(
-            source.get("commit") if isinstance(source, dict) else ""
+        identity = native_runtime_source_identity(
+            gate_id=self.gate_id, manifest=self.manifest,
+            runtime_binding=self.runtime_binding,
+            station_live=read_station_version(self.station_url),
         )
-        station_commit = str(
-            station.get("liveCommit") if isinstance(station, dict) else ""
-        )
-        station_live_commit = str(
-            station_live.get("build_commit")
-            or station_live.get("buildCommit")
-            or ""
-        )
-        cell_source = (
-            runtime_cell.get("source")
-            if isinstance(runtime_cell, dict)
-            else None
-        )
-        platform = (
-            runtime_cell.get("platform")
-            if isinstance(runtime_cell, dict)
-            else None
-        )
-        transport = (
-            runtime_cell.get("transport")
-            if isinstance(runtime_cell, dict)
-            else None
-        )
-        binary_sha256 = str(binary.get("sha256") or "")
-        linux_runtime_valid = (
-            self.runtime_binding.cell_id != "desktop-linux-native"
-            or (
-                isinstance(cell_source, dict)
-                and cell_source.get("remoteCheckoutClean") is True
-                and re.fullmatch(
-                    r"[0-9a-f]{64}",
-                    str(cell_source.get("remoteSourceDigest") or ""),
-                )
-                is not None
-                and isinstance(platform, dict)
-                and re.fullmatch(
-                    r"[0-9a-f]{64}",
-                    str(platform.get("imageDigest") or ""),
-                )
-                is not None
-                and isinstance(transport, dict)
-                and re.fullmatch(
-                    r"[0-9a-f]{64}",
-                    str(transport.get("hostIdentitySha256") or ""),
-                )
-                is not None
-                and re.fullmatch(
-                    r"[0-9a-f]{64}",
-                    str(transport.get("hostKeySha256") or ""),
-                )
-                is not None
-            )
-        )
+        self.report.runtime["runtimeCellRunId"] = identity["runtimeCell"].get("runId")
         self.assert_condition(
-            "source_build_runtime_identity",
-            isinstance(source, dict)
-            and bool(source_commit)
-            and source.get("workspaceDigest") == "clean"
-            and isinstance(station, dict)
-            and bool(station_commit)
-            and commits_match(source_commit, station_commit)
-            and commits_match(source_commit, station_live_commit)
-            and re.fullmatch(
-                r"[0-9a-f]{64}",
-                str(station.get("protocolDigest") or ""),
-            )
-            is not None
-            and isinstance(runtime_cell, dict)
-            and runtime_cell.get("artifactKind")
-            == "acceptance-runtime-cell-manifest"
-            and runtime_cell.get("cellId")
-            == self.runtime_binding.cell_id
-            and runtime_cell.get("gateId") == self.gate_id
-            and bool(runtime_cell.get("runId"))
-            and runtime_cell.get("state") == "LEASED"
-            and isinstance(cell_source, dict)
-            and cell_source.get("commit") == source_commit
-            and cell_source.get("workspaceDigest") == "clean"
-            and linux_runtime_valid
-            and binary.get("sourceCommit") == source_commit
-            and re.fullmatch(r"[0-9a-f]{64}", binary_sha256) is not None
-            and cell_source.get("binarySha256") == binary_sha256,
+            "source_build_runtime_identity", True,
             json.dumps(identity, sort_keys=True),
         )
         return identity

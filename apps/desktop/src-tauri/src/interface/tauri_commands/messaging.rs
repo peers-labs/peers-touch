@@ -15,6 +15,8 @@ use std::path::Path;
 use std::sync::Arc;
 use tauri::{Manager, State, Window};
 
+use super::allow_file_preview;
+
 #[derive(Debug, Deserialize)]
 pub struct MessagingLocalAttachmentInput {
     pub file_path: String,
@@ -1073,14 +1075,6 @@ fn attachment_projection_json(
     })
 }
 
-fn allow_attachment_preview(window: &Window, path: &Path) -> Result<(), String> {
-    let scope = window.app_handle().asset_protocol_scope();
-    scope
-        .allow_file(path)
-        .map_err(|error| format!("allow messaging attachment preview: {error}"))?;
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn messaging_pick_attachment_source(
     state: State<'_, Arc<AppState>>,
@@ -1148,7 +1142,7 @@ pub async fn messaging_pick_attachment_source(
         };
         (std::path::PathBuf::from(local_path), true)
     };
-    if let Err(error) = allow_attachment_preview(&window, &preview_path) {
+    if let Err(error) = allow_file_preview(&window, &preview_path) {
         let cleanup = if managed_source {
             engine
                 .discard_staged_attachment_source(&preview_path.to_string_lossy())
@@ -1382,10 +1376,8 @@ pub async fn messaging_acceptance_create_restorable_command(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> Result<AppResult<Value>, String> {
-    let recovery_fixture = std::env::var("PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND")
-        .ok()
-        .as_deref()
-        == Some("1");
+    let recovery_fixture = std::env::var("PT_ACCEPTANCE_GATE_ID").ok().as_deref()
+        == Some("chat-native-submitted-command-recovery-e2e");
     let direct_retry_fixture =
         std::env::var("PT_ACCEPTANCE_GATE_ID").ok().as_deref() == Some("chat-lifecycle-direct-e2e");
     if !recovery_fixture && !direct_retry_fixture {
@@ -1494,10 +1486,8 @@ pub fn messaging_acceptance_prepare_submitted_command(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    if std::env::var("PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND")
-        .ok()
-        .as_deref()
-        != Some("1")
+    if std::env::var("PT_ACCEPTANCE_GATE_ID").ok().as_deref()
+        != Some("chat-native-submitted-command-recovery-e2e")
     {
         return AppResult::fail(
             ErrorCode::Forbidden,
@@ -2419,7 +2409,7 @@ pub async fn messaging_stage_attachment_source(
             ))
         }
     };
-    if let Err(error) = allow_attachment_preview(&window, Path::new(&local_path)) {
+    if let Err(error) = allow_file_preview(&window, Path::new(&local_path)) {
         let cleanup = engine
             .discard_staged_attachment_source(&local_path)
             .err()
@@ -2504,7 +2494,7 @@ pub fn messaging_capture_attachment_source(
             None,
         );
     }
-    if let Err(error) = allow_attachment_preview(&window, Path::new(&local_path)) {
+    if let Err(error) = allow_file_preview(&window, Path::new(&local_path)) {
         let cleanup = engine
             .discard_staged_attachment_source(&local_path)
             .err()
@@ -2812,7 +2802,7 @@ pub async fn messaging_open_attachment(
             ))
         }
     };
-    if let Err(error) = allow_attachment_preview(&window, Path::new(&local_path)) {
+    if let Err(error) = allow_file_preview(&window, Path::new(&local_path)) {
         return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
     }
     Ok(AppResult::success(json!({

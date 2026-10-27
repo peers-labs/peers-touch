@@ -28,10 +28,14 @@ tooling/scripts/plan/
 ## Responsibilities
 
 - `machine-dev-registry.mjs`: authoritative workspace binding, Profile,
-  capability, current-source, target, and lease admission.
+  capability, current-source, operation target Profile, and lease admission.
 - `machine-dev-lease.py`: OS-held resource exclusivity and bounded child
   lifetime.
 - `machine-dev.mjs`: runtime command composition.
+- `tooling/devctl/profile.mjs`: target/binding projection without registry mutation.
+- `tooling/devctl/station.mjs`: Station reuse, exact-source deployment and readback.
+- `tooling/acceptance/provisioners/station_equipment.py`: shared Acceptance caller
+  of canonical Local Dev readiness; no separate deploy or source-sync implementation.
 - `workflow-snapshot.mjs`: one-shot read-only projection of current source,
   optional task records, and supplied runtime status.
 - `workflow-doctor.mjs`: independent source and optional integration

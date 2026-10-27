@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from tooling.acceptance.core import EvidenceManifestInvalid
 from tooling.acceptance.gates.station_access import relay_aggregate
+from tooling.acceptance.tests.aggregate_fixtures import ManifestFixtureStore
 
 
 EXPECTED_SOURCE = {
@@ -17,6 +17,7 @@ def passing_manifest(
     gate_id: str,
     *,
     source: dict[str, str] | None = None,
+    runtime_cell: str | None = None,
 ) -> dict[str, object]:
     return {
         "artifactKind": "acceptance-run-manifest",
@@ -30,30 +31,11 @@ def passing_manifest(
             "status": "passed",
             "completionStatus": "DONE",
             "proofStatus": "PROVEN",
+            "cleanupStatus": "passed",
+            "runtimeCell": runtime_cell,
             "secretScan": {"status": "passed"},
         },
     }
-
-
-class FakeStore:
-    workspace_id = "0123456789abcdef"
-
-    def __init__(self, manifests: dict[str, dict[str, object]]) -> None:
-        self.manifests = manifests
-        self.calls: list[tuple[str, str | None]] = []
-
-    def latest(
-        self,
-        gate_id: str,
-        *,
-        runtime_cell: str | None = None,
-    ) -> dict[str, object]:
-        self.calls.append((gate_id, runtime_cell))
-        if gate_id not in self.manifests:
-            raise EvidenceManifestInvalid(
-                f"latest pointer is unavailable for {gate_id}"
-            )
-        return self.manifests[gate_id]
 
 
 class RelayAggregateTest(unittest.TestCase):
@@ -71,10 +53,11 @@ class RelayAggregateTest(unittest.TestCase):
 
     def test_unified_aggregate_uses_runtime_cell_pointers(self) -> None:
         manifests = {
-            spec.gate_id: passing_manifest(spec.gate_id)
+            spec.gate_id: passing_manifest(spec.gate_id, runtime_cell=spec.runtime_cell)
             for spec in relay_aggregate.UNIFIED_GATES
         }
-        store = FakeStore(manifests)
+        store = ManifestFixtureStore(manifests)
+        ManifestFixtureStore.bind(self, EXPECTED_SOURCE, lambda: store)
         gate = relay_aggregate.UnifiedRelayAggregateGate(
             store=store,
             expected_source=EXPECTED_SOURCE,
@@ -108,7 +91,7 @@ class RelayAggregateTest(unittest.TestCase):
     def test_stale_or_missing_evidence_fails_closed(self) -> None:
         specs = relay_aggregate.SECURITY_GATES
         manifests = {
-            spec.gate_id: passing_manifest(spec.gate_id)
+            spec.gate_id: passing_manifest(spec.gate_id, runtime_cell=spec.runtime_cell)
             for spec in specs
         }
         manifests[specs[0].gate_id] = passing_manifest(
@@ -116,7 +99,8 @@ class RelayAggregateTest(unittest.TestCase):
             source={**EXPECTED_SOURCE, "commit": "c" * 40},
         )
         del manifests[specs[1].gate_id]
-        store = FakeStore(manifests)
+        store = ManifestFixtureStore(manifests)
+        ManifestFixtureStore.bind(self, EXPECTED_SOURCE, lambda: store)
         results = [
             relay_aggregate.check_gate(
                 store,

@@ -1,6 +1,7 @@
 # 执行身份与证据关系
 
 > **Status**: draft
+> **Authority**: non-normative
 > **Created**: 2026-10-22 | **Updated**: 2026-10-22
 > **Owner**: Acceptance
 

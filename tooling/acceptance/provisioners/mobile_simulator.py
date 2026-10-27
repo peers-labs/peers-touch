@@ -61,6 +61,7 @@ from tooling.acceptance.core.provisioner import (
     resolve_machine_profile_environment,
     resolve_reviewed_profile_environment,
 )
+from tooling.acceptance.core.profile_bindings import resolve_service_profiles
 from tooling.acceptance.core.redaction import (
     is_sensitive_key,
     redact_text,
@@ -7157,7 +7158,10 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         return _validated_station_profiles(
             environment_id=self.environment_id,
             profile_keys=self.station_profile_keys,
-            station_profiles=self._station_profiles,
+            station_profiles=resolve_service_profiles(
+                self.contract, self._station_profiles,
+                kinds=frozenset({"station"}), repo_root=REPO_ROOT,
+            ),
             require_distinct=self.require_distinct_station_profiles,
         )
 
@@ -7168,7 +7172,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         return _inject_reviewed_station_profiles(
             environment_id=self.environment_id,
             profile_keys=self.station_profile_keys,
-            station_profiles=self._station_profiles,
+            station_profiles=self._required_station_profiles(),
             require_distinct=self.require_distinct_station_profiles,
             profile_env=profile_env,
         )
@@ -7196,6 +7200,12 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             )
 
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
+            from .station_equipment import equip_station_profiles
+
+            equip_station_profiles(
+                self._required_station_profiles(), manifest.source_commit,
+                repo_root=REPO_ROOT,
+            )
             for deployment_environment in sorted(
                 {
                     binding.deployment_environment
@@ -8011,6 +8021,12 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 service_bindings,
             )
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
+            from .station_equipment import equip_station_profiles
+
+            equip_station_profiles(
+                self._required_station_profiles(), manifest.source_commit,
+                repo_root=REPO_ROOT,
+            )
             for deployment_environment in sorted(
                 {
                     binding.deployment_environment
@@ -8462,13 +8478,22 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         return _validated_station_profiles(
             environment_id=self.environment_id,
             profile_keys=self.station_profile_keys,
-            station_profiles=self._station_profiles,
+            station_profiles=resolve_service_profiles(
+                self.contract, self._station_profiles,
+                kinds=frozenset({"station"}), repo_root=REPO_ROOT,
+            ),
             require_distinct=self.require_distinct_station_profiles,
         )
 
     def _required_service_profiles(self) -> dict[str, str]:
-        if not self._service_profiles:
-            return {}
+        self._service_profiles = resolve_service_profiles(
+            self.contract, self._service_profiles,
+            kinds=frozenset(
+                service.kind for service in self.contract.services.values()
+                if service.kind != "station"
+            ),
+            repo_root=REPO_ROOT,
+        )
         expected = set(self.service_profile_keys)
         provided = set(self._service_profiles)
         missing = sorted(expected - provided)
@@ -8502,7 +8527,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         return _inject_reviewed_station_profiles(
             environment_id=self.environment_id,
             profile_keys=self.station_profile_keys,
-            station_profiles=self._station_profiles,
+            station_profiles=self._required_station_profiles(),
             require_distinct=self.require_distinct_station_profiles,
             profile_env=profile_env,
         )

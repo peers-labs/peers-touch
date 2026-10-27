@@ -31,7 +31,6 @@ from tooling.acceptance.drivers.native.base import (
 )
 from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 from tooling.acceptance.provisioners.home_station import HomeStationProvisioner
-from tooling.acceptance.provisioners.native_desktop_macos import NativeDesktopMacOSProvisioner
 from tooling.acceptance.provisioners.native_tauri_embedded_webdriver import (
     NativeTauriEmbeddedWebDriverProvisioner,
 )
@@ -148,12 +147,22 @@ class ResourceDiagnosticTests(unittest.TestCase):
         )
         for index, control in enumerate(controls):
             with self.subTest(control=control.actual_frontmost_pid):
-                adapter = Mock(spec=MacOSNativeDesktopAdapter)
-                adapter.focused_control.return_value = control
-                with self.assertRaises(BlockedError) as caught:
-                    NativeDesktopMacOSProvisioner._stable_operator_focus_identity(
-                        adapter, 41, timeout_seconds=0, interval_seconds=0,
-                    )
+                adapter = MacOSNativeDesktopAdapter()
+                response = {"error": {
+                    "reason": "macOS operator focus observation failed",
+                    "expected": {"frontmostPid": 41, "consecutiveStableSamples": 2},
+                    "observed": {
+                        "frontmostPid": control.actual_frontmost_pid,
+                        "probeError": control.error,
+                    },
+                }}
+                with patch(
+                    "tooling.acceptance.drivers.native.macos.subprocess.run",
+                    return_value=subprocess.CompletedProcess(
+                        (), 0, stdout=json.dumps(response), stderr="",
+                    ),
+                ), self.assertRaises(BlockedError) as caught:
+                    adapter.snapshot_operator_state()
                 error = caught.exception
                 details = error.diagnostic.to_dict()
                 check = details["resourceChecks"][0]
@@ -252,7 +261,9 @@ class ResourceDiagnosticTests(unittest.TestCase):
                 module + "load_env_file", return_value={},
             ), patch(module + "source_proto_digest", return_value="probe-protocol"), patch.object(
                 owner, "acquire_profile_lease",
-            ), patch.object(owner, "acquire_remote_git_source_lease"), patch(
+            ), patch(module + "equip_station_profile"), patch.object(
+                owner, "acquire_remote_git_source_lease",
+            ), patch(
                 module + "produce_station_attestation",
             ) as source_attestation:
                 try:

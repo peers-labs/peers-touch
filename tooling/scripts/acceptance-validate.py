@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import importlib.util
 import json
@@ -2204,6 +2205,13 @@ def validate_gate_catalog(
 
 
 def validate_gate_launch(gate_id: str, gate: dict[str, Any]) -> None:
+    from tooling.acceptance.core.execution_identity import validate_execution_inputs
+    from tooling.acceptance.core.execution_budget import ExecutionBudgetError
+
+    try:
+        validate_execution_inputs(gate_id, gate)
+    except ExecutionBudgetError as error:
+        raise RuntimeError(f"STRUCTURAL_GAP: {error}") from error
     if "judgment" in gate:
         require(
             gate["judgment"] == "all-prerequisites"
@@ -2288,7 +2296,134 @@ def validate_gate_inheritance(
     gate_defs: dict[str, Any],
     required_gate_ids: set[str],
 ) -> None:
-    """I1: Gates using python3 -m must contain an AcceptanceGate subclass."""
+    """I1: Python Gate entries use a resolved Core evidence lifecycle."""
+    trees: dict[str, ast.Module | None] = {}
+
+    def tree_for(module: str) -> ast.Module | None:
+        if module not in trees:
+            relative = module.replace(".", "/")
+            source = next(
+                (path for path in (
+                    repo_root / f"{relative}.py",
+                    repo_root / relative / "__init__.py",
+                    repo_root / relative / "__main__.py",
+                ) if path.is_file()),
+                None,
+            )
+            trees[module] = (
+                ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+                if source is not None else None
+            )
+        return trees[module]
+
+    def imported_symbol(module: str, name: str) -> tuple[str, str] | None:
+        tree = tree_for(module)
+        if tree is None:
+            return None
+        for node in tree.body:
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            parent = node.module or ""
+            if node.level:
+                package = module.split(".")[:-node.level]
+                parent = ".".join([*package, parent] if parent else package)
+            for alias in node.names:
+                if (alias.asname or alias.name) == name:
+                    return parent, alias.name
+        return None
+
+    def is_core_symbol(module: str, name: str, symbol: str) -> bool:
+        return imported_symbol(module, name) in {
+            ("tooling.acceptance.core", symbol),
+            ("tooling.acceptance.core.gate", symbol)
+            if symbol == "AcceptanceGate" else
+            ("tooling.acceptance.core.evidence_store", symbol),
+        }
+
+    def is_gate_class(module: str, name: str, visited: set[tuple[str, str]]) -> bool:
+        identity = module, name
+        if identity in visited:
+            return False
+        visited = visited | {identity}
+        if is_core_symbol(module, name, "AcceptanceGate"):
+            return True
+        tree = tree_for(module)
+        if tree is None:
+            return False
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name == name:
+                return any(
+                    isinstance(base, ast.Name)
+                    and is_gate_class(module, base.id, visited)
+                    for base in node.bases
+                )
+        imported = imported_symbol(module, name)
+        return bool(imported and is_gate_class(*imported, visited))
+
+    def uses_lifecycle(module: str) -> bool:
+        tree = tree_for(module)
+        if tree is None:
+            return False
+        if any(
+            isinstance(node, ast.ClassDef)
+            and is_gate_class(module, node.name, set())
+            for node in tree.body
+        ):
+            return True
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "execute"
+                and isinstance(node.func.value, ast.Call)
+                and isinstance(node.func.value.func, ast.Name)
+                and is_gate_class(module, node.func.value.func.id, set())
+            ):
+                return True
+        # Aggregate producers may own ArtifactSession directly. An unused import
+        # or text marker cannot satisfy this alternate lifecycle contract.
+        for function in ast.walk(tree):
+            if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            source_names = {
+                target.id
+                for assignment in ast.walk(function)
+                if isinstance(assignment, ast.Assign)
+                and isinstance(assignment.value, ast.Call)
+                and isinstance(assignment.value.func, ast.Name)
+                and is_core_symbol(module, assignment.value.func.id, "source_identity")
+                for target in assignment.targets if isinstance(target, ast.Name)
+            }
+            for block in ast.walk(function):
+                if not isinstance(block, ast.With):
+                    continue
+                for item in block.items:
+                    call = item.context_expr
+                    if not (
+                        isinstance(call, ast.Call)
+                        and isinstance(call.func, ast.Name)
+                        and is_core_symbol(module, call.func.id, "ArtifactSession")
+                        and isinstance(item.optional_vars, ast.Name)
+                        and any(
+                            keyword.arg == "source"
+                            and isinstance(keyword.value, ast.Name)
+                            and keyword.value.id in source_names
+                            for keyword in call.keywords
+                        )
+                    ):
+                        continue
+                    methods = {
+                        child.func.attr for child in ast.walk(block)
+                        if isinstance(child, ast.Call)
+                        and isinstance(child.func, ast.Attribute)
+                        and isinstance(child.func.value, ast.Name)
+                        and child.func.value.id == item.optional_vars.id
+                    }
+                    if {"write_json", "complete"} <= methods:
+                        return True
+        return False
+
     violations: list[str] = []
     for gate_id in sorted(required_gate_ids & gate_defs.keys()):
         parts = gate_launch_arguments(gate_defs[gate_id])
@@ -2308,13 +2443,13 @@ def validate_gate_inheritance(
         source = next((c for c in candidates if c.is_file()), None)
         if source is None:
             continue
-        content = source.read_text(encoding="utf-8", errors="replace")
-        if "AcceptanceGate" not in content:
+        if not uses_lifecycle(parts[module_index]):
             violations.append(gate_id)
     if violations:
         raise RuntimeError(
             "ACCEPTANCE_GATE_CONTRACT_VIOLATION: gates using python3 -m must "
-            f"contain AcceptanceGate subclass: {violations}"
+            "use an AcceptanceGate subclass or a source-bound ArtifactSession "
+            f"with artifact write and completion: {violations}"
         )
 
 
@@ -2580,6 +2715,10 @@ def latest_passed_gates(
     current_gate_id: str,
     require_run: bool,
 ) -> set[str]:
+    from tooling.acceptance.core.errors import EvidenceError
+    from tooling.acceptance.core.proof import read_gate_proof
+
+    current_source = source_identity(REPO_ROOT)
     def proven_gate_ids(
         results: object,
         *,
@@ -2608,6 +2747,10 @@ def latest_passed_gates(
                 and result.get("completionStatus") == "DONE"
                 and result.get("proofStatus") == "PROVEN"
             ):
+                try:
+                    read_gate_proof(store, gate_id, current_source, result=result)
+                except (EvidenceError, KeyError, OSError, TypeError, ValueError):
+                    continue
                 proven.add(gate_id)
         return proven
 
@@ -2627,7 +2770,7 @@ def latest_passed_gates(
         raise RuntimeError("invalid latest Acceptance run") from error
     current_results = os.environ.get("PT_ACCEPTANCE_CURRENT_RESULTS", "")
     latest_source_matches = (
-        not run or run.get("source") == source_identity(REPO_ROOT)
+        not run or run.get("source") == current_source
     )
     if require_run and not latest_source_matches and not current_results:
         raise RuntimeError(
@@ -2652,7 +2795,7 @@ def latest_passed_gates(
         if (
             not isinstance(current_envelope, dict)
             or set(current_envelope) != {"source", "results"}
-            or current_envelope.get("source") != source_identity(REPO_ROOT)
+            or current_envelope.get("source") != current_source
         ):
             raise RuntimeError(
                 "current Acceptance results source does not match current source"
@@ -2673,10 +2816,6 @@ def latest_passed_gates(
         passed.update(current_proven)
     if require_run and latest_missing and not current_results:
         raise EvidenceManifestInvalid("Acceptance run evidence is required")
-    if current_gate_id:
-        # The current process produces this gate's evidence and can only appear
-        # in latest-run.json after the process exits.
-        passed.add(current_gate_id)
     return passed
 
 
@@ -2686,9 +2825,13 @@ def validate_capability(
     capability: dict[str, Any],
     features: list[dict[str, Any]],
     gate_defs: dict[str, Any],
-    passed_gates: set[str],
+    passed_gates: set[str] | None,
     require_proven: bool,
 ) -> dict[str, Any]:
+    require(
+        (passed_gates is not None) == require_proven,
+        "structural validation and proof assessment must have separate inputs",
+    )
     capability_id = capability.get("id")
     require(bool(capability_id), "capability is missing id")
     require(
@@ -2730,9 +2873,12 @@ def validate_capability(
         isinstance(domain_proof_required, bool),
         f"{capability_id}: domain_proof_required must be boolean",
     )
-    dedicated_missing_gates = proven_by - passed_gates
+    dedicated_missing_gates = (
+        proven_by - passed_gates if passed_gates is not None else None
+    )
     missing_run_gates = (
-        dedicated_missing_gates if domain_proof_required else set()
+        dedicated_missing_gates
+        if domain_proof_required or passed_gates is None else set()
     )
     if require_proven and not domain_proof_required:
         status = "dedicated_proof_required"
@@ -2748,8 +2894,13 @@ def validate_capability(
         "features": feature_ids,
         "required_gates": sorted(required_gates),
         "planned_gates": sorted(planned_gates),
-        "missing_run_gates": sorted(missing_run_gates),
-        "dedicated_missing_gates": sorted(dedicated_missing_gates),
+        "proof_assessment": "evaluated" if require_proven else "not-evaluated",
+        "missing_run_gates": (
+            sorted(missing_run_gates) if missing_run_gates is not None else None
+        ),
+        "dedicated_missing_gates": (
+            sorted(dedicated_missing_gates) if dedicated_missing_gates is not None else None
+        ),
         "domain_proof_required": domain_proof_required,
         "proven_scope": evidence.get("proven_scope", []),
         "unproven_scope": evidence.get("unproven_scope", []),
@@ -2805,10 +2956,9 @@ def validate_domain(
         repo_root, selected,
         [feature for feature in features if feature.get("id") in selected_features],
     )
-    passed_gates = latest_passed_gates(
-        store,
-        validation_gate_id,
-        require_proven,
+    passed_gates = (
+        latest_passed_gates(store, validation_gate_id, True)
+        if require_proven else None
     )
 
     results = [
@@ -2875,10 +3025,9 @@ def validate_infra(
         repo_root, selected,
         [feature for feature in features if feature.get("id") in selected_features],
     )
-    passed_gates = latest_passed_gates(
-        store,
-        current_gate_id,
-        require_proven,
+    passed_gates = (
+        latest_passed_gates(store, current_gate_id, True)
+        if require_proven else None
     )
     results = [
         validate_capability(

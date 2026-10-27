@@ -27,6 +27,14 @@
 
 ACCEPTANCE_RANGE ?= HEAD
 ACCEPTANCE_PLAN ?=
+PT_ACCEPTANCE_PYTHON ?= $(if $(wildcard $(CURDIR)/.local/acceptance/python-venv/bin/python3),$(CURDIR)/.local/acceptance/python-venv/bin/python3,python3)
+export PT_ACCEPTANCE_PYTHON
+ifneq ($(dir $(PT_ACCEPTANCE_PYTHON)),./)
+export PATH := $(dir $(PT_ACCEPTANCE_PYTHON)):$(PATH)
+endif
+ifneq ($(PROFILE),)
+export PT_ACCEPTANCE_PROFILE := $(PROFILE)
+endif
 ACCEPTANCE_PLAN_OUTPUT_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)
 ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan "$(PLAN)",$(if $(ACCEPTANCE_PLAN),--plan "$(ACCEPTANCE_PLAN)",))
 ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
@@ -61,7 +69,7 @@ acceptance-cell-stop:
 	python3 tooling/scripts/acceptance-cell.py stop --cell "$(CELL)"
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --active-plan $(ACCEPTANCE_PLAN_OUTPUT_ARG)
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" $(ACCEPTANCE_PLAN_OUTPUT_ARG)
 
 acceptance-plan-self:
 	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check $(ACCEPTANCE_PLAN_OUTPUT_ARG)

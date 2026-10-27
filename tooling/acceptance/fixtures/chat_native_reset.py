@@ -17,7 +17,7 @@ import sqlite3
 import subprocess
 import threading
 import time
-from typing import Iterable
+from typing import Iterable, Mapping
 import urllib.parse
 import urllib.request
 
@@ -221,6 +221,14 @@ def _local_source_environment(
     station_url: str,
     environment_name: str | None,
 ) -> dict[str, str] | None:
+    parsed_url = urllib.parse.urlparse(station_url)
+    # Non-local targets belong to their reviewed deployment, not the active
+    # local Profile. Explicit local requests retain the full mismatch check.
+    if (
+        environment_name != "local"
+        and parsed_url.hostname not in {"127.0.0.1", "localhost"}
+    ):
+        return None
     try:
         profile = active_profile_environment()
     except (BlockedError, RuntimeError):
@@ -231,7 +239,6 @@ def _local_source_environment(
     expected_url = profile.get("PT_STATION_URL", "").rstrip("/")
     if environment_name not in {None, "", "local", profile_name}:
         return None
-    parsed_url = urllib.parse.urlparse(station_url)
     expected = urllib.parse.urlparse(expected_url)
     if (
         not profile_name
@@ -1598,6 +1605,48 @@ def _fixture_actor_record(
             f"Chat fixture actor identity is incomplete for account={account_email}"
         )
     return record
+
+
+def seed_run_actor_avatars(
+    station_url: str,
+    environment_name: str,
+    avatars: Mapping[str, tuple[str, str]],
+) -> None:
+    """Initialize only unconfigured profiles of accounts created by a Suite."""
+    if not avatars or any(
+        re.fullmatch(r"sc-[a-z-]+-[0-9a-f]{10}@testnet\.local", account) is None
+        or not ptid.startswith("ptid:")
+        or not avatar.startswith("data:image/svg+xml;base64,")
+        for account, (ptid, avatar) in avatars.items()
+    ):
+        raise RuntimeError("Run avatar fixture scope is invalid")
+    environment = acceptance_station_environment(station_url, environment_name)
+    verify_disposable_station_runtime(environment)
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
+        raise RuntimeError("Run avatar fixture requires the reviewed remote Station")
+    statements = []
+    for account, (ptid, avatar) in avatars.items():
+        statements.append(f"""
+DO $fixture$
+DECLARE
+  fixture_actor_id bigint;
+BEGIN
+  UPDATE touch_actor SET icon = {_sql_literal(avatar)}, updated_at = now()
+  WHERE email = {_sql_literal(account)} AND ptid = {_sql_literal(ptid)}
+    AND origin = 'local' AND COALESCE(icon, '') = ''
+  RETURNING id INTO fixture_actor_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Run avatar target is absent or already configured';
+  END IF;
+  INSERT INTO touch_actor_meta
+    (actor_id, profile_revision, created_at, updated_at)
+  VALUES (fixture_actor_id, 2, now(), now())
+  ON CONFLICT (actor_id) DO UPDATE SET
+    profile_revision = GREATEST(touch_actor_meta.profile_revision, 1) + 1,
+    updated_at = now();
+END $fixture$;
+""")
+    _remote_psql(environment, "BEGIN;\n" + "\n".join(statements) + "\nCOMMIT;")
 
 
 def seed_bound_contacts(

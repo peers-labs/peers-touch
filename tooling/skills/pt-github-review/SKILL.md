@@ -337,7 +337,7 @@ Treat these as blocking unless the user explicitly asks for exploratory review:
 | `user-home-absolute-path` | committed documentation-like text contains a developer or CI user-home absolute path instead of a repo-relative path or portable placeholder |
 | `retired-product-reference` | tracked content or a tracked path reintroduces a retired external product identifier |
 | `repository-debug-artifact` | repository-root `debug-*`, `.dbg/`, ad-hoc prompt, runtime log, trace, screenshot, DOM dump, or temporary report |
-| `station-profile-bypass` | Station start, deployment, restart, or direct execution bypasses `make station` and the active profile pipeline |
+| `station-profile-bypass` | Station start, deployment, restart, or direct execution bypasses canonical Machine Dev Profile resolution, capability admission, source synchronization, lease ownership, or deployment readback |
 | `unreviewed-environment-topology` | runtime code invents a remote host, credential, dirty/untracked deploy definition, or bypasses canonical Profile creation and binding |
 
 Keywords intentionally present for freshness checks: hardcoded secrets, No mock,
@@ -589,8 +589,54 @@ Gate scripts must prove real product behavior or honestly report unproven scope.
 Durable evidence must come from the current workspace's canonical latest
 manifest, carry `DONE` / `PROVEN` result semantics, and pass artifact identity
 and digest verification. Native Desktop claims must bind the requested runtime
-cell, clean source commit, Station commit, binary digest, platform probes, and
-reverse-order cleanup; evidence from one platform cannot prove another.
+cell, candidate commit, actual workspace digest, canonical worktree identity,
+Station commit, binary digest, platform probes, and reverse-order cleanup.
+Local builds may use a fenced `sha256:<digest>` snapshot; remote
+`git-object-sync` still requires a clean checkout and independent deployment
+attestation. Reject relabelling a local snapshot as clean or using it to prove
+undeployed service changes. Evidence from one platform cannot prove another.
+Local Native binding construction must validate and retain the parent Cell's
+executable credentials before identity readback or client launch. Both paths
+must revalidate that frozen identity; neither may build or infer a replacement
+executable. Reject launch-time credential consumption that makes prelaunch
+identity unavailable despite a successfully equipped parent Cell.
+
+Semantic Native Cell qualification must freeze the operator before launch and
+compare that same baseline across launch, actions, and owned stop. Reject the
+target client as operator, launch-time focus stealing, repeated show calls that
+activate semantic windows, and resampling that hides an earlier mismatch.
+Desktop build stage reuse requires the same complete candidate identity, a
+nonempty closed output inventory with verified hashes, and the original
+successful producer's cost and logs. A failed later stage may retain that
+checkpoint; it may not publish a binary or proof. Reject unverified stage skips,
+output drift, symlink outputs, or budget increases disguised as stage recovery.
+
+Profile Station equipment must use the canonical target operation without
+rewriting the active binding or slot. Equip before retaining the remote source
+lease, then re-attest health, source, and protocol under that lease.
+Negative port fixtures must claim and retain the actual listening socket
+through the product assertion and owned cleanup. Reject fixed replacement
+ports, probe-and-release allocation, skipped assertions, or stopping unrelated
+listeners as ownership evidence.
+
+Bounded requests retain the complete authorized Gate set. Reused proof must
+reference the original DURABLE producer, complete inventory, current authority,
+matching source and closed inputs, exact prerequisite references, and successful
+cleanup. Sealed request history supplies ordering and candidate references;
+unvisited or unvalidated results remain UNPROVEN.
+
+Input owners must bind the actual executable delegates, installed dependency
+bytes, effective configuration, and material runtime/provider/oracle/fixture
+inputs consumed by their reviewed command. Reject wrapper hashes, version-only
+checks, empty declarations hiding external state, or source owners applied to
+live or ephemeral resources. Equipment observations retain the same original
+run references before command, after cleanup, and on resume; an old READY
+record cannot establish current runtime identity.
+The architecture pnpm/Cargo metadata closure covers only its registry command
+and temporary fixture configuration. It does not qualify compilation, other
+package-manager commands, Profiles, or product state. Probe diagnostics remain
+supporting-only; a successful replay cannot supply an unobserved failure cause,
+renew a deadline, or erase failed process cleanup.
 
 ## Severity Levels
 

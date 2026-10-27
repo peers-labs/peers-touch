@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from tooling.acceptance.core import EvidenceManifestInvalid
 from tooling.acceptance.gates.chat_storage import batch_clear_aggregate
+from tooling.acceptance.tests.aggregate_fixtures import ManifestFixtureStore
 
 
 EXPECTED_SOURCE = {
@@ -26,23 +26,10 @@ def passing_manifest(gate_id: str) -> dict[str, object]:
             "status": "passed",
             "completionStatus": "DONE",
             "proofStatus": "PROVEN",
+            "cleanupStatus": "passed",
             "secretScan": {"status": "passed"},
         },
     }
-
-
-class FakeStore:
-    workspace_id = "0123456789abcdef"
-
-    def __init__(self, manifests: dict[str, dict[str, object]]) -> None:
-        self.manifests = manifests
-
-    def latest(self, gate_id: str) -> dict[str, object]:
-        if gate_id not in self.manifests:
-            raise EvidenceManifestInvalid(
-                f"latest pointer is unavailable for {gate_id}"
-            )
-        return self.manifests[gate_id]
 
 
 class ChatStorageBatchClearAggregateTest(unittest.TestCase):
@@ -51,6 +38,8 @@ class ChatStorageBatchClearAggregateTest(unittest.TestCase):
             spec.gate_id: passing_manifest(spec.gate_id)
             for spec in batch_clear_aggregate.PRECEDING_GATES
         }
+        self.store = ManifestFixtureStore(self.manifests)
+        ManifestFixtureStore.bind(self, EXPECTED_SOURCE, lambda: self.store)
 
     def test_requires_both_batch_clients_builds_and_mobile_regression(self) -> None:
         self.assertEqual(
@@ -69,7 +58,7 @@ class ChatStorageBatchClearAggregateTest(unittest.TestCase):
 
     def test_passes_only_when_every_manifest_matches_exact_source(self) -> None:
         gate = batch_clear_aggregate.ChatStorageBatchClearAggregateGate(
-            store=FakeStore(self.manifests),
+            store=self.store,
             expected_source=EXPECTED_SOURCE,
         )
 
@@ -82,7 +71,7 @@ class ChatStorageBatchClearAggregateTest(unittest.TestCase):
         missing = batch_clear_aggregate.PRECEDING_GATES[0]
         del self.manifests[missing.gate_id]
         gate = batch_clear_aggregate.ChatStorageBatchClearAggregateGate(
-            store=FakeStore(self.manifests),
+            store=self.store,
             expected_source=EXPECTED_SOURCE,
         )
 

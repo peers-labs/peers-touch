@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from tooling.acceptance.core import (
@@ -17,16 +17,14 @@ from tooling.acceptance.core import (
     REPO_ROOT,
     source_identity,
 )
+from tooling.acceptance.station_access_evidence import (
+    AggregateResult as PrerequisiteAggregateResult,
+    GateResult, GateSpec, check_gate as check_formal_gate,
+)
 
 
 GATE_ID = "station-access-session-class-e2e"
 CURRENT_RESULTS_ENV = "PT_ACCEPTANCE_CURRENT_RESULTS"
-
-
-@dataclass(frozen=True)
-class GateSpec:
-    acceptance_id: str
-    gate_id: str
 
 
 PRECEDING_GATES: tuple[GateSpec, ...] = (
@@ -40,36 +38,8 @@ PRECEDING_GATES: tuple[GateSpec, ...] = (
 
 
 @dataclass
-class GateResult:
-    acceptance_id: str
-    gate_id: str
-    run_id: str | None
-    status: str
-    detail: str = ""
-
-
-@dataclass
-class AggregateResult:
-    source: dict[str, str]
-    gates: list[GateResult] = field(default_factory=list)
+class AggregateResult(PrerequisiteAggregateResult):
     proof_status: str = "PROVEN"
-
-    @property
-    def passed(self) -> bool:
-        return (
-            self.source.get("workspaceDigest") == "clean"
-            and all(gate.status == "PASS" for gate in self.gates)
-        )
-
-    @property
-    def unproven(self) -> bool:
-        return (
-            self.source.get("workspaceDigest") != "clean"
-            or any(
-                gate.status in {"MISSING", "STALE", "ERROR"}
-                for gate in self.gates
-            )
-        )
 
 
 def check_gate(
@@ -80,59 +50,26 @@ def check_gate(
     current_result: dict[str, Any] | None = None,
     current_results_authoritative: bool = False,
 ) -> GateResult:
-    development_result = False
-    if current_results_authoritative:
-        if current_result is None:
-            return GateResult(
-                acceptance_id=spec.acceptance_id,
-                gate_id=spec.gate_id,
-                run_id=None,
-                status="MISSING",
-                detail="current aggregate result is missing",
-            )
-        development_result = (
-            current_result.get("artifactKind")
-            == "development-functional-result"
+    if current_results_authoritative and current_result is None:
+        return GateResult(spec.acceptance_id, spec.gate_id, None, "MISSING")
+    if (
+        current_result is None
+        or current_result.get("artifactKind") != "development-functional-result"
+    ):
+        return check_formal_gate(store, spec, expected_source=expected_source)
+    try:
+        reference = ArtifactRef.from_dict(current_result["developmentManifest"])
+        if reference.workspace_id != store.workspace_id:
+            raise ValueError("development manifest belongs to another workspace")
+        manifest = store.read_run_manifest(
+            reference, manifest_sha256=reference.sha256, expected_gate_id=spec.gate_id,
         )
-        reference_field = (
-            "developmentManifest" if development_result else "runManifest"
+    except (EvidenceError, KeyError, TypeError, ValueError, OSError):
+        return GateResult(
+            spec.acceptance_id, spec.gate_id, None, "ERROR",
+            "original development manifest or complete inventory is invalid",
         )
-        try:
-            reference = ArtifactRef.from_dict(
-                current_result.get(reference_field, {})
-            )
-            if (
-                reference.workspace_id != store.workspace_id
-                or reference.gate_id != spec.gate_id
-                or reference.path != "manifest.json"
-            ):
-                raise ValueError("manifest reference identity is invalid")
-            manifest = store.read_json(reference)
-        except (EvidenceError, TypeError, ValueError) as error:
-            return GateResult(
-                acceptance_id=spec.acceptance_id,
-                gate_id=spec.gate_id,
-                run_id=None,
-                status="ERROR",
-                detail=f"current aggregate manifest is invalid: {error}",
-            )
-    else:
-        try:
-            manifest = store.latest(spec.gate_id)
-        except EvidenceError as error:
-            return GateResult(
-                acceptance_id=spec.acceptance_id,
-                gate_id=spec.gate_id,
-                run_id=None,
-                status=(
-                    "MISSING"
-                    if "latest pointer is unavailable" in str(error)
-                    else "ERROR"
-                ),
-                detail=str(error),
-            )
-
-    run_id = manifest.get("runId")
+    run_id = reference.run_id
     if (
         manifest.get("artifactKind") != "acceptance-run-manifest"
         or manifest.get("state") != "DURABLE"
@@ -154,60 +91,32 @@ def check_gate(
             gate_id=spec.gate_id,
             run_id=run_id,
             status="STALE",
-            detail="latest evidence source does not match aggregate source",
+            detail="original development evidence source does not match aggregate source",
         )
 
     result = manifest.get("result")
-    if development_result:
-        if (
-            not isinstance(result, dict)
-            or result.get("status") != "passed"
-            or result.get("verificationClass") != "FUNCTIONAL_CHECK"
-            or result.get("cleanupStatus") not in {"passed", "not-required"}
-            or current_result is None
-            or current_result.get("status") != "passed"
-            or current_result.get("developmentRunId") != run_id
-        ):
-            return GateResult(
-                acceptance_id=spec.acceptance_id,
-                gate_id=spec.gate_id,
-                run_id=run_id if isinstance(run_id, str) else None,
-                status="FAIL",
-                detail=(
-                    "current development result is not a passing immutable "
-                    "functional result with completed cleanup"
-                ),
-            )
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=run_id,
-            status="PASS",
-        )
-
-    expected = {
-        "status": "passed",
-        "completionStatus": "DONE",
-        "proofStatus": "PROVEN",
-    }
     if (
         not isinstance(result, dict)
-        or {key: result.get(key) for key in expected} != expected
-        or result.get("secretScan", {}).get("status") != "passed"
-        or manifest.get("redaction", {}).get("status") != "passed"
+        or result.get("status") != "passed"
+        or result.get("verificationClass") != "FUNCTIONAL_CHECK"
+        or result.get("cleanupStatus") not in {"passed", "not-required"}
+        or current_result.get("status") != result["status"]
+        or current_result.get("cleanupStatus") != result["cleanupStatus"]
+        or current_result.get("developmentRunId") != run_id
     ):
         return GateResult(
             acceptance_id=spec.acceptance_id,
             gate_id=spec.gate_id,
             run_id=run_id,
             status="FAIL",
-            detail="latest result is not passed/DONE/PROVEN with clean evidence",
+            detail="original development functional result or cleanup did not pass",
         )
     return GateResult(
         acceptance_id=spec.acceptance_id,
         gate_id=spec.gate_id,
         run_id=run_id,
         status="PASS",
+        run_manifest=reference.to_dict(),
     )
 
 

@@ -3,25 +3,21 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict
 
 from tooling.acceptance.core import (
     AcceptanceGate,
-    EvidenceError,
     EvidenceStore,
     GateError,
     REPO_ROOT,
     source_identity,
 )
+from tooling.acceptance.station_access_evidence import (
+    AggregateResult, GateSpec, check_gate,
+)
 
 
 GATE_ID = "chat-storage-governance-aggregate-e2e"
-
-
-@dataclass(frozen=True)
-class GateSpec:
-    acceptance_id: str
-    gate_id: str
 
 
 PRECEDING_GATES: tuple[GateSpec, ...] = (
@@ -36,128 +32,6 @@ PRECEDING_GATES: tuple[GateSpec, ...] = (
     GateSpec("CSG-G06", "desktop-release-build"),
     GateSpec("CSG-G06", "mobile-native-build"),
 )
-
-
-@dataclass
-class GateResult:
-    acceptance_id: str
-    gate_id: str
-    run_id: str | None
-    status: str
-    detail: str = ""
-
-
-@dataclass
-class AggregateResult:
-    source: dict[str, str]
-    gates: list[GateResult] = field(default_factory=list)
-
-    @property
-    def passed(self) -> bool:
-        return (
-            self.source.get("workspaceDigest") == "clean"
-            and all(gate.status == "PASS" for gate in self.gates)
-        )
-
-    @property
-    def unproven(self) -> bool:
-        return (
-            self.source.get("workspaceDigest") != "clean"
-            or any(
-                gate.status in {"MISSING", "STALE", "ERROR"}
-                for gate in self.gates
-            )
-        )
-
-
-def check_gate(
-    store: EvidenceStore,
-    spec: GateSpec,
-    *,
-    expected_source: dict[str, str],
-) -> GateResult:
-    try:
-        manifest = store.latest(spec.gate_id)
-    except EvidenceError as error:
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=None,
-            status=(
-                "MISSING"
-                if "latest pointer is unavailable" in str(error)
-                else "ERROR"
-            ),
-            detail=str(error),
-        )
-
-    run_id = manifest.get("runId")
-    if (
-        manifest.get("artifactKind") != "acceptance-run-manifest"
-        or manifest.get("state") != "DURABLE"
-        or manifest.get("workspaceId") != store.workspace_id
-        or manifest.get("gateId") != spec.gate_id
-        or not isinstance(run_id, str)
-        or not run_id
-    ):
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=run_id if isinstance(run_id, str) else None,
-            status="ERROR",
-            detail="authoritative latest manifest identity is invalid",
-        )
-    if manifest.get("source") != expected_source:
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=run_id,
-            status="STALE",
-            detail="latest evidence source does not match aggregate source",
-        )
-
-    result = manifest.get("result")
-    redaction = manifest.get("redaction")
-    secret_scan = (
-        result.get("secretScan")
-        if isinstance(result, dict)
-        else None
-    )
-    if (
-        not isinstance(result, dict)
-        or not isinstance(redaction, dict)
-        or not isinstance(secret_scan, dict)
-    ):
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=run_id,
-            status="ERROR",
-            detail="authoritative latest result metadata is invalid",
-        )
-    expected = {
-        "status": "passed",
-        "completionStatus": "DONE",
-        "proofStatus": "PROVEN",
-    }
-    if (
-        {key: result.get(key) for key in expected} != expected
-        or secret_scan.get("status") != "passed"
-        or redaction.get("status") != "passed"
-    ):
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=run_id,
-            status="FAIL",
-            detail="latest result is not passed/DONE/PROVEN with clean evidence",
-        )
-    return GateResult(
-        acceptance_id=spec.acceptance_id,
-        gate_id=spec.gate_id,
-        run_id=run_id,
-        status="PASS",
-    )
 
 
 def build_report(aggregate: AggregateResult) -> dict[str, object]:

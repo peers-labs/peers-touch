@@ -51,7 +51,7 @@
   "acceptance": {
     "product_truths": [
       "visible native Desktop clients use isolated profiles, ports, storage roots, and observer sockets",
-      "current-profile parity proof launches peers-group-chat and peers-chat-high-chat as distinct synchronized worktrees, with peers-group-chat initiating the journey",
+      "current-profile proof builds the selected source snapshot once and launches isolated run-scoped Alice and Bob instances, with Bob initiating the journey",
       "a restorable native account cold-launches into the authenticated shell without provider credentials, while PIN-protected and sessionless accounts retain their distinct gates",
       "release onboarding launches isolated clients from one canonical exact-source worktree, starts from canonical stranger state, shows stable All and Federation-scoped identity, and converges through reject, retry, accept, one Direct conversation, and exact plaintext",
       "native onboarding submits, lists, rejects, retries, accepts, and reads back the friend-request lifecycle through the production Desktop and Station Social owners",
@@ -61,7 +61,7 @@
       "CHAT-UR11: Local background selection previews immediately while upload and durable persistence continue asynchronously, with rollback and retry on failure",
       "CHAT-UR12: Message search targets canonical Conversation projections, finds known durable plaintext, and keeps the clear affordance inside the input boundary",
       "CHAT-UR13: Current-device conversation clearing commits a verified sequence/hash floor, remains effective after restart, leaves peer devices unchanged, and accepts later messages",
-      "a persistent current-profile client explicitly authenticates its assigned actor even when a prior session restores",
+      "current-profile clients create device state through authentication, preserve it across real Native process restarts, and release run-owned storage at cleanup",
       "Station and every client record matching commit and canonical proto digest with workspace identity",
       "direct multi-device recovery and MLS journeys emit bounded boundary telemetry and stop on first failure",
       "failed message submission clears acceptance-injected composer text",
@@ -92,9 +92,9 @@
     ]
   },
   "constraints": [
-    "live journeys must launch through make desktop",
-    "two clients launched from one worktree cannot prove current-profile cross-worktree parity",
-    "release lifecycle Gates must not require named sibling worktrees; cross-worktree parity remains a separate Gate",
+    "live journeys must launch through the canonical Native runtime and build owners",
+    "current-profile instances share one selected exact-source build while isolating actors, processes, devices, ports and storage",
+    "release lifecycle Gates must not require named sibling worktrees or caller-supplied historical client state",
     "a restored authenticated actor must not be silently reused as the Gate's requested actor",
     "the renderer must not downgrade a native restorable session to provider reauthentication",
     "an existing relationship may be normalized only through production Social commands; fixture or client state must not fabricate stranger, pending, rejected, or accepted state",

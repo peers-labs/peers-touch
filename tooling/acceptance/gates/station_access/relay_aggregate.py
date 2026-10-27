@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict
 
 from tooling.acceptance.core import (
     AcceptanceGate,
@@ -14,7 +14,7 @@ from tooling.acceptance.core import (
     source_identity,
 )
 from tooling.acceptance.station_access_evidence import (
-    GateResult,
+    AggregateResult,
     GateSpec,
     check_gate,
 )
@@ -55,29 +55,6 @@ UNIFIED_GATES: tuple[GateSpec, ...] = (
     GateSpec("RAL-G08", "RAL-G08"),
     GateSpec("SAL-REL-07", SECURITY_GATE_ID),
 )
-
-
-@dataclass
-class AggregateResult:
-    source: dict[str, str]
-    gates: list[GateResult] = field(default_factory=list)
-
-    @property
-    def passed(self) -> bool:
-        return (
-            self.source.get("workspaceDigest") == "clean"
-            and all(gate.status == "PASS" for gate in self.gates)
-        )
-
-    @property
-    def unproven(self) -> bool:
-        return (
-            self.source.get("workspaceDigest") != "clean"
-            or any(
-                gate.status in {"MISSING", "STALE", "ERROR"}
-                for gate in self.gates
-            )
-        )
 
 
 class RelayAggregateGate(AcceptanceGate):

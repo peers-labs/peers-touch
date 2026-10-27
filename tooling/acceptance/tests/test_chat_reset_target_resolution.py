@@ -112,6 +112,35 @@ class ChatResetTargetResolutionTests(unittest.TestCase):
         self.deployment.assert_called_once_with("chat-station")
         self.active.assert_not_called()
 
+    def test_bound_remote_targets_ignore_unrelated_active_profile_failure(self) -> None:
+        with patch.object(
+            reset, "active_profile_environment",
+            side_effect=subprocess.TimeoutExpired("machine-dev profile", 10),
+        ) as active_profile:
+            for target in self.profiles.values():
+                for environment in (None, target["environment"]):
+                    with self.subTest(profile=target["profile"], environment=environment):
+                        self.authority.reset_mock()
+                        self.registry.reset_mock()
+                        self.deployment.reset_mock()
+                        resolved = reset.acceptance_station_environment(
+                            target["stationUrl"] + "/", environment,
+                        )
+                        self.assertEqual(
+                            resolved["PT_ACCEPTANCE_STATION_URL"], target["stationUrl"],
+                        )
+                        self.assertEqual(
+                            resolved["PT_ACCEPTANCE_ENVIRONMENT"], target["environment"],
+                        )
+                        self.authority.assert_called_once_with("chat-native-actors")
+                        self.assertEqual(
+                            [call.args[0] for call in self.registry.call_args_list],
+                            list(self.profiles) if environment is None else [target["profile"]],
+                        )
+                        self.deployment.assert_called_once_with(target["environment"])
+                        active_profile.assert_not_called()
+        self.active.assert_not_called()
+
     def test_explicit_secondary_environment_rejects_primary_url(self) -> None:
         with self.assertRaises(BlockedError) as caught:
             reset.acceptance_station_environment(

@@ -67,8 +67,21 @@ from tooling.acceptance.core.execution_budget import (
     stopped_results,
     digest,
 )
-from tooling.acceptance.core.execution_graph import compile_graph, efficiency_report, prerequisite_results
+from tooling.acceptance.core.execution_graph import (
+    compile_graph, efficiency_report, prerequisite_results, request_dispatch_order,
+)
+from tooling.acceptance.core.execution_identity import (
+    gate_execution_identity as input_execution_identity, inherited_gate_environment,
+    InputIdentityCleanupFailed, InputIdentityError, InputIdentityProbeFailed,
+    observe_gate_inputs, validate_execution_inputs,
+)
 from tooling.acceptance.core.execution_session import ExecutionSession
+from tooling.acceptance.core.input_artifacts import (
+    capture_input_artifacts, original_input_artifacts, validate_input_artifacts,
+)
+from tooling.acceptance.core.scope_ownership import load_scope_catalog
+from tooling.acceptance.core.operation_observer import runner_operation_stream
+from tooling.acceptance.core.proof import read_gate_proof, require_report_proof
 
 
 def utc_now() -> str:
@@ -104,13 +117,8 @@ def current_result_proof_envelope(
 
 
 def execution_context_digest(args: argparse.Namespace, plan_source: Any) -> str:
-    """Hash explicit input and inherited environment; never persist secret values."""
-    volatile = {
-        "_", "SHLVL", "PT_ACCEPTANCE_RUN_ID", "PT_ACCEPTANCE_GATE_ID",
-        "PT_ACCEPTANCE_WORKSPACE_ID", AGGREGATE_SOURCE_ENV, PREREQUISITE_PROOFS_ENV,
-    }
+    """Global candidate identity; each declared Gate separately binds its inputs."""
     return digest({
-        "environment": {key: value for key, value in os.environ.items() if key not in volatile},
         "plan": plan_source,
         "executionPolicy": args.execution_policy,
         "runtimeCell": args.runtime_cell,
@@ -123,29 +131,37 @@ def execution_context_digest(args: argparse.Namespace, plan_source: Any) -> str:
 
 def gate_execution_identity(
     gate: Mapping[str, Any], graph: Mapping[str, Any], policy: Any, context: str,
+    *, probe_context: Mapping[str, Any] | None = None,
+    execution: GateExecution | None = None,
+    stage: str = "execution-inputs", phase: str = "work",
+    input_artifacts: Mapping[str, Any] | None = None,
+    input_artifacts_ref: Any = None, store: Any = None,
 ) -> dict[str, Any]:
-    """Opaque or live inputs require fresh execution until their owner injects identity."""
-    return {
-        "artifactKind": "acceptance-gate-execution-identity",
-        "gateId": gate["id"],
-        "definitionDigest": graph["definitionDigests"][gate["id"]],
-        "graphDigest": graph["digest"],
-        "policyDigest": policy.identity,
-        "contextDigest": context,
-        "reuseEligible": (
-            gate.get("tier") in {"ci-structure", "ci-cheap"}
-            and gate.get("environment", "local") == "local"
-            and not gate.get("provisioner")
-            and not gate.get("requiredRuntimeCells")
-            and not gate.get("ephemeralCapabilities")
-        ),
-    }
+    observation = observe_gate_inputs(
+        gate, os.environ, repo_root=REPO_ROOT,
+        context={
+            **(probe_context or {}), "gate": dict(gate), "contextDigest": context,
+            "inputArtifacts": input_artifacts, "observationStage": stage,
+        },
+        execution=execution, stage=stage, phase=phase,
+        artifact_root=store.root if store is not None else None,
+    )
+    identity = input_execution_identity(
+        gate, graph, policy, context, os.environ, observation=observation,
+    )
+    identity["inputArtifacts"] = (
+        input_artifacts_ref.to_dict() if input_artifacts_ref is not None else None
+    )
+    return identity
 
 
 def revalidate_session_results(
     gates: list[dict[str, Any]], prior_report: Mapping[str, Any],
     source: Mapping[str, str], graph: Mapping[str, Any], policy: Any,
     context: str, store: Any,
+    probe_context: Mapping[str, Any] | None = None,
+    execution: GateExecution | None = None,
+    current_results: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Read original producer proof and current authority; invalid proof returns to work."""
     from tooling.acceptance.core import ArtifactRef, EvidenceError
@@ -153,58 +169,77 @@ def revalidate_session_results(
     by_id = {item["id"]: item for item in prior_report["results"]}
     reused: list[dict[str, Any]] = []
     validation: list[dict[str, Any]] = []
-    reused_ids: set[str] = set()
+    verified = list(current_results or [])
+    verified_ids = {
+        item["id"] for item in verified
+        if all(item.get(key) == value for key, value in (
+            ("status", "passed"), ("completionStatus", "DONE"), ("proofStatus", "PROVEN"),
+        )) and item.get("cleanupStatus") in {"passed", "not-required"}
+        and item.get("runManifest")
+    }
     for gate in gates:
         gate_id = gate["id"]
         started = time.monotonic()
-        original = by_id[gate_id]
-        identity = gate_execution_identity(gate, graph, policy, context)
+        original = by_id.get(gate_id, {})
         reason = "original completion is unproven"
         accepted = False
-        if not identity["reuseEligible"]:
+        owner_failure = None
+        if "executionInputs" not in gate:
             reason = "current runtime/provider/oracle/action-plan identity is not injected"
-        elif not set(graph["dependencies"][gate_id]) <= reused_ids:
-            reason = "required producer needs fresh execution"
+        elif not set(graph["dependencies"][gate_id]) <= verified_ids:
+            reason = "required producer has no current verified proof"
         elif all(original.get(key) == value for key, value in (
             ("status", "passed"), ("completionStatus", "DONE"), ("proofStatus", "PROVEN"),
         )):
             try:
                 ref = ArtifactRef.from_dict(original["runManifest"])
-                manifest = store.read_run_manifest(
-                    ref, manifest_sha256=ref.sha256, expected_gate_id=gate_id,
+                manifest = read_gate_proof(
+                    store, gate_id, source, result=original,
+                    gate_definition=gate, require_latest=True,
+                    runtime_cell=original.get("runtimeCell"),
                 )
-                authority = store.authoritative_latest(gate_id)
                 proof_identity = store.read_json(ArtifactRef.from_dict(
                     manifest["artifacts"]["execution-identity"],
                 ))
                 sealed_result = manifest["result"]
+                expected_prerequisites, unproven = prerequisite_results(
+                    gate, verified, source, store,
+                )
                 if (
-                    authority.manifest_ref.to_dict() != ref.to_dict()
-                    or manifest.get("source") != dict(source)
-                    or proof_identity != identity
-                    or any(sealed_result.get(key) != value for key, value in (
-                        ("status", "passed"), ("completionStatus", "DONE"), ("proofStatus", "PROVEN"),
-                    ))
-                    or sealed_result.get("cleanupStatus") not in {"passed", "not-required"}
-                    or any(original.get(key) != sealed_result.get(key) for key in (
-                        "status", "completionStatus", "proofStatus", "cleanupStatus",
-                    ))
+                    unproven
+                    or sealed_result.get("prerequisiteProofs", []) != expected_prerequisites
                 ):
                     raise ExecutionBudgetError("original proof or current authority changed")
+                inputs_ref, inputs = execute_stage(
+                    execution, "original-input-artifacts", original_input_artifacts,
+                    gate, manifest, store,
+                )
+                identity = gate_execution_identity(
+                    gate, graph, policy, context, probe_context=probe_context,
+                    execution=execution, stage="original-input-validation",
+                    input_artifacts=inputs, input_artifacts_ref=inputs_ref, store=store,
+                )
+                if not identity["reuseEligible"] or proof_identity != identity:
+                    raise InputIdentityError("current closed inputs do not match original proof")
                 reused.append({
                     **sealed_result,
                     "runManifest": ref.to_dict(),
                     "executionDisposition": "REUSED_ORIGINAL",
                     "originRunId": ref.run_id,
                 })
-                reused_ids.add(gate_id)
+                verified.append(reused[-1])
+                verified_ids.add(gate_id)
                 accepted, reason = True, "complete current-source original producer verified"
+            except InputIdentityProbeFailed as error:
+                reason = "original input owner did not complete; actual launch diagnostic retained"
+                owner_failure = error.failure
             except (EvidenceError, ExecutionBudgetError, KeyError, TypeError, ValueError, OSError):
                 reason = "original inventory, proof, input identity or authority is invalid"
         validation.append({
             "gateId": gate_id, "disposition": "REUSED_ORIGINAL" if accepted else "PENDING",
             "reason": reason, "durationSeconds": round(time.monotonic() - started, 6),
             "originRunId": reused[-1]["originRunId"] if accepted else None,
+            **({"inputOwnerFailure": owner_failure} if owner_failure is not None else {}),
         })
     return reused, validation
 
@@ -225,16 +260,7 @@ def read_session_manifest(store: Any, reference: Any) -> tuple[ExecutionSession,
     ):
         raise ExecutionBudgetError("execution session and run inventory identity mismatch")
     report = store.read_json(report_ref)
-    results = report.get("results", [])
-    if (
-        report.get("source") != session.current_source
-        or len(results) != len(session.required_gate_ids)
-        or {item.get("id") for item in results} != set(session.required_gate_ids)
-        or report.get("executionBudget", {}).get("policyDigest") != session.policy_digest
-        or report.get("executionBudget", {}).get("stop") != session.requests[-1]["stop"]
-        or report.get("executionGraph", {}).get("digest") != session.graph_digest
-    ):
-        raise ExecutionBudgetError("original session report candidate or scope mismatch")
+    session.request_results(session.requests[-1], report)
     graph_ref = ArtifactRef.from_dict(report["executionGraph"]["artifact"])
     original_graph = store.read_json(graph_ref)
     from tooling.acceptance.core.execution_graph import ExecutionGraph
@@ -242,8 +268,6 @@ def read_session_manifest(store: Any, reference: Any) -> tuple[ExecutionSession,
     ExecutionGraph(original_graph).validate()
     if original_graph["digest"] != session.graph_digest:
         raise ExecutionBudgetError("original session graph mismatch")
-    if session.state == "PAUSED_REQUEST_EXHAUSTED" and not session.clean_request_exhaustion(report):
-        raise ExecutionBudgetError("original session lacks clean request exhaustion")
     return session, report
 
 
@@ -251,7 +275,7 @@ def publish_initialization_stop(
     store: Any, gates: list[dict[str, Any]], source: Mapping[str, str],
     graph: Mapping[str, Any], plan_source: Any, planning: GateExecution,
     policy: ExecutionBudgetPolicy, error: BaseException,
-) -> None:
+) -> Any:
     """Initialization cancellation owns no product run, but retains the full obligation."""
     from tooling.acceptance.core.execution_budget import deadline
 
@@ -259,11 +283,14 @@ def publish_initialization_stop(
         with store.begin_run("acceptance-execution-stop", source=source) as diagnostic:
             stop = {
                 "artifactKind": "acceptance-execution-stop",
-                "reason": "OWNER_INTERRUPTED" if isinstance(error, KeyboardInterrupt) else "EXECUTION_BUDGET_STOP",
+                "reason": (
+                    "OWNER_INTERRUPTED" if isinstance(error, KeyboardInterrupt) else "EXECUTION_BUDGET_STOP"
+                ),
                 "gateId": planning.report()["gateId"], "cost": planning.report(),
                 "source": dict(source), "policyDigest": policy.identity,
                 "dispatchedGateIds": [], "unexecutedGateIds": [gate["id"] for gate in gates],
-                "resourceCleanup": "not-required", "proofStatus": "UNPROVEN",
+                "resourceCleanup": "not-required",
+                "proofStatus": "UNPROVEN", "failure": type(error).__name__,
             }
             stop_ref = diagnostic.write_json("reports/stop.json", stop, role="execution-stop")
             graph_ref = diagnostic.write_json("reports/graph.json", graph, role="execution-graph")
@@ -283,6 +310,7 @@ def publish_initialization_stop(
             diagnostic.publish_latest()
             print(f"execution-stop: {json.dumps(stop_ref.to_dict(), sort_keys=True)}")
             print(f"run: {json.dumps(run_ref.to_dict(), sort_keys=True)}")
+            return diagnostic.manifest_ref
 
 
 def development_artifact_root(work_item: str, workspace: str) -> Path:
@@ -798,6 +826,7 @@ def persist_provisioner_cleanup_result(
     launch_context_cleanup_error: str = "",
     gate_process_cleanup_status: str = "not-required",
     gate_process_cleanup_error: str = "",
+    provisioning_process_cleanup: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = {
         "artifactKind": "acceptance-provisioner-cleanup-result",
@@ -825,6 +854,7 @@ def persist_provisioner_cleanup_result(
         "launchContextCleanupError": launch_context_cleanup_error,
         "gateProcessCleanupStatus": gate_process_cleanup_status,
         "gateProcessCleanupError": gate_process_cleanup_error,
+        "provisioningProcessCleanup": provisioning_process_cleanup,
     }
     redacted_payload, _ = redact_runtime_value(payload, secret_values)
     return gate_run.write_json(
@@ -1074,6 +1104,19 @@ def ephemeral_cleanup_payload(value: Any) -> dict[str, Any] | None:
     }
 
 
+def provisioning_process_cleanup_failure(error: Exception, stage: str) -> dict[str, Any] | None:
+    from tooling.acceptance.core import EphemeralLaunchCleanupFailed
+    from tooling.acceptance.core.redaction import redact_text
+
+    if not isinstance(error, EphemeralLaunchCleanupFailed):
+        return None
+    return {
+        "status": "failed", "stage": stage, "errorType": type(error).__name__,
+        "operation": error.operation, "error": redact_text(str(error)),
+        "cleanup": ephemeral_cleanup_payload(error.result),
+    }
+
+
 def load_plan(
     path: Path | None,
     store: Any,
@@ -1136,14 +1179,6 @@ def load_gate_definitions(path: Path) -> dict[str, Any]:
             value[key] = item
         return value
     return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_pairs).get("gates", {})
-
-
-def load_scope_capabilities() -> list[dict[str, Any]]:
-    return [
-        item
-        for path in sorted((REPO_ROOT / "tooling/acceptance/capabilities").glob("*.yaml"))
-        for item in json.loads(path.read_text())["capabilities"]
-    ]
 
 
 def gate_launch_fields(gate_id: str, definition: dict[str, Any]) -> dict[str, Any]:
@@ -1216,6 +1251,7 @@ def is_supported_context_argv(argv: list[str]) -> bool:
 
 
 def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, Any]:
+    validate_execution_inputs(gate_id, definition)
     gate = {
         "id": gate_id,
         **gate_launch_fields(gate_id, definition),
@@ -1228,6 +1264,8 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
         "dependsOn": definition.get("dependsOn", []),
         "required_by": ["manual"],
     }
+    if "executionInputs" in definition:
+        gate["executionInputs"] = definition["executionInputs"]
     artifact_kind = definition.get("runtimeCellArtifact")
     if artifact_kind is not None:
         if artifact_kind not in ("acceptance-binary", "installed-appimage"):
@@ -1325,6 +1363,7 @@ def plan_gate_from_entry(entry: Any, definitions: dict[str, Any]) -> dict[str, A
         "runtimeCellArtifact",
         "dependsOn",
         "judgment",
+        "executionInputs",
     ):
         if field in entry and entry[field] != gate.get(field):
             raise SystemExit(
@@ -1460,6 +1499,7 @@ def evidence_summary_from_artifact(path: Any, artifact: Any) -> dict[str, Any]:
         "error_type",
         "failedStep",
         "sampleEmissionAllowed",
+        "assertions",
         "diagnostic",
     ):
         if key in artifact:
@@ -1644,6 +1684,19 @@ def enrich_result_with_run_artifacts(
         issue_reason = reason_from_issue_breakdown(primary)
         if issue_reason:
             enriched["reason"] = issue_reason
+    if (
+        primary.get("artifactKind") == "acceptance-gate-evidence-report"
+        and primary.get("status") in {"PASS", "passed"}
+    ):
+        from tooling.acceptance.core.errors import EvidenceError
+
+        try:
+            require_report_proof(primary, result["id"])
+        except EvidenceError as error:
+            enriched.update(
+                status="failed", completionStatus="PARTIAL", proofStatus="UNPROVEN",
+                sampleEmissionAllowed=False, reason=str(error),
+            )
     return enriched
 
 
@@ -2589,7 +2642,6 @@ def main() -> int:
     request_claim = None
     session_terminal_ref = None
     prior_manifest_ref = None
-    reused_results: list[dict[str, Any]] = []
     reuse_validation: list[dict[str, Any]] = []
     context_identity = None
     aggregate_source = None
@@ -2630,14 +2682,17 @@ def main() -> int:
         if policy is not None and set(policy.gates) - set(definitions):
             raise ExecutionBudgetError("time limits reference unknown catalog Gates")
         if args.all_gates:
-            capabilities = execute_stage(
-                planning, "capability-catalog", load_scope_capabilities
+            scope_catalog = execute_stage(
+                planning, "ownership-catalog", load_scope_catalog, Path(args.gates).parent,
             )
             scope = execute_stage(
                 planning, "scope", freeze_scope,
-                definitions, capabilities,
+                definitions, scope_catalog["capabilities"],
                 excluded_domains=args.exclude_domain,
                 excluded_gates=args.exclude_gate,
+                features=scope_catalog["features"],
+                domains=scope_catalog["domains"],
+                rules=scope_catalog["rules"],
             )
             plan_source = scope
             args.gate = scope["dispatchGateIds"]
@@ -2724,6 +2779,14 @@ def main() -> int:
                 planning, "locked-source-snapshot", source_identity, REPO_ROOT,
             )
             context_identity = execution_context_digest(args, plan_source)
+            probe_context = {
+                "source": aggregate_source,
+                "runtimeCell": args.runtime_cell,
+                "runtimeCellBindings": runtime_cell_bindings,
+                "stationProfiles": station_profiles,
+                "serviceProfiles": service_profiles,
+                "catalogBindings": args.all_gates,
+            }
             if (
                 set(session.required_gate_ids) != set(graph["dispatchGateIds"])
                 or len(session.required_gate_ids) != len(graph["dispatchGateIds"])
@@ -2742,6 +2805,12 @@ def main() -> int:
                 "session-validation", policy.lifecycle, request_deadline,
             )
             preparation_owner = session_validation
+            dispatch_history = execute_stage(
+                preparation_owner, "dispatch-history", session.dispatch_history,
+                store, aggregate_source,
+                graph_digest=graph["digest"], context_digest=context_identity,
+            )
+            reuse_candidates = {"results": []}
             if (
                 prior_report is not None
                 and session.state == "PAUSED_REQUEST_EXHAUSTED"
@@ -2749,16 +2818,14 @@ def main() -> int:
                 and session.graph_digest == graph["digest"]
                 and session.context_digest == context_identity
             ):
-                reused_results, reuse_validation = execute_stage(
-                    preparation_owner, "original-completion-validation", revalidate_session_results,
-                    gates, prior_report, aggregate_source, graph, policy, context_identity, store,
-                )
-            reused_ids = {item["id"] for item in reused_results}
+                reuse_candidates = {"results": dispatch_history}
+            dispatch_order = request_dispatch_order(
+                graph, set(), dispatch_history,
+            )
             session.begin(
                 aggregate_source,
-                [gate["id"] for gate in gates if gate["id"] not in reused_ids],
+                dispatch_order,
                 graph_digest=graph["digest"], context_digest=context_identity,
-                validated_gate_ids=[gate["id"] for gate in gates if gate["id"] in reused_ids],
             )
             execute_stage(
                 preparation_owner, "consume-session-request", request_claim.consume,
@@ -2774,8 +2841,6 @@ def main() -> int:
             source=aggregate_source,
         )
     except (EvidenceError, ExecutionBudgetError, ExecutionDeadline, KeyboardInterrupt, KeyError, ValueError, TypeError, OSError) as error:
-        if request_claim is not None:
-            request_claim.close()
         if (
             isinstance(error, (ExecutionDeadline, KeyboardInterrupt))
             and policy is not None and "graph" in locals()
@@ -2786,13 +2851,15 @@ def main() -> int:
                 )
             except (Exception, ExecutionDeadline):
                 print("Initialization stopped; durable stop-record publication failed", file=sys.stderr)
+        if request_claim is not None:
+            request_claim.close()
         print(
             f"Acceptance evidence initialization failed: {type(error).__name__}: {error}",
             file=sys.stderr,
         )
         return 1
 
-    results: list[dict[str, Any]] = list(reused_results)
+    results: list[dict[str, Any]] = []
     execution_reports: list[dict[str, Any]] = []
     started_gate_ids: set[str] = set()
     execution_stop = None
@@ -2839,11 +2906,13 @@ def main() -> int:
             planning.finish()
         if session_validation is not None:
             session_validation.finish()
-        for gate in gates:
+        gate_by_id = {gate["id"]: gate for gate in gates}
+        request_gates = (
+            [gate_by_id[gate_id] for gate_id in session.requests[-1]["dispatchGateIds"]]
+            if session is not None else gates
+        )
+        for gate in request_gates:
             gate_id = gate["id"]
-            if gate_id in {item["id"] for item in reused_results}:
-                print(f"[REUSED_ORIGINAL] {gate_id}")
-                continue
             command = gate_launch_display(gate)
             timeout = int(gate.get("timeout_seconds") or 600)
             environment = gate.get("environment", "local")
@@ -2876,9 +2945,64 @@ def main() -> int:
                 )
                 continue
 
-            gate_source = execute_stage(
-                execution, "source-snapshot", source_identity, REPO_ROOT
-            )
+            try:
+                gate_source = execute_stage(
+                    execution, "source-snapshot", source_identity, REPO_ROOT
+                )
+                if session is not None and gate_source == aggregate_source:
+                    entry_results, entry_validation = execute_stage(
+                        execution, "original-completion-validation", revalidate_session_results,
+                        [gate], reuse_candidates, aggregate_source, graph, policy,
+                        context_identity, store, probe_context, execution,
+                        current_results=results,
+                    )
+                    reuse_validation.extend(entry_validation)
+                    if entry_results:
+                        gate_source = execute_stage(
+                            execution, "reuse-source-readback", source_identity, REPO_ROOT,
+                        )
+                        if gate_source == aggregate_source:
+                            session.record_reuse(entry_results[0])
+                            execution.finish()
+                            entry_validation[0]["cost"] = execution.report()
+                            results.extend(entry_results)
+                            print(f"[REUSED_ORIGINAL] {gate_id}")
+                            continue
+                        entry_validation[0].update(
+                            disposition="PENDING", reason="source drift during original proof validation",
+                            originRunId=None,
+                        )
+            except ExecutionDeadline:
+                # Source capture and read-only validation acquire no Gate run.
+                # A cancelled probe must confirm cleanup before normal exhaustion.
+                if execution.limit_disposition() != "REQUEST_PREEMPTED":
+                    raise
+                execution.finish()
+                cost = execution.report()
+                execution_reports.append(cost)
+                execution_stop = {
+                    "gateId": gate_id,
+                    "reason": "EXECUTION_BUDGET_STOP",
+                    "cost": cost,
+                    "source": aggregate_source,
+                    "policyDigest": policy.identity,
+                    "resumePolicy": "new bounded request; revalidate original proof and remaining scope",
+                }
+                remaining_results = stopped_results(
+                    gates, {item["id"] for item in results}, execution_stop,
+                )
+                for pending in remaining_results:
+                    if pending["id"] == gate_id:
+                        pending["cleanupStatus"] = (
+                            "passed" if any(
+                                span["phase"] == "cleanup" and span["status"] == "completed"
+                                for span in cost["spans"]
+                            ) else "not-required"
+                        )
+                        pending["limitDisposition"] = cost["limitDisposition"]
+                        pending["timeoutAttribution"] = cost["attribution"]
+                results.extend(remaining_results)
+                break
             source_drift = source_identity_drift(
                 aggregate_source,
                 gate_source,
@@ -2891,14 +3015,12 @@ def main() -> int:
             )
             active_gate_run = gate_run
             started_gate_ids.add(gate_id)
-            if session is not None:
-                execute_stage(
-                    execution, "execution-identity", gate_run.write_json,
-                    "proof/execution-identity.json",
-                    gate_execution_identity(gate, graph, policy, context_identity),
-                    role="execution-identity",
-                )
-            gate_env = gate_run.subprocess_environment(os.environ.copy())
+            gate_input_identity = None
+            gate_input_artifacts = None
+            gate_input_artifacts_ref = None
+            input_identity_error = None
+            input_owner_failure = None
+            gate_env = gate_run.subprocess_environment(inherited_gate_environment(gate, os.environ))
             gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
                 aggregate_source,
                 sort_keys=True,
@@ -2933,6 +3055,7 @@ def main() -> int:
             launch_context_cleanup_error = ""
             gate_process_cleanup_status = "not-required"
             gate_process_cleanup_error = ""
+            provisioning_process_cleanup = None
             resource_cleanup_allowed = True
             cleanup_artifact: dict[str, Any] | None = None
             result: dict[str, Any] | None = None
@@ -3070,6 +3193,9 @@ def main() -> int:
                     except EvidenceError:
                         raise
                     except Exception as error:
+                        provisioning_process_cleanup = provisioning_process_cleanup_failure(
+                            error, "environment-provisioning",
+                        )
                         output_text = f"Provisioning failed: {type(error).__name__}: {error}\n"
                         result = provisioning_failure_result(
                             gate_id=gate_id,
@@ -3136,6 +3262,9 @@ def main() -> int:
                     except EvidenceError:
                         raise
                     except Exception as error:
+                        provisioning_process_cleanup = provisioning_process_cleanup_failure(
+                            error, "runtime-cell-provisioning",
+                        )
                         output_text = (
                             "Runtime-cell provisioning failed: "
                             f"{type(error).__name__}: {error}\n"
@@ -3199,7 +3328,7 @@ def main() -> int:
                         )
                     else:
                         gate_env = gate_run.subprocess_environment(
-                            os.environ.copy()
+                            inherited_gate_environment(gate, os.environ)
                         )
                         gate_env.update(authority_environment)
                         if provisioner is not None:
@@ -3236,6 +3365,47 @@ def main() -> int:
                             runtime_cell_manifest
                         )
                     )
+                    if session is not None:
+                        try:
+                            gate_input_artifacts = execute_stage(
+                                execution, "input-artifacts-capture", capture_input_artifacts,
+                                gate, gate_run, {
+                                    "environment": manifest, "runtimeCell": runtime_cell_manifest,
+                                }, prerequisite_refs,
+                            )
+                            gate_input_artifacts_ref = execute_stage(
+                                execution, "input-artifacts-persist", gate_run.write_json,
+                                "proof/input-artifacts.json", gate_input_artifacts,
+                                role="input-artifacts",
+                            )
+                            gate_input_identity = gate_execution_identity(
+                                gate, graph, policy, context_identity,
+                                probe_context=probe_context, execution=execution,
+                                input_artifacts=gate_input_artifacts,
+                                input_artifacts_ref=gate_input_artifacts_ref, store=store,
+                            )
+                        except InputIdentityCleanupFailed as error:
+                            gate_process_cleanup_status = "failed"
+                            gate_process_cleanup_error = str(error)
+                            result = ephemeral_launch_failure_result(
+                                gate_id=gate_id, command=command, environment=environment,
+                                tier=tier, error=error,
+                                duration_seconds=round(time.time() - started, 3),
+                            )
+                        except InputIdentityError as error:
+                            input_identity_error = str(error)
+                            if isinstance(error, InputIdentityProbeFailed):
+                                input_owner_failure = error.failure
+                            result = {
+                                "id": gate_id, "command": command, "environment": environment,
+                                "tier": tier, "status": "blocked", "completionStatus": "BLOCKED",
+                                "proofStatus": "UNPROVEN", "sampleEmissionAllowed": False,
+                                "blockedReason": "INPUT_IDENTITY_UNPROVEN",
+                                "reason": input_identity_error,
+                                "sourcePhase": "Gate Input Owner",
+                                "exit_code": None, "duration_seconds": round(time.time() - started, 3),
+                            }
+                if result is None:
                     try:
                         inherited_fds: tuple[int, ...] = ()
                         if (
@@ -3394,12 +3564,17 @@ def main() -> int:
             except ExecutionDeadline as error:
                 timed_out = True
                 output_text += f"\n{error}\n"
+                administrative = (
+                    error.phase == "work"
+                    and [item.get("kind") for item in error.constraints] == ["request-work"]
+                )
                 result = {
                     "id": gate_id,
                     "status": "failed",
                     "completionStatus": "PARTIAL",
                     "proofStatus": "UNPROVEN",
-                    "reason": str(error),
+                    "reason": "finite request quota exhausted; Gate completion remains unproven"
+                    if administrative else str(error),
                     "timedOut": True,
                     "sampleEmissionAllowed": False,
                     "sourcePhase": f"Gate {error.phase}: {error.stage}",
@@ -3412,6 +3587,8 @@ def main() -> int:
                     diagnostic = ResourceDiagnostic(
                         owner="tooling/acceptance/core/execution_budget.py",
                         recovery_action=(
+                            "Revalidate original proof and restart incomplete work in a new bounded request"
+                            if administrative else
                             f"Diagnose the recorded {error.stage} stage at its owner; "
                             "repair and qualify it, then refreeze the unchanged scope "
                             "and policy. Do not increase the budget."
@@ -3555,6 +3732,7 @@ def main() -> int:
                 cleanup_failures = tuple(
                     error
                     for error in (
+                        provisioning_process_cleanup["error"] if provisioning_process_cleanup else "",
                         gate_process_cleanup_error,
                         launch_context_cleanup_error,
                         runtime_cell_cleanup_error,
@@ -3579,6 +3757,7 @@ def main() -> int:
                 or runtime_cell_lifecycle is not None
                 or launch_context is not None
                 or gate_process_cleanup_status != "not-required"
+                or provisioning_process_cleanup is not None
             ):
                 cleanup_artifact = execute_stage(
                     execution, "cleanup-artifact", persist_provisioner_cleanup_result,
@@ -3605,6 +3784,7 @@ def main() -> int:
                     launch_context_cleanup_error=launch_context_cleanup_error,
                     gate_process_cleanup_status=gate_process_cleanup_status,
                     gate_process_cleanup_error=gate_process_cleanup_error,
+                    provisioning_process_cleanup=provisioning_process_cleanup,
                 )
 
             source_drift_after = source_identity_drift(
@@ -3619,6 +3799,63 @@ def main() -> int:
                 output_text += (
                     "\nAcceptance source drifted during aggregate execution; "
                     "the Gate cannot contribute exact-source proof.\n"
+                )
+            if (
+                gate_input_identity is not None
+                and gate_input_identity["reuseEligible"]
+                and (exit_code == 0 or (result or {}).get("status") == "passed")
+                and source_drift is None
+                and cleanup_status != "failed"
+            ):
+                try:
+                    input_inventory = execute_stage(
+                        execution, "input-inventory-revalidate", gate_run.collect_existing_artifacts,
+                        phase="publish",
+                    )
+                    execute_stage(
+                        execution, "input-artifacts-revalidate", validate_input_artifacts,
+                        gate, gate_input_artifacts, store, input_inventory,
+                        prerequisite_refs, phase="publish",
+                    )
+                    current_inputs = gate_execution_identity(
+                        gate, graph, policy, context_identity,
+                        probe_context=probe_context, execution=execution,
+                        stage="input-revalidate", phase="publish",
+                        input_artifacts=gate_input_artifacts,
+                        input_artifacts_ref=gate_input_artifacts_ref, store=store,
+                    )
+                    if current_inputs != gate_input_identity:
+                        input_identity_error = "Gate inputs changed during execution"
+                except InputIdentityError as error:
+                    input_identity_error = str(error)
+                    if isinstance(error, InputIdentityProbeFailed):
+                        input_owner_failure = error.failure
+                except InputIdentityCleanupFailed as error:
+                    cleanup_status = "failed"
+                    cleanup_error = gate_process_cleanup_error = str(error)
+                    gate_process_cleanup_status = "failed"
+                    result = ephemeral_launch_failure_result(
+                        gate_id=gate_id, command=command, environment=environment,
+                        tier=tier, error=error,
+                        duration_seconds=round(time.time() - started, 3),
+                    )
+                    cleanup_artifact = execute_stage(
+                        execution, "input-owner-cleanup-artifact", gate_run.write_json,
+                        "cleanup/input-owner.json", {
+                            "artifactKind": "acceptance-input-owner-cleanup",
+                            "gateId": gate_id, "ownerId": error.owner_id,
+                            "status": "failed", "errorType": type(error).__name__,
+                            "cleanup": ephemeral_cleanup_payload(error.result),
+                        }, role="input-owner-cleanup", phase="publish",
+                    ).to_dict()
+            if session is not None:
+                execute_stage(
+                    execution, "execution-identity", gate_run.write_json,
+                    "proof/execution-identity.json",
+                    gate_input_identity or input_execution_identity(
+                        gate, graph, policy, context_identity, os.environ,
+                    ),
+                    role="execution-identity", phase="publish",
                 )
 
             (
@@ -3697,7 +3934,10 @@ def main() -> int:
                 result["completionStatus"] = "PARTIAL"
                 result["proofStatus"] = "UNPROVEN"
                 result["sourcePhase"] = "Gate Resource Cleanup"
-                if gate_process_cleanup_error:
+                if provisioning_process_cleanup:
+                    result["errorType"] = provisioning_process_cleanup["errorType"]
+                    result["sourcePhase"] = "Provisioning Process Cleanup"
+                elif gate_process_cleanup_error:
                     result["errorType"] = "EphemeralLaunchCleanupFailed"
                     result["sourcePhase"] = "Gate Process Cleanup"
                 elif launch_context_cleanup_error:
@@ -3711,7 +3951,23 @@ def main() -> int:
                 result["completionStatus"] = "PARTIAL"
                 result["proofStatus"] = "UNPROVEN"
                 result["sampleEmissionAllowed"] = False
+            if input_identity_error is not None:
+                result.update({
+                    "status": "failed", "completionStatus": "PARTIAL", "proofStatus": "UNPROVEN",
+                    "sampleEmissionAllowed": False, "reason": input_identity_error,
+                    "inputIdentityStatus": "UNPROVEN",
+                })
+                if input_owner_failure is not None:
+                    result["inputOwnerFailure"] = execute_stage(
+                        execution, "input-owner-failure-artifact", gate_run.write_json,
+                        "reports/input-owner-failure.json", input_owner_failure,
+                        role="input-owner-failure", phase="publish",
+                    ).to_dict()
+                    result["errorType"] = input_owner_failure["errorType"]
             result["prerequisiteProofs"] = prerequisite_refs
+            if execution is not None:
+                result["limitDisposition"] = execution.limit_disposition()
+                result["timeoutAttribution"] = execution.report()["attribution"]
 
             result = execute_stage(
                 execution, "failure-observation", record_failure_observation,
@@ -3823,7 +4079,9 @@ def main() -> int:
                         "policyDigest": policy.identity,
                         "resumePolicy": "freeze the current source before a new attempt",
                     }
-                elif args.stop_on_failure and result_is_incomplete(result):
+                elif result.get("cleanupStatus") == "failed" or (
+                    args.stop_on_failure and result_is_incomplete(result)
+                ):
                     execution_stop = {
                         "gateId": gate_id,
                         "reason": "EXECUTION_FAILURE_STOP",
@@ -3832,12 +4090,12 @@ def main() -> int:
                         "policyDigest": policy.identity,
                         "resumePolicy": "diagnose and repair before a new attempt",
                     }
-            elif owner_interrupted:
+            elif owner_interrupted or result.get("cleanupStatus") == "failed":
                 execution_stop = {
                     "gateId": gate_id,
-                    "reason": "OWNER_INTERRUPTED",
+                    "reason": "OWNER_INTERRUPTED" if owner_interrupted else "EXECUTION_FAILURE_STOP",
                     "source": aggregate_source,
-                    "resumePolicy": "inspect recorded cleanup before a new attempt",
+                    "resumePolicy": "inspect recorded cleanup and qualify before a new attempt",
                 }
             print(
                 f"[{str(result.get('status')).upper()}] {gate_id} "
@@ -3999,7 +4257,7 @@ def main() -> int:
                 development_manifest_ref.to_dict(),
             )
         return exit_code
-    except (ExecutionDeadline, ExecutionBudgetError, KeyboardInterrupt) as error:
+    except (ExecutionDeadline, ExecutionBudgetError, InputIdentityCleanupFailed, KeyboardInterrupt) as error:
         if policy is None:
             print(f"Acceptance execution failed: {type(error).__name__}: {error}", file=sys.stderr)
             return 1
@@ -4012,6 +4270,7 @@ def main() -> int:
         stop = {
             "artifactKind": "acceptance-execution-stop",
             "reason": (
+                "INPUT_OWNER_CLEANUP_STOP" if isinstance(error, InputIdentityCleanupFailed) else
                 "OWNER_INTERRUPTED" if isinstance(error, KeyboardInterrupt) else
                 "EXECUTION_BUDGET_STOP"
                 if isinstance(error, ExecutionDeadline) or cost["overrun"]
@@ -4035,6 +4294,12 @@ def main() -> int:
             "resourceCleanup": "UNPROVEN; inspect current run before resuming",
             "failure": type(error).__name__,
         }
+        if isinstance(error, InputIdentityCleanupFailed):
+            stop.update(
+                resourceCleanup="failed",
+                inputOwner={"gateId": error.gate_id, "ownerId": error.owner_id},
+                inputOwnerCleanup=ephemeral_cleanup_payload(error.result),
+            )
         interrupted_results = list(results)
         recorded_ids = {item["id"] for item in results}
         if cost["gateId"] in dispatched_ids - recorded_ids:
@@ -4052,6 +4317,14 @@ def main() -> int:
         terminal_results = interrupted_results + stopped_results(
             gates, {item["id"] for item in interrupted_results}, stop,
         )
+        if isinstance(error, InputIdentityCleanupFailed):
+            for result in terminal_results:
+                if result["id"] == error.gate_id:
+                    result.update(
+                        status="failed", completionStatus="PARTIAL", proofStatus="UNPROVEN",
+                        cleanupStatus="failed", reason="input owner process cleanup failed",
+                        errorType=type(error).__name__,
+                    )
         # A publication failure must not mutate an already sealed Gate run.
         # The independent diagnostic is supporting evidence, never product proof.
         from tooling.acceptance.core.execution_budget import deadline
@@ -4092,9 +4365,10 @@ def main() -> int:
                             "efficiency": efficiency_report(graph, report["executionBudget"]["gates"]),
                         }
                     run_ref = diagnostic.write_json("reports/run.json", report, role="run")
+                    diagnostic_session_ref = None
                     if session is not None and session.state == "RUNNING":
                         session.observe(report, run_ref.to_dict())
-                        diagnostic.write_json(
+                        diagnostic_session_ref = diagnostic.write_json(
                             "reports/session.json", session.report(), role="execution-session",
                         )
                     diagnostic.finalize(result={
@@ -4103,6 +4377,8 @@ def main() -> int:
                     })
                     diagnostic.publish_latest()
                     session_terminal_ref = diagnostic.manifest_ref
+                    if diagnostic_session_ref is not None:
+                        print(f"execution-session-manifest: {json.dumps(session_terminal_ref.to_dict(), sort_keys=True)}")
                     print(f"execution-stop: {json.dumps(ref.to_dict(), sort_keys=True)}")
                     print(f"run: {json.dumps(run_ref.to_dict(), sort_keys=True)}")
                 finally:
@@ -4170,4 +4446,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    with runner_operation_stream():
+        raise SystemExit(main())

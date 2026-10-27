@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
-from unittest.mock import ANY, patch
+from unittest.mock import ANY, Mock, patch
 
 from tooling.acceptance.core import (
     ArtifactRef,
@@ -142,8 +142,14 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 node
                 for node in ast.walk(tree)
                 if isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "async_harness"
+                and (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id == "async_harness"
+                    or isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "self"
+                    and node.func.attr == "harness"
+                )
                 and len(node.args) >= 3
                 and isinstance(node.args[1], ast.Constant)
                 and node.args[1].value
@@ -739,11 +745,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 "id": actor,
                 "actor": actor,
                 "runtime": "native-tauri",
-                "worktree": (
-                    "/workspace/peers-chat-high-chat"
-                    if actor == "alice"
-                    else "/workspace/peers-group-chat"
-                ),
+                "worktree": "/workspace/selected",
                 "webdriver_port": 4445 + index,
                 "gateway_port": 3030 + index,
                 "renderer_port": 14310 + index,
@@ -910,7 +912,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         ] = False
         with self.assertRaisesRegex(
             self.module.GateError,
-            "stale or dirty",
+            "differs from the candidate snapshot",
         ):
             self.module.validate_report(
                 report,
@@ -1184,249 +1186,81 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             .read_text(encoding="utf-8")
         )
         fixture = source.index('"command.reconciliation.fixture"')
-        activation = source.index('"command.reconciliation.activate"', fixture)
+        activation = source.index('"command.reconciliation.restart"', fixture)
         convergence = source.index(
             '"command.reconciliation",',
-            activation + len('"command.reconciliation.activate"'),
+            activation + len('"command.reconciliation.restart"'),
         )
         self.assertLess(fixture, activation)
         self.assertLess(activation, convergence)
 
-    def test_submitted_recovery_can_bind_a_fresh_restorable_command(self) -> None:
-        manifest = self.valid_report()["manifest"]
-        actors = {
-            "initialState": "existing",
-            "actors": [
-                {
-                    "role": actor,
-                    "accountRef": f"station-account:{actor}@p.t",
-                    "ptid": f"ptid:{actor}",
-                }
-                for actor in ("alice", "bob")
-            ],
-            "reset": {"authorized": False, "targetVerified": True},
-        }
+
+
+
+
+
+    def test_submitted_recovery_creates_its_exact_command_through_ui(self) -> None:
         gate = NativeTwoClientGate(
-            manifest=manifest,
-            actor_manifest=actors,
-            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+            manifest=self.valid_report()["manifest"],
+            actor_manifest={
+                "actors": [
+                    {"role": actor, "ptid": f"ptid:{actor}"}
+                    for actor in ("alice", "bob")
+                ],
+            },
+            runtime_binding=SyntheticRuntimeBinding(),
             gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
             allow_existing_fixture=True,
         )
-        gate.clients = {"alice": object(), "bob": object()}  # type: ignore[assignment]
+        gate.clients = {"alice": Mock(), "bob": Mock()}
+        gate.clients["bob"].invoke_app_result.return_value = {
+            "ok": True, "data": {"paused": True},
+        }
         gate.ptids = {"alice": "ptid:alice", "bob": "ptid:bob"}
-        environment = {
-            "PT_CHAT_NATIVE_CREATE_RESTORABLE_COMMAND": "1",
-            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_ACTOR": "alice",
-            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_CONVERSATION_ID": "conversation-1",
-            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_MESSAGE_ID": "",
-            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_COMMAND_ID": "",
-            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_OUTCOME": "accepted",
-            "PT_CHAT_NATIVE_RESTORABLE_COMMAND_PLAINTEXT": "recover me",
+        prepared_row = {
+            "messageId": "message-one", "commandId": "command-one",
+            "localState": "prepared", "outboxState": "pending", "attemptState": "prepared",
+        }
+        submitted = {
+            "messageId": "message-one", "projection": None,
+            "outbox": {"state": "submitted", "lastErrorCode": "", "commandSha256": "e" * 64},
+            "commandLedger": [{
+                **prepared_row, "localState": "submitted", "outboxState": "submitted",
+                "attemptState": "submitted", "draftState": "submitted",
+            }],
         }
         with (
-            patch.dict(os.environ, environment, clear=False),
-            patch(
-                "tooling.acceptance.gates.chat.native_two_client_runner.async_harness",
-                return_value={
-                    "messageId": "message-1",
-                    "commandId": "command-1",
-                    "snapshot": {},
-                },
-            ) as harness,
+            patch("tooling.acceptance.gates.chat.native_two_client_runner.send_text",
+                  return_value={"messageUlid": "message-one"}) as send,
+            patch("tooling.acceptance.gates.chat.native_two_client_runner.async_harness",
+                  side_effect=[
+                      {"commandLedger": [prepared_row]},
+                      {"outbox": {"state": "pending", "commandSha256": "e" * 64}},
+                      {"snapshot": submitted},
+                  ]) as harness,
         ):
-            target = gate.create_restorable_command_target()
-
+            initial = gate.prepare_submitted_command_target("conversation-one")
+        self.assertEqual(initial, submitted)
+        self.assertEqual(gate.expected_reconciliation_target(), {
+            "actor": "bob", "conversationId": "conversation-one",
+            "messageId": "message-one", "commandId": "command-one", "outcome": "accepted",
+        })
+        send.assert_called_once()
+        self.assertIs(send.call_args.args[0], gate.clients["bob"])
+        gate.clients["bob"].invoke_app_result.assert_called_once_with(
+            "messaging_acceptance_pause_lifecycle",
+            {"input": {"expected_actor_ptid": "ptid:bob"}},
+        )
         self.assertEqual(
-            target,
-            {
-                "actor": "alice",
-                "conversationId": "conversation-1",
-                "messageId": "message-1",
-                "commandId": "command-1",
-                "outcome": "accepted",
-            },
+            [call.args[1] for call in harness.call_args_list],
+            ["engineInteractionSnapshot",
+             "engineInteractionSnapshot", "prepareSubmittedCommand"],
         )
-        self.assertEqual(gate.expected_reconciliation_target(), target)
         self.assertEqual(
-            gate.report.runtime["createdSubmittedCommand"]["plaintextSha256"],
-            "bc54d1d8c0a99336ea2c89cccee81d1545b9e5c10791b3e5a7140803035213fb",
+            harness.call_args.kwargs,
+            {},
         )
-        harness.assert_called_once()
-
-    def test_current_profile_accepts_cross_worktree_group_initiator(self) -> None:
-        report = self.valid_report()
-        source_commit = "a" * 40
-        report["manifest"]["source"]["commit"] = source_commit
-        for client in report["manifest"]["clients"]:
-            client["storage_lifecycle"] = "persistent"
-        report["runtime"]["launchOrder"] = ["bob", "alice"]
-        report["runtime"]["directionOrder"] = ["bob", "alice"]
-        report["runtime"]["persistentDeviceState"] = {
-            actor: {
-                "storageRoot": f"/tmp/{actor}",
-                "storageLifecycle": "persistent",
-            }
-            for actor in ("alice", "bob")
-        }
-        report["runtime"]["worktreeTopology"] = {
-            "alice": {
-                "clientId": "alice",
-                "logicalName": "peers-chat-high-chat",
-                "expectedLogicalName": "peers-chat-high-chat",
-                "workspaceId": "1" * 16,
-                "repositoryId": "3" * 16,
-                "canonicalRoot": "/workspace/peers-chat-high-chat",
-                "head": "b" * 40,
-                "tree": "c" * 40,
-                "clean": True,
-            },
-            "bob": {
-                "clientId": "bob",
-                "logicalName": "peers-group-chat",
-                "expectedLogicalName": "peers-group-chat",
-                "workspaceId": "2" * 16,
-                "repositoryId": "3" * 16,
-                "canonicalRoot": "/workspace/peers-group-chat",
-                "head": source_commit,
-                "tree": "c" * 40,
-                "clean": True,
-            },
-        }
-        report["assertions"].extend(
-            {
-                "name": name,
-                "passed": True,
-                "detail": "",
-            }
-            for name in CURRENT_PROFILE_REQUIRED_ASSERTIONS
-        )
-
-        validate_current_profile_topology(report)
-
-    def test_current_profile_rejects_ephemeral_device_state(self) -> None:
-        report = self.valid_report()
-        source_commit = "a" * 40
-        report["manifest"]["source"]["commit"] = source_commit
-        report["runtime"]["launchOrder"] = ["bob", "alice"]
-        report["runtime"]["directionOrder"] = ["bob", "alice"]
-        report["runtime"]["worktreeTopology"] = {
-            "alice": {
-                "clientId": "alice",
-                "logicalName": "peers-chat-high-chat",
-                "expectedLogicalName": "peers-chat-high-chat",
-                "workspaceId": "1" * 16,
-                "repositoryId": "3" * 16,
-                "canonicalRoot": "/workspace/peers-chat-high-chat",
-                "head": "b" * 40,
-                "tree": "c" * 40,
-                "clean": True,
-            },
-            "bob": {
-                "clientId": "bob",
-                "logicalName": "peers-group-chat",
-                "expectedLogicalName": "peers-group-chat",
-                "workspaceId": "2" * 16,
-                "repositoryId": "3" * 16,
-                "canonicalRoot": "/workspace/peers-group-chat",
-                "head": source_commit,
-                "tree": "c" * 40,
-                "clean": True,
-            },
-        }
-        report["runtime"]["persistentDeviceState"] = {
-            actor: {
-                "storageRoot": f"/tmp/{actor}",
-                "storageLifecycle": "ephemeral",
-            }
-            for actor in ("alice", "bob")
-        }
-        report["assertions"].extend(
-            {
-                "name": name,
-                "passed": True,
-                "detail": "",
-            }
-            for name in CURRENT_PROFILE_REQUIRED_ASSERTIONS
-        )
-
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "persistent device state",
-        ):
-            validate_current_profile_topology(report)
-
-    def test_current_profile_rejects_same_worktree_evidence(self) -> None:
-        report = self.valid_report()
-        source_commit = "a" * 40
-        report["manifest"]["source"]["commit"] = source_commit
-        report["manifest"]["clients"][0]["worktree"] = (
-            "/workspace/peers-group-chat"
-        )
-        report["runtime"]["launchOrder"] = ["bob", "alice"]
-        report["runtime"]["directionOrder"] = ["bob", "alice"]
-        report["runtime"]["worktreeTopology"] = {
-            actor: {
-                "clientId": actor,
-                "logicalName": (
-                    "peers-chat-high-chat"
-                    if actor == "alice"
-                    else "peers-group-chat"
-                ),
-                "expectedLogicalName": (
-                    "peers-chat-high-chat"
-                    if actor == "alice"
-                    else "peers-group-chat"
-                ),
-                "workspaceId": "2" * 16,
-                "repositoryId": "3" * 16,
-                "canonicalRoot": "/workspace/peers-group-chat",
-                "head": source_commit,
-                "tree": "c" * 40,
-                "clean": True,
-            }
-            for actor in ("alice", "bob")
-        }
-
-        with self.assertRaisesRegex(RuntimeError, "distinct worktrees"):
-            validate_current_profile_topology(report)
-
-    def test_current_profile_rejects_high_chat_initiator(self) -> None:
-        report = self.valid_report()
-        source_commit = "a" * 40
-        report["manifest"]["source"]["commit"] = source_commit
-        report["runtime"]["launchOrder"] = ["alice", "bob"]
-        report["runtime"]["directionOrder"] = ["alice", "bob"]
-        report["runtime"]["worktreeTopology"] = {
-            "alice": {
-                "clientId": "alice",
-                "logicalName": "peers-chat-high-chat",
-                "expectedLogicalName": "peers-chat-high-chat",
-                "workspaceId": "1" * 16,
-                "repositoryId": "3" * 16,
-                "canonicalRoot": "/workspace/peers-chat-high-chat",
-                "head": "b" * 40,
-                "tree": "c" * 40,
-                "clean": True,
-            },
-            "bob": {
-                "clientId": "bob",
-                "logicalName": "peers-group-chat",
-                "expectedLogicalName": "peers-group-chat",
-                "workspaceId": "2" * 16,
-                "repositoryId": "3" * 16,
-                "canonicalRoot": "/workspace/peers-group-chat",
-                "head": source_commit,
-                "tree": "c" * 40,
-                "clean": True,
-            },
-        }
-
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "must launch and initiate",
-        ):
-            validate_current_profile_topology(report)
+        self.assertEqual(harness.call_args.args[2]["commandId"], "command-one")
 
     def test_client_readiness_requires_active_station_device(self) -> None:
         runner_source = (

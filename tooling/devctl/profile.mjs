@@ -120,6 +120,7 @@ function resolveMachineWorkspace(
       workspaceRoot: root,
       envRepo: resolveEnvRepo(root, environment),
       home: environment.HOME,
+      targetProfile: environment.PT_DEV_TARGET_PROFILE,
     });
   } catch (error) {
     if (error instanceof MachineDevError) {
@@ -263,10 +264,16 @@ export function resolveProfile(
   const activePath = path.join(paths.active, `${worktreeId(root)}.env`);
   const machine = resolveMachineWorkspace(root, environment, machineResolver);
   const explicit = resolveAcceptanceProfilePath(environment);
+  if (explicit && environment.PT_DEV_TARGET_PROFILE) {
+    fail(
+      ERROR_CODES.PROFILE_INVALID,
+      'A target Profile cannot be combined with an Acceptance runtime profile file',
+    );
+  }
   const resolvedPath = explicit ?? machine.profile.profileFile;
   const selectedProfile = validateProfile(
     readEnvFile(resolvedPath),
-    explicit ? undefined : machine.binding.profile,
+    explicit ? undefined : machine.profile.profile,
     resolvedPath,
   );
   const profile = validateProfile(
@@ -465,5 +472,8 @@ export function runtimeEnvironment(resolved, environment = process.env) {
     PT_DEV_DATA: resolved.paths.profileData,
     PT_DEV_LOGS: resolved.paths.profileLogs,
     PT_DEV_PIDS: resolved.paths.profilePids,
+    ...(environment.PT_DEV_TARGET_PROFILE
+      ? { PT_DEV_TARGET_PROFILE: resolved.reference.profileName }
+      : {}),
   };
 }

@@ -617,6 +617,11 @@ class MobileSimulatorContractTests(unittest.TestCase):
         self.path = ENVIRONMENTS_DIR / "mobile-simulator.yaml"
         self.payload = json.loads(self.path.read_text(encoding="utf-8"))
         self.spec = load_mobile_simulator_spec(self.path)
+        equipment = patch(
+            "tooling.acceptance.provisioners.station_equipment.equip_station_profiles",
+        )
+        self.station_equipment = equipment.start()
+        self.addCleanup(equipment.stop)
 
     def _station_access_fixture(
         self,
@@ -2436,6 +2441,8 @@ class MobileSimulatorContractTests(unittest.TestCase):
             contract,
             base_factory=Base,
             overlay_path=social_path,
+            station_profiles={"station-primary": "primary", "station-secondary": "secondary"},
+            service_profiles={"relay": "relay"},
         )
         provisioner.bind_evidence_run(object())  # type: ignore[arg-type]
         services = {
@@ -2444,6 +2451,21 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "relay": attestation("relay", "relay"),
         }
         with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator.resolve_reviewed_profile_environment",
+                side_effect=lambda profile: (
+                    Path(f"/canonical/{profile}/profile.env.example"),
+                    {
+                        "PT_STATION_MODE": "remote",
+                        "PT_STATION_URL": f"https://station-{profile}.example",
+                        "PT_STATION_DEPLOY_ENV": f"station-{profile}",
+                        "PT_RELAY_MODE": "remote",
+                        "PT_RELAY_URL": "https://relay.example",
+                        "PT_RELAY_DEPLOY_ENV": "relay",
+                        "PT_RELAY_HEALTH_URL": "https://relay.example/sub-oss/healthz",
+                    },
+                ),
+            ),
             patch.dict(
                 "os.environ",
                 {
@@ -2740,6 +2762,11 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         )
         self.contract = EnvironmentContract.from_yaml(self.contract_path)
         self.evidence_run = FakeEvidenceRun()
+        equipment = patch(
+            "tooling.acceptance.provisioners.station_equipment.equip_station_profiles",
+        )
+        self.station_equipment = equipment.start()
+        self.addCleanup(equipment.stop)
 
     def _attestation(self, service_id: str) -> ServiceAttestation:
         return ServiceAttestation(
@@ -2873,6 +2900,19 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
         }
 
+    @staticmethod
+    def _reviewed_station_profile(profile: str) -> tuple[Path, dict[str, str]]:
+        if profile not in {"primary", "secondary"}:
+            raise AssertionError(f"Unexpected Profile: {profile}")
+        return (
+            Path(f"/canonical/{profile}/profile.env.example"),
+            {
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_URL": f"https://station-{profile}.example",
+                "PT_STATION_DEPLOY_ENV": f"deploy-{profile}",
+            },
+        )
+
     def test_accepts_and_injects_explicit_station_profiles(self) -> None:
         bindings = {
             "station-primary": "four",
@@ -2978,6 +3018,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         provisioner = MobileStationLifecycleSimulatorProvisioner(
             self.contract,
             base_factory=Base,
+            station_profiles={"station-primary": "primary", "station-secondary": "secondary"},
         )
         provisioner.bind_evidence_run(self.evidence_run)  # type: ignore[arg-type]
 
@@ -2985,6 +3026,10 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             events.append(f"target:{deployment}")
 
         with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator.resolve_reviewed_profile_environment",
+                side_effect=self._reviewed_station_profile,
+            ),
             patch.dict(
                 "os.environ",
                 self._service_environment(),
@@ -3104,6 +3149,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         provisioner = MobileStationLifecycleSimulatorProvisioner(
             self.contract,
             base_factory=Base,
+            station_profiles={"station-primary": "primary", "station-secondary": "secondary"},
         )
         provisioner.bind_evidence_run(self.evidence_run)  # type: ignore[arg-type]
 
@@ -3139,6 +3185,10 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             for service_id in ("station-primary", "station-secondary")
         }
         with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator.resolve_reviewed_profile_environment",
+                side_effect=self._reviewed_station_profile,
+            ),
             patch.dict(
                 "os.environ",
                 self._service_environment(),

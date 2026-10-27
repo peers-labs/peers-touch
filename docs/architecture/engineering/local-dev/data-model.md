@@ -99,6 +99,15 @@ versions; incompatible files fail closed and must be corrected explicitly.
 
 Profile definitions remain references to the sibling environment repository:
 
+`checkWorkspace({targetProfile})` returns the original `binding` and a reviewed
+target `profile`. `profile` remains the binding assertion; it is not the
+operation target. `prepareLease` freezes `targetProfile` alongside the current
+source and exact resource ID. CLI `--target-profile` and the contained
+`PT_DEV_TARGET_PROFILE` projection carry that target through command resolution.
+The lease projects `PT_MACHINE_LEASE_TARGET_PROFILE`; inherited lease
+verification rejects a different requested target and revalidates the frozen
+target. No registry or lease-metadata schema version is added.
+
 ```ts
 interface ProfileDefinition {
   name: string;

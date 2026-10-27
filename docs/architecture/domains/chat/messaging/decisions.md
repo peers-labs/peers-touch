@@ -157,6 +157,23 @@ group/session/transition、pending command 与 transfer state 仍必须清除。
 恢复在原子替换数据库前完成 Station enrollment 验证；已登记设备缺少 DSK 时
 要求设备授权恢复，不得在原设备 ID 下生成替代签名密钥。失败保留原数据库。
 
+新设备先完成认证，再恢复 Actor Identity 和 enrollment，最后验证 Chat readiness。
+Acceptance 登录操作从 authenticated Session 返回 canonical PTID，不得提前要求
+Messaging Engine、Social projection 或加密初始化；显式 Chat hydration 仍必须传播
+Engine 未就绪错误。
+
+备份状态与 revision 列表由 authenticated Session 读取，不要求活动 Engine。
+状态查询使用 Registry 的 typed profile readiness 验证 Actor 绑定；新设备的
+identity 为 null，不得伪造已初始化身份。恢复入口以真实备份存在为资格，生成与
+创建备份仍以真实本地 identity 为资格。Recovery projection 在 Messaging bootstrap
+之前启动，按 Session/Station reset，并在异步完成时校验 Actor、Session epoch 和
+scope generation；账号切换清除恢复短语与弹窗草稿。原生恢复提交后返回真实
+Actor/Profile/Home Station/Endpoint 绑定，Recovery 在读取备份状态前发布 typed
+profile activation。Messaging owner 校验当前 Session 与原生作用域后重新 bootstrap，
+使聊天投影恢复。该信号不改变认证状态，不制造 inbox event 或 lane sequence。
+Messaging 的周期 timer 在缺少 Engine 时仍保留，用于补偿遗漏激活通知；排队任务、
+命令与读取完成均受 Session epoch、activation generation 和 teardown 隔离。
+
 ## MP-D09: 统一 Conversation Framework
 
 **Status**: accepted

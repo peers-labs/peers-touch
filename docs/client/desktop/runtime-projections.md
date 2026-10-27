@@ -33,6 +33,7 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 | Runtime | Owns |
 |---|---|
 | `messaging` | Chat command lifecycle, native projection events, scoped reset, cold sync, and periodic reconciliation |
+| `messaging-recovery` | Authenticated backup status before Messaging activation, Session/Station-scoped reset, committed profile activation publication, post-restore identity refresh, and periodic reconciliation |
 | `socialRealtime` | Friendship, contact, profile, presence, and Social notification projections |
 | `momentsRuntime` | Moments HOME / Explore / Circles projection bootstrap, periodic reconciliation, and actor-scoped reset |
 | `agent-capability` | Provider, model, Agent, applet, MCP, Skill, Tool, and versioned Commands & Skills snapshot bootstrap |
@@ -62,10 +63,17 @@ If a feature only refreshes on component mount, tab switch, or button click, the
 login:
 
 - own the authenticated Device Messaging Engine scope and command facade;
+- consume `messaging.profile_activated` after native recovery commits, verify
+  its Actor, Session epoch, Profile, Home Station and Endpoint against current
+  native readback, and rebuild scope through the Messaging owner;
+- keep the periodic timer installed when bootstrap lacks an Engine so a missed
+  activation wake retries native scope resolution;
 - consume native Messaging projection invalidations;
 - reconcile conversations, messages, receipts, typing, membership, settings,
   and attachments after dropped events, reconnects, and foreground resume;
-- reset Chat projection state atomically on actor or Station scope change;
+- invalidate queued work and reset Chat projection state immediately on Session,
+  Station or Endpoint replacement; every read and command completion is fenced
+  by the current Session epoch and activation generation, including teardown;
 - keep pages and `socialRealtime` from installing Chat consumers.
 
 `socialRealtime` is responsible for keeping Social projections current after login:
@@ -95,9 +103,28 @@ and Thread count reads before they can repopulate the new scope. Native
 proof checks summary/panel count and ID equality after that load, including
 offline and restart recovery.
 
+Thread read cursors use the current conversation's loaded root message and
+that Thread's loaded replies. An explicit last-read message uses its committed
+authority sequence; otherwise the highest positive sequence in those projections
+is used. An empty reply list can therefore read the loaded root. Pending or
+unloaded messages cannot supply a cursor, and the store submits nothing until a
+positive sequence exists. Unrelated timeline messages do not advance the Thread
+cursor; Engine validation of positive sequences and the authority head remains
+the final command boundary.
+
 Friend request handling specifically belongs here. A notification saying "User B sent a friend request" must cause the social projection to refresh friend requests and related counters without waiting for Contacts to remount.
 
 Peer public profile is also part of this projection. The chat layer needs the rich public profile (display name, bio, avatar/header, region, tags, links, counts) of any peer it can converse with. The cache lives in `socialChat.peerProfiles` and is filled by `loadPeerProfile(did)`; UI panels (Contacts detail, Chat detail) call it lazily on view, while authoritative invalidation must come from the runtime — when an `actor.profile.updated` realtime signal lands (or, until then, on supervisor resync) `socialRealtime` must call `loadPeerProfile(did, true)` for every peer currently visible in `sessions`/`groupMembers` so the next render sees the new profile.
+
+Profile read completions are fenced by the authenticated Actor, Session epoch,
+and Social profile reset generation, including the subsequent authoritative
+Federation resolve. A failed refresh supplies no newer profile truth and retains
+the same scope's last successful profile; it clears the loading state and records
+the failure. An initial failure may retain an empty projection until the owning
+runtime retries. A successful authoritative response replaces the previous
+profile, including an explicitly removed avatar. Account/session changes and
+Social reset discard old read completions; Messaging-only reset does not own
+Social profile invalidation.
 
 ## 4.1 Moments Runtime Contract
 
@@ -151,6 +178,17 @@ interface RuntimeDescriptor {
 - `app`-scope runtimes (search, settings, social, moments) do not depend on the active actor at install time; their data either is identity-independent, is itself the source of truth for the active actor, or observes authenticated actor edges through its own bridge logic.
 - `session`-scope runtimes are created by registering a descriptor with `scope: 'session'`; the BootPipeline calls their `bootstrap`/`teardown` on the authenticated-actor edge.
 - `agent-chat` is an authenticated-critical session runtime. Its stream consumer and actor-bound recovery projection MUST finish install/bootstrap before Agent turn commands are exposed; otherwise early sequenced events can be observed by the transport but dropped by the recovery owner.
+- `messaging-recovery` is authenticated-critical and bootstraps before
+  `messaging`. Backup reads require the authenticated Session, not an active
+  Engine. Typed profile readiness validates Actor binding and may project a
+  null local identity. Store completions are fenced by Actor, Session epoch and
+  reset generation. The runtime resets on accepted Session or Station edges;
+  the recovery form is Actor-keyed so phrase drafts cannot survive an identity
+  switch. A successful native restore publishes its committed Actor/Profile/
+  Home Station/Endpoint binding before fetching backup status. Messaging alone
+  resolves and activates the new runtime scope. Status failure cannot suppress
+  this activation wake. It changes no authentication phase or inbox lane
+  sequence; the existing periodic owner covers a missed wake.
 - `acquirePage` / `releasePage` are optional page-resource lease hooks for dynamic runtime instances. They do not replace `install/bootstrap/reconcile`; they only let the owning runtime acquire or release page-scoped resources when PageHost proves a page needs them.
 - Ordinary page switches do not trigger `releasePage`. `keepAlive:{lru}` means the page is hidden but cached; resources are released only for explicit close, LRU eviction, or true unmount.
 - Runtime entries live in `apps/desktop/src/runtimes/*Runtime.ts` and are registered through `services/appRuntime.ts → registerKernelRuntimes`.

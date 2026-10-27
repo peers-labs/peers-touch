@@ -1,6 +1,7 @@
 # 唯一注册与模块职责
 
 > **Status**: draft
+> **Authority**: non-normative
 > **Created**: 2026-10-22 | **Updated**: 2026-10-22
 > **Owner**: Acceptance
 

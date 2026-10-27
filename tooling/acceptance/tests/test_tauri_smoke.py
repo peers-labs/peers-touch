@@ -5,13 +5,15 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from selenium.webdriver.remote.command import Command
 from selenium.webdriver.remote.webelement import WebElement
 
+from tooling.acceptance.core import AppLaunchMetadata, AppLauncher
 from tooling.acceptance.drivers.tauri import (
     MakeDesktopLauncher,
+    TauriDriver,
     TauriSession,
     resolve_smoke_port,
 )
@@ -33,6 +35,51 @@ class TauriSmokePortTests(unittest.TestCase):
             with self.subTest(port=port):
                 with self.assertRaises(ValueError):
                     resolve_smoke_port(port)
+
+
+class TauriSessionLifecycleTests(unittest.TestCase):
+    def test_session_final_stop_releases_preserved_state_and_keeps_launch_pid(self) -> None:
+        for preserve in (False, True):
+            with self.subTest(preserve=preserve), tempfile.TemporaryDirectory() as tmp:
+                storage = Path(tmp) / "state"
+                storage.mkdir()
+                launcher = Mock(spec=AppLauncher)
+                launcher.metadata = AppLaunchMetadata(
+                    "127.0.0.1", 4445, 3140, "owned-client", str(storage), 12345,
+                )
+                launcher.start.return_value = launcher.metadata
+
+                def release(*, preserve_state: bool = False) -> None:
+                    launcher.metadata = AppLaunchMetadata(
+                        "127.0.0.1", 4445, 3140, "owned-client", str(storage), None,
+                    )
+                    if not preserve_state:
+                        storage.rmdir()
+
+                launcher.stop.side_effect = release
+                driver = Mock(spec=TauriDriver)
+                with patch(
+                    "tooling.acceptance.drivers.tauri.TauriDriver",
+                    return_value=driver,
+                ):
+                    session = TauriSession(launcher)
+                    session.start()
+                    if preserve:
+                        session.stop(preserve_state=True)
+                        self.assertTrue(storage.exists())
+                    session.stop()
+                    session.stop()
+                self.assertFalse(storage.exists())
+                self.assertEqual(session.process_id, 12345)
+                self.assertEqual(
+                    launcher.stop.call_args_list,
+                    [call(preserve_state=True), call()] if preserve else [call()],
+                )
+                if preserve:
+                    driver.disconnect.assert_called_once_with()
+                    driver.stop.assert_not_called()
+                else:
+                    driver.stop.assert_called_once_with()
 
 
 class TauriSessionSemanticActionTests(unittest.TestCase):

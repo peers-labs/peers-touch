@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from tooling.acceptance.core import EvidenceManifestInvalid
 from tooling.acceptance.gates.station_access import lifecycle_aggregate
+from tooling.acceptance.tests.aggregate_fixtures import ManifestFixtureStore
 
 
 EXPECTED_SOURCE = {
@@ -33,23 +33,10 @@ def passing_manifest(
             "status": status,
             "completionStatus": completion_status,
             "proofStatus": proof_status,
+            "cleanupStatus": "passed",
             "secretScan": {"status": "passed"},
         },
     }
-
-
-class FakeStore:
-    workspace_id = "0123456789abcdef"
-
-    def __init__(self, manifests: dict[str, dict[str, object]]) -> None:
-        self.manifests = manifests
-
-    def latest(self, gate_id: str) -> dict[str, object]:
-        if gate_id not in self.manifests:
-            raise EvidenceManifestInvalid(
-                f"latest pointer is unavailable for {gate_id}"
-            )
-        return self.manifests[gate_id]
 
 
 class StationAccessLifecycleAggregateTest(unittest.TestCase):
@@ -58,7 +45,8 @@ class StationAccessLifecycleAggregateTest(unittest.TestCase):
             spec.gate_id: passing_manifest(spec.gate_id)
             for spec in lifecycle_aggregate.PRECEDING_GATES
         }
-        self.store = FakeStore(self.manifests)
+        self.store = ManifestFixtureStore(self.manifests)
+        ManifestFixtureStore.bind(self, EXPECTED_SOURCE, lambda: self.store)
 
     def evaluate(self) -> lifecycle_aggregate.AggregateResult:
         return lifecycle_aggregate.AggregateResult(

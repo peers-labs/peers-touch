@@ -141,6 +141,9 @@ def finalizer_bindings(
 
 
 def gate_launch_fields(gate_id: str, gate: dict[str, Any]) -> dict[str, Any]:
+    from tooling.acceptance.core.execution_identity import validate_execution_inputs
+
+    validate_execution_inputs(gate_id, gate)
     if "judgment" in gate:
         if gate["judgment"] != "all-prerequisites" or "command" in gate or "argv" in gate:
             raise SystemExit(f"{gate_id}: invalid prerequisite judgment")
@@ -227,6 +230,8 @@ def planned_gate(
         "dependsOn": gate.get("dependsOn", []),
         "required_by": [],
     }
+    if "executionInputs" in gate:
+        planned["executionInputs"] = gate["executionInputs"]
     if finalizer_binding is not None:
         planned["evidenceFinalizer"] = finalizer_binding.plan_config()
     return planned

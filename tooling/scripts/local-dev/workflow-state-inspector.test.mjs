@@ -31,6 +31,7 @@ function projectRoot(parent) {
     cwd: root,
   });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: root });
+  execFileSync('git', ['config', 'core.hooksPath', '/dev/null'], { cwd: root });
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['commit', '-m', 'fixture'], {
     cwd: root,

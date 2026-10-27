@@ -328,21 +328,37 @@ def redact_text_with_values(text: str, secret_values: tuple[str, ...]) -> str:
 def redact_value_with_values(
     value: Any,
     secret_values: tuple[str, ...],
+    *,
+    serialized_metadata: bool = False,
 ) -> Any:
     text = secret_text_redactor(secret_values)
 
-    def visit(item: Any) -> Any:
+    def visit(item: Any, *, public_metadata: bool = False) -> Any:
         if isinstance(item, Mapping):
+            if (
+                serialized_metadata and not public_metadata
+                and type(item) is dict
+                and item.get("artifactKind") == "acceptance-execution-graph"
+            ):
+                from .execution_graph import ExecutionGraph
+                from .execution_budget import ExecutionBudgetError
+
+                try:
+                    ExecutionGraph(item)
+                except ExecutionBudgetError:
+                    pass
+                else:
+                    public_metadata = True
             return {
                 text(str(key)): (
-                    child if is_sensitive_key(key) and isinstance(child, bool)
-                    else REDACTED if is_sensitive_key(key)
-                    else visit(child)
+                    child if not public_metadata and is_sensitive_key(key) and isinstance(child, bool)
+                    else REDACTED if not public_metadata and is_sensitive_key(key)
+                    else visit(child, public_metadata=public_metadata)
                 )
                 for key, child in item.items()
             }
         if isinstance(item, (list, tuple)):
-            return [visit(child) for child in item]
+            return [visit(child, public_metadata=public_metadata) for child in item]
         if isinstance(item, str):
             return text(item)
         if isinstance(item, (bytes, bytearray, memoryview)):
@@ -375,7 +391,9 @@ def redact_artifact_bytes(
     except json.JSONDecodeError:
         structured = None
     else:
-        redacted_val = redact_value_with_values(structured, secret_values)
+        redacted_val = redact_value_with_values(
+            structured, secret_values, serialized_metadata=True,
+        )
         if redacted_val != structured:
             encoded = (
                 json.dumps(redacted_val, indent=2, sort_keys=True, default=str)

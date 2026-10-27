@@ -10,17 +10,26 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Iterator
 
-from tooling.acceptance.core.errors import BlockedError, EphemeralLaunchError
-from tooling.acceptance.core.evidence_store import current_artifact_ref, write_current_artifact
-from tooling.acceptance.core.execution_budget import ExecutionDeadline, digest, positive_seconds
+from tooling.acceptance.core.errors import (
+    BlockedError, EphemeralLaunchCleanupFailed, EphemeralLaunchError,
+)
+from tooling.acceptance.core.evidence_store import (
+    current_artifact_ref, source_identity, write_current_artifact,
+)
+from tooling.acceptance.core.execution_budget import (
+    ExecutionDeadline, deadline, digest, positive_seconds,
+)
 from tooling.acceptance.core.launch_context import GateLaunchSpec, GateProcessLauncher
 from tooling.acceptance.core.redaction import redact_text, redact_value
 from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
+from tooling.acceptance.input_owners.native_toolchain import macos_sdk_installation
+from tooling.acceptance.input_owners.rust_toolchain import rust_installation
 
 
 DEFAULT_BUILD_SECONDS = 130.0
@@ -72,7 +81,7 @@ class DesktopAcceptanceBuild:
                 owner=BUILD_OWNER,
                 recovery_action=(
                     "Resolve the recorded build stage at its owner, then run "
-                    "make acceptance-driver-build from the clean candidate. "
+                    "make acceptance-driver-build from the frozen candidate. "
                     "Keep the current Gate budget."
                 ),
                 resource_checks=[{
@@ -136,14 +145,9 @@ class DesktopAcceptanceBuild:
         return completed
 
     def _identity(self) -> dict[str, Any]:
-        commit = self._run(("git", "rev-parse", "HEAD")).stdout.strip()
+        source = source_identity(self.root)
+        commit = source["commit"]
         tree = self._run(("git", "rev-parse", "HEAD^{tree}")).stdout.strip()
-        dirty = self._run((
-            "git", "status", "--porcelain", "--untracked-files=all",
-        )).stdout.strip()
-        if dirty:
-            self.observation["source"] = {"commit": commit, "clean": False}
-            raise self._blocked("Desktop Acceptance build requires clean source")
         projected_commit = self.environment.get("PT_BUILD_SOURCE_COMMIT")
         if projected_commit is not None and projected_commit != commit:
             self.observation["sourceProjection"] = {
@@ -152,8 +156,15 @@ class DesktopAcceptanceBuild:
             }
             raise self._blocked("Desktop build source projection conflicts with checked HEAD")
         self.environment["PT_BUILD_SOURCE_COMMIT"] = commit
+        interpreter = self.environment.get("PT_ACCEPTANCE_PYTHON") or sys.executable
+        if not Path(interpreter).is_absolute():
+            interpreter = shutil.which(interpreter, path=self.environment.get("PATH")) or ""
+        if not interpreter or not Path(interpreter).is_file() or not os.access(interpreter, os.X_OK):
+            raise self._blocked("Selected Desktop build Python interpreter is unavailable")
+        self.environment["PT_ACCEPTANCE_PYTHON"] = interpreter
         # Make owns the repository tool search path. Direct Cell callers use
-        # that same exported path; repeated Make prefixes are equivalent.
+        # that same exported path and selected Python environment. A policy
+        # caller that already prepended that interpreter has identical inputs.
         exported = json.loads(self._run((
             "make", "--no-print-directory", "--silent",
             "acceptance-driver-build-environment",
@@ -161,13 +172,33 @@ class DesktopAcceptanceBuild:
         if not isinstance(exported, dict) or not isinstance(exported.get("path"), str):
             raise self._blocked("Make did not publish its build tool search path")
         self.environment["PATH"] = os.pathsep.join(
-            dict.fromkeys(exported["path"].split(os.pathsep))
+            dict.fromkeys((str(Path(interpreter).parent), *exported["path"].split(os.pathsep)))
         )
         tools = {}
+        native_installations = {}
+        if platform.system() == "Darwin":
+            remaining = self._ends - time.monotonic()
+            if remaining <= 0:
+                raise self._blocked("Desktop build deadline expired before installed-input observation")
+            with deadline(remaining, ExecutionDeadline(
+                "desktop-acceptance-build", "installed-native-inputs", "work",
+            )):
+                self.observation["stage"] = "installed-rust-inputs"
+                native_installations["rust"] = rust_installation(
+                    self.root / "apps/desktop/src-tauri", self.environment,
+                )
+                self.observation["stage"] = "installed-sdk-inputs"
+                native_installations["sdk"] = macos_sdk_installation(
+                    self.root / "apps/desktop/src-tauri", self.environment,
+                )
         for name, options in (
+            ("python3", ("--version",)),
             ("node", ("--version",)), ("pnpm", ("--version",)),
             ("cargo", ("--version",)), ("rustc", ("-vV",)),
         ):
+            if name in {"cargo", "rustc"} and "rust" in native_installations:
+                tools[name] = native_installations["rust"]["tools"][name]
+                continue
             executable = shutil.which(name, path=self.environment.get("PATH"))
             if not executable:
                 self.observation["missingTool"] = name
@@ -248,8 +279,11 @@ class DesktopAcceptanceBuild:
             raise self._blocked("Applet build owner did not publish its source inputs")
         return {
             "worktree": str(self.root), "commit": commit, "tree": tree,
-            "workspaceDigest": "clean", "platform": platform.platform(),
+            "workspaceDigest": source["workspaceDigest"],
+            "canonicalWorktreeHash": source["canonicalWorktreeHash"],
+            "platform": platform.platform(),
             "tools": tools, "configurationDigest": digest(build_environment),
+            "nativeInstallations": native_installations,
             "localInputs": local_inputs, "binary": str(self.binary),
             "appletInputs": applet_inputs,
             "features": ["acceptance-webdriver"], "tauriConfig": TAURI_CONFIG,
@@ -272,6 +306,50 @@ class DesktopAcceptanceBuild:
             finally:
                 fcntl.flock(lock, fcntl.LOCK_UN)
 
+    def _frontend_outputs(self) -> dict[str, str]:
+        directory = self.root / "apps/desktop/dist"
+        if not directory.is_dir() or directory.is_symlink():
+            return {}
+        outputs = {}
+        for path in sorted(directory.rglob("*")):
+            if path.is_symlink():
+                return {}
+            if path.is_file():
+                outputs[str(path.relative_to(directory))] = file_digest(path)
+        return outputs
+
+    def _publish_receipt(self, path: Path, receipt: dict[str, Any]) -> None:
+        temporary = self.state / f"{uuid.uuid4().hex}.tmp"
+        try:
+            temporary.write_text(json.dumps(receipt, sort_keys=True) + "\n")
+            if time.monotonic() >= self._ends:
+                raise self._blocked("Desktop build deadline expired before receipt publication")
+            os.replace(temporary, path)
+            if time.monotonic() >= self._ends:
+                raise self._blocked("Desktop build deadline expired during receipt publication")
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def _write_observation(self) -> None:
+        if self._attempt is not None and self._attempt.is_dir():
+            (self._attempt / "observation.json").write_text(
+                json.dumps(redact_value(self.observation), sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+    def _ready(self, *, reuse: str, stage: str) -> Path:
+        self.observation.update(status="READY", reuse=reuse, stage=stage)
+        self.observation["durationSeconds"] = round(
+            self.timeout - (self._ends - time.monotonic()), 6,
+        )
+        self._write_observation()
+        if time.monotonic() >= self._ends:
+            raise self._blocked("Desktop build deadline expired during READY publication")
+        return self.binary
+
     def ensure(self) -> Path:
         started = time.monotonic()
         self._ends = started + self.timeout
@@ -281,13 +359,25 @@ class DesktopAcceptanceBuild:
             "deadlineSeconds": self.timeout,
         }
         self._attempt = self.state / "attempts" / uuid.uuid4().hex
+        cancellation = ExecutionDeadline(
+            "desktop-acceptance-build", "build", "work",
+            constraints=[{
+                "kind": "owner-operation", "owner": BUILD_OWNER,
+                "source": "DesktopAcceptanceBuild.timeout",
+                "deadlineSeconds": self.timeout,
+            }],
+        )
         try:
-            with self._lock():
+            remaining = self._ends - time.monotonic()
+            if remaining <= 0:
+                raise cancellation
+            with deadline(remaining, cancellation), self._lock():
                 self._attempt.mkdir(mode=0o700, parents=True)
                 self.observation["stage"] = "identity"
                 identity = self._identity()
                 self.observation["source"] = {
-                    "commit": identity["commit"], "workspaceDigest": "clean",
+                    "commit": identity["commit"],
+                    "workspaceDigest": identity["workspaceDigest"],
                 }
                 self.observation["inputDigest"] = digest(identity)
                 self.observation["identity"] = identity
@@ -300,16 +390,50 @@ class DesktopAcceptanceBuild:
                     isinstance(receipt, dict) and receipt.get("identity") == identity
                     and self.binary.is_file() and os.access(self.binary, os.X_OK)
                     and receipt.get("binarySha256") == file_digest(self.binary)
+                    and receipt.get("frontendOutputs") == self._frontend_outputs()
+                    and bool(receipt.get("frontendOutputs"))
                 ):
-                    self.observation.update(status="READY", reuse="VERIFIED_BUILD")
-                    return self.binary
+                    return self._ready(reuse="VERIFIED_BUILD", stage="verified")
                 self.observation["reuse"] = "COLD_BUILD"
                 receipt_path.unlink(missing_ok=True)
                 self.observation["stage"] = "frontend"
-                self._run(
-                    ("pnpm", "--dir", "apps/desktop", "run", "build"),
-                    stage="frontend",
-                )
+                frontend_receipt_path = self.state / "frontend-receipt.json"
+                try:
+                    frontend_receipt = json.loads(frontend_receipt_path.read_text())
+                except (OSError, ValueError):
+                    frontend_receipt = {}
+                outputs = self._frontend_outputs()
+                if (
+                    isinstance(frontend_receipt, dict)
+                    and frontend_receipt.get("artifactKind") == "desktop-frontend-build-receipt"
+                    and frontend_receipt.get("identity") == identity
+                    and isinstance(frontend_receipt.get("producer"), dict)
+                    and outputs
+                    and frontend_receipt.get("outputs") == outputs
+                ):
+                    self.observation["frontendReuse"] = "VERIFIED_STAGE"
+                    self.observation["frontendProducer"] = frontend_receipt["producer"]
+                else:
+                    frontend_receipt_path.unlink(missing_ok=True)
+                    self._run(
+                        ("pnpm", "--dir", "apps/desktop", "run", "build"),
+                        stage="frontend",
+                    )
+                    if self._identity() != identity:
+                        raise self._blocked("Desktop source or build inputs changed during build")
+                    outputs = self._frontend_outputs()
+                    if not outputs:
+                        raise self._blocked("Desktop frontend produced no closed output inventory")
+                    self._publish_receipt(frontend_receipt_path, {
+                        "artifactKind": "desktop-frontend-build-receipt",
+                        "identity": identity, "outputs": outputs,
+                        "producer": {
+                            "attemptId": self._attempt.name,
+                            "durationSeconds": self.observation["stages"][-1]["durationSeconds"],
+                            "logs": self.observation.get("logs", []),
+                        },
+                    })
+                    self.observation["frontendReuse"] = "BUILT_STAGE"
                 self.observation["stage"] = "rust"
                 built = self._run((
                     "cargo", "build", "--locked", "--features", "acceptance-webdriver",
@@ -332,6 +456,10 @@ class DesktopAcceptanceBuild:
                 self.observation["stage"] = "source-recheck"
                 if self._identity() != identity:
                     raise self._blocked("Desktop source or build inputs changed during build")
+                self.observation["stage"] = "output-recheck"
+                if self._frontend_outputs() != outputs:
+                    raise self._blocked("Desktop source or build inputs changed during build")
+                self.observation["stage"] = "binary-publication"
                 self.binary.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
                 temporary = self.binary.with_name(f"{self.binary.name}.{uuid.uuid4().hex}.tmp")
                 try:
@@ -343,19 +471,29 @@ class DesktopAcceptanceBuild:
                 receipt = {
                     "artifactKind": "desktop-acceptance-build-receipt",
                     "identity": identity, "binarySha256": file_digest(self.binary),
+                    "frontendOutputs": outputs,
                 }
-                temporary_receipt = self.state / f"{uuid.uuid4().hex}.tmp"
-                try:
-                    temporary_receipt.write_text(json.dumps(receipt, sort_keys=True) + "\n")
-                    os.replace(temporary_receipt, receipt_path)
-                finally:
-                    temporary_receipt.unlink(missing_ok=True)
-                self.observation.update(status="READY", stage="published")
-                return self.binary
+                self.observation["stage"] = "receipt-publication"
+                self._publish_receipt(receipt_path, receipt)
+                return self._ready(reuse="COLD_BUILD", stage="published")
         except BaseException as error:
             self.observation.update(status="FAILED", errorType=type(error).__name__)
             self.observation["durationSeconds"] = round(time.monotonic() - started, 6)
+            if self.observation.get("reuse") == "COLD_BUILD":
+                (self.state / "receipt.json").unlink(missing_ok=True)
+            if isinstance(error, EphemeralLaunchCleanupFailed):
+                raise
             if isinstance(error, ExecutionDeadline):
+                self.observation["deadline"] = {
+                    "gateId": error.gate_id, "stage": error.stage,
+                    "phase": error.phase, "constraints": error.constraints,
+                }
+                if error is cancellation:
+                    reason = (
+                        "Desktop Acceptance build lock timed out"
+                        if self.observation["stage"] == "lock" else str(error)
+                    )
+                    raise self._blocked(reason) from error
                 error.resource = BUILD_RESOURCE
                 error.diagnostic = self._blocked(str(error)).diagnostic
                 raise
@@ -367,8 +505,11 @@ class DesktopAcceptanceBuild:
             raise
         finally:
             self.observation["durationSeconds"] = round(time.monotonic() - started, 6)
-            if self._attempt.is_dir():
-                (self._attempt / "observation.json").write_text(
-                    json.dumps(redact_value(self.observation), sort_keys=True) + "\n",
-                    encoding="utf-8",
-                )
+            if self.observation["status"] == "READY" and time.monotonic() >= self._ends:
+                self.observation.update(status="FAILED", errorType="ExecutionDeadline")
+                if self.observation["reuse"] == "COLD_BUILD":
+                    (self.state / "receipt.json").unlink(missing_ok=True)
+                self._write_observation()
+                raise self._blocked("Desktop build deadline expired before returning READY")
+            if self.observation["status"] != "READY":
+                self._write_observation()

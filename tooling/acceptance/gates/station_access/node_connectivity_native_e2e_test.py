@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import socket
 import threading
@@ -25,6 +26,19 @@ from tooling.acceptance.node_connectivity_native_support import (
 
 
 class NodeConnectivityNativeGateTest(unittest.TestCase):
+    def test_direct_proxy_retains_bound_identity_after_repeated_stop(self) -> None:
+        proxy = DirectRouteFaultProxy("/ip4/127.0.0.1/tcp/9/p2p/test-peer")
+        proxy.start()
+        port = proxy.port
+        multiaddr = proxy.multiaddr
+        proxy.stop()
+        proxy.stop()
+        self.assertEqual(proxy.port, port)
+        self.assertEqual(proxy.multiaddr, multiaddr)
+        self.assertFalse(proxy._thread.is_alive())
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", port))
+
     def test_gate_catalog_uses_environment_backed_native_argv(self) -> None:
         gates = json.loads(
             (REPO_ROOT / "tooling/acceptance/gates.yaml").read_text(
@@ -66,22 +80,52 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
             REPO_ROOT
             / "tooling/acceptance/gates/chat/native_file_picker.py"
         ).read_text(encoding="utf-8")
+        helper_tree = ast.parse(helper)
         self.assertEqual(
-            helper.count("select_file_chooser_path_to_process("),
-            1,
+            [
+                node.name
+                for node in ast.walk(helper_tree)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "select_native_file"
+            ],
+            ["select_native_file"],
         )
         for relative in (
             "tooling/acceptance/gates/chat/lifecycle_direct.py",
             "tooling/acceptance/gates/chat/lifecycle_rich_voice.py",
             "tooling/acceptance/gates/chat/native_product_closure_runner.py",
         ):
-            source = (REPO_ROOT / relative).read_text(encoding="utf-8")
-            self.assertIn("select_native_file(", source, relative)
-            self.assertNotIn(
-                "select_file_chooser_path_to_process(",
-                source,
-                relative,
-            )
+            with self.subTest(consumer=relative):
+                tree = ast.parse(
+                    (REPO_ROOT / relative).read_text(encoding="utf-8")
+                )
+                imports = [
+                    alias
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.ImportFrom)
+                    and node.module
+                    == "tooling.acceptance.gates.chat.native_file_picker"
+                    for alias in node.names
+                    if alias.name == "select_native_file"
+                ]
+                self.assertEqual(len(imports), 1)
+                binding = imports[0].asname or imports[0].name
+                self.assertTrue(any(
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == binding
+                    for node in ast.walk(tree)
+                ))
+                self.assertFalse(any(
+                    isinstance(node, ast.Attribute)
+                    and node.attr == "select_file_chooser_path_to_process"
+                    for node in ast.walk(tree)
+                ))
+                self.assertFalse(any(
+                    isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name == binding
+                    for node in ast.walk(tree)
+                ))
 
     def test_acceptance_binary_exposes_read_only_route_diagnostics(self) -> None:
         command_source = (

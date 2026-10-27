@@ -102,6 +102,23 @@ def fixture_password(path: Path = ACTOR_FIXTURE) -> str:
         )
     return values.pop()
 
+def fixture_avatar(role: str, path: Path = ACTOR_FIXTURE) -> str:
+    username = ACTOR_ACCOUNTS[role].split("@", 1)[0]
+    current_username = ""
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line.startswith("username:"):
+            current_username = line.split(":", 1)[1].strip().strip("'\"")
+        elif current_username == username and line.startswith("avatar:"):
+            avatar = line.split(":", 1)[1].strip().strip("'\"")
+            if avatar.startswith("data:image/svg+xml;base64,"):
+                return avatar
+            break
+    raise BlockedError(
+        reason=f"Committed native avatar fixture is missing for {role}",
+        resource=f"fixture-avatar:{role}",
+    )
+
 
 def _remaining_timeout(
     configured_timeout: float,

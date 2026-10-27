@@ -1,364 +1,224 @@
-# Acceptance Framework
+# Acceptance Framework Operations
 
-`tooling/acceptance/` is the product acceptance layer for agent-driven delivery. It
-defines how a product capability proves that it is complete, which gates must
-run for a changed path, and which artifacts should be produced for human review.
+`tooling/acceptance/` is the executable product-proof layer. This guide is the
+current operating entry point for humans and Agents. Architecture authority is
+in [`docs/architecture/engineering/acceptance/`](../../docs/architecture/engineering/acceptance/README.md).
 
-## Responsibilities
+## What It Proves
 
-- `registry.yaml` maps changed paths to required gates and impacted features.
-- `capabilities/` defines project-wide and domain-specific product capabilities, evidence, and unproven scope.
-- `domains/` defines validation profiles for product domains such as Federation.
-- `domains/index.yaml` lists project domains, onboarding status, coverage state, and next candidates.
-- `templates/` contains domain, capability, and feature templates for new product domains.
-- `gates.yaml` defines gate commands, timeouts, environments, tiers, and artifact expectations.
-- `features/` contains product feature contracts.
-- `gates/` contains stable cross-system acceptance implementations.
-- [`gates/mobile/README.md`](./gates/mobile/README.md) records the Mobile
-  native E2E driver selection, Desktop comparison, hybrid context model, and
-  simulator-versus-physical proof boundary.
-- `playbooks/` explains how agents should run, diagnose, and preserve acceptance flows.
-- Runtime manifests use typed `services[service-id]` as the only service
-  topology. Every required service must carry an ID/kind-matched source-bound
-  attestation; the removed top-level `station` field is invalid.
-- Mobile multi-service environments resolve endpoint and deployment references
-  from the Gate process environment. They do not require or activate an
-  aggregate local-development profile.
-- Current two-actor Mobile product Gates use `mobile-direct-simulator`: two
-  isolated iOS clients bind to one source-attested Station without Relay.
-  `mobile-social-simulator` is retained only for deferred cross-Station proof.
-- `desktop-performance-cohort.json` is the canonical P0c-3 profile, account,
-  dataset, window, warmup, build, runtime, and scenario manifest.
-- `reports/` stores local or CI acceptance artifacts and is ignored by git.
+Acceptance answers four separate questions:
 
-## Reusable Suite Runtime
+1. What product capability was requested?
+2. Which current-source operations and observations ran?
+3. Did cleanup and evidence sealing complete?
+4. Which scope is formally proven, unproven, failed, or blocked?
 
-Multi-scenario runtime Tasks declare a closed `runtimeReuse` object in their
-Task Slice. `tooling/acceptance/core/suite_runtime.py` validates the lifecycle
-without importing a business Domain:
+Framework self-tests prove framework conformance only. Harness observations,
+API success, command exit zero, prerequisite reuse, and Suite lifecycle
+conformance do not substitute for required UI or receiver-visible evidence.
 
-- services, actors, accounts, clients, devices, storage, and login are created
-  at Task or Suite scope;
-- after the first Scenario starts, Scenarios are attach-only;
-- namespaced Fixture reset remains Scenario scoped;
-- Harness observations are supporting evidence only;
-- required real UI actions and receiver-visible assertions are recorded
-  separately;
-- one terminal cleanup event closes the Suite;
-- reports expose provisioning count, client launches, warm-reuse rate, action
-  durations, and an integrity digest.
+## Ownership Map
 
-Audit Plan contracts and immutable reports with:
+- `capabilities/`: business capabilities and required proof.
+- `features/`: feature contracts, visible surfaces, and required Gates.
+- `registry.yaml`: changed-path impact mapping.
+- `domains/`: domain status and validation profiles.
+- `gates.yaml`: Gate commands, dependencies, inputs, timeouts, tiers, and cells.
+- `gates/`: stable product and framework evidence producers.
+- `behavior-rules/`: operation-language behavior rules.
+- `environments/`: typed environment and service requirements.
+- `runtime-cells/`: platform-cell contracts.
+- `provisioners/`: resource lifecycle adapters.
+- `fixtures/`: business-owned setup and reset operations.
+- `input_owners/`: read-only execution-input observers.
+- `core/`: domain-neutral scope, lifecycle, evidence, proof, and reporting logic.
+- `templates/`: contract and human-summary templates.
+- `playbooks/`: bounded operational procedures.
+- `reports/`: ignored convenience output; not the canonical Evidence Store.
 
-```bash
-python3 tooling/scripts/acceptance-pipeline-audit.py \
-  --plan <plan.md> \
-  --tasks <task-id[,task-id...]> \
-  [--runtime-report <suite-report.json>]
+Business modules own the meaning of an operation and its Oracle. Core owns
+execution mechanics and must return `BUSINESS_INJECTION_REQUIRED` or
+`UNPROVEN` when those semantics are absent.
+
+## Execution Flow
+
+```text
+selection
+  -> scope and dependency closure
+  -> execution-input qualification
+  -> environment and runtime-cell provisioning
+  -> bounded Gate operation
+  -> assertions and immutable artifacts
+  -> cleanup and required finalizers
+  -> sealed EvidenceReport
+  -> formal proof reading and report projection
 ```
 
-A passing audit establishes lifecycle conformance only. Product
-`FUNCTIONAL_PASS` and formal `PROVEN` still require their declared Gates.
+The Runner is the execution authority. Execution Plans are optional inputs:
+use one when a reviewed task supplies an explicit scope, or select Gates,
+completion scope, or full scope directly.
 
-## Ephemeral Gate Launch Context
+## Setup
 
-Context-enabled Gates declare canonical `argv` plus
-`ephemeralCapabilities` in `gates.yaml`. The Environment Provisioner keeps
-secrets and raw resource handles in the parent process and returns an
-`EphemeralGateLaunchContext` whose registered handlers exactly match the
-declared capabilities. The runner binds the context to workspace, Gate,
-Evidence Store run, and provisioning run identities, then launches the child
-with `shell=False`, `close_fds=True`, and the exact anonymous channel
-descriptor in `pass_fds`.
+Use the repository Acceptance environment when present:
 
-The child uses `EphemeralGateClient.from_environment()` only to consume the
-non-secret descriptor locator and run identities. Secrets, keys, tokens,
-subjects, raw device identifiers, and endpoint addresses must not enter the
-environment, argv, Runtime Manifest, filesystem, captured output, or Evidence
-Store. Context cleanup always quiesces before runtime-cell and Provisioner
-cleanup, closes handlers afterward, and reports quarantine/zeroization
-failures as Infra failures. Gates without `ephemeralCapabilities` retain their
-existing launch path. Every launch, request, and cleanup timeout must be
-positive and finite. One monotonic request deadline bounds child and broker
-frame reads and every nested parent-side operation, including Appium transport
-and response-body acquisition.
+```bash
+export PATH="$PWD/.local/acceptance/python-venv/bin:$PATH"
+```
 
-## Federation Bootstrap Loop
+Do not install dependencies implicitly during a Gate. Input owners qualify the
+actual selected tools and fail closed when required equipment is absent or has
+drifted.
 
-Federation is a managed domain spanning Station, Native Desktop, Station
-Access, and read-only projections:
+## Select Scope
 
-- Acceptance proves the locally wired Federation scope with Station, Native
-  Desktop, and Station Access gates.
-- Multi-Station convergence and browser-visible remote operations remain
-  explicitly unproven until a new owned environment contract is added.
-- `make acceptance-validate DOMAIN=federation` checks the Federation domain profile against the project-wide capability graph, feature contracts, registry planning, gate definitions, run results, and reports.
-- `make acceptance-federation-domain-validation` runs its local product gates
-  and requires current evidence without claiming framework self-validation.
+Plan the current diff:
 
-## Project Coverage
+```bash
+python3 tooling/scripts/acceptance-plan.py \
+  --root tooling/acceptance \
+  --range HEAD
+```
 
-- `make acceptance-validate` validates every active domain structure in `tooling/acceptance/domains/index.yaml`.
-- `make acceptance-validate DOMAIN=chat` validates the Chat managed-domain profile structure.
-- `make acceptance-validate DOMAIN=federation` validates one domain profile structure.
-- `make acceptance-validate DOMAIN=station-dashboard` validates the Station Dashboard managed-domain profile structure.
-- `python3 tooling/scripts/acceptance-validate.py --domain federation --require-proven` additionally requires latest gate evidence; this is what the Federation mutual-validation gate uses.
-- `make acceptance-chat-domain-validation` runs the Messaging Platform contract,
-  Station messaging packages, Native onboarding, and Native two-client Gates
-  before requiring latest evidence for the managed domain profile.
-- `make acceptance-station-dashboard-domain-validation` runs the Station Dashboard gates and then requires latest evidence for the managed domain profile.
-- `make acceptance-coverage-report` writes `tooling/acceptance/reports/project-coverage-report.md` and summarizes active, candidate, planned, and not-onboarded domains.
-
-## Agent Workflow
-
-1. Update or add a feature contract when a new product capability is introduced.
-2. Ensure the worktree has exactly one active formal execution plan with an
-   `Acceptance Execution` contract.
-3. Run `make acceptance-plan` to inspect the current closure and reconcile the
-   actual diff with the formal plan.
-4. Run `make acceptance` or `make acceptance-run` for the current closure only.
-5. Run `make acceptance-run-completion` when every implementation closure is
-   ready for completion review.
-6. Run `make acceptance-run-full` only after an explicit release or full-test
-   request. Environment availability alone is not authorization.
-7. Run `make quality-evidence REVIEW_RANGE=<base>...<head>` when the change is entering review.
-8. Run `make acceptance-report` and include proven / unproven scope in the handoff.
-9. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
-10. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
-11. For a new product domain, follow `docs/architecture/engineering/acceptance/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
-12. For native Chat journeys, follow
-    `tooling/acceptance/playbooks/chat-native-visible-clients.md`; visible
-    observers, source matching, isolated profiles, bounded steps, and composer
-    cleanup are mandatory.
-
-### W8 Native Chat Operations
-
-`make acceptance-chat-native-static` runs unit and selector contracts without
-launching a live journey. Live targets are
-`acceptance-chat-native-two-client`, `acceptance-chat-native-multi-device`,
-`acceptance-chat-native-recovery`, and `acceptance-chat-native-group-mls`;
-`acceptance-chat-native-w8` runs all four.
-
-### W11 Closure
-
-`make acceptance-chat-w11` runs the fixed W11 closure plan
-(`tooling/acceptance/plans/chat-w11-closure.json`) — 10 gates in sequence:
-forbidden-path scan, duplicate-implementation scan, visible-static checks, all
-six native E2E journeys (two-client, interactions, typing, multi-device,
-recovery, group-MLS), and a mechanical completion-audit that verifies every
-report exists with PASS status before emitting `chat-w11-closure-verdict.json`.
-The gate list is fixed in the plan JSON — there is no AI-driven gate selection.
-Required environment: `CHAT_ACCEPTANCE_RESET=1`, `CHAT_ACCEPTANCE_PASSWORD=1`,
-`CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1`, and a Station whose build commit
-matches the client HEAD.
-
-The two-client Direct journey uses the Core embedded-WebDriver runner. It
-requires `CHAT_NATIVE_STATION_URL` and `CHAT_ACCEPTANCE_RESET=1`. It uses the
-committed disposable dev-account fixture from `apps/station/app/conf/actor.yml`
-(`alice@p.t`, `bob@p.t`, `carol@p.t`, password `1`); these Acceptance-only
-credentials are not part of the production Desktop package. The reset Fixture
-preserves the pre-created actors, while the login result supplies their canonical
-PTIDs. The runner rejects a live Station whose `/app-meta/version` commit does
-not match the tested client commit.
-
-Local Desktop development runs default to
-`PT_ACCEPTANCE_DESKTOP_INPUT_MODE=semantic-nonintrusive`. Embedded WebDriver
-click, text, pointer, and key actions remain inside the Tauri WebView and do
-not acquire the operator's system pointer or keyboard focus. A Gate that needs
-native file panels, permission sheets, physical hover/drag, or native-focus
-proof must use `exclusive-native-input` together with
-`PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION=isolated-gui-session`; otherwise it
-fails closed as `NATIVE_INPUT_ISOLATION_REQUIRED`.
-
-The remaining multi-device, recovery, and group-MLS runners still require
-`CHAT_NATIVE_STATION_ATTESTATION`, canonical actor PTIDs, pre-created accounts,
-and `CHAT_NATIVE_DEMO_PASSWORD`. Their attestation JSON contains `commit`,
-`"workspaceDigest": "clean"`, and `protoDigest`. The digest covers source
-protos plus Desktop TypeScript and Station Go generated bindings.
-`CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
-by commas; one path may be reused for local process-isolation checks.
-
-Native Tauri Chat Gates do not select Station hosts in the Gate catalog or
-environment contract. Every required Station slot must be bound explicitly at
-run time:
+Select explicit Gates:
 
 ```bash
 python3 tooling/scripts/acceptance-run.py \
-  --gate chat-native-product-closure-e2e \
-  --runtime-cell desktop-windows-native \
-  --station-profile station-primary=sixwin
+  --gate acceptance-plan-self \
+  --gate acceptance-infra-validation
 ```
 
-Each selected profile supplies its Station endpoint and
-local/remote lifecycle. Missing, unknown, or duplicate bindings fail closed
-before Station provisioning.
-
-`chat-native-current-profile-two-client-e2e` reuses non-destructive Desktop
-actor identity instead of resetting Station. Alice launches from
-`peers-chat-high-chat`; Bob launches first from `peers-group-chat`; both
-worktrees must be clean and resolve the same Git tree. By default each client
-uses its worktree's `.local/dev/data/<profile>/desktop-app` as a read-only
-bootstrap seed. `PT_CHAT_NATIVE_STORAGE_SEEDS` can override those two seed
-directories in Alice, Bob order.
-
-The Provisioner initializes one dedicated persistent Acceptance storage root
-per actor under that actor's worktree `.local/acceptance/state/` directory.
-`PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS` can override those roots in Alice,
-Bob order. Initial bootstrap retains the actor identity but excludes copied
-live `chat.main.db` and session-device bindings, so the Gate enrolls a dedicated
-device instead of reusing rollback-prone crypto state. Later runs reuse that
-same persistent state. This is required because Station OPK publication and
-consumption are durable and the matching private OPK, ratchet, inbox cursor,
-authority head, and projections must advance together. Runtime cleanup removes
-processes, ports, temporary logs, and ephemeral storage while verifying that
-the declared persistent device roots remain present.
-
-After an explicitly authorized destructive reset of the same active Station
-profile, reset the two dedicated Acceptance device states exactly once by
-running the Gate with:
+Run completion or explicit full scope:
 
 ```bash
-CHAT_ACCEPTANCE_RESET=1 \
-CHAT_ACCEPTANCE_RESET_PROFILE=<active-profile> \
-PT_CHAT_NATIVE_RESET_PERSISTENT_STATE=1 \
+python3 tooling/scripts/acceptance-run.py --completion
+python3 tooling/scripts/acceptance-run.py --full
+```
+
+Consume a reviewed plan when one exists:
+
+```bash
+python3 tooling/scripts/acceptance-run.py --plan <plan.json>
+```
+
+Use `--dry-run` before an expensive or remote scope to inspect the resolved
+closure. A path match alone does not authorize resources outside the selected
+scope.
+
+## Execution Modes
+
+- Direct Gate mode runs the named Gates plus declared prerequisites.
+- Completion mode resolves the current completion contract.
+- Full mode is explicit and must not be inferred from an ordinary change.
+- Tier filters select registered cost classes without changing proof meaning.
+- Runtime-cell selection binds a platform-specific product claim.
+- Resume requires the original durable session reference and revalidates source,
+  input closure, artifacts, equipment, and cleanup eligibility.
+
+Every operation has a timeout. Lifecycle budgets reserve time for cleanup and
+publication. On the first over-budget Gate, downstream dispatch stops; the
+failure is diagnosed at its owning layer before a new candidate is frozen.
+Timeouts must not be enlarged merely to manufacture a pass.
+
+## Reports And Evidence
+
+Generate the report for the latest or selected sealed run:
+
+```bash
+python3 tooling/scripts/acceptance-report.py
+python3 tooling/scripts/acceptance-report.py --run <run-id>
+```
+
+The machine contract is `core/evidence.py::EvidenceReport`. The canonical
+runtime store defaults to `~/.peers-touch/dev/acceptance` and can be isolated
+with `PT_ACCEPTANCE_ARTIFACT_ROOT`.
+
+For a review note, start from
+[`templates/gate-execution-summary.md`](templates/gate-execution-summary.md).
+That file is a human projection only. It defaults to `UNPROVEN`, cites immutable
+run and artifact references, and must never be edited to manufacture `PROVEN`.
+
+Formal proof is read through `core/proof.py`. It validates original inventory,
+source identity, execution inputs, required assertions, scans, terminal cleanup,
+finalizer authority, and evidence freshness. Labels and copied summaries carry
+no proof authority.
+
+## Add Or Change A Product Gate
+
+1. Define or update the Capability and Feature contract.
+2. Declare the exact user effect, operation, Oracle, negative constraints, and
+   required evidence surface.
+3. Register impact mapping separately from business semantics.
+4. Add the Gate command, dependencies, input owner, timeout, tier, environment,
+   runtime cells, artifacts, and finalizer requirement to `gates.yaml`.
+5. Reuse an existing Driver, Provisioner, Fixture, and service binding.
+6. Emit structured assertions and immutable artifact references.
+7. Prove failure, timeout, cleanup, and stale-evidence rejection paths.
+8. Update domain coverage and run structural validation.
+
+Do not put product assertions in Core or Provisioners. Do not infer service
+topology from client order or raw URLs. Use typed service IDs from the runtime
+manifest. Do not let one platform cell prove another.
+
+## Add Or Change Framework Infrastructure
+
+Keep Core domain-neutral. A framework change must preserve:
+
+- explicit closed scope and dependency ordering;
+- current-source execution identity and owner-observed inputs;
+- finite lock wait and hold diagnostics;
+- bounded processes, cleanup, and publication reserve;
+- immutable evidence and atomic latest pointers;
+- no secrets or raw handles in manifests, arguments, environment, or reports;
+- rejection of stale, partial, fabricated, or mismatched proof;
+- `UNPROVEN` product scope when business providers are absent.
+
+Validate the infrastructure slice:
+
+```bash
+python3 tooling/scripts/acceptance-docs-test.py
+python3 tooling/scripts/acceptance-validate-test.py
+python3 tooling/scripts/acceptance-validate.py --infra
+python3 tooling/scripts/acceptance-report-test.py
+```
+
+The registered structural Gate is:
+
+```bash
 python3 tooling/scripts/acceptance-run.py \
-  --gate chat-native-current-profile-two-client-e2e
+  --gate acceptance-infra-validation
 ```
 
-The Provisioner validates each existing marker against the actor, worktree, and
-profile before deletion, then rebuilds the persistent state from the read-only
-identity seed. The reset flag must not remain set for normal repeated runs.
+## Diagnose A Failure
 
-Multi-Station Chat Gates on explicitly approved protected development Stations
-use an exact deployment-environment allowlist:
+Classify the first failed owner before changing code:
 
-```bash
-CHAT_ACCEPTANCE_RESET=1 \
-CHAT_ACCEPTANCE_RESET_ENVIRONMENTS=station-four,station-five-arm \
-python3 tooling/scripts/acceptance-run.py \
-  --gate chat-native-typing-e2e \
-  --runtime-cell desktop-macos-native
-```
+- scope or registry;
+- input qualification or source identity;
+- environment, equipment, lease, or provisioning;
+- Driver, Fixture, operation, or Oracle;
+- product behavior;
+- evidence, cleanup, finalizer, or publication;
+- framework contract or toolchain overhead.
 
-`CHAT_ACCEPTANCE_RESET_ENVIRONMENTS` and
-`CHAT_ACCEPTANCE_RESET_PROFILE` are mutually exclusive. Every listed target
-must match its reviewed deployment host, health endpoint origin, Compose
-project, Station/PostgreSQL containers, and PostgreSQL volume before mutation.
+Preserve raw evidence and immutable references. Do not convert an infrastructure
+failure into a product failure, and do not inherit prior `PASS` after source or
+contract drift. Unexecuted scope remains `UNPROVEN`.
 
-### Agent R6 Stream Resilience
+## Required Knowledge
 
-`agent-stream-resilience-e2e` is the stable native Gate for R6. It requires the
-active `one` profile and runs only through `acceptance-run.py`, so the
-Home Station Provisioner supplies source attestation, the actor Fixture,
-credential references, isolated ports, and storage before the Gate starts.
+Read path-matched entries in `docs/knowledge/` before editing. Common entries:
 
-The Gate inserts a run-local TCP proxy between Desktop and Station, cuts the
-active stream, verifies the visible `reconciling` state, restores the transport,
-and compares the replayed Desktop projection with Station readback. It then
-starts a second turn, logs out through the production identity pipeline, proves
-that the auth gate has no Agent operation tray, re-authenticates, and verifies
-the prior actor projection remains cleared. Reports, DOM observations, Station
-readback, logs, and cleanup evidence are written only to the external Evidence
-Store.
+- `invariants/acceptance-scope-is-runner-owned.md`
+- `invariants/acceptance-suite-runtime-reuse.md`
+- `invariants/acceptance-fixed-scope-continuation.md`
+- `pitfalls/acceptance-core-transport-import-cycle.md`
+- `pitfalls/acceptance-mutable-artifact-rewrite.md`
+- `pitfalls/acceptance-active-docs-must-not-promote-drafts.md`
 
-### Agent Attachment Reference
+## Nonclaims
 
-`agent-attachment-e2e` is the stable native Gate for C08. It uses the same
-One-profile Agent provisioning contract as stream resilience, then dispatches
-the existing AS-F05 admission and `BASE-ATTACHMENT_REJECTED` composer Harness
-journeys through:
-
-```bash
-python3 tooling/acceptance/gates/agent/native_agent_runner.py \
-  --journey attachment
-```
-
-The Gate independently evaluates both fact sets, including the history
-attachment action, composer input/chip, localized rejection, draft
-preservation, and removal. It requires receiver DOM, Station readback, runtime
-event, measurement, side-effect, replay, runtime attestation, and cleanup
-evidence. It uses the canonical `services.station` runtime-manifest entry and
-never treats the Foundation Gate as having run.
-
-### Agent V2 Foundation Runtime
-
-`agent-v2-kernel-foundation-e2e` consumes the provisioned profile selected by
-`PT_ACCEPTANCE_APPROVED_PROFILE`, with two isolated Native Tauri clients.
-`foundation_runtime_client.py` owns their launch, Harness connection, reverse
-shutdown, port checks, and storage cleanup. `foundation_group_one_probe.py`
-expands the reviewed matrix and dispatches the 32 Group 1 tuples by platform,
-locale, and scenario before `foundation_direct_adapter.py` applies its
-fail-closed oracle. Runtime controllers and Harnesses only capture production
-facts; they cannot synthesize assertion outcomes or promote proof status.
-
-The Foundation runner also supports configuration-only validation:
-
-```bash
-python3 tooling/acceptance/gates/agent/foundation_scenario_runner.py --dry-run
-```
-
-This requires `PT_ACCEPTANCE_RUNTIME_MANIFEST` and the matching active profile.
-It checks manifest/profile inputs, Native client fields, the startup
-timeout, and required provider-field presence without constructing runtimes or
-proxies, contacting Station, allocating evidence, or producing a candidate.
-An existing manifest may be inspected this way, but the result is not live
-preflight, source attestation, or product proof. Actual Gate execution still
-requires fresh provisioning through `acceptance-run.py`.
-
-## Desktop Performance Acceptance Logic
-
-Desktop performance acceptance is organized as a source-bound evidence funnel,
-not as point-to-point spot checks. The funnel answers one question per layer:
-
-1. Contract: can acceptance preserve stable targets, source artifacts, and
-   `PARTIAL` / `UNPROVEN` metadata before runtime samples are trusted?
-2. Telemetry: can Native Desktop events flow through Tauri commands into Station, then return
-   through raw query, rollup query, and Dev/CI mirror artifacts?
-3. Runtime: can each runtime cell report an explicit state without one cell
-   impersonating another?
-4. Red-line: can matrix and report gates make a source-bound pass/fail judgment
-   without hiding missing evidence?
-
-The runtime layer admits no samples until
-`desktop-performance-cohort-gate.py` proves that dev Native and packaged Native
-observations match `desktop-performance-cohort.json`, including the actual
-authenticated actor rather than only the requested profile name.
-
-The original Phase 0 bundle remains available as the pilot construction bundle:
-
-```bash
-make acceptance PLAN=tooling/acceptance/plans/desktop-performance-phase0.json
-```
-
-Long-lived Desktop performance gates are split by logical layer:
-
-```bash
-make acceptance PLAN=tooling/acceptance/plans/desktop-performance-contract.json
-make acceptance PLAN=tooling/acceptance/plans/desktop-performance-telemetry.json
-make acceptance PLAN=tooling/acceptance/plans/desktop-performance-runtime.json
-make acceptance PLAN=tooling/acceptance/plans/desktop-performance-redline.json
-```
-
-The profile/runtime environment must be selected before running these plans, for
-example with `make profile PROFILE=<profile>`. Gate scripts must only check their
-own concern; they must not encode a specific environment such as `one`.
-
-Use the layers as follows:
-
-| Layer | Plan | Long-term role | Failure meaning |
-|---|---|---|---|
-| Contract | `desktop-performance-contract.json` | Static and source-bound contract gate for stable anchors, runner semantics, templates, and traceability | Acceptance cannot trust runtime samples |
-| Telemetry | `desktop-performance-telemetry.json` | Product telemetry sink gate for Native Tauri upload, Station ingest/query/rollup, local buffer diagnostics, and Station sampler mirror | Metrics are local-only or not queryable from Station |
-| Runtime | `desktop-performance-runtime.json` | Native runtime matrix gate for DOM anchors, runtime-cell observations, and matrix state | Runtime evidence is missing, blocked, or conflated |
-| Red-line | `desktop-performance-redline.json` | Merge/readiness judgment gate for sampler evidence, matrix, report, and traceability | Performance conclusion must stay `PARTIAL` / `UNPROVEN` |
-
-Phase-specific scaffolding such as template artifacts may remain inside the
-Phase 0 bundle until real collectors replace them. Once a layer is fully backed
-by live evidence, promote the corresponding long-lived plan rather than adding a
-new phase-specific Make target.
-
-## Boundary
-
-Acceptance is not a replacement for unit tests inside `apps/*`. Language-native
-tests stay close to their code. Acceptance gates prove product behavior across
-Station, Desktop, Dashboard, registered runtime cells, and projections.
+An Infra validation pass does not prove a product domain. A domain aggregate
+does not prove undeclared platforms or topologies. A historical report does not
+prove current source. Missing immutable references, required observations,
+cleanup, or authority leaves the affected scope `UNPROVEN`.

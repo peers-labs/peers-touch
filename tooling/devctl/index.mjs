@@ -69,7 +69,7 @@ Usage:
   devctl config [--json]
   devctl doctor [--json]
   devctl check [desktop|all] [--json]
-  devctl station start|check|status|stop|restart [--json]
+  devctl station start|check|status|stop|restart [--target-profile <name>] [--json]
   devctl desktop start|status|stop|restart [--json]
   devctl desktop install [--json]
   devctl status [--json]
@@ -131,7 +131,16 @@ export async function run(argv = process.argv.slice(2), environment = process.en
   const args = [...argv];
   const root = path.resolve(takeOption(args, '--root') ?? defaultRoot());
   const json = takeFlag(args, '--json');
+  const targetProfile = takeOption(args, '--target-profile');
   const [command, subcommand, value] = args;
+  if (targetProfile !== undefined) {
+    if (!['station', 'config'].includes(command)) {
+      throw new DevctlError(
+        ERROR_CODES.PROFILE_INVALID, 'target-profile requires a Station operation or config',
+      );
+    }
+    environment = { ...environment, PT_DEV_TARGET_PROFILE: targetProfile };
+  }
 
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     writeHelp();

@@ -26,6 +26,7 @@ const OPTION_NAMES = new Map([
   ['env-repo', 'envRepo'],
   ['home', 'home'],
   ['profile', 'profile'],
+  ['target-profile', 'targetProfile'],
   ['slot', 'slot'],
   ['capabilities', 'capabilities'],
   ['purpose', 'purpose'],
@@ -96,6 +97,7 @@ function outputShell(resolved) {
     PT_MACHINE_ALLOWED_CAPABILITIES:
       resolved.binding.allowedCapabilities.join(','),
     PT_MACHINE_PROFILE: resolved.binding.profile,
+    PT_MACHINE_TARGET_PROFILE: resolved.profile.profile,
     PT_MACHINE_SLOT: resolved.binding.slot,
     PT_MACHINE_DESKTOP_APP_GATEWAY_PORT: resolved.ports.desktopAppGateway,
     PT_MACHINE_DESKTOP_APP_WEB_PORT: resolved.ports.desktopAppWeb,
@@ -177,6 +179,13 @@ const SIGNAL_EXIT_CODES = {
 export async function runCli(argv) {
   const { action, options } = parseArguments(argv);
   options.envRepo ??= process.env.PT_ENV_REPO;
+  if (['check', 'resolve', 'validate-lease', 'verify-held', 'lease'].includes(action)) {
+    options.targetProfile ??= process.env.PT_DEV_TARGET_PROFILE;
+  } else if (options.targetProfile !== undefined) {
+    throw new MachineDevError(
+      'INVALID_ARGUMENT', 'target-profile is an operation target, not a binding update',
+    );
+  }
   switch (action) {
     case 'register':
       for (const key of [

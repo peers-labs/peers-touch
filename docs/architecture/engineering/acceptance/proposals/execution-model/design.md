@@ -1,6 +1,7 @@
 # Acceptance 执行模型
 
 > **Status**: draft
+> **Authority**: non-normative
 > **Created**: 2026-10-22 | **Updated**: 2026-10-22
 > **Owner**: Acceptance
 

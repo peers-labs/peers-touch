@@ -988,6 +988,14 @@ operator convention is a terminal `stable` suffix.
 - Source synchronization may force-update a namespaced ref in an internal
   deployment transport repository. That ref is not a collaboration branch,
   delivery push, or authorization to publish to origin/GitHub.
+- Explicit operation `targetProfile` uses the same reviewed definition and
+  workspace capability without changing the active binding or slot. It is
+  frozen into post-lock validation and inherited command projection. Stable
+  deployment requires an explicit binding to that stable Profile.
+- Acceptance equips a Station through the canonical Local Dev readiness owner
+  before retaining the remote source lease, then re-attests under that lease.
+  It must not invent a deployment adapter, switch the active Profile, or hold
+  the source lease while nested source-sync tries to acquire it again.
 
 ### Rationale
 
@@ -1003,6 +1011,10 @@ target identity, stable protection, source fencing, or resource exclusion.
   visible protection boundary.
 - Remove capabilities or leases: rejected because they still own operation
   scope and real resource exclusion.
+- Switch active Profiles to equip multiple Station roles: rejected because
+  selection mutates durable workspace state and conflicts with live leases.
+- Add a Provisioner-specific deploy path: rejected because deployment,
+  readiness and source synchronization already have canonical owners.
 
 ### Consequences
 

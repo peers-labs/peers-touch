@@ -28,6 +28,7 @@ from tooling.acceptance.core import (
     require_runtime_client_service,
 )
 from tooling.acceptance.core.provisioning import load_runtime_manifest
+from tooling.acceptance.core.runtime_cell import runtime_source_matches
 from tooling.acceptance.drivers.native import (
     NativeDesktopRuntimeBinding,
     resolve_native_desktop_runtime,
@@ -148,6 +149,7 @@ class NativeClientLifecycle:
     auth_state: NativeAuthState = "none"
     device_state: NativeDeviceState = "active"
     successor_client_id: int | None = None
+    release_errors: tuple[dict[str, str], ...] = ()
 
 
 class NativeClientLifecycleLedger:
@@ -221,7 +223,8 @@ class NativeClientLifecycleLedger:
     def release(self, client: TauriSession) -> list[dict[str, str]]:
         record = self._record(client)
         if record.process_state == "stopped":
-            return []
+            return list(record.release_errors)
+        errors: list[dict[str, str]] = []
         if record.process_state == "stopped_preserved":
             successor = self._by_client_id.get(
                 record.successor_client_id or -1
@@ -231,7 +234,7 @@ class NativeClientLifecycleLedger:
                 "revoked",
                 "logged_out",
             }:
-                return [
+                errors.append(
                     {
                         "resource": f"session:{client.profile}",
                         "error": (
@@ -239,11 +242,11 @@ class NativeClientLifecycleLedger:
                             "successor"
                         ),
                     }
-                ]
-            return []
+                )
+            else:
+                return []
 
-        errors: list[dict[str, str]] = []
-        if record.auth_state in {"authenticated", "restoring"}:
+        elif record.auth_state in {"authenticated", "restoring"}:
             try:
                 process_alive = client.is_alive()
             except Exception as error:
@@ -293,6 +296,7 @@ class NativeClientLifecycleLedger:
                     "error": str(error),
                 }
             )
+        record.release_errors = tuple(errors)
         return errors
 
     def release_all(self) -> list[dict[str, str]]:
@@ -464,10 +468,24 @@ def native_runtime_source_identity(
         "runtimeCell": runtime_cell,
         "binary": binary,
     }
+    if isinstance(source, dict) and source.get("workspaceDigest") != "clean":
+        # Remote Station attestation proves its deployed commit. A local client
+        # snapshot may differ only in inputs outside that service build.
+        changed = subprocess.run(
+            (
+                "git", "status", "--porcelain", "--untracked-files=all", "--",
+                "apps/station", "apps/applets/note/service", "model",
+                "packages/sdk/go", "go.work", "go.work.sum",
+            ),
+            cwd=REPO_ROOT, capture_output=True, text=True, check=True, timeout=3,
+        ).stdout.strip()
+        if changed:
+            raise GateError("Local Station build inputs are not covered by deployed attestation")
     valid = (
-        isinstance(source, dict)
-        and bool(source_commit)
-        and source.get("workspaceDigest") == "clean"
+        runtime_source_matches(
+            source, cell_source,
+            remote=runtime_binding.cell_id != "desktop-macos-native",
+        )
         and isinstance(station, dict)
         and station.get("workspaceDigest") == "clean"
         and station_commit == source_commit
@@ -488,8 +506,6 @@ def native_runtime_source_identity(
         and bool(runtime_cell.get("runId"))
         and runtime_cell.get("state") == "LEASED"
         and isinstance(cell_source, dict)
-        and cell_source.get("commit") == source_commit
-        and cell_source.get("workspaceDigest") == "clean"
         and linux_runtime_valid
         and binary.get("sourceCommit") == source_commit
         and re.fullmatch(r"[0-9a-f]{64}", binary_sha256) is not None
@@ -497,7 +513,7 @@ def native_runtime_source_identity(
     )
     if not valid:
         raise GateError(
-            "runtime source identity mismatch: "
+            "source_build_runtime_identity: runtime source identity mismatch: "
             f"{json.dumps(identity, sort_keys=True)}"
         )
     return identity

@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -25,6 +26,7 @@ from tooling.acceptance.core.evidence_store import (
     write_current_artifact,
     workspace_id,
 )
+from tooling.acceptance.core import evidence_store
 from tooling.acceptance.core.errors import (
     EvidenceConflict,
     EvidenceManifestInvalid,
@@ -37,7 +39,7 @@ from tooling.acceptance.core.errors import (
     EvidenceRunActive,
     EvidenceSymlinkRejected,
 )
-from tooling.acceptance.core.redaction import REDACTED
+from tooling.acceptance.core.redaction import REDACTED, redact_artifact_bytes
 
 
 def _process_writer(
@@ -252,6 +254,21 @@ class EvidenceStoreTests(unittest.TestCase):
             source={"authorization": secret},
         )
         run.configure_redaction((secret,))
+
+        report = run.write_json("reports/result.json", {
+            "results": [{"secretScan": secret_scan}],
+            "untrusted": {"secretScan": {**secret_scan, "password": secret}},
+            "string": {"secretScan": secret},
+            "scannedPath": {"secretScan": {
+                **secret_scan, "redactedArtifacts": [secret],
+            }},
+        }, role="report")
+        projected = self.store.read_json(report)
+        self.assertEqual(projected["results"][0]["secretScan"], secret_scan)
+        self.assertEqual(projected["untrusted"]["secretScan"], REDACTED)
+        self.assertEqual(projected["string"]["secretScan"], REDACTED)
+        self.assertEqual(projected["scannedPath"]["secretScan"]["redactedArtifacts"], [REDACTED])
+        self.assertNotIn(secret, json.dumps(projected))
 
         manifest = run.finalize(
             result={
@@ -1145,6 +1162,8 @@ class PublicMetadataTests(unittest.TestCase):
                                   worktree=Path(temporary) / "worktree")
             with store.begin_run("graph-metadata", source={}) as run:
                 ref = run.write_json("reports/graph.json", graph, role="execution-graph")
+                original = store.resolve(ref).read_bytes()
+                self.assertEqual(redact_artifact_bytes(original), (original, False))
                 observed = store.read_json(ref)
                 self.assertEqual(observed["dependencies"]["token-consumer"],
                                  ["auth-key-check"])
@@ -1227,6 +1246,72 @@ class PublicMetadataTests(unittest.TestCase):
                 self.assertEqual(manifest["artifacts"]["plan-token-role"], ref.to_dict())
                 observed = store.read_json(ref)
                 self.assertEqual(observed["execution_graph"], graph)
+                original = store.resolve(ref).read_bytes()
+                self.assertEqual(redact_artifact_bytes(original), (original, False))
+
+    def test_serialized_graph_scan_retains_secret_and_closure_checks(self):
+        from tooling.acceptance.core.execution_graph import compile_graph
+
+        graph = compile_graph({
+            "auth-key-check": {"argv": ["true"]},
+            "token-consumer": {"dependsOn": ["auth-key-check"], "argv": ["true"]},
+        }, ["token-consumer"])
+        invalid = [
+            {**graph, "password": "1"},
+            {key: value for key, value in graph.items() if key != "digest"},
+            {**graph, "digest": "0" * 64},
+            {**graph, "dependencies": {"auth-key-check": ["token-consumer"],
+                                      "token-consumer": []}},
+            {"artifactKind": "acceptance-execution-graph", "password": "1"},
+        ]
+        for index, candidate in enumerate(invalid):
+            with self.subTest(invalid_graph=index):
+                raw = json.dumps({"graph": candidate}).encode()
+                redacted, changed = redact_artifact_bytes(raw)
+                self.assertTrue(changed)
+                self.assertIn(REDACTED, redacted.decode())
+        for secret in ("auth-key-check", graph["definitionDigests"]["auth-key-check"]):
+            with self.subTest(secret=secret):
+                raw = json.dumps({"graph": graph}).encode()
+                redacted, changed = redact_artifact_bytes(raw, (secret,))
+                self.assertTrue(changed)
+                self.assertNotIn(secret, redacted.decode())
+        raw = json.dumps({"graph": graph, "password": "1",
+                          "description": "synthetic-secret-value"}).encode()
+        redacted, changed = redact_artifact_bytes(raw, ("synthetic-secret-value",))
+        self.assertTrue(changed)
+        observed = json.loads(redacted)
+        self.assertEqual(observed["graph"], graph)
+        self.assertEqual(observed["password"], REDACTED)
+        self.assertEqual(observed["description"], REDACTED)
+
+
+@unittest.skipIf(os.name == "nt", "POSIX held-lock control")
+class EvidenceLockLivenessTests(unittest.TestCase):
+    def test_contended_blocking_lock_has_finite_protection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary).resolve() / "held.lock"
+            holder = evidence_store._FileLock(path)
+            contender = evidence_store._FileLock(path)
+            holder.acquire(blocking=False)
+            # A bounded watchdog releases the actual held lock even before repair.
+            watchdog = threading.Timer(0.2, holder.release)
+            watchdog.start()
+            started = time.monotonic()
+            try:
+                with patch.object(
+                    evidence_store, "EVIDENCE_LOCK_TIMEOUT_SECONDS", 0.03, create=True,
+                ), self.assertRaises(EvidenceConflict):
+                    contender.acquire(blocking=True)
+                self.assertLess(time.monotonic() - started, 0.15)
+                self.assertIsNone(contender._handle)
+            finally:
+                contender.release()
+                watchdog.join(timeout=1)
+                holder.release()
+                self.assertFalse(watchdog.is_alive())
+            self.assertTrue(contender.acquire(blocking=False))
+            contender.release()
 
 
 if __name__ == "__main__":

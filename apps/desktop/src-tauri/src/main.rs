@@ -192,6 +192,18 @@ fn acceptance_input_mode_is_exclusive(
 }
 
 #[cfg(feature = "acceptance-webdriver")]
+fn acceptance_exclusive_native_input() -> Result<bool, String> {
+    acceptance_input_mode_is_exclusive(
+        std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
+            .ok()
+            .as_deref(),
+        std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION")
+            .ok()
+            .as_deref(),
+    )
+}
+
+#[cfg(feature = "acceptance-webdriver")]
 fn position_acceptance_window(
     window: &tauri::WebviewWindow,
     monitor_x: f64,
@@ -226,15 +238,8 @@ fn configure_acceptance_window(
     window: &tauri::WebviewWindow,
     minimum_window_width: f64,
 ) -> std::io::Result<()> {
-    let exclusive_native_input = acceptance_input_mode_is_exclusive(
-        std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
-            .ok()
-            .as_deref(),
-        std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION")
-            .ok()
-            .as_deref(),
-    )
-    .map_err(std::io::Error::other)?;
+    let exclusive_native_input =
+        acceptance_exclusive_native_input().map_err(std::io::Error::other)?;
     let slot = std::env::var("PT_ACCEPTANCE_WINDOW_SLOT")
         .map_err(|error| {
             std::io::Error::other(format!("acceptance window slot is missing: {error}"))
@@ -347,10 +352,10 @@ fn configure_acceptance_window(
         slot,
         count,
     )?;
-    window.show().map_err(|error| {
-        std::io::Error::other(format!("acceptance window show failed: {error}"))
-    })?;
     if exclusive_native_input {
+        window.show().map_err(|error| {
+            std::io::Error::other(format!("acceptance window show failed: {error}"))
+        })?;
         window.set_always_on_top(true).map_err(|error| {
             std::io::Error::other(format!("acceptance window layering failed: {error}"))
         })?;
@@ -457,7 +462,25 @@ fn main() {
         app_state.station.client().clone(),
     ));
 
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    let context = tauri::generate_context!();
+    #[cfg(feature = "acceptance-webdriver")]
+    let (builder, context) = {
+        let exclusive_native_input =
+            acceptance_exclusive_native_input().expect("invalid acceptance input mode");
+        let mut context = context;
+        if !exclusive_native_input {
+            // Wry 0.57.1 honors the initial WebView focus during construction.
+            // Configure it before the SDK creates either native surface.
+            for window in &mut context.config_mut().app.windows {
+                window.focus = false;
+            }
+        }
+        #[cfg(target_os = "macos")]
+        let builder = builder.activate_ignoring_other_apps(exclusive_native_input);
+        (builder, context)
+    };
+    let builder = builder
         .register_uri_scheme_protocol("private-media", |context, request| {
             if request.method() != tauri::http::Method::GET {
                 return tauri::http::Response::builder()
@@ -553,7 +576,7 @@ fn main() {
     #[cfg(feature = "acceptance-webdriver")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
-    builder
+    let app = builder
         .manage(app_state)
         .manage(capability_worker_supervisor)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
@@ -1287,9 +1310,18 @@ fn main() {
             conversation::dkx_send,
             application::error_resolver::resolve_error_action
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|app, event| {
+        .build(context)
+        .expect("error while building tauri application");
+    #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+    let app = {
+        let mut app = app;
+        if !acceptance_exclusive_native_input().expect("invalid acceptance input mode") {
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        }
+        app
+    };
+    app
+        .run(move |app, event| {
             // Closing the symmetric pair to AppLaunch (fired from the
             // frontend usePresence hook): when the user quits the app we
             // owe Station an explicit AppShutdown trigger per bound

@@ -5,9 +5,12 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 
-from tooling.acceptance.core.errors import NativeInputBlocked
+from tooling.acceptance.core.errors import BlockedError, DriverError, NativeInputBlocked
 from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
+from tooling.acceptance.core.runtime_cell import CellNonInterferenceIdentity
 
 
 class NativeInputMode(str, Enum):
@@ -146,6 +149,26 @@ class NativeModifier(str, Enum):
 
 
 @dataclass(frozen=True)
+class NativeFileChooserSnapshot:
+    process_id: int
+    present: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {"processId": self.process_id, "present": self.present}
+
+
+@dataclass(frozen=True)
+class NativeDesktopObservation:
+    operator_state: Mapping[str, object]
+    file_chooser: NativeFileChooserSnapshot | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "operator_state", MappingProxyType(dict(self.operator_state)),
+        )
+
+
+@dataclass(frozen=True)
 class NativeControlSnapshot:
     kind: str = "unknown"
     title: str = ""
@@ -227,6 +250,119 @@ class NativeWindowStack:
         }
 
 
+class NativeOperatorObservation:
+    """One frozen operator baseline; a failed sample can never be rebaselined."""
+
+    def __init__(self, adapter: "NativeDesktopAdapter") -> None:
+        self._adapter = adapter
+        self._baseline = MappingProxyType(dict(adapter.snapshot_operator_state()))
+        self._observations: dict[str, CellNonInterferenceIdentity] = {}
+        self._failure: BlockedError | DriverError | None = None
+
+    @property
+    def baseline(self) -> Mapping[str, object]:
+        return self._baseline
+
+    @property
+    def observations(self) -> Mapping[str, CellNonInterferenceIdentity]:
+        return MappingProxyType(self._observations)
+
+    def sample(
+        self, phase: str, *, target_process_id: int,
+    ) -> CellNonInterferenceIdentity:
+        after = self._read(phase).operator_state
+        identity = self._compare(phase, target_process_id, after)
+        self._observations[phase] = identity
+        return identity
+
+    def file_chooser(
+        self, phase: str, *, target_process_id: int, present: bool,
+        timeout_seconds: float = 0.0, interval_seconds: float = 0.05,
+    ) -> NativeFileChooserSnapshot:
+        """Observe panel and operator together; every waiting sample is checked."""
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while True:
+            observation = self._read(phase, target_process_id=target_process_id)
+            identity = self._compare(
+                phase, target_process_id, observation.operator_state,
+            )
+            panel = observation.file_chooser
+            if panel is None or panel.process_id != target_process_id:
+                self._failure = DriverError("Native observation has no exact-PID chooser")
+                raise self._failure
+            remaining = deadline - time.monotonic()
+            if panel.present is present and (
+                timeout_seconds <= 0 or remaining > 0
+            ):
+                self._observations[phase] = identity
+                return panel
+            if remaining <= 0:
+                self._failure = DriverError(
+                    f"Native chooser phase {phase} did not reach present={present}"
+                )
+                raise self._failure
+            time.sleep(min(max(0.0, interval_seconds), remaining))
+
+    def _read(
+        self, phase: str, *, target_process_id: int | None = None,
+    ) -> NativeDesktopObservation:
+        if self._failure is not None:
+            raise self._failure
+        if phase in self._observations:
+            raise DriverError(f"Operator observation phase repeated: {phase}")
+        try:
+            if target_process_id is not None:
+                return self._adapter.snapshot_operator_and_file_chooser(
+                    target_process_id,
+                )
+            return NativeDesktopObservation(self._adapter.snapshot_operator_state())
+        except (BlockedError, DriverError) as error:
+            if isinstance(error, BlockedError) and error.diagnostic is not None:
+                details = error.diagnostic.to_dict()
+                for check in details["resourceChecks"]:
+                    if check["state"] == "OBSERVED" and isinstance(check["observed"], dict):
+                        check["observed"]["observationPhase"] = phase
+                error.diagnostic = ResourceDiagnostic.from_dict(details)
+            self._failure = error
+            raise
+
+    def _compare(
+        self, phase: str, target_process_id: int, after: Mapping[str, object],
+    ) -> CellNonInterferenceIdentity:
+        before = self._baseline
+        identity = CellNonInterferenceIdentity(
+            before["frontmostPid"], after["frontmostPid"],
+            before["pointerX"], before["pointerY"],
+            after["pointerX"], after["pointerY"],
+            before["keyboardFocusSha256"], after["keyboardFocusSha256"],
+        )
+        if (
+            before["frontmostPid"] == target_process_id
+            or not identity.unchanged()
+        ):
+            self._observations[phase] = identity
+            self._failure = BlockedError(
+                reason=(
+                    "native semantic operation changed operator state or "
+                    "uses the target client itself as its operator baseline"
+                ),
+                resource="runtime-cell-operator-focus",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="native-operator-observation",
+                    resource="runtime-cell-operator-focus",
+                    expected={"operatorBaseline": dict(before), "distinctTargetPid": target_process_id},
+                    observed={"phase": phase, "operatorState": dict(after)},
+                    recovery_action=(
+                        "Repair the observed native operation at its owner and "
+                        "qualify the same Cell again. Do not restore focus, "
+                        "rebaseline, or substitute global input."
+                    ),
+                ),
+            )
+            raise self._failure
+        return identity
+
+
 class NativeDesktopAdapter(ABC):
     @property
     def input_mode(self) -> NativeInputMode:
@@ -249,6 +385,18 @@ class NativeDesktopAdapter(ABC):
                 "user session or replace the operation with a Harness action."
             ),
         )
+
+    def snapshot_operator_state(self) -> dict[str, object]:
+        raise DriverError("Native operator observation is unavailable")
+
+    def snapshot_operator_and_file_chooser(
+        self, process_id: int,
+    ) -> NativeDesktopObservation:
+        del process_id
+        raise DriverError("Combined native operator and chooser observation is unavailable")
+
+    def observe_operator(self) -> NativeOperatorObservation:
+        return NativeOperatorObservation(self)
 
     @property
     @abstractmethod
@@ -376,6 +524,13 @@ class NativeDesktopAdapter(ABC):
     ) -> NativeControlSnapshot | None:
         del process_id, path
         return None
+
+    def file_chooser_state_to_process(
+        self,
+        process_id: int,
+    ) -> NativeFileChooserSnapshot:
+        del process_id
+        raise DriverError("Process-scoped native file chooser observation is unavailable")
 
     def verify_focused_text(
         self,

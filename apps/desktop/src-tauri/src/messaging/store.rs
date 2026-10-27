@@ -9835,12 +9835,16 @@ impl MessagingStore {
         }
         let already_submitted =
             state.2 == "submitted" && state.5 == "submitted" && state.8 == "submitted";
+        let freshly_prepared = state.2 == "prepared"
+            && state.5 == "pending"
+            && state.8 == "prepared"
+            && state.9 == "pending";
         let restorable_terminal = state.2 == "superseded"
             && state.5 == "superseded"
             && state.6 == "stale_delivery_plan"
             && state.8 == "superseded"
             && matches!(state.9.as_str(), "draft" | "failed");
-        if !already_submitted && !restorable_terminal {
+        if !already_submitted && !restorable_terminal && !freshly_prepared {
             return Err("submitted-command fixture target is not safely restorable".to_string());
         }
         let projection_count = transaction
@@ -9871,7 +9875,7 @@ impl MessagingStore {
             .execute(
                 "UPDATE messaging_local_commands SET state = 'submitted'
                  WHERE command_id = ?1 AND command_bytes = ?2
-                   AND state IN ('submitted', 'superseded')",
+                   AND state IN ('submitted', 'superseded', 'prepared')",
                 params![command_id, &state.0],
             )
             .map_err(|error| error.to_string())?;
@@ -9881,7 +9885,7 @@ impl MessagingStore {
                  SET state = 'submitted', next_attempt_at_unix_ms = 0,
                      last_error_code = ''
                  WHERE command_id = ?1 AND command_bytes = ?2
-                   AND state IN ('submitted', 'superseded')",
+                   AND state IN ('submitted', 'superseded', 'pending')",
                 params![command_id, &state.0],
             )
             .map_err(|error| error.to_string())?;
@@ -9889,7 +9893,7 @@ impl MessagingStore {
             .execute(
                 "UPDATE messaging_command_attempts SET state = 'submitted'
                  WHERE command_id = ?1 AND message_id = ?2
-                   AND state IN ('submitted', 'superseded')",
+                   AND state IN ('submitted', 'superseded', 'prepared')",
                 params![command_id, message_id],
             )
             .map_err(|error| error.to_string())?;
@@ -9899,7 +9903,7 @@ impl MessagingStore {
                  SET state = 'submitted', next_attempt_at_unix_ms = 0,
                      last_error_code = ''
                  WHERE conversation_id = ?1 AND message_id = ?2
-                   AND state IN ('submitted', 'draft', 'failed')",
+                   AND state IN ('submitted', 'draft', 'failed', 'pending')",
                 params![conversation_id, message_id],
             )
             .map_err(|error| error.to_string())?;
@@ -17479,6 +17483,42 @@ mod tests {
             snapshot["outbox"]["commandSha256"],
             hex::encode(Sha256::digest(command_bytes)),
         );
+    }
+
+    #[test]
+    fn acceptance_fixture_fences_a_ui_prepared_command_without_replacing_bytes() {
+        let store = MessagingStore::in_memory().unwrap();
+        let command_id = "ui-prepared-command";
+        let command_bytes = b"exact-ui-command";
+        persist_direct_command(&store, command_id, command_bytes, 10).unwrap();
+        let checkpoint = store.lane_checkpoint().unwrap();
+        assert!(store
+            .acceptance_prepare_submitted_command_fixture(
+                "conversation-1",
+                "another-message",
+                command_id,
+            )
+            .is_err());
+        assert_eq!(
+            store.command_status(command_id).unwrap().unwrap().state,
+            "prepared"
+        );
+        let snapshot = store
+            .acceptance_prepare_submitted_command_fixture(
+                "conversation-1",
+                command_id,
+                command_id,
+            )
+            .unwrap();
+        assert_eq!(store.lane_checkpoint().unwrap(), checkpoint);
+        assert!(snapshot["projection"].is_null());
+        assert_eq!(snapshot["outbox"]["state"], "submitted");
+        assert_eq!(
+            snapshot["outbox"]["commandSha256"],
+            hex::encode(Sha256::digest(command_bytes))
+        );
+        assert_eq!(snapshot["commandLedger"][0]["commandId"], command_id);
+        assert_eq!(snapshot["commandLedger"][0]["draftState"], "submitted");
     }
 
     #[test]

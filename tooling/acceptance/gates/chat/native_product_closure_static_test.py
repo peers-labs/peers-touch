@@ -17,14 +17,18 @@ from unittest.mock import Mock, patch
 
 from selenium.webdriver.common.by import By
 
-from tooling.acceptance.core import GateError
+from tooling.acceptance.core import EvidenceStore, GateError, source_identity
 from tooling.acceptance.core.evidence import new_report
 from tooling.acceptance.drivers.native.base import (
     NativeControlSnapshot,
     NativeInputMode,
 )
 from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
-from tooling.acceptance.drivers.native.runtime import LocalMacOSRuntimeBinding
+from tooling.acceptance.drivers.native.runtime import (
+    LocalMacOSRuntimeBinding, NativeDesktopRuntimeBinding,
+)
+from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.gates.chat.native_support import NativeClientLifecycleLedger
 from tooling.acceptance.gates.chat.native_product_closure_runner import (
     NativeProductClosureGate,
     VALID_ATTACHMENT_IMAGE_BYTES,
@@ -74,6 +78,46 @@ CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
 HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+
+
+class NativeProductCleanupTests(unittest.TestCase):
+    def test_terminal_cleanup_reuses_original_result_without_republishing(self) -> None:
+        for success in (True, False):
+            with self.subTest(success=success), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                store = EvidenceStore(root / "evidence", worktree=ROOT)
+                with store.begin_run(
+                    "chat-native-product-closure-e2e", source=source_identity(ROOT),
+                ) as run:
+                    with patch.dict(os.environ, run.subprocess_environment(dict(os.environ))):
+                        gate = NativeProductClosureGate.__new__(NativeProductClosureGate)
+                        gate.report = new_report("chat-native-product-closure-e2e")
+                        gate.fixture_root = root / "fixture"
+                        gate.fixture_root.mkdir()
+                        gate.runtime_instances = []
+                        gate.runtime_launches = []
+                        gate.native_activation_diagnostics = []
+                        gate.client_specs = {}
+                        gate.reaction_proxy = None
+                        gate.reaction_transport_override = None
+                        gate.runtime_binding = Mock(spec=NativeDesktopRuntimeBinding)
+                        gate.runtime_binding.finalize_cleanup.return_value = {
+                            "portsReleased": success, "processesReleased": True,
+                            "storageReleased": True, "logsReleased": True,
+                            "cleanupErrors": [],
+                        }
+                        if success:
+                            result = gate.cleanup_clients()
+                            self.assertIs(gate.cleanup_clients(), result)
+                        else:
+                            with self.assertRaises(GateError) as first:
+                                gate.cleanup_clients()
+                            with self.assertRaises(GateError) as second:
+                                gate.cleanup_clients()
+                            self.assertIs(second.exception, first.exception)
+                        gate.runtime_binding.finalize_cleanup.assert_called_once()
+                        self.assertEqual(len(gate.report.assertions), 4)
+                        self.assertEqual(len(gate.report.evidence), 4)
 
 
 class NativeAvatarRenderedSourceTest(unittest.TestCase):
@@ -779,6 +823,84 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
 
+    def test_launch_policy_preserves_restored_binding_and_device(self) -> None:
+        for scenario in ("initial", "restored", "changed-device", "launch-failed"):
+            with self.subTest(scenario=scenario):
+                gate = NativeProductClosureGate.__new__(NativeProductClosureGate)
+                gate.report = new_report("chat-native-product-closure-e2e")
+                gate.steps = []
+                gate.observe_step = Mock(spec=gate.observe_step)
+                gate.register_driver = Mock(spec=gate.register_driver)
+                gate.client_specs = {"bob": {"renderer_port": 4317}}
+                gate.actor_specs = {"bob": {
+                    "ptid": "ptid:bob", "accountRef": "station-account:bob@p.t",
+                }}
+                gate.runtime_instances = []
+                gate.runtime_launches = []
+                gate.runtime_pids = set()
+                gate.ptids = {}
+                gate.device_ids = {"bob": "persisted-device"}
+                gate.client_lifecycles = NativeClientLifecycleLedger()
+                predecessor = Mock(spec=TauriSession)
+                predecessor.profile = "bob-profile"
+                gate.clients = {"bob": predecessor}
+                gate.client_lifecycles.register(predecessor, "ptid:bob")
+                gate.client_lifecycles.mark_authenticated(predecessor)
+                gate.client_lifecycles.stop_preserving_session(predecessor)
+                client = Mock(spec=TauriSession)
+                client.port = 4445
+                client.gateway_port = 4446
+                client.profile = "bob-profile"
+                client.storage_root = "/tmp/bob-owned-storage"
+                client.process_id = 41
+                client.log_path = None
+                gate.runtime_binding = Mock(spec=NativeDesktopRuntimeBinding)
+                gate.runtime_binding.cell_id = "desktop-macos-native"
+                gate.runtime_binding.create_bound_session.return_value = client
+                launch_error = GateError("owned launcher failed")
+                if scenario == "launch-failed":
+                    gate.runtime_binding.create_bound_session.side_effect = launch_error
+                device = "foreign-device" if scenario == "changed-device" else "persisted-device"
+
+                def harness(_client, method, _arguments, **_kwargs):
+                    if method == "loginWithPassword":
+                        return {"authenticated": True, "actorPtid": "ptid:bob"}
+                    self.assertEqual(method, "getRealtimeDevice")
+                    return {"actorPtid": "ptid:bob", "deviceId": device}
+
+                with patch(
+                    "tooling.acceptance.gates.chat.native_product_closure_runner."
+                    "call_async_harness", side_effect=harness,
+                ) as calls:
+                    if scenario == "initial":
+                        gate.launch_actor("bob")
+                    elif scenario == "changed-device":
+                        with self.assertRaisesRegex(GateError, "device identity changed"):
+                            gate.restore_actor_after_restart("bob")
+                    elif scenario == "launch-failed":
+                        with self.assertRaises(GateError) as raised:
+                            gate.restore_actor_after_restart("bob")
+                        self.assertIs(raised.exception, launch_error)
+                    else:
+                        gate.restore_actor_after_restart("bob")
+                    methods = [call.args[1] for call in calls.call_args_list]
+                    self.assertEqual(
+                        methods, ["loginWithPassword", "getRealtimeDevice"]
+                        if scenario == "initial" else []
+                        if scenario == "launch-failed" else ["getRealtimeDevice"],
+                    )
+                selected_actor, options = gate.runtime_binding.create_bound_session.call_args.args
+                self.assertEqual(selected_actor, "bob")
+                self.assertEqual((options.window_slot, options.window_count), (1, 3))
+                self.assertEqual(options.restore_session, scenario != "initial")
+                if scenario not in {"initial", "launch-failed"}:
+                    predecessor_record, successor_record = gate.client_lifecycles.records
+                    self.assertEqual(predecessor_record.successor_client_id, id(client))
+                    self.assertEqual(successor_record.auth_state, "authenticated")
+                if scenario == "restored":
+                    self.assertEqual(gate.ptids["bob"], "ptid:bob")
+                    self.assertEqual(gate.device_ids["bob"], "persisted-device")
+
     def test_claimed_actions_cannot_use_store_or_command_bypasses(self) -> None:
         for forbidden in (
             "__PT_ACCEPTANCE_STORE__",
@@ -831,15 +953,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("CGEventSourceButtonState", self.macos_adapter)
         self.assertIn("window_stack_at_point", self.source)
         self.assertIn(
-            "int(frontmost_app.processIdentifier()) if frontmost_app else -1",
+            "int(application.processIdentifier()) if application else -1",
             self.macos_adapter,
         )
         self.assertIn(
-            'copied_boolean(front_window, "AXMain")',
+            'copied_boolean(window, "AXMain", deadline=deadline)',
             self.macos_adapter,
         )
         self.assertIn(
-            'copied_boolean(front_window, "AXFocused")',
+            'copied_boolean(window, "AXFocused", deadline=deadline)',
             self.macos_adapter,
         )
         click_start = self.source.index(
@@ -1433,7 +1555,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "background_rendered",
             "background_second_device_recovery",
             "runtime_logs_clean",
-            "binarySha256",
+            "native_runtime_source_identity",
             "save_screenshot",
             "save_dom",
             "conversation_snapshot",
@@ -1492,7 +1614,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"post-clear-', self.source)
         self.assertIn('"conversationMemberSettings"', self.source)
         self.assertNotIn("conversation_get_member_settings", self.source)
-        self.assertIn("commits_match(source_commit, station_commit)", self.source)
+        self.assertIn("native_runtime_source_identity(", self.source)
         self.assertIn('RECOVERY_SELECTORS["restore_submit"]', self.source)
         self.assertNotIn("shutil.copy2", self.source)
 
@@ -1606,20 +1728,44 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("messages: s.messages", details)
         self.assertIn("projectDesktopIMMessages(", details)
         self.assertNotIn("getIMMessages: s.getIMMessages", details)
-        self.assertIn("fn allow_attachment_preview(", messaging)
-        self.assertIn(".asset_protocol_scope()", messaging)
+        commands = ROOT / "apps/desktop/src-tauri/src/interface/tauri_commands"
+        native_commands = (commands / "mod.rs").read_text(encoding="utf-8")
+        profile_commands = (commands / "profile.rs").read_text(encoding="utf-8")
+        oss_commands = (commands / "oss.rs").read_text(encoding="utf-8")
+        self.assertIn("use super::allow_file_preview;", messaging)
         self.assertEqual(
-            messaging.count("allow_attachment_preview(&window,"),
+            messaging.count("allow_file_preview(&window,"),
             4,
         )
-        preview_scope = messaging[
-            messaging.index("fn allow_attachment_preview("):
-            messaging.index(
-                "#[tauri::command]\npub async fn messaging_pick_attachment_source",
-            )
+        preview_scope = native_commands[
+            native_commands.index("pub(crate) fn allow_file_preview("):
+            native_commands.index("pub fn not_implemented(")
         ]
+        self.assertIn(".asset_protocol_scope()", preview_scope)
         self.assertIn(".allow_file(path)", preview_scope)
-        self.assertIn("allow messaging attachment preview", preview_scope)
+        self.assertIn(".map_err(", preview_scope)
+        self.assertNotIn(".allow_directory(", preview_scope)
+        all_commands = native_commands + messaging + profile_commands + oss_commands
+        self.assertEqual(all_commands.count("fn allow_file_preview("), 1)
+        self.assertNotIn("allow_attachment_preview", all_commands)
+        for source, command in (
+            (profile_commands, "pick_image_file"),
+            (oss_commands, "oss_pick_local_file"),
+            (oss_commands, "oss_pick_image_social"),
+        ):
+            with self.subTest(command=command):
+                picker = source[
+                    source.index(f"pub async fn {command}("):
+                ].split("\n#[tauri::command]", 1)[0]
+                self.assertIn("super::allow_file_preview(&window, handle.path())", picker)
+                self.assertIn(
+                    "return AppResult::fail(ErrorCode::InternalError, error, None)",
+                    picker,
+                )
+                self.assertLess(
+                    picker.index("super::allow_file_preview("),
+                    picker.index("AppResult::success("),
+                )
         self.assertNotIn("tauri::async_runtime::spawn", preview_scope)
         self.assertNotIn("reqwest::Client", preview_scope)
         self.assertNotIn("127.0.0.1", preview_scope)
@@ -1753,7 +1899,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("NativeKey.V", self.native_file_picker)
         self.assertIn("NativeKey.ENTER", self.native_file_picker)
         self.assertIn(
-            '"Native Accessibility probe timed out"',
+            '"control", process_id, timeout_seconds=2',
             self.macos_adapter,
         )
 
@@ -1819,22 +1965,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
 
     def test_macos_file_chooser_selection_binds_exact_staged_path(self) -> None:
         adapter = MacOSNativeDesktopAdapter(
-            NativeInputMode.EXCLUSIVE_NATIVE_INPUT
-        )
-        owner = NativeControlSnapshot(
-            kind="list",
-            window_count=1,
-            frontmost=True,
-            main_window=True,
-            actual_frontmost_pid=42,
-            platform_role="AXList",
-        )
-        restored = NativeControlSnapshot(
-            kind="unknown",
-            window_count=1,
-            frontmost=True,
-            main_window=True,
-            actual_frontmost_pid=42,
+            NativeInputMode.SEMANTIC_NON_INTRUSIVE
         )
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
@@ -1849,17 +1980,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                     {
                         "selected": True,
                         "path": str(target),
+                        "control": {"windowCount": 1, "actualFrontmostPid": 41},
                     }
                 ),
                 stderr="",
             )
             with (
                 patch.object(Path, "home", return_value=home),
-                patch.object(
-                    adapter,
-                    "focused_control",
-                    side_effect=(owner, restored),
-                ),
                 patch(
                     "tooling.acceptance.drivers.native.macos.subprocess.run",
                     return_value=completed,
@@ -1873,9 +2000,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.kind, "file-selection")
         self.assertEqual(result.value, str(target))
+        self.assertFalse(result.frontmost)
+        self.assertEqual(result.actual_frontmost_pid, 41)
         command = run.call_args.args[0]
         self.assertEqual(command[-2:], (str(42), str(target)))
         self.assertNotIn("CGEventPostToPid", self.macos_adapter)
+
+    def test_shared_chooser_has_one_selector_and_no_semantic_global_fallback(self) -> None:
+        self.assertEqual(self.native_file_picker.count("def _click_native_selector("), 1)
+        begin = self.native_file_picker.index("def _select_nonintrusive_file(")
+        end = self.native_file_picker.index("def select_native_file(", begin)
+        semantic = self.native_file_picker[begin:end]
+        self.assertIn("client.semantic_click(", semantic)
+        self.assertIn("adapter.select_file_chooser_path_to_process(", semantic)
+        self.assertIn('"chooser-open", target_process_id=process_id, present=True', semantic)
+        self.assertIn('"chooser-selected", target_process_id=process_id, present=False', semantic)
+        for operation in ("activate_process", "request_cooperative_activation",
+                          "post_key", "post_mouse", "clipboard", "window.focus"):
+            self.assertNotIn(operation, semantic)
 
     def test_local_macos_file_staging_is_released(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1924,37 +2066,88 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("style.pointerEvents !== 'none'", self.source)
 
     def test_transient_dialogs_stop_hit_testing_before_next_journey(self) -> None:
-        self.assertIn(
-            "def wait_for_dialogs_to_stop_intercepting(self, actor: str)",
-            self.source,
+        method = next(
+            node for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "wait_for_dialogs_to_stop_intercepting"
         )
-        self.assertIn(
-            "dialog remained hit-testable after dismissal",
-            self.source,
+        script = next(
+            node.value for node in ast.walk(method)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            and "document." in node.value
         )
-        self.assertIn(
-            "document.querySelectorAll('[role=\"dialog\"]')",
-            self.source,
+        scenarios = [
+            {"name": "ready", "expected": True},
+            {"name": "toast_outside_target", "toast": True, "expected": True},
+            {"name": "target_child", "toast": True, "child": True, "expected": True},
+            {"name": "modal_blocks_target", "blocked": True, "expected": False},
+            {"name": "toast_blocks_target", "toast": True, "blocked": True, "expected": False},
+            {"name": "missing", "missing": True, "expected": False},
+            {"name": "detached", "connected": False, "expected": False},
+            {"name": "disabled", "disabled": True, "expected": False},
+            {"name": "display_none", "display": "none", "expected": False},
+            {"name": "hidden", "visibility": "hidden", "expected": False},
+            {"name": "no_pointer_events", "pointerEvents": "none", "expected": False},
+            {"name": "zero_width", "width": 0, "expected": False},
+            {"name": "zero_height", "height": 0, "expected": False},
+            {"name": "no_hit", "noHit": True, "expected": False},
+            {"name": "read_failure", "readError": True, "error": "DOM_READ_FAILED"},
+        ]
+        completed = subprocess.run(
+            ["node", "-e", """
+            const fs = require('node:fs');
+            const {script, scenarios} = JSON.parse(fs.readFileSync(0, 'utf8'));
+            const results = scenarios.map(scene => {
+              const child = {};
+              const target = {
+                isConnected: scene.connected ?? true,
+                disabled: scene.disabled ?? false,
+                style: {
+                  display: scene.display ?? 'block',
+                  visibility: scene.visibility ?? 'visible',
+                  pointerEvents: scene.pointerEvents ?? 'auto',
+                },
+                getBoundingClientRect: () => ({
+                  left: 10, top: 20, width: scene.width ?? 40, height: scene.height ?? 30,
+                }),
+                contains: node => node === child,
+              };
+              const dialog = {
+                style: {display:'block', visibility:'visible', pointerEvents:'auto'},
+                getBoundingClientRect: () => ({width:360, height:44}),
+              };
+              global.getComputedStyle = node => node.style;
+              global.document = {
+                querySelector: selector => scene.missing ? null : target,
+                querySelectorAll: () => scene.toast || scene.blocked ? [dialog] : [],
+                elementFromPoint: () => scene.noHit ? null
+                  : scene.blocked ? dialog : scene.child ? child : target,
+              };
+              if (scene.readError) {
+                const fail = () => {throw new Error('DOM_READ_FAILED');};
+                document.querySelector = fail;
+                document.querySelectorAll = fail;
+              }
+              try {
+                return {name:scene.name, result:new Function(script)('[data-next-control]')};
+              } catch (error) {
+                return {name:scene.name, error:error.message};
+              }
+            });
+            process.stdout.write(JSON.stringify(results));
+            """],
+            input=json.dumps({"script": script, "scenarios": scenarios}),
+            capture_output=True, text=True, timeout=5, check=True,
         )
-        settings_start = self.source.index("    def prove_settings_background(")
-        settings_end = self.source.index(
-            "    def prove_attachment_failure(",
-            settings_start,
-        )
-        settings_source = self.source[settings_start:settings_end]
-        self.assertIn(
-            'self.wait_for_dialogs_to_stop_intercepting("alice")',
-            settings_source,
-        )
-        attachment_end = self.source.index(
-            "    def attachment_message(",
-            settings_end,
-        )
-        attachment_failure_source = self.source[settings_end:attachment_end]
-        self.assertIn(
-            'self.wait_for_dialogs_to_stop_intercepting("alice")',
-            attachment_failure_source,
-        )
+        results = json.loads(completed.stdout)
+        self.assertEqual(len(results), len(scenarios))
+        for scene, result in zip(scenarios, results, strict=True):
+            with self.subTest(scene=scene["name"]):
+                self.assertEqual(result["name"], scene["name"])
+                if "error" in scene:
+                    self.assertEqual(result.get("error"), scene["error"])
+                else:
+                    self.assertEqual(result.get("result"), scene["expected"])
 
     def test_background_recovery_uses_the_visible_retry_action(self) -> None:
         start = self.source.index("    def prove_settings_background(")
@@ -2055,6 +2248,87 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "?.getBoundingClientRect())",
             self.source,
         )
+
+    def test_reaction_route_switch_waits_for_worker_and_restores_pause(self) -> None:
+        prefix = "tooling.acceptance.gates.chat.native_product_closure_runner."
+        for replacement_fails in (False, True):
+            with self.subTest(replacement_fails=replacement_fails):
+                gate = object.__new__(NativeProductClosureGate)
+                gate.steps = []
+                gate.report = new_report(gate.gate_id)
+                gate._step_observation_sequence = 0
+                gate.manifest = {"source": {"commit": "test", "workspaceDigest": "clean"}}
+                gate.ptids = {"alice": "actor"}
+                client = Mock(spec=["invoke_app_result"])
+                gate.clients = {"alice": client}
+                gate.runtime_binding = Mock(spec=NativeDesktopRuntimeBinding)
+                gate.prove_keyboard_reaction_picker = Mock(return_value="emoji")
+                gate.reaction_visible = Mock(side_effect=[True, True, False, False])
+                gate.click = Mock()
+                events = []
+                paused = False
+                terminal = GateError(
+                    "route replacement failed" if replacement_fails else "prepared checkpoint"
+                )
+
+                def lifecycle(command, arguments):
+                    nonlocal paused
+                    self.assertEqual(arguments, {"input": {"expected_actor_ptid": "actor"}})
+                    if command == "messaging_acceptance_pause_lifecycle":
+                        paused = True
+                        events.append("paused")
+                    else:
+                        self.assertEqual(command, "messaging_acceptance_resume_lifecycle")
+                        paused = False
+                        events.append("resumed")
+                    return {"paused": paused}
+
+                def replace_route(*arguments):
+                    self.assertTrue(paused, "route replacement interrupted an active worker")
+                    events.append("route-replaced")
+                    if replacement_fails:
+                        raise terminal
+
+                def poll(predicate, description, timeout=120, interval=0.25):
+                    self.assertTrue(predicate())
+                    if description == "alice.reaction-durable-before-loss":
+                        self.assertEqual(timeout, 30)
+                        self.assertEqual(interval, 0.25)
+                        events.append("prepared")
+                        raise terminal
+                    return True
+
+                client.invoke_app_result.side_effect = lifecycle
+                gate.runtime_binding.apply_verified_direct_route_override.side_effect = replace_route
+                snapshots = [
+                    {"commandLedger": []},
+                    {"commandLedger": [{"commandId": "command", "messageId": "message"}]},
+                    {
+                        "intent": {"commandSha256": "exact-bytes"},
+                        "outbox": {
+                            "commandSha256": "exact-bytes", "state": "pending", "attemptCount": 0,
+                        },
+                    },
+                ]
+                with patch(prefix + "DirectRouteFaultProxy", autospec=True) as proxy_type, patch(
+                    prefix + "active_direct_route_multiaddr", return_value="route",
+                ), patch(prefix + "call_async_harness", side_effect=snapshots), patch(
+                    prefix + "wait_until", side_effect=poll,
+                ), patch(prefix + "write_current_artifact"), self.assertRaises(GateError) as raised:
+                    gate.prove_reaction("conversation", "message")
+                self.assertIs(raised.exception, terminal)
+                self.assertFalse(paused)
+                self.assertEqual(
+                    events,
+                    ["paused", "route-replaced", "resumed"] if replacement_fails
+                    else ["paused", "route-replaced", "prepared", "resumed"],
+                )
+                proxy_type.return_value.disarm.assert_called_once_with()
+                proxy_type.return_value.arm.assert_not_called()
+                gate.runtime_binding.apply_verified_direct_route_override.assert_called_once_with(
+                    "alice", "station", gate.runtime_binding.create_transport_override.return_value,
+                )
+                self.assertEqual(gate.prove_keyboard_reaction_picker.call_count, 1 if replacement_fails else 2)
 
     def test_reaction_fault_preserves_signed_station_and_durable_command(self) -> None:
         self.assertIn("proxy.start()", self.source)
@@ -2240,7 +2514,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('bool(result["storageReleased"])', self.source)
         self.assertIn('self.write_json_evidence("cleanup", result)', self.source)
-        self.assertIn('source.get("workspaceDigest") == "clean"', self.source)
+        self.assertIn("native_runtime_source_identity(", self.source)
         launch_start = self.source.index("    def launch_actor(")
         launch_end = self.source.index("    def restart_actor(", launch_start)
         launch_source = self.source[launch_start:launch_end]
@@ -2466,6 +2740,91 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertEqual(snapshot["summary"], {"count": 1, "ids": ["reply"]})
         self.assertEqual(snapshot["panel"]["ids"], snapshot["summary"]["ids"])
         gate.click.assert_called_once_with("alice", "[data-chat-thread-close]")
+
+    def test_recovery_waits_for_cold_image_decode_before_snapshot(self) -> None:
+        gate = self.transcript_gate()
+        pending = {
+            "id": "image-message", "count": 1, "content": "",
+            "attachments": [{
+                "id": "image", "kind": "image", "state": "remote",
+                "imageCount": 1, "imageLoaded": False,
+            }],
+        }
+        loaded = json.loads(json.dumps(pending))
+        loaded["attachments"][0]["imageLoaded"] = True
+        gate.attachment_message = Mock(side_effect=[pending, loaded])
+
+        def poll(predicate, description, timeout, interval):
+            self.assertEqual(timeout, 180)
+            self.assertIsNone(predicate())
+            return predicate()
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner."
+            "write_current_artifact",
+        ) as write_observation, patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner.wait_until",
+            side_effect=poll,
+        ):
+            value = gate.recovered_attachment_message("alice", 1, "image-message")
+        self.assertEqual(value, loaded)
+        samples = [
+            json.loads(call.args[1])["predicate"]
+            for call in write_observation.call_args_list
+            if json.loads(call.args[1])["state"] == "PREDICATE"
+        ]
+        self.assertEqual([sample["accepted"] for sample in samples], [False, True])
+        self.assertFalse(samples[0]["observed"]["attachments"][0]["imageLoaded"])
+        self.assertTrue(samples[1]["observed"]["attachments"][0]["imageLoaded"])
+
+    def test_recovery_rejects_missing_broken_or_foreign_attachment_rows(self) -> None:
+        valid = {
+            "id": "image-message", "count": 1, "content": "",
+            "attachments": [{
+                "id": "image", "kind": "image", "state": "remote",
+                "imageCount": 1, "imageLoaded": True,
+            }],
+        }
+        rejected = [None, {**valid, "id": "foreign-message"}, {**valid, "count": 2}]
+        for field, value in (("imageCount", 0), ("imageLoaded", False), ("id", "")):
+            row = json.loads(json.dumps(valid))
+            row["attachments"][0][field] = value
+            rejected.append(row)
+        rejected.append({**valid, "attachments": []})
+
+        def reject(predicate, description, timeout, interval):
+            self.assertIsNone(predicate())
+            raise GateError(description)
+
+        for row in rejected:
+            with self.subTest(row=row):
+                gate = self.transcript_gate()
+                gate.attachment_message = Mock(return_value=row)
+                with patch(
+                    "tooling.acceptance.gates.chat.native_product_closure_runner."
+                    "write_current_artifact",
+                ), patch(
+                    "tooling.acceptance.gates.chat.native_product_closure_runner.wait_until",
+                    side_effect=reject,
+                ), self.assertRaisesRegex(GateError, "recovered-attachment-render"):
+                    gate.recovered_attachment_message("alice", 1, "image-message")
+                self.assertEqual(
+                    gate.report.runtime["firstFailedStep"],
+                    "alice.recovered-attachment-render:image-message",
+                )
+
+    def test_every_recovery_snapshot_uses_the_settled_attachment_reader(self) -> None:
+        gate = self.transcript_gate()
+        gate.reaction_visible = Mock(return_value=True)
+        gate.recovered_attachment_message = Mock(return_value={"id": "image-message"})
+        gate.attachment_message = Mock(side_effect=AssertionError("unsettled read"))
+        gate.thread_snapshot = Mock(return_value={"summary": {}, "panel": {}})
+        value = gate.conversation_snapshot(
+            "alice", "bob-root", "bob-root", "emoji", {"image-message": 2},
+        )
+        gate.recovered_attachment_message.assert_called_once_with("alice", 2, "image-message")
+        self.assertEqual(value["attachments"], {"image-message": {"id": "image-message"}})
+        gate.attachment_message.assert_not_called()
 
     def test_thread_summary_must_still_match_the_loaded_panel_ids(self) -> None:
         gate = self.transcript_gate()

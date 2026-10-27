@@ -75,7 +75,7 @@ import {
   normalizeConversations,
   type FriendRequestData,
 } from './socialNormalizers';
-import { currentAuthenticatedActorPtid } from './session';
+import { currentAuthenticatedActorPtid, useSessionStore } from './session';
 import {
   accountProfileFromFederationResolve,
   actorDisplayName,
@@ -941,12 +941,24 @@ const initialSocialState: Pick<
 
 let loadSessionsGeneration = 0;
 let messagingProjectionGeneration = 0;
+let socialProfileGeneration = 0;
+
+function profileReadIsCurrent(): () => boolean {
+  const actorPtid = currentAuthenticatedActorPtid();
+  const sessionEpoch = useSessionStore.getState().sessionEpoch;
+  const generation = socialProfileGeneration;
+  return () => Boolean(actorPtid)
+    && currentAuthenticatedActorPtid() === actorPtid
+    && useSessionStore.getState().sessionEpoch === sessionEpoch
+    && socialProfileGeneration === generation;
+}
 
 export const useSocialChatStore = createDesktopStore<SocialChatState>('socialChat', (set, get) => ({
   ...initialSocialState,
 
   reset: () => {
     messagingProjectionGeneration += 1;
+    socialProfileGeneration += 1;
     set({ ...initialSocialState });
   },
   resetMessagingProjection: () => {
@@ -1682,10 +1694,16 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     const activeKind = kind ?? get().activeTab;
     if (!ulid || !rootUlid) return;
     try {
-      const messages = get().threadMessages[socialThreadKey(activeKind, ulid, rootUlid)] ?? [];
-      const lastReadSeq = messages.find((message) => message.ulid === lastReadUlid)
-        ? messageGroupSeq(messages.find((message) => message.ulid === lastReadUlid)!)
+      const state = get();
+      const messages = [
+        ...(state.messages[ulid] ?? []).filter((message) => message.ulid === rootUlid),
+        ...(state.threadMessages[socialThreadKey(activeKind, ulid, rootUlid)] ?? []),
+      ].filter((message) => messageGroupSeq(message) > 0);
+      const lastReadMessage = messages.find((message) => message.ulid === lastReadUlid);
+      const lastReadSeq = lastReadMessage
+        ? messageGroupSeq(lastReadMessage)
         : messages.reduce((max, message) => Math.max(max, messageGroupSeq(message)), 0);
+      if (lastReadSeq <= 0) return;
       await api.messagingReadCursor(ulid, lastReadSeq);
       await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
     } catch (error) {
@@ -1950,11 +1968,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadCurrentUserProfile: async () => {
-    const actorPtid = currentAuthenticatedActorPtid();
-    if (!actorPtid) return;
+    const isCurrent = profileReadIsCurrent();
+    if (!isCurrent()) return;
     try {
       const profile = await api.actorGetMyProfile();
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
+      if (!isCurrent()) return;
       const profilePtid = profile?.actorPtid?.trim() || null;
       const persistedConversationLocalState =
         loadConversationLocalState(profilePtid);
@@ -1969,7 +1987,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ),
       }));
     } catch (error) {
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
+      if (!isCurrent()) return;
       if (isUnauthorizedError(error)) return;
       const message = error instanceof Error ? error.message : String(error);
       set((state) => ({ loadError: state.loadError || message }));
@@ -1979,7 +1997,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadPeerProfile: async (peerPtid, force = false) => {
-    if (!hasAuthenticatedActor()) return;
+    const isCurrent = profileReadIsCurrent();
+    if (!isCurrent()) return;
     const did = (peerPtid || '').trim();
     if (!did) return;
     const state = get();
@@ -1995,6 +2014,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }));
     try {
       let profile = await api.peerProfileGet(did);
+      if (!isCurrent()) return;
       const federatedHandle = remoteProfileHandle(profile);
       const federationId = state.getIMConversations()
         .find((conversation) => conversation.peerPtid === did)
@@ -2021,17 +2041,18 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           });
         }
       }
+      if (!isCurrent()) return;
       set((prev) => ({
         peerProfiles: { ...prev.peerProfiles, [did]: profile ?? null },
         peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
       }));
     } catch (error) {
+      if (!isCurrent()) return;
       log.warn('socialChat', 'loadPeerProfile failed', { peerPtid: did, error });
       set((prev) => ({
-        // Cache `null` so the UI stops spinning and falls back to the
-        // session-derived display name + avatar; a future force-refresh
-        // (e.g. on profile-updated event) will retry.
-        peerProfiles: { ...prev.peerProfiles, [did]: null },
+        // A failed read has no newer profile truth. Keep this actor's last
+        // successful projection until a runtime-owned refresh succeeds.
+        peerProfiles: { ...prev.peerProfiles, [did]: prev.peerProfiles[did] ?? null },
         peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
       }));
     }

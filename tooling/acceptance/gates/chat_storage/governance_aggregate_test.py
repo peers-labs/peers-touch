@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from tooling.acceptance.core import EvidenceManifestInvalid
 from tooling.acceptance.gates.chat_storage import governance_aggregate
+from tooling.acceptance.tests.aggregate_fixtures import ManifestFixtureStore
 
 
 EXPECTED_SOURCE = {
@@ -33,23 +33,10 @@ def passing_manifest(
             "status": status,
             "completionStatus": completion_status,
             "proofStatus": proof_status,
+            "cleanupStatus": "passed",
             "secretScan": {"status": "passed"},
         },
     }
-
-
-class FakeStore:
-    workspace_id = "0123456789abcdef"
-
-    def __init__(self, manifests: dict[str, dict[str, object]]) -> None:
-        self.manifests = manifests
-
-    def latest(self, gate_id: str) -> dict[str, object]:
-        if gate_id not in self.manifests:
-            raise EvidenceManifestInvalid(
-                f"latest pointer is unavailable for {gate_id}"
-            )
-        return self.manifests[gate_id]
 
 
 class ChatStorageGovernanceAggregateTest(unittest.TestCase):
@@ -58,7 +45,8 @@ class ChatStorageGovernanceAggregateTest(unittest.TestCase):
             spec.gate_id: passing_manifest(spec.gate_id)
             for spec in governance_aggregate.PRECEDING_GATES
         }
-        self.store = FakeStore(self.manifests)
+        self.store = ManifestFixtureStore(self.manifests)
+        ManifestFixtureStore.bind(self, EXPECTED_SOURCE, lambda: self.store)
 
     def evaluate(self) -> governance_aggregate.AggregateResult:
         return governance_aggregate.AggregateResult(
@@ -130,7 +118,7 @@ class ChatStorageGovernanceAggregateTest(unittest.TestCase):
         self.assertFalse(result.unproven)
         self.assertEqual(result.gates[1].status, "FAIL")
 
-    def test_malformed_evidence_is_unproven(self) -> None:
+    def test_incomplete_redaction_is_a_failed_proof(self) -> None:
         target = governance_aggregate.PRECEDING_GATES[1]
         manifest = passing_manifest(target.gate_id)
         manifest["redaction"] = None
@@ -139,8 +127,8 @@ class ChatStorageGovernanceAggregateTest(unittest.TestCase):
         result = self.evaluate()
 
         self.assertFalse(result.passed)
-        self.assertTrue(result.unproven)
-        self.assertEqual(result.gates[1].status, "ERROR")
+        self.assertFalse(result.unproven)
+        self.assertEqual(result.gates[1].status, "FAIL")
 
     def test_gate_records_every_preceding_result(self) -> None:
         gate = governance_aggregate.ChatStorageGovernanceAggregateGate(

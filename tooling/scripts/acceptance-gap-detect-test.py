@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,19 +22,82 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
-def proven_result(gate_id: str) -> dict[str, Any]:
-    return {
+def proven_result(gate_id: str, *, include_runtime: bool = True) -> dict[str, Any]:
+    from tooling.acceptance.core import EvidenceStore, source_identity
+
+    store = EvidenceStore.from_environment(repo_root=MODULE.REPO_ROOT)
+    source = source_identity(MODULE.REPO_ROOT)
+    result = {
         "id": gate_id,
         "status": "passed",
         "completionStatus": "DONE",
         "proofStatus": "PROVEN",
-        "sourceArtifact": {"path": f"reports/{gate_id}.json"},
+        "cleanupStatus": "not-required",
         "sourceArtifactKind": "acceptance-gate-evidence-report",
         "evidenceGateId": gate_id,
+        "secretScan": {
+            "status": "passed", "scannedHighEntropyValues": 0,
+            "scannedCredentialValues": 0, "redactedArtifacts": [],
+        },
     }
+    if include_runtime:
+        result["manifest"] = {
+            "state": "FIXTURE_READY", "runId": "fixture", "source": source,
+            "credentialRefs": [],
+        }
+    with store.begin_run(gate_id, source=source) as run:
+        report = run.write_json(
+            "report.json", {
+                "artifactKind": "acceptance-gate-evidence-report",
+                "gateId": gate_id, "status": "PASS",
+                "completionStatus": "DONE", "proofStatus": "PROVEN",
+                "assertions": [{"name": "fixture-observation", "passed": True}],
+            }, role="report",
+        )
+        result["sourceArtifact"] = report.to_dict()
+        run.finalize(result=result)
+        result = {**result, "runManifest": run.manifest_ref.to_dict()}
+    return result
 
 
-class AcceptanceGapDetectorTests(unittest.TestCase):
+class EvidenceFixture:
+    def setUp(self):
+        from tooling.acceptance.core import EvidenceStore
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        base = Path(temporary.name)
+        repo = base / "repo"
+        repo.mkdir()
+        self.source = {"commit": "current-head", "workspaceDigest": "clean"}
+        self.store = EvidenceStore(base / "artifacts", worktree=repo)
+        for replacement in (
+            patch("tooling.acceptance.core.EvidenceStore.from_environment", return_value=self.store),
+            patch("tooling.acceptance.core.source_identity", return_value=self.source),
+        ):
+            replacement.start()
+            self.addCleanup(replacement.stop)
+
+
+class AcceptanceGapDetectorTests(EvidenceFixture, unittest.TestCase):
+    def test_pass_labels_require_original_manifest_for_every_tier(self) -> None:
+        for tier in ("local-evidence", "env-evidence", "ci-cheap", "ci-structure"):
+            with self.subTest(tier=tier):
+                labels = proven_result("control")
+                labels.pop("runManifest")
+                report = MODULE.detect(
+                    claim="Current Gate is proven",
+                    paths=[],
+                    plan={"selected_gates": [{"id": "control", "tier": tier}]},
+                    run={"results": [labels]},
+                    required_gates=[],
+                )
+                self.assertEqual(report["proofState"], "UNPROVEN")
+                self.assertIn(
+                    "GATE_EVIDENCE_UNPROVEN",
+                    [item["gapType"] for item in report["gaps"]],
+                )
+
     def test_acceptance_run_remains_an_explicit_input_without_session_state(self) -> None:
         args = MODULE.parse_arguments(
             [
@@ -419,7 +483,7 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
         self.assertEqual(report["proofState"], "PROVEN")
         self.assertEqual(report["gaps"], [])
 
-    def test_passed_ci_gate_is_valid_structural_evidence(self) -> None:
+    def test_passed_ci_label_without_manifest_is_unproven(self) -> None:
         report = MODULE.detect(
             claim="Acceptance planner structure remains valid",
             paths=[],
@@ -442,7 +506,7 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
             },
             required_gates=[],
         )
-        self.assertEqual(report["proofState"], "PROVEN")
+        self.assertEqual(report["proofState"], "UNPROVEN")
 
     def test_unrun_selected_gate_fails_closed(self) -> None:
         report = MODULE.detect(
@@ -542,12 +606,12 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
                     }
                 ]
             },
-            run={"results": [proven_result(gate_id)]},
+            run={"results": [proven_result(gate_id, include_runtime=False)]},
             required_gates=[],
         )
         self.assertEqual(
             report["gaps"][0]["gapType"],
-            "RUNTIME_MANIFEST_MISSING",
+            "GATE_EVIDENCE_UNPROVEN",
         )
 
     def test_environment_gate_rejects_noncanonical_evidence_kind(self) -> None:
@@ -619,11 +683,11 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
         )
         self.assertEqual(
             report["gaps"][0]["gapType"],
-            "ACCEPTANCE_EVIDENCE_STALE",
+            "GATE_EVIDENCE_UNPROVEN",
         )
 
 
-class ContractDeliverableTests(unittest.TestCase):
+class ContractDeliverableTests(EvidenceFixture, unittest.TestCase):
     def _contract(self, deliverables: list[dict[str, Any]]) -> dict[str, Any]:
         return {"deliverables": deliverables}
 

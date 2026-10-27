@@ -1707,6 +1707,88 @@ class AcceptanceRunTest(unittest.TestCase):
             str(captured_cleanup["gate_process_cleanup_error"]),
         )
 
+    def test_provisioning_process_cleanup_failure_stops_after_releasing_owned_resources(self) -> None:
+        module = load_module()
+        events = []
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifacts = root / "artifacts"
+            downstream = root / "downstream"
+            provisioner = HomeStationProvisioner(EnvironmentContract.from_yaml(
+                REPO_ROOT / "tooling/acceptance/environments/home-station.yaml",
+            ))
+
+            def prepare(*args, **kwargs):
+                for name in ("profile", "source"):
+                    resource = root / name
+                    resource.write_text("owned")
+
+                    def release(path=resource, resource_name=name):
+                        path.unlink()
+                        events.append(resource_name)
+
+                    provisioner.register_cleanup(name, release)
+                raise EphemeralLaunchCleanupFailed(
+                    "provisioning child did not stop", operation="gate_process",
+                )
+
+            catalog = root / "gates.json"
+            catalog.write_text(json.dumps({"gates": {
+                "equipment": {
+                    "argv": [sys.executable, "-c", "pass"], "environment": "home-station",
+                    "provisioner": "home-station", "tier": "env-evidence",
+                },
+                "later": {
+                    "argv": [sys.executable, "-c", f"from pathlib import Path; Path({str(downstream)!r}).touch()"],
+                    "environment": "local", "tier": "ci-cheap",
+                },
+            }}))
+            policy = root / "policy.json"
+            policy.write_text(json.dumps({
+                "requestSeconds": 30, "planningSeconds": 5,
+                "lifecycle": {"cleanupSeconds": 5, "publishSeconds": 5}, "gates": {},
+            }))
+            with (
+                mock.patch.dict(os.environ, {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifacts)}),
+                mock.patch.object(sys, "argv", [
+                    "acceptance-run.py", "--gates", str(catalog), "--gate", "equipment",
+                    "--gate", "later", "--execution-budget", str(policy),
+                ]),
+                mock.patch("tooling.acceptance.core.source_identity", return_value={
+                    "commit": "a" * 40, "workspaceDigest": "clean",
+                    "canonicalWorktreeHash": workspace_id(REPO_ROOT),
+                }),
+                mock.patch.object(module, "environment_provisioner", return_value=provisioner),
+                mock.patch.object(provisioner, "prepare_fixture_authority", return_value={}),
+                mock.patch.object(provisioner, "prepare_credentials", return_value=((), {})),
+                mock.patch.object(module, "provision_environment", side_effect=prepare),
+                contextlib.redirect_stdout(output),
+            ):
+                exit_code = module.main()
+            store = EvidenceStore(artifacts, worktree=REPO_ROOT)
+            run_ref = next(line.removeprefix("run: ") for line in output.getvalue().splitlines()
+                           if line.startswith("run: "))
+            report = store.read_json(ArtifactRef.from_dict(json.loads(run_ref)))
+            result = next(item for item in report["results"] if item["id"] == "equipment")
+            cleanup = store.read_json(ArtifactRef.from_dict(result["cleanupArtifact"]))
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["cleanupStatus"], "failed")
+            self.assertEqual(cleanup["environmentCleanupStatus"], "passed")
+            self.assertEqual(cleanup["provisioningProcessCleanup"]["status"], "failed")
+            self.assertEqual(cleanup["provisioningProcessCleanup"]["operation"], "gate_process")
+            self.assertEqual(report["executionBudget"]["dispatchedGateCount"], 1)
+            session_ref = next(line.removeprefix("execution-session: ")
+                               for line in output.getvalue().splitlines()
+                               if line.startswith("execution-session: "))
+            session = store.read_json(ArtifactRef.from_dict(json.loads(session_ref)))
+            self.assertEqual(session["state"], "PAUSED_REPAIR_REQUIRED")
+            self.assertEqual(events, ["source", "profile"])
+            self.assertFalse(downstream.exists())
+            self.assertFalse((root / "source").exists())
+            self.assertFalse((root / "profile").exists())
+
     def test_failed_quarantine_defers_resource_release(self) -> None:
         cleanup = EphemeralCleanupResult(
             descriptors_closed=True,
@@ -2386,6 +2468,31 @@ class AcceptanceRunTest(unittest.TestCase):
 
         self.assertEqual(leaked, ["report.json"])
 
+    def test_runtime_artifact_audit_preserves_validated_compiler_graph(self) -> None:
+        from tooling.acceptance.core.execution_graph import compile_graph
+
+        module = load_module()
+        graph = compile_graph({
+            "auth-key-check": {"argv": ["true"]},
+            "token-consumer": {"dependsOn": ["auth-key-check"], "argv": ["true"]},
+        }, ["token-consumer"])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "evidence", worktree=worktree)
+            with store.begin_run("compiler-report", source={}) as run:
+                ref = run.write_json("reports/plan.json", {"execution_graph": graph})
+                original = store.resolve(ref).read_bytes()
+                self.assertEqual(module.audit_runtime_artifacts(run.run_dir, ()), [])
+                module.finalize_runtime_log(run, "compiler-report", "completed", ())
+                run.finalize(result={"status": "passed"})
+                self.assertEqual(store.resolve(ref).read_bytes(), original)
+                self.assertEqual(store.read_json(ref)["execution_graph"], graph)
+                self.assertEqual(module.audit_runtime_artifacts(
+                    run.run_dir, ("auth-key-check",)), ["reports/plan.json"])
+                self.assertEqual(store.resolve(ref).read_bytes(), original)
+
     def test_runtime_artifact_scan_rejects_symlink_without_following_it(
         self,
     ) -> None:
@@ -2763,6 +2870,7 @@ class AcceptanceRunTest(unittest.TestCase):
                 role="validation",
             )
             report = new_report("environment-gate")
+            report.add_assertion("fixture-observation", True)
             report.status = "PASS"
             report.write(run.run_dir / "reports" / "environment-gate.json")
 
@@ -2820,6 +2928,7 @@ class AcceptanceRunTest(unittest.TestCase):
                 "state": "FIXTURE_READY",
                 "runId": "runtime-run",
             }
+            report.add_assertion("fixture-observation", True)
             report.status = "PASS"
             report.write(
                 run.run_dir / "reports" / "environment-gate.json"

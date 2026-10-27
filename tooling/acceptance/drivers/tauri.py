@@ -113,6 +113,7 @@ class TauriDriver(DomDriver):
         self.port = port
         self.log_path = log_path
         self._driver: WebDriver | None = None
+        self._owns_session = True
 
     @property
     def driver(self) -> WebDriver:
@@ -134,10 +135,31 @@ class TauriDriver(DomDriver):
             self.stop()
             raise
 
+    def borrow_session(self, session_id: str) -> WebDriver:
+        """Use a caller-owned live session without creating or deleting it."""
+        if self._driver is not None or not session_id:
+            raise DriverError("Borrowing requires an unconnected driver and a session ID")
+
+        class BorrowedWebDriver(WebDriver):
+            def start_session(self, capabilities: dict) -> None:
+                del capabilities
+                self.session_id = session_id
+                self.caps = {}
+
+        self._owns_session = False
+        self._driver = BorrowedWebDriver(
+            command_executor=_webdriver_url(self.host, self.port),
+            options=webdriver.ChromeOptions(),
+        )
+        return self.driver
+
     def stop(self) -> None:
         if self._driver:
             try:
-                self._driver.quit()
+                if self._owns_session:
+                    self._driver.quit()
+                else:
+                    self._driver.command_executor.close()
             except Exception as error:
                 warnings.warn(f"failed to close WebDriver session: {error}", RuntimeWarning)
             self._driver = None
@@ -785,10 +807,10 @@ class ProvisionedTauriLauncher(AppLauncher):
     def stop(self, *, preserve_state: bool = False) -> None:
         if self._released:
             return
-        self._released = True
-        self._started = False
         if self._release is not None:
             self._release(preserve_state=preserve_state)
+        self._released = not preserve_state
+        self._started = False
 
     def is_alive(self) -> bool:
         if not self._started or self._released:
@@ -801,6 +823,8 @@ class TauriSession(DomDriver):
         self.launcher = launcher
         self._driver: TauriDriver | None = None
         self._launcher_started = False
+        self._launcher_preserved = False
+        self._launched_process_id: int | None = None
 
     @property
     def metadata(self) -> AppLaunchMetadata:
@@ -830,7 +854,7 @@ class TauriSession(DomDriver):
 
     @property
     def process_id(self) -> int | None:
-        return self.metadata.process_id
+        return self._launched_process_id or self.metadata.process_id
 
     @property
     def log_path(self) -> Path | None:
@@ -840,7 +864,9 @@ class TauriSession(DomDriver):
         if self._driver is not None:
             return self.driver
         metadata = self.launcher.start()
+        self._launched_process_id = metadata.process_id
         self._launcher_started = True
+        self._launcher_preserved = False
         self._driver = TauriDriver(
             host=metadata.webdriver_host,
             port=metadata.webdriver_port,
@@ -857,18 +883,22 @@ class TauriSession(DomDriver):
             try:
                 if self._launcher_started:
                     self.launcher.stop(preserve_state=True)
+                    self._launcher_started = False
+                    self._launcher_preserved = True
             finally:
-                self._launcher_started = False
                 if self._driver is not None:
                     self._driver.disconnect()
                     self._driver = None
             return
-        if self._driver is not None:
-            self._driver.stop()
+        try:
+            if self._driver is not None:
+                self._driver.stop()
+        finally:
             self._driver = None
-        if self._launcher_started:
-            self.launcher.stop()
-            self._launcher_started = False
+            if self._launcher_started or self._launcher_preserved:
+                self.launcher.stop()
+                self._launcher_started = False
+                self._launcher_preserved = False
 
     def is_alive(self) -> bool:
         return (

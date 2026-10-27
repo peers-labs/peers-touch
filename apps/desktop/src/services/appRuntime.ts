@@ -73,6 +73,7 @@ function deferredAppRuntimeIds(): string[] {
 }
 
 export const CRITICAL_SESSION_RUNTIME_IDS: ReadonlyArray<string> = [
+  messagingRecoveryRuntime.id,
   messagingRuntime.id,
   callRuntime.id,
   chatRuntime.id,

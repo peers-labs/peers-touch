@@ -47,6 +47,25 @@ class AcceptanceCoverageEvidenceTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_every_declared_domain_is_counted_and_rendered(self) -> None:
+        domains = {
+            "station-access": [{
+                "id": "access-feature", "required_gates": [],
+                "registered": [], "proven": [], "status": "DECLARED",
+            }],
+            "new-domain": [{
+                "id": "new-feature", "required_gates": ["new-gate"],
+                "registered": ["new-gate"], "proven": ["new-gate"],
+                "status": "COMPLETE",
+            }],
+        }
+        summary = self.module.compute_summary(domains)
+        self.assertEqual(summary[-1]["features"], 2)
+        self.assertEqual(summary[-1]["proven"], 1)
+        report = self.module.generate_report(domains, [])
+        self.assertIn("`access-feature`", report)
+        self.assertIn("`new-feature`", report)
+
     def test_rejects_duplicate_gate_catalog_keys(self) -> None:
         gates_path = self.worktree / "gates.yaml"
         gates_path.write_text(
@@ -103,6 +122,8 @@ class AcceptanceCoverageEvidenceTest(unittest.TestCase):
             worktree=self.worktree,
         )
         finalized_result: dict[str, Any] = dict(result)
+        finalized_result.setdefault("id", gate_id)
+        finalized_result.setdefault("cleanupStatus", "not-required")
         if include_secret_scan:
             finalized_result.setdefault(
                 "secretScan",
@@ -123,6 +144,7 @@ class AcceptanceCoverageEvidenceTest(unittest.TestCase):
                     "status": "PASS",
                     "completionStatus": "DONE",
                     "proofStatus": "PROVEN",
+                    "assertions": [{"name": "control-observation", "passed": True}],
                 }
             )
         report = run.write_json(

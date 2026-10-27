@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import hashlib
 import json
+import math
 import mimetypes
 import os
 import re
@@ -20,6 +21,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Mapping
 
 from . import finalization_contracts as finalization
+from .operation_observer import current_lock_observer
 from .errors import (
     EvidenceConflict,
     EvidenceError,
@@ -53,6 +55,7 @@ REDACTION_VALUES_ENV = "PT_ACCEPTANCE_REDACTION_VALUES"
 GATE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 RUN_ID_PATTERN = re.compile(r"^\d{8}T\d{12}Z-[0-9a-f]{32}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+EVIDENCE_LOCK_TIMEOUT_SECONDS = 60
 
 
 def _public_metadata(value: Any, secret_values: tuple[str, ...]) -> Any:
@@ -76,10 +79,20 @@ def _public_metadata(value: Any, secret_values: tuple[str, ...]) -> Any:
 
 
 def _json_payload(value: Any, secret_values: tuple[str, ...]) -> Any:
-    """Only actual closed producer types bypass payload field-name heuristics."""
+    """Preserve closed metadata contracts while scanning ordinary payloads."""
     from .execution_graph import ExecutionGraph
 
     text = secret_text_redactor(secret_values)
+
+    def field(key: Any, child: Any) -> Any:
+        if key == "secretScan" and isinstance(child, Mapping):
+            try:
+                return canonical_secret_scan(child, secret_values)
+            except EvidenceManifestInvalid:
+                return REDACTED
+        if is_sensitive_key(key):
+            return child if isinstance(child, bool) else REDACTED
+        return visit(child)
 
     def visit(item: Any) -> Any:
         if type(item) is ExecutionGraph:
@@ -89,11 +102,7 @@ def _json_payload(value: Any, secret_values: tuple[str, ...]) -> Any:
             return _public_metadata(item.to_dict(), secret_values)
         if isinstance(item, Mapping):
             return {
-                text(str(key)): (
-                    child if is_sensitive_key(key) and isinstance(child, bool)
-                    else REDACTED if is_sensitive_key(key)
-                    else visit(child)
-                )
+                text(str(key)): field(key, child)
                 for key, child in item.items()
             }
         if isinstance(item, (list, tuple)):
@@ -782,10 +791,61 @@ class _FileLock:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._handle: BinaryIO | None = None
+        self._acquired_at: float | None = None
+        self._observer = None
+        self._identity = {
+            "lockId": hashlib.sha256(str(path).encode()).hexdigest(),
+            "lockRole": path.name,
+        }
 
-    def acquire(self, *, blocking: bool, shared: bool = False) -> bool:
+    def acquire(
+        self, *, blocking: bool, shared: bool = False, timeout_seconds: float | None = None,
+    ) -> bool:
         if self._handle is not None:
             return True
+        limit = EVIDENCE_LOCK_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+        if (
+            isinstance(limit, bool) or not isinstance(limit, (int, float))
+            or not math.isfinite(limit) or limit <= 0
+        ):
+            raise ValueError("evidence lock protection must be positive and finite")
+        limit = min(limit, EVIDENCE_LOCK_TIMEOUT_SECONDS)
+        started = time.monotonic()
+        observer = current_lock_observer()
+        attempts = 0
+        try:
+            while True:
+                attempts += 1
+                if self._try_acquire(shared=shared):
+                    self._acquired_at = time.monotonic()
+                    self._observer = observer
+                    if observer is not None:
+                        observer({
+                            **self._identity, "event": "ACQUIRED", "shared": shared,
+                            "attempts": attempts, "waitSeconds": self._acquired_at - started,
+                        })
+                    return True
+                if not blocking:
+                    return False
+                remaining = started + limit - time.monotonic()
+                if remaining <= 0:
+                    raise EvidenceConflict(
+                        "evidence lock acquisition timed out",
+                        operation="acquire-lock", path_role="lock",
+                    )
+                time.sleep(min(0.01, remaining))
+        except BaseException as error:
+            # Preserve the earlier execution owner's cancellation and its type.
+            if observer is not None:
+                observer({
+                    **self._identity, "event": "ACQUIRE_FAILED", "shared": shared,
+                    "attempts": attempts, "waitSeconds": time.monotonic() - started,
+                    "errorType": type(error).__name__,
+                })
+            self.release()
+            raise
+
+    def _try_acquire(self, *, shared: bool) -> bool:
         _private_directory(self.path.parent, "lock-parent")
         if self.path.is_symlink():
             raise EvidenceSymlinkRejected(
@@ -793,6 +853,7 @@ class _FileLock:
                 operation="lock",
                 path_role="lock",
             )
+        handle = None
         try:
             if os.name != "nt":
                 descriptor = os.open(
@@ -803,13 +864,17 @@ class _FileLock:
                     | getattr(os, "O_NOFOLLOW", 0),
                     0o600,
                 )
-                handle = os.fdopen(descriptor, "r+b", closefd=True)
+                try:
+                    handle = os.fdopen(descriptor, "r+b", closefd=True)
+                except BaseException:
+                    os.close(descriptor)
+                    raise
                 os.chmod(self.path, 0o600)
                 import fcntl
 
                 flags = (
                     fcntl.LOCK_SH if shared else fcntl.LOCK_EX
-                ) | (0 if blocking else fcntl.LOCK_NB)
+                ) | fcntl.LOCK_NB
                 try:
                     fcntl.flock(handle.fileno(), flags)
                 except BlockingIOError:
@@ -829,20 +894,22 @@ class _FileLock:
                     handle.write(b"\0")
                     handle.flush()
                 handle.seek(0)
-                mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
                 try:
-                    msvcrt.locking(handle.fileno(), mode, 1)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                 except OSError:
                     handle.close()
                     return False
+            self._handle = handle
+            return True
         except OSError as error:
             raise _map_os_error(
                 error,
                 operation="acquire-lock",
                 path_role="lock",
             ) from error
-        self._handle = handle
-        return True
+        finally:
+            if handle is not None and self._handle is not handle:
+                handle.close()
 
     def fileno(self) -> int:
         if self._handle is None:
@@ -870,6 +937,13 @@ class _FileLock:
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         finally:
             handle.close()
+            if self._observer is not None and self._acquired_at is not None:
+                self._observer({
+                    **self._identity, "event": "RELEASED",
+                    "holdSeconds": time.monotonic() - self._acquired_at,
+                })
+            self._acquired_at = None
+            self._observer = None
 
 
 def _acquire_bounded(
@@ -878,15 +952,12 @@ def _acquire_bounded(
     timeout_seconds: float,
     operation: str,
 ) -> None:
-    deadline = time.monotonic() + timeout_seconds
-    while not lock.acquire(blocking=False):
-        if time.monotonic() >= deadline:
-            raise EvidenceConflict(
-                f"{operation} lock acquisition timed out",
-                operation=operation,
-                path_role="lock",
-            )
-        time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+    try:
+        lock.acquire(blocking=True, timeout_seconds=timeout_seconds)
+    except EvidenceConflict as error:
+        raise EvidenceConflict(
+            f"{operation} lock acquisition failed", operation=operation, path_role="lock",
+        ) from error
 
 
 class GatePublishLock:
@@ -1211,15 +1282,13 @@ class EvidenceStore:
             )
         path = self.workspace_dir / normalized_gate / ".publish.lock"
         lock = _FileLock(path)
-        deadline = time.monotonic() + timeout_seconds
-        while not lock.acquire(blocking=False, shared=shared):
-            if time.monotonic() >= deadline:
-                raise EvidenceConflict(
-                    "Gate publish lock acquisition timed out",
-                    operation="acquire-gate-publish-lock",
-                    path_role="lock",
-                )
-            time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+        try:
+            lock.acquire(blocking=True, shared=shared, timeout_seconds=timeout_seconds)
+        except EvidenceConflict as error:
+            raise EvidenceConflict(
+                "Gate publish lock acquisition failed",
+                operation="acquire-gate-publish-lock", path_role="lock",
+            ) from error
         try:
             observed = os.fstat(lock.fileno())
             if not stat.S_ISREG(observed.st_mode):
@@ -1924,14 +1993,19 @@ class EvidenceStore:
         return target
 
     def read_json(self, reference: ArtifactRef) -> dict[str, Any]:
+        value = self.read_json_value(reference)
+        if not isinstance(value, dict):
+            raise EvidenceManifestInvalid("JSON artifact must be an object")
+        return value
+
+    def read_json_value(self, reference: ArtifactRef) -> Any:
+        """Read hash-verified JSON, including supporting arrays and scalar data."""
         try:
             value = json.loads(self.resolve(reference).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise EvidenceManifestInvalid(
                 f"invalid JSON artifact: {reference.path}"
             ) from error
-        if not isinstance(value, dict):
-            raise EvidenceManifestInvalid("JSON artifact must be an object")
         return value
 
     def read_run_manifest(
@@ -2113,6 +2187,25 @@ class EvidenceStore:
         if pointer is None:
             raise EvidenceManifestInvalid(f"latest pointer is unavailable for {gate_id}")
         return self.read_json(ArtifactRef.from_dict(pointer["manifest"]))
+
+    def latest_manifest_ref(
+        self, gate_id: str, *, runtime_cell: str | None = None,
+    ) -> ArtifactRef:
+        pointer = self._latest_pointer(
+            gate_id, required=True, runtime_cell=runtime_cell,
+        )
+        if pointer is None:
+            raise EvidenceManifestInvalid(f"latest pointer is unavailable for {gate_id}")
+        return ArtifactRef.from_dict(pointer["manifest"])
+
+    def validate_proof_authority(self, reference: ArtifactRef) -> None:
+        """Original legacy proof may survive latest replacement; enforcement may not."""
+        gate_id = _validate_gate_id(reference.gate_id)
+        enforcement = self.workspace_dir / gate_id / "finalizer-enforcement"
+        if enforcement.exists():
+            authority = self.authoritative_latest(gate_id)
+            if authority.manifest_ref.to_dict() != reference.to_dict():
+                raise EvidenceManifestInvalid("original proof is not finalizer authority")
 
     @staticmethod
     def _manifest_result_tuple(

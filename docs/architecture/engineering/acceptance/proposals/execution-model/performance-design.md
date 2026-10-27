@@ -1,6 +1,7 @@
 # 验收反馈时延与自优化
 
 > **Status**: draft
+> **Authority**: non-normative
 > **Created**: 2026-10-22 | **Updated**: 2026-10-22
 > **Owner**: Acceptance
 

@@ -29,6 +29,14 @@
 - Profile、deployment、Fixture 和 Driver 的具体实现步骤。
 - 具体账号、密码、主机、端口或 PTID。
 
+Domain/Infra 结构报告只评估合同闭包。Capability 的
+`proof_assessment=not-evaluated`，`missing_run_gates` 和
+`dedicated_missing_gates` 均为 `null`，不得解释为产品证明通过或缺口为零。
+请求证明检查时，`proof_assessment=evaluated`，两个缺口字段为实际评估的
+数组，保留 `domain_proof_required` 对通用域证明和专属证明的区分。
+结构和证明检查的唯一输入边界由
+[execution-budget.md](execution-budget.md) 定义。
+
 ## 2. Environment Provisioning Contract
 
 Contract 是仓库内长期定义，描述一个 Gate environment 需要什么，不记录某次运行
@@ -712,6 +720,22 @@ Rules：
 
 ## 11. Run Manifest
 
+正式 proof 要求 `result.cleanupStatus` 显式为 `passed` 或 `not-required`，
+且完整 `secretScan` 与 manifest redaction 均通过。`runManifest` 是原始
+不可变记录的引用；调用方不能用状态标签替代引用，缺失 cleanup 也不能默认
+为无需清理。原报告包含非空断言数组，每个 `passed` 必须严格为布尔 true。
+源码、Runtime Cell、原引用或提供的材料字段不一致时，proof 保持 UNPROVEN。
+统一判定由 `core/proof.py` 实施，业务 Oracle 负责所需断言集合。
+即使缺失 sourceArtifact，同 Gate canonical report 的断言仍须核验；报告
+角色名不构成豁免。支持性 JSON 数组或标量不被转换为证真对象。
+`operationObservation.lockObservation` 记录阶段内 Evidence Store 锁的
+哈希 identity、角色、取得/释放/失败、attempts、waitSeconds、holdSeconds
+及累计统计；样本与 droppedSamples 有界，累计统计不依赖样本保留。
+该字段是诊断，没有性能 PASS 或业务证明含义。
+Coverage 每个 Feature 的 `domain_relations` 保留 Capability domain 与
+Feature product_area 的集合；product_area 是报表分组，无该字段且多个
+领域关系时归入 shared。同一 Feature 的分母贡献仍严格为一。
+
 ```json
 {
   "artifactKind": "acceptance-run-manifest",
@@ -1351,6 +1375,13 @@ or redefine Desktop GUI, input, or lease identities.
 Runtime Cell Contract 是 repository 内的非敏感平台能力声明。具体 host、username、
 credential value 和远端绝对路径由 Profile/secret source 解析。
 
+`git-object-sync` 的正式证明要求 clean commit 与 clean remote checkout。
+`local-worktree` 则绑定实际 commit、canonical worktree hash 与
+`workspaceDigest=clean|sha256:<64-hex>`，允许开发态候选。构建、探针、启动与
+读回必须持续匹配同一快照及 binary SHA-256；不得把当前源码重新贴到旧产物。
+`runtime_source_matches` 是 Runner/validator 共用的纯快照匹配规则。远端服务
+仍需自己的部署 attestation，本地快照不能替代未部署服务输入的证明。
+
 ```yaml
 id: desktop-linux-native
 platform: linux
@@ -1499,6 +1530,12 @@ Manifest：
 
 Identity and proof rules:
 
+- 本地 `source.mode: local-worktree` 的装备 owner 投影 `canonicalRoot` 和
+  `binaryPath`。Native child 校验 Gate/lease、平台/input mode、完整当前源码
+  快照、工作区 `.local` 下的 executable 和 `binarySha256`，只启动该产物。
+  凭据消费属于绑定构造，必须先于任何身份读回或客户端启动；两者继续复验
+  同一源码与产物 bytes，不能通过首次启动补齐绑定状态。
+  构建始终属于 parent Runtime Cell，child 不重新编译或从环境推导替代产物。
 - `hostIdentitySha256` 与 `hostKeySha256` 用于身份核验，不持久化 literal SSH target。
 - local source、remote source 与 binary 三者 identity 不一致时不得进入
   `FIXTURE_READY`。
@@ -1523,6 +1560,21 @@ Identity and proof rules:
   `frontmostPidBefore/frontmostPidAfter`、`pointerBefore/pointerAfter` 和
   `keyboardFocusBeforeSha256/keyboardFocusAfterSha256`；不得持久化 operator
   focused-control title、value 或其它私有 UI 内容。
+- `nativeAdapter.fileChooser` 是独立的 optional closed descriptor：
+  `cellId/runId/sourceCommit/workspaceDigest/binarySha256/backend/targetProcessId`、
+  `requestedPathSha256/selectedPathSha256/fixtureSha256/selectedFileSha256`、
+  三阶段布尔 `panelPresence: [false, true, false]`，以及有序 `observations`。
+  observation 只含 `phase/nonInterference`；phase 固定为 `launch-ready`、
+  `semantic-ready`、`chooser-before`、`chooser-open`、`chooser-selected`、
+  `owned-stop`。全部样本共享同一启动前基线，operator PID 必须不同于 target。
+  Driver 通过同一 exact-PID AX 面板查找器观测实际打开及关闭；窗口或 sheet
+  数量不构成面板存在性判据。路径及文件 digest 必须相同。
+  Core 只验证该无业务语义的观测结构、当前 Cell/source identity 与非侵入式
+  约束，不读取平台 UI、不提供 product PASS。没有 descriptor 时只缺少 chooser
+  capability；不得据此推断 physical input 已证明。
+  parent 在真实选择及 owned stop 后产生 descriptor，Binding 从同一个 prepared
+  Cell 消费并重新核验 source/binary。Driver 的操作员采样是唯一实现，运行时
+  picker 冻结自己的真实基线且保持各阶段原始失败，不恢复焦点或触碰剪贴板。
 
 ### 16.1 Native Adapter Diagnostic
 
@@ -8966,3 +9018,155 @@ all declared Scenarios, receiver-visible evidence, budgets, and terminal
 cleanup. Missing child, stale source, wrong cell, missing owner-zero Gate, or
 invalid cleanup remains `UNPROVEN` or `FAIL`; another release target cannot
 supply the missing cell.
+
+## 23. Gate Execution Inputs, Request Order And Observation
+
+`executionInputs` is an optional closed Gate catalog contract:
+`{"environmentKeys": ["OWNER_DECLARED_KEY"]}` with an optional
+`identityProbe: {ownerId, argv, timeoutSeconds}`. Environment-only declarations
+identify deterministic local checks. Runtime, provider and external oracle inputs
+require the owner probe; ephemeral capability inputs remain separately unqualified.
+Core rejects duplicate keys, Runner-owned variables and incomplete probe contracts.
+The concrete source owner also binds executable bytes, the effective Python
+installation and explicitly selected installed packages. Package content,
+distribution metadata, existing bytecode and actual loaded non-system library
+bytes are material inputs. Unknown package dependency closure, external import
+roots and script/shim delegates remain unqualified. Its current native library
+owner supports macOS; other platforms need their own qualified observation.
+Git source enumeration binds its actual toolchain delegate, configuration and
+local exclusion file. Raw configuration is hashed within the owner process.
+The MachineDev self-check Owner additionally observes the original port/slot
+APIs and actual temporary parent identity and permissions. Negative and candidate
+Station port states bind its oracle and fixture digests. It accepts only the
+unchanged complete MachineDev command and the Runner regression command that
+tests this boundary. It sends no application requests, retains no listening
+socket and reads no real Profile or machine registry. Drift rejects reuse;
+product equipment and ephemeral inputs remain outside this Owner.
+The architecture metadata Owner qualifies only `architecture-registry-self`:
+the existing Node/Python closure, actual installed pnpm package bytes and loaded
+images, effective configuration and workspace results, and the real rustup/Cargo
+delegates, libraries, settings, bounded configuration include graph and no-deps
+metadata. Temporary fixture parent configuration and delegate selection are
+observed independently. Node compile caching and pnpm automatic package-manager
+switching are disabled in both the Gate and probe, including temporary fixtures.
+Redirected package managers, external pnpm hooks and fixture-specific
+rustup overrides are not qualified. This metadata closure does not qualify
+builds, other package-manager commands, Profiles or live product state.
+The development-workflow Owner binds the complete original Node/Plan/skill-check
+composition with the same metadata-only pnpm/Cargo contract. It additionally
+binds real shell utilities and the reviewed macOS SHA-256 stdin filter's Perl
+interpreter, loaded module bytes, import resolution and native XS images.
+Unknown checksum selections or configured Perl loaders remain unqualified.
+Temporary-parent permissions/identity, effective disposable Git configuration
+and initialization template bytes are fixture inputs. Workflow fixtures disable
+machine Hooks before their first commit; conditional Git configuration, signing
+and fsmonitor execution are outside this Owner. Node compile cache and pnpm
+version switching stay disabled in both command and probe. The ten-second
+probe does not admit Profiles, product equipment or ephemeral inputs.
+
+The original producer's `execution-identity` artifact binds Gate ID, definition,
+graph, policy, explicit context, hashed actual inherited inputs, `ownerInputs`
+and reuse eligibility. Its `inputArtifacts` field references the original
+`proof/input-artifacts.json` in the same run. That closed
+`acceptance-gate-input-artifacts` record contains exactly `artifactKind`,
+`gateId`, `workspaceId`, `runId`, `artifacts` and `prerequisiteProofs`.
+The equipment map contains the actual original Environment and Runtime Cell
+ArtifactRefs required by this Gate, produced after owned equipment succeeds.
+Core verifies workspace/Gate/run/path, full inventory membership and bytes.
+Neither selectors nor current latest pointers can replace these references.
+The read-only Owner receives the same record before command, after cleanup
+and on resume, plus the observation stage and Artifact Store root. It must
+qualify original equipment together with current material Profile/provider
+state; original READY alone is not evidence of current runtime identity.
+No credentials, lease descriptors or ephemeral capability cross this boundary.
+`ownerInputs` is null or one closed
+`acceptance-gate-input-observation` with exact Gate/Owner IDs and the five
+`runtime`, `provider`, `oracle`, `actionPlan` and `fixture` SHA-256 identities.
+Raw input values are never persisted. An injected observation must match both
+post-equipment/pre-command and pre-seal readback; drift prevents current-input proof.
+Undeclared or unqualified live inputs remain ineligible.
+At each Gate entry, after source capture and before new run acquisition, the Runner
+revalidates original inventory, current authority, source, result, cleanup and exact
+original prerequisite references. It compares current owner observations with the
+sealed original and confirms source stability before recording `REUSED_ORIGINAL`.
+Same-candidate sealed history supplies candidate references only. Prior results
+never enter the current report without this complete validation. Current prerequisites
+must already be proven; a fresh prerequisite manifest different from the original
+consumer reference requires fresh consumer execution.
+Business aggregate readers consume the current Runner's `source/results`
+proof envelope together with its original `gateId/runManifest` prerequisite
+references. Gate IDs and JSON fields must be unique. Both projections select
+the same original ArtifactRef; independently discovered latests cannot supply
+missing proof. Complete manifest inventory and hashes, exact source, sealed
+result equality, DONE/PROVEN, explicit successful/not-required cleanup and
+evidence scans are mandatory. Requested Runtime Cell identity comes from the
+same original sealed result. Aggregate reports retain that manifest reference.
+Matching SHA workspace snapshots are valid local sources; this does not change
+remote Git object synchronization or release-specific clean requirements.
+The concrete prerequisite toolchain Owner closes the seven registered local
+aggregate commands only. It binds actual Python/sh installation inputs and
+revalidates every original producer in `inputArtifacts.prerequisiteProofs`,
+including source, complete inventory, proof, cleanup and scans. Original
+producer refs and sealed material inputs contribute provider/oracle/fixture
+digests. Before-command, after-cleanup and resume use the same original context;
+no Profile, live producer, ephemeral input or product behavior receives this
+qualification.
+The Go source Owner is limited to the Station API AST command. It observes
+the actual native executable, compiler/assembler/linker bytes and libraries,
+resolved standard-package files, installed module trees and metadata, workspace
+files, effective configuration and telemetry mode. Persistent Go settings,
+automatic toolchain selection, network module resolution and CGO are disabled
+in both command and probe. Cache verification prevents cached build artifacts
+from replacing current source/tool inputs. Unknown shims, external replacement
+modules, unresolved packages, native objects and product equipment reject
+qualification. The original ten-second probe and 120-second command protection
+remain unchanged. The observer neither builds nor equips a toolchain.
+`InputIdentityProbeFailed` retains the actual Launcher exception type and
+ResourceDiagnostic. Its supporting `acceptance-input-owner-failure` payload
+contains Gate/Owner identity, bounded stdout/stderr tails, truncation status and
+`proofStatus=supporting-only`; each stream retains at most 64 KiB.
+The Runner seals it under the `input-owner-failure` role through the normal
+redacting writer and preserves the ArtifactRef in the failed result. Entry
+validation retains the corresponding supporting payload in its original
+validation row. Concrete source owners emit internal stages through the
+existing OperationObserver; those samples never change input identity,
+authorize work, renew a timeout or prove a product assertion.
+`InputIdentityCleanupFailed` retains the Gate/Owner identity and the original
+Launcher cleanup result. It is a cleanup failure, not an input mismatch.
+It stops dispatch and prevents proof. During Gate entry validation the
+independent stop inventory contains the complete scope, actual completed results, graph,
+run report and a consumed repair-required Session request; no product Gate run
+is invented and the previous request reference cannot be replayed.
+Sole request-work cancellation with confirmed probe cleanup uses the normal
+full-scope aggregate and clean exhausted Session terminal.
+
+The provisioner cleanup result retains `provisioningProcessCleanup`, null when
+no nested provisioning launcher cleanup failed. Otherwise it contains `status=failed`,
+the environment or Runtime Cell preparation `stage`, original `errorType`,
+`operation`, redacted `error` and the typed ephemeral `cleanup` result when present.
+It is independent of `environmentCleanupStatus` and `runtimeCellCleanupStatus`.
+Releasing the remaining resources cannot erase that failed process result;
+aggregate cleanup remains failed and requires qualified owner repair.
+Station equipment and Desktop build owners preserve the original typed exception
+and its cleanup result through their diagnostic persistence boundary.
+
+`ExecutionGraph.dispatchGateIds` remains the frozen canonical topological order.
+`ExecutionSession.requests[].dispatchGateIds` records this request's actual order,
+which prioritizes incomplete nodes and their prerequisite closure. Reused and
+dispatched sets still account for the complete required scope.
+Every new request starts with all required Gates in dispatch and zero validated
+Gates. `ExecutionSession.record_reuse` moves exactly one pending Gate to validated
+only in an unchanged, unrepaired continuation after complete Runner validation.
+It rejects first requests, changed candidates, duplicate and incomplete results.
+Accepted validation costs are recorded separately from actual dispatch and original
+producer costs. No global proof-validation barrier precedes pending work.
+
+Gate cost and result carry `limitDisposition`; sole request-work expiry is
+`REQUEST_PREEMPTED`, with `ADMINISTRATIVE_PREEMPTION` attribution.
+Owner, mixed/unknown and exit protections remain distinct. No classification supplies
+business progress or performance proof.
+
+`operationObservation` retains bounded START/HEARTBEAT/END samples with absolute time,
+Gate/stage/phase and remaining seconds, dropped sample/stream counts, stream health
+and active worker count. Its meaning is owner liveness only. Workers stop at the
+operation boundary and never publish Evidence Store artifacts.

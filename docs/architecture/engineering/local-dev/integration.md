@@ -56,6 +56,16 @@ one resolver, not each script.
 
 Target command behavior:
 
+Station equipment may call `devctl station start --target-profile <name>`.
+This resolves the reviewed target without rewriting the active binding. The
+same target reaches `station-dev.sh`, deployment admission, OS-held lease
+validation and post-deploy readback. A caller must not combine this target
+with a run-scoped Acceptance profile file. Native and Mobile Provisioners share
+`tooling/acceptance/provisioners/station_equipment.py`; it delegates readiness
+and deploy to Local Dev and leaves business fixtures and attestation to their
+owners. Remote equipment precedes the retained remote source lease; final
+attestation after lease acquisition closes concurrent deployment races.
+
 | Command | Control-plane action |
 |---------|----------------------|
 | `make env-register` | Explicitly enroll the verified current workspace and allocate one profile/slot/capability binding |
@@ -186,6 +196,13 @@ Required negative fixtures:
 - Mixed-case `stable` Profile requesting `station.reset`.
 - Non-stable reset with missing binding capability, exact scope, current
   source identity, or OS lease.
+
+The local unowned-port negative fixture claims a listening socket from the
+canonical `slotPorts` allocation before registering its isolated test workspace.
+It keeps that socket until test cleanup and tests `PORT_CONFLICT` against the same
+slot. An occupied candidate is skipped only on `EADDRINUSE`; exhausting the
+canonical slot range fails the fixture. Fixed test ports, probe-then-release
+allocation, and terminating unrelated listeners cannot establish this proof.
 
 Focused implementation verification:
 

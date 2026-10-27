@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { machineRegistryPath } from '../../scripts/lib/machine-dev-paths.mjs';
-import { registerWorkspace } from '../../scripts/local-dev/machine-dev-registry.mjs';
+import { registerWorkspace, slotPorts } from '../../scripts/local-dev/machine-dev-registry.mjs';
 import { DevctlError, ERROR_CODES } from '../errors.mjs';
 import { startStation } from '../station.mjs';
 
@@ -157,6 +157,18 @@ async function startHealthServer(
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   return address.port;
+}
+
+async function claimLocalStationFixture(t) {
+  for (let slot = 0; slot <= 99; slot += 1) {
+    try {
+      const port = await startHealthServer(t, slotPorts(slot).station);
+      return { slot, port };
+    } catch (error) {
+      if (error.code !== 'EADDRINUSE') throw error;
+    }
+  }
+  throw new Error('No canonical local Station port is available for the test fixture');
 }
 
 test(
@@ -404,9 +416,7 @@ test(
 
 test('local start still rejects a healthy unowned Station port', async (t) => {
   const root = temporaryRoot(t);
-  const slot = 97;
-  const port = 18080 + slot * 100;
-  await startHealthServer(t, port);
+  const { slot, port } = await claimLocalStationFixture(t);
   const profilePath = writeProfile(root, 'local-test', 'local', port);
   const environment = machineEnvironment(t, root, slot);
 

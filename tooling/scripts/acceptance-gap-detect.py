@@ -26,6 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core.errors import EvidenceError  # noqa: E402
+from tooling.acceptance.core.proof import read_gate_proof  # noqa: E402
 from tooling.acceptance.core.execution_plan import (  # noqa: E402
     ExecutionPlanError,
     changed_paths_for_plan,
@@ -234,11 +235,15 @@ def canonical_plan_for_paths(paths: list[str]) -> dict[str, Any]:
 
 
 def result_entries(run: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {
-        str(result["id"]): result
-        for result in run.get("results", [])
-        if isinstance(result, dict) and result.get("id")
-    }
+    entries = {}
+    for result in run.get("results", []):
+        if (
+            not isinstance(result, dict) or not isinstance(result.get("id"), str)
+            or not result["id"] or result["id"] in entries
+        ):
+            raise DetectorError("run contains invalid or duplicate Gate identities")
+        entries[result["id"]] = result
+    return entries
 
 
 def gap(
@@ -398,14 +403,37 @@ def detect(
     workspace_digest: str = "",
     contract: dict[str, Any] | None = None,
     canonical_plan: dict[str, Any] | None = None,
+    store: Any = None,
 ) -> dict[str, Any]:
+    from tooling.acceptance.core import EvidenceStore, source_identity
+
+    source = dict(source_identity(REPO_ROOT))
+    if source_commit:
+        source["commit"] = source_commit
+    if workspace_digest:
+        source["workspaceDigest"] = workspace_digest
     gaps: list[dict[str, Any]] = []
     selected = gate_entries(plan)
     results = result_entries(run)
     obligations = set(required_gates)
 
     if contract:
+        deliverables = contract.get("deliverables", [])
+        if not isinstance(deliverables, list) or any(
+            not isinstance(item, dict) or not isinstance(item.get("verify", {}), dict)
+            for item in deliverables
+        ):
+            raise DetectorError("contract deliverables are invalid")
         gaps.extend(validate_contract_deliverables(contract, results))
+        for deliverable in deliverables:
+            verify = deliverable.get("verify", {})
+            kind = verify.get("type")
+            if kind in SCAN_TYPE_TO_GATE:
+                obligations.add(SCAN_TYPE_TO_GATE[kind])
+            elif kind == "gates-passed":
+                obligations.update(verify.get("gates", []))
+            elif kind == "gate-passed" and verify.get("gate"):
+                obligations.add(verify["gate"])
 
     if canonical_plan is not None:
         canonical_selected = set(gate_entries(canonical_plan))
@@ -527,22 +555,10 @@ def detect(
                 )
             )
             continue
-        if status == "passed" and tier in {"ci-structure", "ci-cheap"}:
-            continue
-        if (
-            status != "passed"
-            or completion != "DONE"
-            or proof != "PROVEN"
-            or (
-                tier == "env-evidence"
-                and (
-                    result.get("sourceArtifactKind")
-                    != "acceptance-gate-evidence-report"
-                    or result.get("evidenceGateId") != gate_id
-                    or not isinstance(result.get("sourceArtifact"), dict)
-                )
-            )
-        ):
+        try:
+            store = store or EvidenceStore.from_environment(repo_root=REPO_ROOT)
+            read_gate_proof(store, gate_id, source, result=result, gate_definition=gate)
+        except (EvidenceError, KeyError, OSError, TypeError, ValueError):
             gaps.append(
                 gap(
                     gap_type="GATE_EVIDENCE_UNPROVEN",
@@ -563,68 +579,6 @@ def detect(
                 )
             )
             continue
-
-        if gate.get("provisioner"):
-            manifest = result.get("manifest")
-            if (
-                not isinstance(manifest, dict)
-                or manifest.get("state") != "FIXTURE_READY"
-                or not manifest.get("runId")
-            ):
-                gaps.append(
-                    gap(
-                        gap_type="RUNTIME_MANIFEST_MISSING",
-                        claim=claim,
-                        owner_stage="EXECUTE",
-                        required_closure=(
-                            f"Attach the FIXTURE_READY Runtime Manifest for {gate_id}"
-                        ),
-                        evidence=[{"gateId": gate_id}],
-                    )
-                )
-                continue
-            source = manifest.get("source")
-            if not isinstance(source, dict):
-                source = {}
-            if source_commit and source.get("commit") != source_commit:
-                gaps.append(
-                    gap(
-                        gap_type="ACCEPTANCE_EVIDENCE_STALE",
-                        claim=claim,
-                        owner_stage="EXECUTE",
-                        required_closure=f"Re-run Gate {gate_id} at the current commit",
-                        evidence=[
-                            {
-                                "gateId": gate_id,
-                                "evidenceCommit": source.get("commit"),
-                                "currentCommit": source_commit,
-                            }
-                        ],
-                    )
-                )
-            if (
-                workspace_digest
-                and source.get("workspaceDigest") != workspace_digest
-            ):
-                gaps.append(
-                    gap(
-                        gap_type="ACCEPTANCE_EVIDENCE_STALE",
-                        claim=claim,
-                        owner_stage="EXECUTE",
-                        required_closure=(
-                            f"Re-run Gate {gate_id} for the current workspace"
-                        ),
-                        evidence=[
-                            {
-                                "gateId": gate_id,
-                                "evidenceWorkspaceDigest": source.get(
-                                    "workspaceDigest"
-                                ),
-                                "currentWorkspaceDigest": workspace_digest,
-                            }
-                        ],
-                    )
-                )
 
     proof_state = "PROVEN" if not gaps else "UNPROVEN"
     return {

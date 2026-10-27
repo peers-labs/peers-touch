@@ -9,7 +9,6 @@ import json
 import os
 import random
 import re
-import subprocess
 import time
 import urllib.request
 from pathlib import Path
@@ -31,6 +30,7 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.core.provisioning import load_runtime_manifest
 from tooling.acceptance.core.evidence_store import workspace_id
+from tooling.acceptance.core.launch_context import EphemeralGateClient
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
@@ -41,6 +41,7 @@ from tooling.acceptance.gates.chat.native_support import (
     commits_match,
     enter_chat_page,
     is_native_tauri_url,
+    native_runtime_source_identity,
     runtime_station_service,
     verify_runtime_fixture_ready,
     wait_for_peer_key_bundle,
@@ -66,38 +67,8 @@ CURRENT_PROFILE_GATE_IDS = frozenset(
         SUBMITTED_COMMAND_RECOVERY_GATE_ID,
     }
 )
-CURRENT_PROFILE_ACTOR_WORKTREES = {
-    "alice": "peers-chat-high-chat",
-    "bob": "peers-group-chat",
-}
+CURRENT_PROFILE_ACTORS = ("alice", "bob")
 CURRENT_PROFILE_INITIAL_SENDER = "bob"
-EXPECTED_RECONCILIATION_ACTOR_ENV = (
-    "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_ACTOR"
-)
-EXPECTED_RECONCILIATION_CONVERSATION_ENV = (
-    "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_CONVERSATION_ID"
-)
-EXPECTED_RECONCILIATION_MESSAGE_ENV = (
-    "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_MESSAGE_ID"
-)
-EXPECTED_RECONCILIATION_COMMAND_ENV = (
-    "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_COMMAND_ID"
-)
-EXPECTED_RECONCILIATION_OUTCOME_ENV = (
-    "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_OUTCOME"
-)
-PREPARE_SUBMITTED_COMMAND_ENV = "PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND"
-CREATE_RESTORABLE_COMMAND_ENV = (
-    "PT_CHAT_NATIVE_CREATE_RESTORABLE_COMMAND"
-)
-RESTORABLE_COMMAND_PLAINTEXT_ENV = (
-    "PT_CHAT_NATIVE_RESTORABLE_COMMAND_PLAINTEXT"
-)
-RECONCILIATION_OUTCOMES = {
-    "accepted",
-    "terminal_failed",
-    "terminal_superseded",
-}
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 STATION_BINDING_PROJECTION_TIMEOUT = 30
 REQUIRED_ASSERTIONS = {
@@ -114,15 +85,15 @@ REQUIRED_ASSERTIONS = {
     "resources_released",
 }
 CURRENT_PROFILE_REQUIRED_ASSERTIONS = {
-    "current_profile_cross_worktree",
+    "current_profile_instance_isolation",
     "current_profile_group_initiator",
-    "current_profile_persistent_device_state",
+    "current_profile_device_restart",
 }
 SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS = {
     "source_build_runtime_identity",
-    "current_profile_cross_worktree",
+    "current_profile_instance_isolation",
     "current_profile_group_initiator",
-    "current_profile_persistent_device_state",
+    "current_profile_device_restart",
     "native_runtime",
     "actor_isolation",
     "submitted_command_fixture_exact",
@@ -513,6 +484,7 @@ class NativeTwoClientGate(AcceptanceGate):
         allow_existing_fixture: bool = False,
         journey_id: str | None = None,
         station_identity_url: str | None = None,
+        account_login_client: EphemeralGateClient | None = None,
     ) -> None:
         self.gate_id = gate_id
         super().__init__()
@@ -548,6 +520,7 @@ class NativeTwoClientGate(AcceptanceGate):
             raise GateError(
                 "actor manifest must contain canonical Alice and Bob identities"
             )
+        self.account_login_client = account_login_client
         self.direction_order = (
             [CURRENT_PROFILE_INITIAL_SENDER, "alice"]
             if is_current_profile_gate(gate_id)
@@ -562,6 +535,8 @@ class NativeTwoClientGate(AcceptanceGate):
         self.device_ids: dict[str, str] = {}
         self.station_access: dict[str, dict[str, Any]] = {}
         self._reconciliation_target: dict[str, str] | None = None
+        self.restart_messages: list[dict[str, str]] = []
+        self.conversation_id = ""
         self.report.station_url = self.station_identity_url
         self.report.manifest = self.manifest
         self.report.runtime.update(
@@ -616,79 +591,18 @@ class NativeTwoClientGate(AcceptanceGate):
         self,
         station_live: dict[str, Any],
     ) -> dict[str, Any]:
-        source = self.manifest.get("source")
-        station = runtime_station_service(self.manifest, "alice")
-        runtime_cell = self.runtime_binding.runtime_identity()
-        binary = self.runtime_binding.binary_identity()
-        identity = {
-            "orchestrator": source,
-            "station": station,
-            "stationLive": station_live,
-            "runtimeCell": runtime_cell,
-            "binary": binary,
-        }
+        identity = native_runtime_source_identity(
+            gate_id=self.gate_id, manifest=self.manifest,
+            runtime_binding=self.runtime_binding, station_live=station_live,
+        )
         self.report.runtime.update(
             {
-                "runtimeCellRunId": runtime_cell.get("runId"),
+                "runtimeCellRunId": identity["runtimeCell"].get("runId"),
                 "sourceIdentity": identity,
             }
         )
-        source_commit = str(
-            source.get("commit") if isinstance(source, dict) else ""
-        )
-        station_commit = str(
-            station.get("liveCommit")
-            if isinstance(station, dict)
-            else ""
-        )
-        cell_source = (
-            runtime_cell.get("source")
-            if isinstance(runtime_cell, dict)
-            else None
-        )
-        binary_sha256 = str(binary.get("sha256") or "")
-        remote_source_valid = (
-            self.runtime_binding.cell_id != "desktop-linux-native"
-            or (
-                isinstance(cell_source, dict)
-                and cell_source.get("remoteCheckoutClean") is True
-                and re.fullmatch(
-                    r"[0-9a-f]{64}",
-                    str(cell_source.get("remoteSourceDigest") or ""),
-                )
-                is not None
-            )
-        )
         self.assert_condition(
-            "source_build_runtime_identity",
-            isinstance(source, dict)
-            and bool(source_commit)
-            and source.get("workspaceDigest") == "clean"
-            and isinstance(station, dict)
-            and station.get("workspaceDigest") == "clean"
-            and station_commit == source_commit
-            and re.fullmatch(
-                r"[0-9a-f]{64}",
-                str(station.get("protocolDigest") or ""),
-            )
-            is not None
-            and commits_match(
-                str(station_live.get("build_commit") or ""),
-                source_commit,
-            )
-            and isinstance(runtime_cell, dict)
-            and runtime_cell.get("cellId")
-            == self.runtime_binding.cell_id
-            and runtime_cell.get("gateId") == self.gate_id
-            and bool(runtime_cell.get("runId"))
-            and runtime_cell.get("state") == "LEASED"
-            and isinstance(cell_source, dict)
-            and cell_source.get("commit") == source_commit
-            and cell_source.get("workspaceDigest") == "clean"
-            and remote_source_valid
-            and binary.get("sourceCommit") == source_commit
-            and re.fullmatch(r"[0-9a-f]{64}", binary_sha256) is not None
-            and cell_source.get("binarySha256") == binary_sha256,
+            "source_build_runtime_identity", True,
             json.dumps(identity, sort_keys=True),
         )
         return identity
@@ -744,15 +658,22 @@ class NativeTwoClientGate(AcceptanceGate):
             self.actor_specs[actor].get("accountRef") or ""
         )
         account = account_ref.removeprefix("station-account:")
-        login = async_harness(
-            client,
-            "loginWithPassword",
-            {
-                "account": account,
-                "password": DEV_ACCOUNT_PASSWORD,
-            },
-            timeout=30,
-        )
+        if is_current_profile_gate(self.gate_id):
+            if self.account_login_client is None:
+                raise GateError("Current-profile accounts require their runtime login capability")
+            from tooling.acceptance.provisioners.native_tauri_current_profile import LOGIN_CAPABILITY_ID
+
+            login = self.account_login_client.invoke(
+                LOGIN_CAPABILITY_ID, "authenticate",
+                {"role": actor, "sessionId": client.driver.session_id},
+                timeout_seconds=35,
+            )
+        else:
+            login = async_harness(
+                client, "loginWithPassword",
+                {"account": account, "password": DEV_ACCOUNT_PASSWORD},
+                timeout=30,
+            )
         if not (login or {}).get("authenticated"):
             raise GateError(f"{actor} login did not authenticate")
         bound_station = call_async_harness(
@@ -798,6 +719,8 @@ class NativeTwoClientGate(AcceptanceGate):
             )
         self.clients[actor] = client
         self.ptids[actor] = ptid
+        if set(self.clients) == set(CURRENT_PROFILE_ACTORS) and self.account_login_client is not None:
+            self.account_login_client.close()
 
         def active_messaging_device() -> dict[str, Any] | None:
             current = async_harness(
@@ -905,64 +828,74 @@ class NativeTwoClientGate(AcceptanceGate):
     def prove_additional_journey_assertions(self) -> None:
         """Variant hook for assertions that must run before evidence cleanup."""
 
-    def current_profile_worktree_topology(self) -> dict[str, Any]:
-        topology: dict[str, Any] = {}
-        for actor, expected_name in CURRENT_PROFILE_ACTOR_WORKTREES.items():
-            raw_root = str(self.client_specs[actor].get("worktree") or "")
-            root = Path(raw_root).expanduser().resolve()
-            completed = subprocess.run(
-                (
-                    "git",
-                    "-C",
-                    str(root),
-                    "status",
-                    "--porcelain",
-                    "--untracked-files=all",
-                ),
-                capture_output=True,
-                text=True,
-                check=False,
+    def prove_current_profile_restart(self) -> None:
+        before = self.report.runtime["instanceTopology"]
+        state: dict[str, Any] = {}
+        for actor in CURRENT_PROFILE_ACTORS:
+            if self.clients[actor].process_id == before[actor]["processId"]:
+                self.step(
+                    "client.restart",
+                    lambda actor=actor: self.restart_client(actor), actor,
+                )
+            self.step(
+                "conversation.restore",
+                lambda actor=actor: enter_chat_page(self.clients[actor]), actor,
             )
-            if completed.returncode != 0:
-                raise GateError(
-                    f"cannot inspect current-profile worktree for {actor}"
+            async_harness(
+                self.clients[actor], "syncFriendSession",
+                {"sessionUlid": self.conversation_id},
+            )
+            visible = [
+                wait_until(
+                    lambda item=item: message_snapshot(self.clients[actor], item["plaintext"]),
+                    f"{actor} message after native restart",
                 )
+                for item in self.restart_messages
+            ]
+            after = self.current_profile_instance_topology()[actor]
+            self.assert_condition(
+                f"{actor}_native_restart_preserves_state",
+                after["processId"] != before[actor]["processId"]
+                and after["deviceId"] == before[actor]["deviceId"]
+                and after["actorPtid"] == before[actor]["actorPtid"]
+                and after["storageRoot"] == before[actor]["storageRoot"]
+                and after["binarySha256"] == before[actor]["binarySha256"]
+                and all(
+                    observed.get("messageUlid") == expected["messageId"]
+                    and expected["plaintext"] in str(observed.get("text") or "")
+                    for observed, expected in zip(visible, self.restart_messages)
+                ),
+                json.dumps({"before": before[actor], "after": after, "messages": visible}),
+            )
+            state[actor] = {"before": before[actor], "after": after, "messages": visible}
+        self.report.runtime["deviceRestartState"] = state
+        self.report.runtime["restartMessages"] = self.restart_messages
+        self.assert_condition("current_profile_device_restart", bool(self.restart_messages))
 
-            def git_value(*args: str) -> str:
-                result = subprocess.run(
-                    ("git", "-C", str(root), *args),
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                value = result.stdout.strip()
-                if result.returncode != 0 or not value:
-                    raise GateError(
-                        "cannot resolve current-profile worktree identity "
-                        f"for {actor}"
-                    )
-                return value
-
-            canonical_root = Path(
-                git_value("rev-parse", "--show-toplevel")
-            ).resolve()
-            common_dir = Path(
-                git_value(
-                    "rev-parse",
-                    "--path-format=absolute",
-                    "--git-common-dir",
-                )
-            ).resolve()
+    def current_profile_instance_topology(self) -> dict[str, Any]:
+        topology: dict[str, Any] = {}
+        source = self.manifest["source"]
+        binary = self.runtime_binding.binary_identity()
+        for actor in CURRENT_PROFILE_ACTORS:
+            spec = self.client_specs[actor]
+            root = Path(str(spec["worktree"])).resolve()
+            if root != REPO_ROOT.resolve():
+                raise GateError("Current-profile clients must use the selected source root")
+            client = self.clients[actor]
             topology[actor] = {
-                "clientId": str(self.client_specs[actor].get("id") or ""),
-                "logicalName": root.name,
-                "expectedLogicalName": expected_name,
+                "clientId": spec["id"],
+                "canonicalRoot": str(root),
                 "workspaceId": workspace_id(root),
-                "repositoryId": workspace_id(common_dir),
-                "canonicalRoot": str(canonical_root),
-                "head": git_value("rev-parse", "HEAD"),
-                "tree": git_value("rev-parse", "HEAD^{tree}"),
-                "clean": not completed.stdout.strip(),
+                "commit": source["commit"],
+                "workspaceDigest": source["workspaceDigest"],
+                "binarySha256": binary["sha256"],
+                "processId": client.process_id,
+                "actorPtid": self.ptids[actor],
+                "deviceId": self.device_ids[actor],
+                "profile": client.profile,
+                "storageRoot": client.storage_root,
+                "gatewayPort": client.gateway_port,
+                "webdriverPort": client.port,
             }
         return topology
 
@@ -1128,6 +1061,10 @@ class NativeTwoClientGate(AcceptanceGate):
             and received.get("messageUlid") == sent.get("messageUlid"),
             f"message_id={received.get('messageUlid', '')}",
         )
+        if is_current_profile_gate(self.gate_id):
+            self.restart_messages.append({
+                "messageId": message_id, "plaintext": text,
+            })
         self.step("message.decrypted", lambda: True, receiver_name)
 
         delivered = self.step(
@@ -1216,136 +1153,84 @@ class NativeTwoClientGate(AcceptanceGate):
     def expected_reconciliation_target(
         self,
     ) -> dict[str, str] | None:
-        if self._reconciliation_target is not None:
-            return dict(self._reconciliation_target)
-        target = {
-            "actor": os.environ.get(
-                EXPECTED_RECONCILIATION_ACTOR_ENV,
-                "",
-            ).strip(),
-            "conversationId": os.environ.get(
-                EXPECTED_RECONCILIATION_CONVERSATION_ENV,
-                "",
-            ).strip(),
-            "messageId": os.environ.get(
-                EXPECTED_RECONCILIATION_MESSAGE_ENV,
-                "",
-            ).strip(),
-            "commandId": os.environ.get(
-                EXPECTED_RECONCILIATION_COMMAND_ENV,
-                "",
-            ).strip(),
-            "outcome": os.environ.get(
-                EXPECTED_RECONCILIATION_OUTCOME_ENV,
-                "",
-            ).strip(),
-        }
-        if not any(target.values()):
-            return None
-        if os.environ.get(CREATE_RESTORABLE_COMMAND_ENV, "").strip() == "1":
-            if (
-                not target["actor"]
-                or not target["conversationId"]
-                or target["messageId"]
-                or target["commandId"]
-                or target["actor"] not in self.clients
-                or target["outcome"] != "accepted"
-            ):
-                raise GateError(
-                    "fresh submitted-command setup requires an actor, "
-                    "conversation, accepted outcome, and no preselected "
-                    "message or command identity"
-                )
-            return None
-        if (
-            not all(target.values())
-            or target["actor"] not in self.clients
-            or target["outcome"] not in RECONCILIATION_OUTCOMES
-        ):
-            raise GateError(
-                "expected submitted-command reconciliation requires a "
-                "complete actor/conversation/message/command identity and "
-                "an accepted, terminal_failed, or terminal_superseded outcome"
-            )
-        return target
+        return (
+            dict(self._reconciliation_target)
+            if self._reconciliation_target is not None else None
+        )
 
-    def create_restorable_command_target(self) -> dict[str, str] | None:
-        if os.environ.get(CREATE_RESTORABLE_COMMAND_ENV, "").strip() != "1":
-            return None
-        actor = os.environ.get(
-            EXPECTED_RECONCILIATION_ACTOR_ENV,
-            "",
-        ).strip()
-        conversation_id = os.environ.get(
-            EXPECTED_RECONCILIATION_CONVERSATION_ENV,
-            "",
-        ).strip()
-        outcome = os.environ.get(
-            EXPECTED_RECONCILIATION_OUTCOME_ENV,
-            "",
-        ).strip()
-        if (
-            actor not in self.clients
-            or not conversation_id
-            or outcome != "accepted"
-            or os.environ.get(
-                EXPECTED_RECONCILIATION_MESSAGE_ENV,
-                "",
-            ).strip()
-            or os.environ.get(
-                EXPECTED_RECONCILIATION_COMMAND_ENV,
-                "",
-            ).strip()
-        ):
-            raise GateError(
-                "fresh submitted-command setup requires an actor, "
-                "conversation, accepted outcome, and no preselected "
-                "message or command identity"
-            )
-        plaintext = os.environ.get(
-            RESTORABLE_COMMAND_PLAINTEXT_ENV,
-            "W8A exact submitted-command recovery",
+    def prepare_submitted_command_target(self, conversation_id: str) -> dict[str, Any]:
+        actor = CURRENT_PROFILE_INITIAL_SENDER
+        client = self.clients[actor]
+        plaintext = f"submitted-command-recovery-{time.time_ns()}"
+        pause_result = client.invoke_app_result(
+            "messaging_acceptance_pause_lifecycle",
+            {"input": {"expected_actor_ptid": self.ptids[actor]}},
         )
-        if not plaintext:
-            raise GateError("fresh submitted-command plaintext is required")
-        created = self.step(
-            "command.reconciliation.seed",
-            lambda: async_harness(
-                self.clients[actor],
-                "createRestorableCommand",
-                {
-                    "actorPtid": self.ptids[actor],
-                    "conversationId": conversation_id,
-                    "plaintext": plaintext,
-                },
-            ),
-            actor,
+        paused = pause_result.get("data")
+        if not isinstance(paused, dict) or paused.get("paused") is not True:
+            raise GateError(
+                "Submitted-command preparation did not pause dispatch: "
+                + json.dumps(pause_result, sort_keys=True)
+            )
+        sent = self.step(
+            "command.reconciliation.ui_send", lambda: send_text(client, plaintext), actor,
         )
-        if not isinstance(created, dict):
-            raise GateError(
-                "fresh submitted-command setup returned invalid evidence"
-            )
-        message_id = str(created.get("messageId") or "")
-        command_id = str(created.get("commandId") or "")
-        if not message_id or not command_id:
-            raise GateError(
-                "fresh submitted-command setup omitted its exact identity"
-            )
+        message_id = str(sent.get("messageUlid") or "")
+        snapshot = async_harness(
+            client, "engineInteractionSnapshot",
+            {"actorPtid": self.ptids[actor], "conversationId": conversation_id,
+             "messageId": message_id},
+        )
+        rows = [
+            row for row in (snapshot or {}).get("commandLedger", [])
+            if isinstance(row, dict) and row.get("messageId") == message_id
+            and row.get("localState") == "prepared"
+            and row.get("outboxState") == "pending"
+            and row.get("attemptState") == "prepared"
+        ]
+        if not message_id or len(rows) != 1 or not rows[0].get("commandId"):
+            raise GateError("UI send did not create one exact durable prepared command")
+        command_id = str(rows[0]["commandId"])
+        exact_prepared = async_harness(
+            client, "engineInteractionSnapshot",
+            {"actorPtid": self.ptids[actor], "conversationId": conversation_id,
+             "messageId": message_id, "commandId": command_id},
+        )
+        prepared_outbox = (exact_prepared or {}).get("outbox")
+        prepared_hash = (
+            prepared_outbox.get("commandSha256")
+            if isinstance(prepared_outbox, dict) else None
+        )
+        if not prepared_hash:
+            raise GateError("UI-prepared command bytes are not available")
         target = {
             "actor": actor,
             "conversationId": conversation_id,
             "messageId": message_id,
             "commandId": command_id,
-            "outcome": outcome,
+            "outcome": "accepted",
         }
         self._reconciliation_target = target
         self.report.runtime["createdSubmittedCommand"] = {
             **target,
-            "plaintextSha256": hashlib.sha256(
-                plaintext.encode("utf-8")
-            ).hexdigest(),
+            "plaintext": plaintext,
+            "plaintextSha256": hashlib.sha256(plaintext.encode()).hexdigest(),
+            "preparedSnapshot": exact_prepared,
         }
-        return dict(target)
+        prepared = async_harness(
+            client, "prepareSubmittedCommand",
+            {"actorPtid": self.ptids[actor], "conversationId": conversation_id,
+             "messageId": message_id, "commandId": command_id},
+        )
+        initial = prepared.get("snapshot") if isinstance(prepared, dict) else None
+        self.assert_condition(
+            "submitted_command_fixture_exact",
+            isinstance(initial, dict) and submitted_command_snapshot_is_exact(
+                initial, command_id, message_id,
+            ) and initial["outbox"].get("commandSha256") == prepared_hash,
+            json.dumps(prepared, sort_keys=True),
+        )
+        return initial
 
     def prove_expected_command_reconciliation(
         self,
@@ -1390,8 +1275,7 @@ class NativeTwoClientGate(AcceptanceGate):
         )
         if len(original_rows) != 1 or not command_sha256:
             raise GateError(
-                "expected historical command is absent from the bound "
-                "retained Device Engine store"
+                "Exact run-created command is absent from the bound Device Engine store"
             )
 
         observed_retry = (
@@ -1474,6 +1358,15 @@ class NativeTwoClientGate(AcceptanceGate):
             )
         else:
             received = read_receiver_message()
+        plaintext = str(self.report.runtime["createdSubmittedCommand"]["plaintext"])
+        visible = self.step(
+            "command.reconciliation.receiver_visible",
+            lambda: wait_until(
+                lambda: message_snapshot(self.clients[receiver], plaintext),
+                "exact recovered plaintext on the receiver",
+            ),
+            receiver,
+        )
         receiver_matches_outcome = (
             received is not None
             if final_outcome == "accepted" or later_committed
@@ -1487,6 +1380,7 @@ class NativeTwoClientGate(AcceptanceGate):
             "initialSenderSnapshot": initial,
             "senderSnapshot": snapshot,
             "receiverMessage": received,
+            "receiverVisible": visible,
             "outcome": final_outcome,
             "observedCanonicalNotFoundRetry": observed_retry,
             "laterAttempts": later_attempts,
@@ -1495,6 +1389,8 @@ class NativeTwoClientGate(AcceptanceGate):
             "submitted_command_converged",
             final_outcome == target["outcome"]
             and receiver_matches_outcome
+            and visible.get("messageUlid") == target["messageId"]
+            and plaintext in str(visible.get("text") or "")
             and (
                 received is None
                 or received.get("messageId") == target["messageId"]
@@ -1577,15 +1473,6 @@ class NativeTwoClientGate(AcceptanceGate):
         return cleanup
 
     def run(self) -> dict[str, Any]:
-        if (
-            self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID
-            and os.environ.get(PREPARE_SUBMITTED_COMMAND_ENV, "").strip() != "1"
-        ):
-            raise GateError(
-                f"{PREPARE_SUBMITTED_COMMAND_ENV}=1 is required for the "
-                "isolated exact-command recovery fixture"
-            )
-
         order = list(self.direction_order)
         if not is_current_profile_gate(self.gate_id):
             random.SystemRandom().shuffle(order)
@@ -1627,100 +1514,31 @@ class NativeTwoClientGate(AcceptanceGate):
             )
             if is_current_profile_gate(self.gate_id):
                 topology = self.step(
-                    "runtime.cross_worktree",
-                    self.current_profile_worktree_topology,
+                    "runtime.instance_isolation",
+                    self.current_profile_instance_topology,
                 )
-                self.report.runtime["worktreeTopology"] = topology
-                source = self.manifest.get("source")
-                source_commit = str(
-                    source.get("commit")
-                    if isinstance(source, dict)
-                    else ""
-                )
+                self.report.runtime["instanceTopology"] = topology
                 self.assert_condition(
-                    "current_profile_cross_worktree",
-                    {
-                        topology[actor]["logicalName"]
-                        for actor in ("alice", "bob")
-                    }
-                    == set(CURRENT_PROFILE_ACTOR_WORKTREES.values())
-                    and all(
-                        topology[actor]["logicalName"]
-                        == CURRENT_PROFILE_ACTOR_WORKTREES[actor]
-                        and topology[actor]["canonicalRoot"]
-                        == str(
-                            Path(
-                                self.client_specs[actor]["worktree"]
-                            ).resolve()
+                    "current_profile_instance_isolation",
+                    all(
+                        len({item[field] for item in topology.values()}) == 2
+                        for field in (
+                            "processId", "actorPtid", "deviceId", "profile",
+                            "storageRoot", "gatewayPort", "webdriverPort",
                         )
-                        and topology[actor]["clean"] is True
-                        for actor in ("alice", "bob")
-                    )
-                    and len(
-                        {
-                            topology[actor]["workspaceId"]
-                            for actor in ("alice", "bob")
-                        }
-                    )
-                    == 2
-                    and len(
-                        {
-                            topology[actor]["repositoryId"]
-                            for actor in ("alice", "bob")
-                        }
-                    )
-                    == 1
-                    and topology["alice"]["tree"] == topology["bob"]["tree"]
-                    and topology["bob"]["head"] == source_commit,
+                    ) and all(
+                        len({item[field] for item in topology.values()}) == 1
+                        for field in (
+                            "canonicalRoot", "workspaceId", "commit",
+                            "workspaceDigest", "binarySha256",
+                        )
+                    ),
                     json.dumps(topology, sort_keys=True),
                 )
                 self.assert_condition(
                     "current_profile_group_initiator",
-                    self.direction_order[0] == CURRENT_PROFILE_INITIAL_SENDER
-                    and topology[self.direction_order[0]]["logicalName"]
-                    == "peers-group-chat",
-                    json.dumps(
-                        {
-                            "directionOrder": self.direction_order,
-                            "topology": topology,
-                        },
-                        sort_keys=True,
-                    ),
-                )
-                persistent_storage = {
-                    actor: {
-                        "storageRoot": str(
-                            self.client_specs[actor].get("storage_root") or ""
-                        ),
-                        "storageLifecycle": str(
-                            self.client_specs[actor].get(
-                                "storage_lifecycle",
-                                "",
-                            )
-                        ),
-                    }
-                    for actor in ("alice", "bob")
-                }
-                persistent_roots = [
-                    Path(item["storageRoot"])
-                    for item in persistent_storage.values()
-                ]
-                self.assert_condition(
-                    "current_profile_persistent_device_state",
-                    len(set(persistent_roots)) == 2
-                    and all(
-                        item["storageLifecycle"] == "persistent"
-                        and root.is_dir()
-                        and not root.is_symlink()
-                        for item, root in zip(
-                            persistent_storage.values(),
-                            persistent_roots,
-                        )
-                    ),
-                    json.dumps(persistent_storage, sort_keys=True),
-                )
-                self.report.runtime["persistentDeviceState"] = (
-                    persistent_storage
+                    order == self.direction_order == ["bob", "alice"],
+                    json.dumps({"directionOrder": self.direction_order}),
                 )
             self.assert_condition(
                 "native_runtime",
@@ -1737,62 +1555,30 @@ class NativeTwoClientGate(AcceptanceGate):
                 and len({client.gateway_port for client in self.clients.values()}) == 2
                 and len({client.storage_root for client in self.clients.values()}) == 2,
             )
-            self.create_restorable_command_target()
-            if self.expected_reconciliation_target() is not None:
-                target = self.expected_reconciliation_target()
-                prepared = self.step(
+            conversation_id = self.step("conversation.open", self.open_conversation)
+            self.conversation_id = conversation_id
+            if self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID:
+                initial = self.step(
                     "command.reconciliation.fixture",
-                    lambda: async_harness(
-                        self.clients[target["actor"]],
-                        "prepareSubmittedCommand",
-                        {
-                            "actorPtid": self.ptids[target["actor"]],
-                            "conversationId": target["conversationId"],
-                            "messageId": target["messageId"],
-                            "commandId": target["commandId"],
-                        },
-                    ),
+                    lambda: self.prepare_submitted_command_target(conversation_id),
+                    CURRENT_PROFILE_INITIAL_SENDER,
+                )
+                target = self.expected_reconciliation_target()
+                self.step(
+                    "command.reconciliation.restart",
+                    lambda: self.restart_client(target["actor"]),
                     target["actor"],
                 )
-                initial = (
-                    prepared.get("snapshot")
-                    if isinstance(prepared, dict)
-                    else None
-                )
-                self.assert_condition(
-                    "submitted_command_fixture_exact",
-                    isinstance(initial, dict)
-                    and submitted_command_snapshot_is_exact(
-                        initial,
-                        target["commandId"],
-                        target["messageId"],
-                    ),
-                    json.dumps(prepared, sort_keys=True),
-                )
-                resumed = self.step(
-                    "command.reconciliation.activate",
-                    lambda: async_harness(
-                        self.clients[target["actor"]],
-                        "resumeMessagingLifecycle",
-                        {"actorPtid": self.ptids[target["actor"]]},
-                    ),
-                    target["actor"],
-                )
-                if not isinstance(resumed, dict) or resumed.get("activated") is not True:
-                    raise GateError(
-                        "submitted-command lifecycle activation failed"
-                    )
                 self.step(
                     "command.reconciliation",
                     lambda: self.prove_expected_command_reconciliation(initial),
                     target["actor"],
                 )
-            conversation_id = ""
-            if self.gate_id != SUBMITTED_COMMAND_RECOVERY_GATE_ID:
-                conversation_id = self.step(
-                    "conversation.open",
-                    self.open_conversation,
-                )
+                self.restart_messages.append({
+                    "messageId": target["messageId"],
+                    "plaintext": self.report.runtime["createdSubmittedCommand"]["plaintext"],
+                })
+            else:
                 self.step(
                     "avatar.bundled",
                     self.prove_demo_avatar_sources,
@@ -1800,6 +1586,13 @@ class NativeTwoClientGate(AcceptanceGate):
                 self.prove_direction(*self.direction_order)
                 self.prove_direction(*reversed(self.direction_order))
                 self.prove_additional_journey_assertions()
+            if is_current_profile_gate(self.gate_id):
+                for actor in CURRENT_PROFILE_ACTORS:
+                    async_harness(
+                        self.clients[actor], "syncFriendSession",
+                        {"sessionUlid": conversation_id},
+                    )
+                self.prove_current_profile_restart()
             for actor in ("alice", "bob"):
                 self.collect_client_evidence(actor)
         finally:
@@ -1837,8 +1630,8 @@ class NativeTwoClientGate(AcceptanceGate):
             "sourceIdentity": source_identity,
             "launchOrder": order,
             "directionOrder": list(self.direction_order),
-            "worktreeTopology": self.report.runtime.get(
-                "worktreeTopology",
+            "instanceTopology": self.report.runtime.get(
+                "instanceTopology",
                 {},
             ),
             "steps": self.steps,

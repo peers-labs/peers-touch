@@ -6,6 +6,7 @@ import re
 from typing import Any, Mapping
 
 from .execution_budget import ExecutionBudgetError, digest
+from .execution_identity import validate_execution_inputs
 
 
 class ExecutionGraph(dict[str, Any]):
@@ -116,6 +117,7 @@ def compile_graph(
         required = dependencies(gate_id, definitions[gate_id])
         definition = definitions[gate_id]
         validate_judgment(gate_id, definition)
+        validate_execution_inputs(gate_id, definition)
         edges[gate_id] = list(required)
         for producer in required:
             visit(producer)
@@ -138,12 +140,55 @@ def compile_graph(
     return ExecutionGraph(graph)
 
 
+def request_dispatch_order(
+    graph: Mapping[str, Any], reused_ids: set[str],
+    prior_results: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    """Finish attempted incomplete roots before unstarted roots and fresh reruns."""
+    remaining = set(graph["dispatchGateIds"]) - reused_ids
+    if not reused_ids <= set(graph["dispatchGateIds"]):
+        raise ExecutionBudgetError("request reuse is outside the frozen graph")
+    order: list[str] = []
+
+    def include(gate_id: str) -> None:
+        if gate_id not in remaining:
+            return
+        for producer in graph["dependencies"][gate_id]:
+            include(producer)
+        remaining.remove(gate_id)
+        order.append(gate_id)
+
+    incomplete = [
+        result for result in prior_results or []
+        if any(result.get(key) != value for key, value in (
+            ("status", "passed"), ("completionStatus", "DONE"), ("proofStatus", "PROVEN"),
+        )) or result.get("cleanupStatus", "not-required") not in {"passed", "not-required"}
+    ]
+    attempted = [
+        result for result in incomplete
+        if result.get("runManifest") or result.get("duration_seconds", 0) > 0
+    ]
+    for result in attempted:
+        include(result["id"])
+    completed = {
+        result["id"] for result in prior_results or []
+        if result not in incomplete
+    }
+    for gate_id in graph["dispatchGateIds"]:
+        if gate_id not in completed:
+            include(gate_id)
+    for gate_id in graph["dispatchGateIds"]:
+        include(gate_id)
+    return order
+
+
 def prerequisite_results(
     gate: Mapping[str, Any], results: list[dict[str, Any]],
     source: Mapping[str, str], store: Any,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Require sealed current-source producer results, including cleanup."""
-    from .evidence_store import ArtifactRef
+    from .errors import EvidenceError
+    from .proof import read_gate_proof
 
     by_id = {result["id"]: result for result in results}
     references: list[dict[str, Any]] = []
@@ -155,24 +200,15 @@ def prerequisite_results(
             result.get("status") != "passed"
             or result.get("completionStatus") != "DONE"
             or result.get("proofStatus") != "PROVEN"
-            or result.get("cleanupStatus", "not-required") not in {"passed", "not-required"}
+            or result.get("cleanupStatus") not in {"passed", "not-required"}
             or not reference
         ):
             unproven.append(producer)
             continue
-        ref = ArtifactRef.from_dict(reference)
-        manifest = store.read_run_manifest(
-            ref, manifest_sha256=ref.sha256, expected_gate_id=producer,
-        )
-        if (
-            ref.gate_id != producer
-            or manifest.get("source") != dict(source)
-            or manifest.get("result", {}).get("cleanupStatus", "not-required") not in {"passed", "not-required"}
-            or any(manifest.get("result", {}).get(key) != value for key, value in (
-                ("status", "passed"), ("completionStatus", "DONE"), ("proofStatus", "PROVEN"),
-            ))
-        ):
-            raise ExecutionBudgetError(f"{producer}: prerequisite source or proof mismatch")
+        try:
+            read_gate_proof(store, producer, source, result=result)
+        except (EvidenceError, KeyError, TypeError, ValueError, OSError) as error:
+            raise ExecutionBudgetError(f"{producer}: prerequisite source or proof mismatch") from error
         references.append({"gateId": producer, "runManifest": reference})
     return references, unproven
 

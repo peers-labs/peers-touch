@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -16,98 +17,14 @@ from tooling.acceptance.drivers.native import (
     NativeModifier,
 )
 from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.drivers.native.base import (
+    NativeOperatorObservation,
+)
 
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
 POLL_SECONDS = 0.05
 REVEAL_ATTEMPTS = 4
-
-
-def _click_native_selector(
-    client: TauriSession,
-    runtime_binding: NativeDesktopRuntimeBinding,
-    selector: str,
-) -> dict[str, Any]:
-    process_id = client.process_id
-    if process_id is None:
-        raise GateError("Native click target has no owning process")
-    element = client.find_element(selector, DEFAULT_TIMEOUT_SECONDS)
-    geometry = client.driver.execute_script(
-        """
-        const element = arguments[0];
-        const rect = element.getBoundingClientRect();
-        const x = rect.left + rect.width / 2;
-        const y = rect.top + rect.height / 2;
-        const hit = document.elementFromPoint(x, y);
-        return {
-          connected: element.isConnected,
-          disabled: Boolean(element.disabled),
-          hit: hit === element || element.contains(hit),
-          element: {
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
-            height: rect.height,
-          },
-          viewport: {
-            width: window.innerWidth,
-            height: window.innerHeight,
-            devicePixelRatio: window.devicePixelRatio || 1,
-          },
-        };
-        """,
-        element,
-    )
-    if (
-        not isinstance(geometry, dict)
-        or not geometry.get("connected")
-        or geometry.get("disabled")
-        or not geometry.get("hit")
-    ):
-        raise GateError(
-            f"Native click target is unavailable: {selector} {geometry}"
-        )
-    ratio = float(geometry["viewport"]["devicePixelRatio"])
-    if ratio <= 0:
-        raise GateError("Native click target returned an invalid window scale")
-    driver_window = client.driver.get_window_rect()
-    native_window = {
-        "left": float(driver_window["x"]) / ratio,
-        "top": float(driver_window["y"]) / ratio,
-        "width": float(driver_window["width"]) / ratio,
-        "height": float(driver_window["height"]) / ratio,
-    }
-    adapter = runtime_binding.native_adapter
-    origin = adapter.content_origin(process_id)
-    if origin is None:
-        origin = (
-            native_window["left"] + max(
-                0.0,
-                (
-                    native_window["width"]
-                    - float(geometry["viewport"]["width"])
-                ) / 2,
-            ),
-            native_window["top"] + max(
-                0.0,
-                native_window["height"]
-                - float(geometry["viewport"]["height"]),
-            ),
-        )
-    point = (
-        origin[0]
-        + float(geometry["element"]["left"])
-        + float(geometry["element"]["width"]) / 2,
-        origin[1]
-        + float(geometry["element"]["top"])
-        + float(geometry["element"]["height"]) / 2,
-    )
-    adapter.post_mouse_to_process(
-        process_id,
-        (MouseAction.MOVE, MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
-        point,
-    )
-    return {"selector": selector, "point": {"x": point[0], "y": point[1]}}
 
 
 def wait_for_actionable_file_trigger(
@@ -233,6 +150,47 @@ def _click_native_selector(
     return {"selector": selector, "point": {"x": point[0], "y": point[1]}}
 
 
+def _select_nonintrusive_file(
+    *, actor: str, client: TauriSession,
+    runtime_binding: NativeDesktopRuntimeBinding,
+    source_path: Path, selected_path: str | Path,
+    operator: NativeOperatorObservation,
+    trigger: Callable[[], Any] | None, trigger_selector: str | None,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    adapter = runtime_binding.native_adapter
+    process_id = client.process_id
+    source_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    if runtime_binding.native_file_sha256(actor, selected_path) != source_hash:
+        raise GateError("Native chooser staged file differs from its source")
+    operator.file_chooser(
+        "chooser-before", target_process_id=process_id, present=False,
+    )
+    if trigger_selector is not None:
+        client.semantic_click(wait_for_actionable_file_trigger(
+            actor=actor, client=client, selector=trigger_selector,
+            timeout_seconds=timeout_seconds,
+        ))
+    else:
+        trigger()
+
+    operator.file_chooser(
+        "chooser-open", target_process_id=process_id, present=True,
+        timeout_seconds=timeout_seconds, interval_seconds=POLL_SECONDS,
+    )
+    selected = adapter.select_file_chooser_path_to_process(process_id, str(selected_path))
+    if selected is None or selected.error or selected.value != str(selected_path):
+        raise GateError("Native chooser did not commit the exact staged file")
+
+    operator.file_chooser(
+        "chooser-selected", target_process_id=process_id, present=False,
+        timeout_seconds=timeout_seconds, interval_seconds=POLL_SECONDS,
+    )
+    if runtime_binding.native_file_sha256(actor, selected_path) != source_hash:
+        raise GateError("Native chooser selected fixture changed")
+    return {"name": source_path.name, "size": source_path.stat().st_size}
+
+
 def select_native_file(
     *,
     actor: str,
@@ -249,9 +207,6 @@ def select_native_file(
     process_id = client.process_id
     if process_id is None:
         raise GateError(f"{actor} Native file chooser has no owning process")
-    runtime_binding.native_adapter.require_exclusive_input(
-        "select file through native chooser"
-    )
     if (trigger is None) == (trigger_selector is None):
         raise GateError(
             "Native file selection requires exactly one chooser trigger"
@@ -261,10 +216,18 @@ def select_native_file(
         raise GateError(
             f"Native file selection source is missing: {resolved_source}"
         )
+    operator = runtime_binding.begin_file_chooser()
     selected_path = runtime_binding.stage_native_file(
         actor,
         resolved_source,
     )
+    if operator is not None:
+        return _select_nonintrusive_file(
+            actor=actor, client=client, runtime_binding=runtime_binding,
+            source_path=resolved_source, selected_path=selected_path,
+            operator=operator, trigger=trigger, trigger_selector=trigger_selector,
+            timeout_seconds=timeout_seconds,
+        )
     adapter = runtime_binding.native_adapter
     all_sessions = tuple(sessions)
     cooperative_activation = runtime_binding.request_cooperative_activation(

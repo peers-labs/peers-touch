@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import dataclasses
-import json
-import os
+import hashlib
+import re
+import secrets
 import shutil
-import subprocess
-import urllib.error
-import urllib.request
+import socket
+import tempfile
+import threading
+import time
+from collections.abc import Mapping
 from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
@@ -15,684 +18,182 @@ from tooling.acceptance.core.attestation import (
     produce_station_attestation,
     source_proto_digest,
 )
-from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.errors import (
+    BlockedError, EphemeralCapabilityBlocked, EphemeralLaunchCleanupFailed,
+)
+from tooling.acceptance.core.launch_context import (
+    EphemeralCapabilityHandler,
+    EphemeralGateLaunchContext,
+    EphemeralHandlerCleanup,
+)
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
-from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.provisioning import (
     ActorIdentity,
     ActorManifest,
     ClientRuntime,
-    EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
     utc_now,
 )
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
+from tooling.acceptance.core.redaction import redact_text_with_values
 from tooling.acceptance.fixtures.chat_native_actors import (
-    ACTOR_ACCOUNTS,
-    fixture_password,
+    fixture_avatar,
     persist_actor_manifest,
 )
+from tooling.acceptance.fixtures.chat_native_reset import (
+    read_fixture_actors,
+    seed_bound_contacts,
+    seed_run_actor_avatars,
+)
+from tooling.acceptance.provisioners.preset_actor import resolve_existing_preset_actor
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
 )
-from tooling.acceptance.provisioners.preset_actor import (
-    resolve_existing_preset_actor,
-)
+from tooling.acceptance.provisioners.station_equipment import equip_station_profile
 
 
 GATE_ID = "chat-native-current-profile-two-client-e2e"
-SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
-    "chat-native-submitted-command-recovery-e2e"
-)
-SUPPORTED_GATE_IDS = {
-    GATE_ID,
-    SUBMITTED_COMMAND_RECOVERY_GATE_ID,
-}
+SUBMITTED_COMMAND_RECOVERY_GATE_ID = "chat-native-submitted-command-recovery-e2e"
+SUPPORTED_GATE_IDS = frozenset({GATE_ID, SUBMITTED_COMMAND_RECOVERY_GATE_ID})
 CLIENT_ROLES = ("alice", "bob")
-CLIENT_WORKTREE_NAMES = {
-    "alice": "peers-chat-high-chat",
-    "bob": "peers-group-chat",
-}
-CLIENT_WORKTREES_ENV = "PT_CHAT_NATIVE_CLIENT_WORKTREES"
-PERSISTENT_STORAGE_ROOTS_ENV = "PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS"
-PERSISTENT_STORAGE_MARKER = ".pt-current-profile-state.json"
-PERSISTENT_STORAGE_RESET_ENV = "PT_CHAT_NATIVE_RESET_PERSISTENT_STATE"
-PERSISTENT_STORAGE_POLICIES = frozenset(
-    {"persistent-acceptance", "retained-engine-acceptance"}
-)
-RETAINED_ENGINE_STATE_ROLES_ENV = (
-    "PT_CHAT_NATIVE_RETAINED_ENGINE_STATE_ROLES"
-)
+LOGIN_CAPABILITY_ID = "chat.runtime-account-login"
 
 
-@dataclasses.dataclass(frozen=True)
-class ClientWorktreeIdentity:
-    root: Path
-    logical_name: str
-    common_dir: Path
-    head: str
-    tree: str
-    clean: bool
+class RuntimeAccountLoginHandler(EphemeralCapabilityHandler):
+    """Keep signup credentials in the parent and authenticate a bound WebView."""
+
+    def __init__(self, password: str, clients: tuple[ClientRuntime, ...],
+                 accounts: dict[str, str], station_url: str) -> None:
+        self._password = bytearray(password.encode())
+        self._clients = {client.actor: client for client in clients}
+        self._accounts = dict(accounts)
+        self._station_url = station_url
+
+    @property
+    def allowed_operations(self) -> tuple[str, ...]:
+        return ("authenticate",)
+
+    @property
+    def sensitive_values(self) -> tuple[str, ...]:
+        return (self._password.decode(),) if self._password else ()
+
+    def invoke(self, operation: str, payload: Mapping[str, object], *,
+               deadline_monotonic: float,
+               cancellation: threading.Event) -> Mapping[str, object]:
+        role, session_id = payload.get("role"), payload.get("sessionId")
+        if (
+            operation != "authenticate" or set(payload) != {"role", "sessionId"}
+            or not isinstance(role, str) or role not in self._clients
+            or not isinstance(session_id, str)
+            or re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", session_id) is None
+            or not self._password or cancellation.is_set()
+            or time.monotonic() >= deadline_monotonic
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Run-account login requires a live bound client",
+                resource=LOGIN_CAPABILITY_ID,
+            )
+        from tooling.acceptance.core.harness import call_async_harness
+        from tooling.acceptance.drivers.tauri import TauriDriver
+
+        client = self._clients[str(role)]
+        driver = TauriDriver(port=client.webdriver_port)
+        try:
+            driver.borrow_session(session_id)
+            timeout = min(30, deadline_monotonic - time.monotonic())
+            binding = call_async_harness(
+                driver, "bindingState", {}, namespace="stationAccess",
+                script_timeout=timeout,
+            )
+            if (
+                driver.driver.current_url != "tauri://localhost"
+                or not isinstance(binding, dict)
+                or str(binding.get("activeUrl") or "").rstrip("/") != self._station_url
+                or cancellation.is_set()
+            ):
+                raise EphemeralCapabilityBlocked(
+                    "Run-account login Station binding differs from its Profile",
+                    resource=LOGIN_CAPABILITY_ID,
+                )
+            result = call_async_harness(
+                driver, "loginWithPassword",
+                {"account": self._accounts[str(role)], "password": self._password.decode()},
+                namespace="chat",
+                script_timeout=min(30, deadline_monotonic - time.monotonic()),
+            )
+            return {"authenticated": isinstance(result, dict) and result.get("authenticated") is True}
+        finally:
+            driver.stop()
+
+    def project_response(self, operation: str,
+                         response: Mapping[str, object]) -> Mapping[str, object]:
+        del operation
+        return dict(response)
+
+    def quarantine(self, reason: str, *, deadline_monotonic: float) -> bool:
+        del reason, deadline_monotonic
+        self.close()
+        return True
+
+    def close(self) -> EphemeralHandlerCleanup:
+        self._password[:] = b"\0" * len(self._password)
+        self._password.clear()
+        self._accounts.clear()
+        return EphemeralHandlerCleanup(closed=True, secrets_zeroized=True)
 
 
 class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
-    """Provision two native clients against the active non-destructive profile."""
+    """Own run-local accounts and clients on the selected reviewed Station.
+
+    Account creation uses the existing production registrar. Existing Station
+    actors are never reset or imported. Native device/session state is created
+    by authentication, survives restart, and is removed at run cleanup.
+    """
 
     environment_id = "native-tauri-current-profile"
 
-    @staticmethod
-    def _storage_marker_matches_identity(
-        actual: object,
-        expected: dict[str, object],
-    ) -> bool:
-        if not isinstance(actual, dict) or set(actual) != set(expected):
-            return False
-        if actual.get("devicePolicy") not in PERSISTENT_STORAGE_POLICIES:
-            return False
-        return all(
-            actual.get(field) == value
-            for field, value in expected.items()
-            if field != "devicePolicy"
-        )
-
-    @staticmethod
-    def _storage_seeds(
-        profile_name: str,
-        client_worktrees: dict[str, ClientWorktreeIdentity],
-    ) -> tuple[Path, ...]:
-        raw_seeds = os.environ.get(
-            "PT_CHAT_NATIVE_STORAGE_SEEDS",
-            "",
-        )
-        if raw_seeds.strip():
-            seeds = tuple(
-                Path(item).expanduser().resolve()
-                for item in raw_seeds.split(",")
-                if item.strip()
-            )
-        else:
-            seeds = tuple(
-                client_worktrees[role].root
-                / ".local"
-                / "dev"
-                / "data"
-                / profile_name
-                / "desktop-app"
-                for role in CLIENT_ROLES
-            )
-        if len(seeds) != len(CLIENT_ROLES):
-            raise BlockedError(
-                reason=(
-                    "Current-profile Native Gate requires one storage seed "
-                    f"per client ({len(CLIENT_ROLES)} required, "
-                    f"{len(seeds)} supplied)"
-                ),
-                resource="client-isolation:storage-seeds",
-            )
-        for seed in seeds:
-            if not (seed / "peers-touch").is_dir():
-                raise BlockedError(
-                    reason=(
-                        "Current-profile Native Gate requires an existing "
-                        f"Desktop identity store at {seed}"
-                    ),
-                    resource="fixture:desktop-identity-storage",
-                    diagnostic=ResourceDiagnostic.observed(
-                        owner="native-tauri-current-profile-provisioner",
-                        recovery_action=f"Supply the existing retained Desktop identity seed at {seed}; a fresh client cannot prove retained Engine recovery.",
-                        resource="fixture:desktop-identity-storage",
-                        expected={"path": str(seed / "peers-touch"), "directoryPresent": True},
-                        observed={"path": str(seed / "peers-touch"), "directoryPresent": False},
-                    ),
-                )
-        return seeds
-
-    @staticmethod
-    def _persistent_storage_roots(
-        profile_name: str,
-        client_worktrees: dict[str, ClientWorktreeIdentity],
-    ) -> tuple[Path, ...]:
-        raw_roots = os.environ.get(PERSISTENT_STORAGE_ROOTS_ENV, "")
-        if raw_roots.strip():
-            roots = tuple(
-                Path(item.strip()).expanduser().resolve()
-                for item in raw_roots.split(",")
-                if item.strip()
-            )
-        else:
-            roots = tuple(
-                client_worktrees[role].root
-                / ".local"
-                / "acceptance"
-                / "state"
-                / "native-tauri-current-profile"
-                / profile_name
-                / role
-                / "desktop-app"
-                for role in CLIENT_ROLES
-            )
-        if len(roots) != len(CLIENT_ROLES) or len(set(roots)) != len(roots):
-            raise BlockedError(
-                reason=(
-                    "Current-profile Native Gate requires one distinct "
-                    f"persistent storage root per client ({len(CLIENT_ROLES)} "
-                    "required)"
-                ),
-                resource="client-isolation:persistent-storage",
-            )
-        return roots
-
-    @staticmethod
-    def _assert_storage_tree_is_copyable(root: Path, role: str) -> None:
-        if root.is_symlink() or any(path.is_symlink() for path in root.rglob("*")):
-            raise BlockedError(
-                reason=(
-                    f"Current-profile {role} storage seed contains a symlink: "
-                    f"{root}"
-                ),
-                resource=f"client-storage-seed:{role}",
-            )
-        active_sidecars = sorted(
-            path
-            for path in root.rglob("*")
-            if path.is_file()
-            and path.name.endswith(("-wal", "-shm", "-journal"))
-        )
-        if active_sidecars:
-            raise BlockedError(
-                reason=(
-                    f"Current-profile {role} storage seed is not quiescent"
-                ),
-                resource=f"client-storage-seed:{role}",
-            )
-
-    @classmethod
-    def _persistent_storage(
-        cls,
-        *,
-        role: str,
-        actor: ActorIdentity,
-        profile_name: str,
-        worktree: ClientWorktreeIdentity,
-        seed_root: Path,
-        storage_root: Path,
-        run_id: str,
-        reset_authorized: bool = False,
-        preserve_retained_engine_state: bool = False,
-    ) -> Path:
-        marker = storage_root / PERSISTENT_STORAGE_MARKER
-        expected_marker = {
-            "schemaVersion": 1,
-            "environmentId": cls.environment_id,
-            "role": role,
-            "actorPtid": actor.ptid,
-            "profile": f"{profile_name}-app",
-            "sourceWorktree": str(worktree.root),
-            "devicePolicy": (
-                "retained-engine-acceptance"
-                if preserve_retained_engine_state
-                else "persistent-acceptance"
-            ),
-        }
-        if storage_root.exists():
-            if storage_root.is_symlink() or not storage_root.is_dir():
-                raise BlockedError(
-                    reason=(
-                        f"Current-profile {role} persistent storage is unsafe"
-                    ),
-                    resource=f"client-persistent-storage:{role}",
-                )
-            try:
-                actual_marker = json.loads(marker.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as error:
-                raise BlockedError(
-                    reason=(
-                        f"Current-profile {role} persistent storage marker "
-                        f"is unavailable: {error}"
-                    ),
-                    resource=f"client-persistent-storage:{role}",
-                ) from error
-            marker_matches = actual_marker == expected_marker
-            reset_identity_matches = (
-                reset_authorized
-                and cls._storage_marker_matches_identity(
-                    actual_marker,
-                    expected_marker,
-                )
-            )
-            if (
-                not marker_matches
-                and not reset_identity_matches
-            ) or not (
-                storage_root / "peers-touch"
-            ).is_dir():
-                raise BlockedError(
-                    reason=(
-                        f"Current-profile {role} persistent storage identity "
-                        "does not match the selected actor/worktree/profile"
-                    ),
-                    resource=f"client-persistent-storage:{role}",
-                )
-            if not reset_authorized:
-                return storage_root
-            if any(path.is_symlink() for path in storage_root.rglob("*")):
-                raise BlockedError(
-                    reason=(
-                        f"Current-profile {role} persistent storage reset "
-                        "refuses a tree containing symlinks"
-                    ),
-                    resource=f"client-persistent-storage:{role}",
-                )
-            shutil.rmtree(storage_root)
-
-        if (
-            storage_root == seed_root
-            or seed_root in storage_root.parents
-            or storage_root in seed_root.parents
-        ):
-            raise BlockedError(
-                reason=(
-                    f"Current-profile {role} persistent storage must be "
-                    "separate from its read-only source seed"
-                ),
-                resource=f"client-persistent-storage:{role}",
-            )
-        cls._assert_storage_tree_is_copyable(seed_root, role)
-        storage_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        temporary = storage_root.with_name(
-            f".{storage_root.name}.init-{run_id}"
-        )
-        if temporary.exists():
-            raise BlockedError(
-                reason=(
-                    f"Current-profile {role} persistent storage initialization "
-                    "is already pending"
-                ),
-                resource=f"client-persistent-storage:{role}",
-            )
-        try:
-            shutil.copytree(seed_root, temporary, symlinks=False)
-            desktop_profile = f"{profile_name}-app"
-            database_root = (
-                temporary
-                / "peers-touch"
-                / desktop_profile
-                / "data"
-                / "db"
-                / "users"
-            )
-            if (
-                not preserve_retained_engine_state
-                and database_root.is_dir()
-            ):
-                for database in database_root.glob("*/chat.main.db*"):
-                    if database.is_file():
-                        database.unlink()
-            session_root = (
-                temporary
-                / "peers-touch"
-                / desktop_profile
-                / "data"
-                / "auth"
-                / "sessions"
-            )
-            if session_root.is_dir():
-                for device_id in session_root.glob("*/device_id"):
-                    if device_id.is_file():
-                        device_id.unlink()
-            marker = temporary / PERSISTENT_STORAGE_MARKER
-            marker.write_text(
-                json.dumps(expected_marker, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            if os.name != "nt":
-                storage_root.parent.chmod(0o700)
-                temporary.chmod(0o700)
-                marker.chmod(0o600)
-            os.replace(temporary, storage_root)
-        except Exception as error:
-            shutil.rmtree(temporary, ignore_errors=True)
-            if isinstance(error, BlockedError):
-                raise
-            raise BlockedError(
-                reason=(
-                    f"Current-profile {role} persistent storage "
-                    f"initialization failed: {error}"
-                ),
-                resource=f"client-persistent-storage:{role}",
-            ) from error
-        return storage_root
-
-    @staticmethod
-    def _retained_engine_state_roles() -> set[str]:
-        raw = os.environ.get(RETAINED_ENGINE_STATE_ROLES_ENV, "").strip()
-        if not raw:
-            return set()
-        roles = {
-            role.strip()
-            for role in raw.split(",")
-            if role.strip()
-        }
-        invalid = roles - set(CLIENT_ROLES)
-        if invalid:
-            raise BlockedError(
-                reason=(
-                    "Current-profile retained Engine state roles are invalid: "
-                    f"{', '.join(sorted(invalid))}"
-                ),
-                resource="client-isolation:retained-engine-state",
-            )
-        return roles
-
-    @staticmethod
-    def _persistent_storage_reset_authorized(profile_name: str) -> bool:
-        if os.environ.get(PERSISTENT_STORAGE_RESET_ENV, "").strip() != "1":
-            return False
-        authorized_profile = os.environ.get(
-            "CHAT_ACCEPTANCE_RESET_PROFILE",
-            "",
-        ).strip()
-        if (
-            os.environ.get("CHAT_ACCEPTANCE_RESET", "").strip() != "1"
-            or authorized_profile != profile_name
-        ):
-            raise BlockedError(
-                reason=(
-                    "Current-profile persistent storage reset requires "
-                    "CHAT_ACCEPTANCE_RESET=1 and an exact "
-                    "CHAT_ACCEPTANCE_RESET_PROFILE match"
-                ),
-                resource="fixture-authorization:persistent-device-state",
-            )
-        return True
-
-    @staticmethod
-    def _git_value(root: Path, *args: str) -> str:
-        completed = subprocess.run(
-            ("git", "-C", str(root), *args),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        value = completed.stdout.strip()
-        if completed.returncode != 0 or not value:
-            detail = completed.stderr.strip() or "git returned no value"
-            raise BlockedError(
-                reason=f"Cannot inspect Native client worktree {root}: {detail}",
-                resource="client-isolation:worktrees",
-            )
-        return value
-
-    @classmethod
-    def _inspect_worktree(cls, root: Path) -> ClientWorktreeIdentity:
-        if not (root / "Makefile").is_file():
-            raise BlockedError(
-                reason=f"Native client worktree has no Makefile: {root}",
-                resource="client-isolation:worktrees",
-                diagnostic=ResourceDiagnostic.observed(
-                    owner="native-tauri-current-profile-provisioner",
-                    recovery_action="Resolve the existing retained client worktree roots through PT_CHAT_NATIVE_CLIENT_WORKTREES; do not create fresh clients as retained proof.",
-                    resource="client-isolation:worktrees",
-                    expected={"path": str(root / "Makefile"), "filePresent": True},
-                    observed={"path": str(root / "Makefile"), "filePresent": False},
-                ),
-            )
-        canonical_root = Path(
-            cls._git_value(root, "rev-parse", "--show-toplevel")
-        ).resolve()
-        if canonical_root != root:
-            raise BlockedError(
-                reason=(
-                    "Native client worktree must be a canonical Git root: "
-                    f"{root}"
-                ),
-                resource="client-isolation:worktrees",
-                diagnostic=ResourceDiagnostic.observed(
-                    owner="native-tauri-current-profile-provisioner",
-                    recovery_action="Bind the retained client to its canonical Git root through PT_CHAT_NATIVE_CLIENT_WORKTREES.",
-                    resource="client-isolation:worktrees",
-                    expected={"path": str(canonical_root)},
-                    observed={"path": str(root)},
-                ),
-            )
-        common_dir = Path(
-            cls._git_value(
-                root,
-                "rev-parse",
-                "--path-format=absolute",
-                "--git-common-dir",
-            )
-        ).resolve()
-        status = subprocess.run(
-            (
-                "git",
-                "-C",
-                str(root),
-                "status",
-                "--porcelain",
-                "--untracked-files=all",
-            ),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if status.returncode != 0:
-            raise BlockedError(
-                reason=f"Cannot inspect Native client worktree status: {root}",
-                resource="client-isolation:worktrees",
-            )
-        return ClientWorktreeIdentity(
-            root=root,
-            logical_name=root.name,
-            common_dir=common_dir,
-            head=cls._git_value(root, "rev-parse", "HEAD"),
-            tree=cls._git_value(root, "rev-parse", "HEAD^{tree}"),
-            clean=not status.stdout.strip(),
-        )
-
-    @staticmethod
-    def _validate_client_worktrees(
-        identities: dict[str, ClientWorktreeIdentity],
-    ) -> None:
-        if set(identities) != set(CLIENT_ROLES):
-            raise BlockedError(
-                reason=(
-                    "Current-profile Native Gate requires one worktree "
-                    "for Alice and one for Bob"
-                ),
-                resource="client-isolation:worktrees",
-                diagnostic=ResourceDiagnostic.observed(
-                    owner="native-tauri-current-profile-provisioner",
-                    recovery_action="The retained-client Gate owner must supply the existing Alice/Bob worktrees and retained Engine state through PT_CHAT_NATIVE_CLIENT_WORKTREES; fresh clients do not satisfy this contract.",
-                    resource="client-isolation:worktrees",
-                    expected={"roles": list(CLIENT_ROLES), "logicalWorktrees": CLIENT_WORKTREE_NAMES},
-                    observed={"roles": sorted(identities), "worktrees": {role: str(identity.root) for role, identity in identities.items()}},
-                ),
-            )
-        for role, expected_name in CLIENT_WORKTREE_NAMES.items():
-            identity = identities[role]
-            if identity.logical_name != expected_name:
-                raise BlockedError(
-                    reason=(
-                        f"Current-profile actor {role} must run from "
-                        f"{expected_name}, got {identity.logical_name}"
-                    ),
-                    resource=f"client-worktree:{role}",
-                    diagnostic=ResourceDiagnostic.observed(
-                        owner="native-tauri-current-profile-provisioner",
-                        recovery_action=f"Bind retained {role} state to the existing {expected_name} worktree; do not rename or create a fresh worktree to simulate the history.",
-                        resource=f"client-worktree:{role}",
-                        expected={"logicalWorktree": expected_name},
-                        observed={"logicalWorktree": identity.logical_name, "path": str(identity.root)},
-                    ),
-                )
-        roots = {identity.root for identity in identities.values()}
-        if len(roots) != len(CLIENT_ROLES):
-            raise BlockedError(
-                reason=(
-                    "Current-profile Native Gate requires two distinct "
-                    "client worktrees"
-                ),
-                resource="client-isolation:worktrees",
-            )
-        if identities["bob"].root != REPO_ROOT.resolve():
-            raise BlockedError(
-                reason=(
-                    "The current-profile Gate must run from peers-group-chat "
-                    "so its existing Bob client initiates the journey"
-                ),
-                resource="client-worktree:initiator",
-                diagnostic=ResourceDiagnostic.observed(
-                    owner="native-tauri-current-profile-provisioner",
-                    recovery_action="Run the retained recovery journey from its existing Bob peers-group-chat worktree under the owning task; keep this training worktree unchanged.",
-                    resource="client-worktree:initiator",
-                    expected={"path": str(identities["bob"].root), "logicalWorktree": "peers-group-chat"},
-                    observed={"path": str(REPO_ROOT.resolve())},
-                ),
-            )
-        if len(
-            {identity.common_dir for identity in identities.values()}
-        ) != 1:
-            raise BlockedError(
-                reason="Native client worktrees do not belong to one repository",
-                resource="client-isolation:worktrees",
-            )
-        dirty = sorted(
-            role for role, identity in identities.items() if not identity.clean
-        )
-        if dirty:
-            raise BlockedError(
-                reason=(
-                    "Current-profile Native client worktrees must be clean: "
-                    f"{', '.join(dirty)}"
-                ),
-                resource="source-identity:worktree-cleanliness",
-            )
-        trees = {identity.tree for identity in identities.values()}
-        if len(trees) != 1:
-            raise BlockedError(
-                reason=(
-                    "peers-chat-high-chat is not synchronized to the "
-                    "peers-group-chat source tree"
-                ),
-                resource="source-identity:worktree-tree",
-            )
-
-    @classmethod
-    def _client_worktrees(cls) -> dict[str, ClientWorktreeIdentity]:
-        raw = os.environ.get(CLIENT_WORKTREES_ENV, "").strip()
-        roots: dict[str, Path]
-        if raw:
-            try:
-                configured = json.loads(raw)
-            except json.JSONDecodeError as error:
-                raise BlockedError(
-                    reason=(
-                        f"{CLIENT_WORKTREES_ENV} must be a JSON object: {error}"
-                    ),
-                    resource="client-isolation:worktrees",
-                ) from error
-            if not isinstance(configured, dict):
-                raise BlockedError(
-                    reason=f"{CLIENT_WORKTREES_ENV} must be a JSON object",
-                    resource="client-isolation:worktrees",
-                )
-            if set(configured) != set(CLIENT_ROLES) or any(
-                not isinstance(path, str) or not path.strip()
-                for path in configured.values()
-            ):
-                raise BlockedError(
-                    reason=(
-                        f"{CLIENT_WORKTREES_ENV} must map exactly Alice and "
-                        "Bob to non-empty worktree paths"
-                    ),
-                    resource="client-isolation:worktrees",
-                )
-            roots = {
-                str(role): Path(str(path)).expanduser().resolve()
-                for role, path in configured.items()
-            }
-        else:
-            completed = subprocess.run(
-                ("git", "worktree", "list", "--porcelain"),
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if completed.returncode != 0:
-                raise BlockedError(
-                    reason="Cannot discover linked Native client worktrees",
-                    resource="client-isolation:worktrees",
-                )
-            discovered: dict[str, Path] = {}
-            for line in completed.stdout.splitlines():
-                if not line.startswith("worktree "):
-                    continue
-                candidate = Path(line.removeprefix("worktree ")).resolve()
-                if candidate.name in CLIENT_WORKTREE_NAMES.values():
-                    if (
-                        candidate.name in discovered
-                        and discovered[candidate.name] != candidate
-                    ):
-                        raise BlockedError(
-                            reason=(
-                                "Multiple linked worktrees use the required "
-                                f"logical name {candidate.name}"
-                            ),
-                            resource="client-isolation:worktrees",
-                        )
-                    discovered[candidate.name] = candidate
-            roots = {
-                role: discovered[name]
-                for role, name in CLIENT_WORKTREE_NAMES.items()
-                if name in discovered
-            }
-        identities = {
-            role: cls._inspect_worktree(root)
-            for role, root in roots.items()
-        }
-        cls._validate_client_worktrees(identities)
-        return identities
-
     def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
         return self._remember_resolved_credentials(
-            ("fixture:apps/station/app/conf/actor.yml#preset_users",),
-            {"chat-password": fixture_password()},
-            sensitive=False,
+            ("auto:chat-current-profile-run-password",),
+            {"chat-password": "GateAa1!" + secrets.token_hex(5)},
         )
 
-    @staticmethod
-    def _resolve_existing_actor(
-        station_url: str,
-        role: str,
-        password: str,
-    ) -> ActorIdentity:
-        account = ACTOR_ACCOUNTS.get(role)
-        if not account:
+    def create_gate_launch_context(
+        self, *, gate_id: str, evidence_run_id: str, provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext:
+        if (
+            gate_id not in SUPPORTED_GATE_IDS
+            or required_capabilities != (LOGIN_CAPABILITY_ID,)
+            or self._manifest is None or not self._manifest.is_ready()
+            or evidence_run_id != self.evidence_run.run_id
+            or provisioning_run_id != self._manifest.run_id
+            or evidence_run_id == provisioning_run_id
+        ):
             raise BlockedError(
-                reason=f"unsupported current-profile actor role: {role}",
-                resource=f"fixture-actor:{role}",
+                reason="Run-account login requires the current ready runtime and evidence run",
+                resource=f"ephemeral-capabilities:{gate_id}",
             )
-        return resolve_existing_preset_actor(
-            station_url=station_url,
-            role=role,
-            account=account,
-            password=password,
-            device_policy="persistent-acceptance",
+        _, credentials = self.prepare_credentials()
+        context = EphemeralGateLaunchContext(required_capabilities=required_capabilities)
+        context.register_capability(
+            LOGIN_CAPABILITY_ID,
+            RuntimeAccountLoginHandler(
+                credentials["chat-password"], self._manifest.clients,
+                self._runtime_accounts, self._manifest.services["station"].endpoint,
+            ),
         )
+        return context
 
     @staticmethod
     def _port_available(port: int) -> bool:
-        return (
-            subprocess.run(
-                ("lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"),
-                capture_output=True,
-                text=True,
-                check=False,
-            ).returncode
-            != 0
-        )
+        with socket.socket() as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                return False
+        return True
 
     def _clients(
         self,
@@ -704,219 +205,226 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
         actors: tuple[ActorIdentity, ...],
     ) -> tuple[ClientRuntime, ...]:
         declared = {client.id: client for client in self.contract.clients}
-        if set(declared) != set(CLIENT_ROLES):
+        if set(declared) != set(CLIENT_ROLES) or {
+            actor.role for actor in actors
+        } != set(CLIENT_ROLES):
             raise BlockedError(
-                reason="Current-profile Native environment must declare Alice and Bob",
-                resource=f"gate-environment:{GATE_ID}",
+                reason="Current-profile Native environment requires Alice and Bob",
+                resource=f"gate-environment:{self.environment_id}",
             )
-        client_worktrees = self._client_worktrees()
-        seed_roots = self._storage_seeds(
-            profile_name,
-            client_worktrees,
+        bases = (
+            int(profile_env["PT_DESKTOP_APP_GATEWAY_PORT"]),
+            int(profile_env["PT_DESKTOP_APP_WEB_PORT"]),
+            4445 + slot * 10,
         )
-        persistent_roots = self._persistent_storage_roots(
-            profile_name,
-            client_worktrees,
-        )
-        reset_persistent_storage = (
-            self._persistent_storage_reset_authorized(profile_name)
-        )
-        retained_engine_state_roles = self._retained_engine_state_roles()
-        actors_by_role = {actor.role: actor for actor in actors}
-        if set(actors_by_role) != set(CLIENT_ROLES):
-            raise BlockedError(
-                reason="Current-profile Native actors are incomplete",
-                resource=f"gate-environment:{GATE_ID}",
-            )
-        configured_gateway = int(profile_env["PT_DESKTOP_APP_GATEWAY_PORT"])
-        configured_renderer = int(profile_env["PT_DESKTOP_APP_WEB_PORT"])
-        configured_webdriver = 4445 + slot * 10
         allocation = next(
             (
-                (
-                    configured_gateway + offset,
-                    configured_renderer + offset,
-                    configured_webdriver + offset,
-                )
-                for offset in range(0, 1_000, 10)
-                if all(
-                    self._port_available(port)
-                    for port in (
-                        configured_gateway + offset,
-                        configured_gateway + offset + 1,
-                        configured_renderer + offset,
-                        configured_renderer + offset + 1,
-                        configured_webdriver + offset,
-                        configured_webdriver + offset + 1,
+                ports for offset in range(0, 1000, 10)
+                if len(set(
+                    ports := tuple(
+                        base + offset + index
+                        for base in bases for index in range(len(CLIENT_ROLES))
                     )
-                )
+                )) == 6 and all(self._port_available(port) for port in ports)
             ),
             None,
         )
         if allocation is None:
             raise BlockedError(
-                reason="No complete two-client Native port set is available",
+                reason="No isolated two-client Native port set is available",
                 resource="client-isolation:ports",
             )
-        gateway_base, renderer_base, webdriver_base = allocation
-        desktop_profile = f"{profile_name}-app"
-        clients: list[ClientRuntime] = []
-        for index, (role, seed_root, persistent_root) in enumerate(
-            zip(CLIENT_ROLES, seed_roots, persistent_roots)
-        ):
-            storage_root = self._persistent_storage(
-                role=role,
-                actor=actors_by_role[role],
-                profile_name=profile_name,
-                worktree=client_worktrees[role],
-                seed_root=seed_root,
-                storage_root=persistent_root,
-                run_id=run_id,
-                reset_authorized=reset_persistent_storage,
-                preserve_retained_engine_state=(
-                    role in retained_engine_state_roles
-                ),
-            )
-            client = ClientRuntime(
+        run_root = Path(tempfile.mkdtemp(prefix=f"pt-native-profile-{run_id}-"))
+
+        def release_storage() -> None:
+            if run_root.exists():
+                shutil.rmtree(run_root)
+
+        self.register_cleanup(f"client-storage:{run_root}", release_storage)
+        clients = []
+        for index, role in enumerate(CLIENT_ROLES):
+            storage = run_root / role / "storage"
+            storage.mkdir(mode=0o700, parents=True)
+            clients.append(ClientRuntime(
+                id=role,
                 actor=declared[role].actor,
                 runtime="native-tauri",
-                worktree=str(client_worktrees[role].root),
-                gateway_port=gateway_base + index,
-                renderer_port=renderer_base + index,
-                webdriver_port=webdriver_base + index,
-                profile=desktop_profile,
-                storage_root=str(storage_root),
-                storage_lifecycle="persistent",
-                id=role,
+                worktree=str(REPO_ROOT.resolve()),
+                gateway_port=allocation[index],
+                renderer_port=allocation[2 + index],
+                webdriver_port=allocation[4 + index],
+                profile=f"{profile_name}-acceptance-{role}",
+                storage_root=str(storage),
+                storage_lifecycle="ephemeral",
                 required_service_roles=declared[role].required_service_roles,
                 service_bindings=declared[role].service_bindings,
-            )
-            clients.append(client)
+            ))
         return tuple(clients)
+
+    @staticmethod
+    def _prepare_actors(
+        station_url: str,
+        deployment_environment: str,
+        run_id: str,
+        password: str,
+    ) -> tuple[ActorIdentity, ...]:
+        # One production account registrar owns signup semantics across Native
+        # Suites. Import at the operation boundary to avoid registry cycles.
+        from tooling.development.secure_content.runtime_owner import (
+            _register_runtime_account,
+        )
+
+        suffix = hashlib.sha256(run_id.encode()).hexdigest()[:10]
+        accounts = {
+            role: _register_runtime_account(
+                station_url, role=role, suffix=suffix, password=password,
+            )
+            for role in CLIENT_ROLES
+        }
+        actors = tuple(
+            resolve_existing_preset_actor(
+                station_url=station_url, role=role, account=accounts[role],
+                password=password, device_policy="run-scoped-acceptance",
+            )
+            for role in CLIENT_ROLES
+        )
+        seed_run_actor_avatars(
+            station_url, deployment_environment,
+            {accounts[actor.role]: (actor.ptid, fixture_avatar(actor.role)) for actor in actors},
+        )
+        records = read_fixture_actors(
+            station_url, deployment_environment, tuple(accounts.values()),
+        )
+        if any(records[accounts[actor.role]].ptid != actor.ptid for actor in actors):
+            raise BlockedError(
+                reason="Run-created account identity drifted before contact preparation",
+                resource="fixture-actor:current-profile",
+            )
+        alice, bob = (records[accounts[role]] for role in CLIENT_ROLES)
+        seed_bound_contacts(
+            station_url, deployment_environment,
+            ((alice, bob), (bob, alice)), (alice, bob),
+        )
+        return actors
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
             if gate_id not in SUPPORTED_GATE_IDS:
                 raise BlockedError(
-                    reason=f"unsupported current-profile Native Gate: {gate_id}",
+                    reason=f"Unsupported current-profile Native Gate: {gate_id}",
                     resource=f"gate-environment:{gate_id}",
                 )
             profile_name, _, slot, profile_env = self._resolve_active_profile()
             manifest = self._preflighted(
-                self._manifest,
-                profile_name=profile_name,
-                slot=slot,
+                self._manifest, profile_name=profile_name, slot=slot,
             )
             station_url = profile_env.get("PT_STATION_URL", "").rstrip("/")
-            health_url = profile_env.get("PT_STATION_HEALTH_URL", "").strip()
-            deployment_environment = profile_env.get(
-                "PT_STATION_DEPLOY_ENV",
-                "",
-            ).strip()
-            if (
-                profile_env.get("PT_STATION_MODE") != "remote"
-                or not station_url
-                or not deployment_environment
-            ):
+            deployment = profile_env.get("PT_STATION_DEPLOY_ENV", "").strip()
+            if profile_env.get("PT_STATION_MODE") != "remote" or not station_url or not deployment:
                 raise BlockedError(
-                    reason=(
-                        "Current-profile Native Gate requires an installed "
-                        "remote Station profile"
-                    ),
+                    reason="Current-profile Native Gate requires a reviewed remote Station",
                     resource="profile:remote-station",
                 )
-            if not self._station_ready(station_url, health_url):
-                raise BlockedError(
-                    reason=f"Profile Station is not ready at {station_url}",
-                    resource=f"station:{station_url}",
-                )
-
+            equip_station_profile(profile_name, manifest.source_commit, repo_root=REPO_ROOT)
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
-            self.acquire_profile_lease(deployment_environment, owner)
-            self.acquire_remote_git_source_lease(
-                deployment_environment,
-                owner,
+            self.acquire_profile_lease(deployment, owner)
+            self.acquire_remote_git_source_lease(deployment, owner)
+            health = self._station_health(
+                station_url, profile_env.get("PT_STATION_HEALTH_URL", ""),
             )
+            if not health["ready"]:
+                resource = "service-health:station"
+                raise BlockedError(
+                    reason="Selected Profile Station is not ready",
+                    resource=resource,
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-tauri-current-profile-provisioner",
+                        recovery_action="Repair the recorded Local Dev equipment or post-lease health failure and repeat readback.",
+                        resource=resource, expected={"ready": True}, observed=health,
+                    ),
+                )
             attestation = produce_station_attestation(
-                environment_id=self.environment_id,
-                run_id=manifest.run_id,
-                service_id="station",
-                station_url=station_url,
-                profile_env=profile_env,
-                require_runtime_identity=True,
+                environment_id=self.environment_id, run_id=manifest.run_id,
+                service_id="station", station_url=station_url,
+                profile_env=profile_env, require_runtime_identity=True,
                 remote_source_identity_provider=resolve_remote_source_identity,
             )
             if not commits_match(attestation.live_commit, manifest.source_commit):
                 raise BlockedError(
-                    reason=(
-                        f"Station commit {attestation.live_commit} does not "
-                        f"match client source {manifest.source_commit}"
-                    ),
+                    reason="Selected Station commit differs from current client source",
                     resource="source-identity:commit",
                     diagnostic=ResourceDiagnostic.observed(
                         owner="native-tauri-current-profile-provisioner",
-                        recovery_action=f"Deploy checked source {manifest.source_commit} to reviewed Station {deployment_environment}; repeat source readback before retained recovery.",
+                        recovery_action="Deploy the current reviewed Station source through its Profile and repeat readback.",
                         resource="source-identity:commit",
-                        expected={"commit": manifest.source_commit, "deployment": deployment_environment},
-                        observed={"commit": attestation.live_commit, "stationUrl": station_url},
+                        expected={"commit": manifest.source_commit},
+                        observed={"commit": attestation.live_commit, "deployment": deployment},
                     ),
                 )
             if attestation.protocol_digest != source_proto_digest(REPO_ROOT):
                 raise BlockedError(
-                    reason="Station and client proto digests do not match",
+                    reason="Station and client protocol digests differ",
                     resource="source-identity:proto",
                 )
+            credential_refs, credentials = self.prepare_credentials()
+            from tooling.development.secure_content.runtime_owner import RuntimeOwnerBlocked
 
-            credential_refs, credential_values = self.prepare_credentials()
-            password = credential_values.get("chat-password", "")
-            actors = tuple(
-                self._resolve_existing_actor(station_url, role, password)
-                for role in CLIENT_ROLES
-            )
-            _, _, actor_ref = persist_actor_manifest(
-                ActorManifest(
-                    fixture_id="chat-native-actors",
-                    environment_id=self.environment_id,
-                    run_id=manifest.run_id,
-                    created_at=utc_now(),
-                    actors=actors,
-                    credential_refs=credential_refs,
-                    reset_authorized=False,
-                    target_verified=True,
-                    initial_state="existing",
+            try:
+                actors = self._prepare_actors(
+                    station_url, deployment, manifest.run_id, credentials["chat-password"],
                 )
-            )
+            except RuntimeOwnerBlocked as error:
+                raise BlockedError(
+                    reason=str(error), resource=error.resource,
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-tauri-current-profile-provisioner",
+                        recovery_action="Repair run-account signup through the production account registrar.",
+                        resource=error.resource, expected={"signup": "accepted"},
+                        observed={"code": error.code, "message": str(error)},
+                    ),
+                ) from error
+            self._runtime_accounts = {
+                actor.role: actor.account_ref.removeprefix("station-account:")
+                for actor in actors
+            }
+            _, _, actor_ref = persist_actor_manifest(ActorManifest(
+                fixture_id="chat-native-actors",
+                environment_id=self.environment_id, run_id=manifest.run_id,
+                created_at=utc_now(), actors=actors, credential_refs=credential_refs,
+                reset_authorized=False, target_verified=True, initial_state="existing",
+            ))
             clients = self._clients(
-                run_id=manifest.run_id,
-                profile_name=profile_name,
-                profile_env=profile_env,
-                slot=slot,
-                actors=actors,
+                run_id=manifest.run_id, profile_name=profile_name,
+                profile_env=profile_env, slot=slot, actors=actors,
             )
             manifest = dataclasses.replace(
-                manifest,
-                state=ProvisioningState.PROVISIONED,
+                manifest, state=ProvisioningState.PROVISIONED,
                 services={attestation.service_id: attestation},
-                actor_manifest_ref=actor_ref,
-                credential_refs=credential_refs,
-                clients=clients,
-                cleanup_resources=self.contract.cleanup.resources,
+                actor_manifest_ref=actor_ref, credential_refs=credential_refs,
+                clients=clients, cleanup_resources=self.contract.cleanup.resources,
             )
             self._manifest = manifest
             return self._ready(manifest)
-        except (BlockedError, KeyError, OSError, ValueError) as error:
-            blocked = (
-                error
-                if isinstance(error, BlockedError)
-                else BlockedError(
-                    reason=f"Current-profile Native provisioning failed: {error}",
-                    resource="native-current-profile",
+        except EphemeralLaunchCleanupFailed:
+            raise
+        except (BlockedError, KeyError, OSError, ValueError, RuntimeError) as error:
+            if isinstance(error, BlockedError):
+                blocked = error
+            else:
+                resource = "native-current-profile"
+                detail = redact_text_with_values(str(error), self.resolved_credential_values)
+                blocked = BlockedError(
+                    reason=f"Current-profile Native provisioning failed: {type(error).__name__}: {detail}",
+                    resource=resource,
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-tauri-current-profile-provisioner",
+                        recovery_action="Repair the recorded provisioning operation at its owner and repeat the current Profile.",
+                        resource=resource, expected={"runtime": "FIXTURE_READY"},
+                        observed={"errorType": type(error).__name__, "message": detail},
+                    ),
                 )
-            )
             return self._blocked(
-                self._manifest,
-                reason=blocked.reason,
-                resource=blocked.resource,
+                self._manifest, reason=blocked.reason, resource=blocked.resource,
                 diagnostic=blocked.diagnostic,
             )

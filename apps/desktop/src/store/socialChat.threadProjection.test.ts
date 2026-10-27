@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { api } from '../services/desktop_api';
 import { imServiceV1 } from '../services/im-service';
 import type { MessagingProjection } from '../services/im-service-contract';
 import { useSessionStore } from './session';
@@ -137,4 +138,111 @@ describe('social chat open Thread freshness', () => {
 
     expect(useSocialChatStore.getState().threadCounts).toEqual({});
   });
+
+  it.each(['friend', 'group'] as const)(
+    'submits the loaded root sequence when the %s Thread has no replies',
+    async (kind) => {
+      const cursor = vi.spyOn(api, 'messagingReadCursor').mockResolvedValue({ submitted: true });
+      vi.mocked(imServiceV1.messaging.listMessages).mockResolvedValue({
+        messages: [
+          { ...message('root'), eventSequence: 13 },
+          { ...message('unrelated'), eventSequence: 99 },
+        ],
+        hasMore: false,
+      });
+      vi.mocked(imServiceV1.messaging.listThreadMessages).mockResolvedValue([]);
+      await useSocialChatStore.getState().loadMessages('conversation', kind);
+      await useSocialChatStore.getState().loadThreadMessages('conversation', 'root', kind);
+
+      await useSocialChatStore.getState().markThreadRead('conversation', 'root', 'root', kind);
+
+      expect(cursor).toHaveBeenCalledExactlyOnceWith('conversation', 13);
+    },
+  );
+
+  it.each([
+    { selected: 'reply', rootSequence: 13, replies: [17, 21], expected: 17 },
+    { selected: 'missing', rootSequence: 13, replies: [17, 21], expected: 21 },
+    { selected: 'root', rootSequence: 13, replies: [17, 21], expected: 13 },
+    { selected: 'root', rootSequence: 0, replies: [17, 21], expected: 21 },
+  ])('uses the authoritative sequence for $selected with root sequence $rootSequence',
+    async ({ selected, rootSequence, replies, expected }) => {
+      const cursor = vi.spyOn(api, 'messagingReadCursor').mockResolvedValue({ submitted: true });
+      vi.mocked(imServiceV1.messaging.listMessages).mockResolvedValue({
+        messages: [{ ...message('root'), eventSequence: rootSequence }],
+        hasMore: false,
+      });
+      vi.mocked(imServiceV1.messaging.listThreadMessages).mockResolvedValue(
+        replies.map((eventSequence, index) => ({
+          ...message(index === 0 ? 'reply' : 'reply-later', 'root'), eventSequence,
+        })),
+      );
+      await useSocialChatStore.getState().loadMessages('conversation', 'friend');
+      await useSocialChatStore.getState().loadThreadMessages('conversation', 'root', 'friend');
+
+      await useSocialChatStore.getState().markThreadRead('conversation', 'root', selected, 'friend');
+
+      expect(cursor).toHaveBeenCalledExactlyOnceWith('conversation', expected);
+    },
+  );
+
+  it.each([undefined, 0])(
+    'does not submit a cursor when the root has no committed sequence (%s)',
+    async (eventSequence) => {
+      const cursor = vi.spyOn(api, 'messagingReadCursor').mockResolvedValue({ submitted: true });
+      vi.mocked(imServiceV1.messaging.listMessages).mockResolvedValue({
+        messages: [{ ...message('root'), eventSequence }],
+        hasMore: false,
+      });
+      vi.mocked(imServiceV1.messaging.listThreadMessages).mockResolvedValue([]);
+      await useSocialChatStore.getState().loadMessages('conversation', 'friend');
+      await useSocialChatStore.getState().loadThreadMessages('conversation', 'root', 'friend');
+      vi.mocked(imServiceV1.messaging.threadCounts).mockClear();
+
+      await useSocialChatStore.getState().markThreadRead('conversation', 'root', 'root', 'friend');
+
+      expect(cursor).not.toHaveBeenCalled();
+      expect(imServiceV1.messaging.threadCounts).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves the Engine rejection for a committed reply read', async () => {
+    const failure = new Error('authority rejected cursor');
+    const cursor = vi.spyOn(api, 'messagingReadCursor').mockRejectedValue(failure);
+    vi.mocked(imServiceV1.messaging.listThreadMessages).mockResolvedValue([
+      { ...message('reply', 'root'), eventSequence: 17 },
+    ]);
+    await useSocialChatStore.getState().loadThreadMessages('conversation', 'root', 'friend');
+    vi.mocked(imServiceV1.messaging.threadCounts).mockClear();
+
+    await expect(useSocialChatStore.getState().markThreadRead(
+      'conversation', 'root', 'reply', 'friend',
+    )).rejects.toBe(failure);
+
+    expect(cursor).toHaveBeenCalledExactlyOnceWith('conversation', 17);
+    expect(imServiceV1.messaging.threadCounts).not.toHaveBeenCalled();
+  });
+
+  it.each(['friend', 'group'] as const)(
+    'opening an empty %s Thread submits its loaded root sequence',
+    async (kind) => {
+      const cursor = vi.spyOn(api, 'messagingReadCursor').mockResolvedValue({ submitted: true });
+      vi.mocked(imServiceV1.messaging.listMessages).mockResolvedValue({
+        messages: [{ ...message('root'), eventSequence: 13 }],
+        hasMore: false,
+      });
+      vi.mocked(imServiceV1.messaging.listThreadMessages).mockResolvedValue([]);
+      await useSocialChatStore.getState().loadMessages('conversation', kind);
+      useSocialChatStore.setState({
+        activeTab: kind,
+        activeSessionUlid: kind === 'friend' ? 'conversation' : null,
+        activeGroupUlid: kind === 'group' ? 'conversation' : null,
+      });
+
+      useSocialChatStore.getState().openThread('root');
+
+      await vi.waitFor(() => expect(cursor).toHaveBeenCalledExactlyOnceWith('conversation', 13));
+      expect(useSocialChatStore.getState().openThreadRootUlid).toBe('root');
+    },
+  );
 });

@@ -121,6 +121,7 @@ class ServiceRequirement:
     health_action: str = ""
     status_action: str = ""
     attestation_producer: str = ""
+    profile_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -422,6 +423,7 @@ class EnvironmentContract:
                 attestation_producer=str(
                     service.get("attestation_producer") or ""
                 ),
+                profile_ref=str(service.get("profile_ref") or ""),
             )
             for name, service in services_data.items()
         }

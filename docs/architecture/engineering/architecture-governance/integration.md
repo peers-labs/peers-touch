@@ -83,6 +83,15 @@ Station Access Lifecycle 作为首个回填模块：
   dependencies、evidence Gates 与 reuse layer，形成可审计的共享能力清单；
 - 未登记共享依赖返回 `ARCHITECTURE_REUSE_UNREGISTERED`。
 
+`architecture-registry-self` 的有界续跑输入由具体 metadata Owner 核验。
+除 Node 与 `yaml` 安装外，还核验 pnpm 实际 package、加载 image、有效配置与
+workspace list，及 rustup 实际选择的 Cargo delegate、配置 include 图和
+Desktop/Mobile `metadata --no-deps` 结果。源码测试的临时 fixture 父目录
+独立核验配置与默认 delegate，不能由当前 worktree 的 toolchain override
+代替。Gate 与只读探针均关闭 Node compile cache 和 pnpm package-manager
+自动跳转，临时 fixture 继承同一环境；缺失或变化保持重新执行，
+不从纯 Node version、wrapper hash 或空输入声明推导复用资格。
+
 Shared package capability 的 `contractRoots` 同时登记 package manifest 与
 当前语义 Owner 源文件。Desktop/Mobile manifest 证明直接消费关系；具体
 Presentation Policy 通过独立 `presentation-policy` capability 登记并显式依赖

@@ -199,6 +199,13 @@ test('FLOW-A04 installed Hook ignores an explicit sibling worktree', async () =>
     assert.deepEqual(response, {});
     assert.deepEqual(reports, []);
   } finally {
-    rmSync(temporary, { recursive: true, force: true });
+    // Match the Git fixture lifecycle used by Plan and workflow-kernel tests:
+    // external repository observers can finish directory writes after Git exits.
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
   }
 });

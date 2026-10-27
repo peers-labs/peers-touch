@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import json
 import os
-import re
-import sys
 from pathlib import Path
+
+from tooling.acceptance.core import AcceptanceGate, BlockedError
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 MANIFEST_PATH = Path(
@@ -26,12 +26,10 @@ MANIFEST_PATH = Path(
 
 def load_manifest() -> dict:
     if not MANIFEST_PATH.exists():
-        print(
-            f"FAIL: contract manifest not found at {MANIFEST_PATH}. "
-            "Run acceptance-closure-gen.py first.",
-            file=sys.stderr,
+        raise BlockedError(
+            reason="W11 contract manifest is missing; run acceptance-closure-gen.py",
+            resource=str(MANIFEST_PATH),
         )
-        sys.exit(2)
     return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
@@ -127,37 +125,27 @@ def scan_codec_duplicates(target: dict) -> list[str]:
     return violations
 
 
+class W11DuplicateScanGate(AcceptanceGate):
+    gate_id = "chat-w11-duplicate-scan"
+
+    def run(self) -> dict:
+        target = find_target(load_manifest(), "no-duplicate-symbol")
+        if target is None:
+            self.assert_condition("no-duplicate-target", True)
+            return {"violations": []}
+        violations = [
+            *scan_duplicate_implementations(target),
+            *scan_codec_duplicates(target),
+        ]
+        self.report.runtime["violations"] = violations
+        self.assert_condition(
+            "single-crypto-codec-owner", not violations, "\n".join(violations),
+        )
+        return {"violations": violations}
+
+
 def main() -> int:
-    manifest = load_manifest()
-    target = find_target(manifest, "no-duplicate-symbol")
-    report_path = REPO_ROOT / "tooling" / "acceptance" / "reports" / "chat-w11-duplicate-scan.json"
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if target is None:
-        report = {"status": "PASS", "assertions": [{"name": "no-duplicate-target", "passed": True}], "violations": []}
-        report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-        print("PASS: W11 duplicate-scan (no no-duplicate-symbol target in contract)")
-        return 0
-
-    violations: list[str] = []
-    violations.extend(scan_duplicate_implementations(target))
-    violations.extend(scan_codec_duplicates(target))
-
-    report = {
-        "status": "PASS" if not violations else "FAIL",
-        "assertions": [{"name": "single-crypto-codec-owner", "passed": not violations}],
-        "violations": violations,
-    }
-    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-
-    if violations:
-        print("FAIL: W11 duplicate-contract scan found violations:")
-        for v in violations:
-            print(f"  - {v}")
-        return 1
-
-    print("PASS: W11 duplicate-contract scan (single crypto/codec owner verified)")
-    return 0
+    return W11DuplicateScanGate().execute()
 
 
 if __name__ == "__main__":

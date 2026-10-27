@@ -146,6 +146,17 @@ env-repository topology or a validated worktree-local compose Profile.
 
 ### 2.3 Existing Profile Operation Admission
 
+Multi-service equipment uses an operation target independently of the active
+workspace binding: `node tooling/devctl/index.mjs station start
+--target-profile <name> --json`. Machine Dev `--target-profile` resolves the
+same reviewed definition and preserves the registration and local slot.
+The workspace's capability and the target's stable policy still apply.
+Stable deployment needs an explicit binding to that stable Profile; stable
+reset is always refused. Target, exact deployment and current source are
+revalidated after lease acquisition. Acceptance callers share
+`tooling/acceptance/provisioners/station_equipment.py`, equip before retaining
+the remote source lease, and re-attest under that lease.
+
 The selected directory name and `PT_DEV_PROFILE` value must match exactly. The
 verified canonical ID then determines reset policy:
 

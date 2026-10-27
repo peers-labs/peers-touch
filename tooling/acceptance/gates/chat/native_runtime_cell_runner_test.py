@@ -579,6 +579,9 @@ gate.wait_step(
             with self.subTest(runner=runner):
                 path = ROOT / "tooling/acceptance/gates/chat" / runner
                 source = self.function_source(path, function_name)
+                if runner == "native_product_closure_runner.py":
+                    self.assertIn("self._cleanup_clients(cleanup_end)", source)
+                    source += self.function_source(path, "_cleanup_clients")
                 self.assertIn("client_lifecycles", source)
                 self.assertNotIn("station.auth_logout()", source)
 
@@ -801,7 +804,10 @@ gate.wait_step(
 
         self.assertEqual(len(errors), 1)
         self.assertIn("no verified successor", errors[0]["error"])
-        client.stop.assert_called_once_with(preserve_state=True)
+        self.assertEqual(client.stop.call_count, 2)
+        self.assertEqual(client.stop.call_args.kwargs, {})
+        self.assertEqual(lifecycle.release(client), errors)
+        self.assertEqual(client.stop.call_count, 2)
 
     def test_native_lifecycle_transfers_preserved_session_ownership(self) -> None:
         predecessor = Mock(profile="acceptance-alice-old")
@@ -846,12 +852,12 @@ gate.wait_step(
             else:
                 os.environ["PT_ACCEPTANCE_RUNTIME_CELL"] = previous
 
-    def test_runtime_identity_is_clean_source_bound(self) -> None:
+    def test_runtime_identity_is_snapshot_source_bound(self) -> None:
         support = (
             ROOT / "tooling/acceptance/gates/chat/native_support.py"
         ).read_text(encoding="utf-8")
         for contract in (
-            'source.get("workspaceDigest") == "clean"',
+            "runtime_source_matches(",
             'station.get("workspaceDigest") == "clean"',
             'runtime_cell.get("state") == "LEASED"',
             'cell_source.get("remoteCheckoutClean") is True',
@@ -951,6 +957,8 @@ gate.wait_step(
             gate["id"]: gate
             for gate in plan["selected_gates"]
         }
+        catalog = json.loads((ROOT / "tooling/acceptance/gates.yaml").read_text())
+        definitions = catalog["gates"]
         for gate_id in (
             "chat-native-two-client-e2e",
             "chat-native-interactions-e2e",
@@ -961,7 +969,9 @@ gate.wait_step(
         ):
             with self.subTest(gate=gate_id):
                 self.assertEqual(
-                    selected[gate_id]["requiredRuntimeCells"],
+                    selected[gate_id].get(
+                        "requiredRuntimeCells", definitions[gate_id]["requiredRuntimeCells"],
+                    ),
                     [
                         "desktop-macos-native",
                         "desktop-linux-native",

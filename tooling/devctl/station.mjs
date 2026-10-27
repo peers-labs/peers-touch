@@ -333,12 +333,18 @@ function runRemoteStationBridge(root, resolved, environment) {
     while (stdio.length <= leaseFd) stdio.push('ignore');
     stdio[leaseFd] = leaseFd;
   }
+  const budgetSeconds = Number(runtimeEnv.PT_STATION_LEASE_BUDGET_SECONDS || 1800);
+  if (!Number.isInteger(budgetSeconds) || budgetSeconds <= 0) {
+    throw new DevctlError(
+      ERROR_CODES.PROFILE_INVALID, 'Station lease budget must be a positive integer',
+    );
+  }
   const result = spawnSync(bash, [script], {
     cwd: root,
     env: runtimeEnv,
     encoding: 'utf8',
     stdio,
-    timeout: 1_800_000,
+    timeout: Math.min(1800, budgetSeconds) * 1000,
     windowsHide: true,
   });
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
@@ -371,6 +377,16 @@ export async function stationStatus(root, environment = process.env) {
 export async function startStation(root, environment = process.env) {
   const resolved = resolveProfile(root, environment);
   const values = stationValues(resolved);
+  if (
+    environment.PT_DEV_TARGET_PROFILE &&
+    environment.PT_BUILD_SOURCE_COMMIT &&
+    environment.PT_BUILD_SOURCE_COMMIT !== localCommit(root)
+  ) {
+    throw new DevctlError(
+      ERROR_CODES.REMOTE_SOURCE_MISMATCH,
+      'Target Station equipment requires the current workspace commit',
+    );
+  }
   if (values.mode === 'remote') {
     const expectedCommit = expectedRemoteCommit(root, environment);
     const existing = await stationStatus(root, environment);

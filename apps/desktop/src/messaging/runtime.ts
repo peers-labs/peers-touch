@@ -9,7 +9,10 @@ import {
   type MessagingProjectionInvalidation,
 } from '../gen/proto/domain/chat/event_pb';
 import { EVENT, eventBus } from '../kernel/events';
-import type { StationActiveChangedPayload } from '../kernel/events/types';
+import type {
+  MessagingProfileActivatedPayload,
+  StationActiveChangedPayload,
+} from '../kernel/events/types';
 import {
   currentAuthenticatedActorPtid,
   useSessionStore,
@@ -44,10 +47,13 @@ class DesktopMessagingDomainRuntime {
   private lifecycle: MessagingLifecyclePort | null = null;
   private installed = false;
   private activeScope: MessagingRuntimeScope | null = null;
+  private scopeSessionEpoch: number | null = null;
   private activationGeneration = 0;
+  private pendingScopeGeneration: number | null = null;
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private unsubscribeSession: (() => void) | null = null;
   private unsubscribeStation: (() => void) | null = null;
+  private unsubscribeActivation: (() => void) | null = null;
   private scopeTransition: Promise<void> = Promise.resolve();
   private scopeListeners = new Set<(scope: MessagingRuntimeScope | null) => void>();
   private readonly onStationChanged = (payload: StationActiveChangedPayload) => {
@@ -56,6 +62,16 @@ class DesktopMessagingDomainRuntime {
       return;
     }
     this.enqueueScopeRefresh('station');
+  };
+  private readonly onProfileActivated = (payload: MessagingProfileActivatedPayload) => {
+    if (
+      payload.actorPtid !== currentAuthenticatedActorPtid()
+      || payload.sessionEpoch !== useSessionStore.getState().sessionEpoch
+      || !payload.profileId?.trim()
+      || !payload.stationPeerId?.trim()
+      || !payload.endpointId?.trim()
+    ) return;
+    this.enqueueScopeRefresh('profile-activated', payload);
   };
 
   configure(lifecycle: MessagingLifecyclePort): void {
@@ -68,6 +84,7 @@ class DesktopMessagingDomainRuntime {
     this.unsubscribeSession = useSessionStore.subscribe((state, previous) => {
       if (
         state.sessionEpoch !== previous.sessionEpoch
+        || state.authenticated !== previous.authenticated
         || state.currentUser?.actorPtid !== previous.currentUser?.actorPtid
       ) {
         this.enqueueScopeRefresh('session');
@@ -77,18 +94,43 @@ class DesktopMessagingDomainRuntime {
       EVENT.STATION_ACTIVE_CHANGED,
       this.onStationChanged,
     );
+    this.unsubscribeActivation = eventBus.subscribe(
+      EVENT.MESSAGING_PROFILE_ACTIVATED,
+      this.onProfileActivated,
+    );
     this.installed = true;
+    this.startReconcile();
   }
 
   async bootstrap(actorPtid: string | null): Promise<void> {
-    const generation = ++this.activationGeneration;
-    this.stopReconcile();
-    this.activeScope = null;
-    this.requireLifecycle().resetProjection();
-    if (!actorPtid) {
-      return;
-    }
+    if (!this.installed) throw new MessagingRuntimeScopeChangedError();
+    this.clearScope();
+    await this.activateScope(
+      actorPtid, this.activationGeneration, useSessionStore.getState().sessionEpoch,
+    );
+  }
 
+  private async activateScope(
+    actorPtid: string | null,
+    generation: number,
+    sessionEpoch: number,
+    expected?: MessagingProfileActivatedPayload,
+  ): Promise<void> {
+    if (!actorPtid) return;
+    this.pendingScopeGeneration = generation;
+    try {
+      await this.resolveScope(actorPtid, generation, sessionEpoch, expected);
+    } finally {
+      if (this.pendingScopeGeneration === generation) this.pendingScopeGeneration = null;
+    }
+  }
+
+  private async resolveScope(
+    actorPtid: string,
+    generation: number,
+    sessionEpoch: number,
+    expected?: MessagingProfileActivatedPayload,
+  ): Promise<void> {
     const accountRequest = api.accountGetActive();
     const stationRequest = api.profileGet();
     const endpointRequest = api.accountGetDeviceId();
@@ -103,10 +145,17 @@ class DesktopMessagingDomainRuntime {
     if (!profileId || !stationPeerId || !endpointId) {
       throw new Error('messaging_runtime_scope_incomplete');
     }
-    if (currentAuthenticatedActorPtid() !== actorPtid) {
-      throw new MessagingRuntimeScopeChangedError();
-    }
-    if (generation !== this.activationGeneration) {
+    if (
+      !this.installed
+      || currentAuthenticatedActorPtid() !== actorPtid
+      || sessionEpoch !== useSessionStore.getState().sessionEpoch
+      || generation !== this.activationGeneration
+      || (expected && (
+        expected.profileId !== profileId
+        || expected.stationPeerId !== stationPeerId
+        || expected.endpointId !== endpointId
+      ))
+    ) {
       throw new MessagingRuntimeScopeChangedError();
     }
     const scope = {
@@ -117,9 +166,9 @@ class DesktopMessagingDomainRuntime {
       activationGeneration: generation,
     };
     this.activeScope = scope;
+    this.scopeSessionEpoch = sessionEpoch;
     await this.requireLifecycle().reconcile('runtime:bootstrap', scope);
     this.assertCurrent(scope);
-    this.startReconcile();
     this.publishScope();
   }
 
@@ -131,13 +180,17 @@ class DesktopMessagingDomainRuntime {
 
   teardown(): void {
     if (!this.installed) return;
+    this.installed = false;
+    this.stopReconcile();
     this.clearScope();
     this.unsubscribeSession?.();
     this.unsubscribeSession = null;
     this.unsubscribeStation?.();
     this.unsubscribeStation = null;
+    this.unsubscribeActivation?.();
+    this.unsubscribeActivation = null;
+    this.scopeTransition = Promise.resolve();
     this.requireLifecycle().teardown();
-    this.installed = false;
   }
 
   captureScope(): MessagingRuntimeScope | null {
@@ -160,6 +213,8 @@ class DesktopMessagingDomainRuntime {
       && current.profileId === scope.profileId
       && current.endpointId === scope.endpointId
       && current.activationGeneration === scope.activationGeneration
+      && this.installed
+      && this.scopeSessionEpoch === useSessionStore.getState().sessionEpoch
       && currentAuthenticatedActorPtid() === scope.actorPtid,
     );
   }
@@ -168,6 +223,7 @@ class DesktopMessagingDomainRuntime {
     const current = this.activeScope;
     return Boolean(
       current
+      && this.isCurrent(current)
       && payload.actorPtid === current.actorPtid
       && payload.homeStationPeerId === current.stationPeerId
       && payload.deviceId === current.endpointId
@@ -183,7 +239,7 @@ class DesktopMessagingDomainRuntime {
 
   requireActiveScope(): MessagingRuntimeScope {
     const scope = this.captureScope();
-    if (!scope || currentAuthenticatedActorPtid() !== scope.actorPtid) {
+    if (!scope || !this.isCurrent(scope)) {
       throw new MessagingRuntimeScopeChangedError();
     }
     return scope;
@@ -207,8 +263,9 @@ class DesktopMessagingDomainRuntime {
 
   private clearScope(): void {
     this.activationGeneration += 1;
-    this.stopReconcile();
+    this.pendingScopeGeneration = null;
     this.activeScope = null;
+    this.scopeSessionEpoch = null;
     this.lifecycle?.resetProjection();
     this.publishScope();
   }
@@ -218,19 +275,40 @@ class DesktopMessagingDomainRuntime {
     this.scopeListeners.forEach((listener) => listener(scope));
   }
 
-  private enqueueScopeRefresh(reason: string): void {
+  private enqueueScopeRefresh(reason: string, expected?: MessagingProfileActivatedPayload): void {
+    if (!this.installed) return;
     const actorPtid = currentAuthenticatedActorPtid();
+    const sessionEpoch = useSessionStore.getState().sessionEpoch;
+    this.clearScope();
+    const generation = this.activationGeneration;
+    this.pendingScopeGeneration = generation;
     this.scopeTransition = this.scopeTransition
-      .then(() => this.bootstrap(actorPtid))
+      .then(async () => {
+        if (
+          !this.installed || generation !== this.activationGeneration
+          || actorPtid !== currentAuthenticatedActorPtid()
+          || sessionEpoch !== useSessionStore.getState().sessionEpoch
+        ) return;
+        await this.activateScope(actorPtid, generation, sessionEpoch, expected);
+      })
       .catch((error) => {
         if (error instanceof MessagingRuntimeScopeChangedError) return;
         log.warn('messagingRuntime', 'scope refresh failed', { reason, error });
+      })
+      .finally(() => {
+        if (this.pendingScopeGeneration === generation) this.pendingScopeGeneration = null;
       });
   }
 
   private startReconcile(): void {
     if (this.reconcileTimer !== null) return;
     this.reconcileTimer = globalThis.setInterval(() => {
+      if (!this.activeScope) {
+        if (this.pendingScopeGeneration === null && currentAuthenticatedActorPtid()) {
+          this.enqueueScopeRefresh('periodic:activation');
+        }
+        return;
+      }
       void this.reconcile('periodic').catch(() => {});
     }, RECONCILE_INTERVAL_MS);
   }

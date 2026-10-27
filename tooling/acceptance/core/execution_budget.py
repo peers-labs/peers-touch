@@ -11,7 +11,9 @@ import threading
 import time
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
+
+from .operation_observer import OperationObserver
 
 
 class ExecutionBudgetError(ValueError):
@@ -207,6 +209,7 @@ class GateExecution:
         self.overrun: dict[str, Any] | None = None
         self._phase = "work"
         self._finished: float | None = None
+        self.observer = OperationObserver(gate_id)
 
     def remaining(self, phase: str = "work") -> float:
         return max(0.0, self.ends[phase] - time.monotonic())
@@ -260,14 +263,12 @@ class GateExecution:
         ]
         cancellation = ExecutionDeadline(self.gate_id, name, phase, constraints=triggered)
         try:
-            remaining = max(0, effective_end - time.monotonic())
-            if remaining <= 0:
-                raise cancellation
-            with deadline(
-                remaining,
-                cancellation,
-            ):
-                yield
+            with self.observer.observe(name, phase, effective_end):
+                remaining = max(0, effective_end - time.monotonic())
+                if remaining <= 0:
+                    raise cancellation
+                with deadline(remaining, cancellation):
+                    yield
         except ExecutionDeadline as error:
             status = "overrun"
             self.overrun = self.overrun or {
@@ -305,6 +306,16 @@ class GateExecution:
         if self._finished is None:
             self._finished = time.monotonic()
 
+    def limit_disposition(self) -> str | None:
+        if not self.overrun:
+            return None
+        kinds = [item.get("kind") for item in self.overrun.get("constraints", [])]
+        if self.overrun["phase"] == "work" and kinds == ["request-work"]:
+            return "REQUEST_PREEMPTED"
+        if self.overrun["phase"] != "work":
+            return "EXIT_PROTECTION_EXPIRED"
+        return "OWNER_LIMIT_EXPIRED" if len(kinds) == 1 else "MIXED_OR_UNKNOWN_LIMIT"
+
     def report(self) -> dict[str, Any]:
         elapsed = (self._finished or time.monotonic()) - self.started
         return {
@@ -313,14 +324,17 @@ class GateExecution:
             "durationSeconds": round(elapsed, 6),
             "state": "OVER_BUDGET" if self.overrun else "WITHIN_BUDGET",
             "overrun": self.overrun,
+            "limitDisposition": self.limit_disposition(),
             "attribution": (
-                "ARCHITECTURE_OVERHEAD"
+                "ADMINISTRATIVE_PREEMPTION" if self.limit_disposition() == "REQUEST_PREEMPTED"
+                else "ARCHITECTURE_OVERHEAD"
                 if self.overrun and self.overrun["phase"] != "work"
                 else "UNKNOWN" if self.overrun else None
             ),
             "mandatoryDuration": "UNPROVEN",
             "performanceStatus": "UNPROVEN",
-            "progressContract": "NOT_DECLARED",
+            "progressContract": "owner-liveness; business-progress-unproven",
+            "operationObservation": self.observer.report(),
             "spans": list(self.spans),
             "stageGranularity": "owner-boundary",
             "productProof": "runner-owned",
@@ -341,23 +355,25 @@ def freeze_scope(
     *,
     excluded_domains: list[str],
     excluded_gates: list[str],
+    features: Sequence[Mapping[str, Any]] = (),
+    domains: Sequence[Mapping[str, Any]] = (),
+    rules: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Every catalog node gets an inclusion decision; shared dependencies stay."""
-    gate_owners: dict[str, set[str]] = {gate_id: set() for gate_id in definitions}
-    gate_requirements: dict[str, list[str]] = {gate_id: [] for gate_id in definitions}
-    domains = {item["domain"] for item in capabilities}
-    unknown = set(excluded_domains) - domains
+    from .scope_ownership import collect_scope_ownership
+
+    try:
+        ownership = collect_scope_ownership(
+            definitions, capabilities, features=features, domains=domains, rules=rules,
+        )
+    except ValueError as error:
+        raise ExecutionBudgetError(str(error)) from error
+    unknown = set(excluded_domains) - set(ownership["domains"])
     if unknown or set(excluded_gates) - set(definitions):
         raise ExecutionBudgetError("scope exclusions contain unknown domains or Gates")
-    for capability in capabilities:
-        for gate_id in capability.get("required_gates", []):
-            if gate_id not in definitions:
-                raise ExecutionBudgetError(f"capability references missing Gate {gate_id}")
-            gate_owners[gate_id].add(capability["domain"])
-            gate_requirements[gate_id].append(capability["id"])
     decisions = []
     for gate_id, definition in definitions.items():
-        owners = gate_owners[gate_id]
+        owners = set(ownership["owners"][gate_id])
         explicit = gate_id in excluded_gates
         domain_only = bool(owners) and owners <= set(excluded_domains)
         catalog_execution = definition.get("catalogExecution", "automatic")
@@ -377,7 +393,11 @@ def freeze_scope(
             ),
             "catalogExecution": catalog_execution,
             "domains": sorted(owners),
-            "capabilityIds": sorted(gate_requirements[gate_id]),
+            "capabilityIds": [
+                item["id"] for item in ownership["sources"][gate_id]
+                if item["kind"] == "capability"
+            ],
+            "ownershipSources": ownership["sources"][gate_id],
             "definitionDigest": digest(definition),
             "executionModel": (
                 "prerequisite-judgment" if definition.get("judgment") else
@@ -394,6 +414,11 @@ def freeze_scope(
         "decisions": decisions,
         "requiredGateIds": [item["gateId"] for item in decisions if item["included"]],
         "capabilityDigest": digest(capabilities),
+        "ownershipDigest": digest({
+            "capabilities": capabilities, "features": features,
+            "domains": domains, "rules": rules,
+        }),
+        "unresolvedFeatureReferences": ownership["unresolvedFeatureReferences"],
     }
     rank = {"ci-structure": 0, "ci-cheap": 1, "env-evidence": 2, "local-evidence": 3}
     scope["dispatchGateIds"] = sorted(

@@ -1,7 +1,7 @@
 ---
 kind: playbook
 title: Desktop Debug Runtime
-status: active
+status: superseded-by:docs/knowledge/playbooks/desktop-debug-runtime-with-qualified-chooser.md
 owns:
   - AGENTS.md
   - apps/desktop/

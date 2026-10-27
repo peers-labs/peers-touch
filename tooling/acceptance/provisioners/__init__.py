@@ -66,11 +66,7 @@ def _constructor_arguments(
     if policy == "both":
         return {"station_profiles": station_profiles, "service_profiles": service_profiles}
     if policy == "shared":
-        if station_profiles and service_profiles and dict(station_profiles) != dict(service_profiles):
-            raise ProvisioningError(
-                f"environment {contract_id!r} received conflicting station and service profile bindings"
-            )
-        return {"station_profiles": service_profiles or station_profiles}
+        return {"station_profiles": {**(station_profiles or {}), **(service_profiles or {})}}
     if policy == "station":
         if service_profiles:
             raise ProvisioningError(
@@ -108,6 +104,12 @@ def get_provisioner(
             station_profiles = None
         if policy in ("station", "none"):
             service_profiles = None
+    for service_id in sorted(set(station_profiles or {}) & set(service_profiles or {})):
+        if station_profiles[service_id] != service_profiles[service_id]:
+            raise ProvisioningError(
+                f"environment {contract.id!r} received conflicting station and service "
+                f"profile bindings for {service_id!r}"
+            )
     arguments = _constructor_arguments(contract.id, policy, station_profiles, service_profiles)
     provisioner_class = _resolve(module, name)
     if not issubclass(provisioner_class, EnvironmentProvisioner) or provisioner_class.environment_id != contract.id:

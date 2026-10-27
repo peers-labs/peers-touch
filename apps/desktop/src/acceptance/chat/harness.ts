@@ -4,7 +4,6 @@ import {
   chatStorageProjectionRuntime,
   type ChatStorageBatchAcceptanceScenario,
 } from '../../runtimes/chatStorageRuntime';
-import { installAuthenticatedCriticalRuntimes } from '../../services/appRuntime';
 import { api } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
@@ -478,12 +477,10 @@ export function installAcceptanceHarness(): void {
         completeCurrentSession: () =>
           identityRuntime.completeCurrentSession(),
       }, account, password);
-      const actorPtid = activeActorPtid();
-      await installAuthenticatedCriticalRuntimes(actorPtid);
-      await hydrateSocialForActiveActor();
+      const actorPtid = requireCanonicalAcceptancePtid(activeSessionActorPtid());
       return {
         authenticated: true,
-        actorPtid: actorPtid,
+        actorPtid,
       };
     },
 

@@ -70,17 +70,13 @@ class ExecutionSession:
         *,
         graph_digest: str,
         context_digest: str,
-        validated_gate_ids: list[str] | None = None,
     ) -> tuple[str, ...]:
         if self.state not in {"READY", "REPAIRED", "PAUSED_REQUEST_EXHAUSTED"}:
             raise ExecutionBudgetError("diagnose and qualify repair before the next request")
         dispatch = tuple(self.required_gate_ids if dispatch_gate_ids is None else dispatch_gate_ids)
-        validated = tuple(validated_gate_ids or ())
         if (
             len(set(dispatch)) != len(dispatch)
-            or len(set(validated)) != len(validated)
-            or set(dispatch) & set(validated)
-            or set(dispatch) | set(validated) != set(self.required_gate_ids)
+            or set(dispatch) != set(self.required_gate_ids)
             or not graph_digest or not context_digest
         ):
             raise ExecutionBudgetError("request must account for the complete Gate scope")
@@ -88,8 +84,6 @@ class ExecutionSession:
             dict(source) != self.current_source
             or graph_digest != self.graph_digest or context_digest != self.context_digest
         )
-        if validated and (changed or self.state != "PAUSED_REQUEST_EXHAUSTED"):
-            raise ExecutionBudgetError("changed or repaired candidate cannot transfer proof")
         self.current_source = dict(source)
         self.graph_digest = graph_digest
         self.context_digest = context_digest
@@ -102,11 +96,42 @@ class ExecutionSession:
             "contextDigest": context_digest,
             "invalidatedPriorProof": changed or bool(self.lineage and not self.requests),
             "dispatchGateIds": list(dispatch),
-            "validatedGateIds": list(validated),
+            "validatedGateIds": [],
             "state": "RUNNING",
         })
         self.state = "RUNNING"
         return dispatch
+
+    def record_reuse(self, result: Mapping[str, Any]) -> None:
+        """Move one pending Gate only after Runner verifies its original proof."""
+        if self.state != "RUNNING" or len(self.requests) < 2:
+            raise ExecutionBudgetError("original reuse requires an active continuation")
+        request, previous = self.requests[-1], self.requests[-2]
+        gate_id = result.get("id")
+        if (
+            previous["state"] != "PAUSED_REQUEST_EXHAUSTED"
+            or "repair" in previous
+            or request["invalidatedPriorProof"]
+            or any(request[key] != previous[key] for key in (
+                "source", "graphDigest", "contextDigest", "policyDigest",
+            ))
+            or gate_id not in request["dispatchGateIds"]
+            or gate_id in request["validatedGateIds"]
+            or any(result.get(key) != value for key, value in (
+                ("status", "passed"), ("completionStatus", "DONE"),
+                ("proofStatus", "PROVEN"), ("executionDisposition", "REUSED_ORIGINAL"),
+            ))
+            or result.get("cleanupStatus") not in {"passed", "not-required"}
+        ):
+            raise ExecutionBudgetError("request cannot record unverified original reuse")
+        reference = ArtifactRef.from_dict(result.get("runManifest"))
+        if (
+            reference.gate_id != gate_id or reference.path != "manifest.json"
+            or result.get("originRunId") != reference.run_id
+        ):
+            raise ExecutionBudgetError("original reuse manifest identity mismatch")
+        request["dispatchGateIds"].remove(gate_id)
+        request["validatedGateIds"].append(gate_id)
 
     @staticmethod
     def clean_request_exhaustion(report: Mapping[str, Any]) -> bool:
@@ -119,6 +144,9 @@ class ExecutionSession:
             (item for item in report.get("results", []) if item.get("id") == stop.get("gateId")),
             {},
         )
+        stop_reference = {
+            key: stop[key] for key in ("gateId", "reason", "policyDigest") if key in stop
+        }
         return (
             overrun.get("phase") == "work"
             and len(constraints) == 1
@@ -130,6 +158,21 @@ class ExecutionSession:
             and not report.get("terminalObservation")
             and all(item.get("cleanupStatus", "not-required") in {"passed", "not-required"}
                     for item in report.get("results", []))
+            and all(
+                item.get("id") == stop.get("gateId")
+                or all(item.get(key) == value for key, value in (
+                    ("status", "passed"), ("completionStatus", "DONE"), ("proofStatus", "PROVEN"),
+                ))
+                or (
+                    item.get("status") == "blocked"
+                    and item.get("completionStatus") == "BLOCKED"
+                    and item.get("proofStatus") == "UNPROVEN"
+                    and item.get("executionStop") == stop_reference
+                    and not item.get("runManifest")
+                    and item.get("duration_seconds", 0) == 0
+                )
+                for item in report.get("results", [])
+            )
         )
 
     def observe(self, report: Mapping[str, Any], report_ref: Mapping[str, Any]) -> None:
@@ -160,6 +203,49 @@ class ExecutionSession:
         self.requests[-1].update(
             report=reference.to_dict(), stop=deepcopy(stop), state=self.state,
         )
+
+    def request_results(
+        self, request: Mapping[str, Any], report: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Validate one original full-scope report against its sealed request."""
+        results = report.get("results")
+        if (
+            not isinstance(results, list)
+            or any(not isinstance(item, dict) for item in results)
+            or len(results) != len(self.required_gate_ids)
+            or {item.get("id") for item in results} != set(self.required_gate_ids)
+            or report.get("source") != request["source"]
+            or report.get("executionBudget", {}).get("policyDigest") != self.policy_digest
+            or report.get("executionBudget", {}).get("stop") != request["stop"]
+            or report.get("executionGraph", {}).get("digest") != request["graphDigest"]
+        ):
+            raise ExecutionBudgetError("original session report candidate or scope mismatch")
+        if request["state"] == "PAUSED_REQUEST_EXHAUSTED" and not self.clean_request_exhaustion(report):
+            raise ExecutionBudgetError("original session lacks clean request exhaustion")
+        return results
+
+    def dispatch_history(
+        self, store: Any, source: Mapping[str, str], *,
+        graph_digest: str, context_digest: str,
+    ) -> list[dict[str, Any]]:
+        """Candidate references and ordering only; Runner must revalidate proof."""
+        matching: list[dict[str, Any]] = []
+        for request in reversed(self.requests):
+            if (
+                request["source"] != dict(source)
+                or request["graphDigest"] != graph_digest
+                or request["contextDigest"] != context_digest
+            ):
+                break
+            matching.append(request)
+        observed: dict[str, dict[str, Any]] = {}
+        for request in reversed(matching):
+            reference = ArtifactRef.from_dict(request["report"])
+            report = store.read_json(reference)
+            for result in self.request_results(request, report):
+                if result.get("runManifest") or result.get("duration_seconds", 0) > 0:
+                    observed[result["id"]] = deepcopy(result)
+        return [observed[gate] for gate in self.required_gate_ids if gate in observed]
 
     def repair(self, *, cause: str, owner: str, correction: str,
                validation_refs: list[Mapping[str, Any]], qualification: str) -> None:

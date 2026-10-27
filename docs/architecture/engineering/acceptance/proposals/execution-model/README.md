@@ -1,9 +1,14 @@
 # Acceptance 执行模型提案
 
 > **Status**: draft
-> **Created**: 2026-10-22 | **Updated**: 2026-10-22
+> **Authority**: non-normative
+> **Created**: 2026-10-22 | **Updated**: 2026-10-26
 > **Owner**: Acceptance
 > **Module**: `tooling/acceptance/`
+
+This proposal is retained for unresolved design work and historical analysis.
+It is not an operating guide. Current behavior is defined by the active
+[Acceptance architecture](../../README.md) and executable contracts.
 
 ## 范围
 
@@ -15,7 +20,8 @@
 
 上游是现有 Acceptance D-20、D-21、操作语言设计和当前 Development Workflow。
 本提案不改变 Chat/Social 产品语义，也不替代尚未完成的原生产品回归。
-所有决策为 proposed；用户确认前不修改执行器、Gate 合同或已有证据。
+Only the items marked `STILL PROPOSED` below remain proposed. Landed behavior
+is governed by active documents and source, not by this draft.
 
 ## 已核实的问题
 
@@ -51,14 +57,34 @@
 - [现有系统集成](integration.md)：已有实现的保留、替换和回归要求。
 - [模块职责](module-layout.md)：唯一注册源、依赖方向和防复发约束。
 
-## 当前状态
+## Disposition
 
-源码审计、历史耗时调查和架构草案已形成。历史采样为 17 个 Gate、114 次运行、
-60 个源码版本，不能作为完整发布或当前性能基线。
-规划探针定位到外部 Python 启动/执行边界；其子调用没有独立 deadline。
-时延 SLO 为拟议目标，尚未证明当前源码达标或实现实际资源热复用。
-PR #150 的 Git 冲突已解决；Chat/Social P1 修复与原生回归仍有待完成项。
-原发布合同的 67 个 Gate 不因本次盘点或冲突解决而变成 PASS。
+### LANDED
 
-这组文档是待确认的 Acceptance 设计修订；尚未登记为新的 active 架构模块。
-确认并落地时更新现有 Acceptance 模块的治理投影与文档，不创建重叠 owner。
+- Explicit execution dependency graph and prerequisite evidence references.
+- Closed execution-input qualification and current-source revalidation.
+- Fixed-scope bounded continuation with durable session and repair records.
+- Suite lifecycle ledger, reuse audit, and supporting-evidence boundary.
+- Lifecycle budgets, cleanup/publication reserve, and first-over-budget stop.
+
+These contracts now belong to active source and architecture documents. Their
+draft descriptions here may be stale and carry no authority.
+
+### STILL PROPOSED
+
+- One business Scenario producer serving multiple Gate judgments without
+  weakening each Gate's Oracle or evidence strength.
+- Actual outer Suite ownership and reuse of product resources across Gates.
+- Accepted end-to-end performance SLOs, policy controller, and measured
+  parallel scheduling.
+
+### HISTORICAL
+
+- The PR #150, R001, 17-Gate, 114-run, 60-source-version, and 67-Gate release
+  references describe the 2026-10-22 investigation only.
+- Those observations are neither a current performance baseline nor product
+  readiness evidence.
+
+Any remaining proposal requires a fresh current-source audit, acceptance into
+the active decision record, implementation, and current evidence before it can
+become operating guidance.

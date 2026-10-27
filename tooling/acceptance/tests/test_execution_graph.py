@@ -11,13 +11,44 @@ import tempfile
 import unittest
 
 from tooling.acceptance.core.execution_budget import ExecutionBudgetError
-from tooling.acceptance.core.execution_graph import compile_graph, prerequisite_results
+from tooling.acceptance.core.execution_graph import (
+    compile_graph, prerequisite_results, request_dispatch_order,
+)
+from tooling.acceptance.core.execution_identity import (
+    gate_execution_identity, inherited_gate_environment, validate_execution_inputs,
+)
 from tooling.acceptance.core import ArtifactRef, EvidenceStore
+from tooling.acceptance.tests.synthetic_git import (
+    run_synthetic_git, synthetic_git_environment,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class ExecutionGraphTest(unittest.TestCase):
+    def test_prerequisite_requires_explicit_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            repo = base / "repo"
+            repo.mkdir()
+            store = EvidenceStore(base / "artifacts", worktree=repo)
+            source = {"commit": "head", "workspaceDigest": "digest"}
+            run = store.begin_run("producer", source=source)
+            run.write_json("report.json", {"status": "passed"}, role="report")
+            result = {
+                "id": "producer", "status": "passed",
+                "completionStatus": "DONE", "proofStatus": "PROVEN",
+            }
+            run.finalize(result=result)
+            result["runManifest"] = run.manifest_ref.to_dict()
+            run.close()
+            references, missing = prerequisite_results(
+                {"id": "consumer", "dependsOn": ["producer"]},
+                [result], source, store,
+            )
+            self.assertEqual(references, [])
+            self.assertEqual(missing, ["producer"])
+
     def test_shared_producer_once_and_prerequisites_first(self):
         definitions = {
             "shared": {"command": "true"},
@@ -41,12 +72,86 @@ class ExecutionGraphTest(unittest.TestCase):
             with self.assertRaises(ExecutionBudgetError):
                 compile_graph(definitions, selected, excluded_ids=excluded)
 
+    def test_declared_identity_binds_only_actual_inherited_inputs(self):
+        from tooling.acceptance.core.execution_budget import ExecutionBudgetPolicy
+
+        gate = {"id": "declared", "command": "true", "tier": "ci-cheap",
+                "executionInputs": {"environmentKeys": ["INPUT"]}}
+        graph = compile_graph({"declared": gate}, ["declared"])
+        policy = ExecutionBudgetPolicy({
+            "requestSeconds": 10, "planningSeconds": 1,
+            "lifecycle": {"cleanupSeconds": 1, "publishSeconds": 1}, "gates": {},
+        })
+        environment = {"INPUT": "secret-value", "OBSERVER": "one", "PATH": "/usr/bin"}
+        identity = gate_execution_identity(gate, graph, policy, "context", environment)
+        self.assertNotIn("secret-value", json.dumps(identity))
+        self.assertEqual(inherited_gate_environment(gate, environment),
+                         {"INPUT": "secret-value", "PATH": "/usr/bin"})
+        environment["OBSERVER"] = "two"
+        self.assertEqual(identity, gate_execution_identity(gate, graph, policy, "context", environment))
+        environment["INPUT"] = "changed"
+        self.assertNotEqual(identity, gate_execution_identity(gate, graph, policy, "context", environment))
+        opaque = {key: value for key, value in gate.items() if key != "executionInputs"}
+        self.assertFalse(gate_execution_identity(opaque, graph, policy, "context", environment)["reuseEligible"])
+        for contract in (
+            {"environmentKeys": ["INPUT", "INPUT"]}, {"environmentKeys": ["PT_ACCEPTANCE_RUN_ID"]},
+            {"environmentKeys": ["bad-key"]}, {"environmentKeys": [], "extra": True},
+        ):
+            with self.assertRaises(ExecutionBudgetError):
+                validate_execution_inputs("declared", {**gate, "executionInputs": contract})
+        with self.assertRaises(ExecutionBudgetError):
+            validate_execution_inputs("declared", {**gate, "provisioner": "live"})
+
+    def test_pending_frontier_owns_priority_without_changing_frozen_graph(self):
+        graph = compile_graph({
+            "opaque-prefix": {"command": "true"},
+            "needed": {"command": "true"},
+            "pending": {"command": "true", "dependsOn": ["needed"]},
+            "shared-a": {"command": "true", "dependsOn": ["needed"]},
+        }, ["opaque-prefix", "pending", "shared-a"])
+        original = json.loads(json.dumps(graph))
+        prior = [{"id": gate, "status": "passed", "completionStatus": "DONE", "proofStatus": "PROVEN"}
+                 for gate in graph["dispatchGateIds"]]
+        next(item for item in prior if item["id"] == "pending")["proofStatus"] = "UNPROVEN"
+        self.assertEqual(request_dispatch_order(graph, set(), prior),
+                         ["needed", "pending", "opaque-prefix", "shared-a"])
+        self.assertEqual(request_dispatch_order(graph, {"needed"}, prior),
+                         ["pending", "opaque-prefix", "shared-a"])
+        self.assertEqual(graph, original)
+
+    def test_unstarted_aggregate_closure_cannot_preempt_interrupted_root(self):
+        graph = compile_graph({
+            "opaque-prefix": {"command": "true"},
+            "interrupted": {"command": "true"},
+            "aggregate": {"command": "true", "dependsOn": ["opaque-prefix", "interrupted"]},
+            "unrelated": {"command": "true"},
+        }, ["opaque-prefix", "interrupted", "aggregate", "unrelated"])
+        original = json.loads(json.dumps(graph))
+        prior = [
+            {"id": "opaque-prefix", "status": "passed", "completionStatus": "DONE", "proofStatus": "PROVEN"},
+            {"id": "interrupted", "status": "failed", "completionStatus": "PARTIAL",
+             "proofStatus": "UNPROVEN", "duration_seconds": 1},
+            {"id": "aggregate", "status": "blocked", "proofStatus": "UNPROVEN"},
+            {"id": "unrelated", "status": "blocked", "proofStatus": "UNPROVEN"},
+        ]
+        self.assertEqual(request_dispatch_order(graph, set(), prior),
+                         ["interrupted", "opaque-prefix", "aggregate", "unrelated"])
+        self.assertEqual(graph, original)
+
     def test_prerequisite_requires_original_sealed_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             store = EvidenceStore(Path(temporary), worktree=REPO_ROOT)
             source = {"commit": "same", "workspaceDigest": "same"}
             with store.begin_run("producer", source=source) as producer:
-                result = {"status": "passed", "completionStatus": "DONE", "proofStatus": "PROVEN"}
+                result = {
+                    "status": "passed", "completionStatus": "DONE", "proofStatus": "PROVEN",
+                    "cleanupStatus": "not-required",
+                    "secretScan": {
+                        "status": "passed", "scannedHighEntropyValues": 0,
+                        "scannedCredentialValues": 0, "redactedArtifacts": [],
+                    },
+                }
+                producer.write_json("report.json", result, role="report")
                 producer.finalize(result=result)
                 ref = producer.manifest_ref.to_dict()
             results = [{"id": "producer", **result, "runManifest": ref}]
@@ -309,13 +414,28 @@ class ExecutionGraphTest(unittest.TestCase):
             self.assertEqual(second["status"], "blocked")
             self.assertEqual(second["duration_seconds"], 0)
 
-    def continuation_fixture(self, root):
+    def continuation_fixture(self, root, *, declared=True, traversal=False):
+        source_root = root / "source"
+        source_root.mkdir()
+        (source_root / "README.md").write_text("Synthetic continuation source fixture\n")
+        (source_root / ".gitignore").write_text(".local/\n")
+        git_environment = synthetic_git_environment()
+        for arguments in (
+            ("init", "-q"),
+            ("add", "README.md", ".gitignore"),
+            ("-c", "user.name=Synthetic Continuation",
+             "-c", "user.email=continuation@example.invalid",
+             "commit", "-qm", "fixture"),
+        ):
+            run_synthetic_git(source_root, *arguments, environment=git_environment)
         calls, cancelled, downstream = (root / name for name in ("calls", "cancelled", "downstream"))
         catalog, policy = root / "catalog.json", root / "policy.json"
         catalog.write_text(json.dumps({"gates": {
             "first": {"argv": [sys.executable, "-c",
                 f"from pathlib import Path;p=Path({str(calls)!r});"
-                "p.write_text(p.read_text()+'x' if p.exists() else 'x')"], "tier": "ci-cheap"},
+                "p.write_text(p.read_text()+'x' if p.exists() else 'x')"], "tier": "ci-cheap",
+                **({"executionInputs": {"environmentKeys": ["PT_CONTINUATION_FIXTURE_EPOCH"]}}
+                   if declared else {})},
             "second": {"argv": [sys.executable, "-c",
                 f"from pathlib import Path;import time;p=Path({str(cancelled)!r});"
                 "first=not p.exists();p.write_text(p.read_text()+'x' if p.exists() else 'x');"
@@ -323,18 +443,38 @@ class ExecutionGraphTest(unittest.TestCase):
             "third": {"dependsOn": ["first", "second"], "argv": [sys.executable, "-c",
                 f"from pathlib import Path;Path({str(downstream)!r}).touch()"], "tier": "ci-cheap"},
         }}))
+        if traversal:
+            definitions = json.loads(catalog.read_text())
+            for gate in ("third", "fourth"):
+                marker = root / f"{gate}-started"
+                definitions["gates"][gate] = {
+                    "argv": [sys.executable, "-c",
+                        f"from pathlib import Path;import time;p=Path({str(marker)!r});"
+                        "first=not p.exists();p.write_text(p.read_text()+'x' if p.exists() else 'x');"
+                        "time.sleep(10 if first else 0)"],
+                    "tier": "ci-cheap",
+                }
+            catalog.write_text(json.dumps(definitions))
         policy.write_text(json.dumps({
             "requestSeconds": 2.5, "planningSeconds": 1.5,
             "lifecycle": {"cleanupSeconds": 1, "publishSeconds": 1}, "gates": {},
         }))
-        command = [sys.executable, "-B", "tooling/scripts/acceptance-run.py",
-                   "--gates", str(catalog), "--gate", "third",
-                   "--execution-budget", str(policy)]
-        environment = {**os.environ, "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "evidence")}
+        program = (
+            "import importlib.util,sys;from pathlib import Path;"
+            f"spec=importlib.util.spec_from_file_location('fixture_runner',{str(REPO_ROOT / 'tooling/scripts/acceptance-run.py')!r});"
+            "runner=importlib.util.module_from_spec(spec);spec.loader.exec_module(runner);"
+            f"runner.REPO_ROOT=Path({str(source_root)!r});"
+            "sys.argv=['acceptance-run.py',*sys.argv[1:]];raise SystemExit(runner.main())"
+        )
+        selection = ("first", "second", "third", "fourth") if traversal else ("third",)
+        command = [sys.executable, "-B", "-c", program,
+                   "--gates", str(catalog), "--execution-budget", str(policy),
+                   *(argument for gate in selection for argument in ("--gate", gate))]
+        environment = {**git_environment, "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "evidence")}
         completed = subprocess.run(command, cwd=REPO_ROOT, env=environment,
                                    capture_output=True, text=True, timeout=12)
         self.assertNotEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        store = EvidenceStore(root / "evidence", worktree=REPO_ROOT)
+        store = EvidenceStore(root / "evidence", worktree=source_root)
         prior = store.latest("acceptance-run")
         session = store.read_json(ArtifactRef.from_dict(prior["artifacts"]["execution-session"]))
         self.assertEqual(session["state"], "PAUSED_REQUEST_EXHAUSTED", completed.stdout + completed.stderr)
@@ -349,6 +489,62 @@ class ExecutionGraphTest(unittest.TestCase):
             hashlib.sha256(manifest_path.read_bytes()).hexdigest(), "application/json",
         ).to_dict()))
         return command + ["--resume-session", str(resume)], environment, store, session, report
+
+    def advance_continuation(self, root, command, environment, store):
+        completed = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                   capture_output=True, text=True, timeout=12)
+        current = store.latest("acceptance-run")
+        manifest_path = store.workspace_dir / "acceptance-run" / current["runId"] / "manifest.json"
+        (root / "resume.json").write_text(json.dumps(ArtifactRef(
+            current["workspaceId"], current["gateId"], current["runId"], "manifest.json",
+            hashlib.sha256(manifest_path.read_bytes()).hexdigest(), "application/json",
+        ).to_dict()))
+        ledger = store.read_json(ArtifactRef.from_dict(current["artifacts"]["execution-session"]))
+        report = store.read_json(ArtifactRef.from_dict(current["artifacts"]["run"]))
+        return completed, ledger, report
+
+    def test_real_four_requests_preserve_opaque_history_without_transferring_proof(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            command, environment, store, session, first = self.continuation_fixture(
+                root, declared=False, traversal=True,
+            )
+            for prefix in (["second", "third"], ["third", "fourth"]):
+                completed, ledger, report = self.advance_continuation(root, command, environment, store)
+                self.assertNotEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                self.assertEqual(ledger["state"], "PAUSED_REQUEST_EXHAUSTED")
+                self.assertEqual(ledger["requests"][-1]["dispatchGateIds"][:2], prefix)
+                self.assertEqual(ledger["requests"][-1]["validatedGateIds"], [])
+                self.assertEqual((root / "calls").read_text(), "x")
+                self.assertEqual(ledger["requiredGateIds"], ["first", "second", "third", "fourth"])
+                opaque = next(item for item in report["results"] if item["id"] == "first")
+                self.assertNotIn("runManifest", opaque)
+                self.assertEqual(opaque["proofStatus"], "UNPROVEN")
+            completed, ledger, report = self.advance_continuation(root, command, environment, store)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual(ledger["state"], "QUALIFIED")
+            self.assertEqual(ledger["requests"][-1]["dispatchGateIds"][0], "fourth")
+            self.assertEqual((root / "calls").read_text(), "xx")
+            opaque = next(item for item in report["results"] if item["id"] == "first")
+            original = next(item for item in first["results"] if item["id"] == "first")
+            self.assertNotEqual(opaque["runManifest"], original["runManifest"])
+
+    def test_real_resume_finishes_interruption_before_opaque_aggregate_prefix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            command, environment, store, session, first = self.continuation_fixture(root, declared=False)
+            completed = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                       capture_output=True, text=True, timeout=10)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            current = store.latest("acceptance-run")
+            ledger = store.read_json(ArtifactRef.from_dict(current["artifacts"]["execution-session"]))
+            self.assertEqual(ledger["requests"][1]["dispatchGateIds"], ["second", "first", "third"])
+            self.assertEqual(ledger["requests"][1]["validatedGateIds"], [])
+            self.assertEqual((root / "calls").read_text(), "xx")
+            self.assertEqual((root / "cancelled").read_text(), "xx")
+            self.assertTrue((root / "downstream").exists())
+            self.assertEqual(ledger["requiredGateIds"], ["first", "second", "third"])
+            self.assertEqual(ledger["state"], "QUALIFIED")
 
     def test_real_two_requests_keep_original_proof_and_reject_concurrent_stale_or_raw_resume(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -409,9 +605,9 @@ class ExecutionGraphTest(unittest.TestCase):
             latest = store.latest("acceptance-run")
             ledger = store.read_json(ArtifactRef.from_dict(latest["artifacts"]["execution-session"]))
             self.assertEqual(ledger["requests"][1]["validatedGateIds"], [])
-            self.assertEqual(ledger["requests"][1]["dispatchGateIds"], ["first", "second", "third"])
+            self.assertEqual(ledger["requests"][1]["dispatchGateIds"], ["second", "first", "third"])
 
-    def test_changed_context_graph_and_policy_cannot_reuse_proof(self):
+    def test_changed_gate_input_graph_and_policy_cannot_reuse_proof(self):
         for change in ("context", "graph", "policy"):
             with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -436,8 +632,22 @@ class ExecutionGraphTest(unittest.TestCase):
                     self.assertEqual((root / "calls").read_text(), "xx")
                     latest = store.latest("acceptance-run")
                     ledger = store.read_json(ArtifactRef.from_dict(latest["artifacts"]["execution-session"]))
-                    self.assertTrue(ledger["requests"][1]["invalidatedPriorProof"])
+                    self.assertEqual(ledger["requests"][1]["invalidatedPriorProof"], change == "graph")
                     self.assertEqual(ledger["requests"][1]["validatedGateIds"], [])
+
+    def test_irrelevant_environment_does_not_repeat_verified_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            command, environment, store, session, first = self.continuation_fixture(root)
+            environment["PT_UNRELATED_OBSERVER"] = "changed"
+            completed = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                                       capture_output=True, text=True, timeout=10)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual((root / "calls").read_text(), "x")
+            latest = store.latest("acceptance-run")
+            report = store.read_json(ArtifactRef.from_dict(latest["artifacts"]["run"]))
+            self.assertEqual(report["results"][0]["runManifest"], first["results"][0]["runManifest"])
+            self.assertEqual(report["executionSession"]["validatedGateIds"], ["first"])
 
     def test_crashed_consumed_request_cannot_dispatch_again(self):
         with tempfile.TemporaryDirectory() as temporary:

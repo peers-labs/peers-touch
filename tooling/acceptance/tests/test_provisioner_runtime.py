@@ -58,6 +58,14 @@ from tooling.acceptance.provisioners.preset_actor import (
 
 
 class ProvisionerBaseClassTests(unittest.TestCase):
+    def setUp(self):
+        equipment = patch(
+            "tooling.acceptance.provisioners."
+            "native_tauri_embedded_webdriver.equip_station_profile",
+        )
+        self.station_equipment = equipment.start()
+        self.addCleanup(equipment.stop)
+
     def test_provisioner_requires_environment_id(self):
         class BadProvisioner(EnvironmentProvisioner):
             def provision(self, gate_id):
@@ -106,7 +114,7 @@ class ProvisionerBaseClassTests(unittest.TestCase):
             },
         )
 
-    def test_native_tauri_rejects_incomplete_runtime_station_profiles(self):
+    def test_native_tauri_merges_declared_profiles_and_rejects_unknown_roles(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
         )
@@ -114,11 +122,9 @@ class ProvisionerBaseClassTests(unittest.TestCase):
             contract,
             station_profiles={"station-four": "four"},
         )
-        with self.assertRaisesRegex(
-            BlockedError,
-            r"--station-profile SERVICE_ID=PROFILE.*missing=station-five",
-        ):
-            provisioner._required_station_profiles()
+        self.assertEqual(provisioner._required_station_profiles(), {
+            "station-four": "four", "station-five": "fiveArm",
+        })
 
         provisioner = get_provisioner(
             contract,
@@ -130,7 +136,7 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             BlockedError,
-            r"unexpected=station-unknown",
+            r"undeclared Profile roles.*station-unknown",
         ):
             provisioner._required_station_profiles()
 
