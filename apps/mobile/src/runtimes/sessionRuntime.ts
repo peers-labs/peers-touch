@@ -295,18 +295,14 @@ export function createSessionRuntimeController({
 
     const operation = (async () => {
       try {
-        let nativePurge: NativeSessionRevocation | null = null;
-        let remoteRevocation: SessionRuntimeRevocation['remoteRevocation'] =
-          'not-required';
-        if (target) {
-          nativePurge = await native.revoke(scopeFor(target));
-          if (!nativeStorageIsEmpty(nativePurge.secureStorage)) {
-            throw new Error('mobile.auth.sessionSecurePurgeIncomplete');
-          }
-          remoteRevocation = nativePurge.stationRevocation === 'not_required'
-            ? 'not-required'
-            : nativePurge.stationRevocation;
+        const nativePurge = await native.revoke(target ? scopeFor(target) : null);
+        if (!nativeStorageIsEmpty(nativePurge.secureStorage)) {
+          throw new Error('mobile.auth.sessionSecurePurgeIncomplete');
         }
+        const remoteRevocation: SessionRuntimeRevocation['remoteRevocation'] =
+          nativePurge.stationRevocation === 'not_required'
+          ? 'not-required'
+          : nativePurge.stationRevocation;
         if (observed === admissionEpoch) {
           revocationTarget = null;
           publish({
@@ -339,6 +335,15 @@ export function createSessionRuntimeController({
     return trackedOperation;
   };
 
+  const revokeExpiredSession = async () => {
+    const pending = revoke();
+    const observed = admissionEpoch;
+    await pending;
+    if (observed === admissionEpoch) {
+      getRecoveryProjection().reportDeviceLocalFlag('session-expired');
+    }
+  };
+
   const refresh = (
     reason: SessionRefreshReason,
   ): Promise<MobileSessionProjection> => {
@@ -358,7 +363,7 @@ export function createSessionRuntimeController({
         errorKey: 'mobile.auth.sessionExpired',
       });
       const operation = (async () => {
-        await revoke();
+        await revokeExpiredSession();
         throw new Error('mobile.auth.sessionExpired');
       })();
       const trackedOperation = operation.finally(() => {
@@ -402,7 +407,7 @@ export function createSessionRuntimeController({
           || !isMobileSessionProjectionValid(current, clock.now());
         if (terminal) {
           revocationTarget = current;
-          await revoke();
+          await revokeExpiredSession();
         } else {
           const retryDelay = retryDelaysMs[refreshRetryIndex];
           refreshRetryIndex += 1;

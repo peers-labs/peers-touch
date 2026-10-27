@@ -38,6 +38,10 @@ COMMITTED 只表示选定安装实例完成交付事务。Mobile 随后通过普
 生命周期隔离必须覆盖 owner 入口之前的异步依赖。Session descriptor 等待
 Station registry 的回调若在挂起后才进入 controller，会得到新的 admission，
 使会话和刷新定时器在挂起后重新出现。仅检查 native read 的返回不够。
+自动终态清理后的 `session-expired` Recovery 也必须检查清理发起后的
+admission epoch；不能把旧失效反馈写入新会话或挂起的生命周期。
+renderer Session 为空不证明原生凭据为空。冷启动失败后的登出仍须调用
+native purge，并核验 absence 与远端撤销结果。
 
 相同 binding 的显式重新选择也会改变所有权。Device Link 清理不得仅比较
 Station/route/revision。注销后的旧 generation 只可在受限取消路径恢复
@@ -61,6 +65,8 @@ Session 的 live offer 保持原容量规则。数据库读取失败不能当作
 
 - `pnpm --dir apps/mobile exec vitest run src/runtimes/deviceLinkRuntime.test.ts src/runtimes/sessionRuntime.test.ts src/runtimes/sessionDescriptorLifecycle.test.ts`
   验证提交转交当前 Access、旧异步结果隔离及挂起/teardown 后无定时器重启。
+  Session 用例还须覆盖自动失效的 Recovery 通知、显式登出无过期反馈、
+  清理迟到不污染新 admission，以及未接纳 renderer Session 时仍清理 native。
 - `cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib runtime::station_route::tests --locked`
   验证选择 CAS、owned reconnect，以及显式同 binding 重选后清理不覆盖选择。
 - `cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib runtime::device_link::tests --locked`

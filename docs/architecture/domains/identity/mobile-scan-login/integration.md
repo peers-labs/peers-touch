@@ -65,6 +65,12 @@ Node Connectivity 管理，不能以历史时刻验证 grant 来延续旧授权�
 
 Mobile 登出先 fence 扫码器和事务，随后必经原 OAuth Session revoke/purge；
 相机关闭失败单独投影，不得阻止凭据清理和认证 generation 推进。
+renderer 尚未接纳 Session 时也须由 native owner 清理当前安装实例的凭据，
+核验安全存储 absence，并保留远端 confirmed/unconfirmed 结果。
+自动刷新终态或期限到达后，Session owner 清理完毕再通知现有
+`session-expired` Recovery；用户 Retry 经原 lifecycle transition 与 Access
+入口重新认证。显式登出不显示过期失败，旧清理完成不能向新的 admission
+或挂起后的生命周期发布 Recovery。
 已确认扫码事务的 Session 投影每次从原 Session owner 读取，不能保存成独立
 轮换真源。持久化 Flow 仅用于恢复同一事务；renderer 不持有 bearer 或密钥。
 COMMITTED 不再投影临时 Access attempt；Mobile 用已确认的规范 Session

@@ -12,70 +12,77 @@ Station 设备授权事务、Desktop 发码与批准、Mobile 原生扫描和账
 COMMITTED 后仍由当前 Access 决策、Session、PIN 和 lifecycle kernel 控制入口。
 模块 active 和源码检查不代表扫码登录或多手机业务已验收。
 
-## 当前检查
+## 当前源码与构建检查
 
-- Mobile Device Link、Session 和真实 descriptor 生命周期测试：29 项通过，
-  覆盖扫码失败反馈保留、显式重扫与持久化 Claim 恢复。
-- Desktop 原生取消接纳、终态恢复与原请求 lookup 回归测试：11 项通过；
-  Station Device Link application 模块测试通过，覆盖终态持久化、摘要冲突
-  拒绝及新登录清理失效原 Session 的旧 offer。
-  只读 Go source overlay 恢复修复前的分配逻辑后，撤销、过期、删除原
-  Session 三个回归格均因 CAPACITY_EXCEEDED 失败；当前源码全部通过。
-- Mobile 前端生产构建及 iOS simulator Rust 检查：通过。
-- Xcode 使用明确的 iPhone 17 / iOS 26.5 destination，编译并链接原生
-  `Peers.app`：通过。使用 SDK 27.1；没有安装新的 Simulator runtime。
-  这是模拟器打包结果，未启动账号 Journey，也不是签名真机包。
-- 独立原生 iPhone 17 / iOS 26.5 图片解码探针：CoreImage
-  `CIDetectorTypeQRCode` CPU 路径 4 项通过。输入为当前 Schema renderer
-  导出的 PNG，覆盖普通 URL、Peers 风格 UTF-8 URL、测试 Device Link
-  locator 和空白负例；三个有效码逐字匹配，空白图无结果。
-  这是模拟器图片解码能力检查，不是 `Peers.app` 扫码或登录证明。
-  当前插件使用 `AVCaptureMetadataOutput`，同一模拟器的摄像头枚举为 0，
-  插件没有图片输入接口；完整模拟扫码需要原生图片输入适配或兼容虚拟相机。
-  探针及结果位于 `/tmp/peers-relay-msl-simulator-20261027/`，
-  `report.json` 引用图片和 renderer 源码指纹，`cleanup.json` 记录资源释放。
-- 路由 owner 的选择、恢复、更新及取消释放测试：20 项通过；
-  包括显式重选相同 binding 后旧事务不得覆盖选择。
-- `one` Station 已部署本地 checkpoint
-  `0fc8de6b9c309f290cc701d6f5d6f26201f7bfb6`；
-  `/app-meta/version` 的 `build_commit` 与其逐字相同。
-  原生 Desktop 经 `make desktop` 启动，使用嵌入式 WebDriver 操作：
-  添加并验证当前 Station、Alice 密码登录、创建/确认本地 PIN、
-  进入 Shell 与全局 Settings Account 均已现场执行。
-  这些前置步骤不等于 Mobile 扫码接纳通过。
-- Relay 已通过 Make 部署与公开 TLS 健康检查，本任务 attachment 为 active。
-  原生 Desktop 生成 `deviceLinkLocator`：534 字节、Q 纠错、版本 22、
-  360 CSS 像素，生产 SVG 为 ready。原生 DOM 导出的 PNG 经独立
-  解码器逐字验证；Desktop 屏幕截图未包含当前弹窗，因此光学屏幕证明
-  仍为 UNPROVEN。
-- Android host 使用 AGP 8.9.1 / Gradle 8.11.1 / compileSdk 36、
-  Cargo 2.12.5、barcode-scanner 2.5.3 / CameraX 1.5.1，以及 APK 内置
-  MLKit barcode-scanning 17.3.0。依赖锁 preflight、AAR metadata、
-  Kotlin 与完整 APK 构建通过。两个本任务 Android API 35 Emulator
-  的已安装 APK 与构建摘要逐字一致：
-  `d5145690d16a04b1d096d4e7ecce9a876a59d01c0954398862e5c72bd28b1214`。
-- Emulator 36.6.11 的 `imagefile` 输入已送入生产相机。使用原生 DOM
-  的同一生产 SVG 导出 720 像素 PNG，置于 RGBA 1280×960 图像的
-  `(0,40)`，相机原始帧中的码图为 840×840、8 像素/module。
-  独立解码器和已安装 APK 内的 MLKit 均读出完整 534 字节载荷。
-  同 APK 的 MLKit 对原始授权码 PNG、低密度 URL 和两个旋转方向均
-  解码通过。该原生诊断不替代 App 登录 Journey。
-- 生产 `device_link_scan` 已通过真实 CameraX/MLKit 读取 locator，
-  原生接纳在短引用 source proof 阶段返回
-  `MOBILE_DEVICE_LINK / deviceLink.sourceProofUnavailable`。
-  Desktop 未收到 Claim；批准、Access/PIN/Shell 与双手机共存尚未执行。
-  源码定位到 transport identity key 的 `/` 和 `:` 不符合 Android
-  SecureStorage 的键字符合同；原生存储命令对该格式现场返回
-  `MOBILE_INVALID_INPUT`，dot 格式探针返回 absent。
-  已将 scoped key 转为 dot 格式，并将其命名空间限制为 Rust owner。
-  扫码失败被后台 idle 读取清除的源码回归已复现并修复；
-  新 APK 尚待重建，完整生产 Journey 仍未证实。
-  当前诊断与源码身份见工作区外
-  `/tmp/peers-relay-msl-native-20261027/native-camera-source-proof-failure.json`。
-- Suite 复用合同审查：PASS / runtime NOT_RUN。五客户端只在 Suite 预置一次、
-  场景 attach-only 的合同成立，未执行该 Suite。
-- 正式 gap detector 未生成有效结果：外部 Evidence Store 没有本次正式
-  acceptance-plan/run。不得把冻结实施计划或上述测试替代正式业务证据。
+- Mobile Device Link、Session 和真实 descriptor 生命周期测试：29 项通过。
+  Desktop 原生取消接纳、终态恢复与原请求 lookup：11 项通过。
+  Station Device Link application 测试通过，覆盖终态持久化、摘要冲突、
+  失效原 Session 的 offer 回收；只读 source overlay 的三个容量回归格
+  已复现原失败并在修复源码上通过。
+- Mobile native 路由测试：21 项通过。真实 Ed25519 证明覆盖过期传递材料
+  拒绝、已接纳 source 的持久恢复、当前路线证明、TLS pin、选择/取消 fence
+  和并发更新。首轮回归复现 `publicMaterialInvalid`；修复后的原生 Journey
+  独立验证恢复效果。
+- Mobile 前端生产构建、iOS simulator Rust 检查与 iPhone 17 / iOS 26.5
+  原生 `Peers.app` 编译链接通过。iOS 图片解码探针 4 项通过；
+  `CIDetectorTypeQRCode` 能读取生产 Schema PNG，但模拟器摄像头枚举为 0，
+  当前 `AVCaptureMetadataOutput` 插件没有图片输入接口。未启动 iOS 登录
+  Journey，也未安装到已配对真机。
+- Android 使用 AGP 8.9.1、Gradle 8.11.1、compileSdk 36、Cargo 2.12.5、
+  CameraX 1.5.1、barcode-scanner 2.5.3 与 APK 内置 MLKit 17.3.0；
+  锁文件、AAR metadata、Kotlin 和完整 APK 构建通过。
+
+## 当前原生 Development 实测
+
+验证策略为 `development`，结果仅是限定 Journey 的 `FUNCTIONAL_CHECK`，
+没有正式 Acceptance run。原生 Desktop 使用嵌入式 WebDriver；
+两部任务专属 Android API 35 Emulator 使用 Appium 和生产 CameraX/MLKit。
+
+APK 源码 checkpoint：
+`9d151a90aa64760b0a5986e1a51330cefcbba7b9`。两部设备拉回的已安装 APK
+均与构建摘要逐字一致：
+`4298b09cbb426b0eaa90bb11c7e8408b37ce6bd520e7c6b0eff3c70080bfe4cd`。
+`one` Station 的当前 `/app-meta/version` 为
+`4e8341e1dd4379b018b314af4394fc1eb9c7ace5`。该 checkpoint 到 APK
+checkpoint 只改变 Mobile native 路由 owner 和文档，Station、Relay、
+Desktop 及共享协议源码无差异。
+
+- Desktop 已执行 Station 验证、Alice 密码登录、本地 PIN 创建/确认、
+  Shell 和全局 Account Settings。生产二维码使用 534 字节 locator、
+  Q 纠错、版本 22；当前原生截图包含真实弹窗和生产二维码。
+- 同一生产 SVG 导出 720 像素 PNG，经 Emulator `imagefile` 虚拟相机
+  送入生产 CameraX/MLKit。两部手机均通过真实 `device_link_scan`、
+  短引用读取和原生 Claim；没有将 locator 直接注入 native intake。
+- 两端核对码逐字一致，实际点击 Desktop 的 `Allow sign-in` 按钮批准。
+  Desktop 正常可见，生产 store polling 自行更新；没有伪造 visibility
+  或通过 native approve 诊断替代本轮批准。两部手机均获得当前 Access
+  GRANTED 并进入 `shell.chat-tab`，Actor/Station 相同，device/Session
+  摘要不同，证明本轮独立会话共存。
+- 第一部手机交付后经过 407 秒再终止并重启 App，回到 GRANTED/Shell。
+  Actor、Station、device、Session 和认证 generation 均保持；
+  新路线证明的期限晚于当前时间和原证明期限。
+- 第一部手机在 Me 页面执行 `Sign Out` → `Log Out` 后，原生 Session
+  absent，界面回到登录入口；第二部手机保持原 Session 和 GRANTED/Shell，
+  Desktop 的已认证设备查询仍成功。
+- 第二部手机的过期重启及重新登录后定向撤销：待本轮后续结果写入。
+
+本轮升级前的试验存储没有 source 接纳时刻，按合同拒绝旧 source。
+第一部新接纳后曾保留 Station runtime failed，界面 Retry 才进入 Shell。
+第二部旧 Session 未由失败的 renderer runtime 接纳，直接重扫被
+`sessionScopeChanged` 拒绝；经产品界面取消并删除该设备的旧保存连接，
+原生清理后新扫码直接进入 Shell。冷启动失败时的旧 Session 退出与
+重接纳体验仍存在缺口；不能把上述恢复步骤计入无中断登录成功。
+
+当前诊断目录为 `/tmp/peers-relay-msl-native-20261027/`：
+`android-installed-a.json` / `android-installed-b.json` 绑定安装摘要，
+`gui-fresh-claim-b.json`、`gui-recovered-a.json`、`gui-admitted-b.json`
+记录界面与 scope 摘要，`coexist-result.json`、`expired-restart-a-result.json`
+及 `logout-isolation-result.json` 记录限定断言。二维码、密钥、bearer、
+安全存储和原始运行材料留在工作区外，不进入 Git。
+
+五客户端 Suite 仅完成复用合同审查，runtime NOT_RUN；正式 Evidence Store
+没有本次 acceptance-plan/run。实施计划、源码测试和 Development 记录
+均不能替代 MSL-A01—MSL-A09 的正式业务证据。
 
 取消恢复保留原请求的 opaque lookup，失败后不丢失。Station 仅在原 Actor、
 Session、设备签名与请求摘要匹配时返回终态元数据；已过期记录先在事务内
@@ -87,7 +94,7 @@ Station 事务可清理已证明失效的原 Session offer，不恢复旧授权�
 未知结果最多保留 32 个 retired Flow，达到上限仍显式拒绝新分配。
 
 独立分组与跨组代码审查覆盖原生、Station、Schema 和返回值/生命周期边界。
-最终审查与源文件指纹、构建日志保存在本工作区外的
+源码审查、指纹和构建日志保存在本工作区外的
 `/tmp/peers-relay-msl-review-20261027/` 及
 `/tmp/peers-relay-msl-*.log`；这些是 Development 诊断，不是正式证据。
 最终完整 source snapshot 与 outcome 文件摘要由该目录的
@@ -95,19 +102,21 @@ Station 事务可清理已证明失效的原 Session offer，不恢复旧授权�
 
 ## 未证实的产品范围
 
-MSL-A01—MSL-A09 继续 UNPROVEN：
+正式 MSL-A01—MSL-A09 继续 UNPROVEN，当前未覆盖：
 
 - Android/iOS 相机读取真实 Desktop 屏幕码，包括权限拒绝、后台释放和扫码测量。
 - Direct/Circuit 与多 Relay 现场可达性、失败迁移及真实业务请求。
-- 当前 policy gate 显示/提交、PIN/Shell 接纳及新消息双向可见/可解密。
-- 两部手机与多个 Desktop 同账号共存、独立 inbox、重登/轮换及定向撤销。
+- 非当前 allowlist 策略的 policy gate 显示/提交、Mobile PIN 和消息双向
+  可见/可解密；Shell 仅有上述 Development 观察。
+- 多个 Desktop 共存、独立 inbox、完整 Session 轮换和设备证书撤销。
 - 真实 PG 并发事务、重启、丢失 claim/approval/ack 和安全存储故障恢复。
 - 原生窄屏、键盘/读屏、字体放大、暗色及性能采样。
 
 现场资源核查发现一台已配对可用 iPhone；未对该 iPhone 安装或启动本需求 App。
 Android SDK 位于 `/opt/homebrew/share/android-commandlinetools/`，包含 Emulator、
 API 35 system image 和 NDK；Emulator 提供虚拟场景 poster 图片输入选项。
-Android 本需求 App 已执行虚拟相机扫码，短引用接纳仍失败。
+Android 本需求 App 已执行虚拟相机扫码、Desktop 界面批准与账号接纳；
+物理摄像头拍摄真实屏幕的光学链路尚未执行。
 
 ## 运行边界与清理
 
@@ -115,13 +124,12 @@ Android 本需求 App 已执行虚拟相机扫码，短引用接纳仍失败。
 Station、`station-1` 部署绑定、slot 18，以及 `station.connect` /
 `station.deploy` 能力；Profile 定义为 tracked-clean。
 用户已授权本地 checkpoint 和继续实测，Station 当前 live build 已核对。
-当前 APK、Desktop 与 Station 绑定上述 checkpoint；修改源码后应重新绑定
+当前 APK、Desktop 与 Station 的身份和源码等价范围如上；修改源码后应重新绑定
 构建身份，并按受影响 owner 重建/部署，不继承本轮前置步骤的结果。
-完整扫码登录 Journey 尚未通过。
+本轮仅验证上述限定 Development Journey，不声明完整产品验收。
 
-本轮 Desktop 已通过 `make desktop-stop` 停止，WebDriver session 已关闭；
-发码弹窗已关闭并交还取消 owner。两个本任务 Android Emulator 已停止，
-Appium 服务已停止；保留任务专属 AVD 和构建缓存供后续迭代复用。
+Desktop、两部 Android Emulator、Appium 和任务日志侦听仍用于本轮后续检查；
+结束后需按 owner 释放并写入清理结果。保留任务专属 AVD 和构建缓存供复用。
 远端 Station 保持本次已核对的部署；不删除账户数据库、安全存储或证据。
 Xcode 构建已退出。独立图片探针已终止，三个本任务 Simulator 已关闭并删除；
 没有启动 `Peers.app`、占用真实相机或修改既有模拟器。
