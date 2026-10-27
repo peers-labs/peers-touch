@@ -500,6 +500,7 @@
   "provider.account.avatarHeader.subtitle": "点击图片区域选择并上传新照片。",
   "provider.account.avatarHeader.avatar": "头像",
   "provider.account.avatarHeader.header": "横幅",
+  "provider.account.avatarHeader.uploadingProgress": "图片上传中，{{percent}}%",
   "provider.account.avatarHeader.avatarUpdated": "头像已更新",
   "provider.account.avatarHeader.headerUpdated": "横幅已更新",
   "provider.account.avatarHeader.failedToUploadAvatar": "上传头像失败",

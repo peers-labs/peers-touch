@@ -2945,6 +2945,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     state.station.resources(),
                     input,
                     &t,
+                    None,
                 )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
@@ -2963,6 +2964,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     state.station.resources(),
                     input,
                     &t,
+                    None,
                 )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,

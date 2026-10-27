@@ -500,6 +500,7 @@
   "provider.account.avatarHeader.subtitle": "Click the image areas to pick and upload a new photo.",
   "provider.account.avatarHeader.avatar": "Avatar",
   "provider.account.avatarHeader.header": "Header",
+  "provider.account.avatarHeader.uploadingProgress": "Uploading image, {{percent}}%",
   "provider.account.avatarHeader.avatarUpdated": "Avatar updated",
   "provider.account.avatarHeader.headerUpdated": "Header updated",
   "provider.account.avatarHeader.failedToUploadAvatar": "Failed to upload avatar",

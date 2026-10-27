@@ -3,7 +3,7 @@ import { Schema } from '@peers-touch/schema';
 import { Typography, Radio, Spin, theme } from 'antd';
 import { Smartphone, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { useDeviceLinkStore } from '../../store/deviceLink';
 import { useSessionStore } from '../../store/session';
 import { deviceLinkActions } from '../../runtimes/deviceLinkRuntime';
@@ -31,6 +31,22 @@ export function DeviceLinkPanel() {
   const showQr = !complete && !terminal && !waiting && !selected;
   const status = complete ? label('complete') : terminal ? label('expired')
     : waiting ? label('finishing') : selected ? label('approvePrompt') : label('scanHint');
+  // One fixed stage hosts every phase. Only one phase layer renders at a
+  // time and every layer uses the same geometry, so swapping QR -> code ->
+  // spinner -> result never resizes the modal or shifts the controls below
+  // it (instant swap keeps the transition meaningful with motion disabled).
+  const stageHeight = 280;
+  const stageStyle: CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: token.marginXS,
+    overflow: 'auto',
+    paddingBlock: token.paddingXS,
+  };
 
   return (
     <SettingsSection title={label('devices')} subtitle={label('description')}>
@@ -55,73 +71,78 @@ export function DeviceLinkPanel() {
             </div>
           </div>
 
-          {showQr && (
-            <div data-pt-device-link-code style={{ width: '100%', maxWidth: 280, justifySelf: 'center',
-              aspectRatio: '1', display: 'grid', placeItems: 'center', background: token.colorBgContainer,
-              borderRadius: token.borderRadiusLG, overflow: 'hidden' }}>
-              {qrFailed ? <Typography.Text type="danger" style={{ textAlign: 'center' }}>{label('qrFailed')}</Typography.Text> :
-                content ? <Schema.QRCode content={content} title={label('qrLabel')}
-                  onError={() => setFailedQrOffer(projection!.offerId)}
-                  errorLabel={label('qrFailed')}
-                  constraints={{ size: 280, style: 'peers', maxVersion: 17, minModulePixels: 3 }} /> :
-                <Spin size="small" />}
-            </div>
-          )}
-
-          {selected && !waiting && !complete && !terminal && (
-            <div style={{ display: 'grid', justifyItems: 'center', gap: token.marginXS, paddingBlock: token.paddingXS }}>
-              {projection && projection.claims.length > 1 && (
-                <Radio.Group value={selectedId} size="small"
-                  onChange={(event) => deviceLinkActions.select(event.target.value)}
-                  style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: token.marginXS }}>
-                  {projection.claims.map((claim) => (
-                    <Radio key={claim.id} value={claim.id}>
-                      {claim.deviceLabel || label(claim.platform)}
-                    </Radio>
-                  ))}
-                </Radio.Group>
-              )}
-              <Typography.Text strong>{selected.deviceLabel || label(selected.platform)}</Typography.Text>
-              <Typography.Text style={{ fontSize: token.fontSizeHeading2, letterSpacing: '0.16em',
-                fontVariantNumeric: 'tabular-nums' }} aria-label={`${label('comparison')} ${selected.comparisonCode}`}>
-                {selected.comparisonCode}
-              </Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: token.fontSizeSM, textAlign: 'center' }}>
-                {label('compareHint')}
-              </Typography.Text>
-              <div style={{ display: 'flex', gap: token.marginSM, width: '100%' }}>
-                <Button block type="primary" loading={busy}
-                  onClick={() => { void deviceLinkActions.decide(selected, true); }}>{label('allow')}</Button>
-                <Button block disabled={busy}
-                  onClick={() => { void deviceLinkActions.decide(selected, false); }}>{label('deny')}</Button>
+          <div style={{ position: 'relative', height: stageHeight, width: '100%' }}>
+            {showQr && (
+              <div style={stageStyle} data-pt-device-link-stage="qr">
+                <div data-pt-device-link-code style={{ width: 280, height: 280, display: 'grid', placeItems: 'center',
+                  background: token.colorBgContainer, borderRadius: token.borderRadiusLG, overflow: 'hidden' }}>
+                  {qrFailed ? <Typography.Text type="danger" style={{ textAlign: 'center' }}>{label('qrFailed')}</Typography.Text> :
+                    content ? <Schema.QRCode content={content} title={label('qrLabel')}
+                      onError={() => setFailedQrOffer(projection!.offerId)}
+                      errorLabel={label('qrFailed')}
+                      constraints={{ size: 280, style: 'peers', maxVersion: 17, minModulePixels: 3 }} /> :
+                    <Spin size="small" />}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {waiting && (
-            <div style={{ height: 120, display: 'grid', placeItems: 'center' }}>
-              <Spin />
-            </div>
-          )}
+            {selected && !waiting && !complete && !terminal && (
+              <div style={stageStyle} data-pt-device-link-stage="approve">
+                {projection && projection.claims.length > 1 && (
+                  <Radio.Group value={selectedId} size="small"
+                    onChange={(event) => deviceLinkActions.select(event.target.value)}
+                    style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: token.marginXS }}>
+                    {projection.claims.map((claim) => (
+                      <Radio key={claim.id} value={claim.id}>
+                        {claim.deviceLabel || label(claim.platform)}
+                      </Radio>
+                    ))}
+                  </Radio.Group>
+                )}
+                <Typography.Text strong>{selected.deviceLabel || label(selected.platform)}</Typography.Text>
+                <Typography.Text style={{ fontSize: token.fontSizeHeading2, letterSpacing: '0.16em',
+                  fontVariantNumeric: 'tabular-nums' }} aria-label={`${label('comparison')} ${selected.comparisonCode}`}>
+                  {selected.comparisonCode}
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: token.fontSizeSM, textAlign: 'center' }}>
+                  {label('compareHint')}
+                </Typography.Text>
+                <div style={{ display: 'flex', gap: token.marginSM, width: '100%' }}>
+                  <Button block type="primary" loading={busy}
+                    onClick={() => { void deviceLinkActions.decide(selected, true); }}>{label('allow')}</Button>
+                  <Button block disabled={busy}
+                    onClick={() => { void deviceLinkActions.decide(selected, false); }}>{label('deny')}</Button>
+                </div>
+              </div>
+            )}
 
-          {complete && (
-            <div style={{ height: 120, display: 'grid', placeItems: 'center' }}>
-              <CheckCircle2 size={44} color={token.colorSuccess} />
-            </div>
-          )}
+            {waiting && (
+              <div style={stageStyle} data-pt-device-link-stage="finishing">
+                <Spin />
+              </div>
+            )}
 
-          {terminal && (
-            <div style={{ height: 120, display: 'grid', placeItems: 'center' }}>
-              <Typography.Text type="secondary">{label('expired')}</Typography.Text>
-            </div>
-          )}
+            {complete && (
+              <div style={stageStyle} data-pt-device-link-stage="complete">
+                <CheckCircle2 size={44} color={token.colorSuccess} />
+              </div>
+            )}
 
-          <div role="status" aria-live="polite" style={{ textAlign: 'center', minHeight: token.fontSize * 1.6,
-            fontSize: token.fontSizeSM }}>
-            {status}
+            {terminal && (
+              <div style={stageStyle} data-pt-device-link-stage="expired">
+                <Typography.Text type="secondary">{label('expired')}</Typography.Text>
+              </div>
+            )}
           </div>
-          {error && <Typography.Text role="alert" type="danger" style={{ textAlign: 'center' }}>{label('failed')}</Typography.Text>}
-          <div style={{ display: 'flex', gap: token.marginSM }}>
+
+          <div role={error ? 'alert' : 'status'} aria-live="polite"
+            style={{ textAlign: 'center', minHeight: token.fontSizeSM * 1.8, fontSize: token.fontSizeSM,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: error ? token.colorError : undefined }}>
+            {error ? label('failed') : status}
+          </div>
+          {/* Reserved slot sized to the real 36px action buttons, so footer
+              presence (Done/Add another/Refresh) never changes modal height. */}
+          <div style={{ display: 'flex', gap: token.marginSM, height: 36 }}>
             {complete && <>
               <Button block type="primary" onClick={() => { void deviceLinkActions.close(); }}>{label('done')}</Button>
               <Button block loading={busy} onClick={() => { void deviceLinkActions.start(); }}>{label('addAnother')}</Button>
