@@ -10,6 +10,7 @@ import {
   localDevPaths,
 } from './profile.mjs';
 import { startStation, stationStatus } from './station.mjs';
+import { ensureRegistryImages } from './images.mjs';
 
 const DEFAULT_PROFILE = 'local';
 const DEFAULT_DB_PASSWORD = 'peers_local_dev';
@@ -167,6 +168,12 @@ export async function runDevUp(root, environment = process.env, options = {}) {
 
   report.profile = ensureProfile(root, environment, options);
   ensureComposeEnv(root, options);
+
+  if (options.imageRegistry) {
+    log(`pre-warming images from ${options.imageRegistry}`);
+    const mirrored = await ensureRegistryImages(options.imageRegistry, { log });
+    report.steps.push(...mirrored.map((entry) => `image:${entry.action}`));
+  }
 
   if (options.pnpmInstall) {
     log('installing pnpm workspace dependencies');
