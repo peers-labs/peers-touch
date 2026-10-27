@@ -114,19 +114,34 @@ export PATH=/opt/peers-dev/go/bin:/opt/peers-dev/node/bin:\$HOME/.cargo/bin:\$PA
 cd "\$ROOT"
 make station-check
 pg="\$(docker ps --format '{{.Names}}' | grep -- '-postgres-1' | head -1)"
+# HTTP health can return 200 before the AfterStart dev seed finishes on a cold
+# first boot, so wait on the actual seeded conditions with a bounded poll.
+psql_count() {
+  docker exec -u postgres "\$pg" psql -U peers -d peers_touch_local -tAc "\$1" | tr -d '[:space:]'
+}
+wait_for_count() {
+  local description="\$1" sql="\$2" want="\$3" tries=0 value
+  while :; do
+    value="\$(psql_count "\$sql")"
+    [ "\$value" = "\$want" ] && return 0
+    tries=\$((tries + 1))
+    if [ "\$tries" -ge 30 ]; then
+      echo "seed assertion '\$description' stuck at '\$value', want '\$want'" >&2
+      return 1
+    fi
+    sleep 2
+  done
+}
 # The four dev accounts must have been seeded at Station startup.
-docker exec -u postgres "\$pg" psql -U peers -d peers_touch_local -tAc \
-  "SELECT count(*) FROM touch_actor WHERE preferred_username IN ('alice','bob','carol','dave')" \
-  | grep -qx 4
+wait_for_count "dev accounts" \\
+  "SELECT count(*) FROM touch_actor WHERE preferred_username IN ('alice','bob','carol','dave')" 4
+# Friendship seed: 10 directed edges across the four accounts.
+wait_for_count "friendship edges" "SELECT count(*) FROM follows" 10
 # Fresh schema must not recreate the retired first-generation tables.
-docker exec -u postgres "\$pg" psql -U peers -d peers_touch_local -tAc \
+psql_count \\
   "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN
    ('touch_conversation','touch_conv_member','touch_message','touch_attachment',
-    'touch_receipt','touch_reaction','touch_key_epoch')" \
-  | grep -qx 0
-# Friendship seed: 10 directed edges across the four accounts.
-docker exec -u postgres "\$pg" psql -U peers -d peers_touch_local -tAc "SELECT count(*) FROM follows" \
-  | grep -qx 10
+    'touch_receipt','touch_reaction','touch_key_epoch')" | grep -qx 0
 echo "seed: 4 dev accounts, 10 friendship edges, zero legacy tables"
 EOF
   log "assertions passed"
@@ -189,8 +204,13 @@ if [ -n "$pkgs" ]; then sudo apt-get purge -y $pkgs; fi
 sudo apt-get autoremove -y 2>/dev/null
 sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg /etc/docker/daemon.json \
   /etc/apt/apt.conf.d/99peers-bootstrap
-sudo rm -rf /opt/peers-dev /etc/profile.d/peers-dev.sh /var/lib/docker /etc/docker
+sudo rm -rf /opt/peers-dev /etc/profile.d/peers-dev.sh /var/lib/docker /var/lib/containerd /etc/docker
 sudo gpasswd -d "$USER" docker 2>/dev/null || true
+# dpkg purge keeps groups created by the package; remove the docker group once
+# it has no members left so the group database also returns to pre-run state.
+if getent group docker | grep -q '^docker:[^:]*:[^:]*:$'; then
+  sudo groupdel docker
+fi
 # Go module cache is read-only by design; sudo is required to remove it.
 sudo rm -rf "$HOME/go"
 rm -rf "$HOME/.cargo" "$HOME/.rustup" "$HOME/.npmrc" "$HOME/.cache/go-build" \
