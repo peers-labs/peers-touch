@@ -2,7 +2,7 @@
 # Profile-based, worktree-isolated development environment.
 
 .PHONY: env-register env-update env-unregister env-check env-status-all dev-observe workflow-snapshot workflow-doctor \
-        profile profile-init profiles config \
+        profile profile-init profiles config doctor dev-up \
         dev-start dev-update dev-status dev-status-all dev-close \
         completion-review-prepare completion-review-assess \
         plan-validate plan-inspect plan-task \
@@ -105,6 +105,36 @@ profiles:
 
 config:
 	@$(DEVCTL) config
+
+# Toolchain self-check. Works before profile activation (toolchain-only
+# report) and after it (also verifies runtime directories and downgrades
+# local Docker/Go requirements for remote profiles). Set TOOLCHAIN=1 to
+# force the toolchain-only report.
+doctor:
+	@$(DEVCTL) doctor $(if $(filter 1 true,$(TOOLCHAIN)),--toolchain)
+
+# One-shot onboarding: check toolchain, install missing pieces (idempotent),
+# create/activate a worktree-local profile, generate tooling/docker/.env, and
+# start Station via compose. Desktop is never launched here; run `make desktop`
+# afterwards. Exit code 3 means "new login session required" (docker group).
+#
+#   CHECK_ONLY=1     report missing toolchain only
+#   NO_INSTALL=1     check, never install
+#   CLIENT_DEPS=0    skip Linux webkit/Tauri system packages (default: install)
+#   PNPM_INSTALL=1   also run pnpm install at the repo root
+#   IMAGE_REGISTRY=<host>   prefix Station images (restricted networks)
+#   INSECURE_REGISTRY=<host> add docker daemon insecure-registry (repeatable)
+#   PROFILE=<name> SLOT=<n>
+dev-up:
+	@$(DEVCTL) dev-up \
+		$(if $(filter 1 true,$(CHECK_ONLY)),--check-only) \
+		$(if $(filter 1 true,$(NO_INSTALL)),--no-install) \
+		$(if $(filter-out 0 false,$(or $(CLIENT_DEPS),1)),--client-deps) \
+		$(if $(filter 1 true,$(PNPM_INSTALL)),--pnpm-install) \
+		$(if $(IMAGE_REGISTRY),--image-registry $(IMAGE_REGISTRY)) \
+		$(if $(INSECURE_REGISTRY),--insecure-registry $(INSECURE_REGISTRY)) \
+		$(if $(PROFILE),--profile $(PROFILE)) \
+		$(if $(SLOT),--slot $(SLOT))
 
 dev-start:
 	@if [ -z "$(DEV_TASK_ARG)" ] || [ -z "$(GOAL)" ] || [ -z "$(CONTRIBUTION)" ]; then \
