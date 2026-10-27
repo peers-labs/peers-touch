@@ -110,6 +110,7 @@ do_assert() {
   rexec <<EOF
 $(remote_script)
 set -e
+export PATH=/opt/peers-dev/go/bin:/opt/peers-dev/node/bin:\$HOME/.cargo/bin:\$PATH
 cd "\$ROOT"
 make station-check
 pg="\$(docker ps --format '{{.Names}}' | grep -- '-postgres-1' | head -1)"
