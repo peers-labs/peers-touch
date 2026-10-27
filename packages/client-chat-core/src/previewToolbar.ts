@@ -141,7 +141,10 @@ export function previewToolbar(options: PreviewToolbarOptions): PreviewToolbar {
     trailing.append(zoomGroup);
   }
 
-  bar.append(leading, pager, trailing);
+  bar.append(leading, pager);
+  // Keep the zoom cluster adjacent to pagination (one centered group);
+  // an empty trailing box would offset the centering on workbooks.
+  if (zoomGroup) bar.append(trailing);
 
   previous.addEventListener('click', onPrevious, { signal });
   next.addEventListener('click', onNext, { signal });

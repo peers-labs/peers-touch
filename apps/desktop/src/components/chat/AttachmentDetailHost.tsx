@@ -161,6 +161,18 @@ function AttachmentDetail({ id }: { id: string }) {
       width={1040}
       centered
       styles={{
+        // Theme tokens are defined on the portal root so BOTH the header
+        // action buttons and the body toolbar inherit them (the header is
+        // rendered outside the body subtree by the Modal).
+        root: {
+          '--chat-preview-text': token.colorText,
+          '--chat-preview-secondary': token.colorTextSecondary,
+          '--chat-preview-border': token.colorBorderSecondary,
+          '--chat-preview-surface': token.colorBgContainer,
+          '--chat-preview-canvas': token.colorFillQuaternary,
+          '--chat-preview-hover': token.colorFillTertiary,
+          '--chat-preview-accent': token.colorPrimary,
+        } as CSSProperties,
         body: { maxHeight: 'none', overflow: 'hidden', padding: '0 16px 16px' },
         header: { justifyContent: 'flex-start', padding: '10px 12px 8px' },
       }}
@@ -169,15 +181,6 @@ function AttachmentDetail({ id }: { id: string }) {
       onCancel={messagingAttachmentAccess.close}
     >
       <div className="chat-file-detail" data-chat-file-detail={id}
-        style={{
-          '--chat-preview-text': token.colorText,
-          '--chat-preview-secondary': token.colorTextSecondary,
-          '--chat-preview-border': token.colorBorderSecondary,
-          '--chat-preview-surface': token.colorBgContainer,
-          '--chat-preview-canvas': token.colorFillQuaternary,
-          '--chat-preview-hover': token.colorFillTertiary,
-          '--chat-preview-accent': token.colorPrimary,
-        } as CSSProperties}
         data-chat-file-name={filename} data-chat-file-type={mimeType || ''}
         data-chat-file-size={String(size ?? '')}>
         {projection?.errorCode ? <div className="chat-file-error" role="alert">{t(`chat.attachment.transferError.${projection.errorCode}`)}</div> : null}

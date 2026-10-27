@@ -17,12 +17,15 @@
   min-height: 0;
 }
 
-/* One quiet Quick Look style toolbar. Single 40px row, hairline divider,
-   content starts directly underneath. */
+/* One quiet WeChat/Quick Look style toolbar: pagination and zoom form a
+   single centered control group; the optional sheet selector anchors to
+   the leading edge. No second row, no stretched empty middle. */
 .chat-preview-toolbar {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   height: 40px;
   padding: 0 8px;
@@ -30,8 +33,7 @@
   background: var(--chat-preview-surface, white);
 }
 .chat-preview-toolbar-spacer {
-  flex: 1 1 0;
-  min-width: 0;
+  display: none;
 }
 .chat-preview-toolbar-leading,
 .chat-preview-toolbar-trailing {
@@ -41,12 +43,14 @@
   min-width: 0;
 }
 .chat-preview-toolbar-leading {
-  flex: 1 1 0;
-  justify-content: flex-start;
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: calc(100% - 16px);
 }
 .chat-preview-toolbar-trailing {
-  flex: 1 1 0;
-  justify-content: flex-end;
+  flex: 0 0 auto;
 }
 .chat-preview-pager {
   display: flex;
@@ -120,6 +124,15 @@
   display: flex;
   align-items: center;
   gap: 2px;
+}
+/* Hairline between the pagination cluster and the zoom cluster so the
+   single centered group reads as pagination | view actions. */
+.chat-preview-zoom::before {
+  content: "";
+  width: 1px;
+  height: 16px;
+  margin: 0 6px 0 0;
+  background: var(--chat-preview-border, #e5e5e5);
 }
 .chat-preview-zoom-button[aria-pressed="true"] {
   background: var(--chat-preview-hover, #ececec);

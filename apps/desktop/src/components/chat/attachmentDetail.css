@@ -62,15 +62,15 @@
 }
 .chat-file-header-icon-primary {
   color: #fff;
-  background: var(--chat-preview-accent);
+  background: var(--chat-preview-accent, #1677ff);
 }
 .chat-file-header-icon-primary:hover:not(:disabled) {
-  background: var(--chat-preview-accent);
+  background: var(--chat-preview-accent, #1677ff);
   filter: brightness(1.08);
 }
 .chat-file-header-icon-primary:disabled {
   color: #fff;
-  background: var(--chat-preview-accent);
+  background: var(--chat-preview-accent, #1677ff);
 }
 .chat-file-state {
   font-size: 12px;
