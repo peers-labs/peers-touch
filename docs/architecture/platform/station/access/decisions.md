@@ -22,7 +22,7 @@
 | SAL-D09 | Relay 只转发端到端加密 opaque tunnel | superseded by NCP-D03 |
 | SAL-D10 | Station enrollment 必须证明 host-key possession | superseded by NCP-D06 |
 | SAL-D11 | Relay 使用显式最小运行角色 | superseded by NCP-D02 |
-| SAL-D12 | 一个 actor 每个 canonical client class 只保留一个 active Session | accepted |
+| SAL-D12 | 一个 actor 每个 Station 与设备只保留一个 active Session | accepted |
 | SAL-D13 | Relay 服务宿主仅支持 Linux/POSIX | superseded by NCP-D11 |
 | SAL-D14 | Desktop binding 通过 AppState-owned coordinator 发布 RouteLease | accepted |
 | SAL-D15 | Station-owned resource identity 独立于 active route origin | accepted |
@@ -447,55 +447,53 @@ terminator 时，Relay 明文 upstream 只能绑定共享网络命名空间的 l
 
 ---
 
-## SAL-D12：按 canonical client class 原子接管 Session
+## SAL-D12：按 Station、Actor 与设备原子替换 Session
 
 **Status**: accepted
-**Date**: 2026-10-06
+**Date**: 2026-10-27
 
 ### Context
 
-Station 旧 `CreateWithKick` 按 `device_type` 撤销同类 Session，允许 Desktop 与
-Mobile 并存。后续 Access Gate password finalizer 改成按 `device_id` 替换，
-OAuth acknowledgement 又撤销 actor 的全部 Session；Desktop restore/takeover
-还提交 `desktop-native`。三个入口因此对同一产品语义使用三个不同槽定义，
-既可能允许两个 Desktop 并存，也可能错误踢掉 Mobile。
+账号需要多台手机同时在线，每台设备单独授权、投递与撤销。
+按客户端类别互斥会让添加第二台手机撤销第一台，违背
+[Mobile Scan Login](../../../domains/identity/mobile-scan-login/decisions.md#msl-d07账号允许多设备session按设备隔离)
+的多设备产品合同。Session 与 Messaging 已有真实 `device_id` 绑定。
 
 ### Decision
 
-Station Session authority 使用 canonical client class `desktop | mobile | web`
-作为并发槽。一个 actor 在一个 Station 每个 class 最多有一个未撤销 Session；
-新同类 Session 原子撤销旧同类 Session，不撤销其他 class。
+Station Session authority 使用 `station_peer_id + actor + device_id` 作为
+并发槽。同设备重新认证或轮换原子撤销自己的旧 Session，不撤销其他设备。
+`desktop | mobile | web` 继续是 canonical 客户端类别，只用于分类和策略。
 
 密码 Access Gate、OAuth acknowledgement 与 session takeover 共用该策略。
-`device_id` 继续标识安装实例并绑定 Messaging/OAuth/lifecycle，不决定并发槽。
+`device_id` 同时标识安装实例、绑定 Messaging/OAuth/lifecycle 并决定设备并发槽。
 Desktop 统一提交 `desktop`，Mobile 提交 `mobile`；非 canonical 运行时标签
 fail closed。既有 `desktop-native` 行在迁移时一次性归一，不保留运行时 alias。
 
 ### Rationale
 
-用户需要同账号跨 Desktop/Mobile 连续使用，同时避免同类客户端并发产生不明确的
-当前端。把类别与设备身份分离后，Station 能同时保证跨类别共存、同类别单一 winner
-和 Session/Messaging 设备绑定。
+设备是授权与撤销对象，客户端类别不能隐式充当账号设备数量限制。
+所有登录入口共用 Session owner 的设备替换，避免扫码成为独立例外。
 
 ### Alternatives Considered
 
-- 按 `device_id` 接管：拒绝，因为每个新安装都会获得新的并发槽。
+- 按类别接管：拒绝，因为合法的新手机会踢掉原手机。
 - 每次登录撤销 actor 全部 Session：拒绝，因为破坏 Desktop+Mobile 共存。
 - 接受 `desktop-native` 等 alias：拒绝，因为运行时标签会变成永久业务类别。
 - 仅在客户端本地互斥：拒绝，因为多机器和多安装不能共享本地 registry。
 
 ### Consequences
 
-- Session schema migration 必须归一历史类别并处理已存在的同类重复 active 行。
-- 激活事务必须锁定 actor 行，并由 active class partial unique index 保证并发
-  登录仍收敛到每类一个 winner。
+- Session schema migration 必须归一历史类别、移除旧类别索引，并只合并同设备
+  重复 active 行。缺少可信 Station/device 绑定的存量会话要求重新认证，不猜设备。
+- 激活事务锁定 actor 行；设备 partial unique index 保证每设备一个 winner。
 - 被接管端通过既有 `session_revoked/kicked` 路径停止 runtime 并回到 Access Gate。
 - Browser 保持独立 `web` 类别；本项目不声明 Browser 产品验收。
 
 ### Reversal Trigger
 
-只有新的多实例产品合同明确允许同类并发，并同时定义 device picker、winner、
-通知、写入冲突和撤销语义时，才可替换该策略。
+若 Station 引入设备数量限制，应由显式策略、设备列表与撤销确认共同定义，
+不得通过恢复类别唯一索引隐式限制。
 
 ---
 

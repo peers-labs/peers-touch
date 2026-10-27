@@ -164,7 +164,7 @@ impl PersistedNativeSession {
     }
 }
 
-fn session_projection_inner<S: SecretStore>(
+pub(super) fn session_projection_inner<S: SecretStore>(
     storage: &S,
     scope: OAuthScopeIntent,
 ) -> MobileResult<Option<NativeSessionProjection>> {

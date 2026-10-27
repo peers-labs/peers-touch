@@ -692,12 +692,15 @@ pub fn agent_turn_artifact_upload(
         Ok(local) => local,
         Err(error) => return AppResult::fail(ErrorCode::NotFound, error, None),
     };
+    // Turn artifacts upload in the background without a UI progress sink; the
+    // seventh argument wires the upload branch's optional progress channel.
     let uploaded = match station_client.upload_multipart(
         &prepared.upload_endpoint,
         token,
         &local.locator,
         "personal",
         "private",
+        None,
         None,
     ) {
         Ok(uploaded) => uploaded,

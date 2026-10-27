@@ -39,7 +39,7 @@ func TestAccessGateSessionDeviceType(t *testing.T) {
 	}
 }
 
-func TestRevokeReplacedAccessGateSessionsRevokesSameClassAndPreservesOtherClasses(t *testing.T) {
+func TestRevokeReplacedAccessGateSessionsRevokesSameDeviceAndPreservesOtherDevices(t *testing.T) {
 	database, err := gorm.Open(
 		sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"),
 		&gorm.Config{},
@@ -65,14 +65,14 @@ func TestRevokeReplacedAccessGateSessionsRevokesSameClassAndPreservesOtherClasse
 	require.NoError(t, revokeReplacedAccessGateSessions(
 		database,
 		41,
-		session.DeviceTypeDesktop,
+		session.DeviceBinding{StationPeerID: "station-test", DeviceID: "desktop-device"},
 		"desktop-current",
 		now.Add(time.Minute),
 	))
 
 	assertAccessGateSessionState(t, database, "desktop-old", true, "kicked")
 	assertAccessGateSessionState(t, database, "desktop-current", false, "")
-	assertAccessGateSessionState(t, database, "desktop-other", true, "kicked")
+	assertAccessGateSessionState(t, database, "desktop-other", false, "")
 	assertAccessGateSessionState(t, database, "mobile-other", false, "")
 	assertAccessGateSessionState(t, database, "other-actor", false, "")
 	assertAccessGateSessionState(t, database, "already-revoked", true, "logout")
@@ -86,14 +86,15 @@ func accessGateSessionRecord(
 	now time.Time,
 ) session.SessionRecord {
 	return session.SessionRecord{
-		SessionID:    sessionID,
-		UserID:       userID,
-		DeviceType:   deviceType,
-		DeviceID:     deviceID,
-		CreatedAt:    now,
-		ExpiresAt:    now.Add(time.Hour),
-		LastActiveAt: now,
-		AuthMethod:   "access_gate",
+		SessionID:     sessionID,
+		UserID:        userID,
+		DeviceType:    deviceType,
+		DeviceID:      deviceID,
+		StationPeerID: "station-test",
+		CreatedAt:     now,
+		ExpiresAt:     now.Add(time.Hour),
+		LastActiveAt:  now,
+		AuthMethod:    "access_gate",
 	}
 }
 

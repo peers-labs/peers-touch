@@ -139,7 +139,7 @@ Content-Type: application/json
 1. 查询 `OAuth2IdentityBinding` 表，匹配 `(provider, provider_user_id)`
 2. 已绑定 → 取对应 `actor_id`
 3. 未绑定 → 用 email 匹配已有 Actor，或自动创建新 Actor → 建立绑定
-4. 复用 `LoginWithSession` 签发 JWT + 创建 Session
+4. 经 Access Gate 的 Station-owned finalizer 签发 JWT 并原子绑定设备 Session
 
 详细架构设计见 `docs/architecture/platform/station-desktop-boundary.md` §10。
 

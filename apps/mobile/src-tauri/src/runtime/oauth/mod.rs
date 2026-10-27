@@ -36,8 +36,9 @@ pub use acceptance::{
     NegativeCallbackProjection, NegativeCallbackRequest, SecureStorageFaultProjection,
 };
 mod access_gate;
+pub(crate) mod link_session;
 mod credential_envelope;
-mod proto;
+pub(crate) mod proto;
 pub(crate) mod session;
 mod transport;
 pub use access_gate::{
@@ -386,9 +387,27 @@ impl OAuthCoordinator {
             (Some(_), _) => Some(false),
             (None, _) => None,
         };
-        let station_revocation = match (attempt_revoked, session_revoked) {
-            (None, None) => OAuthStationRevocation::NotRequired,
-            (attempt, session) if attempt.unwrap_or(true) && session.unwrap_or(true) => {
+        let pending_revoked = match link_session::pending(storage)? {
+            Some(session) => {
+                let scope = ValidatedScope::new(OAuthScopeIntent {
+                    station_origin: session.station_origin.clone(),
+                    station_peer_id: session.station_peer_id.clone(),
+                })?;
+                let revoked = match scope.transport_origin() {
+                    Ok(origin) => self.transport.revoke_session(
+                        &origin, &session.access_token, &session.session_id,
+                    ).await.is_ok(),
+                    Err(_) => false,
+                };
+                link_session::discard(storage)?;
+                Some(revoked)
+            }
+            None => None,
+        };
+        let station_revocation = match (attempt_revoked, session_revoked, pending_revoked) {
+            (None, None, None) => OAuthStationRevocation::NotRequired,
+            (attempt, session, pending)
+                if attempt.unwrap_or(true) && session.unwrap_or(true) && pending.unwrap_or(true) => {
                 OAuthStationRevocation::Confirmed
             }
             _ => OAuthStationRevocation::Unconfirmed,
@@ -400,6 +419,10 @@ impl OAuthCoordinator {
             current_session_key.as_deref(),
         )?;
         session::purge_legacy_web_session(storage)?;
+        if let Some(mut identity) = identity {
+            identity.generation = next_generation(identity.generation)?;
+            write_identity(storage, &identity)?;
+        }
         #[cfg(feature = "acceptance-harness")]
         self.clear_callback_replay_vault()?;
 
@@ -720,7 +743,7 @@ impl OAuthCoordinator {
         Ok(projection)
     }
 
-    fn begin_operation(&self) -> MobileResult<OperationGuard<'_>> {
+    pub(crate) fn begin_operation(&self) -> MobileResult<OperationGuard<'_>> {
         let mut admission = self
             .read_admission
             .lock()
@@ -770,7 +793,7 @@ struct ReadAdmission {
     operation_active: bool,
 }
 
-struct OperationGuard<'a> {
+pub(crate) struct OperationGuard<'a> {
     admission: &'a Mutex<ReadAdmission>,
 }
 
@@ -851,9 +874,9 @@ impl ValidatedStart {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct PersistedIdentity {
-    device_id: String,
-    generation: u64,
+pub(crate) struct PersistedIdentity {
+    pub(crate) device_id: String,
+    pub(crate) generation: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1184,7 +1207,7 @@ impl SecretStore for SecureStorage {
     }
 }
 
-fn load_or_create_identity<S: SecretStore>(storage: &S) -> MobileResult<PersistedIdentity> {
+pub(crate) fn load_or_create_identity<S: SecretStore>(storage: &S) -> MobileResult<PersistedIdentity> {
     let device_id = match storage.get_secret(DEVICE_ID_KEY)? {
         Some(value) => clean_required(value, "deviceId")?,
         None => {
@@ -1634,7 +1657,7 @@ fn candidate_projection(
     })
 }
 
-pub(super) fn access_decision_projection(
+pub(crate) fn access_decision_projection(
     decision: &proto::access_gate::v1::AccessDecision,
 ) -> MobileResult<OAuthAccessDecisionProjection> {
     let state = AccessDecisionState::try_from(decision.state)

@@ -290,6 +290,7 @@ func (c *AttachmentController) ImportAttachment(
 		DialAddresses:  append([]string(nil), prepared.Addresses...),
 		Label:          prepared.Label,
 		CredentialFile: prepared.CredentialFile,
+		TLSCAFile:      prepared.TLSCAFile,
 		Source:         attachmentSourceInvitation,
 		Enabled:        true,
 		CleanupPending: false,
@@ -478,6 +479,15 @@ func (c *AttachmentController) targetFromInvitation(
 	}
 	if _, err := targetAddrInfo(target); err != nil {
 		return Target{}, fmt.Errorf("%w: %v", ErrInvalidInvitation, err)
+	}
+	// An invitation cannot supply trust. Reuse only operator-configured trust
+	// for the exact Relay identity and origin, including after explicit detach.
+	for _, configured := range c.runtime.config.Pool.Targets {
+		if configured.RelayPeerID == target.RelayPeerID &&
+			configured.ControlOrigin == target.ControlOrigin {
+			target.TLSCAFile = configured.TLSCAFile
+			break
+		}
 	}
 	return target, nil
 }

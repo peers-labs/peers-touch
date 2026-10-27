@@ -10,6 +10,7 @@ import {
   Server,
   Trash2,
   X,
+  ScanLine,
 } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -40,6 +41,7 @@ export function StationSelector({
   onSelectSuggestion,
   onSelect,
   onRemove,
+  onScan,
 }: {
   activeStationPeerId: string;
   entries: MobileStationEntry[];
@@ -53,6 +55,7 @@ export function StationSelector({
   onSelectSuggestion: (seedId: string) => boolean | Promise<boolean>;
   onSelect: (stationPeerId: string) => void | Promise<void>;
   onRemove: (stationPeerId: string) => void;
+  onScan?: () => void;
 }) {
   const { t } = useMobileI18n();
   const [stationUrl, setStationUrl] = useState(() => (
@@ -119,6 +122,18 @@ export function StationSelector({
 
   return (
     <section className="station-selector">
+      {onScan ? (
+        <Button
+          className="station-scan-entry"
+          block
+          size="large"
+          icon={<ScanLine size={20} />}
+          disabled={checking}
+          onClick={onScan}
+        >
+          {t('mobile.deviceLink.scan')}
+        </Button>
+      ) : null}
       <div className="station-selector-header">
         <div>
           <Text strong>{t('mobile.launch.station')}</Text>

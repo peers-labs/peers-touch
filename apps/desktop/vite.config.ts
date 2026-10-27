@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, searchForWorkspaceRoot } from 'vite'
 import react from '@vitejs/plugin-react'
 import wasm from 'vite-plugin-wasm'
 import { cpSync, existsSync, rmSync } from 'node:fs'
@@ -75,6 +75,9 @@ export default defineConfig(({ command }) => ({
     port: 3210,
     strictPort: true,
     headers: { 'Cache-Control': 'no-store' },
+    fs: {
+      allow: [searchForWorkspaceRoot(configDir), lynxStaticSourceDir],
+    },
     hmr: process.env.VITE_RUNTIME_EVIDENCE_HARNESS ? false : undefined,
     watch: process.env.VITE_RUNTIME_EVIDENCE_HARNESS
       ? { ignored: ['**/*'] }

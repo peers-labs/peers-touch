@@ -14,6 +14,7 @@ pub mod capability_authority;
 pub mod channels;
 pub mod chat_storage;
 pub mod desktop_executor_worker;
+pub mod device_link;
 pub mod error_resolver;
 pub mod evaluation;
 pub mod federation;

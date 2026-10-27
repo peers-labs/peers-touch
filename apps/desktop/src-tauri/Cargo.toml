@@ -60,6 +60,8 @@ search-core = { path = "../../../packages/search-core" }
 messaging-native-filesystem = { path = "../../../packages/messaging-native-filesystem" }
 secure-content-core = { path = "../../../packages/secure-content-core" }
 station-trust = { path = "../../../packages/station-trust" }
+schema-core = { path = "../../../packages/schema-core" }
+device-link-core = { path = "../../../packages/device-link-core" }
 station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
 x-config-core = { path = "../../../packages/x-config-core" }
 

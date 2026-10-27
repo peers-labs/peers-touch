@@ -714,10 +714,10 @@ func (r *gormOAuthRepository) Acknowledge(
 			pendingSession.RevokedReason != "credential_delivery_pending" {
 			return errOAuthEnvelopeUnavailable
 		}
-		if _, err := session.RevokeReplacedClientClassSessions(
+		if _, err := session.RevokeReplacedDeviceSessions(
 			tx,
 			pendingSession.UserID,
-			pendingSession.DeviceType,
+			pendingSession.DeviceBinding(),
 			pendingSession.SessionID,
 			now,
 		); err != nil {

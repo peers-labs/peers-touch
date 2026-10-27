@@ -28,6 +28,19 @@ func (s *connectionMaterialIssuerStub) IssueConnectionMaterial(
 	}, nil
 }
 
+func (s *connectionMaterialIssuerStub) IssueConnectionBundle(
+	ctx context.Context, request nativeRelay.ConnectionMaterialRequest, _ int,
+) ([]*nativeRelay.ConnectionMaterial, error) {
+	material, err := s.IssueConnectionMaterial(ctx, request)
+	return []*nativeRelay.ConnectionMaterial{material}, err
+}
+
+func (s *connectionMaterialIssuerStub) PublishBootstrapBlob(
+	context.Context, *peerpb.PublishBootstrapBlobRequest,
+) (*peerpb.PublishBootstrapBlobResponse, error) {
+	return nil, nativeRelay.ErrConnectionMaterialUnavailable
+}
+
 type connectionMaterialRequest struct {
 	headers map[string]string
 	path    string

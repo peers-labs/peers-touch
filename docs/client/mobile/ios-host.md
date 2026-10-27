@@ -41,6 +41,17 @@ replace a concurrently selected or removed route. Renewal prepares a request
 before submission and never replays a submitted mutation. Renewal timers stop
 with the Station runtime.
 
+The native route-source namespace stores a typed installation-private record.
+After initial current-time material validation and signed discovery, public
+sources retain the unchanged material and its actual admission time. Restore
+and renewal recheck those pins at admission time, then verify a fresh challenge,
+current Node authorization and signed route at the current time. Transfer TTL
+does not extend or expire an admitted direct discovery pin. Custom endpoint
+TLS trust remains in force. External Schema inputs cannot import these records;
+generic secure-storage commands cannot access their namespace. Old records
+without admission facts fail closed and require fresh connection admission.
+Circuit connection-grant expiry remains enforced by its existing owner.
+
 The existing Mobile logger exposes only fixed proxy stages and the standard
 transport's error kind and submission phase under `station-route`. It does not
 log route identities, URLs, queries, request bodies or transport error messages.

@@ -9,11 +9,14 @@ activation:
     - implementation_gate_and_schema_validation_land_together
 governed_prefixes:
   - /.well-known/peers-touch/access
+  - /.well-known/peers-touch/bootstrap
+  - /api/v1/relay/bootstrap-blobs
   - /sub-bootstrap/station-identity
   - /dashboard/api/relay
   - /api/v1/relay/grants
   - /api/v1/relay/routes
   - /actor/access/
+  - /auth/device-link/
   - /conversation/
   - /messaging/
   - /envelope/
@@ -36,6 +39,7 @@ owner_roots:
   station.access_endpoint:
     - apps/station/frame/core/plugin/native/subserver/bootstrap/
     - apps/station/frame/core/plugin/native/subserver/relay/
+    - apps/station/frame/core/plugin/native/bootstrapblob/
   station.bootstrap_identity:
     - apps/station/frame/core/plugin/native/subserver/bootstrap/
   station.dashboard_access:
@@ -48,6 +52,8 @@ owner_roots:
     - apps/station/app/subserver/conversation/
   station.actor_identity:
     - apps/station/app/subserver/actor_identity/subserver.go
+  station.device_link:
+    - apps/station/app/subserver/device_link/
   station.recovery:
     - apps/station/app/subserver/recovery/subserver.go
   station.key_exchange:
@@ -92,6 +98,140 @@ ddd_layers:
       - github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure
 
 capabilities:
+  - id: identity.device_link.create
+    domain_owner: station.device_link
+    truth_owner: actor.device_link
+    exposure: client
+    canonical_route: { method: POST, path: /auth/device-link/create }
+    request_proto: peers_touch.model.auth.device_link.v1.CreateDeviceLinkRequest
+    response_proto: peers_touch.model.auth.device_link.v1.CreateDeviceLinkResponse
+    truth_stores: [device_link_offers, device_link_claims]
+    allowed_dependencies: [actor.identity.verify, actor.session.read, station.identity.verify, relay.route.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+  - id: identity.device_link.claim
+    domain_owner: station.device_link
+    truth_owner: actor.device_link
+    exposure: client
+    canonical_route: { method: POST, path: /auth/device-link/claim }
+    request_proto: peers_touch.model.auth.device_link.v1.ClaimDeviceLinkRequest
+    response_proto: peers_touch.model.auth.device_link.v1.ClaimDeviceLinkResponse
+    truth_stores: [device_link_offers, device_link_claims]
+    allowed_dependencies: [access.gate.evaluate, actor.identity.verify]
+    forbidden_aliases: []
+    superseded_symbols: []
+  - id: identity.device_link.approve
+    domain_owner: station.device_link
+    truth_owner: actor.device_link
+    exposure: client
+    canonical_route: { method: POST, path: /auth/device-link/approve }
+    request_proto: peers_touch.model.auth.device_link.v1.ApproveDeviceLinkRequest
+    response_proto: peers_touch.model.auth.device_link.v1.ApproveDeviceLinkResponse
+    truth_stores: [device_link_offers, device_link_claims]
+    allowed_dependencies: [actor.identity.verify, actor.session.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+  - id: identity.device_link.deny
+    domain_owner: station.device_link
+    truth_owner: actor.device_link
+    exposure: client
+    canonical_route: { method: POST, path: /auth/device-link/deny }
+    request_proto: peers_touch.model.auth.device_link.v1.DenyDeviceLinkRequest
+    response_proto: peers_touch.model.auth.device_link.v1.DenyDeviceLinkResponse
+    truth_stores: [device_link_offers, device_link_claims]
+    allowed_dependencies: [actor.identity.verify, actor.session.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+  - id: identity.device_link.cancel
+    domain_owner: station.device_link
+    truth_owner: actor.device_link
+    exposure: client
+    canonical_route: { method: POST, path: /auth/device-link/cancel }
+    request_proto: peers_touch.model.auth.device_link.v1.CancelDeviceLinkRequest
+    response_proto: peers_touch.model.auth.device_link.v1.CancelDeviceLinkResponse
+    truth_stores: [device_link_offers, device_link_claims]
+    allowed_dependencies: [actor.identity.verify, actor.session.read, access.gate.evaluate]
+    forbidden_aliases: []
+    superseded_symbols: []
+  - id: identity.device_link.status
+    domain_owner: station.device_link
+    truth_owner: actor.device_link
+    exposure: client
+    canonical_route: { method: POST, path: /auth/device-link/status }
+    request_proto: peers_touch.model.auth.device_link.v1.GetDeviceLinkStatusRequest
+    response_proto: peers_touch.model.auth.device_link.v1.GetDeviceLinkStatusResponse
+    truth_stores: [device_link_offers, device_link_claims]
+    allowed_dependencies: [actor.identity.verify, actor.session.read, access.gate.evaluate]
+    forbidden_aliases: []
+    superseded_symbols: []
+  - id: identity.device_link.material
+    domain_owner: station.device_link
+    truth_owner: actor.device_link
+    exposure: client
+    canonical_route: { method: POST, path: /auth/device-link/material }
+    request_proto: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialRequest
+    response_proto: peers_touch.model.auth.device_link.v1.GetDeviceLinkMaterialResponse
+    truth_stores: [device_link_offers, device_link_claims]
+    allowed_dependencies: [actor.identity.verify, access.gate.evaluate, actor.session.issue, relay.route.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+  - id: identity.device_link.prove
+    domain_owner: station.device_link
+    truth_owner: actor.device_link
+    exposure: client
+    canonical_route: { method: POST, path: /auth/device-link/prove }
+    request_proto: peers_touch.model.auth.device_link.v1.ProveDeviceLinkDeviceRequest
+    response_proto: peers_touch.model.auth.device_link.v1.ProveDeviceLinkDeviceResponse
+    truth_stores: [device_link_offers, device_link_claims]
+    allowed_dependencies: [actor.identity.verify, access.gate.evaluate]
+    forbidden_aliases: []
+    superseded_symbols: []
+  - id: identity.device_link.access
+    domain_owner: station.device_link
+    truth_owner: actor.device_link
+    exposure: client
+    canonical_route: { method: POST, path: /auth/device-link/access }
+    request_proto: peers_touch.model.auth.device_link.v1.SubmitDeviceLinkAccessActionRequest
+    response_proto: peers_touch.model.auth.device_link.v1.SubmitDeviceLinkAccessActionResponse
+    truth_stores: [device_link_offers, device_link_claims]
+    allowed_dependencies: [actor.identity.verify, access.gate.evaluate]
+    forbidden_aliases: []
+    superseded_symbols: []
+  - id: identity.device_link.ack
+    domain_owner: station.device_link
+    truth_owner: actor.device_link
+    exposure: client
+    canonical_route: { method: POST, path: /auth/device-link/ack }
+    request_proto: peers_touch.model.auth.device_link.v1.AcknowledgeDeviceLinkRequest
+    response_proto: peers_touch.model.auth.device_link.v1.AcknowledgeDeviceLinkResponse
+    truth_stores: [device_link_offers, device_link_claims]
+    allowed_dependencies: [actor.identity.verify, access.gate.evaluate, actor.session.issue]
+    forbidden_aliases: []
+    superseded_symbols: []
+  - id: access.bootstrap.retrieve
+    domain_owner: station.access_endpoint
+    truth_owner: station.bootstrap_blob
+    exposure: client
+    canonical_route: { method: POST, path: /.well-known/peers-touch/bootstrap }
+    request_proto: peers_touch.model.peer.v1.RetrieveBootstrapBlobRequest
+    response_proto: peers_touch.model.peer.v1.RetrieveBootstrapBlobResponse
+    truth_stores: []
+    allowed_dependencies: [station.identity.verify, relay.enrollment.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: relay.bootstrap.publish
+    domain_owner: station.access_endpoint
+    truth_owner: station.bootstrap_blob
+    exposure: peer
+    canonical_route: { method: POST, path: /api/v1/relay/bootstrap-blobs }
+    request_proto: peers_touch.model.peer.v1.PublishBootstrapBlobRequest
+    response_proto: peers_touch.model.peer.v1.PublishBootstrapBlobResponse
+    truth_stores: []
+    allowed_dependencies: [station.identity.verify, relay.enrollment.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: access.endpoint.resolve
     domain_owner: station.access_endpoint
     truth_owner: station.route

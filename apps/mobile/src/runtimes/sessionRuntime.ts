@@ -177,6 +177,13 @@ export function createSessionRuntimeController({
   let revokeInFlight: Promise<SessionRuntimeRevocation> | null = null;
   let revocationTarget: MobileSessionProjection | null = null;
   let refreshRetryIndex = 0;
+  let admissionEpoch = 0;
+
+  const invalidateAdmission = () => {
+    admissionEpoch += 1;
+    refreshInFlight = null;
+    return admissionEpoch;
+  };
 
   const publish = (next: SessionRuntimeSnapshot) => {
     snapshot = next;
@@ -274,6 +281,7 @@ export function createSessionRuntimeController({
 
   const revoke = (): Promise<SessionRuntimeRevocation> => {
     if (revokeInFlight) return revokeInFlight;
+    const observed = invalidateAdmission();
     const target = snapshot.session ?? revocationTarget;
     clearRefreshTimer();
     refreshRetryIndex = 0;
@@ -287,28 +295,27 @@ export function createSessionRuntimeController({
 
     const operation = (async () => {
       try {
-        let nativePurge: NativeSessionRevocation | null = null;
-        let remoteRevocation: SessionRuntimeRevocation['remoteRevocation'] =
-          'not-required';
-        if (target) {
-          nativePurge = await native.revoke(scopeFor(target));
-          if (!nativeStorageIsEmpty(nativePurge.secureStorage)) {
-            throw new Error('mobile.auth.sessionSecurePurgeIncomplete');
-          }
-          remoteRevocation = nativePurge.stationRevocation === 'not_required'
-            ? 'not-required'
-            : nativePurge.stationRevocation;
+        const nativePurge = await native.revoke(target ? scopeFor(target) : null);
+        if (!nativeStorageIsEmpty(nativePurge.secureStorage)) {
+          throw new Error('mobile.auth.sessionSecurePurgeIncomplete');
         }
-        revocationTarget = null;
-        publish({
-          phase: 'revoked',
-          session: null,
-          writesAllowed: false,
-          refreshReason: null,
-          errorKey: null,
-        });
+        const remoteRevocation: SessionRuntimeRevocation['remoteRevocation'] =
+          nativePurge.stationRevocation === 'not_required'
+          ? 'not-required'
+          : nativePurge.stationRevocation;
+        if (observed === admissionEpoch) {
+          revocationTarget = null;
+          publish({
+            phase: 'revoked',
+            session: null,
+            writesAllowed: false,
+            refreshReason: null,
+            errorKey: null,
+          });
+        }
         return { remoteRevocation, nativePurge };
       } catch (error) {
+        if (observed !== admissionEpoch) throw error;
         publish({
           phase: 'failed',
           session: null,
@@ -328,6 +335,15 @@ export function createSessionRuntimeController({
     return trackedOperation;
   };
 
+  const revokeExpiredSession = async () => {
+    const pending = revoke();
+    const observed = admissionEpoch;
+    await pending;
+    if (observed === admissionEpoch) {
+      getRecoveryProjection().reportDeviceLocalFlag('session-expired');
+    }
+  };
+
   const refresh = (
     reason: SessionRefreshReason,
   ): Promise<MobileSessionProjection> => {
@@ -336,6 +352,7 @@ export function createSessionRuntimeController({
     if (!current) {
       return Promise.reject(new Error('mobile.auth.nativeSessionRequired'));
     }
+    const observed = invalidateAdmission();
     if (!isMobileSessionProjectionValid(current, clock.now())) {
       revocationTarget = current;
       publish({
@@ -346,15 +363,14 @@ export function createSessionRuntimeController({
         errorKey: 'mobile.auth.sessionExpired',
       });
       const operation = (async () => {
-        try {
-          await revoke();
-          throw new Error('mobile.auth.sessionExpired');
-        } finally {
-          refreshInFlight = null;
-        }
+        await revokeExpiredSession();
+        throw new Error('mobile.auth.sessionExpired');
       })();
-      refreshInFlight = operation;
-      return operation;
+      const trackedOperation = operation.finally(() => {
+        if (refreshInFlight === trackedOperation) refreshInFlight = null;
+      });
+      refreshInFlight = trackedOperation;
+      return trackedOperation;
     }
 
     clearRefreshTimer();
@@ -368,8 +384,12 @@ export function createSessionRuntimeController({
 
     const operation = (async () => {
       try {
+        const response = await native.refresh(scopeFor(current));
+        if (observed !== admissionEpoch) {
+          throw new Error('mobile.auth.sessionTransitionCancelled');
+        }
         const refreshed = projectNative(
-          await native.refresh(scopeFor(current)),
+          response,
           {
             stationPeerId: current.stationPeerId,
             url: current.stationUrl,
@@ -381,12 +401,13 @@ export function createSessionRuntimeController({
         activate(refreshed);
         return refreshed;
       } catch (error) {
+        if (observed !== admissionEpoch) throw error;
         const terminal = reason === 'authenticated-401'
           || isTerminalSessionRefreshError(error)
           || !isMobileSessionProjectionValid(current, clock.now());
         if (terminal) {
           revocationTarget = current;
-          await revoke();
+          await revokeExpiredSession();
         } else {
           const retryDelay = retryDelaysMs[refreshRetryIndex];
           refreshRetryIndex += 1;
@@ -411,12 +432,13 @@ export function createSessionRuntimeController({
           }
         }
         throw error;
-      } finally {
-        refreshInFlight = null;
       }
     })();
-    refreshInFlight = operation;
-    return operation;
+    const trackedOperation = operation.finally(() => {
+      if (refreshInFlight === trackedOperation) refreshInFlight = null;
+    });
+    refreshInFlight = trackedOperation;
+    return trackedOperation;
   };
 
   return {
@@ -428,6 +450,7 @@ export function createSessionRuntimeController({
     },
 
     async restore(station, decision) {
+      const observed = invalidateAdmission();
       clearRefreshTimer();
       if (!station || !isAccessGranted(decision)) {
         publish(inactiveSnapshot());
@@ -437,6 +460,7 @@ export function createSessionRuntimeController({
         stationOrigin: station.url,
         stationPeerId: station.stationPeerId,
       });
+      if (observed !== admissionEpoch) return null;
       if (nativeProjection) {
         const projected = projectNative(nativeProjection, station);
         activate(projected);
@@ -447,6 +471,7 @@ export function createSessionRuntimeController({
     },
 
     observeOAuthProjection(projection, station, decision) {
+      invalidateAdmission();
       if (!station || !isAccessGranted(decision)) {
         publish(inactiveSnapshot());
         return;
@@ -484,16 +509,19 @@ export function createSessionRuntimeController({
     revoke,
 
     fence() {
+      invalidateAdmission();
       clearRefreshTimer();
       revocationTarget = snapshot.session ?? revocationTarget;
       publish(inactiveSnapshot());
     },
 
     suspend() {
+      invalidateAdmission();
       clearRefreshTimer();
     },
 
     fail(error) {
+      invalidateAdmission();
       clearRefreshTimer();
       revocationTarget = snapshot.session ?? revocationTarget;
       publish({
@@ -676,20 +704,32 @@ export async function purgeAllNativeSessionState(): Promise<NativeSessionRevocat
 export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
   let unsubscribeAuth: (() => void) | null = null;
   let releaseMutationAdmission: (() => void) | null = null;
+  let lifecycleEpoch = 0;
+  let running = false;
 
   const observeOAuth = async () => {
-    const station = activeStationEntry(await readStationRegistryProjection());
-    sessionRuntime.observeOAuthProjection(
-      readAuthRuntimeSnapshot(),
-      station,
-      useAuthStore.getState().accessDecision,
-    );
+    const observed = lifecycleEpoch;
+    if (!running) return;
+    try {
+      const station = activeStationEntry(await readStationRegistryProjection());
+      if (!running || observed !== lifecycleEpoch) return;
+      sessionRuntime.observeOAuthProjection(
+        readAuthRuntimeSnapshot(),
+        station,
+        useAuthStore.getState().accessDecision,
+      );
+    } catch (error) {
+      if (running && observed === lifecycleEpoch) sessionRuntime.fail(error);
+    }
   };
   const restoreOwnedSession = async () => {
+    const observed = lifecycleEpoch;
     const station = activeStationEntry(await readStationRegistryProjection());
+    if (!running || observed !== lifecycleEpoch) return;
     const state = useAuthStore.getState();
     if (!station) {
       await purgeAllNativeSessionState();
+      if (!running || observed !== lifecycleEpoch) return;
       state.hideSessionProjection();
       await sessionRuntime.restore(null, state.accessDecision);
       return;
@@ -705,7 +745,10 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
     dependsOn: ['station', 'auth', 'access'],
 
     async bootstrap(_context: MobileRuntimeContext): Promise<void> {
+      running = true;
+      const observed = ++lifecycleEpoch;
       await restoreOwnedSession();
+      if (!running || observed !== lifecycleEpoch) return;
       releaseMutationAdmission = bindMobileSessionMutationAdmission(() => {
         const current = sessionRuntime.getSnapshot();
         return {
@@ -722,22 +765,26 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
         };
       });
       unsubscribeAuth = subscribeAuthRuntimeSnapshot(() => {
-        void observeOAuth().catch((error) => {
-          sessionRuntime.fail(error);
-        });
+        void observeOAuth();
       });
     },
 
     async suspend(): Promise<void> {
+      running = false;
+      lifecycleEpoch += 1;
       sessionRuntime.suspend();
     },
 
     async resume(): Promise<void> {
+      running = true;
+      lifecycleEpoch += 1;
       await restoreOwnedSession();
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
       const start = performance.now();
+      running = false;
+      lifecycleEpoch += 1;
       unsubscribeAuth?.();
       unsubscribeAuth = null;
       releaseMutationAdmission?.();

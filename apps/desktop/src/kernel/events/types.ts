@@ -1,4 +1,4 @@
-import type { ParsedDeepLink } from '../../utils/deeplink';
+import type { NavigationLink } from '@peers-touch/schema';
 import { EVENT } from './catalog';
 
 export type SessionRevokedReason = 'expired' | 'kicked' | 'not_found' | 'unknown';
@@ -343,7 +343,7 @@ export interface EventPayloadMap {
   [EVENT.AUTH_IDENTITY_CHANGED]: void;
   [EVENT.AUTH_SESSION_REVOKED]: SessionRevokedPayload;
   [EVENT.OAUTH_CONNECTIONS_CHANGED]: void;
-  [EVENT.NAVIGATION_REQUESTED]: ParsedDeepLink | { resource: 'settings'; id?: string };
+  [EVENT.NAVIGATION_REQUESTED]: NavigationLink;
   [EVENT.AGENT_BUILDER_STREAM_ENDED]: void;
   [EVENT.AGENT_TURN_STREAM_EVENT]: AgentTurnStreamEventPayload;
   [EVENT.AGENT_TURN_RECOVERY_RETRY_REQUESTED]: { conversationId: string };

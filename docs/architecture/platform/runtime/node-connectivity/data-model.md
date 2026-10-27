@@ -152,6 +152,11 @@ Credential paths share the same scope within the resolved Station data directory
 Bootstrap configuration is an initial import; it cannot overwrite persisted
 intent or a disabled tombstone.
 
+A fresh invitation may reuse operator-configured `TLSCAFile` only when both
+Relay PeerID and canonical control origin match exactly. The invitation does
+not carry trust anchors. Enrollment persists that trusted path with the new
+attachment, so restart retains control-plane trust without enabling a tombstone.
+
 An expired Relay enrollment credential can locate a proof-based rotation.
 Recovery verifies the current non-revoked enrollment ID, generation and JTI,
 then requires fresh root-delegated Node proof before issuing another short-lived
@@ -165,6 +170,33 @@ confirmation, including by an expired signed retirement locator. Such a locator
 cannot revoke an active enrollment, recover admission, or affect a replacement.
 
 ## 5. Binding And Runtime State
+
+### Opaque Bootstrap Reference
+
+`bootstrap_blob.proto` owns the bounded sealed document. The hosting Node/Relay
+retains the locator's SHA-256 digest, exact signed statement, opaque ciphertext,
+source counters and the publishing owner's authorization generation. It stores
+no plaintext locator or unsealing key. The Node signature binds the ciphertext
+digest, logical Station, retrieval endpoint identity, lifetime and source limit.
+
+`bootstrapblob.Store` is volatile: maximum 256 entries, 16 per Node, 16 KiB per
+ciphertext, five-minute TTL and four sources. A source signs the locator digest
+in the existing source-proof contract; each source may retrieve at most 16
+times. Retry retains its slot. Publication cannot replace an existing locator
+or extend its TTL. Restart, Node revocation and stop discard outstanding blobs.
+
+Retrieval uses `POST /.well-known/peers-touch/bootstrap` on the authenticated
+HTTPS endpoint before grant redemption. It never creates a Circuit permit.
+For attachments using a configured CA, retrieval material carries the 32-byte
+leaf SPKI SHA-256 from the successfully verified grant-registration TLS response.
+The configured CA continues to validate Station control requests; its full
+certificate bundle is not embedded in the QR. Missing verified TLS state blocks
+that reference projection. The pin remains scoped to the selected Relay origin,
+identity and short material lifetime; certificate rotation requires fresh material.
+Relay publication uses the enrolled Node's existing control credential at
+`POST /api/v1/relay/bootstrap-blobs`; enrollment generation and delegation epoch
+are checked on publication and retrieval. Station local publication is an
+in-process port, not another public upload API. There is no recursive reference.
 
 ```text
 StationBinding

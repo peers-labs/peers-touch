@@ -340,6 +340,17 @@ func CompleteGenericAction(
 	attemptID, actionID string,
 	input *pb.AccessGateGenericInput,
 ) (*pb.AccessDecision, error) {
+	if err := validateGenericCompletion(actionID, input); err != nil {
+		return nil, err
+	}
+	attempt, err := markAttemptActionCompleted(ctx, attemptID, actionID)
+	if err != nil {
+		return nil, err
+	}
+	return decisionAndPersist(ctx, attempt)
+}
+
+func validateGenericCompletion(actionID string, input *pb.AccessGateGenericInput) error {
 	switch actionID {
 	case "terms.accept":
 		accepted := false
@@ -349,17 +360,12 @@ func CompleteGenericAction(
 			}
 		}
 		if !accepted {
-			return nil, errors.New("terms acceptance requires explicit consent")
+			return errors.New("terms acceptance requires explicit consent")
 		}
 	default:
-		return nil, fmt.Errorf("unsupported schema-bound access action: %s", actionID)
+		return fmt.Errorf("unsupported schema-bound access action: %s", actionID)
 	}
-
-	attempt, err := markAttemptActionCompleted(ctx, attemptID, actionID)
-	if err != nil {
-		return nil, err
-	}
-	return decisionAndPersist(ctx, attempt)
+	return nil
 }
 
 // DecisionForAttempt evaluates the gate chain without persisting the outcome.
@@ -468,6 +474,9 @@ func CheckActorAllowed(ctx context.Context, actor *actormodel.ActorRef, username
 }
 
 func GetPolicy(ctx context.Context) (*dbmodel.AccessPolicy, error) {
+	if policy, ok := ctx.Value(linkedPolicyKey{}).(*dbmodel.AccessPolicy); ok {
+		return policy, nil
+	}
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return nil, err

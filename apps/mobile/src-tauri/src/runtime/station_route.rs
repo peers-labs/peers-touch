@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::fmt;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::{LazyLock, Mutex, RwLock};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    LazyLock, Mutex, RwLock,
+};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
@@ -15,6 +18,7 @@ use reqwest::header::{
     HeaderName, HeaderValue, CONNECTION, CONTENT_LENGTH, HOST, TRANSFER_ENCODING,
 };
 use reqwest::Method;
+use schema_core::{proto::schema_action::Action as SchemaAction, Link as SchemaLink};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use station_libp2p_http::{
@@ -22,6 +26,7 @@ use station_libp2p_http::{
     Route as StandardRoute, TrafficClass, TransportHandle as StandardTransportHandle,
     TransportOwner as StandardTransportOwner,
 };
+use station_trust::transport_identity::TransportIdentityScope;
 use station_trust::{
     endpoint_tls_client_config, proto::PublicEndpointConnectionMaterial,
     verify_node_authorization_bytes, verify_public_connection_material,
@@ -41,11 +46,14 @@ mod peer_proto {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
 }
 
+#[cfg(test)]
+use peer_proto::StationConnectionEnvelope;
+
 use peer_proto::{
     AccessEndpointOutcome, AccessEndpointRequest, AccessEndpointResponse, AccessEndpointRole,
-    AccessEndpointSourceProof, AccessEndpointSourceProofStatement, StationConnectionEnvelope,
-    StationConnectionGrantStatement, StationIdentityRequest, StationIdentityResponse,
-    StationIdentityStatement, StationRouteAttestation, StationRouteKind, StationRouteStatement,
+    AccessEndpointSourceProof, AccessEndpointSourceProofStatement, StationConnectionGrantStatement,
+    StationIdentityRequest, StationIdentityResponse, StationIdentityStatement,
+    StationRouteAttestation, StationRouteKind, StationRouteStatement,
 };
 
 const ACCESS_PATH: &str = "/.well-known/peers-touch/access";
@@ -114,6 +122,21 @@ struct VerifiedDiscovery {
     source_input: String,
 }
 
+/// Installation-private admission record, never a Schema or renderer input.
+/// The original material and its actual validation time retain discovery pins;
+/// every use still needs a fresh endpoint challenge and current route proof.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+enum StoredRouteSource {
+    External {
+        input: String,
+    },
+    AdmittedPublic {
+        input: String,
+        admitted_at_unix_ms: i64,
+    },
+}
+
 #[derive(Clone, Debug)]
 struct CachedRoute {
     candidate: StationRouteCandidate,
@@ -153,7 +176,7 @@ pub struct StationRouteRemoveInput {
     source_ref: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StationRouteBindingProjection {
     pub station_peer_id: String,
@@ -190,9 +213,12 @@ pub struct VerifiedStationIdentity {
 struct RouteRuntime {
     discovered: RwLock<HashMap<(String, String), CachedRoute>>,
     active: RwLock<Option<ActiveRoute>>,
+    selection_epoch: AtomicU64,
+    device_link_epoch: AtomicU64,
     renewal: Mutex<()>,
     proxy_origin: Mutex<Option<String>>,
-    standard_transport: Mutex<Option<StandardTransportRuntime>>,
+    standard_transport: Mutex<HashMap<TransportIdentityScope, StandardTransportRuntime>>,
+    identity_storage: RwLock<Option<SecureStorage>>,
 }
 
 struct StandardTransportRuntime {
@@ -239,18 +265,88 @@ impl RouteRuntime {
         if route_revision == 0 {
             return Err(route_error("routeRevisionInvalid"));
         }
-        let cached = self.cached(station_peer_id, route_id)?;
+        let routes = self
+            .discovered
+            .read()
+            .map_err(|_| route_error("runtimeLock"))?;
+        let cached = routes
+            .get(&(station_peer_id.to_string(), route_id.to_string()))
+            .ok_or_else(|| route_error("routeNotVerified"))?;
         ensure_route_current(&cached.candidate)?;
         let transport_origin = self.ensure_proxy()?;
         let active = ActiveRoute {
             candidate: cached.candidate.clone(),
             route_revision,
         };
-        *self
+        let mut current = self
             .active
             .write()
-            .map_err(|_| route_error("runtimeLock"))? = Some(active.clone());
+            .map_err(|_| route_error("runtimeLock"))?;
+        *current = Some(active.clone());
+        self.selection_epoch.fetch_add(1, Ordering::AcqRel);
         Ok(binding_projection(&active, transport_origin))
+    }
+
+    fn observe_selection(&self) -> MobileResult<(u64, Option<ActiveRoute>)> {
+        let active = self.active.read().map_err(|_| route_error("runtimeLock"))?;
+        Ok((self.selection_epoch.load(Ordering::Acquire), active.clone()))
+    }
+
+    fn commit_discovery(
+        &self,
+        observed: &(u64, Option<ActiveRoute>),
+        discovery: &VerifiedDiscovery,
+        candidate: &StationRouteCandidate,
+        revision: u64,
+    ) -> MobileResult<StationRouteBindingProjection> {
+        if revision == 0 || !discovery.projection.routes.contains(candidate) {
+            return Err(route_error("routeNotVerified"));
+        }
+        ensure_route_current(candidate)?;
+        let origin = self.ensure_proxy()?;
+        // Cache and selection commit under one lock order. The epoch fences
+        // an intervening select/remove even when both snapshots are empty.
+        let mut routes = self
+            .discovered
+            .write()
+            .map_err(|_| route_error("runtimeLock"))?;
+        let mut active = self
+            .active
+            .write()
+            .map_err(|_| route_error("runtimeLock"))?;
+        if self.selection_epoch.load(Ordering::Acquire) != observed.0 || *active != observed.1 {
+            return Err(route_error("routeChanged"));
+        }
+        if routes
+            .get(&(
+                candidate.station_peer_id.clone(),
+                candidate.route_id.clone(),
+            ))
+            .is_some_and(|cached| {
+                cached.candidate.authorization_epoch > candidate.authorization_epoch
+                    || cached.candidate.route_generation > candidate.route_generation
+            })
+        {
+            return Err(route_error("routeGenerationRevoked"));
+        }
+        let committed = ActiveRoute {
+            candidate: candidate.clone(),
+            route_revision: revision,
+        };
+        routes.insert(
+            (
+                candidate.station_peer_id.clone(),
+                candidate.route_id.clone(),
+            ),
+            CachedRoute {
+                candidate: candidate.clone(),
+                source_input: discovery.source_input.clone(),
+            },
+        );
+        *active = Some(committed.clone());
+        let epoch = self.selection_epoch.fetch_add(1, Ordering::AcqRel) + 1;
+        self.device_link_epoch.store(epoch, Ordering::Release);
+        Ok(binding_projection(&committed, origin))
     }
 
     fn active_snapshot(&self) -> MobileResult<ActiveRoute> {
@@ -351,16 +447,22 @@ impl RouteRuntime {
             },
         );
         *active = Some(refreshed.clone());
+        let previous_epoch = self.selection_epoch.fetch_add(1, Ordering::AcqRel);
+        if self.device_link_epoch.load(Ordering::Acquire) == previous_epoch {
+            self.device_link_epoch
+                .store(previous_epoch + 1, Ordering::Release);
+        }
         Ok(refreshed)
     }
 
     fn retire_standard_route(&self, route: &ActiveRoute) -> MobileResult<()> {
+        let scope = route_transport_scope(&route.candidate)?;
         let route = standard_route(route)?;
         let transport = self
             .standard_transport
             .lock()
             .map_err(|_| route_error("runtimeLock"))?;
-        if let Some(transport) = transport.as_ref() {
+        if let Some(transport) = transport.get(&scope) {
             transport
                 .handle
                 .close_route(&route)
@@ -425,6 +527,11 @@ impl RouteRuntime {
             route_revision: failed.route_revision.saturating_add(1),
         };
         *active = Some(alternate.clone());
+        let previous_epoch = self.selection_epoch.fetch_add(1, Ordering::AcqRel);
+        if self.device_link_epoch.load(Ordering::Acquire) == previous_epoch {
+            self.device_link_epoch
+                .store(previous_epoch + 1, Ordering::Release);
+        }
         Ok(alternate)
     }
 
@@ -449,29 +556,53 @@ impl RouteRuntime {
         Ok(value)
     }
 
-    fn standard_transport(&self) -> MobileResult<StandardTransportHandle> {
+    fn standard_transport(
+        &self,
+        scope: &TransportIdentityScope,
+    ) -> MobileResult<StandardTransportHandle> {
         let mut transport = self
             .standard_transport
             .lock()
             .map_err(|_| route_error("runtimeLock"))?;
-        if let Some(transport) = transport.as_ref() {
+        if let Some(transport) = transport.get(scope) {
             return Ok(transport.handle.clone());
         }
-        let owner =
-            StandardTransportOwner::start().map_err(|_| route_error("standardTransportStart"))?;
+        if transport.len() >= 16 {
+            return Err(route_error("transportCapacity"));
+        }
+        let storage = self
+            .identity_storage
+            .read()
+            .map_err(|_| route_error("runtimeLock"))?;
+        let storage = storage
+            .as_ref()
+            .ok_or_else(|| route_error("secureStorageUnavailable"))?;
+        let keypair = crate::platform::transport_identity::keypair(storage, scope).map_err(|error| {
+            log::warn!(target: "station-route", "transport admission failed stage=identity code={}", error.code);
+            error
+        })?;
+        let owner = StandardTransportOwner::start_with_identity(keypair)
+            .map_err(|error| {
+                log::warn!(target: "station-route", "transport admission failed stage=start kind={:?} phase={:?}", error.kind(), error.phase());
+                route_error("standardTransportStart")
+            })?;
         let handle = owner.handle();
-        *transport = Some(StandardTransportRuntime {
-            _owner: owner,
-            handle: handle.clone(),
-        });
+        transport.insert(
+            scope.clone(),
+            StandardTransportRuntime {
+                _owner: owner,
+                handle: handle.clone(),
+            },
+        );
         Ok(handle)
     }
 
     fn remove(&self, station_peer_id: &str, route_id: &str) -> MobileResult<()> {
-        self.discovered
+        let mut routes = self
+            .discovered
             .write()
-            .map_err(|_| route_error("runtimeLock"))?
-            .remove(&(station_peer_id.to_string(), route_id.to_string()));
+            .map_err(|_| route_error("runtimeLock"))?;
+        routes.remove(&(station_peer_id.to_string(), route_id.to_string()));
         let mut active = self
             .active
             .write()
@@ -482,7 +613,32 @@ impl RouteRuntime {
         }) {
             *active = None;
         }
+        self.selection_epoch.fetch_add(1, Ordering::AcqRel);
         Ok(())
+    }
+}
+
+pub(crate) fn install_transport_identity(storage: SecureStorage) -> MobileResult<()> {
+    let mut current = ROUTES
+        .identity_storage
+        .write()
+        .map_err(|_| route_error("runtimeLock"))?;
+    if current.is_none() {
+        *current = Some(storage);
+    }
+    Ok(())
+}
+
+fn route_transport_scope(route: &StationRouteCandidate) -> MobileResult<TransportIdentityScope> {
+    match route.route_type {
+        StationRouteType::Direct => Ok(TransportIdentityScope::DirectStation(
+            route.station_peer_id.clone(),
+        )),
+        StationRouteType::Relay => route
+            .relay_peer_id
+            .clone()
+            .map(TransportIdentityScope::Relay)
+            .ok_or_else(|| route_error("relayIdentityMissing")),
     }
 }
 
@@ -520,17 +676,19 @@ pub async fn station_route_restore(
     let station_peer_id = clean_identifier(&input.station_peer_id, "stationPeerId")?;
     let route_id = clean_identifier(&input.route_id, "routeId")?;
     let source = if input.source_ref.trim().is_empty() {
-        normalize_origin(&input.endpoint_origin)?
+        serde_json::to_string(&StoredRouteSource::External {
+            input: normalize_origin(&input.endpoint_origin)?,
+        })
+        .map_err(|_| route_error("routeSourceInvalid"))?
     } else {
         let source_ref = clean_source_ref(&input.source_ref)?;
         storage
             .get(&route_source_key(&source_ref))?
             .ok_or_else(|| route_error("routeSourceMissing"))?
     };
-    let discovery =
-        tauri::async_runtime::spawn_blocking(move || discover_station_input(&source, true))
-            .await
-            .map_err(|_| discovery_error("runtimeUnavailable"))??;
+    let discovery = tauri::async_runtime::spawn_blocking(move || discover_stored_source(&source))
+        .await
+        .map_err(|_| discovery_error("runtimeUnavailable"))??;
     let route = discovery
         .projection
         .routes
@@ -581,8 +739,7 @@ pub async fn station_route_refresh(
 ) -> MobileResult<StationRouteRefreshProjection> {
     tauri::async_runtime::spawn_blocking(move || {
         // Validate the requested selection after acquiring renewal ownership.
-        let refreshed =
-            ROUTES.renew_route_with(Some(&input), |source| discover_station_input(source, true))?;
+        let refreshed = ROUTES.renew_route_with(Some(&input), discover_stored_source)?;
         Ok(StationRouteRefreshProjection {
             binding: binding_projection(&refreshed, ROUTES.ensure_proxy()?),
             route: refreshed.candidate,
@@ -616,18 +773,291 @@ pub(crate) fn active_transport_origin(
 pub(crate) fn discover_public_material(
     material: &PublicEndpointConnectionMaterial,
 ) -> MobileResult<StationEndpointDiscovery> {
-    let expected = verify_public_connection_material(material, true, unix_ms() as i64)
-        .map_err(|_| discovery_error("publicMaterialInvalid"))?;
-    let source_input = encode_public_connection_material(material);
-    let parsed = ParsedInput {
-        origin: expected.canonical_discovery_origin.clone(),
-        connection_grant: None,
-        relay_peer_id: None,
-        expected: Some(expected),
-    };
-    let discovery = discover_parsed(parsed, source_input)?;
+    let parsed = parse_input(&encode_public_connection_material(material), true)?;
+    let discovery = discover_parsed(parsed)?;
     ROUTES.register(&discovery)?;
     Ok(discovery.projection)
+}
+
+/// Native Device Link admission uses the same source key, fresh discovery and
+/// route owner as normal Station selection. No material is projected to JS.
+pub(crate) fn device_link_connect(
+    storage: &SecureStorage,
+    candidates: &[device_link_core::proto::DeviceLinkConnectionCandidate],
+    expected_station: &str,
+    expected_root: &[u8],
+) -> MobileResult<StationRouteBindingProjection> {
+    connect_device_link(storage, candidates, expected_station, expected_root, false)
+}
+
+pub(crate) fn device_link_reconnect(
+    storage: &SecureStorage,
+    candidates: &[device_link_core::proto::DeviceLinkConnectionCandidate],
+    expected_station: &str,
+    expected_root: &[u8],
+) -> MobileResult<StationRouteBindingProjection> {
+    connect_device_link(storage, candidates, expected_station, expected_root, true)
+}
+
+fn connect_device_link(
+    storage: &SecureStorage,
+    candidates: &[device_link_core::proto::DeviceLinkConnectionCandidate],
+    expected_station: &str,
+    expected_root: &[u8],
+    recovering: bool,
+) -> MobileResult<StationRouteBindingProjection> {
+    use device_link_core::proto::device_link_connection_candidate::Material;
+    let observed = ROUTES.observe_selection()?;
+    if recovering && !device_link_owns_observation(&observed, expected_station, expected_root) {
+        return Err(route_error("routeChanged"));
+    }
+    let revision = observed
+        .1
+        .as_ref()
+        .map(|route| route.route_revision)
+        .unwrap_or_default()
+        .checked_add(1)
+        .ok_or_else(|| route_error("routeRevision"))?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    for circuit in [false, true] {
+        for candidate in candidates {
+            if std::time::Instant::now() >= deadline {
+                return Err(route_error("deviceLinkStationUnreachable"));
+            }
+            let input = match candidate.material.as_ref() {
+                Some(Material::Direct(material)) if !circuit => {
+                    encode_public_connection_material(material)
+                }
+                Some(Material::Circuit(envelope)) if circuit => {
+                    format!("ptc1:{}", URL_SAFE_NO_PAD.encode(envelope.encode_to_vec()))
+                }
+                _ => continue,
+            };
+            let budget = deadline
+                .saturating_duration_since(std::time::Instant::now())
+                .min(Duration::from_secs(5));
+            let discovery = match discover_parsed_with_budget(parse_input(&input, true)?, budget) {
+                Ok(discovery) => discovery,
+                Err(_) => continue,
+            };
+            if discovery.projection.routes.iter().any(|r| {
+                r.station_peer_id != expected_station || r.station_root_public_key != expected_root
+            }) {
+                return Err(identity_error("stationRootMismatch"));
+            }
+            for route in &discovery.projection.routes {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    return Err(route_error("deviceLinkStationUnreachable"));
+                }
+                let probe = ActiveRoute {
+                    candidate: route.clone(),
+                    route_revision: revision,
+                };
+                if probe_device_link_route(&probe, remaining.min(Duration::from_secs(5))).is_err() {
+                    continue;
+                }
+                storage.set(
+                    &route_source_key(&route.source_ref),
+                    &discovery.source_input,
+                )?;
+                if storage
+                    .get(&route_source_key(&route.source_ref))?
+                    .as_deref()
+                    != Some(discovery.source_input.as_str())
+                {
+                    return Err(route_error("routePersistenceFailed"));
+                }
+                return ROUTES.commit_discovery(&observed, &discovery, route, revision);
+            }
+        }
+    }
+    Err(route_error("deviceLinkStationUnreachable"))
+}
+
+pub(crate) fn device_link_source(bytes: &[u8]) -> MobileResult<(Vec<u8>, Vec<u8>)> {
+    let route = ROUTES.active_snapshot()?;
+    let scope = route_transport_scope(&route.candidate)?;
+    let proof = ROUTES
+        .standard_transport(&scope)?
+        .sign_identity_proof(bytes)
+        .map_err(|_| discovery_error("sourceProofUnavailable"))?;
+    Ok((proof.public_key, proof.signature))
+}
+
+pub(crate) fn device_link_route(
+    expected_station: &str,
+    expected_root: &[u8],
+) -> MobileResult<StationRouteCandidate> {
+    let active = ROUTES.active_snapshot()?;
+    if active.candidate.station_peer_id != expected_station
+        || active.candidate.station_root_public_key != expected_root
+    {
+        return Err(identity_error("stationRootMismatch"));
+    }
+    Ok(active.candidate)
+}
+
+/// The request carries an immutable route. A later global selection cannot
+/// forward this body to another Station through the shared loopback proxy.
+pub(crate) fn device_link_post(
+    binding: &StationRouteBindingProjection,
+    expected_root: &[u8],
+    operation: &str,
+    body: Vec<u8>,
+) -> MobileResult<StandardResponse> {
+    let route = ROUTES.active_snapshot()?;
+    if route.candidate.station_peer_id != binding.station_peer_id
+        || route.candidate.station_root_public_key != expected_root
+        || route.candidate.route_id != binding.route_id
+        || route.candidate.route_generation != binding.route_generation
+        || route.route_revision != binding.route_revision
+    {
+        return Err(route_error("routeChanged"));
+    }
+    ensure_route_current(&route.candidate)?;
+    let route_spec = standard_route(&route)?;
+    let transport = ROUTES.standard_transport(&route_transport_scope(&route.candidate)?)?;
+    let mut request = StandardRequest::new(
+        Method::POST,
+        format!("/auth/device-link/{operation}")
+            .parse()
+            .map_err(|_| route_error("requestInvalid"))?,
+    );
+    request.headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        HeaderValue::from_static(PROTOBUF_CONTENT_TYPE),
+    );
+    request.headers.insert(
+        reqwest::header::ACCEPT,
+        HeaderValue::from_static(PROTOBUF_CONTENT_TYPE),
+    );
+    request.timeout = Duration::from_secs(10);
+    request.admission_timeout = Duration::from_secs(1);
+    request.body = StandardRequestBody::Bytes(body);
+    transport
+        .round_trip(&route_spec, request)
+        .map_err(|_| route_error("standardRoundTrip"))
+}
+
+/// Restore only the persisted, installation-bound source. Fresh discovery must
+/// still prove the same Station root and selected route generation.
+pub(crate) fn device_link_restore(
+    storage: &SecureStorage,
+    previous: &StationRouteBindingProjection,
+    source_ref: &str,
+    expected_root: &[u8],
+) -> MobileResult<StationRouteBindingProjection> {
+    let observed = ROUTES.observe_selection()?;
+    if !device_link_owns_observation(&observed, &previous.station_peer_id, expected_root) {
+        return Err(route_error("routeChanged"));
+    }
+    if let Some(active) = observed.1.as_ref() {
+        if active.candidate.station_peer_id != previous.station_peer_id
+            || active.candidate.route_id != previous.route_id
+            || active.candidate.route_generation != previous.route_generation
+            || active.candidate.station_root_public_key != expected_root
+            || active.route_revision != previous.route_revision
+        {
+            return Err(route_error("routeChanged"));
+        }
+        if ensure_route_current(&active.candidate).is_ok() {
+            return Ok(binding_projection(active, ROUTES.ensure_proxy()?));
+        }
+    }
+    let source = storage
+        .get(&route_source_key(&clean_source_ref(source_ref)?))?
+        .ok_or_else(|| route_error("routeSourceMissing"))?;
+    let discovery = discover_stored_source(&source)?;
+    let candidate = discovery
+        .projection
+        .routes
+        .iter()
+        .find(|candidate| {
+            candidate.station_peer_id == previous.station_peer_id
+                && candidate.station_root_public_key == expected_root
+                && candidate.route_id == previous.route_id
+                && candidate.route_generation == previous.route_generation
+        })
+        .ok_or_else(|| route_error("routeGenerationRevoked"))?;
+    let probe = ActiveRoute {
+        candidate: candidate.clone(),
+        route_revision: previous.route_revision,
+    };
+    probe_device_link_route(&probe, Duration::from_secs(5))?;
+    ROUTES.commit_discovery(&observed, &discovery, candidate, previous.route_revision)
+}
+
+pub(crate) fn device_link_release(
+    previous: Option<&StationRouteBindingProjection>,
+    owned: &StationRouteBindingProjection,
+) -> MobileResult<()> {
+    release_device_link(&ROUTES, previous, owned)
+}
+
+fn release_device_link(
+    runtime: &RouteRuntime,
+    previous: Option<&StationRouteBindingProjection>,
+    owned: &StationRouteBindingProjection,
+) -> MobileResult<()> {
+    let restored = previous.and_then(|previous| {
+        runtime
+            .cached(&previous.station_peer_id, &previous.route_id)
+            .ok()
+            .map(|route| route.candidate)
+            .filter(|candidate| ensure_route_current(candidate).is_ok())
+    });
+    let mut active = runtime
+        .active
+        .write()
+        .map_err(|_| route_error("runtimeLock"))?;
+    let Some(current) = active.as_ref() else {
+        return Ok(());
+    };
+    if current.candidate.station_peer_id != owned.station_peer_id
+        || current.candidate.route_id != owned.route_id
+        || current.route_revision != owned.route_revision
+        || runtime.device_link_epoch.load(Ordering::Acquire)
+            != runtime.selection_epoch.load(Ordering::Acquire)
+    {
+        return Ok(());
+    }
+    let retired = current.clone();
+    *active = restored.map(|candidate| ActiveRoute {
+        candidate,
+        route_revision: retired.route_revision.saturating_add(1),
+    });
+    runtime.selection_epoch.fetch_add(1, Ordering::AcqRel);
+    runtime.device_link_epoch.store(0, Ordering::Release);
+    drop(active);
+    runtime.retire_standard_route(&retired)?;
+    Ok(())
+}
+
+pub(crate) fn sign_bootstrap_source(
+    scope: &TransportIdentityScope,
+    bytes: &[u8],
+) -> MobileResult<(Vec<u8>, Vec<u8>)> {
+    let proof = ROUTES
+        .standard_transport(scope)?
+        .sign_identity_proof(bytes)
+        .map_err(|_| discovery_error("sourceProofUnavailable"))?;
+    Ok((proof.public_key, proof.signature))
+}
+
+fn device_link_owns_observation(
+    observed: &(u64, Option<ActiveRoute>),
+    expected_station: &str,
+    expected_root: &[u8],
+) -> bool {
+    match observed.1.as_ref() {
+        None => observed.0 == 0,
+        Some(active) => {
+            ROUTES.device_link_epoch.load(Ordering::Acquire) == observed.0
+                && active.candidate.station_peer_id == expected_station
+                && active.candidate.station_root_public_key == expected_root
+        }
+    }
 }
 
 fn discover_station_input(
@@ -635,10 +1065,21 @@ fn discover_station_input(
     allow_public_material: bool,
 ) -> MobileResult<VerifiedDiscovery> {
     let parsed = parse_input(input, allow_public_material)?;
-    discover_parsed(parsed, input.trim().to_string())
+    discover_parsed(parsed)
 }
 
-fn discover_parsed(parsed: ParsedInput, source_input: String) -> MobileResult<VerifiedDiscovery> {
+fn discover_stored_source(source: &str) -> MobileResult<VerifiedDiscovery> {
+    discover_parsed(parse_stored_source_at(source, unix_ms() as i64)?)
+}
+
+fn discover_parsed(parsed: ParsedInput) -> MobileResult<VerifiedDiscovery> {
+    discover_parsed_with_budget(parsed, Duration::from_secs(10))
+}
+
+fn discover_parsed_with_budget(
+    parsed: ParsedInput,
+    budget: Duration,
+) -> MobileResult<VerifiedDiscovery> {
     let mut challenge = [0_u8; CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
     let source_proof = match (
@@ -659,7 +1100,7 @@ fn discover_parsed(parsed: ParsedInput, source_input: String) -> MobileResult<Ve
             signed.extend_from_slice(ACCESS_ENDPOINT_SOURCE_PROOF_DOMAIN);
             signed.extend_from_slice(&statement_bytes);
             let proof = ROUTES
-                .standard_transport()?
+                .standard_transport(&TransportIdentityScope::Relay(relay_peer_id.to_string()))?
                 .sign_identity_proof(&signed)
                 .map_err(|_| discovery_error("sourceProofUnavailable"))?;
             Some(AccessEndpointSourceProof {
@@ -679,7 +1120,7 @@ fn discover_parsed(parsed: ParsedInput, source_input: String) -> MobileResult<Ve
     };
     let endpoint = format!("{}{}", parsed.origin, ACCESS_PATH);
     let mut client = Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(budget)
         .redirect(reqwest::redirect::Policy::none());
     if let Some(expected) = parsed.expected.as_ref() {
         if let Some(config) = endpoint_tls_client_config(&expected.tls_trust)
@@ -718,6 +1159,8 @@ fn discover_parsed(parsed: ParsedInput, source_input: String) -> MobileResult<Ve
         unix_ms() as i64,
         parsed.expected.as_ref(),
     )?;
+    let source_input =
+        serde_json::to_string(&parsed.source).map_err(|_| route_error("routeSourceInvalid"))?;
     Ok(VerifiedDiscovery {
         projection,
         source_input,
@@ -989,47 +1432,44 @@ struct ParsedInput {
     connection_grant: Option<Vec<u8>>,
     relay_peer_id: Option<String>,
     expected: Option<VerifiedPublicEndpointConnectionMaterial>,
+    source: StoredRouteSource,
 }
 
 fn parse_input(input: &str, allow_public_material: bool) -> MobileResult<ParsedInput> {
-    let value = input.trim();
-    if let Some(encoded) = value.strip_prefix(PUBLIC_CONNECTION_MATERIAL_PREFIX) {
-        if !allow_public_material {
-            return Err(discovery_error("publicMaterialSourceForbidden"));
+    parse_input_at(input, allow_public_material, unix_ms() as i64)
+}
+
+fn parse_input_at(
+    input: &str,
+    allow_public_material: bool,
+    now_unix_ms: i64,
+) -> MobileResult<ParsedInput> {
+    let source = StoredRouteSource::External {
+        input: input.trim().to_string(),
+    };
+    let link =
+        schema_core::parse(input).map_err(|_| discovery_error("connectionMaterialInvalid"))?;
+    if let SchemaLink::Action(action) = &link {
+        if let Some(SchemaAction::PublicConnection(material)) = &action.action {
+            if !allow_public_material {
+                return Err(discovery_error("publicMaterialSourceForbidden"));
+            }
+            let expected = verify_public_connection_material(material, true, now_unix_ms)
+                .map_err(|_| discovery_error("publicMaterialInvalid"))?;
+            return Ok(ParsedInput {
+                origin: expected.canonical_discovery_origin.clone(),
+                connection_grant: None,
+                relay_peer_id: None,
+                expected: Some(expected),
+                source: StoredRouteSource::AdmittedPublic {
+                    input: encode_public_connection_material(material),
+                    admitted_at_unix_ms: now_unix_ms,
+                },
+            });
         }
-        let raw = URL_SAFE_NO_PAD
-            .decode(encoded)
-            .map_err(|_| discovery_error("publicMaterialInvalid"))?;
-        let material = PublicEndpointConnectionMaterial::decode(raw.as_slice())
-            .map_err(|_| discovery_error("publicMaterialInvalid"))?;
-        if material.encode_to_vec() != raw {
-            return Err(discovery_error("publicMaterialInvalid"));
-        }
-        let expected = verify_public_connection_material(&material, true, unix_ms() as i64)
-            .map_err(|_| discovery_error("publicMaterialInvalid"))?;
-        return Ok(ParsedInput {
-            origin: expected.canonical_discovery_origin.clone(),
-            connection_grant: None,
-            relay_peer_id: None,
-            expected: Some(expected),
-        });
-    }
-    let encoded = value
-        .strip_prefix("ptc1:")
-        .or_else(|| value.strip_prefix("peers-touch://connect#"));
-    if let Some(encoded) = encoded {
-        let raw = URL_SAFE_NO_PAD
-            .decode(encoded)
-            .map_err(|_| discovery_error("connectionMaterialInvalid"))?;
-        let envelope = StationConnectionEnvelope::decode(raw.as_slice())
-            .map_err(|_| discovery_error("connectionMaterialInvalid"))?;
-        if envelope.protocol_version != ACCESS_PROTOCOL_VERSION
-            || envelope.relay_origin.trim().is_empty()
-            || envelope.connection_grant.is_none()
-            || envelope.route_attestation.is_none()
-        {
-            return Err(discovery_error("connectionMaterialIncomplete"));
-        }
+        let Some(SchemaAction::CircuitConnection(envelope)) = &action.action else {
+            return Err(discovery_error("connectionMaterialInvalid"));
+        };
         let grant = envelope
             .connection_grant
             .as_ref()
@@ -1045,14 +1485,43 @@ fn parse_input(input: &str, allow_public_material: bool) -> MobileResult<ParsedI
             connection_grant: Some(grant.encode_to_vec()),
             relay_peer_id: Some(grant_statement.relay_peer_id),
             expected: None,
+            source,
         });
     }
+    let SchemaLink::WebUrl(value) = link else {
+        return Err(discovery_error("connectionMaterialInvalid"));
+    };
     Ok(ParsedInput {
-        origin: normalize_origin(value)?,
+        origin: normalize_origin(&value)?,
         connection_grant: None,
         relay_peer_id: None,
         expected: None,
+        source,
     })
+}
+
+fn parse_stored_source_at(source: &str, now_unix_ms: i64) -> MobileResult<ParsedInput> {
+    let source: StoredRouteSource =
+        serde_json::from_str(source).map_err(|_| route_error("routeSourceInvalid"))?;
+    match source {
+        StoredRouteSource::External { input } => parse_input_at(&input, false, now_unix_ms),
+        StoredRouteSource::AdmittedPublic {
+            input,
+            admitted_at_unix_ms,
+        } => {
+            if admitted_at_unix_ms <= 0 || admitted_at_unix_ms > now_unix_ms {
+                return Err(route_error("routeSourceInvalid"));
+            }
+            // This time comes only from the native secure admission record.
+            // Rechecking the unchanged material at that time validates its
+            // pins, not a current grant. Discovery verifies current authority.
+            let parsed = parse_input_at(&input, true, admitted_at_unix_ms)?;
+            if parsed.expected.is_none() {
+                return Err(route_error("routeSourceInvalid"));
+            }
+            Ok(parsed)
+        }
+    }
 }
 
 fn encode_public_connection_material(material: &PublicEndpointConnectionMaterial) -> String {
@@ -1126,7 +1595,7 @@ fn binding_projection(
 }
 
 fn fetch_station_identity() -> MobileResult<VerifiedStationIdentity> {
-    let route = ROUTES.renew_route_with(None, |source| discover_station_input(source, true))?;
+    let route = ROUTES.renew_route_with(None, discover_stored_source)?;
     let mut challenge = [0_u8; CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
     let request = StationIdentityRequest {
@@ -1154,7 +1623,58 @@ fn fetch_station_identity() -> MobileResult<VerifiedStationIdentity> {
             .as_ref(),
     )
     .map_err(|_| identity_error("responseInvalid"))?;
-    verify_station_identity_response(&route, &challenge, proof, unix_ms() as i64)
+    let verified = verify_station_identity_response(&route, &challenge, proof, unix_ms() as i64)?;
+    ROUTES.assert_current(&route)?;
+    Ok(verified)
+}
+
+fn probe_device_link_route(
+    route: &ActiveRoute,
+    budget: Duration,
+) -> MobileResult<VerifiedStationIdentity> {
+    let mut challenge = [0_u8; CHALLENGE_SIZE];
+    rand::thread_rng().fill_bytes(&mut challenge);
+    let mut request = StandardRequest::new(
+        Method::POST,
+        IDENTITY_PATH
+            .parse()
+            .map_err(|_| route_error("requestInvalid"))?,
+    );
+    request.headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        HeaderValue::from_static(PROTOBUF_CONTENT_TYPE),
+    );
+    request.headers.insert(
+        reqwest::header::ACCEPT,
+        HeaderValue::from_static(PROTOBUF_CONTENT_TYPE),
+    );
+    request.timeout = budget;
+    request.admission_timeout = budget.min(Duration::from_secs(1));
+    request.body = StandardRequestBody::Bytes(
+        StationIdentityRequest {
+            challenge: challenge.to_vec(),
+        }
+        .encode_to_vec(),
+    );
+    let transport = ROUTES.standard_transport(&route_transport_scope(&route.candidate)?)?;
+    let response = transport
+        .round_trip(&standard_route(route)?, request)
+        .map_err(|_| identity_error("endpointUnavailable"))?;
+    if !response.status.is_success() {
+        return Err(identity_error("endpointRejected"));
+    }
+    let mut bytes = Vec::new();
+    response
+        .body
+        .take(MAX_DISCOVERY_RESPONSE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| identity_error("responseUnreadable"))?;
+    if bytes.len() > MAX_DISCOVERY_RESPONSE_BYTES {
+        return Err(identity_error("responseInvalid"));
+    }
+    let proof = StationIdentityResponse::decode(bytes.as_slice())
+        .map_err(|_| identity_error("responseInvalid"))?;
+    verify_station_identity_response(route, &challenge, proof, unix_ms() as i64)
 }
 
 fn verify_station_identity_response(
@@ -1201,7 +1721,6 @@ fn verify_station_identity_response(
     {
         return Err(identity_error("canonicalOriginMismatch"));
     }
-    ROUTES.assert_current(route)?;
     Ok(VerifiedStationIdentity {
         station_peer_id,
         node_peer_id,
@@ -1235,7 +1754,7 @@ fn proxy_stage<T>(stage: &'static str, result: MobileResult<T>) -> MobileResult<
 fn serve_proxy_connection(mut connection: TcpStream) -> MobileResult<()> {
     let route = proxy_stage(
         "renewal",
-        ROUTES.renew_route_with(None, |source| discover_station_input(source, true)),
+        ROUTES.renew_route_with(None, discover_stored_source),
     )?;
     let timeout = Duration::from_secs(305);
     proxy_stage(
@@ -1301,7 +1820,7 @@ fn standard_route(route: &ActiveRoute) -> MobileResult<StandardRoute> {
 
 fn open_standard_response(route: &ActiveRoute, request: &[u8]) -> MobileResult<StandardResponse> {
     let route_spec = standard_route(route)?;
-    let transport = ROUTES.standard_transport()?;
+    let transport = ROUTES.standard_transport(&route_transport_scope(&route.candidate)?)?;
     let parsed = parse_proxy_request(request)?;
     let mut standard_request = StandardRequest::new(
         parsed.method,
@@ -1555,6 +2074,106 @@ mod tests {
     use super::*;
 
     #[test]
+    fn device_link_release_preserves_explicit_same_binding_reselection() {
+        let runtime = RouteRuntime::default();
+        let (_, source) = expired_route_runtime();
+        let mut candidate = source.candidate;
+        candidate.attestation_expires_at_unix_ms = Some(unix_ms() as i64 + 120_000);
+        let discovery = route_discovery(candidate.clone());
+        let observed = runtime.observe_selection().unwrap();
+        let owned = runtime
+            .commit_discovery(&observed, &discovery, &candidate, 1)
+            .unwrap();
+        runtime
+            .activate(&candidate.station_peer_id, &candidate.route_id, 1)
+            .unwrap();
+        let selected = runtime.active_snapshot().unwrap();
+        release_device_link(&runtime, None, &owned).unwrap();
+        assert_eq!(runtime.active_snapshot().unwrap(), selected);
+    }
+
+    #[test]
+    fn device_link_release_clears_only_still_owned_binding() {
+        let runtime = RouteRuntime::default();
+        let (_, source) = expired_route_runtime();
+        let mut candidate = source.candidate;
+        candidate.attestation_expires_at_unix_ms = Some(unix_ms() as i64 + 120_000);
+        let discovery = route_discovery(candidate.clone());
+        let observed = runtime.observe_selection().unwrap();
+        let owned = runtime
+            .commit_discovery(&observed, &discovery, &candidate, 1)
+            .unwrap();
+        release_device_link(&runtime, None, &owned).unwrap();
+        assert!(runtime.active_snapshot().is_err());
+        assert_eq!(runtime.device_link_epoch.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn device_link_restore_fences_removal_during_cold_discovery() {
+        let runtime = RouteRuntime::default();
+        let (_, source) = expired_route_runtime();
+        let mut candidate = source.candidate;
+        candidate.attestation_expires_at_unix_ms = Some(unix_ms() as i64 + 120_000);
+        let discovery = route_discovery(candidate.clone());
+        let observed = runtime.observe_selection().unwrap();
+        runtime
+            .remove(&candidate.station_peer_id, &candidate.route_id)
+            .unwrap();
+        assert!(runtime
+            .commit_discovery(&observed, &discovery, &candidate, 1)
+            .unwrap_err()
+            .message
+            .ends_with(":routeChanged"));
+        assert!(runtime.active_snapshot().is_err());
+    }
+
+    #[test]
+    fn device_link_restore_fences_same_route_aba_selection() {
+        let runtime = RouteRuntime::default();
+        let (_, source) = expired_route_runtime();
+        let mut candidate = source.candidate;
+        candidate.attestation_expires_at_unix_ms = Some(unix_ms() as i64 + 120_000);
+        let discovery = route_discovery(candidate.clone());
+        runtime.register(&discovery).unwrap();
+        runtime
+            .activate(&candidate.station_peer_id, &candidate.route_id, 1)
+            .unwrap();
+        let observed = runtime.observe_selection().unwrap();
+        runtime
+            .remove(&candidate.station_peer_id, &candidate.route_id)
+            .unwrap();
+        runtime.register(&discovery).unwrap();
+        runtime
+            .activate(&candidate.station_peer_id, &candidate.route_id, 1)
+            .unwrap();
+        assert!(runtime
+            .commit_discovery(&observed, &discovery, &candidate, 1)
+            .unwrap_err()
+            .message
+            .ends_with(":routeChanged"));
+        assert_eq!(runtime.active_snapshot().unwrap(), observed.1.unwrap());
+    }
+
+    #[test]
+    fn device_link_restore_rejects_newer_cached_authority() {
+        let runtime = RouteRuntime::default();
+        let (_, source) = expired_route_runtime();
+        let mut candidate = source.candidate;
+        candidate.attestation_expires_at_unix_ms = Some(unix_ms() as i64 + 120_000);
+        let discovery = route_discovery(candidate.clone());
+        let observed = runtime.observe_selection().unwrap();
+        let mut newer = candidate.clone();
+        newer.authorization_epoch += 1;
+        runtime.register(&route_discovery(newer)).unwrap();
+        assert!(runtime
+            .commit_discovery(&observed, &discovery, &candidate, 1)
+            .unwrap_err()
+            .message
+            .ends_with(":routeGenerationRevoked"));
+        assert!(runtime.active_snapshot().is_err());
+    }
+
+    #[test]
     fn discovery_uses_station_protobuf_media_type() {
         assert_eq!(PROTOBUF_CONTENT_TYPE, "application/protobuf");
     }
@@ -1612,6 +2231,236 @@ mod tests {
         assert_eq!(parsed.origin, "https://relay.example:443");
         assert!(parsed.connection_grant.is_some());
         assert_eq!(parsed.relay_peer_id.as_deref(), Some("relay-peer"));
+    }
+
+    #[test]
+    fn public_material_route_survives_transfer_expiry() {
+        let now = unix_ms() as i64;
+        let admitted_at = now - 120_000;
+        let root = libp2p_identity::Keypair::generate_ed25519();
+        let node = libp2p_identity::Keypair::generate_ed25519();
+        let material = PublicEndpointConnectionMaterial {
+            schema_version: 1,
+            canonical_discovery_origin: "https://station.example:443".into(),
+            expected_endpoint_role: station_trust::proto::AccessEndpointRole::DirectStation as i32,
+            expected_endpoint_identity: root.public().to_peer_id().to_string(),
+            expected_station_root_public_key: root.public().encode_protobuf(),
+            endpoint_tls_trust: Some(station_trust::proto::EndpointTlsTrust {
+                trust: Some(
+                    station_trust::proto::endpoint_tls_trust::Trust::LeafSpkiSha256(vec![7; 32]),
+                ),
+            }),
+            issued_at_unix_ms: admitted_at,
+            expires_at_unix_ms: admitted_at + 60_000,
+            ..Default::default()
+        };
+        verify_public_connection_material(&material, true, admitted_at).unwrap();
+        let input = encode_public_connection_material(&material);
+        assert!(
+            parse_input(&input, true).is_err(),
+            "expired new import accepted"
+        );
+        let parsed = parse_input_at(&input, true, admitted_at).unwrap();
+        let stored = serde_json::to_string(&parsed.source).unwrap();
+        assert!(
+            parse_input_at(&stored, true, now).is_err(),
+            "private record imported"
+        );
+        let challenge = [4; CHALLENGE_SIZE];
+        let initial = verify_discovery_response(
+            &parsed.origin,
+            None,
+            &challenge,
+            signed_direct_discovery(&root, &node, &challenge, admitted_at),
+            admitted_at,
+            parsed.expected.as_ref(),
+        )
+        .unwrap();
+        let original = ActiveRoute {
+            candidate: initial.routes[0].clone(),
+            route_revision: 7,
+        };
+        let runtime = RouteRuntime::default();
+        runtime
+            .register(&VerifiedDiscovery {
+                projection: initial,
+                source_input: stored.clone(),
+            })
+            .unwrap();
+        *runtime.active.write().unwrap() = Some(original.clone());
+        let renewed = runtime
+            .renew_route_with(None, |source| {
+                let parsed = parse_stored_source_at(source, now)?;
+                let expected = parsed.expected.as_ref().unwrap();
+                assert_eq!(
+                    expected.station_root_public_key,
+                    Some(material.expected_station_root_public_key.clone())
+                );
+                assert_eq!(
+                    expected.tls_trust,
+                    station_trust::VerifiedEndpointTlsTrust::LeafSpkiSha256([7; 32])
+                );
+                assert_eq!(expected.expires_at_unix_ms, material.expires_at_unix_ms);
+                assert!(endpoint_tls_client_config(&expected.tls_trust)
+                    .unwrap()
+                    .is_some());
+                let projection = verify_discovery_response(
+                    &parsed.origin,
+                    None,
+                    &challenge,
+                    signed_direct_discovery(&root, &node, &challenge, now),
+                    now,
+                    Some(expected),
+                )?;
+                Ok(VerifiedDiscovery {
+                    projection,
+                    source_input: source.to_string(),
+                })
+            })
+            .expect("admitted discovery source must survive transfer expiry");
+        assert_eq!(renewed.route_revision, original.route_revision);
+        assert_eq!(
+            renewed.candidate.attestation_expires_at_unix_ms,
+            Some(now + 60_000)
+        );
+        assert_eq!(
+            renewed.candidate.station_peer_id,
+            original.candidate.station_peer_id
+        );
+        assert_eq!(
+            runtime
+                .cached(
+                    &renewed.candidate.station_peer_id,
+                    &renewed.candidate.route_id
+                )
+                .unwrap()
+                .source_input,
+            stored
+        );
+        for mutation in 0..8 {
+            let mut altered = material.clone();
+            let mut admission = admitted_at;
+            match mutation {
+                0 => altered.expected_station_root_public_key = node.public().encode_protobuf(),
+                1 => {
+                    altered.endpoint_tls_trust.as_mut().unwrap().trust = Some(
+                        station_trust::proto::endpoint_tls_trust::Trust::LeafSpkiSha256(vec![
+                            7;
+                            31
+                        ]),
+                    );
+                }
+                2 => admission = material.expires_at_unix_ms,
+                3 => admission = now + 1,
+                4 => admission = 0,
+                5 => altered.schema_version = 0,
+                6 => altered.canonical_discovery_origin = "http://station.example".into(),
+                _ => {
+                    altered.expected_endpoint_role =
+                        station_trust::proto::AccessEndpointRole::Relay as i32
+                }
+            }
+            let record = StoredRouteSource::AdmittedPublic {
+                input: encode_public_connection_material(&altered),
+                admitted_at_unix_ms: admission,
+            };
+            assert!(
+                parse_stored_source_at(&serde_json::to_string(&record).unwrap(), now).is_err(),
+                "invalid admission accepted: {mutation}"
+            );
+        }
+        for response in [
+            signed_direct_discovery(&node, &root, &challenge, now),
+            signed_direct_discovery(&root, &node, &[8; CHALLENGE_SIZE], now),
+            signed_direct_discovery(&root, &node, &challenge, admitted_at),
+        ] {
+            let parsed = parse_stored_source_at(&stored, now).unwrap();
+            assert!(verify_discovery_response(
+                &parsed.origin,
+                None,
+                &challenge,
+                response,
+                now,
+                parsed.expected.as_ref()
+            )
+            .is_err());
+        }
+    }
+
+    fn signed_direct_discovery(
+        root: &libp2p_identity::Keypair,
+        node: &libp2p_identity::Keypair,
+        challenge: &[u8],
+        now: i64,
+    ) -> AccessEndpointResponse {
+        let sign = |key: &libp2p_identity::Keypair, domain: &[u8], bytes: &[u8]| {
+            key.sign(&[domain, bytes].concat()).unwrap()
+        };
+        let capabilities = vec![1; 32];
+        let statement = peer_proto::StationNodeAuthorizationStatement {
+            station_peer_id: root.public().to_peer_id().to_string(),
+            node_peer_id: node.public().to_peer_id().to_string(),
+            node_public_key: node.public().encode_protobuf(),
+            authorization_epoch: 2,
+            capabilities_digest: capabilities.clone(),
+            issued_at_unix_ms: now,
+            expires_at_unix_ms: now + 3_600_000,
+        }
+        .encode_to_vec();
+        let authorization = peer_proto::StationNodeAuthorization {
+            root_signature: sign(
+                root,
+                b"peers-touch/station-node-authorization/v1\0",
+                &statement,
+            ),
+            statement_bytes: statement,
+            station_root_public_key: root.public().encode_protobuf(),
+        };
+        let digest = Sha256::digest(authorization.encode_to_vec()).to_vec();
+        let route_statement = StationRouteStatement {
+            station_peer_id: root.public().to_peer_id().to_string(),
+            node_peer_id: node.public().to_peer_id().to_string(),
+            route_id: "direct-route".into(),
+            route_generation: 2,
+            inner_tls_spki_sha256: vec![3; 32],
+            capabilities_digest: capabilities,
+            visibility: peer_proto::StationRouteVisibility::Public as i32,
+            issued_at_unix_ms: now,
+            expires_at_unix_ms: now + 60_000,
+            node_authorization_digest: digest.clone(),
+            kind: StationRouteKind::Direct as i32,
+            addresses: vec![format!(
+                "/dns4/station.example/tcp/4001/p2p/{}",
+                node.public().to_peer_id()
+            )],
+            ..Default::default()
+        }
+        .encode_to_vec();
+        let endpoint_statement = peer_proto::AccessEndpointStatement {
+            challenge: challenge.to_vec(),
+            endpoint_peer_id: node.public().to_peer_id().to_string(),
+            endpoint_role: AccessEndpointRole::DirectStation as i32,
+            canonical_origin: "https://station.example:443".into(),
+            protocol_versions: vec![ACCESS_PROTOCOL_VERSION],
+            node_authorization_digest: digest,
+            issued_at_unix_ms: now,
+            expires_at_unix_ms: now + 60_000,
+            ..Default::default()
+        }
+        .encode_to_vec();
+        AccessEndpointResponse {
+            endpoint_signature: sign(node, ACCESS_ENDPOINT_DOMAIN, &endpoint_statement),
+            endpoint_statement_bytes: endpoint_statement,
+            endpoint_public_key: node.public().encode_protobuf(),
+            node_authorization: Some(authorization.clone()),
+            station_routes: vec![StationRouteAttestation {
+                node_signature: sign(node, b"peers-touch/station-route/v1\0", &route_statement),
+                statement_bytes: route_statement,
+                node_authorization: Some(authorization),
+            }],
+            outcome: AccessEndpointOutcome::Ready as i32,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -1675,7 +2524,12 @@ mod tests {
         let (runtime, original) = expired_route_runtime();
         let refreshed = runtime
             .renew_route_with(None, |source| {
-                assert_eq!(source, "https://station.example");
+                assert_eq!(
+                    parse_stored_source_at(source, unix_ms() as i64)
+                        .unwrap()
+                        .origin,
+                    "https://station.example:443"
+                );
                 let mut candidate = original.candidate.clone();
                 candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
                 candidate.attestation_bytes = Some(vec![8]);
@@ -1884,7 +2738,10 @@ mod tests {
                 canonical_origin: candidate.endpoint_origin.clone(),
                 routes: vec![candidate],
             },
-            source_input: "https://station.example".to_string(),
+            source_input: serde_json::to_string(&StoredRouteSource::External {
+                input: "https://station.example".to_string(),
+            })
+            .unwrap(),
         }
     }
 
@@ -1993,7 +2850,7 @@ mod tests {
     #[test]
     fn direct_and_circuit_share_one_standard_data_plane() {
         let production = include_str!("station_route.rs")
-            .split("#[cfg(test)]")
+            .split("\n#[cfg(test)]\nmod tests")
             .next()
             .expect("production route source");
 

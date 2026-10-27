@@ -16,7 +16,7 @@
 4. Relay 不是账号、Session、Federation 或业务 authority。
 5. Desktop/Mobile 共享 capability、协议、状态、错误和 scope 结果。
 6. Federation governance 与普通客户端 context consumption 分离。
-7. Session 并发槽由 canonical client class 决定，不由安装实例决定。
+7. Session 并发槽由 Station、Actor 与安装实例决定；客户端类别只用于分类和策略。
 8. Relay wire、enrollment、role 和 resource limits 只由
    [Node Connectivity](../../runtime/node-connectivity/README.md) 定义。
 9. Relay service host 只使用 Node Connectivity `NCP-D11` 定义的 Linux/POSIX
@@ -60,7 +60,7 @@ DBStore 和 Station-scoped keyring。此处不重新定义签名或传输协议�
 | Access decision | Station Access Gate | current attempt/gate/decision |
 | Actor identity | Station Actor + `ActorRef` | current account/session |
 | Device identity | canonical device registration | current device scope |
-| Session class slot | Station Actor Session | `desktop`, `mobile`, or `web` |
+| Session device slot | Station Actor Session | Station + Actor + device ID |
 | Federation topology | Federation app + Ledger | none |
 | Federation context | Station Federation projection | selected context |
 | Relay control/data plane | Node Connectivity | route kind and bounded diagnosis only |
@@ -179,7 +179,7 @@ Session, Messaging, Federation context, cache and projections use the same
 tuple. Asynchronous results compare the tuple again before commit. A route
 revision is transport state and does not change the tuple.
 
-## 8. Client-Class Session Slot
+## 8. Device Session Slot
 
 Canonical classes:
 
@@ -189,10 +189,10 @@ mobile
 web
 ```
 
-For one actor and class, Station permits one active Session. New same-class
-activation atomically revokes the previous winner as `kicked`; other classes
-remain active. `device_id` identifies an installation and binds downstream
-runtime state but does not create a new concurrency class.
+Station permits one active Session per logical Station, Actor and installation.
+New same-device activation atomically revokes that device's previous session as
+`kicked`; other installations remain active, including multiple Mobile clients.
+`device_id` is shared with Messaging and lifecycle. Class does not define a slot.
 
 Password Access Gate, OAuth acknowledgement and session takeover share this
 authority. Non-canonical runtime labels fail before credential activation.
@@ -226,7 +226,8 @@ contract violations.
 | Federation context absent | block scoped action; do not guess a default |
 | stale lifecycle result | discard before projection commit |
 | non-canonical client class | reject before Session activation |
-| same-class new Session | atomically revoke old same-class Session |
+| same-device new Session | atomically revoke only that device's old Session |
+| missing Station/device binding | require authentication; never infer from IP or User-Agent |
 
 ## 11. Evidence Requirements
 

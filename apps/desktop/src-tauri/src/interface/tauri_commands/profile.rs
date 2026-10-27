@@ -6,6 +6,7 @@
 
 use crate::application::profile as application_profile;
 use crate::application::session_resolver;
+use crate::application::station_runtime::client::UploadProgressSink;
 use crate::contracts::{
     AccountSyncAvatarInput, AvatarResolveLocalInput, FileUploadInput, PeerProfileGetInput,
     ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
@@ -13,7 +14,23 @@ use crate::contracts::{
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
 use std::sync::Arc;
-use tauri::{Manager, State, Window};
+use tauri::{Emitter, Manager, State, Window};
+
+/// Emitted while a profile image upload drains to the Station.
+/// Payload: `{ "field": "avatar" | "header", "sent": u64, "total": u64 }`.
+/// Mirrored by the `PROFILE_IMAGE_UPLOAD_PROGRESS_EVENT` constant in the
+/// desktop settings UI; values are real multipart bytes, not estimates.
+pub const PROFILE_IMAGE_UPLOAD_PROGRESS_EVENT: &str = "profile-image-upload-progress";
+
+fn profile_image_progress_sink(app: &tauri::AppHandle, field: &'static str) -> UploadProgressSink {
+    let app = app.clone();
+    Arc::new(move |sent, total| {
+        let _ = app.emit(
+            PROFILE_IMAGE_UPLOAD_PROGRESS_EVENT,
+            serde_json::json!({ "field": field, "sent": sent, "total": total }),
+        );
+    })
+}
 
 fn require_token(state: &Arc<AppState>, window: &Window) -> Result<String, AppResult<StubPayload>> {
     let token = session_resolver::token_for_window(state, window).unwrap_or_default();
@@ -120,8 +137,9 @@ pub async fn profile_upload_avatar_oss(
         Err(e) => return e,
     };
     let resources = state.station.resources().clone();
+    let progress = profile_image_progress_sink(&app, "avatar");
     tokio::task::spawn_blocking(move || {
-        application_profile::profile_upload_avatar_oss(&resources, input, &token)
+        application_profile::profile_upload_avatar_oss(&resources, input, &token, Some(progress))
     })
     .await
     .unwrap_or_else(|e| {
@@ -146,8 +164,9 @@ pub async fn profile_upload_header_oss(
         Err(e) => return e,
     };
     let resources = state.station.resources().clone();
+    let progress = profile_image_progress_sink(&app, "header");
     tokio::task::spawn_blocking(move || {
-        application_profile::profile_upload_header_oss(&resources, input, &token)
+        application_profile::profile_upload_header_oss(&resources, input, &token, Some(progress))
     })
     .await
     .unwrap_or_else(|e| {

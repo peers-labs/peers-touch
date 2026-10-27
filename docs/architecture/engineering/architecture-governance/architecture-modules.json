@@ -43,9 +43,79 @@
     "docs/architecture/domains/federation",
     "docs/architecture/shared/i18n",
     "docs/architecture/domains/notification",
-    "docs/architecture/shared/security/secure-content"
+    "docs/architecture/shared/security/secure-content",
+    "docs/architecture/domains/identity/mobile-scan-login",
+    "docs/architecture/shared/schema"
   ],
   "modules": [
+    {
+      "id": "mobile-scan-login",
+      "root": "docs/architecture/domains/identity/mobile-scan-login",
+      "status": "active",
+      "owner": "Identity and Access",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md", "design.md", "decisions.md", "data-model.md",
+        "module-layout.md", "integration.md"
+      ],
+      "decisionIds": [
+        "MSL-D01", "MSL-D02", "MSL-D03", "MSL-D04",
+        "MSL-D05", "MSL-D06", "MSL-D07"
+      ],
+      "governedPaths": [
+        "model/domain/auth/device_link.proto",
+        "apps/station/app/subserver/device_link",
+        "apps/desktop/src-tauri/src/application/device_link",
+        "apps/mobile/src-tauri/src/runtime/device_link",
+        "packages/device-link-core",
+        "docs/architecture/domains/identity/mobile-scan-login"
+      ],
+      "capabilities": [
+        {
+          "id": "identity.device-link.authorize",
+          "owner": "identity.device-link",
+          "contractRoots": [
+            "model/domain/auth/device_link.proto",
+            "packages/device-link-core"
+          ],
+          "consumers": [
+            "apps/station/app/main.go",
+            "packages/device-link-core/src",
+            "apps/desktop/src-tauri/src/application/device_link",
+            "apps/mobile/src-tauri/src/runtime/device_link"
+          ],
+          "allowedDependencies": [
+            "shared-schema", "node-connectivity", "station.access",
+            "actor.session", "actor.identity"
+          ],
+          "evidenceGates": [
+            "MSL-A01", "MSL-A02", "MSL-A03", "MSL-A04", "MSL-A05",
+            "MSL-A06", "MSL-A07", "MSL-A08", "MSL-A09"
+          ]
+        },
+        {
+          "id": "client.device-link.portable-core",
+          "owner": "identity.device-link",
+          "contractRoots": ["packages/device-link-core/Cargo.toml"],
+          "consumers": [
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
+          ],
+          "allowedDependencies": ["shared.schema", "station.access", "model.domain.auth"],
+          "evidenceGates": ["MSL-A01", "MSL-A02", "MSL-A03", "MSL-A07"],
+          "reuseLayer": "portable-rust-core"
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
     {
       "id": "search",
       "root": "docs/architecture/domains/search",
@@ -760,6 +830,7 @@
       "governedPaths": [
         "apps/station/frame/core/federation",
         "apps/station/frame/core/plugin/native/relay",
+        "apps/station/frame/core/plugin/native/bootstrapblob",
         "apps/station/frame/core/plugin/native/subserver/relay",
         "apps/station/frame/core/plugin/native/transport",
         "apps/station/frame/core/plugin/native/registry",
@@ -769,9 +840,34 @@
         "apps/desktop/src-tauri/src/infrastructure/station",
         "apps/mobile/src-tauri/src/runtime/station_route.rs",
         "docs/architecture/platform/runtime/node-connectivity",
-        "packages/station-libp2p-http"
+        "packages/station-libp2p-http",
+        "packages/station-trust/src",
+        "packages/station-trust/build.rs"
       ],
       "capabilities": [
+        {
+          "id": "station.connectivity.bootstrap",
+          "owner": "node.connectivity",
+          "contractRoots": [
+            "apps/station/frame/core/plugin/native/bootstrapblob",
+            "packages/station-trust/src/bootstrap.rs"
+          ],
+          "consumers": [
+            "apps/station/frame/core/plugin/native/subserver/bootstrap",
+            "apps/station/frame/core/plugin/native/subserver/relay",
+            "apps/station/frame/core/plugin/native/relay/bootstrap_blob.go"
+          ],
+          "allowedDependencies": [
+            "model.domain.peer",
+            "station.node-authorization",
+            "relay.control.enrollment"
+          ],
+          "evidenceGates": [
+            "station-api-ownership",
+            "relay-role-security-contract"
+          ],
+          "reuseLayer": "portable-rust-core"
+        },
         {
           "id": "relay.control.enrollment",
           "owner": "node.connectivity",
@@ -1459,6 +1555,63 @@
             "CCR-G09"
           ],
           "reuseLayer": "portable-rust-core"
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
+      "id": "shared-schema",
+      "root": "docs/architecture/shared/schema",
+      "status": "active",
+      "owner": "Shared Client Interaction",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": false,
+        "persistence": false,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": ["SCH-D01", "SCH-D02", "SCH-D03", "SCH-D04"],
+      "governedPaths": [
+        "model/domain/schema",
+        "packages/schema-core",
+        "packages/schema",
+        "docs/architecture/shared/schema"
+      ],
+      "capabilities": [
+        {
+          "id": "client.schema.link",
+          "owner": "shared.schema",
+          "contractRoots": ["model/domain/schema", "packages/schema-core"],
+          "consumers": [
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
+          ],
+          "allowedDependencies": ["model.domain", "station-trust"],
+          "evidenceGates": ["schema-link-vectors", "MSL-A07"],
+          "reuseLayer": "portable-rust-core"
+        },
+        {
+          "id": "client.schema.qr",
+          "owner": "shared.schema",
+          "contractRoots": ["packages/schema"],
+          "consumers": [
+            "apps/desktop/package.json",
+            "apps/mobile/package.json"
+          ],
+          "allowedDependencies": ["model.domain", "qrcode-generator", "react"],
+          "evidenceGates": ["schema-independent-decoder", "schema-browser-renderer", "MSL-A07"],
+          "reuseLayer": "shared-ts-core"
         }
       ],
       "externalCapabilityRegistries": []

@@ -5,6 +5,7 @@ fn main() {
     let protos = [
         proto_root.join("domain/peer/station_identity.proto"),
         proto_root.join("domain/peer/access_endpoint.proto"),
+        proto_root.join("domain/peer/bootstrap_blob.proto"),
     ];
     for proto in &protos {
         println!("cargo:rerun-if-changed={}", proto.display());

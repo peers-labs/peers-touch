@@ -148,13 +148,15 @@ func TestPostgresCrossProcessSharedAccess(t *testing.T) {
 	}
 
 	web := session.SessionRecord{
-		SessionID:    "web-preserved",
-		UserID:       sharedAccessActorID,
-		Email:        "alice@example.test",
-		DeviceType:   session.DeviceTypeWeb,
-		CreatedAt:    time.Now().UTC(),
-		ExpiresAt:    time.Now().UTC().Add(time.Hour),
-		LastActiveAt: time.Now().UTC(),
+		SessionID:     "web-preserved",
+		UserID:        sharedAccessActorID,
+		Email:         "alice@example.test",
+		DeviceType:    session.DeviceTypeWeb,
+		StationPeerID: sharedAccessStationPeerID,
+		DeviceID:      "web-installation",
+		CreatedAt:     time.Now().UTC(),
+		ExpiresAt:     time.Now().UTC().Add(time.Hour),
+		LastActiveAt:  time.Now().UTC(),
 	}
 	if err := database.Create(&web).Error; err != nil {
 		t.Fatal(err)
@@ -319,7 +321,7 @@ func TestSharedAccessProcessHelper(t *testing.T) {
 		if _, err := sessionStore.RevokeByUserAndDevice(
 			context.Background(),
 			sharedAccessActorID,
-			session.DeviceTypeDesktop,
+			session.DeviceBinding{StationPeerID: sharedAccessStationPeerID, DeviceID: sharedAccessDeviceID},
 			"remote_logout",
 		); err != nil {
 			t.Fatal(err)
@@ -664,7 +666,7 @@ func runSharedAccessActivationHelper(t *testing.T, database *gorm.DB) {
 			LastSeen:  now,
 			Data: map[string]any{
 				"station_peer_id":      sharedAccessStationPeerID,
-				"device_id":            sessionID,
+				"device_id":            sharedAccessDeviceID,
 				"lifecycle_generation": sharedAccessGeneration,
 				"auth_method":          "ncp-concurrent",
 			},

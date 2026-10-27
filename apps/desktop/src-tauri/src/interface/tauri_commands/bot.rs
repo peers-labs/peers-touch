@@ -284,6 +284,7 @@ pub async fn bot_upload_avatar(
             "avatar",
             "public",
             None,
+            None,
         ) {
             Ok(v) => v,
             Err(e) => return e.into_app_result("Failed to upload bot avatar"),

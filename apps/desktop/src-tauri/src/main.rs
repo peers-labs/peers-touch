@@ -788,7 +788,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(interface::tauri_commands::device_link::with_admission(tauri::generate_handler![
             #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
             acceptance_yield_activation,
             #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
@@ -1249,6 +1249,8 @@ fn main() {
             realtime::realtime_signal_send,
             key_exchange::key_exchange_upload_bundle,
             key_exchange::key_exchange_fetch_bundle,
+            interface::tauri_commands::device_link::device_link_status,
+            interface::tauri_commands::device_link::device_link_decide,
             crypto::crypto_ratchet_telemetry_snapshot,
             crypto::signaling_envelope_seal,
             crypto::signaling_envelope_open,
@@ -1372,7 +1374,7 @@ fn main() {
             conversation::device_revoke,
             conversation::dkx_send,
             application::error_resolver::resolve_error_action
-        ])
+        ]))
         .build(context)
         .expect("error while building tauri application");
     #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]

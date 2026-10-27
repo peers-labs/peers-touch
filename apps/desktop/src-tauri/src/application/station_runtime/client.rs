@@ -11,7 +11,7 @@ use std::fmt;
 use std::io::{Cursor, Read};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -106,6 +106,14 @@ pub enum ReplayPolicy {
     Idempotent(String),
     Never,
 }
+
+/// Real byte-transfer progress callback `(bytes sent, total bytes)`.
+///
+/// Fired from the streaming upload reader as the transport drains the
+/// request body, so the UI reflects genuine network progress instead of a
+/// timer. The sink must be cheap and non-blocking (it runs on the sender
+/// thread); `ProgressReader` throttles how often it is invoked.
+pub type UploadProgressSink = Arc<dyn Fn(u64, u64) + Send + Sync>;
 
 pub enum StationRequestBody {
     Empty,
@@ -839,6 +847,22 @@ impl StationClient {
         })
     }
 
+    pub fn request_peers_proto_no_body_at_station<Payload: Message + Default>(
+        &self,
+        station_peer_id: &str,
+        method: Method,
+        path: &str,
+        token: &str,
+    ) -> Result<Payload, StationClientError> {
+        let response = self.execute_wire_for_station(
+            station_peer_id, method, path, None, Some(token), None,
+            Some("application/protobuf"), "application/protobuf",
+            StationRequestBody::Empty, StationTransportPolicy::Interactive,
+            TrafficClass::Interactive, None,
+        )?;
+        decode_peers_envelope(&response.body)
+    }
+
     pub fn request_peers_proto_no_body_for_device<Payload>(
         &self,
         method: Method,
@@ -1134,9 +1158,15 @@ impl StationClient {
         bucket: &str,
         visibility: &str,
         chat_session_id: Option<&str>,
+        progress: Option<UploadProgressSink>,
     ) -> Result<Value, StationClientError> {
         let multipart = MultipartBody::open(file_path, bucket, visibility, chat_session_id)?;
         let content_type = format!("multipart/form-data; boundary={}", multipart.boundary);
+        let content_length = multipart.content_length;
+        let reader: Box<dyn Read + Send> = match progress {
+            Some(sink) => Box::new(ProgressReader::new(multipart.reader, content_length, sink)),
+            None => multipart.reader,
+        };
         let response = self.execute_wire(
             Method::POST,
             path,
@@ -1146,8 +1176,8 @@ impl StationClient {
             Some(&content_type),
             "application/json",
             StationRequestBody::Reader {
-                reader: multipart.reader,
-                content_length: multipart.content_length,
+                reader,
+                content_length,
             },
             StationTransportPolicy::TurnExecution,
             TrafficClass::Bulk,
@@ -1822,6 +1852,68 @@ impl MultipartBody {
     }
 }
 
+/// Wraps a streaming upload body and reports real drained-byte progress.
+///
+/// Notifications are throttled to at least a 2-percent step or 200 ms gap so
+/// large uploads do not flood the UI event channel; EOF always emits a final
+/// `(total, total)` sample.
+struct ProgressReader<R: Read> {
+    inner: R,
+    total: u64,
+    sent: u64,
+    last_percent: Option<u8>,
+    last_flush: Instant,
+    sink: UploadProgressSink,
+    finished: bool,
+}
+
+impl<R: Read> ProgressReader<R> {
+    fn new(inner: R, total: u64, sink: UploadProgressSink) -> Self {
+        Self {
+            inner,
+            total,
+            sent: 0,
+            last_percent: None,
+            last_flush: Instant::now(),
+            sink,
+            finished: false,
+        }
+    }
+
+    fn flush(&mut self, force: bool) {
+        if self.total == 0 {
+            return;
+        }
+        let percent = ((self.sent.saturating_mul(100)) / self.total).min(100) as u8;
+        let stepped = self
+            .last_percent
+            .map(|previous| percent.saturating_sub(previous) >= 2)
+            .unwrap_or(true);
+        let due = self.last_flush.elapsed() >= Duration::from_millis(200);
+        let reached_end = percent == 100 && self.last_percent != Some(100);
+        if force || (percent != self.last_percent.unwrap_or(255) && (stepped || due)) || reached_end
+        {
+            (self.sink)(self.sent.min(self.total), self.total);
+            self.last_percent = Some(percent);
+            self.last_flush = Instant::now();
+        }
+    }
+}
+
+impl<R: Read> Read for ProgressReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buffer)?;
+        if read > 0 {
+            self.sent = self.sent.saturating_add(read as u64);
+            self.flush(false);
+        } else if !self.finished {
+            self.finished = true;
+            self.flush(true);
+        }
+        Ok(read)
+    }
+}
+
 #[derive(Clone, PartialEq, prost::Message)]
 struct StationErrorBody {
     #[prost(int32, tag = "1")]
@@ -1913,6 +2005,35 @@ mod tests {
             cancellation.is_cancelled(),
             "shared read did not cancel its transport"
         );
+    }
+
+    #[test]
+    fn progress_reader_reports_real_bytes_and_final_total() {
+        use std::sync::Mutex;
+        let data = vec![7u8; 1000];
+        let samples = Arc::new(Mutex::new(Vec::<(u64, u64)>::new()));
+        let sink_samples = samples.clone();
+        let sink: UploadProgressSink =
+            Arc::new(move |sent, total| sink_samples.lock().unwrap().push((sent, total)));
+        let mut reader = ProgressReader::new(Cursor::new(data), 1000, sink);
+        let mut collected = Vec::new();
+        let mut chunk = [0u8; 64];
+        loop {
+            let read = reader.read(&mut chunk).unwrap();
+            if read == 0 {
+                break;
+            }
+            collected.extend_from_slice(&chunk[..read]);
+        }
+        assert_eq!(collected.len(), 1000);
+        let recorded = samples.lock().unwrap();
+        assert_eq!(*recorded.last().unwrap(), (1000, 1000));
+        let mut previous = 0;
+        for (sent, total) in recorded.iter().copied() {
+            assert_eq!(total, 1000);
+            assert!(sent >= previous && sent <= 1000);
+            previous = sent;
+        }
     }
 
     struct CancelledReadBody(CancellationToken);

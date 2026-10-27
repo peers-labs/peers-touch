@@ -281,6 +281,7 @@ pub fn upload_attachment_with_mime(
         } else {
             None
         },
+        None,
     ) {
         Ok(v) => v,
         Err(e) => {

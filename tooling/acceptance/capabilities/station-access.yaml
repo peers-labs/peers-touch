@@ -118,14 +118,14 @@
         "truth_sources": [
           "Desktop identity lifecycle and Device Messaging Engine",
           "MobileLifecycleKernel and Mobile Messaging runtime",
-          "Station canonical client-class Session slots",
+          "Station and Actor installation-scoped Session bindings",
           "Station-bound native runtime manifests"
         ],
         "surfaces": [
           "Desktop authenticated shell across process restart",
           "Mobile authenticated shell across WebView restart",
           "Desktop and Mobile runtime scope projections",
-          "same-actor Desktop and Mobile coexistence with same-class takeover"
+          "same-actor multiple Desktop and Mobile installation coexistence"
         ],
         "proven_by": [
           "station-access-scope-isolation-e2e",
@@ -135,8 +135,8 @@
           "Station, Actor, and Device scope remain aligned after native restart",
           "isolated clients do not expose another actor or Station projection",
           "lifecycle generation fences stale Mobile results",
-          "Desktop and Mobile Sessions for one actor coexist through canonical client-class slots",
-          "a newer same-class Session revokes only its predecessor while the cross-class Session remains usable"
+          "multiple Desktop and Mobile installations for one actor coexist with independent Sessions",
+          "a newer Session replaces only the same Station, actor and device binding"
         ],
         "unproven_scope": [
           "Cross-Station Federation context is proven by the SAL-02 boundary Gate"
@@ -477,7 +477,7 @@
         "proven_scope": [
           "Access start on node A and OAuth acknowledgement on node B preserve one Session identity",
           "cross-node JWT issue and validation use the same persisted key ID",
-          "same-class activation has one winner while another class remains active",
+          "same-device activation has one winner while other devices remain active",
           "remote Session revocation is enforced on the other node",
           "keyring or schema revision mismatch fails initialization"
         ],

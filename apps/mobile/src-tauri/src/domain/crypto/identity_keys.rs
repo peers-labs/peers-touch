@@ -51,6 +51,39 @@ pub(crate) fn replace_identity_seed(
     Ok(previous)
 }
 
+pub(crate) fn existing_identity(
+    storage: &SecureStorage,
+    user_scope: &str,
+    actor_ptid: &str,
+) -> MobileResult<Option<IdentityKeyPair>> {
+    storage.get(&identity_key(user_scope, actor_ptid))?
+        .map(|stored| identity_from_seed_b64(&stored)).transpose()
+}
+
+/// Import only if absent or identical; cancellation never replaces an account's
+/// established E2EE identity.
+pub(crate) fn import_linked_identity(
+    storage: &SecureStorage,
+    user_scope: &str,
+    actor_ptid: &str,
+    seed: &[u8; 32],
+) -> MobileResult<()> {
+    if let Some(existing) = existing_identity(storage, user_scope, actor_ptid)? {
+        if existing.signing_key.to_bytes() != *seed {
+            return Err(MobileError::crypto("deviceLink.identityConflict"));
+        }
+        return Ok(());
+    }
+    let encoded = Zeroizing::new(B64.encode(seed));
+    storage.set(&identity_key(user_scope, actor_ptid), &encoded)?;
+    let recovered = existing_identity(storage, user_scope, actor_ptid)?
+        .ok_or_else(|| MobileError::crypto("deviceLink.identityPersistenceFailed"))?;
+    if recovered.signing_key.to_bytes() != *seed {
+        return Err(MobileError::crypto("deviceLink.identityPersistenceFailed"));
+    }
+    Ok(())
+}
+
 pub(crate) fn restore_identity_seed(
     storage: &SecureStorage,
     user_scope: &str,

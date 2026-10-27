@@ -1,4 +1,5 @@
 {
+  "channels.schema.qrUnavailable": "当前空间无法显示可扫描的码，请扩大窗口或打开授权链接。",
   "channels.title": "频道",
   "channels.subtitle": "连接到消息平台，以真实机器人身份运行。用户可以通过 Telegram、飞书或 Slack 与你的 AI 助手对话。",
   "channels.action.refresh": "刷新",

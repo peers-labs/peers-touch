@@ -96,10 +96,6 @@ class _FakeRuntime:
     ) -> SimpleNamespace:
         del window_slot, window_count
         self.started.append(client_id)
-        if client_id == "desktop-bob-peer":
-            self.desktop_revoked = True
-        if client_id == "sim-ios-peer":
-            self.mobile_revoked = True
         return self.identities[client_id]
 
     def actor_runtime(self, client_id: str) -> ActorRuntime:
@@ -466,18 +462,35 @@ class StationAccessSessionClassSuiteGateTest(unittest.TestCase):
             [
                 "desktop-alice",
                 "desktop-bob",
-                "sim-ios",
                 "desktop-bob-peer",
+                "sim-ios",
                 "sim-ios-peer",
             ],
         )
-        self.assertEqual(runtime.marked_desktop_revoked, ["desktop-bob"])
+        self.assertEqual(runtime.marked_desktop_revoked, [])
+        first_scenario = next(
+            index for index, event in enumerate(report["events"])
+            if event["action"] == "scenario-start"
+        )
+        self.assertEqual(
+            sum(
+                event["action"] == "client-launch"
+                for event in report["events"][:first_scenario]
+            ),
+            5,
+        )
+        self.assertFalse(any(
+            event["action"] in {"client-launch", "client-replacement", "login"}
+            for event in report["events"][first_scenario:]
+        ))
         self.assertEqual(
             gate.mobile_receiver_scenarios,
             [
                 "same-station-chat",
                 "cross-class-coexistence",
-                "desktop-takeover",
+                "desktop-device-coexistence",
+                "mobile-device-coexistence-sim-ios",
+                "mobile-device-coexistence-sim-ios-peer",
             ],
         )
 

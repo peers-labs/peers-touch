@@ -282,7 +282,7 @@ impl OAuthCoordinator {
     }
 }
 
-fn validated_submit_request(
+pub(super) fn validated_submit_request(
     input: NativeAccessSubmitInput,
     scope: &ValidatedScope,
     identity: &super::PersistedIdentity,

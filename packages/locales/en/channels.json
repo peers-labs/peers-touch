@@ -1,4 +1,5 @@
 {
+  "channels.schema.qrUnavailable": "This code cannot fit here. Widen the window or open the authorization link.",
   "channels.title": "Channels",
   "channels.subtitle": "Connect to messaging platforms as a real bot. Users can chat with your AI agent via Telegram, Lark, or Slack.",
   "channels.action.refresh": "Refresh",
