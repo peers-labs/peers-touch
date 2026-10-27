@@ -4540,22 +4540,6 @@ func conversationReferencesKey(database *gorm.DB, key string) (bool, error) {
 			return true, nil
 		}
 	}
-	if database.Migrator().HasTable("touch_attachment") {
-		var cids []string
-		if err := database.Table("touch_attachment").Pluck("cid", &cids).Error; err != nil {
-			return false, resetError(
-				ResetCodePartialFailure,
-				"inspect legacy Conversation attachment references: %v",
-				err,
-			)
-		}
-		for _, cid := range cids {
-			resolved, err := extractOssKey(cid)
-			if err == nil && resolved == key {
-				return true, nil
-			}
-		}
-	}
 
 	return false, nil
 }

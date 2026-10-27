@@ -105,7 +105,6 @@ fn compile_protos() {
         "domain/manage/health.proto",
         "domain/applet/applet.proto",
         "domain/launcher/launcher.proto",
-        "domain/message/conversation.proto",
         "domain/activity/activity.proto",
         "domain/secure_content/content.proto",
         "domain/secure_content/prekey.proto",

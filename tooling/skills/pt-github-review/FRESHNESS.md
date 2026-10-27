@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-27
-covered_docs_hash: 424e5b8e2b5a136c3dab75d9cd9718ed73d7ffa875a1b4f9eb149e8fb211e17c
+covered_docs_hash: 9206dcb66e7f3b1323bd9ab308d23bd8fdc89812a0301b728bb40b182ab8fb49
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,16 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Merged Worktree Retirement Skill Review
+
+The only covered-doc change is one new row in the `AGENTS.md` Skill table for
+`pt-merged-worktree-retirement`, which governs post-merge worktree
+verification, delegated cache cleanup, non-rebase squash alignment, machine-dev
+rebinding, and separately authorized remote branch deletion. It changes no
+review severity, fixture, or acceptance rule; cache ownership stays with
+`pt-debug-space-clean` and PR lifecycle with the `pt-github-*` skills. No new
+fixture or knowledge entry is required.
 
 ## Current Source Review
 

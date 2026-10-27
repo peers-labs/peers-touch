@@ -35,11 +35,12 @@ detected: 2026-07-06
 
 所有账号密码均为 `1`，PIN 均为 `111111`。
 
-| Account | Email | Display Name | Avatar | 角色定位 | 默认互为好友 |
-|---------|-------|--------------|--------|---------|-------------|
-| **alice** | `alice@p.t` | Alice ${LABEL} | Coral | 主测试用户 / 发起方 | ✅ |
-| **bob** | `bob@p.t` | Bob ${LABEL} | Teal | 对端用户 / 接收方 | ✅ |
-| **carol** | `carol@p.t` | Carol ${LABEL} | Violet | 第三方 / 跨站联邦用户 | ✅ |
+| Account | Email | Display Name | Avatar | 角色定位 | 好友关系 |
+|---------|-------|--------------|--------|---------|---------|
+| **alice** | `alice@p.t` | Alice ${LABEL} | Coral | 主测试用户 / 发起方 | bob、carol |
+| **bob** | `bob@p.t` | Bob ${LABEL} | Teal | 对端用户 / 接收方 / mixed 群 owner | alice、carol、dave |
+| **carol** | `carol@p.t` | Carol ${LABEL} | Violet | 第三方 / 跨站联邦用户 | alice、bob、dave |
+| **dave** | `dave@p.t` | Dave ${LABEL} | Blue | 陌生人场景：bob/carol 的好友，但**不是 alice 的好友** | bob、carol |
 
 > `${LABEL}` 展开为 `PEERS_NODE_LABEL` 环境变量（如 "One"、"Two"），方便区分多站同名用户。
 >
@@ -50,12 +51,16 @@ detected: 2026-07-06
 采用密码学经典命名（Alice & Bob convention）：
 
 - **Alice** — 通讯发起方
-- **Bob** — 通讯接收方
+- **Bob** — 通讯接收方、含陌生人的 mixed 群 owner
 - **Carol** — 第三方参与者
+- **Dave** — 部分连接者：与 bob/carol 是好友，与 alice 互为陌生人，用于“群里有陌生人”场景
 
 ### 2.3 自动好友关系
 
-Station 启动时，前 3 个 preset user（alice、bob、carol）会自动互相加为好友。
+Station 启动时幂等建立两批双向好友（`follows` 表）：
+
+- alice ↔ bob、alice ↔ carol、bob ↔ carol（三人全连接）
+- bob ↔ dave、carol ↔ dave（dave 只接入 bob/carol，**不与 alice 建立好友关系**）
 
 实现：`frame/touch/actor/seed_dev_friends.go` → 在 `follows` 表中幂等插入双向
 social graph 边，使 unified Conversation 的 relationship gate 认可该好友关系。
@@ -64,23 +69,37 @@ social graph 边，使 unified Conversation 的 relationship gate 认可该好�
 陌生人、权限隔离、压力与安全测试必须使用 disposable Station 数据，
 不得向共享开发 Station 持续注册临时 actor。
 
-### 2.4 多站联邦测试矩阵
+### 2.4 dev 群拓扑（计划中，尚未自动 seed）
+
+预设的两个 dev 群场景如下，统一通过当前 Conversation 权威子服务器
+（`apps/station/app/subserver/conversation`）的建群命令创建，不允许直接写库：
+
+| 名称 | Owner | 成员 | 拓扑含义 |
+|---|---|---|---|
+| Friends | alice | alice、bob、carol | 全员互为好友 |
+| Mixed | bob | bob、alice、dave | dave 是 bob 的好友、对 alice 是陌生人；由 bob 拉入 |
+
+建群命令要求每个成员 actor 已有活跃注册设备（endpoint），而 preset 用户在首次
+登录前没有设备，因此群组不能在 Station 启动 seed 阶段创建。当前需要成员先登录、
+再由 owner 走真实建群流程；自动化 seed（设备就绪后引导或独立 dev 命令）待定。
+
+### 2.5 多站联邦测试矩阵
 
 | Station | Profile | 账号 | 联邦身份示例 |
 |---------|---------|------|-------------|
-| Station One (TEST-NET) | `one` | alice, bob, carol | `@alice@192.0.2.10:18080` |
-| Station Two (TEST-NET) | `two` | alice, bob, carol | `@alice@192.0.2.20:18080` |
-| Station Three (local) | `three` | alice, bob, carol | `@alice@localhost:18080` |
+| Station One (TEST-NET) | `one` | alice, bob, carol, dave | `@alice@192.0.2.10:18080` |
+| Station Two (TEST-NET) | `two` | alice, bob, carol, dave | `@alice@192.0.2.20:18080` |
+| Station Three (local) | `three` | alice, bob, carol, dave | `@alice@localhost:18080` |
 
 **跨站好友** 不自动 seed（需要完整的 Send Request → Accept 流程）。典型跨站测试对：
 
 - `alice@station-one` ↔ `carol@station-two`（发起方↔第三方，跨站互搜/加好友/聊天）
 - `bob@station-one` ↔ `bob@station-two`（同名不同站，验证联邦 handle 唯一性）
 
-### 2.5 快速登录指南
+### 2.6 快速登录指南
 
 ```
-Email:    alice@p.t  (或 bob@p.t / carol@p.t)
+Email:    alice@p.t  (或 bob@p.t / carol@p.t / dave@p.t)
 Password: 1
 PIN:      111111
 ```
