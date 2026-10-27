@@ -134,6 +134,25 @@ func (h *TurnHandlers) HandlePullClientCapabilityRequests(
 	return response, nil
 }
 
+func (h *TurnHandlers) HandleDeclareClientResourceGrants(
+	ctx context.Context,
+	request *model.DeclareClientResourceGrantsRequest,
+) (*model.DeclareClientResourceGrantsResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	deviceID := serverwrapper.GetDeviceID(ctx)
+	if deviceID == "" {
+		return nil, server.NewHandlerError(http.StatusBadRequest, "X-Device-ID is required")
+	}
+	response, err := h.turnService.DeclareClientResourceGrants(ctx, subject.ID, deviceID, request)
+	if err != nil {
+		return nil, toolHandlerError(err)
+	}
+	return response, nil
+}
+
 func (h *TurnHandlers) HandleSubmitClientCapabilityReceipt(
 	ctx context.Context,
 	request *model.SubmitClientCapabilityReceiptRequest,

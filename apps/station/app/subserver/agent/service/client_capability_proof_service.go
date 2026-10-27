@@ -321,6 +321,13 @@ func canonicalCapabilityCommandRequest(
 			typed.GetDeviceId(),
 			"",
 			nil
+	case *model.DeclareClientResourceGrantsRequest:
+		typed.CommandProof = nil
+		return typed,
+			model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_DECLARED_RESOURCE_GRANTS,
+			typed.GetDeviceId(),
+			"",
+			nil
 	case *model.SubmitClientCapabilityReceiptRequest:
 		typed.CommandProof = nil
 		if typed.GetReceipt() == nil {

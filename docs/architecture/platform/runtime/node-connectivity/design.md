@@ -168,7 +168,7 @@ request builders cannot create listeners, threads or network runtimes.
 `AppState` separately owns the actor realtime supervisors, including their
 cancel tokens and join handles, and drains them before `StationRuntime`.
 
-Desktop persists transport keys through the platform secure-store adapter, but
+Desktop and Mobile persist transport keys through their platform secure-store adapters, but
 keys are scoped to a verified transport endpoint rather than shared across all
 Relays. Direct routes use logical Station scope. Relay routes use Relay PeerID
 scope; first contact derives a provisional scope from the normalized discovery
@@ -178,6 +178,11 @@ Private connection material already carries the Relay identity required to
 select the scope before grant redemption. Actor, Session and logical Station
 keys are never reused. Normal restart retains the scoped key; unrelated Relay
 operators cannot correlate one installation through a global PeerID.
+`packages/station-trust/src/transport_identity.rs` owns the canonical scope
+derivation. Desktop and Mobile keep private seeds in their own secure stores.
+Mobile installs the store at native startup and selects the same Relay scope
+for bootstrap source proof, grant redemption and Circuit traffic; a missing or
+corrupt store fails closed instead of replacing a running transport identity.
 
 Desktop business callers submit typed requests directly to a Direct or Circuit
 adapter. There is no loopback Desktop HTTP proxy, raw HTTP/1 parser or
@@ -252,6 +257,17 @@ to the affected destination using public Host network APIs. This may interrupt
 all circuits to that node and is acceptable for revocation, not renewal.
 
 ## 7. Bounds, Liveness And Shutdown
+
+The narrow sealed-bootstrap extension authorized by
+[MSL-D04](../../../domains/identity/mobile-scan-login/decisions.md#msl-d04短引用必须能在私有station连接之前取回)
+belongs to this control plane. `bootstrapblob` hosts only opaque network
+material, without Actor, approval or Session APIs. Its canonical bounds,
+source proof and generation fencing are defined in
+[the data model](./data-model.md#opaque-bootstrap-reference). Client adapters
+authenticate the fixed retrieval endpoint before sending a locator, verify the
+Node signature and expected root, then decrypt and redeem the separate grant.
+No unsealing key enters an HTTP request. Current source checks establish these
+owner contracts; native retrieval and private-route login still require proof.
 
 Circuit connection budgets are finite and apply to the whole multiplexed
 connection, not an HTTP request. Initial evaluation policy is 60 minutes and

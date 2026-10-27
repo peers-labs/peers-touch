@@ -2,13 +2,14 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-26
-covered_docs_hash: e9cb9f685b0f22e8eddce5d26e2d2a038277e657436b880d2bd177eff55e9895
+last_verified_at: 2026-10-27
+covered_docs_hash: 6a1d528c274e550f2f3fc4c6c35f4ce3a69fb53015a9c7828e6f0daf90c75456
 
 covered_docs:
   - AGENTS.md
   - docs/README.md
   - docs/global/code-review-framework.md
+  - docs/architecture/engineering/experience-design
   - docs/architecture/engineering/quality
   - docs/architecture/engineering/acceptance
   - docs/architecture/engineering/development-workflow
@@ -31,7 +32,78 @@ covered_docs:
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
+## 2026-10-27 Review Pipeline Hardening
+
+The review pipeline gained four review-system safeguards. `run.sh` now runs the
+client social-wire and runtime-boundary checks (plus their deterministic
+contract test) on every review instead of relying on per-app checks, and runs a
+knip-backed dead-code report as a strictly non-blocking advisory that SKIPs
+when the toolchain is absent; CI provisions the pinned knip fixture without a
+full workspace install. The retired identifier scan moved from a hard-coded
+shell branch to a validated registry (`retired-refs.json` rendered by
+`retired-refs.mjs`) with per-entry path/content scopes and ignore allowlists.
+The code-structure decision contract now requires an explicit `finding` or
+`accepted-advisory` disposition for every current advisory signal; decisions
+recorded under the older contract are stale and must be re-recorded.
+
+No covered upstream document changed, so the `covered_docs_hash` is unchanged.
+`SKILL.md` was updated because its hard-rule and structure-decision policy
+changed directly; the existing registry fixture and the decision unit tests
+own executable coverage, so no new generic fixture or knowledge entry is
+required.
+
+## 2026-10-27 Desktop Upload Modal / Device Link Merge Review
+
+The cross-branch merge brings instant image upload preview, the stable
+device-link modal, and same-account mobile scan login onto the attachment
+line, adding the `@peers-touch/schema` workspace package, the
+`schema-core`/`device-link-core` portable crates, the `device_link` Station
+subserver, and the `mobile-scan-login`/`shared-schema` architecture modules.
+Covered-doc changes are limited to the doc index, local-dev environment
+doc, Mobile client base, and the knowledge index; they change no review
+severity, fixture, or hard-rule set. One real cross-branch defect hidden by
+auto-merge was fixed during integration (a new background upload caller
+passed the pre-refactor argument count to the progress-sink
+`upload_multipart` signature), plus merge-only hygiene fixes the incoming
+branch did not carry (hard-rule line layout in two mobile unit tests and
+new crates absent from root `.gitignore`). `SKILL.md` needs no new rule; the
+existing source-bound, no-mock, clean-tree, and boundary checks already
+cover the integration. This refresh rebinds the hash to the merged
+covered-doc set.
+
+## 2026-10-27 Agent Usability Depth Merge Review
+
+The cross-branch merge brings the Agent usability depth delivery onto the
+attachment-viewing line. Its covered-doc delta is the new experience-design
+engineering layer (`docs/architecture/engineering/experience-design`),
+registered as an active architecture module, plus doc-index updates. The
+review semantics for comparative experience review and the data-model
+contract already live in that layer; `SKILL.md` needs no new severity or
+rule for this repository-only merge. Mechanical conflicts were resolved from
+source intent (locales as disjoint key union, Cargo.lock re-resolved through
+`cargo fetch`, Tauri command imports matched to the merged module set after
+the cron/tts wrapper deletions). This refresh rebinds the hash to the merged
+covered-doc set.
+
+## Merged Worktree Retirement Skill Review
+
+The only covered-doc change is one new row in the `AGENTS.md` Skill table for
+`pt-merged-worktree-retirement`, which governs post-merge worktree
+verification, delegated cache cleanup, non-rebase squash alignment, machine-dev
+rebinding, and separately authorized remote branch deletion. It changes no
+review severity, fixture, or acceptance rule; cache ownership stays with
+`pt-debug-space-clean` and PR lifecycle with the `pt-github-*` skills. No new
+fixture or knowledge entry is required.
+
 ## Current Source Review
+
+The covered-source delta since the prior refresh is the native adapter section
+of Acceptance integration: direct process-owned AX observations, shared bounded
+read recovery, checked one-shot actions, normal AppKit window tiers and
+source-owned Quick Look pixels. Existing source, lifecycle, ownership and
+native-evidence rules cover these refinements. The native driver supplies real
+AppKit responsiveness regressions and the integration playbook; no review
+severity change, waiver, new Skill rule or generic fixture is needed.
 
 The attachment-viewing changes add no covered upstream rules. The merged
 master source already contains the attach-only Mobile runtime evidence,
@@ -117,6 +189,62 @@ must not restate decisions or describe persisted state that the code only
 derives. `SKILL.md` was updated with this checklist; the large-requirement
 documentation playbook carries the authoring-side steps, so no separate
 fixture is required for the documentation-consistency judgment.
+
+Current Experience admission validates package references and current source at
+the final boundary. Graph recovery requires an executable route and state
+ordering is total. Immutable historical holdout integrity is separate from
+current reevaluation and reciprocal promotion binding. Prototype/Quality
+consumers and negative regression fixtures cover these refinements; GitHub
+Review keeps its existing stale-proof and independent-judgment requirements.
+
+## 2026-10-22 Comparative Experience Review Integration
+
+Experience Design now includes one comparative subsystem: a frozen Outcome
+Oracle, two identity-neutral and independently reviewed Journey observations,
+deterministic paired differentials, a blind semantic review, sealed identity
+reveal, independent Peers disposition and proposal-only Target Contract
+projection.
+
+`pt-product-design-methodology`, `pt-prototype-design` and `pt-quality-check`
+consume the canonical compare CLI. Positive, negative and boundary calibration
+plus source tests cover stale bindings, author overlap, graph closure,
+deterministic priority, causal overclaim and unauthorized projection.
+Framework incremental value remains `UNPROVEN` until a separate Quality-owned
+sealed blind A/B.
+
+GitHub Review already rejects stale evidence, overlapping authors, missing
+proof and self-approved product claims. Its `SKILL.md` and generic hard-rule
+fixtures do not need CER schema or ranking copies; review should consume the
+Quality evidence projection and preserve the same claim boundary.
+
+## 2026-10-20 Experience Identity Contract Review
+
+Experience Cases and independent review receipts now use stable workflow
+principal IDs, exact canonical digest binding and reviewer non-overlap. The
+control plane no longer owns Ed25519 signatures, a trusted issuer registry or a
+user-managed key path. Content-addressed holdouts retain immutable
+case/result/review chains.
+
+This makes ordinary Agent injection executable without weakening current-input
+or independent-review checks. `pt-product-design-methodology`,
+`pt-prototype-design` and `pt-quality-check` were updated to consume the new
+identity contract. GitHub Review already rejects stale, overlapping and
+unproven evidence, so its `SKILL.md` and generic fixtures require no semantic
+change. Closed-schema tests explicitly reject the removed attestation shape.
+
+## 2026-10-20 Experience Design Control Plane Integration Review
+
+The canonical Experience Design Control Plane now includes Product-to-Wireflow
+contracts, UI Grammar, deterministic evaluation, exact evidence matching,
+independent review receipts and the subordinate source-fenced Reasoning Kernel.
+Quality owns blind packages, exposure, scoring and retirement; the Kernel owns
+Journey, trust, recovery and deterministic primary selection inside the
+control-plane boundary.
+
+`pt-product-design-methodology`, `pt-prototype-design` and `pt-quality-check`
+consume the canonical CLI. GitHub Review continues to own final merge judgment
+and already treats missing, stale or unproven evidence as a hold, so its
+`SKILL.md` does not copy the Experience schema or ranking policy.
 
 ## Mobile Origin Contract Review
 
@@ -243,6 +371,30 @@ The Acceptance README now links the frozen 0.0.1 Mobile iOS and Desktop
 release plan. The plan itself remains excluded from the freshness digest and
 does not change review severity, evidence policy, or implementation ownership.
 No `SKILL.md`, fixture, or knowledge update is required.
+
+Current Experience admission validates package references and current source at
+the final boundary. Graph recovery requires an executable route and state
+ordering is total. Immutable historical holdout integrity is separate from
+current reevaluation and reciprocal promotion binding. Prototype/Quality
+consumers and negative regression fixtures cover these refinements; GitHub
+Review keeps its existing stale-proof and independent-judgment requirements.
+
+## 2026-10-20 Experience Identity Contract Review
+
+Experience Cases and independent review receipts now use stable workflow
+principal IDs, exact canonical digest binding and reviewer non-overlap. The
+control plane no longer owns Ed25519 signatures, a trusted issuer registry or a
+user-managed key path. Content-addressed holdouts retain immutable
+case/result/review chains.
+
+This makes ordinary Agent injection executable without weakening current-input
+or independent-review checks. `pt-product-design-methodology`,
+`pt-prototype-design` and `pt-quality-check` were updated to consume the new
+identity contract. GitHub Review already rejects stale, overlapping and
+unproven evidence, so its `SKILL.md` and generic fixtures require no semantic
+change. Closed-schema tests explicitly reject the removed attestation shape.
+
+## 2026-10-20 Experience Design Control Plane Integration Review
 
 ## 2026-10-16 Bot Module Governance Review
 

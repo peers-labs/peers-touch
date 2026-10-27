@@ -16,6 +16,7 @@ tauri = { version = "2.0.1", features = ["image-png", "protocol-asset", "tray-ic
 tauri-plugin-deep-link = "2.0.1"
 tauri-plugin-global-shortcut = "2.0.1"
 tauri-plugin-wdio-webdriver = { version = "1.3.0", optional = true }
+tauri-plugin-playwright = { version = "0.4.1", optional = true }
 tiny_http = "0.12"
 threadpool = "1.8"
 serde = { version = "1", features = ["derive"] }
@@ -59,6 +60,8 @@ search-core = { path = "../../../packages/search-core" }
 messaging-native-filesystem = { path = "../../../packages/messaging-native-filesystem" }
 secure-content-core = { path = "../../../packages/secure-content-core" }
 station-trust = { path = "../../../packages/station-trust" }
+schema-core = { path = "../../../packages/schema-core" }
+device-link-core = { path = "../../../packages/device-link-core" }
 station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
 x-config-core = { path = "../../../packages/x-config-core" }
 
@@ -68,8 +71,8 @@ keyring = { version = "3", features = ["apple-native"] }
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFData", "CFDictionary", "CFString", "CFNumber"] }
 objc2-security = { version = "0.3.2", default-features = false, features = ["std", "SecBase", "SecItem"] }
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["libc", "NSAccessibilityProtocols", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSDockTile"] }
-objc2-foundation = { version = "0.3.2", features = ["NSString", "NSDictionary", "NSBundle", "NSObject", "NSError"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["libc", "NSAccessibilityProtocols", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSPanel", "NSSavePanel", "NSOpenPanel", "NSDockTile"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString", "NSDictionary", "NSBundle", "NSObject", "NSError", "NSURL"] }
 objc2-user-notifications = "0.3"
 block2 = "0.6"
 
@@ -86,4 +89,5 @@ opt-level = 1
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 acceptance-webdriver = ["dep:tauri-plugin-wdio-webdriver"]
-e2e-testing = ["acceptance-webdriver"]
+acceptance-playwright = ["dep:tauri-plugin-playwright"]
+e2e-testing = ["acceptance-webdriver", "acceptance-playwright"]

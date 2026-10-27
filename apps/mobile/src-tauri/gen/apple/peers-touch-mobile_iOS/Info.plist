@@ -44,7 +44,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Peers needs camera access when you choose to capture media.</string>
+	<string>Peers needs camera access when you scan a sign-in code or capture media.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>

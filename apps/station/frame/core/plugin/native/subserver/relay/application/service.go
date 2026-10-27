@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/bootstrapblob"
 	nativeRelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 )
@@ -45,10 +46,11 @@ type Service struct {
 	challengeMu sync.Mutex
 	challenges  map[string]domain.EnrollmentChallenge
 
-	discoveryMu sync.Mutex
-	routes      map[string]domain.RouteRecord
-	grants      map[string]domain.GrantRecord
-	redemptions map[string]domain.GrantRedemptionRecord
+	discoveryMu    sync.Mutex
+	routes         map[string]domain.RouteRecord
+	grants         map[string]domain.GrantRecord
+	redemptions    map[string]domain.GrantRedemptionRecord
+	bootstrapBlobs *bootstrapblob.Store
 }
 
 func NewService(
@@ -57,14 +59,15 @@ func NewService(
 	admission *nativeRelay.Admission,
 ) *Service {
 	return &Service{
-		repo:        repo,
-		authority:   authority,
-		admission:   admission,
-		now:         func() time.Time { return time.Now().UTC() },
-		challenges:  make(map[string]domain.EnrollmentChallenge),
-		routes:      make(map[string]domain.RouteRecord),
-		grants:      make(map[string]domain.GrantRecord),
-		redemptions: make(map[string]domain.GrantRedemptionRecord),
+		repo:           repo,
+		authority:      authority,
+		admission:      admission,
+		now:            func() time.Time { return time.Now().UTC() },
+		challenges:     make(map[string]domain.EnrollmentChallenge),
+		routes:         make(map[string]domain.RouteRecord),
+		grants:         make(map[string]domain.GrantRecord),
+		redemptions:    make(map[string]domain.GrantRedemptionRecord),
+		bootstrapBlobs: bootstrapblob.NewStore(),
 	}
 }
 

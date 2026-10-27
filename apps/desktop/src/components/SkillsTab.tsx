@@ -28,6 +28,7 @@ import {
   type SkillVersionItem,
   type SkillZipValidation,
 } from '../services/desktop_api';
+import { isTextResourceReadable, skillService } from '../services/skill-service';
 import { useSkillStore } from '../store/skill';
 import { SettingsContainer } from './settings/SettingsLayout';
 const { Text, Title, Paragraph } = Typography;
@@ -956,7 +957,7 @@ function MarketSkillDetailModal({
             label: (
               <Flexbox horizontal gap={6} align="center">
                 <Code2 size={14} />
-                <span>SKILL.md</span>
+                <span>{t('provider.skills.detail.manifestFile')}</span>
               </Flexbox>
             ),
             children: loading ? (
@@ -1123,6 +1124,11 @@ function SkillCard({
           {skill.useCount > 0 && (
             <Tag color="gold" style={{ margin: 0 }}>
               {t('provider.skills.usedCount', { count: skill.useCount })}
+            </Tag>
+          )}
+          {typeof skill.resourceCount === 'number' && skill.resourceCount > 0 && (
+            <Tag color="geekblue" style={{ margin: 0 }}>
+              {t('provider.skills.resourceCount', { count: skill.resourceCount })}
             </Tag>
           )}
           <Tag color={sourceColors[skill.source] || 'default'} style={{ margin: 0 }}>
@@ -1393,7 +1399,30 @@ function SkillDetailBoard({
   const [versionTotal, setVersionTotal] = useState(0);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [rollbackVersion, setRollbackVersion] = useState<number | null>(null);
+  const [activeResource, setActiveResource] = useState<{ path: string; content: string } | null>(null);
+  const [resourceLoading, setResourceLoading] = useState(false);
   const canEdit = detail.kind === 'installed';
+
+  const readVersionedResource = useCallback(async (resourcePath: string, owner?: string, contentHash?: string) => {
+    if (!skill || !('agentId' in skill) || !skill.agentId) return;
+    setResourceLoading(true);
+    try {
+      const resourceContent = await skillService.readVersionedResource({
+        agentId: skill.agentId,
+        skillId: skill.id,
+        version: Number(skill.version),
+        path: resourcePath,
+        owner,
+        contentHash,
+      });
+      setActiveResource({ path: resourcePath, content: resourceContent });
+    } catch (error) {
+      message.error(t('provider.skills.detail.readResourceFailed'));
+      log.error('skills', 'Failed to read skill resource', { path: resourcePath, owner, error: String(error) });
+    } finally {
+      setResourceLoading(false);
+    }
+  }, [skill, t]);
 
   const loadInstalledSkill = useCallback(async () => {
     const data = await api.getSkill(detail.key);
@@ -1525,20 +1554,54 @@ function SkillDetailBoard({
             style={{ fontFamily: 'monospace', fontSize: 13 }}
           />
         ) : (
-          <SkillProtocolPreview skill={skill} content={skill.content} token={token} />
+          <SkillProtocolPreview
+            skill={skill}
+            content={skill.content}
+            token={token}
+            onReadResource={readVersionedResource}
+            resourceLoading={resourceLoading}
+          />
         )}
       </Flexbox>
+      <Modal
+        open={activeResource !== null}
+        title={activeResource?.path}
+        footer={null}
+        onCancel={() => setActiveResource(null)}
+        width={760}
+      >
+        <div className="selectable" style={{ whiteSpace: 'pre-wrap', maxHeight: '60vh', overflow: 'auto' }}>
+          {activeResource?.content}
+        </div>
+      </Modal>
     </Modal>
   );
 }
 
-function SkillProtocolPreview({ skill, content, token }: { skill: SkillRecord | BuiltinSkillRecord; content: string; token: any }) {
+function SkillProtocolPreview({
+  skill,
+  content,
+  token,
+  onReadResource,
+  resourceLoading,
+}: {
+  skill: SkillRecord | BuiltinSkillRecord;
+  content: string;
+  token: any;
+  onReadResource?: (path: string, owner?: string, contentHash?: string) => void;
+  resourceLoading?: boolean;
+}) {
   const { t } = useTranslation('provider');
   const sections = parseSkillProtocol(content);
   return (
     <Flexbox gap={12}>
       {'resourceTree' in skill && skill.resourceTree && (
-        <SkillResourceTreePanel skill={skill} token={token} />
+        <SkillResourceTreePanel
+          skill={skill}
+          token={token}
+          onReadResource={onReadResource}
+          resourceLoading={resourceLoading}
+        />
       )}
       <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
         <Text strong>{t('provider.skills.detail.manifest')}</Text>
@@ -1642,9 +1705,19 @@ function SkillVersionHistory({
   );
 }
 
-function SkillResourceTreePanel({ skill, token }: { skill: SkillRecord; token: any }) {
+function SkillResourceTreePanel({
+  skill,
+  token,
+  onReadResource,
+  resourceLoading,
+}: {
+  skill: SkillRecord;
+  token: any;
+  onReadResource?: (path: string, owner?: string, contentHash?: string) => void;
+  resourceLoading?: boolean;
+}) {
   const { t } = useTranslation('provider');
-  const resources = skill.resourceTree?.resources || [];
+  const resources = skill.resourceTree?.root.children || [];
   const runtimeLoad = skill.runtimeLoad;
 
   return (
@@ -1670,7 +1743,15 @@ function SkillResourceTreePanel({ skill, token }: { skill: SkillRecord; token: a
         </Flexbox>
         <Flexbox gap={8}>
           {resources.map((resource) => (
-            <SkillResourceRow key={resource.id} resource={resource} token={token} />
+            <SkillResourceRow
+              key={resource.id}
+              resource={resource}
+              token={token}
+              onReadResource={onReadResource && isTextResourceReadable(resource)
+                ? onReadResource
+                : undefined}
+              loading={resourceLoading}
+            />
           ))}
         </Flexbox>
       </Flexbox>
@@ -1678,7 +1759,17 @@ function SkillResourceTreePanel({ skill, token }: { skill: SkillRecord; token: a
   );
 }
 
-function SkillResourceRow({ resource, token }: { resource: SkillResourceNode; token: any }) {
+function SkillResourceRow({
+  resource,
+  token,
+  onReadResource,
+  loading,
+}: {
+  resource: SkillResourceNode;
+  token: any;
+  onReadResource?: (path: string, owner?: string, contentHash?: string) => void;
+  loading?: boolean;
+}) {
   const { t } = useTranslation('provider');
   const hash = resource.sha256 ? `${resource.sha256.slice(0, 12)}...` : '';
 
@@ -1695,19 +1786,38 @@ function SkillResourceRow({ resource, token }: { resource: SkillResourceNode; to
             <Text strong style={{ fontSize: 13 }}>{resource.path}</Text>
             <Tag>{resource.kind}</Tag>
             {resource.role && <Tag color="cyan">{resource.role}</Tag>}
+            {resource.executionOwner && (
+              <Tag color={resource.executionOwner === 'station' ? 'blue' : 'purple'}>
+                {t(resource.executionOwner === 'station'
+                  ? 'provider.skills.detail.stationOwner'
+                  : 'provider.skills.detail.clientOwner')}
+              </Tag>
+            )}
           </Flexbox>
-          <Tag color={resource.loadedAtRuntime ? 'green' : 'default'}>
-            {resource.loadedAtRuntime
-              ? t('provider.skills.detail.loaded')
-              : t('provider.skills.detail.onDemand')}
-          </Tag>
+          {onReadResource ? (
+            <Button
+              size="small"
+              loading={loading}
+              onClick={() => onReadResource(resource.path, resource.executionOwner, resource.sha256)}
+            >
+              {t('provider.skills.detail.readResource')}
+            </Button>
+          ) : (
+            <Tag color={resource.loadedAtRuntime ? 'green' : 'default'}>
+              {resource.loadedAtRuntime
+                ? t('provider.skills.detail.loaded')
+                : t('provider.skills.detail.onDemand')}
+            </Tag>
+          )}
         </Flexbox>
         {resource.summary && (
           <Text type="secondary" style={{ fontSize: 12 }}>{resource.summary}</Text>
         )}
         <Flexbox horizontal gap={6} wrap="wrap">
           <Tag>{t('provider.skills.detail.resourceBytes', { bytes: resource.bytes })}</Tag>
-          <Tag>{t('provider.skills.detail.resourceLines', { lines: resource.lineCount })}</Tag>
+          {typeof resource.lineCount === 'number' && (
+            <Tag>{t('provider.skills.detail.resourceLines', { lines: resource.lineCount })}</Tag>
+          )}
           <Tag>{t('provider.skills.detail.loadTrigger', { trigger: resource.loadTrigger })}</Tag>
           {hash && <Tag>{t('provider.skills.detail.sha256', { hash })}</Tag>}
         </Flexbox>

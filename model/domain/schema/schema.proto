@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package peers_touch.model.schema.v1;
+
+import "domain/auth/device_link.proto";
+import "domain/peer/access_endpoint.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/schema;schema";
+
+// A navigation envelope is distinct from raw presentation-only QR payloads.
+// Avatar, color, size and rendering settings never enter this wire envelope.
+message SchemaAction {
+  uint32 protocol_version = 1;
+  oneof action {
+    peers_touch.model.auth.device_link.v1.SignedDeviceLinkOffer device_link_offer = 2;
+    peers_touch.model.auth.device_link.v1.DeviceLinkLocator device_link_locator = 3;
+    peers_touch.model.peer.v1.PublicEndpointConnectionMaterial public_connection = 4;
+    peers_touch.model.peer.v1.StationConnectionEnvelope circuit_connection = 5;
+    string conversation_id = 6;
+    string actor_ptid = 7;
+    string invite_code = 8;
+  }
+}

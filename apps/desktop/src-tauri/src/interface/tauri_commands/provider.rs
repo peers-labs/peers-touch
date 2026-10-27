@@ -47,6 +47,47 @@ pub fn provider_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResu
 }
 
 #[tauri::command]
+pub fn provider_runtime_default_get(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let (_, token) = match resolve_auth(&state, &window) {
+        Ok(auth) => auth,
+        Err(error) => return error,
+    };
+    application_provider::runtime_default_get(state.station.client(), &token)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RuntimeDefaultCommandInput {
+    pub provider_id: String,
+    pub model_id: String,
+    #[serde(default)]
+    pub expected_revision: i64,
+}
+
+#[tauri::command]
+pub fn provider_runtime_default_set(
+    input: RuntimeDefaultCommandInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let (_, token) = match resolve_auth(&state, &window) {
+        Ok(auth) => auth,
+        Err(error) => return error,
+    };
+    application_provider::runtime_default_set(
+        state.station.client(),
+        &token,
+        application_provider::RuntimeDefaultInput {
+            provider_id: input.provider_id,
+            model_id: input.model_id,
+            expected_revision: input.expected_revision,
+        },
+    )
+}
+
+#[tauri::command]
 pub fn provider_get(
     input: ProviderIdInput,
     state: State<'_, Arc<AppState>>,

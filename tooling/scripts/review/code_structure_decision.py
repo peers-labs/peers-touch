@@ -28,12 +28,14 @@ from tooling.acceptance.core.errors import (  # noqa: E402
 
 ARTIFACT_KIND = "code-structure-review-decision"
 PREPARATION_KIND = "code-structure-review-preparation"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 GATE_ID = "code-structure-review"
 ARTIFACT_ROLE = "decision"
 RULE_IDS = tuple(f"STRUCT-{index:02d}" for index in range(1, 10))
 VERDICTS = {"PASS", "PASS_WITH_SUGGESTIONS", "REFACTOR_REQUIRED"}
-INPUT_KEYS = {"findings"}
+INPUT_KEYS = {"findings", "signalDispositions"}
+DISPOSITION_RESOLUTIONS = {"finding", "accepted-advisory"}
+DISPOSITION_KEYS = {"signal", "resolution", "findingId", "rationale"}
 FINDING_KEYS = {
     "findingId",
     "primaryRuleId",
@@ -53,6 +55,7 @@ RECORD_KEYS = {
     "rubricHash",
     "verdict",
     "findings",
+    "signalDispositions",
     "blockingRuleIds",
     "suggestionRuleIds",
     "signalsReviewed",
@@ -479,6 +482,96 @@ def normalize_findings(value: object) -> list[dict[str, Any]]:
     return findings
 
 
+def normalize_signal_dispositions(
+    value: object,
+    *,
+    findings: list[dict[str, Any]],
+    expected_signal_keys: list[str],
+) -> list[dict[str, str]]:
+    """Require an explicit decision for every current advisory signal.
+
+    A signal is resolved either by a recorded finding on the same file or by
+    an accepted-advisory rationale. Enumeration in signalsReviewed alone is
+    not a disposition.
+    """
+    if not isinstance(value, list):
+        raise DecisionInvalid("signalDispositions must be an array")
+
+    expected = set(expected_signal_keys)
+    finding_by_id = {finding["findingId"]: finding for finding in findings}
+    dispositions: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(value):
+        item = _require_exact_keys(
+            raw,
+            DISPOSITION_KEYS,
+            f"signalDispositions[{index}]",
+        )
+        signal = _require_text(item["signal"], f"signalDispositions[{index}].signal")
+        if signal not in expected:
+            raise DecisionInvalid(
+                f"signalDispositions[{index}] dispositions a signal that is "
+                f"not current for this target: {signal}"
+            )
+        if signal in seen:
+            raise DecisionInvalid(f"duplicate signal disposition: {signal}")
+        seen.add(signal)
+        resolution = item["resolution"]
+        if resolution not in DISPOSITION_RESOLUTIONS:
+            raise DecisionInvalid(
+                f"signalDispositions[{index}].resolution must be one of: "
+                f"{', '.join(sorted(DISPOSITION_RESOLUTIONS))}"
+            )
+        finding_id = item["findingId"]
+        rationale = item["rationale"]
+        if not isinstance(finding_id, str) or not isinstance(rationale, str):
+            raise DecisionInvalid(
+                f"signalDispositions[{index}] findingId/rationale must be strings"
+            )
+        signal_path = signal.split("@", 1)[1] if "@" in signal else ""
+        if resolution == "finding":
+            finding = finding_by_id.get(finding_id)
+            if finding is None:
+                raise DecisionInvalid(
+                    f"signalDispositions[{index}] references unknown findingId {finding_id}"
+                )
+            if finding["location"]["path"] != signal_path:
+                raise DecisionInvalid(
+                    f"signalDispositions[{index}] finding {finding_id} does not "
+                    f"own the signalled path {signal_path}"
+                )
+            if rationale.strip():
+                raise DecisionInvalid(
+                    f"signalDispositions[{index}] finding resolution carries rationale; "
+                    "the finding record owns the explanation"
+                )
+        else:
+            if finding_id.strip():
+                raise DecisionInvalid(
+                    f"signalDispositions[{index}] accepted-advisory resolution must "
+                    "not reference a findingId"
+                )
+            if not rationale.strip():
+                raise DecisionInvalid(
+                    f"signalDispositions[{index}] accepted-advisory requires a rationale"
+                )
+        dispositions.append(
+            {
+                "signal": signal,
+                "resolution": resolution,
+                "findingId": finding_id,
+                "rationale": rationale,
+            }
+        )
+    missing = sorted(expected - seen)
+    if missing:
+        raise DecisionInvalid(
+            "every advisory signal needs an explicit disposition; missing: "
+            + ", ".join(missing)
+        )
+    return sorted(dispositions, key=lambda item: item["signal"])
+
+
 def build_coverage(
     target: Mapping[str, Any],
     findings: list[dict[str, Any]],
@@ -567,6 +660,11 @@ def build_decision(
         raise DecisionInvalid(
             "signalsReviewed must contain unique non-empty strings"
         )
+    dispositions = normalize_signal_dispositions(
+        raw["signalDispositions"],
+        findings=findings,
+        expected_signal_keys=signals,
+    )
 
     blocking = sorted(
         {
@@ -606,6 +704,7 @@ def build_decision(
         "blockingRuleIds": blocking,
         "suggestionRuleIds": suggestions,
         "signalsReviewed": sorted(signals),
+        "signalDispositions": dispositions,
         "coverage": build_coverage(target, findings),
         "exceptionsApplied": exceptions,
     }
@@ -631,7 +730,10 @@ def validate_decision(
         raise DecisionInvalid("decision record has an invalid verdict")
 
     rebuilt = build_decision(
-        {"findings": record["findings"]},
+        {
+            "findings": record["findings"],
+            "signalDispositions": record["signalDispositions"],
+        },
         target=expected_target,
         rubric_digest=expected_rubric_hash,
         signals=(

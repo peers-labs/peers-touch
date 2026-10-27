@@ -1,0 +1,194 @@
+{
+  "kind": "peers-touch-experience-calibration-manifest",
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "path": "boundary/legal-exceptions.json",
+      "class": "boundary",
+      "mode": "evaluation"
+    },
+    {
+      "path": "boundary/unproven-evidence.json",
+      "class": "boundary",
+      "mode": "evaluation"
+    },
+    {
+      "path": "negative/action-representation.json",
+      "class": "negative",
+      "mode": "evaluation"
+    },
+    {
+      "path": "negative/contract-invalid.json",
+      "class": "negative",
+      "mode": "validation-error",
+      "expectedErrorCode": "ED-CONTRACT-001"
+    },
+    {
+      "path": "negative/evidence-missing.json",
+      "class": "negative",
+      "mode": "evaluation"
+    },
+    {
+      "path": "negative/grammar-role.json",
+      "class": "negative",
+      "mode": "evaluation"
+    },
+    {
+      "path": "negative/information-architecture.json",
+      "class": "negative",
+      "mode": "evaluation"
+    },
+    {
+      "path": "negative/lark-contract-drift.json",
+      "class": "negative",
+      "mode": "evaluation"
+    },
+    {
+      "path": "negative/path-budget.json",
+      "class": "negative",
+      "mode": "evaluation"
+    },
+    {
+      "path": "negative/semantic-redundancy.json",
+      "class": "negative",
+      "mode": "evaluation"
+    },
+    {
+      "path": "negative/state-recovery.json",
+      "class": "negative",
+      "mode": "evaluation"
+    },
+    {
+      "path": "negative/trace-incomplete.json",
+      "class": "negative",
+      "mode": "evaluation"
+    },
+    {
+      "path": "positive/complete-setup.json",
+      "class": "positive",
+      "mode": "evaluation"
+    }
+  ],
+  "coverage": [
+    {
+      "ruleId": "ED-CONTRACT-001",
+      "positive": [
+        "positive/complete-setup.json"
+      ],
+      "negative": [
+        "negative/contract-invalid.json"
+      ],
+      "boundary": [
+        "boundary/legal-exceptions.json"
+      ]
+    },
+    {
+      "ruleId": "ED-SEM-001",
+      "positive": [
+        "positive/complete-setup.json"
+      ],
+      "negative": [
+        "negative/semantic-redundancy.json"
+      ],
+      "boundary": [
+        "boundary/legal-exceptions.json"
+      ]
+    },
+    {
+      "ruleId": "ED-IA-001",
+      "positive": [
+        "positive/complete-setup.json"
+      ],
+      "negative": [
+        "negative/information-architecture.json"
+      ],
+      "boundary": [
+        "boundary/legal-exceptions.json"
+      ]
+    },
+    {
+      "ruleId": "ED-PATH-001",
+      "positive": [
+        "positive/complete-setup.json"
+      ],
+      "negative": [
+        "negative/path-budget.json"
+      ],
+      "boundary": [
+        "boundary/legal-exceptions.json"
+      ]
+    },
+    {
+      "ruleId": "ED-STATE-001",
+      "positive": [
+        "positive/complete-setup.json"
+      ],
+      "negative": [
+        "negative/state-recovery.json"
+      ],
+      "boundary": [
+        "boundary/legal-exceptions.json"
+      ]
+    },
+    {
+      "ruleId": "ED-ACTION-001",
+      "positive": [
+        "positive/complete-setup.json"
+      ],
+      "negative": [
+        "negative/action-representation.json"
+      ],
+      "boundary": [
+        "boundary/legal-exceptions.json"
+      ]
+    },
+    {
+      "ruleId": "ED-GRAMMAR-001",
+      "positive": [
+        "positive/complete-setup.json"
+      ],
+      "negative": [
+        "negative/grammar-role.json"
+      ],
+      "boundary": [
+        "boundary/legal-exceptions.json"
+      ]
+    },
+    {
+      "ruleId": "ED-TRACE-001",
+      "positive": [
+        "positive/complete-setup.json"
+      ],
+      "negative": [
+        "negative/trace-incomplete.json"
+      ],
+      "boundary": [
+        "boundary/legal-exceptions.json"
+      ]
+    },
+    {
+      "ruleId": "ED-EVIDENCE-001",
+      "positive": [
+        "positive/complete-setup.json"
+      ],
+      "negative": [
+        "negative/evidence-missing.json"
+      ],
+      "boundary": [
+        "boundary/unproven-evidence.json"
+      ]
+    },
+    {
+      "ruleId": "ED-DRIFT-001",
+      "positive": [
+        "positive/complete-setup.json"
+      ],
+      "negative": [
+        "negative/lark-contract-drift.json"
+      ],
+      "boundary": [
+        "boundary/legal-exceptions.json"
+      ]
+    }
+  ]
+}

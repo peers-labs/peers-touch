@@ -877,6 +877,18 @@ func (s *TurnService) PullClientCapabilityRequests(
 	return s.toolDispatch.PullCapabilityRequests(ctx, actorID, deviceID, request)
 }
 
+func (s *TurnService) DeclareClientResourceGrants(
+	ctx context.Context,
+	actorID string,
+	deviceID string,
+	request *model.DeclareClientResourceGrantsRequest,
+) (*model.DeclareClientResourceGrantsResponse, error) {
+	if s.toolDispatch == nil {
+		return nil, fmt.Errorf("tool dispatch not configured")
+	}
+	return s.toolDispatch.DeclareCapabilityResourceGrants(ctx, actorID, deviceID, request)
+}
+
 func (s *TurnService) SubmitClientCapabilityReceipt(
 	ctx context.Context,
 	actorID string,
@@ -2622,6 +2634,7 @@ func (s *TurnService) executeSummaryLLM(
 
 	callStart := time.Now()
 	resp, err := s.callProviderWithRuntimeAuthority(ctx, config, &ProviderCallRequest{
+		DispatchClass:  providerDispatchAuxiliary,
 		ProviderID:     providerReference,
 		AgentID:        config.AgentID,
 		ConversationID: config.ConversationID,
@@ -2708,8 +2721,12 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 			config.RuntimeCapabilities,
 		).(*model.RuntimeCapabilitySnapshot)
 	}
+	dispatchClass := request.DispatchClass
+	if dispatchClass == "" {
+		dispatchClass = providerDispatchContinuation
+	}
 	request.BeforeDispatch = func(dispatchCtx context.Context) error {
-		return s.reserveProviderAttempt(dispatchCtx, config)
+		return s.reserveProviderDispatch(dispatchCtx, config, dispatchClass)
 	}
 	if len(request.Tools) > 0 && config.Provider == "ark" {
 		agentic := config.RuntimeCapabilities.GetAgentic()
@@ -2746,9 +2763,74 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 	return response, nil
 }
 
+// providerDispatchClass separates normal agentic model dispatches from
+// transient-failure retries and auxiliary calls (compression/follow-up/
+// review). Each class owns an independent per-turn counter and budget so
+// long tool-result chains and helper calls are not killed by the retry cap.
+type providerDispatchClass string
+
+const (
+	providerDispatchContinuation providerDispatchClass = "continuation"
+	providerDispatchRetry        providerDispatchClass = "retry"
+	providerDispatchAuxiliary    providerDispatchClass = "auxiliary"
+
+	// maxAuxiliaryProviderCalls bounds compression, follow-up suggestion
+	// and review LLM calls for one turn. It is operational, not a product
+	// runtime-budget field, and therefore needs no proto change.
+	maxAuxiliaryProviderCalls uint32 = 8
+)
+
+func (class providerDispatchClass) counterColumn() (string, bool) {
+	switch class {
+	case providerDispatchContinuation:
+		return "provider_continuation_count", true
+	case providerDispatchRetry:
+		return "provider_retry_count", true
+	case providerDispatchAuxiliary:
+		return "provider_auxiliary_count", true
+	default:
+		return "", false
+	}
+}
+
+func (class providerDispatchClass) limit(budget *model.RuntimeBudget) uint32 {
+	switch class {
+	case providerDispatchContinuation:
+		if steps := budget.GetMaxAgentSteps(); steps > 0 {
+			return steps
+		}
+		return 0
+	case providerDispatchRetry:
+		return budget.GetMaxAttempts()
+	case providerDispatchAuxiliary:
+		return maxAuxiliaryProviderCalls
+	default:
+		return 0
+	}
+}
+
+func (class providerDispatchClass) exhaustedReason() string {
+	switch class {
+	case providerDispatchRetry:
+		return maxAttemptsExhaustedReason
+	case providerDispatchAuxiliary:
+		return maxAuxiliaryCallsExhaustedReason
+	default:
+		return maxProviderContinuationsExhaustedReason
+	}
+}
+
 func (s *TurnService) reserveProviderAttempt(
 	ctx context.Context,
 	config *TurnConfig,
+) error {
+	return s.reserveProviderDispatch(ctx, config, providerDispatchContinuation)
+}
+
+func (s *TurnService) reserveProviderDispatch(
+	ctx context.Context,
+	config *TurnConfig,
+	dispatchClass providerDispatchClass,
 ) error {
 	if config == nil || config.RuntimeBudget == nil ||
 		strings.TrimSpace(config.TurnID) == "" {
@@ -2759,8 +2841,17 @@ func (s *TurnService) reserveProviderAttempt(
 			nil,
 		)
 	}
-	maxAttempts := config.RuntimeBudget.GetMaxAttempts()
-	if maxAttempts == 0 {
+	column, ok := dispatchClass.counterColumn()
+	if !ok {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"provider dispatch class is unsupported: "+string(dispatchClass),
+			nil,
+		)
+	}
+	limit := dispatchClass.limit(config.RuntimeBudget)
+	if limit == 0 {
 		return errcode.New(
 			errcode.AgentInvalidSourceState,
 			http.StatusConflict,
@@ -2768,6 +2859,39 @@ func (s *TurnService) reserveProviderAttempt(
 			nil,
 		)
 	}
+	return s.reserveProviderCounter(
+		ctx,
+		config.TurnID,
+		column,
+		limit,
+		dispatchClass.exhaustedReason(),
+	)
+}
+
+// ReserveAuxiliaryProviderDispatch bounds background helper LLM calls
+// (review) for one turn independently of the retry/continuation budgets.
+// It is safe for callers that do not hold the turn's RuntimeBudget.
+func (s *TurnService) ReserveAuxiliaryProviderDispatch(
+	ctx context.Context,
+	turnID string,
+) error {
+	column, _ := providerDispatchAuxiliary.counterColumn()
+	return s.reserveProviderCounter(
+		ctx,
+		turnID,
+		column,
+		maxAuxiliaryProviderCalls,
+		maxAuxiliaryCallsExhaustedReason,
+	)
+}
+
+func (s *TurnService) reserveProviderCounter(
+	ctx context.Context,
+	turnID string,
+	column string,
+	limit uint32,
+	exhaustedReason string,
+) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -2775,14 +2899,14 @@ func (s *TurnService) reserveProviderAttempt(
 	result := db.WithContext(ctx).
 		Model(&persistence.AgentTurn{}).
 		Where(
-			"id = ? AND provider_attempt_count < ?",
-			config.TurnID,
-			maxAttempts,
+			fmt.Sprintf("id = ? AND %s < ?", column),
+			turnID,
+			limit,
 		).
-		UpdateColumn(
-			"provider_attempt_count",
-			gorm.Expr("provider_attempt_count + 1"),
-		)
+		Updates(map[string]interface{}{
+			"provider_attempt_count": gorm.Expr("provider_attempt_count + 1"),
+			column:                   gorm.Expr(column + " + 1"),
+		})
 	if result.Error != nil {
 		return errcode.New(
 			errcode.AgentInternal,
@@ -2797,8 +2921,14 @@ func (s *TurnService) reserveProviderAttempt(
 
 	var turn persistence.AgentTurn
 	if err := db.WithContext(ctx).
-		Select("id", "provider_attempt_count").
-		First(&turn, "id = ?", config.TurnID).Error; err != nil {
+		Select(
+			"id",
+			"provider_attempt_count",
+			"provider_continuation_count",
+			"provider_retry_count",
+			"provider_auxiliary_count",
+		).
+		First(&turn, "id = ?", turnID).Error; err != nil {
 		return errcode.New(
 			errcode.AgentInvalidSourceState,
 			http.StatusConflict,
@@ -2807,9 +2937,9 @@ func (s *TurnService) reserveProviderAttempt(
 		)
 	}
 	return turnRuntimeBudgetExhausted(
-		config.TurnID,
-		maxAttemptsExhaustedReason,
-		maxAttempts,
+		turnID,
+		exhaustedReason,
+		limit,
 	)
 }
 
@@ -2936,6 +3066,10 @@ func (s *TurnService) providerCallWithRetry(
 
 		callStart := time.Now()
 
+		dispatchClass := providerDispatchContinuation
+		if attempt > 0 {
+			dispatchClass = providerDispatchRetry
+		}
 		resp, callErr := s.callProviderWithRuntimeAuthority(ctx, config, &ProviderCallRequest{
 			ProviderID:      providerReference,
 			AgentID:         config.AgentID,
@@ -2948,6 +3082,7 @@ func (s *TurnService) providerCallWithRetry(
 			ProviderType:    config.Provider,
 			Effort:          config.Effort,
 			ThinkingMode:    config.ThinkingMode,
+			DispatchClass:   dispatchClass,
 			MaxOutputTokens: int(config.RuntimeBudget.GetMaxOutputTokens()),
 			AllowedRoots:    turnProviderAllowedRoots(config),
 			DeltaSink: func(deltaCtx context.Context, delta ProviderDelta) error {
@@ -3739,14 +3874,16 @@ func (s *TurnService) processToolCalls(
 }
 
 const (
-	maxAttemptsExhaustedReason           = "max_attempts_exhausted"
-	maxToolCallsExhaustedReason          = "max_tool_calls_exhausted"
-	maxIdenticalToolCallsExhaustedReason = "max_identical_tool_calls_exhausted"
-	maxAgentStepsExhaustedReason         = "max_agent_steps_exhausted"
-	maxDelegationDepthExhaustedReason    = "max_delegation_depth_exhausted"
-	maxInputTokensExhaustedReason        = "max_input_tokens_exhausted"
-	maxOutputTokensExhaustedReason       = "max_output_tokens_exhausted"
-	wallTimeExhaustedReason              = "wall_time_exhausted"
+	maxAttemptsExhaustedReason              = "max_attempts_exhausted"
+	maxProviderContinuationsExhaustedReason = "max_provider_continuations_exhausted"
+	maxAuxiliaryCallsExhaustedReason        = "max_provider_auxiliary_calls_exhausted"
+	maxToolCallsExhaustedReason             = "max_tool_calls_exhausted"
+	maxIdenticalToolCallsExhaustedReason    = "max_identical_tool_calls_exhausted"
+	maxAgentStepsExhaustedReason            = "max_agent_steps_exhausted"
+	maxDelegationDepthExhaustedReason       = "max_delegation_depth_exhausted"
+	maxInputTokensExhaustedReason           = "max_input_tokens_exhausted"
+	maxOutputTokensExhaustedReason          = "max_output_tokens_exhausted"
+	wallTimeExhaustedReason                 = "wall_time_exhausted"
 )
 
 type toolLoopBudgetState struct {
@@ -3918,6 +4055,10 @@ func runtimeBudgetKind(reason string) string {
 	switch reason {
 	case maxAttemptsExhaustedReason:
 		return "attempts"
+	case maxProviderContinuationsExhaustedReason:
+		return "provider_continuations"
+	case maxAuxiliaryCallsExhaustedReason:
+		return "provider_auxiliary"
 	case maxToolCallsExhaustedReason:
 		return "tool_calls"
 	case maxIdenticalToolCallsExhaustedReason:
@@ -4459,9 +4600,10 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 					call.Arguments,
 				)
 				output = result.Content
-				if result.IsError {
-					executionErr = errors.New(result.Content)
-				}
+				// Tool-level IsError is a recoverable business result (e.g. a
+				// fetched URL returning 404, invalid arguments), not a Station
+				// execution fault. The [tool_error] content is applied so the
+				// model can adapt; only a non-nil handler error stays terminal.
 			}
 		}
 		cancelRuntimeBudget()
@@ -5820,6 +5962,12 @@ func capabilityIDForTool(toolName string) string {
 		return "clipboard.write"
 	case "local_shell_safe":
 		return "shell.execute"
+	case "local_file_write":
+		return "filesystem.write"
+	case "local_file_edit":
+		return "filesystem.edit"
+	case "local_shell_exec":
+		return "shell.allowlist"
 	default:
 		return ""
 	}

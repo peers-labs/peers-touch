@@ -98,7 +98,6 @@ func Routers() []option.Option {
 	routers = append(routers, NewActorRouter())
 	routers = append(routers, NewWellKnownRouter())
 	routers = append(routers, NewPeerRouter())
-	routers = append(routers, NewMessageRouter())
 	routers = append(routers, NewSessionRouter())
 	routers = append(routers, NewMetricsRouter())
 	return []option.Option{

@@ -3,7 +3,7 @@ use crate::application::station_runtime::client::{
     StationTransportErrorKind, TrafficClass,
 };
 use crate::application::station_runtime::route_lease::RouteLease;
-use crate::infrastructure::station::identity::{TransportIdentityScope, TransportIdentityStore};
+use crate::infrastructure::station::identity::TransportIdentityStore;
 use crate::infrastructure::station_registry::StationRouteType;
 use station_libp2p_http::{
     FailurePhase, Request as SecureRequest, RequestBody as SecureRequestBody, Route as SecureRoute,
@@ -11,6 +11,7 @@ use station_libp2p_http::{
     TransportHandle as SecureTransportHandle, TransportIdentityProof,
     TransportOwner as SecureTransportOwner,
 };
+use station_trust::transport_identity::TransportIdentityScope;
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{self, Read};

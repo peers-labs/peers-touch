@@ -24,6 +24,7 @@ type ProviderHandlers struct {
 	admissionResolver *service.RuntimeAdmissionResolver
 	runtimeModels     *service.RuntimeModelCatalog
 	modelDiscovery    *service.ProviderModelDiscoveryService
+	runtimeDefaults   *service.RuntimeDefaultService
 }
 
 func NewProviderHandlers(
@@ -33,6 +34,7 @@ func NewProviderHandlers(
 	admissionResolver *service.RuntimeAdmissionResolver,
 	runtimeModels *service.RuntimeModelCatalog,
 	modelDiscovery *service.ProviderModelDiscoveryService,
+	runtimeDefaults *service.RuntimeDefaultService,
 ) *ProviderHandlers {
 	return &ProviderHandlers{
 		providerConfig:    providerConfig,
@@ -41,6 +43,7 @@ func NewProviderHandlers(
 		admissionResolver: admissionResolver,
 		runtimeModels:     runtimeModels,
 		modelDiscovery:    modelDiscovery,
+		runtimeDefaults:   runtimeDefaults,
 	}
 }
 

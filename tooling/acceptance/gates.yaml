@@ -910,7 +910,7 @@
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Require current-source native receiver proof for Desktop-Mobile coexistence and independent Desktop and Mobile same-class takeover."
+      "description": "Require current-source native receiver proof for multiple Desktop and Mobile installation coexistence and independent device Session boundaries."
     },
     "station-access-session-class-suite-e2e": {
       "argv": [
@@ -925,7 +925,7 @@
       "environment": "chat-mixed-native",
       "provisioner": "chat-mixed-native",
       "tier": "env-evidence",
-      "description": "Prove same-Station Chat, Desktop-Mobile coexistence, Desktop takeover, and Mobile takeover in one exact-source reusable Suite Runtime with UI and receiver-visible evidence."
+      "description": "Prove same-Station Chat, Desktop-Mobile coexistence, multiple Desktops and multiple Mobiles in one exact-source reusable Suite Runtime with UI and receiver-visible evidence."
     },
     "station-access-federation-boundary-e2e": {
       "argv": [

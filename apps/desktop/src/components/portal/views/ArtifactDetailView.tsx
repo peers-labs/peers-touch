@@ -1,71 +1,112 @@
+import { useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon } from '@lobehub/ui';
-import { Copy, Download } from 'lucide-react';
-import { theme, Typography } from 'antd';
+import { CloudDownload, CloudUpload, ExternalLink, FolderOpen } from 'lucide-react';
+import { Alert, theme, Typography } from 'antd';
+import { useTranslation } from 'react-i18next';
 
-import type { MessageArtifact } from '../../../store/chat';
+import type { ChatFileArtifact } from '../../../store/chatArtifacts';
+import { useChatArtifactStore } from '../../../store/chatArtifacts';
+import { useChatStore } from '../../../store/chat';
 
 interface ArtifactDetailViewProps {
-  artifact: MessageArtifact;
+  artifact: ChatFileArtifact;
 }
 
 export function ArtifactDetailView({ artifact }: ArtifactDetailViewProps) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('agent');
+  const conversationId = useChatStore((state) => state.currentSessionKey);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(artifact.content);
-  };
-
-  const handleDownload = () => {
-    const ext = artifact.language || 'txt';
-    const blob = new Blob([artifact.content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${artifact.title || 'artifact'}.${ext}`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <Flexbox gap={12} style={{ height: '100%' }}>
+    <Flexbox gap={16} style={{ height: '100%' }}>
       <Flexbox horizontal align="center" justify="space-between">
-        <Flexbox horizontal align="center" gap={8}>
-          {artifact.language && (
-            <Typography.Text
-              code
-              style={{ fontSize: 12, color: token.colorTextSecondary }}
-            >
-              {artifact.language}
-            </Typography.Text>
-          )}
+        <Flexbox gap={2} style={{ minWidth: 0 }}>
+          <Typography.Text strong ellipsis>{artifact.name}</Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {artifact.kind}
+            {artifact.size.toLocaleString()} bytes · {artifact.sha256.slice(0, 12)}
           </Typography.Text>
         </Flexbox>
         <Flexbox horizontal gap={4}>
-          <ActionIcon icon={Copy} size="small" onClick={handleCopy} />
-          <ActionIcon icon={Download} size="small" onClick={handleDownload} />
+          {artifact.localAvailable && (
+            <>
+              <ActionIcon
+                disabled={busy}
+                icon={ExternalLink}
+                title={t('agent.portal.artifact.open')}
+                onClick={() => void run(() => useChatArtifactStore.getState().openLocal(artifact))}
+              />
+              <ActionIcon
+                disabled={busy}
+                icon={FolderOpen}
+                title={t('agent.portal.artifact.reveal')}
+                onClick={() => void run(() => useChatArtifactStore.getState().openLocal(artifact, true))}
+              />
+              {!artifact.stationObjectRef && (
+                <ActionIcon
+                  disabled={busy}
+                  icon={CloudUpload}
+                  title={t('agent.portal.artifact.upload')}
+                  onClick={() => void run(() => (
+                    useChatArtifactStore.getState().upload(conversationId, artifact.id)
+                  ))}
+                />
+              )}
+            </>
+          )}
+          {artifact.stationObjectRef && (
+            <ActionIcon
+              disabled={busy}
+              icon={CloudDownload}
+              title={t('agent.portal.artifact.download')}
+              onClick={() => void run(() => useChatArtifactStore.getState().download(artifact.id))}
+            />
+          )}
         </Flexbox>
       </Flexbox>
 
-      <pre
+      {error && <Alert type="error" showIcon message={error} />}
+
+      <Flexbox
+        gap={8}
         style={{
-          flex: 1,
-          margin: 0,
           padding: 12,
+          border: `1px solid ${token.colorBorderSecondary}`,
           borderRadius: token.borderRadius,
-          background: token.colorFillQuaternary,
-          overflow: 'auto',
-          fontSize: 13,
-          lineHeight: 1.6,
-          fontFamily: 'var(--font-mono, monospace)',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
         }}
       >
-        {artifact.content}
-      </pre>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {t('agent.portal.artifact.source')}
+        </Typography.Text>
+        <Typography.Text style={{ fontSize: 13 }}>
+          {t('agent.portal.artifact.turn', { id: artifact.turnId })}
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {t('agent.portal.artifact.toolCall', { id: artifact.toolCallId })}
+        </Typography.Text>
+      </Flexbox>
+
+      {!artifact.localAvailable && !artifact.stationObjectRef && (
+        <Alert
+          type="info"
+          showIcon
+          message={t('agent.portal.artifact.originalDeviceHelp')}
+        />
+      )}
     </Flexbox>
   );
 }

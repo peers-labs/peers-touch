@@ -15,7 +15,7 @@ model/domain/
 └── peer/                           # signed Station identity consumed here
 
 apps/station/
-├── frame/core/facility/session/    # canonical client-class Session slots
+├── frame/core/facility/session/    # Station/Actor/device Session slots
 ├── frame/touch/accessgate/         # access policy and attempt owner
 ├── frame/touch/actor/              # actor/device Session owner
 └── app/subserver/federation/       # Federation context/operator API
@@ -44,8 +44,9 @@ not appear as Station Access implementation owners.
 | Path | Owns | Must not own |
 |---|---|---|
 | `model/domain/access_gate/` | cross-end Access Gate contract | UI/persistence |
-| `facility/session/` | class slot, revoke and persistence | client runtime labels |
+| `facility/session/` | device slot, revoke and persistence | client runtime labels |
 | `touch/accessgate/` | gate policy, attempt and decision | client projection |
+| `touch/accessgate/linked_retirement` | expired uncommitted linked attempt/submission retirement in the offer transaction | offer truth, committed Session audit removal or invite-use rollback |
 | `touch/actor/` | Actor/Device Session truth | route selection |
 | Desktop `station_binding/` | station-keyed binding lifecycle | Station business truth |
 | Desktop `station_registry.rs` | durable Station selection | Relay credential |

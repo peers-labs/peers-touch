@@ -7,10 +7,11 @@ use crate::application::session_resolver;
 use crate::contracts::StubPayload;
 use crate::error::AppResult;
 use crate::error::ErrorCode;
+use crate::model;
 use crate::state::AppState;
+use prost::Message;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 
 #[tauri::command]
 pub fn agent_growth_snapshot(
@@ -88,27 +89,26 @@ pub fn agent_quick_completion(
     input: AgentQuickCompletionInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<Value> {
+) -> AppResult<Vec<u8>> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let body = json!({
-        "agent_id": input.agent_id,
-        "prompt": input.prompt,
-    });
-    match state.station.client().request_json_auth(
+    let body = model::agent::QuickCompletionRequest {
+        agent_id: input.agent_id,
+        prompt: input.prompt,
+    };
+    match state.station.client().request_proto::<
+        model::agent::QuickCompletionRequest,
+        model::agent::QuickCompletionResponse,
+    >(
         Method::POST,
-        "/agent/quick-completion",
+        "/sub-agent/agent/quick-completion",
         &token,
         None,
         Some(&body),
     ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => AppResult::fail(
-            ErrorCode::InternalError,
-            "quick completion failed",
-            Some(json!({"error": e.to_string()})),
-        ),
+        Ok(resp) => AppResult::success(resp.encode_to_vec()),
+        Err(e) => e.into_app_result("quick completion failed"),
     }
 }

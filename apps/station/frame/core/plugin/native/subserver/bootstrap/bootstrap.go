@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/bootstrapblob"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/internal/mdns"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/accessendpoint"
@@ -55,6 +56,7 @@ type SubServer struct {
 
 	nodeAuthorizationLock sync.Mutex
 	nodeAuthorization     *peerpb.StationNodeAuthorization
+	bootstrapBlobs        *bootstrapblob.Store
 
 	runningLock sync.Mutex
 	status      server.Status
@@ -154,6 +156,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 	}
 	s.host = s.opts.Host
 	s.dht = s.opts.DHT
+	s.bootstrapBlobs = bootstrapblob.NewStore()
 	rawSeeds := federation.BootstrapSeeds()
 	s.seedPeers = make([]peer.AddrInfo, 0, len(rawSeeds))
 	for _, info := range rawSeeds {
@@ -318,6 +321,7 @@ func (s *SubServer) startRepublisher(ctx context.Context) {
 func (s *SubServer) Stop(ctx context.Context) (err error) {
 	s.runningLock.Lock()
 	defer s.runningLock.Unlock()
+	s.bootstrapBlobs.Clear()
 
 	defer func() {
 		if err != nil {
@@ -391,6 +395,7 @@ func (s *SubServer) Handlers() []server.Handler {
 			s.stationIdentity,
 		),
 		accessendpoint.Handler(s),
+		bootstrapblob.RetrievalHandler(s),
 		// Phase B: federation locator diagnostic endpoints. These are
 		// intentionally on the bootstrap subserver (not /touch/...)
 		// because they manipulate the federation DHT directly and have

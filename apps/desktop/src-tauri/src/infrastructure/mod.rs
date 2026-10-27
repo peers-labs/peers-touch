@@ -7,6 +7,8 @@ pub mod i18n;
 pub mod identity_event;
 pub mod local_scope;
 pub mod logger;
+#[cfg(target_os = "macos")]
+pub mod native_file_dialog;
 pub mod oss_cache;
 pub mod p2p;
 pub mod profile_store;

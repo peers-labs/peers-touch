@@ -16,6 +16,6 @@ export function registerSettingsPage(): void {
     factory: () => <SettingsPageContainer />,
     preload: 'idle',
     keepAlive: 'forever',
-    runtimes: ['settings', 'chat-storage', 'channel'],
+    runtimes: ['settings', 'chat-storage', 'channel', 'device-link'],
   });
 }

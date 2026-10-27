@@ -66,17 +66,60 @@ func TestPrepareOAuthSessionRejectsRuntimeClientClassAlias(t *testing.T) {
 	}
 }
 
-func TestIssueTokenAndSessionRejectsNonCanonicalClientClassBeforeIssuance(t *testing.T) {
-	_, err := IssueTokenAndSession(
-		context.Background(),
-		credentialTestActor(),
-		"127.0.0.1",
-		"session-class-test",
-		"desktop-native",
-		nil,
+func TestPendingDeviceLinkSessionIsInactiveAndNotAnOAuthCandidate(t *testing.T) {
+	coreauth.Init(coreauth.Config{
+		Secret: "pending-session-test-secret", AccessTTL: time.Hour,
+	})
+	record, response, err := PreparePendingSession(
+		context.Background(), credentialTestActor(),
+		PendingSessionBinding{
+			AccessGateSessionBinding: AccessGateSessionBinding{
+				AccessAttemptID: "access-1", StationPeerID: "station-1",
+				AccessDecisionRevision: 2, DeviceType: session.DeviceTypeMobile,
+				DeviceID: "phone-1", LifecycleGeneration: 1,
+			},
+			AuthMethod: "device_link",
+		},
+		time.Unix(1_700_000_000, 0),
 	)
-	if err == nil {
-		t.Fatal("IssueTokenAndSession() accepted a runtime client-class alias")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !record.Revoked || record.RevokedReason != "credential_delivery_pending" ||
+		record.OAuthCandidateID != "" || record.AuthMethod != "device_link" ||
+		record.DeviceID != "phone-1" || record.SessionID != response.GetSessionId() {
+		t.Fatal("pending Device Link credential escaped its inactive device binding")
+	}
+	assertCredentialActorRef(t, response.GetActorRef())
+}
+
+func TestPendingSessionRejectsCrossMethodAndUnboundDevice(t *testing.T) {
+	binding := PendingSessionBinding{
+		AccessGateSessionBinding: AccessGateSessionBinding{
+			AccessAttemptID: "access-1", StationPeerID: "station-1",
+			AccessDecisionRevision: 2, DeviceType: session.DeviceTypeMobile,
+			DeviceID: "phone-1", LifecycleGeneration: 1,
+		},
+		AuthMethod: "device_link",
+	}
+	for _, name := range []string{"oauth-candidate", "unbound", "web", "unknown-method"} {
+		t.Run(name, func(t *testing.T) {
+			invalid := binding
+			switch name {
+			case "oauth-candidate":
+				invalid.OAuthCandidateID = "candidate-1"
+			case "unbound":
+				invalid.DeviceID = ""
+			case "web":
+				invalid.DeviceType = session.DeviceTypeWeb
+			case "unknown-method":
+				invalid.AuthMethod = "password"
+			}
+			if _, _, err := PreparePendingSession(context.Background(),
+				credentialTestActor(), invalid, time.Now()); err == nil {
+				t.Fatal("invalid pending binding accepted")
+			}
+		})
 	}
 }
 

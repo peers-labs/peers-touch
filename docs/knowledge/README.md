@@ -162,6 +162,7 @@ Pick one based on intent:
 - [`invariants/desktop-actor-identity-scope-migration.md`](invariants/desktop-actor-identity-scope-migration.md) — Desktop Actor identity scope changes migrate the Station-anchored seed and preserve the local device identity.
 - [`invariants/mobile-user-identity-visual-consistency.md`](invariants/mobile-user-identity-visual-consistency.md) — Mobile user identities use one rounded-square avatar primitive and one canonical actor projection across Social surfaces.
 - [`invariants/access-gate-wire-contract.md`](invariants/access-gate-wire-contract.md) — `AccessDecision` consumers must tolerate snake_case-first keys and match enums by both number and string name across Go→Rust→TS.
+- [`invariants/device-link-commit-and-lifecycle-admission.md`](invariants/device-link-commit-and-lifecycle-admission.md) — Device Link commit defers to current Access and Session owners; stale asynchronous work cannot reacquire lifecycle or route ownership.
 - [`invariants/actor-ref-account-is-persisted-identity.md`](invariants/actor-ref-account-is-persisted-identity.md) — `ActorRef.acct` comes from the persisted federated handle, never request transport.
 - [`invariants/actor-presence-ownership.md`](invariants/actor-presence-ownership.md) — actor presence belongs to the global presence owner, not chat subservers or chat proto models.
 - [`invariants/direct-receipt-endpoint-truth.md`](invariants/direct-receipt-endpoint-truth.md) — Direct receipt aggregation uses immutable event commitments, not Group/MLS device rows.

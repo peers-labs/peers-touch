@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   getSelectedAgent: vi.fn(),
   listAvailableModels: vi.fn(),
   listModelConfig: vi.fn(),
+  getRuntimeDefault: vi.fn(),
   listAgentsWithMeta: vi.fn(),
   setSelectedAgent: vi.fn(),
   updateAgent: vi.fn(),
@@ -94,6 +95,7 @@ describe('Agent profile capability reconciliation', () => {
       provider: 'provider-2',
       version: 8,
     });
+    api.getRuntimeDefault.mockResolvedValue(null);
     capabilityStore.loadAgent.mockResolvedValue(undefined);
     api.getSelectedAgent.mockResolvedValue(agent.name);
     api.listAvailableModels.mockResolvedValue({ models: [], default: '' });
@@ -267,6 +269,45 @@ describe('Agent profile capability reconciliation', () => {
     });
     api.listModelConfig.mockResolvedValueOnce({
       default: { provider: 'provider-2', model: 'model-2' },
+    });
+
+    await useAgentStore.getState().loadModels();
+
+    expect(useAgentStore.getState().defaultModel).toBe('model-2');
+    expect(useAgentStore.getState().defaultProviderId).toBe('provider-2');
+  });
+
+  it('prefers the Station runtime default over the local model registry', async () => {
+    api.listAvailableModels.mockResolvedValueOnce({
+      default: 'model-1',
+      models: [
+        {
+          id: 'model-1',
+          display_name: 'Model 1',
+          provider_id: 'provider-1',
+          provider_name: 'Provider 1',
+          type: 'chat',
+          context_window: 128000,
+          enabled: true,
+        },
+        {
+          id: 'model-2',
+          display_name: 'Model 2',
+          provider_id: 'provider-2',
+          provider_name: 'Provider 2',
+          type: 'chat',
+          context_window: 128000,
+          enabled: true,
+        },
+      ],
+    });
+    api.listModelConfig.mockResolvedValueOnce({
+      default: { provider: 'provider-1', model: 'model-1' },
+    });
+    api.getRuntimeDefault.mockResolvedValueOnce({
+      providerId: 'provider-2',
+      modelId: 'model-2',
+      revision: 3,
     });
 
     await useAgentStore.getState().loadModels();

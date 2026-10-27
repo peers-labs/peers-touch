@@ -1,0 +1,832 @@
+{
+  "kind": "peers-touch-experience-review-result",
+  "schemaVersion": 1,
+  "authorId": "edx-blind-runner-v2",
+  "verdict": "FINDINGS",
+  "evaluationBinding": {
+    "packageId": "EDX-HOLDOUT-20261019-V2",
+    "runEnvelopeDigest": "sha256:5ff0a02a8009e7cbb8deb92965d7172f97585c357a58c43864d3d743f0c63ee3",
+    "caseDigest": "sha256:7850e37e4a2a5cff78e5965882fffdd4ca773c436144e3f54256e692b1b22729",
+    "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+    "manifestDigest": "sha256:6d8c7328bb64ad1d7c9c255a61daaf9186cd20451778f45f7f2c8765b2e468ce",
+    "rubricDigest": "sha256:2f31bcd9bbac2dd5a9280051b8917a1bc4c63da30d4d4e6c8fafaf9069b2ef84",
+    "sourceBlobAlgorithm": "git-sha1",
+    "sourceBlobs": [
+      {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "digest": "cf269e8f45177928a902194823d35897266937ae"
+      },
+      {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+        "digest": "bb1da678b9923a016d7bb19d6232d3d9482b77ae"
+      },
+      {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/experience-contract.md",
+        "digest": "be742e512f34d9e5c3c9bd3382215898c6dd0f57"
+      },
+      {
+        "path": "docs/client/common/ui-identity/interaction.md",
+        "digest": "8e7f54058696bb93ee31a7c0daa9c50b7141944b"
+      }
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C-H01-CAPABILITY-INVENTORY",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/experience-contract.md",
+        "lineStart": 210,
+        "lineEnd": 220
+      },
+      "clause": "V2-J02.1-3",
+      "statement": "The user inspects Tool, MCP, and Connector inventory with source, version, readiness, compatibility, risk, and binding state; binding changes are confirmed by Station readback; disconnected or incompatible capabilities cannot appear ready."
+    },
+    {
+      "id": "C-H01-CONNECTOR-LIFECYCLE",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/experience-contract.md",
+        "lineStart": 245,
+        "lineEnd": 253
+      },
+      "clause": "V2-J05.1-5",
+      "statement": "Connection and scope state is authoritative, resources become versioned tool manifests, binding is confirmed by Station readback, and expiry, denial, disconnect, and reconnect expose typed recovery."
+    },
+    {
+      "id": "C-H01-DISTINCT-CONNECTOR-STATES",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+        "lineStart": 947,
+        "lineEnd": 966
+      },
+      "clause": "MCA-D17 Decision and Rationale",
+      "statement": "Connection, resource discovery, tool synchronization, Agent binding, and invocation are distinct states; Connector resources publish scope-bound manifests and Agent bindings reference those manifests."
+    },
+    {
+      "id": "C-H01-READINESS-INVALIDATION",
+      "authority": "accepted-product",
+      "caseCoverage": "supporting",
+      "source": {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+        "lineStart": 974,
+        "lineEnd": 979
+      },
+      "clause": "MCA-D17 Consequences",
+      "statement": "Resource, version, and scope changes invalidate readiness snapshots, while disconnect follows connection revision semantics."
+    },
+    {
+      "id": "C-H01-DISABLED-EXPLANATION",
+      "authority": "accepted-client",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/client/common/ui-identity/interaction.md",
+        "lineStart": 25,
+        "lineEnd": 43
+      },
+      "clause": "Interaction States minimum rule",
+      "statement": "An actionable component defines disabled and degraded states, and a disabled state that blocks a user task explains the reason."
+    },
+    {
+      "id": "C-H01-LOCAL-FEEDBACK",
+      "authority": "accepted-client",
+      "caseCoverage": "supporting",
+      "source": {
+        "path": "docs/client/common/ui-identity/interaction.md",
+        "lineStart": 55,
+        "lineEnd": 64
+      },
+      "clause": "Feedback",
+      "statement": "Pending, success, and error feedback is local to the affected surface before global feedback."
+    },
+    {
+      "id": "C-H01-FAILED-ACTION-RECOVERY",
+      "authority": "accepted-client",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/client/common/ui-identity/interaction.md",
+        "lineStart": 66,
+        "lineEnd": 74
+      },
+      "clause": "Recovery",
+      "statement": "A failed action identifies what and which object failed, preserves relevant input, exposes retry, and identifies the failure domain."
+    }
+  ],
+  "facts": [
+    {
+      "id": "F-H01-STATUS-PROJECTION",
+      "stateId": "S-H01-PANEL",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 101,
+        "lineEnd": 121,
+        "symbol": "ConnectorStatusBadge"
+      },
+      "statement": "The row distinguishes connected, disconnected, expired, revoked, and revocation-unconfirmed connection states with localized status tags.",
+      "visibleResponse": "A status tag names the current connection state."
+    },
+    {
+      "id": "F-H01-NONCONNECTED-CONNECT",
+      "stateId": "S-H01-PANEL",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 239,
+        "lineEnd": 247,
+        "symbol": "ConnectorRow"
+      },
+      "statement": "Every non-connected status renders a Connect button and uses the row pending flag as its loading state.",
+      "visibleAction": "Activate Connect for a disconnected, expired, revoked, or revocation-unconfirmed Connector."
+    },
+    {
+      "id": "F-H01-ROW-SUMMARY",
+      "stateId": "S-H01-PANEL",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 205,
+        "lineEnd": 237,
+        "symbol": "ConnectorRow"
+      },
+      "statement": "The row exposes Connector name, up to three Connector scopes, connection status, and one aggregate readiness badge when bound; it does not render individual tool manifest identity, version, compatibility, risk, or per-manifest binding state.",
+      "visibleAction": "Inspect the connected Connector row.",
+      "visibleResponse": "The row shows only Connector-level summary fields and aggregate readiness."
+    },
+    {
+      "id": "F-H01-BIND-SWITCH",
+      "stateId": "S-H01-PANEL",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 249,
+        "lineEnd": 257,
+        "symbol": "ConnectorRow"
+      },
+      "statement": "A connected Connector renders one binding Switch; it is disabled while pending or whenever bindingAvailable is false.",
+      "visibleAction": "Attempt to enable the connected Connector for the Agent with the binding Switch.",
+      "visibleResponse": "The Switch is disabled when no current manifest makes binding available."
+    },
+    {
+      "id": "F-H01-MANIFEST-SELECTION",
+      "stateId": "S-H01-PANEL",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 282,
+        "lineEnd": 307,
+        "symbol": "connectorCapabilities"
+      },
+      "statement": "Current resource references select non-retired capability manifests; enabled non-tombstoned bindings matching any referenced manifest are collected, and their readiness is collapsed to one Connector state."
+    },
+    {
+      "id": "F-H01-BINDING-AVAILABLE-PROJECTION",
+      "stateId": "S-H01-PANEL",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 383,
+        "lineEnd": 397,
+        "symbol": "AgentConnectorsPanel"
+      },
+      "statement": "The row is considered bound when at least one matching binding exists and binding is considered available when at least one matching manifest exists.",
+      "visibleResponse": "With several current manifests, any positive binding count checks the single Connector switch."
+    },
+    {
+      "id": "F-H01-NO-MANIFEST-HELP",
+      "stateId": "S-H01-PANEL",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 350,
+        "lineEnd": 380,
+        "symbol": "AgentConnectorsPanel"
+      },
+      "statement": "The explanatory empty state and Settings action appear only when no Connector is available, not when a connected Connector has zero current tool manifests.",
+      "visibleResponse": "A connected row with zero manifests remains visible without the empty-state explanation or Settings action."
+    },
+    {
+      "id": "F-H01-TOGGLE-ACTION",
+      "stateId": "S-H01-PANEL",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 326,
+        "lineEnd": 340,
+        "symbol": "handleToggle"
+      },
+      "statement": "Turning the switch on requests Connector binding and turning it off requests Connector unbinding.",
+      "visibleAction": "Toggle the connected Connector binding."
+    },
+    {
+      "id": "F-H01-PENDING-RESPONSE",
+      "stateId": "S-H01-PENDING",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 249,
+        "lineEnd": 256,
+        "symbol": "ConnectorRow"
+      },
+      "statement": "While a Connector action is pending, the Switch is disabled and displays its loading state.",
+      "visibleResponse": "The affected Connector switch becomes loading and disabled."
+    },
+    {
+      "id": "F-H01-READY-RESPONSE",
+      "stateId": "S-H01-BOUND-READY",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 125,
+        "lineEnd": 143,
+        "symbol": "ConnectorReadinessBadge"
+      },
+      "statement": "READY renders the enabled readiness tag.",
+      "visibleResponse": "The bound Connector shows an enabled readiness tag."
+    },
+    {
+      "id": "F-H01-DEGRADED-RESPONSE",
+      "stateId": "S-H01-BOUND-DEGRADED",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 125,
+        "lineEnd": 143,
+        "symbol": "ConnectorReadinessBadge"
+      },
+      "statement": "DEGRADED renders a partial-degradation readiness tag.",
+      "visibleResponse": "The bound Connector shows a partial-degradation readiness tag."
+    },
+    {
+      "id": "F-H01-UNAVAILABLE-RESPONSE",
+      "stateId": "S-H01-BOUND-UNAVAILABLE",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 125,
+        "lineEnd": 143,
+        "symbol": "ConnectorReadinessBadge"
+      },
+      "statement": "UNAVAILABLE or BLOCKED renders an unavailable readiness tag.",
+      "visibleResponse": "The bound Connector shows an unavailable readiness tag."
+    },
+    {
+      "id": "F-H01-UNKNOWN-RESPONSE",
+      "stateId": "S-H01-BOUND-UNKNOWN",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 125,
+        "lineEnd": 143,
+        "symbol": "ConnectorReadinessBadge"
+      },
+      "statement": "Any remaining readiness value renders an unknown readiness tag.",
+      "visibleResponse": "The bound Connector shows an unknown readiness tag."
+    },
+    {
+      "id": "F-H01-READINESS-COLLAPSE",
+      "stateId": "S-H01-PANEL",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 76,
+        "lineEnd": 99,
+        "symbol": "connectorBindingReadiness"
+      },
+      "statement": "Multiple binding states collapse by precedence to unavailable, unknown, degraded, or ready, removing per-binding readiness distinctions from the row."
+    },
+    {
+      "id": "F-H01-UNBIND-READY-ACTION",
+      "stateId": "S-H01-BOUND-READY",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 326,
+        "lineEnd": 340,
+        "symbol": "handleToggle"
+      },
+      "statement": "The checked Switch can request unbinding.",
+      "visibleAction": "Turn off the ready Connector binding."
+    },
+    {
+      "id": "F-H01-UNBIND-DEGRADED-ACTION",
+      "stateId": "S-H01-BOUND-DEGRADED",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 326,
+        "lineEnd": 340,
+        "symbol": "handleToggle"
+      },
+      "statement": "The checked Switch can request unbinding from degraded readiness.",
+      "visibleAction": "Turn off the degraded Connector binding."
+    },
+    {
+      "id": "F-H01-UNBIND-UNAVAILABLE-ACTION",
+      "stateId": "S-H01-BOUND-UNAVAILABLE",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 326,
+        "lineEnd": 340,
+        "symbol": "handleToggle"
+      },
+      "statement": "The checked Switch can request unbinding from unavailable readiness.",
+      "visibleAction": "Turn off the unavailable Connector binding."
+    },
+    {
+      "id": "F-H01-UNBIND-UNKNOWN-ACTION",
+      "stateId": "S-H01-BOUND-UNKNOWN",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 326,
+        "lineEnd": 340,
+        "symbol": "handleToggle"
+      },
+      "statement": "The checked Switch can request unbinding from unknown readiness.",
+      "visibleAction": "Turn off the unknown Connector binding."
+    },
+    {
+      "id": "F-H01-UNBOUND-RESPONSE",
+      "stateId": "S-H01-PANEL",
+      "source": {
+        "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "lineStart": 383,
+        "lineEnd": 397,
+        "symbol": "AgentConnectorsPanel"
+      },
+      "statement": "When no current binding remains, the row passes bound=false to the Switch.",
+      "visibleResponse": "The Connector binding Switch becomes unchecked."
+    }
+  ],
+  "inferences": [
+    {
+      "id": "I-H01-NO-MANIFEST-BLOCK",
+      "factIds": [
+        "F-H01-BIND-SWITCH",
+        "F-H01-NO-MANIFEST-HELP"
+      ],
+      "contractIds": [
+        "C-H01-DISABLED-EXPLANATION",
+        "C-H01-DISTINCT-CONNECTOR-STATES"
+      ],
+      "statement": "A connected Connector with zero current manifests blocks the requested attach action with a disabled Switch but supplies no visible reason or recovery pointer on that surface."
+    },
+    {
+      "id": "I-H01-INVENTORY-COLLAPSED",
+      "factIds": [
+        "F-H01-ROW-SUMMARY",
+        "F-H01-MANIFEST-SELECTION",
+        "F-H01-BINDING-AVAILABLE-PROJECTION",
+        "F-H01-READINESS-COLLAPSE"
+      ],
+      "contractIds": [
+        "C-H01-CAPABILITY-INVENTORY",
+        "C-H01-DISTINCT-CONNECTOR-STATES",
+        "C-H01-READINESS-INVALIDATION"
+      ],
+      "statement": "The single Connector row and Switch compress a multi-manifest, potentially partially bound capability set into one boolean and one readiness tag, so the user cannot inspect the contract-required per-tool version, compatibility, risk, readiness, and binding meaning."
+    }
+  ],
+  "journeyStateGraph": {
+    "entryStateId": "S-H01-PANEL",
+    "states": [
+      {
+        "id": "S-H01-PANEL",
+        "origin": "starting",
+        "inScope": true,
+        "source": {
+          "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+          "lineStart": 383,
+          "lineEnd": 400,
+          "symbol": "AgentConnectorsPanel"
+        },
+        "visibleMeaning": "The Agent Connector panel projects each available Connector, including its connection status and the current aggregate binding surface; the current manifest and binding sets may be empty or plural."
+      },
+      {
+        "id": "S-H01-PENDING",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 1,
+        "source": {
+          "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+          "lineStart": 239,
+          "lineEnd": 257,
+          "symbol": "ConnectorRow"
+        },
+        "visibleMeaning": "The affected Connect button or binding Switch is loading while its mutation is pending."
+      },
+      {
+        "id": "S-H01-BOUND-READY",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 2,
+        "source": {
+          "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+          "lineStart": 125,
+          "lineEnd": 143,
+          "symbol": "ConnectorReadinessBadge"
+        },
+        "visibleMeaning": "At least one current binding exists and aggregate readiness is ready."
+      },
+      {
+        "id": "S-H01-BOUND-DEGRADED",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 3,
+        "source": {
+          "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+          "lineStart": 125,
+          "lineEnd": 143,
+          "symbol": "ConnectorReadinessBadge"
+        },
+        "visibleMeaning": "At least one current binding exists and aggregate readiness is degraded."
+      },
+      {
+        "id": "S-H01-BOUND-UNAVAILABLE",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 4,
+        "source": {
+          "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+          "lineStart": 125,
+          "lineEnd": 143,
+          "symbol": "ConnectorReadinessBadge"
+        },
+        "visibleMeaning": "At least one current binding exists and aggregate readiness is unavailable or blocked."
+      },
+      {
+        "id": "S-H01-BOUND-UNKNOWN",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 5,
+        "source": {
+          "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+          "lineStart": 125,
+          "lineEnd": 143,
+          "symbol": "ConnectorReadinessBadge"
+        },
+        "visibleMeaning": "At least one current binding exists and aggregate readiness is unknown or unspecified."
+      }
+    ],
+    "edges": [
+      {
+        "id": "E-H01-START-PENDING",
+        "fromStateId": "S-H01-PANEL",
+        "toStateId": "S-H01-PENDING",
+        "actionFactId": "F-H01-TOGGLE-ACTION",
+        "responseFactId": "F-H01-PENDING-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 249,
+            "lineEnd": 257
+          },
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 326,
+            "lineEnd": 340
+          }
+        ]
+      },
+      {
+        "id": "E-H01-START-READY",
+        "fromStateId": "S-H01-PANEL",
+        "toStateId": "S-H01-BOUND-READY",
+        "actionFactId": "F-H01-TOGGLE-ACTION",
+        "responseFactId": "F-H01-READY-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 125,
+            "lineEnd": 143
+          },
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 326,
+            "lineEnd": 340
+          }
+        ]
+      },
+      {
+        "id": "E-H01-START-DEGRADED",
+        "fromStateId": "S-H01-PANEL",
+        "toStateId": "S-H01-BOUND-DEGRADED",
+        "actionFactId": "F-H01-TOGGLE-ACTION",
+        "responseFactId": "F-H01-DEGRADED-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 125,
+            "lineEnd": 143
+          },
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 326,
+            "lineEnd": 340
+          }
+        ]
+      },
+      {
+        "id": "E-H01-START-UNAVAILABLE",
+        "fromStateId": "S-H01-PANEL",
+        "toStateId": "S-H01-BOUND-UNAVAILABLE",
+        "actionFactId": "F-H01-TOGGLE-ACTION",
+        "responseFactId": "F-H01-UNAVAILABLE-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 125,
+            "lineEnd": 143
+          },
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 326,
+            "lineEnd": 340
+          }
+        ]
+      },
+      {
+        "id": "E-H01-START-UNKNOWN",
+        "fromStateId": "S-H01-PANEL",
+        "toStateId": "S-H01-BOUND-UNKNOWN",
+        "actionFactId": "F-H01-TOGGLE-ACTION",
+        "responseFactId": "F-H01-UNKNOWN-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 125,
+            "lineEnd": 143
+          },
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 326,
+            "lineEnd": 340
+          }
+        ]
+      },
+      {
+        "id": "E-H01-READY-UNBOUND",
+        "fromStateId": "S-H01-BOUND-READY",
+        "toStateId": "S-H01-PANEL",
+        "actionFactId": "F-H01-UNBIND-READY-ACTION",
+        "responseFactId": "F-H01-UNBOUND-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 326,
+            "lineEnd": 340
+          },
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 383,
+            "lineEnd": 397
+          }
+        ]
+      },
+      {
+        "id": "E-H01-DEGRADED-UNBOUND",
+        "fromStateId": "S-H01-BOUND-DEGRADED",
+        "toStateId": "S-H01-PANEL",
+        "actionFactId": "F-H01-UNBIND-DEGRADED-ACTION",
+        "responseFactId": "F-H01-UNBOUND-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 326,
+            "lineEnd": 340
+          },
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 383,
+            "lineEnd": 397
+          }
+        ]
+      },
+      {
+        "id": "E-H01-UNAVAILABLE-UNBOUND",
+        "fromStateId": "S-H01-BOUND-UNAVAILABLE",
+        "toStateId": "S-H01-PANEL",
+        "actionFactId": "F-H01-UNBIND-UNAVAILABLE-ACTION",
+        "responseFactId": "F-H01-UNBOUND-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 326,
+            "lineEnd": 340
+          },
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 383,
+            "lineEnd": 397
+          }
+        ]
+      },
+      {
+        "id": "E-H01-UNKNOWN-UNBOUND",
+        "fromStateId": "S-H01-BOUND-UNKNOWN",
+        "toStateId": "S-H01-PANEL",
+        "actionFactId": "F-H01-UNBIND-UNKNOWN-ACTION",
+        "responseFactId": "F-H01-UNBOUND-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 326,
+            "lineEnd": 340
+          },
+          {
+            "path": "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+            "lineStart": 383,
+            "lineEnd": 397
+          }
+        ]
+      }
+    ]
+  },
+  "trustBoundaryChecks": [],
+  "recoveryPaths": [],
+  "candidateLedger": [
+    {
+      "candidate": {
+        "id": "FC-H01-NO-MANIFEST-REASON",
+        "stateId": "S-H01-PANEL",
+        "factIds": [
+          "F-H01-BIND-SWITCH",
+          "F-H01-NO-MANIFEST-HELP"
+        ],
+        "contractIds": [
+          "C-H01-DISABLED-EXPLANATION",
+          "C-H01-DISTINCT-CONNECTOR-STATES"
+        ],
+        "inferenceIds": [
+          "I-H01-NO-MANIFEST-BLOCK"
+        ],
+        "severity": "major",
+        "impact": "outcome-blocked",
+        "confidence": "high",
+        "brokenPromise": "A disabled binding action that blocks attaching the connected service must explain why the action is unavailable.",
+        "causalMechanism": "The row disables its only binding control when current manifest count is zero, while the only explanatory empty state is gated on zero available Connectors.",
+        "userImpact": "The user sees a connected service but cannot attach it or determine whether discovery is still pending, no tools exist, scope is insufficient, or Settings action is required.",
+        "ownerLayer": "Desktop Agent Connector experience projection",
+        "correctionDirection": "Project the no-current-manifest reason beside the disabled binding control and expose the contract-backed next or retry action without conflating connection with tool availability."
+      },
+      "eligible": true,
+      "ineligibleReasons": [],
+      "priorityTuple": [
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        "FC-H01-NO-MANIFEST-REASON"
+      ]
+    },
+    {
+      "candidate": {
+        "id": "FC-H01-COLLAPSED-TOOL-INVENTORY",
+        "stateId": "S-H01-PANEL",
+        "factIds": [
+          "F-H01-ROW-SUMMARY",
+          "F-H01-MANIFEST-SELECTION",
+          "F-H01-BINDING-AVAILABLE-PROJECTION",
+          "F-H01-READINESS-COLLAPSE"
+        ],
+        "contractIds": [
+          "C-H01-CAPABILITY-INVENTORY",
+          "C-H01-DISTINCT-CONNECTOR-STATES",
+          "C-H01-READINESS-INVALIDATION"
+        ],
+        "inferenceIds": [
+          "I-H01-INVENTORY-COLLAPSED"
+        ],
+        "severity": "major",
+        "impact": "material-ambiguity",
+        "confidence": "high",
+        "brokenPromise": "The Agent capability surface must expose the current tool inventory and each tool's version, readiness, compatibility, risk, and binding state.",
+        "causalMechanism": "All current manifests and bindings are compressed into one Connector-level switch and one precedence-based readiness tag; any binding checks the switch even when other current manifests are unbound.",
+        "userImpact": "With several discovered tools, the user cannot tell which tools will be attached, which are already attached, or which specific tool is degraded or unavailable.",
+        "ownerLayer": "Desktop Agent capability inventory projection",
+        "correctionDirection": "Render the versioned manifest inventory and per-manifest binding/readiness meaning, while preserving a Connector-level summary only as a secondary aggregate."
+      },
+      "eligible": true,
+      "ineligibleReasons": [],
+      "priorityTuple": [
+        0,
+        4,
+        0,
+        0,
+        1,
+        0,
+        "FC-H01-COLLAPSED-TOOL-INVENTORY"
+      ]
+    }
+  ],
+  "primaryFinding": {
+    "candidateId": "FC-H01-NO-MANIFEST-REASON",
+    "factIds": [
+      "F-H01-BIND-SWITCH",
+      "F-H01-NO-MANIFEST-HELP"
+    ],
+    "contractIds": [
+      "C-H01-DISABLED-EXPLANATION",
+      "C-H01-DISTINCT-CONNECTOR-STATES"
+    ],
+    "inferenceIds": [
+      "I-H01-NO-MANIFEST-BLOCK"
+    ],
+    "severity": "major",
+    "earliestStateId": "S-H01-PANEL",
+    "brokenPromise": "A disabled binding action that blocks attaching the connected service must explain why the action is unavailable.",
+    "causalMechanism": "The row disables its only binding control when current manifest count is zero, while the only explanatory empty state is gated on zero available Connectors.",
+    "userImpact": "The user sees a connected service but cannot attach it or determine whether discovery is still pending, no tools exist, scope is insufficient, or Settings action is required.",
+    "ownerLayer": "Desktop Agent Connector experience projection",
+    "correctionDirection": "Project the no-current-manifest reason beside the disabled binding control and expose the contract-backed next or retry action without conflating connection with tool availability.",
+    "confidence": "high",
+    "priorityBasis": [
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      "FC-H01-NO-MANIFEST-REASON"
+    ]
+  },
+  "secondaryFindings": [
+    {
+      "candidateId": "FC-H01-COLLAPSED-TOOL-INVENTORY",
+      "factIds": [
+        "F-H01-ROW-SUMMARY",
+        "F-H01-MANIFEST-SELECTION",
+        "F-H01-BINDING-AVAILABLE-PROJECTION",
+        "F-H01-READINESS-COLLAPSE"
+      ],
+      "contractIds": [
+        "C-H01-CAPABILITY-INVENTORY",
+        "C-H01-DISTINCT-CONNECTOR-STATES",
+        "C-H01-READINESS-INVALIDATION"
+      ],
+      "inferenceIds": [
+        "I-H01-INVENTORY-COLLAPSED"
+      ],
+      "severity": "major",
+      "earliestStateId": "S-H01-PANEL",
+      "brokenPromise": "The Agent capability surface must expose the current tool inventory and each tool's version, readiness, compatibility, risk, and binding state.",
+      "causalMechanism": "All current manifests and bindings are compressed into one Connector-level switch and one precedence-based readiness tag; any binding checks the switch even when other current manifests are unbound.",
+      "userImpact": "With several discovered tools, the user cannot tell which tools will be attached, which are already attached, or which specific tool is degraded or unavailable.",
+      "ownerLayer": "Desktop Agent capability inventory projection",
+      "correctionDirection": "Render the versioned manifest inventory and per-manifest binding/readiness meaning, while preserving a Connector-level summary only as a secondary aggregate.",
+      "confidence": "high",
+      "priorityBasis": [
+        0,
+        4,
+        0,
+        0,
+        1,
+        0,
+        "FC-H01-COLLAPSED-TOOL-INVENTORY"
+      ],
+      "deprioritizedBecause": "The unexplained disabled state blocks the attach outcome earlier and has the stronger outcome-blocked impact rank."
+    }
+  ],
+  "minorObservations": [],
+  "statesChecked": [
+    "S-H01-PANEL",
+    "S-H01-PENDING",
+    "S-H01-BOUND-READY",
+    "S-H01-BOUND-DEGRADED",
+    "S-H01-BOUND-UNAVAILABLE",
+    "S-H01-BOUND-UNKNOWN"
+  ],
+  "exitAndRetryPaths": [],
+  "unproven": [
+    {
+      "id": "U-H01-MUTATION-FAILURE",
+      "contractIds": [
+        "C-H01-LOCAL-FEEDBACK",
+        "C-H01-FAILED-ACTION-RECOVERY"
+      ],
+      "requirement": "Bind and unbind mutation failure must identify the failed Connector action locally and expose a retry path.",
+      "reason": "The supplied source ranges show mutation dispatch and pending controls but do not supply the action wrapper's failure projection or runtime behavior.",
+      "requiredEvidenceLevel": "L3_DYNAMIC",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H01-STATION-READBACK",
+      "contractIds": [
+        "C-H01-CAPABILITY-INVENTORY",
+        "C-H01-CONNECTOR-LIFECYCLE"
+      ],
+      "requirement": "A visible checked or unchecked binding state must reflect authoritative Station readback.",
+      "reason": "The supplied component projects store bindings but does not establish the mutation/readback protocol or a current runtime observation.",
+      "requiredEvidenceLevel": "L4_RUNTIME",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H01-FOCUS-RETURN",
+      "contractIds": [
+        "C-H01-DISABLED-EXPLANATION",
+        "C-H01-FAILED-ACTION-RECOVERY"
+      ],
+      "requirement": "After pending or failed mutation, keyboard focus and retry target remain usable on the affected Connector row.",
+      "reason": "Static source does not establish focus order or focus restoration after asynchronous mutation.",
+      "requiredEvidenceLevel": "L3_DYNAMIC",
+      "requiredFor": [
+        "high-fidelity",
+        "production"
+      ]
+    }
+  ]
+}

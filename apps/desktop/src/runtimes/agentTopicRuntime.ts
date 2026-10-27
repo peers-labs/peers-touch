@@ -2,6 +2,7 @@ import type { RuntimeDescriptor } from '../kernel/runtime';
 import { useAgentStore } from '../store/agent';
 import { useAgentTopicStore } from '../store/agentTopics';
 import { useChatStore } from '../store/chat';
+import { useChatArtifactStore } from '../store/chatArtifacts';
 import { useSessionGroupStore } from '../store/sessionGroups';
 import { log } from '../utils/logger';
 
@@ -45,12 +46,14 @@ async function reconcileTopics(reason: string): Promise<void> {
     await useChatStore.getState().bootstrapSession();
     await useChatStore.getState().syncMessages();
     await useChatStore.getState().syncTurnQueue(currentSession.key);
+    await useChatArtifactStore.getState().load(currentSession.key).catch(() => []);
     return;
   }
   if (topics[0]) {
     await useChatStore.getState().selectSession(topics[0].key, topics[0]);
     await useChatStore.getState().syncMessages();
     await useChatStore.getState().syncTurnQueue(topics[0].key);
+    await useChatArtifactStore.getState().load(topics[0].key).catch(() => []);
     return;
   }
 
@@ -95,6 +98,7 @@ export const agentTopicRuntime: RuntimeDescriptor = {
     unsubscribeAgentSelection?.();
     unsubscribeAgentSelection = null;
     useAgentTopicStore.getState().resetProjection();
+    useChatArtifactStore.getState().clear();
   },
   async bootstrap(actorId) {
     if (!actorId) return;

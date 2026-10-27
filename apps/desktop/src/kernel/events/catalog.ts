@@ -6,6 +6,8 @@ export const EVENT = {
   AGENT_BUILDER_STREAM_ENDED: 'agent.builder.stream_ended',
   AGENT_TURN_STREAM_EVENT: 'agent.turn_stream_event',
   AGENT_TURN_RECOVERY_RETRY_REQUESTED: 'agent.turn_recovery_retry_requested',
+  AGENT_TURN_ADMITTED: 'agent.turn_admitted',
+  AGENT_TURN_QUEUE_CANCELLED: 'agent.turn_queue_cancelled',
   EVALUATION_PROJECTION_INVALIDATED: 'agent.evaluation_projection_invalidated',
   GLOBAL_CONTEXT_UPDATED: 'global_context.updated',
   GLOBAL_CONTEXT_PIPELINE_STARTED: 'global_context.pipeline_started',

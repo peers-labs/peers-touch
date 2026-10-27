@@ -747,7 +747,7 @@ func (s *CapabilityOperationService) Start(
 		); err != nil {
 			return err
 		}
-		dispatchSequence, err := nextOperationDispatchSequenceTx(tx, lease)
+		dispatchSequence, err := nextOperationDispatchSequenceTx(tx, lease, now)
 		if err != nil {
 			return err
 		}
@@ -1385,7 +1385,7 @@ func (s *CapabilityOperationService) takeOver(
 		); err != nil {
 			return err
 		}
-		dispatchSequence, err := nextOperationDispatchSequenceTx(tx, lease)
+		dispatchSequence, err := nextOperationDispatchSequenceTx(tx, lease, now)
 		if err != nil {
 			return err
 		}
@@ -2131,10 +2131,12 @@ func loadOperationCapabilityLeaseTx(
 ) (*persistence.ClientCapabilityLease, error) {
 	var lease persistence.ClientCapabilityLease
 	err := tx.Where(
-		"actor_id = ? AND device_id = ? AND session_id = ? AND revoked_at IS NULL AND expires_at > ?",
+		"actor_id = ? AND device_id = ? AND session_id = ? AND revoked_at IS NULL AND expires_at > ? AND "+
+			persistence.ActiveLeaseParentAuthSessionCondition,
 		ptid,
 		strings.TrimSpace(deviceID),
 		strings.TrimSpace(sessionID),
+		now,
 		now,
 	).First(&lease).Error
 	if err != nil {
@@ -2171,14 +2173,17 @@ func validateOperationCapabilityLease(
 func nextOperationDispatchSequenceTx(
 	tx *gorm.DB,
 	lease *persistence.ClientCapabilityLease,
+	now time.Time,
 ) (uint64, error) {
 	next := lease.DispatchSequence + 1
 	result := tx.Model(&persistence.ClientCapabilityLease{}).
 		Where(
-			"session_id = ? AND lease_revision = ? AND dispatch_sequence = ? AND revoked_at IS NULL",
+			"session_id = ? AND lease_revision = ? AND dispatch_sequence = ? AND revoked_at IS NULL AND "+
+				persistence.ActiveLeaseParentAuthSessionCondition,
 			lease.SessionID,
 			lease.LeaseRevision,
 			lease.DispatchSequence,
+			now,
 		).
 		Update("dispatch_sequence", next)
 	if result.Error != nil {

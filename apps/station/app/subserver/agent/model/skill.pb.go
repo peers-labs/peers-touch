@@ -22,6 +22,64 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type SkillResourceKind int32
+
+const (
+	SkillResourceKind_SKILL_RESOURCE_KIND_UNSPECIFIED SkillResourceKind = 0
+	SkillResourceKind_SKILL_RESOURCE_KIND_DOCUMENT    SkillResourceKind = 1
+	SkillResourceKind_SKILL_RESOURCE_KIND_REFERENCE   SkillResourceKind = 2
+	SkillResourceKind_SKILL_RESOURCE_KIND_TEMPLATE    SkillResourceKind = 3
+	SkillResourceKind_SKILL_RESOURCE_KIND_ASSET       SkillResourceKind = 4
+	SkillResourceKind_SKILL_RESOURCE_KIND_SCRIPT      SkillResourceKind = 5
+)
+
+// Enum value maps for SkillResourceKind.
+var (
+	SkillResourceKind_name = map[int32]string{
+		0: "SKILL_RESOURCE_KIND_UNSPECIFIED",
+		1: "SKILL_RESOURCE_KIND_DOCUMENT",
+		2: "SKILL_RESOURCE_KIND_REFERENCE",
+		3: "SKILL_RESOURCE_KIND_TEMPLATE",
+		4: "SKILL_RESOURCE_KIND_ASSET",
+		5: "SKILL_RESOURCE_KIND_SCRIPT",
+	}
+	SkillResourceKind_value = map[string]int32{
+		"SKILL_RESOURCE_KIND_UNSPECIFIED": 0,
+		"SKILL_RESOURCE_KIND_DOCUMENT":    1,
+		"SKILL_RESOURCE_KIND_REFERENCE":   2,
+		"SKILL_RESOURCE_KIND_TEMPLATE":    3,
+		"SKILL_RESOURCE_KIND_ASSET":       4,
+		"SKILL_RESOURCE_KIND_SCRIPT":      5,
+	}
+)
+
+func (x SkillResourceKind) Enum() *SkillResourceKind {
+	p := new(SkillResourceKind)
+	*p = x
+	return p
+}
+
+func (x SkillResourceKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SkillResourceKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_agent_skill_proto_enumTypes[0].Descriptor()
+}
+
+func (SkillResourceKind) Type() protoreflect.EnumType {
+	return &file_domain_agent_skill_proto_enumTypes[0]
+}
+
+func (x SkillResourceKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SkillResourceKind.Descriptor instead.
+func (SkillResourceKind) EnumDescriptor() ([]byte, []int) {
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{0}
+}
+
 type SkillManifest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SkillId       string                 `protobuf:"bytes,1,opt,name=skill_id,json=skillId,proto3" json:"skill_id,omitempty"`
@@ -39,6 +97,7 @@ type SkillManifest struct {
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Enabled       bool                   `protobuf:"varint,15,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Resources     []*SkillResource       `protobuf:"bytes,16,rep,name=resources,proto3" json:"resources,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -178,6 +237,13 @@ func (x *SkillManifest) GetEnabled() bool {
 	return false
 }
 
+func (x *SkillManifest) GetResources() []*SkillResource {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
 type SkillConditions struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	FallbackForToolsets []string               `protobuf:"bytes,1,rep,name=fallback_for_toolsets,json=fallbackForToolsets,proto3" json:"fallback_for_toolsets,omitempty"`
@@ -230,6 +296,150 @@ func (x *SkillConditions) GetRequiresTools() []string {
 	return nil
 }
 
+type SkillResource struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Path           string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	ContentHash    string                 `protobuf:"bytes,2,opt,name=content_hash,json=contentHash,proto3" json:"content_hash,omitempty"`
+	Size           uint64                 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	Kind           SkillResourceKind      `protobuf:"varint,4,opt,name=kind,proto3,enum=peers_touch.model.agent.v1.SkillResourceKind" json:"kind,omitempty"`
+	ExecutionOwner ToolExecutionOwner     `protobuf:"varint,5,opt,name=execution_owner,json=executionOwner,proto3,enum=peers_touch.model.agent.v1.ToolExecutionOwner" json:"execution_owner,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SkillResource) Reset() {
+	*x = SkillResource{}
+	mi := &file_domain_agent_skill_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SkillResource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SkillResource) ProtoMessage() {}
+
+func (x *SkillResource) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_skill_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SkillResource.ProtoReflect.Descriptor instead.
+func (*SkillResource) Descriptor() ([]byte, []int) {
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SkillResource) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SkillResource) GetContentHash() string {
+	if x != nil {
+		return x.ContentHash
+	}
+	return ""
+}
+
+func (x *SkillResource) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *SkillResource) GetKind() SkillResourceKind {
+	if x != nil {
+		return x.Kind
+	}
+	return SkillResourceKind_SKILL_RESOURCE_KIND_UNSPECIFIED
+}
+
+func (x *SkillResource) GetExecutionOwner() ToolExecutionOwner {
+	if x != nil {
+		return x.ExecutionOwner
+	}
+	return ToolExecutionOwner_TOOL_EXECUTION_OWNER_UNSPECIFIED
+}
+
+type SkillResourceInput struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Path           string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Content        []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	Kind           SkillResourceKind      `protobuf:"varint,3,opt,name=kind,proto3,enum=peers_touch.model.agent.v1.SkillResourceKind" json:"kind,omitempty"`
+	ExecutionOwner ToolExecutionOwner     `protobuf:"varint,4,opt,name=execution_owner,json=executionOwner,proto3,enum=peers_touch.model.agent.v1.ToolExecutionOwner" json:"execution_owner,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SkillResourceInput) Reset() {
+	*x = SkillResourceInput{}
+	mi := &file_domain_agent_skill_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SkillResourceInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SkillResourceInput) ProtoMessage() {}
+
+func (x *SkillResourceInput) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_skill_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SkillResourceInput.ProtoReflect.Descriptor instead.
+func (*SkillResourceInput) Descriptor() ([]byte, []int) {
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SkillResourceInput) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SkillResourceInput) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+func (x *SkillResourceInput) GetKind() SkillResourceKind {
+	if x != nil {
+		return x.Kind
+	}
+	return SkillResourceKind_SKILL_RESOURCE_KIND_UNSPECIFIED
+}
+
+func (x *SkillResourceInput) GetExecutionOwner() ToolExecutionOwner {
+	if x != nil {
+		return x.ExecutionOwner
+	}
+	return ToolExecutionOwner_TOOL_EXECUTION_OWNER_UNSPECIFIED
+}
+
 type SkillFinding struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PatternId     string                 `protobuf:"bytes,1,opt,name=pattern_id,json=patternId,proto3" json:"pattern_id,omitempty"`
@@ -245,7 +455,7 @@ type SkillFinding struct {
 
 func (x *SkillFinding) Reset() {
 	*x = SkillFinding{}
-	mi := &file_domain_agent_skill_proto_msgTypes[2]
+	mi := &file_domain_agent_skill_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -257,7 +467,7 @@ func (x *SkillFinding) String() string {
 func (*SkillFinding) ProtoMessage() {}
 
 func (x *SkillFinding) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[2]
+	mi := &file_domain_agent_skill_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -270,7 +480,7 @@ func (x *SkillFinding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillFinding.ProtoReflect.Descriptor instead.
 func (*SkillFinding) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{2}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SkillFinding) GetPatternId() string {
@@ -337,7 +547,7 @@ type SkillScanResult struct {
 
 func (x *SkillScanResult) Reset() {
 	*x = SkillScanResult{}
-	mi := &file_domain_agent_skill_proto_msgTypes[3]
+	mi := &file_domain_agent_skill_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -349,7 +559,7 @@ func (x *SkillScanResult) String() string {
 func (*SkillScanResult) ProtoMessage() {}
 
 func (x *SkillScanResult) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[3]
+	mi := &file_domain_agent_skill_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -362,7 +572,7 @@ func (x *SkillScanResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillScanResult.ProtoReflect.Descriptor instead.
 func (*SkillScanResult) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{3}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SkillScanResult) GetSkillName() string {
@@ -424,7 +634,7 @@ type ListSkillsRequest struct {
 
 func (x *ListSkillsRequest) Reset() {
 	*x = ListSkillsRequest{}
-	mi := &file_domain_agent_skill_proto_msgTypes[4]
+	mi := &file_domain_agent_skill_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -436,7 +646,7 @@ func (x *ListSkillsRequest) String() string {
 func (*ListSkillsRequest) ProtoMessage() {}
 
 func (x *ListSkillsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[4]
+	mi := &file_domain_agent_skill_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -449,7 +659,7 @@ func (x *ListSkillsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSkillsRequest.ProtoReflect.Descriptor instead.
 func (*ListSkillsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{4}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListSkillsRequest) GetAgentId() string {
@@ -475,7 +685,7 @@ type ListSkillsResponse struct {
 
 func (x *ListSkillsResponse) Reset() {
 	*x = ListSkillsResponse{}
-	mi := &file_domain_agent_skill_proto_msgTypes[5]
+	mi := &file_domain_agent_skill_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -487,7 +697,7 @@ func (x *ListSkillsResponse) String() string {
 func (*ListSkillsResponse) ProtoMessage() {}
 
 func (x *ListSkillsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[5]
+	mi := &file_domain_agent_skill_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -500,7 +710,7 @@ func (x *ListSkillsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSkillsResponse.ProtoReflect.Descriptor instead.
 func (*ListSkillsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{5}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListSkillsResponse) GetSkills() []*SkillManifest {
@@ -522,7 +732,7 @@ type GetSkillRequest struct {
 
 func (x *GetSkillRequest) Reset() {
 	*x = GetSkillRequest{}
-	mi := &file_domain_agent_skill_proto_msgTypes[6]
+	mi := &file_domain_agent_skill_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -534,7 +744,7 @@ func (x *GetSkillRequest) String() string {
 func (*GetSkillRequest) ProtoMessage() {}
 
 func (x *GetSkillRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[6]
+	mi := &file_domain_agent_skill_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -547,7 +757,7 @@ func (x *GetSkillRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSkillRequest.ProtoReflect.Descriptor instead.
 func (*GetSkillRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{6}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetSkillRequest) GetSkillId() string {
@@ -581,7 +791,7 @@ type GetSkillResponse struct {
 
 func (x *GetSkillResponse) Reset() {
 	*x = GetSkillResponse{}
-	mi := &file_domain_agent_skill_proto_msgTypes[7]
+	mi := &file_domain_agent_skill_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -593,7 +803,7 @@ func (x *GetSkillResponse) String() string {
 func (*GetSkillResponse) ProtoMessage() {}
 
 func (x *GetSkillResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[7]
+	mi := &file_domain_agent_skill_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -606,7 +816,7 @@ func (x *GetSkillResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSkillResponse.ProtoReflect.Descriptor instead.
 func (*GetSkillResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{7}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetSkillResponse) GetSkill() *SkillManifest {
@@ -623,6 +833,126 @@ func (x *GetSkillResponse) GetFileContent() string {
 	return ""
 }
 
+type ReadSkillResourceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	SkillId       string                 `protobuf:"bytes,2,opt,name=skill_id,json=skillId,proto3" json:"skill_id,omitempty"`
+	Version       int32                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	Path          string                 `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadSkillResourceRequest) Reset() {
+	*x = ReadSkillResourceRequest{}
+	mi := &file_domain_agent_skill_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadSkillResourceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadSkillResourceRequest) ProtoMessage() {}
+
+func (x *ReadSkillResourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_skill_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadSkillResourceRequest.ProtoReflect.Descriptor instead.
+func (*ReadSkillResourceRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ReadSkillResourceRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *ReadSkillResourceRequest) GetSkillId() string {
+	if x != nil {
+		return x.SkillId
+	}
+	return ""
+}
+
+func (x *ReadSkillResourceRequest) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *ReadSkillResourceRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type ReadSkillResourceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Resource      *SkillResource         `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	Content       []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadSkillResourceResponse) Reset() {
+	*x = ReadSkillResourceResponse{}
+	mi := &file_domain_agent_skill_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadSkillResourceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadSkillResourceResponse) ProtoMessage() {}
+
+func (x *ReadSkillResourceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_skill_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadSkillResourceResponse.ProtoReflect.Descriptor instead.
+func (*ReadSkillResourceResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ReadSkillResourceResponse) GetResource() *SkillResource {
+	if x != nil {
+		return x.Resource
+	}
+	return nil
+}
+
+func (x *ReadSkillResourceResponse) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
 type InstallSkillRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
@@ -630,13 +960,14 @@ type InstallSkillRequest struct {
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Content       string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
 	TrustLevel    string                 `protobuf:"bytes,5,opt,name=trust_level,json=trustLevel,proto3" json:"trust_level,omitempty"`
+	Resources     []*SkillResourceInput  `protobuf:"bytes,6,rep,name=resources,proto3" json:"resources,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InstallSkillRequest) Reset() {
 	*x = InstallSkillRequest{}
-	mi := &file_domain_agent_skill_proto_msgTypes[8]
+	mi := &file_domain_agent_skill_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -648,7 +979,7 @@ func (x *InstallSkillRequest) String() string {
 func (*InstallSkillRequest) ProtoMessage() {}
 
 func (x *InstallSkillRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[8]
+	mi := &file_domain_agent_skill_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +992,7 @@ func (x *InstallSkillRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallSkillRequest.ProtoReflect.Descriptor instead.
 func (*InstallSkillRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{8}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *InstallSkillRequest) GetAgentId() string {
@@ -699,6 +1030,13 @@ func (x *InstallSkillRequest) GetTrustLevel() string {
 	return ""
 }
 
+func (x *InstallSkillRequest) GetResources() []*SkillResourceInput {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
 type InstallSkillResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SkillId       string                 `protobuf:"bytes,1,opt,name=skill_id,json=skillId,proto3" json:"skill_id,omitempty"`
@@ -711,7 +1049,7 @@ type InstallSkillResponse struct {
 
 func (x *InstallSkillResponse) Reset() {
 	*x = InstallSkillResponse{}
-	mi := &file_domain_agent_skill_proto_msgTypes[9]
+	mi := &file_domain_agent_skill_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -723,7 +1061,7 @@ func (x *InstallSkillResponse) String() string {
 func (*InstallSkillResponse) ProtoMessage() {}
 
 func (x *InstallSkillResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[9]
+	mi := &file_domain_agent_skill_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -736,7 +1074,7 @@ func (x *InstallSkillResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallSkillResponse.ProtoReflect.Descriptor instead.
 func (*InstallSkillResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{9}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *InstallSkillResponse) GetSkillId() string {
@@ -774,13 +1112,14 @@ type UpdateSkillRequest struct {
 	Name          *string                `protobuf:"bytes,3,opt,name=name,proto3,oneof" json:"name,omitempty"`
 	Description   *string                `protobuf:"bytes,4,opt,name=description,proto3,oneof" json:"description,omitempty"`
 	Content       *string                `protobuf:"bytes,5,opt,name=content,proto3,oneof" json:"content,omitempty"`
+	Resources     []*SkillResourceInput  `protobuf:"bytes,8,rep,name=resources,proto3" json:"resources,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateSkillRequest) Reset() {
 	*x = UpdateSkillRequest{}
-	mi := &file_domain_agent_skill_proto_msgTypes[10]
+	mi := &file_domain_agent_skill_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -792,7 +1131,7 @@ func (x *UpdateSkillRequest) String() string {
 func (*UpdateSkillRequest) ProtoMessage() {}
 
 func (x *UpdateSkillRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[10]
+	mi := &file_domain_agent_skill_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -805,7 +1144,7 @@ func (x *UpdateSkillRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSkillRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSkillRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{10}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UpdateSkillRequest) GetAgentId() string {
@@ -843,6 +1182,13 @@ func (x *UpdateSkillRequest) GetContent() string {
 	return ""
 }
 
+func (x *UpdateSkillRequest) GetResources() []*SkillResourceInput {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
 type UpdateSkillResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Skill         *SkillManifest         `protobuf:"bytes,1,opt,name=skill,proto3" json:"skill,omitempty"`
@@ -854,7 +1200,7 @@ type UpdateSkillResponse struct {
 
 func (x *UpdateSkillResponse) Reset() {
 	*x = UpdateSkillResponse{}
-	mi := &file_domain_agent_skill_proto_msgTypes[11]
+	mi := &file_domain_agent_skill_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -866,7 +1212,7 @@ func (x *UpdateSkillResponse) String() string {
 func (*UpdateSkillResponse) ProtoMessage() {}
 
 func (x *UpdateSkillResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[11]
+	mi := &file_domain_agent_skill_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -879,7 +1225,7 @@ func (x *UpdateSkillResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSkillResponse.ProtoReflect.Descriptor instead.
 func (*UpdateSkillResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{11}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UpdateSkillResponse) GetSkill() *SkillManifest {
@@ -913,7 +1259,7 @@ type DeleteSkillRequest struct {
 
 func (x *DeleteSkillRequest) Reset() {
 	*x = DeleteSkillRequest{}
-	mi := &file_domain_agent_skill_proto_msgTypes[12]
+	mi := &file_domain_agent_skill_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -925,7 +1271,7 @@ func (x *DeleteSkillRequest) String() string {
 func (*DeleteSkillRequest) ProtoMessage() {}
 
 func (x *DeleteSkillRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[12]
+	mi := &file_domain_agent_skill_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -938,7 +1284,7 @@ func (x *DeleteSkillRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSkillRequest.ProtoReflect.Descriptor instead.
 func (*DeleteSkillRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{12}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DeleteSkillRequest) GetAgentId() string {
@@ -964,7 +1310,7 @@ type DeleteSkillResponse struct {
 
 func (x *DeleteSkillResponse) Reset() {
 	*x = DeleteSkillResponse{}
-	mi := &file_domain_agent_skill_proto_msgTypes[13]
+	mi := &file_domain_agent_skill_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -976,7 +1322,7 @@ func (x *DeleteSkillResponse) String() string {
 func (*DeleteSkillResponse) ProtoMessage() {}
 
 func (x *DeleteSkillResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[13]
+	mi := &file_domain_agent_skill_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -989,7 +1335,7 @@ func (x *DeleteSkillResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSkillResponse.ProtoReflect.Descriptor instead.
 func (*DeleteSkillResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{13}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *DeleteSkillResponse) GetSuccess() bool {
@@ -1010,7 +1356,7 @@ type PatchSkillRequest struct {
 
 func (x *PatchSkillRequest) Reset() {
 	*x = PatchSkillRequest{}
-	mi := &file_domain_agent_skill_proto_msgTypes[14]
+	mi := &file_domain_agent_skill_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1022,7 +1368,7 @@ func (x *PatchSkillRequest) String() string {
 func (*PatchSkillRequest) ProtoMessage() {}
 
 func (x *PatchSkillRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[14]
+	mi := &file_domain_agent_skill_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1035,7 +1381,7 @@ func (x *PatchSkillRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PatchSkillRequest.ProtoReflect.Descriptor instead.
 func (*PatchSkillRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{14}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PatchSkillRequest) GetSkillId() string {
@@ -1069,7 +1415,7 @@ type PatchSkillResponse struct {
 
 func (x *PatchSkillResponse) Reset() {
 	*x = PatchSkillResponse{}
-	mi := &file_domain_agent_skill_proto_msgTypes[15]
+	mi := &file_domain_agent_skill_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1081,7 +1427,7 @@ func (x *PatchSkillResponse) String() string {
 func (*PatchSkillResponse) ProtoMessage() {}
 
 func (x *PatchSkillResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_skill_proto_msgTypes[15]
+	mi := &file_domain_agent_skill_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1094,7 +1440,7 @@ func (x *PatchSkillResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PatchSkillResponse.ProtoReflect.Descriptor instead.
 func (*PatchSkillResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_skill_proto_rawDescGZIP(), []int{15}
+	return file_domain_agent_skill_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PatchSkillResponse) GetSkill() *SkillManifest {
@@ -1115,7 +1461,7 @@ var File_domain_agent_skill_proto protoreflect.FileDescriptor
 
 const file_domain_agent_skill_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/agent/skill.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa2\x04\n" +
+	"\x18domain/agent/skill.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/agent/agent.proto\"\xeb\x04\n" +
 	"\rSkillManifest\x12\x19\n" +
 	"\bskill_id\x18\x01 \x01(\tR\askillId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x12\n" +
@@ -1137,10 +1483,22 @@ const file_domain_agent_skill_proto_rawDesc = "" +
 	"created_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
-	"\aenabled\x18\x0f \x01(\bR\aenabled\"l\n" +
+	"\aenabled\x18\x0f \x01(\bR\aenabled\x12G\n" +
+	"\tresources\x18\x10 \x03(\v2).peers_touch.model.agent.v1.SkillResourceR\tresources\"l\n" +
 	"\x0fSkillConditions\x122\n" +
 	"\x15fallback_for_toolsets\x18\x01 \x03(\tR\x13fallbackForToolsets\x12%\n" +
-	"\x0erequires_tools\x18\x02 \x03(\tR\rrequiresTools\"\xc5\x01\n" +
+	"\x0erequires_tools\x18\x02 \x03(\tR\rrequiresTools\"\xf6\x01\n" +
+	"\rSkillResource\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12!\n" +
+	"\fcontent_hash\x18\x02 \x01(\tR\vcontentHash\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x04R\x04size\x12A\n" +
+	"\x04kind\x18\x04 \x01(\x0e2-.peers_touch.model.agent.v1.SkillResourceKindR\x04kind\x12W\n" +
+	"\x0fexecution_owner\x18\x05 \x01(\x0e2..peers_touch.model.agent.v1.ToolExecutionOwnerR\x0eexecutionOwner\"\xde\x01\n" +
+	"\x12SkillResourceInput\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent\x12A\n" +
+	"\x04kind\x18\x03 \x01(\x0e2-.peers_touch.model.agent.v1.SkillResourceKindR\x04kind\x12W\n" +
+	"\x0fexecution_owner\x18\x04 \x01(\x0e2..peers_touch.model.agent.v1.ToolExecutionOwnerR\x0eexecutionOwner\"\xc5\x01\n" +
 	"\fSkillFinding\x12\x1d\n" +
 	"\n" +
 	"pattern_id\x18\x01 \x01(\tR\tpatternId\x12\x1a\n" +
@@ -1172,26 +1530,36 @@ const file_domain_agent_skill_proto_rawDesc = "" +
 	"\bagent_id\x18\x03 \x01(\tR\aagentId\"v\n" +
 	"\x10GetSkillResponse\x12?\n" +
 	"\x05skill\x18\x01 \x01(\v2).peers_touch.model.agent.v1.SkillManifestR\x05skill\x12!\n" +
-	"\ffile_content\x18\x02 \x01(\tR\vfileContent\"\x97\x01\n" +
+	"\ffile_content\x18\x02 \x01(\tR\vfileContent\"~\n" +
+	"\x18ReadSkillResourceRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x19\n" +
+	"\bskill_id\x18\x02 \x01(\tR\askillId\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\x05R\aversion\x12\x12\n" +
+	"\x04path\x18\x04 \x01(\tR\x04path\"|\n" +
+	"\x19ReadSkillResourceResponse\x12E\n" +
+	"\bresource\x18\x01 \x01(\v2).peers_touch.model.agent.v1.SkillResourceR\bresource\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent\"\xe5\x01\n" +
 	"\x13InstallSkillRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
 	"\x06source\x18\x02 \x01(\tR\x06source\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x18\n" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x12\x1f\n" +
 	"\vtrust_level\x18\x05 \x01(\tR\n" +
-	"trustLevel\"\xb7\x01\n" +
+	"trustLevel\x12L\n" +
+	"\tresources\x18\x06 \x03(\v2..peers_touch.model.agent.v1.SkillResourceInputR\tresources\"\xb7\x01\n" +
 	"\x14InstallSkillResponse\x12\x19\n" +
 	"\bskill_id\x18\x01 \x01(\tR\askillId\x12\x18\n" +
 	"\averdict\x18\x02 \x01(\tR\averdict\x12L\n" +
 	"\vscan_result\x18\x03 \x01(\v2+.peers_touch.model.agent.v1.SkillScanResultR\n" +
 	"scanResult\x12\x1c\n" +
-	"\tinstalled\x18\x04 \x01(\bR\tinstalled\"\xdd\x01\n" +
+	"\tinstalled\x18\x04 \x01(\bR\tinstalled\"\xab\x02\n" +
 	"\x12UpdateSkillRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x19\n" +
 	"\bskill_id\x18\x02 \x01(\tR\askillId\x12\x17\n" +
 	"\x04name\x18\x03 \x01(\tH\x00R\x04name\x88\x01\x01\x12%\n" +
 	"\vdescription\x18\x04 \x01(\tH\x01R\vdescription\x88\x01\x01\x12\x1d\n" +
-	"\acontent\x18\x05 \x01(\tH\x02R\acontent\x88\x01\x01B\a\n" +
+	"\acontent\x18\x05 \x01(\tH\x02R\acontent\x88\x01\x01\x12L\n" +
+	"\tresources\x18\b \x03(\v2..peers_touch.model.agent.v1.SkillResourceInputR\tresourcesB\a\n" +
 	"\x05_nameB\x0e\n" +
 	"\f_descriptionB\n" +
 	"\n" +
@@ -1214,7 +1582,14 @@ const file_domain_agent_skill_proto_rawDesc = "" +
 	"new_string\x18\x03 \x01(\tR\tnewString\"o\n" +
 	"\x12PatchSkillResponse\x12?\n" +
 	"\x05skill\x18\x01 \x01(\v2).peers_touch.model.agent.v1.SkillManifestR\x05skill\x12\x18\n" +
-	"\asuccess\x18\x02 \x01(\bR\asuccessBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"\asuccess\x18\x02 \x01(\bR\asuccess*\xde\x01\n" +
+	"\x11SkillResourceKind\x12#\n" +
+	"\x1fSKILL_RESOURCE_KIND_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cSKILL_RESOURCE_KIND_DOCUMENT\x10\x01\x12!\n" +
+	"\x1dSKILL_RESOURCE_KIND_REFERENCE\x10\x02\x12 \n" +
+	"\x1cSKILL_RESOURCE_KIND_TEMPLATE\x10\x03\x12\x1d\n" +
+	"\x19SKILL_RESOURCE_KIND_ASSET\x10\x04\x12\x1e\n" +
+	"\x1aSKILL_RESOURCE_KIND_SCRIPT\x10\x05BKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_skill_proto_rawDescOnce sync.Once
@@ -1228,43 +1603,58 @@ func file_domain_agent_skill_proto_rawDescGZIP() []byte {
 	return file_domain_agent_skill_proto_rawDescData
 }
 
-var file_domain_agent_skill_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_domain_agent_skill_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_domain_agent_skill_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_domain_agent_skill_proto_goTypes = []any{
-	(*SkillManifest)(nil),         // 0: peers_touch.model.agent.v1.SkillManifest
-	(*SkillConditions)(nil),       // 1: peers_touch.model.agent.v1.SkillConditions
-	(*SkillFinding)(nil),          // 2: peers_touch.model.agent.v1.SkillFinding
-	(*SkillScanResult)(nil),       // 3: peers_touch.model.agent.v1.SkillScanResult
-	(*ListSkillsRequest)(nil),     // 4: peers_touch.model.agent.v1.ListSkillsRequest
-	(*ListSkillsResponse)(nil),    // 5: peers_touch.model.agent.v1.ListSkillsResponse
-	(*GetSkillRequest)(nil),       // 6: peers_touch.model.agent.v1.GetSkillRequest
-	(*GetSkillResponse)(nil),      // 7: peers_touch.model.agent.v1.GetSkillResponse
-	(*InstallSkillRequest)(nil),   // 8: peers_touch.model.agent.v1.InstallSkillRequest
-	(*InstallSkillResponse)(nil),  // 9: peers_touch.model.agent.v1.InstallSkillResponse
-	(*UpdateSkillRequest)(nil),    // 10: peers_touch.model.agent.v1.UpdateSkillRequest
-	(*UpdateSkillResponse)(nil),   // 11: peers_touch.model.agent.v1.UpdateSkillResponse
-	(*DeleteSkillRequest)(nil),    // 12: peers_touch.model.agent.v1.DeleteSkillRequest
-	(*DeleteSkillResponse)(nil),   // 13: peers_touch.model.agent.v1.DeleteSkillResponse
-	(*PatchSkillRequest)(nil),     // 14: peers_touch.model.agent.v1.PatchSkillRequest
-	(*PatchSkillResponse)(nil),    // 15: peers_touch.model.agent.v1.PatchSkillResponse
-	(*timestamppb.Timestamp)(nil), // 16: google.protobuf.Timestamp
+	(SkillResourceKind)(0),            // 0: peers_touch.model.agent.v1.SkillResourceKind
+	(*SkillManifest)(nil),             // 1: peers_touch.model.agent.v1.SkillManifest
+	(*SkillConditions)(nil),           // 2: peers_touch.model.agent.v1.SkillConditions
+	(*SkillResource)(nil),             // 3: peers_touch.model.agent.v1.SkillResource
+	(*SkillResourceInput)(nil),        // 4: peers_touch.model.agent.v1.SkillResourceInput
+	(*SkillFinding)(nil),              // 5: peers_touch.model.agent.v1.SkillFinding
+	(*SkillScanResult)(nil),           // 6: peers_touch.model.agent.v1.SkillScanResult
+	(*ListSkillsRequest)(nil),         // 7: peers_touch.model.agent.v1.ListSkillsRequest
+	(*ListSkillsResponse)(nil),        // 8: peers_touch.model.agent.v1.ListSkillsResponse
+	(*GetSkillRequest)(nil),           // 9: peers_touch.model.agent.v1.GetSkillRequest
+	(*GetSkillResponse)(nil),          // 10: peers_touch.model.agent.v1.GetSkillResponse
+	(*ReadSkillResourceRequest)(nil),  // 11: peers_touch.model.agent.v1.ReadSkillResourceRequest
+	(*ReadSkillResourceResponse)(nil), // 12: peers_touch.model.agent.v1.ReadSkillResourceResponse
+	(*InstallSkillRequest)(nil),       // 13: peers_touch.model.agent.v1.InstallSkillRequest
+	(*InstallSkillResponse)(nil),      // 14: peers_touch.model.agent.v1.InstallSkillResponse
+	(*UpdateSkillRequest)(nil),        // 15: peers_touch.model.agent.v1.UpdateSkillRequest
+	(*UpdateSkillResponse)(nil),       // 16: peers_touch.model.agent.v1.UpdateSkillResponse
+	(*DeleteSkillRequest)(nil),        // 17: peers_touch.model.agent.v1.DeleteSkillRequest
+	(*DeleteSkillResponse)(nil),       // 18: peers_touch.model.agent.v1.DeleteSkillResponse
+	(*PatchSkillRequest)(nil),         // 19: peers_touch.model.agent.v1.PatchSkillRequest
+	(*PatchSkillResponse)(nil),        // 20: peers_touch.model.agent.v1.PatchSkillResponse
+	(*timestamppb.Timestamp)(nil),     // 21: google.protobuf.Timestamp
+	(ToolExecutionOwner)(0),           // 22: peers_touch.model.agent.v1.ToolExecutionOwner
 }
 var file_domain_agent_skill_proto_depIdxs = []int32{
-	1,  // 0: peers_touch.model.agent.v1.SkillManifest.conditions:type_name -> peers_touch.model.agent.v1.SkillConditions
-	16, // 1: peers_touch.model.agent.v1.SkillManifest.created_at:type_name -> google.protobuf.Timestamp
-	16, // 2: peers_touch.model.agent.v1.SkillManifest.updated_at:type_name -> google.protobuf.Timestamp
-	2,  // 3: peers_touch.model.agent.v1.SkillScanResult.findings:type_name -> peers_touch.model.agent.v1.SkillFinding
-	16, // 4: peers_touch.model.agent.v1.SkillScanResult.scanned_at:type_name -> google.protobuf.Timestamp
-	0,  // 5: peers_touch.model.agent.v1.ListSkillsResponse.skills:type_name -> peers_touch.model.agent.v1.SkillManifest
-	0,  // 6: peers_touch.model.agent.v1.GetSkillResponse.skill:type_name -> peers_touch.model.agent.v1.SkillManifest
-	3,  // 7: peers_touch.model.agent.v1.InstallSkillResponse.scan_result:type_name -> peers_touch.model.agent.v1.SkillScanResult
-	0,  // 8: peers_touch.model.agent.v1.UpdateSkillResponse.skill:type_name -> peers_touch.model.agent.v1.SkillManifest
-	3,  // 9: peers_touch.model.agent.v1.UpdateSkillResponse.scan_result:type_name -> peers_touch.model.agent.v1.SkillScanResult
-	0,  // 10: peers_touch.model.agent.v1.PatchSkillResponse.skill:type_name -> peers_touch.model.agent.v1.SkillManifest
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	2,  // 0: peers_touch.model.agent.v1.SkillManifest.conditions:type_name -> peers_touch.model.agent.v1.SkillConditions
+	21, // 1: peers_touch.model.agent.v1.SkillManifest.created_at:type_name -> google.protobuf.Timestamp
+	21, // 2: peers_touch.model.agent.v1.SkillManifest.updated_at:type_name -> google.protobuf.Timestamp
+	3,  // 3: peers_touch.model.agent.v1.SkillManifest.resources:type_name -> peers_touch.model.agent.v1.SkillResource
+	0,  // 4: peers_touch.model.agent.v1.SkillResource.kind:type_name -> peers_touch.model.agent.v1.SkillResourceKind
+	22, // 5: peers_touch.model.agent.v1.SkillResource.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
+	0,  // 6: peers_touch.model.agent.v1.SkillResourceInput.kind:type_name -> peers_touch.model.agent.v1.SkillResourceKind
+	22, // 7: peers_touch.model.agent.v1.SkillResourceInput.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
+	5,  // 8: peers_touch.model.agent.v1.SkillScanResult.findings:type_name -> peers_touch.model.agent.v1.SkillFinding
+	21, // 9: peers_touch.model.agent.v1.SkillScanResult.scanned_at:type_name -> google.protobuf.Timestamp
+	1,  // 10: peers_touch.model.agent.v1.ListSkillsResponse.skills:type_name -> peers_touch.model.agent.v1.SkillManifest
+	1,  // 11: peers_touch.model.agent.v1.GetSkillResponse.skill:type_name -> peers_touch.model.agent.v1.SkillManifest
+	3,  // 12: peers_touch.model.agent.v1.ReadSkillResourceResponse.resource:type_name -> peers_touch.model.agent.v1.SkillResource
+	4,  // 13: peers_touch.model.agent.v1.InstallSkillRequest.resources:type_name -> peers_touch.model.agent.v1.SkillResourceInput
+	6,  // 14: peers_touch.model.agent.v1.InstallSkillResponse.scan_result:type_name -> peers_touch.model.agent.v1.SkillScanResult
+	4,  // 15: peers_touch.model.agent.v1.UpdateSkillRequest.resources:type_name -> peers_touch.model.agent.v1.SkillResourceInput
+	1,  // 16: peers_touch.model.agent.v1.UpdateSkillResponse.skill:type_name -> peers_touch.model.agent.v1.SkillManifest
+	6,  // 17: peers_touch.model.agent.v1.UpdateSkillResponse.scan_result:type_name -> peers_touch.model.agent.v1.SkillScanResult
+	1,  // 18: peers_touch.model.agent.v1.PatchSkillResponse.skill:type_name -> peers_touch.model.agent.v1.SkillManifest
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_skill_proto_init() }
@@ -1272,19 +1662,21 @@ func file_domain_agent_skill_proto_init() {
 	if File_domain_agent_skill_proto != nil {
 		return
 	}
-	file_domain_agent_skill_proto_msgTypes[10].OneofWrappers = []any{}
+	file_domain_agent_agent_proto_init()
+	file_domain_agent_skill_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_skill_proto_rawDesc), len(file_domain_agent_skill_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   16,
+			NumEnums:      1,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_domain_agent_skill_proto_goTypes,
 		DependencyIndexes: file_domain_agent_skill_proto_depIdxs,
+		EnumInfos:         file_domain_agent_skill_proto_enumTypes,
 		MessageInfos:      file_domain_agent_skill_proto_msgTypes,
 	}.Build()
 	File_domain_agent_skill_proto = out.File

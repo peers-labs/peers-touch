@@ -18,10 +18,10 @@ use platform::push_bridge::PushBridgeRuntime;
 #[cfg(not(target_os = "android"))]
 use platform::secure_storage::SecureStorage;
 use platform::MobilePlatform;
-use runtime::x_config::MobileXConfigRuntime;
 use runtime::oauth::OAuthCoordinator;
 use runtime::reliability::ReliabilityRuntime;
 use runtime::station_transport::StationTransportRuntime;
+use runtime::x_config::MobileXConfigRuntime;
 use social::MobilePrivateSocialRuntime;
 use tauri::Manager;
 
@@ -32,7 +32,11 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .register_uri_scheme_protocol("chat-file", |context, request| {
             let runtime = context.app_handle().state::<MobileMessagingRuntime>();
-            messaging::file_access::asset_response(runtime.inner(), context.webview_label(), &request)
+            messaging::file_access::asset_response(
+                runtime.inner(),
+                context.webview_label(),
+                &request,
+            )
         })
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -59,6 +63,10 @@ pub fn run() {
         .manage(MobileXConfigRuntime::default())
         .manage(StationTransportRuntime::default());
 
+    #[cfg(mobile)]
+    let builder = builder.plugin(platform::qr_scanner::init());
+    let builder = builder.manage(runtime::device_link::MobileDeviceLinkRuntime::default());
+
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_peers_secure_storage::init());
 
@@ -66,7 +74,14 @@ pub fn run() {
     let builder = builder.manage(SecureStorage::new());
 
     builder
-        .setup(platform::deep_link::install)
+        .setup(|app| {
+            runtime::station_route::install_transport_identity(
+                app.state::<platform::secure_storage::SecureStorage>()
+                    .inner()
+                    .clone(),
+            )?;
+            platform::deep_link::install(app)
+        })
         .invoke_handler(commands::handlers())
         .build(tauri::generate_context!())
         .expect("failed to build Peers")

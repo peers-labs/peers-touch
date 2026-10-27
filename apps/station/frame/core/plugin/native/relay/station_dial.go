@@ -321,7 +321,7 @@ func (c *StationControl) discoverRouteLocked(
 		return verifiedCircuitRoute{}, err
 	}
 	response := &peerpb.AccessEndpointResponse{}
-	if err := c.postProtoLocked(
+	if _, err := c.postProtoLocked(
 		ctx,
 		target,
 		"/.well-known/peers-touch/access",

@@ -30,7 +30,6 @@ import { extractMessageArtifacts, useChatStore } from '../../store/chat';
 import { useAgentStore } from '../../store/agent';
 import { useAgentTopicStore } from '../../store/agentTopics';
 import { usePortalStore } from '../../store/portal';
-import { useTTSStore } from '../../store/tts';
 import {
   api,
   isAgentContextOverflowError,
@@ -44,10 +43,10 @@ import { useTranslation } from 'react-i18next';
 import { MessageActionBar } from '../messages';
 import { ForwardMessageModal } from './ForwardMessageModal';
 import { ToolCallsBlock } from './ToolCallCard';
+import { TurnArtifactBar } from './TurnArtifactBar';
 import { ThinkingIndicator } from './ThinkingBlock';
 import { chatMarkdownProps } from './markdownConfig';
 import { timeAgo, fullTime, downloadCodeBlock, downloadArtifact } from './shared';
-import { TTSControls } from '../chat/TTSControls';
 import { TurnAttribution } from './TurnAttribution';
 
 // --- Collect delegation results from message + tool calls ---
@@ -368,6 +367,19 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       return current;
     }
     return undefined;
+  });
+  // Turn-level chips (artifact bar, attribution) belong once per turn: a
+  // multi-iteration turn persists several assistant rows, so render them only
+  // on the final assistant node for that turn.
+  const isTurnTail = useChatStore((state) => {
+    if (!message.turnId) return true;
+    for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+      const candidate = state.messages[index];
+      if (candidate.role === 'assistant' && candidate.turnId === message.turnId) {
+        return candidate.id === message.id;
+      }
+    }
+    return true;
   });
   const agents = useAgentStore(s => s.agents);
   const availableModels = useAgentStore(s => s.availableModels);
@@ -736,6 +748,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     <Flexbox
       data-pt-agent-message="assistant"
       data-pt-agent-message-id={message.id}
+      data-pt-turn-tail={isTurnTail ? 'true' : 'false'}
+      data-pt-agent-turn-id={message.turnId}
       data-pt-agent-terminal-status={message.terminalStatus}
       data-pt-agent-error-type={message.typedError?.error_type}
       data-pt-agent-error-resource-kind={message.typedError?.details.resource_kind}
@@ -876,7 +890,11 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             />
           )}
 
-          {/* Artifacts */}
+          {/* Real Station-persisted file artifacts produced by this turn.
+              Render once per turn: only its final assistant node. */}
+          {isTurnTail && <TurnArtifactBar turnId={message.turnId} />}
+
+          {/* In-message code-block artifacts */}
           {artifacts.length > 0 && (
             <ArtifactBlock artifacts={artifacts} onOpenArtifact={onOpenArtifact} />
           )}
@@ -885,12 +903,23 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           {message.queued ? (
             <Flexbox
               data-pt-agent-message-queued
+              data-pt-agent-message-queue-entry={message.queueEntryId}
               horizontal
               align="center"
               gap={8}
               style={{ color: token.colorTextSecondary, fontSize: 13 }}
             >
-              <Tag>{t('chat.queue.position', { position: message.queuePosition })}</Tag>
+              <Tag
+                style={{ cursor: 'pointer' }}
+                title={t('chat.queue.showInQueue')}
+                onClick={() => {
+                  document
+                    .querySelector('[data-pt-agent-turn-queue]')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+              >
+                {t('chat.queue.position', { position: message.queuePosition })}
+              </Tag>
               <span>{t('chat.queue.waiting')}</span>
             </Flexbox>
           ) : message.loading && !message.content && !(message.toolCalls && message.toolCalls.length > 0) ? (
@@ -937,10 +966,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             </div>
           ) : null}
 
-          <TurnAttribution projection={message.turnAttribution} />
-
-          {/* TTS inline controls */}
-          <TTSControls messageId={message.id} />
+          {isTurnTail && <TurnAttribution projection={message.turnAttribution} />}
 
           {/* Inline translation */}
           {message.translation && (
@@ -1216,11 +1242,6 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             onDeleteAndRegenerate: handleDelAndRegenerate,
             onTranslate: () => translateMessage(message.id),
             onThread: () => openThread(currentSessionKey, message.id),
-            onReadAloud: () => {
-              if (message.content) {
-                useTTSStore.getState().speak(message.id, message.content);
-              }
-            },
             onExport: () => {
               if (message.content) {
                 const exported = `# Assistant Response\n\n${message.content}`;

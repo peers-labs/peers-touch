@@ -39,6 +39,15 @@ pub fn ingest_native_lifecycle_signal<R: Runtime>(
 ) -> MobileResult<LifecycleBridgeResult> {
     let acceptance = lifecycle_bridge::process_native_signal(&signal)?;
     if let Some(event) = acceptance.event {
+        if event.state == NativeLifecycleState::Background {
+            app.state::<crate::runtime::device_link::MobileDeviceLinkRuntime>().invalidate();
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if crate::platform::qr_scanner::cancel(&app).await.is_err() {
+                    let _ = native_events::emit_native_event_error(&app, "device-link-camera", "Camera stop failed");
+                }
+            });
+        }
         emit_lifecycle_event(app, &event)?;
     }
     Ok(acceptance.result)

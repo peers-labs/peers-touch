@@ -29,6 +29,7 @@ import {
   wakeActiveMessagingSession,
 } from './messagingRuntime';
 import { getRecoveryProjection } from './recoveryProjection';
+import { wakeMobileDeviceLink } from './deviceLinkRuntime';
 
 interface NativeRuntimeEventErrorPayload {
   operation?: string;
@@ -130,6 +131,12 @@ export function installMobileNativeEventBridge(): MobileNativeEventBridgeInstall
     },
   );
 
+  const deviceLinkListenerReady = installListener(
+    'mobile:device-link',
+    'listen-device-link-projection',
+    () => wakeMobileDeviceLink(),
+  );
+
   const onVisibilityChange = () => {
     if (nativeLifecycleCallbacksAvailable) return;
     const foreground = document.visibilityState === 'visible';
@@ -173,6 +180,7 @@ export function installMobileNativeEventBridge(): MobileNativeEventBridgeInstall
     nativeEventListenersReady,
     oauthListenerReady,
     errorListenerReady,
+    deviceLinkListenerReady,
   ]).then(async () => {
     try {
       await ensureNativePushActive();

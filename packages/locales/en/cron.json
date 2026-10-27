@@ -4,13 +4,11 @@
   "cron.header.pausedCount": "{{count}} paused",
   "cron.header.refresh": "Refresh",
   "cron.header.newJob": "New Job",
-
   "cron.search.placeholder": "Search jobs...",
   "cron.list.noMatchingJobs": "No matching jobs",
   "cron.list.noJobsYet": "No cron jobs yet",
   "cron.list.createFirst": "Create your first job",
   "cron.list.loadFailed": "Failed to load jobs: {{message}}",
-
   "cron.job.deleteConfirm": "Delete this job?",
   "cron.job.deleteOk": "Delete",
   "cron.job.deleteCancel": "Cancel",
@@ -22,7 +20,6 @@
   "cron.action.resume": "Resume",
   "cron.action.edit": "Edit",
   "cron.action.delete": "Delete",
-
   "cron.schedule.everyMinutes": "Every {{count}}m",
   "cron.schedule.everyHours": "Every {{count}}h",
   "cron.schedule.everyDays": "Every {{count}}d",
@@ -37,14 +34,11 @@
   "cron.schedule.inHours": "in {{count}}h",
   "cron.schedule.daysAgo": "{{count}}d ago",
   "cron.schedule.inDays": "in {{count}}d",
-
   "cron.status.ok": "OK",
   "cron.status.error": "Error",
   "cron.status.running": "Running",
-
   "cron.runs.title": "Run History — {{name}}",
   "cron.runs.noRuns": "No runs yet",
-
   "cron.drawer.titleCreate": "New Job",
   "cron.drawer.titleEdit": "Edit Job",
   "cron.drawer.saveButton": "Save",
@@ -54,13 +48,11 @@
   "cron.drawer.required": "* Required",
   "cron.drawer.jobUpdated": "Job updated",
   "cron.drawer.jobCreated": "Job created",
-
   "cron.drawer.ai.title": "Describe your schedule in natural language",
   "cron.drawer.ai.placeholder": "e.g. \"every weekday at 9am\" or \"每天下午3点\"",
   "cron.drawer.ai.parseButton": "Parse",
   "cron.drawer.ai.parseSuccess": "Parsed: {{fields}}",
   "cron.drawer.ai.parseFailed": "Parse failed: {{message}}",
-
   "cron.drawer.section.basics": "Basics",
   "cron.drawer.section.basicsDesc": "Name it, choose the assistant, and set enabled state.",
   "cron.drawer.field.name": "Name",
@@ -73,7 +65,6 @@
   "cron.drawer.field.defaultSuffix": "(default)",
   "cron.drawer.field.enabled": "Enabled",
   "cron.drawer.field.disabled": "Disabled",
-
   "cron.drawer.section.schedule": "Schedule",
   "cron.drawer.section.scheduleDesc": "Control when this job runs.",
   "cron.drawer.field.scheduleKind": "Schedule",
@@ -89,7 +80,6 @@
   "cron.drawer.field.runAtPlaceholder": "2025-12-31T09:00:00Z",
   "cron.drawer.field.timezone": "Timezone",
   "cron.drawer.field.timezonePlaceholder": "UTC (default)",
-
   "cron.drawer.cron.templateEveryHour": "Every hour",
   "cron.drawer.cron.templateDailyAt9": "Every day 9:00",
   "cron.drawer.cron.templateWeekdays9": "Weekdays 9:00",
@@ -110,7 +100,6 @@
   "cron.drawer.cron.dayFri": "Fri",
   "cron.drawer.cron.daySat": "Sat",
   "cron.drawer.cron.daySun": "Sun",
-
   "cron.drawer.section.execution": "Execution",
   "cron.drawer.section.executionDesc": "Choose what this job should do.",
   "cron.drawer.field.whatShouldRun": "What should run",
@@ -128,7 +117,6 @@
   "cron.drawer.field.commandLabel": "Command",
   "cron.drawer.field.commandRequired": "Command is required",
   "cron.drawer.field.commandPlaceholder": "find /tmp -mtime +7 -delete",
-
   "cron.drawer.section.advanced": "Advanced",
   "cron.drawer.advancedDesc": "Optional overrides for auto-cleanup and scheduling behavior.",
   "cron.drawer.field.deleteAfterRun": "Delete after run",
@@ -146,5 +134,13 @@
   "cron.drawer.field.deliveryTargetLoading": "Loading targets...",
   "cron.drawer.field.failureChannel": "Failure Alert Channel (optional)",
   "cron.drawer.field.failureChannelPlaceholder": "Same as delivery channel if empty",
-  "cron.drawer.field.deliveryTargetSelectError": "Please select a delivery target (group or user)."
+  "cron.drawer.field.deliveryTargetSelectError": "Please select a delivery target (group or user).",
+  "cron.drawer.ai.unparsed": "I couldn't parse that. Try \"every weekday at 9am\", \"every 30 minutes\", or \"tomorrow at 3pm\".",
+  "cron.drawer.field.runAtInvalid": "Use a valid date and time.",
+  "cron.drawer.field.execAgentOnly": "Scheduled jobs always run as this Agent. Direct shell execution is intentionally unavailable.",
+  "cron.drawer.field.effortLabel": "Reasoning effort",
+  "cron.drawer.field.effortLow": "Low",
+  "cron.drawer.field.effortMedium": "Medium",
+  "cron.drawer.field.effortHigh": "High",
+  "cron.drawer.field.deliveryHidden": "Channel delivery is hidden until the delivery binding is available."
 }

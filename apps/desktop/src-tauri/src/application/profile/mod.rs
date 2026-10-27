@@ -5,6 +5,7 @@
 
 use crate::application::station_runtime::client::{
     self as station_client, StationClient, StationClientError, StationClientErrorKind,
+    UploadProgressSink,
 };
 use crate::application::station_runtime::resource::{
     ResourceProjectionError, ResourceReference, StationResourceHandle,
@@ -118,16 +119,18 @@ pub fn profile_upload_avatar_oss(
     resources: &StationResourceHandle,
     input: FileUploadInput,
     token: &str,
+    progress: Option<UploadProgressSink>,
 ) -> AppResult<StubPayload> {
-    upload_and_set_profile_image(resources, token, &input.file_path, "avatar")
+    upload_and_set_profile_image(resources, token, &input.file_path, "avatar", progress)
 }
 
 pub fn profile_upload_header_oss(
     resources: &StationResourceHandle,
     input: FileUploadInput,
     token: &str,
+    progress: Option<UploadProgressSink>,
 ) -> AppResult<StubPayload> {
-    upload_and_set_profile_image(resources, token, &input.file_path, "header")
+    upload_and_set_profile_image(resources, token, &input.file_path, "header", progress)
 }
 
 fn upload_and_set_profile_image(
@@ -135,6 +138,7 @@ fn upload_and_set_profile_image(
     token: &str,
     file_path: &str,
     field: &str,
+    progress: Option<UploadProgressSink>,
 ) -> AppResult<StubPayload> {
     let station_client = resources.client();
     tracing::info!(file_path = %file_path, field = %field, "Starting profile image upload");
@@ -167,6 +171,7 @@ fn upload_and_set_profile_image(
         "avatar",
         "public",
         None,
+        progress,
     ) {
         Ok(v) => {
             tracing::info!("OSS upload succeeded");

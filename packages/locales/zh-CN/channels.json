@@ -1,4 +1,5 @@
 {
+  "channels.schema.qrUnavailable": "当前空间无法显示可扫描的码，请扩大窗口或打开授权链接。",
   "channels.title": "频道",
   "channels.subtitle": "连接到消息平台，以真实机器人身份运行。用户可以通过 Telegram、飞书或 Slack 与你的 AI 助手对话。",
   "channels.action.refresh": "刷新",
@@ -314,6 +315,16 @@
 
   "channels.v2.automations.title": "自动化",
   "channels.v2.automations.description": "由定时、消息或文档变化触发，并把结果投递到飞书。",
+
+  "channels.v2.topics.title": "渠道 Topics",
+  "channels.v2.topics.entryDescription": "该连接所绑定各 Agent 在 Station 的会话。",
+  "channels.v2.topics.description": "只读投影本连接绑定的所有 Agent（默认应答、路由规则、自动化）在 Station 的会话。",
+  "channels.v2.topics.heading": "来自 Station 的 Agent 会话",
+  "channels.v2.topics.readonly": "Topics 由入站消息创建；本页仅读取 Station 真相。",
+  "channels.v2.topics.refresh": "刷新",
+  "channels.v2.topics.loadFailed": "部分 Topics 加载失败，可重试刷新。",
+  "channels.v2.topics.noAgents": "先选择应答 Agent，其 Topics 才会出现。",
+  "channels.v2.topics.empty": "暂无 Topics，入站消息会在此开启新的 Topic。",
   "channels.v2.automations.saved": "{{count}} 项自动化",
   "channels.v2.automations.empty": "尚无自动化",
   "channels.v2.automations.summary": "每项自动化集中展示触发器、Agent、目标和最近结果。",

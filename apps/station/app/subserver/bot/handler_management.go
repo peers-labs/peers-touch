@@ -54,7 +54,11 @@ func mapDomainError(err error) error {
 	}
 }
 
-func toProtoBot(b *domain.Bot, grant registry.PublishingGrant) *botmodel.Bot {
+func toProtoBot(
+	b *domain.Bot,
+	grant registry.PublishingGrant,
+	binding *botmodel.BotAgentBinding,
+) *botmodel.Bot {
 	if b == nil {
 		return nil
 	}
@@ -64,6 +68,7 @@ func toProtoBot(b *domain.Bot, grant registry.PublishingGrant) *botmodel.Bot {
 		Name:            b.Name,
 		State:           botmodel.BotState(int32(b.State)),
 		PublishingGrant: toProtoPublishingGrant(grant),
+		AgentBinding:    binding,
 	}
 }
 
@@ -101,7 +106,7 @@ func (s *subServer) handleCreate(
 		return nil, mapDomainError(err)
 	}
 	return &botmodel.CreateBotResponse{
-		Bot:        toProtoBot(created.Bot, created.Publishing),
+		Bot:        toProtoBot(created.Bot, created.Publishing, nil),
 		IngressUrl: ingressPath(created.Publishing.ID),
 		Secret:     created.Secret,
 	}, nil
@@ -119,13 +124,21 @@ func (s *subServer) handleList(
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
+	bindings, err := s.registry.ListAgentBindings(ctx, owner)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	bindingByBot := make(map[string]*botmodel.BotAgentBinding, len(bindings))
+	for _, binding := range bindings {
+		bindingByBot[binding.BotPtid] = toProtoBinding(binding)
+	}
 	out := make([]*botmodel.Bot, 0, len(bots))
 	for _, item := range bots {
 		grant, err := s.registry.PublishingGrant(ctx, owner, item)
 		if err != nil {
 			return nil, mapDomainError(err)
 		}
-		out = append(out, toProtoBot(item, grant))
+		out = append(out, toProtoBot(item, grant, bindingByBot[item.BotPtid]))
 	}
 	return &botmodel.ListMyBotsResponse{Bots: out}, nil
 }
@@ -162,7 +175,11 @@ func (s *subServer) handleSetState(
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
-	return &botmodel.SetBotStateResponse{Bot: toProtoBot(bot, grant)}, nil
+	binding, err := s.bindingProjection(ctx, owner, req.GetBotPtid())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &botmodel.SetBotStateResponse{Bot: toProtoBot(bot, grant, binding)}, nil
 }
 
 func (s *subServer) handleSetProfile(
@@ -181,5 +198,9 @@ func (s *subServer) handleSetProfile(
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
-	return &botmodel.SetBotProfileResponse{Bot: toProtoBot(bot, grant)}, nil
+	binding, err := s.bindingProjection(ctx, owner, req.GetBotPtid())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &botmodel.SetBotProfileResponse{Bot: toProtoBot(bot, grant, binding)}, nil
 }

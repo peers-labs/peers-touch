@@ -221,18 +221,28 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
   loadModels: async () => {
     set({ loading: true, error: null });
     try {
-      const [res, modelConfig] = await Promise.all([
+      const [res, modelConfig, runtimeDefault] = await Promise.all([
         api.listAvailableModels(),
         api.listModelConfig().catch((error) => {
           log.warn('agent', 'Failed to load default model config', { error: toStoreError(error) });
           return {} as ModelServiceConfig;
         }),
+        api.getRuntimeDefault().catch((error) => {
+          log.warn('agent', 'Failed to load Station runtime default', {
+            error: toStoreError(error),
+          });
+          return null;
+        }),
       ]);
       const models = res.models || [];
       log.info('agent', 'Models loaded', { count: models.length });
       const enabledModels = models.filter((m) => m.enabled);
-      const configuredDefault = modelConfig.default?.model || res.default;
-      const configuredDefaultProvider = modelConfig.default?.provider || '';
+      // Station runtime default is the truth new Topics inherit; the local
+      // model-registry slot and the catalog fallback only cover older stores.
+      const configuredDefault =
+        runtimeDefault?.modelId || modelConfig.default?.model || res.default;
+      const configuredDefaultProvider =
+        runtimeDefault?.providerId || modelConfig.default?.provider || '';
       const defaultSelection = resolveAvailableModelSelection(
         enabledModels,
         '',

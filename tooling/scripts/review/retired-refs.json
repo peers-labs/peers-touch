@@ -1,0 +1,12 @@
+{
+  "references": [
+    {
+      "code": "retired-product-reference",
+      "pattern": "agent[-_ ]*box",
+      "message": "uses a retired product identifier",
+      "paths": true,
+      "content": true,
+      "ignore": []
+    }
+  ]
+}

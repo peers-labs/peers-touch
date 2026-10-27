@@ -5,7 +5,8 @@ use crate::application::station_runtime::client::{
 use crate::model::agent::{
     ClientCapabilityAdvertisement, ClientCapabilityCommandDomain, ClientCapabilityCommandErrorCode,
     ClientCapabilityCommandProof, ClientCapabilityCommandSigningPayload, ClientCapabilityLease,
-    ClientCapabilityLeaseRevokeReason, ClientCapabilityReceipt,
+    ClientCapabilityLeaseRevokeReason, ClientCapabilityReceipt, ClientResourceRef,
+    DeclareClientResourceGrantsRequest, DeclareClientResourceGrantsResponse,
     PullClientCapabilityRequestsRequest, PullClientCapabilityRequestsResponse,
     ReachCapabilityAcceptanceExecutorBarrierRequest,
     ReachCapabilityAcceptanceExecutorBarrierResponse, RegisterClientCapabilityLeaseRequest,
@@ -25,6 +26,7 @@ const PULL_PATH: &str = "/sub-agent/agent/capability/requests/pull";
 const REGISTER_PATH: &str = "/sub-agent/agent/capability/lease/register";
 const RENEW_PATH: &str = "/sub-agent/agent/capability/lease/renew";
 const REVOKE_PATH: &str = "/sub-agent/agent/capability/lease/revoke";
+const RESOURCE_GRANTS_PATH: &str = "/sub-agent/agent/capability/resource-grants/declare";
 const ACTIVE_RECEIPT_PATH: &str = "/sub-agent/agent/capability/receipt";
 const RECOVERY_RECEIPT_PATH: &str = "/sub-agent/agent/capability/receipt/recover";
 const ACCEPTANCE_SCENARIO_REACH_PATH: &str =
@@ -246,6 +248,44 @@ impl<'a> CapabilityStationTransport<'a> {
             .any(|request| request.target_device_id != self.device_id)
         {
             return Err("Station returned an untargeted capability envelope".to_string());
+        }
+        Ok(response)
+    }
+
+    /// Declares the device-resolved workspace resource grants for one active
+    /// capability session. Station pins the grants onto later dispatched
+    /// envelopes; local paths never leave the device.
+    pub fn declare_resource_grants(
+        &self,
+        capability_session_id: &str,
+        grants: &[ClientResourceRef],
+    ) -> Result<DeclareClientResourceGrantsResponse, String> {
+        let mut request = DeclareClientResourceGrantsRequest {
+            capability_session_id: capability_session_id.to_string(),
+            device_id: self.device_id.to_string(),
+            grants: grants.to_vec(),
+            command_proof: None,
+        };
+        request.command_proof = Some(self.sign_command(
+            ClientCapabilityCommandDomain::DeclaredResourceGrants,
+            &request_without_grants_proof(&request),
+        )?);
+        let response: DeclareClientResourceGrantsResponse = self
+            .station_client
+            .request_proto_for_device(
+                Method::POST,
+                RESOURCE_GRANTS_PATH,
+                self.token,
+                None,
+                Some(&request),
+                self.device_id,
+            )
+            .map_err(|error| format!("declare capability resource grants: {error}"))?;
+        validate_command_response(response.error_code, "capability resource grant declaration")?;
+        if response.accepted_count as usize != grants.len() {
+            return Err(
+                "Station accepted a different number of capability resource grants".to_string(),
+            );
         }
         Ok(response)
     }
@@ -493,6 +533,14 @@ impl ReceiptReporter for CapabilityStationTransport<'_> {
         }
         Ok(())
     }
+}
+
+fn request_without_grants_proof(
+    request: &DeclareClientResourceGrantsRequest,
+) -> DeclareClientResourceGrantsRequest {
+    let mut canonical = request.clone();
+    canonical.command_proof = None;
+    canonical
 }
 
 fn request_without_pull_proof(

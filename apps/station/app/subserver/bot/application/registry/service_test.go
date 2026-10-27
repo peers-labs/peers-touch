@@ -56,6 +56,27 @@ func (r *memoryRepository) ActiveByName(_ context.Context, owner, name string) (
 	return nil, nil
 }
 
+// The base memory fixture is intentionally binding-free: every bot created
+// through it behaves as an unbound, receive-only bot.
+func (r *memoryRepository) CreateAgentBinding(context.Context, *domain.AgentBinding) error {
+	return domain.NewError(domain.CodeStateConflict, "binding fixture is not wired")
+}
+func (r *memoryRepository) UpdateAgentBinding(context.Context, *domain.AgentBinding) (bool, error) {
+	return false, nil
+}
+func (r *memoryRepository) GetAgentBinding(context.Context, string) (*domain.AgentBinding, bool, error) {
+	return nil, false, nil
+}
+func (r *memoryRepository) ListAgentBindings(context.Context, string) ([]*domain.AgentBinding, error) {
+	return nil, nil
+}
+func (r *memoryRepository) DeleteAgentBinding(context.Context, string, int64) (bool, error) {
+	return false, nil
+}
+func (r *memoryRepository) AgentBindingRevision(context.Context, string) (int64, error) {
+	return 0, nil
+}
+
 type fakeMinter struct{}
 
 func (fakeMinter) MintAgentActor(context.Context, string, string, string) (string, error) {

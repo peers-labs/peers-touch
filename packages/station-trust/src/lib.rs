@@ -1,4 +1,6 @@
 use libp2p_identity::{KeyType, PublicKey};
+pub mod bootstrap;
+pub mod transport_identity;
 use multiaddr::Multiaddr;
 use prost::Message;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
@@ -845,7 +847,7 @@ mod tests {
     use super::*;
     use libp2p_identity::Keypair;
 
-    const NOW: i64 = 1_800_000_000_000;
+    pub(super) const NOW: i64 = 1_800_000_000_000;
 
     fn capabilities() -> Vec<String> {
         vec![
@@ -855,7 +857,11 @@ mod tests {
         ]
     }
 
-    fn authorization(root: &Keypair, node: &Keypair, epoch: u64) -> StationNodeAuthorization {
+    pub(super) fn authorization(
+        root: &Keypair,
+        node: &Keypair,
+        epoch: u64,
+    ) -> StationNodeAuthorization {
         let statement = StationNodeAuthorizationStatement {
             station_peer_id: root.public().to_peer_id().to_string(),
             node_peer_id: node.public().to_peer_id().to_string(),
@@ -890,6 +896,7 @@ mod tests {
             issued_at_unix_ms: NOW,
             expires_at_unix_ms: NOW + 60_000,
             node_authorization_digest: authorization_digest.to_vec(),
+            federation_signing_public_key: Vec::new(),
         };
         let statement_bytes = statement.encode_to_vec();
         StationIdentityResponse {
@@ -965,7 +972,7 @@ mod tests {
         }
     }
 
-    fn sign(key: &Keypair, domain: &[u8], statement: &[u8]) -> Vec<u8> {
+    pub(super) fn sign(key: &Keypair, domain: &[u8], statement: &[u8]) -> Vec<u8> {
         let mut input = domain.to_vec();
         input.extend_from_slice(statement);
         key.sign(&input).unwrap()

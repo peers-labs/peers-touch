@@ -1,4 +1,5 @@
 {
+  "chat.schema.qrUnavailable": "This code cannot fit here. Widen the window and try again.",
   "chat.clarification.other": "Other",
   "chat.clarification.submit": "Submit answer",
   "chat.agentReadiness.modelRequired": "Choose an available provider and model for this Topic before sending.",
@@ -324,6 +325,8 @@
   "chat.message.budget.kind.output_tokens": "The turn reached its output-token limit ({{limit}}).",
   "chat.message.budget.kind.attachments": "The turn reached its attachment budget ({{limit}}).",
   "chat.message.budget.kind.cost": "The turn reached its cost budget ({{limit}}).",
+  "chat.message.budget.kind.provider_continuations": "The task reached its step budget ({{limit}}). Split it into smaller tasks or continue in a new topic.",
+  "chat.message.budget.kind.provider_auxiliary": "The turn reached its auxiliary model-call limit ({{limit}}).",
   "chat.message.turnDetails.loadFailed": "Turn details could not be loaded.",
   "chat.message.turnDetails.retry": "Retry",
   "chat.message.turnDetails.export": "Export diagnostics",
@@ -336,6 +339,16 @@
   "chat.message.turnDetails.terminalReason": "Terminal reason",
   "chat.message.toolCall.arguments": "Arguments",
   "chat.message.toolCall.result": "Result",
+  "chat.message.toolCall.todo.title": "Task checklist",
+  "chat.message.toolCall.todo.progress": "{{done}}/{{total}} done",
+  "chat.message.toolCall.todo.empty": "No checklist items yet.",
+  "chat.message.toolCall.webFetch.title": "Web fetch",
+  "chat.message.toolCall.webFetch.status": "HTTP {{status}}",
+  "chat.message.toolCall.webFetch.truncated": "The page content was truncated.",
+  "chat.message.toolCall.workspace.write": "Write file",
+  "chat.message.toolCall.workspace.edit": "Edit file",
+  "chat.message.toolCall.workspace.shell": "Run command",
+  "chat.message.toolCall.workspace.exit": "exit {{code}}",
   "chat.message.toolCall.server": "Server",
   "chat.message.toolCall.progress": "Progress",
   "chat.message.toolCall.approval": "Approval",
@@ -1009,5 +1022,9 @@
   "chat.attachment.completed": "Completed",
   "chat.attachment.actionCancelled": "Cancelled",
   "chat.attachment.actionUnavailable": "No available app for this file",
-  "chat.attachment.actionFailed": "File operation failed. Try again."
+  "chat.attachment.actionFailed": "File operation failed. Try again.",
+  "chat.queue.snapshot": "Snapshot",
+  "chat.queue.cancelAndEdit": "Cancel and edit",
+  "chat.queue.showInQueue": "Show in queue",
+  "chat.queue.showInConversation": "Show in conversation"
 }

@@ -15,9 +15,6 @@ var migrationIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // call it after store is initiated
 func init() {
 	store.InitTableHooks(func(ctx context.Context, rds *gorm.DB) {
-		if err := migrateTouchIdentityColumns(rds); err != nil {
-			panic(fmt.Errorf("migrate touch identity columns: %w", err))
-		}
 		if err := migrateSocialIdentityColumns(rds); err != nil {
 			panic(fmt.Errorf("migrate social identity columns: %w", err))
 		}
@@ -33,9 +30,6 @@ func init() {
 			&OAuthClient{}, &OAuthAuthCode{}, &OAuthToken{},
 			&OAuth2IdentityBinding{}, &OAuth2TokenState{}, &OAuth2ConnectionState{},
 			&OAuthBridgeAssertion{},
-			// Chat models
-			&Conversation{}, &ConvMember{}, &Message{},
-			&Attachment{}, &Receipt{}, &Reaction{}, &KeyEpoch{},
 			// Social — Moments family (see docs/architecture/domains/social/core/moments.md §6).
 			// Private encrypted models are migrated through the explicit
 			// SocialPrivateContentModels path.
@@ -63,15 +57,6 @@ type stringIdentityColumnRename struct {
 	table string
 	from  string
 	to    string
-}
-
-func migrateTouchIdentityColumns(rds *gorm.DB) error {
-	return migrateStringIdentityColumns(rds, []stringIdentityColumnRename{
-		{table: "touch_conv_member", from: "did", to: "ptid"},
-		{table: "touch_message", from: "sender_did", to: "sender_ptid"},
-		{table: "touch_receipt", from: "member_did", to: "member_ptid"},
-		{table: "touch_reaction", from: "member_did", to: "member_ptid"},
-	})
 }
 
 func migrateSocialIdentityColumns(rds *gorm.DB) error {

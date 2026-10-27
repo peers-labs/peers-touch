@@ -1,8 +1,12 @@
 // @ts-nocheck -- Vitest is supplied by the repository test runner.
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AccessDecision } from '../features/auth/authSession';
+import {
+  destroyRecoveryProjection,
+  getRecoveryProjection,
+} from './recoveryProjection';
 import {
   createSessionRuntimeController,
   type NativeSessionProjection,
@@ -89,6 +93,48 @@ function runtime(options: {
 }
 
 describe('sessionRuntime', () => {
+  beforeEach(() => destroyRecoveryProjection());
+
+  it.each(['fence', 'suspend', 'fail'])('discards a native restore completed after %s', async (action) => {
+    const read = deferred<NativeSessionProjection | null>();
+    const { controller, timers } = runtime({ read: () => read.promise });
+    const pending = controller.restore(station, granted);
+    if (action === 'fail') controller.fail(new Error('connection failed'));
+    else controller[action]();
+    read.resolve(nativeProjection());
+    expect(await pending).toBeNull();
+    expect(controller.getSnapshot().session).toBeNull();
+    expect(controller.getSnapshot().writesAllowed).toBe(false);
+    expect(timers).toHaveLength(0);
+  });
+
+  it('discards a refresh after fencing without restoring writes or timers', async () => {
+    const refresh = deferred<NativeSessionProjection>();
+    const { controller, timers } = runtime({ refresh: () => refresh.promise });
+    await controller.restore(station, granted);
+    const timerCount = timers.length;
+    const pending = controller.refresh('scheduled');
+    controller.fence();
+    refresh.resolve(nativeProjection({ sessionId: 'late-refresh' }));
+    await expect(pending).rejects.toThrow('sessionTransitionCancelled');
+    expect(controller.getSnapshot().session).toBeNull();
+    expect(controller.getSnapshot().writesAllowed).toBe(false);
+    expect(timers).toHaveLength(timerCount);
+  });
+
+  it('keeps a newer restore when an older native read completes last', async () => {
+    const read = deferred<NativeSessionProjection | null>();
+    let calls = 0;
+    const { controller } = runtime({
+      read: () => ++calls === 1 ? read.promise : Promise.resolve(nativeProjection({ sessionId: 'new' })),
+    });
+    const old = controller.restore(station, granted);
+    await controller.restore(station, granted);
+    read.resolve(nativeProjection({ sessionId: 'old' }));
+    expect(await old).toBeNull();
+    expect(controller.getSnapshot().session?.sessionId).toBe('new');
+  });
+
   it('activates native OAuth metadata without projecting credential material', async () => {
     const { controller, timers } = runtime();
 
@@ -295,21 +341,133 @@ describe('sessionRuntime', () => {
     expect(controller.getSnapshot().phase).toBe('revoked');
   });
 
-  it('releases a completed no-op revocation before a later session', async () => {
+  it('purges native state before admission and releases revocation for a later session', async () => {
     const { controller, native } = runtime();
 
     await expect(controller.revoke()).resolves.toEqual({
-      remoteRevocation: 'not-required',
-      nativePurge: null,
+      remoteRevocation: 'confirmed',
+      nativePurge: completePurge(),
     });
-    expect(native.revoke).not.toHaveBeenCalled();
+    expect(native.revoke).toHaveBeenNthCalledWith(1, null);
 
     await controller.restore(station, granted);
     await expect(controller.revoke()).resolves.toEqual({
       remoteRevocation: 'confirmed',
       nativePurge: completePurge(),
     });
+    expect(native.revoke).toHaveBeenCalledTimes(2);
+    expect(native.revoke).toHaveBeenNthCalledWith(2, {
+      stationOrigin: station.url,
+      stationPeerId: station.stationPeerId,
+    });
+  });
+
+  it.each([
+    ['scheduled', 'mobile.auth.sessionCredentialRejected:401'],
+    ['authenticated-401', 'mobile.auth.oauthTransportUnavailable'],
+  ])('reports actionable expiry after terminal %s refresh', async (reason, message) => {
+    const purge = deferred<ReturnType<typeof completePurge>>();
+    const { controller, native } = runtime({
+      refresh: async () => { throw new Error(message); },
+      revoke: () => purge.promise,
+    });
+    await controller.restore(station, granted);
+    const pending = controller.refresh(reason);
+    const rejected = expect(pending).rejects.toThrow(message);
+    await vi.waitFor(() => expect(native.revoke).toHaveBeenCalledOnce());
+    expect(controller.getSnapshot().writesAllowed).toBe(false);
+    expect(getRecoveryProjection().getSnapshot().states).toEqual([]);
+
+    purge.resolve(completePurge());
+    await rejected;
+    expect(controller.getSnapshot().session).toBeNull();
+    expect(getRecoveryProjection().getSnapshot()).toMatchObject({
+      isWriteBlocked: true,
+      states: [{ kind: 'device-local-flag', reason: 'session-expired' }],
+    });
+    await controller.restore(station, granted);
+    expect(getRecoveryProjection().getSnapshot().states).toEqual([]);
+  });
+
+  it('reports expiry when the scheduled session reaches its deadline before refresh', async () => {
+    let now = NOW;
+    const { controller, native } = runtime({ now: () => now });
+    await controller.restore(station, granted);
+    now += 10 * 60 * 1_000;
+    await expect(controller.refresh('scheduled')).rejects.toThrow('sessionExpired');
+    expect(native.refresh).not.toHaveBeenCalled();
     expect(native.revoke).toHaveBeenCalledOnce();
+    expect(getRecoveryProjection().getSnapshot()).toMatchObject({
+      isWriteBlocked: true,
+      states: [{ kind: 'device-local-flag', reason: 'session-expired' }],
+    });
+  });
+
+  it('retains the admitted session without an expiry flag during a transient scheduled failure', async () => {
+    const { controller, native, timers } = runtime({
+      refresh: async () => { throw new Error('mobile.auth.oauthTransportUnavailable'); },
+    });
+    await controller.restore(station, granted);
+    await expect(controller.refresh('scheduled')).rejects.toThrow('oauthTransportUnavailable');
+    expect(native.revoke).not.toHaveBeenCalled();
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'active',
+      writesAllowed: true,
+      session: { sessionId: 'session-a' },
+    });
+    expect(timers.at(-1)?.delayMs).toBe(5_000);
+    expect(getRecoveryProjection().getSnapshot().states).toEqual([]);
+  });
+
+  it('does not present an expiry failure after explicit logout', async () => {
+    const { controller } = runtime();
+    await controller.restore(station, granted);
+    await controller.revoke();
+    expect(controller.getSnapshot().phase).toBe('revoked');
+    expect(getRecoveryProjection().getSnapshot().states).toEqual([]);
+  });
+
+  it.each(['fence', 'suspend', 'restore'])('does not publish a late expiry flag after %s', async (action) => {
+    const purge = deferred<ReturnType<typeof completePurge>>();
+    const { controller, native } = runtime({
+      refresh: async () => { throw new Error('mobile.auth.sessionCredentialRejected:401'); },
+      revoke: () => purge.promise,
+      read: async () => nativeProjection({ sessionId: 'new-session' }),
+    });
+    await controller.restore(station, granted);
+    const pending = controller.refresh('scheduled');
+    const rejected = expect(pending).rejects.toThrow('sessionCredentialRejected');
+    await vi.waitFor(() => expect(native.revoke).toHaveBeenCalledOnce());
+    if (action === 'restore') await controller.restore(station, granted);
+    else controller[action]();
+    purge.resolve(completePurge());
+    await rejected;
+    expect(getRecoveryProjection().getSnapshot().states).toEqual([]);
+    if (action === 'restore') {
+      expect(controller.getSnapshot()).toMatchObject({
+        phase: 'active',
+        writesAllowed: true,
+        session: { sessionId: 'new-session' },
+      });
+    }
+  });
+
+  it('rejects incomplete native purge even when no renderer session was admitted', async () => {
+    const { controller, native } = runtime({
+      revoke: async () => ({
+        ...completePurge(),
+        secureStorage: {
+          ...completePurge().secureStorage,
+          credentialRecordAbsent: false,
+        },
+      }),
+    });
+    controller.fail(new Error('station unavailable'));
+    await expect(controller.revoke()).rejects.toThrow('sessionSecurePurgeIncomplete');
+    expect(native.revoke).toHaveBeenCalledWith(null);
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'failed', session: null, writesAllowed: false,
+    });
   });
 
   it('keeps the session fenced when native secure purge is incomplete', async () => {

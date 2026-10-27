@@ -1,0 +1,811 @@
+{
+  "kind": "peers-touch-experience-review-result",
+  "schemaVersion": 1,
+  "authorId": "edx-blind-runner-v2",
+  "verdict": "FINDINGS",
+  "evaluationBinding": {
+    "packageId": "EDX-HOLDOUT-20261019-V2",
+    "runEnvelopeDigest": "sha256:5ff0a02a8009e7cbb8deb92965d7172f97585c357a58c43864d3d743f0c63ee3",
+    "caseDigest": "sha256:a210d2eff9b2b701abd5433adb989205ef24c8d3b21ed25f640af1aa701244e1",
+    "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+    "manifestDigest": "sha256:6d8c7328bb64ad1d7c9c255a61daaf9186cd20451778f45f7f2c8765b2e468ce",
+    "rubricDigest": "sha256:2f31bcd9bbac2dd5a9280051b8917a1bc4c63da30d4d4e6c8fafaf9069b2ef84",
+    "sourceBlobAlgorithm": "git-sha1",
+    "sourceBlobs": [
+      {
+        "path": "apps/mobile/src/App.tsx",
+        "digest": "d5032848da90c90baae6185310a344b465bbc244"
+      },
+      {
+        "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+        "digest": "83482342b5fc7fe047e05b0fc7b4316c82366507"
+      },
+      {
+        "path": "apps/mobile/src/runtimes/recoveryProjection.ts",
+        "digest": "e55b0789d2fa73ff43cf3738963fb9c9627c1932"
+      },
+      {
+        "path": "docs/architecture/platform/client/mobile/experience-contract.md",
+        "digest": "5bf67d0011ad97dfb9934c337dc68518a0a3f706"
+      },
+      {
+        "path": "docs/architecture/platform/client/mobile/product-state-model.md",
+        "digest": "8239c494f11a4f729afc59e8925ab07ac1196fe9"
+      },
+      {
+        "path": "docs/client/mobile/lifecycle.md",
+        "digest": "c1a72cb6149a9055f5a3a69a186f1d06b04228f8"
+      }
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C-H02-TRUST-STATE",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/platform/client/mobile/experience-contract.md",
+        "lineStart": 25,
+        "lineEnd": 47
+      },
+      "clause": "MS-J01 steps 1-9 and Recovery",
+      "statement": "Station handshake precedes authentication and Shell admission; a saved URL presenting another Station identity shows a blocking trust state with back or explicit replacement, and Gate denial never enters the Shell."
+    },
+    {
+      "id": "C-H02-MISMATCH-ISOLATION",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/platform/client/mobile/experience-contract.md",
+        "lineStart": 132,
+        "lineEnd": 143
+      },
+      "clause": "MS-J07.5",
+      "statement": "Station identity mismatch closes writes immediately, hides prior-scope projections, and presents re-authentication or Station replacement."
+    },
+    {
+      "id": "C-H02-STATION-RECOVERY-SURFACE",
+      "authority": "accepted-product",
+      "caseCoverage": "supporting",
+      "source": {
+        "path": "docs/architecture/platform/client/mobile/product-state-model.md",
+        "lineStart": 106,
+        "lineEnd": 125
+      },
+      "clause": "Surface State Contracts",
+      "statement": "Station selection exposes identity mismatch and permits retry, replacement, and inspection of friendly identity; Access Gate exposes pending, failed, retry, and Station-change recovery."
+    },
+    {
+      "id": "C-H02-HUMAN-READABLE-TRUST",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/platform/client/mobile/product-state-model.md",
+        "lineStart": 142,
+        "lineEnd": 167
+      },
+      "clause": "Human-Readable Surface Contract",
+      "statement": "Every visible state makes friendly identity primary, moves technical identifiers to diagnostics, exposes the next valid accessible action, and provides scoped recovery; identity mismatch without actionable recovery or with raw technical identity as title fails."
+    },
+    {
+      "id": "C-H02-LIFECYCLE-FENCE",
+      "authority": "accepted-client",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/client/mobile/lifecycle.md",
+        "lineStart": 161,
+        "lineEnd": 173
+      },
+      "clause": "Edge Handling",
+      "statement": "Identity mismatch blocks before credentials, preserves the old scope, and offers back or explicit replacement; Station change fences the old generation, hides projections, clears local credentials and caches, quarantines unresolved commands, and returns to selection."
+    }
+  ],
+  "facts": [
+    {
+      "id": "F-H02-MISMATCH-STATE",
+      "stateId": "S-H02-MISMATCH",
+      "source": {
+        "path": "apps/mobile/src/runtimes/recoveryProjection.ts",
+        "lineStart": 74,
+        "lineEnd": 80,
+        "symbol": "SessionMismatchState"
+      },
+      "statement": "The recovery state retains only expected and actual Station peer IDs plus detection time; it contains no friendly identity for either scope."
+    },
+    {
+      "id": "F-H02-MISMATCH-REPORT",
+      "stateId": "S-H02-MISMATCH",
+      "source": {
+        "path": "apps/mobile/src/runtimes/recoveryProjection.ts",
+        "lineStart": 479,
+        "lineEnd": 487,
+        "symbol": "reportSessionMismatch"
+      },
+      "statement": "Mismatch detection stores the expected and observed peer IDs and rebuilds the recovery projection.",
+      "visibleResponse": "The blocking recovery projection is rebuilt for an identity mismatch."
+    },
+    {
+      "id": "F-H02-OVERLAY-COPY",
+      "stateId": "S-H02-MISMATCH",
+      "source": {
+        "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+        "lineStart": 56,
+        "lineEnd": 85,
+        "symbol": "SessionMismatchOverlay"
+      },
+      "statement": "The alert dialog renders generic localized title, body, and mismatch status without passing either retained identity or a friendly Station identity into the copy.",
+      "visibleAction": "Inspect the blocking trust warning before choosing a scope action.",
+      "visibleResponse": "The overlay states that a mismatch exists but does not identify the trusted saved Station or the newly observed Station in user-facing terms."
+    },
+    {
+      "id": "F-H02-RECOVERY-ACTIONS",
+      "stateId": "S-H02-MISMATCH",
+      "source": {
+        "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+        "lineStart": 86,
+        "lineEnd": 115,
+        "symbol": "SessionMismatchOverlay"
+      },
+      "statement": "The overlay presents Switch Station and Re-authenticate actions, disables both during pending work, and gives initial focus to Re-authenticate.",
+      "visibleAction": "Choose Switch Station or Re-authenticate from the blocking overlay.",
+      "visibleResponse": "The chosen action starts while both trust-boundary controls are disabled."
+    },
+    {
+      "id": "F-H02-FOCUS-CONTAINMENT",
+      "stateId": "S-H02-MISMATCH",
+      "source": {
+        "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+        "lineStart": 26,
+        "lineEnd": 38,
+        "symbol": "SessionMismatchOverlay"
+      },
+      "statement": "The overlay focuses the primary action on mount and restores prior connected focus on unmount."
+    },
+    {
+      "id": "F-H02-REAUTH-ACTION",
+      "stateId": "S-H02-MISMATCH",
+      "source": {
+        "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+        "lineStart": 98,
+        "lineEnd": 114,
+        "symbol": "SessionMismatchOverlay"
+      },
+      "statement": "The primary action invokes the re-authentication handler and animates its icon while that action is pending.",
+      "visibleAction": "Activate Re-authenticate for the saved Station."
+    },
+    {
+      "id": "F-H02-SWITCH-ACTION",
+      "stateId": "S-H02-MISMATCH",
+      "source": {
+        "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+        "lineStart": 86,
+        "lineEnd": 97,
+        "symbol": "SessionMismatchOverlay"
+      },
+      "statement": "The secondary action invokes the switch-Station handler.",
+      "visibleAction": "Activate Switch Station."
+    },
+    {
+      "id": "F-H02-PENDING-RESPONSE",
+      "stateId": "S-H02-REAUTH-PENDING",
+      "source": {
+        "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+        "lineStart": 40,
+        "lineEnd": 53,
+        "symbol": "runAction"
+      },
+      "statement": "The selected action is recorded as pending until its handler settles.",
+      "visibleResponse": "The overlay becomes busy and its actions remain disabled until completion."
+    },
+    {
+      "id": "F-H02-FAILED-RESPONSE",
+      "stateId": "S-H02-REAUTH-FAILED",
+      "source": {
+        "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+        "lineStart": 116,
+        "lineEnd": 120,
+        "symbol": "SessionMismatchOverlay"
+      },
+      "statement": "Any rejected switch or re-authentication handler renders the same generic action-failed message.",
+      "visibleResponse": "A generic action-failed alert appears without naming the selected action, Station, or failure domain."
+    },
+    {
+      "id": "F-H02-FAILED-RETRY",
+      "stateId": "S-H02-REAUTH-FAILED",
+      "source": {
+        "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+        "lineStart": 40,
+        "lineEnd": 53,
+        "symbol": "runAction"
+      },
+      "statement": "After failure the pending flag clears, so the same visible actions can be attempted again.",
+      "visibleAction": "Retry Re-authenticate or Switch Station after the failure alert."
+    },
+    {
+      "id": "F-H02-EXPECTED-IDENTITY-GATE",
+      "stateId": "S-H02-MISMATCH",
+      "source": {
+        "path": "apps/mobile/src/App.tsx",
+        "lineStart": 685,
+        "lineEnd": 706,
+        "symbol": "reAuthenticateSessionMismatch"
+      },
+      "statement": "Re-authentication requires the active registry entry to retain the expected peer ID, verifies that entry again, requires the verified peer ID to match, revokes the previous scope while retaining drafts, starts the Access Gate chain, and only then clears mismatch.",
+      "visibleResponse": "Re-authentication proceeds toward the saved Station's Access Gate only after expected-identity verification."
+    },
+    {
+      "id": "F-H02-ACCESS-GATE-RESPONSE",
+      "stateId": "S-H02-ACCESS-GATE",
+      "source": {
+        "path": "apps/mobile/src/App.tsx",
+        "lineStart": 798,
+        "lineEnd": 815,
+        "symbol": "startAccessGateChainFor"
+      },
+      "statement": "The chain enters Station handshake, verifies the selected Station identity, runs the active access attempt, and remains in the Access Gate chain when access is not granted.",
+      "visibleResponse": "The verified saved Station's current Access Gate becomes the active pre-Shell state."
+    },
+    {
+      "id": "F-H02-SHELL-RESPONSE",
+      "stateId": "S-H02-SHELL-ADMITTED",
+      "source": {
+        "path": "apps/mobile/src/App.tsx",
+        "lineStart": 804,
+        "lineEnd": 812,
+        "symbol": "startAccessGateChainFor"
+      },
+      "statement": "Shell admission reconciliation runs only when the Access Gate decision grants access.",
+      "visibleResponse": "The Shell is reconciled only after identity verification and a granted Access Gate."
+    },
+    {
+      "id": "F-H02-SELECTION-RESPONSE",
+      "stateId": "S-H02-STATION-SELECTION",
+      "source": {
+        "path": "apps/mobile/src/App.tsx",
+        "lineStart": 815,
+        "lineEnd": 830,
+        "symbol": "startAccessGateChainFor"
+      },
+      "statement": "A failed Station verification or Access Gate start records a Station error and shows Station selection.",
+      "visibleResponse": "Mobile returns to Station selection instead of admitting the old Shell."
+    }
+  ],
+  "inferences": [
+    {
+      "id": "I-H02-IDENTITY-MEANING-MISSING",
+      "factIds": [
+        "F-H02-MISMATCH-STATE",
+        "F-H02-OVERLAY-COPY",
+        "F-H02-RECOVERY-ACTIONS"
+      ],
+      "contractIds": [
+        "C-H02-TRUST-STATE",
+        "C-H02-HUMAN-READABLE-TRUST",
+        "C-H02-LIFECYCLE-FENCE"
+      ],
+      "statement": "The trust boundary asks the user to re-authenticate or leave without presenting friendly prior and candidate Station identity or explaining which scope each action will trust."
+    },
+    {
+      "id": "I-H02-FAILURE-CONTEXT-MISSING",
+      "factIds": [
+        "F-H02-RECOVERY-ACTIONS",
+        "F-H02-FAILED-RESPONSE",
+        "F-H02-FAILED-RETRY"
+      ],
+      "contractIds": [
+        "C-H02-STATION-RECOVERY-SURFACE",
+        "C-H02-HUMAN-READABLE-TRUST"
+      ],
+      "statement": "Retry remains available, but the shared generic failure message does not tell the user whether re-authentication or Station switching failed or whether the failure was identity, network, Gate, or local state related."
+    }
+  ],
+  "journeyStateGraph": {
+    "entryStateId": "S-H02-MISMATCH",
+    "states": [
+      {
+        "id": "S-H02-MISMATCH",
+        "origin": "starting",
+        "inScope": true,
+        "source": {
+          "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+          "lineStart": 56,
+          "lineEnd": 123,
+          "symbol": "SessionMismatchOverlay"
+        },
+        "visibleMeaning": "A modal blocking trust state replaces interaction with the prior Shell and asks the user to re-authenticate or switch Station."
+      },
+      {
+        "id": "S-H02-REAUTH-PENDING",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 1,
+        "source": {
+          "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+          "lineStart": 40,
+          "lineEnd": 64,
+          "symbol": "runAction"
+        },
+        "visibleMeaning": "A selected trust-boundary action is pending and both actions are disabled."
+      },
+      {
+        "id": "S-H02-REAUTH-FAILED",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 2,
+        "source": {
+          "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+          "lineStart": 116,
+          "lineEnd": 120,
+          "symbol": "SessionMismatchOverlay"
+        },
+        "visibleMeaning": "The selected action failed and the overlay exposes a generic failure alert with enabled retry controls."
+      },
+      {
+        "id": "S-H02-ACCESS-GATE",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 3,
+        "source": {
+          "path": "apps/mobile/src/App.tsx",
+          "lineStart": 798,
+          "lineEnd": 815,
+          "symbol": "startAccessGateChainFor"
+        },
+        "visibleMeaning": "The expected Station identity is verified and Mobile remains in its current Access Gate before Shell admission."
+      },
+      {
+        "id": "S-H02-STATION-SELECTION",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 4,
+        "source": {
+          "path": "apps/mobile/src/App.tsx",
+          "lineStart": 815,
+          "lineEnd": 830,
+          "symbol": "startAccessGateChainFor"
+        },
+        "visibleMeaning": "The mismatch recovery leaves the blocked scope and returns to Station selection."
+      },
+      {
+        "id": "S-H02-SHELL-ADMITTED",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 5,
+        "source": {
+          "path": "apps/mobile/src/App.tsx",
+          "lineStart": 804,
+          "lineEnd": 812,
+          "symbol": "startAccessGateChainFor"
+        },
+        "visibleMeaning": "The expected identity is verified, access is granted, and Shell admission is reconciled."
+      }
+    ],
+    "edges": [
+      {
+        "id": "E-H02-MISMATCH-PENDING",
+        "fromStateId": "S-H02-MISMATCH",
+        "toStateId": "S-H02-REAUTH-PENDING",
+        "actionFactId": "F-H02-REAUTH-ACTION",
+        "responseFactId": "F-H02-PENDING-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+            "lineStart": 40,
+            "lineEnd": 53
+          },
+          {
+            "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+            "lineStart": 98,
+            "lineEnd": 114
+          }
+        ]
+      },
+      {
+        "id": "E-H02-MISMATCH-FAILED",
+        "fromStateId": "S-H02-MISMATCH",
+        "toStateId": "S-H02-REAUTH-FAILED",
+        "actionFactId": "F-H02-REAUTH-ACTION",
+        "responseFactId": "F-H02-FAILED-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+            "lineStart": 40,
+            "lineEnd": 53
+          },
+          {
+            "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+            "lineStart": 98,
+            "lineEnd": 120
+          }
+        ]
+      },
+      {
+        "id": "E-H02-MISMATCH-GATE",
+        "fromStateId": "S-H02-MISMATCH",
+        "toStateId": "S-H02-ACCESS-GATE",
+        "actionFactId": "F-H02-REAUTH-ACTION",
+        "responseFactId": "F-H02-ACCESS-GATE-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/App.tsx",
+            "lineStart": 685,
+            "lineEnd": 706
+          },
+          {
+            "path": "apps/mobile/src/App.tsx",
+            "lineStart": 798,
+            "lineEnd": 815
+          }
+        ]
+      },
+      {
+        "id": "E-H02-MISMATCH-SELECTION",
+        "fromStateId": "S-H02-MISMATCH",
+        "toStateId": "S-H02-STATION-SELECTION",
+        "actionFactId": "F-H02-SWITCH-ACTION",
+        "responseFactId": "F-H02-SELECTION-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/App.tsx",
+            "lineStart": 815,
+            "lineEnd": 830
+          },
+          {
+            "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+            "lineStart": 86,
+            "lineEnd": 97
+          }
+        ]
+      },
+      {
+        "id": "E-H02-MISMATCH-SHELL",
+        "fromStateId": "S-H02-MISMATCH",
+        "toStateId": "S-H02-SHELL-ADMITTED",
+        "actionFactId": "F-H02-REAUTH-ACTION",
+        "responseFactId": "F-H02-SHELL-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/App.tsx",
+            "lineStart": 685,
+            "lineEnd": 706
+          },
+          {
+            "path": "apps/mobile/src/App.tsx",
+            "lineStart": 804,
+            "lineEnd": 812
+          }
+        ]
+      },
+      {
+        "id": "E-H02-FAILED-RETRY",
+        "fromStateId": "S-H02-REAUTH-FAILED",
+        "toStateId": "S-H02-REAUTH-PENDING",
+        "actionFactId": "F-H02-FAILED-RETRY",
+        "responseFactId": "F-H02-PENDING-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+            "lineStart": 40,
+            "lineEnd": 53
+          },
+          {
+            "path": "apps/mobile/src/components/recovery/SessionMismatchOverlay.tsx",
+            "lineStart": 86,
+            "lineEnd": 114
+          }
+        ]
+      }
+    ]
+  },
+  "trustBoundaryChecks": [
+    {
+      "id": "T-H02-STATION-IDENTITY-CHANGE",
+      "contractTransitionRefs": [
+        "C-H02-TRUST-STATE",
+        "C-H02-MISMATCH-ISOLATION",
+        "C-H02-HUMAN-READABLE-TRUST",
+        "C-H02-LIFECYCLE-FENCE"
+      ],
+      "beforeScope": "The saved Station scope pinned by the prior session and expectedStationPeerId.",
+      "candidateTarget": "The Station identity newly observed at the saved address and retained as actualStationPeerId.",
+      "diagnosticEvidenceKinds": [
+        "expected Station peer ID",
+        "observed Station peer ID",
+        "detection timestamp"
+      ],
+      "requiredIdentityEvidenceKinds": [
+        "friendly saved Station identity",
+        "friendly newly observed Station identity",
+        "verified Station identity match before credentials"
+      ],
+      "scopeEffectMeaning": "Mismatch immediately blocks prior-scope writes and hides prior-scope projections; switching Station fences the old generation and returns to selection.",
+      "nextGateMeaning": "Re-authentication verifies the expected saved Station and continues its current Access Gate; Shell admission occurs only after access is granted.",
+      "failureMeaning": "A verification or Gate-start failure must remain outside the Shell and return to blocking recovery or Station selection.",
+      "visibleConsequences": [
+        "blocking alert dialog",
+        "Re-authenticate action",
+        "Switch Station action",
+        "old Shell not admitted before a granted Gate"
+      ],
+      "previousScopeExposure": "The prior scope is preserved for controlled recovery but must remain hidden until expected identity verification and a valid Access Gate complete."
+    }
+  ],
+  "recoveryPaths": [
+    {
+      "id": "R-H02-REAUTHENTICATE",
+      "contractIds": [
+        "C-H02-MISMATCH-ISOLATION",
+        "C-H02-LIFECYCLE-FENCE"
+      ],
+      "sourceStateId": "S-H02-MISMATCH",
+      "reason": "The user keeps the saved Station scope but must verify its pinned identity before any credential or Shell continuation.",
+      "entryActionVisible": true,
+      "distance": "same-surface",
+      "preservedState": [
+        "saved-station-scope",
+        "quarantined-drafts"
+      ],
+      "returnStateId": "S-H02-ACCESS-GATE",
+      "returnTarget": {
+        "kind": "navigation",
+        "targetId": "mobile-access-gate"
+      }
+    },
+    {
+      "id": "R-H02-SWITCH-STATION",
+      "contractIds": [
+        "C-H02-TRUST-STATE",
+        "C-H02-LIFECYCLE-FENCE"
+      ],
+      "sourceStateId": "S-H02-MISMATCH",
+      "reason": "The user declines to continue the mismatched saved address and returns to Station selection without exposing the old Shell.",
+      "entryActionVisible": true,
+      "distance": "same-surface",
+      "preservedState": [
+        "old-scope-quarantine"
+      ],
+      "returnStateId": "S-H02-STATION-SELECTION",
+      "returnTarget": {
+        "kind": "navigation",
+        "targetId": "mobile-station-selection"
+      }
+    },
+    {
+      "id": "R-H02-RETRY",
+      "contractIds": [
+        "C-H02-STATION-RECOVERY-SURFACE",
+        "C-H02-HUMAN-READABLE-TRUST"
+      ],
+      "sourceStateId": "S-H02-REAUTH-FAILED",
+      "reason": "A failed trust-boundary action leaves the blocking overlay active and permits a deliberate retry or alternate Station action.",
+      "entryActionVisible": true,
+      "distance": "same-surface",
+      "preservedState": [
+        "expected-station-identity",
+        "observed-station-identity"
+      ],
+      "returnStateId": "S-H02-REAUTH-PENDING",
+      "returnTarget": {
+        "kind": "touch-anchor",
+        "targetId": "recovery-session-reauthenticate"
+      }
+    }
+  ],
+  "candidateLedger": [
+    {
+      "candidate": {
+        "id": "FC-H02-FRIENDLY-IDENTITY-ABSENT",
+        "stateId": "S-H02-MISMATCH",
+        "factIds": [
+          "F-H02-MISMATCH-STATE",
+          "F-H02-OVERLAY-COPY",
+          "F-H02-RECOVERY-ACTIONS"
+        ],
+        "contractIds": [
+          "C-H02-TRUST-STATE",
+          "C-H02-HUMAN-READABLE-TRUST",
+          "C-H02-LIFECYCLE-FENCE"
+        ],
+        "inferenceIds": [
+          "I-H02-IDENTITY-MEANING-MISSING"
+        ],
+        "severity": "major",
+        "impact": "unsafe-trust-or-data-loss",
+        "confidence": "high",
+        "brokenPromise": "A blocking Station identity transition must identify the prior trusted Station and candidate Station in friendly terms before asking the user to choose a trust action.",
+        "causalMechanism": "The recovery state carries only raw peer IDs and the overlay renders no state-derived identity at all, leaving two action labels without before-scope or candidate-target meaning.",
+        "userImpact": "The user cannot understand which Station changed or what Re-authenticate versus Switch Station will preserve, so the required trust decision is not informed even though protocol checks remain fail-closed.",
+        "ownerLayer": "Mobile recovery projection and Station identity presentation",
+        "correctionDirection": "Carry contract-approved friendly identity for both the saved and observed Station into the recovery projection, keep raw peer IDs behind diagnostics, and state each action's scope effect."
+      },
+      "eligible": true,
+      "ineligibleReasons": [],
+      "priorityTuple": [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        "FC-H02-FRIENDLY-IDENTITY-ABSENT"
+      ]
+    },
+    {
+      "candidate": {
+        "id": "FC-H02-GENERIC-ACTION-FAILURE",
+        "stateId": "S-H02-REAUTH-FAILED",
+        "factIds": [
+          "F-H02-RECOVERY-ACTIONS",
+          "F-H02-FAILED-RESPONSE",
+          "F-H02-FAILED-RETRY"
+        ],
+        "contractIds": [
+          "C-H02-STATION-RECOVERY-SURFACE",
+          "C-H02-HUMAN-READABLE-TRUST"
+        ],
+        "inferenceIds": [
+          "I-H02-FAILURE-CONTEXT-MISSING"
+        ],
+        "severity": "minor",
+        "impact": "material-ambiguity",
+        "confidence": "high",
+        "brokenPromise": "Failed recovery should remain scoped to its action and explain the next valid retry.",
+        "causalMechanism": "Both trust-boundary handlers collapse to one actionFailed boolean and one generic message.",
+        "userImpact": "The user can retry but cannot tell which selected operation failed or whether choosing the alternate action is appropriate.",
+        "ownerLayer": "Mobile mismatch overlay feedback",
+        "correctionDirection": "Retain the selected action and typed failure meaning in local copy while keeping both recovery actions available."
+      },
+      "eligible": true,
+      "ineligibleReasons": [],
+      "priorityTuple": [
+        0,
+        4,
+        2,
+        0,
+        2,
+        0,
+        "FC-H02-GENERIC-ACTION-FAILURE"
+      ]
+    }
+  ],
+  "primaryFinding": {
+    "candidateId": "FC-H02-FRIENDLY-IDENTITY-ABSENT",
+    "factIds": [
+      "F-H02-MISMATCH-STATE",
+      "F-H02-OVERLAY-COPY",
+      "F-H02-RECOVERY-ACTIONS"
+    ],
+    "contractIds": [
+      "C-H02-TRUST-STATE",
+      "C-H02-HUMAN-READABLE-TRUST",
+      "C-H02-LIFECYCLE-FENCE"
+    ],
+    "inferenceIds": [
+      "I-H02-IDENTITY-MEANING-MISSING"
+    ],
+    "severity": "major",
+    "earliestStateId": "S-H02-MISMATCH",
+    "brokenPromise": "A blocking Station identity transition must identify the prior trusted Station and candidate Station in friendly terms before asking the user to choose a trust action.",
+    "causalMechanism": "The recovery state carries only raw peer IDs and the overlay renders no state-derived identity at all, leaving two action labels without before-scope or candidate-target meaning.",
+    "userImpact": "The user cannot understand which Station changed or what Re-authenticate versus Switch Station will preserve, so the required trust decision is not informed even though protocol checks remain fail-closed.",
+    "ownerLayer": "Mobile recovery projection and Station identity presentation",
+    "correctionDirection": "Carry contract-approved friendly identity for both the saved and observed Station into the recovery projection, keep raw peer IDs behind diagnostics, and state each action's scope effect.",
+    "confidence": "high",
+    "priorityBasis": [
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      "FC-H02-FRIENDLY-IDENTITY-ABSENT"
+    ]
+  },
+  "secondaryFindings": [],
+  "minorObservations": [
+    {
+      "candidateId": "FC-H02-GENERIC-ACTION-FAILURE",
+      "factIds": [
+        "F-H02-RECOVERY-ACTIONS",
+        "F-H02-FAILED-RESPONSE",
+        "F-H02-FAILED-RETRY"
+      ],
+      "contractIds": [
+        "C-H02-STATION-RECOVERY-SURFACE",
+        "C-H02-HUMAN-READABLE-TRUST"
+      ],
+      "inferenceIds": [
+        "I-H02-FAILURE-CONTEXT-MISSING"
+      ],
+      "severity": "minor",
+      "earliestStateId": "S-H02-REAUTH-FAILED",
+      "brokenPromise": "Failed recovery should remain scoped to its action and explain the next valid retry.",
+      "causalMechanism": "Both trust-boundary handlers collapse to one actionFailed boolean and one generic message.",
+      "userImpact": "The user can retry but cannot tell which selected operation failed or whether choosing the alternate action is appropriate.",
+      "ownerLayer": "Mobile mismatch overlay feedback",
+      "correctionDirection": "Retain the selected action and typed failure meaning in local copy while keeping both recovery actions available.",
+      "confidence": "high",
+      "priorityBasis": [
+        0,
+        4,
+        2,
+        0,
+        2,
+        0,
+        "FC-H02-GENERIC-ACTION-FAILURE"
+      ]
+    }
+  ],
+  "statesChecked": [
+    "S-H02-MISMATCH",
+    "S-H02-REAUTH-PENDING",
+    "S-H02-REAUTH-FAILED",
+    "S-H02-ACCESS-GATE",
+    "S-H02-STATION-SELECTION",
+    "S-H02-SHELL-ADMITTED"
+  ],
+  "exitAndRetryPaths": [
+    {
+      "id": "X-H02-REAUTHENTICATE",
+      "sourceStateId": "S-H02-MISMATCH",
+      "actionFactId": "F-H02-REAUTH-ACTION",
+      "destinationStateId": "S-H02-ACCESS-GATE",
+      "recoveryPathId": "R-H02-REAUTHENTICATE"
+    },
+    {
+      "id": "X-H02-SWITCH-STATION",
+      "sourceStateId": "S-H02-MISMATCH",
+      "actionFactId": "F-H02-SWITCH-ACTION",
+      "destinationStateId": "S-H02-STATION-SELECTION",
+      "recoveryPathId": "R-H02-SWITCH-STATION"
+    },
+    {
+      "id": "X-H02-RETRY",
+      "sourceStateId": "S-H02-REAUTH-FAILED",
+      "actionFactId": "F-H02-FAILED-RETRY",
+      "destinationStateId": "S-H02-REAUTH-PENDING",
+      "recoveryPathId": "R-H02-RETRY"
+    }
+  ],
+  "unproven": [
+    {
+      "id": "U-H02-SWITCH-HANDLER-FENCE",
+      "contractIds": [
+        "C-H02-TRUST-STATE",
+        "C-H02-LIFECYCLE-FENCE"
+      ],
+      "requirement": "Switch Station must fence the old generation, hide projections, clear credentials and caches, quarantine unresolved commands, and return to selection.",
+      "reason": "The supplied overlay invokes onSwitchStation, but the handler implementation is not supplied.",
+      "requiredEvidenceLevel": "L3_DYNAMIC",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H02-OLD-SCOPE-VISIBILITY",
+      "contractIds": [
+        "C-H02-MISMATCH-ISOLATION",
+        "C-H02-LIFECYCLE-FENCE"
+      ],
+      "requirement": "Prior-scope projections remain hidden throughout mismatch, re-authentication, and Access Gate progression until Shell admission is valid.",
+      "reason": "The supplied control flow is fail-closed, but static source does not establish rendered stacking, stale-frame absence, or runtime projection teardown across the full transition.",
+      "requiredEvidenceLevel": "L4_RUNTIME",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H02-TOUCH-AND-SCREEN-READER",
+      "contractIds": [
+        "C-H02-HUMAN-READABLE-TRUST"
+      ],
+      "requirement": "Both trust actions and the resulting Gate or Station selection are reachable by touch and accessibility navigation with coherent announcement order.",
+      "reason": "ARIA roles and initial focus are source-backed, but actual mobile accessibility order and touch geometry require inspected behavior.",
+      "requiredEvidenceLevel": "L3_DYNAMIC",
+      "requiredFor": [
+        "high-fidelity",
+        "production"
+      ]
+    }
+  ]
+}

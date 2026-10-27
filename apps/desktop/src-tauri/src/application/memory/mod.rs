@@ -133,7 +133,7 @@ pub fn memory_list(
     match station_client
         .request_peers_proto::<agent::ListMemoriesRequest, agent::ListMemoriesResponse>(
             Method::POST,
-            "/agent/memory/list",
+            "/sub-agent/agent/memory/list",
             token,
             None,
             Some(&req),
@@ -160,7 +160,7 @@ pub fn memory_get(
     let req = agent::GetMemoryRequest { id: input.id };
     match station_client.request_peers_proto::<agent::GetMemoryRequest, agent::GetMemoryResponse>(
         Method::POST,
-        "/agent/memory/get",
+        "/sub-agent/agent/memory/get",
         token,
         None,
         Some(&req),
@@ -191,7 +191,7 @@ pub fn memory_delete(
     match station_client
         .request_peers_proto::<agent::DeleteMemoryRequest, agent::DeleteMemoryResponse>(
             Method::POST,
-            "/agent/memory/delete",
+            "/sub-agent/agent/memory/delete",
             token,
             None,
             Some(&req),
@@ -221,7 +221,7 @@ pub fn memory_update(
     match station_client
         .request_peers_proto::<agent::WriteMemoryRequest, agent::WriteMemoryResponse>(
             Method::POST,
-            "/agent/memory/update",
+            "/sub-agent/agent/memory/update",
             token,
             None,
             Some(&req),
@@ -263,7 +263,7 @@ pub fn memory_search(
     match station_client
         .request_peers_proto::<agent::SearchMemoriesRequest, agent::SearchMemoriesResponse>(
             Method::POST,
-            "/agent/memory/search",
+            "/sub-agent/agent/memory/search",
             token,
             None,
             Some(&req),
@@ -309,7 +309,7 @@ pub fn memory_persona(
     match station_client
         .request_peers_proto::<agent::GetMemoryPersonaRequest, agent::GetMemoryPersonaResponse>(
             Method::POST,
-            "/agent/memory/persona",
+            "/sub-agent/agent/memory/persona",
             token,
             None,
             Some(&req),
@@ -329,7 +329,7 @@ pub fn memory_stats(station_client: &StationClient, token: &str) -> AppResult<St
     match station_client
         .request_peers_proto::<agent::GetMemoryStatsRequest, agent::GetMemoryStatsResponse>(
             Method::POST,
-            "/agent/memory/stats",
+            "/sub-agent/agent/memory/stats",
             token,
             None,
             Some(&req),
@@ -364,7 +364,7 @@ pub fn memory_events(
     match station_client
         .request_peers_proto::<agent::ListMemoryEventsRequest, agent::ListMemoryEventsResponse>(
             Method::POST,
-            "/agent/memory/events",
+            "/sub-agent/agent/memory/events",
             token,
             None,
             Some(&req),
@@ -400,7 +400,7 @@ pub fn memory_export(
     match station_client
         .request_peers_proto::<agent::ExportMemoriesRequest, agent::ExportMemoriesResponse>(
             Method::POST,
-            "/agent/memory/export",
+            "/sub-agent/agent/memory/export",
             token,
             None,
             Some(&req),
@@ -452,7 +452,7 @@ pub fn memory_import(
     match station_client
         .request_peers_proto::<agent::ImportMemoriesRequest, agent::ImportMemoriesResponse>(
             Method::POST,
-            "/agent/memory/import",
+            "/sub-agent/agent/memory/import",
             token,
             None,
             Some(&req),
@@ -519,7 +519,7 @@ pub fn memory_embedding_status(
     match station_client
         .request_peers_proto::<agent::EmbeddingStatusRequest, agent::EmbeddingStatusResponse>(
             Method::POST,
-            "/agent/memory/embedding-status",
+            "/sub-agent/agent/memory/embedding-status",
             token,
             None,
             Some(&agent::EmbeddingStatusRequest {}),
@@ -540,7 +540,7 @@ pub fn memory_embedding_status(
 pub fn memory_reembed(station_client: &StationClient, token: &str) -> AppResult<StubPayload> {
     match station_client.request_peers_proto::<agent::ReEmbedRequest, agent::ReEmbedResponse>(
         Method::POST,
-        "/agent/memory/reembed",
+        "/sub-agent/agent/memory/reembed",
         token,
         None,
         Some(&agent::ReEmbedRequest {}),

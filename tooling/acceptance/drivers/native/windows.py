@@ -84,6 +84,7 @@ _VK_RETURN = 0x0D
 _VK_TAB = 0x09
 _VK_ESCAPE = 0x1B
 _VK_OEM_2 = 0xBF  # "/" key on US layout
+_VK_OEM_COMMA = 0xBC
 
 # Map NativeKey to (virtual_key_code, needs_extended_flag)
 _KEY_VK_MAP: dict[NativeKey, tuple[int, bool]] = {
@@ -93,6 +94,7 @@ _KEY_VK_MAP: dict[NativeKey, tuple[int, bool]] = {
     NativeKey.L: (0x4C, False),
     NativeKey.SLASH: (_VK_OEM_2, False),
     NativeKey.V: (0x56, False),
+    NativeKey.COMMA: (_VK_OEM_COMMA, False),
     NativeKey.DELETE: (_VK_DELETE, True),
     NativeKey.ENTER: (_VK_RETURN, False),
     NativeKey.TAB: (_VK_TAB, False),

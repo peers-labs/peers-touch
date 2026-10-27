@@ -530,6 +530,18 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async replaceAccountWithPassword({ account, password }: LoginInput) {
+      if (!useSessionStore.getState().authenticated) {
+        throw new Error('Chat account replacement requires an authenticated session');
+      }
+      await identityRuntime.loginWithPassword(account, password);
+      await identityRuntime.completeCurrentSession();
+      const actorPtid = activeActorPtid();
+      await installAuthenticatedCriticalRuntimes(actorPtid);
+      await hydrateSocialForActiveActor();
+      return { authenticated: true, actorPtid };
+    },
+
     async hydrateActiveActor() {
       await hydrateSocialForActiveActor();
       return {

@@ -1,4 +1,4 @@
-import { Copy, Pencil, Trash2, RefreshCw, RotateCcw, GitBranch, ChevronRight, Eraser, Languages, MessageSquareMore, Volume2, Download, Forward, Activity } from 'lucide-react';
+import { Copy, Pencil, Trash2, RefreshCw, RotateCcw, GitBranch, ChevronRight, Eraser, Languages, MessageSquareMore, Download, Forward, Activity } from 'lucide-react';
 import type { MessageActionDef, MessageActionContext } from './types';
 import { isActiveOperation } from '../../../store/streaming';
 
@@ -80,7 +80,6 @@ function buildAssistantActions(ctx: MessageActionContext): { primary: MessageAct
     primary: [
       { key: 'copy', label: 'chat.message.action.copy', icon: Copy, onClick: ctx.onCopy },
       { key: 'regenerate', label: 'chat.message.action.regenerate', icon: RefreshCw, onClick: ctx.onRegenerate },
-      { key: 'readAloud', label: 'chat.message.action.readAloud', icon: Volume2, onClick: ctx.onReadAloud },
     ],
     menu: [
       { key: 'branch', label: 'chat.message.action.branch', icon: GitBranch, onClick: ctx.onBranch },

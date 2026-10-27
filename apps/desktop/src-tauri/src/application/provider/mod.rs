@@ -3,6 +3,9 @@ use crate::contracts::{
     ProviderCheckInput, ProviderCreateInput, ProviderIdInput, ProviderUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
+use crate::model;
+use reqwest::Method;
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 pub(crate) mod remote;
@@ -50,6 +53,88 @@ pub fn provider_list(
         Err(e) => return station_error_to_result(e),
     };
     success_payload("provider_list", resp)
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RuntimeDefaultInput {
+    #[serde(default)]
+    pub provider_id: String,
+    #[serde(default)]
+    pub model_id: String,
+    #[serde(default)]
+    pub expected_revision: i64,
+}
+
+pub fn runtime_default_get(station_client: &StationClient, token: &str) -> AppResult<StubPayload> {
+    let resp = match station_client.request_proto::<
+        model::agent::GetRuntimeDefaultRequest,
+        model::agent::GetRuntimeDefaultResponse,
+    >(
+        Method::GET,
+        "/sub-agent/agent/provider/runtime-default",
+        token,
+        None,
+        None,
+    ) {
+        Ok(resp) => resp,
+        Err(e) => return station_error_to_result(e.into()),
+    };
+    let data = match resp.runtime_default {
+        Some(value) => json!({
+            "providerId": value.provider_id,
+            "modelId": value.model_id,
+            "revision": value.revision,
+        }),
+        None => json!({ "providerId": "", "modelId": "", "revision": 0 }),
+    };
+    success_payload(
+        "provider_runtime_default_get",
+        json!({ "runtimeDefault": data }),
+    )
+}
+
+pub fn runtime_default_set(
+    station_client: &StationClient,
+    token: &str,
+    input: RuntimeDefaultInput,
+) -> AppResult<StubPayload> {
+    if input.provider_id.trim().is_empty() || input.model_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "provider_id and model_id are required",
+            None,
+        );
+    }
+    let req = model::agent::SetRuntimeDefaultRequest {
+        provider_id: input.provider_id,
+        model_id: input.model_id,
+        expected_revision: input.expected_revision,
+    };
+    let resp = match station_client.request_proto::<
+        model::agent::SetRuntimeDefaultRequest,
+        model::agent::SetRuntimeDefaultResponse,
+    >(
+        Method::POST,
+        "/sub-agent/agent/provider/runtime-default",
+        token,
+        None,
+        Some(&req),
+    ) {
+        Ok(resp) => resp,
+        Err(e) => return station_error_to_result(e.into()),
+    };
+    let data = match resp.runtime_default {
+        Some(value) => json!({
+            "providerId": value.provider_id,
+            "modelId": value.model_id,
+            "revision": value.revision,
+        }),
+        None => json!({ "providerId": "", "modelId": "", "revision": 0 }),
+    };
+    success_payload(
+        "provider_runtime_default_set",
+        json!({ "runtimeDefault": data }),
+    )
 }
 
 pub fn provider_get(

@@ -54,6 +54,7 @@ import {
   fenceAccessRuntimeProjection,
 } from './accessRuntime';
 import { createDeviceSettingsRuntimeDescriptor } from './deviceSettingsRuntime';
+import { createDeviceLinkRuntimeDescriptor, fenceMobileDeviceLink } from './deviceLinkRuntime';
 import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
 import { fetchLifecycleGeneration } from './nativeLifecycleBridge';
 import { createMessagingRuntimeDescriptor } from './messagingRuntime';
@@ -178,7 +179,7 @@ function createStationRuntimeDescriptor(): MobileRuntimeDescriptor {
     title: 'Station Runtime',
     responsibility:
       'Owns the serialized device-local Station registry and its observable handshake projection.',
-    dependsOn: ['secure-storage'],
+    dependsOn: ['secure-storage', 'device-link'],
 
     async bootstrap(): Promise<void> {
       await bootstrapStationRuntime();
@@ -738,6 +739,7 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
   return [
     createDeviceSettingsRuntimeDescriptor(),
     createSecureStorageDescriptor(),
+    createDeviceLinkRuntimeDescriptor(),
     createXConfigRuntimeDescriptor(),
     createStationRuntimeDescriptor(),
     createAuthRuntimeDescriptor(),
@@ -771,6 +773,7 @@ export function fenceMobileRuntimeProjections(
 ): void {
   if (!PROJECTION_CLEAR_REASONS.has(reason)) return;
 
+  fenceMobileDeviceLink();
   fenceAuthRuntimeProjection();
   fenceAccessRuntimeProjection();
   fenceSessionRuntimeProjection();

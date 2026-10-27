@@ -1,10 +1,10 @@
-import { useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { DraggablePanel } from '@lobehub/ui';
 import { Drawer, theme } from 'antd';
 
 import { usePortalStore } from '../../store/portal';
-import { useChatStore, extractMessageArtifacts } from '../../store/chat';
+import { useChatStore } from '../../store/chat';
+import { useChatArtifactStore, type ChatFileArtifact } from '../../store/chatArtifacts';
 import { PortalHeader } from './PortalHeader';
 import { ArtifactListView } from './views/ArtifactListView';
 import { ArtifactDetailView } from './views/ArtifactDetailView';
@@ -16,6 +16,10 @@ import { WorkingProgressView } from './views/WorkingProgressView';
 import { AgentOverviewView } from './views/AgentOverviewView';
 import { TurnDetailsView } from './views/TurnDetailsView';
 
+// Selector fallback must keep a stable reference: a fresh [] per selection
+// makes useSyncExternalStore detect an endless snapshot mismatch (React #185).
+const EMPTY_ARTIFACTS: ChatFileArtifact[] = [];
+
 export function PortalPanel({ artifactsOnly = false, overlay = false }: {
   artifactsOnly?: boolean;
   overlay?: boolean;
@@ -24,10 +28,9 @@ export function PortalPanel({ artifactsOnly = false, overlay = false }: {
   const expanded = usePortalStore((s) => s.expanded);
   const activeView = usePortalStore((s) => s.activeView);
   const messages = useChatStore((s) => s.messages);
-
-  const allArtifacts = useMemo(
-    () => messages.filter((m) => m.role === 'assistant').flatMap((m) => extractMessageArtifacts(m)),
-    [messages],
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const allArtifacts = useChatArtifactStore(
+    (s) => s.byConversationId[currentSessionKey] ?? EMPTY_ARTIFACTS,
   );
 
   if (!expanded) return null;
@@ -43,7 +46,8 @@ export function PortalPanel({ artifactsOnly = false, overlay = false }: {
       return <ArtifactListView artifacts={allArtifacts} />;
     }
     if (activeView.type === 'artifactDetail') {
-      return <ArtifactDetailView artifact={activeView.artifact} />;
+      const artifact = allArtifacts.find((item) => item.id === activeView.artifact.id);
+      return artifact ? <ArtifactDetailView artifact={artifact} /> : null;
     }
     if (activeView.type === 'toolDetail') {
       const msg = messages.find((m) => m.id === activeView.messageId);

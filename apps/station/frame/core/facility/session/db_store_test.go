@@ -97,7 +97,7 @@ func TestDBStoreCreateWithKickRoundTripsMetadataAndRejectsCandidateReuse(t *test
 	require.Equal(t, int64(1), candidateCount)
 }
 
-func TestDBStoreCreateWithKickReplacesSameClassAndPreservesOtherClasses(t *testing.T) {
+func TestDBStoreCreateWithKickReplacesSameDeviceAndPreservesOtherDevices(t *testing.T) {
 	store, _ := newSQLiteDBStore(t)
 	ctx := context.Background()
 
@@ -114,7 +114,7 @@ func TestDBStoreCreateWithKickReplacesSameClassAndPreservesOtherClasses(t *testi
 	require.Zero(t, kicked)
 
 	desktopNew := newPersistentTestSession("desktop-new", 41)
-	desktopNew.Data["device_id"] = "desktop-device-new"
+	desktopNew.Data["device_id"] = "desktop-device-old"
 	_, kicked, err = store.CreateWithKick(ctx, desktopNew, DeviceTypeDesktop)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), kicked)
@@ -207,7 +207,7 @@ func TestDBStoreRejectsNonCanonicalClientClass(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidDeviceType)
 }
 
-func TestDBStoreConcurrentSameClassActivationConvergesToOneWinner(t *testing.T) {
+func TestDBStoreConcurrentSameDeviceActivationConvergesToOneWinner(t *testing.T) {
 	store, db := newSQLiteDBStore(t)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
@@ -262,28 +262,32 @@ func TestDBStoreConcurrentSameClassActivationConvergesToOneWinner(t *testing.T) 
 	require.Equal(t, int64(1), revokedCount)
 }
 
-func TestDBStoreAutoMigrateNormalizesAndDeduplicatesClientClasses(t *testing.T) {
+func TestDBStoreAutoMigrateNormalizesClassesAndDeduplicatesDeviceBindings(t *testing.T) {
 	db := newLegacySessionDatabase(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	records := []SessionRecord{
 		{
 			SessionID: "desktop-legacy",
 			UserID:    41, DeviceType: DeviceType("desktop-native"),
+			StationPeerID: "station-test", DeviceID: "desktop-installation",
 			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
 		},
 		{
 			SessionID: "desktop-winner",
 			UserID:    41, DeviceType: DeviceTypeDesktop,
+			StationPeerID: "station-test", DeviceID: "desktop-installation",
 			CreatedAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
 		},
 		{
 			SessionID: "mobile-current",
 			UserID:    41, DeviceType: DeviceTypeMobile,
+			StationPeerID: "station-test", DeviceID: "mobile-installation",
 			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
 		},
 		{
 			SessionID: "web-legacy",
 			UserID:    42, DeviceType: DeviceType("desktop-browser"),
+			StationPeerID: "station-test", DeviceID: "web-installation",
 			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
 		},
 	}
@@ -310,11 +314,13 @@ func TestDBStoreAutoMigrateNormalizesAndDeduplicatesClientClasses(t *testing.T) 
 		require.NoError(t, db.Where("session_id = ?", sessionID).First(&record).Error)
 		require.False(t, record.Revoked, sessionID)
 	}
-	require.True(t, db.Migrator().HasIndex(&SessionRecord{}, activeClientClassIndex))
+	require.True(t, db.Migrator().HasIndex(&SessionRecord{}, activeDeviceIndex))
+	require.False(t, db.Migrator().HasIndex(&SessionRecord{}, "uidx_actor_sessions_active_client_class"))
 
 	duplicate := SessionRecord{
 		SessionID: "desktop-duplicate",
 		UserID:    41, DeviceType: DeviceTypeDesktop,
+		StationPeerID: "station-test", DeviceID: "desktop-installation",
 		CreatedAt: now.Add(2 * time.Minute), ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
 	}
 	require.Error(t, db.Create(&duplicate).Error)
@@ -342,8 +348,10 @@ func TestDBStoreAllowsMultipleNonOAuthSessions(t *testing.T) {
 	for index, sessionID := range []string{"session-password-1", "session-password-2"} {
 		sess := newPersistentTestSession(sessionID, uint64(100+index))
 		sess.Data = map[string]interface{}{
-			"device_type": string(DeviceTypeDesktop),
-			"auth_method": "password",
+			"device_type":     string(DeviceTypeDesktop),
+			"auth_method":     "password",
+			"station_peer_id": "station-test",
+			"device_id":       "installation-test",
 		}
 		require.NoError(t, store.Set(ctx, sess.ID, sess))
 
@@ -405,8 +413,78 @@ func newPersistentTestSession(sessionID string, userID uint64) *Session {
 		LastSeen:  now,
 		IPAddress: "127.0.0.1",
 		UserAgent: "session-store-test",
-		Data:      map[string]interface{}{},
+		Data: map[string]interface{}{
+			"station_peer_id": "station-test",
+			"device_id":       "installation-test",
+		},
 	}
+}
+
+func TestDBStoreMobileDevicesCoexistAndRevokeIndependently(t *testing.T) {
+	store, _ := newSQLiteDBStore(t)
+	ctx := context.Background()
+	first := newPersistentTestSession("phone-one", 41)
+	first.Data["device_id"] = "phone-one-installation"
+	second := newPersistentTestSession("phone-two", 41)
+	second.Data["device_id"] = "phone-two-installation"
+	desktop := newPersistentTestSession("desktop", 41)
+	desktop.Data["device_id"] = "desktop-installation"
+	for _, input := range []struct {
+		sess  *Session
+		class DeviceType
+	}{{first, DeviceTypeMobile}, {second, DeviceTypeMobile}, {desktop, DeviceTypeDesktop}} {
+		_, kicked, err := store.CreateWithKick(ctx, input.sess, input.class)
+		require.NoError(t, err)
+		require.Zero(t, kicked)
+	}
+
+	rotated := newPersistentTestSession("phone-one-rotated", 41)
+	rotated.Data["device_id"] = first.Data["device_id"]
+	_, kicked, err := store.CreateWithKick(ctx, rotated, DeviceTypeMobile)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), kicked)
+	count, err := store.RevokeByUserAndDevice(ctx, 41,
+		DeviceBinding{StationPeerID: "station-test", DeviceID: "phone-one-installation"}, "remote_logout")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), count)
+	for _, sess := range []*Session{second, desktop} {
+		valid, reason := store.CheckSessionValid(ctx, sess.ID)
+		require.True(t, valid)
+		require.Empty(t, reason)
+	}
+	valid, reason := store.CheckSessionValid(ctx, rotated.ID)
+	require.False(t, valid)
+	require.Equal(t, "remote_logout", reason)
+}
+
+func TestDBStoreSetCannotMoveOrResurrectDeviceBinding(t *testing.T) {
+	store, _ := newSQLiteDBStore(t)
+	ctx := context.Background()
+	sess := newPersistentTestSession("immutable-binding", 41)
+	sess.Data["device_type"] = string(DeviceTypeMobile)
+	require.NoError(t, store.Set(ctx, sess.ID, sess))
+	sess.Data["device_id"] = "other-installation"
+	require.ErrorIs(t, store.Set(ctx, sess.ID, sess), ErrInvalidDeviceBinding)
+	sess.Data["device_id"] = "installation-test"
+	_, err := store.RevokeByUserAndDevice(ctx, 41,
+		DeviceBinding{StationPeerID: "station-test", DeviceID: "installation-test"}, "logout")
+	require.NoError(t, err)
+	require.ErrorIs(t, store.Set(ctx, sess.ID, sess), ErrSessionRevoked)
+}
+
+func TestDBStoreAutoMigrateRevokesUnboundSessionsWithoutGuessing(t *testing.T) {
+	db := newLegacySessionDatabase(t)
+	now := time.Now().UTC()
+	require.NoError(t, db.Create(&SessionRecord{
+		SessionID: "unbound", UserID: 41, DeviceType: DeviceTypeMobile,
+		CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
+	}).Error)
+	store := NewDBStore(func(context.Context) (*gorm.DB, error) { return db, nil }, time.Hour)
+	require.NoError(t, store.AutoMigrate(context.Background()))
+	valid, reason := store.CheckSessionValid(context.Background(), "unbound")
+	require.False(t, valid)
+	require.Equal(t, "device_binding_required", reason)
+	require.NoError(t, store.AutoMigrate(context.Background()))
 }
 
 func requireAuthorizationMetadata(

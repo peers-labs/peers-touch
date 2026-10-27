@@ -32,7 +32,7 @@ func TestOpenAIAttachmentUsesNativeImageContent(t *testing.T) {
 
 func TestAnthropicAttachmentUsesNativePDFDocument(t *testing.T) {
 	messages := []map[string]any{{
-		"role": "user",
+		"role":    "user",
 		"content": []any{map[string]any{"type": "text", "text": "Summarize it."}},
 	}}
 	err := applyAnthropicAttachments(messages, []AdmittedAttachment{{

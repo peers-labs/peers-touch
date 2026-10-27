@@ -23,6 +23,7 @@ export function StationLaunchScreen({
   onSelectStation,
   onRemoveStation,
   onContinue,
+  onScan,
 }: {
   registry: StoredStationRegistry;
   error: string | null;
@@ -36,6 +37,7 @@ export function StationLaunchScreen({
   onSelectStation: (stationPeerId: string) => void | Promise<void>;
   onRemoveStation: (stationPeerId: string) => void;
   onContinue: () => void | Promise<void>;
+  onScan?: () => void;
 }) {
   const { t } = useMobileI18n();
   const activeStation = activeStationEntry(registry);
@@ -81,6 +83,7 @@ export function StationLaunchScreen({
             onSelectSuggestion={onSelectSuggestion}
             onSelect={onSelectStation}
             onRemove={onRemoveStation}
+            onScan={onScan}
           />
           <div className="launch-actions">
             <Button

@@ -70,8 +70,12 @@ import type {
 } from '../gen/proto/domain/agent/agent_pb';
 import {
   ExportTurnDiagnosticsResponseSchema,
+  CompleteTurnArtifactUploadResponseSchema,
   GetTurnAttributionsResponseSchema,
+  ListTurnArtifactsResponseSchema,
   ListTurnFeedbackResponseSchema,
+  QuickCompletionRequestSchema,
+  QuickCompletionResponseSchema,
   RecordFeedbackResponseSchema,
   ResetConversationRuntimeResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
@@ -93,6 +97,7 @@ import type {
   ListConnectorResourceManifestsRequest,
   ListKnowledgeResourceDescriptorsRequest,
   PrepareCapabilityAcceptanceScenarioRequest,
+  ReadKnowledgeResourceContentRequest,
   ReleaseCapabilityAcceptanceBarrierRequest,
   TakeOverCapabilityCleanupRequest,
   TakeOverCapabilityOperationRequest,
@@ -132,6 +137,8 @@ import {
   ListKnowledgeResourceDescriptorsResponseSchema,
   PrepareCapabilityAcceptanceScenarioRequestSchema,
   PrepareCapabilityAcceptanceScenarioResponseSchema,
+  ReadKnowledgeResourceContentRequestSchema,
+  ReadKnowledgeResourceContentResponseSchema,
   ReconcileCapabilityOperationRequestSchema,
   ReconcileCapabilityOperationResponseSchema,
   ReleaseCapabilityAcceptanceBarrierRequestSchema,
@@ -149,6 +156,13 @@ import {
   WaitCapabilityAcceptanceBarrierRequestSchema,
   WaitCapabilityAcceptanceBarrierResponseSchema,
 } from '../gen/proto/domain/agent/capability_pb';
+import type {
+  ReadSkillResourceRequest,
+} from '../gen/proto/domain/agent/skill_pb';
+import {
+  ReadSkillResourceRequestSchema,
+  ReadSkillResourceResponseSchema,
+} from '../gen/proto/domain/agent/skill_pb';
 import type {
   HomeWorkProjection,
   SubmitHomeChatCommandResponse,
@@ -1196,6 +1210,13 @@ export interface ProviderListItem {
   version: number;
 }
 
+// Station-authoritative actor default used by new Topics.
+export interface RuntimeDefaultSelection {
+  providerId: string;
+  modelId: string;
+  revision: number;
+}
+
 export interface ModelItem {
   id: string;
   display_name: string;
@@ -1463,14 +1484,6 @@ export interface StatisticsData {
   topic_rank: StatisticsRankItem[] | null;
 }
 
-export interface TTSVoice {
-  id: string;
-  name: string;
-  provider: string;
-  language: string;
-  gender: string;
-}
-
 // ── Skill types ──
 
 export interface BuiltinSkillInfo {
@@ -1505,6 +1518,17 @@ export interface SkillListItem {
   updatedAt: string;
   useCount: number;
   lastUsedAt?: string;
+  agentId?: string;
+  resourceCount?: number;
+  resources?: SkillResourceMeta[];
+}
+
+export interface SkillResourceMeta {
+  path: string;
+  contentHash: string;
+  size: number | string;
+  kind: string;
+  executionOwner?: string;
 }
 
 export interface SkillResourceNode {
@@ -1515,8 +1539,9 @@ export interface SkillResourceNode {
   role?: string;
   mime?: string;
   bytes: number;
-  lineCount: number;
+  lineCount?: number;
   sha256?: string;
+  executionOwner?: string;
   loadedAtRuntime: boolean;
   loadTrigger: string;
   summary?: string;
@@ -1814,6 +1839,7 @@ export interface NotebookDocumentWithTopic extends NotebookDocument {
 
 export interface CronJob {
   id: string;
+  agentId: string;
   name: string;
   description: string;
   enabled: boolean;
@@ -1822,29 +1848,26 @@ export interface CronJob {
   intervalSec: number;
   runAt: string;
   timezone: string;
-  execKind: string; // 'shell' | 'agent'
-  shellCmd: string;
+  execKind: 'agent';
   agentPrompt: string;
-  agentName: string;
   modelOverride: string;
+  providerOverride: string;
+  effortOverride: string;
   timeoutSec: number;
   deleteAfterRun: boolean;
+  conversationId: string;
   nextRunAt: string;
   lastRunAt: string;
   lastStatus: string;
   lastError: string;
   lastDurationMs: number;
   consecErrors: number;
-  deliveryMode: string;
-  deliveryChannelId: string;
-  deliveryTargetId: string;
-  deliveryTargetType: string;
-  failureChannelId: string;
+  revision: number;
   createdAt: string;
-  updatedAt: string;
 }
 
 export interface CronJobCreate {
+  agentId?: string;
   name: string;
   description?: string;
   scheduleKind: string;
@@ -1852,18 +1875,15 @@ export interface CronJobCreate {
   intervalSec?: number;
   runAt?: string;
   timezone?: string;
-  execKind: string;
-  shellCmd?: string;
-  agentPrompt?: string;
-  agentName?: string;
-  modelOverride?: string;
-  timeoutSec?: number;
+  prompt: string;
+  runtimeOverride?: {
+    model?: string;
+    provider?: string;
+    effort?: string;
+    timeoutSec?: number;
+  };
   deleteAfterRun?: boolean;
-  deliveryMode?: string;
-  deliveryChannelId?: string;
-  deliveryTargetId?: string;
-  deliveryTargetType?: string;
-  failureChannelId?: string;
+  enabled?: boolean;
 }
 
 // ── Model Service types ──
@@ -1908,23 +1928,18 @@ export type ChannelProvisioningConfirmation = ChannelModel.ConfirmChannelProvisi
 export type ChannelMessageDelivery = ChannelModel.SendChannelMessageResponse;
 
 export interface CronRun {
-  id: number;
+  id: string;
   jobId: string;
+  agentId: string;
+  conversationId: string;
+  turnId: string;
+  trigger: string;
   startedAt: string;
   endedAt: string;
-  status: string;
+  status: string; // 'ok' | 'error' | 'running'
   error: string;
   output: string;
   durationMs: number;
-}
-
-export interface CronStatus {
-  enabled: boolean;
-  total: number;
-  active: number;
-  paused: number;
-  nextRunAt: string;
-  nextJobName: string;
 }
 
 export interface CronScheduleParsed {
@@ -1935,8 +1950,7 @@ export interface CronScheduleParsed {
   timezone?: string;
   name?: string;
   description?: string;
-  agentPrompt?: string;
-  execKind?: string;
+  prompt?: string;
 }
 
 export interface LogTailResponse {
@@ -1955,10 +1969,6 @@ export interface UserPreferences {
   user_name?: string;
   user_avatar?: string;
   user_avatar_provider?: string;
-  tts_provider?: 'browser' | 'edge' | 'openai';
-  tts_voice?: string;
-  tts_speed?: number;
-  tts_auto_read?: boolean;
   stt_provider?: 'browser' | 'openai';
   stt_language?: string;
   stt_auto_stop?: boolean;
@@ -2756,7 +2766,9 @@ export type AgentRuntimeBudgetKind =
   | 'input_tokens'
   | 'output_tokens'
   | 'attachments'
-  | 'cost';
+  | 'cost'
+  | 'provider_continuations'
+  | 'provider_auxiliary';
 
 export type AgentToolLoopBudgetExhaustedError = AgentTypedErrorPayload & {
   details: {
@@ -2894,6 +2906,8 @@ const AGENT_RUNTIME_BUDGET_KINDS = new Set<AgentRuntimeBudgetKind>([
   'output_tokens',
   'attachments',
   'cost',
+  'provider_continuations',
+  'provider_auxiliary',
 ]);
 const AGENT_TERMINAL_MUTATION_STATUSES = new Set<AgentTerminalMutationStatus>([
   'completed',
@@ -3672,11 +3686,12 @@ export interface AgentTurnQueueEntry {
   conversation_id: string;
   agent_id: string;
   client_idempotency_key: string;
-  status: string;
+  status?: string;
   queue_sequence: number;
   queue_position: number;
   admitted_turn_id: string;
   user_input: string;
+  client_capability_session_id?: string;
 }
 
 export interface AgentTurnQueueListOutput {
@@ -3702,6 +3717,20 @@ export interface AgentTurnTraceListInput {
 export interface AgentTurnTraceGetInput {
   trace_id?: string;
   turn_id?: string;
+}
+
+export interface AgentTurnArtifactListInput {
+  conversation_id: string;
+  turn_ids?: string[];
+}
+
+export interface AgentTurnArtifactInput {
+  artifact_id: string;
+}
+
+export interface AgentTurnArtifactLocalInput {
+  client_local_ref: string;
+  reveal?: boolean;
 }
 
 export interface AgentTurnDiagnosticsInput {
@@ -4351,10 +4380,6 @@ export interface CronRunsInput {
   job_id: string;
 }
 
-export interface CronParseScheduleInput {
-  text: string;
-}
-
 export interface ModelConfigKeyInput {
   key: string;
 }
@@ -4447,12 +4472,6 @@ export interface MemoryImportInput {
 
 export interface MemoryPersonaInput {
   agent_id?: string;
-}
-
-export interface TtsInput {
-  text: string;
-  voice?: string;
-  speed?: number;
 }
 
 export interface TopicIdInput {
@@ -4662,10 +4681,6 @@ export interface ConfigSectionSetInput {
 export interface ConfigFieldResetInput {
   section: string;
   field: string;
-}
-
-export interface ConfigPostgresTestInput {
-  dsn: string;
 }
 
 export interface ContextSnapshotGetInput {
@@ -5734,6 +5749,32 @@ export const api = {
       { turn_ids: turnIds },
     ),
 
+  listAgentTurnArtifacts: (conversationId: string, turnIds?: string[]) =>
+    invokeRustProto(
+      'agent_turn_artifact_list',
+      ListTurnArtifactsResponseSchema,
+      { conversation_id: conversationId, turn_ids: turnIds ?? [] },
+    ),
+
+  uploadAgentTurnArtifact: (artifactId: string) =>
+    invokeRustProto(
+      'agent_turn_artifact_upload',
+      CompleteTurnArtifactUploadResponseSchema,
+      { artifact_id: artifactId },
+    ),
+
+  openAgentTurnArtifact: (clientLocalRef: string, reveal = false) =>
+    invokeRustDataFromStatus<AgentTurnArtifactLocalInput, { opened: boolean; revealed: boolean }>(
+      'agent_turn_artifact_open_local',
+      { client_local_ref: clientLocalRef, reveal },
+    ),
+
+  downloadAgentTurnArtifact: (artifactId: string) =>
+    invokeRustDataFromStatus<AgentTurnArtifactInput, { downloaded: boolean }>(
+      'agent_turn_artifact_download',
+      { artifact_id: artifactId },
+    ),
+
   listAgentTurnFeedback: (turnId: string) =>
     invokeRustProto(
       'agent_list_turn_feedback',
@@ -5853,6 +5894,21 @@ export const api = {
     invokeRustDataFromStatus<void, { providers?: any[] }>('provider_list').then((r) =>
       (r.providers || []).map(mapAIChatProviderToListItem),
     ),
+
+  getRuntimeDefault: () =>
+    invokeRustDataFromStatus<void, { runtimeDefault: RuntimeDefaultSelection }>(
+      'provider_runtime_default_get',
+    ).then((r) => r.runtimeDefault),
+
+  setRuntimeDefault: (providerId: string, modelId: string, expectedRevision = 0) =>
+    invokeRustDataFromStatus<
+      { provider_id: string; model_id: string; expected_revision: number },
+      { runtimeDefault: RuntimeDefaultSelection }
+    >('provider_runtime_default_set', {
+      provider_id: providerId,
+      model_id: modelId,
+      expected_revision: expectedRevision,
+    }).then((r) => r.runtimeDefault),
 
   getProvider: (id: string) =>
     invokeRustDataFromStatus<ProviderIdInput, { provider?: any }>('provider_get', { id }).then((r) =>
@@ -6234,6 +6290,16 @@ export const api = {
       data_base64: await fileToBase64(file),
     });
   },
+
+  readManagedSkillResource: (input: {
+    skillId: string;
+    version: number;
+    path: string;
+    contentHash?: string;
+  }) => invokeRustDataFromStatus<typeof input, { path: string; version: number; content: string }>(
+    'skills_managed_resource_read',
+    input,
+  ),
 
   // ── Skill Market API ──
 
@@ -6692,12 +6758,30 @@ export const api = {
     request,
   ),
 
+  readKnowledgeResourceContent: (
+    request: ReadKnowledgeResourceContentRequest,
+  ) => invokeRustProtoRequest(
+    'agent_knowledge_descriptor_content_read',
+    ReadKnowledgeResourceContentRequestSchema,
+    ReadKnowledgeResourceContentResponseSchema,
+    request,
+  ),
+
   tombstoneKnowledgeResourceDescriptor: (
     request: TombstoneKnowledgeResourceDescriptorRequest,
   ) => invokeRustProtoRequest(
     'agent_knowledge_descriptor_tombstone',
     TombstoneKnowledgeResourceDescriptorRequestSchema,
     TombstoneKnowledgeResourceDescriptorResponseSchema,
+    request,
+  ),
+
+  readSkillResource: (
+    request: ReadSkillResourceRequest,
+  ) => invokeRustProtoRequest(
+    'agent_skill_resource_read',
+    ReadSkillResourceRequestSchema,
+    ReadSkillResourceResponseSchema,
     request,
   ),
 
@@ -6994,18 +7078,18 @@ export const api = {
       translation,
     }),
 
-  // ── Cron Jobs API ──
+  // ── Cron Jobs API (Station-authoritative persistent scheduler) ──
 
-  cronStatus: () =>
-    invokeRustDataFromStatus<void, CronStatus>('cron_status'),
-
-  listCronJobs: () =>
-    invokeRustDataFromStatus<void, { jobs: CronJob[] }>('cron_list_jobs').then((r) => r.jobs),
+  listCronJobs: (includePaused = true, agentId?: string) =>
+    invokeRustDataFromStatus<{ includePaused: boolean; agentId?: string }, { jobs: CronJob[] }>(
+      'cron_list_jobs',
+      { includePaused, agentId },
+    ).then((r) => r.jobs),
 
   createCronJob: (data: CronJobCreate) =>
     invokeRustDataFromStatus<CronCreateInput, { job: CronJob }>('cron_create_job', { data }).then((r) => r.job),
 
-  updateCronJob: (id: string, data: Partial<CronJobCreate>) =>
+  updateCronJob: (id: string, data: Partial<CronJobCreate> & { expectedRevision?: number }) =>
     invokeRustDataFromStatus<CronUpdateInput, { job: CronJob }>('cron_update_job', { id, data }).then((r) => r.job),
 
   deleteCronJob: (id: string) =>
@@ -7019,9 +7103,6 @@ export const api = {
 
   listCronRuns: (jobId: string) =>
     invokeRustDataFromStatus<CronRunsInput, { runs: CronRun[] }>('cron_list_runs', { job_id: jobId }).then((r) => r.runs),
-
-  parseCronSchedule: (text: string) =>
-    invokeRustDataFromStatus<CronParseScheduleInput, CronScheduleParsed>('cron_parse_schedule', { text }),
 
   // ── Model Service ──
 
@@ -7648,12 +7729,6 @@ export const api = {
   reEmbed: () =>
     invokeRustDataFromStatus<void, { ok: boolean; reembedded_count: number }>('memory_reembed'),
 
-  tts: (text: string, voice?: string, speed?: number) =>
-    invokeRustDataFromStatus<TtsInput, { url: string }>('tts_synthesize', { text, voice, speed }),
-
-  ttsVoices: () =>
-    invokeRustDataFromStatus<void, { voices: TTSVoice[] }>('tts_voices'),
-
   stt: async (file: Blob, language?: string): Promise<{ text: string }> => {
     const formData = new FormData();
     formData.append('file', file, 'recording.webm');
@@ -7679,19 +7754,6 @@ export const api = {
 
   resetConfigField: (section: string, field: string) =>
     invokeRustDataFromStatus<ConfigFieldResetInput, { ok: boolean }>('config_field_reset', { section, field }),
-
-  testPostgresConnection: (dsn: string) =>
-    invokeRustDataFromStatus<ConfigPostgresTestInput, { ok: boolean; has_pgvector?: boolean; error?: string; warning?: string }>(
-      'config_test_postgres',
-      { dsn },
-    ),
-
-  listEmbeddingModels: () =>
-    invokeRustDataFromStatus<void, {
-      models: EmbeddingModelInfo[];
-      resolved: { provider_id: string; provider_name: string; model: string };
-      configured: { provider: string; model: string };
-    }>('embedding_models_list'),
 
   // Visitor / online count
   visitorHeartbeat: () =>
@@ -8278,6 +8340,39 @@ export const api = {
       'bot_upload_avatar', { file_path: filePath },
     ),
 
+  botAgentBindingSet: (
+    botPtid: string,
+    agentId: string,
+    enabled: boolean,
+    expectedVersion: number,
+  ) =>
+    invokeRustDataFromStatus<
+      { bot_ptid: string; agent_id: string; enabled: boolean; expected_version: number },
+      { binding: BotAgentBinding | null }
+    >(
+      'bot_agent_binding_set',
+      {
+        bot_ptid: botPtid,
+        agent_id: agentId,
+        enabled,
+        expected_version: expectedVersion,
+      },
+    ),
+
+  botAgentBindingList: () =>
+    invokeRustDataFromStatus<void, { bindings: BotAgentBinding[] }>(
+      'bot_agent_binding_list',
+    ),
+
+  botAgentBindingDelete: (botPtid: string, expectedVersion: number) =>
+    invokeRustDataFromStatus<
+      { bot_ptid: string; expected_version: number },
+      { deleted: boolean }
+    >(
+      'bot_agent_binding_delete',
+      { bot_ptid: botPtid, expected_version: expectedVersion },
+    ),
+
   notificationList: (category?: number, status?: number, cursor?: string, limit?: number) =>
     invokeRustDataFromStatus<NotificationListInput, NotificationListResponse>(
       'notification_list', { category, status, cursor, limit },
@@ -8440,10 +8535,12 @@ export const api = {
     invoke<{ ok: boolean; reauth?: boolean; message?: string; opened?: boolean }>('resolve_error_action', { action }),
 
   quickCompletion: (agentId: string, prompt: string) =>
-    invokeRustDataFromStatus<
-      { agent_id: string; prompt: string },
-      { ok: boolean; content: string }
-    >('agent_quick_completion', { agent_id: agentId, prompt }).then((r) => r.content ?? ''),
+    invokeRustProtoRequest(
+      'agent_quick_completion',
+      QuickCompletionRequestSchema,
+      QuickCompletionResponseSchema,
+      create(QuickCompletionRequestSchema, { agentId, prompt }),
+    ).then((response) => response.content),
 
   groupCallJoin: (input: { group_ulid: string }) =>
     invokeRustDataFromStatus<
@@ -8456,13 +8553,6 @@ export interface ConfigFieldMeta {
   value: any;
   default: any;
   source: 'default' | 'custom';
-}
-
-export interface EmbeddingModelInfo {
-  id: string;
-  name: string;
-  provider: string;
-  dimensions: number;
 }
 
 export interface UploadResult {
@@ -8553,6 +8643,16 @@ export interface FriendRequestData {
 
 export type RegistryBotState = 0 | 1 | 2 | 3 | 4;
 
+export interface BotAgentBinding {
+  botPtid: string;
+  ownerPtid: string;
+  agentId: string;
+  enabled: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RegistryBot {
   botPtid: string;
   ownerPtid: string;
@@ -8563,6 +8663,7 @@ export interface RegistryBot {
   secretHint: string;
   rateLimitPerMinute: number;
   createdAtMs: bigint | number;
+  agentBinding?: BotAgentBinding | null;
 }
 
 export interface BotCreateResponse {
@@ -9760,67 +9861,4 @@ export async function exportAgentTurnDiagnostics(turnId: string): Promise<Export
     ExportTurnDiagnosticsResponseSchema,
     { turn_id: turnId },
   );
-}
-
-export async function agentQuickCompletion(agentId: string, prompt: string): Promise<string> {
-  const result = await invokeRustDataFromStatus<
-    { agent_id: string; prompt: string },
-    { ok: boolean; content: string }
-  >('agent_quick_completion', { agent_id: agentId, prompt });
-  return result.content ?? '';
-}
-
-// ---------------------------------------------------------------------------
-// Agent Scheduler (Autonomous Learning)
-// ---------------------------------------------------------------------------
-
-export interface SchedulerJobInfo {
-  kind: string;
-  agent_id: string;
-  enabled: boolean;
-  interval: string;
-  last_run_at: string | null;
-  last_status: string | null;
-  run_count: number;
-}
-
-export interface SchedulerStatusResponse {
-  running: boolean;
-  jobs: SchedulerJobInfo[];
-  started_at: string | null;
-}
-
-export async function startAgentScheduler(
-  agentId: string,
-  reviewIntervalMinutes?: number,
-  dogfoodIntervalMinutes?: number,
-): Promise<void> {
-  await invokeRustDataFromStatus('agent_scheduler_start', {
-    agent_id: agentId,
-    review_interval_minutes: reviewIntervalMinutes ?? 120,
-    dogfood_interval_minutes: dogfoodIntervalMinutes ?? 360,
-  });
-}
-
-export async function stopAgentScheduler(): Promise<void> {
-  await invokeRustDataFromStatus('agent_scheduler_stop', {});
-}
-
-export async function getAgentSchedulerStatus(): Promise<SchedulerStatusResponse> {
-  return invokeRustDataFromStatus<object, SchedulerStatusResponse>(
-    'agent_scheduler_status',
-    {},
-  );
-}
-
-export async function addAgentSchedulerJob(
-  kind: string,
-  agentId: string,
-  intervalMinutes?: number,
-): Promise<void> {
-  await invokeRustDataFromStatus('agent_scheduler_add_job', {
-    kind,
-    agent_id: agentId,
-    interval_minutes: intervalMinutes ?? 60,
-  });
 }

@@ -1,6 +1,6 @@
 import DOMPurify from 'dompurify';
 import { AttachmentByteReader } from './attachmentByteReader.js';
-import { previewNavigation } from './previewNavigation.js';
+import { previewToolbar } from './previewToolbar.js';
 import { setChatFilePreviewState, setChatFilePreviewUnavailable, type ChatFilePreviewLabels } from './previewSurface.js';
 import { workbookTable } from './workbookTable.js';
 
@@ -86,24 +86,50 @@ export async function mountChatOfficePreview(
     clearTimeout(timer);
     timer = setTimeout(() => fail(true), 30_000);
   };
-  const navigation = previewNavigation(labels, signal);
   const surface = document.createElement('div');
   surface.className = 'chat-office-preview';
   const body = document.createElement('div');
   body.className = 'chat-office-content';
-  surface.append(navigation.element, body);
   let page = 1;
   let total = 1;
   let columnPage = 1;
   let columnTotal = 1;
-  const columns = previewNavigation({
-    ...labels, previousPage: labels.previousColumns, nextPage: labels.nextColumns, page: labels.columns,
-  }, signal);
+  let mode: 'document' | 'presentation' | 'workbook' | '' = '';
   let sheet = '';
   let renderPage: (() => void) | undefined;
-  let wordZoom: HTMLSelectElement | undefined;
-  navigation.previous.addEventListener('click', () => { page--; renderPage?.(); }, { signal });
-  navigation.next.addEventListener('click', () => { page++; renderPage?.(); }, { signal });
+  let zoomValue: 'width' | 'page' | 'actual' = 'width';
+  let sheetSelect: HTMLSelectElement | null = null;
+
+  const isWorkbook = /^(xlsx?|xlsm)$/.test(extension);
+  const isPresentation = /^(pptx?|pptm)$/.test(extension);
+
+  sheetSelect = document.createElement('select');
+  sheetSelect.setAttribute('aria-label', labels.sheet);
+  sheetSelect.hidden = !isWorkbook;
+
+  const toolbar = previewToolbar({
+    labels,
+    signal,
+    initialZoom: isPresentation ? 'page' : 'width',
+    showZoom: !isWorkbook && !isPresentation,
+    leading: isWorkbook ? sheetSelect : undefined,
+    secondary: isWorkbook
+      ? {
+          status: '',
+          labelPrevious: labels.previousColumns,
+          labelNext: labels.nextColumns,
+          onPrevious: () => { columnPage = Math.max(1, columnPage - 1); renderPage?.(); },
+          onNext: () => { columnPage += 1; renderPage?.(); },
+        }
+      : undefined,
+    onPrevious: () => { page = Math.max(1, page - 1); renderPage?.(); },
+    onNext: () => { page += 1; renderPage?.(); },
+    onZoom: (zoom) => {
+      zoomValue = zoom;
+      renderPage?.();
+    },
+  });
+  surface.append(toolbar.element, body);
   worker.onerror = () => fail();
   worker.onmessage = (event: MessageEvent) => {
     const message = event.data;
@@ -117,24 +143,14 @@ export async function mountChatOfficePreview(
     if (message.type === 'error') { fail(message.code === 'FILE_PREVIEW_RESOURCE_UNAVAILABLE'); return; }
     container.replaceChildren(surface);
     if (message.type === 'document' || message.type === 'presentation') {
+      mode = message.type === 'document' ? 'document' : 'presentation';
       total = message.total;
       if (!total) { fail(); return; }
       const request = message.type === 'document' ? 'page' : 'slide';
-      if (message.type === 'document') {
-        wordZoom = document.createElement('select');
-        wordZoom.setAttribute('aria-label', labels.zoom);
-        for (const [value, label] of [['width', labels.fitWidth], ['page', labels.fitPage], ['actual', labels.actualSize]]) {
-          const option = document.createElement('option');
-          option.value = value;
-          option.textContent = label;
-          wordZoom.append(option);
-        }
-        navigation.element.prepend(wordZoom);
-        wordZoom.addEventListener('change', () => renderPage?.(), { signal });
-      }
+      if (isPresentation) zoomValue = 'page';
       renderPage = () => {
         preparing();
-        navigation.update(page, total, true);
+        toolbar.setPagination(page, total, true);
         armDeadline();
         worker.postMessage({ type: request, page, revision });
       };
@@ -144,8 +160,8 @@ export async function mountChatOfficePreview(
       const width = Number(message.width) || 816;
       const height = Number(message.height) || 1056;
       const fit = Math.max(0.1, (body.clientWidth - 32) / width);
-      const scale = wordZoom?.value === 'width' ? fit
-        : wordZoom?.value === 'page' || message.type === 'slide'
+      const scale = zoomValue === 'width' ? fit
+        : zoomValue === 'page' || message.type === 'slide'
           ? Math.min(fit, Math.max(0.1, (body.clientHeight - 32) / height)) : 1;
       const frame = documentFrame(message.html ?? message.svg, filename, scale, {
         width, height, slide: message.type === 'slide',
@@ -154,34 +170,35 @@ export async function mountChatOfficePreview(
         requestAnimationFrame(() => requestAnimationFrame(() => {
           if (disposed || signal.aborted || current !== revision) return;
           frame.dataset.chatRenderedPage = String(page);
-          navigation.update(page, total);
+          toolbar.setPagination(page, total);
           setChatFilePreviewState(container, 'ready');
           clearTimeout(timer);
         }));
       }, { once: true, signal });
       body.replaceChildren(frame);
     } else if (message.type === 'workbook') {
-      const select = document.createElement('select');
-      select.setAttribute('aria-label', labels.sheet);
-      for (const name of message.sheets as string[]) {
-        const option = document.createElement('option');
-        option.textContent = option.value = name;
-        select.append(option);
+      mode = 'workbook';
+      zoomValue = 'page';
+      if (sheetSelect) {
+        sheetSelect.replaceChildren();
+        for (const name of message.sheets as string[]) {
+          const option = document.createElement('option');
+          option.textContent = option.value = name;
+          sheetSelect.append(option);
+        }
       }
-      navigation.element.prepend(select);
-      surface.insertBefore(columns.element, body);
-      columns.previous.addEventListener('click', () => { columnPage--; renderPage?.(); }, { signal });
-      columns.next.addEventListener('click', () => { columnPage++; renderPage?.(); }, { signal });
       sheet = message.sheets[0];
       if (!sheet) { fail(); return; }
       renderPage = () => {
         preparing();
-        navigation.update(page, total, true);
-        columns.update(columnPage, columnTotal, true);
+        toolbar.setPagination(page, total, true);
+        toolbar.setSecondaryPagination(columnPage, columnTotal, true);
         armDeadline();
         worker.postMessage({ type: 'sheet', sheet, page, columnPage });
       };
-      select.addEventListener('change', () => { sheet = select.value; page = columnPage = 1; renderPage?.(); }, { signal });
+      sheetSelect?.addEventListener('change', () => {
+        sheet = sheetSelect?.value ?? sheet; page = columnPage = 1; renderPage?.();
+      }, { signal });
       renderPage();
     } else if (message.type === 'rows' && message.sheet === sheet && message.page === page && message.columnPage === columnPage) {
       clearTimeout(timer);
@@ -190,8 +207,10 @@ export async function mountChatOfficePreview(
       const table = workbookTable(message, labels);
       body.replaceChildren(table);
       body.scrollTop = body.scrollLeft = 0;
-      navigation.update(page, total);
-      columns.update(columnPage, columnTotal);
+      toolbar.setPagination(page, total);
+      // Workbook columns are reported as letter ranges; show the current one.
+      toolbar.setSecondaryStatus(String(message.range || '').split(':').pop() ?? '');
+      toolbar.setSecondaryPagination(columnPage, columnTotal);
       setChatFilePreviewState(container, 'ready');
     }
   };
@@ -202,7 +221,7 @@ export async function mountChatOfficePreview(
     if (width === lastWidth && height === lastHeight) return;
     lastWidth = width;
     lastHeight = height;
-    if (wordZoom || /^(pptx?)$/.test(extension)) renderPage?.();
+    if (mode === 'document' || mode === 'presentation') renderPage?.();
   });
   resize.observe(body);
   armDeadline();

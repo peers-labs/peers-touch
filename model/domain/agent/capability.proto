@@ -562,6 +562,16 @@ message TombstoneKnowledgeResourceDescriptorResponse {
   CapabilityManifest manifest = 2;
 }
 
+message ReadKnowledgeResourceContentRequest {
+  string resource_id = 1;
+  uint64 revision = 2;
+}
+
+message ReadKnowledgeResourceContentResponse {
+  KnowledgeResourceDescriptor descriptor = 1;
+  bytes content = 2;
+}
+
 message AgentPackageBindingRef {
   string capability_id = 1;
   string capability_version = 2;

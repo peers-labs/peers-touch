@@ -27,6 +27,9 @@ import {
 } from './features/auth/authSession';
 import { AccessGateHost, authStationLabel } from './features/auth/AccessGateHost';
 import { useAuthStore } from './features/auth/authStore';
+import { DeviceLinkScreen } from './features/auth/DeviceLinkScreen';
+import { useDeviceLinkStore } from './features/auth/deviceLinkStore';
+import { startMobileDeviceLink } from './runtimes/deviceLinkRuntime';
 import {
   setEntrySurfaceFixture,
   useEntrySurfaceFixture,
@@ -135,6 +138,7 @@ interface PendingRouteChoice {
 function MobileAppRoot() {
   const { t } = useMobileI18n();
   const lifecycle = useLifecycleKernel();
+  const deviceLink = useDeviceLinkStore();
 
   const launchState = lifecycle.launchState;
   const stationRegistry = useStationRegistryProjection();
@@ -183,14 +187,6 @@ function MobileAppRoot() {
     activeStation?.url ?? '',
     t('common.stationPicker.fallbackLabel'),
   );
-
-  // The lifecycle-owned auth descriptor restores and revalidates credentials.
-  // React only loads the device-local Station projection for rendering.
-  useEffect(() => {
-    if (lifecycle.phase !== 'ACTIVE') return;
-
-
-  }, [lifecycle.generation, lifecycle.phase]);
 
 
   // --- Auto-verify the selected Station route ---
@@ -630,6 +626,15 @@ function MobileAppRoot() {
     await startAccessGateChainFor(selectedStation);
   }
 
+  async function scanDesktopLogin() {
+    const completed = await runUserScopeTransition('station-replace', async () => {
+      await logoutSessionRuntime();
+    });
+    if (!completed) return;
+    showStationSelection();
+    await startMobileDeviceLink();
+  }
+
   async function leaveCurrentStationForSelection() {
     const completed = await runUserScopeTransition(
       'station-replace',
@@ -835,6 +840,11 @@ function MobileAppRoot() {
 
   // --- Render based on launch state ---
 
+  if (deviceLink.phase !== 'idle' && deviceLink.phase !== 'committed'
+    && renderedLaunchState !== 'shell') {
+    return <DeviceLinkScreen />;
+  }
+
   function renderWithRecovery(content: ReactNode) {
     const replacementStation = pendingIdentityReplacement?.station
       ?? (
@@ -1026,6 +1036,7 @@ function MobileAppRoot() {
         onLogin={login}
         onInviteCode={submitInviteCode}
         onSchemaSubmit={submitSchemaGate}
+        onScan={() => void scanDesktopLogin()}
       />,
     );
   }
@@ -1034,6 +1045,7 @@ function MobileAppRoot() {
     <StationLaunchScreen
       key={`station-launch-${entryFixture.revision}`}
       registry={renderedStationRegistry}
+      onScan={() => void scanDesktopLogin()}
       error={renderedStationError}
       checking={stationChecking}
       verifyingUrls={

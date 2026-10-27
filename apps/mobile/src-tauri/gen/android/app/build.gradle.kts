@@ -22,7 +22,7 @@ val firebaseResources = System.getenv("PT_ANDROID_FIREBASE_RESOURCES_JSON")
     ?.let { JsonSlurper().parseText(it) as Map<*, *> }
 
 android {
-    compileSdk = 34
+    compileSdk = 36
     namespace = "com.peers.touch.mobile"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
@@ -78,6 +78,8 @@ dependencies {
     implementation("androidx.webkit:webkit:1.6.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.8.0")
+    // Bundle the scanner model so first use also works without a Play Services download.
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")

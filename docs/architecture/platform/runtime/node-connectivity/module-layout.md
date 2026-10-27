@@ -10,7 +10,8 @@
 ```text
 model/domain/
 ├── peer/station_identity.proto
-└── peer/access_endpoint.proto
+├── peer/access_endpoint.proto
+└── peer/bootstrap_blob.proto
 
 apps/station/frame/
 ├── peers.go
@@ -18,6 +19,7 @@ apps/station/frame/
 ├── core/plugin/native/
 │   ├── node/native_init_top_comp.go
 │   ├── relay/
+│   ├── bootstrapblob/                 # opaque short-lived material only
 │   ├── transport/securehttp/
 │   ├── registry/
 │   ├── federation/
@@ -35,7 +37,7 @@ apps/station/app/subserver/
 
 packages/
 ├── station-libp2p-http/
-└── station-trust/
+└── station-trust/src/bootstrap.rs     # exact signed document verification
 
 apps/desktop/src-tauri/src/infrastructure/
 ├── station_discovery.rs
@@ -96,6 +98,8 @@ apps/desktop/src-tauri/src/
 | Desktop transport owner | driver, bounded admission, route sessions, cancellation and join | Station binding mutation or Session state |
 | Desktop event-stream runtime | actor supervisor cancellation and bounded thread join | Station transport or route selection |
 | Desktop transport identity adapter | endpoint-scoped libp2p keys in platform secure storage | Actor, Session, logical Station identity or cross-Relay global identity |
+| Shared transport identity scope | canonical Station/Relay/origin scope hashing in station-trust | private key storage or global installation identity |
+| Mobile transport identity adapter | secure-store readback and scoped standard drivers | random global transport identity or credential persistence |
 | Linux runtime owner | listeners, control TLS, quotas, exact source and cleanup | additional Relay host platform |
 
 ## 3. Allowed Dependencies

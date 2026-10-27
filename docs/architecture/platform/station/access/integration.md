@@ -14,7 +14,7 @@
 | Station identity/route | Node Connectivity + Station host identity | station binding/registry | station feature/runtime |
 | Access attempt | Access Gate | auth/session adapter | OAuth/access runtime |
 | Session scope | Actor Session | runtime coordinator | runtime coordinator |
-| Session class slot | Actor Session | canonical `desktop` | canonical `mobile` |
+| Session device slot | Actor Session | Station + Actor + installation | Station + Actor + installation |
 | Federation context | Federation | context store | social runtime |
 | Relay diagnosis | Node Connectivity/operations | read-only projection | read-only projection |
 
@@ -105,7 +105,8 @@ outside Station transport.
 
 - `station-api-ownership` validates Station routes, contracts and owners.
 - Station Access capability contract validates real Desktop/Mobile consumers.
-- Session tests validate same-class takeover and cross-class coexistence.
+- Session tests validate same-device replacement, multi-device coexistence,
+  independent revocation and migration of missing device bindings.
 - Native Journeys validate first access, recovery, switching and scoped
   Federation consumption.
 - Node Connectivity Gates validate Relay role, enrollment, discovery, Circuit

@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Alert, Button, Spin, Tag, theme, Tooltip, Typography } from 'antd';
 import { Check, RefreshCw, ShieldAlert, ShieldCheck, ShieldQuestion } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
+import { Schema } from '@peers-touch/schema';
 import { api, pickLatestKeyExchangeBundle } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import {
@@ -235,7 +235,7 @@ export function SafetyVerificationPanel({ localActorPtid, localFingerprint, peer
             )}
           </Flexbox>
 
-          <Flexbox horizontal gap={12} align="flex-start">
+          <Flexbox gap={12} align="center">
             <Flexbox align="center" gap={6} style={{ flexShrink: 0 }}>
               {qrPayload ? (
                 <div
@@ -246,7 +246,12 @@ export function SafetyVerificationPanel({ localActorPtid, localFingerprint, peer
                     border: `1px solid ${token.colorBorderSecondary}`,
                   }}
                 >
-                  <QRCodeSVG value={qrPayload} size={120} level="M" includeMargin={false} />
+                  <Schema.QRCode
+                    content={{ kind: 'external-protocol', owner: 'identity.safety-number.v1', value: qrPayload }}
+                    constraints={{ size: 288, style: 'classic', errorCorrection: 'Q' }}
+                    title={t('chat.social.verify.qrPeerLabel')}
+                    errorLabel={t('chat.schema.qrUnavailable')}
+                  />
                 </div>
               ) : null}
               <Text type="secondary" style={{ fontSize: 10, textAlign: 'center' }}>
@@ -254,7 +259,7 @@ export function SafetyVerificationPanel({ localActorPtid, localFingerprint, peer
               </Text>
             </Flexbox>
 
-            <Flexbox gap={6} style={{ minWidth: 0, flex: 1 }}>
+            <Flexbox gap={6} style={{ minWidth: 0, width: '100%' }}>
               <Flexbox gap={2}>
                 <Text type="secondary" style={{ fontSize: 11 }}>
                   {t('chat.social.verify.yourFingerprintLabel')}

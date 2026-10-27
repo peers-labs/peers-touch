@@ -61,6 +61,9 @@ type agentSubServer struct {
 	operationService       *service.CapabilityOperationService
 	evaluationService      *service.EvaluationService
 	externalRuntimeService *service.ExternalRuntimeService
+	scheduledJobService    *service.ScheduledJobService
+	botTurnBridge          *service.BotTurnBridge
+	agentService           *service.AgentService
 	deviceKeys             *touchactor.DeviceStore
 	agentDB                *gorm.DB
 	nodeID                 string
@@ -121,6 +124,10 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 		capabilityBackfillRegistry,
 		service.NewSessionSearchService(),
 	)
+	// Station-owned builtins must seed manifests on every boot so they can be
+	// bound and admitted like the runtime registry advertises them.
+	service.RegisterWebFetchTool(capabilityBackfillRegistry, service.NewWebFetchService())
+	service.RegisterTodoTools(capabilityBackfillRegistry, service.NewTodoService())
 	if _, err = service.NewCapabilityBackfillService(
 		rds,
 		capabilityBackfillRegistry,
@@ -187,6 +194,12 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 			}
 			return err
 		}
+	}
+	if s.scheduledJobService != nil && !s.scheduledJobService.StartScheduledJobWorker(workerCtx) {
+		logger.Warnf(ctx, "scheduled job worker was already running in this process")
+	}
+	if s.botTurnBridge != nil && !s.botTurnBridge.StartProjectionWorker(workerCtx) {
+		logger.Warnf(ctx, "bot turn projection worker was already running in this process")
 	}
 	if s.turnService != nil {
 		serverOptions := server.GetOptions()
@@ -343,6 +356,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// Session Search — cross-session learning via keyword search.
 	sessionSearchSvc := service.NewSessionSearchService()
 	service.RegisterSessionSearchTool(toolRegistrySvc, sessionSearchSvc)
+	service.RegisterWebFetchTool(toolRegistrySvc, service.NewWebFetchService())
+	service.RegisterTodoTools(toolRegistrySvc, service.NewTodoService())
 
 	// Phase 6: Background Review — self-review with LLM after turn completion.
 	reviewSvc := service.NewReviewService(
@@ -371,6 +386,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	)
 	turnSvc.SetEventBus(eventBus)
 	turnSvc.SetExternalRuntimeService(externalRuntimeSvc)
+	reviewSvc.SetAuxiliaryDispatchReserver(turnSvc.ReserveAuxiliaryProviderDispatch)
 
 	// Dogfood self-verification service.
 	dogfoodSvc := service.NewDogfoodService(memorySvc, skillSvc, growthMetricsSvc)
@@ -406,9 +422,22 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	threadHandlers := handler.NewThreadHandlers(service.NewThreadService())
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
 	workspaceHandlers := handler.NewWorkspaceHandlers(workspaceSvc)
+	var artifactFileService ossservice.FileService
+	if serverOptions := server.GetOptions(); serverOptions != nil {
+		if ossSubserver := serverOptions.SubserverInstances["oss"]; ossSubserver != nil {
+			if provider, ok := ossSubserver.(ossFileServiceProvider); ok {
+				artifactFileService = provider.FileService()
+			}
+		}
+	}
+	workspaceOSSHandlers := handler.NewWorkspaceOSSHandlers(
+		service.NewWorkspaceOSSService(turnSvc, artifactFileService),
+	)
 	offlineQueueHandlers := handler.NewOfflineQueueHandlers(offlineQueueSvc)
 	eventStreamHandlers := handler.NewEventStreamHandlers(eventStreamSvc)
 	skillHandlers := handler.NewSkillHandlers(skillSvc)
+	s.scheduledJobService = service.NewScheduledJobService(turnAdmissionSvc)
+	scheduledJobHandlers := handler.NewScheduledJobHandlers(s.scheduledJobService)
 	dogfoodHandlers := handler.NewDogfoodHandlers(dogfoodSvc)
 	schedulerHandlers := handler.NewSchedulerHandlers(schedulerSvc)
 	orchestrationHandlers := handler.NewOrchestrationHandlers(orchestrationSvc)
@@ -429,6 +458,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		admissionResolver,
 		runtimeModelCatalog,
 		providerModelDiscoverySvc,
+		service.NewRuntimeDefaultService(),
 	)
 	runtimeEvidenceHandlers := handler.NewRuntimeEvidenceHandlers(
 		runtimeEvidenceSvc,
@@ -534,11 +564,13 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	s.operationService = operationSvc
 	s.evaluationService = evaluationSvc
 	s.externalRuntimeService = externalRuntimeSvc
+	s.agentService = agentSvc
 
-	s.wireChannelTurnExecutor(
+	channelTurnExecutor := s.wireChannelTurnExecutor(
 		turnSvc, convSvc, turnAdmissionSvc,
 		agentSvc, capabilityAuthoritySvc, toolRegistrySvc, growthMetricsSvc,
 	)
+	s.botTurnBridge = s.wireBotTurnBridge(channelTurnExecutor)
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
@@ -565,6 +597,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-capability-lease-renew", "/agent/capability/lease/renew", server.POST, turnHandlers.HandleRenewClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-lease-revoke", "/agent/capability/lease/revoke", server.POST, turnHandlers.HandleRevokeClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-requests-pull", "/agent/capability/requests/pull", server.POST, turnHandlers.HandlePullClientCapabilityRequests, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-resource-grants-declare", "/agent/capability/resource-grants/declare", server.POST, turnHandlers.HandleDeclareClientResourceGrants, logIDWrapper, deviceIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-receipt", "/agent/capability/receipt", server.POST, turnHandlers.HandleSubmitClientCapabilityReceipt, logIDWrapper, deviceIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-receipt-recover", "/agent/capability/receipt/recover", server.POST, turnHandlers.HandleSubmitClientCapabilityRecoveryReceipt, logIDWrapper),
 		server.NewTypedHandler("agent-capability-operation-start", "/agent/capability/operation/start", server.POST, operationHandlers.HandleStart, logIDWrapper, jwtWrapper),
@@ -591,11 +624,17 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-knowledge-descriptor-create", "/agent/knowledge/descriptor/create", server.POST, knowledgeDescriptorHandlers.HandleCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-knowledge-descriptor-update", "/agent/knowledge/descriptor/update", server.POST, knowledgeDescriptorHandlers.HandleUpdate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-knowledge-descriptor-list", "/agent/knowledge/descriptor/list", server.POST, knowledgeDescriptorHandlers.HandleList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-knowledge-descriptor-content-read", "/agent/knowledge/descriptor/content/read", server.POST, knowledgeDescriptorHandlers.HandleReadContent, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-knowledge-descriptor-tombstone", "/agent/knowledge/descriptor/tombstone", server.POST, knowledgeDescriptorHandlers.HandleTombstone, logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("agent-quick-completion", "/agent/quick-completion", server.POST, turnHandlers.HandleQuickCompletion, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-quick-completion", "/agent/quick-completion", server.POST, turnHandlers.HandleQuickCompletion, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-attribution-get", "/agent/turn/attribution/get", server.POST, turnHandlers.HandleGetTurnAttributions, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-artifact-list", "/agent/turn/artifact/list", server.POST, turnHandlers.HandleListTurnArtifacts, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-artifact-get", "/agent/turn/artifact/get", server.POST, turnHandlers.HandleGetTurnArtifact, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-artifact-upload-prepare", "/agent/turn/artifact/upload/prepare", server.POST, workspaceOSSHandlers.HandlePrepareArtifactUpload, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-artifact-upload-complete", "/agent/turn/artifact/upload/complete", server.POST, workspaceOSSHandlers.HandleCompleteArtifactUpload, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-artifact-download", "/agent/turn/artifact/download", server.POST, workspaceOSSHandlers.HandleGetArtifactDownload, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-diagnostics-export", "/agent/turn/diagnostics/export", server.POST, turnHandlers.HandleExportTurnDiagnostics, logIDWrapper, jwtWrapper),
 
 		server.NewHTTPHandler("agent-conversation-list", "/agent/conversation/list", server.POST, convHandlers.HandleListConversations, logIDWrapper, jwtWrapper),
@@ -624,6 +663,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-provider-create", "/agent/provider/create", server.POST, providerHandlers.HandleProviderCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-update", "/agent/provider/update", server.POST, providerHandlers.HandleProviderUpdate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-delete", "/agent/provider/delete", server.POST, providerHandlers.HandleProviderDelete, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-runtime-default-get", "/agent/provider/runtime-default", server.GET, providerHandlers.HandleGetRuntimeDefault, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-runtime-default-set", "/agent/provider/runtime-default", server.POST, providerHandlers.HandleSetRuntimeDefault, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-check", "/agent/provider/check", server.POST, providerHandlers.HandleProviderCheck, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-model-discover", "/agent/provider/model/discover", server.POST, providerHandlers.HandleDiscoverProviderModels, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-list", "/agent/model/list", server.POST, providerHandlers.HandleModelList, logIDWrapper, jwtWrapper),
@@ -726,9 +767,19 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 		server.NewTypedHandler("agent-skill-list", "/agent/skill/list", server.POST, skillHandlers.HandleListSkills, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-get", "/agent/skill/get", server.GET, skillHandlers.HandleGetSkill, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-skill-resource-read", "/agent/skill/resource/read", server.POST, skillHandlers.HandleReadSkillResource, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-install", "/agent/skill/install", server.POST, skillHandlers.HandleInstallSkill, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-update", "/agent/skill/update", server.POST, skillHandlers.HandleUpdateSkill, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-delete", "/agent/skill/delete", server.POST, skillHandlers.HandleDeleteSkill, logIDWrapper, jwtWrapper),
+
+		// Persistent user scheduled jobs (V11).
+		server.NewTypedHandler("agent-scheduled-job-create", "/agent/scheduled-job/create", server.POST, scheduledJobHandlers.HandleCreateScheduledJob, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-scheduled-job-update", "/agent/scheduled-job/update", server.POST, scheduledJobHandlers.HandleUpdateScheduledJob, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-scheduled-job-delete", "/agent/scheduled-job/delete", server.POST, scheduledJobHandlers.HandleDeleteScheduledJob, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-scheduled-job-list", "/agent/scheduled-job/list", server.POST, scheduledJobHandlers.HandleListScheduledJobs, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-scheduled-job-toggle", "/agent/scheduled-job/toggle", server.POST, scheduledJobHandlers.HandleToggleScheduledJob, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-scheduled-job-trigger", "/agent/scheduled-job/trigger", server.POST, scheduledJobHandlers.HandleTriggerScheduledJob, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-scheduled-job-runs-list", "/agent/scheduled-job/runs/list", server.POST, scheduledJobHandlers.HandleListScheduledJobRuns, logIDWrapper, jwtWrapper),
 
 		// Growth Dashboard endpoints.
 		server.NewTypedHandler("agent-growth-snapshot", "/agent/growth/snapshot", server.POST, growthHandlers.HandleGetGrowthSnapshot, logIDWrapper, jwtWrapper),

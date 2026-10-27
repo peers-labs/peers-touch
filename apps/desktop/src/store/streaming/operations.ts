@@ -8,6 +8,8 @@ export function createOperation(params: {
   assistantMessageId: string;
   abortController: AbortController;
   streamGeneration?: number;
+  clientIdempotencyKey?: string;
+  awaitingAdmission?: boolean;
 }): Operation {
   return {
     id: `op-${Date.now()}-${operationCounter++}`,
@@ -18,6 +20,8 @@ export function createOperation(params: {
     assistantMessageId: params.assistantMessageId,
     abortController: params.abortController,
     streamGeneration: params.streamGeneration,
+    clientIdempotencyKey: params.clientIdempotencyKey,
+    awaitingAdmission: params.awaitingAdmission,
     startedAt: Date.now(),
   };
 }

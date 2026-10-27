@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { Flexbox } from 'react-layout-kit';
 import { Tooltip, toast } from '@lobehub/ui';
 import {
@@ -40,9 +42,144 @@ import {
   resolveAccountLoginProvider,
 } from './accountIdentityPresentation';
 import { log } from '../../utils/logger';
+import { DeviceLinkPanel } from './DeviceLinkPanel';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
+
+// Mirrors `PROFILE_IMAGE_UPLOAD_PROGRESS_EVENT` in
+// apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs.
+const PROFILE_IMAGE_UPLOAD_PROGRESS_EVENT = 'profile-image-upload-progress';
+type ProfileImageField = 'avatar' | 'header';
+type ImageProgress = Record<ProfileImageField, number>;
+type PendingImage = Partial<Record<ProfileImageField, string>>;
+
+function usePrefersReducedMotion(): boolean {
+  const query = '(prefers-reduced-motion: reduce)';
+  const [reduced, setReduced] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.(query)?.matches === true,
+  );
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const onChange = () => setReduced(media.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return reduced;
+}
+
+// Optimistic preview of a locally picked image while it streams to the
+// Station. The blurred layer is immediately visible; a crisp copy is
+// revealed bottom-up by `progress` (real multipart bytes), like a bottle
+// filling. Reduced-motion users get the crisp image immediately; the
+// determinate progress bar is rendered by the caller as a sibling of the
+// interactive control, so progress/live semantics never nest inside a
+// role="button" element.
+function OptimisticImageLayer({
+  url,
+  progress,
+  radius,
+  reducedMotion,
+}: {
+  url: string;
+  progress: number;
+  radius: number;
+  reducedMotion: boolean;
+}) {
+  const { token } = theme.useToken();
+  const fraction = Math.max(0, Math.min(1, progress));
+  const imageStyle: CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    borderRadius: radius,
+  };
+
+  if (reducedMotion) {
+    return <img src={url} alt="" aria-hidden style={imageStyle} />;
+  }
+
+  return (
+    <>
+      <img
+        src={url}
+        alt=""
+        aria-hidden
+        style={{ ...imageStyle, filter: 'blur(10px) saturate(0.9)', transform: 'scale(1.1)', opacity: 0.92 }}
+      />
+      <img
+        src={url}
+        alt=""
+        aria-hidden
+        style={{
+          ...imageStyle,
+          clipPath: `inset(${((1 - fraction) * 100).toFixed(2)}% 0 0 0)`,
+          // motion.fast role (tokens.md §8): small continuous state reveal.
+          transition: `clip-path ${token.motionDurationMid} linear`,
+        }}
+      />
+    </>
+  );
+}
+
+// Screen-reader progress announcement. Must stay a sibling of the
+// role="button" surface (ARIA forbids role=status/progressbar inside a button).
+function UploadLiveRegion({ fieldKey, percent }: { fieldKey: string; percent: number }) {
+  const { t } = useTranslation('provider');
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      style={{
+        position: 'absolute',
+        width: 1,
+        height: 1,
+        padding: 0,
+        margin: -1,
+        overflow: 'hidden',
+        clip: 'rect(0 0 0 0)',
+        whiteSpace: 'nowrap',
+        border: 0,
+      }}
+    >
+      {t(fieldKey, { percent })}
+    </span>
+  );
+}
+
+// Determinate progress bar for reduced-motion users; a sibling (not a child)
+// of the interactive surface.
+function UploadProgressBar({ percent }: { percent: number }) {
+  const { token } = theme.useToken();
+  return (
+    <div
+      role="progressbar"
+      aria-valuenow={percent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 4, background: 'rgba(0,0,0,0.28)' }}
+    >
+      <div style={{ height: '100%', width: `${percent}%`, background: token.colorPrimary }} />
+    </div>
+  );
+}
+
+function preloadImage(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (!url) {
+      resolve();
+      return;
+    }
+    const image = new Image();
+    const settle = () => resolve();
+    image.onload = settle;
+    image.onerror = settle;
+    image.src = url;
+    window.setTimeout(settle, 1200);
+  });
+}
 
 const COMMON_TIMEZONES = [
   'UTC',
@@ -158,148 +295,264 @@ async function pickImageFile(): Promise<string | null> {
   }
 }
 
+const AVATAR_RADIUS = 12;
+
 function EditableAvatar({
   src,
   fallbackText,
   size,
   uploading,
+  pendingUrl,
+  progress,
   onUpload,
 }: {
   src?: string;
   fallbackText: string;
   size: number;
   uploading: boolean;
+  pendingUrl?: string;
+  progress: number;
   onUpload: () => void;
 }) {
   const { token } = theme.useToken();
+  const reducedMotion = usePrefersReducedMotion();
+  // The edit affordance is shown on hover and on keyboard focus — never
+  // hover-only (accessibility.md §5).
+  const [editHint, setEditHint] = useState(false);
 
   return (
     <div
       data-pt-account-avatar-url={src || ''}
-      onClick={() => !uploading && onUpload()}
-      style={{
-        position: 'relative',
-        cursor: uploading ? 'wait' : 'pointer',
-        flexShrink: 0,
-        width: size,
-        height: size,
-      }}
+      style={{ position: 'relative', flexShrink: 0, width: size, height: size, borderRadius: AVATAR_RADIUS, overflow: 'hidden' }}
     >
-      <UserSquareAvatar
-        remoteUrl={src}
-        name={fallbackText}
-        size={size}
-        radius={12}
-        border={`2px solid ${token.colorBorderSecondary}`}
-      />
-
       <div
+        role="button"
+        tabIndex={0}
+        aria-busy={uploading}
+        aria-label={fallbackText}
+        onClick={() => !uploading && onUpload()}
+        onKeyDown={(event) => {
+          if (!uploading && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            onUpload();
+          }
+        }}
+        onMouseEnter={() => setEditHint(true)}
+        onMouseLeave={() => setEditHint(false)}
+        onFocus={() => setEditHint(true)}
+        onBlur={() => setEditHint(false)}
         style={{
-          position: 'absolute',
-          bottom: 0,
-          right: 0,
-          width: 24,
-          height: 24,
-          borderRadius: 6,
-          background: token.colorPrimary,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: `2px solid ${token.colorBgContainer}`,
-          boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+          position: 'relative',
+          width: '100%',
+          height: '100%',
+          borderRadius: AVATAR_RADIUS,
+          cursor: uploading ? 'wait' : 'pointer',
         }}
       >
-        {uploading ? (
-          <Spin size="small" style={{ fontSize: 10 }} />
-        ) : (
-          <Camera size={12} style={{ color: '#fff' }} />
+        <UserSquareAvatar
+          remoteUrl={src}
+          name={fallbackText}
+          size={size}
+          radius={AVATAR_RADIUS}
+          border={`2px solid ${token.colorBorderSecondary}`}
+        />
+
+        {pendingUrl && (
+          <OptimisticImageLayer
+            url={pendingUrl}
+            progress={progress}
+            radius={AVATAR_RADIUS}
+            reducedMotion={reducedMotion}
+          />
+        )}
+
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: 24,
+            height: 24,
+            borderRadius: 6,
+            background: token.colorPrimary,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: `2px solid ${token.colorBgContainer}`,
+            boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+          }}
+        >
+          {uploading ? (
+            <Spin size="small" style={{ fontSize: 10 }} />
+          ) : (
+            <Camera size={12} style={{ color: '#fff' }} />
+          )}
+        </div>
+
+        {!uploading && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: AVATAR_RADIUS,
+              background: 'rgba(0,0,0,0.25)',
+              opacity: editHint ? 1 : 0,
+              transition: `opacity ${token.motionDurationMid}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Pencil size={20} style={{ color: '#fff' }} />
+          </div>
         )}
       </div>
 
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          borderRadius: 12,
-          background: 'rgba(0,0,0,0.25)',
-          opacity: 0,
-          transition: 'opacity 0.2s',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.opacity = '1';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.opacity = '0';
-        }}
-      >
-        {!uploading && <Pencil size={20} style={{ color: '#fff' }} />}
-      </div>
+      {uploading && reducedMotion && (
+        <UploadProgressBar percent={Math.round(progress * 100)} />
+      )}
+      {uploading && (
+        <UploadLiveRegion
+          fieldKey="provider.account.avatarHeader.uploadingProgress"
+          percent={Math.round(progress * 100)}
+        />
+      )}
     </div>
   );
 }
 
+const HEADER_HEIGHT = 120;
+const HEADER_RADIUS = 12;
+
 function EditableHeaderBanner({
   src,
   uploading,
+  pendingUrl,
+  progress,
   onUpload,
   t,
 }: {
   src?: string;
   uploading: boolean;
+  pendingUrl?: string;
+  progress: number;
   onUpload: () => void;
-  t: (key: string) => string;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const { token } = theme.useToken();
+  const reducedMotion = usePrefersReducedMotion();
+  const [editHint, setEditHint] = useState(false);
 
   return (
     <div
-      onClick={() => !uploading && onUpload()}
       style={{
         position: 'relative',
         width: '100%',
-        height: 120,
-        borderRadius: 12,
+        height: HEADER_HEIGHT,
+        borderRadius: HEADER_RADIUS,
         overflow: 'hidden',
-        cursor: uploading ? 'wait' : 'pointer',
-        background: src
-          ? `url(${src}) center/cover no-repeat`
-          : `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`,
+        background: `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`,
         border: `1px solid ${token.colorBorderSecondary}`,
       }}
     >
       <div
+        role="button"
+        tabIndex={0}
+        aria-busy={uploading}
+        aria-label={t('provider.account.identity.changeHeader')}
+        onClick={() => !uploading && onUpload()}
+        onKeyDown={(event) => {
+          if (!uploading && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            onUpload();
+          }
+        }}
+        onMouseEnter={() => setEditHint(true)}
+        onMouseLeave={() => setEditHint(false)}
+        onFocus={() => setEditHint(true)}
+        onBlur={() => setEditHint(false)}
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'rgba(0,0,0,0.3)',
-          opacity: 0,
-          transition: 'opacity 0.2s',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.opacity = '1';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.opacity = '0';
+          cursor: uploading ? 'wait' : 'pointer',
+          borderRadius: HEADER_RADIUS,
         }}
       >
-        {uploading ? (
-          <Spin size="small" />
-        ) : (
-          <>
+        {src && (
+          <img
+            src={src}
+            alt=""
+            aria-hidden
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              borderRadius: HEADER_RADIUS,
+            }}
+          />
+        )}
+
+        {pendingUrl && (
+          <OptimisticImageLayer
+            url={pendingUrl}
+            progress={progress}
+            radius={HEADER_RADIUS}
+            reducedMotion={reducedMotion}
+          />
+        )}
+
+        {uploading && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              width: 28,
+              height: 28,
+              borderRadius: 8,
+              background: 'rgba(0,0,0,0.45)',
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
+            <Spin size="small" />
+          </div>
+        )}
+
+        {!uploading && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(0,0,0,0.3)',
+              opacity: editHint ? 1 : 0,
+              transition: `opacity ${token.motionDurationMid}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              borderRadius: HEADER_RADIUS,
+            }}
+          >
             <Camera size={16} style={{ color: '#fff' }} />
             <Text style={{ color: '#fff', fontSize: 12 }}>
               {t('provider.account.identity.changeHeader')}
             </Text>
-          </>
+          </div>
         )}
       </div>
+
+      {uploading && reducedMotion && (
+        <UploadProgressBar percent={Math.round(progress * 100)} />
+      )}
+      {uploading && (
+        <UploadLiveRegion
+          fieldKey="provider.account.avatarHeader.uploadingProgress"
+          percent={Math.round(progress * 100)}
+        />
+      )}
     </div>
   );
 }
@@ -399,6 +652,8 @@ export function AccountTab() {
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingHeader, setUploadingHeader] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<ImageProgress>({ avatar: 0, header: 0 });
+  const [pendingImage, setPendingImage] = useState<PendingImage>({});
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const timezoneOptions = useMemo(() => buildTimezoneOptions(t), [t]);
@@ -433,8 +688,29 @@ export function AccountTab() {
 
   useEffect(() => {
     loadProfile(false);
+    let unlisten: UnlistenFn | undefined;
+    listen<{ field: ProfileImageField; sent: number; total: number }>(
+      PROFILE_IMAGE_UPLOAD_PROGRESS_EVENT,
+      (event) => {
+        const { field, sent, total } = event.payload;
+        if (field !== 'avatar' && field !== 'header') return;
+        const fraction = total > 0 ? Math.min(1, sent / total) : 0;
+        setUploadProgress((current) =>
+          fraction !== 1 && Math.abs(current[field] - fraction) < 0.005
+            ? current
+            : { ...current, [field]: fraction },
+        );
+      },
+    )
+      .then((unsubscribe) => {
+        unlisten = unsubscribe;
+      })
+      .catch((error) => {
+        log.warn('settings', 'profile image progress listener failed', error);
+      });
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      unlisten?.();
     };
   }, []);
 
@@ -505,12 +781,26 @@ export function AccountTab() {
     });
   };
 
+  // The picked file is shown immediately (optimistic local preview) and
+  // crispness follows the real upload byte progress; any non-committed result
+  // rolls the preview back so the surface never pretends success.
+  const beginPendingImage = (field: ProfileImageField, path: string) => {
+    setPendingImage((current) => ({ ...current, [field]: convertFileSrc(path) }));
+    setUploadProgress((current) => ({ ...current, [field]: 0 }));
+  };
+  const clearPendingImage = (field: ProfileImageField) => {
+    setPendingImage((current) => ({ ...current, [field]: undefined }));
+    setUploadProgress((current) => ({ ...current, [field]: 0 }));
+  };
+
   const handleUploadAvatar = async () => {
     if (uploadingAvatar) return;
     const path = await pickImageFile();
     if (!path) return;
 
     setUploadingAvatar(true);
+    beginPendingImage('avatar', path);
+    let committed = false;
     try {
       const result = await api.profileUploadAvatarOss({ file_path: path });
       if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
@@ -519,16 +809,25 @@ export function AccountTab() {
         return;
       }
       const next = normalizeProfile(result.profile);
-      setProfile(next);
-
       if (next.avatar) {
+        // Resolve/materialize the remote avatar in the native cache before
+        // removing the optimistic preview, so the swap to the authoritative
+        // image does not wait on a cold download.
+        try {
+          await api.avatarResolveLocal(next.avatar);
+        } catch (error) {
+          log.warn('settings', 'avatar cache warm-up failed before commit', error);
+        }
         await syncCurrentProfileIdentity(next.avatar);
       }
-
+      setProfile(next);
+      clearPendingImage('avatar');
+      committed = true;
       toast.success(t('provider.account.avatarHeader.avatarUpdated'));
     } catch (error: any) {
       toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadAvatar'));
     } finally {
+      if (!committed) clearPendingImage('avatar');
       setUploadingAvatar(false);
     }
   };
@@ -539,6 +838,8 @@ export function AccountTab() {
     if (!path) return;
 
     setUploadingHeader(true);
+    beginPendingImage('header', path);
+    let committed = false;
     try {
       const result = await api.profileUploadHeaderOss({ file_path: path });
       if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
@@ -547,11 +848,17 @@ export function AccountTab() {
         return;
       }
       const next = normalizeProfile(result.profile);
+      // Let the browser cache the committed banner before removing the local
+      // preview, so the authoritative swap is seamless.
+      await preloadImage(next.header || '');
       setProfile(next);
+      clearPendingImage('header');
+      committed = true;
       toast.success(t('provider.account.avatarHeader.headerUpdated'));
     } catch (error: any) {
       toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadHeader'));
     } finally {
+      if (!committed) clearPendingImage('header');
       setUploadingHeader(false);
     }
   };
@@ -588,6 +895,8 @@ export function AccountTab() {
         <EditableHeaderBanner
           src={profile.header || undefined}
           uploading={uploadingHeader}
+          pendingUrl={pendingImage.header}
+          progress={uploadProgress.header}
           onUpload={handleUploadHeader}
           t={t}
         />
@@ -599,6 +908,8 @@ export function AccountTab() {
               fallbackText={profile.display_name || profile.username}
               size={80}
               uploading={uploadingAvatar}
+              pendingUrl={pendingImage.avatar}
+              progress={uploadProgress.avatar}
               onUpload={handleUploadAvatar}
             />
           </div>
@@ -646,6 +957,7 @@ export function AccountTab() {
           />
         </Flexbox>
       </SettingsSection>
+      <DeviceLinkPanel />
       {/* ── Section 2: Public Profile (editable, auto-save) ── */}
       <SettingsSection
         title={t('provider.account.profile.title')}

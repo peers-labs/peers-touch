@@ -488,6 +488,8 @@ func attachCapabilityCommandProofForTest(
 		typed.CommandProof = proof
 	case *model.PullClientCapabilityRequestsRequest:
 		typed.CommandProof = proof
+	case *model.DeclareClientResourceGrantsRequest:
+		typed.CommandProof = proof
 	case *model.SubmitClientCapabilityReceiptRequest:
 		typed.CommandProof = proof
 	case *model.PullCapabilityOperationsRequest:

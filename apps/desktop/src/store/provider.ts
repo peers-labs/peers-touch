@@ -6,6 +6,7 @@ import {
   type ProviderModelConfigInput,
   type ProviderModelCreateData,
   type ProviderRuntimeConfig,
+  type RuntimeDefaultSelection,
 } from '../services/desktop_api';
 import { log } from '../utils/logger';
 import { useAgentStore } from './agent';
@@ -27,6 +28,7 @@ interface ProviderState {
   detail: ProviderDetail | null;
   loading: boolean;
   readinessById: Record<string, ProviderReadiness>;
+  runtimeDefault: RuntimeDefaultSelection | null;
 
   // P0: per-provider operation tracking for optimistic UX
   providerLoadingIds: Set<string>;
@@ -34,6 +36,7 @@ interface ProviderState {
   detailCache: Map<string, ProviderDetail>;
 
   loadProviders: () => Promise<void>;
+  setRuntimeDefault: (providerId: string, modelId: string) => Promise<RuntimeDefaultSelection>;
   selectProvider: (id: string, skipLoading?: boolean) => Promise<void>;
   updateProvider: (
     id: string,
@@ -67,15 +70,25 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
   detail: null,
   loading: false,
   readinessById: {},
+  runtimeDefault: null,
   providerLoadingIds: new Set<string>(),
   detailCache: new Map<string, ProviderDetail>(),
 
   loadProviders: async () => {
     set({ loading: true });
     try {
-      const providers = await api.listProviders();
+      const [providers, runtimeDefault] = await Promise.all([
+        api.listProviders(),
+        api.getRuntimeDefault().catch((error) => {
+          log.warn('provider', 'Failed to load runtime default', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }),
+      ]);
       set({
         providers,
+        runtimeDefault,
         loading: false,
         readinessById: Object.fromEntries(providers.map((provider) => [provider.id, mapProviderUIStatus(provider)])),
       });
@@ -86,6 +99,18 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
       log.error('provider', 'Failed to load providers', e);
       set({ loading: false });
     }
+  },
+
+  setRuntimeDefault: async (providerId, modelId) => {
+    const expectedRevision = get().runtimeDefault?.revision ?? 0;
+    const runtimeDefault = await api.setRuntimeDefault(
+      providerId,
+      modelId,
+      expectedRevision,
+    );
+    set({ runtimeDefault });
+    await useAgentStore.getState().loadModels();
+    return runtimeDefault;
   },
 
   selectProvider: async (id: string, skipLoading?: boolean) => {

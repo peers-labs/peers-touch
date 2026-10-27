@@ -25,21 +25,29 @@ describe('mapProviderUIStatus', () => {
     expect(mapProviderUIStatus(provider({
       has_api_key: true,
       credential_status: 'configured',
-    }))).toEqual({ status: 'ready' });
+    }))).toEqual({ status: 'unverified' });
   });
 
-  it('allows an enabled provider that does not require an API key', () => {
+  it('leaves a keyless enabled provider unverified until a real check', () => {
     expect(mapProviderUIStatus(provider({
       id: 'ollama',
       requires_api_key: false,
-    }))).toEqual({ status: 'ready' });
+    }))).toEqual({ status: 'unverified' });
   });
 
   it('marks disabled providers unavailable', () => {
     expect(mapProviderUIStatus(provider({ enabled: false }))).toEqual({ status: 'unavailable' });
   });
 
-  it('shows only enabled and configured providers as usable', () => {
+  it('treats a successful explicit check as ready', () => {
+    expect(isProviderUsable(provider(), { status: 'ready' })).toBe(false);
+    expect(isProviderUsable(provider({
+      has_api_key: true,
+      credential_status: 'configured',
+    }, ), { status: 'ready' })).toBe(true);
+  });
+
+  it('shows enabled and credentialed providers as usable while unverified', () => {
     expect(isProviderUsable(provider())).toBe(false);
     expect(isProviderUsable(provider({
       has_api_key: true,
@@ -50,5 +58,9 @@ describe('mapProviderUIStatus', () => {
       has_api_key: true,
       credential_status: 'configured',
     }))).toBe(false);
+    expect(isProviderUsable(provider({
+      has_api_key: true,
+      credential_status: 'configured',
+    }), { status: 'invalid' })).toBe(false);
   });
 });

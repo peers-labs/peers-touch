@@ -34,7 +34,7 @@
       "an Access attempt started on node A can be finalized and acknowledged on node B",
       "idempotent acknowledgement preserves one logical Session ID",
       "a JWT issued on one node validates on another through the persisted key ID",
-      "two concurrent same-class activations leave one active winner",
+      "two concurrent same-device activations leave one active winner while other devices stay active",
       "other canonical client classes remain active",
       "revocation committed on one node is enforced by another node"
     ],

@@ -63,6 +63,13 @@ jobs:
           # and lockfile stay unchanged because shell-quote is a transitive dep.
           npm install --no-save --no-package-lock shell-quote@1.10.0
 
+      - name: Install dead-code advisory fixture
+        run: |
+          # Keep this version in sync with the knip devDependency in package.json
+          # and pnpm-lock.yaml. --no-save/--no-package-lock provisions node_modules
+          # only; the advisory is non-blocking and SKIPs when knip cannot resolve.
+          npm install --no-save --no-package-lock knip@5.43.6
+
       - name: Run review framework gates
         run: |
           tooling/scripts/review/run.sh --range "$REVIEW_RANGE" --strict-knowledge

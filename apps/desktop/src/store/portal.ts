@@ -1,9 +1,9 @@
 import { createDesktopStore } from './createDesktopStore';
-import type { MessageArtifact } from './chat';
+import type { ChatFileArtifact } from './chatArtifacts';
 
 export type PortalView =
   | { type: 'artifacts'; messageId?: string }
-  | { type: 'artifactDetail'; artifact: MessageArtifact }
+  | { type: 'artifactDetail'; artifact: ChatFileArtifact }
   | { type: 'toolDetail'; messageId: string; toolCallId: string }
   | { type: 'turnDetails'; messageId: string; turnId: string }
   | { type: 'thread'; sessionKey: string; sourceMessageId: string }
@@ -19,7 +19,7 @@ interface PortalState {
 }
 
 interface PortalActions {
-  openArtifact: (artifact: MessageArtifact) => void;
+  openArtifact: (artifact: ChatFileArtifact) => void;
   openArtifacts: (messageId?: string) => void;
   openToolDetail: (messageId: string, toolCallId: string) => void;
   openTurnDetails: (messageId: string, turnId: string) => void;
@@ -53,7 +53,7 @@ export const usePortalStore = createDesktopStore<PortalState & PortalActions>(
       portalStack: [],
       activeView: null,
 
-      openArtifact: (artifact: MessageArtifact) => {
+      openArtifact: (artifact: ChatFileArtifact) => {
         pushPortalView({ type: 'artifactDetail', artifact });
       },
 

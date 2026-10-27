@@ -184,6 +184,10 @@ reset remains forbidden.
 | `PT_DESKTOP_APP_WEB_PORT` | yes | `3210` | Desktop Tauri web port |
 | `PT_MOBILE_WEB_PORT` | if mobile | `5173` | Mobile dev server port |
 
+Addresses in this document use RFC 5737 TEST-NET ranges. Real deployment
+coordinates belong only to the sibling environment repository or machine-local
+profile state.
+
 ### 2.5 Deploy Env Files
 
 Canonical definitions live at
@@ -302,6 +306,12 @@ registered and its binding must resolve.
 | `make desktop` | Start Desktop Tauri app |
 | `make desktop-install` | Build the current source and atomically install the platform-native development artifact: macOS `.app` or Linux AppImage/XDG entry |
 | `make mobile` | Start Mobile iOS simulator |
+
+For a native semantic development Journey, `PT_ACCEPTANCE_NATIVE_DEV=1 make
+desktop` enables the embedded `acceptance-webdriver` feature and renderer
+diagnostics. `PT_ACCEPTANCE_WEBDRIVER_PORT` selects that task's driver port.
+The command retains Profile, process ownership, source identity and startup
+checks. Enabling this driver does not publish formal Acceptance evidence.
 
 Normal initial registration is explicit and one-step:
 

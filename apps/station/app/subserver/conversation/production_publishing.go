@@ -188,6 +188,7 @@ func (s *subServer) handlePublishMessage(
 			logger.Errorf(ctx, "[message-publishing] post-commit notification wake failed: %v", err)
 		}
 	}
+	s.dispatchInboundAutomation(ctx, &result)
 	output, err := productionPublishingResponse(result.Response)
 	if err != nil {
 		return writePublishingDomainError(ctx, response, err)

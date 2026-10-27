@@ -55,7 +55,8 @@ func (s *TurnService) generateFollowUpSuggestions(
 		outputLimit = 256
 	}
 	result, err := s.callProviderWithRuntimeAuthority(ctx, config, &ProviderCallRequest{
-		ProviderID: providerReference, ProviderType: config.Provider,
+		DispatchClass: providerDispatchAuxiliary,
+		ProviderID:    providerReference, ProviderType: config.Provider,
 		AgentID:        config.AgentID,
 		ConversationID: config.ConversationID + ":follow-up:" + config.TurnID,
 		Model:          config.Model, SystemPrompt: followUpSystemPrompt,

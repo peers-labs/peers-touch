@@ -26,16 +26,24 @@ import { useToolStore } from '../store/tool';
 import { log } from '../utils/logger';
 
 const CAPABILITY_RECONCILE_INTERVAL_MS = 60_000;
+const SESSION_WARMUP_INTERVAL_MS = 1_000;
+// After a renderer reload the identity session is restored in tens of
+// milliseconds, but the capability worker re-registers its lease a few
+// seconds later. Warmup polls only through that registration gap so composer
+// readiness converges without waiting for the periodic reconciliation.
+const SESSION_WARMUP_ATTEMPTS = 20;
 const AGENT_PROJECTION_CONCURRENCY = 2;
 const MAX_AUTHORITY_STREAMS = 4;
 
 let installed = false;
 let runtimeGeneration = 0;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
+let warmupTimer: ReturnType<typeof setTimeout> | null = null;
+let warmupAttempts = 0;
 let runtimeUnsubscribers: Array<() => void> = [];
 const authorityStreams = new Map<string, AbortController>();
 
-type CapabilitySession = AgentCapabilitySessionList['sessions'][number];
+export type CapabilitySession = AgentCapabilitySessionList['sessions'][number];
 type AgentCapabilityProjectionStore = Pick<
   AgentCapabilityState,
   'loadCatalog' | 'loadKnowledgeDescriptors' | 'loadAgent'
@@ -54,24 +62,77 @@ function capabilitySessionExpiresAtMs(session: CapabilitySession): number {
   );
 }
 
+export function isLiveDesktopCapabilitySession(
+  session: CapabilitySession,
+  nowMs = Date.now(),
+): boolean {
+  return Boolean(session.session_id)
+    && session.platform === 'CLIENT_PLATFORM_DESKTOP'
+    && capabilitySessionExpiresAtMs(session) > nowMs;
+}
+
 export function selectActiveCapabilitySession(
   sessions: readonly CapabilitySession[],
   nowMs = Date.now(),
 ): CapabilitySession | undefined {
-  const active = sessions.filter(
-    (session) =>
-      Boolean(session.session_id)
-      && capabilitySessionExpiresAtMs(session) > nowMs,
-  );
-
-  return active
-    .filter((session) => session.platform === 'CLIENT_PLATFORM_DESKTOP')
+  return sessions
+    .filter((session) => isLiveDesktopCapabilitySession(session, nowMs))
     .sort((left, right) => {
       const expiryDelta =
         capabilitySessionExpiresAtMs(right) - capabilitySessionExpiresAtMs(left);
       if (expiryDelta !== 0) return expiryDelta;
       return right.lease_revision - left.lease_revision;
     })[0];
+}
+
+// Resolves the session a turn must pin: the readiness-selected session when
+// it is still live in Station's session list, otherwise the current live
+// selection. Returns undefined when no desktop executor is registered, in
+// which case client-owned capabilities are unavailable and the composer gate
+// blocks dispatch rather than pinning an orphaned session.
+export function resolvePinnedClientCapabilitySessionId(
+  readinessSelectedSessionId: string | undefined,
+  sessions: readonly CapabilitySession[] = useAgentCapabilityStore.getState().capabilitySessions,
+  nowMs = Date.now(),
+): string | undefined {
+  if (
+    readinessSelectedSessionId
+    && sessions.some(
+      (session) =>
+        session.session_id === readinessSelectedSessionId
+        && isLiveDesktopCapabilitySession(session, nowMs),
+    )
+  ) {
+    return readinessSelectedSessionId;
+  }
+  return selectActiveCapabilitySession(sessions, nowMs)?.session_id;
+}
+
+function clearCapabilitySessionWarmup(): void {
+  if (warmupTimer !== null) {
+    clearTimeout(warmupTimer);
+    warmupTimer = null;
+  }
+  warmupAttempts = 0;
+}
+
+function scheduleCapabilitySessionWarmup(generation: number): void {
+  if (!installed || warmupTimer !== null) return;
+  if (warmupAttempts >= SESSION_WARMUP_ATTEMPTS) {
+    warmupAttempts = 0;
+    return;
+  }
+  warmupTimer = setTimeout(() => {
+    warmupTimer = null;
+    if (!installed || generation !== runtimeGeneration) return;
+    warmupAttempts += 1;
+    void loadAgentCapabilities('capability-session-warmup').catch((error) => {
+      log.warn('agentCapabilityRuntime', 'capability session warmup failed', {
+        attempt: warmupAttempts,
+        error: String(error),
+      });
+    });
+  }, SESSION_WARMUP_INTERVAL_MS);
 }
 
 export async function reconcileAgentCapabilityProjection(
@@ -157,11 +218,18 @@ async function loadAgentCapabilities(reason: string): Promise<void> {
     ]),
   ]);
   if (!installed || generation !== runtimeGeneration) return;
+  const capabilityStore = useAgentCapabilityStore.getState();
+  capabilityStore.setCapabilitySessions(listedCapabilitySessions.sessions);
   const activeSession = selectActiveCapabilitySession(
     listedCapabilitySessions.sessions,
   );
+  if (activeSession) {
+    clearCapabilitySessionWarmup();
+  } else {
+    scheduleCapabilitySessionWarmup(generation);
+  }
 
-  const authorityStore = useAgentCapabilityStore.getState();
+  const authorityStore = capabilityStore;
   const agentState = useAgentStore.getState();
   const selectedAgent = agentState.agents.find(
     (agent) => agent.name === agentState.selectedAgent,
@@ -352,6 +420,7 @@ export const agentCapabilityRuntime: RuntimeDescriptor = {
     }
     runtimeGeneration += 1;
     clearReconcileTimer();
+    clearCapabilitySessionWarmup();
     clearProjectionInvalidation();
     clearAuthorityStreams();
     useAgentCapabilityStore.getState().reset();

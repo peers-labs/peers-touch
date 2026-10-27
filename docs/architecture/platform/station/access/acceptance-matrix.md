@@ -97,14 +97,15 @@
 - 同一测试账号在一个 Desktop 与一个 Mobile 上同时登录后，两端 Session 均有效。
 - 两端使用不同 `device_id`，但共享相同 actor PTID，并能从同一 Station 读取、
   发送和接收 Conversation。
-- 第二个 Desktop 使用不同安装/存储身份登录后，旧 Desktop 收到
-  `session_revoked/kicked`，Mobile Session 保持有效。
-- 第二个 Mobile 使用不同模拟器、安装和存储身份登录后，旧 Mobile 收敛到
-  `session_revoked/kicked`，Desktop Session 保持有效。
+- 第二个 Desktop 使用不同安装/存储身份登录后，所有已有设备保持有效。
+- 第二部 Mobile 使用不同模拟器、安装和存储身份登录后，原手机与 Desktop
+  保持有效；各手机可独立收发、重登、退出和撤销。
 - 密码 Access Gate、OAuth credential acknowledgement 和
-  `/actor/session/takeover` 使用同一 canonical client-class slot。
-- 两个同类别登录并发时，Station 最终最多保留一个未撤销 Session；不得通过
-  `desktop-native`、窗口 label、设备型号或新 `device_id` 创建第二个类别槽。
+  `/actor/session/takeover` 使用同一 Station/Actor/device slot。
+- 同设备并发激活最终最多保留一个未撤销 Session，不同 device 可并存。
+  类别只接受 canonical 值，窗口 label 与设备型号不得替代安装身份。
+- 缺少可信 Station/device 绑定的旧会话被撤销并要求重新认证；索引迁移事务
+  不能误撤销不同设备，也不能从 IP/User-Agent 推测绑定。
 
 ## 4. 必需运行单元
 
@@ -117,7 +118,7 @@
 | Adversarial client | forgery、replay、wrong-route、oversize、overload 与 cancellation |
 | Relay observer | 无客户端 Station Session credential、Access payload 或业务明文 |
 | Mixed same-Station | 不同账号 Desktop↔Mobile Chat；同一账号 Desktop+Mobile 并存 |
-| Same-class takeover | 双 Desktop 和双 Mobile 分别证明新 Session 接管旧同类端 |
+| Multi-device sessions | 双 Desktop 与双 Mobile 并存、同设备替换及独立撤销 |
 | Mixed cross-Station | 显式 Federation context 与 Relay 隔离 |
 | Fresh install/reset | 仅依赖当前 scoped key、route 与 schema |
 

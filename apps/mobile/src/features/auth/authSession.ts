@@ -474,22 +474,13 @@ export async function submitStationSchemaGate(input: {
   values: Record<string, string | boolean | number>;
   submissionId?: string;
 }): Promise<{ decision: AccessDecision; session: NativeAccessSession | null }> {
-  const fields = parseGateFields(input.gate);
-  const values = fields.flatMap((field): NativeGenericFieldValue[] => {
-    const value = input.values[field.name];
-    if (value === undefined && !field.required) return [];
-    return [{
-      fieldName: field.name,
-      value: scalarValue(field, value),
-    }];
-  });
   const result = await submitNativeAccessGate({
     stationPeerId: input.stationPeerId,
     stationUrl: input.stationUrl,
     attemptId: input.attemptId,
     gate: input.gate,
     submissionId: input.submissionId,
-    actionInput: { kind: 'generic', fields: values },
+    actionInput: schemaGateInput(input.gate, input.values),
   });
   const decision = requireSupportedAccessDecision(normalizeDecision(result.decision));
   if (isAccessGranted(decision) && oauthAccessGrantFinalizer) {
@@ -498,6 +489,20 @@ export async function submitStationSchemaGate(input: {
   return {
     decision,
     session: nativeAccessSession(input.stationPeerId, input.stationUrl, result.session),
+  };
+}
+
+export function schemaGateInput(
+  gate: AccessGate,
+  values: Record<string, string | boolean | number>,
+): NativeAccessGateInput {
+  return {
+    kind: 'generic',
+    fields: parseGateFields(gate).flatMap((field): NativeGenericFieldValue[] => {
+      const value = values[field.name];
+      if (value === undefined && !field.required) return [];
+      return [{ fieldName: field.name, value: scalarValue(field, value) }];
+    }),
   };
 }
 
@@ -595,7 +600,7 @@ function scalarValue(
   }
 }
 
-function gateTypeNumber(type: number | string): number {
+export function gateTypeNumber(type: number | string): number {
   if (typeof type === 'number') return type;
   const values: Record<string, number> = {
     ACCESS_GATE_TYPE_AUTH_LOGIN,

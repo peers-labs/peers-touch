@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 
-from tooling.acceptance.core.errors import NativeInputBlocked
+from tooling.acceptance.core.errors import DriverError, NativeInputBlocked
 
 
 class NativeInputMode(str, Enum):
@@ -79,6 +79,7 @@ class NativeKey(str, Enum):
     L = "l"
     SLASH = "slash"
     V = "v"
+    COMMA = "comma"
     DELETE = "delete"
     ENTER = "enter"
     TAB = "tab"
@@ -212,6 +213,29 @@ class NativeDesktopAdapter(ABC):
         self.require_exclusive_input("post mouse to process")
         self.activate_process(process_id)
         self.post_mouse(actions, point)
+
+    def post_scroll(
+        self,
+        point: tuple[float, float],
+        *,
+        delta_y: int,
+    ) -> None:
+        """Scroll in pixels; positive delta moves down through the document."""
+        self.require_exclusive_input("post native scroll")
+        raise DriverError(f"Native pixel scrolling is unavailable on {self.platform}")
+
+    def post_scroll_to_process(
+        self,
+        process_id: int,
+        point: tuple[float, float],
+        *,
+        delta_y: int,
+    ) -> None:
+        self.require_exclusive_input("post scroll to process")
+        self.activate_process(process_id)
+        if not self.window_stack_at_point(point).point_owned_by(process_id):
+            raise DriverError("Native scroll target is not owned by the actor")
+        self.post_scroll(point, delta_y=delta_y)
 
     def drag_mouse(
         self,

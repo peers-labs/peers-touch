@@ -46,4 +46,6 @@ export const messagingAttachmentAccess = new ChatAttachmentAccessController<
   handle: (projection) => projection.accessHandle,
   pending: (projection) => projection.state === AttachmentAccessState.DOWNLOADING
     || projection.state === AttachmentAccessState.VERIFYING,
+  pendingError: (error) => error instanceof RustCommandException
+    && error.message === 'FILE_PROJECTION_UNAVAILABLE',
 });

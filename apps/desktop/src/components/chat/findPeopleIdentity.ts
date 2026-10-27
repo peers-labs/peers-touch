@@ -116,3 +116,40 @@ export function catalogEntryToSearchResult(
     homeStationName: entry.homeStationName,
   };
 }
+
+/** Structural shape of the local actor-search API item (see desktop_api). */
+interface LocalActorSearchItem {
+  actorPtid: string;
+  username: string;
+  displayName: string;
+  avatar?: string;
+  homeStationPeerId: string;
+}
+
+export function localActorToSearchResult(
+  actor: LocalActorSearchItem,
+): ActorSearchResult | null {
+  const id = actor.actorPtid.trim();
+  if (!id) return null;
+
+  return {
+    id,
+    username: actor.username,
+    displayName: actor.displayName || actor.username,
+    avatar: actor.avatar || '',
+    homeStationPeerId: actor.homeStationPeerId,
+  };
+}
+
+export function mergeActorSearchResults(
+  ...groups: ReadonlyArray<ReadonlyArray<ActorSearchResult>>
+): ActorSearchResult[] {
+  const byActorPtid = new Map<string, ActorSearchResult>();
+  for (const group of groups) {
+    for (const actor of group) {
+      if (!actor.id.trim()) continue;
+      byActorPtid.set(actor.id, actor);
+    }
+  }
+  return [...byActorPtid.values()];
+}
