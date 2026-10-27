@@ -308,6 +308,7 @@
   "provider.skills.detail.rawProtocol": "原始协议",
   "provider.skills.detail.noFrontmatter": "无 frontmatter",
   "provider.skills.detail.overview": "概览",
+  "provider.skills.detail.manifestFile": "SKILL.md",
   "provider.skills.detail.developedBy": "开发者",
   "provider.skills.detail.details": "详情",
   "provider.skills.detail.version": "版本",

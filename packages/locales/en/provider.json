@@ -308,6 +308,7 @@
   "provider.skills.detail.rawProtocol": "Raw Protocol",
   "provider.skills.detail.noFrontmatter": "No frontmatter",
   "provider.skills.detail.overview": "Overview",
+  "provider.skills.detail.manifestFile": "SKILL.md",
   "provider.skills.detail.developedBy": "Developed by",
   "provider.skills.detail.details": "Details",
   "provider.skills.detail.version": "Version",

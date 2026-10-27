@@ -957,7 +957,7 @@ function MarketSkillDetailModal({
             label: (
               <Flexbox horizontal gap={6} align="center">
                 <Code2 size={14} />
-                <span>SKILL.md</span>
+                <span>{t('provider.skills.detail.manifestFile')}</span>
               </Flexbox>
             ),
             children: loading ? (
