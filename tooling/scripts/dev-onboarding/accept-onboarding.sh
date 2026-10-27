@@ -139,8 +139,10 @@ export PATH=/opt/peers-dev/go/bin:/opt/peers-dev/node/bin:$HOME/.cargo/bin:$PATH
 cd "$ROOT"
 pnpm install
 pnpm applets:build
-# Desktop: TS contract/type checks plus a full Rust check. No GUI is launched.
+# Desktop: TS contract/type checks, the vite bundle (tauri generate_context!
+# needs ../dist), then a full Rust check. No GUI is launched.
 pnpm --filter @peers-touch/app-desktop run check
+pnpm --filter @peers-touch/app-desktop run build
 (cd apps/desktop/src-tauri && cargo check)
 # Mobile on Linux stops before the iOS/Android project gates (xcodebuild/JDK
 # are platform-specific); web bundle and Rust crates must still resolve.
