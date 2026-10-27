@@ -165,31 +165,12 @@ if [ -d "\$ROOT" ]; then
   cd "\$ROOT"
   docker compose -p pt_local -f tooling/docker/compose.yml --env-file tooling/docker/.env \
     --profile infra --profile station down -v --rmi local --remove-orphans 2>/dev/null || true
+  # Remove this clone's registration (helper lives in the clone, run before rm).
+  python3 tooling/scripts/dev-onboarding/reset_registration.py "\$ROOT" 2>/dev/null || true
 fi
 set -e
 rm -rf "\$ROOT"
 rm -f "\$HOME"/.peers-touch/dev/runtime/local/pids/*.pid 2>/dev/null || true
-# Remove exactly this clone's registration and workspace state, preserving
-# any unrelated registrations in the shared machine registry.
-python3 - "\$ROOT" <<'PY'
-import json, os, pathlib, shutil, sys
-root = os.path.realpath(sys.argv[1])
-dev = pathlib.Path.home() / '.peers-touch' / 'dev'
-registry = dev / 'registry.json'
-if registry.exists():
-    data = json.loads(registry.read_text())
-    kept = [r for r in data.get('registrations', [])
-            if os.path.realpath(r.get('canonicalRoot', '')) != root]
-    removed = [r for r in data.get('registrations', []) if r not in kept]
-    data['registrations'] = kept
-    registry.write_text(json.dumps(data, indent=2) + '\n')
-    for reg in removed:
-        ws = dev / 'workspaces' / reg.get('workspaceId', '')
-        if ws.parent == dev / 'workspaces' and ws.exists():
-            shutil.rmtree(ws)
-            print('removed workspace', ws)
-    print(f'removed {len(removed)} registration(s)')
-PY
 EOF
   log "reset complete"
 }
@@ -214,10 +195,10 @@ sudo gpasswd -d "$USER" docker 2>/dev/null || true
 sudo rm -rf "$HOME/go"
 rm -rf "$HOME/.cargo" "$HOME/.rustup" "$HOME/.npmrc" "$HOME/.cache/go-build" \
        "$HOME/.config/go" "$HOME/.local/share/pnpm"
-# The machine is a dedicated acceptance host: once its registrations are
-# gone, remove the whole local-dev state directory.
-if [ -f "$HOME/.peers-touch/dev/registry.json" ] \
-   && [ "$(python3 -c 'import json,pathlib;print(len(json.loads(pathlib.Path.home().joinpath(".peers-touch/dev/registry.json").read_text()).get("registrations",[])))')" = "0" ]; then
+# Dedicated acceptance host: do_reset already removed this clone's registration;
+# drop the whole local-dev state when none remain.
+if [ ! -s "$HOME/.peers-touch/dev/registry.json" ] \
+   || ! grep -q '"canonicalRoot"' "$HOME/.peers-touch/dev/registry.json" 2>/dev/null; then
   rm -rf "$HOME/.peers-touch"
 fi
 sudo apt-get update -qq
