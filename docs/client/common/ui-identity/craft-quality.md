@@ -1,8 +1,12 @@
-# Client Experience Craft Quality
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-11
+review-cadence: quarterly
+next-review: 2027-01-27
+---
 
-> Status: Canonical client craft and review contract.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-10-11.
+# Client Experience Craft Quality
 
 ## 1. Purpose
 

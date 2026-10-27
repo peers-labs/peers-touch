@@ -1,8 +1,12 @@
-# UI Identity Foundations
+---
+status: active
+owner: Client Platform Team
+updated: 2026-06-18
+review-cadence: quarterly
+next-review: 2027-01-27
+---
 
-> Status: Canonical client-level UI identity foundation.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-18.
+# UI Identity Foundations
 
 ## 1. North Star
 

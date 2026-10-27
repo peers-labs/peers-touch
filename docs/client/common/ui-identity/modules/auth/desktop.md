@@ -1,8 +1,12 @@
-# Desktop Auth UI Identity
+---
+status: active
+owner: Client Platform Team
+updated: 2026-06-20
+review-cadence: semiannual
+next-review: 2027-04-27
+---
 
-> Status: Desktop refinement for Auth UI Identity.
-> Audience: Desktop engineers, reviewers, and AI agents.
-> Updated: 2026-06-20.
+# Desktop Auth UI Identity
 
 ## 1. Purpose
 

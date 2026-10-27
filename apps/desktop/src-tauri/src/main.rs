@@ -1438,10 +1438,8 @@ fn main() {
                     "messaging: failed to stop all profile workers during shutdown"
                 );
             }
-            app.state::<Arc<
-                interface::tauri_commands::messaging_files::NativeFilePresentations,
-            >>()
-            .shutdown();
+            app.state::<Arc<interface::tauri_commands::messaging_files::NativeFilePresentations>>()
+                .shutdown();
             let supervisor = app.state::<Arc<application::presence::PresenceSupervisor>>();
             let sessions = state.sessions.snapshot_all();
             tracing::info!(

@@ -855,10 +855,18 @@ impl StationClient {
         token: &str,
     ) -> Result<Payload, StationClientError> {
         let response = self.execute_wire_for_station(
-            station_peer_id, method, path, None, Some(token), None,
-            Some("application/protobuf"), "application/protobuf",
-            StationRequestBody::Empty, StationTransportPolicy::Interactive,
-            TrafficClass::Interactive, None,
+            station_peer_id,
+            method,
+            path,
+            None,
+            Some(token),
+            None,
+            Some("application/protobuf"),
+            "application/protobuf",
+            StationRequestBody::Empty,
+            StationTransportPolicy::Interactive,
+            TrafficClass::Interactive,
+            None,
         )?;
         decode_peers_envelope(&response.body)
     }

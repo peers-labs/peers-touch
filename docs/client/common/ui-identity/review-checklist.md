@@ -1,8 +1,15 @@
-# UI Identity Review Checklist
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-27
+review-cadence: quarterly
+next-review: 2027-01-27
+related:
+  - docs/client/common/ui-identity/layout.md
+  - docs/client/common/ui-identity/patterns/optimistic-commit.md
+---
 
-> Status: Canonical UI identity review checklist.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-10-12.
+# UI Identity Review Checklist
 
 ## 1. Purpose
 
@@ -215,6 +222,18 @@ measured geometry, not screenshots alone.
   recovery, pagination and valid page correction after deletion. Verify
   stable dialog geometry, shared read/decision state, teardown and source
   focus restoration.
+- [ ] **Multi-phase overlays hold one geometry.** A dialog/sheet that changes
+  phase (QR → approve → processing → complete) reserves its terminal
+  geometry; measured width/height are identical across every phase, the
+  status/error text shares one reserved line, and the footer reserves the
+  real button height even when empty. Probe every phase transition, not only
+  the open state (layout.md §3.2).
+- [ ] **Optimistic commits are real and recoverable.** Immediate local
+  preview follows genuine progress (transport bytes/steps, not timers),
+  swaps to the authoritative asset only when ready, and restores the prior
+  value on any rejection; progress/status semantics are siblings of the
+  interactive role and reduced-motion keeps the meaning
+  (patterns/optimistic-commit.md).
 - [ ] **Painted boundaries are checked.** Foreground contours that overlap
   another surface remain visible on all four edges and rounded corners
   (components.md §4). Sample screenshot pixels against the boundary's declared

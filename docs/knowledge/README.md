@@ -84,8 +84,16 @@ referenced-by:
 related:
   - <ADR / architecture doc / external link>
 detected: YYYY-MM-DD
+owner: <owning team>            # recommended
+review-cadence: annual          # recommended: quarterly | semiannual | annual | on-change
+next-review: YYYY-MM-DD         # required when review-cadence is set
 ---
 ```
+
+The optional `owner` / `review-cadence` / `next-review` fields use the same
+review-cadence mechanism defined for client contracts in
+`docs/client/common/ui-identity/README.md §9`. They are recommended for new
+entries; existing entries gain them incrementally.
 
 The `owns:` field is **machine-readable** and load-bearing:
 

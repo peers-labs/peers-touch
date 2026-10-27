@@ -1390,35 +1390,46 @@ impl MessagingEngine {
             }
         }
         let mut transfer = self.store.attachment_transfer(attachment_id)?;
-        if let Some(access) = self.cached_attachment_access(
-            owner, &projection, transfer.as_ref(), retry,
-        )? {
+        if let Some(access) =
+            self.cached_attachment_access(owner, &projection, transfer.as_ref(), retry)?
+        {
             return Ok(access);
         }
-        if start_download && !cache.is_file()
+        if start_download
+            && !cache.is_file()
             && transfer.as_ref().is_some_and(|value| {
-                value.direction == 2 && value.state
-                    == messaging_core::proto::chat::AttachmentTransferState::Complete as i32
+                value.direction == 2
+                    && value.state
+                        == messaging_core::proto::chat::AttachmentTransferState::Complete as i32
             })
         {
-            let descriptor = projection.metadata.object.as_ref()
+            let descriptor = projection
+                .metadata
+                .object
+                .as_ref()
                 .ok_or("FILE_DESCRIPTOR_UNAVAILABLE")?;
-            let plaintext_sha256 = projection.metadata.plaintext_sha256.as_slice()
-                .try_into().map_err(|_| "FILE_COMMITMENT_INVALID")?;
+            let plaintext_sha256 = projection
+                .metadata
+                .plaintext_sha256
+                .as_slice()
+                .try_into()
+                .map_err(|_| "FILE_COMMITMENT_INVALID")?;
             self.attachment_transfer_worker(token.to_string())?
                 .restore_download_cache(
-                    attachment_id, descriptor, &plaintext_sha256,
-                    &cache.to_string_lossy(), now_unix_ms(),
+                    attachment_id,
+                    descriptor,
+                    &plaintext_sha256,
+                    &cache.to_string_lossy(),
+                    now_unix_ms(),
                 )?;
             transfer = self.store.attachment_transfer(attachment_id)?;
-            if let Some(access) = self.cached_attachment_access(
-                owner, &projection, transfer.as_ref(), retry,
-            )? {
+            if let Some(access) =
+                self.cached_attachment_access(owner, &projection, transfer.as_ref(), retry)?
+            {
                 return Ok(access);
             }
         }
-        let access =
-            attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
+        let access = attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
         if start_download && access.state == AttachmentAccessState::Remote as i32 {
             let download =
                 attachment_download_transfer(&self.profile_id, &projection, now_unix_ms())?;
@@ -1495,9 +1506,12 @@ impl MessagingEngine {
                     std::fs::remove_file(&cache).map_err(|_| "FILE_CACHE_CLEANUP_FAILED")?;
                     Ok(None)
                 } else {
-                    let mut access = attachment_access_projection(&projection.metadata, transfer, false);
+                    let mut access =
+                        attachment_access_projection(&projection.metadata, transfer, false);
                     access.state = AttachmentAccessState::Failed as i32;
-                    access.error_code = messaging_core::proto::chat::AttachmentTransferErrorCode::IntegrityFailed as i32;
+                    access.error_code =
+                        messaging_core::proto::chat::AttachmentTransferErrorCode::IntegrityFailed
+                            as i32;
                     access.retryable = true;
                     Ok(Some(access))
                 }
@@ -5671,14 +5685,14 @@ mod tests {
             let fixture = std::env::temp_dir().join(&profile);
             std::fs::create_dir_all(&fixture).unwrap();
             let database = fixture.join("fixture.db");
-            let store = Arc::new(MessagingStore::from_connection(
-                rusqlite::Connection::open(&database).unwrap(),
-            ).unwrap());
+            let store = Arc::new(
+                MessagingStore::from_connection(rusqlite::Connection::open(&database).unwrap())
+                    .unwrap(),
+            );
             let bytes = b"verified completed receiver attachment";
             let material = AttachmentCryptoMaterial::generate(bytes.len() as u64).unwrap();
-            let encrypted = secure_content_core::object::encrypt_object_chunk(
-                &material, 0, bytes,
-            ).unwrap();
+            let encrypted =
+                secure_content_core::object::encrypt_object_chunk(&material, 0, bytes).unwrap();
             let descriptor = crate::model::chat::EncryptedObjectDescriptor {
                 object_id: "object".into(),
                 storage_ref: "opaque".into(),
@@ -5699,8 +5713,9 @@ mod tests {
                 std::fs::write(format!("{}.decrypting", cache.display()), bytes).unwrap();
             }
             let connection = rusqlite::Connection::open(&database).unwrap();
-            connection.execute_batch(
-                "INSERT INTO messaging_conversations
+            connection
+                .execute_batch(
+                    "INSERT INTO messaging_conversations
                    (conversation_id,authority_station_id,federation_id,kind,name,owner_ptid,
                     membership_epoch,mls_epoch,active,updated_at_unix_ms)
                  VALUES ('conversation','station','federation',2,'fixture','ptid:alice',1,1,1,10);
@@ -5709,42 +5724,70 @@ mod tests {
                     sender_device_id,plaintext,delivery_state,committed_at_unix_ms)
                  VALUES ('conversation','event',1,'message','ptid:alice','device','',
                          'consumed',10);",
-            ).unwrap();
-            connection.execute(
-                "INSERT INTO messaging_attachment_projections
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_attachment_projections
                    (message_id,attachment_id,object_id,storage_ref,filename,mime_type,
                     content_kind,plaintext_size,plaintext_sha256,object_key,base_nonce,
                     descriptor_bytes,availability_state,local_cache_path)
                  VALUES ('message','attachment','object','opaque','report.txt','text/plain',
                          1,?1,?2,?3,?4,?5,'available',?6)",
-                rusqlite::params![
-                    bytes.len() as u64, Sha256::digest(bytes).as_slice(),
-                    material.object_key().as_slice(), material.base_nonce().as_slice(),
-                    descriptor.encode_to_vec(), cache.to_string_lossy().as_ref(),
-                ],
-            ).unwrap();
+                    rusqlite::params![
+                        bytes.len() as u64,
+                        Sha256::digest(bytes).as_slice(),
+                        material.object_key().as_slice(),
+                        material.base_nonce().as_slice(),
+                        descriptor.encode_to_vec(),
+                        cache.to_string_lossy().as_ref(),
+                    ],
+                )
+                .unwrap();
             drop(connection);
-            let projection = store.attachment_download_projection("attachment").unwrap().unwrap();
+            let projection = store
+                .attachment_download_projection("attachment")
+                .unwrap()
+                .unwrap();
             let mut transfer = attachment_download_transfer(&profile, &projection, 10).unwrap();
             transfer.state = AttachmentTransferState::Complete as i32;
             transfer.descriptor_sha256 = Sha256::digest(descriptor.encode_to_vec()).to_vec();
             transfer.completed_chunk_bitmap = vec![1];
             store.create_attachment_transfer(&transfer).unwrap();
             let engine = MessagingEngine::from_store(
-                StationClient::testing_unavailable(), profile.clone(), endpoint("device"), store,
-            ).unwrap();
-            let failed = engine.attachment_access("token", "window", "attachment", true, false).unwrap();
-            assert_eq!(failed.state, messaging_core::proto::chat::AttachmentAccessState::Failed as i32);
+                StationClient::testing_unavailable(),
+                profile.clone(),
+                endpoint("device"),
+                store,
+            )
+            .unwrap();
+            let failed = engine
+                .attachment_access("token", "window", "attachment", true, false)
+                .unwrap();
+            assert_eq!(
+                failed.state,
+                messaging_core::proto::chat::AttachmentAccessState::Failed as i32
+            );
             assert!(failed.retryable && cache.is_file());
-            let restored = engine.attachment_access("token", "window", "attachment", true, true).unwrap();
+            let restored = engine
+                .attachment_access("token", "window", "attachment", true, true)
+                .unwrap();
             if recoverable_staging {
-                assert_eq!(restored.state, messaging_core::proto::chat::AttachmentAccessState::Ready as i32);
+                assert_eq!(
+                    restored.state,
+                    messaging_core::proto::chat::AttachmentAccessState::Ready as i32
+                );
                 assert!(!restored.access_handle.is_empty());
                 assert_eq!(std::fs::read(&cache).unwrap(), bytes);
             } else {
-                assert_eq!(restored.state, messaging_core::proto::chat::AttachmentAccessState::Downloading as i32);
-                assert_eq!(engine.store.next_due_attachment_download(i64::MAX).unwrap(),
-                           Some("attachment".into()));
+                assert_eq!(
+                    restored.state,
+                    messaging_core::proto::chat::AttachmentAccessState::Downloading as i32
+                );
+                assert_eq!(
+                    engine.store.next_due_attachment_download(i64::MAX).unwrap(),
+                    Some("attachment".into())
+                );
                 assert!(!cache.exists());
             }
             drop(engine);
@@ -6160,7 +6203,9 @@ mod tests {
 
     #[test]
     fn registry_teardown_fences_file_operations_on_retained_engines() {
-        for (all_profiles, fail_worker_drain) in [(false, false), (true, false), (false, true), (true, true)] {
+        for (all_profiles, fail_worker_drain) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
             let registry = EngineRegistry::default();
             let engine = Arc::new(
                 MessagingEngine::from_profile_store(
@@ -6171,30 +6216,46 @@ mod tests {
                     3,
                     false,
                     Arc::new(MessagingStore::in_memory().unwrap()),
-                ).unwrap(),
+                )
+                .unwrap(),
             );
-            registry.engines.lock().unwrap()
+            registry
+                .engines
+                .lock()
+                .unwrap()
                 .insert(engine.profile_id().to_string(), engine.clone());
             let root = std::env::temp_dir().join(format!("chat-teardown-{}", Ulid::new()));
             std::fs::create_dir_all(&root).unwrap();
             let cache = root.join("cached.txt");
             let bytes = b"verified attachment before logout";
             std::fs::write(&cache, bytes).unwrap();
-            let handle = engine.attachment_file_access.grant(
-                "window", "attachment", &root, &cache, "report.txt", "text/plain",
-                bytes.len() as u64, &Sha256::digest(bytes),
-            ).unwrap();
+            let handle = engine
+                .attachment_file_access
+                .grant(
+                    "window",
+                    "attachment",
+                    &root,
+                    &cache,
+                    "report.txt",
+                    "text/plain",
+                    bytes.len() as u64,
+                    &Sha256::digest(bytes),
+                )
+                .unwrap();
             let epoch = engine.attachment_file_access.epoch();
-            assert!(engine.attachment_file_access.read_asset(
-                "window", &handle, None, false,
-            ).is_ok());
+            assert!(engine
+                .attachment_file_access
+                .read_asset("window", &handle, None, false,)
+                .is_ok());
             if fail_worker_drain {
                 std::thread::scope(|scope| {
                     let registry_ref = &registry;
-                    let _ = scope.spawn(move || {
-                        let _guard = registry_ref.workers.lock().unwrap();
-                        panic!("injected worker registry failure");
-                    }).join();
+                    let _ = scope
+                        .spawn(move || {
+                            let _guard = registry_ref.workers.lock().unwrap();
+                            panic!("injected worker registry failure");
+                        })
+                        .join();
                 });
             }
             let result = if all_profiles {
@@ -6204,13 +6265,15 @@ mod tests {
             };
             assert_eq!(result.is_err(), fail_worker_drain);
             assert!(!engine.attachment_file_access.epoch_is_current(epoch));
-            assert!(engine.attachment_file_access.read_asset(
-                "window", &handle, None, false,
-            ).is_err());
+            assert!(engine
+                .attachment_file_access
+                .read_asset("window", &handle, None, false,)
+                .is_err());
             let exported = root.join("exported.txt");
-            assert!(engine.attachment_file_access.save_copy(
-                "window", &handle, &exported,
-            ).is_err());
+            assert!(engine
+                .attachment_file_access
+                .save_copy("window", &handle, &exported,)
+                .is_err());
             assert!(!exported.exists());
             std::fs::remove_dir_all(root).unwrap();
         }

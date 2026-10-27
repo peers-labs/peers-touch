@@ -118,9 +118,7 @@ impl PublicReader {
                     transport_error_kind = ?error.kind,
                     "public Social Search read failed"
                 );
-                ctx.check()
-                    .err()
-                    .unwrap_or_else(|| transport_error(error))
+                ctx.check().err().unwrap_or_else(|| transport_error(error))
             })?;
         ctx.check()?;
         Ok(response)

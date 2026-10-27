@@ -134,12 +134,15 @@ pub async fn messaging_attachment_access(
         let current = active_engine(state.inner(), &window)
             .is_ok_and(|(_, _, engine)| Arc::ptr_eq(&expected_engine, &engine));
         if !current
-            || file_owner(state.inner(), window.label()).ok().as_deref() != Some(expected_owner.as_str())
-            || !expected_engine.attachment_file_access.epoch_is_current(epoch)
+            || file_owner(state.inner(), window.label()).ok().as_deref()
+                != Some(expected_owner.as_str())
+            || !expected_engine
+                .attachment_file_access
+                .epoch_is_current(epoch)
         {
-            expected_engine.attachment_file_access.release(
-                &expected_owner, &projection.access_handle,
-            );
+            expected_engine
+                .attachment_file_access
+                .release(&expected_owner, &projection.access_handle);
             return Err("FILE_ACCESS_STALE".into());
         }
     }
@@ -245,11 +248,9 @@ pub async fn messaging_attachment_file_action(
     let staging_root = engine.attachment_handoff_root()?;
     let worker_root = staging_root.clone();
     let staged = tauri::async_runtime::spawn_blocking(move || {
-        stage_engine.attachment_file_access.stage_copy(
-            &stage_owner,
-            &handle,
-            &worker_root,
-        )
+        stage_engine
+            .attachment_file_access
+            .stage_copy(&stage_owner, &handle, &worker_root)
     })
     .await
     .map_err(|_| "FILE_COPY_WORKER_FAILED")??;
@@ -263,7 +264,10 @@ pub async fn messaging_attachment_file_action(
         native_preview(
             &staged,
             &staging_root,
-            window.state::<Arc<NativeFilePresentations>>().inner().clone(),
+            window
+                .state::<Arc<NativeFilePresentations>>()
+                .inner()
+                .clone(),
             move || ensure_current(&current_state, &current_window, &engine, &request).is_ok(),
         )
     } else {
@@ -414,7 +418,9 @@ pub fn asset_response(
             if query != "representation=preview" {
                 return Err("FILE_REPRESENTATION_INVALID".into());
             }
-            return engine.attachment_file_access.read_image_preview(&owner, handle, head);
+            return engine
+                .attachment_file_access
+                .read_image_preview(&owner, handle, head);
         }
         engine.attachment_file_access.read_asset(
             &owner,
@@ -437,7 +443,10 @@ fn asset_http_response(
         .header("cache-control", "no-store")
         .header("x-content-type-options", "nosniff")
         .header("content-security-policy", "default-src 'none'; sandbox")
-        .header("access-control-expose-headers", "content-range, content-length, accept-ranges")
+        .header(
+            "access-control-expose-headers",
+            "content-range, content-length, accept-ranges",
+        )
         .header("access-control-allow-origin", "*");
     match result {
         Ok(asset) => {

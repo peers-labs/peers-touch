@@ -830,7 +830,10 @@ pub fn social_get_comments(
         );
     }
     if input.cursor.as_ref().is_some_and(|value| !value.is_empty())
-        && input.anchor_comment_id.as_ref().is_some_and(|value| !value.is_empty())
+        && input
+            .anchor_comment_id
+            .as_ref()
+            .is_some_and(|value| !value.is_empty())
     {
         return AppResult::fail(
             ErrorCode::InvalidArgument,

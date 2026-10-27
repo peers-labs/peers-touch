@@ -404,7 +404,10 @@ mod tests {
         for selected in 0..3 {
             let bindings = publication_bindings();
             let source = bindings[selected].source.clone();
-            for unrelated in bindings.iter().filter(|b| b.source_id() != source.source_id) {
+            for unrelated in bindings
+                .iter()
+                .filter(|b| b.source_id() != source.source_id)
+            {
                 bindings[0]
                     .current
                     .lock()

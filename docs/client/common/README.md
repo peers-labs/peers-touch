@@ -1,3 +1,10 @@
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-27
+review-cadence: on-change
+---
+
 # Client Common Docs
 
 本目录承载 Desktop 与 Mobile 共同遵守的客户端通用契约。

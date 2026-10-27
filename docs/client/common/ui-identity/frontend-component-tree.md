@@ -1,10 +1,12 @@
-# Frontend Component Tree Standard
+---
+status: active
+owner: Client Platform Team
+updated: 2026-09-11
+review-cadence: annual
+next-review: 2027-10-27
+---
 
-> **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-09-11
-> **Owner**: Client Platform Team
-> **Module**: `docs/client/common/ui-identity/`
+# Frontend Component Tree Standard
 
 ---
 

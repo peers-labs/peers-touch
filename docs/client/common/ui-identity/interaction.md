@@ -1,8 +1,15 @@
-# UI Identity Interaction
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-27
+review-cadence: quarterly
+next-review: 2027-01-27
+related:
+  - docs/client/common/ui-identity/patterns/optimistic-commit.md
+  - docs/client/common/ui-identity/accessibility.md
+---
 
-> Status: Canonical interaction contract for client UI identity.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-18.
+# UI Identity Interaction
 
 ## 1. Purpose
 
@@ -55,6 +62,10 @@ Rules:
 - Publish may show pending content only if failure can restore the draft.
 - Delete, block, moderation, and privacy-sensitive actions must confirm server success before removing critical context.
 - Station policy state must never be fabricated locally; show pending policy only as pending.
+- Immediate local preview with real progress and rollback (media uploads,
+  visible commits) follows one reusable contract:
+  [patterns/optimistic-commit.md](./patterns/optimistic-commit.md). Do not
+  restate its state machine, progress, or accessibility rules per surface.
 
 ## 5. Feedback
 

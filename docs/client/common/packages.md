@@ -1,9 +1,12 @@
-# Client Shared Packages
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-17
+review-cadence: annual
+next-review: 2027-10-27
+---
 
-> **Status**: active
-> **Version**: v1.1
-> **Updated**: 2026-10-17
-> **Owner**: Client Platform Team
+# Client Shared Packages
 
 ---
 

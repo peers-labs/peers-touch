@@ -1,8 +1,12 @@
-# Social UI Identity
+---
+status: active
+owner: Client Platform Team
+updated: 2026-06-18
+review-cadence: semiannual
+next-review: 2027-04-27
+---
 
-> Status: Canonical module UI identity for Human Social.
-> Audience: Product designers, client engineers, and reviewers.
-> Updated: 2026-06-18.
+# Social UI Identity
 
 ## 1. Purpose
 

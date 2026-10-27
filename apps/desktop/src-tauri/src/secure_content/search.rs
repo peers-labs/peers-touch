@@ -180,8 +180,14 @@ pub(super) fn refresh(
              WHERE kind = ?1 AND id = ?2 AND post_id = ?3 AND content_id = ?4
                AND generation = ?5 AND revision = ?6 AND created_at = ?7 AND readable = ?8)",
             params![
-                kind, id, post_id, content_id, generation as i64,
-                revision, created_at, projection.is_some(),
+                kind,
+                id,
+                post_id,
+                content_id,
+                generation as i64,
+                revision,
+                created_at,
+                projection.is_some(),
             ],
             |row| row.get(0),
         )

@@ -10,6 +10,9 @@ referenced-by:                          # other knowledge files that link here
 related:                                # external context: ADR / architecture doc / issue tracker
   - PLACEHOLDER-decision-or-arch-doc.md
 detected: YYYY-MM-DD
+owner: <owning team>                    # recommended; who keeps this entry current
+review-cadence: annual                  # recommended: quarterly | semiannual | annual | on-change
+next-review: YYYY-MM-DD                 # required when review-cadence is set (skip both for on-change)
 ---
 
 <!-- ============================================================ -->

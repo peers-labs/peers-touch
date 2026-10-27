@@ -2232,7 +2232,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             if input.cursor.as_ref().is_some_and(|value| !value.is_empty())
-                && input.anchor_comment_id.as_ref().is_some_and(|value| !value.is_empty())
+                && input
+                    .anchor_comment_id
+                    .as_ref()
+                    .is_some_and(|value| !value.is_empty())
             {
                 return to_json(AppResult::<Vec<u8>>::fail(
                     ErrorCode::InvalidArgument,
