@@ -111,29 +111,43 @@ $(remote_script)
 set -e
 cd "\$ROOT"
 make station-check
+pg="\$(docker ps --format '{{.Names}}' | grep -- '-postgres-1' | head -1)"
 # The four dev accounts must have been seeded at Station startup.
-docker exec \$(docker ps --format '{{.Names}}' | grep -- '-postgres-1' | head -1) \
-  psql -U peers -d peers_touch_local -tAc \
-  "SELECT count(*) FROM touch_actor WHERE username IN ('alice','bob','carol','dave')" \
+docker exec -u postgres "\$pg" psql -U peers -d peers_touch_local -tAc \
+  "SELECT count(*) FROM touch_actor WHERE preferred_username IN ('alice','bob','carol','dave')" \
   | grep -qx 4
-echo "seed: 4 dev accounts present"
+# Fresh schema must not recreate the retired first-generation tables.
+docker exec -u postgres "\$pg" psql -U peers -d peers_touch_local -tAc \
+  "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN
+   ('touch_conversation','touch_conv_member','touch_message','touch_attachment',
+    'touch_receipt','touch_reaction','touch_key_epoch')" \
+  | grep -qx 0
+# Friendship seed: 10 directed edges across the four accounts.
+docker exec -u postgres "\$pg" psql -U peers -d peers_touch_local -tAc "SELECT count(*) FROM follows" \
+  | grep -qx 10
+echo "seed: 4 dev accounts, 10 friendship edges, zero legacy tables"
 EOF
   log "assertions passed"
 }
 
 do_clients() {
   log "client install verification (no GUI started)"
-  rexec <<EOF
-$(remote_script)
-set -e
-export PATH=/opt/peers-dev/go/bin:/opt/peers-dev/node/bin:\$HOME/.cargo/bin:\$PATH
-cd "\$ROOT"
+  rexec <<'EOF'
+set -euo pipefail
+ROOT="$HOME/$ACCEPT_DIR_NAME"
+export PATH=/opt/peers-dev/go/bin:/opt/peers-dev/node/bin:$HOME/.cargo/bin:$PATH
+cd "$ROOT"
 pnpm install
 pnpm applets:build
-bash model/build.sh
+# Desktop: TS contract/type checks plus a full Rust check. No GUI is launched.
 pnpm --filter @peers-touch/app-desktop run check
-pnpm --filter @peers-touch/app-mobile run check
 (cd apps/desktop/src-tauri && cargo check)
+# Mobile on Linux stops before the iOS/Android project gates (xcodebuild/JDK
+# are platform-specific); web bundle and Rust crates must still resolve.
+pnpm --filter @peers-touch/app-mobile run check:web
+pnpm --filter @peers-touch/app-mobile run build
+(cd apps/mobile/src-tauri && cargo fetch && cargo check --offline)
+echo "clients installable on headless linux"
 EOF
   log "client toolchain verified"
 }
@@ -178,13 +192,17 @@ set +e
 sudo systemctl disable --now docker 2>/dev/null
 sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
   docker-compose-plugin docker-ce-rootless-extras docker-client docker-client-latest \
-  docker-common docker-engine docker.io 2>/dev/null
+  docker-common docker-engine docker.io \
+  protobuf-compiler libprotobuf-dev libprotobuf32 \
+  libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev \
+  build-essential 2>/dev/null || true
 sudo apt-get autoremove -y 2>/dev/null
 sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg /etc/docker/daemon.json \
   /etc/apt/apt.conf.d/99peers-bootstrap
 sudo rm -rf /opt/peers-dev /etc/profile.d/peers-dev.sh /var/lib/docker /etc/docker
 sudo gpasswd -d "$USER" docker 2>/dev/null || true
-rm -rf "$HOME/.cargo" "$HOME/.rustup" "$HOME/.npmrc" "$HOME/.cache/go-build"
+rm -rf "$HOME/.cargo" "$HOME/.rustup" "$HOME/.npmrc" "$HOME/.cache/go-build" \
+       "$HOME/.config/go" "$HOME/go" "$HOME/.local/share/pnpm"
 sudo apt-get update -qq
 set -e
 echo "teardown complete"
