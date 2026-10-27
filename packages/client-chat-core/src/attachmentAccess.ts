@@ -44,6 +44,7 @@ export interface ChatAttachmentAccessPort<Scope, Projection, Action, Result> {
   action(scope: Scope, id: string, handle: string, action: Action): Promise<Result>;
   handle(projection: Projection): string;
   pending(projection: Projection): boolean;
+  pendingError(error: unknown): boolean;
 }
 
 interface Entry<Projection> {
@@ -55,6 +56,7 @@ interface Entry<Projection> {
   revision: number;
   followup: { start: boolean; retry: boolean } | null;
   expiresAt: number;
+  pendingRead: { start: boolean; retry: boolean } | null;
 }
 
 const EMPTY = Object.freeze({ projection: null, loading: false, error: false });
@@ -95,6 +97,8 @@ export class ChatAttachmentAccessController<Scope, Projection, Action, Result> {
       entry.inFlight = null;
       entry.cancelling = false;
       entry.followup = null;
+      entry.pendingRead = null;
+      entry.expiresAt = 0;
       entry.listeners.forEach((notify) => notify());
     }
     if (this.timer !== null) clearInterval(this.timer);
@@ -163,6 +167,8 @@ export class ChatAttachmentAccessController<Scope, Projection, Action, Result> {
         // Retain pending checkpoints for runtime reconciliation, never a grant.
         if (!entry.snapshot.projection || !this.port.pending(entry.snapshot.projection)) {
           entry.snapshot = EMPTY;
+          entry.pendingRead = null;
+          entry.expiresAt = 0;
         }
         entry.listeners.forEach((notify) => notify());
         const generation = this.generation;
@@ -189,6 +195,7 @@ export class ChatAttachmentAccessController<Scope, Projection, Action, Result> {
     entry.cancelling = true;
     entry.revision += 1;
     entry.followup = null;
+    entry.pendingRead = null;
     try {
       await this.port.cancel(scope, id);
     } catch {
@@ -222,6 +229,14 @@ export class ChatAttachmentAccessController<Scope, Projection, Action, Result> {
   refreshPending(): void {
     for (const [id, entry] of this.entries) {
       const pending = entry.snapshot.projection && this.port.pending(entry.snapshot.projection);
+      if (entry.pendingRead) {
+        if (Date.now() >= entry.expiresAt) {
+          entry.pendingRead = null;
+          this.update(entry, { ...entry.snapshot, loading: false, error: true });
+        } else if (!entry.inFlight && (entry.listeners.size || this.selection === id)) {
+          void this.request(id, entry.pendingRead.start, entry.pendingRead.retry);
+        }
+      }
       if (pending && (this.selection === id || Date.now() < entry.expiresAt)) {
         void this.request(id, false, false);
       }
@@ -237,7 +252,7 @@ export class ChatAttachmentAccessController<Scope, Projection, Action, Result> {
     if (!entry) {
       this.refreshPending();
       if (this.entries.size >= MAX_ENTRIES) throw new Error('FILE_ACCESS_CAPACITY');
-      entry = { snapshot: EMPTY, listeners: new Set(), inFlight: null, cancelling: false, releaseBarrier: Promise.resolve(), revision: 0, followup: null, expiresAt: 0 };
+      entry = { snapshot: EMPTY, listeners: new Set(), inFlight: null, cancelling: false, releaseBarrier: Promise.resolve(), revision: 0, followup: null, expiresAt: 0, pendingRead: null };
       this.entries.set(id, entry);
     }
     return entry;
@@ -248,7 +263,7 @@ export class ChatAttachmentAccessController<Scope, Projection, Action, Result> {
     if (!scope) return Promise.resolve();
     const entry = this.entry(id);
     if (entry.cancelling) return Promise.resolve();
-    if (start) entry.expiresAt = Date.now() + RECONCILE_LIFETIME_MS;
+    if (start && !entry.pendingRead) entry.expiresAt = Date.now() + RECONCILE_LIFETIME_MS;
     if (entry.inFlight) {
       if (start || retry) entry.followup = { start, retry: retry || Boolean(entry.followup?.retry) };
       return entry.inFlight;
@@ -294,8 +309,21 @@ export class ChatAttachmentAccessController<Scope, Projection, Action, Result> {
       } else {
         this.update(entry, { projection, loading: false, error: false });
       }
-    }).catch(() => {
+      entry.pendingRead = null;
+    }).catch((error: unknown) => {
       if (generation === this.generation && revision === entry.revision) {
+        // A thumbnail can precede the private projection commit. Only the
+        // Host's explicit not-yet-available error keeps acquisition pending;
+        // authority, integrity and unclassified failures remain failures.
+        if (!entry.snapshot.projection && this.port.pendingError(error)) {
+          if (!entry.expiresAt) entry.expiresAt = Date.now() + RECONCILE_LIFETIME_MS;
+          if (Date.now() < entry.expiresAt) {
+            entry.pendingRead = { start, retry };
+            this.update(entry, { projection: null, loading: true, error: false });
+            return;
+          }
+        }
+        entry.pendingRead = null;
         this.update(entry, { ...entry.snapshot, loading: false, error: true });
       }
     }).finally(() => {

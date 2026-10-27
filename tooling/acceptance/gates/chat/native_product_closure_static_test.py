@@ -1286,10 +1286,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("function HoverActions(", self.message_row)
         self.assertNotIn("msg-hover-actions", self.message_row)
 
-    def test_acceptance_window_owns_the_native_overlay_level(self) -> None:
+    def test_acceptance_window_preserves_native_document_layering(self) -> None:
         self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)
         self.assertIn("target_os = \"macos\"", self.desktop_main)
-        self.assertIn("NSScreenSaverWindowLevel", self.desktop_main)
+        self.assertIn("ns_window.setLevel(NSNormalWindowLevel)", self.desktop_main)
+        self.assertNotIn("NSScreenSaverWindowLevel", self.desktop_main)
+        panel_source = (
+            ROOT / "apps/desktop/src-tauri/src/infrastructure/native_file_dialog.rs"
+        ).read_text()
+        self.assertNotIn("NSScreenSaverWindowLevel", panel_source)
+        self.assertNotIn("raise_above_acceptance_window", panel_source)
+        self.assertIn("panel.beginWithCompletionHandler(&handler)", panel_source)
         self.assertIn(
             "NSWindowCollectionBehavior::CanJoinAllSpaces",
             self.desktop_main,

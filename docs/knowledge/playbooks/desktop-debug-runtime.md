@@ -64,6 +64,24 @@ Do not use hard packaged `.app` debugging by default. Packaging is only the righ
    - Native file panels, permission sheets, physical hover/drag and focus
      claims require `exclusive-native-input` in an `isolated-gui-session`.
      A shared user session must fail closed before global input.
+   - macOS exclusive windows keep the normal AppKit document tier. Screen-saver
+     or always-on-top levels cover Quick Look and external documents even after
+     successful process activation. Open/Save panels keep their default system
+     tier; do not compensate for a raised main window by raising panels further.
+     Verify process-owned Quick Look pixels and real picker actions together.
+   - Embedded WebDriver readiness does not imply that the process's
+     Accessibility window is registered. Native preflight waits for a nonempty
+     process-owned AX window list within the existing 30-second startup budget
+     before positioning it. Read-only `-25204` messaging failures may recover
+     within one shared 1.5-second AX read budget inside the existing two-second
+     probe deadline. Permission, invalid-element and exhausted messaging errors
+     remain failures; OS actions and mutations are never retried. Only a
+     successfully observed empty window list is a pending startup state.
+   - Window, file-selection and panel-button probes share `macos_ax.py`.
+     Required `AXWindows` failures never mean the chooser has closed.
+     Selection and button actions check AX return codes and stop on failure
+     without replaying a possibly completed action. Verify recovery and terminal
+     failure against a real busy NSOpenPanel as well as a document window.
 
 3. **Separate acceptance tiers** — Treat package gates as a different evidence tier.
    - Local lifecycle and runtime gates may run during debugging.

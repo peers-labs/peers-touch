@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from tooling.acceptance.core import GateError
@@ -33,22 +34,54 @@ def document_windows(pid: int) -> list[str]:
     return value.splitlines() if value else []
 
 
-def document_contains(pid: int, expected_text: str) -> bool:
-    value = run_document_script(f"""
-        tell application "System Events"
-          set targetProcess to first application process whose unix id is {pid}
-          set nodes to entire contents of window 1 of targetProcess
-          if (count of nodes) > 1000 then error "preview AX tree exceeds bound"
-          repeat with node in nodes
-            try
-              set content to value of attribute "AXValue" of node as text
-              if content contains {json.dumps(expected_text)} then return "matched"
-            end try
-          end repeat
-          return "unproven"
-        end tell
-    """)
-    return value == "matched"
+def process_document_window(pid: int) -> dict | None:
+    """Read the on-screen window owned by a document process, including qlmanage."""
+    if pid <= 0:
+        raise GateError("Native document process identity is invalid")
+    probe = r"""
+import json
+import sys
+import Quartz
+
+windows = Quartz.CGWindowListCopyWindowInfo(
+    Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+    Quartz.kCGNullWindowID,
+)
+candidates = []
+for window in windows:
+    if int(window.get(Quartz.kCGWindowOwnerPID, -1)) != int(sys.argv[1]):
+        continue
+    bounds = window.get(Quartz.kCGWindowBounds) or {}
+    if float(window.get(Quartz.kCGWindowAlpha, 0)) <= 0:
+        continue
+    if float(bounds.get("Width", 0)) <= 1 or float(bounds.get("Height", 0)) <= 1:
+        continue
+    candidates.append({
+        "processId": int(sys.argv[1]),
+        "windowId": int(window[Quartz.kCGWindowNumber]),
+        "x": float(bounds["X"]), "y": float(bounds["Y"]),
+        "width": float(bounds["Width"]), "height": float(bounds["Height"]),
+    })
+if len(candidates) > 1:
+    raise SystemExit("Native document window identity is ambiguous")
+if candidates:
+    display = Quartz.CGDisplayBounds(Quartz.CGMainDisplayID())
+    candidates[0]["display"] = {
+        "x": float(display.origin.x), "y": float(display.origin.y),
+        "width": float(display.size.width), "height": float(display.size.height),
+    }
+print(json.dumps(candidates[0] if candidates else None))
+"""
+    completed = subprocess.run(
+        (sys.executable, "-c", probe, str(pid)),
+        capture_output=True, text=True, check=False, timeout=2,
+    )
+    if completed.returncode:
+        raise GateError(f"Native document window inspection failed: {completed.stderr.strip()}")
+    value = json.loads(completed.stdout)
+    if value is not None and (not isinstance(value, dict) or value.get("processId") != pid):
+        raise GateError("Native document window inspection returned an invalid identity")
+    return value
 
 
 def text_editor_document(path: Path, operation: str = "read") -> str:

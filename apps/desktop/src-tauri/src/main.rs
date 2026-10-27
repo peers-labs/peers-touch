@@ -82,7 +82,7 @@ fn show_acceptance_background_windows(app: &tauri::App) -> std::io::Result<()> {
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 fn configure_acceptance_window_level(window: &tauri::WebviewWindow) -> std::io::Result<()> {
     use dispatch2::DispatchQueue;
-    use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindow, NSWindowCollectionBehavior};
+    use objc2_app_kit::{NSNormalWindowLevel, NSWindow, NSWindowCollectionBehavior};
 
     let ns_window = window.ns_window().map_err(|error| {
         std::io::Error::other(format!("acceptance native window lookup failed: {error}"))
@@ -93,7 +93,9 @@ fn configure_acceptance_window_level(window: &tauri::WebviewWindow) -> std::io::
             | NSWindowCollectionBehavior::CanJoinAllSpaces
             | NSWindowCollectionBehavior::FullScreenAuxiliary;
         ns_window.setCollectionBehavior(collection_behavior);
-        ns_window.setLevel(NSScreenSaverWindowLevel);
+        // Preserve AppKit's document tier so Quick Look and external apps can
+        // become visible after the user's file action.
+        ns_window.setLevel(NSNormalWindowLevel);
     });
     Ok(())
 }
@@ -372,6 +374,7 @@ fn configure_acceptance_window(
         window.show().map_err(|error| {
             std::io::Error::other(format!("acceptance window show failed: {error}"))
         })?;
+        #[cfg(not(target_os = "macos"))]
         window.set_always_on_top(true).map_err(|error| {
             std::io::Error::other(format!("acceptance window layering failed: {error}"))
         })?;

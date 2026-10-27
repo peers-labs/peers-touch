@@ -16,6 +16,10 @@ file begins a resumable download; the surface displays progress, cancel, retry
 and an actionable terminal error. Reopening it resumes the same attachment.
 Closing the surface leaves the transfer under Messaging Runtime ownership.
 
+Opening a sender attachment while its upload is pending observes that existing
+transfer until verified cache bytes become available. Only a remote attachment
+creates a download; observing an active transfer cannot replace its record.
+
 The detail surface previews supported images, audio, video, PDF, plain text and
 common Office documents. DOCX uses a local document renderer; XLSX and XLS use a
 local workbook parser with sheet selection and a bounded table viewport;
@@ -174,6 +178,12 @@ removes a saved export.
 
 Each access read receives its own opaque grant. Runtime revocation precedes
 reacquisition; releasing a late result cannot revoke a newer reader's grant.
+Thumbnails may appear before their private attachment projection commits.
+The Host classifies only `FILE_PROJECTION_UNAVAILABLE` as pending acquisition;
+the shared access controller reconciles it for at most five minutes without
+extending that budget on polling. It preserves the original download intent
+until a projection exists, and closing or changing scope fences that intent.
+Authority, integrity and unclassified errors remain terminal access failures.
 Native verification runs outside the grant registry lock and checks a captured
 revocation epoch between bounded reads. Suspension disables new grants; resume
 keeps the old epoch invalid. IPC checks the captured Engine, owner and epoch
@@ -210,6 +220,16 @@ Native Journeys must send files in both directions and prove sender/receiver
 filename, exact bytes, preview, external copy isolation and saved-file retention.
 The matrix includes image, audio, video, PDF, text, Office, archive and unsupported
 content; interrupted download, retry, account/Station change and restart.
+Word content proof reads original-size text and uses native page scrolling for
+the figure and caption. Fit-page evidence proves the overview and page identity;
+it does not require body text to remain readable after reducing the whole page.
+Each sender/receiver scope journey captures close, leave-Chat, conversation,
+account, Station and logout transitions. Conversation, account and Station
+also have separate supporting authority transitions, so a preceding close or
+logout cannot conceal a missing independent fence. Every observation starts
+with the selected UI's available grant and verifies revoked reads, rejected
+stale intents and unchanged native resource counts. Supporting observations
+never replace the required UI transition.
 Unavailable OS/native cells remain UNPROVEN. Browser or API checks cannot
 substitute for platform preview, destination picker or external-application proof.
 

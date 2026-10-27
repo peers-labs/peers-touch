@@ -1,6 +1,6 @@
 import { AttachmentByteReader } from './attachmentByteReader.js';
 import { setChatFilePreviewState, setChatFilePreviewUnavailable, type ChatFilePreviewLabels } from './previewSurface.js';
-import { previewNavigation } from './previewNavigation.js';
+import { previewToolbar } from './previewToolbar.js';
 
 const PAGE_BYTES = 32 * 1024;
 
@@ -11,8 +11,15 @@ export async function mountChatTextPreview(
   const surface = document.createElement('div');
   surface.className = 'chat-text-preview';
   const text = document.createElement('pre');
-  const navigation = previewNavigation(labels, signal);
-  surface.append(navigation.element, text);
+  let page = 1;
+  const toolbar = previewToolbar({
+    labels,
+    signal,
+    showZoom: false,
+    onPrevious: () => { page = Math.max(1, page - 1); void render(); },
+    onNext: () => { page += 1; void render(); },
+  });
+  surface.append(toolbar.element, text);
   container.replaceChildren(surface);
   signal.addEventListener('abort', () => surface.remove(), { once: true });
   const prefix = await reader.read(0, Math.min(3, size));
@@ -22,11 +29,10 @@ export async function mountChatTextPreview(
   const bom = encoding !== 'utf-8' ? 2
     : prefix[0] === 239 && prefix[1] === 187 && prefix[2] === 191 ? 3 : 0;
   const total = Math.max(1, Math.ceil((size - bom) / PAGE_BYTES));
-  let page = 1;
   let revision = 0;
   const render = async () => {
     const current = ++revision;
-    navigation.update(page, total, true);
+    toolbar.setPagination(page, total, true);
     setChatFilePreviewState(container, 'loading');
     try {
       const start = bom + (page - 1) * PAGE_BYTES;
@@ -47,7 +53,7 @@ export async function mountChatTextPreview(
         if (end >= 2 && end + 2 <= bytes.length && unit(end - 2) >= 0xd800 && unit(end - 2) <= 0xdbff) end += 2;
       }
       text.textContent = new TextDecoder(encoding, { ignoreBOM: true }).decode(bytes.subarray(first, end));
-      navigation.update(page, total);
+      toolbar.setPagination(page, total);
       text.scrollTop = 0;
       setChatFilePreviewState(container, 'ready');
     } catch {
@@ -56,7 +62,5 @@ export async function mountChatTextPreview(
       }
     }
   };
-  navigation.previous.addEventListener('click', () => { page--; void render(); }, { signal });
-  navigation.next.addEventListener('click', () => { page++; void render(); }, { signal });
   await render();
 }

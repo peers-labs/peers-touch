@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,7 @@ from tooling.acceptance.gates.chat.lifecycle_file_native import (
     prove_file_grant_revocation,
     prove_native_file_preview,
 )
+from tooling.acceptance.gates.chat.lifecycle_file_scope import ChatFileScopeJourney
 from tooling.acceptance.gates.chat.native_file_picker import (
     select_native_file,
     wait_for_actionable_file_trigger,
@@ -44,6 +46,7 @@ from tooling.acceptance.gates.chat.native_support import (
     active_direct_route_multiaddr,
     async_harness,
     enter_chat_page,
+    runtime_station_service,
     selected_native_runtime,
     wait_until,
 )
@@ -114,6 +117,27 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
         if not value:
             raise GateError("active rich-media conversation identity is missing")
         return str(value)
+
+    def _scroll_file_preview(self, actor: str, selector: str) -> None:
+        client = self.clients[actor]
+        point = self._native_click(actor, selector)
+        rect = client.find_element(selector, 5).rect
+        before = client.driver.get_screenshot_as_png()
+        self.runtime_binding.native_adapter.post_scroll_to_process(
+            client.process_id, point, delta_y=round(rect["height"] * 0.7),
+        )
+        previous = before
+
+        def settled() -> bool:
+            nonlocal previous
+            current = client.driver.get_screenshot_as_png()
+            ready = current != before and current == previous
+            previous = current
+            return ready
+
+        wait_until(
+            settled, f"{actor} native document paging pixels settled", timeout=10,
+        )
 
     def _select_native_file(
         self,
@@ -547,7 +571,7 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
             timeout=10,
         )
 
-    def _native_click(self, actor: str, selector: str) -> None:
+    def _native_click(self, actor: str, selector: str) -> tuple[float, float]:
         client = self.clients[actor]
         if client.process_id is None:
             raise GateError(f"{actor} native click has no owning process")
@@ -632,6 +656,7 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
         finally:
             if mouse_down:
                 adapter.post_mouse((MouseAction.LEFT_UP,), point)
+        return point
 
     def _cancel_screenshot(self, actor: str) -> dict[str, Any]:
         client = self.clients[actor]
@@ -960,10 +985,29 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                 download_override,
             )
             download_proxy.arm()
+            # A pre-existing libp2p connection can briefly survive the route
+            # override, so the first object fetch may not traverse the armed
+            # proxy. Reassert the override periodically (each reapplication
+            # closes the live route) until the proxy observes a real drop.
+            last_reapply = [time.monotonic()]
+
+            def wait_download_interrupted() -> bool:
+                if download_proxy.evidence()["failureCount"] >= 1:
+                    return True
+                if time.monotonic() - last_reapply[0] >= 5.0:
+                    self.runtime_binding.apply_verified_direct_route_override(
+                        peer,
+                        "station",
+                        download_override,
+                    )
+                    last_reapply[0] = time.monotonic()
+                return False
+
             download_recovery = prove_file_download_recovery(
                 client=self.clients[peer],
                 attachment_id=attachment_id,
                 resume_transport=download_proxy.disarm,
+                wait_interrupted=wait_download_interrupted,
                 assert_condition=self.assert_condition,
             )
             peer_path = self._open_attachment(peer, attachment_id)
@@ -1123,7 +1167,11 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                             f"file-format-{format_id}-{role}-{record.name}", record,
                             destination_dir=self.evidence_dir,
                         )
-                    for pixels in (observed.get("pixelsEvidence", {}), observed.get("nextPixelsEvidence", {})):
+                    for key in (
+                        "pixelsEvidence", "nextPixelsEvidence",
+                        "overviewPixelsEvidence", "figurePixelsEvidence",
+                    ):
+                        pixels = observed.get(key, {})
                         for key in ("screenshot", "contentScreenshot", "headerScreenshot", "navigationScreenshot"):
                             if pixels.get(key) in retained:
                                 pixels[key] = retained[pixels[key]]
@@ -1135,6 +1183,9 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                     role=role,
                     evidence_root=evidence_root,
                     assert_condition=self.assert_condition,
+                    scroll_preview=lambda selector, participant=participant: self._scroll_file_preview(
+                        participant, selector,
+                    ),
                     retain_evidence=retain_evidence,
                 )
                 # Cache hashes supplement the actual card and decoder evidence.
@@ -1160,10 +1211,25 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
         peer: str,
         conversation_id: str,
         attachment_id: str,
+        root: Path,
     ) -> dict[str, Any]:
         observations: dict[str, Any] = {}
         for participant, role in ((actor, "sender"), (peer, "receiver")):
             client = self.clients[participant]
+            other = peer if participant == actor else actor
+            evidence_root = root / "file-scope-evidence" / role
+            journey = ChatFileScopeJourney(
+                client=client, runtime_binding=self.runtime_binding,
+                account=str(self.actor_specs[participant]["accountRef"]).removeprefix("station-account:"),
+                actor_ptid=self.ptids[participant], conversation_id=conversation_id,
+                primary_station=runtime_station_service(self.manifest, participant),
+                secondary_station=runtime_station_service(self.manifest, other),
+                native_click=lambda selector, participant=participant: self._native_click(
+                    participant, selector,
+                ),
+                evidence_root=evidence_root,
+            )
+            journey.prepare()
 
             def restore() -> None:
                 enter_chat_page(client)
@@ -1190,23 +1256,54 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                 return {"boundary": "leave-chat", "route": route}
 
             observations[role] = {}
-            for boundary, transition in (("close", close_detail), ("leave_chat", leave_chat)):
-                result = prove_file_grant_revocation(
-                    client=client, runtime_binding=self.runtime_binding,
-                    attachment_id=attachment_id, actor_ptid=self.ptids[participant],
-                    transition=transition, restore=restore,
-                )
+            try:
+                for boundary, transition in (("close", close_detail), ("leave_chat", leave_chat)):
+                    observations[role][boundary] = prove_file_grant_revocation(
+                        client=client, runtime_binding=self.runtime_binding,
+                        attachment_id=attachment_id, actor_ptid=self.ptids[participant],
+                        transition=transition, restore=restore,
+                        evidence_root=evidence_root / boundary,
+                    )
+                observations[role].update(journey.prove(attachment_id))
+            finally:
+                references = {
+                    str(path): self.report.add_evidence_file(
+                        f"file-scope-{role}-{'-'.join(path.relative_to(evidence_root).parts)}",
+                        path, destination_dir=self.evidence_dir,
+                    )
+                    for path in evidence_root.rglob("*.png")
+                }
+
+                def retained(value: Any) -> Any:
+                    if isinstance(value, dict):
+                        return {key: retained(item) for key, item in value.items()}
+                    return references.get(value, value) if isinstance(value, str) else value
+
+                observations[role] = retained(observations[role])
+            for boundary, result in observations[role].items():
+                ui = result.get("ui", result)
                 self.assert_condition(
                     f"rich_file_scope_{role}_{boundary}",
-                    result["afterStatus"] == 404
-                    and len(result["rejectedIntents"]) == 3
-                    and result["nativeResourcesUnchanged"],
+                    ui["afterStatus"] == 404
+                    and len(ui["rejectedIntents"]) == 3
+                    and ui["nativeResourcesUnchanged"],
                     json.dumps(result, sort_keys=True),
                 )
-                observations[role][boundary] = result
-        # These observations deliberately do not emit rich_file_scope_fencing.
-        # Conversation/account/Station changes remain independent obligations.
-        observations["unprovenBoundaries"] = ["conversation", "account", "station"]
+        required = {"close", "leave_chat", "conversation", "account", "station", "logout"}
+        self.assert_condition(
+            "rich_file_scope_fencing",
+            all(
+                set(observations[role]) == required
+                and all(
+                    observations[role][boundary]["supporting-authority"]["afterStatus"] == 404
+                    and len(observations[role][boundary]["supporting-authority"]["rejectedIntents"]) == 3
+                    and observations[role][boundary]["supporting-authority"]["nativeResourcesUnchanged"]
+                    for boundary in ("conversation", "account", "station")
+                )
+                for role in ("sender", "receiver")
+            ),
+            json.dumps(observations, sort_keys=True),
+        )
         return observations
 
     def _prove_native_file_actions(
@@ -1252,14 +1349,27 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
             finally:
                 # Persist native observations before the Suite fixture root is
                 # reclaimed, including screenshots preceding a failed action.
-                for path in evidence_root.glob("*.png"):
-                    reference = self.report.add_evidence_file(
-                        f"file-{role}-{path.stem}", path,
+                references = {
+                    str(path): self.report.add_evidence_file(
+                        f"file-{role}-{path.name}", path,
                         destination_dir=self.evidence_dir,
                     )
-                    for action in actions.values():
-                        if action.get("screenshot") == str(path):
-                            action["screenshot"] = reference
+                    for path in sorted(evidence_root.glob("*.png"))
+                }
+
+                def retained(value):
+                    if isinstance(value, dict):
+                        return {key: retained(item) for key, item in value.items()}
+                    return references.get(value, value) if isinstance(value, str) else value
+
+                for path in sorted(evidence_root.glob("*.json")):
+                    record = retained(json.loads(path.read_text()))
+                    path.write_text(json.dumps(record, indent=2))
+                    references[str(path)] = self.report.add_evidence_file(
+                        f"file-{role}-{path.name}", path,
+                        destination_dir=self.evidence_dir,
+                    )
+                actions = retained(actions)
             observations[role] = actions
         for name, field in (
             ("rich_file_native_preview", "preview"),
@@ -1768,6 +1878,7 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
             )
             file_scope = self._prove_file_scope_boundaries(
                 actor, peer, conversation_id, str(attachment["attachmentId"]),
+                root,
             )
             voice_boundaries = self._prove_voice_cancel_and_discard(actor)
             voice = self._prove_voice_message(

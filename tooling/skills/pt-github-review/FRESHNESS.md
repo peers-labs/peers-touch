@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-26
-covered_docs_hash: e9cb9f685b0f22e8eddce5d26e2d2a038277e657436b880d2bd177eff55e9895
+last_verified_at: 2026-10-27
+covered_docs_hash: 424e5b8e2b5a136c3dab75d9cd9718ed73d7ffa875a1b4f9eb149e8fb211e17c
 
 covered_docs:
   - AGENTS.md
@@ -32,6 +32,14 @@ covered_docs:
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
 ## Current Source Review
+
+The covered-source delta since the prior refresh is the native adapter section
+of Acceptance integration: direct process-owned AX observations, shared bounded
+read recovery, checked one-shot actions, normal AppKit window tiers and
+source-owned Quick Look pixels. Existing source, lifecycle, ownership and
+native-evidence rules cover these refinements. The native driver supplies real
+AppKit responsiveness regressions and the integration playbook; no review
+severity change, waiver, new Skill rule or generic fixture is needed.
 
 The attachment-viewing changes add no covered upstream rules. The merged
 master source already contains the attach-only Mobile runtime evidence,

@@ -149,6 +149,36 @@ Gate Catalog
 Business Gate 只能依赖 adapter interface。平台实现不得 import Chat Gate，也不得改变
 selector、actor journey、timeout budget 或 success assertion。
 
+macOS 窗口状态、定位、激活和关闭由 Native adapter 通过
+`AXUIElementCreateApplication(actorPid)` 直接访问进程的 Accessibility 对象；
+focused-control observation 使用同一通道。不得以 System Events 的进程窗口缓存
+判断窗口是否存在：同一 app binary 反复构建启动时，该缓存可能报告零窗口，而
+直接 AX 和 CoreGraphics 均能观察到真实窗口。AX 消息超时最多 0.5 秒，
+读取共享 1.5 秒预算，每个探测子进程仍限时 2 秒。只有只读请求的 `-25204`
+消息失败可在剩余预算内重试；权限、无效对象与耗尽预算的错误保留为 Driver
+failure，不能解释成已隐藏或失焦。OS mutation/action 不重试。
+`drivers/native/macos_ax.py` 统一窗口探测、文件选择和面板按钮的读取策略；
+每次完整树观察共用上述读取预算，并受原有 2 秒窗口、30 秒文件选择、10 秒
+面板操作期限约束。只有可选属性的 unsupported/no-value 可表示缺值；
+必需的 `AXWindows` 读取失败不能表示文件面板关闭。选择和按钮动作检查
+AX 返回码，失败即终止，不再次执行可能已经生效的操作。
+窗口选择优先 `AXMain`，激活后的 frontmost PID 必须等于 actor PID；
+关闭使用该窗口的 `AXCloseButton`，不向全局发送关闭快捷键。
+WebDriver channel ready 与 AX window ready 是独立条件。Runtime preflight 在
+原有 30 秒窗口启动预算内等待直接 AX 返回非空的进程窗口列表，再执行定位；
+成功读取的空列表表示尚未登记；不可恢复或耗尽读取预算的 AX 错误仍失败。
+
+macOS exclusive runtime 保持 AppKit 的正常文档窗口层级；原生 Open/Save panel
+使用系统默认层级。不得将主窗口提升到屏保层级或用更高层的 panel 补偿：
+这会遮挡 `qlmanage` 和外部应用的普通文档窗口，改变真实文件动作的可见结果。
+客户间切换由显式 activation 协调，文档交接保留 OS 的窗口排序。
+
+`qlmanage -p` 的窗口由 CoreGraphics 报告，但该 CLI 进程不提供可用 AX 文档树。
+系统预览 oracle 因此绑定 action-owned PID 与单一窗口几何，截取真实屏幕的标题
+和正文区域，复用 Vision OCR 核对原文件名及 fixture 内容。捕获前后窗口身份必须
+一致；标题被其他进程遮挡或窗口越出捕获显示器时拒绝证明。AX 或窗口标题元数据
+不能替代实际文件名和正文像素。
+
 本机开发默认调用链：
 
 ```text

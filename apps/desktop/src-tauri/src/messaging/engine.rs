@@ -1410,9 +1410,7 @@ impl MessagingEngine {
         }
         let access =
             attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
-        if start_download
-            && !matches!(access.state, value if value == AttachmentAccessState::Cancelled as i32 || value == AttachmentAccessState::Failed as i32)
-        {
+        if start_download && access.state == AttachmentAccessState::Remote as i32 {
             let download =
                 attachment_download_transfer(&self.profile_id, &projection, now_unix_ms())?;
             let _guard = self

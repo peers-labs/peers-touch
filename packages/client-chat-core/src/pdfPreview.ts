@@ -6,7 +6,7 @@ import {
   type ChatFilePreviewLabels,
 } from './previewSurface.js';
 import { AttachmentByteReader } from './attachmentByteReader.js';
-import { previewNavigation } from './previewNavigation.js';
+import { previewToolbar } from './previewToolbar.js';
 
 const MAX_CANVAS_PIXELS = 4 * 1024 * 1024;
 const MAX_DEMAND_BYTES = 32 * 1024 * 1024;
@@ -98,24 +98,19 @@ export async function mountChatPdfPreview(
   surface.className = 'chat-pdf-preview';
   const canvas = document.createElement('canvas');
   canvas.setAttribute('role', 'img');
-  const navigation = previewNavigation(labels, signal);
-  const { previous, next } = navigation;
-  const zoom = document.createElement('select');
-  zoom.setAttribute('aria-label', labels.zoom);
-  for (const [value, label] of [
-    ['page', labels.fitPage], ['width', labels.fitWidth], ['actual', labels.actualSize],
-  ]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    zoom.append(option);
-  }
-  zoom.value = 'width';
   const viewportHost = document.createElement('div');
   viewportHost.className = 'chat-pdf-canvas-scroll';
   viewportHost.append(canvas);
-  navigation.element.prepend(zoom);
-  surface.append(navigation.element, viewportHost);
+  let zoomValue: 'width' | 'page' | 'actual' = 'width';
+  const toolbar = previewToolbar({
+    labels,
+    signal,
+    initialZoom: 'width',
+    onPrevious: () => { pageNumber -= 1; void render(); },
+    onNext: () => { pageNumber += 1; void render(); },
+    onZoom: (zoom) => { zoomValue = zoom; void render(); },
+  });
+  surface.append(toolbar.element, viewportHost);
   container.replaceChildren(surface);
   let pageNumber = 1;
   let revision = 0;
@@ -126,7 +121,7 @@ export async function mountChatPdfPreview(
     const current = ++revision;
     const prior = task;
     prior?.cancel();
-    navigation.update(pageNumber, pdf.numPages, true);
+    toolbar.setPagination(pageNumber, pdf.numPages, true);
     setChatFilePreviewState(container, 'loading');
     armDeadline();
     try {
@@ -137,8 +132,8 @@ export async function mountChatPdfPreview(
       const width = Math.max(1, viewportHost.clientWidth - 32 || 720);
       const height = Math.max(1, viewportHost.clientHeight - 32 || 640);
       const density = Math.min(window.devicePixelRatio || 1, 2);
-      const fit = zoom.value === 'width' ? width / base.width
-        : zoom.value === 'actual' ? 1 : Math.min(width / base.width, height / base.height);
+      const fit = zoomValue === 'width' ? width / base.width
+        : zoomValue === 'actual' ? 1 : Math.min(width / base.width, height / base.height);
       const scale = Math.min(fit * density, Math.sqrt(MAX_CANVAS_PIXELS / (base.width * base.height)));
       const viewport = page.getViewport({ scale });
       canvas.width = Math.floor(viewport.width);
@@ -151,7 +146,7 @@ export async function mountChatPdfPreview(
       // Publish page identity only after its pixels belong to the completed render.
       canvas.setAttribute('aria-label', labels.page(pageNumber, pdf.numPages));
       canvas.dataset.chatRenderedPage = String(pageNumber);
-      navigation.update(pageNumber, pdf.numPages);
+      toolbar.setPagination(pageNumber, pdf.numPages);
       setChatFilePreviewState(container, 'ready');
       clearTimeout(timer);
       page.cleanup();
@@ -162,9 +157,6 @@ export async function mountChatPdfPreview(
       }
     }
   };
-  previous.addEventListener('click', () => { pageNumber -= 1; void render(); }, { signal });
-  next.addEventListener('click', () => { pageNumber += 1; void render(); }, { signal });
-  zoom.addEventListener('change', () => { void render(); }, { signal });
   resize = new ResizeObserver(() => {
     const width = container.clientWidth;
     const height = container.clientHeight;
