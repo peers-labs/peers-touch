@@ -122,6 +122,21 @@ struct VerifiedDiscovery {
     source_input: String,
 }
 
+/// Installation-private admission record, never a Schema or renderer input.
+/// The original material and its actual validation time retain discovery pins;
+/// every use still needs a fresh endpoint challenge and current route proof.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+enum StoredRouteSource {
+    External {
+        input: String,
+    },
+    AdmittedPublic {
+        input: String,
+        admitted_at_unix_ms: i64,
+    },
+}
+
 #[derive(Clone, Debug)]
 struct CachedRoute {
     candidate: StationRouteCandidate,
@@ -661,17 +676,19 @@ pub async fn station_route_restore(
     let station_peer_id = clean_identifier(&input.station_peer_id, "stationPeerId")?;
     let route_id = clean_identifier(&input.route_id, "routeId")?;
     let source = if input.source_ref.trim().is_empty() {
-        normalize_origin(&input.endpoint_origin)?
+        serde_json::to_string(&StoredRouteSource::External {
+            input: normalize_origin(&input.endpoint_origin)?,
+        })
+        .map_err(|_| route_error("routeSourceInvalid"))?
     } else {
         let source_ref = clean_source_ref(&input.source_ref)?;
         storage
             .get(&route_source_key(&source_ref))?
             .ok_or_else(|| route_error("routeSourceMissing"))?
     };
-    let discovery =
-        tauri::async_runtime::spawn_blocking(move || discover_station_input(&source, true))
-            .await
-            .map_err(|_| discovery_error("runtimeUnavailable"))??;
+    let discovery = tauri::async_runtime::spawn_blocking(move || discover_stored_source(&source))
+        .await
+        .map_err(|_| discovery_error("runtimeUnavailable"))??;
     let route = discovery
         .projection
         .routes
@@ -722,8 +739,7 @@ pub async fn station_route_refresh(
 ) -> MobileResult<StationRouteRefreshProjection> {
     tauri::async_runtime::spawn_blocking(move || {
         // Validate the requested selection after acquiring renewal ownership.
-        let refreshed =
-            ROUTES.renew_route_with(Some(&input), |source| discover_station_input(source, true))?;
+        let refreshed = ROUTES.renew_route_with(Some(&input), discover_stored_source)?;
         Ok(StationRouteRefreshProjection {
             binding: binding_projection(&refreshed, ROUTES.ensure_proxy()?),
             route: refreshed.candidate,
@@ -757,16 +773,8 @@ pub(crate) fn active_transport_origin(
 pub(crate) fn discover_public_material(
     material: &PublicEndpointConnectionMaterial,
 ) -> MobileResult<StationEndpointDiscovery> {
-    let expected = verify_public_connection_material(material, true, unix_ms() as i64)
-        .map_err(|_| discovery_error("publicMaterialInvalid"))?;
-    let source_input = encode_public_connection_material(material);
-    let parsed = ParsedInput {
-        origin: expected.canonical_discovery_origin.clone(),
-        connection_grant: None,
-        relay_peer_id: None,
-        expected: Some(expected),
-    };
-    let discovery = discover_parsed(parsed, source_input)?;
+    let parsed = parse_input(&encode_public_connection_material(material), true)?;
+    let discovery = discover_parsed(parsed)?;
     ROUTES.register(&discovery)?;
     Ok(discovery.projection)
 }
@@ -828,11 +836,7 @@ fn connect_device_link(
             let budget = deadline
                 .saturating_duration_since(std::time::Instant::now())
                 .min(Duration::from_secs(5));
-            let discovery = match discover_parsed_with_budget(
-                parse_input(&input, true)?,
-                input.clone(),
-                budget,
-            ) {
+            let discovery = match discover_parsed_with_budget(parse_input(&input, true)?, budget) {
                 Ok(discovery) => discovery,
                 Err(_) => continue,
             };
@@ -853,11 +857,14 @@ fn connect_device_link(
                 if probe_device_link_route(&probe, remaining.min(Duration::from_secs(5))).is_err() {
                     continue;
                 }
-                storage.set(&route_source_key(&route.source_ref), &input)?;
+                storage.set(
+                    &route_source_key(&route.source_ref),
+                    &discovery.source_input,
+                )?;
                 if storage
                     .get(&route_source_key(&route.source_ref))?
                     .as_deref()
-                    != Some(input.as_str())
+                    != Some(discovery.source_input.as_str())
                 {
                     return Err(route_error("routePersistenceFailed"));
                 }
@@ -961,7 +968,7 @@ pub(crate) fn device_link_restore(
     let source = storage
         .get(&route_source_key(&clean_source_ref(source_ref)?))?
         .ok_or_else(|| route_error("routeSourceMissing"))?;
-    let discovery = discover_station_input(&source, true)?;
+    let discovery = discover_stored_source(&source)?;
     let candidate = discovery
         .projection
         .routes
@@ -1058,16 +1065,19 @@ fn discover_station_input(
     allow_public_material: bool,
 ) -> MobileResult<VerifiedDiscovery> {
     let parsed = parse_input(input, allow_public_material)?;
-    discover_parsed(parsed, input.trim().to_string())
+    discover_parsed(parsed)
 }
 
-fn discover_parsed(parsed: ParsedInput, source_input: String) -> MobileResult<VerifiedDiscovery> {
-    discover_parsed_with_budget(parsed, source_input, Duration::from_secs(10))
+fn discover_stored_source(source: &str) -> MobileResult<VerifiedDiscovery> {
+    discover_parsed(parse_stored_source_at(source, unix_ms() as i64)?)
+}
+
+fn discover_parsed(parsed: ParsedInput) -> MobileResult<VerifiedDiscovery> {
+    discover_parsed_with_budget(parsed, Duration::from_secs(10))
 }
 
 fn discover_parsed_with_budget(
     parsed: ParsedInput,
-    source_input: String,
     budget: Duration,
 ) -> MobileResult<VerifiedDiscovery> {
     let mut challenge = [0_u8; CHALLENGE_SIZE];
@@ -1149,6 +1159,8 @@ fn discover_parsed_with_budget(
         unix_ms() as i64,
         parsed.expected.as_ref(),
     )?;
+    let source_input =
+        serde_json::to_string(&parsed.source).map_err(|_| route_error("routeSourceInvalid"))?;
     Ok(VerifiedDiscovery {
         projection,
         source_input,
@@ -1420,9 +1432,21 @@ struct ParsedInput {
     connection_grant: Option<Vec<u8>>,
     relay_peer_id: Option<String>,
     expected: Option<VerifiedPublicEndpointConnectionMaterial>,
+    source: StoredRouteSource,
 }
 
 fn parse_input(input: &str, allow_public_material: bool) -> MobileResult<ParsedInput> {
+    parse_input_at(input, allow_public_material, unix_ms() as i64)
+}
+
+fn parse_input_at(
+    input: &str,
+    allow_public_material: bool,
+    now_unix_ms: i64,
+) -> MobileResult<ParsedInput> {
+    let source = StoredRouteSource::External {
+        input: input.trim().to_string(),
+    };
     let link =
         schema_core::parse(input).map_err(|_| discovery_error("connectionMaterialInvalid"))?;
     if let SchemaLink::Action(action) = &link {
@@ -1430,13 +1454,17 @@ fn parse_input(input: &str, allow_public_material: bool) -> MobileResult<ParsedI
             if !allow_public_material {
                 return Err(discovery_error("publicMaterialSourceForbidden"));
             }
-            let expected = verify_public_connection_material(material, true, unix_ms() as i64)
+            let expected = verify_public_connection_material(material, true, now_unix_ms)
                 .map_err(|_| discovery_error("publicMaterialInvalid"))?;
             return Ok(ParsedInput {
                 origin: expected.canonical_discovery_origin.clone(),
                 connection_grant: None,
                 relay_peer_id: None,
                 expected: Some(expected),
+                source: StoredRouteSource::AdmittedPublic {
+                    input: encode_public_connection_material(material),
+                    admitted_at_unix_ms: now_unix_ms,
+                },
             });
         }
         let Some(SchemaAction::CircuitConnection(envelope)) = &action.action else {
@@ -1457,6 +1485,7 @@ fn parse_input(input: &str, allow_public_material: bool) -> MobileResult<ParsedI
             connection_grant: Some(grant.encode_to_vec()),
             relay_peer_id: Some(grant_statement.relay_peer_id),
             expected: None,
+            source,
         });
     }
     let SchemaLink::WebUrl(value) = link else {
@@ -1467,7 +1496,32 @@ fn parse_input(input: &str, allow_public_material: bool) -> MobileResult<ParsedI
         connection_grant: None,
         relay_peer_id: None,
         expected: None,
+        source,
     })
+}
+
+fn parse_stored_source_at(source: &str, now_unix_ms: i64) -> MobileResult<ParsedInput> {
+    let source: StoredRouteSource =
+        serde_json::from_str(source).map_err(|_| route_error("routeSourceInvalid"))?;
+    match source {
+        StoredRouteSource::External { input } => parse_input_at(&input, false, now_unix_ms),
+        StoredRouteSource::AdmittedPublic {
+            input,
+            admitted_at_unix_ms,
+        } => {
+            if admitted_at_unix_ms <= 0 || admitted_at_unix_ms > now_unix_ms {
+                return Err(route_error("routeSourceInvalid"));
+            }
+            // This time comes only from the native secure admission record.
+            // Rechecking the unchanged material at that time validates its
+            // pins, not a current grant. Discovery verifies current authority.
+            let parsed = parse_input_at(&input, true, admitted_at_unix_ms)?;
+            if parsed.expected.is_none() {
+                return Err(route_error("routeSourceInvalid"));
+            }
+            Ok(parsed)
+        }
+    }
 }
 
 fn encode_public_connection_material(material: &PublicEndpointConnectionMaterial) -> String {
@@ -1541,7 +1595,7 @@ fn binding_projection(
 }
 
 fn fetch_station_identity() -> MobileResult<VerifiedStationIdentity> {
-    let route = ROUTES.renew_route_with(None, |source| discover_station_input(source, true))?;
+    let route = ROUTES.renew_route_with(None, discover_stored_source)?;
     let mut challenge = [0_u8; CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
     let request = StationIdentityRequest {
@@ -1700,7 +1754,7 @@ fn proxy_stage<T>(stage: &'static str, result: MobileResult<T>) -> MobileResult<
 fn serve_proxy_connection(mut connection: TcpStream) -> MobileResult<()> {
     let route = proxy_stage(
         "renewal",
-        ROUTES.renew_route_with(None, |source| discover_station_input(source, true)),
+        ROUTES.renew_route_with(None, discover_stored_source),
     )?;
     let timeout = Duration::from_secs(305);
     proxy_stage(
@@ -2180,6 +2234,236 @@ mod tests {
     }
 
     #[test]
+    fn public_material_route_survives_transfer_expiry() {
+        let now = unix_ms() as i64;
+        let admitted_at = now - 120_000;
+        let root = libp2p_identity::Keypair::generate_ed25519();
+        let node = libp2p_identity::Keypair::generate_ed25519();
+        let material = PublicEndpointConnectionMaterial {
+            schema_version: 1,
+            canonical_discovery_origin: "https://station.example:443".into(),
+            expected_endpoint_role: station_trust::proto::AccessEndpointRole::DirectStation as i32,
+            expected_endpoint_identity: root.public().to_peer_id().to_string(),
+            expected_station_root_public_key: root.public().encode_protobuf(),
+            endpoint_tls_trust: Some(station_trust::proto::EndpointTlsTrust {
+                trust: Some(
+                    station_trust::proto::endpoint_tls_trust::Trust::LeafSpkiSha256(vec![7; 32]),
+                ),
+            }),
+            issued_at_unix_ms: admitted_at,
+            expires_at_unix_ms: admitted_at + 60_000,
+            ..Default::default()
+        };
+        verify_public_connection_material(&material, true, admitted_at).unwrap();
+        let input = encode_public_connection_material(&material);
+        assert!(
+            parse_input(&input, true).is_err(),
+            "expired new import accepted"
+        );
+        let parsed = parse_input_at(&input, true, admitted_at).unwrap();
+        let stored = serde_json::to_string(&parsed.source).unwrap();
+        assert!(
+            parse_input_at(&stored, true, now).is_err(),
+            "private record imported"
+        );
+        let challenge = [4; CHALLENGE_SIZE];
+        let initial = verify_discovery_response(
+            &parsed.origin,
+            None,
+            &challenge,
+            signed_direct_discovery(&root, &node, &challenge, admitted_at),
+            admitted_at,
+            parsed.expected.as_ref(),
+        )
+        .unwrap();
+        let original = ActiveRoute {
+            candidate: initial.routes[0].clone(),
+            route_revision: 7,
+        };
+        let runtime = RouteRuntime::default();
+        runtime
+            .register(&VerifiedDiscovery {
+                projection: initial,
+                source_input: stored.clone(),
+            })
+            .unwrap();
+        *runtime.active.write().unwrap() = Some(original.clone());
+        let renewed = runtime
+            .renew_route_with(None, |source| {
+                let parsed = parse_stored_source_at(source, now)?;
+                let expected = parsed.expected.as_ref().unwrap();
+                assert_eq!(
+                    expected.station_root_public_key,
+                    Some(material.expected_station_root_public_key.clone())
+                );
+                assert_eq!(
+                    expected.tls_trust,
+                    station_trust::VerifiedEndpointTlsTrust::LeafSpkiSha256([7; 32])
+                );
+                assert_eq!(expected.expires_at_unix_ms, material.expires_at_unix_ms);
+                assert!(endpoint_tls_client_config(&expected.tls_trust)
+                    .unwrap()
+                    .is_some());
+                let projection = verify_discovery_response(
+                    &parsed.origin,
+                    None,
+                    &challenge,
+                    signed_direct_discovery(&root, &node, &challenge, now),
+                    now,
+                    Some(expected),
+                )?;
+                Ok(VerifiedDiscovery {
+                    projection,
+                    source_input: source.to_string(),
+                })
+            })
+            .expect("admitted discovery source must survive transfer expiry");
+        assert_eq!(renewed.route_revision, original.route_revision);
+        assert_eq!(
+            renewed.candidate.attestation_expires_at_unix_ms,
+            Some(now + 60_000)
+        );
+        assert_eq!(
+            renewed.candidate.station_peer_id,
+            original.candidate.station_peer_id
+        );
+        assert_eq!(
+            runtime
+                .cached(
+                    &renewed.candidate.station_peer_id,
+                    &renewed.candidate.route_id
+                )
+                .unwrap()
+                .source_input,
+            stored
+        );
+        for mutation in 0..8 {
+            let mut altered = material.clone();
+            let mut admission = admitted_at;
+            match mutation {
+                0 => altered.expected_station_root_public_key = node.public().encode_protobuf(),
+                1 => {
+                    altered.endpoint_tls_trust.as_mut().unwrap().trust = Some(
+                        station_trust::proto::endpoint_tls_trust::Trust::LeafSpkiSha256(vec![
+                            7;
+                            31
+                        ]),
+                    );
+                }
+                2 => admission = material.expires_at_unix_ms,
+                3 => admission = now + 1,
+                4 => admission = 0,
+                5 => altered.schema_version = 0,
+                6 => altered.canonical_discovery_origin = "http://station.example".into(),
+                _ => {
+                    altered.expected_endpoint_role =
+                        station_trust::proto::AccessEndpointRole::Relay as i32
+                }
+            }
+            let record = StoredRouteSource::AdmittedPublic {
+                input: encode_public_connection_material(&altered),
+                admitted_at_unix_ms: admission,
+            };
+            assert!(
+                parse_stored_source_at(&serde_json::to_string(&record).unwrap(), now).is_err(),
+                "invalid admission accepted: {mutation}"
+            );
+        }
+        for response in [
+            signed_direct_discovery(&node, &root, &challenge, now),
+            signed_direct_discovery(&root, &node, &[8; CHALLENGE_SIZE], now),
+            signed_direct_discovery(&root, &node, &challenge, admitted_at),
+        ] {
+            let parsed = parse_stored_source_at(&stored, now).unwrap();
+            assert!(verify_discovery_response(
+                &parsed.origin,
+                None,
+                &challenge,
+                response,
+                now,
+                parsed.expected.as_ref()
+            )
+            .is_err());
+        }
+    }
+
+    fn signed_direct_discovery(
+        root: &libp2p_identity::Keypair,
+        node: &libp2p_identity::Keypair,
+        challenge: &[u8],
+        now: i64,
+    ) -> AccessEndpointResponse {
+        let sign = |key: &libp2p_identity::Keypair, domain: &[u8], bytes: &[u8]| {
+            key.sign(&[domain, bytes].concat()).unwrap()
+        };
+        let capabilities = vec![1; 32];
+        let statement = peer_proto::StationNodeAuthorizationStatement {
+            station_peer_id: root.public().to_peer_id().to_string(),
+            node_peer_id: node.public().to_peer_id().to_string(),
+            node_public_key: node.public().encode_protobuf(),
+            authorization_epoch: 2,
+            capabilities_digest: capabilities.clone(),
+            issued_at_unix_ms: now,
+            expires_at_unix_ms: now + 3_600_000,
+        }
+        .encode_to_vec();
+        let authorization = peer_proto::StationNodeAuthorization {
+            root_signature: sign(
+                root,
+                b"peers-touch/station-node-authorization/v1\0",
+                &statement,
+            ),
+            statement_bytes: statement,
+            station_root_public_key: root.public().encode_protobuf(),
+        };
+        let digest = Sha256::digest(authorization.encode_to_vec()).to_vec();
+        let route_statement = StationRouteStatement {
+            station_peer_id: root.public().to_peer_id().to_string(),
+            node_peer_id: node.public().to_peer_id().to_string(),
+            route_id: "direct-route".into(),
+            route_generation: 2,
+            inner_tls_spki_sha256: vec![3; 32],
+            capabilities_digest: capabilities,
+            visibility: peer_proto::StationRouteVisibility::Public as i32,
+            issued_at_unix_ms: now,
+            expires_at_unix_ms: now + 60_000,
+            node_authorization_digest: digest.clone(),
+            kind: StationRouteKind::Direct as i32,
+            addresses: vec![format!(
+                "/dns4/station.example/tcp/4001/p2p/{}",
+                node.public().to_peer_id()
+            )],
+            ..Default::default()
+        }
+        .encode_to_vec();
+        let endpoint_statement = peer_proto::AccessEndpointStatement {
+            challenge: challenge.to_vec(),
+            endpoint_peer_id: node.public().to_peer_id().to_string(),
+            endpoint_role: AccessEndpointRole::DirectStation as i32,
+            canonical_origin: "https://station.example:443".into(),
+            protocol_versions: vec![ACCESS_PROTOCOL_VERSION],
+            node_authorization_digest: digest,
+            issued_at_unix_ms: now,
+            expires_at_unix_ms: now + 60_000,
+            ..Default::default()
+        }
+        .encode_to_vec();
+        AccessEndpointResponse {
+            endpoint_signature: sign(node, ACCESS_ENDPOINT_DOMAIN, &endpoint_statement),
+            endpoint_statement_bytes: endpoint_statement,
+            endpoint_public_key: node.public().encode_protobuf(),
+            node_authorization: Some(authorization.clone()),
+            station_routes: vec![StationRouteAttestation {
+                node_signature: sign(node, b"peers-touch/station-route/v1\0", &route_statement),
+                statement_bytes: route_statement,
+                node_authorization: Some(authorization),
+            }],
+            outcome: AccessEndpointOutcome::Ready as i32,
+            ..Default::default()
+        }
+    }
+
+    #[test]
     fn proxy_parser_rejects_chunked_requests() {
         assert!(read_http_request_from_bytes(
             b"POST /actor/access/start HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n"
@@ -2240,7 +2524,12 @@ mod tests {
         let (runtime, original) = expired_route_runtime();
         let refreshed = runtime
             .renew_route_with(None, |source| {
-                assert_eq!(source, "https://station.example");
+                assert_eq!(
+                    parse_stored_source_at(source, unix_ms() as i64)
+                        .unwrap()
+                        .origin,
+                    "https://station.example:443"
+                );
                 let mut candidate = original.candidate.clone();
                 candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
                 candidate.attestation_bytes = Some(vec![8]);
@@ -2449,7 +2738,10 @@ mod tests {
                 canonical_origin: candidate.endpoint_origin.clone(),
                 routes: vec![candidate],
             },
-            source_input: "https://station.example".to_string(),
+            source_input: serde_json::to_string(&StoredRouteSource::External {
+                input: "https://station.example".to_string(),
+            })
+            .unwrap(),
         }
     }
 

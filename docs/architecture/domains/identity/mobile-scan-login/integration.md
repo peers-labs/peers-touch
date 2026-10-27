@@ -56,6 +56,12 @@ libp2p HTTP 路线对象提交，不通过随全局选择变化的 loopback prox
 连接转换先保存原生安全存储中的转换意图，再准入专用路线和暂存 Session，
 支持转换中断或存储 readback 失败后的同 root 恢复。无凭据交付的过期取消
 先完成本地安全清理，不依赖网络恢复。
+交付后的 public source 由原生 route owner 保存原始材料及首次有效验证时刻，
+与短期传递 TTL 分离。恢复使用已接纳的 Station/root 和 endpoint TLS pin，
+再验证当前 challenge、Node 授权和路线；不修改原材料时刻或延长签名寿命。
+该内部记录不能经 Schema 或通用 secure-storage 命令导入或伪造。
+没有接纳事实的旧存储必须重新接纳；Circuit grant 的期限与重新取得仍由
+Node Connectivity 管理，不能以历史时刻验证 grant 来延续旧授权。
 
 Mobile 登出先 fence 扫码器和事务，随后必经原 OAuth Session revoke/purge；
 相机关闭失败单独投影，不得阻止凭据清理和认证 generation 推进。
