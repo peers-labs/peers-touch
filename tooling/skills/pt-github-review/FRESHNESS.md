@@ -31,6 +31,26 @@ covered_docs:
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
+## 2026-10-27 Review Pipeline Hardening
+
+The review pipeline gained four review-system safeguards. `run.sh` now runs the
+client social-wire and runtime-boundary checks (plus their deterministic
+contract test) on every review instead of relying on per-app checks, and runs a
+knip-backed dead-code report as a strictly non-blocking advisory that SKIPs
+when the toolchain is absent; CI provisions the pinned knip fixture without a
+full workspace install. The retired identifier scan moved from a hard-coded
+shell branch to a validated registry (`retired-refs.json` rendered by
+`retired-refs.mjs`) with per-entry path/content scopes and ignore allowlists.
+The code-structure decision contract now requires an explicit `finding` or
+`accepted-advisory` disposition for every current advisory signal; decisions
+recorded under the older contract are stale and must be re-recorded.
+
+No covered upstream document changed, so the `covered_docs_hash` is unchanged.
+`SKILL.md` was updated because its hard-rule and structure-decision policy
+changed directly; the existing registry fixture and the decision unit tests
+own executable coverage, so no new generic fixture or knowledge entry is
+required.
+
 ## Merged Worktree Retirement Skill Review
 
 The only covered-doc change is one new row in the `AGENTS.md` Skill table for

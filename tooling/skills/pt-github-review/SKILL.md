@@ -194,6 +194,17 @@ When the route includes `code-structure`, require the recorded
 `REFACTOR_REQUIRED` blocks approval; `PASS_WITH_SUGGESTIONS` does not. Advisory
 structure signals never decide the verdict by themselves.
 
+Every current advisory signal (`<code>@<path>` from `structure-signals.mjs`)
+must have exactly one `signalDispositions` entry. Resolution `finding` links to
+a recorded finding whose location owns the signalled path and leaves the
+rationale to that finding record; `accepted-advisory` carries a non-empty
+rationale and references no findingId. A signal enumerated in
+`signalsReviewed` without a disposition invalidates the decision, and a
+disposition for a non-current or duplicate signal is rejected. Decisions
+stored under the older schema are stale and must be re-recorded. The knip
+dead-code report is contextual review input, not a recorded signal: it supports
+findings and judgment, has no disposition requirement, and never blocks.
+
 For Goal, execution-skill, or tracked-work workflow changes, additionally
 verify:
 
@@ -294,6 +305,10 @@ Scripts are evidence producers:
 - `hard-rules.sh` catches simple blocking patterns.
 - `structure-signals.mjs` reports non-blocking size, fan-out, and nesting
   signals that require `pt-code-structure-review` judgment.
+- `dead-code-advisory.mjs` runs knip over the workspace configuration
+  (`knip.json`) and reports unused files, exports, types, and dependencies as
+  a non-blocking advisory; when knip or its install is unavailable it SKIPs
+  instead of failing local or CI review.
 - `knowledge-match.sh` finds knowledge entries that must be read and delegates
   changed-path architecture validation to the shared module-governance parser.
 - The formal execution plan schedules Acceptance Gates.
@@ -344,6 +359,18 @@ Keywords intentionally present for freshness checks: hardcoded secrets, No mock,
 hardcoded-ui-string, silent error, generated, runtime projection, CODEOWNERS,
 user-home-absolute-path, retired-product-reference, repository-debug-artifact, station-profile-bypass,
 unreviewed-environment-topology.
+
+### Retired Reference Registry
+
+Retired identifiers are registry-driven rather than hard-coded as individual
+branches in the scanner. `tooling/scripts/review/retired-refs.json` holds one
+entry per retired identifier with a stable blocking `code`, a case-insensitive
+ERE `pattern`, a `message`, `paths`/`content` booleans selecting the scanned
+surfaces, and an `ignore` array of ERE allowlists. `retired-refs.mjs` validates
+the registry and renders it for `hard-rules.sh`; a malformed registry fails the
+hard-rule run. Retiring another product, API, or protocol identifier means
+adding one registry entry plus fixture coverage for its surfaces, never another
+special case in the shell scanner.
 
 ## Operational Knowledge
 
