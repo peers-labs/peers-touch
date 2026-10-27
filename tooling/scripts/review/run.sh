@@ -72,6 +72,16 @@ echo "== Frontend runtime registry =="
 node tooling/scripts/check-frontend-runtime-registry.mjs --range "$diff_range"
 
 echo
+echo "== Client boundary contracts =="
+# Ownership must hold for every review, not only when an agent remembers the
+# per-app pnpm check: social wire placement and runtime boundaries are
+# source-only scans, plus their deterministic contract test.
+node tooling/devctl/index.mjs check desktop-social-wire --root .
+node tooling/devctl/index.mjs check mobile-social-wire --root .
+node tooling/devctl/index.mjs check social-runtime-boundaries --root .
+python3 tooling/scripts/check_social_runtime_boundaries_test.py
+
+echo
 echo "== Knowledge match =="
 if [[ "$strict_knowledge" -eq 1 ]]; then
   tooling/scripts/review/knowledge-match.sh --range "$diff_range" --strict
