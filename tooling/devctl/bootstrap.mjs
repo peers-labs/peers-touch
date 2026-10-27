@@ -63,6 +63,9 @@ const APT_BASE_PACKAGES = [
   'make',
   'python3',
   'protobuf-compiler',
+  // protoc well-known-type .proto files ship in the dev package on Debian,
+  // not in protobuf-compiler itself.
+  'libprotobuf-dev',
   'uidmap',
 ];
 
@@ -223,6 +226,10 @@ function installGo(root) {
   sudo(['tar', '-C', INSTALL_ROOT, '-xzf', archive]);
   fs.rmSync(archive, { force: true });
   writeProfileD();
+  // Host-side Go needs a reachable module proxy on restricted networks;
+  // the container build sets its own GOPROXY in the Station Dockerfile.
+  const goBin = path.join(INSTALL_ROOT, 'go', 'bin', 'go');
+  run(goBin, ['env', '-w', 'GOPROXY=https://goproxy.cn,direct'], { env: bootstrapEnv() });
   return true;
 }
 
