@@ -74,6 +74,14 @@ Skill.
 
 ### 2. Use Explicit Failure Ownership
 
+E2E preparation is the existing Runner's read-only stage after graph/source
+resolution and before resources. Extend `core/e2e_preflight.py` and the
+Catalog's reference schema; preserve fixed selection and original resource,
+budget and evidence owners. Do not add IDE keyword triggers, operation-script
+copies, global Gate dispatch, or a second admission/receipt chain.
+Validate manual subprocess entry, both policies, no-resource preview,
+source/selection drift, dependency gaps and original-owner repair.
+
 When injected content is missing or invalid, return:
 
 ```text

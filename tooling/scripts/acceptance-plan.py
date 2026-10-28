@@ -219,6 +219,9 @@ def planned_gate(
     gate: dict[str, Any],
     finalizer_binding: Any | None = None,
 ) -> dict[str, Any]:
+    from tooling.acceptance.core.e2e_preflight import validate_e2e_definition
+
+    validate_e2e_definition(gate_id, gate)
     planned = {
         "id": gate_id,
         **gate_launch_fields(gate_id, gate),
@@ -232,6 +235,8 @@ def planned_gate(
     }
     if "executionInputs" in gate:
         planned["executionInputs"] = gate["executionInputs"]
+    if "e2e" in gate:
+        planned["e2e"] = gate["e2e"]
     if finalizer_binding is not None:
         planned["evidenceFinalizer"] = finalizer_binding.plan_config()
     return planned

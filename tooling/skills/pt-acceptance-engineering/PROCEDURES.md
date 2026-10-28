@@ -494,6 +494,11 @@ Do not commit concrete secrets or transient local paths.
 8. For tracked work, compare the impact projection with the formal plan's
    `Acceptance Execution` contract. Candidate Gates absent from that contract
    are `ACCEPTANCE_PLAN_DRIFT`; candidate Gates do not become immediate work.
+9. For E2E, declare Journey IDs and references to existing Gate/Driver/Harness
+   implementations in the selected Catalog entry's `e2e` contract. Run the
+   shared runner with the explicit Gate/cell and `--dry-run` before Step 7.
+   Resolve `ENHANCE_REQUIRED` at the returned original owner and repeat the
+   same selection. Do not add unrelated Gates or reproduce login/input scripts.
 
 ### Commands
 
@@ -501,6 +506,8 @@ Do not commit concrete secrets or transient local paths.
 make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>
 python3 tooling/scripts/acceptance-artifact.py cat \
   --gate acceptance-plan --role plan
+python3 tooling/scripts/acceptance-run.py \
+  --gate <selected-e2e-gate> --runtime-cell <declared-cell> --dry-run
 ```
 
 For an uncommitted or synthetic path check:

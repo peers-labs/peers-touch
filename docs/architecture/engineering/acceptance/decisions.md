@@ -2016,3 +2016,21 @@ Reports account for every required Gate and distinguish original completion,
 validation and actual dispatch. Request metadata is supporting-only. No new
 business assertions, smaller observation windows, uniform work caps, automatic
 budget growth or Gate scope changes follow from this decision.
+
+## D-24: E2E Preparation Reuses Existing Implementation Owners
+
+> Status: accepted
+> Owner: Acceptance Infra
+
+The shared Runner calls read-only E2E preparation after resolving its selected
+Gate dependency graph and source, before expensive preparation. Gate Catalog
+`e2e` entries reference original public implementations and Journeys; they do
+not contain operation-script copies. Missing implementation returns to its
+original owner for enhancement and reexecution of the same selection.
+
+Development, formal Acceptance, independent Gate entries, and manual CLI
+consume this contract without an IDE. Preparation cannot widen Gate selection,
+qualify resources, inherit product PASS, or create another authorization,
+receipt or resource ledger. `make desktop` and advisory Host Hooks retain their
+independent roles. The active schema, failure and verification contract is
+[e2e-execution-hook.md](e2e-execution-hook.md).

@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 from .drivers.base import BaseDriver, DomDriver
 from .errors import BlockedError, GateError
+from .e2e_preflight import preflight_gate_entry
 from .evidence import EvidenceReport, new_report
 from .harness import call_async_harness
 from .resource_diagnostic import ResourceDiagnostic
@@ -22,6 +23,13 @@ class AcceptanceGate(ABC):
     spec: tuple[str, ...] = ()
     report_path: Optional[Path] = None
     evidence_dir: Optional[Path] = None
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> AcceptanceGate:
+        # Guard before a concrete constructor can acquire a client or Fixture.
+        instance = super().__new__(cls)
+        gate_id = kwargs.get("gate_id") or cls.gate_id
+        instance.e2e_preflight = preflight_gate_entry(gate_id) if gate_id else None
+        return instance
 
     def __init__(self) -> None:
         if not self.gate_id:
@@ -111,11 +119,13 @@ class AcceptanceGate(ABC):
 
     def execute(self) -> int:
         self._start_time = time.time()
-        if self.evidence_dir is not None:
-            self.evidence_dir.mkdir(parents=True, exist_ok=True)
         result: dict[str, Any] = {}
         caught_error: Exception | None = None
         try:
+            if self.e2e_preflight is not None:
+                preflight_gate_entry(self.gate_id)
+            if self.evidence_dir is not None:
+                self.evidence_dir.mkdir(parents=True, exist_ok=True)
             result = self.run()
             runtime_binding = getattr(self, "runtime_binding", None)
             if runtime_binding is not None:

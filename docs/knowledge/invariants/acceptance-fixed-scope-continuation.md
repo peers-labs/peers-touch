@@ -40,6 +40,14 @@ detected: 2026-10-23
 
 # Fixed Acceptance scope and original proof
 
+E2E preparation uses the same fixed graph; its source/Catalog/implementation
+checks and manual entry contract are owned by
+[e2e-execution-hook.md](../../architecture/engineering/acceptance/e2e-execution-hook.md).
+Development prerequisite validation reads the current request's original
+functional manifest and inventory, checks current source, result and cleanup,
+and retains `NOT_APPLICABLE`. It cannot consume formal proof as functional
+completion or promote a functional result to formal `PROVEN`.
+
 ## What must hold
 
 The unique Runner resolves the complete required scope before execution.
