@@ -81,8 +81,12 @@ Rules:
   must not grow or shrink the overlay.
 - Verify with measured geometry across every phase transition, not a single
   state: the overlay width/height must be identical for all phases (the
-  device-link modal is the reference, constant 360×497). See
-  [review-checklist.md §13](./review-checklist.md#13-geometric-measurement-gate).
+  device-link modal is the reference, constant 400×557 since 2026-10-28).
+  The size is set by the QR decode floor, not by taste: the v15 compact
+  reference needs 4px modules, i.e. a 340px stage inside the modal. Growing a
+  phase stage requires growing every layer and re-measuring all phases. See
+  [review-checklist.md §13](./review-checklist.md#13-geometric-measurement-gate)
+  and `docs/knowledge/pitfalls/qr-transform-measurement-density-budget.md`.
 
 ## 4. Header And CTA
 

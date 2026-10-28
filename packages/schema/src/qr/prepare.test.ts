@@ -36,33 +36,43 @@ describe('independent QR decode', () => {
       }
     });
   }
-  it('keeps compact Device Link Base32 references independently decodable at 280px', async () => {
+  it('keeps compact Device Link Base32 references independently decodable at 340px/4px modules', async () => {
+    // Production-shaped reference: relay role carries the relay key and a
+    // leaf SPKI pin, giving the same 368-char payload observed on live offers.
     const reference = create(DeviceLinkLocatorSchema, {
       protocolVersion: 1,
       offerDigest: new Uint8Array(32).fill(1),
       expiresAtUnixMs: BigInt(Date.now() + 300_000),
       stationRootEd25519: new Uint8Array(32).fill(2),
       bootstrapSecret: new Uint8Array(32).fill(3),
-      canonicalDiscoveryOrigin: 'https://station.example',
-      endpointRole: 1,
+      canonicalDiscoveryOrigin: 'https://10.37.118.48:18081',
+      endpointRole: 2,
+      relayEd25519: new Uint8Array(32).fill(4),
+      endpointTlsTrust: { trust: { case: 'leafSpkiSha256', value: new Uint8Array(32).fill(5) } },
     });
     const content = { kind: 'action' as const, value: create(SchemaActionSchema, {
       protocolVersion: 1, action: { case: 'deviceLinkLocator' as const, value: reference },
     }) };
     const payload = encode(content);
     expect(payload).toContain('#B32:');
+    expect(payload).toHaveLength(368);
     const artifact = await prepareQr(content, {
-      size: 280, style: 'peers', maxVersion: 17, minModulePixels: 3
+      size: 340, style: 'peers', maxVersion: 17, minModulePixels: 4
     });
     try {
       const svg = await artifact.export('svg');
       const { data, info } = await sharp(Buffer.from(await svg.arrayBuffer())).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
       const decoded = jsQR(new Uint8ClampedArray(data), info.width, info.height);
       expect(decoded?.binaryData).toEqual([...new TextEncoder().encode(payload)]);
-      expect(artifact.diagnostics.version).toBeLessThanOrEqual(17);
-      expect(artifact.diagnostics.modulePixels).toBe(3);
+      expect(artifact.diagnostics.version).toBe(15);
+      expect(artifact.diagnostics.modulePixels).toBe(4);
       expect(artifact.diagnostics.errorCorrection).toBe('Q');
     } finally { artifact.dispose(); }
+    // The 280px box only yields 3px modules for this payload: the caller
+    // contract rejects it loudly instead of rendering an undecodable code.
+    await expect(prepareQr(content, {
+      size: 280, style: 'peers', maxVersion: 17, minModulePixels: 4,
+    })).rejects.toMatchObject({ code: 'PAYLOAD_TOO_DENSE' });
   });
   it('retains safety-number and provider payload bytes as presentation only', async () => {
     for (const [owner, value] of [
