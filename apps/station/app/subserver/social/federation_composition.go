@@ -77,11 +77,9 @@ func (p conversationDirectPort) EnsureDirectConversation(
 	ctx context.Context,
 	request application.EnsureDirectConversationRequest,
 ) (string, error) {
-	if request.FederationID == "" {
-		return "", errors.New(
-			"ensure accepted-relationship Direct Conversation: federation ID is required",
-		)
-	}
+	// Same-station relationships carry no Federation id: the canonical
+	// Conversation provider derives the Local scope from Actor home-station
+	// ownership. A cross-station effect supplies its Federation id in the claim.
 	if p.resolve == nil {
 		return "", errors.New(
 			"ensure accepted-relationship Direct Conversation: provider resolver is unavailable",

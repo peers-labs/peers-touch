@@ -198,7 +198,7 @@ func groupRecipientSnapshot(
 	})
 
 	result := ports.GroupRecipientSnapshot{
-		FederationID:        string(snapshot.FederationID),
+		FederationID:        string(snapshot.Scope.FederationIDOrEmpty()),
 		ConversationID:      string(snapshot.ID),
 		AuthorPTID:          string(author),
 		MembershipEpoch:     uint64(snapshot.Head.MembershipEpoch),
@@ -347,7 +347,7 @@ func (s *subServer) ResolveGroupCallAuthority(
 	}
 
 	return string(snapshot.AuthorityStation),
-		string(snapshot.FederationID),
+		string(snapshot.Scope.FederationIDOrEmpty()),
 		uint64(snapshot.AuthorityEpoch),
 		string(memberHomeStation),
 		true,

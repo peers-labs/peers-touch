@@ -11,14 +11,13 @@ import (
 )
 
 // EnsureSystemDirectRequest is the internal creation input for a delegated
-// service sender and its local recipient.
+// service sender and its local recipient. The scope is always the Station's
+// own Local scope; callers never supply a Federation id.
 type EnsureSystemDirectRequest struct {
 	Sender          valueobject.PTID
 	Recipient       valueobject.PTID
 	SystemSender    valueobject.Endpoint
 	RecipientRoutes []ports.EndpointRoute
-	FederationID    valueobject.FederationID
-	AuthorityEpoch  valueobject.AuthorityEpoch
 	CommandID       valueobject.CommandID
 	ExactEventBytes []byte
 }
@@ -152,13 +151,17 @@ func (s *Service) EnsureSystemDirect(
 				deliveries = append(deliveries, delivery)
 			}
 
+			scope, scopeErr := valueobject.LocalScope(s.localStation)
+			if scopeErr != nil {
+				return directCreationStage("resolve_scope", scopeErr)
+			}
 			created, transition, createErr := aggregate.CreateSystemDirect(
 				aggregate.CreateInput{
 					ID:               conversationID,
 					Kind:             valueobject.ConversationKindDirect,
-					FederationID:     request.FederationID,
+					Scope:            scope,
 					AuthorityStation: s.localStation,
-					AuthorityEpoch:   request.AuthorityEpoch,
+					AuthorityEpoch:   LocalAuthorityEpoch,
 					Participants: []aggregate.Participant{
 						{Actor: request.Sender, HomeStation: s.localStation},
 						{Actor: request.Recipient, HomeStation: s.localStation},
@@ -222,7 +225,10 @@ func validateExistingSystemDirect(
 	}
 	if snapshot.Kind != valueobject.ConversationKindDirect ||
 		snapshot.Status != valueobject.ConversationStatusActive ||
+		!snapshot.Scope.IsLocal() ||
+		snapshot.Scope.LocalStation() != localStation ||
 		snapshot.AuthorityStation != localStation ||
+		snapshot.AuthorityEpoch != LocalAuthorityEpoch ||
 		len(activeMembers) != 2 ||
 		!activeMembers[request.Sender] ||
 		!activeMembers[request.Recipient] ||

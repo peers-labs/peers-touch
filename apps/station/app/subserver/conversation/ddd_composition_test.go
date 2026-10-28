@@ -180,6 +180,24 @@ func (d dddFederationDirectory) IsActiveStation(
 	return station != "" && !d.factory.inactiveStations[station], nil
 }
 
+func (d dddFederationDirectory) ResolveSharedFederation(
+	_ context.Context,
+	stationA valueobject.StationID,
+	stationB valueobject.StationID,
+) (valueobject.FederationID, error) {
+	if stationA == "" || stationB == "" ||
+		d.factory.inactiveStations[stationA] ||
+		d.factory.inactiveStations[stationB] {
+		return "", conversationdomain.NewError(
+			conversationdomain.ErrorCodeFederationInactive,
+			"ddd.federation",
+			"federation",
+			"stations share no active federation",
+		)
+	}
+	return dddFederationID, nil
+}
+
 type dddIdentityDirectory struct {
 	db      *gorm.DB
 	factory *dddAdapterFactory
@@ -719,7 +737,7 @@ func TestConversationDDDPersistsCanonicalTimestampPrecision(t *testing.T) {
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "timestamp-create",
 			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
@@ -772,7 +790,7 @@ func TestConversationDDDReadCursorUsesVerifiedRemoteRoutes(t *testing.T) {
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "read-cursor-create",
 			VerifiedRoutes:    routes,
@@ -835,7 +853,7 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 	created, err := fixture.commands.CreateDirect(context.Background(), command.CreateDirectRequest{
 		Creator:           alice,
 		Peer:              bob.Actor,
-		FederationID:      dddFederationID,
+		Scope:             valueobject.MustFederationScope(dddFederationID),
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "create-direct",
 		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
@@ -1118,7 +1136,7 @@ func TestConversationDDDCreateDirectUsesVerifiedRemoteRoutes(t *testing.T) {
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "manifest-only-remote-create",
 			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
@@ -1157,7 +1175,7 @@ func TestConversationDDDCreateDirectUsesVerifiedRemoteRoutes(t *testing.T) {
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "manifest-only-remote-create",
 			ExactCommandBytes: []byte("manifest-only-remote-create"),
@@ -1172,7 +1190,7 @@ func TestConversationDDDCreateDirectUsesVerifiedRemoteRoutes(t *testing.T) {
 	conflictingReplay := command.CreateDirectRequest{
 		Creator:           alice,
 		Peer:              bob.Actor,
-		FederationID:      dddFederationID,
+		Scope:             valueobject.MustFederationScope(dddFederationID),
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "manifest-only-remote-create",
 		ExactCommandBytes: []byte("different-create-command"),
@@ -1188,7 +1206,7 @@ func TestConversationDDDCreateDirectUsesVerifiedRemoteRoutes(t *testing.T) {
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "direct-reopen-command",
 			ExactCommandBytes: []byte("direct-reopen-command"),
@@ -1216,7 +1234,7 @@ func TestConversationDDDCreateDirectUsesVerifiedRemoteRoutes(t *testing.T) {
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "relationship-effect-after-device-churn",
 			ExactCommandBytes: []byte("relationship-effect-after-device-churn"),
@@ -1233,7 +1251,7 @@ func TestConversationDDDCreateDirectUsesVerifiedRemoteRoutes(t *testing.T) {
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      "different-federation",
+			Scope:             valueobject.MustFederationScope("different-federation"),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "relationship-effect-wrong-federation",
 			ExactCommandBytes: []byte("relationship-effect-wrong-federation"),
@@ -1314,7 +1332,7 @@ func TestConversationDDDCreateDirectFailsClosedBeforeMutation(t *testing.T) {
 				command.CreateDirectRequest{
 					Creator:           alice,
 					Peer:              bob.Actor,
-					FederationID:      dddFederationID,
+					Scope:             valueobject.MustFederationScope(dddFederationID),
 					AuthorityEpoch:    dddAuthorityEpoch,
 					CommandID:         "closed-create",
 					VerifiedRoutes:    testCase.routes(alice, bob),
@@ -1343,7 +1361,7 @@ func TestConversationDDDCreateDirectReopensFollowerProjection(t *testing.T) {
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "authority-direct-create",
 			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
@@ -1367,7 +1385,7 @@ func TestConversationDDDCreateDirectReopensFollowerProjection(t *testing.T) {
 		command.CreateDirectRequest{
 			Creator:           bob,
 			Peer:              alice.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "follower-direct-reopen",
 			ExactCommandBytes: []byte("follower-direct-reopen"),
@@ -1414,7 +1432,7 @@ func TestConversationDDDDirectFanoutUsesCurrentActiveActorDevices(t *testing.T) 
 	created, err := fixture.commands.CreateDirect(context.Background(), command.CreateDirectRequest{
 		Creator:           alice,
 		Peer:              bob.Actor,
-		FederationID:      dddFederationID,
+		Scope:             valueobject.MustFederationScope(dddFederationID),
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "direct-devices-create",
 		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
@@ -1526,7 +1544,7 @@ func TestConversationDDDDirectRecoversMissingDeviceProjectionFromVerifiedGenesis
 		command.CreateDirectRequest{
 			Creator:           aliceOriginal,
 			Peer:              bobOriginal.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "direct-recovery-create",
 			VerifiedRoutes:    dddDirectRoutes(aliceOriginal, "station-a", bobOriginal, "station-a"),
@@ -1683,7 +1701,7 @@ func TestConversationDDDDirectProjectionRecoveryRejectsTamperedGenesis(t *testin
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "direct-recovery-tampered-create",
 			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
@@ -1728,7 +1746,7 @@ func TestConversationDDDCommandRoutesUseVerifiedRemoteActorWithoutShadowRow(t *t
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "verified-command-create",
 			VerifiedRoutes:    routes,
@@ -1919,7 +1937,7 @@ func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 	created, err := fixture.commands.CreateDirect(context.Background(), command.CreateDirectRequest{
 		Creator:           alice,
 		Peer:              bob.Actor,
-		FederationID:      dddFederationID,
+		Scope:             valueobject.MustFederationScope(dddFederationID),
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "message-rules-create",
 		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
@@ -2148,7 +2166,7 @@ func TestConversationDDDConcurrentFirstCreateReplaysExactly(t *testing.T) {
 	request := command.CreateDirectRequest{
 		Creator:           alice,
 		Peer:              bob.Actor,
-		FederationID:      dddFederationID,
+		Scope:             valueobject.MustFederationScope(dddFederationID),
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "concurrent-create",
 		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
@@ -2195,7 +2213,7 @@ func TestConversationDDDCreateReplayRejectsReceiptEventDrift(t *testing.T) {
 	request := command.CreateDirectRequest{
 		Creator:           alice,
 		Peer:              bob.Actor,
-		FederationID:      dddFederationID,
+		Scope:             valueobject.MustFederationScope(dddFederationID),
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "create-replay-drift",
 		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
@@ -2233,7 +2251,7 @@ func TestConversationDDDForwardedProposalUsesAuthorityCommandPath(t *testing.T) 
 	created, err := fixture.commands.CreateDirect(context.Background(), command.CreateDirectRequest{
 		Creator:           alice,
 		Peer:              bob.Actor,
-		FederationID:      dddFederationID,
+		Scope:             valueobject.MustFederationScope(dddFederationID),
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "proposal-create",
 		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
@@ -4899,7 +4917,7 @@ func TestConversationDDDTestCompositionFollowerAndPostCommitFailure(t *testing.T
 	}
 	authority, transition, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "follower-group",
-		FederationID:     dddFederationID,
+		Scope:            valueobject.MustFederationScope(dddFederationID),
 		AuthorityStation: "station-c",
 		AuthorityEpoch:   dddAuthorityEpoch,
 		Owner:            alice.Actor,
@@ -5042,7 +5060,7 @@ func TestConversationDDDTestCompositionFollowerAndPostCommitFailure(t *testing.T
 		command.CreateDirectRequest{
 			Creator:        dddEndpoint("ptid:local-a", "a-1"),
 			Peer:           "ptid:local-b",
-			FederationID:   dddFederationID,
+			Scope:          valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch: dddAuthorityEpoch,
 			CommandID:      "post-commit-create",
 			VerifiedRoutes: dddDirectRoutes(
@@ -5082,7 +5100,7 @@ func TestConversationDDDPostCommitFailuresDoNotRollBackCommandOrReadCursor(t *te
 		command.CreateDirectRequest{
 			Creator:           alice,
 			Peer:              bob.Actor,
-			FederationID:      dddFederationID,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "post-commit-direct",
 			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
@@ -5185,7 +5203,7 @@ func TestConversationDDDFollowerRejectsAuthorityReplacement(t *testing.T) {
 	bob := dddEndpoint("ptid:follower-authority-bob", "bob-1")
 	authority, genesis, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "follower-authority-group",
-		FederationID:     dddFederationID,
+		Scope:            valueobject.MustFederationScope(dddFederationID),
 		AuthorityStation: "station-c",
 		AuthorityEpoch:   dddAuthorityEpoch,
 		Owner:            alice.Actor,
@@ -5409,7 +5427,7 @@ func TestConversationDDDFollowerHistoricalReplayAndForkProtection(t *testing.T) 
 	bob := dddEndpoint("ptid:follower-history-bob", "bob-1")
 	authority, genesis, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "follower-history-group",
-		FederationID:     dddFederationID,
+		Scope:            valueobject.MustFederationScope(dddFederationID),
 		AuthorityStation: "station-c",
 		AuthorityEpoch:   dddAuthorityEpoch,
 		Owner:            alice.Actor,
@@ -5503,7 +5521,7 @@ func TestConversationDDDRejectedFollowerEventDoesNotPoisonHistory(t *testing.T) 
 	bob := dddEndpoint("ptid:follower-reject-bob", "bob-1")
 	authority, genesis, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "follower-reject-group",
-		FederationID:     dddFederationID,
+		Scope:            valueobject.MustFederationScope(dddFederationID),
 		AuthorityStation: "station-c",
 		AuthorityEpoch:   dddAuthorityEpoch,
 		Owner:            alice.Actor,
@@ -5568,7 +5586,7 @@ func TestConversationDDDFollowerRejectsInvalidEpochProgression(t *testing.T) {
 	bob := dddEndpoint("ptid:follower-epoch-bob", "bob-1")
 	authority, genesis, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "follower-epoch-group",
-		FederationID:     dddFederationID,
+		Scope:            valueobject.MustFederationScope(dddFederationID),
 		AuthorityStation: "station-c",
 		AuthorityEpoch:   dddAuthorityEpoch,
 		Owner:            alice.Actor,
@@ -5636,7 +5654,7 @@ func TestConversationDDDFollowerRejectsPostStateEpochMismatch(t *testing.T) {
 	bob := dddEndpoint("ptid:follower-state-epoch-bob", "bob-1")
 	_, genesis, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "follower-state-epoch-group",
-		FederationID:     dddFederationID,
+		Scope:            valueobject.MustFederationScope(dddFederationID),
 		AuthorityStation: "station-c",
 		AuthorityEpoch:   dddAuthorityEpoch,
 		Owner:            alice.Actor,
@@ -5714,7 +5732,7 @@ func TestConversationDDDFollowerRejectsEventStateShapeMismatch(t *testing.T) {
 	charlie := dddEndpoint("ptid:follower-shape-charlie", "charlie-1")
 	authority, genesis, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "follower-shape-group",
-		FederationID:     dddFederationID,
+		Scope:            valueobject.MustFederationScope(dddFederationID),
 		AuthorityStation: "station-c",
 		AuthorityEpoch:   dddAuthorityEpoch,
 		Owner:            alice.Actor,
@@ -5917,7 +5935,7 @@ func TestConversationDDDFollowerRejectsPersistedHeadDrift(t *testing.T) {
 	bob := dddEndpoint("ptid:follower-head-bob", "bob-1")
 	authority, genesis, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "follower-head-group",
-		FederationID:     dddFederationID,
+		Scope:            valueobject.MustFederationScope(dddFederationID),
 		AuthorityStation: "station-c",
 		AuthorityEpoch:   dddAuthorityEpoch,
 		Owner:            alice.Actor,
@@ -5991,7 +6009,7 @@ func TestConversationDDDConcurrentFollowerGenesisDetectsConflict(t *testing.T) {
 		t.Helper()
 		_, transition, err := aggregate.CreateGroup(aggregate.CreateInput{
 			ID:               "follower-race-group",
-			FederationID:     dddFederationID,
+			Scope:            valueobject.MustFederationScope(dddFederationID),
 			AuthorityStation: "station-c",
 			AuthorityEpoch:   dddAuthorityEpoch,
 			Owner:            alice.Actor,
@@ -6063,7 +6081,7 @@ func TestConversationDDDPreGenesisFollowerForkRemainsReadOnly(t *testing.T) {
 	bob := dddEndpoint("ptid:follower-fork-bob", "bob-1")
 	authority, genesis, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "follower-pre-genesis-fork",
-		FederationID:     dddFederationID,
+		Scope:            valueobject.MustFederationScope(dddFederationID),
 		AuthorityStation: "station-c",
 		AuthorityEpoch:   dddAuthorityEpoch,
 		Owner:            alice.Actor,
@@ -6152,7 +6170,7 @@ func TestConversationDDDFullFollowerBufferAcceptsExactReplay(t *testing.T) {
 	bob := dddEndpoint("ptid:follower-buffer-bob", "bob-1")
 	authority, genesis, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "follower-full-buffer",
-		FederationID:     dddFederationID,
+		Scope:            valueobject.MustFederationScope(dddFederationID),
 		AuthorityStation: "station-c",
 		AuthorityEpoch:   dddAuthorityEpoch,
 		Owner:            alice.Actor,

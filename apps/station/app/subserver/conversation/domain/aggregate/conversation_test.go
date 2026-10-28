@@ -52,7 +52,7 @@ func TestCreateDirect(t *testing.T) {
 
 		conversation, transition, err := aggregate.CreateDirect(aggregate.CreateInput{
 			AuthorityStation: station,
-			FederationID:     testFederationID,
+			Scope:            valueobject.MustFederationScope(testFederationID),
 			AuthorityEpoch:   testAuthorityEpoch,
 			Participants:     participants,
 			Devices:          devices,
@@ -144,7 +144,7 @@ func TestCreateGroup(t *testing.T) {
 		member := mustEndpoint(t, "ptid:member", "member-device")
 		_, _, err := aggregate.CreateGroup(aggregate.CreateInput{
 			ID:               valueobject.ConversationID("group-missing-owner"),
-			FederationID:     testFederationID,
+			Scope:            valueobject.MustFederationScope(testFederationID),
 			AuthorityStation: fixture.station,
 			AuthorityEpoch:   testAuthorityEpoch,
 			Owner:            owner.Actor,
@@ -168,7 +168,7 @@ func TestCreateGroup(t *testing.T) {
 		outsider := mustEndpoint(t, "ptid:outsider", "outsider-device")
 		_, _, err := aggregate.CreateGroup(aggregate.CreateInput{
 			ID:               valueobject.ConversationID("group-unauthorized-creator"),
-			FederationID:     testFederationID,
+			Scope:            valueobject.MustFederationScope(testFederationID),
 			AuthorityStation: fixture.station,
 			AuthorityEpoch:   testAuthorityEpoch,
 			Owner:            fixture.owner.Actor,
@@ -198,7 +198,7 @@ func TestCreateGroup(t *testing.T) {
 		member := mustEndpoint(t, "ptid:genesis-member", "member-device")
 		_, _, err := aggregate.CreateGroup(aggregate.CreateInput{
 			ID:               valueobject.ConversationID("group-invalid-delivery-kind"),
-			FederationID:     testFederationID,
+			Scope:            valueobject.MustFederationScope(testFederationID),
 			AuthorityStation: fixture.station,
 			AuthorityEpoch:   testAuthorityEpoch,
 			Owner:            owner.Actor,
@@ -256,7 +256,7 @@ func TestCreateRejectsInvalidDeviceProjection(t *testing.T) {
 
 			_, _, err := aggregate.CreateGroup(aggregate.CreateInput{
 				ID:               valueobject.ConversationID("group-invalid-device"),
-				FederationID:     testFederationID,
+				Scope:            valueobject.MustFederationScope(testFederationID),
 				AuthorityStation: station,
 				AuthorityEpoch:   testAuthorityEpoch,
 				Owner:            owner.Actor,
@@ -292,7 +292,7 @@ func TestConversationRejectsNonTransportEventSealer(t *testing.T) {
 	station := valueobject.StationID("station-a")
 	_, _, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "transport-sealer-group",
-		FederationID:     testFederationID,
+		Scope:            valueobject.MustFederationScope(testFederationID),
 		AuthorityStation: station,
 		AuthorityEpoch:   testAuthorityEpoch,
 		Owner:            owner.Actor,
@@ -1510,7 +1510,7 @@ func TestRehydrateRejectsMalformedDirectState(t *testing.T) {
 	bob := mustEndpoint(t, "ptid:direct-bob", "bob-device")
 	station := valueobject.StationID("station-a")
 	conversation, _, err := aggregate.CreateDirect(aggregate.CreateInput{
-		FederationID:     testFederationID,
+		Scope:            valueobject.MustFederationScope(testFederationID),
 		AuthorityStation: station,
 		AuthorityEpoch:   testAuthorityEpoch,
 		Participants: []aggregate.Participant{
@@ -1648,7 +1648,7 @@ func mustCreateGroup(t *testing.T) conversationFixture {
 	station := valueobject.StationID("station-a")
 	conversation, transition, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               valueobject.ConversationID("group-1"),
-		FederationID:     testFederationID,
+		Scope:            valueobject.MustFederationScope(testFederationID),
 		AuthorityStation: station,
 		AuthorityEpoch:   testAuthorityEpoch,
 		Owner:            owner.Actor,
@@ -1701,7 +1701,7 @@ func mustCreateThreeMemberGroup(
 	station := valueobject.StationID("station-a")
 	conversation, transition, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               valueobject.ConversationID("group-member-authority"),
-		FederationID:     testFederationID,
+		Scope:            valueobject.MustFederationScope(testFederationID),
 		AuthorityStation: station,
 		AuthorityEpoch:   testAuthorityEpoch,
 		Owner:            owner.Actor,
@@ -1769,7 +1769,7 @@ func mustMemberAuthorityCommand(
 		Action:                 action,
 		Target:                 target,
 		ObservedAuthorityHead:  fixture.conversation.AuthorityHead(),
-		ObservedFederationID:   fixture.conversation.FederationID(),
+		ObservedScope:          fixture.conversation.Scope(),
 		ObservedAuthorityEpoch: fixture.conversation.AuthorityEpoch(),
 		Deadline:               at.Add(5 * time.Minute),
 	}

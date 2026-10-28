@@ -25,7 +25,11 @@ message CreateDirectConversationRequest {
   string peer_ptid = 1;
   reserved 2;
   reserved "peer_station_peer_id";
-  string federation_id = 3;
+  // Scope is derived server-side from the two actors' Home Stations: Local
+  // when both are on this Station, Federation (resolved from the station
+  // pair) when they cross stations. Clients no longer supply a federation id.
+  reserved 3;
+  reserved "federation_id";
   peers_touch.model.actor.v1.ActorDeviceRef creator = 4;
   string command_id = 5;
 }

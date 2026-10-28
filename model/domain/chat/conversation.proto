@@ -44,6 +44,9 @@ message Conversation {
   int64 mls_epoch = 17;
   string federation_id = 18;
   int64 authority_epoch = 19;
+  // Discriminator for the conversation authorization scope. LOCAL carries
+  // an empty federation_id; FEDERATION requires federation_id to be set.
+  ConversationScopeKind scope_kind = 20;
 }
 
 message ConversationPublicHead {
@@ -59,6 +62,17 @@ message ConversationPublicHead {
   string transition_id = 10;
   bytes commit_sha256 = 11;
   string status = 12;
+  ConversationScopeKind scope_kind = 13;
+}
+
+// ConversationScopeKind discriminates the two authorization scopes a
+// conversation can live under. LOCAL is derived from Actor Home-Station
+// ownership and never crosses stations; FEDERATION references a real
+// Federation resource id carried in federation_id.
+enum ConversationScopeKind {
+  CONVERSATION_SCOPE_KIND_UNSPECIFIED = 0;
+  CONVERSATION_SCOPE_KIND_LOCAL = 1;
+  CONVERSATION_SCOPE_KIND_FEDERATION = 2;
 }
 
 enum ConversationPublicHeadSource {

@@ -152,11 +152,17 @@ func MapMemberAuthorityCommand(
 	if err != nil {
 		return command.SubmitRequest{}, err
 	}
+	observedScope, err := valueobject.FederationScope(
+		valueobject.FederationID(wire.GetFederationId()),
+	)
+	if err != nil {
+		return command.SubmitRequest{}, err
+	}
 	memberCommand := &aggregate.MemberAuthorityCommand{
 		Command:                base,
 		Target:                 target,
 		ObservedAuthorityHead:  preparation.Head,
-		ObservedFederationID:   valueobject.FederationID(wire.GetFederationId()),
+		ObservedScope:          observedScope,
 		ObservedAuthorityEpoch: valueobject.AuthorityEpoch(wire.GetAuthorityEpoch()),
 		Deadline:               deadline,
 	}
@@ -1330,6 +1336,17 @@ func conversationKindToProto(kind valueobject.ConversationKind) chat.Conversatio
 	}
 }
 
+func authorityScopeKind(kind valueobject.ScopeKind) chat.ConversationScopeKind {
+	switch kind {
+	case valueobject.ScopeKindLocal:
+		return chat.ConversationScopeKind_CONVERSATION_SCOPE_KIND_LOCAL
+	case valueobject.ScopeKindFederation:
+		return chat.ConversationScopeKind_CONVERSATION_SCOPE_KIND_FEDERATION
+	default:
+		return chat.ConversationScopeKind_CONVERSATION_SCOPE_KIND_UNSPECIFIED
+	}
+}
+
 func mapConversationState(
 	state *domainevent.ConversationState,
 ) *chat.ConversationAuthoritySnapshot {
@@ -1370,7 +1387,8 @@ func mapConversationState(
 		MembershipEpoch:      int64(state.MembershipEpoch),
 		MlsEpoch:             int64(state.MLSEpoch),
 		ActiveEndpointRoutes: endpointRoutes,
-		FederationId:         string(state.FederationID),
+		FederationId:         string(state.Scope.FederationIDOrEmpty()),
+		ScopeKind:            authorityScopeKind(state.Scope.Kind()),
 		AuthorityEpoch:       int64(state.AuthorityEpoch),
 		Description:          state.Settings.Description,
 		AvatarObjectId:       state.Settings.AvatarObjectID,

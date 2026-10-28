@@ -18,7 +18,12 @@ func init() {
 type TouchConfig struct {
 	Peers struct {
 		Actor struct {
-			PresetUsers []PresetActorConfig `json:"preset_users" pconf:"preset_users" yaml:"preset_users"`
+			// DevSeedEnabled must be explicitly turned on for development images to
+			// create preset actors/friendships at startup. It defaults to false so a
+			// production deployment can never inject seeded accounts, even if
+			// preset_users is populated. Seeding has no HTTP/RPC entry point.
+			DevSeedEnabled bool                `json:"dev_seed_enabled" pconf:"dev_seed_enabled" yaml:"dev_seed_enabled"`
+			PresetUsers    []PresetActorConfig `json:"preset_users" pconf:"preset_users" yaml:"preset_users"`
 		} `json:"actor" pconf:"actor" yaml:"actor"`
 		Touch struct {
 			Routers  RouterConfig   `json:"routers" pconf:"routers" yaml:"routers"`
@@ -76,6 +81,12 @@ func GetRouterConfig() *RouterConfig {
 
 func GetPresetUsers() []PresetActorConfig {
 	return touchConfig.Peers.Actor.PresetUsers
+}
+
+// GetDevSeedEnabled reports whether development-only preset seeding is
+// explicitly enabled for this deployment. It is opt-in and defaults off.
+func GetDevSeedEnabled() bool {
+	return touchConfig.Peers.Actor.DevSeedEnabled
 }
 
 // GetPasswordConfig returns the password configuration with default values

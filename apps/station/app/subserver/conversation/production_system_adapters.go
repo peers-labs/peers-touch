@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
-	federationinfra "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
 	notificationinfra "github.com/peers-labs/peers-touch/station/app/subserver/notification/infrastructure"
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"gorm.io/gorm"
@@ -90,38 +88,4 @@ func (n *productionServiceNotifications) ProduceInTx(
 		Produced:       result.Produced,
 		NotificationID: result.NotificationID,
 	}, nil
-}
-
-// productionLocalScope resolves the Station's own active Federation for
-// internal system conversations. v1 admits exactly one home-local federation;
-// a missing or ambiguous scope is a hard error rather than a guessed id.
-type productionLocalScope struct {
-	db           *gorm.DB
-	localStation valueobject.StationID
-}
-
-func (s *productionLocalScope) LocalFederation(
-	ctx context.Context,
-) (valueobject.FederationID, valueobject.AuthorityEpoch, error) {
-	repos := federationinfra.NewRepos(s.db)
-	records, err := repos.Federation.ListByStation(ctx, string(s.localStation))
-	if err != nil {
-		return "", 0, conversationdomain.NewError(
-			conversationdomain.ErrorCodeFederationInactive,
-			"production_system.local_scope",
-			"federation",
-			"cannot resolve local federation: "+err.Error(),
-		)
-	}
-	for _, record := range records {
-		if strings.EqualFold(record.Status, "active") && record.FederationID != "" {
-			return valueobject.FederationID(record.FederationID), valueobject.AuthorityEpoch(1), nil
-		}
-	}
-	return "", 0, conversationdomain.NewError(
-		conversationdomain.ErrorCodeFederationInactive,
-		"production_system.local_scope",
-		"federation",
-		"no active local Federation is registered for this Station",
-	)
 }

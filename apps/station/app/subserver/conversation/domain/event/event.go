@@ -74,7 +74,7 @@ type ConversationCreated struct {
 
 type ConversationState struct {
 	Kind            valueobject.ConversationKind
-	FederationID    valueobject.FederationID
+	Scope           valueobject.Scope
 	AuthorityEpoch  valueobject.AuthorityEpoch
 	Owner           valueobject.PTID
 	Settings        valueobject.ConversationSettings
@@ -623,7 +623,7 @@ func conversationStateBytes(state *ConversationState) []byte {
 	}
 	fields := [][]byte{
 		[]byte(state.Kind),
-		[]byte(state.FederationID),
+		[]byte(state.Scope.Canonical()),
 		[]byte(state.AuthorityEpoch.String()),
 		[]byte(state.Owner),
 		[]byte(state.Settings.Name),

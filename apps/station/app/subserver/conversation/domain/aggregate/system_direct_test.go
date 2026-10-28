@@ -34,9 +34,13 @@ func mustSystemCreateInput(
 		t.Fatalf("genesis delivery: %v", err)
 	}
 	genesisDeliveries = append(genesisDeliveries, delivery)
+	scope, err := valueobject.LocalScope(station)
+	if err != nil {
+		t.Fatalf("local scope: %v", err)
+	}
 	return aggregate.CreateInput{
 		AuthorityStation: station,
-		FederationID:     testFederationID,
+		Scope:            scope,
 		AuthorityEpoch:   testAuthorityEpoch,
 		Participants: []aggregate.Participant{
 			{Actor: bot.Actor, HomeStation: station},

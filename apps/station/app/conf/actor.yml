@@ -1,5 +1,8 @@
 peers:
   actor:
+    # Development-only. Preset seeding has no HTTP/RPC entry point and runs at
+    # most once per process. Production overlays must set this to false.
+    dev_seed_enabled: true
     preset_users:
       - id: "https://station.local/actor/alice"
         username: "alice"

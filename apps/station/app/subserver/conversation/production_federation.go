@@ -570,7 +570,7 @@ func (p *productionDeviceDeliveryPort) ApplyDeviceDelivery(
 		active, err := (productionFederationMembershipProjection{}).IsActiveStation(
 			ctx,
 			transaction,
-			string(view.Conversation.FederationID),
+			string(view.Conversation.Scope.FederationIDOrEmpty()),
 			sourceAuthorityStationPeerID,
 		)
 		if err != nil {
@@ -1246,7 +1246,7 @@ func (p *productionDeliveryReceiptPort) ApplyDeliveryReceipt(
 	active, err := (productionFederationMembershipProjection{}).IsActiveStation(
 		ctx,
 		transaction,
-		string(view.Conversation.FederationID),
+		string(view.Conversation.Scope.FederationIDOrEmpty()),
 		sourceHomeStationPeerID,
 	)
 	if err != nil {
@@ -1333,7 +1333,7 @@ func (p *productionReadCursorPort) ApplyReadCursor(
 	view, err := boundQuery.Get(ctx, request.ConversationID, request.Reader.Actor)
 	if err != nil ||
 		view.Source != query.SourceAuthority ||
-		view.Conversation.FederationID != federationID ||
+		view.Conversation.Scope.FederationIDOrEmpty() != federationID ||
 		view.Conversation.AuthorityStation != authority ||
 		authority != p.composition.localStation ||
 		view.Conversation.AuthorityEpoch != authorityEpoch {
@@ -1916,7 +1916,7 @@ func validateConversationProposalFollowerHead(
 		head.FollowerStatus != repository.FollowerStatusActive ||
 		head.Status != valueobject.ConversationStatusActive ||
 		string(head.ConversationID) != command.ConversationID ||
-		string(head.FederationID) != proposal.GetFederationId() ||
+		string(head.Scope.FederationIDOrEmpty()) != proposal.GetFederationId() ||
 		string(head.AuthorityStation) != proposal.GetAuthorityStationPeerId() ||
 		int64(head.AuthorityEpoch) != proposal.GetAuthorityEpoch() {
 		return conversationdomain.NewError(
@@ -2347,9 +2347,15 @@ func productionStateFromWire(
 		endpoints = append(endpoints, mapped)
 	}
 
+	scope, err := valueobject.FederationScope(
+		valueobject.FederationID(wire.GetFederationId()),
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &domainevent.ConversationState{
 		Kind:            productionConversationKindFromProto(wire.GetKind()),
-		FederationID:    valueobject.FederationID(wire.GetFederationId()),
+		Scope:           scope,
 		AuthorityEpoch:  valueobject.AuthorityEpoch(wire.GetAuthorityEpoch()),
 		Owner:           valueobject.PTID(wire.GetOwnerPtid()),
 		Settings:        productionConversationSettingsFromWire(wire),

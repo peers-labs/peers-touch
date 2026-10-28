@@ -23,7 +23,7 @@ func TestValidateConversationProposalFollowerHead(t *testing.T) {
 	valid := query.PublicHead{
 		ConversationID:   valueobject.ConversationID("conversation-1"),
 		Source:           query.SourceFollower,
-		FederationID:     valueobject.FederationID("federation-1"),
+		Scope:            valueobject.MustFederationScope("federation-1"),
 		AuthorityStation: valueobject.StationID("station-four"),
 		AuthorityEpoch:   valueobject.AuthorityEpoch(3),
 		Status:           valueobject.ConversationStatusActive,
@@ -58,7 +58,7 @@ func TestValidateConversationProposalFollowerHead(t *testing.T) {
 		{
 			name: "federation drift",
 			mutate: func(head *query.PublicHead) {
-				head.FederationID = "federation-other"
+				head.Scope = valueobject.MustFederationScope("federation-other")
 			},
 		},
 		{

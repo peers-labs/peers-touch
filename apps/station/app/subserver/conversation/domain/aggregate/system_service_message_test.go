@@ -32,7 +32,7 @@ func mustCreateBotDirect(
 	}
 	conversation, _, err := aggregate.CreateDirect(aggregate.CreateInput{
 		AuthorityStation: station,
-		FederationID:     testFederationID,
+		Scope:            valueobject.MustFederationScope(testFederationID),
 		AuthorityEpoch:   testAuthorityEpoch,
 		Participants: []aggregate.Participant{
 			{Actor: bot.Actor, HomeStation: station},

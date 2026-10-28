@@ -209,7 +209,7 @@ func (s *subServer) prepareFederatedMembership(
 	}
 	if view.Source != query.SourceAuthority ||
 		view.Conversation.AuthorityStation != s.localStation ||
-		claims.Custom[federationruntime.ClaimFederationID] != string(view.Conversation.FederationID) ||
+		claims.Custom[federationruntime.ClaimFederationID] != string(view.Conversation.Scope.FederationIDOrEmpty()) ||
 		claims.Custom[federationruntime.ClaimAuthorityEpoch] != strconv.FormatInt(
 			int64(view.Conversation.AuthorityEpoch), 10,
 		) {
@@ -394,7 +394,7 @@ func (s *subServer) productionFollowerEventsPage(
 			}
 			active, err := transaction.Federation.IsActiveStation(
 				ctx,
-				snapshot.FederationID,
+				snapshot.Scope.FederationIDOrEmpty(),
 				valueobject.StationID(targetHomeStationPeerID),
 			)
 			if err != nil {

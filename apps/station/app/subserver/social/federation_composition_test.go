@@ -60,22 +60,32 @@ func TestConversationDirectPortThreadsFederationIdentity(t *testing.T) {
 	}
 }
 
-func TestConversationDirectPortRejectsMissingFederationIdentity(t *testing.T) {
-	_, err := (conversationDirectPort{
+func TestConversationDirectPortAllowsLocalRelationshipWithoutFederationIdentity(t *testing.T) {
+	provider := &directConversationProviderFixture{}
+	request := application.EnsureDirectConversationRequest{
+		EffectID:   "effect-1",
+		RequestID:  "request-1",
+		ActorAPTID: "ptid:alice",
+		ActorBPTID: "ptid:bob",
+	}
+	port := conversationDirectPort{
 		resolve: func() (canonicalConversationDirectProvider, error) {
-			return &directConversationProviderFixture{}, nil
+			return provider, nil
 		},
-	}).EnsureDirectConversation(
+	}
+	conversationID, err := port.EnsureDirectConversation(
 		context.Background(),
-		application.EnsureDirectConversationRequest{
-			EffectID:   "effect-1",
-			RequestID:  "request-1",
-			ActorAPTID: "ptid:alice",
-			ActorBPTID: "ptid:bob",
-		},
+		request,
 	)
-	if err == nil {
-		t.Fatal("missing federation identity was accepted")
+	if err != nil {
+		t.Fatalf("same-station relationship without a Federation id must reach the provider: %v", err)
+	}
+	if conversationID != "conversation-direct" || provider.request != request {
+		t.Fatalf(
+			"conversation result = %q, request = %+v",
+			conversationID,
+			provider.request,
+		)
 	}
 }
 

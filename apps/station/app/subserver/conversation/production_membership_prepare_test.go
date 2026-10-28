@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -103,7 +104,7 @@ func TestForwardPrepareMembershipUsesCanonicalFederationPrepareRoute(t *testing.
 	}
 	conversation := aggregate.Snapshot{
 		ID:               "conversation-1",
-		FederationID:     "federation-1",
+		Scope:            valueobject.MustFederationScope("federation-1"),
 		AuthorityStation: "station-authority",
 		AuthorityEpoch:   7,
 	}

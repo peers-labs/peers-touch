@@ -107,7 +107,7 @@ func (s *Service) Publish(
 		ctx,
 		"message-publishing:"+publishingID,
 		func(tx ports.Transaction) error {
-			if tx.Publishing == nil || tx.PublishingObjects == nil || tx.LocalScope == nil {
+			if tx.Publishing == nil || tx.PublishingObjects == nil {
 				return fmt.Errorf("publishing transaction adapters are not wired")
 			}
 			grant, loadErr := tx.Publishing.GetGrant(ctx, publishingID)
@@ -170,10 +170,6 @@ func (s *Service) Publish(
 			if len(routes) == 0 {
 				return conflict("recipient", "has no active device")
 			}
-			federationID, authorityEpoch, err := tx.LocalScope.LocalFederation(ctx)
-			if err != nil {
-				return err
-			}
 			bound, err := s.commands.BindUnitOfWork(boundUnitOfWork{tx: tx})
 			if err != nil {
 				return err
@@ -188,8 +184,6 @@ func (s *Service) Publish(
 				Recipient:       grant.Owner,
 				SystemSender:    systemSender,
 				RecipientRoutes: routes,
-				FederationID:    federationID,
-				AuthorityEpoch:  authorityEpoch,
 				CommandID:       genesisCommandID,
 				ExactEventBytes: []byte("publishing-genesis:" + publishingID),
 			})

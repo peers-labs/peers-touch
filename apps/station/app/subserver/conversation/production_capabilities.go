@@ -149,7 +149,7 @@ func (s *subServer) handleListLeaveIntents(
 			Subject: authenticated.PTID,
 			Claims: map[string]string{
 				federationruntime.ClaimFederationID: string(
-					view.Conversation.FederationID,
+					view.Conversation.Scope.FederationIDOrEmpty(),
 				),
 				federationruntime.ClaimConversationID: request.GetConversationId(),
 				federationruntime.ClaimAuthorityEpoch: strconv.FormatInt(
@@ -230,7 +230,7 @@ func (c *ProductionComposition) listFederatedLeaveIntents(
 		}
 		if snapshot.AuthorityStation != c.localStation ||
 			claims.Custom[federationruntime.ClaimFederationID] !=
-				string(snapshot.FederationID) ||
+				string(snapshot.Scope.FederationIDOrEmpty()) ||
 			claims.Custom[federationruntime.ClaimConversationID] !=
 				string(snapshot.ID) ||
 			claims.Custom[federationruntime.ClaimAuthorityEpoch] !=
@@ -340,7 +340,7 @@ func (c *ProductionComposition) syncFederatedAuthorityEvents(
 		if err != nil {
 			return err
 		}
-		if snapshot.FederationID != valueobject.FederationID(request.GetFederationId()) ||
+		if snapshot.Scope.FederationIDOrEmpty() != valueobject.FederationID(request.GetFederationId()) ||
 			snapshot.AuthorityStation != c.localStation ||
 			snapshot.AuthorityEpoch != valueobject.AuthorityEpoch(request.GetAuthorityEpoch()) {
 			return fmt.Errorf("Conversation authority scope does not match the peer request")
@@ -1694,7 +1694,7 @@ func (s *subServer) forwardPrepareMembership(
 		request.GetSender() == nil ||
 		request.GetSender().GetActor() == nil ||
 		conversation.ID != valueobject.ConversationID(request.GetConversationId()) ||
-		conversation.FederationID == "" ||
+		conversation.Scope.FederationIDOrEmpty() == "" ||
 		conversation.AuthorityStation == "" ||
 		conversation.AuthorityStation == s.localStation {
 		return nil, server.BadRequest(
@@ -1714,7 +1714,7 @@ func (s *subServer) forwardPrepareMembership(
 		Subject: request.GetSender().GetActor().GetPtid(),
 		Claims: map[string]string{
 			federationruntime.ClaimFederationID: string(
-				conversation.FederationID,
+				conversation.Scope.FederationIDOrEmpty(),
 			),
 			federationruntime.ClaimConversationID: request.GetConversationId(),
 			federationruntime.ClaimActorPTID: request.GetSender().
@@ -1777,13 +1777,36 @@ func (s *subServer) EnsureAcceptedRelationshipDirectConversation(
 	if err != nil {
 		return "", err
 	}
-	federation, err := valueobject.NewFederationID(federationID)
-	if err != nil {
-		return "", err
-	}
 	conversationID, err := valueobject.DirectConversationID(actorA, actorB)
 	if err != nil {
 		return "", err
+	}
+	// Same-station accepted relationships normalize to Local scope derived
+	// from Actor home-station ownership; the Social effect's Federation claim
+	// is authoritative only for a genuine cross-station relationship.
+	peerHomeStation, homeErr := s.composition.ActorCapabilities.
+		ResolveActorHomeStationPeerID(ctx, actorBPTID)
+	if homeErr != nil {
+		return "", fmt.Errorf(
+			"ensure accepted-relationship Direct Conversation: resolve peer home Station: %w",
+			homeErr,
+		)
+	}
+	var scope valueobject.Scope
+	if peerHomeStation == string(s.localStation) {
+		scope, err = valueobject.LocalScope(s.localStation)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		federation, federationErr := valueobject.NewFederationID(federationID)
+		if federationErr != nil {
+			return "", federationErr
+		}
+		scope, err = valueobject.FederationScope(federation)
+		if err != nil {
+			return "", err
+		}
 	}
 	existing, getErr := s.composition.QueryService.Get(
 		ctx,
@@ -1794,7 +1817,7 @@ func (s *subServer) EnsureAcceptedRelationshipDirectConversation(
 	case getErr == nil:
 		if !existingDirectCanReopen(
 			existing,
-			federation,
+			scope,
 			actorA,
 			actorB,
 			s.localStation,
@@ -1837,8 +1860,7 @@ func (s *subServer) EnsureAcceptedRelationshipDirectConversation(
 		return "", err
 	}
 	wire := &chatmodel.CreateDirectConversationRequest{
-		PeerPtid:     string(actorB),
-		FederationId: string(federation),
+		PeerPtid: string(actorB),
 		Creator: &actormodel.ActorDeviceRef{
 			Actor: &actormodel.ActorRef{
 				Ptid: string(creator.Actor),
@@ -1864,7 +1886,7 @@ func (s *subServer) EnsureAcceptedRelationshipDirectConversation(
 		command.CreateDirectRequest{
 			Creator:           creator,
 			Peer:              actorB,
-			FederationID:      federation,
+			Scope:             scope,
 			AuthorityEpoch:    initialConversationAuthorityEpoch,
 			CommandID:         valueobject.CommandID(requestID),
 			VerifiedRoutes:    verifiedRoutes,
@@ -1883,7 +1905,7 @@ func (s *subServer) EnsureAcceptedRelationshipDirectConversation(
 
 func existingDirectCanReopen(
 	view query.ConversationView,
-	federationID valueobject.FederationID,
+	scope valueobject.Scope,
 	actorA valueobject.PTID,
 	actorB valueobject.PTID,
 	localStation valueobject.StationID,
@@ -1891,7 +1913,7 @@ func existingDirectCanReopen(
 	snapshot := view.Conversation
 	if snapshot.Kind != valueobject.ConversationKindDirect ||
 		snapshot.Status != valueobject.ConversationStatusActive ||
-		snapshot.FederationID != federationID {
+		!snapshot.Scope.Equal(scope) {
 		return false
 	}
 	activeMembers := make(map[valueobject.PTID]struct{}, len(snapshot.Members))

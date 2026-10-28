@@ -233,6 +233,7 @@ func (r *authorityRepository) Save(
 		Updates(map[string]any{
 			"kind":                      model.Kind,
 			"status":                    model.Status,
+			"scope_kind":                model.ScopeKind,
 			"federation_id":             model.FederationID,
 			"authority_station_peer_id": model.AuthorityStationPeerID,
 			"authority_epoch":           model.AuthorityEpoch,
@@ -380,11 +381,23 @@ func (r *authorityRepository) loadSnapshot(
 			return aggregate.Snapshot{}, err
 		}
 	}
+	scope, scopeErr := valueobject.ScopeFromPersistence(
+		valueobject.ScopeKind(model.ScopeKind),
+		valueobject.FederationID(model.FederationID),
+		valueobject.StationID(model.AuthorityStationPeerID),
+	)
+	if scopeErr != nil {
+		return aggregate.Snapshot{}, fmt.Errorf(
+			"conversation persistence: rebuild scope for %s: %w",
+			model.ConversationID,
+			scopeErr,
+		)
+	}
 	snapshot := aggregate.Snapshot{
 		ID:               valueobject.ConversationID(model.ConversationID),
 		Kind:             valueobject.ConversationKind(model.Kind),
 		Status:           valueobject.ConversationStatus(model.Status),
-		FederationID:     valueobject.FederationID(model.FederationID),
+		Scope:            scope,
 		AuthorityStation: valueobject.StationID(model.AuthorityStationPeerID),
 		AuthorityEpoch:   valueobject.AuthorityEpoch(model.AuthorityEpoch),
 		Owner:            valueobject.PTID(model.OwnerPTID),
@@ -428,12 +441,24 @@ func (r *authorityRepository) recoverDirectGenesisDevices(
 		)
 	}
 	state := genesis.Fact.PostState
+	persistedScope, scopeErr := valueobject.ScopeFromPersistence(
+		valueobject.ScopeKind(model.ScopeKind),
+		valueobject.FederationID(model.FederationID),
+		valueobject.StationID(model.AuthorityStationPeerID),
+	)
+	if scopeErr != nil {
+		return nil, fmt.Errorf(
+			"conversation persistence: rebuild scope for %s: %w",
+			model.ConversationID,
+			scopeErr,
+		)
+	}
 	if genesis.Fact.Kind != domainevent.KindConversationCreated ||
 		state == nil ||
 		state.Kind != valueobject.ConversationKindDirect ||
 		genesis.ConversationID != valueobject.ConversationID(model.ConversationID) ||
 		genesis.AuthorityStation != valueobject.StationID(model.AuthorityStationPeerID) ||
-		state.FederationID != valueobject.FederationID(model.FederationID) ||
+		!state.Scope.Equal(persistedScope) ||
 		state.AuthorityEpoch != valueobject.AuthorityEpoch(model.AuthorityEpoch) ||
 		state.Owner != valueobject.PTID(model.OwnerPTID) ||
 		state.MembershipEpoch != valueobject.Epoch(model.MembershipEpoch) ||
@@ -1653,7 +1678,7 @@ func (r *followerRepository) Apply(
 	}
 	model := ConversationFollowerHeadModel{
 		ConversationID:         string(event.ConversationID),
-		FederationID:           string(projection.Conversation.FederationID),
+		FederationID:           string(projection.Conversation.Scope.FederationIDOrEmpty()),
 		AuthorityStationPeerID: string(event.AuthorityStation),
 		AuthorityEpoch:         uint64(projection.Conversation.AuthorityEpoch),
 		Sequence:               uint64(event.Sequence),
@@ -2044,7 +2069,9 @@ func followerFromModel(
 	if _, err := aggregate.Rehydrate(snapshot); err != nil {
 		return repository.FollowerProjection{}, err
 	}
-	if snapshot.FederationID != valueobject.FederationID(model.FederationID) ||
+	indexedFederationID := valueobject.FederationID(model.FederationID)
+	snapshotFederationID, federationScope := snapshot.Scope.FederationID()
+	if !federationScope || snapshotFederationID != indexedFederationID ||
 		snapshot.AuthorityStation != valueobject.StationID(model.AuthorityStationPeerID) ||
 		snapshot.AuthorityEpoch != valueobject.AuthorityEpoch(model.AuthorityEpoch) {
 		return repository.FollowerProjection{}, conversationdomain.NewError(
@@ -2086,7 +2113,8 @@ func conversationModelFromSnapshot(snapshot aggregate.Snapshot) ConversationMode
 		ConversationID:         string(snapshot.ID),
 		Kind:                   string(snapshot.Kind),
 		Status:                 string(snapshot.Status),
-		FederationID:           string(snapshot.FederationID),
+		ScopeKind:              string(snapshot.Scope.Kind()),
+		FederationID:           string(snapshot.Scope.FederationIDOrEmpty()),
 		AuthorityStationPeerID: string(snapshot.AuthorityStation),
 		AuthorityEpoch:         uint64(snapshot.AuthorityEpoch),
 		OwnerPTID:              string(snapshot.Owner),

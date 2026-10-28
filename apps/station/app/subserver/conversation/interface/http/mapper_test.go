@@ -84,7 +84,7 @@ func TestMapMemberAuthorityCommandBindsAuthorityAndExactIdentity(t *testing.T) {
 		mapped.MemberAuthority.MutedUntil == nil ||
 		!mapped.MemberAuthority.MutedUntil.Equal(mutedUntil) ||
 		mapped.MemberAuthority.ObservedAuthorityHead != preparation.Head ||
-		mapped.MemberAuthority.ObservedFederationID != "federation-1" ||
+		mapped.MemberAuthority.ObservedScope != valueobject.MustFederationScope("federation-1") ||
 		mapped.MemberAuthority.ObservedAuthorityEpoch != 4 ||
 		len(mapped.Command.Deliveries) != len(preparation.RequiredEndpoints) {
 		t.Fatalf("mapped member authority command = %+v", mapped)
