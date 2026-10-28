@@ -242,6 +242,61 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "release-distribution",
+      "root": "docs/architecture/engineering/release-distribution",
+      "status": "active",
+      "owner": "Architecture Team",
+      "characteristics": {
+        "protocol": false,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "RD-D01", "RD-D02", "RD-D03", "RD-D04", "RD-D05",
+        "RD-D06", "RD-D07", "RD-D08", "RD-D09", "RD-D10",
+        "RD-D11", "RD-D12", "RD-D13", "RD-D14", "RD-D15"
+      ],
+      "governedPaths": [
+        ".github/workflows/release.yml",
+        "docs/architecture/engineering/release-distribution",
+        "tooling/distribution/.env.example",
+        "tooling/distribution/README.md",
+        "tooling/distribution/docker-compose.yml",
+        "tooling/distribution/install.sh",
+        "tooling/distribution/install.test.sh",
+        "tooling/distribution/installation_state.py",
+        "tooling/distribution/installation_state_test.py",
+        "tooling/distribution/installer.py",
+        "tooling/distribution/installer_test.py",
+        "tooling/distribution/release-asset-server.mjs",
+        "tooling/distribution/release-asset-server.test.mjs",
+        "tooling/distribution/release-assets.mjs",
+        "tooling/distribution/release-assets.test.mjs",
+        "tooling/distribution/release-evidence-check.mjs",
+        "tooling/distribution/release-evidence-check.test.mjs",
+        "tooling/distribution/release-lifecycle.mjs",
+        "tooling/distribution/release-lifecycle.test.mjs",
+        "tooling/distribution/release-suite.mjs",
+        "tooling/distribution/release-version-check.mjs",
+        "tooling/distribution/release-version-check.test.mjs",
+        "tooling/distribution/release-workflow.test.mjs"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "development-workflow",
       "root": "docs/architecture/engineering/development-workflow",
       "status": "active",

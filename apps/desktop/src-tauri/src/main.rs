@@ -587,6 +587,7 @@ fn main() {
             }
         })
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(desktop_capture::global_shortcut_plugin());
 
     #[cfg(feature = "acceptance-webdriver")]
@@ -789,6 +790,8 @@ fn main() {
             Ok(())
         })
         .invoke_handler(interface::tauri_commands::device_link::with_admission(tauri::generate_handler![
+            #[cfg(feature = "acceptance-webdriver")]
+            application::updater_verification::acceptance_updater_verify,
             #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
             acceptance_yield_activation,
             #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]

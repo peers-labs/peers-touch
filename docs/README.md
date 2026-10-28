@@ -326,6 +326,9 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
 - 跨平台开发工具链：`architecture/engineering/toolchain/README.md`
   （active；`devctl` 是 profile、诊断、本地运行时生命周期与检查的统一控制面，
   Make、PowerShell 和 package scripts 只保留薄入口）
+- 发布与分发通道：`architecture/engineering/release-distribution/README.md`
+  （active；GHCR 不可变 candidate→public→stable 发布链、digest 校验、
+  install/upgrade/backup/rollback/purge 生命周期、fail-closed 的原生更新校验）
 
 ### 4.2 平台层真源
 

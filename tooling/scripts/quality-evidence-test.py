@@ -692,6 +692,63 @@ class RouteRangeTests(unittest.TestCase):
         self.assertNotIn("ecosystem.pb.go", knowledge_completed.stdout)
         self.assertIn("hard-rules: pass", hard_rules_completed.stdout)
 
+    def test_hard_rules_reject_force_tracked_ignored_output(self) -> None:
+        with temporary_git_directory() as root:
+            for git_args in (
+                ["init"],
+                ["config", "user.email", "acceptance@test.invalid"],
+                ["config", "user.name", "Acceptance Test"],
+            ):
+                subprocess.run(
+                    ["git", *git_args],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+            (root / "README.md").write_text("base\n", encoding="utf-8")
+            (root / ".gitignore").write_text("generated/\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "base"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            )
+            generated = root / "generated"
+            generated.mkdir()
+            (generated / "reader.html").write_text(
+                "<html>generated</html>\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "-f", "generated/reader.html"], cwd=root, check=True)
+
+            blocked = subprocess.run(
+                script_command(HARD_RULES_SCRIPT),
+                cwd=root,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(blocked.returncode, 1)
+            self.assertIn("ignored-output-tracked", blocked.stdout)
+            self.assertIn("generated/reader.html", blocked.stdout)
+
+            subprocess.run(
+                ["git", "rm", "--cached", "generated/reader.html"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            )
+            cleared = subprocess.run(
+                script_command(HARD_RULES_SCRIPT),
+                cwd=root,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(cleared.returncode, 0)
+            self.assertIn("hard-rules: pass", cleared.stdout)
+
     def test_review_run_only_merges_untracked_for_head(self) -> None:
         source = REVIEW_RUN_SCRIPT.read_text(encoding="utf-8")
         self.assertIn('if [[ "$diff_range" == "HEAD" ]]', source)

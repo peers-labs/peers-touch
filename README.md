@@ -51,7 +51,17 @@ Desktop (macOS) and mobile (Android / iOS, in development) apps with chat, socia
 
 ## Try it
 
-> **Just want to use it?** Download links and hosted Stations are coming soon. Star the repo to get notified.
+**As a regular user: not yet.** Peers-Touch does not currently ship a verified public Release, downloadable Desktop installer, or hosted Station. The product features exist in source, while the distribution and native-update verification pipeline is being completed. Star the repo to get notified.
+
+**You will not need an AI agent or a development environment to install Peers-Touch.** The instructions under `AGENTS.md` and `tooling/skills/` are only for contributors working on this repository. When the first verified stable Release is published, the end-user flow will be:
+
+```bash
+curl -fL https://github.com/peers-labs/peers-touch/releases/latest/download/install.sh \
+  -o peers-install.sh
+sh peers-install.sh install
+```
+
+The installer downloads an immutable Station image, verifies release checksums, generates private credentials locally, and stores the instance under `~/.peers-touch/station`. Desktop installers (`.dmg`, `-setup.exe`, `.AppImage`, `.deb`) will be attached to the [latest GitHub Release](https://github.com/peers-labs/peers-touch/releases/latest). Until that Release exists, these URLs are expected to return 404 and there is no supported end-user installation path. See the [Station installation and maintenance guide](tooling/distribution/README.md) for backup, upgrade, rollback, remote access, and uninstall details.
 
 **Developers — run it locally:**
 

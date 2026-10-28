@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-26
-covered_docs_hash: 7d81e7a89ba603660940f4079b2e86dac16b709dd52d9907fa7d377d53308cda
+last_verified_at: 2026-10-28
+covered_docs_hash: 58d88632834e6e69b62ebee1ea93da6e52ece9b886019a23fdf155335ca95d76
 
 covered_docs:
   - AGENTS.md
@@ -1897,3 +1897,15 @@ stale-proof rejection rules already cover these judgments. A deterministic
 `acceptance-docs-test.py` structural gate (chained before `--infra`
 validation) and the indexed active-docs pitfall provide regression coverage,
 so no new review fixture or admission owner is required.
+
+## 2026-10-28 Review
+
+### Release distribution docs index
+
+Reviewed the only covered-doc change in the release-distribution train:
+`docs/README.md` gains one architecture index bullet pointing at the new
+`docs/architecture/engineering/release-distribution/` active module. It is a
+navigation entry, not a review-rule change; no SKILL.md rule, fixture, or
+knowledge entry changes. Review still applies existing rules to the new
+module's governed paths (release.yml and the `tooling/distribution/` lifecycle
+files), with `channels.json` remaining under x-config ownership per XCFG-D06.

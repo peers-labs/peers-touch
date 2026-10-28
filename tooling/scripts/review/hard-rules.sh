@@ -187,6 +187,20 @@ scan_retired_product_references() {
 
 scan_retired_product_references
 
+# Generated outputs are declared in .gitignore. Force-adding them re-tracks
+# large build artifacts (recurrence: vendored Archify HTML readers re-entered
+# history despite an existing ignore rule); .gitignore never blocks files
+# already in the index, so this invariant needs an executable check.
+if [[ -z "$fixture_dir" ]]; then
+  tracked_ignored_outputs="$(git ls-files --cached --ignored --exclude-standard || true)"
+  if [[ -n "$tracked_ignored_outputs" ]]; then
+    while IFS= read -r tracked_ignored_output; do
+      [[ -n "$tracked_ignored_output" ]] || continue
+      report_failure "ignored-output-tracked" "$tracked_ignored_output is tracked despite a .gitignore rule; generated output is rebuilt at build time and must not be committed (untrack with: git rm --cached <path>)"
+    done <<< "$tracked_ignored_outputs"
+  fi
+fi
+
 is_source_file() {
   case "$1" in
     *.go|*.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs|*.rs|*.kt|*.kts|*.swift|*.java|*.sh) return 0 ;;

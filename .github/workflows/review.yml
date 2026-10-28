@@ -41,6 +41,15 @@ jobs:
       - name: Install review framework dependencies
         run: python3 -m pip install -r tooling/acceptance/requirements.txt
 
+      - name: Install plan validation fixture
+        run: |
+          # planctl.mjs -> module-governance.mjs imports the yaml package.
+          # Keep this version in sync with the yaml devDependency in
+          # package.json and pnpm-lock.yaml. --no-save/--no-package-lock
+          # provisions node_modules only; the manifest and lockfile stay
+          # unchanged because yaml is already a repo devDependency.
+          npm install --no-save --no-package-lock yaml@2.9.1
+
       - name: Validate explicit execution plans
         run: |
           while IFS= read -r plan; do

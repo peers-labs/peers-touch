@@ -47,5 +47,7 @@ pub mod station_runtime;
 pub mod system;
 pub mod tools;
 pub mod tray;
+#[cfg(feature = "acceptance-webdriver")]
+pub mod updater_verification;
 pub mod window_lifecycle;
 pub mod x_config;
