@@ -1,9 +1,11 @@
 /**
- * devicePreferences.ts — Typed device-local preferences
+ * devicePreferences.ts — Settings-facing adapters for personal preferences
  *
- * Device preferences are stored locally (never sent to Station). Their
- * projection and persistence lifecycle belong to deviceSettingsRuntime;
- * this module keeps settings-facing platform adapters together.
+ * Preferences are L2 device-actor data (never sent to Station): they live in
+ * the identity-scoped `(app, station, actor)` config.preference namespace and
+ * are hard-deleted on session revoke. Their projection and persistence
+ * lifecycle belong to deviceSettingsRuntime; this module keeps settings-facing
+ * platform adapters together.
  */
 
 import { getVersion } from '@tauri-apps/api/app';

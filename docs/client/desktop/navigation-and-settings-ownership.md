@@ -12,7 +12,11 @@ This contract defines which Desktop surfaces qualify for the primary
 navigation rail and which utility surfaces belong inside Settings.
 
 It does not change the official Note applet, applet service APIs, Chat's
-conversation notebook, or Station persistence.
+conversation notebook, or Station persistence. Data ownership of the controls
+behind those surfaces (L1 Station-actor, L2 device-actor personalization, L3
+device/install state) is defined in
+[Client Settings Ownership](../../architecture/platform/client/settings-ownership.md);
+this document covers placement only.
 
 ## 2. Product Decision
 

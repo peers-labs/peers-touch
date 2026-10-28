@@ -346,42 +346,64 @@
 
 ### 4.5 Settings 同步
 
+> 设置归属统一遵循
+> [Client Settings Ownership](../../architecture/platform/client/settings-ownership.md)
+> 的三层模型（L1 Station-actor / L2 设备-actor / L3 设备）。本节只描述与
+> 同步相关的结论：仅 L1 跨设备同步。
+
 #### 4.5.1 设置分类
 
 | 类别 | 范围 | 存储位置 | 同步策略 |
 | --- | --- | --- | --- |
-| 账户级设置 | 跨设备同步 | Station | Last-Write-Wins |
-| 设备级设置 | 仅本地 | 端侧本地存储 | 不同步 |
+| L1 账户/业务设置 | 跨设备 | Station owner API | 按 owner 协议（revision + 类型化冲突） |
+| L2 设备-actor 个性化 | 仅本机本 actor，登出硬删 | 端侧 identity scope 存储 | 不同步 |
+| L3 设备/安装级设置 | 仅本机，跨身份保留 | 端侧 app scope 存储 | 不同步 |
 
 #### 4.5.2 账户级设置
-- 语言偏好（`locale`）
 - 通知偏好（推送开关、免打扰时段）
 - AI 偏好（默认模型、温度参数）
 - 隐私设置（在线状态可见性、已读回执开关）
 - Feature Flags（`feature_flags`）
 
-**同步方式**：
-- 读取：`GET /actor/preferences` → 返回 `ActorPreferences` Proto。
-- 写入：`PUT /actor/preferences` → 提交更新后的 `ActorPreferences`。
-- Station 在变更后发布 `settings.updated` 事件，其他在线端收到后拉取最新值。
+> 归属判定以
+> [Client Settings Ownership](../../architecture/platform/client/settings-ownership.md)
+> 为准：业务配置与密钥（providers、Agents、Skills、MCP、通知、隐私、block
+> list 等）为 L1，由各自的 Station owner API（Actor Profile、Notification、
+> Social 等）负责，带 revision 与类型化冲突结果。语言偏好不属于账户级设置，
+> 当前产品没有公开的通用 `ActorPreferences` API，也没有本地兜底持久化。
 
-#### 4.5.3 设备级设置
-- 主题模式（深色/浅色/跟随系统）
-- 字号大小
-- 缓存策略（缓存大小上限、清理策略）
-- 网络偏好（仅 Wi-Fi 下载大文件）
+**同步方式**：
+- 读取：各 owner 的 typed read API（当前版本不提供通用 `GET /actor/preferences`）。
+- 写入：各 owner 的 typed mutation API。
+- Station 在变更后发布 owner 自己的更新事件，其他在线端收到后拉取最新值。
+
+#### 4.5.3 设备-Actor 个性化（L2）与设备级设置（L3）
+- L2 个性化（设备-Actor，不跨设备，登出硬删）：
+  - 主题模式（深色/浅色/跟随系统）
+  - 字号大小 / 密度
+  - 语言偏好
+  - 网络偏好（仅 Wi-Fi 下载大文件）等媒体自动下载策略
+- L3 设备/安装级设置（跨身份保留）：
+  - 缓存策略（缓存大小上限、清理操作）
 
 **存储方式**：
 - `packages/client-storage/` 定义共享 scope、cache envelope、TTL 与失效语义。
-- `apps/mobile/src/` 的 device settings runtime 通过同一 shared adapter
-  持久化非敏感偏好。
+- L2 由 `apps/mobile/src/` 的 device settings runtime 写入 identity scope
+  `(app, station, actor)` 的 `config.preference` 域；会话注销（revoke）硬删
+  该命名空间，登录前界面只使用 OS 默认值。
+- L3 使用 app scope 的独立域，绝不与 L2 共用键。
 - 只有需要 OS protection 的字段才进入 Rust typed port 与 Android/iOS
   secure-storage adapter。
-- 不上传 Station，不跨设备同步。
+- L2/L3 均不上传 Station，不跨设备同步；跨设备归属提升必须按属性走 L1
+  owner 立项，不允许整体上提。
 
 #### 4.5.4 冲突解决
-- 账户级设置采用 **Last-Write-Wins**：Station 以最后一次写入的值为准。
-- `ActorPreferences` 携带 `schema_version` 字段，用于检测 Schema 升级冲突。
+- L1 设置按所属 owner 的修订协议解决冲突（Actor Profile、Notification 等
+  owner 要求精确非零 observed revision，并返回类型化的 `APPLIED` /
+  `UNCHANGED` / `CONFLICT`），不存在通用的 Last-Write-Wins 通道。
+- L2 为单机单 actor 本地状态，没有跨端冲突；登出即删除，不做迁移。
+- 若未来将某个 L2 属性提升为跨设备同步，必须按属性立项定义 owner、字段与
+  冲突语义，不允许整体上提。
 
 ---
 

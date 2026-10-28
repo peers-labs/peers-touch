@@ -40,7 +40,7 @@ do not prove physical hardware, OS background/lock behavior or full Search.
   Driver context always returns to the product WebView, including on failure.
   The Search detail consumes the shared `useVisualKeyboardOverlap` measurement
   to shrink its full-height rail; its result scroll root ends above the keyboard.
-- Theme rendering consumes the committed device preference through the root
+- Theme rendering consumes the committed identity-scoped preference through the root
   LobeUI ThemeProvider. Captured title, result, source, history-boundary, scope,
   filter and query text must retain at least 4.5:1 contrast against its actual ancestor-composited
   background, including text opacity. Distinct backgrounds alone cannot pass.
@@ -123,7 +123,7 @@ Theme interaction contract:
 
 ```yaml
 surface: mobile.search
-given: [readable received result, current device preference]
+given: [readable received result, current identity-scoped theme preference]
 when: [save opposite theme through Chat Settings, return to Search]
 then: [committed theme in root UI provider, same matching received result]
 visual_invariants: [text contrast at least 4.5:1 including scope and filters, semantic header surface]

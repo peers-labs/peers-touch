@@ -39,7 +39,6 @@ pub mod runtime_evidence;
 pub mod search;
 pub mod security;
 pub mod session_resolver;
-pub mod settings;
 pub mod skills;
 pub mod skills_market;
 pub mod station_binding;

@@ -18,6 +18,7 @@ frontend runtime. Platform-internal implementation guidance remains in
 
 | Client | Entry |
 |---|---|
+| Settings ownership layers (Station-actor / device-actor / device) for Desktop and Mobile | [settings-ownership.md](./settings-ownership.md) |
 | Desktop/Mobile forms, reusable assets, reuse admission, portable Rust cores, hosts, and ports | [cross-client-runtime/](./cross-client-runtime/README.md) |
 | Desktop runtime | [desktop/](./desktop/README.md) |
 | Mobile shell and native kernel | [mobile/](./mobile/README.md) |

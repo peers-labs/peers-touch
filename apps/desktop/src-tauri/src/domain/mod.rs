@@ -8,6 +8,5 @@ pub mod identity;
 pub mod pin_lock;
 pub mod presence;
 pub mod profile;
-pub mod settings;
 pub mod storage;
 pub mod user_profile;

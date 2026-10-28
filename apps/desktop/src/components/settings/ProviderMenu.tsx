@@ -27,7 +27,7 @@ export function ProviderMenu() {
   const availableModels = useAgentStore((state) => state.availableModels);
   const { showUsableOnly, setShowUsableOnly } = useActiveSettingsSlice((state) => ({
     showUsableOnly: state.showUsableProvidersOnly,
-    setShowUsableOnly: state.setShowUsableProvidersOnly,
+    setShowUsableOnly: state.setShowUsableOnly,
   }));
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);

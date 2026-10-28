@@ -43,35 +43,6 @@ describe('TS ↔ Rust command contract', () => {
     });
   });
 
-  it('调用 settings_set 并返回统一结构', async () => {
-    invokeMock.mockResolvedValue({
-      ok: true,
-      data: {
-        command: 'settings_set',
-        status: 'stub',
-      },
-    });
-
-    const result = await api.settingsSet({
-      key: 'settings.currentAgent',
-      value: 'assistant',
-    });
-
-    expect(invokeMock).toHaveBeenCalledWith('settings_set', {
-      input: {
-        key: 'settings.currentAgent',
-        value: 'assistant',
-      },
-    });
-    expect(result).toEqual({
-      ok: true,
-      data: {
-        command: 'settings_set',
-        status: 'stub',
-      },
-    });
-  });
-
   it('无 input 的命令不传入参数对象', async () => {
     invokeMock.mockResolvedValue({
       ok: true,

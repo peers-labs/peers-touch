@@ -18,6 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useProviderStore } from '../store/provider';
 import { api, type Agent, type AppletInfo, type HelpCategoryGroup, type StatisticsData } from '../services/desktop_api';
+import { useSessionStore } from '../store/session';
 import { SEARCH_FUNCTIONS } from '../components/search/functions';
 import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
@@ -1684,7 +1685,7 @@ function DangerZoneResetOnboarding() {
       onOk: async () => {
         setLoading(true);
         try {
-          await api.authLogout();
+          await useSessionStore.getState().logout();
           await api.resetOnboarding();
           const { clearWarmResume } = await import('../hooks/useAppLifecycle');
           clearWarmResume();

@@ -2191,10 +2191,6 @@ export interface TauriStubPayload {
   status: string;
 }
 
-export interface SettingsGetPayload extends TauriStubPayload {
-  value?: unknown;
-}
-
 export interface AuthSessionResponse extends TauriStubPayload {
   actor_ptid: string | null;
   name?: string;
@@ -2288,15 +2284,6 @@ export interface AccessSubmitLoginInput {
 
 export interface AuthValidateTokenInput {
   token?: string;
-}
-
-export interface SettingsGetInput {
-  key: string;
-}
-
-export interface SettingsSetInput {
-  key: string;
-  value: any;
 }
 
 export interface ChatScreenshotShortcutRegisterInput {
@@ -4901,15 +4888,6 @@ export const api = {
 
   ensureStationSession: () =>
     invokeAuthCommand<void>('ensure_station_session'),
-
-  settingsGet: (input: SettingsGetInput) =>
-    invokeRustCommand<SettingsGetInput, SettingsGetPayload>('settings_get', input),
-
-  settingsSet: (input: SettingsSetInput) =>
-    invokeRustCommand<SettingsSetInput, TauriStubPayload>('settings_set', input),
-
-  settingsReset: () =>
-    invokeRustCommand<void, TauriStubPayload>('settings_reset'),
 
   chatScreenshotShortcutRegister: (input: ChatScreenshotShortcutRegisterInput) =>
     invokeRustCommand<ChatScreenshotShortcutRegisterInput, TauriStubPayload>(
