@@ -4,7 +4,8 @@ title: SQLCipher keys must retain their raw bytes
 status: active
 created: 2026-10-22
 detected: 2026-10-22
-owns: apps/desktop/src-tauri/src/infrastructure/storage
+owns:
+  - apps/desktop/src-tauri/src/infrastructure/storage
 applies: desktop
 tags: [security, storage, sqlcipher, encryption]
 ---
