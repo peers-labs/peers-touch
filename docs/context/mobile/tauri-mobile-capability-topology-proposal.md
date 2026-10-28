@@ -225,7 +225,7 @@ apps/mobile/
 | Agent | Shared AI chat UI + streaming event channel | Station |
 | Federation | Mobile federation square / station discovery | Station / Federation ledger |
 | Applet | Tauri-hosted applet manager + Bridge V2 permission | Station + Applet manifest |
-| Settings | Shared settings UI + mobile device preference adapter | Station + local device state |
+| Settings | Shared settings UI + mobile preference adapter | L1 Station owners + L2 actor-local personalization (deleted on logout) + L3 device state |
 
 ---
 

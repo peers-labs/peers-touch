@@ -17,7 +17,12 @@ import zhCommon from '../../../../packages/locales/zh-CN/common.json';
 import zhMoments from '../../../../packages/locales/zh-CN/moments.json';
 import zhChat from '../../../../packages/locales/zh-CN/chat.json';
 import zhSearch from '../../../../packages/locales/zh-CN/search.json';
-import { createMobileAppStorageRuntime } from '../storage/mobileClientStorage';
+import { createMobileActorStorageRuntime } from '../storage/mobileClientStorage';
+import {
+  readActiveSessionProjection,
+  subscribeSessionRuntime,
+  type MobileSessionProjection,
+} from '../runtimes/sessionRuntime';
 
 export type MobileLanguage = 'en' | 'zh-CN';
 
@@ -99,9 +104,10 @@ export function MobileI18nProvider({ children }: { children: ReactNode }) {
 
     setLanguageStatus('saving');
     setLanguageError(null);
-    return readStoredLanguage()
+    const session = readActiveSessionProjection();
+    return Promise.resolve(session ? readStoredLanguage(session) : null)
       .then((stored) => {
-        if (stored) setLanguageState(stored);
+        setLanguageState(stored ?? detectInitialLanguage());
         setLanguageStatus('idle');
         return true;
       })
@@ -131,20 +137,41 @@ export function MobileI18nProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  // Pre-login language follows the OS. The authenticated actor's own
+  // language loads on the session edge and resets to the OS language on
+  // logout/Station switch, so a shared device never inherits the previous
+  // actor's language (Settings ownership layer L2).
   useEffect(() => {
     let active = true;
-    void readStoredLanguage()
-      .then((stored) => {
+    let identity: string | null = null;
+    const applyForIdentity = async (session: MobileSessionProjection | null) => {
+      const nextIdentity = session
+        ? `${session.stationPeerId}\0${session.actorPtid}`
+        : null;
+      if (nextIdentity === identity) return;
+      identity = nextIdentity;
+      if (!active) return;
+      if (!session) {
+        setLanguageState(detectInitialLanguage());
+        return;
+      }
+      try {
+        const stored = await readStoredLanguage(session);
         if (active && stored) setLanguageState(stored);
-      })
-      .catch(() => {
+      } catch {
         if (active) {
           setLanguageStatus('failed');
           setLanguageError('mobile.settings.language.loadFailed');
         }
-      });
+      }
+    };
+    const release = subscribeSessionRuntime(() => {
+      void applyForIdentity(readActiveSessionProjection());
+    });
+    void applyForIdentity(readActiveSessionProjection());
     return () => {
       active = false;
+      release();
     };
   }, []);
 
@@ -165,8 +192,13 @@ function detectInitialLanguage(): MobileLanguage {
   return navigator.language.startsWith('zh') ? 'zh-CN' : 'en';
 }
 
-async function readStoredLanguage(): Promise<MobileLanguage | null> {
-  const value = await createMobileAppStorageRuntime().repositories.chatPreferences.readValue(MOBILE_LANGUAGE_KEY);
+async function readStoredLanguage(
+  session: MobileSessionProjection,
+): Promise<MobileLanguage | null> {
+  const value = await createMobileActorStorageRuntime(
+    session.stationPeerId,
+    session.actorPtid,
+  ).repositories.chatPreferences.readValue(MOBILE_LANGUAGE_KEY);
   const language = typeof value === 'object' && value && 'language' in value ? (value as { language?: unknown }).language : value;
   return language === 'en' || language === 'zh-CN' ? language : null;
 }
@@ -174,7 +206,14 @@ async function readStoredLanguage(): Promise<MobileLanguage | null> {
 export async function persistMobileLanguage(
   language: MobileLanguage,
 ): Promise<void> {
-  await createMobileAppStorageRuntime().repositories.chatPreferences.write(
+  const session = readActiveSessionProjection();
+  // A language picked before sign-in is an in-memory run choice; it must not
+  // be persisted into a global namespace and leak to another actor.
+  if (!session) return;
+  await createMobileActorStorageRuntime(
+    session.stationPeerId,
+    session.actorPtid,
+  ).repositories.chatPreferences.write(
     MOBILE_LANGUAGE_KEY,
     { language },
   );

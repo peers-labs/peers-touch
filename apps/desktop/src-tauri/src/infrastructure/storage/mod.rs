@@ -510,30 +510,6 @@ pub fn write_string_atomic(path: &Path, payload: &str) -> Result<(), StorageErro
     fs::rename(&tmp, path).map_err(|error| StorageError::WriteFailed(error.to_string()))
 }
 
-pub fn load_settings() -> Result<HashMap<String, Value>, StorageError> {
-    let file_path = settings_file_path();
-    if !file_path.exists() {
-        return Ok(HashMap::new());
-    }
-    let raw = fs::read_to_string(file_path)
-        .map_err(|error| StorageError::ReadFailed(error.to_string()))?;
-    let parsed = serde_json::from_str::<HashMap<String, Value>>(&raw)
-        .map_err(|error| StorageError::ReadFailed(error.to_string()))?;
-    Ok(parsed)
-}
-
-pub fn save_settings(settings: &HashMap<String, Value>) -> Result<(), StorageError> {
-    let file_path = settings_file_path();
-    let payload = serde_json::to_string(settings)
-        .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
-    write_string_atomic(&file_path, &payload)
-}
-
-fn settings_file_path() -> PathBuf {
-    app_file_path("desktop", StorageKind::Config, &["settings.json"])
-        .unwrap_or_else(|_| PathBuf::from("settings.json"))
-}
-
 fn append_migration_log(app_name: &str, message: &str) -> Result<(), StorageError> {
     tracing::info!(app_name = %app_name, event = %message, "Appending migration log");
     let log_path = app_file_path(app_name, StorageKind::Logs, &["storage-migration.jsonl"])?;

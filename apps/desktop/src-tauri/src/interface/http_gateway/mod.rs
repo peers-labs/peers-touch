@@ -52,7 +52,6 @@ use crate::application::oss as app_oss;
 use crate::application::profile as app_profile;
 use crate::application::provider as app_provider;
 use crate::application::runtime_evidence as app_runtime_evidence;
-use crate::application::settings as app_settings;
 use crate::application::skills as app_skills;
 use crate::application::skills_market as app_skills_market;
 use crate::application::system as app_system;
@@ -2811,25 +2810,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             state.station.client(),
             state,
         )),
-
-        // =================================================================
-        // Settings (state-dependent)
-        // =================================================================
-        "settings_get" => {
-            let input = match parse_args::<SettingsGetInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_settings::settings_get(state, input))
-        }
-        "settings_set" => {
-            let input = match parse_args::<SettingsSetInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_settings::settings_set(state, input))
-        }
-        "settings_reset" => to_json(app_settings::settings_reset(state)),
 
         // Note: legacy `timeline_*` dev-HTTP routes were removed in P2. The
         // new `social_*` Tauri commands target proto-typed responses and

@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AccessDecision } from '../features/auth/authSession';
+import { createMobileActorStorageRuntime, createMobileAppStorageRuntime } from '../storage/mobileClientStorage';
 import {
   destroyRecoveryProjection,
   getRecoveryProjection,
@@ -51,6 +52,34 @@ function completePurge() {
       publicProjectionAbsent: true,
     },
   };
+}
+
+class MemoryStorage {
+  private readonly entries = new Map<string, string>();
+
+  get length(): number {
+    return this.entries.size;
+  }
+
+  key(index: number): string | null {
+    return Array.from(this.entries.keys())[index] ?? null;
+  }
+
+  getItem(key: string): string | null {
+    return this.entries.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    this.entries.set(key, value);
+  }
+
+  removeItem(key: string): void {
+    this.entries.delete(key);
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
 }
 
 function deferred<T>() {
@@ -339,6 +368,42 @@ describe('sessionRuntime', () => {
       nativePurge: completePurge(),
     });
     expect(controller.getSnapshot().phase).toBe('revoked');
+  });
+
+  it('hard-deletes the revoking actor L2 personalization without touching other actors or L3 state', async () => {
+    vi.stubGlobal('window', { localStorage: new MemoryStorage() });
+    try {
+      const preferenceKey = 'peers-touch.mobile.device-preferences.v1';
+      const aliceStorage = createMobileActorStorageRuntime('station-a', 'ptid:alice');
+      const bobStorage = createMobileActorStorageRuntime('station-a', 'ptid:bob');
+      const appStorage = createMobileAppStorageRuntime();
+
+      await aliceStorage.repositories.chatPreferences.write(preferenceKey, {
+        theme: 'dark',
+      });
+      await bobStorage.repositories.chatPreferences.write(preferenceKey, {
+        theme: 'light',
+      });
+      await appStorage.repositories.stationRegistry.write('active-station', {
+        url: 'https://station.example',
+      });
+
+      const { controller } = runtime();
+      await controller.restore(station, granted);
+      await controller.revoke();
+
+      await expect(
+        aliceStorage.repositories.chatPreferences.readValue(preferenceKey),
+      ).resolves.toBeNull();
+      await expect(
+        bobStorage.repositories.chatPreferences.readValue(preferenceKey),
+      ).resolves.toEqual({ theme: 'light' });
+      await expect(
+        appStorage.repositories.stationRegistry.readValue('active-station'),
+      ).resolves.toEqual({ url: 'https://station.example' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('purges native state before admission and releases revocation for a later session', async () => {

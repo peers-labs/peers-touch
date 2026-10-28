@@ -96,7 +96,8 @@ Tauri Mobile App
 | Moments/posts/comments/reactions | Station | Station APIs | moments runtime |
 | Profile and privacy fields | Actor Profile | Actor Profile API | profile runtime |
 | Notification preferences and push registration | Notification | Notification APIs | notification runtime plus Rust push registrar |
-| Device preferences | device local | `deviceSettingsRuntime` | client storage/native port |
+| Personalization (theme, language, font size, density, media auto-download) | device-actor local; hard-deleted on logout | `deviceSettingsRuntime` | identity-scoped `config.preference` in client storage |
+| Device/install state (Station registry, cache maintenance, permission grants, app metadata) | device local; survives identity change | `deviceSettingsRuntime` and native ports | app-scope client storage/native port |
 | Push/deep-link payload | Notification/OS wakeup only | Notification + native plugin | host adapter; never business store |
 | Native media selection | OS picker grant plus Rust-owned staging record | native picker plugin and Rust media staging | typed platform port |
 
@@ -713,9 +714,19 @@ Settings composes independent owners:
   registered push devices;
 - this release has no additional account-preference fields, owner, runtime, or
   placeholder section; `ActorPreferences` is not a public API;
-- `deviceSettingsRuntime` owns theme, font size, compact density, device-local
-  language, cache controls, permission state, and app metadata;
+- `deviceSettingsRuntime` owns personalization — theme, font size, compact
+  density, media auto-download, and language — in the identity-scoped
+  `(app, station, actor)` `config.preference` namespace (L2): it depends on
+  the session runtime, reloads on identity edges, resets to OS defaults when
+  no actor is active, and session revocation hard-deletes the namespace;
+- the same runtime keeps L3 device/install concerns (Station registry, cache
+  maintenance operations, permission state, app metadata) in app-scope
+  storage, which survives identity changes;
 - Social owns blocked users.
+
+The three-layer settings model (L1 Station-actor, L2 device-actor, L3 device)
+and the cross-client symmetry rule are defined in
+[Client Settings Ownership](../settings-ownership.md).
 
 Actor Profile uses one dedicated monotonic `profile_revision` over editable
 profile/privacy values in `touch_actor` and `touch_actor_meta`; counter-only
@@ -731,8 +742,9 @@ saving, saved, conflict, unavailable, and failed state. A lost mutation
 response triggers owner readback before retry: exact draft equality confirms
 commit, a newer divergent snapshot is conflict, and an unchanged base revision
 permits explicit retry. Unavailable owner state disables that section without
-substituting retained defaults. Device settings never imply cross-device sync,
-and Station-owned settings never fall back to local persistence.
+substituting retained defaults. L2 personalization is device-local, never
+implies cross-device sync, and is deleted on logout; Station-owned settings
+never fall back to local persistence.
 
 ### 12.8 Native Authenticated Transport
 

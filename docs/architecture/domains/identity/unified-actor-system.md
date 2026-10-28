@@ -192,8 +192,11 @@ Target user-domain state on disk is keyed by PTID:
 | `account/identities.json` (registry of per-Actor encrypted sessions) | OS-user | `infrastructure::auth_identity` |
 | `data/db/users/{ptid}/*.db` | per-Actor | `infrastructure::storage::resolve_database_path` |
 | `config/providers/users/{ptid}/override.yaml` | per-Actor | `application::provider::state` |
-| `config/settings.json` | OS-user (intentionally global) | `infrastructure::storage::settings_*` |
+| personalization (theme, language, shortcuts, filters) | per-Actor web storage `(app, station, actor)` | `runtimes/personalization.ts` via `@peers-touch/client-storage`; hard-deleted on logout |
 
+There is no OS-user-global settings KV: the former Rust `config/settings.json`
+is deleted (see
+[Client Settings Ownership](../../platform/client/settings-ownership.md)).
 There MUST NOT exist any single shared file at OS-user scope that holds per-Actor state, other than `identities.json` (itself a multi-entry registry).
 
 ### C-4 · In-memory store partitioning
@@ -403,8 +406,7 @@ $APP_SUPPORT/peers-touch/desktop/
 ├── data/
 │   └── db/users/{ptid}/*.db       ← per-Actor SQLite
 ├── config/
-│   ├── providers/users/{ptid}/override.yaml
-│   └── settings.json              ← OS-user-global, intentional
+│   └── providers/users/{ptid}/override.yaml
 └── cache/avatars/                 ← content-addressed
 ```
 

@@ -26,7 +26,10 @@
       - `conversations/<peerId|roomId>/` 消息附件、本地草稿
     - `data/`
       - `profile.json` 用户资料快照（非权威）
-      - `settings.json` 客户端设置
+      - 个性化（语言、快捷键、列表过滤等）不再落地为 `settings.json`：
+        它们是设备-actor 的 L2 数据，保存在客户端身份作用域
+        `(app, station, actor)` 的 `config.preference`，登出即硬删；
+        Station 连接注册表等 L3 数据仍为安装级
     - `logs/` 客户端日志
     - `temp/` 临时文件
   - 注意：`token/refreshToken` 使用系统安全存储（如 Keychain），不写入上述目录

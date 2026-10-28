@@ -6,6 +6,14 @@
 > **Owner**: Mobile Architecture Team
 > **Module**: `model/domain/`, `apps/station/`, `apps/mobile/`
 
+> **Cross-reference (2026-10-28)**: the "device-local" wording in MS-D22A.1
+> and §5 is refined by the cross-client three-layer contract in
+> [Client Settings Ownership](../../settings-ownership.md): theme, language,
+> font size, density, and media auto-download are L2 device-actor
+> personalization (identity-scoped, hard-deleted on logout); only genuine
+> device/install state remains L3. The Station-owner decisions of this
+> amendment (MS-D22A.1–A.6) are unchanged.
+
 ---
 
 ## 1. Scope

@@ -13,7 +13,7 @@ const modelSelectSource = readFileSync(new URL('../ModelSelect.tsx', import.meta
 describe('Provider settings product contract', () => {
   it('uses one mixed list with a persisted usable-only preference', () => {
     expect(menuSource).toContain('showUsableProvidersOnly');
-    expect(menuSource).toContain('setShowUsableProvidersOnly');
+    expect(menuSource).toContain('setShowUsableOnly');
     expect(menuSource).toContain('isProviderUsable');
     expect(menuSource).toContain('ref={providerListRef}');
     expect(menuSource).toContain("selectedRow?.scrollIntoView({ block: 'nearest' })");

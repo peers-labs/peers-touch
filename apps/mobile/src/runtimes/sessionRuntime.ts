@@ -17,6 +17,7 @@ import {
   type MobileStationEntry,
 } from '../features/station/stationRegistry';
 import type { OAuthPublicProjection } from '../services/mobileCommands';
+import { createMobileActorStorageRuntime } from '../storage/mobileClientStorage';
 import {
   readAuthRuntimeSnapshot,
   subscribeAuthRuntimeSnapshot,
@@ -299,6 +300,15 @@ export function createSessionRuntimeController({
         if (!nativeStorageIsEmpty(nativePurge.secureStorage)) {
           throw new Error('mobile.auth.sessionSecurePurgeIncomplete');
         }
+        // Hard-delete this actor's identity-scoped personalization so the
+        // next sign-in on the device cannot inherit it (Settings ownership
+        // layer L2 hard cut).
+        if (target) {
+          await createMobileActorStorageRuntime(
+            target.stationPeerId,
+            target.actorPtid,
+          ).kernel.invalidateDomains(['config.preference']);
+        }
         const remoteRevocation: SessionRuntimeRevocation['remoteRevocation'] =
           nativePurge.stationRevocation === 'not_required'
           ? 'not-required'
@@ -555,6 +565,10 @@ export function useSessionRuntime(): SessionRuntimeSnapshot {
 
 export function readSessionRuntimeSnapshot(): SessionRuntimeSnapshot {
   return sessionRuntime.getSnapshot();
+}
+
+export function subscribeSessionRuntime(listener: () => void): () => void {
+  return sessionRuntime.subscribe(listener);
 }
 
 export function readActiveSessionProjection(): MobileSessionProjection | null {

@@ -40,7 +40,8 @@
 
 ## 主题实现
 
-- `deviceSettingsRuntime` 持有已保存的设备偏好，并更新文档色系、字号和密度
+- `deviceSettingsRuntime` 持有当前 actor 的身份作用域个性化偏好（L2，登出硬删，
+  登录前回落 OS 默认），并更新文档色系、字号和密度
 - 根 `MobileThemeProvider` 订阅同一偏好，交给既有 LobeUI ThemeProvider 的
   `themeMode`；`system` 映射为 SDK 的 `auto`，不建立第二份主题状态
 - `styles.css` 的语义表面、边框与继承文字同时消费当前主题；通用页头不保留浅色常量

@@ -242,63 +242,57 @@ stopStreaming: () => {
 
 ### useSettingsStore
 
-`store/settings.ts` 是一个精简的 Store，管理 Agent 和工具配置。
+`store/settings.ts` 管理 Agent/工具配置与本机个性化。个性化项（快捷键、Provider
+过滤等）是 L2 设备-actor 数据，只能通过 `runtimes/personalization` 读写
+identity scope 的 `config.preference`；不存在 Rust 全局 settings KV，也不允许
+调用任何 `settingsGet/settingsSet` 式通用接口（详见
+[Client Settings Ownership](../../../architecture/platform/client/settings-ownership.md)）。
 
 ```typescript
-interface SettingsState {
+interface SettingsState extends RevalidationState {
   agents: Agent[];
   tools: ToolInfo[];
-  currentAgent: string;
+  activeAccount: AccountIdentity | null;
+  chatScreenshotShortcut: string;
+  showUsableProvidersOnly: boolean;
 
+  loadChatPreferences: () => Promise<void>;
+  loadProviderPreferences: () => Promise<void>;
   loadAgents: () => Promise<void>;
-  loadTools: () => Promise<void>;
-  setCurrentAgent: (name: string) => void;
-  updateAgent: (name: string, data: Partial<Agent>) => Promise<void>;
+  setChatScreenshotShortcut: (shortcut: string) => void;
+  setShowUsableOnly: (show: boolean) => Promise<void>;
+  /** Restore identity-independent defaults after logout / actor switch. */
+  resetPersonalization: () => void;
 }
 
-export const useSettingsStore = create<SettingsState>((set) => ({
-  agents: [],
-  tools: [],
-  currentAgent: 'assistant',
+// Read: identity-scoped preference; a missing value yields the documented default.
+const value = await readPersonalization<unknown>(PERSONALIZATION_CHAT_SHORTCUT_KEY);
+set({ chatScreenshotShortcut: normalizeChatScreenshotShortcut(value) });
 
-  loadAgents: async () => {
-    try {
-      const agents = await api.listAgents();
-      set({ agents });
-      // 从 Rust 端读取持久化的 currentAgent 配置
-      const rustResult = await api.settingsGet({ key: 'settings.currentAgent' });
-      if (rustResult.ok) {
-        const value = (rustResult.data as { value?: string } | undefined)?.value;
-        if (value) set({ currentAgent: value });
+// Write: optimistically update, then persist into the actor scope. The boolean
+// result is false when no identity is active (pre-login surface); never fall
+// back to an app-global namespace.
+setChatScreenshotShortcut: (shortcut) => {
+  const normalized = normalizeChatScreenshotShortcut(shortcut);
+  set({ chatScreenshotShortcut: normalized });
+  void writePersonalization(PERSONALIZATION_CHAT_SHORTCUT_KEY, normalized)
+    .then((persisted) => {
+      if (!persisted) {
+        log.warn('settings', 'Chat shortcut change held without an active identity');
       }
-    } catch (e) {
-      console.error('Failed to load agents:', e);
-    }
-  },
-
-  setCurrentAgent: (name: string) => {
-    set({ currentAgent: name });
-    // 同时写入 Rust 端持久化
-    api.settingsSet({ key: 'settings.currentAgent', value: name }).catch(() => {});
-  },
-
-  updateAgent: async (name: string, data: Partial<Agent>) => {
-    try {
-      const agents = await api.listAgents();
-      const agent = agents.find((a) => a.name === name);
-      if (agent) await api.updateAgent(agent.id, data);
-      const updated = await api.listAgents();
-      set({ agents: updated });
-    } catch (e) {
-      console.error('Failed to update agent:', e);
-    }
-  },
-}));
+    })
+    .catch((error) => {
+      log.error('settings', 'Failed to persist chat screenshot shortcut', {
+        error: toStoreError(error),
+      });
+    });
+},
 ```
 
 特点:
-- `setCurrentAgent` 采用 **写前更新 + 异步持久化** 模式
-- `updateAgent` 采用 **先写后读** 模式，确保 UI 展示的是服务端最新状态
+- 个性化读取走 `readPersonalization`，写入采用 **乐观更新 + actor 作用域持久化**，无身份时只保留在内存且不写全局存储
+- `updateAgent` 等 L1 业务配置采用 **先写后读** 模式，Station 是唯一权威，失败不允许本地兜底
+- 会话 teardown 调用 `resetPersonalization()`，登出后下一 actor 只能看到默认值
 
 ### useAccountIdentityStore
 

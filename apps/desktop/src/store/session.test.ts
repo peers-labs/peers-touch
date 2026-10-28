@@ -224,4 +224,70 @@ describe('session authentication convergence', () => {
     expect(useSessionStore.getState().authenticated).toBe(false);
     expect(useSessionStore.getState().currentUser).toBeNull();
   });
+
+  it('hard-deletes the outgoing actor preference namespace and keeps L3 state', async () => {
+    class MemoryStorage {
+      private entries = new Map<string, string>();
+
+      get length(): number {
+        return this.entries.size;
+      }
+
+      key(index: number): string | null {
+        return Array.from(this.entries.keys())[index] ?? null;
+      }
+
+      getItem(key: string): string | null {
+        return this.entries.has(key) ? this.entries.get(key)! : null;
+      }
+
+      setItem(key: string, value: string): void {
+        this.entries.set(key, value);
+      }
+
+      removeItem(key: string): void {
+        this.entries.delete(key);
+      }
+    }
+
+    vi.stubGlobal('window', { localStorage: new MemoryStorage() });
+    try {
+      mocks.authLogout.mockReset();
+      mocks.authLogout.mockResolvedValue(undefined);
+      const { createDesktopClientStorageRuntime } = await import(
+        '../storage/desktopClientStorage'
+      );
+      const actorPtid = 'ptid:person:alice';
+      const actorRuntime = createDesktopClientStorageRuntime({ ptid: actorPtid });
+      await actorRuntime.repositories.chatPreferences.write(
+        'peers-touch-lang',
+        'zh-CN' as unknown as Record<string, unknown>,
+      );
+      await actorRuntime.repositories.chatPreferences.write(
+        'settings.providers.showUsableOnly',
+        false as unknown as Record<string, unknown>,
+      );
+      const appRuntime = createDesktopClientStorageRuntime({});
+      await appRuntime.repositories.stationRegistry.write(
+        'active-station',
+        { station_peer_id: 'station-peer' },
+      );
+
+      await useSessionStore.getState().logout();
+
+      await expect(
+        actorRuntime.repositories.chatPreferences.readValue('peers-touch-lang'),
+      ).resolves.toBeNull();
+      await expect(
+        actorRuntime.repositories.chatPreferences.readValue(
+          'settings.providers.showUsableOnly',
+        ),
+      ).resolves.toBeNull();
+      await expect(
+        appRuntime.repositories.stationRegistry.readValue('active-station'),
+      ).resolves.toEqual({ station_peer_id: 'station-peer' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
