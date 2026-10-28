@@ -254,9 +254,9 @@ describe('mobile runtime registry', () => {
     );
 
     expect(new Set(ids).size).toBe(ids.length);
-    expect(deviceSettings?.dependsOn).toEqual([]);
+    expect(deviceSettings?.dependsOn).toEqual(['session']);
     expect(deviceSettings?.responsibility).toContain(
-      'app-scoped device preference',
+      'identity-scoped preference',
     );
     expect(station?.responsibility).toContain('serialized device-local Station registry');
     expect(xConfig?.dependsOn).toEqual(['secure-storage']);

@@ -2,6 +2,7 @@ import { createDesktopStore } from './createDesktopStore';
 import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
+import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
 import { primeResolvedLocal } from '../components/common/SquareAvatar';
 import {
   accessSubmissionDescriptor,
@@ -227,11 +228,27 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 
   logout: async () => {
     markLocalIdentityAction();
+    // Capture the actor before the command tears down the session: the logout
+    // identity pipeline intentionally runs without an actor PTID, so the
+    // actor-scoped storage must be hard-deleted here, mirroring the Mobile
+    // session revoke path.
+    const actorPtid = get().currentUser?.actorPtid ?? null;
     let cleanupError: unknown;
     try {
       await api.authLogout();
     } catch (error) {
       cleanupError = error;
+    }
+    if (actorPtid && typeof window !== 'undefined') {
+      await createDesktopClientStorageRuntime({ ptid: actorPtid }).kernel.invalidateDomains([
+        'asset.avatar',
+        'chat.conversation-settings',
+        'chat.message',
+        'config.preference',
+        'identity.trust',
+        'profile.peer',
+        'runtime.projection',
+      ]);
     }
     await runIdentityPipeline({
       reason: 'logout',

@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-29
-covered_docs_hash: 7d60e74f193971b3965906b6c26e3112dc457f57d769310dd817fb0767db09c1
+covered_docs_hash: ad7ec5f80737b3c6ec83847fea4aa296d7150b9c80409b5420cd3ef453372e53
 
 covered_docs:
   - AGENTS.md
@@ -1909,3 +1909,31 @@ navigation entry, not a review-rule change; no SKILL.md rule, fixture, or
 knowledge entry changes. Review still applies existing rules to the new
 module's governed paths (release.yml and the `tooling/distribution/` lifecycle
 files), with `channels.json` remaining under x-config ownership per XCFG-D06.
+
+### Client settings ownership hard cut
+
+Reviewed the covered-doc changes in the cross-client settings cutover:
+`docs/client/desktop/runtime-projections.md` reclassifies the settings runtime
+as `session`-scoped with L1 Station projections and L2 identity-scoped
+personalization; the desktop and mobile coding guides require personalization
+in the `(app, station, actor)` `config.preference` namespace with logout hard
+delete and forbid a second generic settings store; `docs/knowledge/README.md`
+indexes the new owning invariant and the cross-actor leak pitfall. The change
+is covered by existing ownership, exact-source and hard-rule review plus the
+new invariant's grep guards, the `pt-read-before-edit` `owns:` match, and two
+real-storage two-actor isolation regressions (desktop `personalization.test.ts`,
+mobile `sessionRuntime` revoke test). No `pt-github-review` SKILL.md rule or
+review fixture changes are required; the business knowledge entry is the new
+invariant/pitfall pair and `pt-desktop-runtime-projections` carries the
+runtime wording.
+
+### Client settings cutover leftover cleanup
+
+Reviewed a follow-up covered-doc cleanup in the same hard cut:
+`docs/global/coding-guide/desktop/rust-architecture.md` now mirrors the real
+`AppState` (no `SettingsState`/`RealtimeState` fields) and states that
+personalization lives in identity-scoped web storage, not native global KV;
+the desktop/mobile coding guides describe the L2 owner. The change is
+documentation-only, aligned with the already-reviewed settings contract and
+the 22/22 exact-source Desktop journey; no SKILL.md rule, fixture, or review
+policy changes.

@@ -15,7 +15,7 @@ Mobile uses one storage ownership model on Android and iOS:
 | Shared business truth | Station | account state, conversations, membership, notification preferences |
 | Portable-core durable state | owning Rust core | encrypted messaging state, secure-content state |
 | Mobile runtime durable state | Mobile Rust runtime | command ledger, drafts, recovery/quarantine state |
-| Non-secret client cache | `@peers-touch/client-storage` + Mobile runtime | avatars, projections, device preferences, Station registry |
+| Non-secret client cache | `@peers-touch/client-storage` + Mobile runtime | avatars, projections, actor personalization (L2), Station registry and other device state (L3) |
 | Secrets and key material | Rust secure-storage port + OS adapter | session credentials, install/device keys, OAuth verifier/nonce |
 | OS/provider resources | typed native plugin | scoped media handles, provider tokens, permission state |
 
@@ -101,28 +101,44 @@ Rules:
 - Logs and Acceptance artifacts contain only redacted identifiers.
 - Hardware-backed claims require physical-device evidence.
 
-## 5. Device Preferences
+## 5. Preferences And Device Settings
 
-Device-local product preferences use the shared Mobile runtime and
-`@peers-touch/client-storage` unless confidentiality or OS execution requires a
-native port. Android and iOS do not define separate preference schemas.
+Settings follow the three-layer ownership contract in
+[Client Settings Ownership](../../../architecture/platform/client/settings-ownership.md):
+L1 Station-actor, L2 device-actor, L3 device/install. Every control declares
+exactly one layer.
 
-Account-level preferences remain Station-owned and synchronize through typed
-Station contracts. A UI setting must state whether it is:
+- L2 personalization (theme, language, font size, density, media
+  auto-download, per-list filters) uses `@peers-touch/client-storage`
+  `config.preference` in the identity scope `(app, station, actor)`. It is
+  never written from an app-global namespace, never synced, and is
+  hard-deleted on logout/session revocation. Pre-identity surfaces read OS
+  defaults only.
+- L3 device/install state (Station registry, cache maintenance, OS permission
+  observation, app metadata) uses app-scope storage with a distinct domain; it
+  survives identity changes.
+- L1 account/business preferences stay Station-owned behind typed Station
+  contracts; local fallback persistence is forbidden.
 
-- Station/account scoped;
-- device local;
+Android and iOS do not define separate preference schemas. A UI setting must
+state whether it is:
+
+- Station-actor scoped (L1);
+- device-actor scoped (L2, deleted on logout);
+- device/install scoped (L3);
 - session/process ephemeral;
 - OS capability observation.
 
-Ambiguous scope is a storage defect.
+Ambiguous scope, or the same attribute placed in different layers across
+clients, is a storage defect.
 
 ## 6. Migration And Cleanup
 
 - Internal ownership changes use a hard cut with one writer.
 - Persisted external data receives an explicit schema migration.
 - No dual Room/SwiftData/Rust writes or read fallback.
-- Logout removes session secrets and session-scoped projections.
+- Logout removes session secrets, session-scoped projections, and the actor's
+  L2 `config.preference` namespace; L3 device/install state is preserved.
 - Actor or Station switch fences the old generation before new writes.
 - Cache cleanup never deletes durable outbox, drafts, cryptographic state, or
   protected attachment blobs.

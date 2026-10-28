@@ -117,10 +117,13 @@ Optimistic reaction/comment state rolls back to Station readback on rejection.
 1. User opens Me and sees identity, Station, trust, and profile summary.
 2. User opens a settings detail; only that detail surface mounts.
 3. Actor Profile/privacy, Notification preferences, and Social blocked users
-   persist through their Station owners; device preferences remain local.
+   persist through their Station owners; personalization stays on the device
+   in the active actor's identity-scoped namespace and is hard-deleted on
+   logout, while device/install state remains local.
 4. User changes Station or logs out.
-5. System tears down session runtimes, clears actor-scoped projections and
-   credentials, preserves the Station registry, and restarts the gate flow.
+5. System tears down session runtimes, clears actor-scoped projections,
+   personalization, and credentials, preserves the Station registry and other
+   L3 device state, and restarts the gate flow with OS defaults.
 
 Language, notification, privacy, storage, and blocked-user surfaces distinguish
 saved, unsaved, saving, permission-required, failed, and externally changed
@@ -177,7 +180,8 @@ walkthrough starts at launch and visits every reachable surface one by one:
 4. Moments feed, detail/comments, composer, media lifecycle, pagination, empty,
    filtered, policy-hidden, unavailable, pending, and rollback states.
 5. Me and every Settings detail, including profile/privacy, notifications,
-   blocked users, device preferences, storage, language, Station change,
+   blocked users, identity-scoped personalization, device settings, storage,
+   language, Station change,
    logout, dirty drafts, conflict, permission, unavailable, and failure states.
 6. Shared recovery surfaces for revocation, stale data, command capacity,
    unknown outcome, draft restoration, and deferred module activation.

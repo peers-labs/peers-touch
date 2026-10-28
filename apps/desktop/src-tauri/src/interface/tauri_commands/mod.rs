@@ -44,7 +44,6 @@ pub mod provider;
 pub mod realtime;
 pub mod runtime_evidence;
 pub mod search;
-pub mod settings;
 pub mod skills;
 pub mod skills_market;
 pub mod social;

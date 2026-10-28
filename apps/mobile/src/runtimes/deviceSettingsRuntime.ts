@@ -2,7 +2,12 @@ import type {
   MobileRuntimeDescriptor,
   RuntimeOperationResult,
 } from '../app/lifecycle/types';
-import { createMobileAppStorageRuntime } from '../storage/mobileClientStorage';
+import { createMobileActorStorageRuntime } from '../storage/mobileClientStorage';
+import {
+  assertSessionWriteAdmission,
+  readActiveSessionProjection,
+  subscribeSessionRuntime,
+} from './sessionRuntime';
 
 export const DEVICE_SETTINGS_RUNTIME_ID = 'device-settings';
 
@@ -278,23 +283,53 @@ export function subscribeDeviceSettingsRuntime(
   return deviceSettingsRuntime.subscribe(listener);
 }
 
+export function resetDevicePreferencesToSystemDefault(): void {
+  applyDevicePreferences(defaultDevicePreferences());
+}
+
 export function createDeviceSettingsRuntimeDescriptor(
-  runtime: Pick<DeviceSettingsRuntime, 'bootstrap'> = deviceSettingsRuntime,
+  runtime: Pick<DeviceSettingsRuntime, 'bootstrap' | 'retry'> = deviceSettingsRuntime,
+  options: {
+    readActiveIdentity?: () => string | null;
+    subscribeIdentity?: (listener: () => void) => () => void;
+  } = {},
 ): MobileRuntimeDescriptor {
+  const readActiveIdentity = options.readActiveIdentity ?? (() => {
+    const session = readActiveSessionProjection();
+    return session ? `${session.stationPeerId}\0${session.actorPtid}` : null;
+  });
+  const subscribeIdentity = options.subscribeIdentity ?? subscribeSessionRuntime;
+
+  let releaseIdentity: (() => void) | null = null;
+
   return {
     id: DEVICE_SETTINGS_RUNTIME_ID,
     title: 'Device Settings Runtime',
     responsibility:
-      'Owns app-scoped device preference loading, committed readback, mutation, and retryable local-storage failures.',
-    dependsOn: [],
+      'Owns identity-scoped preference loading, committed readback, mutation, and retryable local-storage failures.',
+    dependsOn: ['session'],
 
     async bootstrap(): Promise<void> {
       await runtime.bootstrap();
       installDeviceSettingsSystemThemeListener();
+      if (!releaseIdentity) {
+        let lastIdentity = readActiveIdentity();
+        releaseIdentity = subscribeIdentity(() => {
+          const identity = readActiveIdentity();
+          if (identity === lastIdentity) return;
+          lastIdentity = identity;
+          if (identity) {
+            void runtime.retry();
+          } else {
+            // Logout / Station switch: pre-login surfaces follow OS defaults.
+            resetDevicePreferencesToSystemDefault();
+          }
+        });
+      }
     },
 
     async suspend(): Promise<void> {
-      // Device preferences have no active resource to suspend.
+      // Personalization has no active resource to suspend.
     },
 
     async resume(): Promise<void> {
@@ -304,6 +339,9 @@ export function createDeviceSettingsRuntimeDescriptor(
     async teardown(): Promise<RuntimeOperationResult> {
       releaseSystemThemeListener?.();
       releaseSystemThemeListener = null;
+      releaseIdentity?.();
+      releaseIdentity = null;
+      resetDevicePreferencesToSystemDefault();
       return {
         runtimeId: DEVICE_SETTINGS_RUNTIME_ID,
         success: true,
@@ -326,15 +364,28 @@ function installDeviceSettingsSystemThemeListener(): void {
   releaseSystemThemeListener = () => query.removeEventListener('change', applyCurrent);
 }
 
+// Personalization is identity-scoped (Settings ownership layer L2):
+// preferences are keyed by (app, station, actor). A shared device must not
+// keep one actor's theme, font size, density, or media-download choice for
+// the next person who signs in. Pre-login reads resolve to OS defaults and
+// writes require an authenticated session. Logout hard-deletes the actor's
+// preference namespace in the session runtime.
 function deviceSettingsPersistence(): DeviceSettingsPersistence {
   return {
-    read: async () => (
-      createMobileAppStorageRuntime()
-        .repositories.chatPreferences
-        .readValue(DEVICE_PREFERENCES_KEY)
-    ),
+    read: async () => {
+      const session = readActiveSessionProjection();
+      if (!session) return null;
+      return createMobileActorStorageRuntime(
+        session.stationPeerId,
+        session.actorPtid,
+      ).repositories.chatPreferences.readValue(DEVICE_PREFERENCES_KEY);
+    },
     write: async (preferences) => {
-      await createMobileAppStorageRuntime().repositories.chatPreferences.write(
+      const session = assertSessionWriteAdmission();
+      await createMobileActorStorageRuntime(
+        session.stationPeerId,
+        session.actorPtid,
+      ).repositories.chatPreferences.write(
         DEVICE_PREFERENCES_KEY,
         preferences as unknown as Record<string, unknown>,
       );

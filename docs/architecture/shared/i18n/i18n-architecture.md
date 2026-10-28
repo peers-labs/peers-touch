@@ -525,11 +525,16 @@ export function resolveError(code: number | string, fallbackMessage?: string): s
 ### 7.1 语言检测优先级
 
 ```
-1. 用户手动设置（持久化在 localStorage: 'peers-touch-lang'）
-2. navigator.language 精确匹配
+1. 已认证 actor 的身份作用域偏好（`config.preference` 中的 `peers-touch-lang`，
+   键空间为 (app, station, actor)；登出硬删，不跨 actor 泄露）
+2. navigator.language 精确匹配（登录前/无偏好时的 OS 语言）
 3. navigator.language 前缀匹配（zh-* → zh-CN）
 4. Fallback: en
 ```
+
+> 语言是 L2 设备-actor 个性化，不是设备级设置：登录前界面只跟 OS 语言，
+> 认证边界后才应用该 actor 自己的选择。详见
+> [Client Settings Ownership](../../platform/client/settings-ownership.md)。
 
 ### 7.2 语言元信息
 
@@ -561,7 +566,9 @@ export interface LanguageInfo {
 └─────────────────────────────────┘
 ```
 
-切换调用 `changeLanguage(lang)` → `i18n.changeLanguage()` + `localStorage.setItem()`，立即生效无需重启。
+切换调用 `changeLanguage(lang)` → `i18n.changeLanguage()` 立即生效，并把
+`peers-touch-lang` 写入当前 actor 的身份作用域 `config.preference`（无身份时
+只保留在本次运行内存中，不污染下一个登录者）。
 
 ---
 
@@ -668,7 +675,7 @@ import { Translation } from 'react-i18next';
 - ✅ `LanguageSwitcher` 组件实现
 - ✅ LoginPage 右上角语言切换
 - ✅ Settings General 语言切换
-- ✅ 语言偏好持久化到 localStorage
+- ✅ 语言偏好持久化到身份作用域 `config.preference`（登出硬删）
 - ✅ 切换后即时生效
 
 ### Phase 5: 后端 i18n ⏳ Planned

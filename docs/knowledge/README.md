@@ -186,6 +186,7 @@ Pick one based on intent:
 - [`invariants/private-comment-read-completion.md`](invariants/private-comment-read-completion.md) — private Comment Store reads share completion and reject stale scope, page, anchor, and removed-post publication.
 - [`invariants/x-config-origins-never-extend-trust.md`](invariants/x-config-origins-never-extend-trust.md) — x-config origin lists choose fetch transport only; publisher trust stays app-baked, key rotation requires a release.
 - [`invariants/x-config-must-not-block-local-startup.md`](invariants/x-config-must-not-block-local-startup.md) — optional configuration I/O cannot block local startup or readers; denied watermarks stay unknown and concurrent refreshes coalesce.
+- [`invariants/client-settings-personalization-actor-scoped.md`](invariants/client-settings-personalization-actor-scoped.md) — client personalization is L2 `(app, station, actor)` `config.preference`, symmetric across Desktop/Mobile, hard-deleted on logout; no generic settings store.
 
 ### Pitfalls
 
@@ -212,6 +213,7 @@ Pick one based on intent:
 - [`pitfalls/json-fallback-decode-state.md`](pitfalls/json-fallback-decode-state.md) — fallback JSON parsers isolate destinations because failed decodes may leave partial state.
 - [`pitfalls/sqlcipher-raw-key-no-utf8-lossy.md`](pitfalls/sqlcipher-raw-key-no-utf8-lossy.md) — SQLCipher keys are 32 random bytes and must reach `sqlite3_key_v2` unmodified; UTF-8 lossy conversion folds their entropy.
 - [`pitfalls/mobile-proto-regen-import-closure.md`](pitfalls/mobile-proto-regen-import-closure.md) — shipping one regenerated mobile proto file without its import closure breaks tsc; regen to a staging dir and sync the closure, not a single file.
+- [`pitfalls/global-personalization-leaks-across-actors.md`](pitfalls/global-personalization-leaks-across-actors.md) — app-global/OS-user settings stores survived logout and rendered actor A's language/theme/personalization to actor B on the same device.
 
 ### Playbooks
 

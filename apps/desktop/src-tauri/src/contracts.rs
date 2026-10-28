@@ -117,24 +117,6 @@ pub struct AccessDecisionPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SettingsGetInput {
-    pub key: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SettingsGetPayload {
-    pub command: String,
-    pub status: String,
-    pub value: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SettingsSetInput {
-    pub key: String,
-    pub value: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatListMessagesInput {
     pub conversation_id: String,
     pub cursor: Option<String>,

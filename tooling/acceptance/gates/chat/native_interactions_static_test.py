@@ -1011,16 +1011,26 @@ class ContactMessageResilienceTest(unittest.TestCase):
 
     def test_settings_reset_logs_out_before_reset(self) -> None:
         src = self.source("apps/desktop/src/pages/SettingsPage.tsx")
-        logout_pos = src.find("api.authLogout()")
+        # Danger zone must go through the session store logout owner, which
+        # invalidates the native session and hard-deletes the outgoing actor's
+        # preferences before resolving (see store/session.test.ts). Calling
+        # api.authLogout() directly here would race the post-logout reload and
+        # leave actor-scoped personalization on disk.
+        self.assertNotIn(
+            "api.authLogout()", src,
+            "Settings danger zone must not call api.authLogout() directly; "
+            "use the single session-store logout owner",
+        )
+        logout_pos = src.find("useSessionStore.getState().logout()")
         reset_pos = src.find("api.resetOnboarding()", logout_pos)
         self.assertGreater(
             logout_pos, 0,
-            "Settings danger-zone reset must call api.authLogout() first",
+            "Settings danger-zone reset must call the session store logout owner",
         )
         self.assertGreater(
             reset_pos, logout_pos,
-            "authLogout() must be called BEFORE resetOnboarding() so the server "
-            "session is invalidated before local state is wiped",
+            "store logout (native session invalidation + actor preference "
+            "hard delete) must resolve BEFORE resetOnboarding() wipes local state",
         )
 
         warm_resume_pos = src.find("clearWarmResume()", reset_pos)
