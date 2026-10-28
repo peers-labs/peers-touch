@@ -43,6 +43,11 @@ type subServer struct {
 
 	cancel context.CancelFunc
 	wait   sync.WaitGroup
+
+	// inboundAutomation projects accepted external publications into
+	// Station-internal automation (bot↔Agent turns). Installed by the agent
+	// subserver through structural wiring; nil keeps publishing receive-only.
+	inboundAutomation InboundAutomationSink
 }
 
 // NewConversationSubServer constructs the canonical Conversation production owner.

@@ -849,7 +849,7 @@ def run_shared_access_gate() -> dict[str, object]:
                 "Access attempt start on node A and OAuth acknowledgement on node B",
                 "Station key ID and one logical Session survive the node handoff",
                 "idempotent acknowledgement preserves the Session ID",
-                "concurrent same-class activation converges to one winner",
+                "concurrent same-device activation converges to one winner",
                 "other canonical client classes remain active",
                 "revocation on node B is enforced by validation on node A",
                 "keyring configuration mismatch fails node initialization",

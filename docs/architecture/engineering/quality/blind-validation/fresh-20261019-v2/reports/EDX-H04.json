@@ -1,0 +1,837 @@
+{
+  "kind": "peers-touch-experience-review-result",
+  "schemaVersion": 1,
+  "authorId": "edx-blind-runner-v2",
+  "verdict": "NO_BLOCKING_FINDING",
+  "evaluationBinding": {
+    "packageId": "EDX-HOLDOUT-20261019-V2",
+    "runEnvelopeDigest": "sha256:5ff0a02a8009e7cbb8deb92965d7172f97585c357a58c43864d3d743f0c63ee3",
+    "caseDigest": "sha256:5ddfb09e265a3b4b6ed09492ee360638802326d3feb141498bb3cb58fe9a6f28",
+    "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+    "manifestDigest": "sha256:6d8c7328bb64ad1d7c9c255a61daaf9186cd20451778f45f7f2c8765b2e468ce",
+    "rubricDigest": "sha256:2f31bcd9bbac2dd5a9280051b8917a1bc4c63da30d4d4e6c8fafaf9069b2ef84",
+    "sourceBlobAlgorithm": "git-sha1",
+    "sourceBlobs": [
+      {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "digest": "5adede8885afa0976c727b026f61e4cf4cd9def9"
+      },
+      {
+        "path": "apps/desktop/src/pages/marketplace/PackageCard.tsx",
+        "digest": "18c9d20a13edd29ac378fe0fab806b24d0feab3d"
+      },
+      {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+        "digest": "bb1da678b9923a016d7bb19d6232d3d9482b77ae"
+      },
+      {
+        "path": "tooling/acceptance/features/agent-trusted-package-catalog.yaml",
+        "digest": "93f762682a78b95751640fc90ac29ab638b0de31"
+      }
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C-H04-TRUSTED-CATALOG",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+        "lineStart": 1590,
+        "lineEnd": 1610
+      },
+      "clause": "MCA-D20 catalog verification",
+      "statement": "Package discovery consumes signed versioned snapshots whose pinned source identity, signature, schema, artifact hash, trust, derived risk, scan verdict, and install policy are verified before publication."
+    },
+    {
+      "id": "C-H04-AUTHORITY-READBACK",
+      "authority": "accepted-product",
+      "caseCoverage": "supporting",
+      "source": {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+        "lineStart": 1612,
+        "lineEnd": 1622
+      },
+      "clause": "MCA-D20 authority-specific installation",
+      "statement": "Agent, Skill, and MCP packages install through their target authority and require authority readback; the local ledger is only a reconciliation cache."
+    },
+    {
+      "id": "C-H04-RISK-AND-REVOCATION",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+        "lineStart": 1624,
+        "lineEnd": 1629
+      },
+      "clause": "MCA-D20 risk and revocation",
+      "statement": "Revocation blocks new install and update without deleting user-owned resources, high-risk packages require explicit confirmation before mutation, and invalid or blocked inputs fail closed."
+    },
+    {
+      "id": "C-H04-STALE-SOURCE",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+        "lineStart": 1656,
+        "lineEnd": 1668
+      },
+      "clause": "MCA-D20 consequences",
+      "statement": "Catalog APIs expose provenance, revocation, derived policy, and pagination; network failure may retain the last verified snapshot only when stale or error state is visible."
+    },
+    {
+      "id": "C-H04-VISIBLE-ACCEPTANCE",
+      "authority": "accepted-product",
+      "caseCoverage": "explicit",
+      "source": {
+        "path": "tooling/acceptance/features/agent-trusted-package-catalog.yaml",
+        "lineStart": 31,
+        "lineEnd": 45
+      },
+      "clause": "visible acceptance",
+      "statement": "Marketplace visibly shows source trust, signature, package type, version, derived risk, scan verdict, install policy, and revocation; high risk requires confirmation and revoked packages remain inspectable but cannot be installed."
+    },
+    {
+      "id": "C-H04-NEGATIVE-GUARDS",
+      "authority": "accepted-product",
+      "caseCoverage": "supporting",
+      "source": {
+        "path": "tooling/acceptance/features/agent-trusted-package-catalog.yaml",
+        "lineStart": 47,
+        "lineEnd": 55
+      },
+      "clause": "negative acceptance",
+      "statement": "Source labels do not become authority, install success does not precede target-authority readback, revocation does not silently delete installed resources, and static evidence is not native proof."
+    }
+  ],
+  "facts": [
+    {
+      "id": "F-H04-CARD-PROVENANCE",
+      "stateId": "S-H04-CATALOG",
+      "source": {
+        "path": "apps/desktop/src/pages/marketplace/PackageCard.tsx",
+        "lineStart": 84,
+        "lineEnd": 153,
+        "symbol": "MarketplacePackageCard"
+      },
+      "statement": "Each card shows package name, publisher, type, description, version, signature-derived trust or invalid signature, risk, and revocation.",
+      "visibleAction": "Inspect a package card before opening detail.",
+      "visibleResponse": "The card exposes package provenance, risk, signature, and revocation summary."
+    },
+    {
+      "id": "F-H04-OPEN-DETAIL",
+      "stateId": "S-H04-CATALOG",
+      "source": {
+        "path": "apps/desktop/src/pages/marketplace/PackageCard.tsx",
+        "lineStart": 155,
+        "lineEnd": 163,
+        "symbol": "MarketplacePackageCard"
+      },
+      "statement": "Every package card has a visible Details button that opens the selected entry.",
+      "visibleAction": "Open package details."
+    },
+    {
+      "id": "F-H04-DETAIL-LOADING",
+      "stateId": "S-H04-DETAIL-LOADING",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 625,
+        "lineEnd": 629,
+        "symbol": "MarketplacePage"
+      },
+      "statement": "The detail Drawer renders a centered spinner while package detail is loading.",
+      "visibleResponse": "The opened package detail shows an explicit loading state."
+    },
+    {
+      "id": "F-H04-DETAIL-PROVENANCE",
+      "stateId": "S-H04-DETAIL",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 629,
+        "lineEnd": 686,
+        "symbol": "MarketplacePage"
+      },
+      "statement": "Loaded detail shows package type, version, publisher, license, trust, risk, source, signature, policy, optional digest, revocation time, scan verdict, and installed target authority.",
+      "visibleResponse": "The detail Drawer exposes the trust and policy evidence needed for the install decision."
+    },
+    {
+      "id": "F-H04-DETAIL-CONTENT",
+      "stateId": "S-H04-DETAIL",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 687,
+        "lineEnd": 707,
+        "symbol": "MarketplacePage"
+      },
+      "statement": "When available, package content is inspectable in a bounded scrollable preformatted region."
+    },
+    {
+      "id": "F-H04-INSTALL-ACTION",
+      "stateId": "S-H04-DETAIL",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 603,
+        "lineEnd": 623,
+        "symbol": "MarketplacePage"
+      },
+      "statement": "An uninstalled detail exposes Install, while blocked or revoked detail disables that action.",
+      "visibleAction": "Activate Install for a policy-allowed package."
+    },
+    {
+      "id": "F-H04-BLOCKED-RESPONSE",
+      "stateId": "S-H04-BLOCKED",
+      "source": {
+        "path": "apps/desktop/src/pages/marketplace/PackageCard.tsx",
+        "lineStart": 148,
+        "lineEnd": 195,
+        "symbol": "MarketplacePackageCard"
+      },
+      "statement": "A revoked package remains inspectable, while its card Install button is disabled and carries localized install-blocked help.",
+      "visibleResponse": "Revocation remains visible and Install is disabled."
+    },
+    {
+      "id": "F-H04-BLOCKED-GUARD",
+      "stateId": "S-H04-BLOCKED",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 269,
+        "lineEnd": 274,
+        "symbol": "handleInstall"
+      },
+      "statement": "The install handler independently rejects blocked or revoked packages before mutation and displays an error.",
+      "visibleAction": "Attempt an install through the package install handler.",
+      "visibleResponse": "Policy-blocked or revoked input fails closed before the install API."
+    },
+    {
+      "id": "F-H04-HIGH-RISK-CONFIRM",
+      "stateId": "S-H04-HIGH-RISK-CONFIRM",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 275,
+        "lineEnd": 290,
+        "symbol": "handleInstall"
+      },
+      "statement": "A confirmation-required package opens a modal naming package and risk, labels the confirmation as Install, and styles it as dangerous.",
+      "visibleResponse": "A risk confirmation blocks mutation until Cancel or Install is chosen."
+    },
+    {
+      "id": "F-H04-CONFIRM-ACTION",
+      "stateId": "S-H04-HIGH-RISK-CONFIRM",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 275,
+        "lineEnd": 290,
+        "symbol": "handleInstall"
+      },
+      "statement": "Confirm resolves riskAcknowledged=true and Cancel resolves false.",
+      "visibleAction": "Confirm the named high-risk install."
+    },
+    {
+      "id": "F-H04-CANCEL-ACTION",
+      "stateId": "S-H04-HIGH-RISK-CONFIRM",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 275,
+        "lineEnd": 290,
+        "symbol": "handleInstall"
+      },
+      "statement": "Cancel resolves riskAcknowledged=false.",
+      "visibleAction": "Cancel the high-risk install."
+    },
+    {
+      "id": "F-H04-CANCEL-RESPONSE",
+      "stateId": "S-H04-HIGH-RISK-CANCELLED",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 289,
+        "lineEnd": 293,
+        "symbol": "handleInstall"
+      },
+      "statement": "A false risk acknowledgement returns before the install API.",
+      "visibleResponse": "The confirmation closes without package mutation."
+    },
+    {
+      "id": "F-H04-INSTALL-SUCCESS",
+      "stateId": "S-H04-INSTALL-SUCCESS",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 292,
+        "lineEnd": 298,
+        "symbol": "handleInstall"
+      },
+      "statement": "After the install API resolves, Marketplace shows success, closes selected detail, and reloads the catalog.",
+      "visibleResponse": "Install success is announced and the catalog refreshes."
+    },
+    {
+      "id": "F-H04-INSTALL-FAILURE",
+      "stateId": "S-H04-INSTALL-FAILED",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 298,
+        "lineEnd": 301,
+        "symbol": "handleInstall"
+      },
+      "statement": "An install rejection displays its error detail or localized install-failed message without clearing the selected detail.",
+      "visibleResponse": "Install failure is announced while package detail remains available."
+    },
+    {
+      "id": "F-H04-FAILURE-RETRY",
+      "stateId": "S-H04-INSTALL-FAILED",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 603,
+        "lineEnd": 623,
+        "symbol": "MarketplacePage"
+      },
+      "statement": "Because failure does not clear selected detail, the allowed Install action remains on the Drawer.",
+      "visibleAction": "Retry Install from the same package detail."
+    },
+    {
+      "id": "F-H04-DETAIL-RETURN",
+      "stateId": "S-H04-DETAIL",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 603,
+        "lineEnd": 624,
+        "symbol": "MarketplacePage"
+      },
+      "statement": "The selected package Drawer remains the local decision surface until success or explicit close.",
+      "visibleResponse": "The same package detail and Install decision are available."
+    },
+    {
+      "id": "F-H04-SOURCE-STATUS-ACTION",
+      "stateId": "S-H04-CATALOG",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 475,
+        "lineEnd": 505,
+        "symbol": "MarketplacePage"
+      },
+      "statement": "Source tags expose source name, package count, trust level, state color, and a title containing source provenance and error detail.",
+      "visibleAction": "Inspect the current catalog source status and its detail."
+    },
+    {
+      "id": "F-H04-STALE-PARTIAL",
+      "stateId": "S-H04-STALE-OR-PARTIAL",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 475,
+        "lineEnd": 517,
+        "symbol": "MarketplacePage"
+      },
+      "statement": "Revoked or invalid sources use error status, stale sources use warning status, synchronized sources use success status, and a partial-load warning names the failed-source count.",
+      "visibleResponse": "Marketplace visibly distinguishes source state and warns when part of the catalog is unavailable."
+    },
+    {
+      "id": "F-H04-CATALOG-RETRY",
+      "stateId": "S-H04-STALE-OR-PARTIAL",
+      "source": {
+        "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+        "lineStart": 362,
+        "lineEnd": 384,
+        "symbol": "renderContent"
+      },
+      "statement": "A full catalog load error displays local error detail and a Retry button.",
+      "visibleAction": "Retry catalog loading after a full load failure."
+    }
+  ],
+  "inferences": [
+    {
+      "id": "I-H04-PROVENANCE-COMPLETE",
+      "factIds": [
+        "F-H04-CARD-PROVENANCE",
+        "F-H04-DETAIL-PROVENANCE",
+        "F-H04-DETAIL-CONTENT"
+      ],
+      "contractIds": [
+        "C-H04-TRUSTED-CATALOG",
+        "C-H04-VISIBLE-ACCEPTANCE"
+      ],
+      "statement": "The card and detail surfaces expose the package provenance, policy, risk, scan, signature, revocation, version, and content needed for the bounded install decision."
+    },
+    {
+      "id": "I-H04-MUTATION-GUARDED",
+      "factIds": [
+        "F-H04-BLOCKED-RESPONSE",
+        "F-H04-BLOCKED-GUARD",
+        "F-H04-HIGH-RISK-CONFIRM",
+        "F-H04-CANCEL-RESPONSE"
+      ],
+      "contractIds": [
+        "C-H04-RISK-AND-REVOCATION",
+        "C-H04-VISIBLE-ACCEPTANCE"
+      ],
+      "statement": "Revoked and blocked packages fail closed at both UI and handler layers, while high-risk mutation requires explicit named confirmation and Cancel returns before mutation."
+    },
+    {
+      "id": "I-H04-FAILURE-RECOVERABLE",
+      "factIds": [
+        "F-H04-INSTALL-FAILURE",
+        "F-H04-FAILURE-RETRY",
+        "F-H04-DETAIL-RETURN"
+      ],
+      "contractIds": [
+        "C-H04-RISK-AND-REVOCATION",
+        "C-H04-VISIBLE-ACCEPTANCE"
+      ],
+      "statement": "Install failure does not claim success or discard the package decision surface, so an allowed package can be retried locally."
+    }
+  ],
+  "journeyStateGraph": {
+    "entryStateId": "S-H04-CATALOG",
+    "states": [
+      {
+        "id": "S-H04-CATALOG",
+        "origin": "starting",
+        "inScope": true,
+        "source": {
+          "path": "apps/desktop/src/pages/marketplace/PackageCard.tsx",
+          "lineStart": 42,
+          "lineEnd": 199,
+          "symbol": "MarketplacePackageCard"
+        },
+        "visibleMeaning": "A verified catalog snapshot presents ordinary, high-risk, blocked, and revoked package summaries."
+      },
+      {
+        "id": "S-H04-DETAIL-LOADING",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 1,
+        "source": {
+          "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+          "lineStart": 625,
+          "lineEnd": 629,
+          "symbol": "MarketplacePage"
+        },
+        "visibleMeaning": "The selected package detail is loading."
+      },
+      {
+        "id": "S-H04-DETAIL",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 2,
+        "source": {
+          "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+          "lineStart": 629,
+          "lineEnd": 707,
+          "symbol": "MarketplacePage"
+        },
+        "visibleMeaning": "The selected package detail exposes provenance, risk, policy, and optional content."
+      },
+      {
+        "id": "S-H04-BLOCKED",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 3,
+        "source": {
+          "path": "apps/desktop/src/pages/marketplace/PackageCard.tsx",
+          "lineStart": 148,
+          "lineEnd": 195,
+          "symbol": "MarketplacePackageCard"
+        },
+        "visibleMeaning": "A revoked or policy-blocked package remains inspectable but cannot be installed."
+      },
+      {
+        "id": "S-H04-STALE-OR-PARTIAL",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 4,
+        "source": {
+          "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+          "lineStart": 475,
+          "lineEnd": 517,
+          "symbol": "MarketplacePage"
+        },
+        "visibleMeaning": "The source snapshot is stale, invalid, revoked, or partially unavailable without replacing it with unverified content."
+      },
+      {
+        "id": "S-H04-HIGH-RISK-CONFIRM",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 5,
+        "source": {
+          "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+          "lineStart": 275,
+          "lineEnd": 290,
+          "symbol": "handleInstall"
+        },
+        "visibleMeaning": "A high-risk package is awaiting explicit Install or Cancel confirmation."
+      },
+      {
+        "id": "S-H04-INSTALL-SUCCESS",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 6,
+        "source": {
+          "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+          "lineStart": 292,
+          "lineEnd": 298,
+          "symbol": "handleInstall"
+        },
+        "visibleMeaning": "Install completed, success is announced, and catalog refresh begins."
+      },
+      {
+        "id": "S-H04-INSTALL-FAILED",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 7,
+        "source": {
+          "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+          "lineStart": 298,
+          "lineEnd": 301,
+          "symbol": "handleInstall"
+        },
+        "visibleMeaning": "Install failed and detail remains available for retry or exit."
+      },
+      {
+        "id": "S-H04-HIGH-RISK-CANCELLED",
+        "origin": "explicit",
+        "inScope": true,
+        "explicitOrder": 8,
+        "source": {
+          "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+          "lineStart": 275,
+          "lineEnd": 293,
+          "symbol": "handleInstall"
+        },
+        "visibleMeaning": "The user cancelled high-risk confirmation and no install mutation ran."
+      }
+    ],
+    "edges": [
+      {
+        "id": "E-H04-OPEN-LOADING",
+        "fromStateId": "S-H04-CATALOG",
+        "toStateId": "S-H04-DETAIL-LOADING",
+        "actionFactId": "F-H04-OPEN-DETAIL",
+        "responseFactId": "F-H04-DETAIL-LOADING",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 340,
+            "lineEnd": 355
+          },
+          {
+            "path": "apps/desktop/src/pages/marketplace/PackageCard.tsx",
+            "lineStart": 155,
+            "lineEnd": 163
+          }
+        ]
+      },
+      {
+        "id": "E-H04-OPEN-DETAIL",
+        "fromStateId": "S-H04-CATALOG",
+        "toStateId": "S-H04-DETAIL",
+        "actionFactId": "F-H04-OPEN-DETAIL",
+        "responseFactId": "F-H04-DETAIL-PROVENANCE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 340,
+            "lineEnd": 355
+          },
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 629,
+            "lineEnd": 686
+          }
+        ]
+      },
+      {
+        "id": "E-H04-INSPECT-BLOCKED",
+        "fromStateId": "S-H04-CATALOG",
+        "toStateId": "S-H04-BLOCKED",
+        "actionFactId": "F-H04-CARD-PROVENANCE",
+        "responseFactId": "F-H04-BLOCKED-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/marketplace/PackageCard.tsx",
+            "lineStart": 128,
+            "lineEnd": 195
+          }
+        ]
+      },
+      {
+        "id": "E-H04-INSPECT-SOURCE",
+        "fromStateId": "S-H04-CATALOG",
+        "toStateId": "S-H04-STALE-OR-PARTIAL",
+        "actionFactId": "F-H04-SOURCE-STATUS-ACTION",
+        "responseFactId": "F-H04-STALE-PARTIAL",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 475,
+            "lineEnd": 517
+          }
+        ]
+      },
+      {
+        "id": "E-H04-DETAIL-CONFIRM",
+        "fromStateId": "S-H04-DETAIL",
+        "toStateId": "S-H04-HIGH-RISK-CONFIRM",
+        "actionFactId": "F-H04-INSTALL-ACTION",
+        "responseFactId": "F-H04-HIGH-RISK-CONFIRM",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 269,
+            "lineEnd": 290
+          },
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 603,
+            "lineEnd": 623
+          }
+        ]
+      },
+      {
+        "id": "E-H04-DETAIL-SUCCESS",
+        "fromStateId": "S-H04-DETAIL",
+        "toStateId": "S-H04-INSTALL-SUCCESS",
+        "actionFactId": "F-H04-INSTALL-ACTION",
+        "responseFactId": "F-H04-INSTALL-SUCCESS",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 292,
+            "lineEnd": 298
+          },
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 603,
+            "lineEnd": 623
+          }
+        ]
+      },
+      {
+        "id": "E-H04-DETAIL-FAILURE",
+        "fromStateId": "S-H04-DETAIL",
+        "toStateId": "S-H04-INSTALL-FAILED",
+        "actionFactId": "F-H04-INSTALL-ACTION",
+        "responseFactId": "F-H04-INSTALL-FAILURE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 292,
+            "lineEnd": 301
+          },
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 603,
+            "lineEnd": 623
+          }
+        ]
+      },
+      {
+        "id": "E-H04-CONFIRM-SUCCESS",
+        "fromStateId": "S-H04-HIGH-RISK-CONFIRM",
+        "toStateId": "S-H04-INSTALL-SUCCESS",
+        "actionFactId": "F-H04-CONFIRM-ACTION",
+        "responseFactId": "F-H04-INSTALL-SUCCESS",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 275,
+            "lineEnd": 298
+          }
+        ]
+      },
+      {
+        "id": "E-H04-CONFIRM-FAILURE",
+        "fromStateId": "S-H04-HIGH-RISK-CONFIRM",
+        "toStateId": "S-H04-INSTALL-FAILED",
+        "actionFactId": "F-H04-CONFIRM-ACTION",
+        "responseFactId": "F-H04-INSTALL-FAILURE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 275,
+            "lineEnd": 301
+          }
+        ]
+      },
+      {
+        "id": "E-H04-CONFIRM-CANCEL",
+        "fromStateId": "S-H04-HIGH-RISK-CONFIRM",
+        "toStateId": "S-H04-HIGH-RISK-CANCELLED",
+        "actionFactId": "F-H04-CANCEL-ACTION",
+        "responseFactId": "F-H04-CANCEL-RESPONSE",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 275,
+            "lineEnd": 293
+          }
+        ]
+      },
+      {
+        "id": "E-H04-FAILURE-RETRY",
+        "fromStateId": "S-H04-INSTALL-FAILED",
+        "toStateId": "S-H04-DETAIL",
+        "actionFactId": "F-H04-FAILURE-RETRY",
+        "responseFactId": "F-H04-DETAIL-RETURN",
+        "sourceRefs": [
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 298,
+            "lineEnd": 301
+          },
+          {
+            "path": "apps/desktop/src/pages/MarketplacePage.tsx",
+            "lineStart": 603,
+            "lineEnd": 623
+          }
+        ]
+      }
+    ]
+  },
+  "trustBoundaryChecks": [
+    {
+      "id": "T-H04-CATALOG-INSTALL",
+      "contractTransitionRefs": [
+        "C-H04-TRUSTED-CATALOG",
+        "C-H04-AUTHORITY-READBACK",
+        "C-H04-RISK-AND-REVOCATION",
+        "C-H04-NEGATIVE-GUARDS"
+      ],
+      "beforeScope": "A verified immutable catalog snapshot and its pinned publisher/source identity.",
+      "candidateTarget": "The selected versioned package artifact and its Agent, Skill, or MCP target authority.",
+      "diagnosticEvidenceKinds": [
+        "signature status",
+        "catalog revision",
+        "artifact digest",
+        "scan verdict",
+        "derived risk",
+        "install policy"
+      ],
+      "requiredIdentityEvidenceKinds": [
+        "pinned publisher identity",
+        "verified package identity and version",
+        "target-authority readback"
+      ],
+      "scopeEffectMeaning": "Policy-allowed install mutates only the package's target authority; local catalog state remains a reconciliation projection.",
+      "nextGateMeaning": "High-risk policy requires explicit confirmation before mutation, then target-authority readback determines installed truth.",
+      "failureMeaning": "Blocked, revoked, invalid, or rejected packages do not mutate; failed installation does not claim success.",
+      "visibleConsequences": [
+        "provenance and policy details",
+        "disabled revoked or blocked install",
+        "explicit dangerous high-risk confirmation",
+        "success or failure feedback"
+      ],
+      "previousScopeExposure": "Existing user-owned installed resources remain inspectable and are never silently deleted by catalog revocation."
+    }
+  ],
+  "recoveryPaths": [
+    {
+      "id": "R-H04-CANCEL-HIGH-RISK",
+      "contractIds": [
+        "C-H04-RISK-AND-REVOCATION",
+        "C-H04-VISIBLE-ACCEPTANCE"
+      ],
+      "sourceStateId": "S-H04-HIGH-RISK-CONFIRM",
+      "reason": "The user declines the high-risk mutation after reviewing its named risk.",
+      "entryActionVisible": true,
+      "distance": "same-surface",
+      "preservedState": [
+        "selected-package-detail",
+        "catalog-snapshot"
+      ],
+      "returnStateId": "S-H04-HIGH-RISK-CANCELLED",
+      "returnTarget": {
+        "kind": "keyboard-focus",
+        "targetId": "marketplace-package-detail"
+      }
+    },
+    {
+      "id": "R-H04-RETRY-INSTALL",
+      "contractIds": [
+        "C-H04-RISK-AND-REVOCATION",
+        "C-H04-VISIBLE-ACCEPTANCE"
+      ],
+      "sourceStateId": "S-H04-INSTALL-FAILED",
+      "reason": "A policy-allowed install failed without changing visible installed truth, so the same package detail remains the retry surface.",
+      "entryActionVisible": true,
+      "distance": "same-surface",
+      "preservedState": [
+        "selected-package-detail",
+        "risk-and-policy-context"
+      ],
+      "returnStateId": "S-H04-DETAIL",
+      "returnTarget": {
+        "kind": "keyboard-focus",
+        "targetId": "marketplace-package-detail"
+      }
+    }
+  ],
+  "candidateLedger": [],
+  "primaryFinding": null,
+  "secondaryFindings": [],
+  "minorObservations": [],
+  "statesChecked": [
+    "S-H04-CATALOG",
+    "S-H04-DETAIL-LOADING",
+    "S-H04-DETAIL",
+    "S-H04-BLOCKED",
+    "S-H04-STALE-OR-PARTIAL",
+    "S-H04-HIGH-RISK-CONFIRM",
+    "S-H04-INSTALL-SUCCESS",
+    "S-H04-INSTALL-FAILED",
+    "S-H04-HIGH-RISK-CANCELLED"
+  ],
+  "exitAndRetryPaths": [
+    {
+      "id": "X-H04-CANCEL-HIGH-RISK",
+      "sourceStateId": "S-H04-HIGH-RISK-CONFIRM",
+      "actionFactId": "F-H04-CANCEL-ACTION",
+      "destinationStateId": "S-H04-HIGH-RISK-CANCELLED",
+      "recoveryPathId": "R-H04-CANCEL-HIGH-RISK"
+    },
+    {
+      "id": "X-H04-RETRY-INSTALL",
+      "sourceStateId": "S-H04-INSTALL-FAILED",
+      "actionFactId": "F-H04-FAILURE-RETRY",
+      "destinationStateId": "S-H04-DETAIL",
+      "recoveryPathId": "R-H04-RETRY-INSTALL"
+    }
+  ],
+  "unproven": [
+    {
+      "id": "U-H04-AUTHORITY-READBACK",
+      "contractIds": [
+        "C-H04-AUTHORITY-READBACK",
+        "C-H04-NEGATIVE-GUARDS"
+      ],
+      "requirement": "Visible install success follows real target-authority readback for Agent, Skill, or MCP rather than only a local API return.",
+      "reason": "The supplied UI calls installMarketSkill and reloads the catalog, but target-authority persistence and native Gate proof are outside the case boundary.",
+      "requiredEvidenceLevel": "L4_RUNTIME",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H04-STALE-SNAPSHOT-INTEGRITY",
+      "contractIds": [
+        "C-H04-STALE-SOURCE",
+        "C-H04-NEGATIVE-GUARDS"
+      ],
+      "requirement": "Network or source failure retains only the last verified snapshot and never substitutes unverified bytes while reporting fresh synchronization.",
+      "reason": "The supplied UI visibly projects stale and failed-source state, but snapshot retention and cryptographic source behavior are outside this visible review.",
+      "requiredEvidenceLevel": "L4_RUNTIME",
+      "requiredFor": [
+        "production"
+      ]
+    },
+    {
+      "id": "U-H04-ACCESSIBILITY",
+      "contractIds": [
+        "C-H04-VISIBLE-ACCEPTANCE"
+      ],
+      "requirement": "Risk, revocation, blocked policy, confirmation, and stale source state remain understandable without relying only on color or pointer hover.",
+      "reason": "The source includes textual package state and a partial-load warning, but source-tag stale semantics and modal focus order require rendered accessibility inspection.",
+      "requiredEvidenceLevel": "L3_DYNAMIC",
+      "requiredFor": [
+        "high-fidelity",
+        "production"
+      ]
+    }
+  ]
+}

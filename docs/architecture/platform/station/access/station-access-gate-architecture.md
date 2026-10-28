@@ -248,7 +248,7 @@ Transport can be HTTP/Tauri bridge during implementation, but payload models mus
 ### 9.2 Password Session Finalization
 
 `FinalizeGrantedSession` owns one transaction for the granted attempt, Actor
-lookup, same-client-class session replacement, new session and attempt binding.
+lookup, same-device session replacement, new session and attempt binding.
 An idempotent retry reissues credentials for the same committed session.
 
 JWT issuance and replay read the Station access key authority through that

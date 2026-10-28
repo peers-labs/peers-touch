@@ -242,6 +242,90 @@ func TestKnowledgeResourceListIsActorScopedAndCursorPaginated(t *testing.T) {
 	}
 }
 
+func TestKnowledgeResourceReadContentIsActorAndRevisionScoped(t *testing.T) {
+	resourceService, _ := newKnowledgeResourceTestService(t, "knowledge-read-content")
+	created, _, err := resourceService.Create(
+		context.Background(),
+		knowledgeTestActor,
+		stationKnowledgeCreateRequest("create-1", "Readable", []byte("revision one")),
+	)
+	if err != nil {
+		t.Fatalf("create knowledge resource: %v", err)
+	}
+
+	first, err := resourceService.ReadContent(
+		context.Background(),
+		knowledgeTestActor,
+		&model.ReadKnowledgeResourceContentRequest{
+			ResourceId: created.GetResourceId(),
+			Revision:   1,
+		},
+	)
+	if err != nil {
+		t.Fatalf("read knowledge content: %v", err)
+	}
+	if string(first.GetContent()) != "revision one" ||
+		first.GetDescriptor_().GetResourceId() != created.GetResourceId() {
+		t.Fatalf("unexpected read result: %+v content=%q", first, first.GetContent())
+	}
+
+	if _, err := resourceService.ReadContent(
+		context.Background(),
+		"ptid:person:other",
+		&model.ReadKnowledgeResourceContentRequest{
+			ResourceId: created.GetResourceId(),
+			Revision:   1,
+		},
+	); !isCapabilityError(err, errcode.AgentNotFound) {
+		t.Fatalf("expected cross-actor read rejection, got %v", err)
+	}
+
+	if _, _, err := resourceService.Tombstone(
+		context.Background(),
+		knowledgeTestActor,
+		&model.TombstoneKnowledgeResourceDescriptorRequest{
+			ResourceId:       created.GetResourceId(),
+			ExpectedRevision: 1,
+			IdempotencyKey:   "tombstone-1",
+			Reason:           "user removed resource",
+		},
+	); err != nil {
+		t.Fatalf("tombstone knowledge resource: %v", err)
+	}
+	if _, err := resourceService.ReadContent(
+		context.Background(),
+		knowledgeTestActor,
+		&model.ReadKnowledgeResourceContentRequest{
+			ResourceId: created.GetResourceId(),
+			Revision:   1,
+		},
+	); !isCapabilityError(err, errcode.AgentInvalidSourceState) {
+		t.Fatalf("expected tombstoned read rejection, got %v", err)
+	}
+}
+
+func TestKnowledgeResourceReadContentRejectsClientOwnedRef(t *testing.T) {
+	resourceService, _ := newKnowledgeResourceTestService(t, "knowledge-read-client")
+	created, _, err := resourceService.Create(
+		context.Background(),
+		knowledgeTestActor,
+		clientKnowledgeCreateRequest("client-1", "resource_01-opaque"),
+	)
+	if err != nil {
+		t.Fatalf("create client knowledge resource: %v", err)
+	}
+	if _, err := resourceService.ReadContent(
+		context.Background(),
+		knowledgeTestActor,
+		&model.ReadKnowledgeResourceContentRequest{
+			ResourceId: created.GetResourceId(),
+			Revision:   1,
+		},
+	); !isCapabilityError(err, errcode.AgentInvalidSourceState) {
+		t.Fatalf("expected client-owned ref rejection, got %v", err)
+	}
+}
+
 func TestKnowledgeResourceTombstonePreservesImmutableRevision(t *testing.T) {
 	resourceService, authority := newKnowledgeResourceTestService(t, "knowledge-tombstone")
 	createRequest := stationKnowledgeCreateRequest("create-1", "Delete", []byte("content"))

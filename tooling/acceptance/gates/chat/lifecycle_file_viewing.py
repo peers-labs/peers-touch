@@ -42,6 +42,11 @@ REQUIRED_FILE_VIEWING_ASSERTIONS.update(
     for format_id in FILE_FORMAT_KINDS
     for role in ("sender", "receiver")
 )
+REQUIRED_FILE_VIEWING_ASSERTIONS.update(
+    f"rich_file_scope_{role}_{boundary}"
+    for role in ("sender", "receiver")
+    for boundary in ("close", "leave_chat", "conversation", "account", "station", "logout")
+)
 
 
 def prove_file_format_preview(
@@ -53,6 +58,7 @@ def prove_file_format_preview(
     role: str,
     evidence_root: Path,
     assert_condition: Callable[[str, bool, str], Any],
+    scroll_preview: Callable[[str], None],
     retain_evidence: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     root = f'[data-messaging-attachment-id="{attachment_id}"]'
@@ -61,14 +67,23 @@ def prove_file_format_preview(
     kind = FILE_FORMAT_KINDS[format_id]
     client.find_element(card, 30).click()
     try:
-        wait_until(
+        ready_selector = (
+            f'{detail} .chat-file-preview-resource[data-chat-preview-state="ready"], '
+            f'{detail} .chat-file-preview-resource[data-chat-preview-state="unavailable"]'
+        )
+        failed_selector = '.chat-file-modal [data-chat-file-state="failed"]'
+        state = wait_until(
             lambda: next(
                 (item for item in client.find_elements(
-                    f'{detail} [data-chat-file-state="ready"]'
+                    f'{ready_selector}, {failed_selector}'
                 ) if item.is_displayed()), None,
             ),
             f"{role} {format_id} verified detail", timeout=60,
         )
+        # An unsupported-but-downloaded file (archive etc.) intentionally has
+        # no inline decoder; only the header transfer failure is terminal.
+        if state.get_attribute("data-chat-file-state") == "failed":
+            raise GateError(f"{role} {format_id} detail reached a terminal access failure")
         def decoded() -> dict[str, Any] | None:
             observation = client.execute_script(
                 """
@@ -89,7 +104,9 @@ def prove_file_format_preview(
                             || !frame.srcdoc.includes("default-src 'none'"))
                         || Boolean(window.__attachmentExecuted),
                     actions: ['open-external', 'save-copy'].every(intent => {
-                        const button = detail.querySelector(`[data-chat-file-action="${intent}"]`);
+                        const button = document.querySelector(
+                          `.chat-file-modal [data-chat-file-action="${intent}"]`
+                        );
                         return button && !button.disabled;
                     }),
                 };
@@ -109,7 +126,7 @@ def prove_file_format_preview(
                 } else if (kind === 'text') {
                     if (!node) return null;
                     result.text = node.textContent.trim();
-                    result.page = preview.querySelector('.chat-preview-navigation [role="status"]')?.textContent;
+                    result.page = preview.querySelector('.chat-preview-page-status')?.textContent;
                 } else if (kind === 'pdf') {
                     if (!node?.width || !node?.height) return null;
                     const pixels = node.getContext('2d').getImageData(0, 0, node.width, node.height).data;
@@ -137,7 +154,7 @@ def prove_file_format_preview(
                     result.fallback = preview.textContent.trim();
                     result.unavailable = preview.dataset.chatFilePreviewUnavailable === 'true';
                     result.inlineDecoder = Boolean(preview.querySelector('pre,img,audio,video,canvas'));
-                    result.nativePreview = Boolean(detail.querySelector('[data-chat-file-action="preview"]'));
+                    result.nativePreview = Boolean(document.querySelector('.chat-file-modal [data-chat-file-action="preview"]'));
                     if (!result.fallback || !result.unavailable || result.inlineDecoder) return null;
                 }
                 return result;
@@ -159,7 +176,7 @@ def prove_file_format_preview(
             source_text = source.read_text()
             valid = valid and observation["text"] == source_text[:32 * 1024].strip()
             if format_id == "oversized_text":
-                client.find_element(f"{detail} .chat-preview-navigation button:last-child", 5).click()
+                client.find_element(f"{detail} [data-preview-pager='next']", 5).click()
                 next_page = wait_until(
                     lambda: value if (
                         (value := decoded()) and value.get("page") != observation.get("page")
@@ -172,7 +189,7 @@ def prove_file_format_preview(
             observation["pixelsEvidence"] = prove_preview_pixels(
                 client, detail, source.name, ["File viewing page 1"], evidence_root, "page-1",
             )
-            client.find_element(f"{detail} .chat-preview-navigation button:last-child", 5).click()
+            client.find_element(f"{detail} [data-preview-pager='next']", 5).click()
             next_page = wait_until(
                 lambda: value if (
                     (value := decoded()) and value.get("page") != observation["page"]
@@ -187,14 +204,14 @@ def prove_file_format_preview(
         if kind == "office":
             if format_id == "workbook":
                 valid = valid and "Real workbook preview." in observation["text"] and observation["cells"] <= 2000
-                client.find_element(f"{detail} .chat-preview-navigation:nth-child(2) button:last-child", 5).click()
+                client.find_element(f"{detail} [data-preview-column='next']", 5).click()
                 wait_until(
-                    lambda: client.find_element(
-                        f"{detail} .chat-preview-navigation:first-child button:last-child", 5
-                    ).is_enabled(),
+                    lambda: not client.find_element(
+                        f"{detail} [data-preview-pager='next']", 5
+                    ).get_attribute("disabled"),
                     f"{role} workbook column viewport ready", timeout=20,
                 )
-                client.find_element(f"{detail} .chat-preview-navigation:first-child button:last-child", 5).click()
+                client.find_element(f"{detail} [data-preview-pager='next']", 5).click()
                 viewport = wait_until(
                     lambda: value if (
                         (value := decoded()) and "Last workbook viewport." in value["text"]
@@ -208,20 +225,32 @@ def prove_file_format_preview(
                 )
             else:
                 if format_id == "office":
-                    control = client.find_element(f"{detail} select[aria-label='Zoom']", 5)
-                    # The embedded driver clicks options without dispatching
-                    # selection changes. Exercise the same production handler.
-                    client.execute_script(
-                        "arguments[0].value='page';arguments[0].dispatchEvent(new Event('change',{bubbles:true}))",
-                        control,
-                    )
+                    # The zoom segmented control drives the production render.
+                    client.find_element(f"{detail} [data-zoom='page']", 5).click()
                     wait_until(decoded, f"{role} Word fit-page rendered", timeout=20)
-                expected = ["Real Office file preview.", "Figure 1"] if format_id == "office" else ["Real presentation page 1."]
-                observation["pixelsEvidence"] = prove_preview_pixels(
-                    client, detail, source.name, expected + ["HIGH RESOLUTION PREVIEW"],
-                    evidence_root, "page-1",
-                )
-                client.find_element(f"{detail} .chat-preview-navigation button:last-child", 5).click()
+                    observation["overviewPixelsEvidence"] = prove_preview_pixels(
+                        client, detail, source.name, [], evidence_root, "page-1-overview",
+                    )
+                    # A fitted page is an overview. Read text at original size
+                    # and page the actual sandboxed document to its figure.
+                    client.find_element(f"{detail} [data-zoom='actual']", 5).click()
+                    wait_until(decoded, f"{role} Word original-size rendered", timeout=20)
+                    observation["pixelsEvidence"] = prove_preview_pixels(
+                        client, detail, source.name, ["Real Office file preview."],
+                        evidence_root, "page-1-text",
+                    )
+                    scroll_preview(f"{detail} .chat-office-frame")
+                    observation["figurePixelsEvidence"] = prove_preview_pixels(
+                        client, detail, source.name, ["Figure 1", "HIGH RESOLUTION PREVIEW"],
+                        evidence_root, "page-1-figure",
+                    )
+                else:
+                    observation["pixelsEvidence"] = prove_preview_pixels(
+                        client, detail, source.name,
+                        ["Real presentation page 1.", "HIGH RESOLUTION PREVIEW"],
+                        evidence_root, "page-1",
+                    )
+                client.find_element(f"{detail} [data-preview-pager='next']", 5).click()
                 wait_until(
                     lambda: value if (value := decoded()) and value["renderedPage"] == 2 else None,
                     f"{role} Office second page rendered", timeout=20,
@@ -238,6 +267,41 @@ def prove_file_format_preview(
             bool(valid), json.dumps(observation, sort_keys=True),
         )
         return observation
+    except Exception as error:
+        evidence_root.mkdir(parents=True, exist_ok=True)
+        client.save_screenshot(evidence_root / "failed-detail.png")
+        snapshot = client.execute_script(
+            """
+            const card = document.querySelector(arguments[0]);
+            const detail = document.querySelector(arguments[1]);
+            return {
+                route: location.hash,
+                card: card?.outerHTML.slice(0, 6000) || null,
+                detail: detail?.outerHTML.slice(0, 6000) || null,
+                selectedDetails: Array.from(document.querySelectorAll('[data-chat-file-detail]'))
+                    .map(node => node.dataset.chatFileDetail),
+            };
+            """, root, detail,
+        )
+        # Supporting Native read only: it cannot turn this failed UI assertion
+        # into success or start/retry its transfer. The Suite revokes any grant
+        # produced by this observation during its normal failure cleanup.
+        try:
+            native_read = client.invoke_app_result(
+                "messaging_attachment_access",
+                {"input": {"attachment_id": attachment_id, "start_download": False}},
+                timeout=10,
+            )
+            snapshot["nativeRead"] = {
+                "ok": True,
+                "projectionBytes": native_read.get("data"),
+            }
+        except Exception as native_error:
+            snapshot["nativeRead"] = {"ok": False, "error": str(native_error)}
+        (evidence_root / "failed-detail.json").write_text(
+            json.dumps({"error": str(error), "observation": snapshot}, ensure_ascii=False, indent=2),
+        )
+        raise
     finally:
         if retain_evidence:
             retain_evidence({})
@@ -251,6 +315,7 @@ def prove_file_download_recovery(
     client: TauriSession,
     attachment_id: str,
     resume_transport: Callable[[], None],
+    wait_interrupted: Callable[[], bool] | None = None,
     assert_condition: Callable[[str, bool, str], Any],
 ) -> dict[str, Any]:
     """The caller keeps the receiver's real transport interrupted until retry."""
@@ -258,12 +323,16 @@ def prove_file_download_recovery(
     detail = f'[data-chat-file-detail="{attachment_id}"]'
 
     def wait_state(state: str) -> Any:
+        selector = (
+            f'{detail} .chat-file-preview-resource[data-chat-preview-state="ready"]'
+            if state == "ready"
+            else f'.chat-file-modal [data-chat-file-state="{state}"]'
+        )
         return wait_until(
             lambda: next(
                 (
-                    item for item in client.find_elements(
-                        f'{detail} [data-chat-file-state="{state}"]'
-                    ) if item.is_displayed()
+                    item for item in client.find_elements(selector)
+                    if item.is_displayed()
                 ),
                 None,
             ),
@@ -273,6 +342,16 @@ def prove_file_download_recovery(
 
     client.find_element(card, 30).click()
     wait_state("downloading")
+    if wait_interrupted is not None:
+        # The detail enters "downloading" as soon as the transfer is queued,
+        # before the background worker attempts the network fetch. Wait until
+        # the armed fault proxy has actually rejected a connection so the
+        # interruption overlaps a real in-flight download attempt.
+        wait_until(
+            wait_interrupted,
+            "receiver file download interrupted on the faulted route",
+            timeout=60,
+        )
     progress = client.find_element(f"{detail} progress", 10)
     total = float(progress.get_attribute("max") or 0)
     value = float(progress.get_attribute("value") or 0)
@@ -280,14 +359,14 @@ def prove_file_download_recovery(
     wait_until(lambda: not client.find_elements(detail), "pending detail closed", timeout=10)
     client.find_element(card, 10).click()
     wait_state("downloading")
-    client.find_element(f'{detail} [data-chat-file-action="cancel"]', 10).click()
+    client.find_element('.chat-file-modal [data-chat-file-action="cancel"]', 10).click()
     wait_state("cancelled")
     client.find_element(".ant-modal-close", 5).click()
     wait_until(lambda: not client.find_elements(detail), "cancelled detail closed", timeout=10)
     client.find_element(card, 10).click()
     wait_state("cancelled")
     resume_transport()
-    client.find_element(f'{detail} [data-chat-file-action="retry"]', 10).click()
+    client.find_element('.chat-file-modal [data-chat-file-action="retry"]', 10).click()
     wait_state("ready")
     recovered = client.find_element(detail, 5)
     evidence = {"attachmentId": attachment_id, "total": total, "beforeCancel": value}
@@ -314,7 +393,7 @@ def prove_file_detail(
 ) -> dict[str, Any]:
     card = f'[data-messaging-attachment-id="{attachment_id}"][role="button"]'
     detail = f'[data-chat-file-detail="{attachment_id}"]'
-    ready = f'{detail} [data-chat-file-state="ready"]'
+    ready = f'{detail} .chat-file-preview-resource[data-chat-preview-state="ready"]'
     source_text = source.read_text().strip()
 
     def open_detail() -> Any:
@@ -332,9 +411,13 @@ def prove_file_detail(
         )
 
     opened = open_detail()
+    # The modal animates in on WebKit, so the element exists with final
+    # attributes before it is reported as visible. Wait for visibility before
+    # asserting the displayed detail instead of racing the open animation.
+    wait_until(opened.is_displayed, f"{role} file detail displayed", timeout=10)
     name = opened.get_attribute("data-chat-file-name")
     size = opened.get_attribute("data-chat-file-size")
-    title = client.find_element(".ant-modal-title", 10).text
+    title = client.find_element(".chat-file-modal .chat-file-title", 10).text
     assert_condition(
         f"rich_file_{role}_detail",
         opened.is_displayed()
@@ -356,7 +439,9 @@ def prove_file_detail(
         timeout=30,
     )
     actions = {
-        intent: client.find_element(f'{detail} [data-chat-file-action="{intent}"]', 5)
+        intent: client.find_element(
+            f'.chat-file-modal [data-chat-file-action="{intent}"]', 5
+        )
         for intent in ("open-external", "save-copy")
     }
     assert_condition(
@@ -366,6 +451,10 @@ def prove_file_detail(
         json.dumps({"filename": name, "preview": preview.text, "actions": list(actions)}),
     )
     client.driver.switch_to.active_element.send_keys(Keys.ESCAPE)
+    if client.find_elements(detail):
+        # WebKit can leave focus on an inner control where ESC does not bubble
+        # to the Ant modal; close it deterministically before the teardown wait.
+        client.find_element(".ant-modal-close", 5).click()
     wait_until(
         lambda: not client.find_elements(detail),
         f"{role} file detail teardown",
@@ -388,7 +477,7 @@ def prove_file_detail(
     if pid is None:
         raise GateError("file save cancellation has no owning native process")
     baseline = adapter.focused_control(pid)
-    native_click(f'{detail} [data-chat-file-action="save-copy"]')
+    native_click('.chat-file-modal [data-chat-file-action="save-copy"]')
     panel = wait_until(
         lambda: (
             control if (
@@ -404,8 +493,19 @@ def prove_file_detail(
         f"{role} native save-copy picker",
         timeout=30,
     )
+    def dismiss_panel(*, strict: bool = False) -> None:
+        # Two same-bundle app instances can coexist, so a global Escape can
+        # reach the sibling process's key window. macOS presses Cancel inside
+        # the target process dialog; other platforms dismiss with Escape.
+        if adapter.platform == "macos":
+            adapter.dismiss_owned_dialog_to_process(
+                pid, "Cancel", raise_if_missing=strict
+            )
+        else:
+            adapter.post_key_to_process(pid, NativeKey.ESCAPE)
+
     try:
-        adapter.post_key_to_process(pid, NativeKey.ESCAPE)
+        dismiss_panel(strict=True)
         cancelled = wait_until(
             lambda: next(
                 (
@@ -422,14 +522,19 @@ def prove_file_detail(
             f"rich_file_{role}_save_cancelled",
             cancelled.is_displayed()
             and client.find_element(
-                f'{detail} [data-chat-file-action="save-copy"]', 5
+                '.chat-file-modal [data-chat-file-action="save-copy"]', 5
             ).is_enabled(),
             json.dumps({"picker": panel.to_dict(), "result": cancelled.text}),
         )
     finally:
-        # On any failure close only this owned picker before leaving the client.
-        if adapter.focused_control(pid).dialog_count > baseline.dialog_count:
-            adapter.post_key_to_process(pid, NativeKey.ESCAPE)
+        # A standalone panel adds a window; a sheet adds a dialog. Close any
+        # panel still owned by this process before leaving the client.
+        remaining = adapter.focused_control(pid)
+        if (
+            remaining.dialog_count > baseline.dialog_count
+            or remaining.window_count > baseline.window_count
+        ):
+            dismiss_panel()
     client.find_element(".ant-modal-close", 5).click()
     wait_until(lambda: not client.find_elements(detail), f"{role} detail closed", timeout=10)
     return {"filename": name, "size": size, "preview": source_text, "saveCancelled": True}

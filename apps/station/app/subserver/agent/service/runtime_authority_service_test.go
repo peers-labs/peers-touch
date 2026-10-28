@@ -1156,6 +1156,7 @@ func TestProviderAttemptBudgetIsSharedAcrossProviderPaths(t *testing.T) {
 		t.Fatalf("decode pinned runtime snapshot: %v", err)
 	}
 	snapshot.Budget.MaxAttempts = 2
+	snapshot.Budget.MaxAgentSteps = 2
 	encoded, err := persistence.MarshalRuntimeSnapshot(snapshot)
 	if err != nil {
 		t.Fatalf("encode pinned runtime snapshot: %v", err)
@@ -1185,27 +1186,34 @@ func TestProviderAttemptBudgetIsSharedAcrossProviderPaths(t *testing.T) {
 		providerCalls++
 		return &ProviderCallResponse{Content: "ok"}, nil
 	}
+	// Retry dispatches share the persisted MaxAttempts cap across call paths.
 	for index := 0; index < 2; index++ {
 		if _, err := service.callProviderWithRuntimeAuthority(
 			context.Background(),
 			config,
-			&ProviderCallRequest{Model: config.Model},
+			&ProviderCallRequest{
+				Model:         config.Model,
+				DispatchClass: providerDispatchRetry,
+			},
 		); err != nil {
-			t.Fatalf("provider call %d: %v", index+1, err)
+			t.Fatalf("provider retry %d: %v", index+1, err)
 		}
 	}
 	if _, err := service.callProviderWithRuntimeAuthority(
 		context.Background(),
 		config,
-		&ProviderCallRequest{Model: config.Model},
+		&ProviderCallRequest{
+			Model:         config.Model,
+			DispatchClass: providerDispatchRetry,
+		},
 	); err == nil {
-		t.Fatal("expected shared provider-attempt budget exhaustion")
+		t.Fatal("expected retry budget exhaustion")
 	} else {
 		var budgetErr *errcode.BizError
 		if !errors.As(err, &budgetErr) ||
 			budgetErr.Code != errcode.AgentToolBudgetExhausted ||
 			budgetErr.Message != maxAttemptsExhaustedReason {
-			t.Fatalf("unexpected provider-attempt exhaustion: %T %v", err, err)
+			t.Fatalf("unexpected retry exhaustion: %T %v", err, err)
 		}
 	}
 	if providerCalls != 2 {
@@ -1215,8 +1223,21 @@ func TestProviderAttemptBudgetIsSharedAcrossProviderPaths(t *testing.T) {
 	if err := db.First(&turn, "id = ?", config.TurnID).Error; err != nil {
 		t.Fatalf("load bounded turn: %v", err)
 	}
-	if turn.ProviderAttemptCount != 2 {
-		t.Fatalf("persisted provider attempts = %d, want 2", turn.ProviderAttemptCount)
+	if turn.ProviderRetryCount != 2 || turn.ProviderAttemptCount != 2 {
+		t.Fatalf("persisted retry=%d total=%d, want 2/2",
+			turn.ProviderRetryCount, turn.ProviderAttemptCount)
+	}
+	// A normal continuation after two failed retries is governed by the
+	// agent-step budget, not the retry cap.
+	if _, err := service.callProviderWithRuntimeAuthority(
+		context.Background(),
+		config,
+		&ProviderCallRequest{
+			Model:         config.Model,
+			DispatchClass: providerDispatchContinuation,
+		},
+	); err != nil {
+		t.Fatalf("continuation must not share retry budget: %v", err)
 	}
 }
 

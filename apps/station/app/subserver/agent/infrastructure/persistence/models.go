@@ -25,6 +25,10 @@ package persistence
 // 2026-09-17 — Added AgentPackageImportReceipt for atomic package import replay.
 // 2026-09-17 — Added the Station-owned Evaluation aggregate and removed the
 // legacy ecosystem evaluation dataset authority.
+// 2026-10-25 — Added ScheduledJob/ScheduledJobRun for the single
+// Station-authoritative user-visible scheduler (V11).
+// 2026-10-26 — Added BotInboundTurn for the durable bot↔Agent turn
+// projection (AUD-10).
 func AllModels() []interface{} {
 	return []interface{}{
 		&Agent{},
@@ -73,12 +77,20 @@ func AllModels() []interface{} {
 		&MemorySnapshot{},
 		&Skill{},
 		&SkillVersion{},
+		&SkillResource{},
+		&ImmutableContentBlob{},
 		&Review{},
 		&Credential{},
 		&AgentProvider{},
 		&AgentTurn{},
+		&TurnArtifact{},
+		&AgentTurnTodo{},
 		&TurnQueueEntry{},
 		&TurnTrace{},
+		&ScheduledJob{},
+		&ScheduledJobRun{},
+		&BotInboundTurn{},
+		&AgentRuntimeDefault{},
 		&GrowthEvent{},
 		&UserFeedback{},
 		&SuspectedItem{},

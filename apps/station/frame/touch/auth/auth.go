@@ -22,16 +22,15 @@ import (
 
 // DefaultSessionDuration is the lifetime of an actor's session record in the
 // Station session table. Tokens issued for that session inherit the same TTL
-// (see `IssueTokenAndSession`). We default to 30 days because:
+// (see the Access Gate and OAuth credential finalizers). We default to 30 days because:
 //
 //   - The chat client is treated as a long-lived "trusted device" — kicking
 //     people out every 24h forces them through the picker → PIN dance for no
 //     security gain (the PIN protects the encrypted token at rest, and the
 //     server still revokes on logout / `CreateWithKick`).
-//   - `CreateWithKick` is the authoritative takeover boundary: within one
-//     Station, a successful login for an actor revokes older sessions for that
-//     actor on the *same device type*. Different device types (Desktop native,
-//     Browser, Mobile) may hold concurrent sessions per MCA-D19.
+//   - `CreateWithKick` replaces sessions for the same Station, Actor and
+//     installation. Other installations remain active, including multiple
+//     Mobile devices. Client class is retained only for classification.
 //
 // Operators that want a shorter window can override this via a session config
 // once we wire one up; today this constant is the single source of truth.
@@ -195,46 +194,82 @@ type AccessGateSessionBinding struct {
 	LifecycleGeneration    uint64
 }
 
-// PrepareOAuthSession creates bearer material and its inactive persistent
-// session row without writing either. The OAuth finalizer owns the surrounding
-// database transaction and encrypts the returned LoginResponse before commit.
+// PrepareOAuthSession maps the OAuth-specific candidate binding onto the shared
+// inactive-session issuer. OAuth retains its own delivery and acknowledgement.
 func PrepareOAuthSession(
 	ctx context.Context,
 	actor *db.Actor,
 	binding OAuthSessionBinding,
 	now time.Time,
 ) (*session.SessionRecord, *model.LoginResponse, error) {
+	return PreparePendingSession(ctx, actor, PendingSessionBinding{
+		AccessGateSessionBinding: AccessGateSessionBinding{
+			AccessAttemptID:        binding.AccessAttemptID,
+			StationPeerID:          binding.StationPeerID,
+			AccessDecisionRevision: binding.AccessDecisionRevision,
+			DeviceType:             binding.DeviceType,
+			DeviceID:               binding.DeviceID,
+			LifecycleGeneration:    binding.LifecycleGeneration,
+		},
+		AuthMethod:       "oauth",
+		OAuthCandidateID: binding.CandidateID,
+	}, now)
+}
+
+// PendingSessionBinding identifies one granted attempt whose credential must be
+// persisted by its receiver before activation. Candidate IDs belong to OAuth.
+type PendingSessionBinding struct {
+	AccessGateSessionBinding
+	AuthMethod       string
+	OAuthCandidateID string
+}
+
+// PreparePendingSession returns bearer material and a revoked pending row. It
+// neither writes nor activates a Session. The owner encrypts the response and
+// persists it in the same transaction, then activates only after a verified ack.
+func PreparePendingSession(
+	ctx context.Context,
+	actor *db.Actor,
+	binding PendingSessionBinding,
+	now time.Time,
+	opts ...coreauth.Option,
+) (*session.SessionRecord, *model.LoginResponse, error) {
 	if actor == nil {
-		return nil, nil, errors.New("cannot prepare OAuth session without actor")
+		return nil, nil, errors.New("cannot prepare pending session without actor")
 	}
 	ptid := strings.TrimSpace(actor.PTID)
 	if _, err := actoridentity.Parse(ptid); err != nil {
-		return nil, nil, fmt.Errorf("cannot prepare OAuth session for actor without valid PTID: %w", err)
+		return nil, nil, fmt.Errorf("cannot prepare pending session for actor without valid PTID: %w", err)
 	}
 	if err := binding.DeviceType.Validate(); err != nil {
-		return nil, nil, errors.New("OAuth session binding has a non-canonical client class")
+		return nil, nil, errors.New("pending session binding has a non-canonical client class")
 	}
-	if strings.TrimSpace(binding.CandidateID) == "" ||
+	if binding.AuthMethod != "oauth" && binding.AuthMethod != "device_link" {
+		return nil, nil, errors.New("unsupported pending session authentication method")
+	}
+	if (binding.AuthMethod == "oauth" && strings.TrimSpace(binding.OAuthCandidateID) == "") ||
+		(binding.AuthMethod == "device_link" && binding.OAuthCandidateID != "") ||
 		strings.TrimSpace(binding.AccessAttemptID) == "" ||
-		strings.TrimSpace(binding.StationPeerID) == "" ||
-		strings.TrimSpace(binding.DeviceID) == "" ||
+		(binding.AuthMethod == "device_link" && binding.DeviceType != session.DeviceTypeMobile) ||
+		now.IsZero() ||
 		binding.LifecycleGeneration == 0 ||
 		binding.AccessDecisionRevision == 0 {
-		return nil, nil, errors.New("OAuth session binding is incomplete")
+		return nil, nil, errors.New("pending session binding is incomplete")
+	}
+	if err := (session.DeviceBinding{
+		StationPeerID: binding.StationPeerID,
+		DeviceID:      binding.DeviceID,
+	}).Validate(); err != nil {
+		return nil, nil, err
 	}
 
 	sessionID, err := generateSessionID()
 	if err != nil {
-		return nil, nil, fmt.Errorf("generate OAuth session ID: %w", err)
+		return nil, nil, fmt.Errorf("generate pending session ID: %w", err)
 	}
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
-		SubjectID:  ptid,
-		SessionID:  sessionID,
-		Attributes: map[string]string{"email": actor.Email},
-	})
+	response, err := issueSessionCredential(ctx, actor, sessionID, opts...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("issue OAuth session credential: %w", err)
+		return nil, nil, err
 	}
 
 	expiresAt := now.Add(DefaultSessionDuration)
@@ -243,38 +278,20 @@ func PrepareOAuthSession(
 		UserID:                 actor.ID,
 		Email:                  actor.Email,
 		DeviceType:             binding.DeviceType,
-		OAuthCandidateID:       binding.CandidateID,
+		OAuthCandidateID:       binding.OAuthCandidateID,
 		AccessAttemptID:        binding.AccessAttemptID,
 		StationPeerID:          binding.StationPeerID,
 		AccessDecisionRevision: binding.AccessDecisionRevision,
 		DeviceID:               binding.DeviceID,
 		LifecycleGeneration:    binding.LifecycleGeneration,
-		AuthMethod:             "oauth",
+		AuthMethod:             binding.AuthMethod,
 		CreatedAt:              now,
 		ExpiresAt:              expiresAt,
 		LastActiveAt:           now,
 		Revoked:                true,
 		RevokedReason:          "credential_delivery_pending",
 	}
-	return record, &model.LoginResponse{
-		Tokens: &model.AuthTokens{
-			Token:       token.Value,
-			AccessToken: token.Value,
-			TokenType:   token.Type,
-			ExpiresAt:   token.ExpiresAt.Format(time.RFC3339),
-		},
-		SessionId: sessionID,
-		ActorRef:  actorservice.ProtoActorRef(actor),
-	}, nil
-}
-
-func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, userAgent, deviceType string) (*SessionLoginResult, error) {
-	user, err := AuthenticatePassword(ctx, credentials)
-	if err != nil {
-		return nil, err
-	}
-
-	return IssueTokenAndSession(ctx, user, clientIP, userAgent, deviceType, nil)
+	return record, response, nil
 }
 
 // AuthenticatePassword resolves a password credential to an Actor without
@@ -300,7 +317,7 @@ func AuthenticatePassword(ctx context.Context, credentials *Credentials) (*db.Ac
 	return &user, nil
 }
 
-// PrepareAccessGateSession creates one active client-class session record and
+// PrepareAccessGateSession creates one active device-bound session record and
 // its credential response without persisting either. The Access Gate finalizer
 // persists both the session and the attempt binding in one transaction.
 func PrepareAccessGateSession(
@@ -403,37 +420,6 @@ func issueSessionCredential(
 		SessionId: sessionID,
 		ActorRef:  actorservice.ProtoActorRef(actor),
 	}, nil
-}
-
-// IssueTokenAndSession creates a JWT token + session for an already-authenticated Actor.
-// extraData is merged into session.Data (e.g. {"auth_method": "oauth_bridge"}).
-func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAgent, deviceType string, extraData map[string]interface{}) (*SessionLoginResult, error) {
-	clientClass, err := session.ParseDeviceType(deviceType)
-	if err != nil {
-		return nil, err
-	}
-
-	data := map[string]interface{}{"device_type": string(clientClass)}
-	for k, v := range extraData {
-		data[k] = v
-	}
-	sess, token, err := prepareSessionCredential(
-		ctx,
-		actor,
-		clientIP,
-		userAgent,
-		data,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	_, kickedCount, err := SessionManager().CreateWithKick(ctx, sess, clientClass)
-	if err != nil {
-		return nil, err
-	}
-
-	return sessionLoginResult(actor, sess.ID, token, kickedCount), nil
 }
 
 func prepareSessionCredential(

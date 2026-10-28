@@ -1,32 +1,26 @@
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography, Empty } from 'antd';
-import { Code, FileText, GitGraph, Braces } from 'lucide-react';
+import { Cloud, FileText, HardDrive } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
-import type { MessageArtifact } from '../../../store/chat';
+import type { ChatFileArtifact } from '../../../store/chatArtifacts';
 import { usePortalStore } from '../../../store/portal';
 
 interface ArtifactListViewProps {
-  artifacts: MessageArtifact[];
+  artifacts: ChatFileArtifact[];
 }
-
-const kindIcon = {
-  code: Code,
-  document: FileText,
-  diagram: GitGraph,
-  structured: Braces,
-} as const;
 
 export function ArtifactListView({ artifacts }: ArtifactListViewProps) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('agent');
 
   if (artifacts.length === 0) {
-    return <Empty description="No artifacts yet" style={{ marginTop: 48 }} />;
+    return <Empty description={t('agent.portal.artifact.empty')} style={{ marginTop: 48 }} />;
   }
 
   return (
     <Flexbox gap={8}>
       {artifacts.map((artifact) => {
-        const Icon = kindIcon[artifact.kind] || Code;
         return (
           <Flexbox
             key={artifact.id}
@@ -48,16 +42,20 @@ export function ArtifactListView({ artifacts }: ArtifactListViewProps) {
               (e.currentTarget as HTMLElement).style.background = 'transparent';
             }}
           >
-            <Icon size={16} color={token.colorTextSecondary} />
+            <FileText size={16} color={token.colorTextSecondary} />
             <Flexbox style={{ flex: 1, overflow: 'hidden' }}>
               <Typography.Text ellipsis style={{ fontSize: 13, fontWeight: 500 }}>
-                {artifact.title || artifact.language || 'Untitled'}
+                {artifact.name}
               </Typography.Text>
-              {artifact.language && (
-                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                  {artifact.language} · {artifact.kind}
-                </Typography.Text>
-              )}
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                {artifact.localAvailable ? <HardDrive size={11} /> : <Cloud size={11} />}
+                {' '}
+                {artifact.localAvailable
+                  ? t('agent.portal.artifact.onDevice')
+                  : artifact.stationObjectRef
+                    ? t('agent.portal.artifact.stationCopy')
+                    : t('agent.portal.artifact.originalDevice')}
+              </Typography.Text>
             </Flexbox>
           </Flexbox>
         );

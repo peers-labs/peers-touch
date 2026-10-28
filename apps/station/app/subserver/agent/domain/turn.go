@@ -5,6 +5,10 @@ import "time"
 type TurnStatus string
 
 const (
+	// TurnStatusQueued marks a Turn pre-created at enqueue time. The Turn is
+	// the stable execution identity from the moment a request is queued; the
+	// queue worker flips it to running when admission starts.
+	TurnStatusQueued           TurnStatus = "queued"
 	TurnStatusRunning          TurnStatus = "running"
 	TurnStatusWaitingLocalTool TurnStatus = "waiting_local_tool"
 	TurnStatusCompleted        TurnStatus = "completed"

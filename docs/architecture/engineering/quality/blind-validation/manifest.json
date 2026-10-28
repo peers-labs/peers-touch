@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "packageId": "EDX-BLIND-20261019",
+  "status": "evaluation-only",
+  "sourceHead": "9b8693ec9d48b86b51eb6ef915b803f25c468f49",
+  "runnerInputs": [
+    "rubric.md",
+    "cases/EDX-B01.md",
+    "cases/EDX-B02.md",
+    "cases/EDX-B03.md",
+    "cases/EDX-B04.md",
+    "cases/EDX-B05.md",
+    "cases/EDX-B06.md"
+  ],
+  "cases": [
+    {
+      "id": "EDX-B01",
+      "platform": "mobile-prototype",
+      "title": "Choose a Station and continue"
+    },
+    {
+      "id": "EDX-B02",
+      "platform": "desktop-production",
+      "title": "Find a person and send a request"
+    },
+    {
+      "id": "EDX-B03",
+      "platform": "desktop-production",
+      "title": "Switch the active Station"
+    },
+    {
+      "id": "EDX-B04",
+      "platform": "desktop-production",
+      "title": "Recover when the selected Station is offline"
+    },
+    {
+      "id": "EDX-B05",
+      "platform": "desktop-production",
+      "title": "Complete a normal OAuth login"
+    },
+    {
+      "id": "EDX-B06",
+      "platform": "mobile-prototype",
+      "title": "Search chat history"
+    }
+  ],
+  "sourceBlobAlgorithm": "git-sha1",
+  "sourceBlobs": {
+    "apps/desktop/src/components/chat/FindPeopleModal.tsx": "6af7c4e33caac0a21fa49bfd505c5134b5c78bfb",
+    "apps/desktop/src/components/common/StationPicker.tsx": "db2ab78e0c7a14b4456c891b91a4a7666bf57db9",
+    "apps/desktop/src/pages/login/LoginPage.oauth.test.ts": "fc2011c1b73dbb8c57857fdb6772ac333aaa631d",
+    "apps/desktop/src/pages/login/views/LoginFormView.tsx": "a18cfe5e70fa1c5e1280b6f4a6c91da644233f97",
+    "apps/desktop/src/store/stationGate.ts": "6e95b9eabbdefd16dfccaa4fca1957bbc4909234",
+    "apps/desktop/src/views/OnboardingView.tsx": "f44e0248482567e86aa60f4bdda61baf2bec7bb4",
+    "docs/architecture/domains/chat/lifecycle/product-definition.md": "c821eae929667d142de8a54dbb0ffd16cfd75162",
+    "docs/architecture/platform/station/access/experience-contract.md": "691a24654b0c34c24e993ff735fb77ecf1926240",
+    "docs/client/common/ui-identity/interaction.md": "8e7f54058696bb93ee31a7c0daa9c50b7141944b",
+    "docs/client/common/ui-identity/modules/auth/README.md": "52bd7bd6dad9d4a455d8221b4a9615e82833665a",
+    "docs/client/common/ux-design-methodology.md": "b5c51c1c36bd585c61af6a93a8a0abf710f4083c",
+    "docs/client/mobile/lifecycle.md": "e6f25f9382f849c51c8dc73035a2aca35a890f29",
+    "packages/prototypes/mobile/chat/src/components/ChatHistorySearch.tsx": "d9850834e46cb2193b0fb9aa55db2b2899f1116e",
+    "packages/prototypes/mobile/chat/src/components/StationSelector.tsx": "b7032eff84bdfc645b81b6dd89ed9376180d2208",
+    "packages/prototypes/mobile/chat/src/pages/LaunchScreen.tsx": "dfd5d1263a9a77d7d9fd52bc47906d497eff7283"
+  }
+}

@@ -32,6 +32,20 @@ pub struct AttachmentActionInput {
     request_bytes: Vec<u8>,
 }
 
+#[cfg(target_os = "macos")]
+async fn pick_save_destination(filename: &str) -> Option<std::path::PathBuf> {
+    crate::infrastructure::native_file_dialog::save_single_file(filename.to_string()).await
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn pick_save_destination(filename: &str) -> Option<std::path::PathBuf> {
+    rfd::AsyncFileDialog::new()
+        .set_file_name(filename)
+        .save_file()
+        .await
+        .map(|handle| handle.path().to_path_buf())
+}
+
 /// Host-owned native presentations are terminated before application exit.
 #[derive(Default)]
 pub struct NativeFilePresentations {
@@ -103,6 +117,8 @@ pub async fn messaging_attachment_access(
     let expected_engine = engine.clone();
     let expected_owner = owner.clone();
     let epoch = engine.attachment_file_access.epoch();
+    let observed_attachment_id = input.attachment_id.clone();
+    let observed_start_download = input.start_download;
     let result = tauri::async_runtime::spawn_blocking(move || {
         engine.attachment_access(
             &token,
@@ -129,7 +145,15 @@ pub async fn messaging_attachment_access(
     }
     Ok(match result {
         Ok(projection) => AppResult::success(projection.encode_to_vec()),
-        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+        Err(error) => {
+            tracing::warn!(
+                attachment_id = %observed_attachment_id,
+                start_download = observed_start_download,
+                error_code = %error,
+                "attachment access failed",
+            );
+            AppResult::fail(ErrorCode::InternalError, error, None)
+        }
     })
 }
 
@@ -188,15 +212,11 @@ pub async fn messaging_attachment_file_action(
             .attachment_file_access
             .filename(&owner, &request.access_handle)?;
         ensure_current(state.inner(), &window, &engine, &request)?;
-        let selected = rfd::AsyncFileDialog::new()
-            .set_file_name(filename)
-            .save_file()
-            .await;
+        let selected = pick_save_destination(&filename).await;
         let Some(destination) = selected else {
             return Ok(action_result(AttachmentFileActionState::Cancelled, ""));
         };
         ensure_current(state.inner(), &window, &engine, &request)?;
-        let destination = destination.path().to_path_buf();
         let handle = request.access_handle;
         let result = tauri::async_runtime::spawn_blocking(move || {
             engine

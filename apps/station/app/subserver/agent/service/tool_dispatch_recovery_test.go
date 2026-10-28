@@ -1212,6 +1212,15 @@ func (f toolDispatchFixture) registerReplacementLease(
 		"replacement-register-"+suffix,
 		nonceByte,
 	)
+	// The parent actor session authenticates the registration, so it exists
+	// before the lease row is created — registration's internal prepared-call
+	// takeover already evaluates the parent-liveness guard.
+	seedLiveActorSession(
+		t,
+		f.db,
+		"replacement-auth-session-"+suffix,
+		f.now,
+	)
 	response, err := f.service.RegisterCapabilityLease(
 		context.Background(),
 		f.actorID,

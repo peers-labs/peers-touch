@@ -419,6 +419,7 @@ func newUnstartedCapabilityOperationFixture(
 	}).Error; err != nil {
 		t.Fatalf("seed operation capability lease: %v", err)
 	}
+	seedLiveActorSession(t, authority.db, "auth-1", now)
 	operations := NewCapabilityOperationService(authority.db)
 	operations.now = authority.now
 	return authority, operations, &model.StartCapabilityOperationRequest{

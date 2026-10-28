@@ -114,8 +114,7 @@ const { mountChatPdfPreview } = await import('data:text/javascript;base64,' + Bu
 const surface = document.createElement('div');
 const pdfAbort = new AbortController();
 await mountChatPdfPreview(surface, url, 100, labels, pdfAbort.signal);
-const select = surface.querySelector('select');
-select.value = 'actual'; select.dispatchEvent(new window.Event('change'));
+surface.querySelector('[data-zoom="actual"]').dispatchEvent(new window.Event('click', { bubbles: true }));
 for (let i = 0; surface.dataset.chatPreviewState === 'loading' && i < 100; i++) await new Promise(resolve => setImmediate(resolve));
 const canvas = surface.querySelector('canvas');
 assert.equal(canvas.style.width, '1191px');

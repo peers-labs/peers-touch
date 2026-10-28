@@ -45,6 +45,7 @@
 | `agent` | domains | Peers-Touch Agent Team | [design.md](./domains/agent/design.md) | [8](./engineering/architecture-governance/architecture-modules.json) |
 | `bot` | domains | Peers-Touch Bot Team | [design.md](./domains/bot/design.md) | [6](./engineering/architecture-governance/architecture-modules.json) |
 | `chat-storage-governance` | domains | Device Messaging Engine | [design.md](./domains/chat/storage-governance/design.md) | [18](./engineering/architecture-governance/architecture-modules.json) |
+| `mobile-scan-login` | domains | Identity and Access | [design.md](./domains/identity/mobile-scan-login/design.md) | [4](./engineering/architecture-governance/architecture-modules.json) |
 | `oauth-login-broker` | domains | Identity and Access | [design.md](./domains/identity/oauth-login-broker/design.md) | [2](./engineering/architecture-governance/architecture-modules.json) |
 | `search` | domains | Search / Client / Station | [search.reuse-topology](./domains/search/architecture.svg) | [6](./engineering/architecture-governance/architecture-modules.json) |
 | `cross-station-social` | domains | Social / Federation | [design.md](./domains/social/cross-station/design.md) | [1](./engineering/architecture-governance/architecture-modules.json) |
@@ -52,12 +53,14 @@
 | `api-ownership` | engineering | Architecture Team | [design.md](./engineering/api-governance/design.md) | [1](./engineering/architecture-governance/architecture-modules.json) |
 | `architecture-module-governance` | engineering | Architecture Team | [design.md](./engineering/architecture-governance/design.md) | [20](./engineering/architecture-governance/architecture-modules.json) |
 | `development-workflow` | engineering | Platform Team | [design.md](./engineering/development-workflow/design.md) | [34](./engineering/architecture-governance/architecture-modules.json) |
+| `experience-design` | engineering | Developer Experience / Product Design | [design.md](./engineering/experience-design/design.md) | [7](./engineering/architecture-governance/architecture-modules.json) |
 | `local-dev-control-plane` | engineering | Platform Team | [design.md](./engineering/local-dev/design.md) | [26](./engineering/architecture-governance/architecture-modules.json) |
-| `x-config` | platform | Client Platform | [design.md](./platform/client/control-plane/design.md) | [11](./engineering/architecture-governance/architecture-modules.json) |
+| `x-config` | platform | Client Platform | [design.md](./platform/client/control-plane/design.md) | [12](./engineering/architecture-governance/architecture-modules.json) |
 | `cross-client-runtime` | platform | Client Platform Team | [cross-client-runtime.reuse-topology](./platform/client/cross-client-runtime/architecture.svg) | [20](./engineering/architecture-governance/architecture-modules.json) |
 | `mobile-social-parity` | platform | Mobile / Social / Client Architecture | [design.md](./platform/client/mobile/social-parity/design.md) | [9](./engineering/architecture-governance/architecture-modules.json) |
-| `node-connectivity` | platform | Architecture Team | [design.md](./platform/runtime/node-connectivity/design.md) | [12](./engineering/architecture-governance/architecture-modules.json) |
+| `node-connectivity` | platform | Architecture Team | [design.md](./platform/runtime/node-connectivity/design.md) | [15](./engineering/architecture-governance/architecture-modules.json) |
 | `station-access-lifecycle` | platform | Identity and Access | [design.md](./platform/station/access/design.md) | [24](./engineering/architecture-governance/architecture-modules.json) |
+| `shared-schema` | shared | Shared Client Interaction | [design.md](./shared/schema/design.md) | [4](./engineering/architecture-governance/architecture-modules.json) |
 | `secure-content` | shared | Architecture Team | [design.md](./shared/security/secure-content/design.md) | [1](./engineering/architecture-governance/architecture-modules.json) |
 
 ## 3. 物理目录与所有权

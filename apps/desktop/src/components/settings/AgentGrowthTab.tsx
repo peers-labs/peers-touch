@@ -1,27 +1,49 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Card, Statistic, Progress, Table, Tag, Badge, Button,
-  Empty, Spin, Typography, Space, Switch, message, theme,
-  InputNumber,
+  Badge,
+  Button,
+  Card,
+  Empty,
+  Progress,
+  Select,
+  Space,
+  Spin,
+  Statistic,
+  Switch,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
 } from 'antd';
 import {
-  TrendingUp, TrendingDown, Minus, Brain, BookOpen,
-  RefreshCw, ThumbsUp, ThumbsDown, Eye, Zap, Activity,
-  Clock, Play, Square,
+  Activity,
+  BookOpen,
+  Brain,
+  Clock,
+  Eye,
+  Minus,
+  Play,
+  RefreshCw,
+  ThumbsDown,
+  ThumbsUp,
+  TrendingDown,
+  TrendingUp,
+  Zap,
 } from 'lucide-react';
+
 import {
-  getAgentGrowthSnapshot,
-  getAgentMemories,
-  getAgentSkills,
-  getAgentSchedulerStatus,
-  startAgentScheduler,
-  stopAgentScheduler,
+  api,
+  type Agent,
+  type CronJob,
   type GrowthSnapshot,
   type MemoryItem,
   type SkillItem,
-  type SchedulerStatusResponse,
+  getAgentGrowthSnapshot,
+  getAgentMemories,
+  getAgentSkills,
 } from '../../services/desktop_api';
 
 const { Title, Text } = Typography;
@@ -36,9 +58,9 @@ function VerdictBadge({ verdict }: { verdict: string }) {
     stable: { color: 'blue', icon: <Minus size={12} /> },
     declining: { color: 'red', icon: <TrendingDown size={12} /> },
   };
-  const c = config[verdict] || config.stable;
+  const resolved = config[verdict] ?? config.stable;
   return (
-    <Tag color={c.color} icon={c.icon}>
+    <Tag color={resolved.color} icon={resolved.icon}>
       {verdict.toUpperCase()}
     </Tag>
   );
@@ -50,106 +72,117 @@ function TrustBar({ score }: { score: number }) {
   return <Progress percent={percent} size="small" strokeColor={color} showInfo={false} />;
 }
 
-export function AgentGrowthTab({ agentId }: AgentGrowthTabProps) {
+function scheduleSummary(job: CronJob): string {
+  if (job.scheduleKind === 'interval' && job.intervalSec > 0) {
+    return `interval ${job.intervalSec}s`;
+  }
+  if (job.scheduleKind === 'once') {
+    return job.runAt || 'once';
+  }
+  return job.cronExpr || 'cron';
+}
+
+export function AgentGrowthTab({ agentId: initialAgentId }: AgentGrowthTabProps) {
   const { t } = useTranslation('settings');
-  theme.useToken();
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentId, setAgentId] = useState(initialAgentId ?? '');
   const [loading, setLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<GrowthSnapshot | null>(null);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [skills, setSkills] = useState<SkillItem[]>([]);
-  const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatusResponse | null>(null);
-  const [reviewInterval, setReviewInterval] = useState(120);
-  const [dogfoodInterval, setDogfoodInterval] = useState(360);
-  const [schedulerLoading, setSchedulerLoading] = useState(false);
+  const [jobs, setJobs] = useState<CronJob[]>([]);
 
-  const loadData = useCallback(async () => {
-    if (!agentId) return;
+  useEffect(() => {
+    api.listAgents()
+      .then((roster) => {
+        setAgents(roster);
+        setAgentId((current) => current || roster[0]?.id || '');
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const loadData = useCallback(async (selectedAgentId: string) => {
+    if (!selectedAgentId) {
+      setSnapshot(null);
+      setMemories([]);
+      setSkills([]);
+      setJobs([]);
+      return;
+    }
     setLoading(true);
     try {
-      const [snap, mems, skls, sched] = await Promise.all([
-        getAgentGrowthSnapshot(agentId).catch(() => null),
-        getAgentMemories(agentId).catch(() => []),
-        getAgentSkills(agentId).catch(() => []),
-        getAgentSchedulerStatus().catch(() => null),
+      const [snap, mems, skls, jobPage] = await Promise.all([
+        getAgentGrowthSnapshot(selectedAgentId).catch(() => null),
+        getAgentMemories(selectedAgentId).catch(() => []),
+        getAgentSkills(selectedAgentId).catch(() => []),
+        api.listCronJobs(true, selectedAgentId).catch(() => []),
       ]);
       setSnapshot(snap);
       setMemories(mems);
       setSkills(skls);
-      setSchedulerStatus(sched);
+      setJobs(jobPage);
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
-
-  const handleSchedulerToggle = useCallback(async () => {
-    if (!agentId) return;
-    setSchedulerLoading(true);
-    try {
-      if (schedulerStatus?.running) {
-        await stopAgentScheduler();
-        message.success('Scheduler stopped');
-      } else {
-        await startAgentScheduler(agentId, reviewInterval, dogfoodInterval);
-        message.success('Scheduler started');
-      }
-      const status = await getAgentSchedulerStatus().catch(() => null);
-      setSchedulerStatus(status);
-    } catch {
-      message.error('Failed to toggle scheduler');
-    } finally {
-      setSchedulerLoading(false);
-    }
-  }, [agentId, schedulerStatus, reviewInterval, dogfoodInterval]);
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    void loadData(agentId);
+  }, [agentId, loadData]);
 
-  if (!agentId) {
-    return (
-      <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-        <Empty description={t('settings.agentGrowth.empty')} />
-      </Flexbox>
-    );
-  }
+  const toggleJob = async (job: CronJob, enabled: boolean) => {
+    try {
+      await api.toggleCronJob(job.id, enabled);
+      setJobs((current) => current.map((item) =>
+        item.id === job.id ? { ...item, enabled } : item,
+      ));
+      message.success(t('settings.agentGrowth.jobUpdated'));
+    } catch (error) {
+      message.error((error as Error)?.message || 'toggle scheduled job failed');
+    }
+  };
 
-  if (loading && !snapshot) {
-    return (
-      <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-        <Spin description={t('settings.agentGrowth.loading')} />
-      </Flexbox>
-    );
-  }
+  const runJob = async (job: CronJob) => {
+    try {
+      await api.runCronJob(job.id);
+      message.success(t('settings.agentGrowth.jobTriggered'));
+      await loadData(agentId);
+    } catch (error) {
+      message.error((error as Error)?.message || 'run scheduled job failed');
+    }
+  };
 
-  const memoryColumns = [
+  const memoryColumns = useMemo(() => [
     {
-      title: 'Content',
+      title: t('settings.agentGrowth.colContent'),
       dataIndex: 'content',
       key: 'content',
       ellipsis: true,
       width: '40%',
     },
     {
-      title: 'Target',
+      title: t('settings.agentGrowth.colTarget'),
       dataIndex: 'target',
       key: 'target',
       width: 80,
-      render: (t: string) => <Tag>{t}</Tag>,
+      render: (target: string) => <Tag>{target}</Tag>,
     },
     {
-      title: 'Trust',
+      title: t('settings.agentGrowth.colTrust'),
       dataIndex: 'trust_score',
       key: 'trust_score',
       width: 120,
-      render: (score: number) => <TrustBar score={score} />,
       sorter: (a: MemoryItem, b: MemoryItem) => a.trust_score - b.trust_score,
+      render: (score: number) => <TrustBar score={score} />,
     },
     {
-      title: 'Source',
+      title: t('settings.agentGrowth.colSource'),
       dataIndex: 'source',
       key: 'source',
-      width: 80,
-      render: (s: string) => <Tag color={s === 'review' ? 'purple' : 'default'}>{s}</Tag>,
+      width: 90,
+      render: (source: string) => (
+        <Tag color={source === 'review' ? 'purple' : 'default'}>{source}</Tag>
+      ),
     },
     {
       title: <ThumbsUp size={12} />,
@@ -165,35 +198,28 @@ export function AgentGrowthTab({ agentId }: AgentGrowthTabProps) {
       width: 50,
       align: 'center' as const,
     },
-    {
-      title: 'Frozen',
-      dataIndex: 'is_frozen',
-      key: 'is_frozen',
-      width: 70,
-      render: (frozen: boolean) => frozen ? <Badge status="processing" text="Yes" /> : null,
-    },
-  ];
+  ], [t]);
 
-  const skillColumns = [
+  const skillColumns = useMemo(() => [
     {
-      title: 'Name',
+      title: t('settings.agentGrowth.colName'),
       dataIndex: 'name',
       key: 'name',
       width: '25%',
       render: (name: string) => <Text strong>{name}</Text>,
     },
     {
-      title: 'Description',
+      title: t('settings.agentGrowth.colDescription'),
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
       width: '35%',
     },
     {
-      title: 'Trust',
+      title: t('settings.agentGrowth.colSkillTrust'),
       dataIndex: 'trust_level',
       key: 'trust_level',
-      width: 90,
+      width: 100,
       render: (level: string) => {
         const color = level === 'builtin' ? 'green' : level === 'trusted' ? 'blue' : 'default';
         return <Tag color={color}>{level}</Tag>;
@@ -214,179 +240,201 @@ export function AgentGrowthTab({ agentId }: AgentGrowthTabProps) {
       align: 'center' as const,
     },
     {
-      title: 'Enabled',
+      title: t('settings.agentGrowth.colEnabled'),
       dataIndex: 'enabled',
       key: 'enabled',
       width: 70,
       render: (enabled: boolean) => <Switch size="small" checked={enabled} disabled />,
     },
-  ];
+  ], [t]);
+
+  const jobColumns = useMemo(() => [
+    {
+      title: t('settings.agentGrowth.colJob'),
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string, job: CronJob) => (
+        <Space direction="vertical" size={0}>
+          <Text strong>{name}</Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {scheduleSummary(job)}
+          </Text>
+        </Space>
+      ),
+    },
+    {
+      title: t('settings.agentGrowth.colLastRun'),
+      key: 'lastRun',
+      width: 200,
+      render: (_: unknown, job: CronJob) => (
+        <Space direction="vertical" size={0}>
+          <span>{job.lastRunAt ? new Date(job.lastRunAt).toLocaleString() : '—'}</span>
+          {job.lastError ? (
+            <Text type="danger" style={{ fontSize: 11 }} ellipsis>
+              {job.lastError}
+            </Text>
+          ) : null}
+        </Space>
+      ),
+    },
+    {
+      title: t('settings.agentGrowth.colLastStatus'),
+      dataIndex: 'lastStatus',
+      key: 'lastStatus',
+      width: 100,
+      render: (status: string) =>
+        status ? <Tag color={status === 'ok' ? 'green' : status === 'error' ? 'red' : 'default'}>{status}</Tag> : null,
+    },
+    {
+      title: t('settings.agentGrowth.colEnabled'),
+      dataIndex: 'enabled',
+      key: 'enabled',
+      width: 80,
+      render: (enabled: boolean, job: CronJob) => (
+        <Switch
+          size="small"
+          checked={enabled}
+          onChange={(value) => void toggleJob(job, value)}
+        />
+      ),
+    },
+    {
+      title: '',
+      key: 'actions',
+      width: 56,
+      render: (_: unknown, job: CronJob) => (
+        <Tooltip title={t('settings.agentGrowth.runNow')}>
+          <Button size="small" type="text" icon={<Play size={14} />} onClick={() => void runJob(job)} />
+        </Tooltip>
+      ),
+    },
+  // toggleJob/runJob are stable enough for this settings surface; deps are intentionally minimal.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [t, agentId]);
 
   return (
     <Flexbox gap={16} style={{ padding: '0 4px', overflow: 'auto', maxHeight: '100%' }}>
       <Flexbox horizontal justify="space-between" align="center">
         <Title level={5} style={{ margin: 0 }}>
           <Activity size={16} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-          Agent Growth Dashboard
+          {t('settings.agentGrowth.title')}
         </Title>
-        <Button icon={<RefreshCw size={14} />} onClick={loadData} loading={loading} size="small">
-          Refresh
-        </Button>
+        <Space>
+          <Select
+            showSearch
+            style={{ width: 240 }}
+            value={agentId || undefined}
+            placeholder={t('settings.agentGrowth.selectAgent')}
+            optionFilterProp="label"
+            options={agents.map((agent) => ({
+              label: agent.title || agent.name || agent.id,
+              value: agent.id,
+            }))}
+            onChange={setAgentId}
+          />
+          <Button icon={<RefreshCw size={14} />} onClick={() => void loadData(agentId)} loading={loading}>
+            {t('settings.agentGrowth.refresh')}
+          </Button>
+        </Space>
       </Flexbox>
 
-      {snapshot && (
-        <Flexbox horizontal gap={12} wrap="wrap">
-          <Card size="small" style={{ flex: 1, minWidth: 180 }}>
-            <Statistic
-              title="Growth Score"
-              value={snapshot.growth_score}
-              precision={3}
-              prefix={<VerdictBadge verdict={snapshot.growth_verdict} />}
-            />
-          </Card>
-          <Card size="small" style={{ flex: 1, minWidth: 140 }}>
-            <Statistic title="Total Turns" value={snapshot.total_turns} prefix={<Zap size={14} />} />
-          </Card>
-          <Card size="small" style={{ flex: 1, minWidth: 140 }}>
-            <Statistic
-              title="Feedback Ratio"
-              value={snapshot.feedback_ratio}
-              precision={2}
-              suffix={
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  ({snapshot.positive_feedback}+ / {snapshot.negative_feedback}-)
-                </Text>
-              }
-            />
-          </Card>
-          <Card size="small" style={{ flex: 1, minWidth: 140 }}>
-            <Statistic title="Error Rate" value={snapshot.error_rate} precision={3} />
-          </Card>
+      {!agentId ? (
+        <Flexbox align="center" justify="center" style={{ padding: 48 }}>
+          <Empty description={t('settings.agentGrowth.empty')} />
         </Flexbox>
-      )}
+      ) : (
+        <>
+          {snapshot ? (
+            <Flexbox horizontal gap={12} wrap="wrap">
+              <Card size="small" style={{ flex: 1, minWidth: 180 }}>
+                <Statistic
+                  title={t('settings.agentGrowth.growthScore')}
+                  value={snapshot.growth_score}
+                  precision={3}
+                  prefix={<VerdictBadge verdict={snapshot.growth_verdict} />}
+                />
+              </Card>
+              <Card size="small" style={{ flex: 1, minWidth: 140 }}>
+                <Statistic
+                  title={t('settings.agentGrowth.totalTurns')}
+                  value={snapshot.total_turns}
+                  prefix={<Zap size={14} />}
+                />
+              </Card>
+              <Card size="small" style={{ flex: 1, minWidth: 140 }}>
+                <Statistic
+                  title={t('settings.agentGrowth.feedbackRatio')}
+                  value={snapshot.feedback_ratio}
+                  precision={2}
+                  suffix={
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      ({snapshot.positive_feedback}+ / {snapshot.negative_feedback}-)
+                    </Text>
+                  }
+                />
+              </Card>
+              <Card size="small" style={{ flex: 1, minWidth: 140 }}>
+                <Statistic title={t('settings.agentGrowth.errorRate')} value={snapshot.error_rate} precision={3} />
+              </Card>
+            </Flexbox>
+          ) : null}
 
-      <Card
-        size="small"
-        title={
-          <Space>
-            <Clock size={14} />
-            <span>Autonomous Learning Scheduler</span>
-            <Badge
-              status={schedulerStatus?.running ? 'processing' : 'default'}
-              text={schedulerStatus?.running ? 'Running' : 'Stopped'}
-            />
-          </Space>
-        }
-        extra={
-          <Button
-            type={schedulerStatus?.running ? 'default' : 'primary'}
-            danger={schedulerStatus?.running}
-            icon={schedulerStatus?.running ? <Square size={12} /> : <Play size={12} />}
+          <Card
             size="small"
-            loading={schedulerLoading}
-            onClick={handleSchedulerToggle}
+            title={
+              <Space>
+                <Clock size={14} />
+                <span>{t('settings.agentGrowth.scheduledJobs')}</span>
+                <Badge
+                  status={jobs.some((job) => job.enabled) ? 'processing' : 'default'}
+                  text={jobs.some((job) => job.enabled)
+                    ? t('settings.agentGrowth.schedulerRunning')
+                    : t('settings.agentGrowth.schedulerStopped')}
+                />
+              </Space>
+            }
           >
-            {schedulerStatus?.running ? 'Stop' : 'Start'}
-          </Button>
-        }
-      >
-        {!schedulerStatus?.running && (
-          <Flexbox horizontal gap={16} align="center" style={{ marginBottom: 8 }}>
-            <Space>
-              <Typography.Text type="secondary">Review interval:</Typography.Text>
-              <InputNumber
-                min={1}
-                max={1440}
-                value={reviewInterval}
-                onChange={(v) => v && setReviewInterval(v)}
-                size="small"
-                addonAfter="min"
-                style={{ width: 120 }}
-              />
-            </Space>
-            <Space>
-              <Typography.Text type="secondary">Dogfood interval:</Typography.Text>
-              <InputNumber
-                min={1}
-                max={1440}
-                value={dogfoodInterval}
-                onChange={(v) => v && setDogfoodInterval(v)}
-                size="small"
-                addonAfter="min"
-                style={{ width: 120 }}
-              />
-            </Space>
-          </Flexbox>
-        )}
-        {schedulerStatus?.running && schedulerStatus.jobs?.length > 0 && (
-          <Table
-            dataSource={schedulerStatus.jobs}
-            rowKey={(r) => `${r.kind}-${r.agent_id}`}
-            size="small"
-            pagination={false}
-            columns={[
-              { title: 'Job', dataIndex: 'kind', key: 'kind', render: (k: string) => <Tag>{k}</Tag> },
-              { title: 'Interval', dataIndex: 'interval', key: 'interval', width: 100 },
-              { title: 'Runs', dataIndex: 'run_count', key: 'run_count', width: 60, align: 'center' as const },
-              {
-                title: 'Last Run',
-                dataIndex: 'last_run_at',
-                key: 'last_run_at',
-                width: 180,
-                render: (v: string | null) => v ? new Date(v).toLocaleString() : '-',
-              },
-              {
-                title: 'Status',
-                dataIndex: 'last_status',
-                key: 'last_status',
-                width: 100,
-                render: (s: string | null) => {
-                  if (!s) return <Tag>pending</Tag>;
-                  return <Tag color={s === 'ok' ? 'green' : 'red'}>{s}</Tag>;
-                },
-              },
-            ]}
-          />
-        )}
-      </Card>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {t('settings.agentGrowth.schedulerNote')}
+            </Text>
+            <Table
+              dataSource={jobs}
+              columns={jobColumns}
+              rowKey="id"
+              size="small"
+              pagination={false}
+              locale={{ emptyText: t('settings.agentGrowth.jobsEmpty') }}
+            />
+          </Card>
 
-      <Card
-        size="small"
-        title={
-          <Space>
-            <Brain size={14} />
-            <span>Memories ({memories.length})</span>
-          </Space>
-        }
-      >
-        <Table
-          dataSource={memories}
-          columns={memoryColumns}
-          rowKey="id"
-          size="small"
-          pagination={{ pageSize: 10 }}
-          locale={{ emptyText: <Empty description="No memories yet" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
-        />
-      </Card>
+          <Card size="small" title={<Space><Brain size={14} /><span>{t('settings.agentGrowth.memories', { count: memories.length })}</span></Space>}>
+            <Table
+              dataSource={memories}
+              columns={memoryColumns}
+              rowKey="id"
+              size="small"
+              pagination={{ pageSize: 10 }}
+              locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('settings.agentGrowth.noMemories')} /> }}
+            />
+          </Card>
 
-      <Card
-        size="small"
-        title={
-          <Space>
-            <BookOpen size={14} />
-            <span>Skills ({skills.length})</span>
-          </Space>
-        }
-      >
-        <Table
-          dataSource={skills}
-          columns={skillColumns}
-          rowKey="id"
-          size="small"
-          pagination={{ pageSize: 10 }}
-          locale={{ emptyText: <Empty description="No skills yet" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
-        />
-      </Card>
+          <Card size="small" title={<Space><BookOpen size={14} /><span>{t('settings.agentGrowth.skills', { count: skills.length })}</span></Space>}>
+            <Table
+              dataSource={skills}
+              columns={skillColumns}
+              rowKey="id"
+              size="small"
+              pagination={{ pageSize: 10 }}
+              locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('settings.agentGrowth.noSkills')} /> }}
+            />
+          </Card>
+        </>
+      )}
+      {loading && !snapshot && memories.length === 0 ? (
+        <Flexbox align="center" justify="center" style={{ padding: 48 }}>
+          <Spin />
+        </Flexbox>
+      ) : null}
     </Flexbox>
   );
 }

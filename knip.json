@@ -1,0 +1,80 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "tooling/**/*.{mjs,js,cjs,sh,py}",
+    "*.{mjs,js,cjs}"
+  ],
+  "ignore": [
+    "**/dist/**",
+    "**/build/**",
+    "**/gen/**",
+    "**/generated/**",
+    "**/target/**",
+    "**/node_modules/**",
+    "**/*.pb.ts",
+    "**/*.pb.go",
+    "**/*.config.{js,ts,mjs,mts,cjs,cts}",
+    "**/e2e/**",
+    "**/acceptance/**",
+    "**/review-fixtures/**",
+    "**/scripts/**",
+    "**/tests/**/__fixtures__/**",
+    "apps/desktop/src-tauri/**",
+    "apps/mobile/src-tauri/**",
+    "apps/desktop/applets-dev/**",
+    "packages/prototypes/**"
+  ],
+  "ignoreBinaries": [
+    "python3",
+    "cargo",
+    "scripts/*"
+  ],
+  "ignoreDependencies": [
+    "vitest",
+    "@playwright/test"
+  ],
+  "workspaces": {
+    "packages/client-chat-core": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/client-media-security": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/client-storage": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/model": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/sdk/ts": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/ui/desktop": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/applet-sdk": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/applet-contract": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/applet-kernel": {
+      "entry": ["src/index.ts"]
+    },
+    "apps/desktop": {
+      "entry": ["src/main.tsx"]
+    },
+    "apps/mobile": {
+      "entry": ["src/main.tsx"]
+    },
+    "apps/x-config/console": {
+      "entry": ["src/main.tsx"]
+    },
+    "apps/station/app/subserver/dashboard/web": {
+      "entry": ["src/main.tsx"]
+    },
+    "apps/applets/*/frontend": {
+      "entry": ["src/index.tsx"]
+    }
+  }
+}

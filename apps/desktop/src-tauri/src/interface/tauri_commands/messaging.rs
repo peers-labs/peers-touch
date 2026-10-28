@@ -1078,6 +1078,21 @@ fn allow_attachment_preview(window: &Window, path: &Path) -> Result<(), String> 
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+async fn pick_attachment_file(_window: &tauri::Window) -> Option<std::path::PathBuf> {
+    crate::infrastructure::native_file_dialog::pick_single_file("Select File".to_string()).await
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn pick_attachment_file(window: &tauri::Window) -> Option<std::path::PathBuf> {
+    rfd::AsyncFileDialog::new()
+        .set_title("Select File")
+        .set_parent(window)
+        .pick_file()
+        .await
+        .map(|handle| handle.path().to_path_buf())
+}
+
 #[tauri::command]
 pub async fn messaging_pick_attachment_source(
     state: State<'_, Arc<AppState>>,
@@ -1087,18 +1102,18 @@ pub async fn messaging_pick_attachment_source(
         Ok(value) => value,
         Err(error) => return Ok(error),
     };
-    let selected = rfd::AsyncFileDialog::new()
-        .set_title("Select File")
-        .pick_file()
-        .await;
-    let Some(handle) = selected else {
+    // The command runs on a Tauri worker thread. macOS presents a standalone,
+    // modeless panel (not an in-window sheet) so the native chooser exposes
+    // its own accessibility window while the main run loop keeps serving the
+    // embedded WebDriver channel. Other platforms keep the rfd async dialog.
+    let Some(path) = pick_attachment_file(&window).await else {
         return Ok(AppResult::fail(
             ErrorCode::InvalidArgument,
             "No file selected",
             None,
         ));
     };
-    let path = handle.path();
+    let path = path.as_path();
     let metadata = match path.metadata() {
         Ok(metadata) if metadata.is_file() => metadata,
         Ok(_) => {

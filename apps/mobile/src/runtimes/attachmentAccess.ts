@@ -41,4 +41,7 @@ export const mobileAttachmentAccess = new ChatAttachmentAccessController<
   handle: (projection) => projection.accessHandle,
   pending: (projection) => projection.state === AttachmentAccessState.DOWNLOADING
     || projection.state === AttachmentAccessState.VERIFYING,
+  pendingError: (error) => Boolean(error && typeof error === 'object'
+    && 'code' in error && error.code === 'MOBILE_MESSAGING'
+    && 'message' in error && error.message === 'FILE_PROJECTION_UNAVAILABLE'),
 });

@@ -68,6 +68,13 @@ and fresh Node proof with valid Station delegation. A disabled attachment must
 leave both reservation and control/dial target sets before remote cleanup.
 Cleanup cannot re-register a deleted Relay as a dial candidate.
 
+Invitation import MUST NOT accept TLS trust from invitation data. Configured CA
+reuse requires exact Relay PeerID and canonical control-origin equality, and
+the resulting attachment MUST persist that CA path. A disabled tombstone remains
+disabled until a fresh explicit invitation enrolls it. Compact bootstrap pins
+MUST come from a successful CA-verified control response, never an unverified
+certificate probe or an unrelated Relay connection.
+
 Recovery MUST preserve monotonic Node authorization epochs and atomically
 commit replacement JTI and delegation authority. Durable transitions and
 admission publication MUST remain ordered with registration and revocation.

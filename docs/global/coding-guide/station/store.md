@@ -435,7 +435,7 @@ func (s *service) TransferFunds(ctx context.Context, from, to string, amount int
 
 ### 10.3 TableName Convention
 
-- Frame-level models (under `frame/`): prefix `touch_`, e.g., `touch_message`, `touch_peer`.
+- Frame-level models (under `frame/`): prefix `touch_`, e.g., `touch_actor`, `touch_peer`.
 - Subserver models use the stable resource owner name, e.g.
   `conversations`, `conversation_members`, and `conversation_events`.
 - This eliminates cross-subserver collisions without encoding retired

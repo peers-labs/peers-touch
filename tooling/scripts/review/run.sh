@@ -50,6 +50,12 @@ echo "== Code structure signals =="
 node tooling/skills/pt-code-structure-review/scripts/structure-signals.mjs \
   --range "$diff_range"
 
+# Advisory only: knip output is contextual input for the semantic structure
+# decision. It never gates the pipeline and SKIPs without the toolchain.
+echo
+echo "== Dead code advisory (non-blocking) =="
+node tooling/scripts/review/dead-code-advisory.mjs || true
+
 if rg -q '^\[code-structure\]$' <<< "$route_output"; then
   echo
   echo "== Code structure decision =="
@@ -70,6 +76,16 @@ fi
 echo
 echo "== Frontend runtime registry =="
 node tooling/scripts/check-frontend-runtime-registry.mjs --range "$diff_range"
+
+echo
+echo "== Client boundary contracts =="
+# Ownership must hold for every review, not only when an agent remembers the
+# per-app pnpm check: social wire placement and runtime boundaries are
+# source-only scans, plus their deterministic contract test.
+node tooling/devctl/index.mjs check desktop-social-wire --root .
+node tooling/devctl/index.mjs check mobile-social-wire --root .
+node tooling/devctl/index.mjs check social-runtime-boundaries --root .
+python3 tooling/scripts/check_social_runtime_boundaries_test.py
 
 echo
 echo "== Knowledge match =="

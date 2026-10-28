@@ -4,6 +4,7 @@ import type { AgentCapabilitySessionList } from '../services/desktop_api';
 import {
   authorityEventAgentId,
   reconcileAgentCapabilityProjection,
+  resolvePinnedClientCapabilitySessionId,
   selectActiveCapabilitySession,
   selectAuthorityStreamAgentIds,
 } from './agentCapabilityRuntime';
@@ -69,6 +70,60 @@ describe('selectActiveCapabilitySession', () => {
 
     expect(selectActiveCapabilitySession(sessions, nowMs)?.session_id)
       .toBe('desktop-new');
+  });
+});
+
+describe('resolvePinnedClientCapabilitySessionId', () => {
+  const nowMs = 1_000_000;
+
+  it('keeps the readiness-selected session while it remains live', () => {
+    const sessions = [
+      session('desktop-new', 'CLIENT_PLATFORM_DESKTOP', 3_000, 1),
+      session('desktop-old', 'CLIENT_PLATFORM_DESKTOP', 2_000, 5),
+    ];
+
+    expect(resolvePinnedClientCapabilitySessionId(
+      'desktop-old',
+      sessions,
+      nowMs,
+    )).toBe('desktop-old');
+  });
+
+  it('falls back to the live selection when the readiness pin is orphaned', () => {
+    const sessions = [
+      session('desktop-orphan', 'CLIENT_PLATFORM_DESKTOP', 900, 5),
+      session('desktop-new', 'CLIENT_PLATFORM_DESKTOP', 3_000, 1),
+    ];
+
+    expect(resolvePinnedClientCapabilitySessionId(
+      'desktop-orphan',
+      sessions,
+      nowMs,
+    )).toBe('desktop-new');
+  });
+
+  it('returns undefined when no desktop executor is registered', () => {
+    const sessions = [
+      session('mobile-only', 'CLIENT_PLATFORM_MOBILE', 3_000, 1),
+    ];
+
+    expect(resolvePinnedClientCapabilitySessionId(
+      'desktop-orphan',
+      sessions,
+      nowMs,
+    )).toBeUndefined();
+  });
+
+  it('selects the live session when readiness carried no pin', () => {
+    const sessions = [
+      session('desktop-new', 'CLIENT_PLATFORM_DESKTOP', 3_000, 1),
+    ];
+
+    expect(resolvePinnedClientCapabilitySessionId(
+      undefined,
+      sessions,
+      nowMs,
+    )).toBe('desktop-new');
   });
 });
 

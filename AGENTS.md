@@ -502,6 +502,7 @@ Current project skills:
 | `pt-github-release` | Semantic versioning, changelog generation, GitHub Release creation |
 | `pt-github-review` | Structured PR code review and comment submission |
 | `pt-local-dev-env` | Select and activate local development environment profiles |
+| `pt-merged-worktree-retirement` | Verify a merged PR, delegate cache cleanup, align a worktree to master without rebasing squash-merged commits, rebind machine-dev registration, and retire the feature branch |
 | `pt-oauth2-client-2-vercel` | Publish and verify the OAuth2 Client on Vercel with fail-closed provider, environment, callback, and persistence checks |
 | `pt-x-config-catalog-publish` | Publish/republish signed x-config channel catalogs (seeds, directives, releases) through the admin API; targets the corpstable/preview channels |
 | `pt-x-config-deploy` | Deploy/roll back the apps/x-config service runtime to corpstable (fiveArm) or preview (Home) via the env-repository Compose definition |

@@ -29,14 +29,14 @@ func accessGateSessionDeviceType(platform string) (session.DeviceType, error) {
 func revokeReplacedAccessGateSessions(
 	tx *gorm.DB,
 	userID uint64,
-	deviceType session.DeviceType,
+	binding session.DeviceBinding,
 	currentSessionID string,
 	now time.Time,
 ) error {
-	_, err := session.RevokeReplacedClientClassSessions(
+	_, err := session.RevokeReplacedDeviceSessions(
 		tx,
 		userID,
-		deviceType,
+		binding,
 		currentSessionID,
 		now,
 	)
@@ -45,7 +45,7 @@ func revokeReplacedAccessGateSessions(
 
 // FinalizeGrantedSession is the sole password/generic Access Gate credential
 // finalizer. It creates at most one session for a granted attempt, replaces
-// older sessions in the same client-class slot, and reissues credentials for
+// older sessions on the same installation, and reissues credentials for
 // that same session on an idempotent retry.
 func FinalizeGrantedSession(
 	ctx context.Context,
@@ -132,7 +132,7 @@ func FinalizeGrantedSession(
 
 		now := time.Now().UTC()
 		if err := revokeReplacedAccessGateSessions(
-			tx, actor.ID, record.DeviceType, record.SessionID, now,
+			tx, actor.ID, record.DeviceBinding(), record.SessionID, now,
 		); err != nil {
 			return err
 		}

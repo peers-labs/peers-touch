@@ -105,7 +105,40 @@ func (s *SkillService) GetSkill(ctx context.Context, agentID, name string) (*dom
 	return &m, nil
 }
 
-// GetSkillByID returns a skill by durable ID for UI/API callers.
+// ListSkillResources returns versioned resource metadata without bytes.
+func (s *SkillService) ListSkillResources(
+	ctx context.Context,
+	agentID, skillID string,
+	version int,
+) ([]*model.SkillResource, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if version <= 0 {
+		row, err := s.findByID(ctx, db, agentID, skillID)
+		if err != nil {
+			return nil, err
+		}
+		version = row.Version
+	}
+	return listSkillResources(ctx, db, skillID, version)
+}
+
+// ReadSkillResource returns one Station-owned immutable resource revision.
+func (s *SkillService) ReadSkillResource(
+	ctx context.Context,
+	agentID, skillID string,
+	version int,
+	resourcePath string,
+) (*model.SkillResource, []byte, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return readSkillResource(ctx, db, agentID, skillID, version, resourcePath)
+}
+
 func (s *SkillService) GetSkillByID(ctx context.Context, agentID, skillID string) (*domain.SkillManifest, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -164,6 +197,7 @@ func (s *SkillService) CreateSkill(
 	ctx context.Context,
 	agentID, name, description, content string,
 	trustLevel domain.TrustLevel,
+	resources ...*model.SkillResourceInput,
 ) (*domain.SkillManifest, *domain.ScanResult, error) {
 
 	if err := s.validateContent(description, content); err != nil {
@@ -192,7 +226,7 @@ func (s *SkillService) CreateSkill(
 		return nil, scanResult, err
 	}
 
-	now := time.Now()
+	now := time.Now().UTC()
 	verdictStr := string(scanResult.Verdict)
 
 	row := persistence.Skill{
@@ -208,12 +242,22 @@ func (s *SkillService) CreateSkill(
 		UpdatedAt:   now,
 	}
 
+	preparedResources, err := prepareSkillResources(
+		row.ID, agentID, "agent:"+agentID, 1, resources, s.guard, trustLevel, now,
+	)
+	if err != nil {
+		return nil, scanResult, err
+	}
+
 	var registered *model.CapabilityManifest
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
 		s.recordVersion(ctx, tx, &row, "create")
+		if err := putSkillResourcesTx(tx, "agent:"+agentID, preparedResources, now); err != nil {
+			return err
+		}
 		var err error
 		_, registered, err = s.syncSkillCapabilityTx(
 			tx, nil, &row, "skill_created",
@@ -293,6 +337,33 @@ func (s *SkillService) UpdateSkill(
 	description *string,
 	content *string,
 ) (*domain.SkillManifest, *domain.ScanResult, error) {
+	return s.updateSkill(ctx, agentID, skillID, name, description, content, nil, 0)
+}
+
+// UpdateSkillWithResources creates a new Skill version whose resource set is
+// exactly the supplied inputs. An empty slice creates a resource-free version.
+func (s *SkillService) UpdateSkillWithResources(
+	ctx context.Context,
+	agentID string,
+	skillID string,
+	name *string,
+	description *string,
+	content *string,
+	resources []*model.SkillResourceInput,
+) (*domain.SkillManifest, *domain.ScanResult, error) {
+	return s.updateSkill(ctx, agentID, skillID, name, description, content, resources, 0)
+}
+
+func (s *SkillService) updateSkill(
+	ctx context.Context,
+	agentID string,
+	skillID string,
+	name *string,
+	description *string,
+	content *string,
+	resourceInputs []*model.SkillResourceInput,
+	cloneResourcesFromVersion int,
+) (*domain.SkillManifest, *domain.ScanResult, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -316,9 +387,11 @@ func (s *SkillService) UpdateSkill(
 		nextContent = *content
 	}
 	contentChanged := nextContent != row.Content
+	resourcesChanged := resourceInputs != nil
 	changed := nextName != row.Name ||
 		nextDescription != row.Description ||
-		contentChanged
+		contentChanged ||
+		resourcesChanged
 
 	if err := s.validateContent(nextDescription, nextContent); err != nil {
 		return nil, nil, err
@@ -328,7 +401,17 @@ func (s *SkillService) UpdateSkill(
 		return &current, nil, nil
 	}
 
-	now := time.Now()
+	now := time.Now().UTC()
+	preparedResources := []preparedSkillResource(nil)
+	if resourcesChanged {
+		preparedResources, err = prepareSkillResources(
+			skillID, agentID, "agent:"+agentID, row.Version+1,
+			resourceInputs, s.guard, domain.TrustLevel(row.TrustLevel), now,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	updates := map[string]interface{}{
 		"name":        nextName,
 		"description": nextDescription,
@@ -382,6 +465,21 @@ func (s *SkillService) UpdateSkill(
 				errcode.AgentVersionConflict, 409,
 				"skill version changed during update", nil,
 			)
+		}
+		if resourcesChanged {
+			if err := putSkillResourcesTx(tx, "agent:"+agentID, preparedResources, now); err != nil {
+				return err
+			}
+		} else {
+			sourceVersion := row.Version
+			if cloneResourcesFromVersion > 0 {
+				sourceVersion = cloneResourcesFromVersion
+			}
+			if err := cloneSkillResourcesTx(
+				tx, skillID, agentID, sourceVersion, updated.Version, now,
+			); err != nil {
+				return err
+			}
 		}
 		var syncErr error
 		retired, registered, syncErr = s.syncSkillCapabilityTx(
@@ -979,8 +1077,8 @@ func (s *SkillService) RollbackSkill(ctx context.Context, agentID, skillID strin
 			fmt.Sprintf("version %d not found for skill %s", targetVersion, skillID), err)
 	}
 
-	updated, _, err := s.UpdateSkill(
-		ctx, agentID, skillID, nil, nil, &version.Content,
+	updated, _, err := s.updateSkill(
+		ctx, agentID, skillID, nil, nil, &version.Content, nil, targetVersion,
 	)
 	if err != nil {
 		return err

@@ -15,6 +15,25 @@ type Repository interface {
 	GetByPtid(ctx context.Context, botPtid string) (*domain.Bot, error)
 	ListByOwner(ctx context.Context, ownerPtid string) ([]*domain.Bot, error)
 	ActiveByName(ctx context.Context, ownerPtid, name string) (*domain.Bot, error)
+
+	CreateAgentBinding(ctx context.Context, binding *domain.AgentBinding) error
+	// UpdateAgentBinding applies the next revision and reports whether the
+	// expected previous revision matched.
+	UpdateAgentBinding(ctx context.Context, binding *domain.AgentBinding) (bool, error)
+	GetAgentBinding(ctx context.Context, botPtid string) (*domain.AgentBinding, bool, error)
+	ListAgentBindings(ctx context.Context, ownerPtid string) ([]*domain.AgentBinding, error)
+	// DeleteAgentBinding reports whether a row matched botPtid plus version.
+	DeleteAgentBinding(ctx context.Context, botPtid string, expectedVersion int64) (bool, error)
+	// AgentBindingRevision returns 0 for an unbound bot, letting the service
+	// distinguish a missing row from an optimistic-lock conflict.
+	AgentBindingRevision(ctx context.Context, botPtid string) (int64, error)
+}
+
+// AgentRoster verifies that an Agent belongs to the binding owner. The agent
+// subserver implements it through structural subserver lookup; the bot
+// registry never opens the agent database.
+type AgentRoster interface {
+	IsAgentOwnedBy(ctx context.Context, ownerPtid, agentID string) (bool, error)
 }
 
 type PublishingGrant struct {

@@ -8,14 +8,13 @@ import { useChatStore } from '../store/chat';
 import { LazyMarkdown as Markdown } from './LazyMarkdown';
 import MessageCard, { type CardData } from './MessageCard';
 import { AgentIconTile } from './agent/AgentIconTile';
-import { parseDeepLink } from '../utils/deeplink';
+import { Schema } from '@peers-touch/schema';
 import { EVENT, eventBus } from '../kernel/events';
 import { useTranslation } from 'react-i18next';
 import { AssistantMessage } from './messages/AssistantMessage';
 import { UserMessage } from './messages/UserMessage';
 import { chatMarkdownProps } from './messages/markdownConfig';
 import { MiniButton, timeAgo, fullTime } from './messages/shared';
-import { usePortalStore } from '../store/portal';
 
 interface Props {
   message: ChatMessage;
@@ -45,9 +44,9 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
   }, [message.content, message.contentType]);
 
   const handleDeepLinkNav = useCallback((uri: string) => {
-    const parsed = parseDeepLink(uri);
-    if (!parsed) return;
-    eventBus.publish(EVENT.NAVIGATION_REQUESTED, parsed);
+    const parsed = Schema.parse(uri);
+    if (parsed.status !== 'recognized' || parsed.link.kind !== 'navigation') return;
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, parsed.link.value);
   }, []);
 
   const handleCopyCard = useCallback(() => {
@@ -147,5 +146,5 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
   }
 
   // --- Assistant message (default) ---
-  return <AssistantMessage message={message} onOpenArtifact={onOpenArtifact || usePortalStore.getState().openArtifact} />;
+  return <AssistantMessage message={message} onOpenArtifact={onOpenArtifact} />;
 }

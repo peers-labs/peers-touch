@@ -12,15 +12,14 @@ use crate::application::station_runtime::client::{
     TrafficClass,
 };
 use crate::application::station_runtime::resource::StationResourceHandle;
-use crate::infrastructure::station::{
-    StationTransportHandle, StationTransportOwner, TransportIdentityScope,
-};
+use crate::infrastructure::station::{StationTransportHandle, StationTransportOwner};
 use crate::infrastructure::station_registry::{
     route_attestation_is_current, StationEntry, StationRegistry, StationRouteHealth,
     StationRouteType,
 };
 use serde::Serialize;
 use station_libp2p_http::TransportIdentityProof;
+use station_trust::transport_identity::TransportIdentityScope;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -1152,7 +1152,7 @@
   margin-bottom: 18px;
 }
 
-.pt-channel-personal-qr > svg {
+.pt-channel-personal-qr > [data-schema-qr] {
   background: #fff;
   border: 1px solid var(--channel-border);
   border-radius: 8px;
@@ -1452,4 +1452,62 @@
     grid-column: 2;
     justify-content: flex-start;
   }
+}
+
+/* AUD-11 Channel Topics — read-only Station conversation projection. */
+.pt-channel-panel-loading {
+  align-items: center;
+  color: var(--channel-muted, #8a8f99);
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 28px 0;
+}
+
+.pt-channel-topic-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.pt-channel-topic-group h4 {
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+
+.pt-channel-topic-list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pt-channel-topic-list li {
+  align-items: baseline;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 8px 2px;
+}
+
+.pt-channel-topic-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pt-channel-topic-date {
+  color: var(--channel-muted, #8a8f99);
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.pt-channel-topic-empty {
+  color: var(--channel-muted, #8a8f99);
+  font-size: 12px;
+  margin: 0;
+  padding: 8px 2px;
 }

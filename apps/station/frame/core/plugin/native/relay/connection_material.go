@@ -5,6 +5,9 @@ import (
 	"errors"
 	"sync/atomic"
 	"time"
+
+	"github.com/libp2p/go-libp2p/core/peer"
+	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
 )
 
 var (
@@ -17,6 +20,7 @@ var (
 )
 
 type ConnectionMaterialRequest struct {
+	RelayPeerID   peer.ID
 	RouteID       string
 	RouteLifetime time.Duration
 	GrantLifetime time.Duration
@@ -24,9 +28,11 @@ type ConnectionMaterialRequest struct {
 }
 
 type ConnectionMaterial struct {
-	Code      string
-	DeepLink  string
-	ExpiresAt time.Time
+	Code              string
+	DeepLink          string
+	ExpiresAt         time.Time
+	Envelope          *peerpb.StationConnectionEnvelope
+	BootstrapEndpoint *peerpb.PublicEndpointConnectionMaterial
 }
 
 type ConnectionMaterialIssuer interface {
@@ -34,6 +40,8 @@ type ConnectionMaterialIssuer interface {
 		context.Context,
 		ConnectionMaterialRequest,
 	) (*ConnectionMaterial, error)
+	IssueConnectionBundle(context.Context, ConnectionMaterialRequest, int) ([]*ConnectionMaterial, error)
+	PublishBootstrapBlob(context.Context, *peerpb.PublishBootstrapBlobRequest) (*peerpb.PublishBootstrapBlobResponse, error)
 }
 
 type issuerHolder struct {

@@ -296,6 +296,28 @@ func (h *TurnHandlers) HandleGetTurnAttributions(
 	}, nil
 }
 
+func (h *TurnHandlers) HandleListTurnArtifacts(
+	ctx context.Context,
+	req *model.ListTurnArtifactsRequest,
+) (*model.ListTurnArtifactsResponse, error) {
+	artifacts, err := h.turnService.ListTurnArtifacts(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.ListTurnArtifactsResponse{Artifacts: artifacts}, nil
+}
+
+func (h *TurnHandlers) HandleGetTurnArtifact(
+	ctx context.Context,
+	req *model.GetTurnArtifactRequest,
+) (*model.GetTurnArtifactResponse, error) {
+	artifact, err := h.turnService.GetTurnArtifact(ctx, subjectActorID(ctx), req.GetArtifactId())
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.GetTurnArtifactResponse{Artifact: artifact}, nil
+}
+
 func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.Request, resp server.Response) error {
 	resp.SetHeader("Content-Type", "text/event-stream")
 	resp.SetHeader("Cache-Control", "no-cache")
@@ -640,40 +662,31 @@ func (h *TurnHandlers) HandleCancelTurn(ctx context.Context, req server.Request,
 
 // HandleQuickCompletion performs a one-shot LLM call using the agent's provider.
 // Used for lightweight tasks like translation that don't need conversation history.
-func (h *TurnHandlers) HandleQuickCompletion(ctx context.Context, req server.Request, resp server.Response) error {
-	resp.SetHeader("Content-Type", "application/json")
-
-	var input struct {
-		AgentID string `json:"agent_id"`
-		Prompt  string `json:"prompt"`
-	}
-	if err := json.Unmarshal(req.Body(), &input); err != nil || input.AgentID == "" || input.Prompt == "" {
-		resp.WriteHeader(400)
-		_, _ = resp.Write([]byte(`{"ok":false,"error":"agent_id and prompt are required"}`))
-		return nil
+func (h *TurnHandlers) HandleQuickCompletion(
+	ctx context.Context,
+	req *model.QuickCompletionRequest,
+) (*model.QuickCompletionResponse, error) {
+	if strings.TrimSpace(req.GetAgentId()) == "" || strings.TrimSpace(req.GetPrompt()) == "" {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"agent_id and prompt are required",
+			nil,
+		)
 	}
 
 	config, configErr := h.turnConfigFromRequest(ctx, &model.ExecuteTurnRequest{
-		AgentId: input.AgentID,
+		AgentId: req.GetAgentId(),
 	}, nil)
 	if configErr != nil {
-		resp.WriteHeader(http.StatusBadRequest)
-		out, _ := json.Marshal(map[string]any{"ok": false, "error": configErr.Error()})
-		_, _ = resp.Write(out)
-		return nil
+		return nil, configErr
 	}
 
-	content, err := h.turnService.QuickCompletion(ctx, config, input.Prompt)
+	content, err := h.turnService.QuickCompletion(ctx, config, req.GetPrompt())
 	if err != nil {
-		resp.WriteHeader(500)
-		out, _ := json.Marshal(map[string]any{"ok": false, "error": err.Error()})
-		_, _ = resp.Write(out)
-		return nil
+		return nil, err
 	}
-
-	out, _ := json.Marshal(map[string]any{"ok": true, "content": content})
-	_, _ = resp.Write(out)
-	return nil
+	return &model.QuickCompletionResponse{Content: content}, nil
 }
 
 type turnStreamResult struct {

@@ -497,6 +497,7 @@ class NativeDesktopMacOSProvisioner:
                 raise ProvisioningError(
                     "macOS runtime-cell probe process identity is unavailable"
                 )
+            self._await_accessible_window(adapter, process_id)
             adapter.position_main_window(process_id, (100.0, 100.0))
             bounds = self._await_window_bounds(process_id)
             point, pointer, stack, input_probe, attempted_points = (
@@ -960,6 +961,32 @@ class NativeDesktopMacOSProvisioner:
                     resource="runtime-cell-native-focus",
                 )
             if last_control.error and interval_seconds > 0:
+                time.sleep(interval_seconds)
+
+    @staticmethod
+    def _await_accessible_window(
+        adapter: MacOSNativeDesktopAdapter,
+        process_id: int,
+        *,
+        timeout_seconds: float = NATIVE_WINDOW_READY_TIMEOUT_SECONDS,
+        interval_seconds: float = 0.1,
+    ) -> dict[str, object]:
+        # Embedded WebDriver readiness does not imply that AppKit has
+        # registered the window in the owning process's Accessibility tree.
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while True:
+            state = adapter.window_state(process_id)
+            if int(state["windowCount"]) > 0:
+                return state
+            if time.monotonic() >= deadline:
+                raise BlockedError(
+                    reason=(
+                        "macOS runtime-cell process-owned Accessibility window "
+                        f"did not become available within {timeout_seconds:.1f}s"
+                    ),
+                    resource="runtime-cell-accessibility-window",
+                )
+            if interval_seconds > 0:
                 time.sleep(interval_seconds)
 
     @classmethod

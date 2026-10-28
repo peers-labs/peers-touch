@@ -17,10 +17,9 @@ type GormRepo struct {
 func NewGormRepo(db *gorm.DB) *GormRepo { return &GormRepo{db: db} }
 
 func (r *GormRepo) AutoMigrate() error {
-	if r.db.Migrator().HasTable(&BotRegistrationModel{}) {
-		return nil
-	}
-	return r.db.AutoMigrate(&BotRegistrationModel{})
+	// AutoMigrate is additive and idempotent, so both bot-owned tables are
+	// declared together even when bot_registration already exists.
+	return r.db.AutoMigrate(&BotRegistrationModel{}, &BotAgentBindingModel{})
 }
 
 func toModel(b *domain.Bot) *BotRegistrationModel {

@@ -6,17 +6,36 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Select,
   Space,
   Spin,
+  Switch,
   Table,
   Tag,
   Tooltip,
   Typography,
   message,
 } from 'antd';
-import { Bot, Copy, KeyRound, Pause, Play, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
+import {
+  Bot,
+  Copy,
+  KeyRound,
+  Link2,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Unlink,
+  Upload,
+} from 'lucide-react';
 
-import { api, type RegistryBot, type BotCreateResponse } from '../../services/desktop_api';
+import {
+  api,
+  type Agent,
+  type RegistryBot,
+  type BotCreateResponse,
+} from '../../services/desktop_api';
 import { useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import {
@@ -158,6 +177,24 @@ export function BotsSettings() {
   const [rotated, setRotated] = useState<{ secret: string } | null>(null);
   const [busyPtid, setBusyPtid] = useState<string | null>(null);
 
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [bindingBot, setBindingBot] = useState<RegistryBot | null>(null);
+  const [draftAgentId, setDraftAgentId] = useState<string>('');
+  const [draftEnabled, setDraftEnabled] = useState(true);
+  const [bindingSaving, setBindingSaving] = useState(false);
+
+  const agentNameById = useCallback(
+    (agentId: string) => {
+      const match = agents.find((item) => item.id === agentId);
+      return match?.title || match?.name || agentId;
+    },
+    [agents],
+  );
+
+  useEffect(() => {
+    api.listAgents().then(setAgents).catch(() => {});
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
@@ -244,6 +281,55 @@ export function BotsSettings() {
     }
   };
 
+  const openBinding = (bot: RegistryBot) => {
+    setBindingBot(bot);
+    setDraftAgentId(bot.agentBinding?.agentId ?? '');
+    setDraftEnabled(bot.agentBinding?.enabled ?? true);
+  };
+
+  const closeBinding = () => {
+    if (bindingSaving) return;
+    setBindingBot(null);
+  };
+
+  const saveBinding = async () => {
+    if (!bindingBot || !draftAgentId.trim() || bindingSaving) return;
+    setBindingSaving(true);
+    try {
+      await api.botAgentBindingSet(
+        bindingBot.botPtid,
+        draftAgentId.trim(),
+        draftEnabled,
+        bindingBot.agentBinding?.version ?? 0,
+      );
+      message.success(tt('settings.bots.bindingSaved', 'Binding saved'));
+      setBindingBot(null);
+      await refresh();
+    } catch (error) {
+      message.error((error as Error)?.message || 'bot_agent_binding_set failed');
+    } finally {
+      setBindingSaving(false);
+    }
+  };
+
+  const unbind = async () => {
+    if (!bindingBot?.agentBinding || bindingSaving) return;
+    setBindingSaving(true);
+    try {
+      await api.botAgentBindingDelete(
+        bindingBot.botPtid,
+        bindingBot.agentBinding.version,
+      );
+      message.success(tt('settings.bots.bindingDeleted', 'Binding removed'));
+      setBindingBot(null);
+      await refresh();
+    } catch (error) {
+      message.error((error as Error)?.message || 'bot_agent_binding_delete failed');
+    } finally {
+      setBindingSaving(false);
+    }
+  };
+
   const stateTag = (state: number) => {
     if (state === STATE.ACTIVE) return <Tag color="success">{tt('settings.bots.stateActive', 'Active')}</Tag>;
     if (state === STATE.DISABLED) return <Tag>{tt('settings.bots.stateDisabled', 'Disabled')}</Tag>;
@@ -271,6 +357,45 @@ export function BotsSettings() {
       title: tt('settings.bots.colRateLimit', 'Rate limit/min'),
       dataIndex: 'rateLimitPerMinute',
       width: 120,
+    },
+    {
+      title: tt('settings.bots.colAgent', 'Agent'),
+      key: 'agentBinding',
+      width: 220,
+      render: (_: unknown, bot: RegistryBot) => {
+        const binding = bot.agentBinding;
+        return (
+          <Space size={6}>
+            {binding ? (
+              <Space direction="vertical" size={0}>
+                <Text style={{ fontSize: 13 }}>{agentNameById(binding.agentId)}</Text>
+                {binding.enabled ? (
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {tt('settings.bots.bindingActive', 'Auto-reply on')}
+                  </Text>
+                ) : (
+                  <Tag style={{ marginInlineEnd: 0 }}>
+                    {tt('settings.bots.bindingPaused', 'Paused')}
+                  </Tag>
+                )}
+              </Space>
+            ) : (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {tt('settings.bots.bindingNone', 'Receive only')}
+              </Text>
+            )}
+            <Tooltip title={tt('settings.bots.configureBinding', 'Configure Agent binding')}>
+              <Button
+                size="small"
+                type="text"
+                disabled={bot.state === STATE.REVOKED || busyPtid === bot.botPtid}
+                icon={<Link2 size={15} />}
+                onClick={() => openBinding(bot)}
+              />
+            </Tooltip>
+          </Space>
+        );
+      },
     },
     {
       title: tt('settings.bots.colActions', 'Actions'),
@@ -340,7 +465,7 @@ export function BotsSettings() {
   ];
 
   return (
-    <SettingsContainer fullHeight maxWidth={1100}>
+    <SettingsContainer fullHeight maxWidth={1260}>
       <SettingsPanelHeader
         icon={<Bot size={20} />}
         title={tt('settings.bots.title', 'Bots')}
@@ -447,6 +572,83 @@ export function BotsSettings() {
           onClose={() => setRotated(null)}
         />
       )}
+
+      <Modal
+        open={!!bindingBot}
+        title={tt('settings.bots.bindingTitle', 'Bind Agent')}
+        onCancel={closeBinding}
+        confirmLoading={bindingSaving}
+        okText={tt('settings.bots.save', 'Save')}
+        okButtonProps={{ disabled: !draftAgentId.trim() }}
+        onOk={saveBinding}
+        footer={(_, { OkBtn, CancelBtn }) => (
+          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Space>
+              {bindingBot?.agentBinding && (
+                <Popconfirm
+                  title={tt(
+                    'settings.bots.unbindConfirm',
+                    'Unbind this Agent? Inbound messages will no longer trigger replies.',
+                  )}
+                  okText={tt('settings.bots.unbind', 'Unbind')}
+                  okButtonProps={{ danger: true }}
+                  cancelText={tt('common.cancel', 'Cancel')}
+                  onConfirm={unbind}
+                >
+                  <Button danger icon={<Unlink size={14} />} loading={bindingSaving}>
+                    {tt('settings.bots.unbind', 'Unbind')}
+                  </Button>
+                </Popconfirm>
+              )}
+            </Space>
+            <Space>
+              <CancelBtn />
+              <OkBtn />
+            </Space>
+          </Space>
+        )}
+      >
+        {bindingBot && (
+          <Space direction="vertical" style={{ width: '100%' }} size={16}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {tt(
+                'settings.bots.bindingIntro',
+                'Inbound publishing messages run the selected Agent; its reply is published as this bot. No binding means the bot only receives messages.',
+              )}
+            </Text>
+            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {tt('settings.bots.bindingAgent', 'Agent')}
+              </Text>
+              <Select
+                showSearch
+                style={{ width: '100%' }}
+                placeholder={tt('settings.bots.bindingAgentPlaceholder', 'Select an Agent')}
+                value={draftAgentId || undefined}
+                optionFilterProp="label"
+                options={agents.map((agent) => ({
+                  label: agent.title || agent.name || agent.id,
+                  value: agent.id,
+                }))}
+                onChange={(value) => setDraftAgentId(value)}
+                notFoundContent={tt('settings.bots.bindingNoAgents', 'No agents available')}
+              />
+            </Space>
+            <Space direction="vertical" size={4}>
+              <Space>
+                <Switch checked={draftEnabled} onChange={setDraftEnabled} />
+                <Text>{tt('settings.bots.bindingEnabled', 'Automatic replies')}</Text>
+              </Space>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {tt(
+                  'settings.bots.bindingEnabledHint',
+                  'Pause the switch to keep the binding but stop replies immediately.',
+                )}
+              </Text>
+            </Space>
+          </Space>
+        )}
+      </Modal>
     </SettingsContainer>
   );
 }

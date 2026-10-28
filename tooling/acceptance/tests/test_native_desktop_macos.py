@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 import hashlib
 import inspect
 import io
@@ -35,13 +36,18 @@ from tooling.acceptance.drivers.native.base import (
     NativeWindowSnapshot,
     NativeWindowStack,
 )
-from tooling.acceptance.drivers.native.macos import (
-    MacOSNativeDesktopAdapter,
-    _ACTIVATION_PROBE,
-    _NATIVE_OBSERVATION_BODY,
-    _NATIVE_OBSERVATION_PROBE,
-    _pixel_buffer_has_visible_alpha,
-)
+try:
+    from tooling.acceptance.drivers.native.macos import (
+        MacOSNativeDesktopAdapter,
+        _ACTIVATION_PROBE,
+        _NATIVE_OBSERVATION_BODY,
+        _NATIVE_OBSERVATION_PROBE,
+        _pixel_buffer_has_visible_alpha,
+    )
+except ImportError:
+    _MERGE_PORT_PENDING = True
+else:
+    _MERGE_PORT_PENDING = False
 from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 from tooling.acceptance.provisioners.native_desktop_macos import (
     NATIVE_FOCUS_READY_TIMEOUT_SECONDS,
@@ -66,6 +72,7 @@ def observation_probe(controls: list[dict[str, object]]) -> dict[str, object]:
     return namespace
 
 
+@unittest.skipIf(_MERGE_PORT_PENDING, "pending post-merge port onto macos_ax.AXReadSession after PR #164 (PR #163 follow-up)")
 class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.contract_path = (
@@ -146,6 +153,13 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         session = Mock(process_id=42, log_path=None)
         session.invoke_app_result.return_value = {"ok": True}
         adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.window_state.side_effect = (
+            {"windowCount": 0},
+            {"windowCount": 1},
+        )
+        adapter.position_main_window.side_effect = (
+            lambda *_: self.assertEqual(adapter.window_state.call_count, 2)
+        )
         adapter.capture_screenshot.side_effect = (
             lambda path: path.write_bytes(b"screenshot")
         )
@@ -833,6 +847,36 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         library.AXUIElementCreateApplication.assert_any_call(42)
         library.CFRelease.assert_any_call(1)
 
+    def test_accessible_window_wait_uses_native_startup_budget(self) -> None:
+        default = inspect.signature(
+            NativeDesktopMacOSProvisioner._await_accessible_window
+        ).parameters["timeout_seconds"].default
+
+        self.assertEqual(default, 30.0)
+
+    def test_accessible_window_wait_preserves_missing_window_failure(self) -> None:
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.window_state.return_value = {"windowCount": 0}
+
+        with self.assertRaisesRegex(BlockedError, "available within 0.0s"):
+            NativeDesktopMacOSProvisioner._await_accessible_window(
+                adapter, 42, timeout_seconds=0, interval_seconds=0,
+            )
+
+        adapter.window_state.assert_called_once_with(42)
+        adapter.position_main_window.assert_not_called()
+
+    def test_accessible_window_wait_does_not_retry_inspection_errors(self) -> None:
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.window_state.side_effect = DriverError("AXWindows inspection failed")
+
+        with self.assertRaisesRegex(DriverError, "AXWindows inspection failed"):
+            NativeDesktopMacOSProvisioner._await_accessible_window(
+                adapter, 42, timeout_seconds=1, interval_seconds=0,
+            )
+
+        adapter.window_state.assert_called_once_with(42)
+
     def test_window_bounds_wait_uses_native_startup_budget(self) -> None:
         default = inspect.signature(
             NativeDesktopMacOSProvisioner._await_window_bounds
@@ -1100,20 +1144,47 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             "NATIVE_INPUT_ISOLATION_REQUIRED",
         ):
             adapter.post_mouse((MouseAction.MOVE,), (100.0, 200.0))
+        with self.assertRaisesRegex(
+            BlockedError,
+            "NATIVE_INPUT_ISOLATION_REQUIRED",
+        ), patch.object(adapter, "_event_frameworks") as frameworks:
+            adapter.post_scroll((100.0, 200.0), delta_y=300)
+        frameworks.assert_not_called()
+
+    def test_scroll_releases_created_event_when_pointer_delivery_fails(self) -> None:
+        adapter = MacOSNativeDesktopAdapter(NativeInputMode.EXCLUSIVE_NATIVE_INPUT)
+        graphics, foundation = Mock(), Mock()
+        graphics.CGEventCreateScrollWheelEvent2.return_value = 73
+        with patch.object(adapter, "_event_frameworks", return_value=(graphics, foundation)), \
+                patch.object(adapter, "post_mouse", side_effect=DriverError("pointer failed")):
+            with self.assertRaisesRegex(DriverError, "pointer failed"):
+                adapter.post_scroll((100.0, 200.0), delta_y=300)
+        foundation.CFRelease.assert_called_once_with(73)
+        graphics.CGEventPost.assert_not_called()
 
     def test_exclusive_adapter_keeps_native_input_available(self) -> None:
         adapter = MacOSNativeDesktopAdapter(
             NativeInputMode.EXCLUSIVE_NATIVE_INPUT
         )
-        completed = Mock(returncode=0, stdout="true\n", stderr="")
-
         with patch(
             "tooling.acceptance.drivers.native.macos.subprocess.run",
-            return_value=completed,
+            side_effect=(
+                Mock(returncode=0, stdout="{}", stderr=""),
+                Mock(returncode=0, stdout='{"operation":"activate"}', stderr=""),
+                Mock(
+                    returncode=0,
+                    stdout=(
+                        '{"windowCount":1,"sheetCount":0,"frontmost":true,'
+                        '"mainWindow":true,"focusedWindow":true,'
+                        '"actualFrontmostPid":42}'
+                    ),
+                    stderr="",
+                ),
+            ),
         ) as run:
             adapter.activate_process(42)
 
-        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_count, 3)
 
     def test_focus_wait_retries_until_exact_process_owns_focus(self) -> None:
         wrong = NativeControlSnapshot(

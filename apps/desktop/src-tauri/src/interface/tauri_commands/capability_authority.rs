@@ -387,6 +387,22 @@ pub fn agent_knowledge_descriptor_list(
 }
 
 #[tauri::command]
+pub fn agent_knowledge_descriptor_content_read(
+    input: EncodedRequestInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    match authenticated_token(&state, &window) {
+        Ok(token) => capability_authority::read_knowledge_descriptor_content(
+            state.station.client(),
+            input,
+            &token,
+        ),
+        Err(error) => error,
+    }
+}
+
+#[tauri::command]
 pub fn agent_knowledge_descriptor_tombstone(
     input: EncodedRequestInput,
     state: State<'_, Arc<AppState>>,
@@ -398,6 +414,20 @@ pub fn agent_knowledge_descriptor_tombstone(
             input,
             &token,
         ),
+        Err(error) => error,
+    }
+}
+
+#[tauri::command]
+pub fn agent_skill_resource_read(
+    input: EncodedRequestInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    match authenticated_token(&state, &window) {
+        Ok(token) => {
+            capability_authority::read_skill_resource(state.station.client(), input, &token)
+        }
         Err(error) => error,
     }
 }

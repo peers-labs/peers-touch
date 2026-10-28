@@ -20,6 +20,7 @@ type Service struct {
 	minter           ActorMinter
 	publishing       PublishingManager
 	profilePublisher ProfileChangePublisher
+	roster           AgentRoster
 	now              func() time.Time
 }
 
@@ -27,6 +28,12 @@ type Option func(*Service)
 
 func WithProfileChangePublisher(publisher ProfileChangePublisher) Option {
 	return func(s *Service) { s.profilePublisher = publisher }
+}
+
+// WithAgentRoster wires the Agent ownership verification port used when a
+// bot is bound to an Agent.
+func WithAgentRoster(roster AgentRoster) Option {
+	return func(s *Service) { s.roster = roster }
 }
 
 func NewService(

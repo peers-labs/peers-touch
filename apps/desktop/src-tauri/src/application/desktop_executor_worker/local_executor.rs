@@ -1,5 +1,6 @@
 use super::fenced_executor::{CapabilityContract, CapabilityExecutor};
 use super::resource_registry::LocalResource;
+use crate::application::skills_market::managed_package;
 use crate::application::{mcp, oauth2, tools};
 use crate::model::agent::ClientCapabilityRequest;
 use serde_json::Value;
@@ -52,9 +53,13 @@ impl LocalCapabilityExecutor {
                 contract.capability_id.as_str(),
                 "filesystem.read"
                     | "filesystem.list"
+                    | "filesystem.write"
+                    | "filesystem.edit"
                     | "clipboard.read"
                     | "clipboard.write"
                     | "shell.execute"
+                    | "shell.allowlist"
+                    | "skill.resource.read"
             ) && !is_mcp_capability_id(&contract.capability_id)
                 && !is_connector_capability_id(&contract.capability_id)
             {
@@ -164,6 +169,40 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         &allowed_roots,
                         &request.tool_call_id,
                     )?
+                }
+                "filesystem.write" => {
+                    record_side_effect_start()?;
+                    execute_builtin(
+                        "local_file_write",
+                        arguments,
+                        workspace_root,
+                        &allowed_roots,
+                        &request.tool_call_id,
+                    )?
+                }
+                "filesystem.edit" => {
+                    record_side_effect_start()?;
+                    execute_builtin(
+                        "local_file_edit",
+                        arguments,
+                        workspace_root,
+                        &allowed_roots,
+                        &request.tool_call_id,
+                    )?
+                }
+                "shell.allowlist" => {
+                    record_side_effect_start()?;
+                    execute_builtin(
+                        "local_shell_exec",
+                        arguments,
+                        workspace_root,
+                        &allowed_roots,
+                        &request.tool_call_id,
+                    )?
+                }
+                "skill.resource.read" => {
+                    record_side_effect_start()?;
+                    execute_managed_skill_resource_read(arguments)?
                 }
                 capability_id if is_mcp_capability_id(capability_id) => {
                     record_side_effect_start()?;
@@ -331,6 +370,34 @@ fn execute_mcp_capability(
         .map_err(|_| "CLIENT_CAPABILITY_RESULT_ENCODING_FAILED".to_string())
 }
 
+fn execute_managed_skill_resource_read(arguments: Value) -> Result<Value, String> {
+    let skill_id = arguments
+        .get("skill_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "SKILL_RESOURCE_SKILL_ID_REQUIRED".to_string())?;
+    let version = arguments
+        .get("version")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "SKILL_RESOURCE_VERSION_REQUIRED".to_string())?;
+    let path = arguments
+        .get("path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "SKILL_RESOURCE_PATH_REQUIRED".to_string())?;
+    let expected_hash = arguments
+        .get("content_hash")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty());
+    let content = managed_package::read_managed_resource(skill_id, version, path, expected_hash)?;
+    Ok(serde_json::json!({
+        "path": path,
+        "version": version,
+        "size": content.len(),
+        "content": String::from_utf8(content)
+            .map_err(|_| "SKILL_RESOURCE_NOT_UTF8".to_string())?,
+    }))
+}
+
 fn redact_local_locators(value: &mut Value, resources: &[LocalResource]) {
     match value {
         Value::String(text) => {
@@ -355,7 +422,12 @@ fn redact_local_locators(value: &mut Value, resources: &[LocalResource]) {
 fn requires_local_resource(capability_id: &str) -> bool {
     matches!(
         capability_id,
-        "filesystem.read" | "filesystem.list" | "shell.execute"
+        "filesystem.read"
+            | "filesystem.list"
+            | "filesystem.write"
+            | "filesystem.edit"
+            | "shell.execute"
+            | "shell.allowlist"
     )
 }
 
@@ -439,6 +511,22 @@ mod tests {
         assert!(!encoded.contains("/private/device/alice/workspace"));
         assert!(encoded.contains("resource-1/file.txt"));
         assert!(encoded.contains("resource-1/key"));
+    }
+
+    #[test]
+    fn managed_skill_resource_contract_is_registered() {
+        let executor = LocalCapabilityExecutor::new(
+            "ptid:person:test",
+            [CapabilityContract {
+                capability_id: "skill.resource.read".to_string(),
+                schema_version: "1".to_string(),
+                max_argument_bytes: 4096,
+                max_result_bytes: 65536,
+                supports_external_idempotency: false,
+            }],
+        )
+        .expect("managed Skill resource capability should register");
+        assert!(executor.contract("skill.resource.read").is_some());
     }
 
     #[test]

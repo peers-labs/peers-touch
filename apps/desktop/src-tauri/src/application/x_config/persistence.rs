@@ -14,26 +14,33 @@ const WATERMARK_SERVICE: &str = "peers-touch.desktop.x-config";
 
 pub struct DesktopWatermarkStore {
     channel: String,
-    debug_path: Option<PathBuf>,
+    // Debug, test, and sandboxed acceptance runs persist the watermark in a
+    // 0600 file. Debug binaries are recompiled constantly and each ad-hoc
+    // signature invalidates the macOS Keychain item's access-control list,
+    // which otherwise raises a login-password SecurityAgent prompt that owns
+    // the frontmost window and blocks native panels. Release builds return
+    // `None` and persist through the OS keychain, matching the chat-DB and
+    // identity secret stores.
+    file_path: Option<PathBuf>,
 }
 
 impl DesktopWatermarkStore {
     pub fn new(channel: &str, secure_store_dir: PathBuf) -> Self {
-        #[cfg(test)]
-        let debug_path = Some(secure_store_dir.join(format!("{channel}.watermark.json")));
-        #[cfg(not(test))]
-        let debug_path = {
+        #[cfg(debug_assertions)]
+        let file_path = Some(secure_store_dir.join(format!("{channel}.watermark.json")));
+        #[cfg(not(debug_assertions))]
+        let file_path = {
             let _ = secure_store_dir;
             None
         };
         Self {
             channel: channel.to_string(),
-            debug_path,
+            file_path,
         }
     }
 
     fn load_document(&self) -> Result<Option<WatermarkDocument>, XConfigError> {
-        if let Some(path) = self.debug_path.as_ref() {
+        if let Some(path) = self.file_path.as_ref() {
             return match fs::read(path) {
                 Ok(bytes) => serde_json::from_slice(&bytes)
                     .map(Some)
@@ -52,7 +59,7 @@ impl DesktopWatermarkStore {
 
     fn save_document(&self, document: &WatermarkDocument) -> Result<(), XConfigError> {
         let bytes = serde_json::to_vec(document).map_err(|_| storage_error("watermark_encode"))?;
-        if let Some(path) = self.debug_path.as_ref() {
+        if let Some(path) = self.file_path.as_ref() {
             return atomic_write(path, &bytes).map_err(|_| storage_error("watermark_write"));
         }
         save_keychain_document(&self.channel, &bytes)

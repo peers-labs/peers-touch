@@ -3163,7 +3163,7 @@ fn invoke_agent_skill(
     let execution = station_client
         .request_json(
             Method::POST,
-            "/agent/turn/execute",
+            "/sub-agent/agent/turn/execute",
             &context.token,
             None,
             Some(body),
@@ -3502,7 +3502,7 @@ fn handle_tasks(
                             station_client
                                 .request_json(
                                     Method::POST,
-                                    "/agent/turn/execute",
+                                    "/sub-agent/agent/turn/execute",
                                     &context.token,
                                     None,
                                     Some(body),
@@ -3711,7 +3711,7 @@ fn handle_agent(
             let response = station_client
                 .request_json(
                     Method::POST,
-                    "/agent/turn/execute",
+                    "/sub-agent/agent/turn/execute",
                     &context.token,
                     None,
                     Some(body),

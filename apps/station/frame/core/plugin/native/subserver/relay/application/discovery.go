@@ -460,6 +460,7 @@ func (s *Service) InvalidateNodeRoutes(
 	stationPeerID string,
 	nodePeerID string,
 ) {
+	s.bootstrapBlobs.InvalidateNode(stationPeerID, nodePeerID)
 	s.discoveryMu.Lock()
 	defer s.discoveryMu.Unlock()
 	revokedRouteIDs := make(map[string]struct{})

@@ -37,6 +37,24 @@ type Service struct {
 type Result struct {
 	Response         *Response
 	NotificationWake *ports.ServiceNotificationWake
+	// Inbound is populated only for a newly accepted publication. It is the
+	// projection consumed by Station-internal automation (bot↔Agent replies);
+	// replays never re-project an inbound event.
+	Inbound *CommittedInbound
+}
+
+// CommittedInbound describes one accepted external publication after its
+// conversation event committed.
+type CommittedInbound struct {
+	PublishingID    string
+	SenderPTID      string
+	OwnerPTID       string
+	ConversationID  string
+	CommandID       string
+	MessageID       string
+	EventID         string
+	Text            string
+	SourceNamespace string
 }
 
 func NewService(
@@ -279,6 +297,17 @@ func (s *Service) Publish(
 			}
 			if err := tx.Publishing.RecordPublication(ctx, receipt); err != nil {
 				return err
+			}
+			result.Inbound = &CommittedInbound{
+				PublishingID:    publishingID,
+				SenderPTID:      string(grant.Sender),
+				OwnerPTID:       string(grant.Owner),
+				ConversationID:  string(target),
+				CommandID:       string(commandID),
+				MessageID:       string(messageID),
+				EventID:         string(delivered.Event.ID),
+				Text:            message.FallbackText,
+				SourceNamespace: grant.SourceNamespace,
 			}
 			result.Response = publicationResponse(
 				receipt,

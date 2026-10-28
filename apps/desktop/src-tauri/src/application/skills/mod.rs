@@ -81,7 +81,10 @@ fn manifest_list_json(skill: &model::agent::SkillManifest) -> Value {
         "enabled": skill.enabled,
         "createdAt": timestamp_json(&skill.created_at),
         "updatedAt": timestamp_json(&skill.updated_at),
-        "useCount": 0
+        "useCount": 0,
+        "agentId": skill.agent_id,
+        "resourceCount": skill.resources.len(),
+        "resources": skill.resources.iter().map(skill_resource_json).collect::<Vec<_>>()
     })
 }
 
@@ -113,104 +116,78 @@ fn manifest_detail_json(skill: &model::agent::SkillManifest, content: &str) -> V
     base
 }
 
+fn skill_execution_owner_json(owner: i32) -> &'static str {
+    match model::agent::ToolExecutionOwner::try_from(owner).unwrap_or_default() {
+        model::agent::ToolExecutionOwner::Station => "station",
+        model::agent::ToolExecutionOwner::ClientCapability => "client_capability",
+        model::agent::ToolExecutionOwner::Unspecified => "unspecified",
+    }
+}
+
+fn skill_resource_kind_json(kind: i32) -> &'static str {
+    model::agent::SkillResourceKind::try_from(kind)
+        .unwrap_or_default()
+        .as_str_name()
+        .trim_start_matches("SKILL_RESOURCE_KIND_")
+}
+
+fn skill_resource_json(resource: &model::agent::SkillResource) -> Value {
+    json!({
+        "path": resource.path,
+        "contentHash": resource.content_hash,
+        "size": resource.size,
+        "kind": skill_resource_kind_json(resource.kind),
+        "executionOwner": skill_execution_owner_json(resource.execution_owner),
+    })
+}
+
 fn skill_resource_tree(skill: &model::agent::SkillManifest, content: &str) -> Value {
-    let (frontmatter, body) = split_skill_protocol(content);
-    let frontmatter_bytes = frontmatter.as_bytes().len();
-    let body_bytes = body.as_bytes().len();
-    let total_bytes = content.as_bytes().len();
+    let mut children = vec![json!({
+        "id": format!("skill:{}:v{}:SKILL.md", skill.skill_id, skill.version),
+        "name": "SKILL.md",
+        "path": "SKILL.md",
+        "kind": "file",
+        "role": "entrypoint",
+        "mime": "text/markdown",
+        "bytes": content.as_bytes().len(),
+        "lineCount": line_count(content),
+        "sha256": sha256_hex(content),
+        "loadedAtRuntime": false,
+        "loadTrigger": "skill_view",
+        "summary": resource_summary(&skill.description, content)
+    })];
+    for resource in &skill.resources {
+        let owner = skill_execution_owner_json(resource.execution_owner);
+        children.push(json!({
+            "id": format!("skill:{}:v{}:{}", skill.skill_id, skill.version, resource.path),
+            "name": resource.path.rsplit('/').next().unwrap_or(resource.path.as_str()),
+            "path": resource.path,
+            "kind": "file",
+            "role": skill_resource_kind_json(resource.kind).to_lowercase(),
+            "bytes": resource.size,
+            "sha256": resource.content_hash,
+            "executionOwner": owner,
+            "loadedAtRuntime": false,
+            "loadTrigger": if resource.execution_owner == model::agent::ToolExecutionOwner::Station as i32 {
+                "skill_resource_read"
+            } else {
+                "skill.resource.read"
+            }
+        }));
+    }
     json!({
         "root": {
-            "id": format!("skill:{}:root", skill.skill_id),
+            "id": format!("skill:{}:v{}:root", skill.skill_id, skill.version),
             "name": skill.name,
             "path": "/",
             "kind": "directory",
-            "bytes": total_bytes,
+            "bytes": content.as_bytes().len(),
             "lineCount": line_count(content),
             "loadedAtRuntime": false,
             "loadTrigger": "none",
-            "children": [
-                {
-                    "id": format!("skill:{}:skill-md", skill.skill_id),
-                    "name": "SKILL.md",
-                    "path": "SKILL.md",
-                    "kind": "file",
-                    "role": "entrypoint",
-                    "mime": "text/markdown",
-                    "bytes": total_bytes,
-                    "lineCount": line_count(content),
-                    "sha256": sha256_hex(content),
-                    "loadedAtRuntime": false,
-                    "loadTrigger": "skill_view",
-                    "summary": resource_summary(&skill.description, content)
-                },
-                {
-                    "id": format!("skill:{}:frontmatter", skill.skill_id),
-                    "name": "frontmatter",
-                    "path": "SKILL.md#frontmatter",
-                    "kind": "section",
-                    "role": "manifest",
-                    "mime": "text/yaml",
-                    "bytes": frontmatter_bytes,
-                    "lineCount": line_count(&frontmatter),
-                    "sha256": sha256_hex(&frontmatter),
-                    "loadedAtRuntime": false,
-                    "loadTrigger": "skill_view",
-                    "summary": "Skill metadata parsed from the SKILL.md frontmatter"
-                },
-                {
-                    "id": format!("skill:{}:instructions", skill.skill_id),
-                    "name": "instructions",
-                    "path": "SKILL.md#instructions",
-                    "kind": "section",
-                    "role": "instructions",
-                    "mime": "text/markdown",
-                    "bytes": body_bytes,
-                    "lineCount": line_count(&body),
-                    "sha256": sha256_hex(&body),
-                    "loadedAtRuntime": false,
-                    "loadTrigger": "skill_view",
-                    "summary": resource_summary(&skill.description, &body)
-                }
-            ]
+            "children": children
         },
-        "resources": [
-            {
-                "id": format!("skill:{}:skill-md", skill.skill_id),
-                "name": "SKILL.md",
-                "path": "SKILL.md",
-                "kind": "file",
-                "role": "entrypoint",
-                "bytes": total_bytes,
-                "lineCount": line_count(content),
-                "sha256": sha256_hex(content),
-                "loadedAtRuntime": false,
-                "loadTrigger": "skill_view"
-            },
-            {
-                "id": format!("skill:{}:frontmatter", skill.skill_id),
-                "name": "frontmatter",
-                "path": "SKILL.md#frontmatter",
-                "kind": "section",
-                "role": "manifest",
-                "bytes": frontmatter_bytes,
-                "lineCount": line_count(&frontmatter),
-                "sha256": sha256_hex(&frontmatter),
-                "loadedAtRuntime": false,
-                "loadTrigger": "skill_view"
-            },
-            {
-                "id": format!("skill:{}:instructions", skill.skill_id),
-                "name": "instructions",
-                "path": "SKILL.md#instructions",
-                "kind": "section",
-                "role": "instructions",
-                "bytes": body_bytes,
-                "lineCount": line_count(&body),
-                "sha256": sha256_hex(&body),
-                "loadedAtRuntime": false,
-                "loadTrigger": "skill_view"
-            }
-        ]
+        "resources": skill.resources.iter().map(skill_resource_json).collect::<Vec<_>>()
     })
 }
 
@@ -442,6 +419,7 @@ pub fn skills_create(
         name: name.to_string(),
         content: input.content,
         trust_level: "community".to_string(),
+        resources: vec![],
     };
     match station_client
         .request_proto::<model::agent::InstallSkillRequest, model::agent::InstallSkillResponse>(
@@ -483,6 +461,9 @@ pub fn skills_update(
         name: input.name,
         description: input.description,
         content: input.content,
+        // Content-only edits carry no replacement set; Station clones the
+        // pinned resources of the previous version onto the new revision.
+        resources: vec![],
     };
     match station_client
         .request_proto::<model::agent::UpdateSkillRequest, model::agent::UpdateSkillResponse>(
@@ -493,10 +474,34 @@ pub fn skills_update(
             Some(&req),
         ) {
         Ok(resp) => {
+            let mut managed_package_version: Option<i64> = None;
+            if let Some(updated) = &resp.skill {
+                if updated.version > 1 {
+                    match crate::application::skills_market::managed_package::promote_managed_package(
+                        id,
+                        updated.version as i64,
+                        &updated.content,
+                    ) {
+                        Ok(true) => managed_package_version = Some(updated.version as i64),
+                        Ok(false) => {}
+                        Err(error) => {
+                            return AppResult::fail(
+                                ErrorCode::InternalError,
+                                format!("Station Skill updated but managed package promotion failed: {error}"),
+                                None,
+                            )
+                        }
+                    }
+                }
+            }
             let skill = resp.skill.map(|item| manifest_list_json(&item));
             success_payload(
                 "skills_update",
-                json!({ "ok": resp.success, "skill": skill }),
+                json!({
+                    "ok": resp.success,
+                    "skill": skill,
+                    "managedPackageVersion": managed_package_version
+                }),
             )
         }
         Err(err) => station_error("skills_update", err),
@@ -527,7 +532,26 @@ pub fn skills_delete(
             None,
             Some(&req),
         ) {
-        Ok(resp) => success_payload("skills_delete", json!({ "ok": resp.success })),
+        Ok(resp) => {
+            let managed_removed =
+                match crate::application::skills_market::managed_package::delete_managed_package(id)
+                {
+                    Ok(removed) => removed,
+                    Err(error) => {
+                        return AppResult::fail(
+                            ErrorCode::InternalError,
+                            format!(
+                                "Station Skill deleted but managed package cleanup failed: {error}"
+                            ),
+                            None,
+                        )
+                    }
+                };
+            success_payload(
+                "skills_delete",
+                json!({ "ok": resp.success, "managedRemoved": managed_removed }),
+            )
+        }
         Err(err) => station_error("skills_delete", err),
     }
 }
@@ -582,6 +606,7 @@ mod tests {
             created_at: None,
             updated_at: None,
             enabled: true,
+            resources: vec![],
         };
 
         let json = manifest_list_json(&skill);
@@ -640,6 +665,22 @@ mod tests {
             created_at: None,
             updated_at: None,
             enabled: true,
+            resources: vec![
+                model::agent::SkillResource {
+                    path: "references/api.md".to_string(),
+                    content_hash: "station-hash".to_string(),
+                    size: 14,
+                    kind: model::agent::SkillResourceKind::Reference.into(),
+                    execution_owner: model::agent::ToolExecutionOwner::Station.into(),
+                },
+                model::agent::SkillResource {
+                    path: "scripts/run.sh".to_string(),
+                    content_hash: "client-hash".to_string(),
+                    size: 10,
+                    kind: model::agent::SkillResourceKind::Script.into(),
+                    execution_owner: model::agent::ToolExecutionOwner::ClientCapability.into(),
+                },
+            ],
         };
         let content = "---\nname: Review\n---\n\nReview the selected code.";
 
@@ -653,23 +694,63 @@ mod tests {
                 .and_then(Value::as_str),
             Some("index-only")
         );
-        let resources = detail
+        let children = detail
             .get("resourceTree")
-            .and_then(|value| value.get("resources"))
+            .and_then(|value| value.get("root"))
+            .and_then(|value| value.get("children"))
             .and_then(Value::as_array)
-            .expect("resources");
-        assert_eq!(resources.len(), 3);
+            .expect("root children");
+        assert_eq!(children.len(), 3);
         assert_eq!(
-            resources[0].get("path").and_then(Value::as_str),
+            children[0].get("path").and_then(Value::as_str),
             Some("SKILL.md")
         );
         assert_eq!(
-            resources[0].get("loadTrigger").and_then(Value::as_str),
+            children[0].get("loadTrigger").and_then(Value::as_str),
             Some("skill_view")
         );
         assert_eq!(
-            resources[0].get("loadedAtRuntime").and_then(Value::as_bool),
+            children[0].get("loadedAtRuntime").and_then(Value::as_bool),
             Some(false)
+        );
+        assert_eq!(
+            children[1].get("role").and_then(Value::as_str),
+            Some("reference")
+        );
+        assert_eq!(
+            children[1].get("executionOwner").and_then(Value::as_str),
+            Some("station")
+        );
+        assert_eq!(
+            children[1].get("loadTrigger").and_then(Value::as_str),
+            Some("skill_resource_read")
+        );
+        assert_eq!(
+            children[2].get("role").and_then(Value::as_str),
+            Some("script")
+        );
+        assert_eq!(
+            children[2].get("executionOwner").and_then(Value::as_str),
+            Some("client_capability")
+        );
+        assert_eq!(
+            children[2].get("loadTrigger").and_then(Value::as_str),
+            Some("skill.resource.read")
+        );
+
+        let flat = detail
+            .get("resourceTree")
+            .and_then(|value| value.get("resources"))
+            .and_then(Value::as_array)
+            .expect("flat resource metadata");
+        assert_eq!(flat.len(), 2);
+        assert_eq!(
+            flat[0].get("kind").and_then(Value::as_str),
+            Some("Reference")
+        );
+        assert_eq!(
+            flat[1].get("executionOwner").and_then(Value::as_str),
+            Some("client_capability")
         );
     }
 

@@ -188,8 +188,17 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       const queueEntry = rawQueueEntry && typeof rawQueueEntry === 'object'
         ? rawQueueEntry as Record<string, unknown>
         : {};
+      // The Turn identity is pre-bound at enqueue time; hold it immediately so
+      // the recovery stream can attach before the turn leaves the queue.
+      const boundTurnId = s(
+        admission.turnId
+          || admission.turn_id
+          || queueEntry.admittedTurnId
+          || queueEntry.admitted_turn_id,
+      );
       return {
         ...msg,
+        turnId: boundTurnId || msg.turnId,
         queued: true,
         queueEntryId: s(queueEntry.queueEntryId || queueEntry.queue_entry_id),
         queuePosition: Number(queueEntry.queuePosition || queueEntry.queue_position || 0),
@@ -198,12 +207,27 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       };
     }
 
-    case 'admission_replayed':
+    case 'admission_replayed': {
+      const admission = d.admission && typeof d.admission === 'object'
+        ? d.admission as Record<string, unknown>
+        : {};
+      const rawQueueEntry = admission.queueEntry || admission.queue_entry;
+      const queueEntry = rawQueueEntry && typeof rawQueueEntry === 'object'
+        ? rawQueueEntry as Record<string, unknown>
+        : {};
+      const boundTurnId = s(
+        admission.turnId
+          || admission.turn_id
+          || queueEntry.admittedTurnId
+          || queueEntry.admitted_turn_id,
+      );
       return {
         ...msg,
+        turnId: boundTurnId || msg.turnId,
         loading: false,
         lastEventAt: Date.now(),
       };
+    }
 
     case 'snapshot': {
       const status = s(d.status).toLowerCase();

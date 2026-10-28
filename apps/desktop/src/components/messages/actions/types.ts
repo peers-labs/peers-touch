@@ -30,7 +30,6 @@ export interface MessageActionContext {
   onTranslate: () => void;
   onThread: () => void;
   onTurnDetails?: () => void;
-  onReadAloud: () => void;
   onExport: () => void;
   onForward: () => void;
 }

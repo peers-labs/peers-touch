@@ -13,7 +13,7 @@ import stat
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.errors import BlockedError
@@ -25,13 +25,13 @@ from tooling.acceptance.drivers.native import (
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.drivers.native.macos_documents import (
     close_owned_text_editor_document,
-    document_contains,
     document_windows,
     require_text_editor_default,
     text_editor_document,
     text_editor_pid,
     text_editor_running,
 )
+from tooling.acceptance.gates.chat.lifecycle_file_pixels import prove_native_document_pixels
 from tooling.acceptance.gates.chat.native_support import async_harness, wait_until
 
 
@@ -115,7 +115,7 @@ def _open_detail(client: TauriSession, attachment_id: str) -> str:
     detail = f'[data-chat-file-detail="{attachment_id}"]'
     wait_until(
         lambda: next((item for item in client.find_elements(
-            f'{detail} [data-chat-file-state="ready"]',
+            f'{detail} .chat-file-preview-resource[data-chat-preview-state="ready"]',
         ) if item.is_displayed()), None),
         "verified Chat file detail", timeout=60,
     )
@@ -150,7 +150,7 @@ def prove_native_file_preview(
     preview_pid = None
     copy = None
     try:
-        native_click(f'{detail} [data-chat-file-action="preview"]')
+        native_click('.chat-file-modal [data-chat-file-action="preview"]')
         copy = observer.new_copy(before, source)
 
         def owned_preview() -> int | None:
@@ -163,26 +163,19 @@ def prove_native_file_preview(
             return matches[0] if matches else None
 
         preview_pid = wait_until(owned_preview, "owned Quick Look process", timeout=15)
-        def selected_document_windows() -> list[str] | None:
-            values = document_windows(preview_pid)
-            return values if any(source.name in title for title in values) else None
-        titles = wait_until(
-            selected_document_windows,
-            "Quick Look window for the selected original filename", timeout=20,
+        pixels = prove_native_document_pixels(
+            runtime_binding.native_adapter, preview_pid,
+            source.name, expected_text, evidence_root,
         )
-        def document_content() -> bool:
-            return document_contains(preview_pid, expected_text)
-        wait_until(document_content, "Quick Look decoded document content", timeout=20)
         _completed(client, detail)
-        screenshot = observer.screenshot(evidence_root / "native-preview.png")
         _close_detail(client, detail)
         wait_until(
             lambda: preview_pid not in _processes() and not copy.exists(),
             "Quick Look and its private copy revoked on detail close", timeout=15,
         )
         return {"attachmentId": attachment_id, "filename": source.name,
-                "previewPid": preview_pid, "windowTitles": titles,
-                "sha256": _hash(source), "screenshot": screenshot,
+                "previewPid": preview_pid, "pixels": pixels,
+                "sha256": _hash(source), "screenshot": pixels["screenshot"],
                 "contentMatched": True, "revoked": True}
     finally:
         _close_detail(client, detail)
@@ -210,7 +203,7 @@ def prove_external_file_isolation(
     before = observer.copies()
     copy = None
     try:
-        native_click(f'{detail} [data-chat-file-action="open-external"]')
+        native_click('.chat-file-modal [data-chat-file-action="open-external"]')
         copy = observer.new_copy(before, source)
 
         def document() -> str | None:
@@ -268,7 +261,7 @@ def prove_export_retention(
     adapter = runtime_binding.native_adapter
     baseline = adapter.focused_control(observer.pid)
     try:
-        native_click(f'{detail} [data-chat-file-action="save-copy"]')
+        native_click('.chat-file-modal [data-chat-file-action="save-copy"]')
         panel = wait_until(
             lambda: control if (
                 (control := adapter.focused_control(observer.pid)).frontmost
@@ -330,14 +323,19 @@ def prove_file_grant_revocation(
     *, client: TauriSession, runtime_binding: NativeDesktopRuntimeBinding,
     attachment_id: str, actor_ptid: str, transition: Callable[[], dict[str, Any]],
     restore: Callable[[], None],
+    evidence_class: Literal["ui", "supporting-authority"] = "ui",
+    evidence_root: Path | None = None,
 ) -> dict[str, Any]:
     """A real visible transition revokes the selected UI's existing grant.
 
     This primitive proves one boundary only. Account and Station transitions
     require their own bound real UI callbacks and cannot inherit close proof.
     """
+    if evidence_class not in ("ui", "supporting-authority"):
+        raise ValueError("Unknown file scope evidence class")
     observer = MacOSFileObservation(client, runtime_binding)
     detail = _open_detail(client, attachment_id)
+    screenshots = {}
     try:
         grant = async_harness(client, "attachmentFileGrant", {
             "actorPtid": actor_ptid, "attachmentId": attachment_id,
@@ -361,9 +359,15 @@ def prove_file_grant_revocation(
         available = read_asset()
         if available.get("status") not in (200, 206) or not available.get("size"):
             raise GateError("scope oracle never observed the selected asset available")
+        if evidence_root is not None:
+            evidence_root.mkdir(parents=True, exist_ok=True)
+            path = evidence_root / "before.png"
+            client.save_screenshot(path)
+            screenshots["before"] = str(path)
         visible_transition = transition()
-        wait_until(lambda: not client.find_elements(detail),
-                   "file detail removed by the real scope transition", timeout=15)
+        if evidence_class == "ui":
+            wait_until(lambda: not client.find_elements(detail),
+                       "file detail removed by the real scope transition", timeout=15)
         revoked = wait_until(
             lambda: result if (result := read_asset()).get("status") == 404 else None,
             "old UI file grant returns 404 after the visible transition", timeout=15,
@@ -393,9 +397,14 @@ def prove_file_grant_revocation(
             or after.window_count != baseline.window_count
         ):
             raise GateError("replaying a revoked file intent created a native resource")
+        if evidence_root is not None:
+            path = evidence_root / "after.png"
+            client.save_screenshot(path)
+            screenshots["after"] = str(path)
         return {"attachmentId": attachment_id, "transition": visible_transition,
                 "beforeStatus": available["status"], "afterStatus": revoked["status"],
-                "rejectedIntents": rejected, "nativeResourcesUnchanged": True}
+                "rejectedIntents": rejected, "nativeResourcesUnchanged": True,
+                "evidenceClass": evidence_class, "screenshots": screenshots}
     finally:
         _close_detail(client, detail)
         restore()

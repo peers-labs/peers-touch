@@ -4,13 +4,11 @@
   "cron.header.pausedCount": "{{count}} 个已暂停",
   "cron.header.refresh": "刷新",
   "cron.header.newJob": "新建任务",
-
   "cron.search.placeholder": "搜索任务...",
   "cron.list.noMatchingJobs": "没有匹配的任务",
   "cron.list.noJobsYet": "暂无定时任务",
   "cron.list.createFirst": "创建你的第一个任务",
   "cron.list.loadFailed": "加载任务失败: {{message}}",
-
   "cron.job.deleteConfirm": "确定删除这个任务？",
   "cron.job.deleteOk": "删除",
   "cron.job.deleteCancel": "取消",
@@ -22,7 +20,6 @@
   "cron.action.resume": "恢复",
   "cron.action.edit": "编辑",
   "cron.action.delete": "删除",
-
   "cron.schedule.everyMinutes": "每 {{count}} 分钟",
   "cron.schedule.everyHours": "每 {{count}} 小时",
   "cron.schedule.everyDays": "每 {{count}} 天",
@@ -37,14 +34,11 @@
   "cron.schedule.inHours": "{{count}} 小时后",
   "cron.schedule.daysAgo": "{{count}} 天前",
   "cron.schedule.inDays": "{{count}} 天后",
-
   "cron.status.ok": "正常",
   "cron.status.error": "错误",
   "cron.status.running": "运行中",
-
   "cron.runs.title": "运行历史 — {{name}}",
   "cron.runs.noRuns": "暂无运行记录",
-
   "cron.drawer.titleCreate": "新建任务",
   "cron.drawer.titleEdit": "编辑任务",
   "cron.drawer.saveButton": "保存",
@@ -54,13 +48,11 @@
   "cron.drawer.required": "* 必填",
   "cron.drawer.jobUpdated": "任务已更新",
   "cron.drawer.jobCreated": "任务已创建",
-
   "cron.drawer.ai.title": "用自然语言描述你的日程",
   "cron.drawer.ai.placeholder": "例如 \"every weekday at 9am\" 或 \"每天下午3点\"",
   "cron.drawer.ai.parseButton": "解析",
   "cron.drawer.ai.parseSuccess": "已解析: {{fields}}",
   "cron.drawer.ai.parseFailed": "解析失败: {{message}}",
-
   "cron.drawer.section.basics": "基础信息",
   "cron.drawer.section.basicsDesc": "命名任务、选择助手并设置启用状态。",
   "cron.drawer.field.name": "名称",
@@ -73,7 +65,6 @@
   "cron.drawer.field.defaultSuffix": "（默认）",
   "cron.drawer.field.enabled": "已启用",
   "cron.drawer.field.disabled": "已禁用",
-
   "cron.drawer.section.schedule": "调度",
   "cron.drawer.section.scheduleDesc": "控制任务何时运行。",
   "cron.drawer.field.scheduleKind": "调度方式",
@@ -89,7 +80,6 @@
   "cron.drawer.field.runAtPlaceholder": "2025-12-31T09:00:00Z",
   "cron.drawer.field.timezone": "时区",
   "cron.drawer.field.timezonePlaceholder": "UTC（默认）",
-
   "cron.drawer.cron.templateEveryHour": "每小时",
   "cron.drawer.cron.templateDailyAt9": "每天 9:00",
   "cron.drawer.cron.templateWeekdays9": "工作日 9:00",
@@ -110,7 +100,6 @@
   "cron.drawer.cron.dayFri": "周五",
   "cron.drawer.cron.daySat": "周六",
   "cron.drawer.cron.daySun": "周日",
-
   "cron.drawer.section.execution": "执行",
   "cron.drawer.section.executionDesc": "选择这个任务要做什么。",
   "cron.drawer.field.whatShouldRun": "运行方式",
@@ -128,7 +117,6 @@
   "cron.drawer.field.commandLabel": "命令",
   "cron.drawer.field.commandRequired": "命令为必填项",
   "cron.drawer.field.commandPlaceholder": "find /tmp -mtime +7 -delete",
-
   "cron.drawer.section.advanced": "高级设置",
   "cron.drawer.advancedDesc": "可选的自动清理和调度行为覆盖设置。",
   "cron.drawer.field.deleteAfterRun": "运行后删除",
@@ -146,5 +134,13 @@
   "cron.drawer.field.deliveryTargetLoading": "加载目标中...",
   "cron.drawer.field.failureChannel": "失败告警渠道（可选）",
   "cron.drawer.field.failureChannelPlaceholder": "留空则使用推送渠道",
-  "cron.drawer.field.deliveryTargetSelectError": "请选择一个推送目标（群组或用户）。"
+  "cron.drawer.field.deliveryTargetSelectError": "请选择一个推送目标（群组或用户）。",
+  "cron.drawer.ai.unparsed": "无法解析。可尝试“每个工作日上午9点”“每30分钟”或“明天下午3点”。",
+  "cron.drawer.field.runAtInvalid": "请选择有效的日期和时间。",
+  "cron.drawer.field.execAgentOnly": "定时任务始终以该 Agent 身份运行；不提供直接 shell 执行。",
+  "cron.drawer.field.effortLabel": "思考强度",
+  "cron.drawer.field.effortLow": "低",
+  "cron.drawer.field.effortMedium": "中",
+  "cron.drawer.field.effortHigh": "高",
+  "cron.drawer.field.deliveryHidden": "渠道投递在交付绑定就绪前保持隐藏。"
 }

@@ -165,6 +165,7 @@ export function LogsTab() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const cursorRef = useRef<number>(-1);
+  const fileRef = useRef('');
   const loadingRef = useRef(false);
   const pausedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -208,35 +209,33 @@ export function LogsTab() {
     [getMaxLines],
   );
 
-  const fetchLogs = useCallback(
-    async (reset = false) => {
-      if (loadingRef.current) return;
-      loadingRef.current = true;
-      try {
-        const currentCursor = reset ? -1 : cursorRef.current;
-        const fetchCount = Math.min(getMaxLines(), 500);
-        const res = await api.tailLogs(
-          currentCursor,
-          fetchCount,
-          fetchCount * 200,
-        );
-        const newEntries = (res.lines || []).map(parseLogLine);
-
-        if (res.reset || reset) {
-          setEntries(newEntries);
-        } else if (newEntries.length > 0) {
-          setEntries((prev) => mergeEntries(prev, newEntries));
-        }
-        cursorRef.current = res.cursor;
-        setCursor(res.cursor);
-      } catch (err) {
-        log.error("LogsTab", "Failed to load logs", err);
-      } finally {
-        loadingRef.current = false;
+  const fetchLogs = useCallback(async (reset = false) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    try {
+      const currentCursor = reset ? -1 : cursorRef.current;
+      const fetchCount = Math.min(getMaxLines(), 500);
+      let res = await api.tailLogs(currentCursor, fetchCount, fetchCount * 200);
+      const fileChanged = Boolean(fileRef.current && fileRef.current !== res.file);
+      if (!reset && fileChanged) {
+        res = await api.tailLogs(-1, fetchCount, fetchCount * 200);
       }
-    },
-    [getMaxLines, mergeEntries],
-  );
+      const newEntries = (res.lines || []).map(parseLogLine);
+
+      if (res.reset || reset || fileChanged) {
+        setEntries(newEntries);
+      } else if (newEntries.length > 0) {
+        setEntries(prev => mergeEntries(prev, newEntries));
+      }
+      fileRef.current = res.file;
+      cursorRef.current = res.cursor;
+      setCursor(res.cursor);
+    } catch (err) {
+      log.error('LogsTab', 'Failed to load logs', err);
+    } finally {
+      loadingRef.current = false;
+    }
+  }, [getMaxLines, mergeEntries]);
 
   useEffect(() => {
     if (autoFollow && !paused && logsEndRef.current) {

@@ -824,6 +824,8 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
 		secretBoundary = "channel-requester"
 		riskClass = "external-write"
+	case definition.Name == "web_fetch":
+		riskClass = "external-read"
 	case strings.HasPrefix(definition.Name, "lark_"):
 		secretBoundary = "channel-requester"
 		riskClass = "external-read"

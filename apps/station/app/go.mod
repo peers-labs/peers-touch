@@ -13,6 +13,7 @@ replace (
 )
 
 require (
+	github.com/cloudflare/circl v1.6.4
 	github.com/cloudwego/hertz v0.9.5
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674

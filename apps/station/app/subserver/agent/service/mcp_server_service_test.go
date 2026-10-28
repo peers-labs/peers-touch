@@ -260,6 +260,110 @@ func TestMCPClientOwnerRejectsStationSecretsAndCrossActorReads(t *testing.T) {
 	}
 }
 
+// TestMCPUnreadyServerRegistersNothing pins the readiness gate: a failed
+// Station probe or a zero-tool client declaration must persist status but
+// never publish a bindable manifest or registry tool (AUD-13 regression).
+func TestMCPUnreadyServerRegistersNothing(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:mcp-unready?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&persistence.McpServer{},
+		&persistence.McpServerRevision{},
+		&persistence.McpServerCommand{},
+		&persistence.CapabilityManifest{},
+	); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+	registry := NewToolRegistryService(nil, nil)
+	authority := NewCapabilityAuthorityService(db)
+	service := NewMcpServerService(db, authority, registry)
+
+	mcpToolCount := func() int {
+		count := 0
+		for _, name := range registry.ToolNames() {
+			if strings.HasPrefix(name, "mcp_") {
+				count++
+			}
+		}
+		return count
+	}
+	if before := mcpToolCount(); before != 0 {
+		t.Fatalf("fresh registry already exposes %d mcp_ tools", before)
+	}
+
+	failedProbe, err := service.Upsert(
+		context.Background(),
+		"ptid:person:mcp-unready",
+		&model.UpsertMcpServerRequest{
+			Server: &model.McpServer{
+				Name:           "broken-stdio",
+				Transport:      model.McpTransport_MCP_TRANSPORT_STDIO,
+				ExecutionOwner: model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
+				Command:        "pt-mcp-fixture-missing-binary",
+				Enabled:        true,
+			},
+			IdempotencyKey: "broken-stdio-create",
+		},
+	)
+	if err != nil {
+		t.Fatalf("upsert failing Station MCP server: %v", err)
+	}
+	if failedProbe.GetServer().GetStatus() != model.McpServerStatus_MCP_SERVER_STATUS_FAILED {
+		t.Fatalf("status = %s, want FAILED", failedProbe.GetServer().GetStatus())
+	}
+	if len(failedProbe.GetServer().GetTools()) != 0 || len(failedProbe.GetManifests()) != 0 {
+		t.Fatalf("failed probe projected tools=%d manifests=%d, want 0/0",
+			len(failedProbe.GetServer().GetTools()), len(failedProbe.GetManifests()))
+	}
+
+	zeroToolClient, err := service.Upsert(
+		context.Background(),
+		"ptid:person:mcp-unready",
+		&model.UpsertMcpServerRequest{
+			Server: &model.McpServer{
+				Name:           "client-no-tools",
+				Transport:      model.McpTransport_MCP_TRANSPORT_STDIO,
+				ExecutionOwner: model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY,
+				Command:        "pt-client-mcp",
+				Enabled:        true,
+			},
+			IdempotencyKey: "client-no-tools-create",
+		},
+	)
+	if err != nil {
+		t.Fatalf("upsert zero-tool client MCP server: %v", err)
+	}
+	if zeroToolClient.GetServer().GetStatus() == model.McpServerStatus_MCP_SERVER_STATUS_READY {
+		t.Fatal("zero-tool client server must not reach READY")
+	}
+	if len(zeroToolClient.GetManifests()) != 0 {
+		t.Fatalf("zero-tool client projected %d manifests, want 0", len(zeroToolClient.GetManifests()))
+	}
+
+	var manifestCount int64
+	if err := db.Model(&persistence.CapabilityManifest{}).
+		Where("owner_ptid = ?", "ptid:person:mcp-unready").
+		Count(&manifestCount).Error; err != nil {
+		t.Fatalf("count manifests: %v", err)
+	}
+	if manifestCount != 0 {
+		t.Fatalf("persisted %d manifests for an actor with no ready server", manifestCount)
+	}
+	if mcpToolCount() != 0 {
+		t.Fatal("unready servers registered mcp_ tools in the dispatch registry")
+	}
+
+	// Restart projection reuses the same readiness gate.
+	if err := service.RestoreRegistry(context.Background()); err != nil {
+		t.Fatalf("restore registry: %v", err)
+	}
+	if mcpToolCount() != 0 {
+		t.Fatal("registry restore bound tools from an unready MCP server")
+	}
+}
+
 func writeStationMcpFixture(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "mcp_fixture.py")

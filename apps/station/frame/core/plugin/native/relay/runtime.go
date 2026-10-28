@@ -12,8 +12,11 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	relayv2 "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay"
 	nativeFederation "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
+	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
 	"gorm.io/gorm"
 )
+
+var _ ConnectionMaterialIssuer = (*Runtime)(nil)
 
 type Runtime struct {
 	config      RuntimeConfig
@@ -260,6 +263,20 @@ func (r *Runtime) IssueConnectionMaterial(
 		return nil, ErrConnectionMaterialUnavailable
 	}
 	return r.control.IssueConnectionMaterial(ctx, request)
+}
+
+func (r *Runtime) IssueConnectionBundle(ctx context.Context, request ConnectionMaterialRequest, limit int) ([]*ConnectionMaterial, error) {
+	if r == nil || r.control == nil {
+		return nil, ErrConnectionMaterialUnavailable
+	}
+	return r.control.IssueConnectionBundle(ctx, request, limit)
+}
+
+func (r *Runtime) PublishBootstrapBlob(ctx context.Context, request *peerpb.PublishBootstrapBlobRequest) (*peerpb.PublishBootstrapBlobResponse, error) {
+	if r == nil || r.control == nil {
+		return nil, ErrConnectionMaterialUnavailable
+	}
+	return r.control.PublishBootstrapBlob(ctx, request)
 }
 
 func (r *Runtime) Start(ctx context.Context) error {

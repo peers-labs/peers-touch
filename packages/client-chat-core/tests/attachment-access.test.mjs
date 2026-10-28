@@ -5,9 +5,9 @@ import { AttachmentByteReader } from '../dist/attachmentByteReader.js';
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 function deferred() {
-  let resolve;
-  const promise = new Promise((done) => { resolve = done; });
-  return { promise, resolve };
+  let resolve, reject;
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }
 function fixture(t) {
   const reads = [], releases = [], actions = [], cancels = [];
@@ -22,12 +22,95 @@ function fixture(t) {
     action: async (...args) => { actions.push(args); return 'completed'; },
     handle: (projection) => projection.handle ?? '',
     pending: (projection) => projection.state === 'pending',
+    pendingError: (error) => error === 'FILE_PROJECTION_UNAVAILABLE',
   };
   const controller = new ChatAttachmentAccessController(port);
   controller.setScope('alice', 'alice');
   t.after(() => controller.setScope(null));
   return { controller, port, reads, releases, actions, cancels };
 }
+
+test('early thumbnails wait for the private projection and preserve download admission', async (t) => {
+  const f = fixture(t);
+  const stop = f.controller.observe('image', () => {}, true);
+  await flush();
+  f.reads[0].result.reject('FILE_PROJECTION_UNAVAILABLE');
+  await flush();
+  assert.deepEqual(f.controller.snapshot('image'), { projection: null, loading: true, error: false });
+  f.controller.refreshPending();
+  f.controller.refreshPending();
+  await flush();
+  assert.equal(f.reads.length, 2);
+  assert.equal(f.reads[1].start, true);
+  f.reads[1].result.resolve({ state: 'pending' });
+  await flush();
+  f.controller.refreshPending();
+  await flush();
+  assert.equal(f.reads[2].start, false);
+  f.reads[2].result.resolve({ state: 'ready', handle: 'image-grant' });
+  await flush();
+  f.controller.open('image');
+  assert.equal(f.controller.snapshot('image').projection.handle, 'image-grant');
+  assert.equal(f.controller.snapshot('image').error, false);
+  assert.equal(f.actions.length, 0);
+  stop();
+});
+
+test('missing projection reconciliation expires without extending its acquisition budget', async (t) => {
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const f = fixture(t);
+  f.controller.open('missing');
+  await flush();
+  f.reads[0].result.reject('FILE_PROJECTION_UNAVAILABLE');
+  await flush();
+  now += 4 * 60_000;
+  f.controller.refreshPending();
+  await flush();
+  f.reads[1].result.reject('FILE_PROJECTION_UNAVAILABLE');
+  await flush();
+  now += 2 * 60_000;
+  f.controller.refreshPending();
+  await flush();
+  assert.equal(f.reads.length, 2);
+  assert.deepEqual(f.controller.snapshot('missing'), { projection: null, loading: false, error: true });
+});
+
+test('closing before projection commit stops acquisition and scope replacement fences old failures', async (t) => {
+  const f = fixture(t);
+  f.controller.open('image');
+  await flush();
+  f.reads[0].result.reject('FILE_PROJECTION_UNAVAILABLE');
+  await flush();
+  f.controller.close();
+  f.controller.refreshPending();
+  await flush();
+  assert.equal(f.reads.length, 1);
+  f.controller.open('image');
+  await flush();
+  f.controller.setScope('bob', 'bob');
+  f.reads[1].result.reject('FILE_PROJECTION_UNAVAILABLE');
+  await flush();
+  f.controller.refreshPending();
+  await flush();
+  assert.equal(f.reads.length, 2);
+  assert.equal(f.controller.selectedId(), null);
+});
+
+test('authority and unclassified failures never enter projection acquisition retry', async (t) => {
+  const f = fixture(t);
+  for (const error of ['FILE_ACCESS_STALE', 'FILE_SCOPE_UNAVAILABLE', 'FILE_INTEGRITY_FAILED', 'network failed']) {
+    f.controller.open(error);
+    await flush();
+    f.reads.at(-1).result.reject(error);
+    await flush();
+    const count = f.reads.length;
+    f.controller.refreshPending();
+    await flush();
+    assert.equal(f.reads.length, count);
+    assert.equal(f.controller.snapshot(error).error, true);
+  }
+});
 
 test('deduplicates selection, observations and pending refresh without dispatching an OS action', async (t) => {
   const f = fixture(t);

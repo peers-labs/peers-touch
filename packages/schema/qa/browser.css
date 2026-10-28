@@ -1,0 +1,12 @@
+body { margin: 0; background: #f4f6f8; color: #243b53; font: 15px system-ui, sans-serif; }
+main { max-width: 960px; padding: 32px; margin: auto; }
+h1 { font-size: 24px; margin: 0 0 12px; }
+p { line-height: 1.5; }
+.controls { display: flex; gap: 12px; flex-wrap: wrap; margin-block: 24px; }
+button { border: 1px solid #c7d2dd; background: white; color: inherit; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
+button:focus-visible { outline: 2px solid #375a7f; outline-offset: 2px; }
+.preview { max-width: calc(100% - 32px); background: white; padding: 16px; border-radius: 8px; box-sizing: content-box; }
+output { display: block; margin-top: 24px; font-weight: 600; }
+pre { overflow: auto; font-size: 12px; }
+.pt-channel-scan { display: flex; flex-direction: column; align-items: center; margin-top: 24px; }
+.pt-channel-qr { padding: 16px; background: white; border-radius: 8px; }

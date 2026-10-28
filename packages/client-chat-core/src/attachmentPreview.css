@@ -16,49 +16,133 @@
   min-width: 0;
   min-height: 0;
 }
-.chat-preview-navigation {
+
+/* One quiet WeChat/Quick Look style toolbar: pagination and zoom form a
+   single centered control group; the optional sheet selector anchors to
+   the leading edge. No second row, no stretched empty middle. */
+.chat-preview-toolbar {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  flex-wrap: wrap;
-  padding: 8px 12px;
+  height: 40px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--chat-preview-border, #e5e5e5);
   background: var(--chat-preview-surface, white);
-  border-bottom: 1px solid var(--chat-preview-border, #dedede);
 }
-.chat-preview-navigation [role="status"] {
-  min-width: 9ch;
-  text-align: center;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+.chat-preview-toolbar-spacer {
+  display: none;
 }
-.chat-preview-navigation button, .chat-preview-navigation select {
-  min-height: var(--chat-preview-control-size, 32px);
-  padding: 4px 10px;
-  border: 1px solid var(--chat-preview-border, #dedede);
-  border-radius: 6px;
-  background: var(--chat-preview-surface, white);
+.chat-preview-toolbar-leading,
+.chat-preview-toolbar-trailing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.chat-preview-toolbar-leading {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: calc(100% - 16px);
+}
+.chat-preview-toolbar-trailing {
+  flex: 0 0 auto;
+}
+.chat-preview-pager {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.chat-preview-pager-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--chat-preview-border, #e5e5e5);
+}
+.chat-preview-toolbar-leading select {
+  max-width: 160px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
   color: var(--chat-preview-text, #171717);
   font: inherit;
   font-size: 12px;
-  max-width: 100%;
+  cursor: pointer;
+}
+.chat-preview-toolbar-leading select:hover {
+  background: var(--chat-preview-hover, #f0f0f0);
+}
+.chat-preview-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--chat-preview-text, #171717);
   cursor: pointer;
   touch-action: manipulation;
 }
-.chat-preview-navigation button:hover:not(:disabled),
-.chat-preview-navigation select:hover {
+.chat-preview-icon:hover:not(:disabled) {
   background: var(--chat-preview-hover, #f0f0f0);
 }
-.chat-preview-navigation :focus-visible {
+.chat-preview-icon:focus-visible {
   outline: 2px solid var(--chat-preview-accent, #1677ff);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
-.chat-preview-navigation button:disabled {
-  color: var(--chat-preview-secondary, #737373);
-  opacity: .55;
+.chat-preview-icon:disabled {
+  color: var(--chat-preview-secondary, #9a9a9a);
   cursor: default;
 }
+.chat-preview-page-status {
+  min-width: 44px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  color: var(--chat-preview-text, #171717);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+.chat-preview-column-status {
+  min-width: 56px;
+}
+.chat-preview-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* Hairline between the pagination cluster and the zoom cluster so the
+   single centered group reads as pagination | view actions. */
+.chat-preview-zoom::before {
+  content: "";
+  width: 1px;
+  height: 16px;
+  margin: 0 6px 0 0;
+  background: var(--chat-preview-border, #e5e5e5);
+}
+.chat-preview-zoom-button[aria-pressed="true"] {
+  background: var(--chat-preview-hover, #ececec);
+  color: var(--chat-preview-accent, #1677ff);
+}
+.chat-preview-toolbar[aria-busy="true"] .chat-preview-icon,
+.chat-preview-toolbar[aria-busy="true"] .chat-preview-page-status {
+  opacity: .55;
+}
+
 .chat-pdf-canvas-scroll, .chat-office-content, .chat-text-preview pre {
   flex: 1 1 0;
   min-height: 0;

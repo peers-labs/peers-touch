@@ -104,6 +104,9 @@ func (s *SubServer) Start(context.Context, ...option.Option) error {
 }
 
 func (s *SubServer) Stop(context.Context) error {
+	if s.svc != nil {
+		s.svc.ClearBootstrapBlobs()
+	}
 	s.status = server.StatusStopped
 	return nil
 }

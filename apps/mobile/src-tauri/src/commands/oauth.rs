@@ -92,12 +92,30 @@ pub async fn oauth_cancel(
 }
 
 #[tauri::command]
-pub async fn oauth_logout_purge(
+pub async fn oauth_logout_purge<R: Runtime>(
+    app: AppHandle<R>,
     coordinator: State<'_, OAuthCoordinator>,
     storage: State<'_, SecureStorage>,
     input: Option<OAuthScopeIntent>,
 ) -> MobileResult<OAuthPurgeProjection> {
-    coordinator.logout_purge(&storage, input).await
+    use tauri::Manager;
+    app.state::<crate::runtime::device_link::MobileDeviceLinkRuntime>().invalidate();
+    let camera_cleanup = crate::platform::qr_scanner::cancel(&app).await;
+    let cleanup = app.clone();
+    // Cancellation preserves its retry record on a transient Station failure.
+    // The Session owner below still purges and reports unconfirmed revocation.
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        cleanup.state::<crate::runtime::device_link::MobileDeviceLinkRuntime>().cancel(
+            &cleanup.state::<SecureStorage>(), &cleanup.state::<OAuthCoordinator>(),
+        )
+    }).await;
+    let result = coordinator.logout_purge(&storage, input).await;
+    if camera_cleanup.is_err() {
+        let _ = crate::platform::native_events::emit_native_event_error(
+            &app, "device-link-camera-cleanup", "Camera cleanup failed",
+        );
+    }
+    result
 }
 
 #[tauri::command]

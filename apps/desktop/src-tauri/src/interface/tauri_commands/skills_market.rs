@@ -6,10 +6,20 @@ use crate::contracts::{
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
+use serde::Deserialize;
 use std::sync::Arc;
 use tauri::{State, Window};
 
 use crate::application::skills_market as application_skills_market;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedSkillResourceInput {
+    pub skill_id: String,
+    pub version: i64,
+    pub path: String,
+    pub content_hash: Option<String>,
+}
 
 fn token_or_unauthorized(
     state: &State<'_, Arc<AppState>>,
@@ -68,6 +78,16 @@ pub fn skills_import_zip(
 #[tauri::command]
 pub fn skills_validate_zip(input: SkillImportZipInput) -> AppResult<StubPayload> {
     application_skills_market::skills_validate_zip(input)
+}
+
+#[tauri::command]
+pub fn skills_managed_resource_read(input: ManagedSkillResourceInput) -> AppResult<StubPayload> {
+    application_skills_market::skills_managed_resource_read(
+        input.skill_id,
+        input.version,
+        input.path,
+        input.content_hash,
+    )
 }
 
 #[tauri::command]

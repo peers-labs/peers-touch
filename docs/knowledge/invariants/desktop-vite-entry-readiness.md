@@ -26,6 +26,11 @@ The Vite dev server MUST send `Cache-Control: no-store` for every runtime mode.
 WebKit otherwise retains transformed module responses across Vite restarts and
 can reject a new entry graph even when every current HTTP request succeeds.
 
+Lynx runtime JS/CSS assets MUST remain available when dependencies resolve
+outside the workspace through package-manager links. Vite may add the exact
+resolved SDK static directory to its serving allowlist; it MUST NOT disable
+filesystem restrictions or allow an arbitrary external directory.
+
 ## Why this is non-negotiable
 
 Vite can successfully transform `/src/main.tsx` before its transitive imports

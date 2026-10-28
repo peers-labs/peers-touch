@@ -69,13 +69,28 @@ def finding(*, blocking: bool) -> dict[str, object]:
     }
 
 
+SIGNAL = "STRUCT-SIGNAL-FILE-LINES@src/service.ts"
+
+
+def disposition_finding() -> dict[str, str]:
+    return {
+        "signal": SIGNAL,
+        "resolution": "finding",
+        "findingId": "structure-owner",
+        "rationale": "",
+    }
+
+
 class DecisionSchemaTests(unittest.TestCase):
     def test_derives_verdict_and_primary_rule_sets(self) -> None:
         record = decision.build_decision(
-            {"findings": [finding(blocking=True)]},
+            {
+                "findings": [finding(blocking=True)],
+                "signalDispositions": [disposition_finding()],
+            },
             target=TARGET,
             rubric_digest=RUBRIC_HASH,
-            signals=["STRUCT-SIGNAL-FILE-LINES@src/service.ts"],
+            signals=[SIGNAL],
         )
 
         self.assertEqual(record["verdict"], "REFACTOR_REQUIRED")
@@ -96,7 +111,7 @@ class DecisionSchemaTests(unittest.TestCase):
 
     def test_rejects_stale_target(self) -> None:
         record = decision.build_decision(
-            {"findings": []},
+            {"findings": [], "signalDispositions": []},
             target=TARGET,
             rubric_digest=RUBRIC_HASH,
         )
@@ -120,7 +135,7 @@ class DecisionSchemaTests(unittest.TestCase):
 
     def test_rejects_inconsistent_derived_fields(self) -> None:
         record = decision.build_decision(
-            {"findings": []},
+            {"findings": [], "signalDispositions": []},
             target=TARGET,
             rubric_digest=RUBRIC_HASH,
         )
@@ -136,25 +151,66 @@ class DecisionSchemaTests(unittest.TestCase):
                 expected_rubric_hash=RUBRIC_HASH,
             )
 
-    def test_rejects_unreviewed_advisory_signals(self) -> None:
+    def test_rejects_undispositioned_advisory_signals(self) -> None:
         record = decision.build_decision(
-            {"findings": []},
+            {"findings": [], "signalDispositions": []},
             target=TARGET,
             rubric_digest=RUBRIC_HASH,
         )
 
         with self.assertRaisesRegex(
             decision.DecisionInvalid,
-            "does not account for every current advisory signal",
+            "every advisory signal needs an explicit disposition",
         ):
             decision.validate_decision(
                 record,
                 expected_target=TARGET,
                 expected_rubric_hash=RUBRIC_HASH,
-                expected_signal_keys=[
-                    "STRUCT-SIGNAL-FILE-LINES@src/service.ts"
-                ],
+                expected_signal_keys=[SIGNAL],
             )
+
+    def test_rejects_advisory_disposition_without_rationale_or_owner(self) -> None:
+        with self.assertRaisesRegex(
+            decision.DecisionInvalid,
+            "accepted-advisory requires a rationale",
+        ):
+            decision.build_decision(
+                {
+                    "findings": [],
+                    "signalDispositions": [{
+                        "signal": SIGNAL,
+                        "resolution": "accepted-advisory",
+                        "findingId": "",
+                        "rationale": "",
+                    }],
+                },
+                target=TARGET,
+                rubric_digest=RUBRIC_HASH,
+                signals=[SIGNAL],
+            )
+
+    def test_accepts_advisory_signal_with_rationale(self) -> None:
+        record = decision.build_decision(
+            {
+                "findings": [],
+                "signalDispositions": [{
+                    "signal": SIGNAL,
+                    "resolution": "accepted-advisory",
+                    "findingId": "",
+                    "rationale": "Large file predates the change and groups one owner.",
+                }],
+            },
+            target=TARGET,
+            rubric_digest=RUBRIC_HASH,
+            signals=[SIGNAL],
+        )
+        self.assertEqual(record["verdict"], "PASS")
+        decision.validate_decision(
+            record,
+            expected_target=TARGET,
+            expected_rubric_hash=RUBRIC_HASH,
+            expected_signal_keys=[SIGNAL],
+        )
 
     def test_rejects_findings_outside_reviewed_files(self) -> None:
         invalid = finding(blocking=True)
@@ -169,7 +225,7 @@ class DecisionSchemaTests(unittest.TestCase):
             "points outside reviewedFiles",
         ):
             decision.build_decision(
-                {"findings": [invalid]},
+                {"findings": [invalid], "signalDispositions": []},
                 target=TARGET,
                 rubric_digest=RUBRIC_HASH,
             )
@@ -188,7 +244,7 @@ class DecisionSchemaTests(unittest.TestCase):
         }
 
         record = decision.build_decision(
-            {"findings": []},
+            {"findings": [], "signalDispositions": []},
             target=target,
             rubric_digest=RUBRIC_HASH,
         )
@@ -208,7 +264,7 @@ class DecisionSchemaTests(unittest.TestCase):
             "decision input must contain exactly",
         ):
             decision.build_decision(
-                {"findings": [], "signalsReviewed": []},
+                {"findings": [], "signalDispositions": [], "signalsReviewed": []},
                 target=TARGET,
                 rubric_digest=RUBRIC_HASH,
             )
@@ -400,7 +456,7 @@ class DecisionCollectionTests(unittest.TestCase):
         paths = ["src/service.ts"]
         target = decision.review_target(REPO_ROOT, "HEAD", paths)
         record = decision.build_decision(
-            {"findings": []},
+            {"findings": [], "signalDispositions": []},
             target=target,
             rubric_digest=decision.rubric_hash(REPO_ROOT),
         )
@@ -420,7 +476,7 @@ class DecisionCollectionTests(unittest.TestCase):
         paths = ["src/service.ts"]
         target = decision.review_target(REPO_ROOT, "HEAD", paths)
         record = decision.build_decision(
-            {"findings": []},
+            {"findings": [], "signalDispositions": []},
             target=target,
             rubric_digest=f"sha256:{'b' * 64}",
         )

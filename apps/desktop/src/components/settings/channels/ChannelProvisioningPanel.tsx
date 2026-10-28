@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Modal } from '@lobehub/ui';
 import { Tabs } from 'antd';
-import { QRCodeSVG } from 'qrcode.react';
+import { Schema } from '@peers-touch/schema';
 import {
   ArrowLeft,
   Check,
@@ -269,7 +269,12 @@ export function ChannelProvisioningPanel({
         <div className="pt-channel-scan">
           {!ready && !failed ? (
             <div className="pt-channel-qr">
-              <QRCodeSVG value={start.qrPayload} size={184} level="M" />
+              <Schema.QRCode
+                content={{ kind: 'external-protocol', owner: 'channels.provider-provisioning', value: start.qrPayload }}
+                constraints={{ size: 320, style: 'classic', errorCorrection: 'Q' }}
+                title={t('channels.v2.provision.scan')}
+                errorLabel={t('channels.schema.qrUnavailable')}
+              />
             </div>
           ) : ready ? (
             <span className="pt-channel-result-mark is-ready"><Check size={28} /></span>

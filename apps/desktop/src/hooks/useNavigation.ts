@@ -3,7 +3,6 @@ import { useChatStore } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { EVENT, eventBus } from '../kernel/events';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
-import type { ParsedDeepLink } from '../utils/deeplink';
 import {
   DEFAULT_READY_PAGE,
   type HashRouter,
@@ -46,7 +45,7 @@ export function useNavigation(router: HashRouter): Navigation {
 
   useEffect(() => {
     const unsubscribe = eventBus.subscribe(EVENT.NAVIGATION_REQUESTED, (parsed) => {
-      const nav = parsed as ParsedDeepLink;
+      const nav = parsed;
       if (!nav?.resource) return;
       switch (nav.resource) {
         case 'cron':

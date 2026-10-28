@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
-import { Button, Modal } from '@lobehub/ui';
+import { Modal } from '@lobehub/ui';
 import { useTranslation } from 'react-i18next';
-import { theme } from 'antd';
+import { theme, Tooltip } from 'antd';
+import {
+  Download,
+  ExternalLink,
+  Eye,
+  LoaderCircle,
+  RefreshCw,
+  XCircle,
+} from 'lucide-react';
 import {
   chatAttachmentFileType,
   chatFilePreviewKind,
@@ -31,7 +39,7 @@ function AttachmentDetail({ id }: { id: string }) {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const { projection, error, src } = useAttachmentAccess({ cid: id });
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<AttachmentFileAction | null>(null);
   const [feedback, setFeedback] = useState('');
   const metadata = messagingAttachmentAccess.selectedMetadata();
   const filename = projection?.filename || metadata?.filename || t('chat.attachment.unnamed');
@@ -44,14 +52,11 @@ function AttachmentDetail({ id }: { id: string }) {
     filename, mimeType, size,
   });
   const fileType = chatAttachmentFileType({ filename, mimeType }) || t('chat.attachment.file');
-  const total = Number(projection?.transferTotalBytes ?? 0);
-  const transferred = Number(projection?.transferredBytes ?? 0);
-  const stateKey = error || state === AttachmentAccessState.FAILED ? 'failed'
-    : state === AttachmentAccessState.CANCELLED ? 'cancelled'
-      : state === AttachmentAccessState.VERIFYING ? 'verifying'
-        : pending ? 'downloading' : ready ? 'ready' : 'preparing';
-  const action = async (intent: AttachmentFileAction) => {
-    setBusy(true);
+  const failed = error || state === AttachmentAccessState.FAILED;
+  const cancelled = state === AttachmentAccessState.CANCELLED;
+
+  const run = async (intent: AttachmentFileAction) => {
+    setBusy(intent);
     setFeedback('');
     try {
       const result = await messagingAttachmentAccess.perform(id, intent);
@@ -63,26 +68,103 @@ function AttachmentDetail({ id }: { id: string }) {
     } catch {
       setFeedback('actionFailed');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
+
+  const canPreview = ready && ['office', 'pdf', 'image'].includes(kind);
+  const header = (
+    <div className="chat-file-header">
+      <div className="chat-file-heading">
+        <span className="chat-file-title" title={filename}>{filename}</span>
+        <span className="chat-file-subtitle">
+          {fileType}{typeof size === 'number' && Number.isFinite(size) ? ` · ${formatChatAttachmentSize(size)}` : ''}
+        </span>
+      </div>
+      <div className="chat-file-header-actions">
+        {pending ? (
+          <span className="chat-file-progress-status">
+            <LoaderCircle size={15} className="chat-file-spin" aria-hidden="true" />
+            <DownloadProgress projection={projection} />
+          </span>
+        ) : null}
+        <span className="chat-file-state" data-chat-file-state={
+          error || state === AttachmentAccessState.FAILED ? 'failed'
+            : state === AttachmentAccessState.CANCELLED ? 'cancelled'
+              : state === AttachmentAccessState.VERIFYING ? 'verifying'
+                : pending ? 'downloading' : ready ? 'ready' : 'preparing'
+        }>
+          {t(`chat.attachment.${
+            error || state === AttachmentAccessState.FAILED ? 'failed'
+              : cancelled ? 'cancelled'
+                : state === AttachmentAccessState.VERIFYING ? 'verifying'
+                  : pending ? 'downloading' : ready ? 'ready' : 'preparing'
+          }`)}
+        </span>
+        {pending ? (
+          <HeaderIcon
+            action="cancel"
+            label={t('chat.attachment.cancelDownload')}
+            onClick={() => void messagingAttachmentAccess.cancel(id)}
+          >
+            <XCircle size={17} />
+          </HeaderIcon>
+        ) : null}
+        {failed || projection?.retryable || cancelled ? (
+          <HeaderIcon
+            action="retry"
+            label={t('chat.attachment.retry')}
+            disabled={busy !== null}
+            onClick={() => void messagingAttachmentAccess.retry(id)}
+          >
+            <RefreshCw size={17} />
+          </HeaderIcon>
+        ) : null}
+        {canPreview ? (
+          <HeaderIcon
+            action="preview"
+            label={t('chat.attachment.systemPreview')}
+            disabled={busy !== null}
+            onClick={() => void run(AttachmentFileAction.PREVIEW)}
+          >
+            <Eye size={17} />
+          </HeaderIcon>
+        ) : null}
+        <HeaderIcon
+          action="open-external"
+          label={t('chat.attachment.openExternal')}
+          disabled={!ready || busy !== null}
+          onClick={() => void run(AttachmentFileAction.OPEN_EXTERNAL)}
+        >
+          <ExternalLink size={17} />
+        </HeaderIcon>
+        <HeaderIcon
+          action="save-copy"
+          label={t('chat.attachment.saveCopy')}
+          primary
+          disabled={!ready || busy !== null}
+          onClick={() => void run(AttachmentFileAction.SAVE_COPY)}
+        >
+          {busy === AttachmentFileAction.SAVE_COPY
+            ? <LoaderCircle size={17} className="chat-file-spin" />
+            : <Download size={17} />}
+        </HeaderIcon>
+      </div>
+    </div>
+  );
+
   return (
     <Modal
       open
-      title={<span className="chat-file-title" title={filename}>{filename}</span>}
+      title={header}
       className="chat-file-modal"
       width={1040}
       centered
       styles={{
-        body: { maxHeight: 'none', overflow: 'hidden', padding: '0 16px 16px' },
-        header: { justifyContent: 'flex-start' },
-      }}
-      footer={null}
-      destroyOnHidden
-      onCancel={messagingAttachmentAccess.close}
-    >
-      <div className="chat-file-detail" data-chat-file-detail={id}
-        style={{
+        // Theme tokens are defined on the portal root so BOTH the header
+        // action buttons and the body toolbar inherit them (the header is
+        // rendered outside the body subtree by the Modal).
+        root: {
           '--chat-preview-text': token.colorText,
           '--chat-preview-secondary': token.colorTextSecondary,
           '--chat-preview-border': token.colorBorderSecondary,
@@ -90,40 +172,75 @@ function AttachmentDetail({ id }: { id: string }) {
           '--chat-preview-canvas': token.colorFillQuaternary,
           '--chat-preview-hover': token.colorFillTertiary,
           '--chat-preview-accent': token.colorPrimary,
-        } as CSSProperties}
+        } as CSSProperties,
+        body: { maxHeight: 'none', overflow: 'hidden', padding: '0 16px 16px' },
+        header: { justifyContent: 'flex-start', padding: '10px 12px 8px' },
+      }}
+      footer={null}
+      destroyOnHidden
+      onCancel={messagingAttachmentAccess.close}
+    >
+      <div className="chat-file-detail" data-chat-file-detail={id}
         data-chat-file-name={filename} data-chat-file-type={mimeType || ''}
         data-chat-file-size={String(size ?? '')}>
-        <div className="chat-file-metadata">
-          <span title={mimeType}>{fileType}</span>
-          <span>{formatChatAttachmentSize(size)}</span>
-          <span role="status" data-chat-file-state={stateKey}>{t(`chat.attachment.${stateKey}`)}</span>
-        </div>
-        {projection?.errorCode ? <div role="alert">{t(`chat.attachment.transferError.${projection.errorCode}`)}</div> : null}
-        {pending && total > 0 ? (
-          <div className="chat-file-transfer">
-            <progress value={transferred} max={total} aria-label={t('chat.attachment.downloading')} />
-            <span>{formatChatAttachmentSize(transferred)} / {formatChatAttachmentSize(total)}</span>
-          </div>
-        ) : null}
+        {projection?.errorCode ? <div className="chat-file-error" role="alert">{t(`chat.attachment.transferError.${projection.errorCode}`)}</div> : null}
+        {pending ? <FileTransferProgress projection={projection} /> : null}
         <div className="chat-file-preview">
           {ready && src ? (
             <AttachmentPreview url={src} kind={kind} size={Number(size ?? 0)} filename={filename} />
-          ) : <span>{t(`chat.attachment.${stateKey}`)}</span>}
+          ) : <span className="chat-file-placeholder"><LoaderCircle size={18} className="chat-file-spin" aria-hidden="true" />{t(`chat.attachment.${error ? 'failed' : 'preparing'}`)}</span>}
         </div>
-        <div className="chat-file-actions">
-          {pending ? <Button data-chat-file-action="cancel" onClick={() => void messagingAttachmentAccess.cancel(id)}>{t('chat.attachment.cancelDownload')}</Button> : null}
-          {error || projection?.retryable || state === AttachmentAccessState.CANCELLED ? (
-            <Button data-chat-file-action="retry" onClick={() => void messagingAttachmentAccess.retry(id)}>{t('chat.attachment.retry')}</Button>
-          ) : null}
-          {ready && ['office', 'pdf', 'image'].includes(kind) ? (
-            <Button data-chat-file-action="preview" disabled={busy} onClick={() => void action(AttachmentFileAction.PREVIEW)}>{t('chat.attachment.systemPreview')}</Button>
-          ) : null}
-          <Button data-chat-file-action="open-external" disabled={!ready || busy} onClick={() => void action(AttachmentFileAction.OPEN_EXTERNAL)}>{t('chat.attachment.openExternal')}</Button>
-          <Button data-chat-file-action="save-copy" type="primary" disabled={!ready || busy} onClick={() => void action(AttachmentFileAction.SAVE_COPY)}>{t('chat.attachment.saveCopy')}</Button>
-        </div>
-        {feedback ? <div role="status" data-chat-file-action-result={feedback}>{t(`chat.attachment.${feedback}`)}</div> : null}
+        {feedback ? <div className="chat-file-feedback" role="status" data-chat-file-action-result={feedback}>{t(`chat.attachment.${feedback}`)}</div> : null}
       </div>
     </Modal>
+  );
+}
+
+function FileTransferProgress({ projection }: { projection: ReturnType<typeof useAttachmentAccess>['projection'] }) {
+  const total = Number(projection?.transferTotalBytes ?? 0);
+  const transferred = Number(projection?.transferredBytes ?? 0);
+  return (
+    <div className="chat-file-transfer">
+      <progress value={transferred} max={total} aria-label="download" />
+    </div>
+  );
+}
+
+function DownloadProgress({ projection }: { projection: ReturnType<typeof useAttachmentAccess>['projection'] }) {
+  const total = Number(projection?.transferTotalBytes ?? 0);
+  const transferred = Number(projection?.transferredBytes ?? 0);
+  if (total <= 0) return null;
+  return (
+    <span className="chat-file-progress-numbers" title={`${formatChatAttachmentSize(transferred)} / ${formatChatAttachmentSize(total)}`}>
+      {Math.round((transferred / total) * 100)}%
+    </span>
+  );
+}
+
+function HeaderIcon({
+  label, onClick, disabled, primary, action, children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  action?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip title={label}>
+      <button
+        type="button"
+        className={`chat-file-header-icon${primary ? ' chat-file-header-icon-primary' : ''}`}
+        aria-label={label}
+        title={label}
+        disabled={disabled}
+        data-chat-file-action={action}
+        onClick={onClick}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 

@@ -24,6 +24,10 @@ Rules:
 
 ## 3. Interaction States
 
+These are component interaction states, not the Journey-visible `StateKind`
+taxonomy in `interaction-design-methodology.md`. A component state can refine a
+Journey-visible state but cannot replace or rename it.
+
 Every actionable component must define:
 
 - Normal.

@@ -2431,6 +2431,253 @@ func (x *ResolveCredentialResponse) GetCredential() *CredentialResolveInfo {
 	return nil
 }
 
+// Actor-scoped explicit default provider/model. Unlike the per-provider
+// runtime_config.default_model, this selects which provider supplies new
+// Topics. Historical turns keep their recorded provider attribution.
+type RuntimeDefault struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ModelId       string                 `protobuf:"bytes,2,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
+	Revision      int64                  `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RuntimeDefault) Reset() {
+	*x = RuntimeDefault{}
+	mi := &file_domain_agent_provider_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RuntimeDefault) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RuntimeDefault) ProtoMessage() {}
+
+func (x *RuntimeDefault) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_provider_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RuntimeDefault.ProtoReflect.Descriptor instead.
+func (*RuntimeDefault) Descriptor() ([]byte, []int) {
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *RuntimeDefault) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *RuntimeDefault) GetModelId() string {
+	if x != nil {
+		return x.ModelId
+	}
+	return ""
+}
+
+func (x *RuntimeDefault) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+type GetRuntimeDefaultRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRuntimeDefaultRequest) Reset() {
+	*x = GetRuntimeDefaultRequest{}
+	mi := &file_domain_agent_provider_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRuntimeDefaultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRuntimeDefaultRequest) ProtoMessage() {}
+
+func (x *GetRuntimeDefaultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_provider_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRuntimeDefaultRequest.ProtoReflect.Descriptor instead.
+func (*GetRuntimeDefaultRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{40}
+}
+
+type GetRuntimeDefaultResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RuntimeDefault *RuntimeDefault        `protobuf:"bytes,1,opt,name=runtime_default,json=runtimeDefault,proto3" json:"runtime_default,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetRuntimeDefaultResponse) Reset() {
+	*x = GetRuntimeDefaultResponse{}
+	mi := &file_domain_agent_provider_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRuntimeDefaultResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRuntimeDefaultResponse) ProtoMessage() {}
+
+func (x *GetRuntimeDefaultResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_provider_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRuntimeDefaultResponse.ProtoReflect.Descriptor instead.
+func (*GetRuntimeDefaultResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *GetRuntimeDefaultResponse) GetRuntimeDefault() *RuntimeDefault {
+	if x != nil {
+		return x.RuntimeDefault
+	}
+	return nil
+}
+
+type SetRuntimeDefaultRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId       string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ModelId          string                 `protobuf:"bytes,2,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
+	ExpectedRevision int64                  `protobuf:"varint,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *SetRuntimeDefaultRequest) Reset() {
+	*x = SetRuntimeDefaultRequest{}
+	mi := &file_domain_agent_provider_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetRuntimeDefaultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetRuntimeDefaultRequest) ProtoMessage() {}
+
+func (x *SetRuntimeDefaultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_provider_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetRuntimeDefaultRequest.ProtoReflect.Descriptor instead.
+func (*SetRuntimeDefaultRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *SetRuntimeDefaultRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *SetRuntimeDefaultRequest) GetModelId() string {
+	if x != nil {
+		return x.ModelId
+	}
+	return ""
+}
+
+func (x *SetRuntimeDefaultRequest) GetExpectedRevision() int64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+type SetRuntimeDefaultResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RuntimeDefault *RuntimeDefault        `protobuf:"bytes,1,opt,name=runtime_default,json=runtimeDefault,proto3" json:"runtime_default,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SetRuntimeDefaultResponse) Reset() {
+	*x = SetRuntimeDefaultResponse{}
+	mi := &file_domain_agent_provider_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetRuntimeDefaultResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetRuntimeDefaultResponse) ProtoMessage() {}
+
+func (x *SetRuntimeDefaultResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_provider_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetRuntimeDefaultResponse.ProtoReflect.Descriptor instead.
+func (*SetRuntimeDefaultResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *SetRuntimeDefaultResponse) GetRuntimeDefault() *RuntimeDefault {
+	if x != nil {
+		return x.RuntimeDefault
+	}
+	return nil
+}
+
 var File_domain_agent_provider_proto protoreflect.FileDescriptor
 
 const file_domain_agent_provider_proto_rawDesc = "" +
@@ -2646,7 +2893,22 @@ const file_domain_agent_provider_proto_rawDesc = "" +
 	"\x19ResolveCredentialResponse\x12Q\n" +
 	"\n" +
 	"credential\x18\x01 \x01(\v21.peers_touch.model.agent.v1.CredentialResolveInfoR\n" +
-	"credentialBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"credential\"h\n" +
+	"\x0eRuntimeDefault\x12\x1f\n" +
+	"\vprovider_id\x18\x01 \x01(\tR\n" +
+	"providerId\x12\x19\n" +
+	"\bmodel_id\x18\x02 \x01(\tR\amodelId\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"\x1a\n" +
+	"\x18GetRuntimeDefaultRequest\"p\n" +
+	"\x19GetRuntimeDefaultResponse\x12S\n" +
+	"\x0fruntime_default\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.RuntimeDefaultR\x0eruntimeDefault\"\x83\x01\n" +
+	"\x18SetRuntimeDefaultRequest\x12\x1f\n" +
+	"\vprovider_id\x18\x01 \x01(\tR\n" +
+	"providerId\x12\x19\n" +
+	"\bmodel_id\x18\x02 \x01(\tR\amodelId\x12+\n" +
+	"\x11expected_revision\x18\x03 \x01(\x03R\x10expectedRevision\"p\n" +
+	"\x19SetRuntimeDefaultResponse\x12S\n" +
+	"\x0fruntime_default\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.RuntimeDefaultR\x0eruntimeDefaultBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_provider_proto_rawDescOnce sync.Once
@@ -2660,7 +2922,7 @@ func file_domain_agent_provider_proto_rawDescGZIP() []byte {
 	return file_domain_agent_provider_proto_rawDescData
 }
 
-var file_domain_agent_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_domain_agent_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
 var file_domain_agent_provider_proto_goTypes = []any{
 	(*ModelCapabilityConfig)(nil),          // 0: peers_touch.model.agent.v1.ModelCapabilityConfig
 	(*ProviderRuntimeConfig)(nil),          // 1: peers_touch.model.agent.v1.ProviderRuntimeConfig
@@ -2701,23 +2963,28 @@ var file_domain_agent_provider_proto_goTypes = []any{
 	(*GetCredentialStatusResponse)(nil),    // 36: peers_touch.model.agent.v1.GetCredentialStatusResponse
 	(*ResolveCredentialRequest)(nil),       // 37: peers_touch.model.agent.v1.ResolveCredentialRequest
 	(*ResolveCredentialResponse)(nil),      // 38: peers_touch.model.agent.v1.ResolveCredentialResponse
-	nil,                                    // 39: peers_touch.model.agent.v1.ModelCapabilityConfig.FlagsEntry
-	nil,                                    // 40: peers_touch.model.agent.v1.ProviderRuntimeConfig.EnvironmentEntry
-	(*timestamppb.Timestamp)(nil),          // 41: google.protobuf.Timestamp
+	(*RuntimeDefault)(nil),                 // 39: peers_touch.model.agent.v1.RuntimeDefault
+	(*GetRuntimeDefaultRequest)(nil),       // 40: peers_touch.model.agent.v1.GetRuntimeDefaultRequest
+	(*GetRuntimeDefaultResponse)(nil),      // 41: peers_touch.model.agent.v1.GetRuntimeDefaultResponse
+	(*SetRuntimeDefaultRequest)(nil),       // 42: peers_touch.model.agent.v1.SetRuntimeDefaultRequest
+	(*SetRuntimeDefaultResponse)(nil),      // 43: peers_touch.model.agent.v1.SetRuntimeDefaultResponse
+	nil,                                    // 44: peers_touch.model.agent.v1.ModelCapabilityConfig.FlagsEntry
+	nil,                                    // 45: peers_touch.model.agent.v1.ProviderRuntimeConfig.EnvironmentEntry
+	(*timestamppb.Timestamp)(nil),          // 46: google.protobuf.Timestamp
 }
 var file_domain_agent_provider_proto_depIdxs = []int32{
-	39, // 0: peers_touch.model.agent.v1.ModelCapabilityConfig.flags:type_name -> peers_touch.model.agent.v1.ModelCapabilityConfig.FlagsEntry
-	40, // 1: peers_touch.model.agent.v1.ProviderRuntimeConfig.environment:type_name -> peers_touch.model.agent.v1.ProviderRuntimeConfig.EnvironmentEntry
+	44, // 0: peers_touch.model.agent.v1.ModelCapabilityConfig.flags:type_name -> peers_touch.model.agent.v1.ModelCapabilityConfig.FlagsEntry
+	45, // 1: peers_touch.model.agent.v1.ProviderRuntimeConfig.environment:type_name -> peers_touch.model.agent.v1.ProviderRuntimeConfig.EnvironmentEntry
 	0,  // 2: peers_touch.model.agent.v1.ProviderModelInfo.capabilities:type_name -> peers_touch.model.agent.v1.ModelCapabilityConfig
 	3,  // 3: peers_touch.model.agent.v1.AgentProviderInfo.models:type_name -> peers_touch.model.agent.v1.ProviderModelInfo
 	1,  // 4: peers_touch.model.agent.v1.AgentProviderInfo.runtime_config:type_name -> peers_touch.model.agent.v1.ProviderRuntimeConfig
 	1,  // 5: peers_touch.model.agent.v1.AgentProviderInfo.default_runtime_config:type_name -> peers_touch.model.agent.v1.ProviderRuntimeConfig
 	2,  // 6: peers_touch.model.agent.v1.AgentProviderInfo.adapter_capabilities:type_name -> peers_touch.model.agent.v1.ProviderAdapterCapabilities
-	41, // 7: peers_touch.model.agent.v1.AgentModelInfo.created_at:type_name -> google.protobuf.Timestamp
-	41, // 8: peers_touch.model.agent.v1.AgentModelInfo.updated_at:type_name -> google.protobuf.Timestamp
+	46, // 7: peers_touch.model.agent.v1.AgentModelInfo.created_at:type_name -> google.protobuf.Timestamp
+	46, // 8: peers_touch.model.agent.v1.AgentModelInfo.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 9: peers_touch.model.agent.v1.AgentModelInfo.capabilities:type_name -> peers_touch.model.agent.v1.ModelCapabilityConfig
 	3,  // 10: peers_touch.model.agent.v1.DiscoverProviderModelsResponse.models:type_name -> peers_touch.model.agent.v1.ProviderModelInfo
-	41, // 11: peers_touch.model.agent.v1.DiscoverProviderModelsResponse.observed_at:type_name -> google.protobuf.Timestamp
+	46, // 11: peers_touch.model.agent.v1.DiscoverProviderModelsResponse.observed_at:type_name -> google.protobuf.Timestamp
 	4,  // 12: peers_touch.model.agent.v1.ListProvidersResponse.providers:type_name -> peers_touch.model.agent.v1.AgentProviderInfo
 	4,  // 13: peers_touch.model.agent.v1.GetProviderResponse.provider:type_name -> peers_touch.model.agent.v1.AgentProviderInfo
 	18, // 14: peers_touch.model.agent.v1.ListAvailableModelsResponse.models:type_name -> peers_touch.model.agent.v1.AvailableModelInfo
@@ -2733,11 +3000,13 @@ var file_domain_agent_provider_proto_depIdxs = []int32{
 	6,  // 24: peers_touch.model.agent.v1.SetCredentialResponse.status:type_name -> peers_touch.model.agent.v1.CredentialStatusInfo
 	6,  // 25: peers_touch.model.agent.v1.GetCredentialStatusResponse.status:type_name -> peers_touch.model.agent.v1.CredentialStatusInfo
 	7,  // 26: peers_touch.model.agent.v1.ResolveCredentialResponse.credential:type_name -> peers_touch.model.agent.v1.CredentialResolveInfo
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	39, // 27: peers_touch.model.agent.v1.GetRuntimeDefaultResponse.runtime_default:type_name -> peers_touch.model.agent.v1.RuntimeDefault
+	39, // 28: peers_touch.model.agent.v1.SetRuntimeDefaultResponse.runtime_default:type_name -> peers_touch.model.agent.v1.RuntimeDefault
+	29, // [29:29] is the sub-list for method output_type
+	29, // [29:29] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_provider_proto_init() }
@@ -2753,7 +3022,7 @@ func file_domain_agent_provider_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_provider_proto_rawDesc), len(file_domain_agent_provider_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   41,
+			NumMessages:   46,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

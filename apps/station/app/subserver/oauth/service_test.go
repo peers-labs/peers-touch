@@ -917,18 +917,26 @@ func TestOAuthAcknowledgeClearsEnvelopeAndActivatesPersistedSession(t *testing.T
 	assertPersistenceCounts(t, fixture.database, 1, 0)
 }
 
-func TestOAuthAcknowledgeReplacesOnlySameClientClass(t *testing.T) {
+func TestOAuthAcknowledgeReplacesOnlySameDevice(t *testing.T) {
 	fixture := newOAuthFixture(t, accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED)
 	now := time.Now().UTC().Truncate(time.Second)
 	existing := []session.SessionRecord{
 		{
 			SessionID: "desktop-existing",
 			UserID:    17, DeviceType: session.DeviceTypeDesktop,
+			StationPeerID: testStationPeerID, DeviceID: "desktop-installation",
 			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
 		},
 		{
 			SessionID: "mobile-existing",
 			UserID:    17, DeviceType: session.DeviceTypeMobile,
+			StationPeerID: testStationPeerID, DeviceID: testDeviceID,
+			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
+		},
+		{
+			SessionID: "mobile-peer",
+			UserID:    17, DeviceType: session.DeviceTypeMobile,
+			StationPeerID: testStationPeerID, DeviceID: "second-mobile-installation",
 			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
 		},
 	}
@@ -961,6 +969,13 @@ func TestOAuthAcknowledgeReplacesOnlySameClientClass(t *testing.T) {
 	}
 	if !mobile.Revoked || mobile.RevokedReason != "kicked" {
 		t.Fatalf("mobile OAuth acknowledgement did not replace Mobile: %#v", mobile)
+	}
+	var peerMobile session.SessionRecord
+	if err := fixture.database.Where("session_id = ?", "mobile-peer").First(&peerMobile).Error; err != nil {
+		t.Fatal(err)
+	}
+	if peerMobile.Revoked {
+		t.Fatal("OAuth acknowledgement revoked a different Mobile installation")
 	}
 	var activated session.SessionRecord
 	if err := fixture.database.

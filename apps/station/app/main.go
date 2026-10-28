@@ -16,6 +16,7 @@ import (
 	botsub "github.com/peers-labs/peers-touch/station/app/subserver/bot"
 	"github.com/peers-labs/peers-touch/station/app/subserver/clusterreadiness"
 	convsub "github.com/peers-labs/peers-touch/station/app/subserver/conversation"
+	devicelink "github.com/peers-labs/peers-touch/station/app/subserver/device_link"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	frontendtelemetry "github.com/peers-labs/peers-touch/station/app/subserver/frontend_telemetry"
 	keyexchange "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange"
@@ -93,6 +94,8 @@ func stationApplicationSubservers() []option.Option {
 		),
 		server.WithSubServer("events", events.NewEventsSubServer),
 		server.WithSubServer("conversation", convsub.NewConversationSubServer),
+		server.WithSubServer("device_link", devicelink.NewDeviceLinkSubServer),
+		server.WithClusterReadinessProbe("device_link", clusterreadiness.SharedPostgres("device_link")),
 		server.WithSubServer("presence", presence.NewPresenceSubServer),
 		server.WithClusterReadinessProbe(
 			"presence",

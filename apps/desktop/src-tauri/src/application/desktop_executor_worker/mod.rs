@@ -9,7 +9,9 @@ pub(crate) mod recovery_signer;
 pub(crate) mod resource_registry;
 pub(crate) mod station_transport;
 pub(crate) mod supervisor;
+pub(crate) mod workspace_grants;
 
+pub(crate) use resource_registry::LocalArtifact;
 pub use supervisor::CapabilityWorkerSupervisor;
 
 const CANVAS_READINESS_LOCALE_KEY: &str = "agent.errors.canvasSingleAgentNotReady";
@@ -33,6 +35,14 @@ pub fn start(_state: Arc<AppState>) {
             "desktop executor worker blocked by single-Agent readiness"
         );
     }
+}
+
+pub(crate) fn resolve_local_artifact(
+    actor_ptid: &str,
+    device_id: &str,
+    artifact_ref: &str,
+) -> Result<LocalArtifact, String> {
+    resource_registry::ResourceRegistry::open(actor_ptid, device_id)?.resolve_artifact(artifact_ref)
 }
 
 #[cfg(test)]

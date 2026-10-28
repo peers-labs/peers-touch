@@ -54,8 +54,8 @@ Desktop 与 Mobile 均为 `required`；Browser 不在本模块范围。
 6. 同一 Station 从直连切到 Relay 或反向切换时，用户账号与业务 scope 不变。
 7. 账号或 Station 身份变化时完整停止旧 runtime 并清空旧 projection。
 8. 登录后显示当前 Station 与 Federation context。
-9. 同一账号的 Desktop 与 Mobile 可同时使用；第二个 Desktop 或第二个 Mobile
-   登录后，旧同类端收到 `kicked` 并回到登录态，异类端保持可用。
+9. 同一账号的 Desktop 与多部 Mobile 可同时使用，各自拥有独立设备、Session
+   与 inbox。设备重登只替换自己的旧 Session，退出或撤销不影响其他设备。
 
 ## 5. 非目标
 

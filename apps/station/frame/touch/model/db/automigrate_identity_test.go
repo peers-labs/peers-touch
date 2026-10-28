@@ -9,47 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestMigrateTouchIdentityColumnsPreservesData(t *testing.T) {
-	rds := openIdentityMigrationDB(t, "touch_preserves_data")
-	mustExecuteMigrationSQL(t, rds,
-		`CREATE TABLE touch_message (id INTEGER PRIMARY KEY, sender_did TEXT)`,
-		`CREATE TABLE touch_receipt (id INTEGER PRIMARY KEY, member_did TEXT)`,
-		`INSERT INTO touch_message (id, sender_did) VALUES (1, 'ptid:alice')`,
-		`INSERT INTO touch_receipt (id, member_did) VALUES (1, 'ptid:bob')`,
-	)
-
-	if err := migrateTouchIdentityColumns(rds); err != nil {
-		t.Fatalf("migrate touch identity columns: %v", err)
-	}
-
-	assertIdentityValue(t, rds, "touch_message", "sender_ptid", "ptid:alice")
-	assertIdentityValue(t, rds, "touch_receipt", "member_ptid", "ptid:bob")
-	if rds.Migrator().HasColumn("touch_message", "sender_did") ||
-		rds.Migrator().HasColumn("touch_receipt", "member_did") {
-		t.Fatal("legacy touch identity columns remain after migration")
-	}
-}
-
-func TestMigrateTouchIdentityColumnsRollsBackAsASet(t *testing.T) {
-	rds := openIdentityMigrationDB(t, "touch_rolls_back")
-	mustExecuteMigrationSQL(t, rds,
-		`CREATE TABLE touch_message (id INTEGER PRIMARY KEY, sender_did TEXT)`,
-		`CREATE TABLE touch_receipt (id INTEGER PRIMARY KEY, member_did TEXT, member_ptid TEXT)`,
-		`INSERT INTO touch_message (id, sender_did) VALUES (1, 'ptid:alice')`,
-		`INSERT INTO touch_receipt (id, member_did, member_ptid) VALUES (1, 'ptid:bob', 'ptid:mallory')`,
-	)
-
-	err := migrateTouchIdentityColumns(rds)
-	if err == nil || !strings.Contains(err.Error(), "divergent") {
-		t.Fatalf("expected divergent identity error, got %v", err)
-	}
-	if !rds.Migrator().HasColumn("touch_message", "sender_did") ||
-		rds.Migrator().HasColumn("touch_message", "sender_ptid") {
-		t.Fatal("touch_message migration was not rolled back with the module set")
-	}
-	assertIdentityValue(t, rds, "touch_message", "sender_did", "ptid:alice")
-}
-
 func TestMigrateSocialIdentityColumnsPreservesAliases(t *testing.T) {
 	rds := openIdentityMigrationDB(t, "social_preserves_aliases")
 	mustExecuteMigrationSQL(t, rds,

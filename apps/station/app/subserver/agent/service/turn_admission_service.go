@@ -371,18 +371,40 @@ func (s *TurnAdmissionService) Admit(
 			Scan(&maxSequence).Error; sequenceErr != nil {
 			return admissionInternal("allocate turn queue sequence", sequenceErr)
 		}
-		entry := &persistence.TurnQueueEntry{
-			ID:                   generateID("queue"),
+		// The Turn identity exists from enqueue time on; admission only flips
+		// its status. Clients hold the turn id while the request is still
+		// queued and can tail its event stream before execution starts, so
+		// promoting a queue entry never needs a separate identity-resolution
+		// handshake.
+		queuedTurnID := NewTurnID()
+		queuedKey := request.GetClientIdempotencyKey()
+		queuedTurn := &persistence.AgentTurn{
+			ID:                   queuedTurnID,
 			ConversationID:       conversation.ID,
 			AgentID:              request.GetAgentId(),
-			Ptid:                 actorID,
-			ClientIdempotencyKey: request.GetClientIdempotencyKey(),
+			ClientIdempotencyKey: &queuedKey,
 			AdmissionPayloadHash: payloadHash,
-			RequestPayload:       payload,
-			QueueSequence:        maxSequence + 1,
-			Status:               queueStatusPending,
-			CreatedAt:            now,
-			UpdatedAt:            now,
+			UserInput:            stringPointerValue(request.GetUserInput()),
+			Status:               string(domain.TurnStatusQueued),
+			StartedAt:            now,
+		}
+		if createErr := tx.Create(queuedTurn).Error; createErr != nil {
+			return admissionInternal("enqueue pre-created turn", createErr)
+		}
+		entry := &persistence.TurnQueueEntry{
+			ID:                        generateID("queue"),
+			ConversationID:            conversation.ID,
+			AgentID:                   request.GetAgentId(),
+			Ptid:                      actorID,
+			ClientIdempotencyKey:      request.GetClientIdempotencyKey(),
+			AdmissionPayloadHash:      payloadHash,
+			RequestPayload:            payload,
+			QueueSequence:             maxSequence + 1,
+			Status:                    queueStatusPending,
+			AdmittedTurnID:            queuedTurnID,
+			ClientCapabilitySessionID: strings.TrimSpace(request.GetClientCapabilitySessionId()),
+			CreatedAt:                 now,
+			UpdatedAt:                 now,
 		}
 		if createErr := tx.Create(entry).Error; createErr != nil {
 			return admissionInternal("enqueue turn", createErr)
@@ -396,6 +418,7 @@ func (s *TurnAdmissionService) Admit(
 		}
 		admission = &model.TurnAdmission{
 			Status: model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED,
+			TurnId: queuedTurnID,
 			QueueEntry: queueEntryToProto(
 				entry,
 				uint32(pendingCount+1),
@@ -448,6 +471,20 @@ func (s *TurnAdmissionService) ResolveAdmission(
 			conversationID, idempotencyKey).
 		Order("started_at DESC").First(&turn).Error
 	if err == nil {
+		if turn.Status == string(domain.TurnStatusQueued) {
+			queued, queuedErr := queuedEntryReplayTx(
+				db.WithContext(ctx),
+				&conversation,
+				idempotencyKey,
+				"",
+			)
+			if queuedErr != nil {
+				return nil, queuedErr
+			}
+			if queued != nil {
+				return queued, nil
+			}
+		}
 		return &model.TurnAdmission{
 			Status: model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_REPLAYED,
 			TurnId: turn.ID, QueueCapacity: turnQueueCapacity,
@@ -595,6 +632,9 @@ func (s *TurnAdmissionService) Cancel(
 		entry.CancelIdempotencyKey = request.GetIdempotencyKey()
 		entry.CancelledAt = &now
 		entry.UpdatedAt = now
+		if cancelErr := cancelBoundQueuedTurnTx(tx, &entry, now, "queued turn cancelled by actor"); cancelErr != nil {
+			return cancelErr
+		}
 		if updateErr := tx.Save(&entry).Error; updateErr != nil {
 			return admissionInternal("cancel queued turn", updateErr)
 		}
@@ -679,6 +719,9 @@ func (s *TurnAdmissionService) AdmitNext(
 			rejected = s.requestPreflight(ctx, actorID, &request)
 		}
 		if rejected != nil {
+			if rejectErr := cancelBoundQueuedTurnTx(tx, &entry, now, "queued turn rejected at admission"); rejectErr != nil {
+				return rejectErr
+			}
 			entry.Status = queueStatusCancelled
 			entry.CancelledAt = &now
 			entry.UpdatedAt = now
@@ -693,22 +736,47 @@ func (s *TurnAdmissionService) AdmitNext(
 				"updated_at": now,
 			}).Error
 		}
-		key := entry.ClientIdempotencyKey
-		turn := &persistence.AgentTurn{
-			ID:                   NewTurnID(),
-			ConversationID:       conversation.ID,
-			AgentID:              entry.AgentID,
-			ClientIdempotencyKey: &key,
-			AdmissionPayloadHash: entry.AdmissionPayloadHash,
-			UserInput:            stringPointerValue(request.GetUserInput()),
-			Status:               string(domain.TurnStatusRunning),
-			StartedAt:            now,
-		}
-		if createErr := tx.Create(turn).Error; createErr != nil {
-			return admissionInternal("create dequeued turn", createErr)
+		turnID := strings.TrimSpace(entry.AdmittedTurnID)
+		if turnID == "" {
+			// Legacy rows enqueued before the Turn identity existed at enqueue
+			// time: mint the Turn at admission as before.
+			key := entry.ClientIdempotencyKey
+			turn := &persistence.AgentTurn{
+				ID:                   NewTurnID(),
+				ConversationID:       conversation.ID,
+				AgentID:              entry.AgentID,
+				ClientIdempotencyKey: &key,
+				AdmissionPayloadHash: entry.AdmissionPayloadHash,
+				UserInput:            stringPointerValue(request.GetUserInput()),
+				Status:               string(domain.TurnStatusRunning),
+				StartedAt:            now,
+			}
+			if createErr := tx.Create(turn).Error; createErr != nil {
+				return admissionInternal("create legacy dequeued turn", createErr)
+			}
+			turnID = turn.ID
+			entry.AdmittedTurnID = turnID
+		} else {
+			// Promotion only flips the pre-created Turn. The conditional
+			// update guards against double admission under the conversation
+			// lock; StartedAt resets so runtime budgets measure execution, not
+			// queue wait.
+			flip := tx.Model(&persistence.AgentTurn{}).
+				Where("id = ? AND conversation_id = ? AND status = ?",
+					turnID, conversation.ID, string(domain.TurnStatusQueued)).
+				Updates(map[string]interface{}{
+					"status":     string(domain.TurnStatusRunning),
+					"started_at": now,
+					"ended_at":   nil,
+				})
+			if flip.Error != nil {
+				return admissionInternal("promote queued turn", flip.Error)
+			}
+			if flip.RowsAffected != 1 {
+				return admissionInternal("promote queued turn", gorm.ErrRecordNotFound)
+			}
 		}
 		entry.Status = queueStatusAdmitted
-		entry.AdmittedTurnID = turn.ID
 		entry.UpdatedAt = now
 		if updateErr := tx.Save(&entry).Error; updateErr != nil {
 			return admissionInternal("mark queued turn admitted", updateErr)
@@ -726,7 +794,7 @@ func (s *TurnAdmissionService) AdmitNext(
 		admitted = &AdmittedTurn{
 			Admission: &model.TurnAdmission{
 				Status:              model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED,
-				TurnId:              turn.ID,
+				TurnId:              turnID,
 				QueueEntry:          queueEntryToProto(&entry, 0),
 				QueueCapacity:       turnQueueCapacity,
 				ConversationVersion: nextVersion,
@@ -831,6 +899,23 @@ func findAdmissionReplay(
 		idempotencyKey,
 	).First(&turn).Error
 	if turnErr == nil {
+		if turn.Status == string(domain.TurnStatusQueued) {
+			// While the request is still waiting, its command identity is the
+			// queue entry: duplicate conflicts report the entry id and replays
+			// carry the live FIFO position plus the pre-bound turn id.
+			queued, queuedErr := queuedEntryReplayTx(
+				tx,
+				conversation,
+				idempotencyKey,
+				payloadHash,
+			)
+			if queuedErr != nil {
+				return nil, queuedErr
+			}
+			if queued != nil {
+				return queued, nil
+			}
+		}
 		if turn.AdmissionPayloadHash != payloadHash {
 			return nil, errcode.NewAdmissionDuplicateConflict(
 				idempotencyKey,
@@ -913,6 +998,81 @@ func lockAdmissionConversation(
 	return &conversation, nil
 }
 
+// cancelBoundQueuedTurnTx settles the Turn pre-created at enqueue time when
+// its queue entry leaves the queue without execution (actor cancel or
+// admission rejection). Only a Turn still in the queued state is affected.
+func cancelBoundQueuedTurnTx(
+	tx *gorm.DB,
+	entry *persistence.TurnQueueEntry,
+	now time.Time,
+	reason string,
+) error {
+	turnID := strings.TrimSpace(entry.AdmittedTurnID)
+	if turnID == "" {
+		return nil
+	}
+	result := tx.Model(&persistence.AgentTurn{}).
+		Where("id = ? AND conversation_id = ? AND status = ?",
+			turnID, entry.ConversationID, string(domain.TurnStatusQueued)).
+		Updates(map[string]interface{}{
+			"status":          string(domain.TurnStatusCancelled),
+			"ended_at":        now,
+			"terminal_reason": reason,
+		})
+	if result.Error != nil {
+		return admissionInternal("cancel bound queued turn", result.Error)
+	}
+	return nil
+}
+
+// queuedEntryReplayTx maps a Turn still waiting in the queue to its QUEUED
+// admission, including the current FIFO position and pre-bound turn id. It
+// returns nil admission when the pending entry no longer exists (concurrent
+// cancel or legacy rows), letting the caller fall back to the Turn row. A
+// non-empty payloadHash enables the idempotency duplicate-conflict check.
+func queuedEntryReplayTx(
+	db *gorm.DB,
+	conversation *persistence.Conversation,
+	idempotencyKey string,
+	payloadHash string,
+) (*model.TurnAdmission, error) {
+	var entry persistence.TurnQueueEntry
+	err := db.
+		Where(
+			"conversation_id = ? AND client_idempotency_key = ? AND status = ?",
+			conversation.ID,
+			idempotencyKey,
+			queueStatusPending,
+		).
+		First(&entry).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, admissionInternal("load pending queue entry", err)
+	}
+	if payloadHash != "" && entry.AdmissionPayloadHash != payloadHash {
+		return nil, errcode.NewAdmissionDuplicateConflict(idempotencyKey, entry.ID)
+	}
+	var position int64
+	if err := db.Model(&persistence.TurnQueueEntry{}).
+		Where(
+			"conversation_id = ? AND status = ? AND queue_sequence <= ?",
+			conversation.ID,
+			queueStatusPending,
+			entry.QueueSequence,
+		).Count(&position).Error; err != nil {
+		return nil, admissionInternal("resolve queued turn position", err)
+	}
+	return &model.TurnAdmission{
+		Status:              model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED,
+		TurnId:              entry.AdmittedTurnID,
+		QueueEntry:          queueEntryToProto(&entry, uint32(position)),
+		QueueCapacity:       turnQueueCapacity,
+		ConversationVersion: conversation.Version,
+	}, nil
+}
+
 func queueEntryToProto(
 	entry *persistence.TurnQueueEntry,
 	position uint32,
@@ -930,17 +1090,18 @@ func queueEntryToProto(
 		status = model.TurnQueueStatus_TURN_QUEUE_STATUS_CANCELLED
 	}
 	return &model.TurnQueueEntry{
-		QueueEntryId:         entry.ID,
-		ConversationId:       entry.ConversationID,
-		AgentId:              entry.AgentID,
-		ClientIdempotencyKey: entry.ClientIdempotencyKey,
-		Status:               status,
-		QueueSequence:        entry.QueueSequence,
-		QueuePosition:        position,
-		AdmittedTurnId:       entry.AdmittedTurnID,
-		CreatedAt:            timestamppb.New(entry.CreatedAt),
-		UpdatedAt:            timestamppb.New(entry.UpdatedAt),
-		UserInput:            queuedUserInput(entry.RequestPayload),
+		QueueEntryId:              entry.ID,
+		ConversationId:            entry.ConversationID,
+		AgentId:                   entry.AgentID,
+		ClientIdempotencyKey:      entry.ClientIdempotencyKey,
+		Status:                    status,
+		QueueSequence:             entry.QueueSequence,
+		QueuePosition:             position,
+		AdmittedTurnId:            entry.AdmittedTurnID,
+		CreatedAt:                 timestamppb.New(entry.CreatedAt),
+		UpdatedAt:                 timestamppb.New(entry.UpdatedAt),
+		UserInput:                 queuedUserInput(entry.RequestPayload),
+		ClientCapabilitySessionId: entry.ClientCapabilitySessionID,
 	}
 }
 

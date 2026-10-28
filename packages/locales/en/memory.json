@@ -3,20 +3,17 @@
   "memory.header.subtitle": "Browse, search, and manage agent memories across layers.",
   "memory.header.badge": "Memory",
   "memory.header.memoriesLabel": "Memories",
-
   "memory.tab.browse": "Browse",
   "memory.tab.search": "Search",
   "memory.tab.persona": "Persona",
   "memory.tab.events": "Events",
   "memory.tab.configuration": "Configuration",
-
   "memory.layer.all": "All",
   "memory.layer.identity": "identity",
   "memory.layer.context": "context",
   "memory.layer.experience": "experience",
   "memory.layer.preference": "preference",
   "memory.layer.activity": "activity",
-
   "memory.time.allTime": "All time",
   "memory.time.last24h": "Last 24h",
   "memory.time.last7d": "Last 7d",
@@ -26,7 +23,6 @@
   "memory.time.minutesAgo": "{{count}}m ago",
   "memory.time.hoursAgo": "{{count}}h ago",
   "memory.time.daysAgo": "{{count}}d ago",
-
   "memory.browse.allAgents": "All agents",
   "memory.browse.viewList": "List",
   "memory.browse.viewTimeline": "Timeline",
@@ -40,13 +36,11 @@
   "memory.browse.deleteFailed": "Failed to delete memory",
   "memory.browse.noMemories": "No memories found",
   "memory.browse.hasDetail": "has detail",
-
   "memory.search.placeholder": "Search memories...",
   "memory.search.button": "Search",
   "memory.search.allAgents": "All agents",
   "memory.search.noResults": "No results",
   "memory.search.scoreLabel": "score: {{score}}%",
-
   "memory.persona.noData": "No persona data yet",
   "memory.persona.noDataHint": "Persona is derived from identity-layer memories. Chat with agents to build up your persona over time.",
   "memory.persona.autoUpdateHint": "Refresh is not yet implemented — persona updates automatically.",
@@ -55,7 +49,6 @@
   "memory.persona.narrative": "Narrative",
   "memory.persona.empty": "(empty)",
   "memory.persona.updated": "Updated: {{time}}",
-
   "memory.events.title": "Event log (auto-refresh every 10s)",
   "memory.events.allAgents": "All agents",
   "memory.events.refresh": "Refresh",
@@ -64,5 +57,10 @@
   "memory.events.column.layer": "Layer",
   "memory.events.column.latency": "Latency",
   "memory.events.column.detail": "Detail",
-  "memory.events.column.timestamp": "Timestamp"
+  "memory.events.column.timestamp": "Timestamp",
+  "memory.browse.editTitle": "Edit memory",
+  "memory.browse.editSave": "Save",
+  "memory.browse.editCancel": "Cancel",
+  "memory.browse.editSuccess": "Memory updated",
+  "memory.browse.editFailed": "Failed to update memory"
 }
