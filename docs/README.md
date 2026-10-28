@@ -7,6 +7,11 @@
 
 ## 1. 先记住这条规则
 
+**第一次接手项目、想先把环境跑起来？** 直接看
+[GETTING_STARTED.md（开发者快速上手，实验版）](./GETTING_STARTED.md)：
+一条 `make dev-up` 装齐工具链并起 Station，含测试账号、常见报错与系统全景速览，
+建议交给编码 Agent 按页引导。
+
 看文档前，先问自己：你现在要解决的是哪一种问题？
 
 - **系统为什么这么设计**
@@ -374,6 +379,11 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
 
 ## 5. 按问题找文档
 
+### 我想把开发环境跑起来 / 新人第一天
+
+- [GETTING_STARTED.md](./GETTING_STARTED.md)：`make dev-up` 一键引导、测试账号、
+  Desktop/Mobile、远程 Station、起步排障（实验版，Linux 已实测）
+
 ### 我想从外部系统接入 / 调用公开 API
 
 - 先看 `api/README.md`（对外合同归属与写作规范、合同索引）
@@ -452,6 +462,7 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
 
 ### 新成员
 
+0. 先跑起来：[GETTING_STARTED.md](./GETTING_STARTED.md)
 1. `global/project-identity.md`
 2. `architecture/architecture.md`
 3. 对应平台 `base.md`

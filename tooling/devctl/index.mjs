@@ -11,6 +11,7 @@ import {
   stopDesktop,
 } from './desktop.mjs';
 import { runDoctor } from './doctor.mjs';
+import { runDevUp, DevUpError } from './dev-up.mjs';
 import { DevctlError, ERROR_CODES, serializeError } from './errors.mjs';
 import {
   activateProfile,
@@ -67,7 +68,10 @@ Usage:
   devctl profile init <name> [--slot <n>]
   devctl profile activate <name>
   devctl config [--json]
-  devctl doctor [--json]
+  devctl doctor [--json] [--toolchain]
+  devctl dev-up [--json] [--check-only] [--no-install] [--client-deps]
+                [--pnpm-install] [--image-registry <host>] [--profile <name>]
+                [--slot <n>]
   devctl check [desktop|all] [--json]
   devctl station start|check|status|stop|restart [--json]
   devctl desktop start|status|stop|restart [--json]
@@ -99,9 +103,12 @@ function formatConfig(resolved) {
 }
 
 function formatDoctor(report) {
+  const scope = report.toolchainOnly
+    ? 'toolchain only (no active profile)'
+    : `profile=${report.profile}, mode=${report.stationMode}`;
   const lines = [
     '',
-    `Developer Environment Doctor (${report.platform}, profile=${report.profile})`,
+    `Developer Environment Doctor (${report.platform}, ${scope})`,
     '================================================================',
   ];
   for (const check of report.checks) {
@@ -116,6 +123,31 @@ function formatDoctor(report) {
     `Summary: ${report.summary.pass} pass, ${report.summary.warn} warn, ${report.summary.fail} fail`,
     '',
   );
+  return lines.join('\n');
+}
+
+function formatDevUp(report) {
+  const lines = ['', 'dev-up', '======'];
+  if (report.checkOnly) {
+    lines.push(`toolchain: ${report.doctor.summary.pass} pass, ${report.doctor.summary.warn} warn, ${report.doctor.summary.fail} fail`);
+    for (const check of report.doctor.failed) {
+      lines.push(`  [FAIL] ${check.id}: ${check.remediation ?? ''}`);
+    }
+    lines.push('');
+    return lines.join('\n');
+  }
+  if (report.reloginRequired) {
+    lines.push('docker group membership changed. Start a new login session and rerun "make dev-up"; previous steps are cached.');
+    lines.push('');
+    return lines.join('\n');
+  }
+  for (const step of report.steps) {
+    lines.push(`  [DONE] ${step}`);
+  }
+  if (report.station) {
+    lines.push(`  [DONE] station: ${report.station.health.url}`);
+  }
+  lines.push('');
   return lines.join('\n');
 }
 
@@ -192,13 +224,49 @@ export async function run(argv = process.argv.slice(2), environment = process.en
   }
 
   if (command === 'doctor') {
-    const report = runDoctor(root, environment);
+    const toolchainOnly = takeFlag(args, '--toolchain');
+    const report = runDoctor(root, environment, { toolchainOnly });
     if (json) {
       writeJson({ ok: report.summary.fail === 0, ...report });
     } else {
       process.stdout.write(formatDoctor(report));
     }
     return report.summary.fail === 0 ? 0 : 1;
+  }
+
+  if (command === 'dev-up') {
+    const checkOnly = takeFlag(args, '--check-only');
+    const noInstall = takeFlag(args, '--no-install');
+    const clientDeps = takeFlag(args, '--client-deps');
+    const pnpmInstall = takeFlag(args, '--pnpm-install');
+    const imageRegistry = takeOption(args, '--image-registry');
+    const profile = takeOption(args, '--profile');
+    const slot = takeOption(args, '--slot');
+    const insecureRegistries = [];
+    while (args.includes('--insecure-registry')) {
+      insecureRegistries.push(takeOption(args, '--insecure-registry'));
+    }
+    const report = await runDevUp(root, environment, {
+      checkOnly,
+      noInstall,
+      withClientDeps: clientDeps,
+      pnpmInstall,
+      imageRegistry,
+      profile,
+      slot,
+      insecureRegistries,
+    });
+    if (json) {
+      writeJson({
+        ok: !report.reloginRequired && (report.checkOnly ? report.doctor.summary.fail === 0 : true),
+        ...report,
+      });
+    } else {
+      process.stdout.write(formatDevUp(report));
+    }
+    if (report.reloginRequired) return 3;
+    if (report.checkOnly) return report.doctor.summary.fail === 0 ? 0 : 1;
+    return 0;
   }
 
   if (
@@ -357,6 +425,6 @@ if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
     })
     .catch((error) => {
       writeJson(serializeError(error), process.stderr);
-      process.exitCode = error instanceof DevctlError ? 2 : 1;
+      process.exitCode = error instanceof DevctlError || error instanceof DevUpError ? 2 : 1;
     });
 }
