@@ -35,7 +35,11 @@ export function DeviceLinkPanel() {
   // time and every layer uses the same geometry, so swapping QR -> code ->
   // spinner -> result never resizes the modal or shifts the controls below
   // it (instant swap keeps the transition meaningful with motion disabled).
-  const stageHeight = 280;
+  // Compact references currently encode at QR v15 (77 modules). With an
+  // 8-module quiet zone that is 85 columns; 340 CSS px keeps the nominal
+  // module at 4 px (8 physical px at 2x), the independently decodable floor.
+  const qrBox = 340;
+  const stageHeight = qrBox;
   const stageStyle: CSSProperties = {
     position: 'absolute',
     inset: 0,
@@ -56,7 +60,7 @@ export function DeviceLinkPanel() {
         </Button>
       </div>
       {open && (
-        <Modal open title={label('start')} width={360} footer={null}
+        <Modal open title={label('start')} width={400} footer={null}
           styles={{ body: { display: 'grid', gap: token.marginSM, paddingBlock: token.paddingSM } }}
           onCancel={() => { void deviceLinkActions.close(); }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: token.marginSM, minWidth: 0 }}>
@@ -74,13 +78,13 @@ export function DeviceLinkPanel() {
           <div style={{ position: 'relative', height: stageHeight, width: '100%' }}>
             {showQr && (
               <div style={stageStyle} data-pt-device-link-stage="qr">
-                <div data-pt-device-link-code style={{ width: 280, height: 280, display: 'grid', placeItems: 'center',
+                <div data-pt-device-link-code style={{ width: qrBox, height: qrBox, display: 'grid', placeItems: 'center',
                   background: token.colorBgContainer, borderRadius: token.borderRadiusLG, overflow: 'hidden' }}>
                   {qrFailed ? <Typography.Text type="danger" style={{ textAlign: 'center' }}>{label('qrFailed')}</Typography.Text> :
                     content ? <Schema.QRCode content={content} title={label('qrLabel')}
                       onError={() => setFailedQrOffer(projection!.offerId)}
                       errorLabel={label('qrFailed')}
-                      constraints={{ size: 280, style: 'peers', maxVersion: 17, minModulePixels: 3 }} /> :
+                      constraints={{ size: qrBox, style: 'peers', maxVersion: 17, minModulePixels: 4 }} /> :
                     <Spin size="small" />}
                 </div>
               </div>

@@ -7,7 +7,10 @@ const source = readFileSync(new URL('./DeviceLinkPanel.tsx', import.meta.url), '
 // complete / expired phases — dynamic height shifts cause visual "shake".
 describe('DeviceLinkPanel stable modal geometry', () => {
   it('hosts every phase inside one fixed-height stage', () => {
-    expect(source).toContain('const stageHeight = 280;');
+    // 340 CSS px keeps the v15 compact reference (85 columns with quiet zone)
+    // at 4 px modules, the independently decodable floor.
+    expect(source).toContain('const qrBox = 340;');
+    expect(source).toContain('const stageHeight = qrBox;');
     expect(source).toMatch(/<div style=\{\{ position: 'relative', height: stageHeight, width: '100%' \}\}>/);
     for (const stage of ['qr', 'approve', 'finishing', 'complete', 'expired']) {
       expect(source).toContain(`data-pt-device-link-stage="${stage}"`);

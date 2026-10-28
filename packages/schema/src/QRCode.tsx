@@ -27,7 +27,11 @@ export function QRCode({ content, constraints, title, description, errorLabel, c
     const host = frame.current;
     if (!host) return;
     const measure = () => {
-      const available = Math.floor(host.getBoundingClientRect().width);
+      // Layout box only: an ancestor under CSS transform (e.g. the modal
+      // zoom-in animation) shrinks getBoundingClientRect while the encoded
+      // pixel budget must follow the untransformed layout size. ResizeObserver
+      // reports content-box changes, so the two must agree on clientWidth.
+      const available = host.clientWidth;
       const next = Math.min(maximumSize, available);
       if (available > 0 && measuredSize.current !== next) {
         measuredSize.current = next;

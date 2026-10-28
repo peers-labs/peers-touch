@@ -1,0 +1,97 @@
+{
+  "ok": true,
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "feature": "device-link.compact-reference-scan-login",
+  "verificationMode": "POST_MERGE_REGRESSION_CLOSURE",
+  "recordedAt": "2026-10-28T04:10:00Z",
+  "scope": "Scan login only: desktop GUI offer, Android optical scan, compact reference exchange, GUI approval, second-device coexistence, targeted revocation. iOS simulator camera and physical-device optical measurement remain manual/UNPROVEN.",
+  "sourceIdentity": {
+    "baseCommit": "589ba7d47e9c6ca32209aeec141aae69a77752a0",
+    "baseCommitNote": "squash tip of merged PR #165; merge commit c1c856eb881c has an identical tree (verified TREE_IDENTICAL pre-merge)",
+    "workingTreeDirtyDigest": "10dbffbc4bd4f0ae14ebd808728da712c00833403935505915fd031db29a38a0",
+    "changedFiles": [
+      "packages/schema/src/QRCode.tsx",
+      "packages/schema/src/QRCode.test.tsx",
+      "packages/schema/src/qr/prepare.test.ts",
+      "apps/desktop/src/components/settings/DeviceLinkPanel.tsx",
+      "apps/desktop/src/components/settings/DeviceLinkPanel.stage.test.ts"
+    ],
+    "rebaseBase": "620041165",
+    "remoteMasterNote": "the fix was applied onto current origin/master (620041165); the five source/test files were untouched between the #165 tree and that base"
+  },
+  "runtimeArtifacts": {
+    "stationBuildCommit": "589ba7d47e9c6ca32209aeec141aae69a77752a0",
+    "stationUrl": "<profile-station-1-private-endpoint>",
+    "relayUrl": "<profile-relay-private-endpoint>",
+    "desktopBinarySha256": "ac7fe888532eff9422b8538ca20ae339ae31d61516f2644bc48df23d0f0cfd94",
+    "androidApkSha256": "f384a5931a73f9a0fcd1d878df5209db2ca39e3819f20dfcc0e38574f8d694e3",
+    "desktopProfile": "one-app",
+    "stationProfile": "station-1",
+    "runtimeScratchDir": "<runtime-home>/peers-relay-msl-native-20261027"
+  },
+  "defectsFoundAndFixed": [
+    {
+      "id": "DL-QR-TRANSFORM-MEASURE",
+      "layer": "packages/schema/src/QRCode.tsx",
+      "mechanism": "Pixel budget was read from getBoundingClientRect(), which follows CSS transforms. During the modal zoom-in (scale 0.2->1) under load the first measurement landed below the density floor, and ResizeObserver (layout box only, transform never re-fires) left the failed state permanent. Deterministically reproduced with a scaled ancestor (measured 196 of 340 layout px).",
+      "fix": "Measure the transform-immune content box (clientWidth), matching ResizeObserver content-box semantics.",
+      "regression": "QRCode.test.tsx DOM test: scaled rect 238 with layout clientWidth 340 must still reach ready"
+    },
+    {
+      "id": "DL-QR-PAYLOAD-BUDGET",
+      "layer": "apps/desktop/src/components/settings/DeviceLinkPanel.tsx",
+      "mechanism": "Compact locators gained relayEd25519 and endpointTlsTrust leaf SPKI pin; the live payload is 368 chars at QR v15 (77 modules). The 280px box yields 3px modules, which an independent decoder rejects at v15 for both peers and classic styles; >=4px (340px / 85 columns) decodes. The shipped 280px test fixture omitted the new fields and stayed at 251 chars, so the regression was not caught.",
+      "fix": "Modal 400px, code stage 340px, constraints minModulePixels 4 (dense payloads now fail loudly instead of rendering undecodable codes).",
+      "regression": "prepare.test.ts uses the production-shaped 368-byte reference: decodes at 340/4px and rejects 280px under minModulePixels 4 with PAYLOAD_TOO_DENSE"
+    }
+  ],
+  "journeys": [
+    {
+      "id": "A",
+      "emulator": "emulator-5580 (msl-owned-a, imagefile emulated back camera)",
+      "timelineLocal": "2026-10-28 11:57:18 GUI start -> 11:57:21 poster visible==kernel -> 11:57:33 approve panel comparisonCode 135851 -> Allow -> 11:57:43 stage complete, kernel state 8 rev 6 -> phone enters Chats shell",
+      "stationSessionCreatedAt": "2026-10-28T03:57:42.417279Z",
+      "stationSessionPrefix": "2add7da735d87225",
+      "deviceType": "mobile",
+      "revoked": false
+    },
+    {
+      "id": "B",
+      "emulator": "emulator-5582 (msl-owned-b, imagefile emulated back camera)",
+      "timelineLocal": "2026-10-28 12:01:55 GUI start -> 12:01:57 poster visible==kernel -> 12:02:08 approve panel comparisonCode 766530 -> Allow -> 12:02:16 stage complete, kernel state 8 rev 6 -> phone enters Chats shell",
+      "stationSessionCreatedAt": "2026-10-28T04:02:17.679274Z",
+      "stationSessionPrefix": "00031bb14834ff9b",
+      "deviceType": "mobile",
+      "revoked": true,
+      "revokedReason": "revoked_by_admin"
+    }
+  ],
+  "assertions": {
+    "qrVisibleEqualsKernel": "A and B: rasterized modal QR decoded by OpenCV to exactly device_link_status.qrLink (368 chars)",
+    "coexistence": "After B approval, station listed two active mobile sessions (03:57 and 04:02), and both emulators showed the authenticated Chats shell simultaneously",
+    "targetedRevocation": "Dashboard revoke of B returned 200; B showed 'Your session has expired. Please log in again.' with Re-authenticate; A remained in the fully functional Chats shell; station listed B revoked_by_admin and A active",
+    "receiverVisibleArtifacts": [
+      "journey-a-result.json",
+      "journey-b-result.json",
+      "revoke-b-result.json",
+      "station-sessions-alice.json",
+      "phone-a-coexist.png",
+      "phone-b-coexist.png",
+      "phone-a-after-revoke.png",
+      "phone-b-after-revoke.png"
+    ]
+  },
+  "deterministicChecks": {
+    "packages/schema": "vitest run: 50 passed",
+    "apps/desktop": "pnpm run check pass; vitest run: 1322 passed, 1 skipped"
+  },
+  "harnessNotes": [
+    "The device-link runtime intentionally pauses polling while document.hidden is true and refreshes on visibilitychange. A never-activated acceptance window stays hidden, so the real macOS window must be fronted before scanning; this is product-correct (the compare-code UX requires a visible desktop), not a product defect.",
+    "UiAutomator2 instrumentation survives app force-stop; stale sessions on systemPort 8290/8291 must be cleared before a new Appium session."
+  ],
+  "unproven": [
+    "iOS simulator camera (observed 0 AVCaptureDevice on iOS 26.5/27.0 simulators)",
+    "Physical phone optical scan of a physical screen",
+    "Formal Acceptance Gate registration for this feature (no business-owned gate exists in this tree)"
+  ]
+}
