@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: peers
+      POSTGRES_DB: peers_touch
+      POSTGRES_PASSWORD: ${PEERS_DB_PASSWORD:?PEERS_DB_PASSWORD is required}
+    labels:
+      sh.peers.install-root: ${PEERS_INSTALL_ROOT:?PEERS_INSTALL_ROOT is required}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U peers -d peers_touch"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  station:
+    image: ${PEERS_STATION_IMAGE:?PEERS_STATION_IMAGE is required}
+    labels:
+      sh.peers.install-root: ${PEERS_INSTALL_ROOT:?PEERS_INSTALL_ROOT is required}
+    environment:
+      PEERS_NODE_ROLE: station
+      PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
+      PEERS_DASHBOARD_USERNAME: ${PEERS_DASHBOARD_USERNAME:?PEERS_DASHBOARD_USERNAME is required}
+      PEERS_DASHBOARD_PASSWORD: ${PEERS_DASHBOARD_PASSWORD:?PEERS_DASHBOARD_PASSWORD is required}
+      PEERS_DASHBOARD_JWT_SECRET: ${PEERS_DASHBOARD_JWT_SECRET:?PEERS_DASHBOARD_JWT_SECRET is required}
+      PEERS_DATA_DIR: /app/data
+      PEERS_DB_DSN: host=postgres user=peers password=${PEERS_DB_PASSWORD} dbname=peers_touch port=5432 sslmode=disable TimeZone=Asia/Shanghai
+      PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH: /app/data/oss
+      PEERS_OSS_BACKEND: local
+      PEERS_NODE_SERVER_BASEURL: ${PEERS_NODE_SERVER_BASEURL:-}
+      PEERS_LIBP2P_PUBLIC_ADDRS: ${PEERS_LIBP2P_PUBLIC_ADDRS:-}
+      PEERS_BOOTSTRAP_NODES: ${PEERS_BOOTSTRAP_NODES:-}
+      PEERS_FEDERATION_MIN_DHT_PEERS: ${PEERS_FEDERATION_MIN_DHT_PEERS:-0}
+    ports:
+      - "${STATION_BIND:-127.0.0.1}:${STATION_PORT:-18080}:18080"
+      - "${LIBP2P_PORT:-4001}:4001"
+    volumes:
+      - peers_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=3", "http://127.0.0.1:18080/sub-oss/healthz"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+volumes:
+  pg_data:
+    external: true
+    name: ${PEERS_PG_VOLUME:?PEERS_PG_VOLUME is required}
+  peers_data:
+    external: true
+    name: ${PEERS_DATA_VOLUME:?PEERS_DATA_VOLUME is required}

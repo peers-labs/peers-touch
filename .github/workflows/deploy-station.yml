@@ -8,10 +8,10 @@
 #      with the GitHub Actions cache so subsequent PRs and the deploy
 #      path benefit from warm layers. NO remote deploy on PR — the
 #      live test bench is shared by all four envs and a PR-triggered
-#      deploy would race the manual + tag paths.
+#      deploy would race manual operations.
 #
 #   2. Deploy (`deploy` job) — runs on workflow_dispatch (operator
-#      picks an env) and on push tag v*.*.* (release rolls all four).
+#      picks one env or explicitly selects all four).
 #      Build still happens on the remote daemon over `docker --context`
 #      to avoid GHCR (org policy: GITHUB_TOKEN stays at contents:read).
 #      Remote builds set BUILDKIT_INLINE_CACHE=1 so successive deploys
@@ -55,10 +55,6 @@ on:
           - pt-station-2
           - pt-station-relay-only
           - all
-  push:
-    tags:
-      - 'v*.*.*'
-
 permissions:
   contents: read
 
@@ -146,16 +142,16 @@ jobs:
           cache-to: type=gha,scope=station,mode=max
           # mode=max persists every intermediate layer to the cache,
           # which costs a few hundred MB but lets the next PR (or the
-          # tag deploy that lands the merge) hit warm-cache builds.
+          # manual deploy that lands the merge) hit warm-cache builds.
 
   # ── Deploy: live test bench ──────────────────────────────────────
-  # Runs on workflow_dispatch and tag push. The fan-out matrix picks
+  # Runs only on workflow_dispatch. The fan-out matrix picks
   # which envs to touch; each leg owns its docker-context + .env file
   # synthesis. Build still runs on the remote daemon — we keep that
   # to avoid GHCR — but with BUILDKIT_INLINE_CACHE so the second deploy
   # to a given remote reuses layers from the first.
   plan:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       envs: ${{ steps.pick.outputs.envs }}
@@ -170,7 +166,7 @@ jobs:
           fi
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -252,7 +248,15 @@ jobs:
 
       # ── synthesise gitignored .env.<name> from environment secrets ──
       - name: Materialise env file
+        env:
+          APT_MIRROR: ${{ vars.APT_MIRROR }}
+          GO_TARBALL_MIRROR: ${{ vars.GO_TARBALL_MIRROR }}
+          GOPROXY: ${{ vars.GOPROXY }}
+          GOSUMDB: ${{ vars.GOSUMDB }}
+          GONOSUMCHECK: ${{ vars.GONOSUMCHECK }}
         run: |
+          set -euo pipefail
+          umask 077
           mkdir -p tooling/docker
           cat > tooling/docker/.env.${{ matrix.env }} <<EOF
           COMPOSE_PROJECT_NAME=${{ matrix.env }}
@@ -266,6 +270,16 @@ jobs:
           PEERS_FEDERATION_DIRECT_OUTBOUND=${{ steps.route.outputs.direct_out }}
           PEERS_FEDERATION_DIRECT_INBOUND=${{ steps.route.outputs.direct_in }}
           EOF
+          # Empty GitHub variables leave the Dockerfile/Compose defaults intact.
+          for key in APT_MIRROR GO_TARBALL_MIRROR GOPROXY GOSUMDB GONOSUMCHECK; do
+            value="${!key}"
+            if [ -n "$value" ]; then
+              case "$value" in
+                *$'\n'*|*$'\r'*|*'$'*|*'"'*|*"'"*) echo "::error::Invalid build variable $key"; exit 1 ;;
+              esac
+              printf '%s=%s\n' "$key" "$value" >> tooling/docker/.env.${{ matrix.env }}
+            fi
+          done
 
       # ── deploy ───────────────────────────────────────────────
       # BUILDKIT_INLINE_CACHE=1 makes `docker build` embed cache
