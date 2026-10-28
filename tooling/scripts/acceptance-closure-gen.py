@@ -268,6 +268,21 @@ def validate_contract(contract: dict[str, Any], gate_defs: dict[str, Any]) -> li
             "(chat-w11-forbidden-scan, chat-w11-duplicate-scan, "
             "chat-w11-completion-audit)"
         )
+    elif gate_order[-1] != "chat-w11-completion-audit":
+        errors.append(
+            "chat-w11-completion-audit must be the final closure Gate"
+        )
+    else:
+        audit_dependencies = gate_defs.get(
+            "chat-w11-completion-audit",
+            {},
+        ).get("dependsOn", [])
+        expected_dependencies = gate_order[:-1]
+        if audit_dependencies != expected_dependencies:
+            errors.append(
+                "chat-w11-completion-audit dependsOn must exactly match "
+                "the preceding gate_order"
+            )
 
     return errors
 
@@ -297,6 +312,9 @@ def generate_plan(contract: dict[str, Any], gate_defs: dict[str, Any]) -> dict[s
         required_cells = gdef.get("requiredRuntimeCells")
         if required_cells:
             planned_gate["requiredRuntimeCells"] = required_cells
+        dependencies = gdef.get("dependsOn")
+        if dependencies:
+            planned_gate["dependsOn"] = list(dependencies)
         selected_gates.append(planned_gate)
 
     return {

@@ -16,7 +16,7 @@ evidence.
 1. Station deployment commit is recorded and contains all Station/proto changes.
 2. Each client records commit and dirty workspace digest.
 3. Generated proto digests match the Station source contract.
-4. Each worktree has a distinct profile, gateway port, Vite port, WebDriver
+4. Each client instance has a distinct profile, gateway port, renderer port, WebDriver
    port, and storage root.
 5. `PT_DESKTOP_E2E=true` is enabled and Vite HMR is disabled.
 6. Native windows are visible and attached to responsive observers.
@@ -84,8 +84,23 @@ forbidden.
 - A successful click is not a successful send. The runner waits for a committed
   message ID and receiver plaintext.
 - Exact plaintext must appear on the receiver; ciphertext placeholders fail.
+- Recovery snapshots wait for each exact attachment row and every image's
+  decoded load state before comparing clients. Restored metadata can appear
+  before its asynchronous local asset loads. The shared offline/restart reader
+  retains rejected and accepted observations within the original deadline.
+  Missing images, failed loads, counts and identities still fail; cached bytes,
+  image loading policy and equality assertions remain unchanged.
 - Startup order is randomized. Correctness must not depend on Bob or Alice
-  starting first.
+  starting first. Current-profile Gates explicitly use Bob first to cover that
+  direction; they use the same selected source and build for both clients.
+- Current-profile device state is run-owned. Normal authentication creates it,
+  real Native process restart preserves it, and final cleanup removes it.
+  Historical worktree names, storage seeds and caller-prepared command IDs are
+  not provisioning inputs.
+- Submitted-command recovery pauses dispatch, submits through the visible
+  composer, fences the exact durable command into the injected crash state,
+  restarts the Native process, and verifies canonical convergence plus exact
+  receiver-visible plaintext. A lifecycle resume cannot substitute for restart.
 
 ## Failure Evidence
 

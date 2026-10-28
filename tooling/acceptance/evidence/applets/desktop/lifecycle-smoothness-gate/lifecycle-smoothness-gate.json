@@ -11,7 +11,7 @@
     {
       "id": "close-navigates-before-release",
       "status": "PASS",
-      "message": "`AppletRuntimePage` close must navigate home before requesting runtime release."
+      "message": "`AppletRuntimePage` close must navigate to its owning exit surface before requesting runtime release."
     },
     {
       "id": "launcher-refresh-keeps-content",

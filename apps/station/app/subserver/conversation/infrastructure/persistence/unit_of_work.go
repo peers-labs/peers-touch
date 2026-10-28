@@ -71,6 +71,7 @@ func requireCanonicalSchema(db *gorm.DB) error {
 		model          any
 		columns        []string
 		forbidden      []string
+		exactColumns   bool
 		primaryColumns []string
 		uniqueIndexes  []uniqueIndexContract
 	}{
@@ -82,7 +83,8 @@ func requireCanonicalSchema(db *gorm.DB) error {
 				"federation_id",
 				"authority_epoch",
 			},
-			forbidden:      []string{"current_seq", "disappear_timer_seconds"},
+			forbidden:      []string{"current_seq"},
+			exactColumns:   true,
 			primaryColumns: []string{"conversation_id"},
 		},
 		{
@@ -142,7 +144,7 @@ func requireCanonicalSchema(db *gorm.DB) error {
 		},
 		{
 			model:          &ConversationMemberSettingsModel{},
-			forbidden:      []string{"cleared_at_unix_ms"},
+			exactColumns:   true,
 			primaryColumns: []string{"conversation_id", "ptid"},
 		},
 		{
@@ -223,6 +225,11 @@ func requireCanonicalSchema(db *gorm.DB) error {
 				)
 			}
 		}
+		if contract.exactColumns {
+			if err := requireExactColumns(db, contract.model); err != nil {
+				return err
+			}
+		}
 		if len(contract.primaryColumns) > 0 {
 			if err := requirePrimaryColumns(db, contract.model, contract.primaryColumns); err != nil {
 				return err
@@ -232,6 +239,44 @@ func requireCanonicalSchema(db *gorm.DB) error {
 			if err := requireUniqueIndex(db, contract.model, index.name, index.columns); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func requireExactColumns(db *gorm.DB, model any) error {
+	statement := &gorm.Statement{DB: db}
+	if err := statement.Parse(model); err != nil {
+		return fmt.Errorf(
+			"conversation persistence: parse canonical columns for %T: %w",
+			model,
+			err,
+		)
+	}
+	actual, err := db.Migrator().ColumnTypes(model)
+	if err != nil {
+		return fmt.Errorf(
+			"conversation persistence: inspect canonical columns for %T: %w",
+			model,
+			err,
+		)
+	}
+	expected := make(map[string]struct{}, len(statement.Schema.DBNames))
+	for _, name := range statement.Schema.DBNames {
+		expected[name] = struct{}{}
+	}
+	if len(actual) != len(expected) {
+		return fmt.Errorf(
+			"conversation persistence: non-canonical column set for %T requires a database reset",
+			model,
+		)
+	}
+	for _, column := range actual {
+		if _, ok := expected[column.Name()]; !ok {
+			return fmt.Errorf(
+				"conversation persistence: non-canonical column set for %T requires a database reset",
+				model,
+			)
 		}
 	}
 	return nil

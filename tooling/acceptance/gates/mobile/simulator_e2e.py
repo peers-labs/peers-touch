@@ -16,6 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -1313,15 +1314,32 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
             role="mobile-simulator-source-identity",
         )
 
-        client_results: dict[str, Any] = {}
+        client_sessions: dict[str, SimulatorAppiumSession] = {}
         for spec in clients:
             session = self._create_session(server_url, spec)
             self.sessions.append(session)
-            client_results[spec.client_id] = self._exercise_client(
-                artifacts,
-                session,
-                spec,
-            )
+            client_sessions[spec.client_id] = session
+
+        # The descriptor gives every client an isolated device and Appium port
+        # set. Run their internally ordered Journeys concurrently so one Suite
+        # does not pay the independent device timelines serially.
+        with ThreadPoolExecutor(
+            max_workers=len(clients),
+            thread_name_prefix="mobile-simulator-client",
+        ) as executor:
+            futures = {
+                spec.client_id: executor.submit(
+                    self._exercise_client,
+                    artifacts,
+                    client_sessions[spec.client_id],
+                    spec,
+                )
+                for spec in clients
+            }
+            client_results = {
+                spec.client_id: futures[spec.client_id].result()
+                for spec in clients
+            }
 
         return {
             **self._result_base("PASS"),

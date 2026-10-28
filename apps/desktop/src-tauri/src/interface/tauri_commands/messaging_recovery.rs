@@ -19,7 +19,7 @@ use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::session_vault;
 use crate::messaging::{
     decode_recovery_revision, encode_recovery_revision, MessagingEngine,
-    INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+    MessagingProfileReadiness, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
 };
 use crate::model::recovery::{
     ReadLatestRecoveryRevisionRequest, ReadLatestRecoveryRevisionResponse,
@@ -342,6 +342,16 @@ pub fn messaging_recovery_restore_latest(
         Ok(session) => session,
         Err(error) => return error,
     };
+    let station_peer_id = match state.station.client().active_station_peer_id() {
+        Some(peer_id) if !peer_id.trim().is_empty() => peer_id,
+        _ => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "messaging recovery Home Station identity is unavailable",
+                None,
+            )
+        }
+    };
     if let Err(error) = crypto::validate_mnemonic(&recovery_phrase) {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -480,6 +490,9 @@ pub fn messaging_recovery_restore_latest(
         json!({
             "backup": revision_json(&revision),
             "recoveryEpoch": decoded.recovery_epoch,
+            "actorPtid": session.actor_ptid,
+            "profileId": session.account_id,
+            "stationPeerId": station_peer_id,
             "deviceId": restored_device_id,
             "fingerprint": crypto::fingerprint_hex(restored_identity.verifying_key()),
             "messageCount": archive.messages.len(),
@@ -502,20 +515,46 @@ pub fn messaging_recovery_status(
         Ok(session) => session,
         Err(error) => return error,
     };
-    let engine = match state.messaging_engines.get(&session.account_id) {
-        Ok(Some(engine)) => engine,
-        Ok(None) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                "messaging recovery requires an active profile engine",
-                None,
-            )
-        }
+    let readiness = match state.messaging_engines.profile_readiness(&session.account_id) {
+        Ok(readiness) => readiness,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let identity = match identity_json(engine.as_ref()) {
-        Ok(identity) => identity,
-        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    let identity = match readiness {
+        MessagingProfileReadiness::Active { actor_ptid } => {
+            if actor_ptid != session.actor_ptid {
+                return AppResult::fail(
+                    ErrorCode::Unauthorized,
+                    "messaging profile does not belong to the authenticated actor",
+                    None,
+                );
+            }
+            let engine = match state.messaging_engines.get(&session.account_id) {
+                Ok(Some(engine)) if engine.endpoint().ptid == session.actor_ptid => engine,
+                Ok(_) => {
+                    return AppResult::fail(
+                        ErrorCode::InternalError,
+                        "messaging profile changed while reading recovery status",
+                        None,
+                    )
+                }
+                Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+            };
+            match identity_json(engine.as_ref()) {
+                Ok(identity) => identity,
+                Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+            }
+        }
+        MessagingProfileReadiness::RecoveryRequired { actor_ptid } => {
+            if actor_ptid != session.actor_ptid {
+                return AppResult::fail(
+                    ErrorCode::Unauthorized,
+                    "recovery profile does not belong to the authenticated actor",
+                    None,
+                );
+            }
+            serde_json::Value::Null
+        }
+        MessagingProfileReadiness::Inactive => serde_json::Value::Null,
     };
     match latest_revision(state.station.client(), &session) {
         Ok(revision) => to_stub(
@@ -540,17 +579,6 @@ pub fn messaging_recovery_list_revisions(
     let session = match require_session(&state, &window) {
         Ok(session) => session,
         Err(error) => return error,
-    };
-    let engine = match state.messaging_engines.get(&session.account_id) {
-        Ok(Some(engine)) => engine,
-        Ok(None) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                "messaging recovery requires an active profile engine",
-                None,
-            )
-        }
-        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
     match latest_revision(state.station.client(), &session) {
         Ok(revision) => to_stub(

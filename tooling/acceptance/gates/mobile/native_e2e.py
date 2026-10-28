@@ -32,6 +32,7 @@ from tooling.acceptance.core import (
     require_runtime_service,
 )
 from tooling.acceptance.core.redaction import is_sensitive_key
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.gates.mobile.appium import (
     APPIUM_CAPABILITY_ID,
     AppiumSession,
@@ -282,11 +283,15 @@ class MobileNativeBlocked(GateError):
         resource: str,
         *,
         evidence_gaps: list[dict[str, str]] | None = None,
+        diagnostic: ResourceDiagnostic | None = None,
     ) -> None:
         super().__init__(reason)
         self.reason = reason
         self.resource = resource
         self.evidence_gaps = list(evidence_gaps or [])
+        if diagnostic is not None:
+            diagnostic.require_resource(resource)
+        self.diagnostic = diagnostic
 
 
 def validate_lifecycle_snapshot(
@@ -1472,6 +1477,8 @@ class MobileNativeGate(AcceptanceGate):
                 )
                 if error.evidence_gaps:
                     result["evidenceGaps"] = error.evidence_gaps
+                if error.diagnostic is not None:
+                    result["diagnostic"] = error.diagnostic.to_dict()
                 completion_status = "BLOCKED"
                 exit_code = 2
             except (
@@ -1552,14 +1559,36 @@ class MobileNativeGate(AcceptanceGate):
     def _run_dependency_blocked_scenario(self) -> dict[str, Any]:
         blocker = SCENARIO_DEPENDENCY_BLOCKERS[self.scenario]
         workstream = blocker["workstream"]
-        reason = blocker["reason"]
+        resource = f"mobile-product-dependency:{workstream.lower()}"
+        reason = (
+            f"Mobile native scenario {self.scenario!r} dispatches to a "
+            "declared rejection procedure with no executable product journey; "
+            "product dependency state has not been evaluated"
+        )
         raise MobileNativeBlocked(
-            (
-                f"Mobile native scenario {self.scenario!r} requires "
-                f"incomplete {workstream} product dependencies: {reason}; "
-                "physical product proof remains BLOCKED/UNPROVEN"
+            reason,
+            resource,
+            diagnostic=ResourceDiagnostic(
+                owner="mobile-native-scenario-owner",
+                recovery_action=f"Implement the {self.scenario} product journey in tooling/acceptance/gates/mobile/native_e2e.py, verify the current {workstream} contracts, and execute its required physical-device proof.",
+                resource_checks=[{
+                    "resource": resource,
+                    "expected": {"executableJourney": True},
+                    "state": "OBSERVED",
+                    "observed": {
+                        "scenario": self.scenario,
+                        "procedure": "_run_dependency_blocked_scenario",
+                        "declaredWorkstream": workstream,
+                        "declaredDependencyReason": blocker["reason"],
+                        "executableJourney": False,
+                    },
+                }, {
+                    "resource": f"mobile-product-state:{self.scenario}",
+                    "expected": {"requiredPhysicalProductProof": "PROVEN"},
+                    "state": "NOT_EVALUATED",
+                    "reason": "The declared rejection procedure runs no product dependency probe or physical product journey.",
+                }],
             ),
-            f"mobile-product-dependency:{workstream.lower()}",
             evidence_gaps=[
                 {
                     "scenario": self.scenario,

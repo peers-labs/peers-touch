@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import unittest
 
-from tooling.acceptance.core import EvidenceManifestInvalid
+from tooling.acceptance.core.execution_budget import digest
 from tooling.acceptance.gates.station_access import session_class_e2e
+from tooling.acceptance.tests.aggregate_fixtures import ManifestFixtureStore
 
 
 EXPECTED_SOURCE = {
@@ -34,6 +35,7 @@ def passing_manifest(
             "status": status,
             "completionStatus": completion_status,
             "proofStatus": proof_status,
+            "cleanupStatus": "passed",
             "secretScan": {"status": "passed"},
         },
     }
@@ -56,6 +58,7 @@ def development_result(gate_id: str) -> dict[str, object]:
         "artifactKind": "development-functional-result",
         "id": gate_id,
         "status": "passed",
+        "cleanupStatus": "passed",
         "developmentRunId": run_id,
         "developmentManifest": {
             "artifactKind": "acceptance-artifact-ref",
@@ -63,34 +66,10 @@ def development_result(gate_id: str) -> dict[str, object]:
             "gateId": gate_id,
             "runId": run_id,
             "path": "manifest.json",
-            "sha256": "c" * 64,
+            "sha256": digest(development_manifest(gate_id)),
             "mediaType": "application/json",
         },
     }
-
-
-class FakeStore:
-    workspace_id = "0123456789abcdef"
-
-    def __init__(self, manifests: dict[str, dict[str, object]]) -> None:
-        self.manifests = manifests
-        self.latest_calls = 0
-
-    def latest(self, gate_id: str) -> dict[str, object]:
-        self.latest_calls += 1
-        if gate_id not in self.manifests:
-            raise EvidenceManifestInvalid(
-                f"latest pointer is unavailable for {gate_id}"
-            )
-        return self.manifests[gate_id]
-
-    def read_json(self, reference: object) -> dict[str, object]:
-        gate_id = getattr(reference, "gate_id", "")
-        if gate_id not in self.manifests:
-            raise EvidenceManifestInvalid(
-                f"immutable manifest is unavailable for {gate_id}"
-            )
-        return self.manifests[gate_id]
 
 
 class StationAccessSessionClassGateTest(unittest.TestCase):
@@ -99,7 +78,8 @@ class StationAccessSessionClassGateTest(unittest.TestCase):
             spec.gate_id: passing_manifest(spec.gate_id)
             for spec in session_class_e2e.PRECEDING_GATES
         }
-        self.store = FakeStore(self.manifests)
+        self.store = ManifestFixtureStore(self.manifests)
+        ManifestFixtureStore.bind(self, EXPECTED_SOURCE, lambda: self.store)
 
     def evaluate(self) -> session_class_e2e.AggregateResult:
         return session_class_e2e.AggregateResult(
@@ -145,7 +125,7 @@ class StationAccessSessionClassGateTest(unittest.TestCase):
             spec.gate_id: development_manifest(spec.gate_id)
             for spec in session_class_e2e.PRECEDING_GATES
         }
-        store = FakeStore(manifests)
+        store = ManifestFixtureStore(manifests)
         raw = json.dumps(
             {
                 "source": EXPECTED_SOURCE,
@@ -177,7 +157,7 @@ class StationAccessSessionClassGateTest(unittest.TestCase):
         )
 
         self.assertTrue(aggregate.passed)
-        self.assertEqual(store.latest_calls, 0)
+        self.assertEqual(len(store.calls), 3)
         report = session_class_e2e.build_report(aggregate)
         self.assertEqual(report["status"], "PASS")
         self.assertEqual(report["proofStatus"], "NOT_APPLICABLE")

@@ -81,9 +81,9 @@ class NodeConnectivityJourneyTest(unittest.TestCase):
             work_root = Path(directory)
             with (
                 mock.patch.object(
-                    JOURNEY.tempfile,
-                    "TemporaryDirectory",
-                    return_value=contextlib.nullcontext(directory),
+                    JOURNEY,
+                    "native_cut_build_root",
+                    return_value=work_root,
                 ),
                 mock.patch.object(JOURNEY, "run_command", side_effect=run_command),
                 mock.patch.object(

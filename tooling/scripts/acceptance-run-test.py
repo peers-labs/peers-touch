@@ -353,6 +353,69 @@ class AcceptanceRunTest(unittest.TestCase):
             with self.subTest(values=values), self.assertRaises(SystemExit):
                 module.parse_service_profile_bindings(values)
 
+    def test_runtime_cells_are_bound_per_gate(self) -> None:
+        module = load_module()
+
+        self.assertEqual(
+            module.parse_runtime_cell_bindings(
+                [
+                    "chat-native-two-client-e2e=desktop-macos-native",
+                    "NCP-G03=desktop-windows-native",
+                ]
+            ),
+            {
+                "chat-native-two-client-e2e": "desktop-macos-native",
+                "NCP-G03": "desktop-windows-native",
+            },
+        )
+        for values in (
+            ["desktop-macos-native"],
+            ["chat-native-two-client-e2e="],
+            ["=desktop-macos-native"],
+            [
+                "chat-native-two-client-e2e=desktop-macos-native",
+                "chat-native-two-client-e2e=desktop-linux-native",
+            ],
+        ):
+            with self.subTest(values=values), self.assertRaises(SystemExit):
+                module.parse_runtime_cell_bindings(values)
+
+    def test_current_result_projection_is_bounded_to_proof_fields(self) -> None:
+        module = load_module()
+        envelope = module.current_result_proof_envelope(
+            {"commit": "abc", "workspaceDigest": "clean"},
+            [
+                {
+                    "id": "gate-a",
+                    "status": "passed",
+                    "completionStatus": "DONE",
+                    "proofStatus": "PROVEN",
+                    "runManifest": {"path": "manifest.json"},
+                    "largeProductReport": "x" * 2_000_000,
+                }
+            ],
+        )
+
+        self.assertEqual(
+            envelope,
+            {
+                "source": {
+                    "commit": "abc",
+                    "workspaceDigest": "clean",
+                },
+                "results": [
+                    {
+                        "id": "gate-a",
+                        "status": "passed",
+                        "completionStatus": "DONE",
+                        "proofStatus": "PROVEN",
+                        "runManifest": {"path": "manifest.json"},
+                    }
+                ],
+            },
+        )
+        self.assertLess(len(json.dumps(envelope)), 1000)
+
     def test_environment_provisioner_receives_only_its_profile_bindings(
         self,
     ) -> None:
@@ -628,6 +691,90 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(gate_call.kwargs["encoding"], "utf-8")
         self.assertEqual(gate_call.kwargs["errors"], "replace")
 
+    def test_budget_source_drift_stops_before_downstream_mutation(self) -> None:
+        expected = {
+            "commit": "a" * 40,
+            "workspaceDigest": "clean",
+            "canonicalWorktreeHash": "workspace-a",
+        }
+        observed = {**expected, "workspaceDigest": "sha256:changed"}
+        for drift_before_gate in (True, False):
+            with self.subTest(drift_before_gate=drift_before_gate):
+                module = load_module()
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    first_marker = root / "first-command"
+                    downstream_marker = root / "downstream-command"
+                    catalog = root / "catalog.json"
+                    policy = root / "budget.json"
+                    catalog.write_text(json.dumps({"gates": {
+                        gate_id: {
+                            "argv": [
+                                sys.executable, "-c",
+                                f"from pathlib import Path;Path({str(marker)!r}).touch()",
+                            ],
+                            "environment": "local",
+                            "tier": "ci-cheap",
+                            "timeout_seconds": 10,
+                        }
+                        for gate_id, marker in (
+                            ("synthetic-first", first_marker),
+                            ("synthetic-downstream", downstream_marker),
+                        )
+                    }}))
+                    policy.write_text(json.dumps({
+                        "requestSeconds": 30, "planningSeconds": 5,
+                        "lifecycle": {
+                            "cleanupSeconds": 2,
+                            "publishSeconds": 5,
+                        },
+                        "gates": {},
+                    }))
+                    source_reads = 0
+
+                    def current_source(_: Path) -> dict[str, str]:
+                        nonlocal source_reads
+                        source_reads += 1
+                        if source_reads <= 2:
+                            return expected
+                        if drift_before_gate or first_marker.exists():
+                            return observed
+                        return expected
+
+                    artifact_root = root / "evidence"
+                    with mock.patch.dict(os.environ, {
+                        "PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifact_root),
+                    }), mock.patch.object(sys, "argv", [
+                        "acceptance-run.py", "--gates", str(catalog),
+                        "--gate", "synthetic-first",
+                        "--gate", "synthetic-downstream",
+                        "--execution-budget", str(policy),
+                    ]), mock.patch(
+                        "tooling.acceptance.core.source_identity",
+                        side_effect=current_source,
+                    ), contextlib.redirect_stdout(io.StringIO()):
+                        exit_code = module.main()
+
+                    store = EvidenceStore(artifact_root, worktree=REPO_ROOT)
+                    aggregate = store.latest("acceptance-run")
+                    report = store.read_json(
+                        ArtifactRef.from_dict(aggregate["artifacts"]["run"])
+                    )
+                    self.assertEqual(exit_code, 2)
+                    self.assertEqual(first_marker.exists(), not drift_before_gate)
+                    self.assertFalse(downstream_marker.exists())
+                    self.assertEqual(report["source"], expected)
+                    stop = report["executionBudget"]["stop"]
+                    self.assertEqual(stop["reason"], "SOURCE_IDENTITY_STOP")
+                    self.assertEqual(stop["sourceDrift"]["observed"], observed)
+                    self.assertEqual(report["executionBudget"]["dispatchedGateCount"], 1)
+                    self.assertEqual(
+                        report["results"][0]["cleanupStatus"],
+                        "not-required" if drift_before_gate else "passed",
+                    )
+                    self.assertEqual(report["results"][1]["duration_seconds"], 0)
+                    self.assertEqual(report["results"][1]["proofStatus"], "UNPROVEN")
+
     def test_core_exports_generic_runner_contracts(self) -> None:
         self.assertTrue(
             issubclass(EphemeralLaunchCleanupFailed, EphemeralLaunchError)
@@ -813,10 +960,15 @@ class AcceptanceRunTest(unittest.TestCase):
 
         class EnvironmentProvisioner:
             resolved_credential_values = ("resolved-secret",)
+            remote_source_environment: dict[str, str] = {}
+            remote_source_context = staticmethod(contextlib.nullcontext)
 
             def bind_evidence_run(self, run: object) -> None:
                 self.evidence_run = run
                 events.append("evidence-run-bound")
+
+            def prepare_fixture_authority(self, **_kwargs) -> dict[str, str]:
+                return {}
 
             def prepare_credentials(
                 self,
@@ -1025,10 +1177,15 @@ class AcceptanceRunTest(unittest.TestCase):
         class EnvironmentProvisioner:
             environment_id = "synthetic-environment"
             resolved_credential_values: tuple[str, ...] = ()
+            remote_source_environment: dict[str, str] = {}
+            remote_source_context = staticmethod(contextlib.nullcontext)
 
             def bind_evidence_run(self, run: object) -> None:
                 self.evidence_run = run
                 events.append("evidence-run-bound")
+
+            def prepare_fixture_authority(self, **_kwargs) -> dict[str, str]:
+                return {}
 
             def prepare_credentials(
                 self,
@@ -1085,9 +1242,11 @@ class AcceptanceRunTest(unittest.TestCase):
                 None,
             )
 
-        def run_gate(spec, binding):
+        def run_gate(spec, binding, *, capture_output=None):
             events.append("gate")
             binding.close_parent_copy()
+            if capture_output is not None:
+                capture_output("", "")
             return subprocess.CompletedProcess(
                 args=spec.argv,
                 returncode=0,
@@ -1169,6 +1328,10 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertNotIn("SYNTHETIC_SECRET", child_environment)
         self.assertNotIn("resolved-secret", json.dumps(child_environment))
         self.assertEqual(
+            json.loads(child_environment["PT_ACCEPTANCE_PREREQUISITE_PROOFS"]),
+            [],
+        )
+        self.assertEqual(
             json.loads(child_environment["PT_ACCEPTANCE_CURRENT_RESULTS"]),
             {
                 "source": {
@@ -1197,9 +1360,13 @@ class AcceptanceRunTest(unittest.TestCase):
 
     def test_main_preserves_parent_blocked_context_result(self) -> None:
         module = load_module()
-        provisioner = mock.Mock()
+        provisioner = mock.Mock(
+            remote_source_environment={},
+            remote_source_context=mock.Mock(return_value=contextlib.nullcontext()),
+        )
         provisioner.environment_id = "synthetic-environment"
         provisioner.resolved_credential_values = ()
+        provisioner.prepare_fixture_authority.return_value = {}
         provisioner.prepare_credentials.return_value = ((), {})
         provisioner.cleanup.return_value = ("environment",)
         launch_context = mock.Mock()
@@ -1324,9 +1491,13 @@ class AcceptanceRunTest(unittest.TestCase):
     ) -> None:
         module = load_module()
         events: list[str] = []
-        provisioner = mock.Mock()
+        provisioner = mock.Mock(
+            remote_source_environment={},
+            remote_source_context=mock.Mock(return_value=contextlib.nullcontext()),
+        )
         provisioner.environment_id = "synthetic-environment"
         provisioner.resolved_credential_values = ()
+        provisioner.prepare_fixture_authority.return_value = {}
         provisioner.prepare_credentials.return_value = ((), {})
 
         def cleanup_environment() -> tuple[str, ...]:
@@ -1536,6 +1707,88 @@ class AcceptanceRunTest(unittest.TestCase):
             str(captured_cleanup["gate_process_cleanup_error"]),
         )
 
+    def test_provisioning_process_cleanup_failure_stops_after_releasing_owned_resources(self) -> None:
+        module = load_module()
+        events = []
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifacts = root / "artifacts"
+            downstream = root / "downstream"
+            provisioner = HomeStationProvisioner(EnvironmentContract.from_yaml(
+                REPO_ROOT / "tooling/acceptance/environments/home-station.yaml",
+            ))
+
+            def prepare(*args, **kwargs):
+                for name in ("profile", "source"):
+                    resource = root / name
+                    resource.write_text("owned")
+
+                    def release(path=resource, resource_name=name):
+                        path.unlink()
+                        events.append(resource_name)
+
+                    provisioner.register_cleanup(name, release)
+                raise EphemeralLaunchCleanupFailed(
+                    "provisioning child did not stop", operation="gate_process",
+                )
+
+            catalog = root / "gates.json"
+            catalog.write_text(json.dumps({"gates": {
+                "equipment": {
+                    "argv": [sys.executable, "-c", "pass"], "environment": "home-station",
+                    "provisioner": "home-station", "tier": "env-evidence",
+                },
+                "later": {
+                    "argv": [sys.executable, "-c", f"from pathlib import Path; Path({str(downstream)!r}).touch()"],
+                    "environment": "local", "tier": "ci-cheap",
+                },
+            }}))
+            policy = root / "policy.json"
+            policy.write_text(json.dumps({
+                "requestSeconds": 30, "planningSeconds": 5,
+                "lifecycle": {"cleanupSeconds": 5, "publishSeconds": 5}, "gates": {},
+            }))
+            with (
+                mock.patch.dict(os.environ, {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifacts)}),
+                mock.patch.object(sys, "argv", [
+                    "acceptance-run.py", "--gates", str(catalog), "--gate", "equipment",
+                    "--gate", "later", "--execution-budget", str(policy),
+                ]),
+                mock.patch("tooling.acceptance.core.source_identity", return_value={
+                    "commit": "a" * 40, "workspaceDigest": "clean",
+                    "canonicalWorktreeHash": workspace_id(REPO_ROOT),
+                }),
+                mock.patch.object(module, "environment_provisioner", return_value=provisioner),
+                mock.patch.object(provisioner, "prepare_fixture_authority", return_value={}),
+                mock.patch.object(provisioner, "prepare_credentials", return_value=((), {})),
+                mock.patch.object(module, "provision_environment", side_effect=prepare),
+                contextlib.redirect_stdout(output),
+            ):
+                exit_code = module.main()
+            store = EvidenceStore(artifacts, worktree=REPO_ROOT)
+            run_ref = next(line.removeprefix("run: ") for line in output.getvalue().splitlines()
+                           if line.startswith("run: "))
+            report = store.read_json(ArtifactRef.from_dict(json.loads(run_ref)))
+            result = next(item for item in report["results"] if item["id"] == "equipment")
+            cleanup = store.read_json(ArtifactRef.from_dict(result["cleanupArtifact"]))
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["cleanupStatus"], "failed")
+            self.assertEqual(cleanup["environmentCleanupStatus"], "passed")
+            self.assertEqual(cleanup["provisioningProcessCleanup"]["status"], "failed")
+            self.assertEqual(cleanup["provisioningProcessCleanup"]["operation"], "gate_process")
+            self.assertEqual(report["executionBudget"]["dispatchedGateCount"], 1)
+            session_ref = next(line.removeprefix("execution-session: ")
+                               for line in output.getvalue().splitlines()
+                               if line.startswith("execution-session: "))
+            session = store.read_json(ArtifactRef.from_dict(json.loads(session_ref)))
+            self.assertEqual(session["state"], "PAUSED_REPAIR_REQUIRED")
+            self.assertEqual(events, ["source", "profile"])
+            self.assertFalse(downstream.exists())
+            self.assertFalse((root / "source").exists())
+            self.assertFalse((root / "profile").exists())
+
     def test_failed_quarantine_defers_resource_release(self) -> None:
         cleanup = EphemeralCleanupResult(
             descriptors_closed=True,
@@ -1640,9 +1893,13 @@ class AcceptanceRunTest(unittest.TestCase):
         if close_error is not None:
             launch_context.close.side_effect = close_error
         launch_context.bind_child.return_value = mock.Mock()
-        provisioner = mock.Mock()
+        provisioner = mock.Mock(
+            remote_source_environment={},
+            remote_source_context=mock.Mock(return_value=contextlib.nullcontext()),
+        )
         provisioner.environment_id = "synthetic-environment"
         provisioner.resolved_credential_values = ()
+        provisioner.prepare_fixture_authority.return_value = {}
         provisioner.prepare_credentials.return_value = ((), {})
         provisioner.cleanup.return_value = ("environment",)
         cell_lifecycle = mock.Mock()
@@ -2211,6 +2468,31 @@ class AcceptanceRunTest(unittest.TestCase):
 
         self.assertEqual(leaked, ["report.json"])
 
+    def test_runtime_artifact_audit_preserves_validated_compiler_graph(self) -> None:
+        from tooling.acceptance.core.execution_graph import compile_graph
+
+        module = load_module()
+        graph = compile_graph({
+            "auth-key-check": {"argv": ["true"]},
+            "token-consumer": {"dependsOn": ["auth-key-check"], "argv": ["true"]},
+        }, ["token-consumer"])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "evidence", worktree=worktree)
+            with store.begin_run("compiler-report", source={}) as run:
+                ref = run.write_json("reports/plan.json", {"execution_graph": graph})
+                original = store.resolve(ref).read_bytes()
+                self.assertEqual(module.audit_runtime_artifacts(run.run_dir, ()), [])
+                module.finalize_runtime_log(run, "compiler-report", "completed", ())
+                run.finalize(result={"status": "passed"})
+                self.assertEqual(store.resolve(ref).read_bytes(), original)
+                self.assertEqual(store.read_json(ref)["execution_graph"], graph)
+                self.assertEqual(module.audit_runtime_artifacts(
+                    run.run_dir, ("auth-key-check",)), ["reports/plan.json"])
+                self.assertEqual(store.resolve(ref).read_bytes(), original)
+
     def test_runtime_artifact_scan_rejects_symlink_without_following_it(
         self,
     ) -> None:
@@ -2511,6 +2793,57 @@ class AcceptanceRunTest(unittest.TestCase):
             ["sourcePhase", "sourceBom", "sourceSpec"],
         )
 
+    def test_canonical_blocked_gate_report_preserves_blocked_result(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("blocked-gate", source={})
+            report = new_report(
+                "blocked-gate",
+                phase="runtime preflight",
+                bom=("ENV-01",),
+                spec=("environment-runtime",),
+            )
+            report.status = "BLOCKED"
+            report.error = "required runtime is unavailable"
+            report.error_type = "BlockedError"
+            report.blocked_reason = "required runtime is unavailable"
+            report.blocked_resource = "runtime-cell:synthetic"
+            report.write(run.run_dir / "reports" / "blocked-gate.json")
+
+            result = module.enrich_result_with_run_artifacts(
+                {
+                    "id": "blocked-gate",
+                    "status": "failed",
+                    "exit_code": 2,
+                    "tier": "ci-cheap",
+                    "cleanupStatus": "not-required",
+                    "timedOut": False,
+                },
+                run,
+            )
+            result = module.standardize_result(
+                result,
+                "/tmp/acceptance-plan.json",
+            )
+            run.close()
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["completionStatus"], "BLOCKED")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertFalse(result["sampleEmissionAllowed"])
+        self.assertEqual(
+            result["blockedReason"],
+            "required runtime is unavailable",
+        )
+        self.assertEqual(
+            result["blockedResource"],
+            "runtime-cell:synthetic",
+        )
+
     def test_validation_artifact_does_not_replace_environment_report(
         self,
     ) -> None:
@@ -2537,6 +2870,7 @@ class AcceptanceRunTest(unittest.TestCase):
                 role="validation",
             )
             report = new_report("environment-gate")
+            report.add_assertion("fixture-observation", True)
             report.status = "PASS"
             report.write(run.run_dir / "reports" / "environment-gate.json")
 
@@ -2594,6 +2928,7 @@ class AcceptanceRunTest(unittest.TestCase):
                 "state": "FIXTURE_READY",
                 "runId": "runtime-run",
             }
+            report.add_assertion("fixture-observation", True)
             report.status = "PASS"
             report.write(
                 run.run_dir / "reports" / "environment-gate.json"

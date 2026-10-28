@@ -521,12 +521,11 @@ export function installAcceptanceHarness(): void {
         completeCurrentSession: () =>
           identityRuntime.completeCurrentSession(),
       }, account, password);
-      const actorPtid = activeActorPtid();
+      const actorPtid = requireCanonicalAcceptancePtid(activeSessionActorPtid());
       await installAuthenticatedCriticalRuntimes(actorPtid);
-      await hydrateSocialForActiveActor();
       return {
         authenticated: true,
-        actorPtid: actorPtid,
+        actorPtid,
       };
     },
 

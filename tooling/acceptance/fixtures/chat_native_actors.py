@@ -33,9 +33,14 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     fixture_federation_id,
     machine_lease_reset_profile,
     read_fixture_actor,
-    seed_bound_contact,
+    read_fixture_actors,
+    seed_bound_contacts,
     seed_federation_context,
     verify_disposable_station_runtime,
+)
+from tooling.acceptance.fixtures.chat_reset_targets import (
+    PROFILE_BINDINGS_ENV,
+    require_reset_lease,
 )
 
 
@@ -96,6 +101,23 @@ def fixture_password(path: Path = ACTOR_FIXTURE) -> str:
             resource="fixture:apps/station/app/conf/actor.yml",
         )
     return values.pop()
+
+def fixture_avatar(role: str, path: Path = ACTOR_FIXTURE) -> str:
+    username = ACTOR_ACCOUNTS[role].split("@", 1)[0]
+    current_username = ""
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line.startswith("username:"):
+            current_username = line.split(":", 1)[1].strip().strip("'\"")
+        elif current_username == username and line.startswith("avatar:"):
+            avatar = line.split(":", 1)[1].strip().strip("'\"")
+            if avatar.startswith("data:image/svg+xml;base64,"):
+                return avatar
+            break
+    raise BlockedError(
+        reason=f"Committed native avatar fixture is missing for {role}",
+        resource=f"fixture-avatar:{role}",
+    )
 
 
 def _remaining_timeout(
@@ -167,22 +189,20 @@ def reset_fixture(
     operation_deadline = effective_deadline - termination_reserve
     try:
         child_environment = os.environ.copy()
-        if not child_environment.get(RESET_PROFILE_AUTHORIZATION_ENV) and not child_environment.get(
-            RESET_ENVIRONMENTS_AUTHORIZATION_ENV
-        ):
+        if not any(child_environment.get(key) for key in (
+            RESET_PROFILE_AUTHORIZATION_ENV,
+            RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
+            PROFILE_BINDINGS_ENV,
+        )):
             lease_profile = machine_lease_reset_profile()
             if lease_profile:
                 child_environment[
                     RESET_PROFILE_AUTHORIZATION_ENV
                 ] = lease_profile
-        for key in (
-            "PT_MACHINE_LEASE_KIND",
-            "PT_MACHINE_LEASE_RESOURCE_ID",
-            "PT_MACHINE_LEASE_RESET_SCOPE",
-            "PT_MACHINE_LEASE_FD",
-            "PT_MACHINE_LEASE_ID",
-        ):
-            child_environment.pop(key, None)
+        inherited_fds: tuple[int, ...] = ()
+        if child_environment.get("PT_MACHINE_LEASE_KIND") == "station.reset":
+            require_reset_lease()
+            inherited_fds = (int(child_environment["PT_MACHINE_LEASE_FD"]),)
         if reset_authorized is not None:
             if reset_authorized:
                 child_environment["CHAT_ACCEPTANCE_RESET"] = "1"
@@ -206,6 +226,7 @@ def reset_fixture(
             text=True,
             shell=False,
             close_fds=True,
+            pass_fds=inherited_fds,
             start_new_session=os.name == "posix",
         )
     except OSError as error:
@@ -345,14 +366,53 @@ def resolve_actor_identity(
             reason=f"Cannot resolve canonical PTID for fixture role {role}: {error}",
             resource=f"fixture-actor:{role}",
         ) from error
+    return _resolved_actor_identity(role, record)
+
+
+def _resolved_actor_identity(
+    role: str,
+    record: FixtureActorRecord,
+) -> ResolvedActorIdentity:
     return ResolvedActorIdentity(
         role=role,
-        account_ref=f"station-account:{account}",
+        account_ref=f"station-account:{ACTOR_ACCOUNTS[role]}",
         ptid=record.ptid,
         display_name=record.name.strip(),
         federated_handle=record.federated_handle,
         home_station_peer_id=record.home_station_peer_id,
     )
+
+
+def _read_bound_actor_records(
+    role_targets: Mapping[str, tuple[str, str]],
+) -> dict[str, FixtureActorRecord]:
+    grouped: dict[tuple[str, str], list[str]] = {}
+    for role, target in role_targets.items():
+        if role not in ACTOR_ACCOUNTS:
+            raise BlockedError(
+                reason=f"Chat native actor role is unsupported: {role}",
+                resource=f"fixture-actor:{role}",
+            )
+        grouped.setdefault(target, []).append(role)
+    records: dict[str, FixtureActorRecord] = {}
+    for (station_url, environment), roles in grouped.items():
+        try:
+            by_account = read_fixture_actors(
+                station_url, environment,
+                tuple(ACTOR_ACCOUNTS[role] for role in roles),
+            )
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            raise BlockedError(
+                reason=(
+                    f"Cannot resolve canonical PTIDs for fixture roles "
+                    f"{','.join(roles)}: {error}"
+                ),
+                resource=f"fixture-actor:{roles[0]}",
+            ) from error
+        records.update({
+            role: by_account[ACTOR_ACCOUNTS[role]] for role in roles
+        })
+    return {role: records[role] for role in role_targets}
 
 
 def resolve_existing_actor_identity(
@@ -629,13 +689,8 @@ def prepare_bound_friendships(
     actors: tuple[ActorIdentity, ...],
 ) -> None:
     by_role = {actor.role: actor for actor in actors}
-    records: dict[str, FixtureActorRecord] = {}
-    for role, (station_url, environment) in role_targets.items():
-        record = read_fixture_actor(
-            station_url,
-            environment,
-            ACTOR_ACCOUNTS[role],
-        )
+    records = _read_bound_actor_records(role_targets)
+    for role, record in records.items():
         identity = by_role.get(role)
         if identity is None or identity.ptid != record.ptid:
             raise BlockedError(
@@ -645,20 +700,21 @@ def prepare_bound_friendships(
                 ),
                 resource=f"fixture-actor:{role}",
             )
-        records[role] = record
-
     federation_members = tuple(records.values())
+    contacts_by_target: dict[
+        tuple[str, str], list[tuple[FixtureActorRecord, FixtureActorRecord]]
+    ] = {}
     for actor_role, (station_url, environment) in role_targets.items():
         for peer_role in role_targets:
             if actor_role == peer_role:
                 continue
-            seed_bound_contact(
-                station_url,
-                environment,
-                records[actor_role],
-                records[peer_role],
-                federation_members,
+            contacts_by_target.setdefault((station_url, environment), []).append(
+                (records[actor_role], records[peer_role])
             )
+    for (station_url, environment), contacts in contacts_by_target.items():
+        seed_bound_contacts(
+            station_url, environment, tuple(contacts), federation_members,
+        )
     prepare_bound_federation_routing(role_targets, records)
 
 
@@ -667,12 +723,11 @@ def prepare_federation_contexts(
 ) -> str:
     records_by_target: dict[str, tuple[FixtureActorRecord, ...]] = {}
     for service_id, (station_url, environment, roles) in targets.items():
+        by_account = read_fixture_actors(
+            station_url, environment, tuple(ACTOR_ACCOUNTS[role] for role in roles),
+        )
         records_by_target[service_id] = tuple(
-            read_fixture_actor(
-                station_url,
-                environment,
-                ACTOR_ACCOUNTS[role],
-            )
+            by_account[ACTOR_ACCOUNTS[role]]
             for role in roles
         )
     members = tuple({
@@ -716,7 +771,7 @@ def produce_actor_manifest(
     deployment_environment: str,
     roles: Iterable[str],
     credential_ref: str,
-    reset_authorized: bool,
+    reset_authorized: bool | None,
 ) -> tuple[ActorManifest, Path, dict[str, str]]:
     return produce_bound_actor_manifest(
         environment_id=environment_id,
@@ -736,11 +791,13 @@ def produce_bound_actor_manifest(
     run_id: str,
     role_targets: Mapping[str, tuple[str, str]],
     credential_ref: str,
-    reset_authorized: bool,
+    reset_authorized: bool | None,
     fixture_id: str = "chat-native-actors",
 ) -> tuple[ActorManifest, Path, dict[str, str]]:
     unique_roles = tuple(dict.fromkeys(role_targets))
-    if not reset_authorized:
+    if reset_authorized is None:
+        require_reset_lease()
+    elif not reset_authorized:
         raise BlockedError(
             reason=(
                 "Chat native actor reset requires CHAT_ACCEPTANCE_RESET=1 "
@@ -763,13 +820,9 @@ def produce_bound_actor_manifest(
             target_roles,
             reset_authorized=reset_authorized,
         )
+    records = _read_bound_actor_records(role_targets)
     actors = tuple(
-        resolve_actor_identity(
-            role_targets[role][0],
-            role_targets[role][1],
-            role,
-        )
-        for role in unique_roles
+        _resolved_actor_identity(role, records[role]) for role in unique_roles
     )
     prepare_bound_friendships(role_targets, actors)
     manifest = ActorManifest(

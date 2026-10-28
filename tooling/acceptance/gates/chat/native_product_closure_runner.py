@@ -17,6 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import unquote, urlsplit
 
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
@@ -32,6 +33,8 @@ from tooling.acceptance.core import (
     REPO_ROOT,
     call_async_harness,
 )
+from tooling.acceptance.core.evidence_store import write_current_artifact
+from tooling.acceptance.core.execution_budget import ExecutionDeadline, deadline
 from tooling.acceptance.core.provisioning import load_runtime_manifest
 from tooling.acceptance.drivers.native import (
     MouseAction,
@@ -44,18 +47,19 @@ from tooling.acceptance.drivers.native import (
 )
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
-from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
-    AcceptanceStationSubmitFaultProxy,
-)
 from tooling.acceptance.gates.chat.native_file_picker import select_native_file
+from tooling.acceptance.gates.chat.native_two_client_runner import is_bundled_square_avatar
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
+    active_direct_route_multiaddr,
     cleanup_preserving_primary_failure,
-    commits_match,
+    native_runtime_source_identity,
     read_station_version,
     runtime_station_service,
+    verify_runtime_fixture_ready,
     wait_until,
 )
+from tooling.acceptance.node_connectivity_native_support import DirectRouteFaultProxy
 
 
 GATE_ID = "chat-native-product-closure-e2e"
@@ -234,6 +238,24 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def avatar_rendered_source_matches(source: str, rendered: str) -> bool:
+    if not source or not rendered:
+        return False
+    if source.startswith("data:"):
+        return is_bundled_square_avatar(source) and rendered == source
+    expected_cache_key = hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
+    local = urlsplit(rendered)
+    filename = unquote(local.path).rsplit("/", 1)[-1]
+    return (
+        (local.scheme, local.netloc) in {
+            ("asset", "localhost"),
+            ("http", "asset.localhost"),
+            ("https", "asset.localhost"),
+        }
+        and filename.split(".", 1)[0] == expected_cache_key
+    )
+
+
 def public_fixture_password() -> str:
     path = REPO_ROOT / "apps" / "station" / "app" / "conf" / "actor.yml"
     current_email = ""
@@ -347,26 +369,115 @@ class NativeProductClosureGate(AcceptanceGate):
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.steps: list[dict[str, Any]] = []
+        self._step_observation_sequence = 0
         self.structured_evidence: dict[str, Any] = {}
         self.localization_checks: dict[str, dict[str, list[str]]] = {}
         self.native_activation_diagnostics: list[dict[str, Any]] = []
-        self.reaction_proxy: AcceptanceStationSubmitFaultProxy | None = None
+        self.reaction_proxy: DirectRouteFaultProxy | None = None
         self.reaction_transport_override = None
         self.fixture_root = Path(tempfile.mkdtemp(prefix="pt-chat-product-closure-"))
         self.report.station_url = self.station_url
         self.report.manifest = self.manifest
         self.report.runtime["desktopInputMode"] = self.input_mode.value
 
+    def observe_step(
+        self, name: str, state: str, started: float,
+        *, error: Exception | None = None,
+        predicate: dict[str, Any] | None = None,
+    ) -> None:
+        self._step_observation_sequence += 1
+        observation = {
+            "artifactKind": "acceptance-step-observation",
+            "evidenceClass": "SUPPORTING_OBSERVATION",
+            "proofStatus": "NOT_APPLICABLE",
+            "gateId": self.gate_id,
+            "sequence": self._step_observation_sequence,
+            "source": self.manifest["source"],
+            "step": name,
+            "client": name.split(".", 1)[0] if name.split(".", 1)[0] in CLIENT_ACTOR_ROLES else "",
+            "state": state,
+            "elapsedMs": int((time.monotonic() - started) * 1000),
+        }
+        if error is not None:
+            observation["errorType"] = type(error).__name__
+            observation["error"] = str(error)
+        if predicate is not None:
+            observation["predicate"] = predicate
+        write_current_artifact(
+            f"observations/step-{self._step_observation_sequence:05d}.json",
+            (json.dumps(observation, sort_keys=True) + "\n").encode("utf-8"),
+            repo_root=REPO_ROOT,
+        )
+        print(json.dumps(observation, sort_keys=True), flush=True)
+
     def step(self, name: str, action: Callable[[], Any]) -> Any:
+        started = time.monotonic()
+        self.observe_step(name, "STARTED", started)
         try:
             value = action()
         except Exception as error:
             self.steps.append({"step": name, "status": "fail", "error": str(error)})
             self.report.runtime["steps"] = list(self.steps)
-            self.report.runtime["firstFailedStep"] = name
+            self.report.runtime.setdefault("firstFailedStep", name)
+            self.observe_step(name, "FAILED", started, error=error)
             raise
         self.steps.append({"step": name, "status": "pass"})
+        self.observe_step(name, "COMPLETED", started)
         return value
+
+    def wait_step(
+        self,
+        probe: Callable[[], Any],
+        description: str,
+        *,
+        expected: Any,
+        ready: Callable[[Any], bool] = bool,
+        timeout: float = 120,
+        interval: float = 0.25,
+    ) -> Any:
+        started = time.monotonic()
+        last_serialized = ""
+        last_recorded = float("-inf")
+
+        def predicate() -> Any:
+            nonlocal last_serialized, last_recorded
+            failure: Exception | None = None
+            try:
+                value = probe()
+                accepted = ready(value)
+                sample = {
+                    "expected": expected,
+                    "observed": value,
+                    "accepted": accepted,
+                }
+            except Exception as error:
+                failure = error
+                value = None
+                accepted = False
+                sample = {
+                    "expected": expected,
+                    "errorType": type(error).__name__,
+                    "error": str(error),
+                    "accepted": False,
+                }
+            serialized = json.dumps(sample, sort_keys=True)
+            now = time.monotonic()
+            if serialized != last_serialized and (
+                accepted or now - last_recorded >= 1
+            ):
+                self.observe_step(
+                    description, "PREDICATE", started, predicate=sample,
+                )
+                last_serialized = serialized
+                last_recorded = now
+            if failure is not None:
+                raise failure
+            return value if accepted else None
+
+        return self.step(
+            description,
+            lambda: wait_until(predicate, description, timeout, interval),
+        )
 
     def write_json_evidence(self, key: str, value: Any) -> None:
         path = self.fixture_root / f"{key}.json"
@@ -419,6 +530,7 @@ class NativeProductClosureGate(AcceptanceGate):
             NativeLaunchOptions(
                 window_slot=window_actors.index(actor),
                 window_count=len(window_actors),
+                restore_session=restore_session,
             ),
         )
         attempt = {
@@ -453,38 +565,25 @@ class NativeProductClosureGate(AcceptanceGate):
             if client.process_id:
                 self.runtime_pids.add(int(client.process_id))
             self.register_driver(client)
-            if (
-                actor == "alice"
-                and self.reaction_transport_override is not None
-            ):
-                self.runtime_binding.apply_transport_override(
-                    "alice",
-                    "station",
-                    self.reaction_transport_override,
-                )
             if not restore_session:
                 account_ref = str(
                     self.actor_specs[actor_role].get("accountRef") or ""
                 )
                 account = account_ref.removeprefix("station-account:")
-                login = call_async_harness(
-                    client,
-                    "loginWithPassword",
-                    {"account": account, "password": public_fixture_password()},
-                    namespace="chat",
-                    script_timeout=NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS,
+                login = self.step(
+                    f"{actor}.login",
+                    lambda: call_async_harness(
+                        client,
+                        "loginWithPassword",
+                        {"account": account, "password": public_fixture_password()},
+                        namespace="chat",
+                        script_timeout=NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS,
+                    ),
                 )
                 if not (login or {}).get("authenticated"):
                     raise GateError(f"{actor} login did not authenticate")
                 self.client_lifecycles.mark_authenticated(client)
-                hydration = call_async_harness(
-                    client,
-                    "hydrateActiveActor",
-                    {},
-                    namespace="chat",
-                    script_timeout=30,
-                )
-                ptid = str((hydration or {}).get("actorPtid") or "")
+                ptid = str((login or {}).get("actorPtid") or "")
                 if ptid != expected_ptid:
                     raise GateError(
                         f"{actor} login identity mismatch: "
@@ -495,7 +594,10 @@ class NativeProductClosureGate(AcceptanceGate):
             ptid = expected_ptid
             device_id = ""
             if wait_for_device:
-                device = self.wait_for_realtime_device(client, expected_ptid)
+                device = self.step(
+                    f"{actor}.device",
+                    lambda: self.wait_for_realtime_device(client, expected_ptid),
+                )
                 ptid = str(device.get("actorPtid") or "")
                 device_id = str((device or {}).get("deviceId") or "")
                 if not device_id:
@@ -1656,25 +1758,33 @@ class NativeProductClosureGate(AcceptanceGate):
                     content: row.querySelector('[data-message-content]')?.innerText || '',
                   };
                 }
-                const preview = Array.from(
-                  document.querySelectorAll('[data-thread-preview-message-id]'),
-                ).find((item) => {
-                  const content = item.querySelector('[data-thread-preview-message-content]');
-                  return (content?.innerText || '').includes(expected);
-                });
-                if (!preview) return null;
                 return {
-                  id: preview.getAttribute('data-thread-preview-message-id') || '',
-                  sequence: 0,
-                  attachmentCount: 0,
-                  content: preview.querySelector('[data-thread-preview-message-content]')?.innerText || '',
+                  id: '',
+                  visibleRows: Array.from(
+                    document.querySelectorAll('[data-message-ulid]'),
+                  ).map((item) => ({
+                    id: item.getAttribute('data-message-ulid') || '',
+                    sequence: Number(
+                      item.getAttribute('data-message-authority-sequence') || 0,
+                    ),
+                    content: item.querySelector('[data-message-content]')
+                      ?.innerText || '',
+                    threadRoot: item.getAttribute('data-message-thread-root') || '',
+                    replyTo: item.getAttribute('data-message-reply-to') || '',
+                  })),
                 };
                 """,
                 text,
             )
-            return value if isinstance(value, dict) and value.get("id") else None
+            return value if isinstance(value, dict) else {}
 
-        return wait_until(snapshot, f"{actor} visible message {text!r}", timeout=120)
+        return self.wait_step(
+            snapshot,
+            f"{actor}.visible-message:{text}",
+            expected={"visibleMessageText": text, "messageIdPresent": True},
+            ready=lambda value: bool(value.get("id")),
+            timeout=120,
+        )
 
     def enter_chat_page(self, actor: str) -> None:
         client = self.clients[actor]
@@ -2293,17 +2403,13 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         return Path(local_path)
 
-    def thread_snapshot(self, actor: str, root_id: str) -> dict[str, Any]:
-        if self.clients[actor].find_elements("[data-chat-detail-panel='open']"):
-            self.click(actor, "[data-chat-detail-toggle]")
+    def read_thread_summary(self, actor: str, root_id: str) -> dict[str, Any]:
         row = self.clients[actor].find_element(
             f'[data-message-ulid="{root_id}"]',
             20,
         )
-        summary = {
-            "count": int(
-                row.get_attribute("data-message-thread-reply-count") or 0
-            ),
+        return {
+            "count": int(row.get_attribute("data-message-thread-reply-count") or 0),
             "ids": [
                 item
                 for item in (
@@ -2312,44 +2418,60 @@ class NativeProductClosureGate(AcceptanceGate):
                 if item
             ],
         }
+
+    def read_thread_panel(self, actor: str) -> dict[str, Any]:
+        value = self.clients[actor].execute_script(
+            """
+            const panel = document.querySelector('[data-chat-thread-panel="open"]');
+            if (!panel) return {};
+            const replies = Array.from(
+              panel.querySelectorAll('[data-thread-message-role="reply"]'),
+            );
+            return {
+              root: panel.getAttribute('data-chat-thread-root') || '',
+              count: Number(panel.getAttribute('data-chat-thread-reply-count') || 0),
+              ids: replies.map((row) =>
+                row.getAttribute('data-thread-message-id') || ''
+              ),
+              orders: Array.from(
+                panel.querySelectorAll('[data-thread-message-order]'),
+              ).map((row) =>
+                Number(row.getAttribute('data-thread-message-order') || -1)
+              ),
+              replies: replies.map((row) => ({
+                id: row.getAttribute('data-thread-message-id') || '',
+                content: row.querySelector('[data-message-text]')?.innerText || '',
+                order: Number(row.getAttribute('data-thread-message-order') || -1),
+              })),
+            };
+            """
+        )
+        return value if isinstance(value, dict) else {}
+
+    def thread_snapshot(self, actor: str, root_id: str) -> dict[str, Any]:
+        if self.clients[actor].find_elements("[data-chat-detail-panel='open']"):
+            self.click(actor, "[data-chat-detail-toggle]")
         self.click_message_action(actor, root_id, "thread")
-        panel = self.clients[actor].find_element(
+        self.clients[actor].find_element(
             "[data-chat-thread-panel='open']",
             30,
         )
-        panel_snapshot = self.clients[actor].execute_script(
-            """
-            const panel = arguments[0];
-            return {
-              root: panel.getAttribute('data-chat-thread-root') || '',
-              count: Number(
-                panel.getAttribute('data-chat-thread-reply-count') || 0
-              ),
-              ids: Array.from(
-                panel.querySelectorAll('[data-thread-message-role="reply"]')
-              ).map((item) =>
-                item.getAttribute('data-thread-message-id') || ''
-              ),
-              orders: Array.from(
-                panel.querySelectorAll('[data-thread-message-order]')
-              ).map((item) =>
-                Number(item.getAttribute('data-thread-message-order') || -1)
-              ),
-            };
-            """,
-            panel,
+        snapshot = self.wait_step(
+            lambda: {
+                "summary": self.read_thread_summary(actor, root_id),
+                "panel": self.read_thread_panel(actor),
+            },
+            f"{actor}.recovered-thread-summary-panel",
+            expected={"root": root_id, "summaryEqualsPanel": True},
+            ready=lambda value: (
+                value["panel"].get("root") == root_id
+                and value["panel"].get("count") == value["summary"]["count"]
+                and value["panel"].get("ids") == value["summary"]["ids"]
+            ),
+            timeout=120,
         )
         self.click(actor, "[data-chat-thread-close]")
-        if (
-            panel_snapshot.get("root") != root_id
-            or panel_snapshot.get("count") != summary["count"]
-            or panel_snapshot.get("ids") != summary["ids"]
-        ):
-            raise GateError(
-                f"{actor} thread summary and panel diverged: "
-                f"{json.dumps({'summary': summary, 'panel': panel_snapshot})}"
-            )
-        return {"summary": summary, "panel": panel_snapshot}
+        return snapshot
 
     def conversation_snapshot(
         self,
@@ -2365,7 +2487,7 @@ class NativeProductClosureGate(AcceptanceGate):
             reaction_emoji,
         )
         attachments = {
-            message_id: self.attachment_message(actor, count, message_id)
+            message_id: self.recovered_attachment_message(actor, count, message_id)
             for message_id, count in attachment_messages.items()
         }
         if not reaction_visible:
@@ -2390,79 +2512,111 @@ class NativeProductClosureGate(AcceptanceGate):
         bob_text = f"w13-bob-{os.getpid()}"
         reply_text = f"w13-reply-{os.getpid()}"
 
-        self.composer_send("alice", root_text)
+        self.step(
+            "transcript.alice.send-root.ui",
+            lambda: self.composer_send("alice", root_text),
+        )
         root = self.wait_message_text("alice", root_text)
         self.wait_message_text("bob", root_text)
-        self.composer_send("bob", bob_text)
+        self.step(
+            "transcript.bob.send-root.ui",
+            lambda: self.composer_send("bob", bob_text),
+        )
         bob_root = self.wait_message_text("bob", bob_text)
         self.wait_message_text("alice", bob_text)
 
-        self.click_message_action("alice", str(bob_root["id"]), "reply")
-        self.composer_send("alice", reply_text)
-        reply = self.wait_message_text("alice", reply_text)
-        self.wait_message_text("bob", reply_text)
-
-        def summary() -> dict[str, Any] | None:
-            row = self.clients["alice"].find_element(
-                f'[data-message-ulid="{bob_root["id"]}"]',
-                10,
-            )
-            count = int(row.get_attribute("data-message-thread-reply-count") or 0)
-            ids = [
-                item
-                for item in (
-                    row.get_attribute("data-message-thread-reply-ids") or ""
-                ).split(",")
-                if item
-            ]
-            return {"count": count, "ids": ids} if count == 1 and ids else None
-
-        thread_summary = wait_until(summary, "thread summary projection", timeout=120)
-        self.click_message_action("alice", str(bob_root["id"]), "thread")
-        panel = self.clients["alice"].find_element("[data-chat-thread-panel='open']", 30)
-        panel_snapshot = self.clients["alice"].execute_script(
-            """
-            const panel = arguments[0];
-            return {
-              root: panel.getAttribute('data-chat-thread-root') || '',
-              count: Number(panel.getAttribute('data-chat-thread-reply-count') || 0),
-              ids: Array.from(panel.querySelectorAll('[data-thread-message-role="reply"]'))
-                .map((row) => row.getAttribute('data-thread-message-id') || ''),
-            };
-            """,
-            panel,
+        self.step(
+            "transcript.alice.reply.ui",
+            lambda: self.click_message_action("alice", str(bob_root["id"]), "reply"),
         )
+        self.step(
+            "transcript.alice.send-reply.ui",
+            lambda: self.composer_send("alice", reply_text),
+        )
+
+        self.wait_step(
+            lambda: self.read_thread_summary("alice", str(bob_root["id"])),
+            "alice.thread-summary",
+            expected={"count": 1},
+            ready=lambda value: value["count"] == 1,
+            timeout=120,
+        )
+        panels = {}
+        summaries = {}
+        # Thread replies are rendered in the real panel, never in timeline previews.
+        for actor in ("alice", "bob"):
+            self.step(
+                f"transcript.{actor}.thread.ui",
+                lambda actor=actor: self.click_message_action(
+                    actor, str(bob_root["id"]), "thread",
+                ),
+            )
+            panels[actor] = self.wait_step(
+                lambda actor=actor: self.read_thread_panel(actor),
+                f"{actor}.exact-thread-panel",
+                expected={
+                    "root": bob_root["id"],
+                    "count": 1,
+                    "ids": panels["alice"]["ids"] if actor == "bob" else "one reply ID",
+                    "replyContent": reply_text,
+                    "orders": [0, 1],
+                },
+                ready=lambda value: (
+                    value.get("root") == bob_root["id"]
+                    and value.get("count") == 1
+                    and value.get("orders") == [0, 1]
+                    and len(value.get("replies", [])) == 1
+                    and value.get("ids") == [value["replies"][0]["id"]]
+                    and bool(value["replies"][0]["id"])
+                    and reply_text in value["replies"][0]["content"]
+                    and (actor == "alice" or value["ids"] == panels["alice"]["ids"])
+                ),
+                timeout=120,
+            )
+            # The on-visit thread load must hydrate the actual root summary too.
+            summaries[actor] = self.wait_step(
+                lambda actor=actor: self.read_thread_summary(
+                    actor, str(bob_root["id"]),
+                ),
+                f"{actor}.exact-thread-summary",
+                expected={"count": panels[actor]["count"], "ids": panels[actor]["ids"]},
+                ready=lambda value: (
+                    value["count"] == panels[actor]["count"]
+                    and value["ids"] == panels[actor]["ids"]
+                ),
+                timeout=120,
+            )
+        self.capture_visible_localization("thread", ("alice",))
+        for actor in ("alice", "bob"):
+            self.click(actor, "[data-chat-thread-close]")
+        panel_snapshot = panels["alice"]
+        thread_summary = summaries["alice"]
+        reply = panel_snapshot["replies"][0]
         self.assert_condition(
             "thread_exact",
             panel_snapshot.get("root") == bob_root["id"]
             and panel_snapshot.get("count") == thread_summary["count"]
             and panel_snapshot.get("ids") == thread_summary["ids"]
-            and panel_snapshot.get("ids") == [reply["id"]],
-            json.dumps({"summary": thread_summary, "panel": panel_snapshot}),
+            and panel_snapshot.get("ids") == [reply["id"]]
+            and panels["bob"] == panel_snapshot
+            and summaries["bob"] == thread_summary,
+            json.dumps({"summaries": summaries, "panels": panels}),
         )
-        self.capture_visible_localization("thread", ("alice",))
-        self.click("alice", "[data-chat-thread-close]")
 
         expected_top_level_ids = [str(root["id"]), str(bob_root["id"])]
         expected_top_level_content = [root_text, bob_text]
-        alice_transcript = wait_until(
-            lambda: (
-                value
-                if (value := self.transcript("alice"))
-                and [item["id"] for item in value] == expected_top_level_ids
-                else None
-            ),
-            "Alice exact top-level transcript",
+        alice_transcript = self.wait_step(
+            lambda: self.transcript("alice"),
+            "alice.exact-top-level-transcript",
+            expected={"messageIds": expected_top_level_ids},
+            ready=lambda value: [item["id"] for item in value] == expected_top_level_ids,
             timeout=120,
         )
-        bob_transcript = wait_until(
-            lambda: (
-                value
-                if (value := self.transcript("bob"))
-                and [item["id"] for item in value] == expected_top_level_ids
-                else None
-            ),
-            "Bob exact top-level transcript",
+        bob_transcript = self.wait_step(
+            lambda: self.transcript("bob"),
+            "bob.exact-top-level-transcript",
+            expected={"messageIds": expected_top_level_ids},
+            ready=lambda value: [item["id"] for item in value] == expected_top_level_ids,
             timeout=120,
         )
         top_level_ids = [item["id"] for item in alice_transcript]
@@ -2489,6 +2643,8 @@ class NativeProductClosureGate(AcceptanceGate):
             "bob": bob_transcript,
             "summary": thread_summary,
             "panel": panel_snapshot,
+            "receiverPanels": panels,
+            "receiverSummaries": summaries,
         }
         return str(root["id"]), str(bob_root["id"])
 
@@ -2583,7 +2739,8 @@ class NativeProductClosureGate(AcceptanceGate):
               );
               state.events.push({
                 active: describe(active),
-                eventKey: event?.key || '',
+                inputName: ['Enter', 'Tab', 'Escape', ' '].includes(event?.key)
+                  ? event.key : '',
                 kind,
                 overlayKind: overlay?.getAttribute(
                   'data-message-action-overlay',
@@ -2640,7 +2797,24 @@ class NativeProductClosureGate(AcceptanceGate):
               overlayKind: overlay?.getAttribute(
                 'data-message-action-overlay',
               ) || '',
+              overlayMessageId: overlay?.getAttribute(
+                'data-message-action-message',
+              ) || '',
               overlayLabel: overlay?.getAttribute('aria-label') || '',
+              actionControls: Array.from(
+                overlay?.querySelectorAll('[data-message-action]') || [],
+              ).map(element => ({
+                action: element.getAttribute('data-message-action'),
+                visibility: getComputedStyle(element).visibility,
+                transitionProperty: getComputedStyle(element).transitionProperty,
+                transitions: element.getAnimations().map(animation => ({
+                  currentTime: animation.currentTime,
+                  playState: animation.playState,
+                  keyframes: animation.effect?.getKeyframes().map(frame => ({
+                    visibility: frame.visibility,
+                  })),
+                })),
+              })),
             };
         """
         # #endregion
@@ -2680,6 +2854,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 Keys.TAB,
                 Keys.ENTER,
                 Keys.ENTER,
+                interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS,
             )
         else:
             self.native_adapter.post_key_sequence_to_process(
@@ -2694,19 +2869,17 @@ class NativeProductClosureGate(AcceptanceGate):
                 private_source=True,
             )
         try:
-            selected_emoji = WebDriverWait(client.driver, 15).until(
-                lambda driver: driver.execute_script(
-                    """
-                    const events = window.__PT_REACTION_KEYBOARD_DEBUG__?.events || [];
-                    return events
-                      .filter(
-                        (event) => event.kind === 'click' && event.target?.emoji,
-                      )
-                      .at(-1)?.target?.emoji || '';
-                    """
-                )
+            snapshot = self.wait_step(
+                lambda: client.execute_script(keyboard_debug_script),
+                f"{actor}.reaction-keyboard-selection",
+                expected={"messageId": message_id, "selectedEmoji": "nonempty"},
+                ready=lambda value: any(
+                    event.get("kind") == "click" and event.get("target", {}).get("emoji")
+                    for event in value.get("events", [])
+                ),
+                timeout=15,
             )
-        except TimeoutException:
+        except GateError:
             # #region debug-point V-X:reaction-keyboard-lifecycle
             _debug_report(
                 "V-X",
@@ -2715,8 +2888,14 @@ class NativeProductClosureGate(AcceptanceGate):
                 client.execute_script(keyboard_debug_script),
             )
             # #endregion
+            self.save_screenshot(client, f"{actor}-reaction-keyboard-failed")
+            self.save_dom(client, f"{actor}-reaction-keyboard-failed")
             raise
-        snapshot = client.execute_script(keyboard_debug_script)
+        selected_emoji = next(
+            str(event["target"]["emoji"])
+            for event in reversed(snapshot["events"])
+            if event.get("kind") == "click" and event.get("target", {}).get("emoji")
+        )
         picker_events = [
             event
             for event in snapshot.get("events", [])
@@ -2798,17 +2977,113 @@ class NativeProductClosureGate(AcceptanceGate):
             timeout=120,
         )
 
-        proxy = self.reaction_proxy
-        if proxy is None:
-            raise GateError("reaction fault proxy is not running")
+        if self.runtime_binding is None:
+            raise GateError("Native Desktop runtime binding is required")
+        proxy = DirectRouteFaultProxy(active_direct_route_multiaddr(self.clients["alice"]))
+        self.reaction_proxy = proxy
+        proxy.start()
+        self.reaction_transport_override = self.runtime_binding.create_transport_override(
+            "alice", "station", proxy.multiaddr,
+        )
+
+        def command_snapshot(command_id: str = "") -> dict[str, Any]:
+            value = call_async_harness(
+                self.clients["alice"],
+                "engineInteractionSnapshot",
+                {
+                    "actorPtid": self.ptids["alice"],
+                    "conversationId": conversation_id,
+                    "messageId": message_id,
+                    "commandId": command_id,
+                },
+                namespace="chat",
+                script_timeout=30,
+            )
+            if not isinstance(value, dict):
+                raise GateError("reaction Engine snapshot is invalid")
+            return value
+
+        baseline = command_snapshot()
+        baseline_ids = {
+            str(item["commandId"]) for item in baseline.get("commandLedger", [])
+        }
+        reaction_command = ""
+        failed_command: dict[str, Any] = {}
+        failed_proxy: dict[str, Any] = {}
+        last_actionable_observation: dict[str, Any] = {}
+        lifecycle_paused = False
         try:
-            proxy.arm_connection_loss()
+            lifecycle_paused = True
+            self.step(
+                "alice.reaction-worker.pause",
+                lambda: self.clients["alice"].invoke_app_result(
+                    "messaging_acceptance_pause_lifecycle",
+                    {"input": {"expected_actor_ptid": self.ptids["alice"]}},
+                ),
+            )
+            # Route replacement closes the old connection. Join the worker first
+            # so an in-flight inbox claim cannot lose its consumer-epoch response.
+            self.runtime_binding.apply_verified_direct_route_override(
+                "alice", "station", self.reaction_transport_override,
+            )
             failure_emoji = self.prove_keyboard_reaction_picker(
                 "alice",
                 message_id,
             )
 
+            def prepared_observation() -> dict[str, Any]:
+                nonlocal reaction_command
+                candidates = [
+                    item for item in command_snapshot().get("commandLedger", [])
+                    if str(item.get("commandId") or "") not in baseline_ids
+                    and item.get("messageId") == message_id
+                ]
+                if len(candidates) > 1:
+                    raise GateError("reaction UI created multiple durable commands")
+                if not candidates:
+                    return {"newCommandCount": 0}
+                reaction_command = str(candidates[0].get("commandId") or "")
+                current = command_snapshot(reaction_command)
+                intent = current.get("intent") or {}
+                outbox = current.get("outbox") or {}
+                return {
+                    "newCommandCount": 1,
+                    "commandId": reaction_command,
+                    "intentSha256": intent.get("commandSha256"),
+                    "outboxSha256": outbox.get("commandSha256"),
+                    "state": outbox.get("state"),
+                    "attemptCount": outbox.get("attemptCount"),
+                }
+
+            # Preparation performs real authority sync over the healthy route.
+            # Only the already-durable command's dispatch is interrupted.
+            prepared_command = self.wait_step(
+                prepared_observation,
+                "alice.reaction-durable-before-loss",
+                expected={"newCommandCount": 1, "state": "pending", "attemptCount": 0},
+                ready=lambda value: (
+                    value.get("newCommandCount") == 1
+                    and bool(value.get("commandId"))
+                    and bool(value.get("intentSha256"))
+                    and value.get("intentSha256") == value.get("outboxSha256")
+                    and value.get("state") == "pending"
+                    and value.get("attemptCount") == 0
+                ),
+                timeout=30,
+            )
+            proxy.arm()
+            self.step(
+                "alice.reaction-worker.resume",
+                lambda: self.clients["alice"].invoke_app_result(
+                    "messaging_acceptance_resume_lifecycle",
+                    {"input": {"expected_actor_ptid": self.ptids["alice"]}},
+                ),
+            )
+            lifecycle_paused = False
+
             def actionable_error() -> bool:
+                nonlocal reaction_command, failed_command, failed_proxy
+                nonlocal last_actionable_observation
                 row = self.clients["alice"].find_element(
                     f'[data-message-ulid="{message_id}"]',
                     5,
@@ -2836,19 +3111,61 @@ class NativeProductClosureGate(AcceptanceGate):
                     By.CSS_SELECTOR,
                     '[data-message-reaction-state="error"]',
                 )
-                proxy_evidence = snapshot["proxy"]
-                command_hashes = proxy_evidence.get("commandSha256") or []
+                ledger = command_snapshot().get("commandLedger", [])
+                candidates = [
+                    item for item in ledger
+                    if str(item.get("commandId") or "") not in baseline_ids
+                    and item.get("messageId") == message_id
+                ]
+                if len(candidates) > 1:
+                    raise GateError("reaction UI created multiple durable commands")
+                snapshot["newCommandCount"] = len(candidates)
+                snapshot["errorSurfaceCount"] = len(error_surfaces)
+                snapshot["controlledLoss"] = False
+                last_actionable_observation = snapshot
+                if not candidates:
+                    return False
+                command_id = str(candidates[0].get("commandId") or "")
+                if reaction_command and command_id != reaction_command:
+                    raise GateError("reaction retry changed its durable command identity")
+                reaction_command = command_id
+                current = command_snapshot(command_id)
+                intent = current.get("intent") or {}
+                outbox = current.get("outbox") or {}
                 controlled_loss = (
-                    int(proxy_evidence.get("connectionLossCount") or 0) >= 1
-                    and bool(proxy_evidence.get("requestSha256"))
-                    and bool(command_hashes)
-                    and len(set(command_hashes)) == 1
+                    int(snapshot["proxy"].get("failureCount") or 0) >= 1
+                    and bool(intent.get("commandSha256"))
+                    and intent.get("commandSha256") == prepared_command["intentSha256"]
+                    and intent.get("commandSha256") == outbox.get("commandSha256")
+                    and int(outbox.get("attemptCount") or 0) >= 1
+                    and outbox.get("state") == "retry_wait"
                 )
+                snapshot["command"] = {
+                    "commandId": command_id,
+                    "intentSha256": intent.get("commandSha256"),
+                    "outboxSha256": outbox.get("commandSha256"),
+                    "attemptCount": outbox.get("attemptCount"),
+                    "state": outbox.get("state"),
+                }
+                snapshot["controlledLoss"] = controlled_loss
+                if error_surfaces and controlled_loss:
+                    failed_command = current
+                    failed_proxy = snapshot["proxy"]
                 return bool(error_surfaces and controlled_loss)
 
-            wait_until(
-                actionable_error,
-                "reaction actionable error",
+            def actionable_observation() -> dict[str, Any]:
+                accepted = actionable_error()
+                return {**last_actionable_observation, "actionable": accepted}
+
+            self.wait_step(
+                actionable_observation,
+                "alice.reaction-actionable-error",
+                expected={
+                    "newCommandCount": 1,
+                    "errorSurfaceCount": "positive",
+                    "controlledLoss": True,
+                },
+                ready=lambda snapshot: snapshot["actionable"],
                 timeout=30,
             )
             self.capture_visible_localization("reaction-error", ("alice",))
@@ -2861,27 +3178,57 @@ class NativeProductClosureGate(AcceptanceGate):
                 "reaction automatic retry convergence",
                 timeout=120,
             )
-            wait_until(
-                lambda: (
-                    not self.clients["alice"].find_elements(
-                        f'[data-message-ulid="{message_id}"] '
-                        "[data-message-reaction-state]"
-                    )
+            recovery_state = self.wait_step(
+                lambda: self.clients["alice"].execute_script(
+                    """
+                    const row = document.querySelector(
+                      `[data-message-ulid="${arguments[0]}"]`,
+                    );
+                    return {
+                      rowFound: Boolean(row),
+                      states: row ? Array.from(
+                        row.querySelectorAll('[data-message-reaction-state]'),
+                      ).map((item) => item.getAttribute('data-message-reaction-state')) : [],
+                      retryCount: row ? row.querySelectorAll(
+                        '[data-message-reaction-retry]',
+                      ).length : 0,
+                    };
+                    """,
+                    message_id,
                 ),
-                "reaction recovery state cleared",
+                "alice.reaction-recovery-state-cleared",
+                expected={"rowFound": True, "states": ["idle"], "retryCount": 0},
+                ready=lambda value: (
+                    value.get("rowFound") is True
+                    and value.get("states") == ["idle"]
+                    and value.get("retryCount") == 0
+                ),
                 timeout=30,
             )
             proxy_evidence = proxy.evidence()
-            command_hashes = proxy_evidence.get("commandSha256") or []
-            forwarded_paths = proxy_evidence.get("forwardedPaths") or {}
+            recovered_command = command_snapshot(reaction_command)
+            recovered_outbox = recovered_command.get("outbox") or {}
+            failed_outbox = failed_command.get("outbox") or {}
+            recovered_candidates = [
+                item for item in recovered_command.get("commandLedger", [])
+                if str(item.get("commandId") or "") not in baseline_ids
+                and item.get("messageId") == message_id
+            ]
             if (
-                len(command_hashes) < 2
-                or len(set(command_hashes)) != 1
-                or int(forwarded_paths.get("/conversation/command") or 0) < 1
+                len(recovered_candidates) != 1
+                or recovered_candidates[0].get("commandId") != reaction_command
+                or recovered_outbox.get("commandSha256") != failed_outbox.get("commandSha256")
+                or (recovered_command.get("intent") or {}).get("commandSha256")
+                != failed_outbox.get("commandSha256")
+                or int(recovered_outbox.get("attemptCount") or 0)
+                < int(failed_outbox.get("attemptCount") or 0)
+                or recovered_outbox.get("state") not in {"submitted", "committed"}
+                or int(proxy_evidence.get("forwardedConnections") or 0)
+                <= int(failed_proxy.get("forwardedConnections") or 0)
             ):
                 raise GateError(
-                    "reaction exact retry was not proven through the fault proxy: "
-                    f"{json.dumps(proxy_evidence, sort_keys=True)}"
+                    "reaction exact retry did not retain its durable command: "
+                    f"{json.dumps(recovered_command, sort_keys=True)}"
                 )
             engine: dict[str, list[dict[str, str]]] = {}
             for actor in ("alice", "bob"):
@@ -2941,11 +3288,21 @@ class NativeProductClosureGate(AcceptanceGate):
             return {
                 "failureEmoji": failure_emoji,
                 "proxy": proxy_evidence,
+                "commandId": reaction_command,
+                "preparedCommand": prepared_command,
+                "failedCommand": failed_command,
+                "recoveredCommand": recovered_command,
+                "recoveryState": recovery_state,
                 "engine": engine,
                 "recovered": True,
             }
         finally:
             proxy.disarm()
+            if lifecycle_paused:
+                self.clients["alice"].invoke_app_result(
+                    "messaging_acceptance_resume_lifecycle",
+                    {"input": {"expected_actor_ptid": self.ptids["alice"]}},
+                )
 
     def open_details(self, actor: str) -> Any:
         if not self.clients[actor].find_elements("[data-chat-detail-panel='open']"):
@@ -3026,8 +3383,7 @@ class NativeProductClosureGate(AcceptanceGate):
         snapshots: dict[str, dict[str, Any]] = {}
         for actor in ("alice", "bob"):
             def capture_phase(required_surfaces: set[str]) -> dict[str, Any]:
-                def ready() -> dict[str, Any] | None:
-                    snapshot = self.identity_snapshot(actor)
+                def ready(snapshot: dict[str, Any]) -> bool:
                     identities = snapshot.get("identities", {})
                     for ptid in self.ptids.values():
                         entries = identities.get(ptid, [])
@@ -3040,12 +3396,18 @@ class NativeProductClosureGate(AcceptanceGate):
                             if not surface_entries or not all(
                                 entry.get("loaded") for entry in surface_entries
                             ):
-                                return None
-                    return snapshot
+                                return False
+                    return True
 
-                return wait_until(
-                    ready,
+                return self.wait_step(
+                    lambda: self.identity_snapshot(actor),
                     f"{actor} loaded avatar surfaces {sorted(required_surfaces)}",
+                    expected={
+                        "actorPtids": sorted(set(self.ptids.values())),
+                        "surfaces": sorted(required_surfaces),
+                        "allImagesLoaded": True,
+                    },
+                    ready=ready,
                     timeout=30,
                 )
 
@@ -3129,12 +3491,7 @@ class NativeProductClosureGate(AcceptanceGate):
                     },
                 })
             raw_sources = client_sources[0]["raw"]
-            expected_cache_key = (
-                hashlib.sha256(next(iter(raw_sources)).encode("utf-8"))
-                .hexdigest()[:16]
-                if len(raw_sources) == 1
-                else ""
-            )
+            expected_source = next(iter(raw_sources)) if len(raw_sources) == 1 else ""
             if (
                 len(client_sources) != 2
                 or len(client_sources[0]["canonical"]) != 1
@@ -3142,11 +3499,11 @@ class NativeProductClosureGate(AcceptanceGate):
                 or client_sources[0]["canonical"]
                 != client_sources[1]["canonical"]
                 or client_sources[0]["raw"] != client_sources[1]["raw"]
-                or not expected_cache_key
+                or not expected_source
                 or any(
                     not sources["current"]
                     or any(
-                        expected_cache_key not in str(current)
+                        not avatar_rendered_source_matches(expected_source, str(current))
                         for current in sources["current"]
                     )
                     for sources in client_sources
@@ -3192,8 +3549,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 slot["src"]
                 and slot["canonical"]
                 and slot["currentSrc"]
-                and hashlib.sha256(slot["src"].encode("utf-8"))
-                .hexdigest()[:16] in slot["currentSrc"]
+                and avatar_rendered_source_matches(slot["src"], slot["currentSrc"])
                 and slot["loaded"]
                 for slot in slot_sets["alice"]
             ),
@@ -3406,7 +3762,9 @@ class NativeProductClosureGate(AcceptanceGate):
         self.click(actor, '[data-chat-conversation-action="background"]')
         client.find_element("[data-chat-background-select]", 15)
 
-    def wait_for_dialogs_to_stop_intercepting(self, actor: str) -> None:
+    def wait_for_dialogs_to_stop_intercepting(
+        self, actor: str, next_selector: str,
+    ) -> None:
         client = self.clients[actor]
         WebDriverWait(
             client.driver,
@@ -3416,23 +3774,25 @@ class NativeProductClosureGate(AcceptanceGate):
             lambda driver: bool(
                 driver.execute_script(
                     """
-                    return !Array.from(
-                      document.querySelectorAll('[role="dialog"]')
-                    ).some((dialog) => {
-                      const style = getComputedStyle(dialog);
-                      const rect = dialog.getBoundingClientRect();
-                      return (
-                        style.display !== 'none'
-                        && style.visibility !== 'hidden'
-                        && style.pointerEvents !== 'none'
-                        && rect.width > 0
-                        && rect.height > 0
-                      );
-                    });
-                    """
+                    const target = document.querySelector(arguments[0]);
+                    if (!target || !target.isConnected || target.disabled) return false;
+                    const style = getComputedStyle(target);
+                    const rect = target.getBoundingClientRect();
+                    if (
+                      style.display === 'none'
+                      || style.visibility === 'hidden'
+                      || style.pointerEvents === 'none'
+                      || rect.width <= 0 || rect.height <= 0
+                    ) return false;
+                    const hit = document.elementFromPoint(
+                      rect.left + rect.width / 2, rect.top + rect.height / 2,
+                    );
+                    return hit === target || target.contains(hit);
+                    """,
+                    next_selector,
                 )
             ),
-            "dialog remained hit-testable after dismissal",
+            "next Journey control remained intercepted after dismissal",
         )
 
     def select_second_background(self, actor: str) -> None:
@@ -3646,7 +4006,9 @@ class NativeProductClosureGate(AcceptanceGate):
             json.dumps({"ui": final_state, "station": normalized}),
         )
         self.capture_visible_localization("settings", ("alice",))
-        self.wait_for_dialogs_to_stop_intercepting("alice")
+        self.wait_for_dialogs_to_stop_intercepting(
+            "alice", "[data-chat-detail-toggle]",
+        )
         return {
             "ui": final_state,
             "station": normalized,
@@ -3754,7 +4116,9 @@ class NativeProductClosureGate(AcceptanceGate):
             "failed attachment draft removed before the success journey",
             timeout=30,
         )
-        self.wait_for_dialogs_to_stop_intercepting("alice")
+        self.wait_for_dialogs_to_stop_intercepting(
+            "alice", "[data-chat-attachment-picker]",
+        )
 
     def attachment_message(
         self,
@@ -3798,6 +4162,43 @@ class NativeProductClosureGate(AcceptanceGate):
             message_id,
         )
         return value if isinstance(value, dict) and value.get("id") else None
+
+    def recovered_attachment_message(
+        self,
+        actor: str,
+        expected_count: int,
+        message_id: str,
+    ) -> dict[str, Any]:
+        return self.wait_step(
+            lambda: self.attachment_message(actor, expected_count, message_id),
+            f"{actor}.recovered-attachment-render:{message_id}",
+            expected={
+                "messageId": message_id,
+                "attachmentCount": expected_count,
+                "imagesLoaded": True,
+            },
+            ready=lambda value: (
+                isinstance(value, dict)
+                and value.get("id") == message_id
+                and value.get("count") == expected_count
+                and len(value.get("attachments", [])) == expected_count
+                and len({
+                    item.get("id") for item in value.get("attachments", [])
+                }) == expected_count
+                and all(
+                    item.get("id")
+                    and (
+                        item.get("kind") != "image"
+                        or (
+                            int(item.get("imageCount") or 0) > 0
+                            and item.get("imageLoaded") is True
+                        )
+                    )
+                    for item in value.get("attachments", [])
+                )
+            ),
+            timeout=180,
+        )
 
     def prove_attachments(
         self,
@@ -4247,16 +4648,36 @@ class NativeProductClosureGate(AcceptanceGate):
         }
 
     def open_existing_group(self, actor: str, group_id: str) -> None:
-        self.enter_chat_page(actor)
-        self.clients[actor].find_element(
-            f'[data-chat-group-ulid="{group_id}"]',
-            180,
-        )
+        client = self.clients[actor]
+
+        def wait_for_surface(selector: str, boundary: str) -> None:
+            self.wait_step(
+                lambda: client.execute_script(
+                    """
+                    return {
+                      present: Boolean(document.querySelector(arguments[0])),
+                      chatRoute: location.href.endsWith('#/chat'),
+                      groups: Array.from(
+                        document.querySelectorAll('[data-chat-group-ulid]'),
+                      ).map(item => item.getAttribute('data-chat-group-ulid')),
+                      panes: Array.from(
+                        document.querySelectorAll('[data-chat-conversation-pane]'),
+                      ).map(item => item.getAttribute('data-chat-conversation-pane')),
+                    };
+                    """,
+                    selector,
+                ),
+                f"{actor}.group.{boundary}",
+                expected={"selector": selector, "present": True},
+                ready=lambda value: value["present"],
+                timeout=180,
+                interval=0.5,
+            )
+
+        self.step(f"{actor}.group.enter-chat", lambda: self.enter_chat_page(actor))
+        wait_for_surface(f'[data-chat-group-ulid="{group_id}"]', "item")
         self.click(actor, f'[data-chat-group-ulid="{group_id}"]')
-        self.clients[actor].find_element(
-            f'[data-chat-conversation-pane="{group_id}"]',
-            180,
-        )
+        wait_for_surface(f'[data-chat-conversation-pane="{group_id}"]', "pane")
 
     def prove_offline_recovery(
         self,
@@ -4288,22 +4709,22 @@ class NativeProductClosureGate(AcceptanceGate):
         self.composer_send("alice", offline_text)
         self.wait_message_text("alice", offline_text)
 
-        self.restore_actor_after_restart("bob")
+        self.step("bob.offline.restore", lambda: self.restore_actor_after_restart("bob"))
         self.open_existing_group("bob", group_id)
-        wait_until(
-            lambda: (
-                value
-                if (
-                    (value := self.transcript("bob"))
-                    == self.transcript("alice")
-                    and any(
-                        offline_text in str(item.get("content") or "")
-                        for item in value
-                    )
+        self.wait_step(
+            lambda: {
+                "receiver": self.transcript("bob"),
+                "sender": self.transcript("alice"),
+            },
+            "bob.offline.exact-transcript",
+            expected={"transcriptsEqual": True, "offlineMessage": offline_text},
+            ready=lambda value: (
+                value["receiver"] == value["sender"]
+                and any(
+                    offline_text in str(item.get("content") or "")
+                    for item in value["receiver"]
                 )
-                else None
             ),
-            "Bob offline exact transcript recovery",
             timeout=180,
         )
         after = {
@@ -4810,6 +5231,19 @@ class NativeProductClosureGate(AcceptanceGate):
             self.save_app_log(self.clients[actor], f"{actor}-final")
 
     def cleanup_clients(self) -> dict[str, Any]:
+        prior = self.report.runtime.get("cleanup")
+        if isinstance(prior, dict):
+            failure = getattr(self, "_cleanup_failure", None)
+            if failure is not None:
+                raise failure
+            return prior
+        cleanup_end = time.monotonic() + 30
+        with deadline(
+            30, ExecutionDeadline(self.gate_id, "native-client-cleanup", "cleanup"),
+        ):
+            return self._cleanup_clients(cleanup_end)
+
+    def _cleanup_clients(self, cleanup_end: float) -> dict[str, Any]:
         reaction_proxy_port = (
             self.reaction_proxy.port
             if self.reaction_proxy is not None
@@ -4823,7 +5257,7 @@ class NativeProductClosureGate(AcceptanceGate):
         cleanup_errors: list[dict[str, str]] = []
         if self.reaction_transport_override is not None:
             try:
-                self.runtime_binding.clear_transport_override(
+                self.runtime_binding.clear_verified_direct_route_override(
                     "alice",
                     "station",
                     self.reaction_transport_override,
@@ -4870,6 +5304,7 @@ class NativeProductClosureGate(AcceptanceGate):
         result = self.runtime_binding.finalize_cleanup(
             self.runtime_instances,
             self.client_specs,
+            timeout_seconds=max(0.0, cleanup_end - time.monotonic()),
         )
         if self.reaction_proxy is not None:
             try:
@@ -4885,7 +5320,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 proxy_released = bool(wait_until(
                     lambda: port_is_free(reaction_proxy_port),
                     "reaction proxy port release",
-                    timeout=30,
+                    timeout=max(0.0, cleanup_end - time.monotonic()),
                 ))
             except GateError:
                 proxy_released = False
@@ -4927,116 +5362,25 @@ class NativeProductClosureGate(AcceptanceGate):
         self.report.runtime["cleanup"] = result
         failed = [name for name, passed in assertions.items() if not passed]
         if failed:
-            raise GateError(f"cleanup assertions failed: {failed}; {detail}")
+            self._cleanup_failure = GateError(f"cleanup assertions failed: {failed}; {detail}")
+            raise self._cleanup_failure
         return result
 
     def source_identity(self) -> dict[str, Any]:
-        source = self.manifest.get("source")
-        station = runtime_station_service(self.manifest, "alice")
-        station_live = read_station_version(self.station_url)
-        runtime_cell = self.runtime_binding.runtime_identity()
-        binary = self.runtime_binding.binary_identity()
-        identity = {
-            "orchestrator": source,
-            "station": station,
-            "stationLive": station_live,
-            "runtimeCell": runtime_cell,
-            "binary": binary,
-        }
-        self.report.runtime["runtimeCellRunId"] = runtime_cell.get("runId")
-
-        source_commit = str(
-            source.get("commit") if isinstance(source, dict) else ""
+        identity = native_runtime_source_identity(
+            gate_id=self.gate_id, manifest=self.manifest,
+            runtime_binding=self.runtime_binding,
+            station_live=read_station_version(self.station_url),
         )
-        station_commit = str(
-            station.get("liveCommit") if isinstance(station, dict) else ""
-        )
-        station_live_commit = str(
-            station_live.get("build_commit")
-            or station_live.get("buildCommit")
-            or ""
-        )
-        cell_source = (
-            runtime_cell.get("source")
-            if isinstance(runtime_cell, dict)
-            else None
-        )
-        platform = (
-            runtime_cell.get("platform")
-            if isinstance(runtime_cell, dict)
-            else None
-        )
-        transport = (
-            runtime_cell.get("transport")
-            if isinstance(runtime_cell, dict)
-            else None
-        )
-        binary_sha256 = str(binary.get("sha256") or "")
-        linux_runtime_valid = (
-            self.runtime_binding.cell_id != "desktop-linux-native"
-            or (
-                isinstance(cell_source, dict)
-                and cell_source.get("remoteCheckoutClean") is True
-                and re.fullmatch(
-                    r"[0-9a-f]{64}",
-                    str(cell_source.get("remoteSourceDigest") or ""),
-                )
-                is not None
-                and isinstance(platform, dict)
-                and re.fullmatch(
-                    r"[0-9a-f]{64}",
-                    str(platform.get("imageDigest") or ""),
-                )
-                is not None
-                and isinstance(transport, dict)
-                and re.fullmatch(
-                    r"[0-9a-f]{64}",
-                    str(transport.get("hostIdentitySha256") or ""),
-                )
-                is not None
-                and re.fullmatch(
-                    r"[0-9a-f]{64}",
-                    str(transport.get("hostKeySha256") or ""),
-                )
-                is not None
-            )
-        )
+        self.report.runtime["runtimeCellRunId"] = identity["runtimeCell"].get("runId")
         self.assert_condition(
-            "source_build_runtime_identity",
-            isinstance(source, dict)
-            and bool(source_commit)
-            and source.get("workspaceDigest") == "clean"
-            and isinstance(station, dict)
-            and bool(station_commit)
-            and commits_match(source_commit, station_commit)
-            and commits_match(source_commit, station_live_commit)
-            and re.fullmatch(
-                r"[0-9a-f]{64}",
-                str(station.get("protocolDigest") or ""),
-            )
-            is not None
-            and isinstance(runtime_cell, dict)
-            and runtime_cell.get("artifactKind")
-            == "acceptance-runtime-cell-manifest"
-            and runtime_cell.get("cellId")
-            == self.runtime_binding.cell_id
-            and runtime_cell.get("gateId") == self.gate_id
-            and bool(runtime_cell.get("runId"))
-            and runtime_cell.get("state") == "LEASED"
-            and isinstance(cell_source, dict)
-            and cell_source.get("commit") == source_commit
-            and cell_source.get("workspaceDigest") == "clean"
-            and linux_runtime_valid
-            and binary.get("sourceCommit") == source_commit
-            and re.fullmatch(r"[0-9a-f]{64}", binary_sha256) is not None
-            and cell_source.get("binarySha256") == binary_sha256,
+            "source_build_runtime_identity", True,
             json.dumps(identity, sort_keys=True),
         )
         return identity
 
     def run(self) -> dict[str, Any]:
-        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
+        verify_runtime_fixture_ready(self.manifest, self.actor_manifest)
         source_identity = self.source_identity()
         self.assert_condition("native_dom_only", True)
 
@@ -5051,17 +5395,6 @@ class NativeProductClosureGate(AcceptanceGate):
 
         cleanup: dict[str, Any] = {}
         try:
-            self.reaction_proxy = AcceptanceStationSubmitFaultProxy(
-                self.station_url
-            )
-            self.reaction_proxy.start()
-            self.reaction_transport_override = (
-                self.runtime_binding.create_transport_override(
-                    "alice",
-                    "station",
-                    self.reaction_proxy.url,
-                )
-            )
             for actor in ("alice", "bob"):
                 self.step(f"{actor}.launch", lambda actor=actor: self.launch_actor(actor))
             direct_search = self.step(

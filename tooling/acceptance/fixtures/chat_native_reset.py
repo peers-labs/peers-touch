@@ -17,7 +17,7 @@ import sqlite3
 import subprocess
 import threading
 import time
-from typing import Iterable
+from typing import Iterable, Mapping
 import urllib.parse
 import urllib.request
 
@@ -28,6 +28,10 @@ from tooling.acceptance.core.provisioner import (
 )
 from tooling.acceptance.core.reset_authority import (
     require_station_reset_authority,
+)
+from tooling.acceptance.fixtures.chat_reset_targets import (
+    bound_reset_target,
+    require_reset_lease,
 )
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
@@ -217,6 +221,14 @@ def _local_source_environment(
     station_url: str,
     environment_name: str | None,
 ) -> dict[str, str] | None:
+    parsed_url = urllib.parse.urlparse(station_url)
+    # Non-local targets belong to their reviewed deployment, not the active
+    # local Profile. Explicit local requests retain the full mismatch check.
+    if (
+        environment_name != "local"
+        and parsed_url.hostname not in {"127.0.0.1", "localhost"}
+    ):
+        return None
     try:
         profile = active_profile_environment()
     except (BlockedError, RuntimeError):
@@ -227,7 +239,6 @@ def _local_source_environment(
     expected_url = profile.get("PT_STATION_URL", "").rstrip("/")
     if environment_name not in {None, "", "local", profile_name}:
         return None
-    parsed_url = urllib.parse.urlparse(station_url)
     expected = urllib.parse.urlparse(expected_url)
     if (
         not profile_name
@@ -406,27 +417,29 @@ def _authorized_reset_environment(
     station_url: str,
     selected_environment: str,
     environment: dict[str, str],
+    *,
+    bound_target: dict[str, str] | None,
 ) -> tuple[str, dict[str, str]] | None:
     configured_profile = os.environ.get(
         RESET_PROFILE_AUTHORIZATION_ENV,
         "",
     ).strip()
-    lease_profile = (
-        ""
-        if configured_profile
-        else machine_lease_reset_profile()
-    )
-    authorized_profile = configured_profile or lease_profile
     authorized_environments_raw = os.environ.get(
         RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
         "",
     ).strip()
     lease_profile = (
         ""
-        if configured_profile or authorized_environments_raw
+        if bound_target or configured_profile or authorized_environments_raw
         else machine_lease_reset_profile()
     )
-    authorized_profile = configured_profile or lease_profile
+    authorized_profile = (
+        bound_target["profile"]
+        if bound_target is not None
+        else configured_profile or lease_profile
+    )
+    if bound_target is not None:
+        authorized_environments_raw = ""
     if authorized_profile and authorized_environments_raw:
         raise RuntimeError(
             "Chat Acceptance reset requires exactly one authorization mode"
@@ -435,7 +448,15 @@ def _authorized_reset_environment(
         return None
 
     if authorized_profile:
-        profile = active_profile_environment()
+        profile = (
+            {
+                "PT_DEV_PROFILE": bound_target["profile"],
+                "PT_STATION_DEPLOY_ENV": bound_target["environment"],
+                "PT_STATION_URL": bound_target["stationUrl"],
+            }
+            if bound_target is not None
+            else active_profile_environment()
+        )
         active_profile = profile.get("PT_DEV_PROFILE", "").strip()
         active_environment = profile.get("PT_STATION_DEPLOY_ENV", "").strip()
         active_station = profile.get("PT_STATION_URL", "").rstrip("/")
@@ -574,12 +595,18 @@ def acceptance_station_environment(
     )
     if local_environment is not None:
         return local_environment
-    selected_environment = environment_name or active_deployment_environment()
+    bound_target = bound_reset_target(environment_name or "", station_url)
+    selected_environment = (
+        environment_name
+        or (bound_target["environment"] if bound_target is not None else "")
+        or active_deployment_environment()
+    )
     environment = deploy_environment(selected_environment)
     explicit_authorization = _authorized_reset_environment(
         station_url,
         selected_environment,
         environment,
+        bound_target=bound_target,
     )
     if explicit_authorization is not None:
         station_url, environment = explicit_authorization
@@ -662,22 +689,27 @@ def verify_disposable_station_runtime(
         "station": environment["PT_ACCEPTANCE_STATION_CONTAINER"],
         "postgres": environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"],
     }
-    observed: dict[str, str] = {}
-    for service, container in containers.items():
-        output = _remote_command(
-            environment,
-            "docker inspect "
-            "--format '{{json .}}' "
-            f"{shlex.quote(container)}",
-            deadline_monotonic=deadline_monotonic,
-            cancellation=cancellation,
+    output = _remote_command(
+        environment,
+        "docker inspect --format '{{json .}}' "
+        + " ".join(shlex.quote(container) for container in containers.values()),
+        deadline_monotonic=deadline_monotonic,
+        cancellation=cancellation,
+    )
+    try:
+        inspections = [json.loads(line) for line in output.splitlines()]
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            "Disposable Chat Acceptance container inspect is invalid"
+        ) from error
+    if len(inspections) != len(containers):
+        raise RuntimeError(
+            "Disposable Chat Acceptance container inspect is incomplete"
         )
-        try:
-            inspection = json.loads(output)
-        except json.JSONDecodeError as error:
-            raise RuntimeError(
-                f"Disposable Chat Acceptance {service} inspect is invalid"
-            ) from error
+    observed: dict[str, str] = {}
+    for (service, container), inspection in zip(
+        containers.items(), inspections, strict=True,
+    ):
         labels = (
             inspection.get("Config", {}).get("Labels", {})
             if isinstance(inspection, dict)
@@ -1266,10 +1298,7 @@ def duplicate_acceptance_queue_delivery(
     *,
     deployment_environment: str = "",
 ) -> dict[str, object]:
-    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-        raise RuntimeError(
-            "CHAT_ACCEPTANCE_RESET=1 is required for queue replay fault injection"
-        )
+    require_reset_lease()
     if not source_item_id or not recipient_ptid or not recipient_device_id:
         raise RuntimeError("queue replay requires source item and recipient endpoint")
 
@@ -1452,6 +1481,19 @@ def read_fixture_actor(
     environment_name: str,
     account_email: str,
 ) -> FixtureActorRecord:
+    return read_fixture_actors(
+        station_url, environment_name, (account_email,),
+    )[account_email]
+
+
+def read_fixture_actors(
+    station_url: str,
+    environment_name: str,
+    account_emails: Iterable[str],
+) -> dict[str, FixtureActorRecord]:
+    accounts = tuple(dict.fromkeys(account_emails))
+    if not accounts or any(not account for account in accounts):
+        raise RuntimeError("Chat fixture actor read requires non-empty accounts")
     environment = acceptance_station_environment(
         station_url,
         environment_name,
@@ -1464,51 +1506,34 @@ def read_fixture_actor(
         )) as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
-                """
+                f"""
 SELECT
+  email AS accountEmail,
   ptid,
-  preferred_username,
+  preferred_username AS preferredUsername,
   name,
   summary,
   icon,
   image,
   url,
-  federated_handle,
-  home_station_peer_id,
-  home_station_domain,
+  federated_handle AS federatedHandle,
+  home_station_peer_id AS homeStationPeerId,
+  home_station_domain AS homeStationDomain,
   visibility,
-  locator_seq
+  locator_seq AS locatorSeq
 FROM touch_actor
-WHERE email = ?
+WHERE email IN ({", ".join("?" for _ in accounts)})
   AND origin = 'local'
 """,
-                (account_email,),
+                accounts,
             ).fetchall()
-        if len(rows) != 1:
-            raise RuntimeError(
-                "Chat fixture requires exactly one local actor for "
-                f"account={account_email}"
-            )
-        row = rows[0]
-        value = {
-            "ptid": row["ptid"],
-            "preferredUsername": row["preferred_username"],
-            "name": row["name"],
-            "summary": row["summary"],
-            "icon": row["icon"],
-            "image": row["image"],
-            "url": row["url"],
-            "federatedHandle": row["federated_handle"],
-            "homeStationPeerId": row["home_station_peer_id"],
-            "homeStationDomain": row["home_station_domain"],
-            "visibility": row["visibility"],
-            "locatorSeq": row["locator_seq"],
-        }
+        values = [dict(row) for row in rows]
     else:
         output = _remote_psql(
             environment,
             f"""
 SELECT json_build_object(
+  'accountEmail', email,
   'ptid', ptid,
   'preferredUsername', preferred_username,
   'name', name,
@@ -1523,24 +1548,38 @@ SELECT json_build_object(
   'locatorSeq', locator_seq
 )
 FROM touch_actor
-WHERE email = {_sql_literal(account_email)}
+WHERE email IN ({", ".join(_sql_literal(account) for account in accounts)})
   AND origin = 'local';
 """,
         )
-        lines = [
-            line for line in output.splitlines()
+        values = [
+            json.loads(line) for line in output.splitlines()
             if line.strip().startswith("{")
         ]
-        if len(lines) != 1:
+    records: dict[str, FixtureActorRecord] = {}
+    for value in values:
+        if not isinstance(value, dict):
+            raise RuntimeError("Chat fixture actor projection is invalid")
+        account = str(value.get("accountEmail") or "")
+        if account not in accounts or account in records:
             raise RuntimeError(
                 "Chat fixture requires exactly one local actor for "
-                f"account={account_email}"
+                f"account={account or 'unknown'}"
             )
-        value = json.loads(lines[0])
-    if not isinstance(value, dict):
+        records[account] = _fixture_actor_record(value, account)
+    missing = set(accounts) - records.keys()
+    if missing:
         raise RuntimeError(
-            f"Chat fixture actor projection is invalid for account={account_email}"
+            "Chat fixture requires exactly one local actor for "
+            f"account={sorted(missing)[0]}"
         )
+    return {account: records[account] for account in accounts}
+
+
+def _fixture_actor_record(
+    value: dict[str, object],
+    account_email: str,
+) -> FixtureActorRecord:
     record = FixtureActorRecord(
         ptid=str(value.get("ptid") or ""),
         preferred_username=str(value.get("preferredUsername") or ""),
@@ -1568,6 +1607,48 @@ WHERE email = {_sql_literal(account_email)}
     return record
 
 
+def seed_run_actor_avatars(
+    station_url: str,
+    environment_name: str,
+    avatars: Mapping[str, tuple[str, str]],
+) -> None:
+    """Initialize only unconfigured profiles of accounts created by a Suite."""
+    if not avatars or any(
+        re.fullmatch(r"sc-[a-z-]+-[0-9a-f]{10}@testnet\.local", account) is None
+        or not ptid.startswith("ptid:")
+        or not avatar.startswith("data:image/svg+xml;base64,")
+        for account, (ptid, avatar) in avatars.items()
+    ):
+        raise RuntimeError("Run avatar fixture scope is invalid")
+    environment = acceptance_station_environment(station_url, environment_name)
+    verify_disposable_station_runtime(environment)
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
+        raise RuntimeError("Run avatar fixture requires the reviewed remote Station")
+    statements = []
+    for account, (ptid, avatar) in avatars.items():
+        statements.append(f"""
+DO $fixture$
+DECLARE
+  fixture_actor_id bigint;
+BEGIN
+  UPDATE touch_actor SET icon = {_sql_literal(avatar)}, updated_at = now()
+  WHERE email = {_sql_literal(account)} AND ptid = {_sql_literal(ptid)}
+    AND origin = 'local' AND COALESCE(icon, '') = ''
+  RETURNING id INTO fixture_actor_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Run avatar target is absent or already configured';
+  END IF;
+  INSERT INTO touch_actor_meta
+    (actor_id, profile_revision, created_at, updated_at)
+  VALUES (fixture_actor_id, 2, now(), now())
+  ON CONFLICT (actor_id) DO UPDATE SET
+    profile_revision = GREATEST(touch_actor_meta.profile_revision, 1) + 1,
+    updated_at = now();
+END $fixture$;
+""")
+    _remote_psql(environment, "BEGIN;\n" + "\n".join(statements) + "\nCOMMIT;")
+
+
 def seed_bound_contact(
     station_url: str,
     environment_name: str,
@@ -1575,20 +1656,53 @@ def seed_bound_contact(
     peer: FixtureActorRecord,
     federation_members: Iterable[FixtureActorRecord],
 ) -> None:
+    """Seed a single contact pair through the canonical plural owner."""
+    seed_bound_contacts(
+        station_url,
+        environment_name,
+        ((actor, peer),),
+        federation_members,
+    )
+
+
+def seed_bound_contacts(
+    station_url: str,
+    environment_name: str,
+    contacts: Iterable[tuple[FixtureActorRecord, FixtureActorRecord]],
+    federation_members: Iterable[FixtureActorRecord],
+) -> None:
     environment = acceptance_station_environment(station_url, environment_name)
     verify_disposable_station_runtime(environment)
     members = tuple(federation_members)
+    pairs = tuple(contacts)
     if not members:
         raise RuntimeError("Chat fixture Federation requires actors")
+    if not pairs:
+        raise RuntimeError("Chat fixture contacts require actor pairs")
     if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
-        seed_same_station_contact(
-            station_url,
-            environment_name,
-            actor,
-            peer,
-            members,
-        )
+        for actor, peer in pairs:
+            seed_same_station_contact(
+                station_url,
+                environment_name,
+                actor,
+                peer,
+                members,
+            )
         return
+    statements = [
+        _bound_contact_sql(station_url, actor, peer, members)
+        for actor, peer in pairs
+    ]
+    _remote_psql(environment, "BEGIN;\n" + "\n".join(statements) + "\nCOMMIT;")
+
+
+def _bound_contact_sql(
+    station_url: str,
+    actor: FixtureActorRecord,
+    peer: FixtureActorRecord,
+    members: tuple[FixtureActorRecord, ...],
+) -> str:
+    """Return one canonical contact's writes and readback assertions."""
     federation_owner = min(members, key=lambda member: member.ptid)
     friendship = _accepted_friendship(
         actor,
@@ -1733,8 +1847,7 @@ WHERE touch_actor.origin = 'remote_cached'
     RAISE EXCEPTION 'cross-Station remote Actor projection is incomplete';
   END IF;
 """
-    sql = f"""
-BEGIN;
+    return f"""
 INSERT INTO federation (
   federation_id,
   name,
@@ -1942,9 +2055,7 @@ BEGIN
   END IF;
 END
 $acceptance$;
-COMMIT;
 """
-    _remote_psql(environment, sql)
 
 
 def seed_same_station_contact(
@@ -2491,15 +2602,7 @@ def prepare_local_friend_request_lifecycle(
     *,
     reset_authorized: bool | None = None,
 ) -> None:
-    authorized = (
-        os.environ.get("CHAT_ACCEPTANCE_RESET") == "1"
-        if reset_authorized is None
-        else reset_authorized
-    )
-    if not authorized:
-        raise RuntimeError(
-            "CHAT_ACCEPTANCE_RESET=1 is required for destructive Chat reset"
-        )
+    require_reset_lease()
     if (
         not sender_ptid.startswith("ptid:")
         or not receiver_ptid.startswith("ptid:")
@@ -2571,10 +2674,7 @@ def reset_fixture_follow_edges(
     environment_name: str,
     actor_ptids: Iterable[str],
 ) -> None:
-    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-        raise RuntimeError(
-            "CHAT_ACCEPTANCE_RESET=1 is required for Social relationship reset"
-        )
+    require_reset_lease()
     ptids = tuple(sorted({
         ptid.strip()
         for ptid in actor_ptids
@@ -2664,10 +2764,7 @@ COMMIT;
 
 
 def reset_station_chat_state(environment_name: str) -> None:
-    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-        raise RuntimeError(
-            "CHAT_ACCEPTANCE_RESET=1 is required for destructive Chat reset"
-        )
+    require_reset_lease()
     profile = active_profile_environment()
     station_url = profile.get("PT_STATION_URL", "").strip()
     local_environment = _local_source_environment(
@@ -2906,8 +3003,8 @@ def main() -> int:
     parser.add_argument("--accounts", nargs="+", default=["alice", "bob", "charlie"])
     args = parser.parse_args()
 
-    reset_roots = reset_local_client_storage(args.accounts)
     reset_station_chat_state(args.environment)
+    reset_roots = reset_local_client_storage(args.accounts)
     print(
         f"native Chat fixture reset: environment={args.environment} "
         f"local_storage_roots={reset_roots}"

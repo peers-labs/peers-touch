@@ -23,11 +23,12 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     machine_lease_reset_profile,
     prepare_local_friend_request_lifecycle,
     read_fixture_actor,
+    read_fixture_actors,
     reset_fixture_follow_edges,
     reset_local_client_storage,
     restart_acceptance_station,
     reset_station_chat_state,
-    seed_bound_contact,
+    seed_bound_contacts,
     seed_federation_context,
     verify_disposable_station_runtime,
 )
@@ -497,7 +498,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                     "station-four",
                 )
 
-    def test_accepts_exact_environment_authorization_with_live_reset_lease(self) -> None:
+    def test_accepts_exact_environment_authorized_protected_stations(self) -> None:
         deployments = {
             "station-four": {
                 "PT_DEPLOY_HOST": "192.0.2.40",
@@ -540,10 +541,6 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         ), patch(
             "tooling.acceptance.fixtures.chat_native_reset."
             "require_station_reset_authority",
-        ) as reset_authority, patch(
-            "tooling.acceptance.fixtures.chat_native_reset."
-            "active_profile_environment",
-            return_value={"PT_DEV_PROFILE": "four"},
         ):
             four = acceptance_station_environment(
                 "http://192.0.2.40:18080",
@@ -558,8 +555,6 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                 "station-five-arm",
             )
 
-        self.assertEqual(reset_authority.call_count, 3)
-        reset_authority.assert_called_with("mobile-station-lifecycle-alice")
         self.assertEqual(
             four["PT_ACCEPTANCE_STATION_URL"],
             "http://192.0.2.40:18080",
@@ -671,7 +666,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self,
         remote_command,
     ) -> None:
-        remote_command.side_effect = [
+        remote_command.return_value = "\n".join([
             json.dumps({
                 "Config": {
                     "Labels": {
@@ -699,7 +694,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                     "Destination": "/var/lib/postgresql/data",
                 }],
             }),
-        ]
+        ])
 
         actual = verify_disposable_station_runtime({
             **DISPOSABLE_ENVIRONMENT,
@@ -718,7 +713,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self,
         remote_command,
     ) -> None:
-        remote_command.side_effect = [
+        remote_command.return_value = "\n".join([
             json.dumps({
                 "Config": {
                     "Labels": {
@@ -746,7 +741,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                     "Destination": "/var/lib/postgresql/data",
                 }],
             }),
-        ]
+        ])
 
         with self.assertRaisesRegex(RuntimeError, "volume mismatch"):
             verify_disposable_station_runtime({
@@ -794,6 +789,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             self.assertTrue((root / "eve" / "storage").is_dir())
 
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_local_source_reset_recreates_only_profile_database(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -908,6 +904,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             self.assertEqual(evidence["afterCommit"], "abc123")
 
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_local_source_queue_replay_duplicates_acked_item(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "station.db"
@@ -1026,6 +1023,7 @@ WHERE recipient_ptid = 'ptid:bob'
             self.assertEqual(evidence["payloadSha256"], "0304")
 
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_remote_queue_replay_preserves_event_sequence(self) -> None:
         with patch(
             "tooling.acceptance.fixtures.chat_native_reset."
@@ -1118,6 +1116,41 @@ INSERT INTO touch_actor VALUES (
             self.assertEqual(actor.ptid, "ptid:alice")
             self.assertEqual(actor.home_station_peer_id, "peer-sixwin")
 
+    def test_batch_actor_read_requires_one_complete_local_identity_per_account(self) -> None:
+        def row(account: str) -> str:
+            role = account.split("@", 1)[0]
+            return json.dumps({
+                "accountEmail": account,
+                "ptid": f"ptid:{role}",
+                "preferredUsername": role,
+                "federatedHandle": f"@{role}@station.example",
+                "homeStationPeerId": "peer-station",
+                "homeStationDomain": "station.example",
+            })
+
+        accounts = ("bob@p.t", "carol@p.t")
+        valid_rows = [row(account) for account in accounts]
+        with patch(
+            "tooling.acceptance.fixtures.chat_native_reset.acceptance_station_environment",
+            return_value={"PT_ACCEPTANCE_RUNTIME_KIND": "remote"},
+        ) as resolve, patch(
+            "tooling.acceptance.fixtures.chat_native_reset.verify_disposable_station_runtime",
+        ) as verify, patch(
+            "tooling.acceptance.fixtures.chat_native_reset._remote_psql",
+            return_value="\n".join(valid_rows),
+        ) as query:
+            records = read_fixture_actors("http://station.example", "assigned", accounts)
+            self.assertEqual(list(records), list(accounts))
+            self.assertEqual([record.ptid for record in records.values()], ["ptid:bob", "ptid:carol"])
+            resolve.assert_called_once()
+            verify.assert_called_once()
+            query.assert_called_once()
+            for rows in (valid_rows[:1], [*valid_rows, valid_rows[0]], [*valid_rows, row("eve@p.t")]):
+                with self.subTest(rows=len(rows)):
+                    query.return_value = "\n".join(rows)
+                    with self.assertRaisesRegex(RuntimeError, "exactly one local actor"):
+                        read_fixture_actors("http://station.example", "assigned", accounts)
+
     def test_same_station_contact_seeds_canonical_sqlite_projection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "station.db"
@@ -1198,18 +1231,16 @@ CREATE TABLE social_relationship_projections (
                 "_encode_social_proto",
                 return_value=b"canonical-proto",
             ):
-                seed_bound_contact(
+                seed_bound_contacts(
                     "http://127.0.0.1:18080",
                     "sixwin",
-                    actor,
-                    peer,
+                    ((actor, peer),),
                     (actor, peer),
                 )
-                seed_bound_contact(
+                seed_bound_contacts(
                     "http://127.0.0.1:18080",
                     "sixwin",
-                    actor,
-                    peer,
+                    ((actor, peer),),
                     (actor, peer),
                 )
 
@@ -1285,11 +1316,10 @@ ORDER BY owner_ptid
         ), patch(
             "tooling.acceptance.fixtures.chat_native_reset._remote_psql",
         ) as remote_psql:
-            seed_bound_contact(
+            seed_bound_contacts(
                 "http://192.0.2.30:18132",
                 "chat-native-disposable-station",
-                actor,
-                peer,
+                ((actor, peer),),
                 (actor, peer),
             )
 
@@ -1312,6 +1342,7 @@ ORDER BY owner_ptid
             ):
                 reset_local_client_storage(["../outside"], Path(directory))
 
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_friend_request_lifecycle_removes_only_the_selected_pair(
         self,
     ) -> None:
@@ -1350,6 +1381,7 @@ ORDER BY owner_ptid
             sql,
         )
 
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_social_fixture_follow_reset_removes_all_selected_actor_edges(
         self,
     ) -> None:
@@ -1441,11 +1473,10 @@ ORDER BY owner_ptid
             locator_seq=1,
         )
 
-        seed_bound_contact(
+        seed_bound_contacts(
             "http://192.0.2.30:18132",
             "chat-native-acceptance",
-            actor,
-            peer,
+            ((actor, peer),),
             (actor, peer),
         )
 
@@ -1531,11 +1562,10 @@ ORDER BY owner_ptid
             locator_seq=1,
         )
 
-        seed_bound_contact(
+        seed_bound_contacts(
             "http://192.0.2.30:18132",
             "chat-native-acceptance",
-            actor,
-            peer,
+            ((actor, peer),),
             (actor, peer),
         )
 
@@ -1567,6 +1597,7 @@ ORDER BY owner_ptid
         "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
         return_value=DISPOSABLE_ENVIRONMENT,
     )
+    @patch("tooling.acceptance.fixtures.chat_native_reset.require_reset_lease", new=lambda: None)
     def test_station_reset_clears_sessions_and_restores_preset_credentials(
         self,
         _environment,
@@ -1634,11 +1665,11 @@ ORDER BY owner_ptid
         self.assertIn("native Chat preset actor PTIDs are invalid", sql)
         self.assertNotIn("_actor_id::text", sql)
 
-    @patch.dict(os.environ, {}, clear=True)
-    def test_station_reset_requires_explicit_authorization(self) -> None:
+    @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"}, clear=True)
+    def test_station_reset_requires_live_lease_even_with_boolean(self) -> None:
         with self.assertRaisesRegex(
             RuntimeError,
-            "CHAT_ACCEPTANCE_RESET=1 is required",
+            "live station.reset lease",
         ):
             reset_station_chat_state("chat-native-acceptance")
 

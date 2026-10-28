@@ -25,6 +25,7 @@ from tooling.acceptance.provisioners.station_access_dual_relay import (
     CAPABILITY_ID,
     DualRelayControlHandler,
 )
+from tooling.acceptance.tests.aggregate_fixtures import ManifestFixtureStore
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -126,6 +127,8 @@ def passing_manifest(
             "status": "passed",
             "completionStatus": "DONE",
             "proofStatus": "PROVEN",
+            "cleanupStatus": "passed",
+            "runtimeCell": "desktop-windows-native" if gate_id == "NCP-G03" else None,
             "secretScan": {"status": "passed"},
         },
         "artifacts": {},
@@ -293,8 +296,10 @@ class StationAccessDualRelayContractTest(unittest.TestCase):
             )
 
     def test_aggregate_requires_ral_native_and_renewal_evidence(self) -> None:
+        store = ManifestFixtureStore(FakeStore().manifests)
+        ManifestFixtureStore.bind(self, EXPECTED_SOURCE, lambda: store)
         gate = lifecycle.RelayAttachmentAggregateGate(
-            store=FakeStore(),
+            store=store,
             expected_source=EXPECTED_SOURCE,
         )
 

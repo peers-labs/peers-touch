@@ -617,6 +617,11 @@ class MobileSimulatorContractTests(unittest.TestCase):
         self.path = ENVIRONMENTS_DIR / "mobile-simulator.yaml"
         self.payload = json.loads(self.path.read_text(encoding="utf-8"))
         self.spec = load_mobile_simulator_spec(self.path)
+        equipment = patch(
+            "tooling.acceptance.provisioners.station_equipment.equip_station_profiles",
+        )
+        self.station_equipment = equipment.start()
+        self.addCleanup(equipment.stop)
 
     def _station_access_fixture(
         self,
@@ -2436,6 +2441,8 @@ class MobileSimulatorContractTests(unittest.TestCase):
             contract,
             base_factory=Base,
             overlay_path=social_path,
+            station_profiles={"station-primary": "primary", "station-secondary": "secondary"},
+            service_profiles={"relay": "relay"},
         )
         provisioner.bind_evidence_run(object())  # type: ignore[arg-type]
         services = {
@@ -2444,6 +2451,21 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "relay": attestation("relay", "relay"),
         }
         with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator.resolve_reviewed_profile_environment",
+                side_effect=lambda profile: (
+                    Path(f"/canonical/{profile}/profile.env.example"),
+                    {
+                        "PT_STATION_MODE": "remote",
+                        "PT_STATION_URL": f"https://station-{profile}.example",
+                        "PT_STATION_DEPLOY_ENV": f"station-{profile}",
+                        "PT_RELAY_MODE": "remote",
+                        "PT_RELAY_URL": "https://relay.example",
+                        "PT_RELAY_DEPLOY_ENV": "relay",
+                        "PT_RELAY_HEALTH_URL": "https://relay.example/sub-oss/healthz",
+                    },
+                ),
+            ),
             patch.dict(
                 "os.environ",
                 {
@@ -2740,6 +2762,11 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         )
         self.contract = EnvironmentContract.from_yaml(self.contract_path)
         self.evidence_run = FakeEvidenceRun()
+        equipment = patch(
+            "tooling.acceptance.provisioners.station_equipment.equip_station_profiles",
+        )
+        self.station_equipment = equipment.start()
+        self.addCleanup(equipment.stop)
 
     def _attestation(self, service_id: str) -> ServiceAttestation:
         return ServiceAttestation(
@@ -2873,6 +2900,19 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
         }
 
+    @staticmethod
+    def _reviewed_station_profile(profile: str) -> tuple[Path, dict[str, str]]:
+        if profile not in {"primary", "secondary"}:
+            raise AssertionError(f"Unexpected Profile: {profile}")
+        return (
+            Path(f"/canonical/{profile}/profile.env.example"),
+            {
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_URL": f"https://station-{profile}.example",
+                "PT_STATION_DEPLOY_ENV": f"deploy-{profile}",
+            },
+        )
+
     def test_accepts_and_injects_explicit_station_profiles(self) -> None:
         bindings = {
             "station-primary": "four",
@@ -2978,6 +3018,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         provisioner = MobileStationLifecycleSimulatorProvisioner(
             self.contract,
             base_factory=Base,
+            station_profiles={"station-primary": "primary", "station-secondary": "secondary"},
         )
         provisioner.bind_evidence_run(self.evidence_run)  # type: ignore[arg-type]
 
@@ -2985,6 +3026,10 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             events.append(f"target:{deployment}")
 
         with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator.resolve_reviewed_profile_environment",
+                side_effect=self._reviewed_station_profile,
+            ),
             patch.dict(
                 "os.environ",
                 self._service_environment(),
@@ -3104,6 +3149,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         provisioner = MobileStationLifecycleSimulatorProvisioner(
             self.contract,
             base_factory=Base,
+            station_profiles={"station-primary": "primary", "station-secondary": "secondary"},
         )
         provisioner.bind_evidence_run(self.evidence_run)  # type: ignore[arg-type]
 
@@ -3139,6 +3185,10 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             for service_id in ("station-primary", "station-secondary")
         }
         with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator.resolve_reviewed_profile_environment",
+                side_effect=self._reviewed_station_profile,
+            ),
             patch.dict(
                 "os.environ",
                 self._service_environment(),
@@ -3899,6 +3949,173 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
             )
             self.assertEqual(session.device.identifier, client["device"])
             self.assertEqual(session.chromedriver_executable, "")
+
+    def test_ios_build_boot_and_deploy_run_concurrently(self) -> None:
+        original_run = self.executor.run
+        lock = threading.Lock()
+        active = {"bootstatus": 0, "install": 0, "xcodebuild": 0}
+        maximum = {"bootstatus": 0, "install": 0, "xcodebuild": 0}
+        build_boot_overlap = False
+
+        def delayed_run(
+            command: tuple[str, ...] | list[str],
+            *,
+            cwd: Path,
+            env: dict[str, str],
+            timeout: float,
+        ) -> CommandResult:
+            normalized = tuple(command)
+            stage = None
+            if normalized[:3] == ("xcrun", "simctl", "bootstatus"):
+                stage = "bootstatus"
+            elif normalized[:3] == ("xcrun", "simctl", "install"):
+                stage = "install"
+            elif normalized[:1] == ("xcodebuild",):
+                stage = "xcodebuild"
+            if stage is None:
+                return original_run(
+                    normalized,
+                    cwd=cwd,
+                    env=env,
+                    timeout=timeout,
+                )
+
+            nonlocal build_boot_overlap
+            with lock:
+                active[stage] += 1
+                maximum[stage] = max(maximum[stage], active[stage])
+                if active["bootstatus"] and active["xcodebuild"]:
+                    build_boot_overlap = True
+            try:
+                time.sleep(0.05)
+                return original_run(
+                    normalized,
+                    cwd=cwd,
+                    env=env,
+                    timeout=timeout,
+                )
+            finally:
+                with lock:
+                    active[stage] -= 1
+
+        self.executor.run = delayed_run  # type: ignore[method-assign]
+
+        manifest = self.provisioner.provision(
+            "mobile-simulator-access-e2e"
+        )
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertEqual(maximum["bootstatus"], 2)
+        self.assertEqual(maximum["install"], 2)
+        self.assertTrue(build_boot_overlap)
+        self.provisioner.cleanup()
+
+    def test_ios_build_cache_is_source_bound_and_survives_run_cleanup(
+        self,
+    ) -> None:
+        first = self.provisioner.provision(
+            "mobile-simulator-access-e2e"
+        )
+        first_payload = first.to_dict()["mobileSimulator"]
+        first_artifact = Path(first_payload["applications"]["ios"]["artifact"])
+        first_build_identity = first_payload["applications"]["ios"][
+            "buildIdentity"
+        ]
+        first_derived_data = next(
+            Path(command[command.index("-derivedDataPath") + 1])
+            for command in self.executor.commands
+            if command[:1] == ("xcodebuild",)
+        )
+
+        self.assertTrue(first_artifact.exists())
+        self.assertIn(
+            (self.root / "runtime").resolve(),
+            first_artifact.resolve().parents,
+        )
+        self.assertIn(
+            (self.cache_root / "ios-build").resolve(),
+            first_derived_data.parents,
+        )
+
+        self.provisioner.cleanup()
+
+        self.assertFalse(first_artifact.exists())
+        self.assertTrue(first_derived_data.exists())
+
+        self.provisioner = self._new_provisioner()
+        second = self.provisioner.provision(
+            "mobile-simulator-access-e2e"
+        )
+        second_artifact = Path(
+            second.to_dict()["mobileSimulator"]["applications"]["ios"][
+                "artifact"
+            ]
+        )
+        second_build_identity = second.to_dict()["mobileSimulator"][
+            "applications"
+        ]["ios"]["buildIdentity"]
+        derived_data_paths = [
+            Path(command[command.index("-derivedDataPath") + 1])
+            for command in self.executor.commands
+            if command[:1] == ("xcodebuild",)
+        ]
+
+        self.assertEqual(derived_data_paths, [first_derived_data])
+        self.assertEqual(
+            self.executor.commands.count(
+                ("pnpm", "--dir", "apps/mobile", "run", "build")
+            ),
+            1,
+        )
+        self.assertNotEqual(second_artifact, first_artifact)
+        self.assertTrue(second_artifact.exists())
+        self.assertEqual(second_build_identity, first_build_identity)
+        self.provisioner.cleanup()
+        self.assertTrue(first_derived_data.exists())
+
+    def test_ios_build_cache_rebuilds_after_artifact_tampering(self) -> None:
+        self.provisioner.provision("mobile-simulator-access-e2e")
+        xcode_command = next(
+            command
+            for command in self.executor.commands
+            if command[:1] == ("xcodebuild",)
+        )
+        derived_data = Path(
+            xcode_command[xcode_command.index("-derivedDataPath") + 1]
+        )
+        cached_binary = next(derived_data.glob("**/*.app/Peers"))
+        self.provisioner.cleanup()
+        cached_binary.write_text("tampered\n", encoding="utf-8")
+
+        self.provisioner = self._new_provisioner()
+        self.provisioner.provision("mobile-simulator-access-e2e")
+
+        self.assertEqual(
+            sum(
+                command[:1] == ("xcodebuild",)
+                for command in self.executor.commands
+            ),
+            2,
+        )
+        self.provisioner.cleanup()
+
+    def test_ios_build_cache_changes_with_source_identity(self) -> None:
+        spec = load_mobile_simulator_spec(self.contract_path)
+        manifest = self.provisioner._new_base_manifest(
+            "mobile-simulator-access-e2e"
+        )
+        changed = dataclasses.replace(
+            manifest,
+            workspace_digest="sha256:changed",
+        )
+
+        first = self.provisioner._ios_incremental_build_root(manifest, spec)
+        second = self.provisioner._ios_incremental_build_root(changed, spec)
+
+        self.assertNotEqual(first, second)
+        cache_root = (self.cache_root / "ios-build").resolve()
+        self.assertIn(cache_root, first.parents)
+        self.assertIn(cache_root, second.parents)
 
     def test_cleanup_releases_resources_in_reverse_acquisition_order(
         self,

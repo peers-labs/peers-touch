@@ -204,7 +204,7 @@ def _remote_git_source_lease_payload(resource: str) -> tuple[str, str]:
             "",
             "def write_owner(handle, owner):",
             "    handle.seek(1 if os.name == 'nt' else 0)",
-            "    handle.write(owner + '\\n')",
+            "    handle.write(owner + '\\n' + str(os.getpid()) + '\\n')",
             "    handle.truncate()",
             "    handle.flush()",
             "    os.fsync(handle.fileno())",
@@ -244,6 +244,37 @@ def _remote_git_source_lease_script(resource: str, owner: str) -> str:
     return "exec " + shlex.join(
         ["python3", "-c", python_script, normalized_resource, owner]
     )
+
+
+def source_lease_guarded_argv(
+    resource: str, owner: str, argv: Sequence[str],
+) -> list[str]:
+    """Recheck the actual remote flock and its owner within each SSH operation."""
+    script = "\n".join((
+        "import fcntl,json,os,pathlib,sys",
+        "path = pathlib.Path.home() / '.cache/peers-touch/source-leases' / (sys.argv[1] + '.lock')",
+        "def reject():",
+        "    print('PT_SOURCE_LEASE_NOT_HELD', file=sys.stderr, flush=True)",
+        "    raise SystemExit(74)",
+        "try:",
+        "    handle = path.open('r+', encoding='utf-8')",
+        "except OSError:",
+        "    reject()",
+        "try:",
+        "    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)",
+        "except BlockingIOError:",
+        "    if handle.readline().strip() != sys.argv[2]:",
+        "        reject()",
+        "else:",
+        "    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)",
+        "    reject()",
+        "argv = json.loads(sys.argv[3])",
+        "os.execvp(argv[0], argv)",
+    ))
+    return [
+        "python3", "-c", script, normalize_lease_resource(resource), owner,
+        json.dumps(list(argv), ensure_ascii=False),
+    ]
 
 
 def _remote_git_source_lease_argv(
@@ -394,6 +425,7 @@ class RemoteGitSourceLease:
         persistent: bool = False,
         expires_at_epoch: int = 0,
         remote_platform: RemotePlatform = RemotePlatform.POSIX,
+        reuse_connection: bool = False,
     ) -> None:
         from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
@@ -419,10 +451,27 @@ class RemoteGitSourceLease:
                 port=port,
                 known_hosts_file=known_hosts_file,
                 remote_platform=remote_platform,
-            )
+            ),
+            connection_environment={},
         )
         self._process: subprocess.Popen[str] | None = None
         self._acquired = False
+        self._socket_root: tempfile.TemporaryDirectory[str] | None = None
+        self.reuse_connection = reuse_connection
+
+    @property
+    def connection_descriptor(self) -> dict[str, object] | None:
+        from tooling.acceptance.transports.ssh import ssh_target_identity
+
+        if self._socket_root is None or self._process is None or not self._acquired:
+            return None
+        return {
+            "target": ssh_target_identity(self.transport.target),
+            "pid": self._process.pid,
+            "controlPath": str(Path(self._socket_root.name) / "control"),
+            "resource": self.resource,
+            "owner": self.owner,
+        }
 
     def _command(self) -> list[str]:
         if self.persistent:
@@ -449,8 +498,14 @@ class RemoteGitSourceLease:
                     self.remote_platform,
                 )
             )
+        prefix = self.transport.command_prefix(
+            control_master=(
+                Path(self._socket_root.name) / "control"
+                if self._socket_root is not None else None
+            ),
+        )
         return [
-            *self.transport.command_prefix(),
+            *prefix,
             self.transport.target.destination,
             remote_command,
         ]
@@ -476,6 +531,47 @@ class RemoteGitSourceLease:
     def acquire(self) -> None:
         if self._process is not None or self._acquired:
             return
+        if self.reuse_connection:
+            if os.name != "posix" or self.persistent or self.remote_platform != RemotePlatform.POSIX:
+                raise ValueError("connection reuse requires a live POSIX-local source lease")
+            self._socket_root = tempfile.TemporaryDirectory(prefix="pt-ssh-", dir="/tmp")
+        started = time.monotonic()
+        try:
+            self._acquire()
+            if self._socket_root is not None:
+                from tooling.acceptance.transports.ssh import SSH_CONNECTIONS_ENV, SshTransport
+
+                descriptor = self.connection_descriptor
+                remaining = self.acquire_timeout - (time.monotonic() - started)
+                if remaining <= 0:
+                    raise RemoteGitSourceLeaseUnavailable(
+                        self.resource, "SSH connection check exceeded lease acquisition deadline",
+                    )
+                SshTransport(
+                    self.transport.target,
+                    connection_environment={SSH_CONNECTIONS_ENV: json.dumps([descriptor])},
+                ).command_prefix(
+                    timeout=min(remaining, 2),
+                )
+        except BaseException:
+            process = self._process
+            self._process = None
+            self._acquired = False
+            try:
+                if process is not None:
+                    self._stop_process(process)
+                    self._close_streams(process)
+            finally:
+                self._remove_socket_root()
+            raise
+
+    def _remove_socket_root(self) -> None:
+        directory = self._socket_root
+        self._socket_root = None
+        if directory is not None:
+            directory.cleanup()
+
+    def _acquire(self) -> None:
         if self.persistent and self.expires_at_epoch <= int(time.time()):
             raise ValueError(
                 "persistent remote source lease requires a future expiry"
@@ -497,6 +593,7 @@ class RemoteGitSourceLease:
                 self.resource,
                 f"cannot start SSH lease process: {error}",
             ) from error
+        self._process = process
         if process.stdout is None:
             self._stop_process(process)
             self._close_streams(process)
@@ -549,6 +646,7 @@ class RemoteGitSourceLease:
                 returncode = -1
             if returncode == 0:
                 self._close_streams(process)
+                self._process = None
                 self._acquired = True
                 return
 
@@ -581,6 +679,12 @@ class RemoteGitSourceLease:
         self._acquired = True
 
     def release(self) -> None:
+        try:
+            self._release()
+        finally:
+            self._remove_socket_root()
+
+    def _release(self) -> None:
         if self.persistent:
             if not self._acquired:
                 return

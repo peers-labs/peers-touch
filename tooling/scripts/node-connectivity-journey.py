@@ -1695,6 +1695,26 @@ def isolated_command_environment(work_root: Path) -> dict[str, str]:
     }
 
 
+def native_cut_build_root() -> Path:
+    configured = os.environ.get("PT_NCP_NATIVE_CUT_BUILD_ROOT", "").strip()
+    root = Path(
+        configured
+        or (
+            Path.home()
+            / ".peers-touch"
+            / "dev"
+            / "build-cache"
+            / "ncp-native-cut"
+        )
+    ).expanduser().resolve()
+    if root == REPO_ROOT or REPO_ROOT in root.parents:
+        raise ValueError(
+            "Node Connectivity build cache must stay outside the repository"
+        )
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def run_command(
     command: list[str],
     cwd: Path,
@@ -1793,20 +1813,17 @@ def main() -> int:
                         REPO_ROOT,
                     ),
                 ]
-                with tempfile.TemporaryDirectory(
-                    prefix="peers-touch-node-connectivity-",
-                ) as work_root:
-                    environment = isolated_command_environment(
-                        Path(work_root)
+                environment = isolated_command_environment(
+                    native_cut_build_root()
+                )
+                results.extend(
+                    run_command(
+                        command,
+                        cwd,
+                        environment=environment,
                     )
-                    results.extend(
-                        run_command(
-                            command,
-                            cwd,
-                            environment=environment,
-                        )
-                        for command, cwd in commands
-                    )
+                    for command, cwd in commands
+                )
             else:
                 command = NATIVE_CUT_COMMANDS[gate_id]
                 results.append(

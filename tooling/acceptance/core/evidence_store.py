@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import hashlib
 import json
+import math
 import mimetypes
 import os
 import re
@@ -20,6 +21,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Mapping
 
 from . import finalization_contracts as finalization
+from .operation_observer import current_lock_observer
 from .errors import (
     EvidenceConflict,
     EvidenceError,
@@ -35,10 +37,13 @@ from .errors import (
     EvidenceWriteInterrupted,
 )
 from .redaction import (
+    is_sensitive_key,
+    REDACTED,
     redact_artifact_bytes,
     redact_text_with_values,
     redact_value,
     redact_value_with_values,
+    secret_text_redactor,
 )
 
 
@@ -50,6 +55,79 @@ REDACTION_VALUES_ENV = "PT_ACCEPTANCE_REDACTION_VALUES"
 GATE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 RUN_ID_PATTERN = re.compile(r"^\d{8}T\d{12}Z-[0-9a-f]{32}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+EVIDENCE_LOCK_TIMEOUT_SECONDS = 60
+
+
+def _public_metadata(value: Any, secret_values: tuple[str, ...]) -> Any:
+    """Scan every string, rejecting loss of identity rather than sealing it."""
+    text = secret_text_redactor(secret_values)
+
+    def visit(item: Any) -> Any:
+        if isinstance(item, Mapping):
+            return {visit(key): visit(child) for key, child in item.items()}
+        if isinstance(item, (list, tuple)):
+            return [visit(child) for child in item]
+        if isinstance(item, str):
+            if text(item) != item:
+                raise EvidenceManifestInvalid("public metadata contains a resolved credential")
+            return item
+        if item is None or isinstance(item, (bool, int, float)):
+            return item
+        raise EvidenceManifestInvalid("public metadata contains an unsupported value")
+
+    return visit(value)
+
+
+def _json_payload(value: Any, secret_values: tuple[str, ...]) -> Any:
+    """Preserve closed metadata contracts while scanning ordinary payloads."""
+    from .execution_graph import ExecutionGraph
+
+    text = secret_text_redactor(secret_values)
+
+    def field(key: Any, child: Any) -> Any:
+        if key == "secretScan" and isinstance(child, Mapping):
+            try:
+                return canonical_secret_scan(child, secret_values)
+            except EvidenceManifestInvalid:
+                return REDACTED
+        if is_sensitive_key(key):
+            return child if isinstance(child, bool) else REDACTED
+        return visit(child)
+
+    def visit(item: Any) -> Any:
+        if type(item) is ExecutionGraph:
+            item.validate()
+            return _public_metadata(item, secret_values)
+        if type(item) is ArtifactRef:
+            return _public_metadata(item.to_dict(), secret_values)
+        if isinstance(item, Mapping):
+            return {
+                text(str(key)): field(key, child)
+                for key, child in item.items()
+            }
+        if isinstance(item, (list, tuple)):
+            return [visit(child) for child in item]
+        if isinstance(item, str):
+            return text(item)
+        if isinstance(item, (bytes, bytearray, memoryview)):
+            return REDACTED
+        if item is None or isinstance(item, (bool, int, float)):
+            return item
+        return text(str(item))
+
+    return visit(value)
+
+
+@dataclass(frozen=True)
+class _JsonArtifact:
+    value: Mapping[str, Any]
+
+    def encode(self, secret_values: tuple[str, ...]) -> tuple[bytes, bool]:
+        if not isinstance(self.value, Mapping):
+            raise EvidenceManifestInvalid("JSON artifact must be an object")
+        payload = _json_payload(self.value, secret_values)
+        encoded = (json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n").encode("utf-8")
+        return encoded, payload != self.value
 
 
 def _redaction_values(
@@ -372,6 +450,30 @@ def write_current_artifact(
     repo_root: Path,
     environment: Mapping[str, str] | None = None,
 ) -> Path:
+    return _write_current_artifact(
+        relative_path, value, repo_root=repo_root, environment=environment,
+    )
+
+
+def write_current_json(
+    relative_path: str,
+    value: Mapping[str, Any],
+    *,
+    repo_root: Path,
+    environment: Mapping[str, str] | None = None,
+) -> Path:
+    return _write_current_artifact(
+        relative_path, _JsonArtifact(value), repo_root=repo_root, environment=environment,
+    )
+
+
+def _write_current_artifact(
+    relative_path: str,
+    value: bytes | _JsonArtifact,
+    *,
+    repo_root: Path,
+    environment: Mapping[str, str] | None = None,
+) -> Path:
     current_environment = dict(
         os.environ if environment is None else environment
     )
@@ -380,7 +482,10 @@ def write_current_artifact(
         raise EvidenceManifestInvalid(
             "Acceptance artifact path contains a resolved credential"
         )
-    value, _ = redact_artifact_bytes(value, secret_values)
+    value, _ = (
+        value.encode(secret_values) if type(value) is _JsonArtifact
+        else redact_artifact_bytes(value, secret_values)
+    )
     run_dir = current_run_directory(
         repo_root=repo_root,
         environment=current_environment,
@@ -686,10 +791,61 @@ class _FileLock:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._handle: BinaryIO | None = None
+        self._acquired_at: float | None = None
+        self._observer = None
+        self._identity = {
+            "lockId": hashlib.sha256(str(path).encode()).hexdigest(),
+            "lockRole": path.name,
+        }
 
-    def acquire(self, *, blocking: bool, shared: bool = False) -> bool:
+    def acquire(
+        self, *, blocking: bool, shared: bool = False, timeout_seconds: float | None = None,
+    ) -> bool:
         if self._handle is not None:
             return True
+        limit = EVIDENCE_LOCK_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+        if (
+            isinstance(limit, bool) or not isinstance(limit, (int, float))
+            or not math.isfinite(limit) or limit <= 0
+        ):
+            raise ValueError("evidence lock protection must be positive and finite")
+        limit = min(limit, EVIDENCE_LOCK_TIMEOUT_SECONDS)
+        started = time.monotonic()
+        observer = current_lock_observer()
+        attempts = 0
+        try:
+            while True:
+                attempts += 1
+                if self._try_acquire(shared=shared):
+                    self._acquired_at = time.monotonic()
+                    self._observer = observer
+                    if observer is not None:
+                        observer({
+                            **self._identity, "event": "ACQUIRED", "shared": shared,
+                            "attempts": attempts, "waitSeconds": self._acquired_at - started,
+                        })
+                    return True
+                if not blocking:
+                    return False
+                remaining = started + limit - time.monotonic()
+                if remaining <= 0:
+                    raise EvidenceConflict(
+                        "evidence lock acquisition timed out",
+                        operation="acquire-lock", path_role="lock",
+                    )
+                time.sleep(min(0.01, remaining))
+        except BaseException as error:
+            # Preserve the earlier execution owner's cancellation and its type.
+            if observer is not None:
+                observer({
+                    **self._identity, "event": "ACQUIRE_FAILED", "shared": shared,
+                    "attempts": attempts, "waitSeconds": time.monotonic() - started,
+                    "errorType": type(error).__name__,
+                })
+            self.release()
+            raise
+
+    def _try_acquire(self, *, shared: bool) -> bool:
         _private_directory(self.path.parent, "lock-parent")
         if self.path.is_symlink():
             raise EvidenceSymlinkRejected(
@@ -697,6 +853,7 @@ class _FileLock:
                 operation="lock",
                 path_role="lock",
             )
+        handle = None
         try:
             if os.name != "nt":
                 descriptor = os.open(
@@ -707,13 +864,17 @@ class _FileLock:
                     | getattr(os, "O_NOFOLLOW", 0),
                     0o600,
                 )
-                handle = os.fdopen(descriptor, "r+b", closefd=True)
+                try:
+                    handle = os.fdopen(descriptor, "r+b", closefd=True)
+                except BaseException:
+                    os.close(descriptor)
+                    raise
                 os.chmod(self.path, 0o600)
                 import fcntl
 
                 flags = (
                     fcntl.LOCK_SH if shared else fcntl.LOCK_EX
-                ) | (0 if blocking else fcntl.LOCK_NB)
+                ) | fcntl.LOCK_NB
                 try:
                     fcntl.flock(handle.fileno(), flags)
                 except BlockingIOError:
@@ -733,20 +894,22 @@ class _FileLock:
                     handle.write(b"\0")
                     handle.flush()
                 handle.seek(0)
-                mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
                 try:
-                    msvcrt.locking(handle.fileno(), mode, 1)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                 except OSError:
                     handle.close()
                     return False
+            self._handle = handle
+            return True
         except OSError as error:
             raise _map_os_error(
                 error,
                 operation="acquire-lock",
                 path_role="lock",
             ) from error
-        self._handle = handle
-        return True
+        finally:
+            if handle is not None and self._handle is not handle:
+                handle.close()
 
     def fileno(self) -> int:
         if self._handle is None:
@@ -774,6 +937,13 @@ class _FileLock:
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         finally:
             handle.close()
+            if self._observer is not None and self._acquired_at is not None:
+                self._observer({
+                    **self._identity, "event": "RELEASED",
+                    "holdSeconds": time.monotonic() - self._acquired_at,
+                })
+            self._acquired_at = None
+            self._observer = None
 
 
 def _acquire_bounded(
@@ -782,15 +952,12 @@ def _acquire_bounded(
     timeout_seconds: float,
     operation: str,
 ) -> None:
-    deadline = time.monotonic() + timeout_seconds
-    while not lock.acquire(blocking=False):
-        if time.monotonic() >= deadline:
-            raise EvidenceConflict(
-                f"{operation} lock acquisition timed out",
-                operation=operation,
-                path_role="lock",
-            )
-        time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+    try:
+        lock.acquire(blocking=True, timeout_seconds=timeout_seconds)
+    except EvidenceConflict as error:
+        raise EvidenceConflict(
+            f"{operation} lock acquisition failed", operation=operation, path_role="lock",
+        ) from error
 
 
 class GatePublishLock:
@@ -834,6 +1001,58 @@ class GatePublishLock:
         raise TypeError("GatePublishLock is process-local and non-serializable")
 
 
+class ExecutionRequestClaim:
+    """One process-local lock and one-shot request consumption, outside evidence."""
+
+    def __init__(self, directory: Path) -> None:
+        self.directory = directory
+        self._lock = _FileLock(directory / "request.lock")
+        if not self._lock.acquire(blocking=False):
+            raise EvidenceConflict("execution session already has an active request")
+        self._request_dir: Path | None = None
+
+    def consume(self, sequence: int, prior_manifest: ArtifactRef | None) -> None:
+        if self._request_dir is not None or type(sequence) is not int or sequence < 1:
+            raise EvidenceConflict("execution request can only be consumed once")
+        _ensure_no_symlink(self.directory, self.directory)
+        if sequence > 1:
+            completed = self.directory / str(sequence - 1) / "completed.json"
+            try:
+                _ensure_no_symlink(self.directory, completed)
+                previous = ArtifactRef.from_dict(json.loads(completed.read_text()))
+            except (OSError, ValueError, EvidenceError) as error:
+                raise EvidenceConflict("prior request lacks durable terminal cleanup") from error
+            if previous != prior_manifest:
+                raise EvidenceConflict("stale execution session manifest")
+        elif prior_manifest is not None:
+            raise EvidenceConflict("initial request cannot consume prior proof")
+        request_dir = self.directory / str(sequence)
+        _private_directory(request_dir, "execution-request")
+        created = _atomic_write_no_replace(
+            request_dir / "consumed.json",
+            (json.dumps({
+                "request": sequence,
+                "priorManifest": prior_manifest.to_dict() if prior_manifest else None,
+            }, sort_keys=True) + "\n").encode(),
+            path_role="execution-request",
+        )
+        if not created:
+            raise EvidenceConflict("execution request sequence was already consumed")
+        self._request_dir = request_dir
+
+    def complete(self, reference: ArtifactRef) -> None:
+        if self._request_dir is None:
+            raise EvidenceConflict("execution request was not consumed")
+        _atomic_write_no_replace(
+            self._request_dir / "completed.json",
+            (json.dumps(reference.to_dict(), sort_keys=True) + "\n").encode(),
+            path_role="execution-request-terminal",
+        )
+
+    def close(self) -> None:
+        self._lock.release()
+
+
 @dataclass(frozen=True)
 class ArtifactRef:
     workspace_id: str
@@ -868,16 +1087,19 @@ class ArtifactRef:
     def from_dict(cls, value: Mapping[str, Any]) -> "ArtifactRef":
         if not isinstance(value, Mapping):
             raise EvidenceManifestInvalid("artifact reference must be an object")
+        fields = {"artifactKind", "workspaceId", "gateId", "runId", "path", "sha256", "mediaType"}
+        if set(value) != fields or any(not isinstance(item, str) for item in value.values()):
+            raise EvidenceManifestInvalid("artifact reference has unknown, missing or non-string fields")
         if value.get("artifactKind") != "acceptance-artifact-ref":
             raise EvidenceManifestInvalid("invalid artifact reference kind")
         try:
             return cls(
-                workspace_id=str(value["workspaceId"]),
-                gate_id=str(value["gateId"]),
-                run_id=str(value["runId"]),
-                path=str(value["path"]),
-                sha256=str(value["sha256"]),
-                media_type=str(value["mediaType"]),
+                workspace_id=value["workspaceId"],
+                gate_id=value["gateId"],
+                run_id=value["runId"],
+                path=value["path"],
+                sha256=value["sha256"],
+                media_type=value["mediaType"],
             )
         except KeyError as error:
             raise EvidenceManifestInvalid(
@@ -1009,6 +1231,16 @@ class EvidenceStore:
         _private_directory(self.root, "artifact-root")
         _private_directory(self.workspace_dir, "workspace")
 
+    def execution_request(self, session_id: str) -> ExecutionRequestClaim:
+        validate_run_id(session_id)
+        store_identity = hashlib.sha256(str(self.root).encode()).hexdigest()
+        directory = (
+            self.worktree / ".local" / "acceptance" / "execution-sessions"
+            / store_identity / session_id
+        )
+        _reject_symlink_components(directory, role="execution-session")
+        return ExecutionRequestClaim(directory)
+
     @classmethod
     def from_environment(
         cls,
@@ -1050,15 +1282,13 @@ class EvidenceStore:
             )
         path = self.workspace_dir / normalized_gate / ".publish.lock"
         lock = _FileLock(path)
-        deadline = time.monotonic() + timeout_seconds
-        while not lock.acquire(blocking=False, shared=shared):
-            if time.monotonic() >= deadline:
-                raise EvidenceConflict(
-                    "Gate publish lock acquisition timed out",
-                    operation="acquire-gate-publish-lock",
-                    path_role="lock",
-                )
-            time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+        try:
+            lock.acquire(blocking=True, shared=shared, timeout_seconds=timeout_seconds)
+        except EvidenceConflict as error:
+            raise EvidenceConflict(
+                "Gate publish lock acquisition failed",
+                operation="acquire-gate-publish-lock", path_role="lock",
+            ) from error
         try:
             observed = os.fstat(lock.fileno())
             if not stat.S_ISREG(observed.st_mode):
@@ -1763,14 +1993,19 @@ class EvidenceStore:
         return target
 
     def read_json(self, reference: ArtifactRef) -> dict[str, Any]:
+        value = self.read_json_value(reference)
+        if not isinstance(value, dict):
+            raise EvidenceManifestInvalid("JSON artifact must be an object")
+        return value
+
+    def read_json_value(self, reference: ArtifactRef) -> Any:
+        """Read hash-verified JSON, including supporting arrays and scalar data."""
         try:
             value = json.loads(self.resolve(reference).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise EvidenceManifestInvalid(
                 f"invalid JSON artifact: {reference.path}"
             ) from error
-        if not isinstance(value, dict):
-            raise EvidenceManifestInvalid("JSON artifact must be an object")
         return value
 
     def read_run_manifest(
@@ -1803,7 +2038,21 @@ class EvidenceStore:
             or manifest.get("runId") != reference.run_id
         ):
             raise EvidenceManifestInvalid("run manifest identity mismatch")
+        self.verify_run_inventory(manifest)
         return manifest
+
+    def verify_run_inventory(self, manifest: Mapping[str, Any]) -> None:
+        artifacts = manifest.get("artifacts")
+        if not isinstance(artifacts, dict):
+            raise EvidenceManifestInvalid("run artifact inventory must be an object")
+        identity = (manifest.get("workspaceId"), manifest.get("gateId"), manifest.get("runId"))
+        for role, value in artifacts.items():
+            if not isinstance(role, str) or not role:
+                raise EvidenceManifestInvalid("artifact role must be a non-empty string")
+            reference = ArtifactRef.from_dict(value)
+            if (reference.workspace_id, reference.gate_id, reference.run_id) != identity:
+                raise EvidenceManifestInvalid("artifact inventory identity mismatch")
+            self.resolve(reference)
 
     def publish_candidate_proof(
         self,
@@ -1938,6 +2187,25 @@ class EvidenceStore:
         if pointer is None:
             raise EvidenceManifestInvalid(f"latest pointer is unavailable for {gate_id}")
         return self.read_json(ArtifactRef.from_dict(pointer["manifest"]))
+
+    def latest_manifest_ref(
+        self, gate_id: str, *, runtime_cell: str | None = None,
+    ) -> ArtifactRef:
+        pointer = self._latest_pointer(
+            gate_id, required=True, runtime_cell=runtime_cell,
+        )
+        if pointer is None:
+            raise EvidenceManifestInvalid(f"latest pointer is unavailable for {gate_id}")
+        return ArtifactRef.from_dict(pointer["manifest"])
+
+    def validate_proof_authority(self, reference: ArtifactRef) -> None:
+        """Original legacy proof may survive latest replacement; enforcement may not."""
+        gate_id = _validate_gate_id(reference.gate_id)
+        enforcement = self.workspace_dir / gate_id / "finalizer-enforcement"
+        if enforcement.exists():
+            authority = self.authoritative_latest(gate_id)
+            if authority.manifest_ref.to_dict() != reference.to_dict():
+                raise EvidenceManifestInvalid("original proof is not finalizer authority")
 
     @staticmethod
     def _manifest_result_tuple(
@@ -2926,6 +3194,16 @@ class RunHandle:
         media_type: str = "application/octet-stream",
         role: str | None = None,
     ) -> ArtifactRef:
+        return self._write_artifact(relative_path, value, media_type=media_type, role=role)
+
+    def _write_artifact(
+        self,
+        relative_path: str,
+        value: bytes | _JsonArtifact,
+        *,
+        media_type: str,
+        role: str | None,
+    ) -> ArtifactRef:
         with self._mutex:
             if self.state != "ACTIVE":
                 raise EvidenceConflict("artifacts can only be written to an active run")
@@ -2940,6 +3218,8 @@ class RunHandle:
                         "artifacts are sealed for finalization"
                     )
                 normalized, target = self._target(relative_path)
+                artifact_role = role or normalized
+                _public_metadata(artifact_role, self._redaction_values)
                 if (
                     redact_text_with_values(normalized, self._redaction_values)
                     != normalized
@@ -2947,9 +3227,9 @@ class RunHandle:
                     raise EvidenceManifestInvalid(
                         "Acceptance artifact path contains a resolved credential"
                     )
-                value, redacted = redact_artifact_bytes(
-                    value,
-                    self._redaction_values,
+                value, redacted = (
+                    value.encode(self._redaction_values) if type(value) is _JsonArtifact
+                    else redact_artifact_bytes(value, self._redaction_values)
                 )
                 if redacted:
                     self._redacted_artifacts.add(normalized)
@@ -2977,7 +3257,6 @@ class RunHandle:
                     sha256=digest,
                     media_type=media_type,
                 )
-                artifact_role = role or normalized
                 existing = self._artifacts.get(artifact_role)
                 if existing is not None and existing != reference:
                     raise EvidenceConflict(f"artifact role already exists: {artifact_role}")
@@ -2994,16 +3273,27 @@ class RunHandle:
         role: str | None = None,
         redact: bool = True,
     ) -> ArtifactRef:
-        payload: Any = redact_value(dict(value)) if redact else dict(value)
-        encoded = (
-            json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n"
-        ).encode("utf-8")
-        return self.write_bytes(
+        return self._write_artifact(
             relative_path,
-            encoded,
+            _JsonArtifact(value),
             media_type="application/json",
             role=role,
         )
+
+    def _public_inventory(self, artifacts: Mapping[str, Any]) -> dict[str, Any]:
+        values = {}
+        for role, reference in artifacts.items():
+            if type(reference) is finalization.ArtifactRef:
+                reference = _store_artifact_ref(reference)
+            if type(reference) is not ArtifactRef:
+                raise EvidenceManifestInvalid("public inventory requires actual ArtifactRef values")
+            values[role] = reference.to_dict()
+        values = _public_metadata(values, self._redaction_values)
+        self.store.verify_run_inventory({
+            "workspaceId": self.store.workspace_id, "gateId": self.gate_id,
+            "runId": self.run_id, "artifacts": values,
+        })
+        return values
 
     def register_finalization_artifact(
         self,
@@ -3401,17 +3691,14 @@ class RunHandle:
         result = dict(result)
         result.update(finalization_record.published_result_tuple().to_dict())
         result["evidenceFinalization"] = finalization_record.to_dict()
-        artifacts: dict[str, dict[str, object]] = {
-            role: reference.to_dict()
-            for role, reference in sorted(self._artifacts.items())
-        }
+        artifacts = dict(self._artifacts)
         for artifact in marker.snapshot.artifacts:
             key = (
                 artifact.role_name
                 if artifact.discriminator is None
                 else f"{artifact.role_name}@{artifact.discriminator}"
             )
-            value = artifact.ref.to_dict()
+            value = _store_artifact_ref(artifact.ref)
             if key in artifacts and artifacts[key] != value:
                 raise EvidenceConflict(
                     "manifest artifact key has conflicting role identities"
@@ -3434,7 +3721,7 @@ class RunHandle:
                 )
             },
             "result": result,
-            "artifacts": artifacts,
+            "artifacts": self._public_inventory(artifacts),
             "redaction": {"status": "passed"},
         }
         manifest_bytes = _canonical_contract_bytes(manifest)
@@ -3781,11 +4068,7 @@ class RunHandle:
                         "source": self.source,
                         "runtime": {},
                         "result": result,
-                        "artifacts": {
-                            role: reference.to_dict()
-                            for role, reference
-                            in sorted(self._artifacts.items())
-                        },
+                        "artifacts": self._public_inventory(self._artifacts),
                         "redaction": {"status": "passed"},
                     }
                     manifest_bytes = _canonical_contract_bytes(manifest)
@@ -3873,22 +4156,21 @@ class RunHandle:
                 "state": "DURABLE",
                 "createdAt": self.created_at,
                 "completedAt": completed_at,
-                "source": self.source,
+                "source": redact_value_with_values(self.source, self._redaction_values),
                 "runtime": redact_value_with_values(
                     dict(runtime or {}),
                     self._redaction_values,
                 ),
                 "result": redacted_result,
-                "artifacts": {
-                    role: reference.to_dict()
-                    for role, reference in sorted(self._artifacts.items())
-                },
+                "artifacts": self._public_inventory(self._artifacts),
                 "redaction": {"status": redaction_status},
             }
-            manifest = redact_value_with_values(
-                manifest,
-                self._redaction_values,
-            )
+            _public_metadata({
+                key: manifest[key] for key in (
+                    "artifactKind", "schemaVersion", "workspaceId", "gateId",
+                    "runId", "state", "createdAt", "completedAt",
+                )
+            }, self._redaction_values)
             if redacted_secret_scan is not None:
                 manifest["result"]["secretScan"] = redacted_secret_scan
             encoded = (
@@ -4094,16 +4376,18 @@ class ArtifactSession:
                 role=role,
                 redact=redact,
             )
-        payload: Any = redact_value(dict(value)) if redact else dict(value)
-        encoded = (
-            json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n"
-        ).encode("utf-8")
-        return self.write_bytes(
-            relative_path,
-            encoded,
-            media_type="application/json",
-            role=role,
+        if role is not None:
+            _public_metadata(role, _redaction_values())
+        write_current_json(
+            relative_path, value, repo_root=self.repo_root,
         )
+        reference = current_artifact_ref(
+            relative_path, repo_root=self.repo_root,
+            media_type="application/json",
+        )
+        if role is not None:
+            _register_current_artifact_role(reference, role, repo_root=self.repo_root)
+        return reference
 
     def complete(
         self,

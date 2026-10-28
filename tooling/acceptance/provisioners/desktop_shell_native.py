@@ -28,6 +28,10 @@ from tooling.acceptance.core import (
     RuntimeManifest,
 )
 from tooling.acceptance.core._paths import REPO_ROOT
+from tooling.acceptance.drivers.native.base import (
+    NativeInputMode,
+    admit_local_native_input_mode,
+)
 from tooling.acceptance.drivers.native.macos import (
     MacOSNativeDesktopAdapter,
 )
@@ -58,9 +62,6 @@ TRAY_ASSET = (
     / "src-tauri"
     / "icons"
     / "tray-icon-macos.png"
-)
-DEDICATED_BINARY = (
-    REPO_ROOT / ".local" / "acceptance" / "bin" / "peers-touch-desktop"
 )
 
 
@@ -399,6 +400,10 @@ class DesktopShellNativeProvisioner(EnvironmentProvisioner):
                     reason="Desktop shell tray proof requires macOS",
                     resource="runtime-cell:desktop-macos-native",
                 )
+            admit_local_native_input_mode(
+                NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value,
+                os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"),
+            )
             if self._manifest.workspace_digest != "clean":
                 raise BlockedError(
                     reason="Desktop shell proof requires a clean source worktree",
@@ -455,6 +460,7 @@ class DesktopShellNativeProvisioner(EnvironmentProvisioner):
                 self._manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
     def create_gate_launch_context(
@@ -536,26 +542,6 @@ class DesktopShellNativeProvisioner(EnvironmentProvisioner):
                     reason=f"Desktop shell package input is missing: {path}",
                     resource="desktop-shell-package",
                 )
-        driver = subprocess.run(
-            ("make", "acceptance-driver-build"),
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=3600,
-            check=False,
-        )
-        if driver.returncode != 0 or not DEDICATED_BINARY.is_file():
-            raise BlockedError(
-                reason=(
-                    "Desktop runtime-cell driver build failed: "
-                    + (
-                        driver.stderr.strip()
-                        or driver.stdout.strip()
-                        or f"exit {driver.returncode}"
-                    )[-4000:]
-                ),
-                resource="desktop-acceptance-binary",
-            )
 
     def _cleanup_handler(self) -> None:
         if self._handler is None:

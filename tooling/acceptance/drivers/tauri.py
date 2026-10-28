@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import signal
 import shutil
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Generator, Mapping, Optional, Protocol
 
 from selenium import webdriver
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support.ui import WebDriverWait
@@ -111,6 +113,7 @@ class TauriDriver(DomDriver):
         self.port = port
         self.log_path = log_path
         self._driver: WebDriver | None = None
+        self._owns_session = True
 
     @property
     def driver(self) -> WebDriver:
@@ -132,10 +135,31 @@ class TauriDriver(DomDriver):
             self.stop()
             raise
 
+    def borrow_session(self, session_id: str) -> WebDriver:
+        """Use a caller-owned live session without creating or deleting it."""
+        if self._driver is not None or not session_id:
+            raise DriverError("Borrowing requires an unconnected driver and a session ID")
+
+        class BorrowedWebDriver(WebDriver):
+            def start_session(self, capabilities: dict) -> None:
+                del capabilities
+                self.session_id = session_id
+                self.caps = {}
+
+        self._owns_session = False
+        self._driver = BorrowedWebDriver(
+            command_executor=_webdriver_url(self.host, self.port),
+            options=webdriver.ChromeOptions(),
+        )
+        return self.driver
+
     def stop(self) -> None:
         if self._driver:
             try:
-                self._driver.quit()
+                if self._owns_session:
+                    self._driver.quit()
+                else:
+                    self._driver.command_executor.close()
             except Exception as error:
                 warnings.warn(f"failed to close WebDriver session: {error}", RuntimeWarning)
             self._driver = None
@@ -783,10 +807,10 @@ class ProvisionedTauriLauncher(AppLauncher):
     def stop(self, *, preserve_state: bool = False) -> None:
         if self._released:
             return
-        self._released = True
-        self._started = False
         if self._release is not None:
             self._release(preserve_state=preserve_state)
+        self._released = not preserve_state
+        self._started = False
 
     def is_alive(self) -> bool:
         if not self._started or self._released:
@@ -799,6 +823,8 @@ class TauriSession(DomDriver):
         self.launcher = launcher
         self._driver: TauriDriver | None = None
         self._launcher_started = False
+        self._launcher_preserved = False
+        self._launched_process_id: int | None = None
 
     @property
     def metadata(self) -> AppLaunchMetadata:
@@ -828,7 +854,7 @@ class TauriSession(DomDriver):
 
     @property
     def process_id(self) -> int | None:
-        return self.metadata.process_id
+        return self._launched_process_id or self.metadata.process_id
 
     @property
     def log_path(self) -> Path | None:
@@ -838,7 +864,9 @@ class TauriSession(DomDriver):
         if self._driver is not None:
             return self.driver
         metadata = self.launcher.start()
+        self._launched_process_id = metadata.process_id
         self._launcher_started = True
+        self._launcher_preserved = False
         self._driver = TauriDriver(
             host=metadata.webdriver_host,
             port=metadata.webdriver_port,
@@ -855,18 +883,22 @@ class TauriSession(DomDriver):
             try:
                 if self._launcher_started:
                     self.launcher.stop(preserve_state=True)
+                    self._launcher_started = False
+                    self._launcher_preserved = True
             finally:
-                self._launcher_started = False
                 if self._driver is not None:
                     self._driver.disconnect()
                     self._driver = None
             return
-        if self._driver is not None:
-            self._driver.stop()
+        try:
+            if self._driver is not None:
+                self._driver.stop()
+        finally:
             self._driver = None
-        if self._launcher_started:
-            self.launcher.stop()
-            self._launcher_started = False
+            if self._launcher_started or self._launcher_preserved:
+                self.launcher.stop()
+                self._launcher_started = False
+                self._launcher_preserved = False
 
     def is_alive(self) -> bool:
         return (
@@ -957,7 +989,7 @@ class TauriSession(DomDriver):
         return self._connected_driver().find_elements(selector)
 
     def semantic_click(self, element: Any) -> None:
-        element.click()
+        ActionChains(self.driver, duration=0).move_to_element(element).click().perform()
 
     def semantic_hover(self, element: Any) -> None:
         self.execute_script(
@@ -991,11 +1023,18 @@ class TauriSession(DomDriver):
         self,
         element: Any,
         *keys: str,
+        interval_seconds: float = 0.1,
     ) -> None:
-        self.execute_script(
+        if not keys:
+            raise ValueError("Semantic key sequence must not be empty")
+        if not math.isfinite(interval_seconds) or interval_seconds < 0:
+            raise ValueError("Semantic key sequence interval must be finite and non-negative")
+        result = self.execute_async_script(
             """
             const element = arguments[0];
             const requestedKeys = arguments[1];
+            const intervalMs = arguments[2];
+            const done = arguments[arguments.length - 1];
             const descriptors = {
               '\uE004': { key: 'Tab', code: 'Tab', keyCode: 9 },
               '\uE007': { key: 'Enter', code: 'Enter', keyCode: 13 },
@@ -1016,8 +1055,9 @@ class TauriSession(DomDriver):
                 && rect.width > 0
                 && rect.height > 0;
             });
+            (async () => {
             element.focus({ preventScroll: true });
-            for (const requestedKey of requestedKeys) {
+            for (const [index, requestedKey] of requestedKeys.entries()) {
               const descriptor = descriptors[requestedKey];
               if (!descriptor) {
                 throw new Error(
@@ -1060,11 +1100,21 @@ class TauriSession(DomDriver):
               (document.activeElement || target).dispatchEvent(
                 new KeyboardEvent('keyup', init),
               );
+              if (index + 1 < requestedKeys.length) {
+                // Let the WebView commit focus and rendered controls before
+                // resolving the next key's target, as real input does.
+                await new Promise(resolve => setTimeout(resolve, intervalMs));
+              }
             }
+            done({ ok: true });
+            })().catch(error => done({ ok: false, error: String(error) }));
             """,
             element,
             list(keys),
+            interval_seconds * 1000,
         )
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise DriverError(f"Semantic key sequence failed: {result!r}")
 
     def save_screenshot(self, path: str | Path) -> None:
         self._connected_driver().save_screenshot(path)

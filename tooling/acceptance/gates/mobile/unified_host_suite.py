@@ -22,6 +22,7 @@ from tooling.acceptance.core import (
     write_current_artifact,
 )
 from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.gates.mobile.proof_contracts import (
     validate_contract_payload,
     validate_historical_lease_acquisition_payload,
@@ -254,6 +255,46 @@ def validate_runtime_evidence(
     return value
 
 
+def host_prerequisite_diagnostic(
+    *,
+    platform: str,
+    tool_path: str | None,
+    physical_device_count: int,
+    inventory_evaluated: bool,
+    environment: dict[str, str],
+) -> ResourceDiagnostic:
+    provider_variable = (
+        "PT_ANDROID_FCM_PROVIDER_CONFIG"
+        if platform == "android"
+        else "PT_IOS_APNS_PROVIDER_CONFIG"
+    )
+    device_check = {
+        "resource": f"mobile-{platform}-physical-devices",
+        "expected": {"minimumCount": 1},
+        "state": "OBSERVED" if inventory_evaluated else "NOT_EVALUATED",
+    }
+    if inventory_evaluated:
+        device_check["observed"] = {"physicalDeviceCount": physical_device_count}
+    else:
+        device_check["reason"] = "The platform inventory command was unavailable or did not return successfully."
+    return ResourceDiagnostic(
+        owner=f"unified-client-{platform}-host-suite",
+        recovery_action=f"Prepare the reviewed {platform} device inventory, {provider_variable}, and dedicated Suite Runtime; then execute the required push and Host lifecycle drivers.",
+        resource_checks=[{
+            "resource": f"mobile-{platform}-native",
+            "expected": {"toolPresent": True, "providerConfigurationPresent": True, "suiteManifestReferencePresent": True},
+            "state": "OBSERVED",
+            "observed": {
+                "toolPresent": bool(tool_path),
+                "toolPath": tool_path,
+                "providerConfigurationPresent": bool(environment.get(provider_variable, "").strip()),
+                "suiteManifestReferencePresent": bool(environment.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()),
+                "stage": "prerequisite-configuration",
+            },
+        }, device_check],
+    )
+
+
 class UnifiedHostSuiteGate(AcceptanceGate):
     spec = (
         "docs/architecture/platform/client/cross-client-runtime/"
@@ -264,6 +305,7 @@ class UnifiedHostSuiteGate(AcceptanceGate):
     def __init__(
         self, *, platform: str, reuse_suite_runtime: bool,
         runtime_evidence: Path | None, blockers: list[str],
+        diagnostic: ResourceDiagnostic | None = None,
     ) -> None:
         if platform not in HOST_SCENARIOS:
             raise GateError("unsupported physical Host platform")
@@ -274,6 +316,7 @@ class UnifiedHostSuiteGate(AcceptanceGate):
         self.platform = platform
         self.runtime_evidence = runtime_evidence
         self.blockers = blockers
+        self.diagnostic = diagnostic
         super().__init__()
 
     def run(self) -> dict[str, Any]:
@@ -294,11 +337,19 @@ class UnifiedHostSuiteGate(AcceptanceGate):
                     "host-system-lifecycle-scenario-drivers-missing",
                     "host-suite-terminal-publication-missing",
                 ]
+                self.diagnostic = ResourceDiagnostic.observed(
+                    owner=f"unified-client-{self.platform}-host-suite",
+                    recovery_action="Implement the real push-provider and Host lifecycle scenario drivers, then publish their source-bound Suite result after cleanup.",
+                    resource=cells[0],
+                    expected={"scenarioDrivers": "executable", "terminalSuiteEvidence": True},
+                    observed={"entryObservation": True, "declaredMissingDrivers": list(self.blockers)},
+                )
             blockers = self.blockers or ["receiver-visible-host-suite-not-executed"]
             self.report.runtime.update({"status": "UNPROVEN", "blockers": blockers})
             raise BlockedError(
                 reason="physical Host Suite unavailable: " + ", ".join(blockers),
                 resource=cells[0],
+                diagnostic=self.diagnostic,
             )
         evidence = validate_runtime_evidence(
             self.runtime_evidence,

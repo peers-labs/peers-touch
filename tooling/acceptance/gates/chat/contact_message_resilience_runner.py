@@ -24,12 +24,10 @@ from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
     acceptance_station_environment,
 )
-from tooling.acceptance.fixtures.chat_contact_message_fault_proxy import (
-    AcceptanceStationContactMessageFaultProxy,
-)
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
+    active_direct_route_multiaddr,
     async_harness,
     cleanup_preserving_primary_failure,
     enter_chat_page,
@@ -40,6 +38,10 @@ from tooling.acceptance.gates.chat.native_support import (
     selected_native_runtime,
     verify_runtime_fixture_ready,
     wait_until,
+)
+from tooling.acceptance.node_connectivity_native_support import (
+    DirectRouteFaultProxy,
+    route_probe,
 )
 
 
@@ -140,7 +142,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
         self.client: TauriSession | None = None
         self.runtime_instances: list[TauriSession] = []
         self.client_lifecycles = NativeClientLifecycleLedger()
-        self.proxy: AcceptanceStationContactMessageFaultProxy | None = None
+        self.proxy: DirectRouteFaultProxy | None = None
         self.transport_override = None
         self.ptid = ""
         self.bob_ptid = ""
@@ -375,7 +377,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
         cleanup_errors: list[dict[str, str]] = []
         if self.transport_override is not None and self.runtime_binding is not None:
             try:
-                self.runtime_binding.clear_transport_override(
+                self.runtime_binding.clear_verified_direct_route_override(
                     "alice",
                     "station",
                     self.transport_override,
@@ -451,8 +453,6 @@ class ContactMessageResilienceGate(AcceptanceGate):
         return cleanup
 
     def run(self) -> dict[str, Any]:
-        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
         if self.runtime_binding is None:
             try:
                 acceptance_station_environment(self.station_url)
@@ -504,8 +504,8 @@ class ContactMessageResilienceGate(AcceptanceGate):
             steps.append({"step": "navigate.contacts", "status": "pass", "ptid": self.bob_ptid})
 
             steps.append({"step": "proxy.start", "status": "start"})
-            self.proxy = AcceptanceStationContactMessageFaultProxy(
-                self.station_url
+            self.proxy = DirectRouteFaultProxy(
+                active_direct_route_multiaddr(self.client),
             )
             self.proxy.start()
             if self.runtime_binding is None:
@@ -514,15 +514,15 @@ class ContactMessageResilienceGate(AcceptanceGate):
                 self.runtime_binding.create_transport_override(
                     "alice",
                     "station",
-                    self.proxy.url,
+                    self.proxy.multiaddr,
                 )
             )
-            self.runtime_binding.apply_transport_override(
+            self.runtime_binding.apply_verified_direct_route_override(
                 "alice",
                 "station",
                 self.transport_override,
             )
-            self.proxy.arm_create_direct_failure()
+            self.proxy.arm()
             steps.append({"step": "proxy.start", "status": "pass"})
 
             steps.append({"step": "message.click", "status": "start"})
@@ -591,17 +591,21 @@ class ContactMessageResilienceGate(AcceptanceGate):
             self.save_screenshot(self.client, "peer-bound-intent-failure")
             steps.append({"step": "error.presented", "status": "pass"})
 
-            time.sleep(1)
-            evidence = self.proxy.evidence()
+            failure_evidence = self.proxy.evidence()
             self.assert_condition(
                 "create_direct_was_intercepted",
-                evidence["interceptedCount"] >= 1,
-                f"proxy should have intercepted createDirect, got: {evidence}",
+                failure_evidence["failureCount"] >= 1,
+                f"Direct connection must fail during the createDirect UI action: {failure_evidence}",
             )
+            self.proxy.disarm()
+            recovery_probe = route_probe(self.client, "direct_only")
+            evidence = self.proxy.evidence()
             self.assert_condition(
                 "proxy_forwarded_other_traffic",
-                evidence["forwardedCount"] >= 1,
-                f"proxy should have forwarded non-createDirect traffic, got: {evidence}",
+                recovery_probe.get("ok") is True
+                and evidence["forwardedConnections"]
+                > failure_evidence["forwardedConnections"],
+                f"restored Direct proxy must forward the read-only route probe: {evidence}",
             )
 
             result = {
@@ -613,6 +617,8 @@ class ContactMessageResilienceGate(AcceptanceGate):
                 "bobPtid": self.bob_ptid,
                 "navigationMs": navigation_ms,
                 "proxyEvidence": evidence,
+                "failureProxyEvidence": failure_evidence,
+                "recoveryProbe": recovery_probe,
                 "sourceIdentity": source_identity,
                 "steps": steps,
             }

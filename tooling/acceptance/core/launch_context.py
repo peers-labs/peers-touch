@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import errno
+from contextlib import nullcontext
 import hashlib
 import json
 import math
@@ -21,7 +23,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, ContextManager, Mapping, Optional
 
 from .errors import (
     EphemeralCapabilityBlocked,
@@ -34,6 +36,7 @@ from .errors import (
     EphemeralLaunchTimeout,
     EphemeralLaunchTransportUnsupported,
 )
+from .resource_diagnostic import ResourceDiagnostic
 
 
 EPHEMERAL_CONTEXT_FD_ENV = "PT_ACCEPTANCE_EPHEMERAL_CONTEXT_FD"
@@ -52,6 +55,16 @@ DEFAULT_MAX_REQUEST_IDS = 4096
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 30.0
 DEFAULT_QUIESCE_TIMEOUT_SECONDS = 5.0
 _LENGTH_PREFIX = struct.Struct("!I")
+
+_SPAWN_RESOURCE_CATEGORIES = {
+    errno.E2BIG: "argument-environment-limit",
+    errno.EAGAIN: "process-resource-limit",
+    errno.EMFILE: "process-file-descriptor-limit",
+    errno.ENFILE: "system-file-descriptor-limit",
+    errno.ENOMEM: "memory-pressure",
+    errno.ENOENT: "executable-unavailable",
+    errno.EACCES: "permission-denied",
+}
 
 
 class EphemeralLaunchContextState(str, Enum):
@@ -203,6 +216,7 @@ class GateProcessLauncher:
         cwd: Optional[str] = None,
         environment: Optional[Mapping[str, str]] = None,
         termination_timeout_seconds: float = 5.0,
+        pass_fds: tuple[int, ...] = (),
     ) -> None:
         if not _is_positive_finite_timeout(termination_timeout_seconds):
             raise EphemeralLaunchContextInvalid(
@@ -212,16 +226,37 @@ class GateProcessLauncher:
         self._cwd = cwd
         self._environment = None if environment is None else dict(environment)
         self._termination_timeout_seconds = termination_timeout_seconds
+        if (
+            not isinstance(pass_fds, tuple)
+            or any(type(fd) is not int or fd < 3 for fd in pass_fds)
+            or len(set(pass_fds)) != len(pass_fds)
+            or (pass_fds and os.name != "posix")
+        ):
+            raise EphemeralLaunchContextInvalid(
+                "inherited descriptors must be unique POSIX file descriptors",
+                operation="launch",
+            )
+        self._pass_fds = pass_fds
 
     def run(
         self,
         spec: GateLaunchSpec,
         binding: Optional[GateLaunchBinding],
+        *,
+        capture_output: Callable[[str, str], None] | None = None,
+        work_scope: Callable[[], ContextManager[Any]] | None = None,
+        cleanup_scope: Callable[[], ContextManager[Any]] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         has_context = binding is not None
         if bool(spec.required_capabilities) != has_context:
             raise EphemeralLaunchContextInvalid(
                 "launch binding must match required capabilities",
+                operation="launch",
+            )
+        if has_context and self._pass_fds:
+            binding.close_parent_copy()
+            raise EphemeralLaunchContextInvalid(
+                "context Gates cannot inherit ambient descriptors",
                 operation="launch",
             )
         if binding is not None and self._environment is None:
@@ -254,6 +289,8 @@ class GateProcessLauncher:
         }
         if os.name == "posix":
             popen_options["start_new_session"] = True
+            if self._pass_fds:
+                popen_options["pass_fds"] = self._pass_fds
         if binding is not None:
             environment = dict(
                 os.environ if environment is None else environment
@@ -262,37 +299,81 @@ class GateProcessLauncher:
             popen_options["env"] = environment
             popen_options["pass_fds"] = binding.pass_fds
 
+        process: subprocess.Popen[str] | None = None
         try:
-            launch_argv = (
-                _isolated_python_argv(
-                    spec.argv,
-                    environment=environment,
-                )
-                if binding is not None
-                else spec.argv
-            )
-            process = subprocess.Popen(launch_argv, **popen_options)
-        except OSError as error:
-            raise EphemeralLaunchBindFailed(
-                "failed to spawn Gate process",
+            with work_scope() if work_scope is not None else nullcontext():
+                try:
+                    launch_argv = (
+                        _isolated_python_argv(
+                            spec.argv,
+                            environment=environment,
+                        )
+                        if binding is not None
+                        else spec.argv
+                    )
+                    process = subprocess.Popen(launch_argv, **popen_options)
+                except OSError as error:
+                    errno_name = errno.errorcode.get(error.errno or 0, "UNKNOWN")
+                    raise EphemeralLaunchBindFailed(
+                        f"failed to spawn Gate process ({errno_name})",
+                        operation="gate_process",
+                        errno_name=errno_name,
+                        resource_category=_SPAWN_RESOURCE_CATEGORIES.get(
+                            error.errno,
+                            "operating-system-spawn-failure",
+                        ),
+                    ) from error
+                finally:
+                    if binding is not None:
+                        binding.close_parent_copy()
+                stdout, stderr = process.communicate(timeout=spec.timeout_seconds)
+        except BaseException as error:
+            # The work context has unwound before termination starts. Both
+            # process termination and subsequent resource cleanup consume
+            # the lifecycle owner's same fixed cleanup tail.
+            if process is not None:
+                with cleanup_scope() if cleanup_scope is not None else nullcontext():
+                    try:
+                        stdout, stderr = self._terminate(process)
+                    except BaseException:
+                        self._signal_process_tree(process, force=True)
+                        raise
+                if capture_output is not None:
+                    capture_output(stdout, stderr)
+            if not isinstance(error, subprocess.TimeoutExpired):
+                raise
+            raise EphemeralLaunchTimeout(
+                "Gate process exceeded its launch timeout",
                 operation="gate_process",
+                resource="gate-command-process",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="tooling/acceptance/core/launch_context.py::GateProcessLauncher",
+                    recovery_action=(
+                        "Inspect the captured command output and same-run Step observations; "
+                        "attribute the command delay at its actual owner, repair and qualify "
+                        "it, then refreeze the original scope and time contract."
+                    ),
+                    resource="gate-command-process",
+                    expected={"commandTimeoutSeconds": spec.timeout_seconds},
+                    observed={
+                        "processId": process.pid,
+                        "returnCode": process.returncode,
+                        "deadlineExceeded": True,
+                        "processCleanup": "completed",
+                    },
+                )
             ) from error
         finally:
             if binding is not None:
                 binding.close_parent_copy()
-
-        try:
-            stdout, stderr = process.communicate(timeout=spec.timeout_seconds)
-        except subprocess.TimeoutExpired as error:
-            self._terminate(process)
-            raise EphemeralLaunchTimeout(
-                "Gate process exceeded its launch timeout",
-                operation="gate_process",
-            ) from error
-        except BaseException:
-            self._terminate(process)
-            raise
-        self._kill_remaining_process_group(process)
+        with cleanup_scope() if cleanup_scope is not None else nullcontext():
+            try:
+                self._kill_remaining_process_group(process)
+            except BaseException:
+                self._signal_process_tree(process, force=True)
+                raise
+        if capture_output is not None:
+            capture_output(stdout, stderr)
         return subprocess.CompletedProcess(
             args=spec.argv,
             returncode=process.returncode,
@@ -300,19 +381,22 @@ class GateProcessLauncher:
             stderr=stderr,
         )
 
-    def _terminate(self, process: subprocess.Popen[str]) -> None:
+    def _terminate(self, process: subprocess.Popen[str]) -> tuple[str, str]:
+        cleanup_end = time.monotonic() + self._termination_timeout_seconds
         self._signal_process_tree(process, force=False)
         try:
-            process.communicate(timeout=self._termination_timeout_seconds)
+            output = process.communicate(
+                timeout=max(0, cleanup_end - time.monotonic()) / 2,
+            )
         except subprocess.TimeoutExpired:
             self._signal_process_tree(process, force=True)
         except BaseException:
             self._signal_process_tree(process, force=True)
         else:
-            self._kill_remaining_process_group(process)
-            return
+            self._kill_remaining_process_group(process, cleanup_end=cleanup_end)
+            return output
         try:
-            process.communicate(timeout=self._termination_timeout_seconds)
+            output = process.communicate(timeout=max(0, cleanup_end - time.monotonic()))
         except subprocess.TimeoutExpired as error:
             raise EphemeralLaunchCleanupFailed(
                 "Gate process did not stop after termination",
@@ -323,7 +407,8 @@ class GateProcessLauncher:
                 "Gate process could not be reaped after termination",
                 operation="gate_process",
             ) from error
-        self._kill_remaining_process_group(process)
+        self._kill_remaining_process_group(process, cleanup_end=cleanup_end)
+        return output
 
     @staticmethod
     def _signal_process_tree(
@@ -343,6 +428,10 @@ class GateProcessLauncher:
                 process.terminate()
         except ProcessLookupError:
             return
+        except PermissionError:
+            # macOS can report EPERM for a zombie-only process group. The
+            # bounded extinction probe remains authoritative.
+            return
         except OSError as error:
             raise EphemeralLaunchCleanupFailed(
                 "Gate process group could not be signalled",
@@ -352,6 +441,8 @@ class GateProcessLauncher:
     def _kill_remaining_process_group(
         self,
         process: subprocess.Popen[str],
+        *,
+        cleanup_end: float | None = None,
     ) -> None:
         if os.name != "posix":
             return
@@ -359,12 +450,19 @@ class GateProcessLauncher:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             return
+        except PermissionError:
+            # Do not turn macOS's transient zombie-group EPERM into a cleanup
+            # failure; the probe below still fails closed if the group lives.
+            pass
         except OSError as error:
             raise EphemeralLaunchCleanupFailed(
                 "Gate process descendants could not be killed",
                 operation="gate_process",
             ) from error
-        deadline = time.monotonic() + self._termination_timeout_seconds
+        deadline = (
+            time.monotonic() + self._termination_timeout_seconds
+            if cleanup_end is None else cleanup_end
+        )
         while True:
             try:
                 os.killpg(process.pid, 0)
@@ -1272,11 +1370,7 @@ class EphemeralGateClient:
                         "ephemeral capability blocked response is invalid",
                         operation="invoke",
                     )
-                raise EphemeralCapabilityBlocked(
-                    reason,
-                    resource=resource,
-                    operation="invoke",
-                )
+                raise _blocked_error_from_response(response)
             if code == EphemeralLaunchTimeout.code:
                 raise EphemeralLaunchTimeout(
                     "ephemeral capability request timed out",
@@ -1572,6 +1666,16 @@ def _validate_projected_response(
             "blocked capability response projection resource is invalid",
             operation="invoke",
         )
+    if "diagnostic" in error:
+        try:
+            ResourceDiagnostic.from_dict(error["diagnostic"]).require_resource(
+                error.get("resource", "")
+            )
+        except (TypeError, ValueError) as invalid:
+            raise EphemeralLaunchProtocolError(
+                "blocked capability resource diagnostic is invalid",
+                operation="invoke",
+            ) from invalid
 
 
 def _blocked_error_from_response(
@@ -1587,6 +1691,10 @@ def _blocked_error_from_response(
         reason,
         resource=resource,
         operation="invoke",
+        diagnostic=(
+            ResourceDiagnostic.from_dict(error["diagnostic"])
+            if "diagnostic" in error else None
+        ),
     )
 
 
@@ -1791,6 +1899,8 @@ def _blocked_response(
     }
     if error.resource:
         error_data["resource"] = error.resource
+    if error.diagnostic is not None:
+        error_data["diagnostic"] = error.diagnostic.to_dict()
     return {
         "requestId": request_id,
         "status": "BLOCKED",

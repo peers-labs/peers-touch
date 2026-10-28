@@ -107,6 +107,21 @@ class ChangedPathsTests(unittest.TestCase):
 
 
 class ReadinessTests(unittest.TestCase):
+    def test_classifies_structural_judgment_without_fabricating_a_command(self) -> None:
+        gate = {
+            "id": "consumer", "judgment": "all-prerequisites",
+            "dependsOn": ["producer"], "tier": "ci-structure",
+        }
+        summary = MODULE.classify_gates([gate])["ci_gates"][0]
+        self.assertEqual(summary["command"], "prerequisite judgment: producer")
+        for invalid in [
+            {**gate, "command": "true"},
+            {**gate, "environment": "remote"},
+            {**gate, "dependsOn": []},
+        ]:
+            with self.assertRaises(ValueError):
+                MODULE.classify_gates([invalid])
+
     def test_classifies_argv_gate_with_readable_invocation(self) -> None:
         buckets = MODULE.classify_gates(
             [
@@ -684,7 +699,6 @@ class RouteRangeTests(unittest.TestCase):
     def test_review_scripts_only_fallback_to_worktree_for_head(self) -> None:
         for script in (
             ROUTE_SCRIPT,
-            KNOWLEDGE_SCRIPT,
             HARD_RULES_SCRIPT,
         ):
             with self.subTest(script=script.name):
@@ -694,12 +708,87 @@ class RouteRangeTests(unittest.TestCase):
                     source,
                 )
 
-    def test_knowledge_match_disables_git_path_quoting(self) -> None:
-        source = KNOWLEDGE_SCRIPT.read_text(encoding="utf-8")
-        self.assertGreaterEqual(
-            source.count("git -c core.quotePath=false"),
-            3,
-        )
+    def test_knowledge_cli_preserves_unicode_paths_and_exact_ranges(self) -> None:
+        with temporary_git_directory() as root:
+            def git(*arguments):
+                return subprocess.run(
+                    ["git", *arguments], cwd=root, check=True,
+                    capture_output=True, text=True, timeout=5,
+                ).stdout.strip()
+
+            git("init")
+            git("config", "user.email", "acceptance@test.invalid")
+            git("config", "user.name", "Acceptance Test")
+            entry = root / "docs/knowledge/invariants/unicode.md"
+            entry.parent.mkdir(parents=True)
+            entry.write_text(
+                '---\nkind: invariant\ntitle: "Before --- after"\n'
+                'status: active\nowns:\n  - docs/源文件.md\n  - apps/模块/\n'
+                'detected: 2026-10-22\n---\n## How to verify\nCheck paths.\n',
+                encoding="utf-8",
+            )
+            tracked = root / "docs/源文件.md"
+            tracked.write_text("base\n", encoding="utf-8")
+            (root / "apps/模块").mkdir(parents=True)
+            git("add", ".")
+            git("commit", "-m", "base")
+            base = git("rev-parse", "HEAD")
+            tracked.write_text("dirty\n", encoding="utf-8")
+            (root / "apps/模块/新.py").write_text("pass\n", encoding="utf-8")
+
+            def matches(diff_range):
+                completed = subprocess.run(
+                    script_command(KNOWLEDGE_SCRIPT, "--range", diff_range),
+                    cwd=root, text=True, capture_output=True, timeout=10,
+                )
+                # This fixture exercises matching. It intentionally has no
+                # architecture registry; that separate owner may reject it.
+                return completed, [
+                    line for line in completed.stdout.splitlines()
+                    if line.startswith("- docs/knowledge/")
+                ]
+
+            head, head_matches = matches("HEAD")
+            self.assertEqual(len(head_matches), 2, head.stdout + head.stderr)
+            self.assertTrue(any("matches docs/源文件.md" in line for line in head_matches))
+            self.assertTrue(any("matches apps/模块/新.py" in line for line in head_matches))
+            explicit, explicit_matches = matches(f"{base}...HEAD")
+            self.assertEqual(explicit_matches, [], explicit.stdout + explicit.stderr)
+            invalid, invalid_matches = matches("missing-base...HEAD")
+            self.assertNotEqual(invalid.returncode, 0)
+            self.assertEqual(invalid_matches, [])
+
+    def test_knowledge_cli_requires_actual_freshness_procedures(self) -> None:
+        with temporary_git_directory() as root:
+            subprocess.run(["git", "init"], cwd=root, check=True,
+                           capture_output=True, timeout=5)
+            (root / "owned").mkdir()
+            cases = [
+                ("pitfall", "# Recurrence\n\nThe monitor detects timeouts.\n", False),
+                ("pitfall", "## How to detect a recurrence\nRun the check.\n", True),
+                ("playbook", "Write `- [ ]` when documenting tasks.\n", False),
+                ("playbook", "## 2. Verify\nRun the check.\n", True),
+            ]
+            for kind, body, valid in cases:
+                with self.subTest(kind=kind, body=body):
+                    entry = root / f"docs/knowledge/{kind}s/procedure.md"
+                    entry.parent.mkdir(parents=True, exist_ok=True)
+                    entry.write_text(
+                        f'---\nkind: {kind}\ntitle: "Before --- after"\n'
+                        'status: active\nowns:\n  - owned/\n'
+                        f'detected: 2026-10-22\n---\n{body}',
+                        encoding="utf-8",
+                    )
+                    completed = subprocess.run(
+                        script_command(KNOWLEDGE_SCRIPT, "--strict", "--changed-file", "owned/file"),
+                        cwd=root, text=True, capture_output=True, timeout=10,
+                    )
+                    self.assertEqual(
+                        "[knowledge-freshness]" not in completed.stderr, valid,
+                        completed.stdout + completed.stderr,
+                    )
+                    self.assertNotIn("[knowledge-schema]", completed.stderr)
+                    entry.unlink()
 
 
 if __name__ == "__main__":

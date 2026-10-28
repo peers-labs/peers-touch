@@ -49,6 +49,7 @@
 | `oauth-login-broker` | domains | Identity and Access | [design.md](./domains/identity/oauth-login-broker/design.md) | [2](./engineering/architecture-governance/architecture-modules.json) |
 | `search` | domains | Search / Client / Station | [search.reuse-topology](./domains/search/architecture.svg) | [6](./engineering/architecture-governance/architecture-modules.json) |
 | `cross-station-social` | domains | Social / Federation | [design.md](./domains/social/cross-station/design.md) | [1](./engineering/architecture-governance/architecture-modules.json) |
+| `acceptance` | engineering | Architecture Team | [design.md](./engineering/acceptance/design.md) | [8](./engineering/architecture-governance/architecture-modules.json) |
 | `api-ownership` | engineering | Architecture Team | [design.md](./engineering/api-governance/design.md) | [1](./engineering/architecture-governance/architecture-modules.json) |
 | `architecture-module-governance` | engineering | Architecture Team | [design.md](./engineering/architecture-governance/design.md) | [20](./engineering/architecture-governance/architecture-modules.json) |
 | `development-workflow` | engineering | Platform Team | [design.md](./engineering/development-workflow/design.md) | [34](./engineering/architecture-governance/architecture-modules.json) |

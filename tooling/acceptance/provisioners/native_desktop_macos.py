@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -32,16 +33,19 @@ from tooling.acceptance.core import (
     RuntimeCellManifest,
     RuntimeCellState,
 )
+from tooling.acceptance.core.runtime_cell import CellFileChooserIdentity
 from tooling.acceptance.core.errors import (
     BlockedError,
     DriverError,
     ProvisioningError,
 )
+from tooling.acceptance.core.evidence_store import source_identity
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
     NativeInputIsolation,
     NativeInputMode,
+    NativeOperatorObservation,
     NativeWindowStack,
     admit_local_native_input_mode,
 )
@@ -49,15 +53,13 @@ from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 from tooling.acceptance.drivers.tauri import (
     LocalTauriLauncher,
     TauriSession,
-    find_app_binary,
     resolve_smoke_port,
 )
+from .desktop_acceptance_build import DesktopAcceptanceBuild
 
 
 NATIVE_WINDOW_READY_TIMEOUT_SECONDS = 30.0
 NATIVE_FOCUS_READY_TIMEOUT_SECONDS = 30.0
-OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS = 1.0
-OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS = 0.05
 
 
 _WINDOW_BOUNDS_PROBE = r"""
@@ -118,29 +120,6 @@ print(
 )
 """
 
-_POINTER_LOCATION_PROBE = r"""
-import json
-
-import Quartz
-
-event = Quartz.CGEventCreate(None)
-if event is None:
-    raise SystemExit("cannot create pointer-location event")
-point = Quartz.CGEventGetLocation(event)
-print(json.dumps({"x": float(point.x), "y": float(point.y)}, sort_keys=True))
-"""
-
-_FRONTMOST_PID_PROBE = r"""
-import json
-
-import AppKit
-
-application = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
-process_id = int(application.processIdentifier()) if application else -1
-print(json.dumps({"processId": process_id}, sort_keys=True))
-"""
-
-
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -172,6 +151,7 @@ class NativeDesktopMacOSProvisioner:
                 "NativeDesktopMacOSProvisioner requires macos"
             )
         self.source_root = source_root.resolve()
+        self._acceptance_binary: Path | None = None
         root = state_root or (
             REPO_ROOT / ".local" / "acceptance" / "runtime-cells"
         )
@@ -205,6 +185,10 @@ class NativeDesktopMacOSProvisioner:
                 resource=f"runtime-cell:{self.contract.cell_id}",
             )
 
+        admit_local_native_input_mode(
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE"),
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"),
+        )
         run_id = (
             f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}-"
             f"{secrets.token_hex(8)}"
@@ -223,7 +207,18 @@ class NativeDesktopMacOSProvisioner:
         try:
             source = self._source_identity()
             platform_identity, transport, display = self._host_identity()
-            adapter, webdriver_port = self._probe_native_adapter()
+            adapter, webdriver_port = self._probe_native_adapter(source, run_id)
+            current = source_identity(self.source_root)
+            if (
+                current["commit"] != source.commit
+                or current["workspaceDigest"] != source.workspace_digest
+                or self._acceptance_binary is None
+                or _file_sha256(self._acceptance_binary) != source.binary_sha256
+            ):
+                raise BlockedError(
+                    reason="macOS runtime-cell candidate changed during adapter preparation",
+                    resource="source-identity:local-snapshot",
+                )
             transport = CellTransportIdentity(
                 kind=transport.kind,
                 host_identity_sha256=transport.host_identity_sha256,
@@ -292,72 +287,36 @@ class NativeDesktopMacOSProvisioner:
         }
 
     def _source_identity(self) -> CellSourceIdentity:
-        commit = self._git("rev-parse", "HEAD")
+        source = source_identity(self.source_root)
+        commit = source["commit"]
         tree = self._git("rev-parse", "HEAD^{tree}")
-        self._require_clean_source()
         binary = self._build_acceptance_binary()
-        self._require_clean_source()
+        if source_identity(self.source_root) != source:
+            raise BlockedError(
+                reason="macOS runtime-cell source changed while preparing its binary",
+                resource="source-identity:local-snapshot",
+            )
+        self._acceptance_binary = binary
         return CellSourceIdentity(
             mode="local-worktree",
             commit=commit,
-            workspace_digest="clean",
+            workspace_digest=source["workspaceDigest"],
             remote_source_digest=_sha256_text(
-                f"{self.source_root}:{commit}:{tree}"
+                json.dumps({**source, "tree": tree}, sort_keys=True)
             ),
-            remote_checkout_clean=True,
+            remote_checkout_clean=source["workspaceDigest"] == "clean",
             binary_sha256=_file_sha256(binary),
+            canonical_root=str(self.source_root.resolve()),
+            binary_path=str(binary),
         )
-
-    def _require_clean_source(self) -> None:
-        dirty = subprocess.run(
-            (
-                "git",
-                "-C",
-                str(self.source_root),
-                "status",
-                "--porcelain",
-                "--untracked-files=all",
-            ),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if dirty.returncode != 0:
-            raise ProvisioningError(
-                "cannot inspect local macOS runtime-cell source"
-            )
-        if dirty.stdout.strip():
-            raise BlockedError(
-                reason=(
-                    "desktop-macos-native requires a clean source worktree"
-                ),
-                resource="source-identity:worktree-cleanliness",
-            )
 
     def _build_acceptance_binary(self) -> Path:
-        completed = subprocess.run(
-            ("make", "acceptance-driver-build"),
-            cwd=self.source_root,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=1800,
+        override = os.environ.get("PT_ACCEPTANCE_APP_BINARY", "").strip()
+        build = DesktopAcceptanceBuild(
+            self.source_root,
+            binary=Path(override) if override else None,
         )
-        if completed.returncode != 0:
-            raise BlockedError(
-                reason=(
-                    "desktop-macos-native could not build its exact-source "
-                    "Acceptance binary"
-                ),
-                resource="desktop-acceptance-binary",
-            )
-        binary = Path(find_app_binary()).resolve()
-        if not binary.is_file():
-            raise BlockedError(
-                reason=f"macOS Acceptance binary is missing: {binary}",
-                resource="desktop-acceptance-binary",
-            )
-        return binary
+        return build.ensure()
 
     def _host_identity(
         self,
@@ -417,15 +376,21 @@ class NativeDesktopMacOSProvisioner:
 
     def _probe_native_adapter(
         self,
+        source: CellSourceIdentity,
+        run_id: str,
     ) -> tuple[CellAdapterIdentity, int]:
         input_mode = admit_local_native_input_mode(
-            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
-            or NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value,
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE"),
             os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"),
         )
+        if self._acceptance_binary is None:
+            raise BlockedError(
+                reason="Native adapter probe requires the source-bound Acceptance binary",
+                resource="source-identity:acceptance-binary",
+            )
         webdriver_port = resolve_smoke_port(0)
         launcher = LocalTauriLauncher(
-            app_binary=find_app_binary(),
+            app_binary=self._acceptance_binary,
             port=webdriver_port,
             profile=f"{self.contract.cell_id}-probe",
             environment={
@@ -448,6 +413,11 @@ class NativeDesktopMacOSProvisioner:
         log_path: Path | None = None
         session_stopped = False
         try:
+            operator = (
+                adapter.observe_operator()
+                if input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE
+                else None
+            )
             session.start()
             session.wait_for_ready()
             session.wait_for_acceptance_harness()
@@ -460,10 +430,23 @@ class NativeDesktopMacOSProvisioner:
                     session,
                     adapter,
                     screenshot,
+                    operator=operator,
                 )
+                chooser = self._probe_file_chooser(session, adapter, operator)
                 log_path = session.log_path
-                session.stop()
+                cleanup_errors = session.stop()
                 session_stopped = True
+                if cleanup_errors:
+                    raise ProvisioningError("Native qualifier cleanup failed")
+                non_interference = operator.sample(
+                    "owned-stop", target_process_id=chooser.target_process_id,
+                )
+                chooser = replace(
+                    chooser, cell_id=self.contract.cell_id, run_id=run_id,
+                    source_commit=source.commit, workspace_digest=source.workspace_digest,
+                    binary_sha256=source.binary_sha256,
+                    observations=tuple(operator.observations.values()),
+                )
                 non_interference_probe = non_interference.unchanged()
                 probes = CellAdapterIdentity(
                     input_backend=self.contract.native_adapter.input,
@@ -479,6 +462,7 @@ class NativeDesktopMacOSProvisioner:
                     semantic_screenshot_probe=semantic_screenshot_probe,
                     non_interference_probe=non_interference_probe,
                     non_interference=non_interference,
+                    file_chooser=chooser,
                 )
                 if not (
                     probes.semantic_action_probe
@@ -658,62 +642,100 @@ class NativeDesktopMacOSProvisioner:
         adapter: MacOSNativeDesktopAdapter,
         screenshot: Path,
         *,
-        max_attempts: int = 5,
-        interval_seconds: float = 0.1,
+        operator: NativeOperatorObservation,
     ) -> tuple[bool, bool, CellNonInterferenceIdentity]:
-        if max_attempts < 1:
-            raise ValueError("semantic probe requires at least one attempt")
-        last: tuple[bool, bool, CellNonInterferenceIdentity] | None = None
-        for attempt in range(1, max_attempts + 1):
+        if session.process_id is None:
+            raise BlockedError(
+                reason="semantic window has no owning process",
+                resource="runtime-cell-semantic-adapter",
+            )
+        operator.sample("launch-ready", target_process_id=session.process_id)
+        self._await_window_bounds(session.process_id)
+        semantic_action_probe = self._probe_semantic_actions(session)
+        session.save_screenshot(screenshot)
+        semantic_screenshot_probe = (
+            screenshot.is_file() and screenshot.stat().st_size > 0
+        )
+        return (
+            semantic_action_probe,
+            semantic_screenshot_probe,
+            operator.sample("semantic-ready", target_process_id=session.process_id),
+        )
+
+    @staticmethod
+    def _probe_file_chooser(
+        session: TauriSession, adapter: MacOSNativeDesktopAdapter,
+        operator: NativeOperatorObservation,
+    ) -> CellFileChooserIdentity:
+        process_id = session.process_id
+        with tempfile.TemporaryDirectory(
+            prefix="PeersTouchChooserQualification-", dir=Path.home(),
+        ) as raw:
+            target = Path(raw).resolve() / "qualification.bin"
+            target.write_bytes(secrets.token_bytes(32))
+            fixture_hash = _file_sha256(target)
+            baseline = operator.file_chooser(
+                "chooser-before", target_process_id=process_id, present=False,
+            )
+            session.execute_script("""
+                const button = document.createElement('button');
+                button.dataset.ptChooserQualification = 'true';
+                button.textContent = 'Choose qualification file';
+                button.style.cssText = 'position:fixed;left:8px;top:8px;z-index:2147483647';
+                button.onclick = () => {
+                  window.__ptChooserQualification = {pending:true};
+                  window.__TAURI_INTERNALS__.invoke('oss_pick_local_file').then(result => {
+                    window.__ptChooserQualification = {pending:false,result};
+                  }).catch(error => {
+                    window.__ptChooserQualification = {pending:false,error:String(error)};
+                  });
+                };
+                document.body.append(button);
+            """)
             try:
-                operator_before = self._snapshot_operator_state(adapter)
-            except BlockedError as error:
+                session.semantic_click(session.find_element(
+                    "[data-pt-chooser-qualification]",
+                ))
+                opened = operator.file_chooser(
+                    "chooser-open", target_process_id=process_id, present=True,
+                    timeout_seconds=5.0,
+                )
+                selected = adapter.select_file_chooser_path_to_process(process_id, str(target))
+                deadline = time.monotonic() + 5.0
+                while True:
+                    result = session.execute_script("return window.__ptChooserQualification")
+                    if isinstance(result, dict) and result.get("pending") is False:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise ProvisioningError("Native qualification selection was not committed")
+                    time.sleep(0.05)
+                native = result.get("result") or {}
+                payload = native.get("data") or {}
                 if (
-                    error.resource != "runtime-cell-operator-focus"
-                    or attempt >= max_attempts
+                    selected is None or selected.error or selected.value != str(target)
+                    or native.get("ok") is not True
+                    or payload.get("command") != "oss_pick_local_file"
+                    or payload.get("status") != str(target)
                 ):
-                    raise
-                if interval_seconds > 0:
-                    time.sleep(interval_seconds)
-                continue
-            semantic_action_probe = self._probe_semantic_actions(session)
-            session.save_screenshot(screenshot)
-            semantic_screenshot_probe = (
-                screenshot.is_file() and screenshot.stat().st_size > 0
-            )
-            operator_after = self._snapshot_operator_state(adapter)
-            non_interference = CellNonInterferenceIdentity(
-                frontmost_pid_before=int(operator_before["frontmostPid"]),
-                frontmost_pid_after=int(operator_after["frontmostPid"]),
-                pointer_x_before=float(operator_before["pointerX"]),
-                pointer_y_before=float(operator_before["pointerY"]),
-                pointer_x_after=float(operator_after["pointerX"]),
-                pointer_y_after=float(operator_after["pointerY"]),
-                keyboard_focus_before_sha256=str(
-                    operator_before["keyboardFocusSha256"]
-                ),
-                keyboard_focus_after_sha256=str(
-                    operator_after["keyboardFocusSha256"]
-                ),
-            )
-            last = (
-                semantic_action_probe,
-                semantic_screenshot_probe,
-                non_interference,
-            )
-            if (
-                semantic_action_probe
-                and semantic_screenshot_probe
-                and non_interference.unchanged()
-            ):
-                return last
-            if not semantic_action_probe or not semantic_screenshot_probe:
-                return last
-            if attempt < max_attempts and interval_seconds > 0:
-                time.sleep(interval_seconds)
-        if last is None:
-            raise AssertionError("semantic probe attempts produced no result")
-        return last
+                    raise ProvisioningError("Native qualification selected a different file")
+                closed = operator.file_chooser(
+                    "chooser-selected", target_process_id=process_id, present=False,
+                )
+                return CellFileChooserIdentity(
+                    cell_id="", run_id="", source_commit="", workspace_digest="",
+                    binary_sha256="", backend="macos-accessibility",
+                    target_process_id=process_id,
+                    requested_path_sha256=_sha256_text(str(target)),
+                    selected_path_sha256=_sha256_text(selected.value),
+                    fixture_sha256=fixture_hash, selected_file_sha256=_file_sha256(target),
+                    panel_presence=(baseline.present, opened.present, closed.present),
+                    observations=(),
+                )
+            finally:
+                session.execute_script("""
+                    document.querySelector('[data-pt-chooser-qualification]')?.remove();
+                    delete window.__ptChooserQualification;
+                """)
 
     @staticmethod
     def _probe_semantic_actions(session: TauriSession) -> bool:
@@ -810,111 +832,6 @@ class NativeDesktopMacOSProvisioner:
                 """
             )
 
-    @classmethod
-    def _snapshot_operator_state(
-        cls,
-        adapter: MacOSNativeDesktopAdapter,
-    ) -> dict[str, Any]:
-        frontmost = cls._json_probe(
-            _FRONTMOST_PID_PROBE,
-            "frontmost application",
-        )
-        process_id = int(frontmost.get("processId") or -1)
-        if process_id <= 0:
-            raise BlockedError(
-                reason="macOS operator frontmost process is unavailable",
-                resource="runtime-cell-operator-focus",
-            )
-        focus_identity = cls._stable_operator_focus_identity(
-            adapter,
-            process_id,
-        )
-        pointer = cls._json_probe(
-            _POINTER_LOCATION_PROBE,
-            "pointer location",
-        )
-        return {
-            "frontmostPid": process_id,
-            "pointerX": float(pointer["x"]),
-            "pointerY": float(pointer["y"]),
-            "keyboardFocusSha256": _sha256_text(
-                json.dumps(
-                    focus_identity,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-            ),
-        }
-
-    @staticmethod
-    def _keyboard_focus_identity(
-        control: NativeControlSnapshot,
-    ) -> dict[str, object]:
-        return {
-            "actualFrontmostPid": control.actual_frontmost_pid,
-            "focusedWindow": control.focused_window,
-            "frontmost": control.frontmost,
-            "kind": control.kind,
-            "mainWindow": control.main_window,
-            "platformRole": control.platform_role,
-            "platformSubrole": control.platform_subrole,
-            "title": control.title,
-        }
-
-    @classmethod
-    def _stable_operator_focus_identity(
-        cls,
-        adapter: MacOSNativeDesktopAdapter,
-        process_id: int,
-        *,
-        timeout_seconds: float = OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS,
-        interval_seconds: float = OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS,
-    ) -> dict[str, object]:
-        deadline = time.monotonic() + max(0.0, timeout_seconds)
-        previous: dict[str, object] | None = None
-        last_control = NativeControlSnapshot()
-        while True:
-            control = adapter.focused_control(process_id)
-            last_control = control
-            if (
-                not control.error
-                and control.actual_frontmost_pid != process_id
-            ):
-                raise BlockedError(
-                    reason=(
-                        "macOS operator frontmost process changed during "
-                        f"focus sampling: expected={process_id} "
-                        f"actual={control.actual_frontmost_pid}"
-                    ),
-                    resource="runtime-cell-operator-focus",
-                )
-            valid = (
-                not control.error
-                and control.actual_frontmost_pid == process_id
-            )
-            identity = (
-                cls._keyboard_focus_identity(control) if valid else None
-            )
-            if identity is not None and identity == previous:
-                return identity
-            previous = identity
-            if time.monotonic() >= deadline:
-                raise BlockedError(
-                    reason=(
-                        "macOS operator keyboard focus did not stabilize: "
-                        f"processId={process_id} "
-                        f"kind={last_control.kind!r} "
-                        f"role={last_control.platform_role!r} "
-                        f"subrole={last_control.platform_subrole!r} "
-                        f"actualFrontmostPid="
-                        f"{last_control.actual_frontmost_pid} "
-                        f"error={last_control.error!r}"
-                    ),
-                    resource="runtime-cell-operator-focus",
-                )
-            if interval_seconds > 0:
-                time.sleep(interval_seconds)
-
     @staticmethod
     def _await_webview_focus(
         session: TauriSession,
@@ -982,10 +899,7 @@ class NativeDesktopMacOSProvisioner:
         input_probe = False
         for point in points:
             adapter.post_mouse((MouseAction.MOVE,), point)
-            pointer = cls._json_probe(
-                _POINTER_LOCATION_PROBE,
-                "pointer location",
-            )
+            pointer = adapter.pointer_location()
             input_probe = (
                 abs(float(pointer.get("x") or 0) - point[0]) <= 1
                 and abs(float(pointer.get("y") or 0) - point[1]) <= 1

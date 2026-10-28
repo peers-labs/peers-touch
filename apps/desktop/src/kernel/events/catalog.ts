@@ -14,6 +14,7 @@ export const EVENT = {
   GLOBAL_CONTEXT_PIPELINE_FINISHED: 'global_context.pipeline_finished',
   GLOBAL_CONTEXT_PIPELINE_FAILED: 'global_context.pipeline_failed',
   STATION_ACTIVE_CHANGED: 'station.active_changed',
+  MESSAGING_PROFILE_ACTIVATED: 'messaging.profile_activated',
   REALTIME_MESSAGE_RECEIVED: 'realtime.message_received',
   REALTIME_PRESENCE_FLIP: 'realtime.presence_flip',
   REALTIME_RESYNC: 'realtime.resync',

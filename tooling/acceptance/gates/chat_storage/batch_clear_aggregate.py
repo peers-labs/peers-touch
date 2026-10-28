@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from tooling.acceptance.core import (
     AcceptanceGate,
     EvidenceStore,
@@ -12,10 +10,8 @@ from tooling.acceptance.core import (
     REPO_ROOT,
     source_identity,
 )
-from tooling.acceptance.gates.chat_storage.governance_aggregate import (
-    GateResult,
-    GateSpec,
-    check_gate,
+from tooling.acceptance.station_access_evidence import (
+    AggregateResult, GateSpec, check_gate,
 )
 
 
@@ -30,19 +26,6 @@ PRECEDING_GATES: tuple[GateSpec, ...] = (
     GateSpec("CSG-G07-release", "mobile-native-build"),
     GateSpec("CSG-G07-infra", "acceptance-infra-validation"),
 )
-
-
-@dataclass(frozen=True)
-class BatchAggregate:
-    source: dict[str, str]
-    gates: tuple[GateResult, ...]
-
-    @property
-    def passed(self) -> bool:
-        return (
-            self.source.get("workspaceDigest") == "clean"
-            and all(getattr(gate, "status", "") == "PASS" for gate in self.gates)
-        )
 
 
 class ChatStorageBatchClearAggregateGate(AcceptanceGate):
@@ -68,16 +51,16 @@ class ChatStorageBatchClearAggregateGate(AcceptanceGate):
         self.expected_source = expected_source or source_identity(REPO_ROOT)
 
     def run(self) -> dict[str, object]:
-        aggregate = BatchAggregate(
+        aggregate = AggregateResult(
             source=self.expected_source,
-            gates=tuple(
+            gates=[
                 check_gate(
                     self.store,
                     spec,
                     expected_source=self.expected_source,
                 )
                 for spec in PRECEDING_GATES
-            ),
+            ],
         )
         for gate in aggregate.gates:
             self.report.add_assertion(

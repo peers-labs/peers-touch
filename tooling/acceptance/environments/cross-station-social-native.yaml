@@ -7,6 +7,7 @@
   "services": {
     "station-four": {
       "kind": "station",
+      "profile_ref": "profile:four",
       "required": true,
       "runtime_identity_required": true,
       "ready_action": "station",
@@ -16,6 +17,7 @@
     },
     "station-five-arm": {
       "kind": "station",
+      "profile_ref": "profile:fiveArm",
       "required": true,
       "runtime_identity_required": true,
       "ready_action": "station",
@@ -90,7 +92,7 @@
     {
       "id": "cross-station-social-actors",
       "authorization_required": true,
-      "authorization_ref": "env:SOCIAL_CROSS_STATION_ACCEPTANCE_RESET"
+      "authorization_ref": "station.reset:cross-station-social-actors"
     }
   ],
   "credentials": [],

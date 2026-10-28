@@ -35,9 +35,11 @@ from tooling.acceptance.provisioners import (
     HomeStationProvisioner,
     MobileNativeProvisioner,
     NativeTauriEmbeddedWebDriverProvisioner,
+    XConfigHomeProvisioner,
     get_provisioner,
 )
 from tooling.acceptance.provisioners.home_station import (
+    AGENT_NATIVE_GATES,
     GATE_ROLES,
     HOME_SINGLE_NATIVE_GATES,
     MESSAGE_PUBLISHING_GATE,
@@ -56,6 +58,14 @@ from tooling.acceptance.provisioners.preset_actor import (
 
 
 class ProvisionerBaseClassTests(unittest.TestCase):
+    def setUp(self):
+        equipment = patch(
+            "tooling.acceptance.provisioners."
+            "native_tauri_embedded_webdriver.equip_station_profile",
+        )
+        self.station_equipment = equipment.start()
+        self.addCleanup(equipment.stop)
+
     def test_provisioner_requires_environment_id(self):
         class BadProvisioner(EnvironmentProvisioner):
             def provision(self, gate_id):
@@ -81,6 +91,15 @@ class ProvisionerBaseClassTests(unittest.TestCase):
             MobileNativeProvisioner,
         )
 
+    def test_x_config_home_runtime_provisioner_is_registered(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "x-config-home-runtime.yaml"
+        )
+        self.assertIsInstance(
+            get_provisioner(contract),
+            XConfigHomeProvisioner,
+        )
+
     def test_native_tauri_defaults_to_canonical_station_profiles(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
@@ -95,7 +114,7 @@ class ProvisionerBaseClassTests(unittest.TestCase):
             },
         )
 
-    def test_native_tauri_rejects_incomplete_runtime_station_profiles(self):
+    def test_native_tauri_merges_declared_profiles_and_rejects_unknown_roles(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
         )
@@ -103,11 +122,9 @@ class ProvisionerBaseClassTests(unittest.TestCase):
             contract,
             station_profiles={"station-four": "four"},
         )
-        with self.assertRaisesRegex(
-            BlockedError,
-            r"--station-profile SERVICE_ID=PROFILE.*missing=station-five",
-        ):
-            provisioner._required_station_profiles()
+        self.assertEqual(provisioner._required_station_profiles(), {
+            "station-four": "four", "station-five": "fiveArm",
+        })
 
         provisioner = get_provisioner(
             contract,
@@ -119,7 +136,7 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             BlockedError,
-            r"unexpected=station-unknown",
+            r"undeclared Profile roles.*station-unknown",
         ):
             provisioner._required_station_profiles()
 
@@ -201,8 +218,8 @@ class ProvisionerBaseClassTests(unittest.TestCase):
                 "resolve_deployment_environment_path",
             ) as resolve_deployment, patch.object(
                 provisioner,
-                "_station_ready",
-                return_value=True,
+                "_station_health",
+                return_value={"ready": True},
             ), patch.object(
                 provisioner,
                 "acquire_profile_lease",
@@ -308,8 +325,8 @@ class ProvisionerBaseClassTests(unittest.TestCase):
                 return_value=deployment_path,
             ) as resolve_deployment, patch.object(
                 provisioner,
-                "_station_ready",
-                return_value=True,
+                "_station_health",
+                return_value={"ready": True},
             ) as station_ready, patch.object(
                 provisioner,
                 "acquire_profile_lease",
@@ -1039,7 +1056,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(client.webdriver_port, 14449)
         self.assertIn("pt-agent-stream-run-stream-resilience", client.storage_root)
 
-    def test_message_publishing_uses_one_alice_profile_without_reset(self):
+    def test_message_publishing_uses_resolved_alice_profile_without_reset(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
         )
@@ -1056,18 +1073,19 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "run-message-publishing",
                 1,
                 profile_env,
+                profile_name="assigned-chat-profile",
             )
 
         self.assertEqual(GATE_ROLES[MESSAGE_PUBLISHING_GATE], ("alice",))
         self.assertIn(MESSAGE_PUBLISHING_GATE, HOME_SINGLE_NATIVE_GATES)
+        self.assertNotIn(MESSAGE_PUBLISHING_GATE, AGENT_NATIVE_GATES)
         self.assertFalse(
             agent_native_requires_disposable_fixture(MESSAGE_PUBLISHING_GATE)
         )
         self.assertFalse(agent_native_requires_provider(MESSAGE_PUBLISHING_GATE))
-        self.assertEqual(agent_profile_for_gate(MESSAGE_PUBLISHING_GATE), "one")
         self.assertEqual(client.actor, "alice")
         self.assertEqual(client.id, "alice")
-        self.assertEqual(client.profile, "one")
+        self.assertEqual(client.profile, "assigned-chat-profile")
         self.assertEqual(client.required_service_roles, ("station",))
         self.assertEqual(
             client.service_bindings["station"],

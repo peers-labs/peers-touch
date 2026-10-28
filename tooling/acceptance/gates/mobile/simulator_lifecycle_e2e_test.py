@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import unittest
 from pathlib import Path
 from typing import Any
@@ -74,7 +75,8 @@ class FakeArtifacts:
 class FakeSession:
     client_id = "sim-ios-peer"
 
-    def __init__(self) -> None:
+    def __init__(self, client_id: str = "sim-ios-peer") -> None:
+        self.client_id = client_id
         self.calls: list[str] = []
         self.action_payloads: list[tuple[str, dict[str, Any]]] = []
         self.navigation = {
@@ -196,6 +198,16 @@ class FakeSession:
         return "<main>ready</main>"
 
 
+class ConcurrentFakeSession(FakeSession):
+    def __init__(self, client_id: str, barrier: threading.Barrier) -> None:
+        super().__init__(client_id)
+        self.barrier = barrier
+
+    def start(self) -> None:
+        self.calls.append("start")
+        self.barrier.wait(timeout=2)
+
+
 class LifecycleSnapshotTests(unittest.TestCase):
     def test_accepts_ordered_runtime_snapshot(self) -> None:
         snapshot = validate_lifecycle_snapshot(
@@ -311,6 +323,83 @@ class SimulatorRuntimeLifecycleGateTests(unittest.TestCase):
                 "mobile-simulator-lifecycle-source-identity",
             ),
             artifacts.writes,
+        )
+
+    def test_run_journeys_exercises_isolated_clients_concurrently(self) -> None:
+        gate = SimulatorRuntimeLifecycleGate()
+        artifacts = FakeArtifacts()
+        manifest = {
+            "runId": "runtime-manifest-run",
+            "credentialRefs": [],
+            "mobileSimulator": {
+                "appium": {"serverUrl": "http://127.0.0.1:4723"},
+            },
+        }
+        specs = tuple(
+            SimulatorClientSpec(
+                client_id=client_id,
+                platform="ios",
+                automation_name="XCUITest",
+                device=SimulatorDeviceTarget(
+                    platform="ios",
+                    identifier=f"{client_id}-udid",
+                    role=role,
+                ),
+                build=SimulatorBuildTarget(
+                    platform="ios",
+                    artifact=Path("/tmp/mobile.app"),
+                    application_id="com.peers.touch.mobile",
+                ),
+                callback_scheme="peers-touch",
+                ports={
+                    "wda-local": port,
+                    "mjpeg": port + 100,
+                    "webview": port + 200,
+                },
+                required_harness_actions=REQUIRED_HARNESS_ACTIONS,
+                chromedriver_executable="",
+            )
+            for client_id, role, port in (
+                ("sim-ios", "primary-ios-simulator", 8101),
+                ("sim-ios-peer", "peer-ios-simulator", 8102),
+            )
+        )
+        barrier = threading.Barrier(len(specs))
+        sessions = {
+            spec.client_id: ConcurrentFakeSession(spec.client_id, barrier)
+            for spec in specs
+        }
+
+        with (
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_lifecycle_e2e."
+                "_validate_source_identity",
+                return_value={
+                    "commit": "source-commit",
+                    "workspaceDigest": "dirty:source-digest",
+                },
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_lifecycle_e2e."
+                "_validate_runtime_identity",
+                return_value={"appium": "verified"},
+            ),
+            patch.object(gate, "_client_specs", return_value=specs),
+            patch.object(
+                gate,
+                "_create_session",
+                side_effect=lambda _server_url, spec: sessions[spec.client_id],
+            ),
+        ):
+            result = gate._run_journeys(artifacts, manifest)
+
+        self.assertEqual(
+            list(result["clients"]),
+            ["sim-ios", "sim-ios-peer"],
+        )
+        self.assertEqual(
+            [sessions[spec.client_id].calls[0] for spec in specs],
+            ["start", "start"],
         )
 
     def test_exercises_suspend_resume_and_restart_with_monotonic_generation(

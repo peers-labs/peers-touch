@@ -299,6 +299,7 @@ function rejectsCode(code, operation) {
 test('current repository satisfies the module registry', () => {
   const result = validateArchitectureRegistry({ repoRoot: REPO_ROOT });
   assert.deepEqual(result.moduleIds, [
+    'acceptance',
     'agent',
     'api-ownership',
     'architecture-module-governance',
@@ -318,6 +319,7 @@ test('current repository satisfies the module registry', () => {
     'x-config',
   ]);
   assert.deepEqual(result.capabilityIds, [
+    'acceptance.core.execution',
     'agent.chat.minimum-usable',
     'agent.mcp.dual-runtime',
     'architecture.module.validate',
@@ -838,6 +840,29 @@ test('external YAML capability references must resolve', async (t) => {
     gate: 'station-capability-gate',
   });
   rejectsCode('ARCHITECTURE_CAPABILITY_UNKNOWN', () =>
+    validateArchitectureRegistry({
+      repoRoot: value.root,
+      registry: value.registry,
+    }));
+});
+
+test('external YAML registries retain merge semantics and reject duplicate keys', async (t) => {
+  const value = await fixture(t);
+  const registryPath = path.join(value.root, 'capabilities.yaml');
+  value.registry.modules[0].externalCapabilityRegistries.push({
+    path: 'capabilities.yaml',
+    capabilityIds: ['station.current'],
+    gate: 'station-capability-gate',
+  });
+  await writeFile(registryPath,
+    'defaults: &cap {id: station.current}\ncapabilities:\n  - <<: *cap\n');
+  assert.equal(validateArchitectureRegistry({
+    repoRoot: value.root,
+    registry: value.registry,
+  }).ok, true);
+  await writeFile(registryPath,
+    'capabilities:\n  - id: station.current\n    id: station.other\n');
+  rejectsCode('ARCHITECTURE_REGISTRY_INVALID', () =>
     validateArchitectureRegistry({
       repoRoot: value.root,
       registry: value.registry,

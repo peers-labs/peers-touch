@@ -64,6 +64,7 @@ class NativeFilePickerTest(unittest.TestCase):
             )
             binding = SimpleNamespace(
                 native_adapter=adapter,
+                begin_file_chooser=Mock(return_value=None),
                 request_cooperative_activation=Mock(return_value=False),
                 stage_native_file=Mock(return_value=source),
             )
@@ -107,6 +108,7 @@ class NativeFilePickerTest(unittest.TestCase):
             )
             binding = SimpleNamespace(
                 native_adapter=adapter,
+                begin_file_chooser=Mock(return_value=None),
                 request_cooperative_activation=Mock(return_value=False),
                 stage_native_file=Mock(return_value=source),
             )
@@ -162,6 +164,7 @@ class NativeFilePickerTest(unittest.TestCase):
             adapter.content_origin.return_value = (100.0, 200.0)
             binding = SimpleNamespace(
                 native_adapter=adapter,
+                begin_file_chooser=Mock(return_value=None),
                 request_cooperative_activation=Mock(return_value=False),
                 stage_native_file=Mock(return_value=source),
             )
@@ -232,6 +235,7 @@ class NativeFilePickerTest(unittest.TestCase):
             source.write_bytes(b"native-file-picker")
             binding = SimpleNamespace(
                 native_adapter=Mock(),
+                begin_file_chooser=Mock(return_value=None),
                 stage_native_file=Mock(),
             )
             client = SimpleNamespace(process_id=42, driver=Mock())
@@ -290,6 +294,7 @@ class NativeFilePickerTest(unittest.TestCase):
             adapter.read_clipboard.side_effect = (b"before", str(source).encode())
             binding = SimpleNamespace(
                 native_adapter=adapter,
+                begin_file_chooser=Mock(return_value=None),
                 request_cooperative_activation=Mock(return_value=False),
                 stage_native_file=Mock(return_value=source),
             )
@@ -351,6 +356,7 @@ class NativeFilePickerTest(unittest.TestCase):
             )
             binding = SimpleNamespace(
                 native_adapter=adapter,
+                begin_file_chooser=Mock(return_value=None),
                 request_cooperative_activation=Mock(return_value=False),
                 stage_native_file=Mock(return_value=source),
             )
@@ -381,6 +387,7 @@ class NativeFilePickerTest(unittest.TestCase):
     def test_missing_source_fails_before_native_staging(self) -> None:
         binding = SimpleNamespace(
             native_adapter=Mock(),
+            begin_file_chooser=Mock(return_value=None),
             stage_native_file=Mock(),
         )
         client = SimpleNamespace(process_id=42, driver=Mock())
@@ -419,6 +426,7 @@ class NativeFilePickerTest(unittest.TestCase):
             adapter.content_origin.return_value = (100.0, 200.0)
             binding = SimpleNamespace(
                 native_adapter=adapter,
+                begin_file_chooser=Mock(return_value=None),
                 request_cooperative_activation=Mock(return_value=False),
                 stage_native_file=Mock(return_value=source),
             )

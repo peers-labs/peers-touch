@@ -2,7 +2,7 @@
 
 .PHONY: acceptance-plan acceptance-plan-self acceptance-run acceptance-run-completion acceptance-run-full acceptance-run-ci acceptance-run-local-evidence \
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate acceptance-infra-validate \
-        acceptance-driver-build acceptance-driver-smoke \
+        acceptance-driver-build acceptance-driver-build-environment acceptance-driver-smoke \
         acceptance-cell-ready acceptance-cell-status acceptance-cell-logs acceptance-cell-stop \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-native-static acceptance-chat-native-two-client \
@@ -27,6 +27,14 @@
 
 ACCEPTANCE_RANGE ?= HEAD
 ACCEPTANCE_PLAN ?=
+PT_ACCEPTANCE_PYTHON ?= $(if $(wildcard $(CURDIR)/.local/acceptance/python-venv/bin/python3),$(CURDIR)/.local/acceptance/python-venv/bin/python3,python3)
+export PT_ACCEPTANCE_PYTHON
+ifneq ($(dir $(PT_ACCEPTANCE_PYTHON)),./)
+export PATH := $(dir $(PT_ACCEPTANCE_PYTHON)):$(PATH)
+endif
+ifneq ($(PROFILE),)
+export PT_ACCEPTANCE_PROFILE := $(PROFILE)
+endif
 ACCEPTANCE_PLAN_OUTPUT_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)
 ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan "$(PLAN)",$(if $(ACCEPTANCE_PLAN),--plan "$(ACCEPTANCE_PLAN)",))
 ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
@@ -35,14 +43,12 @@ CELL_GATE ?= runtime-cell-preflight
 RUNTIME_CELL ?= desktop-macos-native
 
 acceptance-driver-build:
-	VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build
-	cd apps/desktop/src-tauri && \
-		TAURI_CONFIG='{"app":{"withGlobalTauri":true}}' \
-		cargo build --features acceptance-webdriver
-	@mkdir -p "$(dir $(ACCEPTANCE_DRIVER_BINARY))"
-	@cp apps/desktop/src-tauri/target/debug/peers-touch-desktop "$(ACCEPTANCE_DRIVER_BINARY).tmp"
-	@chmod 0755 "$(ACCEPTANCE_DRIVER_BINARY).tmp"
-	@mv "$(ACCEPTANCE_DRIVER_BINARY).tmp" "$(ACCEPTANCE_DRIVER_BINARY)"
+	"$${PT_ACCEPTANCE_PYTHON:-python3}" tooling/scripts/acceptance-driver-build.py \
+		--binary "$(ACCEPTANCE_DRIVER_BINARY)"
+
+acceptance-driver-build-environment:
+	@"$${PT_ACCEPTANCE_PYTHON:-python3}" tooling/scripts/acceptance-driver-build.py \
+		--environment-path
 
 acceptance-driver-smoke:
 	python3 -m tooling.acceptance.drivers.tauri \
@@ -63,7 +69,7 @@ acceptance-cell-stop:
 	python3 tooling/scripts/acceptance-cell.py stop --cell "$(CELL)"
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --active-plan $(ACCEPTANCE_PLAN_OUTPUT_ARG)
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" $(ACCEPTANCE_PLAN_OUTPUT_ARG)
 
 acceptance-plan-self:
 	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check $(ACCEPTANCE_PLAN_OUTPUT_ARG)

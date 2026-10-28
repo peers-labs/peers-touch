@@ -87,8 +87,8 @@ fi
 : "${PT_DEV_PROFILE:?PT_DEV_PROFILE not set in profile}"
 
 if [[ "$PROFILE_FROM_MACHINE" == "1" ]] \
-  && [[ "$PT_DEV_PROFILE" != "$PT_MACHINE_PROFILE" ]]; then
-  echo "[ERROR] Machine binding and profile definition identities do not match."
+  && [[ "$PT_DEV_PROFILE" != "$PT_MACHINE_TARGET_PROFILE" ]]; then
+  echo "[ERROR] Machine operation target and profile definition identities do not match."
   exit 1
 fi
 

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-12 | **Updated**: 2026-09-12
+> **Created**: 2026-09-12 | **Updated**: 2026-10-26
 > **Owner**: Developer Infrastructure
 
 ---
@@ -17,7 +17,7 @@
 | DTC-D04 | Managed process state is explicit and verified | accepted |
 | DTC-D05 | Migration is an atomic consumer cutover | accepted |
 | DTC-D06 | Remote deployment is bridged before it is ported | accepted |
-| DTC-D07 | Formal execution plan owns Acceptance scheduling | accepted |
+| DTC-D07 | Formal execution plan owns Acceptance scheduling | accepted; amended 2026-10-26 |
 | DTC-D08 | Diff planning detects drift but does not schedule work | accepted |
 | DTC-D09 | Full and release verification require explicit invocation | accepted |
 
@@ -202,6 +202,14 @@ active-plan pointer, or workflow session is introduced.
 `active_work` remains an Agent-facing index and Context Anchor remains a chat
 projection. The CLI discovers the formal plan by verified worktree metadata and
 fails when the match is absent or ambiguous.
+
+### Amendment (2026-10-26): Plan Is An Optional Scope Input
+
+The formal Execution Plan is optional, not a scheduling prerequisite. The
+Acceptance Runner owns scope closure for direct Gate, completion, and explicit
+full modes without any Plan. When a reviewed Plan is explicitly selected, its
+current closure still determines that run's scope; Plans are never required to
+exist, and plan-less runs must not fail on an absent active-plan match.
 
 ---
 

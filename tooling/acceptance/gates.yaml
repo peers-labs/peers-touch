@@ -70,11 +70,24 @@
       "description": "Reuse the exact Home release and authenticated operator fixture to save and publish a reviewed catalog, verify GitHub CAS paths and exact latest/immutable bytes through x-config-core, then prove durable revocation and terminal Suite cleanup."
     },
     "x-config-api-aggregate-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "prerequisite-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.prerequisite_toolchain", "--gate", "x-config-api-aggregate-e2e"], "timeoutSeconds": 10}},
+      "dependsOn": [
+        "x-config-operator-login-contract",
+        "x-config-snapshot-core-contract",
+        "x-config-snapshot-publication-contract",
+        "x-config-admin-api-contract",
+        "x-config-console-admin-e2e",
+        "x-config-desktop-adapter-contract",
+        "x-config-mobile-adapter-contract",
+        "x-config-domain-validation",
+        "x-config-home-operator-login-e2e",
+        "x-config-home-publication-e2e"
+      ],
       "command": "python3 -m tooling.acceptance.gates.x_config.aggregate",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "env-evidence",
-      "description": "Aggregate the required API closure Gates exclusively from validated durable Evidence Store latest manifests matching the current source; missing, stale, incomplete and unproven dependencies keep closure unproven."
+      "description": "Aggregate the required API closure from the current Runner's original prerequisite manifests, complete inventories, exact source, proven results and cleanup; missing or conflicting proof remains unproven."
     },
     "x-config-operator-login-contract": {
       "command": "sh -c 'go test ./packages/github-repository/... -count=1 && cd apps/oauth2-client && go test ./internal/application/oauth/usecase ./internal/infrastructure/persistence/memory ./internal/infrastructure/persistence/github ./internal/interfaces/http/handler -count=1 && cd ../x-config && go test ./internal/application/operatorauth ./internal/bootstrap ./internal/infrastructure/operatorstore ./internal/integration ./internal/interfaces/http -count=1 && cd ../.. && test ! -e apps/oauth2-client/internal/infrastructure/persistence/github/app_auth.go && test ! -e apps/oauth2-client/internal/infrastructure/persistence/github/git_data.go && test ! -e apps/x-config/internal/infrastructure/operatorstore/github.go'",
@@ -126,6 +139,7 @@
       "description": "Validate Mobile secure watermark and cache adapters, optional lifecycle projection refresh, distinct verified and suggested Station rows, stale non-actionable state, and canonical route discovery before registry persistence without claiming device UI proof."
     },
     "x-config-domain-validation": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "x-config-domain-validation", "--tool", "python3", "--tool", "sh", "--python-package", "yaml"], "timeoutSeconds": 10}},
       "command": "python3 tooling/scripts/acceptance-validate.py --domain x-config",
       "timeout_seconds": 120,
       "environment": "local",
@@ -278,19 +292,23 @@
     },
     "oauth2-client-live-api-repository": {
       "command": "tooling/acceptance/gates/oauth2_client/live_api.sh",
+      "catalogExecution": "manual",
       "timeout_seconds": 300,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Prove live GitHub and Google identity readback, standards-based OAuth2 redirects, GitHub-backed encrypted record classes, and idempotent key rotation using the isolated oauth2-client-test environment."
     },
     "oauth-login-broker-architecture": {
-      "command": "node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs",
+      "executionInputs": {"environmentKeys": []},
+      "judgment": "all-prerequisites",
+      "dependsOn": ["architecture-registry-self"],
       "timeout_seconds": 60,
       "environment": "local",
       "tier": "ci-structure",
       "description": "Validate the OAuth Login Broker architecture module registration, governed paths, required documents, decisions, and capability projection."
     },
     "oauth-login-broker-contract": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "oauth-login-broker-contract", "--tool", "python3", "--tool", "sh", "--python-package", "yaml"], "timeoutSeconds": 10}},
       "command": "python3 tooling/scripts/acceptance-validate.py --domain oauth-login-broker",
       "timeout_seconds": 600,
       "environment": "local",
@@ -298,13 +316,64 @@
       "description": "Validate the OAuth Login Broker managed-domain Feature, Capability, Registry, Gate, environment, and Provisioner graph."
     },
     "architecture-module-governance": {
-      "command": "node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/workflow-kernel.test.mjs tooling/scripts/local-dev/workflow-host-adapters.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs && tooling/scripts/review/knowledge-match.sh --changed-file tooling/scripts/plan/plan-package.mjs --strict && python3 -m unittest tooling/scripts/agent-integration-audit-test.py",
+      "executionInputs": {"environmentKeys": []},
+      "judgment": "all-prerequisites",
+      "dependsOn": ["architecture-registry-self", "architecture-host-contract-self", "agent-integration-framework-self"],
       "timeout_seconds": 240,
       "environment": "local",
       "tier": "ci-structure",
       "description": "Validate registered architecture modules, derived documents, decisions, governed paths, positive capability references, deterministic pre-edit receipts, and shared Hook, Plan, Review, CI, and agent-integration enforcement."
     },
+    "architecture-registry-self": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "architecture-metadata-toolchain", "argv": ["env", "NODE_DISABLE_COMPILE_CACHE=1", "npm_config_manage_package_manager_versions=false", "python3", "-B", "-m", "tooling.acceptance.input_owners.metadata_toolchain", "--gate", "architecture-registry-self"], "timeoutSeconds": 10}},
+      "command": "env NODE_DISABLE_COMPILE_CACHE=1 npm_config_manage_package_manager_versions=false sh -c 'node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs'",
+      "timeout_seconds": 30,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Produce the canonical architecture registry validation once for structural consumers."
+    },
+    "architecture-host-contract-self": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "node-source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.node_toolchain", "--gate", "architecture-host-contract-self", "--tool", "node", "--tool", "python3", "--tool", "sh", "--tool", "bash", "--tool", "env", "--tool", "git", "--tool", "dirname", "--node-import", "tooling/scripts/architecture/module-governance.mjs", "yaml"], "timeoutSeconds": 10}},
+      "command": "node --test tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/workflow-kernel.test.mjs tooling/scripts/local-dev/workflow-host-adapters.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs && tooling/scripts/review/knowledge-match.sh --changed-file tooling/scripts/plan/plan-package.mjs --strict",
+      "timeout_seconds": 30,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Produce shared Plan, host adapter, Hook and operational knowledge contracts once."
+    },
+    "agent-integration-framework-self": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "node-source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.node_toolchain", "--gate", "agent-integration-framework-self", "--tool", "node", "--tool", "python3", "--tool", "sh", "--tool", "bash", "--tool", "env", "--tool", "git", "--tool", "dirname", "--node-import", "tooling/scripts/architecture/module-governance.mjs", "yaml"], "timeoutSeconds": 10}},
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling/scripts/agent-integration-audit-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate selected-root installer, Skill and Hook projections with isolated synthetic repositories; this is host framework coverage, not Agent product acceptance."
+    },
+    "acceptance-planner-framework-self": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "node-source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.node_toolchain", "--gate", "acceptance-planner-framework-self", "--tool", "node", "--tool", "python3", "--tool", "sh", "--tool", "env", "--tool", "git", "--node-import", "tooling/scripts/architecture/module-governance.mjs", "yaml"], "timeoutSeconds": 10}},
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 tooling/scripts/acceptance-plan-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Produce canonical Planner regression results once."
+    },
+    "acceptance-validator-framework-self": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "acceptance-validator-framework-self", "--tool", "python3", "--tool", "sh", "--tool", "env", "--tool", "git", "--python-package", "yaml"], "timeoutSeconds": 10}},
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 tooling/scripts/acceptance-validate-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Produce canonical validator regression results once."
+    },
+    "acceptance-boundary-framework-self": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "node-source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.node_toolchain", "--gate", "acceptance-boundary-framework-self", "--tool", "node", "--tool", "python3", "--tool", "sh", "--tool", "bash", "--tool", "env", "--tool", "git", "--tool", "rg", "--tool", "dirname", "--tool", "sed", "--tool", "sort", "--tool", "mktemp", "--tool", "rm", "--tool", "cut", "--tool", "awk", "--node-import", "tooling/scripts/architecture/module-governance.mjs", "yaml"], "timeoutSeconds": 10}},
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py'",
+      "timeout_seconds": 150,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Produce Infra ownership, fail-closed gaps and quality-evidence contracts once."
+    },
     "acceptance-plan-self": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "acceptance-plan-self", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check",
       "timeout_seconds": 30,
       "environment": "local",
@@ -312,20 +381,24 @@
       "description": "Validate that the acceptance registry can plan the current diff."
     },
     "acceptance-infra-validation": {
-      "command": "python3 tooling/scripts/acceptance-validate.py --infra",
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "acceptance-infra-validation", "--tool", "python3", "--tool", "sh", "--python-package", "yaml"], "timeoutSeconds": 10}},
+      "command": "python3 tooling/scripts/acceptance-docs-test.py && python3 tooling/scripts/acceptance-validate.py --infra",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-structure",
-      "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
+      "description": "Validate active Acceptance documentation authority, then only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
     },
     "acceptance-runtime-provisioning-self": {
-      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_station_access_dual_relay tooling.acceptance.tests.test_station_access_relay_role tooling.acceptance.tests.test_posix_service_runtime tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py'",
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "node-source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.node_toolchain", "--gate", "acceptance-runtime-provisioning-self", "--tool", "node", "--tool", "python3", "--tool", "sh", "--tool", "bash", "--tool", "env", "--tool", "git", "--tool", "make", "--tool", "ps", "--tool", "sleep", "--node-import", "tooling/scripts/architecture/module-governance.mjs", "yaml", "--python-package", "selenium"], "timeoutSeconds": 10}},
+      "dependsOn": ["acceptance-run-static-gate", "acceptance-planner-framework-self", "acceptance-validator-framework-self", "acceptance-boundary-framework-self"],
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_native_observation_diagnostics tooling.acceptance.tests.test_desktop_acceptance_build tooling.acceptance.tests.test_resource_diagnostic tooling.acceptance.tests.test_proof tooling.acceptance.tests.test_evidence_store tooling.acceptance.tests.test_redaction tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_station_equipment tooling.acceptance.tests.test_station_access_dual_relay tooling.acceptance.tests.test_station_access_relay_role tooling.acceptance.tests.test_posix_service_runtime tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context tooling.acceptance.tests.test_execution_budget tooling.acceptance.tests.test_execution_graph tooling.acceptance.tests.test_execution_session tooling.acceptance.tests.test_operation_observer tooling.acceptance.tests.test_fixture_authority_lifecycle tooling.acceptance.tests.test_profile_bindings tooling.acceptance.tests.test_current_profile_native tooling.acceptance.tests.test_runtime_source_snapshot tooling.acceptance.tests.test_native_runtime_binding tooling.acceptance.tests.test_mobile_simulator_provisioner tooling.acceptance.tests.test_prerequisite_aggregate_contract tooling.acceptance.tests.test_go_source_input_owner tooling.acceptance.gates.chat.native_two_client_e2e_test && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py'",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, ephemeral Gate launch-context isolation and cleanup, runner and report semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity."
     },
     "machine-dev-registry-self": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "machine-dev-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.machine_dev_toolchain", "--gate", "machine-dev-registry-self"], "timeoutSeconds": 10}},
       "command": "node --test tooling/scripts/local-dev/machine-dev.test.mjs tooling/devctl/test/desktop.test.mjs tooling/devctl/test/process-adapter.test.mjs tooling/devctl/test/profile.test.mjs tooling/devctl/test/station.test.mjs",
       "timeout_seconds": 600,
       "environment": "local",
@@ -333,14 +406,18 @@
       "description": "Validate explicit first-use Profile registration, authoritative workspace update, source-matched idempotent Station and Desktop startup, partial managed Desktop recovery, generated-source preparation, typed remote deployment failures, owner-checked unregister, profile policy, conflict detection, and OS-held runtime lease lifecycle."
     },
     "acceptance-workflow-contract": {
-      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/development-close.test.mjs tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/workflow-*.test.mjs tooling/scripts/local-dev/worktree-observation-store.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py && python3 -m unittest tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py && python3 -m unittest tooling/scripts/agent-integration-audit-test.py && tooling/scripts/review/skill-check.sh'",
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "node-source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.node_toolchain", "--gate", "acceptance-workflow-contract", "--tool", "node", "--tool", "python3", "--tool", "sh", "--tool", "env", "--tool", "git"], "timeoutSeconds": 10}},
+      "dependsOn": ["architecture-module-governance", "acceptance-runtime-provisioning-self", "development-workflow-control-plane"],
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/local-dev/worktree-observation-store.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py'",
       "timeout_seconds": 480,
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Validate explicit Plan reads, optional task-local recovery, standalone review and status, advisory Hook behavior, selected-root Skill projection, Acceptance selection, and Skill governance."
     },
     "development-workflow-control-plane": {
-      "command": "node --test tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/development-close.test.mjs tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/workflow-snapshot.test.mjs tooling/scripts/local-dev/workflow-doctor.test.mjs tooling/scripts/local-dev/workflow-state-inspector.test.mjs && python3 -m unittest tooling.acceptance.tests.test_execution_plan && bash tooling/scripts/review/skill-check.sh",
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "development-workflow-toolchain", "argv": ["env", "NODE_DISABLE_COMPILE_CACHE=1", "npm_config_manage_package_manager_versions=false", "python3", "-B", "-m", "tooling.acceptance.input_owners.workflow_toolchain", "--gate", "development-workflow-control-plane"], "timeoutSeconds": 10}},
+      "dependsOn": ["architecture-host-contract-self"],
+      "command": "env NODE_DISABLE_COMPILE_CACHE=1 npm_config_manage_package_manager_versions=false sh -c 'node --test tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/development-close.test.mjs tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/workflow-snapshot.test.mjs tooling/scripts/local-dev/workflow-doctor.test.mjs tooling/scripts/local-dev/workflow-state-inspector.test.mjs && python3 -m unittest tooling.acceptance.tests.test_execution_plan && bash tooling/scripts/review/skill-check.sh'",
       "timeout_seconds": 300,
       "environment": "local",
       "tier": "ci-cheap",
@@ -354,7 +431,8 @@
       "description": "Prove FLOW-A01-A04 and FLOW-A06-A20 through synthetic Git workspaces, atomic task snapshots, selected-root integration fixtures, runtime admission tests, source-bound review, and residue inventory. Real-host Hook observation is optional supporting diagnostics."
     },
     "acceptance-run-static-gate": {
-      "command": "python3 tooling/scripts/acceptance-run-test.py",
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "machine-dev-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.machine_dev_toolchain", "--gate", "acceptance-run-static-gate"], "timeoutSeconds": 10}},
+      "command": "python3 tooling/scripts/acceptance-run-test.py && python3 -m unittest tooling.acceptance.tests.test_input_owner_diagnostics tooling.acceptance.tests.test_machine_dev_input_owner",
       "timeout_seconds": 30,
       "environment": "local",
       "tier": "local-evidence",
@@ -376,7 +454,7 @@
       "description": "Run one exact-source Home Station and one isolated Alice macOS Native Desktop through the owner-only generic Message Publishing lifecycle, receiver projection, semantic aggregation, restart recovery, human Direct regression, and cleanup."
     },
     "chat-native-visible-static": {
-      "command": "cd apps/station && go test ./frame/touch/actor -run 'TestBackfillPresetAvatar' -count=1 && go test ./frame/touch/federation/cache -count=1 && cd app && GOWORK=off go test ./subserver/social/application -run 'TestRelationshipListsHydrateActorProjections|TestRelationshipListsFilterBlockedEdges' -count=1 && cd ../../.. && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts src/acceptance/chat/passwordLogin.test.ts src/components/chat/CreateGroupModal.test.ts src/components/chat/contactSelection.test.ts src/components/chat/message/ChatMessageTimeline.test.ts src/components/common/SquareAvatar.test.ts src/services/chatPresence.test.ts src/services/errorMappings/chatErrorMapping.test.ts src/services/socialRealtime.test.ts src/store/federation.test.ts src/store/friendshipProjection.test.ts src/store/relationships.test.ts src/store/socialChat.conversationProjection.test.ts src/store/socialNormalizers.test.ts src/store/socialProfileProjection.test.ts && pnpm --filter @peers-touch/prototype-desktop-social-chat build && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop group_creation_ && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop typed_station_error_details_survive_json_transport && env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling.acceptance.gates.chat.lifecycle_regression_contract_test tooling.acceptance.gates.chat.lifecycle_onboarding_test tooling.acceptance.gates.chat.lifecycle_mixed_client_test tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
+      "command": "cd apps/station && go test ./frame/touch/actor -run 'TestBackfillPresetAvatar' -count=1 && go test ./frame/touch/federation/cache -count=1 && cd app && GOWORK=off go test ./subserver/social/application -run 'TestRelationshipListsHydrateActorProjections|TestRelationshipListsFilterBlockedEdges' -count=1 && cd ../../.. && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts src/acceptance/chat/passwordLogin.test.ts src/acceptance/chat/harness.test.ts src/store/messagingRecovery.test.ts src/messaging/runtime.test.ts src/runtimes/messagingRecoveryRuntime.test.ts src/components/chat/CreateGroupModal.test.ts src/components/chat/contactSelection.test.ts src/components/chat/message/ChatMessageTimeline.test.ts src/components/common/SquareAvatar.test.ts src/services/chatPresence.test.ts src/services/errorMappings/chatErrorMapping.test.ts src/services/socialRealtime.test.ts src/store/federation.test.ts src/store/friendshipProjection.test.ts src/store/relationships.test.ts src/store/socialChat.conversationProjection.test.ts src/store/socialChat.peerProfile.test.ts src/store/socialNormalizers.test.ts src/store/socialProfileProjection.test.ts && pnpm --filter @peers-touch/prototype-desktop-social-chat build && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop group_creation_ && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop typed_station_error_details_survive_json_transport && env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling.acceptance.gates.chat.lifecycle_regression_contract_test tooling.acceptance.gates.chat.lifecycle_onboarding_test tooling.acceptance.gates.chat.lifecycle_mixed_client_test tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.tests.test_chat_reset_target_resolution tooling.acceptance.gates.station_access.node_connectivity_native_e2e_test",
       "timeout_seconds": 300,
       "environment": "local",
       "tier": "ci-cheap",
@@ -429,20 +507,24 @@
       "description": "Run three isolated Native Desktop clients and prove same-Station group audio and video calls with live remote media, mute/camera convergence, late join, leave, and resource release."
     },
     "chat-native-current-profile-two-client-e2e": {
-      "command": "PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.native_current_profile_two_client_entry && PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.native_current_profile_two_client_e2e",
+      "argv": ["python3", "-m", "tooling.acceptance.gates.chat.native_current_profile_two_client_entry"],
+      "ephemeralCapabilities": ["chat.runtime-account-login"],
       "timeout_seconds": 1800,
       "environment": "native-tauri-current-profile",
       "provisioner": "native-tauri-current-profile",
+      "requiredRuntimeCells": ["desktop-macos-native"],
       "tier": "env-evidence",
-      "description": "Run synchronized peers-group-chat initiator and peers-chat-high-chat receiver worktrees through separate make-desktop clients against the installed active profile, without destructive Station reset, and prove bidirectional Direct plaintext, DELIVERED receipt visibility, unobscured newest-message geometry, and bundled demo-avatar rendering."
+      "description": "Build the selected source once, create run-scoped Alice and Bob clients through the active Profile without resetting existing Station actors, and prove bidirectional Direct plaintext, DELIVERED receipts, visible message geometry, avatars, native restart continuity and final cleanup."
     },
     "chat-native-submitted-command-recovery-e2e": {
-      "command": "PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.native_submitted_command_recovery_entry && PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.native_submitted_command_recovery_e2e",
+      "argv": ["python3", "-m", "tooling.acceptance.gates.chat.native_submitted_command_recovery_entry"],
+      "ephemeralCapabilities": ["chat.runtime-account-login"],
       "timeout_seconds": 1800,
       "environment": "native-tauri-current-profile",
       "provisioner": "native-tauri-current-profile",
+      "requiredRuntimeCells": ["desktop-macos-native"],
       "tier": "env-evidence",
-      "description": "Run source-equal Native clients against isolated retained Device Engine state and prove canonical accepted, failed, or superseded submitted-command convergence without replacing exact retry identity or the logical message."
+      "description": "Create a real UI message in run-scoped Native clients, inject exact submitted-command crash state, restart the Native process and prove canonical convergence plus receiver-visible plaintext with the original command bytes and message identity."
     },
     "chat-native-interactions-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_interactions_runner",
@@ -534,21 +616,44 @@
       "description": "Run three source-bound Native clients and prove same-name PTID identity metadata, avatar parity, visible Create Group selection, three-device MLS projection/send/restart/remove, and typed unavailable-member inline retry."
     },
     "chat-w11-forbidden-scan": {
-      "command": "python3 -m tooling.acceptance.gates.chat.w11_forbidden_scan",
+      "command": "python3 tooling/scripts/acceptance-closure-gen.py --contract tooling/acceptance/closures/messaging-w11.yaml --manifest-output tooling/acceptance/reports/w11-contract-manifest.json > /dev/null && python3 -m tooling.acceptance.gates.chat.w11_forbidden_scan",
       "timeout_seconds": 60,
       "environment": "local",
       "tier": "ci-cheap",
       "description": "W11 closure: tree-wide scan for deleted owners, dead code, and debug instrumentation."
     },
     "chat-w11-duplicate-scan": {
-      "command": "python3 -m tooling.acceptance.gates.chat.w11_duplicate_scan",
+      "command": "python3 tooling/scripts/acceptance-closure-gen.py --contract tooling/acceptance/closures/messaging-w11.yaml --manifest-output tooling/acceptance/reports/w11-contract-manifest.json > /dev/null && python3 -m tooling.acceptance.gates.chat.w11_duplicate_scan",
       "timeout_seconds": 60,
       "environment": "local",
       "tier": "ci-cheap",
       "description": "W11 closure: verify single-owner crypto/codec contracts with no duplicate implementations."
     },
     "chat-w11-completion-audit": {
-      "command": "python3 -m tooling.acceptance.gates.chat.w11_completion_audit",
+      "dependsOn": [
+        "chat-w11-forbidden-scan",
+        "chat-w11-duplicate-scan",
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-product-closure-e2e",
+        "chat-native-two-client-e2e",
+        "chat-native-interactions-e2e",
+        "chat-contact-message-resilience-e2e",
+        "chat-native-typing-e2e",
+        "chat-native-multi-device-e2e",
+        "chat-native-recovery-e2e",
+        "chat-native-group-mls-e2e",
+        "chat-lifecycle-onboarding-e2e",
+        "station-access-federation-boundary-e2e",
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-runtime-provisioning-self",
+        "desktop-dev-runtime-isolation-static",
+        "proto-build"
+      ],
+      "command": "python3 tooling/scripts/acceptance-closure-gen.py --contract tooling/acceptance/closures/messaging-w11.yaml --manifest-output tooling/acceptance/reports/w11-contract-manifest.json > /dev/null && python3 -m tooling.acceptance.gates.chat.w11_completion_audit",
       "timeout_seconds": 60,
       "environment": "local",
       "tier": "ci-cheap",
@@ -595,7 +700,8 @@
       "description": "Run Station Dashboard web TypeScript checks."
     },
     "station-api-ownership": {
-      "command": "go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/engineering/api-governance/station-api-capabilities.yaml",
+      "executionInputs": {"environmentKeys": ["GOPATH", "GOMODCACHE"], "identityProbe": {"ownerId": "go-source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.go_source_toolchain", "--gate", "station-api-ownership"], "timeoutSeconds": 10}},
+      "command": "env GOENV=off GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off CGO_ENABLED=0 GOFLAGS=-mod=readonly GODEBUG=gocacheverify=1 go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/engineering/api-governance/station-api-capabilities.yaml",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-structure",
@@ -707,6 +813,7 @@
       "description": "Provision one exact-source disposable Station and two isolated Relays once, then execute RAL-G01 through RAL-G07 as an attach-only Suite covering invitation, overlap, failure, restart, offline cleanup, revoke, and idempotency."
     },
     "RAL-G02": {
+      "dependsOn": ["RAL-G01"],
       "argv": [
         "python3",
         "-m",
@@ -718,6 +825,7 @@
       "description": "Project the current-source RAL-G01 Suite evidence for credential-before-intent attachment activation and secret-free operator readback."
     },
     "RAL-G03": {
+      "dependsOn": ["RAL-G01"],
       "argv": [
         "python3",
         "-m",
@@ -729,6 +837,7 @@
       "description": "Project the current-source RAL-G01 Suite evidence for independent dual-Relay generation-1 active overlap."
     },
     "RAL-G04": {
+      "dependsOn": ["RAL-G01"],
       "argv": [
         "python3",
         "-m",
@@ -740,6 +849,7 @@
       "description": "Project the current-source RAL-G01 Suite evidence for Relay failure isolation and dual-active recovery."
     },
     "RAL-G05": {
+      "dependsOn": ["RAL-G01"],
       "argv": [
         "python3",
         "-m",
@@ -751,6 +861,7 @@
       "description": "Project the current-source RAL-G01 Suite evidence for Station restart recovery of persisted dual-Relay intent."
     },
     "RAL-G06": {
+      "dependsOn": ["RAL-G01"],
       "argv": [
         "python3",
         "-m",
@@ -762,6 +873,7 @@
       "description": "Project the current-source RAL-G01 Suite evidence for local-disable-first offline detach and unaffected Relay continuity."
     },
     "RAL-G07": {
+      "dependsOn": ["RAL-G01"],
       "argv": [
         "python3",
         "-m",
@@ -773,6 +885,17 @@
       "description": "Project the current-source RAL-G01 Suite evidence for cleanup retry, online detach, consumed-invite conflict, durable generation-2 revoke, repeated delete, and empty final projection."
     },
     "RAL-G08": {
+      "dependsOn": [
+        "RAL-G01",
+        "RAL-G02",
+        "RAL-G03",
+        "RAL-G04",
+        "RAL-G05",
+        "RAL-G06",
+        "RAL-G07",
+        "NCP-G03",
+        "NCP-G07"
+      ],
       "argv": [
         "python3",
         "-m",
@@ -844,6 +967,14 @@
       "description": "Prove exact-source iOS Simulator Mobile discovers a Relay, retains one Station identity across Direct and Relay routes, preserves its Session during explicit route switching, and restores the Relay route after restart."
     },
     "station-access-relay-security-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "prerequisite-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.prerequisite_toolchain", "--gate", "station-access-relay-security-e2e"], "timeoutSeconds": 10}},
+      "dependsOn": [
+        "relay-role-security-contract",
+        "NCP-G01",
+        "NCP-G03",
+        "NCP-G07",
+        "NCP-G08"
+      ],
       "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
@@ -851,6 +982,16 @@
       "description": "Require current-source DONE and PROVEN evidence for Relay role isolation, enrollment, signed discovery, standard Circuit admission, and native route security."
     },
     "unified-relay-station-access-aggregate-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "prerequisite-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.prerequisite_toolchain", "--gate", "unified-relay-station-access-aggregate-e2e"], "timeoutSeconds": 10}},
+      "dependsOn": [
+        "station-access-relay-security-e2e",
+        "station-dashboard-unit",
+        "station-dashboard-web-check",
+        "station-access-desktop-relay-native-e2e",
+        "station-access-desktop-relay-windows-e2e",
+        "station-access-mobile-relay-native-e2e",
+        "RAL-G08"
+      ],
       "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
@@ -906,6 +1047,11 @@
       "description": "Prove native macOS Desktop and iOS Simulator restart, logout, actor/device separation, lifecycle fencing, and old-scope absence on one source-attested Station."
     },
     "station-access-session-class-e2e": {
+      "dependsOn": [
+        "chat-native-multi-device-e2e",
+        "chat-lifecycle-mixed-client-multi-device-e2e",
+        "mobile-simulator-station-lifecycle-e2e"
+      ],
       "command": "python3 -m tooling.acceptance.gates.station_access.session_class_e2e",
       "timeout_seconds": 180,
       "environment": "local",
@@ -943,6 +1089,45 @@
       "description": "Prove native macOS Desktop and iOS Simulator clients consume one explicit Federation context for scoped search, resolve, Direct creation, and Group creation while ordinary clients expose no Federation governance or Relay topology controls."
     },
     "station-access-domain-validation": {
+      "dependsOn": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-workflow-contract",
+        "acceptance-runtime-provisioning-self",
+        "NCP-G01",
+        "NCP-G02",
+        "NCP-G03",
+        "NCP-G04",
+        "NCP-G05",
+        "NCP-G06",
+        "NCP-G06-OSS",
+        "NCP-G07",
+        "NCP-G08",
+        "RAL-G01",
+        "RAL-G02",
+        "RAL-G03",
+        "RAL-G04",
+        "RAL-G05",
+        "RAL-G06",
+        "RAL-G07",
+        "RAL-G08",
+        "desktop-release-build",
+        "mobile-native-build",
+        "proto-build",
+        "relay-role-security-contract",
+        "station-access-auth-e2e",
+        "station-access-capability-contract",
+        "station-access-desktop-oauth-native-e2e",
+        "station-access-desktop-relay-native-e2e",
+        "station-access-desktop-relay-windows-e2e",
+        "station-access-federation-boundary-e2e",
+        "station-access-lifecycle-aggregate-e2e",
+        "station-access-scope-isolation-e2e",
+        "station-access-session-class-suite-e2e",
+        "station-api-ownership",
+        "station-federation-unit",
+        "unified-relay-station-access-aggregate-e2e"
+      ],
       "command": "python3 tooling/scripts/acceptance-validate.py --domain station-access --require-proven",
       "timeout_seconds": 600,
       "environment": "local",
@@ -992,6 +1177,14 @@
       "description": "Build and launch the exact-source packaged macOS Desktop, prove the 88 x 36 Template Peers wordmark through a 62 x 24 AXMenuExtra status item, close-to-hide residency, native Show restoration, package/process identity, screenshot support, and reverse cleanup."
     },
     "desktop-shell-domain-validation": {
+      "dependsOn": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-workflow-contract",
+        "acceptance-runtime-provisioning-self",
+        "desktop-linux-install-native-e2e",
+        "desktop-shell-tray-e2e"
+      ],
       "command": "python3 tooling/scripts/acceptance-validate.py --domain desktop-shell --require-proven",
       "timeout_seconds": 600,
       "environment": "local",
@@ -1057,6 +1250,7 @@
       "description": "Validate exact-source Desktop, signed iOS and physical Android Messaging convergence in one reusable Suite Runtime; remain UNPROVEN when physical evidence is unavailable."
     },
     "messaging-owner-hard-cut-zero": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "messaging-owner-hard-cut-zero", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 -m tooling.acceptance.gates.unified_client.messaging_owner_zero",
       "timeout_seconds": 300,
       "environment": "local",
@@ -1079,6 +1273,7 @@
       "description": "Validate exact-source Desktop, signed iOS and physical Android Secure Content publish, receiver, restart, revocation and object-resume convergence in one reusable Suite Runtime; remain UNPROVEN when physical evidence is unavailable."
     },
     "secure-content-owner-hard-cut-zero": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "secure-content-owner-hard-cut-zero", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 -m tooling.acceptance.gates.unified_client.secure_content_owner_zero",
       "timeout_seconds": 300,
       "environment": "local",
@@ -1086,6 +1281,7 @@
       "description": "Prove that former Desktop/Mobile Secure Content operation and object-transfer owners are absent and both production Hosts consume the portable core."
     },
     "unified-client-shared-semantics": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "unified-client-shared-semantics", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 -m tooling.acceptance.gates.unified_client.shared_semantics",
       "timeout_seconds": 300,
       "environment": "local",
@@ -1093,6 +1289,17 @@
       "description": "Prove one renderer-neutral owner for shared Chat projection, media descriptor codec, wire codec, storage scope/reconciliation and capability admission while Desktop/Mobile Presentation Policy remains form-specific."
     },
     "unified-client-architecture-aggregate": {
+      "dependsOn": [
+        "unified-client-android-host-e2e",
+        "unified-client-ios-host-e2e",
+        "unified-client-messaging-core-contract",
+        "unified-client-messaging-e2e",
+        "messaging-owner-hard-cut-zero",
+        "secure-content-portable-core",
+        "unified-client-secure-content-e2e",
+        "secure-content-owner-hard-cut-zero",
+        "unified-client-shared-semantics"
+      ],
       "command": "python3 -m tooling.acceptance.gates.unified_client.architecture_aggregate",
       "timeout_seconds": 900,
       "environment": "local",
@@ -1100,6 +1307,22 @@
       "description": "Run bounded source checks and aggregate exact-source child evidence, runtime cells, owner-zero Gates, reusable Suite cleanup and outcome-comparison identity without provisioning."
     },
     "station-access-lifecycle-aggregate-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "prerequisite-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.prerequisite_toolchain", "--gate", "station-access-lifecycle-aggregate-e2e"], "timeoutSeconds": 10}},
+      "dependsOn": [
+        "development-workflow-control-plane",
+        "proto-build",
+        "station-api-ownership",
+        "station-access-capability-contract",
+        "station-access-auth-e2e",
+        "station-access-scope-isolation-e2e",
+        "station-federation-unit",
+        "station-access-federation-boundary-e2e",
+        "mobile-hard-cut-static",
+        "mobile-simulator-platform-e2e",
+        "desktop-release-build",
+        "mobile-native-build",
+        "station-access-session-class-e2e"
+      ],
       "command": "python3 -m tooling.acceptance.gates.station_access.lifecycle_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
@@ -1114,6 +1337,7 @@
       "description": "Run canonical Station Conversation and shared Federation package tests."
     },
     "messaging-platform-contract": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "messaging-platform-contract", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 -m unittest tooling.acceptance.gates.chat.messaging_platform_contract_test",
       "timeout_seconds": 120,
       "environment": "local",
@@ -1121,6 +1345,7 @@
       "description": "Validate the unified messaging platform ownership, protocol, queue, and crypto contracts."
     },
     "chat-storage-contract": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "chat-storage-contract", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 -m unittest tooling.acceptance.gates.chat.storage_governance_contract_test",
       "timeout_seconds": 120,
       "environment": "local",
@@ -1184,6 +1409,17 @@
       "description": "Select and clear two conversations through the native Mobile Storage UI, prove canonical serial execution, physical reclamation, and restart-stable absence."
     },
     "chat-storage-batch-clear-aggregate-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "prerequisite-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.prerequisite_toolchain", "--gate", "chat-storage-batch-clear-aggregate-e2e"], "timeoutSeconds": 10}},
+      "dependsOn": [
+        "chat-storage-contract",
+        "chat-storage-zero-legacy-e2e",
+        "chat-storage-desktop-batch-clear-e2e",
+        "chat-storage-mobile-batch-clear-e2e",
+        "mobile-simulator-chat-contacts-e2e",
+        "desktop-release-build",
+        "mobile-native-build",
+        "acceptance-infra-validation"
+      ],
       "command": "python3 -m unittest tooling.acceptance.gates.chat_storage.batch_clear_aggregate_test && python3 -m tooling.acceptance.gates.chat_storage.batch_clear_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
@@ -1191,6 +1427,7 @@
       "description": "Require exact-source Desktop and Mobile batch-clear journeys, regression journeys, release builds, and Acceptance infrastructure evidence."
     },
     "chat-storage-dead-contract-zero-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "chat-storage-dead-contract-zero-e2e", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 -m unittest tooling.acceptance.gates.chat_storage.zero_legacy_test && python3 -m tooling.acceptance.gates.chat_storage.zero_legacy --owner-task CSG-05-local-clear-hard-cut",
       "timeout_seconds": 180,
       "environment": "local",
@@ -1198,6 +1435,7 @@
       "description": "Scan every declared Chat storage legacy dimension and reject all retired conversation-marker, restore, disappearing-message, backfill, and compatibility-schema references owned by CSG-05."
     },
     "chat-storage-zero-legacy-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "chat-storage-zero-legacy-e2e", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 -m unittest tooling.acceptance.gates.chat_storage.zero_legacy_test && python3 -m tooling.acceptance.gates.chat_storage.zero_legacy",
       "timeout_seconds": 180,
       "environment": "local",
@@ -1205,6 +1443,19 @@
       "description": "Scan every Chat storage legacy matcher across all nine declared dimensions and fail on any current tracked or untracked reference."
     },
     "chat-storage-governance-aggregate-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "prerequisite-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.prerequisite_toolchain", "--gate", "chat-storage-governance-aggregate-e2e"], "timeoutSeconds": 10}},
+      "dependsOn": [
+        "chat-storage-contract",
+        "chat-storage-accounting-e2e",
+        "chat-storage-cache-clear-e2e",
+        "chat-storage-retention-e2e",
+        "chat-storage-redaction-recovery-e2e",
+        "chat-storage-delete-reclaim-e2e",
+        "chat-storage-dead-contract-zero-e2e",
+        "chat-storage-zero-legacy-e2e",
+        "desktop-release-build",
+        "mobile-native-build"
+      ],
       "command": "python3 -m tooling.acceptance.gates.chat_storage.governance_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
@@ -1212,6 +1463,7 @@
       "description": "Require current-source DONE and PROVEN evidence for every Chat storage governance and release Gate."
     },
     "chat-lifecycle-safety-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "chat-lifecycle-safety-e2e", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_safety",
       "timeout_seconds": 120,
       "environment": "local",
@@ -1363,6 +1615,7 @@
     },
     "social-private-desktop-e2e": {
       "command": "python3 -m tooling.acceptance.gates.social.desktop_private_e2e",
+      "catalogExecution": "manual",
       "timeout_seconds": 9000,
       "environment": "local",
       "tier": "env-evidence",
@@ -1412,6 +1665,7 @@
     },
     "social-cross-station-desktop-functional": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-desktop-functional",
+      "catalogExecution": "manual",
       "timeout_seconds": 10800,
       "environment": "local",
       "tier": "local-evidence",
@@ -1419,6 +1673,7 @@
     },
     "social-cross-station-native-e2e": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-native-e2e",
+      "catalogExecution": "manual",
       "timeout_seconds": 10800,
       "environment": "local",
       "tier": "env-evidence",
@@ -1449,6 +1704,28 @@
       "description": "Prove browser-gateway registers no Social page, runtime, module, navigation item, or action."
     },
     "social-domain-validation": {
+      "catalogExecution": "manual",
+      "dependsOn": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-workflow-contract",
+        "acceptance-runtime-provisioning-self",
+        "browser-social-zero-registration",
+        "social-content-search-mobile-native-e2e",
+        "social-content-search-desktop-native-e2e",
+        "social-content-search-contract",
+        "social-cross-station-contract",
+        "social-cross-station-delivery",
+        "social-cross-station-desktop-functional",
+        "social-cross-station-eventbus-contract",
+        "social-cross-station-interaction",
+        "social-cross-station-mobile-desktop-e2e",
+        "social-cross-station-native-e2e",
+        "social-cross-station-prekey",
+        "social-cross-station-revocation-recovery",
+        "social-private-desktop-e2e",
+        "station-api-ownership"
+      ],
       "command": "python3 tooling/scripts/acceptance-validate.py --domain social --require-proven",
       "timeout_seconds": 600,
       "environment": "local",
@@ -1457,12 +1734,14 @@
     },
     "desktop-performance-matrix-gate": {
       "command": "python3 tooling/scripts/desktop-performance-matrix-gate.py",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Generate the fail-closed Native Desktop performance runtime matrix with explicit sampled, blocked, or diagnostic incomplete status per cell."
     },
     "desktop-performance-cell-template-static-gate": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-performance-cell-template-static-gate", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 tooling/scripts/desktop-performance-cell-template-test.py",
       "timeout_seconds": 120,
       "environment": "local",
@@ -1471,12 +1750,14 @@
     },
     "desktop-performance-cell-template-gate": {
       "command": "python3 tooling/scripts/desktop-performance-cell-template.py --strict-exit",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Generate fail-closed P0c-3 runtime-cell evidence templates for dev and packaged Tauri WebView cells."
     },
     "desktop-performance-cell-collect-static-gate": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-performance-cell-collect-static-gate", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 tooling/scripts/desktop-performance-cell-collect-test.py",
       "timeout_seconds": 120,
       "environment": "local",
@@ -1485,12 +1766,14 @@
     },
     "desktop-performance-cell-collect-gate": {
       "command": "python3 tooling/scripts/desktop-performance-cell-collect.py --strict-exit",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Generate P0c-3 runtime-cell evidence from runtime sampler observations, failing closed when true runtime samples are missing."
     },
     "desktop-performance-cohort-static-gate": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-performance-cohort-static-gate", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 tooling/scripts/desktop-performance-cohort-gate-test.py",
       "timeout_seconds": 120,
       "environment": "local",
@@ -1499,13 +1782,15 @@
     },
     "desktop-performance-cohort-gate": {
       "command": "python3 tooling/scripts/desktop-performance-cohort-gate.py",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Require complete and cohort-identical development and packaged Native Tauri observations before matrix samples are admitted."
     },
     "desktop-local-telemetry-buffer-static-gate": {
-      "command": "python3 tooling/scripts/desktop-local-telemetry-buffer-gate-test.py",
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-local-telemetry-buffer-static-gate", "--tool", "python3", "--tool", "sh", "--tool", "git", "--tool", "env"], "timeoutSeconds": 10}},
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 tooling/scripts/desktop-local-telemetry-buffer-gate-test.py",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
@@ -1513,12 +1798,14 @@
     },
     "desktop-local-telemetry-buffer-gate": {
       "command": "python3 tooling/scripts/desktop-local-telemetry-buffer-gate.py",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Generate local Desktop telemetry inspector evidence without replacing Station mirror proof."
     },
     "desktop-performance-sampler-static-gate": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-performance-sampler-static-gate", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 tooling/scripts/desktop-performance-sampler-gate-test.py",
       "timeout_seconds": 120,
       "environment": "local",
@@ -1527,12 +1814,14 @@
     },
     "desktop-performance-sampler-gate": {
       "command": "python3 tooling/scripts/desktop-performance-sampler-gate.py",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Generate the fail-closed P0b Desktop sampler evidence gate from the Station mirror artifact."
     },
     "desktop-telemetry-mirror-static-gate": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-telemetry-mirror-static-gate", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 tooling/scripts/desktop-telemetry-mirror-test.py",
       "timeout_seconds": 120,
       "environment": "local",
@@ -1540,6 +1829,7 @@
       "description": "Validate the P0a/P0c Dev/CI telemetry mirror artifact preserves phase, BOM, Spec, Gate, proof metadata, and Station-as-product-sink boundary."
     },
     "desktop-telemetry-mirror-template-static-gate": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-telemetry-mirror-template-static-gate", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 tooling/scripts/desktop-telemetry-mirror-template-test.py",
       "timeout_seconds": 120,
       "environment": "local",
@@ -1548,6 +1838,7 @@
     },
     "desktop-telemetry-mirror-template-gate": {
       "command": "python3 tooling/scripts/desktop-telemetry-mirror-template.py",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
@@ -1555,19 +1846,22 @@
     },
     "desktop-anchor-inventory-gate": {
       "command": "python3 tooling/scripts/desktop-anchor-inventory.py",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Generate the fail-closed Desktop stable-anchor inventory for P0b-1, preserving UNPROVEN when Native Tauri DOM automation evidence is missing."
     },
     "desktop-anchor-source-static-gate": {
-      "command": "python3 tooling/scripts/desktop-anchor-source-gate-test.py",
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-anchor-source-static-gate", "--tool", "python3", "--tool", "sh", "--tool", "git", "--tool", "env"], "timeoutSeconds": 10}},
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 tooling/scripts/desktop-anchor-source-gate-test.py",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate the P0b-1 Desktop source-anchor gate proves required selectors without claiming Native Tauri DOM automation evidence."
     },
     "desktop-anchor-source-gate": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-anchor-source-gate", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 tooling/scripts/desktop-anchor-source-gate.py",
       "timeout_seconds": 120,
       "environment": "local",
@@ -1575,14 +1869,16 @@
       "description": "Generate the P0b-1 Desktop source-anchor gate artifact for required stable selectors."
     },
     "desktop-anchor-dom-evidence-template-static-gate": {
-      "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-template-test.py",
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-anchor-dom-evidence-template-static-gate", "--tool", "python3", "--tool", "sh", "--tool", "git", "--tool", "env"], "timeoutSeconds": 10}},
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 tooling/scripts/desktop-anchor-dom-evidence-template-test.py",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate the P0b-1 Desktop anchor DOM evidence template preserves Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata."
     },
     "desktop-anchor-dom-evidence-collect-static-gate": {
-      "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-collect-test.py",
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "desktop-anchor-dom-evidence-collect-static-gate", "--tool", "python3", "--tool", "sh", "--tool", "git", "--tool", "env"], "timeoutSeconds": 10}},
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 tooling/scripts/desktop-anchor-dom-evidence-collect-test.py",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
@@ -1590,6 +1886,7 @@
     },
     "desktop-anchor-dom-evidence-template-gate": {
       "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-template.py",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
@@ -1597,6 +1894,7 @@
     },
     "desktop-anchor-dom-evidence-gate": {
       "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-gate.py",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
@@ -1604,12 +1902,24 @@
     },
     "desktop-performance-traceability-gate": {
       "command": "python3 tooling/scripts/desktop-performance-traceability-gate.py",
+      "catalogExecution": "manual",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate Phase 0 aggregate issue/result evidence preserves source artifact, Phase, BOM, Spec, Gate, and fail-closed traceability."
     },
     "federation-domain-validation": {
+      "dependsOn": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-workflow-contract",
+        "acceptance-runtime-provisioning-self",
+        "desktop-check",
+        "federation-two-station-lifecycle-e2e",
+        "proto-build",
+        "station-access-federation-boundary-e2e",
+        "station-federation-unit"
+      ],
       "command": "python3 tooling/scripts/acceptance-validate.py --domain federation --require-proven",
       "timeout_seconds": 600,
       "environment": "local",
@@ -1617,6 +1927,14 @@
       "description": "Validate the Federation managed-domain profile against its capability graph, registry, gate catalog, and latest run results."
     },
     "station-dashboard-domain-validation": {
+      "dependsOn": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-workflow-contract",
+        "acceptance-runtime-provisioning-self",
+        "station-dashboard-unit",
+        "station-dashboard-web-check"
+      ],
       "command": "python3 tooling/scripts/acceptance-validate.py --domain station-dashboard --require-proven",
       "timeout_seconds": 600,
       "environment": "local",
@@ -1624,6 +1942,61 @@
       "description": "Validate the Station Dashboard managed domain profile against project-wide acceptance contracts and latest gate evidence."
     },
     "chat-domain-validation": {
+      "dependsOn": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-workflow-contract",
+        "acceptance-runtime-provisioning-self",
+        "chat-contact-message-resilience-e2e",
+        "chat-device-search-contract",
+        "chat-device-search-native-e2e",
+        "chat-lifecycle-call-resolution-e2e",
+        "chat-lifecycle-direct-e2e",
+        "chat-lifecycle-group-live-e2e",
+        "chat-lifecycle-interactions-group-e2e",
+        "chat-lifecycle-live-voice-e2e",
+        "chat-lifecycle-mixed-client-cross-station-e2e",
+        "chat-lifecycle-mixed-client-group-mls-e2e",
+        "chat-lifecycle-mixed-client-multi-device-e2e",
+        "chat-lifecycle-mixed-client-same-station-e2e",
+        "chat-lifecycle-onboarding-e2e",
+        "chat-lifecycle-rich-voice-e2e",
+        "chat-lifecycle-tree-zero-reference-e2e",
+        "chat-message-publishing-native-e2e",
+        "chat-mobile-device-search-native-e2e",
+        "chat-native-current-profile-two-client-e2e",
+        "chat-native-group-mls-e2e",
+        "chat-native-interactions-e2e",
+        "chat-native-multi-device-e2e",
+        "chat-native-recovery-e2e",
+        "chat-native-submitted-command-recovery-e2e",
+        "chat-native-two-client-e2e",
+        "chat-native-typing-e2e",
+        "chat-native-visible-static",
+        "chat-presence-layout-e2e",
+        "chat-storage-accounting-e2e",
+        "chat-storage-cache-clear-e2e",
+        "chat-storage-contract",
+        "chat-storage-dead-contract-zero-e2e",
+        "chat-storage-delete-reclaim-e2e",
+        "chat-storage-desktop-batch-clear-e2e",
+        "chat-storage-governance-aggregate-e2e",
+        "chat-storage-mobile-batch-clear-e2e",
+        "chat-storage-redaction-recovery-e2e",
+        "chat-storage-retention-e2e",
+        "chat-storage-zero-legacy-e2e",
+        "desktop-check",
+        "desktop-release-build",
+        "messaging-owner-hard-cut-zero",
+        "messaging-platform-contract",
+        "mobile-native-build",
+        "proto-build",
+        "station-api-ownership",
+        "station-messaging-unit",
+        "unified-client-messaging-core-contract",
+        "unified-client-messaging-e2e",
+        "unified-client-shared-semantics"
+      ],
       "command": "python3 tooling/scripts/acceptance-validate.py --domain chat --require-proven",
       "timeout_seconds": 600,
       "environment": "local",
@@ -1631,6 +2004,13 @@
       "description": "Validate the Chat managed domain profile against service, realtime, Desktop surface, registry, gate, and latest evidence contracts."
     },
     "applet-domain-validation": {
+      "dependsOn": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-workflow-contract",
+        "acceptance-runtime-provisioning-self",
+        "applet-desktop-lifecycle-smoothness"
+      ],
       "command": "python3 tooling/scripts/acceptance-validate.py --domain applet --require-proven",
       "timeout_seconds": 600,
       "environment": "local",
@@ -2339,6 +2719,7 @@
       "description": "Prove the MPS-RC02 same-Station Social suite through one USB-authorized physical Android device, sequential non-destructive Alice/Bob/Eve sessions, exact-source build and Station attestation, real UI actions, receiver-visible assertions, native evidence, and deterministic lease cleanup."
     },
     "mobile-identity-contract": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "mobile-identity-contract", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 -m tooling.acceptance.gates.mobile.identity_contract",
       "timeout_seconds": 120,
       "environment": "local",
@@ -2626,6 +3007,35 @@
       "description": "Exercise source-bound iOS and Android physical accessibility capture, production permission/network ports, and diagnostic timing without requiring access/OAuth resources."
     },
     "mobile-domain-validation": {
+      "catalogExecution": "manual",
+      "dependsOn": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-workflow-contract",
+        "acceptance-runtime-provisioning-self",
+        "mobile-contract-static",
+        "mobile-hard-cut-static",
+        "mobile-identity-contract",
+        "mobile-ios-simulator-layout-accessibility-e2e",
+        "mobile-simulator-access-e2e",
+        "mobile-simulator-chat-contacts-e2e",
+        "mobile-simulator-moments-e2e",
+        "mobile-simulator-platform-e2e",
+        "mobile-simulator-recovery-e2e",
+        "mobile-simulator-recovery-ui-e2e",
+        "mobile-simulator-runtime-lifecycle-e2e",
+        "mobile-simulator-settings-e2e",
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-simulator-station-lifecycle-e2e",
+        "mobile-simulator-whole-product-usability-e2e",
+        "mobile-social-android-native",
+        "mobile-social-ios-native",
+        "release-0.0.1-operation-analysis",
+        "secure-content-owner-hard-cut-zero",
+        "secure-content-portable-core",
+        "social-cross-station-mobile-desktop-e2e",
+        "unified-client-secure-content-e2e"
+      ],
       "command": "python3 tooling/scripts/acceptance-validate.py --domain mobile --require-proven",
       "timeout_seconds": 600,
       "environment": "local",
@@ -2634,6 +3044,7 @@
     },
     "release-0.0.1-operation-analysis": {
       "command": "python3 -m tooling.acceptance.gates.release.operation_analysis",
+      "catalogExecution": "manual",
       "timeout_seconds": 900,
       "environment": "local",
       "tier": "local-evidence",
@@ -2647,6 +3058,7 @@
       "description": "Fail closed unless every preceding 0.0.1 completion Gate belongs to the same current aggregate and clean source with DONE, PROVEN, canonical product, runtime-cell, redaction, secret-scan, and cleanup evidence."
     },
     "chat-lifecycle-tree-zero-reference-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.source_toolchain", "--gate", "chat-lifecycle-tree-zero-reference-e2e", "--tool", "python3", "--tool", "sh", "--tool", "git"], "timeoutSeconds": 10}},
       "command": "python3 tooling/acceptance/gates/chat/lifecycle_tree_zero_reference.py",
       "timeout_seconds": 120,
       "environment": "local",
@@ -2654,6 +3066,16 @@
       "description": "CCU nine-dimensional zero-reference gate: enforce deleted paths and reject legacy Chat imports, routes, commands, schemas, generated artifacts, tests, scripts, runtime traces, and current-source docs."
     },
     "chat-lifecycle-ccu-aggregate-e2e": {
+      "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "prerequisite-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.prerequisite_toolchain", "--gate", "chat-lifecycle-ccu-aggregate-e2e"], "timeoutSeconds": 10}},
+      "dependsOn": [
+        "messaging-platform-contract",
+        "chat-lifecycle-mixed-client-same-station-e2e",
+        "chat-lifecycle-mixed-client-cross-station-e2e",
+        "chat-lifecycle-mixed-client-multi-device-e2e",
+        "chat-lifecycle-call-resolution-e2e",
+        "chat-lifecycle-mixed-client-group-mls-e2e",
+        "chat-lifecycle-tree-zero-reference-e2e"
+      ],
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_ccu_aggregate",
       "timeout_seconds": 120,
       "environment": "local",

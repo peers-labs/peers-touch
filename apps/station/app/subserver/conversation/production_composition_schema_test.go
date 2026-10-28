@@ -9,25 +9,25 @@ import (
 	"gorm.io/gorm"
 )
 
-type legacyProductionConversationModel struct {
+type nonCanonicalProductionConversationModel struct {
 	persistence.ConversationModel
-	DisappearTimerSeconds uint32 `gorm:"column:disappear_timer_seconds;not null"`
+	RetiredField uint32 `gorm:"column:retired_field;not null"`
 }
 
-func (*legacyProductionConversationModel) TableName() string {
+func (*nonCanonicalProductionConversationModel) TableName() string {
 	return "conversations"
 }
 
-type legacyProductionMemberSettingsModel struct {
+type nonCanonicalProductionMemberSettingsModel struct {
 	persistence.ConversationMemberSettingsModel
-	ClearedAtUnixMillis int64 `gorm:"column:cleared_at_unix_ms;not null"`
+	RetiredField int64 `gorm:"column:retired_field;not null"`
 }
 
-func (*legacyProductionMemberSettingsModel) TableName() string {
+func (*nonCanonicalProductionMemberSettingsModel) TableName() string {
 	return "conversation_member_settings"
 }
 
-func TestMigrateProductionConversationSchemaUsesCanonicalMigration(t *testing.T) {
+func TestMigrateProductionConversationSchemaRejectsNonCanonicalLayout(t *testing.T) {
 	t.Parallel()
 
 	db, err := gorm.Open(
@@ -38,34 +38,12 @@ func TestMigrateProductionConversationSchemaUsesCanonicalMigration(t *testing.T)
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&legacyProductionConversationModel{},
-		&legacyProductionMemberSettingsModel{},
+		&nonCanonicalProductionConversationModel{},
+		&nonCanonicalProductionMemberSettingsModel{},
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !db.Migrator().HasColumn(
-		&persistence.ConversationModel{},
-		"disappear_timer_seconds",
-	) || !db.Migrator().HasColumn(
-		&persistence.ConversationMemberSettingsModel{},
-		"cleared_at_unix_ms",
-	) {
-		t.Fatal("legacy production columns were not installed")
-	}
-
-	if err := migrateProductionConversationSchema(t.Context(), db); err != nil {
-		t.Fatalf("migrateProductionConversationSchema() error = %v", err)
-	}
-	if db.Migrator().HasColumn(
-		&persistence.ConversationModel{},
-		"disappear_timer_seconds",
-	) {
-		t.Fatal("production migration retained disappear_timer_seconds")
-	}
-	if db.Migrator().HasColumn(
-		&persistence.ConversationMemberSettingsModel{},
-		"cleared_at_unix_ms",
-	) {
-		t.Fatal("production migration retained cleared_at_unix_ms")
+	if err := migrateProductionConversationSchema(t.Context(), db); err == nil {
+		t.Fatal("production accepted a non-canonical schema without reset")
 	}
 }

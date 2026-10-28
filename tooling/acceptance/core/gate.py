@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import sys
 import time
 import traceback
@@ -8,9 +9,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .drivers.base import BaseDriver, DomDriver
-from .errors import GateError
+from .errors import BlockedError, GateError
 from .evidence import EvidenceReport, new_report
 from .harness import call_async_harness
+from .resource_diagnostic import ResourceDiagnostic
 
 
 class AcceptanceGate(ABC):
@@ -121,6 +123,8 @@ class AcceptanceGate(ABC):
                     runtime_binding.binding_proof_evidence()
                 )
             self.report.status = "PASS"
+            if self.report.to_dict()["proofStatus"] != "PROVEN":
+                raise GateError("Gate returned without complete passing assertions")
             if isinstance(result, dict):
                 self.report.runtime.update({k: v for k, v in result.items()
                                              if k not in ("gate", "status", "evidence", "error", "assertions")})
@@ -128,11 +132,49 @@ class AcceptanceGate(ABC):
                     for k, v in result["evidence"].items():
                         if v:
                             self.report.evidence[k] = v
+        except BlockedError as error:
+            caught_error = error
+            self.report.status = "BLOCKED"
+            self.report.error = str(error)
+            self.report.error_type = type(error).__name__
+            self.report.blocked_reason = error.reason
+            self.report.blocked_resource = error.resource
+            self.report.diagnostic = error.diagnostic
+            runtime_binding = getattr(self, "runtime_binding", None)
+            if runtime_binding is not None:
+                self.report.runtime["clientBindingProofs"] = {
+                    "proofRefs": list(runtime_binding.proof_refs()),
+                    "closure": "UNPROVEN",
+                }
         except Exception as error:
             caught_error = error
             self.report.status = "FAIL"
-            self.report.error = str(error)
+            self.report.error = str(error) or type(error).__name__
             self.report.error_type = type(error).__name__
+            self.report.blocked_resource = f"gate-command:{self.gate_id}"
+            steps = self.report.runtime.get("steps")
+            self.report.diagnostic = ResourceDiagnostic.observed(
+                owner=(
+                    f"{Path(inspect.getfile(type(self).run)).resolve()}"
+                    f"::{type(self).__qualname__}"
+                ),
+                recovery_action=(
+                    f"Inspect reports/{self.gate_id}.json and the captured traceback "
+                    "at this Gate implementation; repair the observed failure, "
+                    "qualify the correction and refreeze the original scope and budget."
+                ),
+                resource=self.report.blocked_resource,
+                expected="Gate run completes its declared assertions without an exception",
+                observed={
+                    "errorType": type(error).__name__,
+                    "error": str(error),
+                    "firstFailedStep": self.report.runtime.get("firstFailedStep"),
+                    "failedSteps": [
+                        step for step in (steps if isinstance(steps, list) else [])
+                        if isinstance(step, dict) and step.get("status") == "fail"
+                    ],
+                },
+            )
             runtime_binding = getattr(self, "runtime_binding", None)
             if runtime_binding is not None:
                 self.report.runtime["clientBindingProofs"] = {
@@ -143,11 +185,14 @@ class AcceptanceGate(ABC):
         if cleanup_failures:
             detail = "; ".join(cleanup_failures)
             self.report.add_assertion("driver_cleanup", False, detail)
-            if caught_error is None:
+            if caught_error is None or isinstance(caught_error, BlockedError):
                 caught_error = GateError(f"driver cleanup failed: {detail}")
                 self.report.status = "FAIL"
                 self.report.error = str(caught_error)
                 self.report.error_type = type(caught_error).__name__
+                self.report.blocked_reason = None
+                self.report.blocked_resource = None
+                self.report.diagnostic = None
 
         self.report.duration_ms = int((time.time() - self._start_time) * 1000)
         try:
@@ -157,6 +202,9 @@ class AcceptanceGate(ABC):
             return 1
 
         if caught_error is not None:
+            if isinstance(caught_error, BlockedError):
+                self._print_blocked(caught_error)
+                return 2
             self._print_fail(caught_error)
             return 1
         self._print_pass(result)
@@ -168,3 +216,6 @@ class AcceptanceGate(ABC):
     def _print_fail(self, error: Exception) -> None:
         traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
         print(f"FAIL: {self.gate_id}: {error}", file=sys.stderr)
+
+    def _print_blocked(self, error: BlockedError) -> None:
+        print(f"BLOCKED: {self.gate_id}: {error}", file=sys.stderr)

@@ -16,6 +16,15 @@ export interface StationActiveChangedPayload {
   displayName?: string;
 }
 
+/** Committed native profile activation; independent of authentication and inbox lanes. */
+export interface MessagingProfileActivatedPayload {
+  actorPtid: string;
+  sessionEpoch: number;
+  profileId: string;
+  stationPeerId: string;
+  endpointId: string;
+}
+
 export interface RealtimeMessageReceivedPayload {
   /** Server-assigned monotonic ULID; opaque to the UI. */
   eventId: string;
@@ -365,6 +374,7 @@ export interface EventPayloadMap {
   [EVENT.GLOBAL_CONTEXT_PIPELINE_FINISHED]: { name: string; timestamp_ms: number };
   [EVENT.GLOBAL_CONTEXT_PIPELINE_FAILED]: { name: string; error: string; timestamp_ms: number };
   [EVENT.STATION_ACTIVE_CHANGED]: StationActiveChangedPayload;
+  [EVENT.MESSAGING_PROFILE_ACTIVATED]: MessagingProfileActivatedPayload;
   [EVENT.REALTIME_MESSAGE_RECEIVED]: RealtimeMessageReceivedPayload;
   [EVENT.REALTIME_PRESENCE_FLIP]: RealtimePresenceFlipPayload;
   [EVENT.REALTIME_RESYNC]: RealtimeResyncPayload;

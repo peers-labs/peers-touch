@@ -111,83 +111,162 @@ def terminate_process_group(child, grace_seconds=2.0):
             pass
 
 
-def run_with_lease(args):
-    if not args.command:
-        emit_error("INVALID_ARGUMENT", "lease command is required")
-        return 2
+class MachineLeaseError(RuntimeError):
+    def __init__(self, code, message, detail=None):
+        super().__init__(message)
+        self.code = code
+        self.detail = detail
 
-    lease_file = Path(args.lease_file)
-    lease_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    lease_file.touch(mode=0o600, exist_ok=True)
 
-    received_signal = None
-    child = None
-    with lease_file.open("r+", encoding="utf-8") as handle:
+class MachineLease:
+    """One canonical OS lock, usable by a parent runtime or the CLI owner."""
+
+    def __init__(self, request, validation_command, *, reset_scope=None):
+        self.request = request
+        self.validation_command = validation_command
+        self.reset_scope = reset_scope
+        self.handle = None
+        self.metadata = None
+        self.deadline = None
+
+    def acquire(self):
+        if self.handle is not None:
+            raise RuntimeError("machine lease is already acquired")
+        if (
+            not isinstance(self.validation_command, list)
+            or not self.validation_command
+            or any(
+                not isinstance(value, str) or not value
+                for value in self.validation_command
+            )
+        ):
+            raise MachineLeaseError(
+                "INVALID_ARGUMENT", "lease validation must be a non-empty argv array"
+            )
+        lease_file = Path(self.request["leaseFile"])
+        lease_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        lease_file.touch(mode=0o600, exist_ok=True)
+        handle = lease_file.open("r+", encoding="utf-8")
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             owner = read_metadata(handle)
-            emit_error(
-                error_code(args.resource_kind),
+            handle.close()
+            raise MachineLeaseError(
+                error_code(self.request["resourceKind"]),
                 "runtime resource is held by another process",
                 {"leaseFile": str(lease_file), "owner": owner},
             )
-            return 2
-
-        process_start = process_start_identity(os.getpid())
-        if not process_start:
-            emit_error(
-                "RUNTIME_IDENTITY_MISMATCH",
-                "cannot establish lease-holder process identity",
-            )
-            return 2
-
-        acquired_at = utc_now()
-        metadata = {
-            "leaseId": str(uuid.uuid4()),
-            "resourceKind": args.resource_kind,
-            "resourceId": args.resource_id,
-            "workspaceId": args.workspace_id,
-            "ownerPid": os.getpid(),
-            "ownerProcessStart": process_start,
-            "acquiredAt": isoformat(acquired_at),
-            "expiresAt": isoformat(
-                acquired_at + datetime.timedelta(seconds=args.budget_seconds)
-            ),
-        }
-        write_metadata(handle, metadata)
-
+        self.handle = handle
         try:
-            validation_command = json.loads(args.validation_command_json)
-        except json.JSONDecodeError:
-            emit_error(
-                "INVALID_ARGUMENT",
-                "lease validation command is not valid JSON",
+            self.deadline = time.monotonic() + self.request["budgetSeconds"]
+            process_start = process_start_identity(os.getpid())
+            if not process_start:
+                raise MachineLeaseError(
+                    "RUNTIME_IDENTITY_MISMATCH",
+                    "cannot establish lease-holder process identity",
+                )
+            acquired_at = utc_now()
+            self.metadata = {
+                "leaseId": str(uuid.uuid4()),
+                "resourceKind": self.request["resourceKind"],
+                "resourceId": self.request["resourceId"],
+                "workspaceId": self.request["workspaceId"],
+                "ownerPid": os.getpid(),
+                "ownerProcessStart": process_start,
+                "acquiredAt": isoformat(acquired_at),
+                "expiresAt": isoformat(
+                    acquired_at
+                    + datetime.timedelta(seconds=self.request["budgetSeconds"])
+                ),
+            }
+            write_metadata(handle, self.metadata)
+            validation = subprocess.run(
+                self.validation_command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=max(0.001, self.deadline - time.monotonic()),
             )
-            return 2
-        if (
-            not isinstance(validation_command, list)
-            or not validation_command
-            or any(not isinstance(value, str) or not value for value in validation_command)
-        ):
-            emit_error(
-                "INVALID_ARGUMENT",
-                "lease validation command must be a non-empty argv array",
-            )
-            return 2
-        validation = subprocess.run(
+            if validation.returncode != 0:
+                raise MachineLeaseError(
+                    "RUNTIME_IDENTITY_MISMATCH",
+                    "runtime binding changed before lease acquisition completed",
+                    {"validationExitCode": validation.returncode},
+                )
+            return self
+        except BaseException:
+            self.release()
+            raise
+
+    @property
+    def environment(self):
+        if self.handle is None or self.metadata is None:
+            raise RuntimeError("machine lease is not acquired")
+        values = {
+            "PT_MACHINE_LEASE_FD": str(self.handle.fileno()),
+            "PT_MACHINE_LEASE_ID": self.metadata["leaseId"],
+            "PT_MACHINE_LEASE_KIND": self.request["resourceKind"],
+            "PT_MACHINE_LEASE_RESOURCE_ID": self.request["resourceId"],
+            "PT_MACHINE_LEASE_WORKSPACE_ID": self.request["workspaceId"],
+            "PT_MACHINE_LEASE_SOURCE_BRANCH": self.request["source"]["branch"],
+            "PT_MACHINE_LEASE_SOURCE_HEAD": self.request["source"]["head"],
+        }
+        if self.request.get("targetProfile"):
+            values["PT_MACHINE_LEASE_TARGET_PROFILE"] = self.request["targetProfile"]
+            values["PT_DEV_TARGET_PROFILE"] = self.request["targetProfile"]
+        if self.reset_scope:
+            values["PT_MACHINE_LEASE_RESET_SCOPE"] = self.reset_scope
+        return values
+
+    def release(self):
+        if self.handle is None:
+            return
+        handle, self.handle = self.handle, None
+        try:
+            write_metadata(handle, None)
+        finally:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            finally:
+                handle.close()
+                self.metadata = None
+
+
+def run_with_lease(args):
+    if not args.command:
+        emit_error("INVALID_ARGUMENT", "lease command is required")
+        return 2
+    try:
+        validation_command = json.loads(args.validation_command_json)
+        lease = MachineLease(
+            {
+                "leaseFile": args.lease_file,
+                "resourceKind": args.resource_kind,
+                "resourceId": args.resource_id,
+                "workspaceId": args.workspace_id,
+                "budgetSeconds": args.budget_seconds,
+                "source": {"branch": args.expected_branch, "head": args.expected_head},
+                "targetProfile": args.target_profile,
+            },
             validation_command,
-            check=False,
-            capture_output=True,
-            text=True,
+            reset_scope=args.reset_scope,
+        ).acquire()
+    except subprocess.TimeoutExpired:
+        emit_error("LEASE_BUDGET_EXCEEDED", "lease validation exceeded its budget")
+        return 124
+    except (json.JSONDecodeError, MachineLeaseError) as error:
+        emit_error(
+            getattr(error, "code", "INVALID_ARGUMENT"),
+            str(error),
+            getattr(error, "detail", None),
         )
-        if validation.returncode != 0:
-            emit_error(
-                "RUNTIME_IDENTITY_MISMATCH",
-                "runtime binding changed before lease acquisition completed",
-                {"validationExitCode": validation.returncode},
-            )
-            return 2
+        return 2
+
+    received_signal = None
+    child = None
+    previous_handlers = {}
+    try:
 
         def forward_signal(signum, _frame):
             nonlocal received_signal
@@ -195,36 +274,19 @@ def run_with_lease(args):
             if child is not None:
                 terminate_process_group(child)
 
-        previous_handlers = {}
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             previous_handlers[signum] = signal.signal(signum, forward_signal)
 
         try:
             child_environment = os.environ.copy()
-            child_environment.update(
-                {
-                    "PT_MACHINE_LEASE_FD": str(handle.fileno()),
-                    "PT_MACHINE_LEASE_ID": metadata["leaseId"],
-                    "PT_MACHINE_LEASE_KIND": args.resource_kind,
-                    "PT_MACHINE_LEASE_RESOURCE_ID": args.resource_id,
-                    "PT_MACHINE_LEASE_WORKSPACE_ID": args.workspace_id,
-                }
-            )
-            if args.reset_scope:
-                child_environment["PT_MACHINE_LEASE_RESET_SCOPE"] = (
-                    args.reset_scope
-                )
-            child_environment["PT_MACHINE_LEASE_SOURCE_BRANCH"] = (
-                args.expected_branch
-            )
-            child_environment["PT_MACHINE_LEASE_SOURCE_HEAD"] = args.expected_head
+            child_environment.update(lease.environment)
             child = subprocess.Popen(
                 args.command,
                 start_new_session=True,
-                pass_fds=(handle.fileno(),),
+                pass_fds=(lease.handle.fileno(),),
                 env=child_environment,
             )
-            deadline = time.monotonic() + args.budget_seconds
+            deadline = lease.deadline
             while child.poll() is None:
                 if received_signal is not None:
                     terminate_process_group(child)
@@ -248,10 +310,10 @@ def run_with_lease(args):
         finally:
             if child is not None and child.poll() is None:
                 terminate_process_group(child)
-            write_metadata(handle, None)
             for signum, previous in previous_handlers.items():
                 signal.signal(signum, previous)
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        lease.release()
 
 
 def validate_active_metadata(metadata):
@@ -394,6 +456,7 @@ def parser():
     run.add_argument("--budget-seconds", required=True, type=int)
     run.add_argument("--expected-branch", required=True)
     run.add_argument("--expected-head", required=True)
+    run.add_argument("--target-profile")
     run.add_argument("--validation-command-json", required=True)
     run.add_argument("--reset-scope")
     run.add_argument("command", nargs=argparse.REMAINDER)

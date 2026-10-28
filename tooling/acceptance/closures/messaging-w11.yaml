@@ -1,6 +1,6 @@
 version: 1
 workstream: MP-W11
-claimed_runtime_cell: desktop-linux-native
+claimed_runtime_cell: desktop-macos-native
 canonical_range: origin/master...HEAD
 retained_gates:
   - proto-build

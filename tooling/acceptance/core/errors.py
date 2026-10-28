@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .resource_diagnostic import ResourceDiagnostic
+
 
 class GateError(RuntimeError):
     pass
@@ -126,19 +128,37 @@ class ClientBindingError(ProvisioningError):
 
 
 class BlockedError(ProvisioningError):
-    def __init__(self, reason: str, resource: str = "") -> None:
+    def __init__(
+        self,
+        reason: str,
+        resource: str = "",
+        *,
+        diagnostic: ResourceDiagnostic | None = None,
+    ) -> None:
         super().__init__(reason)
+        if diagnostic is not None:
+            if not isinstance(diagnostic, ResourceDiagnostic):
+                raise TypeError("blocked diagnostic must be ResourceDiagnostic")
+            diagnostic.require_resource(resource)
         self.reason = reason
         self.resource = resource
+        self.diagnostic = diagnostic
 
 
 class NativeInputBlocked(BlockedError):
     code = "NATIVE_INPUT_ISOLATION_REQUIRED"
 
-    def __init__(self, operation: str, detail: str) -> None:
+    def __init__(
+        self,
+        operation: str,
+        detail: str,
+        *,
+        diagnostic: ResourceDiagnostic,
+    ) -> None:
         super().__init__(
             reason=f"{self.code}: {operation}: {detail}",
             resource="desktop-native-input-isolation",
+            diagnostic=diagnostic,
         )
         self.operation = operation
         self.detail = detail
@@ -163,6 +183,18 @@ class EphemeralLaunchTransportUnsupported(EphemeralLaunchError):
 class EphemeralLaunchBindFailed(EphemeralLaunchError):
     code = "EPHEMERAL_LAUNCH_BIND_FAILED"
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation: str = "",
+        errno_name: str = "",
+        resource_category: str = "",
+    ) -> None:
+        super().__init__(message, operation=operation)
+        self.errno_name = errno_name
+        self.resource_category = resource_category
+
 
 class EphemeralLaunchHandshakeFailed(EphemeralLaunchError):
     code = "EPHEMERAL_LAUNCH_HANDSHAKE_FAILED"
@@ -175,6 +207,20 @@ class EphemeralLaunchProtocolError(EphemeralLaunchError):
 class EphemeralLaunchTimeout(EphemeralLaunchError):
     code = "EPHEMERAL_LAUNCH_TIMEOUT"
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation: str = "",
+        resource: str = "",
+        diagnostic: ResourceDiagnostic | None = None,
+    ) -> None:
+        super().__init__(message, operation=operation)
+        if diagnostic is not None:
+            diagnostic.require_resource(resource)
+        self.resource = resource
+        self.diagnostic = diagnostic
+
 
 class EphemeralCapabilityBlocked(EphemeralLaunchError, BlockedError):
     code = "EPHEMERAL_CAPABILITY_BLOCKED"
@@ -185,10 +231,10 @@ class EphemeralCapabilityBlocked(EphemeralLaunchError, BlockedError):
         *,
         resource: str = "",
         operation: str = "invoke",
+        diagnostic: ResourceDiagnostic | None = None,
     ) -> None:
         EphemeralLaunchError.__init__(self, reason, operation=operation)
-        self.reason = reason
-        self.resource = resource
+        BlockedError.__init__(self, reason, resource, diagnostic=diagnostic)
 
 
 class EphemeralLaunchCleanupFailed(EphemeralLaunchError):

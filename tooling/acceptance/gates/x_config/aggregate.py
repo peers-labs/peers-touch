@@ -3,7 +3,7 @@
 from dataclasses import asdict
 
 from tooling.acceptance.core import AcceptanceGate, EvidenceStore, GateError, REPO_ROOT, source_identity
-from tooling.acceptance.station_access_evidence import GateSpec, check_gate
+from tooling.acceptance.station_access_evidence import AggregateResult, GateSpec, check_gate
 
 
 REQUIRED_GATES = (
@@ -44,7 +44,7 @@ class APIAggregateGate(AcceptanceGate):
         for result in results:
             self.report.add_assertion(result.gate_id, result.status == "PASS", result.detail)
         missing = [result for result in results if result.status != "PASS"]
-        if source.get("workspaceDigest") != "clean" or missing:
+        if not AggregateResult(source, results).passed:
             raise GateError("X Config API closure remains unproven: " + ", ".join(
                 result.gate_id+"="+result.status for result in missing))
         return {"source": source, "gateCount": len(results), "proofStatus": "PROVEN"}

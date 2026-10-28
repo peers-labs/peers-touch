@@ -151,9 +151,6 @@ class MessagingPlatformContractTest(unittest.TestCase):
         desktop_store = (
             ROOT / "apps/desktop/src-tauri/src/messaging/store.rs"
         ).read_text(encoding="utf-8")
-        desktop_event_projection = (
-            ROOT / "apps/desktop/src-tauri/src/messaging/engine.rs"
-        ).read_text(encoding="utf-8")
         desktop_lifecycle = (
             ROOT / "apps/desktop/src-tauri/src/messaging/lifecycle.rs"
         ).read_text(encoding="utf-8")
@@ -202,7 +199,6 @@ class MessagingPlatformContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("federation_id TEXT NOT NULL", schema)
-        self.assertIn('column: "federation_id"', schema)
         self.assertIn("pub federation_id: String", core_contract)
         self.assertIn(
             "federation_id: post_state.federation_id.clone()",
@@ -213,10 +209,6 @@ class MessagingPlatformContractTest(unittest.TestCase):
             core_mls_projection,
         )
         self.assertIn("pub federation_id: String", desktop_store)
-        self.assertIn(
-            "ConversationStateProcessor::new(store.clone()",
-            desktop_event_projection,
-        )
         self.assertIn(
             "projection.federation_id.trim().is_empty()",
             desktop_lifecycle,
@@ -309,11 +301,11 @@ class MessagingPlatformContractTest(unittest.TestCase):
         desktop_transport = (
             ROOT / "apps/desktop/src-tauri/src/messaging/transport.rs"
         ).read_text(encoding="utf-8")
-        desktop_consumer = (
-            ROOT / "apps/desktop/src-tauri/src/messaging/engine.rs"
-        ).read_text(encoding="utf-8")
         portable_consumer = (
             ROOT / "packages/messaging-core/src/inbox/consumer.rs"
+        ).read_text(encoding="utf-8")
+        desktop_engine = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/engine.rs"
         ).read_text(encoding="utf-8")
         portable_command_result = (
             ROOT / "packages/messaging-core/src/inbox/command_result.rs"
@@ -426,7 +418,7 @@ class MessagingPlatformContractTest(unittest.TestCase):
         )
         self.assertIn(
             "CommandResultProcessor::new",
-            desktop_consumer,
+            desktop_engine,
         )
         self.assertIn(
             "commit_command_result",

@@ -14,7 +14,6 @@ This gate is deterministic — it does not perform AI-style judgment.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import re
@@ -53,7 +52,7 @@ SCAN_GATE_MAP = {
     "tauri-command-absent": "chat-w11-forbidden-scan",
     "no-duplicate-symbol": "chat-w11-duplicate-scan",
 }
-CURRENT_RESULTS_ENV = "PT_ACCEPTANCE_CURRENT_RESULTS"
+PREREQUISITE_PROOFS_ENV = "PT_ACCEPTANCE_PREREQUISITE_PROOFS"
 AGGREGATE_SOURCE_ENV = "PT_ACCEPTANCE_AGGREGATE_SOURCE"
 
 
@@ -833,69 +832,69 @@ def check_station_identity(
     return errors
 
 
-def canonical_gate_union(diff_range: str) -> set[str]:
-    script_path = REPO_ROOT / "tooling" / "scripts" / "acceptance-plan.py"
-    spec = importlib.util.spec_from_file_location(
-        "w11_acceptance_plan",
-        script_path,
-    )
-    if spec is None or spec.loader is None:
-        raise AssertionError("canonical Acceptance planner cannot be loaded")
-    module = importlib.util.module_from_spec(spec)
-    scripts_path = str(script_path.parent)
-    sys.path.insert(0, scripts_path)
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.path.remove(scripts_path)
-    changed_paths = module.changed_paths(diff_range)
-    plan = module.plan(REPO_ROOT / "tooling" / "acceptance", changed_paths)
-    selected = plan.get("selected_gates")
-    if not isinstance(selected, list) or not selected:
-        raise AssertionError(
-            f"canonical exact-range plan {diff_range!r} selected no Gates"
-        )
-    return {
-        str(gate.get("id") if isinstance(gate, dict) else gate)
-        for gate in selected
-    }
-
-
 def immutable_results_by_gate(
-    raw_results: str,
+    raw_proofs: str,
     *,
     expected_gates: set[str],
-    allowed_supplemental_gates: set[str],
 ) -> dict[str, dict[str, Any]]:
     try:
-        values = json.loads(raw_results)
+        values = json.loads(raw_proofs)
     except json.JSONDecodeError as error:
-        raise AssertionError("parent aggregate results are malformed") from error
+        raise AssertionError("prerequisite proofs are malformed") from error
     if not isinstance(values, list):
-        raise AssertionError("parent aggregate results must be a list")
+        raise AssertionError("prerequisite proofs must be a list")
 
     by_gate: dict[str, dict[str, Any]] = {}
     for value in values:
         if not isinstance(value, dict):
-            raise AssertionError("parent aggregate contains a malformed result")
-        gate_id = value.get("id")
+            raise AssertionError("prerequisite proof is malformed")
+        gate_id = value.get("gateId")
+        run_manifest = value.get("runManifest")
         if not isinstance(gate_id, str) or not gate_id:
-            raise AssertionError("parent aggregate result has no Gate identity")
+            raise AssertionError("prerequisite proof has no Gate identity")
+        if not isinstance(run_manifest, dict):
+            raise AssertionError(
+                f"prerequisite proof {gate_id!r} has no run manifest"
+            )
         if gate_id in by_gate:
             raise AssertionError(
-                f"parent aggregate contains duplicate Gate {gate_id!r}"
+                f"prerequisite proofs contain duplicate Gate {gate_id!r}"
             )
-        by_gate[gate_id] = value
+        by_gate[gate_id] = {
+            "id": gate_id,
+            "runManifest": run_manifest,
+        }
 
     observed = set(by_gate)
     missing = sorted(expected_gates - observed)
-    unexpected = sorted(observed - expected_gates - allowed_supplemental_gates)
+    unexpected = sorted(observed - expected_gates)
     if missing or unexpected:
         raise AssertionError(
-            "parent aggregate does not match the canonical exact-range Gate "
-            f"union: missing={missing}, unexpected={unexpected}"
+            "prerequisite proofs do not match the closure contract: "
+            f"missing={missing}, unexpected={unexpected}"
         )
     return by_gate
+
+
+def completion_audit_dependencies() -> set[str]:
+    definitions = json.loads(GATES_PATH.read_text(encoding="utf-8")).get(
+        "gates",
+        {},
+    )
+    values = definitions.get("chat-w11-completion-audit", {}).get(
+        "dependsOn",
+        [],
+    )
+    if (
+        not isinstance(values, list)
+        or not values
+        or any(not isinstance(gate_id, str) or not gate_id for gate_id in values)
+        or len(set(values)) != len(values)
+    ):
+        raise AssertionError(
+            "completion audit has no valid explicit proof dependencies"
+        )
+    return set(values)
 
 
 def runtime_cell_gates(
@@ -958,8 +957,6 @@ def main() -> int:
 
     required_gates: set[str] = set()
     scan_gates_needed: set[str] = set()
-    planned_gates: set[str] = set()
-
     for did, target in targets.items():
         vtype = target.get("type", "")
         if vtype in SCAN_GATE_MAP:
@@ -975,23 +972,22 @@ def main() -> int:
 
     required_gates.discard("chat-w11-completion-audit")
     try:
-        planned_gates = canonical_gate_union(canonical_range)
-        expected_aggregate_gates = planned_gates | retained_gates
-        if required_gates != expected_aggregate_gates:
-            missing = sorted(expected_aggregate_gates - required_gates)
-            unexpected = sorted(required_gates - expected_aggregate_gates)
+        expected_proof_gates = required_gates | scan_gates_needed
+        declared_dependencies = completion_audit_dependencies()
+        if expected_proof_gates != declared_dependencies:
+            missing = sorted(expected_proof_gates - declared_dependencies)
+            unexpected = sorted(declared_dependencies - expected_proof_gates)
             raise AssertionError(
-                "closure contract does not match the canonical exact-range "
-                "Gate union plus retained obligations: "
+                "completion audit dependencies do not match the closure "
+                "contract: "
                 f"missing={missing}, unexpected={unexpected}"
             )
         aggregate_results = immutable_results_by_gate(
-            os.environ.get(CURRENT_RESULTS_ENV, ""),
-            expected_gates=expected_aggregate_gates,
-            allowed_supplemental_gates=scan_gates_needed,
+            os.environ.get(PREREQUISITE_PROOFS_ENV, ""),
+            expected_gates=expected_proof_gates,
         )
         native_gates = runtime_cell_gates(
-            planned_gates,
+            required_gates,
             runtime_cell=claimed_runtime_cell,
         )
     except Exception as exc:

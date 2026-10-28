@@ -14,7 +14,9 @@ from .evidence_store import (
     write_current_artifact,
 )
 from .errors import EvidenceError
+from .proof import assertions_pass
 from .redaction import redact_text, redact_value
+from .resource_diagnostic import ResourceDiagnostic
 
 
 TEXT_EVIDENCE_SUFFIXES = {".html", ".json", ".log", ".md", ".txt", ".xml"}
@@ -54,7 +56,10 @@ class EvidenceReport:
     station_url: Optional[str] = None
     error: Optional[str] = None
     error_type: Optional[str] = None
+    blocked_reason: Optional[str] = None
+    blocked_resource: Optional[str] = None
     manifest: Optional[dict[str, Any]] = None
+    diagnostic: ResourceDiagnostic | None = None
 
     def add_evidence_file(
         self,
@@ -115,13 +120,17 @@ class EvidenceReport:
                     f"actor {key!r} must be ActorRuntime or a mapping, got {type(actor).__name__}"
                 )
 
-        passed = self.status == "PASS"
+        assertions = [asdict(a) for a in self.assertions]
+        passed = self.status == "PASS" and not self.error and assertions_pass(assertions)
+        blocked = self.status == "BLOCKED"
         report = {
             "artifactKind": "acceptance-gate-evidence-report",
             "gate": self.gate_id,
             "gateId": self.gate_id,
             "status": self.status,
-            "completionStatus": "DONE" if passed else "PARTIAL",
+            "completionStatus": (
+                "DONE" if passed else "BLOCKED" if blocked else "PARTIAL"
+            ),
             "proofStatus": "PROVEN" if passed else "UNPROVEN",
             "sampleEmissionAllowed": passed,
             "started_at": self.started_at,
@@ -129,12 +138,22 @@ class EvidenceReport:
             "station_url": self.station_url,
             "runtime": self.runtime,
             "actors": actors,
-            "assertions": [asdict(a) for a in self.assertions],
+            "assertions": assertions,
             "evidence": self.evidence,
             "error": self.error,
             "error_type": self.error_type,
             "manifest": self.manifest,
         }
+        if self.blocked_reason:
+            report["reason"] = self.blocked_reason
+            report["blockedReason"] = self.blocked_reason
+        elif self.error:
+            report["reason"] = self.error
+        if self.blocked_resource:
+            report["blockedResource"] = self.blocked_resource
+        if self.diagnostic is not None:
+            self.diagnostic.require_resource(self.blocked_resource or "")
+            report["diagnostic"] = self.diagnostic.to_dict()
         if self.phase:
             report["phase"] = self.phase
         if self.bom:

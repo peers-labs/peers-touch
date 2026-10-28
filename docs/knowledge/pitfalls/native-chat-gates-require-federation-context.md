@@ -6,11 +6,15 @@ owns:
   - apps/desktop/src/acceptance/moments/harness.ts
   - tooling/acceptance/provisioners/secure_content_remote_recipient.py
   - tooling/acceptance/gates/chat/native_support.py
+  - tooling/acceptance/gates/chat/contact_message_resilience_runner.py
   - tooling/acceptance/gates/chat/native_two_client_runner.py
   - tooling/acceptance/gates/chat/native_interactions_runner.py
   - tooling/acceptance/gates/chat/native_multi_device_runner.py
+  - tooling/acceptance/gates/chat/native_product_closure_runner.py
   - tooling/acceptance/gates/chat/native_recovery_runner.py
   - tooling/acceptance/gates/chat/native_typing_runner.py
+  - tooling/acceptance/gates/chat/native_group_mls_runner.py
+  - tooling/acceptance/gates/chat/lifecycle_group_live.py
   - tooling/acceptance/fixtures/chat_native_actors.py
   - tooling/development/secure_content/runtime_owner.py
   - tooling/development/secure_content/scenarios/social_expansion.py
@@ -104,6 +108,18 @@ context and cannot stand in for that product path.
   profile resolver.
 - No product default, fallback, or synthetic Federation is introduced.
 
+### Prepared Fixture consumption
+
+An authorized cross-Station Fixture can reach FIXTURE_READY while a Gate still
+rejects the removed CHAT_ACCEPTANCE_RESET boolean. Gate entrypoints consume the
+canonical native_support.verify_runtime_fixture_ready validator instead:
+verified target plus authorized reset, or explicitly selected existing state
+with no reset authorization. Native two-client variants preserve that existing
+mode; product closure verifies readiness before any product action. Actual
+reset mutation remains behind the reviewed Profile and live descriptor.
+The native runtime runner and two-client regressions cover absent legacy flags,
+unverified targets, false authority and the existing-state mode.
+
 ### What guards against regression
 
 `NativeRuntimeCellRunnerContractTest` verifies shared-Federation selection and
@@ -125,6 +141,7 @@ Run:
 python3 -m unittest \
   tooling.acceptance.tests.test_provisioning_owners \
   tooling.acceptance.gates.chat.native_runtime_cell_runner_test \
+  tooling.acceptance.gates.chat.native_two_client_e2e_test \
   tooling.development.secure_content.test_runtime_owner \
   tooling.development.secure_content.scenarios.test_social_expansion
 ```

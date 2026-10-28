@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
 import json
 import os
 import sqlite3
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +16,10 @@ from unittest.mock import Mock, patch
 from selenium.common.exceptions import WebDriverException
 
 from tooling.acceptance.core import GateError
+from tooling.acceptance.core import EvidenceStore
+from tooling.acceptance.core.errors import EphemeralLaunchTimeout
 from tooling.acceptance.core.evidence import new_report
+from tooling.acceptance.core.launch_context import GateLaunchSpec, GateProcessLauncher
 from tooling.acceptance.gates.chat import native_support
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
@@ -56,6 +62,80 @@ TRACEABLE_GATE_CLASSES = {
 
 
 class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
+    def test_nested_interaction_steps_emit_unique_supporting_observations(self) -> None:
+        from tooling.acceptance.gates.chat.native_interactions_runner import NativeInteractionsGate
+
+        gate = NativeInteractionsGate.__new__(NativeInteractionsGate)
+        gate.steps = []
+        gate._step_observation_sequence = 0
+        gate.tested_commit = "synthetic"
+        gate.workspace_digest = "clean"
+        gate.report = new_report(gate.gate_id)
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=ROOT)
+            with store.begin_run(gate.gate_id, source={"commit": "synthetic"}) as run:
+                with patch.dict(os.environ, run.subprocess_environment()), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(gate.step("outer", lambda: gate.step("inner", lambda: 7)), 7)
+                observations = [
+                    json.loads(store.resolve(ref).read_text())
+                    for ref in run.collect_existing_artifacts().values()
+                ]
+                self.assertEqual([item["sequence"] for item in observations], [1, 2, 3, 4])
+                self.assertEqual([item["state"] for item in observations],
+                                 ["STARTED", "STARTED", "COMPLETED", "COMPLETED"])
+                self.assertTrue(all(item["proofStatus"] == "NOT_APPLICABLE" for item in observations))
+                run.finalize(result={"status": "failed", "proofStatus": "UNPROVEN"})
+
+    def test_interaction_step_start_survives_real_command_termination(self) -> None:
+        command = """
+import time
+from tooling.acceptance.core.evidence import new_report
+from tooling.acceptance.gates.chat.native_interactions_runner import NativeInteractionsGate
+gate = NativeInteractionsGate.__new__(NativeInteractionsGate)
+gate.steps = []
+gate._step_observation_sequence = 0
+gate._predicate_probes = []
+gate.tested_commit = "synthetic"
+gate.workspace_digest = "clean"
+gate.report = new_report(gate.gate_id)
+gate.wait_step(
+    "synthetic.pending",
+    lambda: {"replyCount": 1},
+    "synthetic-actor",
+    expected={"replyCount": 2},
+    ready=lambda value: value["replyCount"] == 2,
+)
+"""
+        gate_id = "chat-native-interactions-e2e"
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=ROOT)
+            with store.begin_run(gate_id, source={"commit": "synthetic"}) as run:
+                launcher = GateProcessLauncher(
+                    cwd=str(ROOT), environment=run.subprocess_environment(),
+                    termination_timeout_seconds=0.2,
+                )
+                with self.assertRaises(EphemeralLaunchTimeout):
+                    launcher.run(
+                        GateLaunchSpec(argv=(sys.executable, "-c", command),
+                                       timeout_seconds=2, required_capabilities=()), None,
+                    )
+                observations = [
+                    json.loads(store.resolve(ref).read_text())
+                    for ref in run.collect_existing_artifacts().values()
+                ]
+                self.assertEqual(len(observations), 2)
+                self.assertEqual(observations[0]["state"], "STARTED")
+                self.assertEqual(observations[0]["step"], "synthetic.pending")
+                self.assertEqual(observations[0]["proofStatus"], "NOT_APPLICABLE")
+                self.assertEqual(observations[1]["state"], "PREDICATE")
+                self.assertEqual(observations[1]["predicate"], {
+                    "expected": {"replyCount": 2},
+                    "observed": {"replyCount": 1},
+                    "accepted": False,
+                })
+                run.finalize(result={"status": "failed", "proofStatus": "UNPROVEN"})
+
     def source(self, runner: str) -> str:
         return RUNNERS[runner].read_text(encoding="utf-8")
 
@@ -81,6 +161,67 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 for target in node.targets
             )
         )
+
+    def test_prepared_fixture_authority_is_mode_specific(self) -> None:
+        for ready, authorized, verified in (
+            (True, True, True),
+            (False, True, True),
+            (True, False, True),
+            (True, True, False),
+        ):
+            with self.subTest(ready=ready, authorized=authorized, verified=verified):
+                manifest = {"state": "FIXTURE_READY" if ready else "PREPARING"}
+                actors = {"reset": {
+                    "authorized": authorized, "targetVerified": verified,
+                }}
+                if ready and authorized and verified:
+                    native_support.verify_runtime_fixture_ready(manifest, actors)
+                else:
+                    with self.assertRaises(GateError):
+                        native_support.verify_runtime_fixture_ready(manifest, actors)
+
+    def test_product_closure_checks_fixture_before_source_and_product_actions(self) -> None:
+        from tooling.acceptance.gates.chat.native_product_closure_runner import (
+            NativeProductClosureGate,
+        )
+
+        for authorized, verified in ((True, True), (False, True), (True, False)):
+            with self.subTest(authorized=authorized, verified=verified):
+                gate = NativeProductClosureGate.__new__(NativeProductClosureGate)
+                gate.manifest = {"state": "FIXTURE_READY"}
+                gate.actor_manifest = {"reset": {
+                    "authorized": authorized, "targetVerified": verified,
+                }}
+                with (
+                    patch.dict(os.environ, {}, clear=True),
+                    patch.object(
+                        gate, "source_identity",
+                        side_effect=RuntimeError("source probe reached"),
+                    ) as source_probe,
+                ):
+                    if authorized and verified:
+                        with self.assertRaisesRegex(RuntimeError, "source probe reached"):
+                            gate.run()
+                        source_probe.assert_called_once_with()
+                    else:
+                        with self.assertRaises(GateError):
+                            gate.run()
+                        source_probe.assert_not_called()
+
+    def test_native_run_entries_have_no_second_boolean_reset_authority(self) -> None:
+        paths = (
+            *ALL_MIGRATED_RUNNERS,
+            "native_two_client_runner.py",
+            "native_product_closure_runner.py",
+            "lifecycle_group_live.py",
+        )
+        for name in paths:
+            with self.subTest(runner=name):
+                path = ROOT / "tooling/acceptance/gates/chat" / name
+                self.assertNotIn(
+                    "CHAT_ACCEPTANCE_RESET",
+                    self.function_source(path, "run"),
+                )
 
     def test_enter_chat_page_retries_webdriver_script_timeout(self) -> None:
         class Driver:
@@ -438,6 +579,9 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             with self.subTest(runner=runner):
                 path = ROOT / "tooling/acceptance/gates/chat" / runner
                 source = self.function_source(path, function_name)
+                if runner == "native_product_closure_runner.py":
+                    self.assertIn("self._cleanup_clients(cleanup_end)", source)
+                    source += self.function_source(path, "_cleanup_clients")
                 self.assertIn("client_lifecycles", source)
                 self.assertNotIn("station.auth_logout()", source)
 
@@ -512,9 +656,9 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             ROOT / "tooling/acceptance/gates/chat/native_interactions_runner.py",
             "prove_lifecycle",
         )
-        reply_projection = source.index("reply authority projection")
+        reply_projection = source.index(f'{{claim_kind}}.reply.authority-projection')
         thread_submit = source.index(f'{{claim_kind}}.thread.send')
-        thread_projection = source.index("thread authority projection")
+        thread_projection = source.index(f'{{claim_kind}}.thread.authority-projection')
         nested_submit = source.index(f'{{claim_kind}}.thread.nested.send')
         self.assertLess(reply_projection, thread_submit)
         self.assertLess(thread_projection, nested_submit)
@@ -660,7 +804,10 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
 
         self.assertEqual(len(errors), 1)
         self.assertIn("no verified successor", errors[0]["error"])
-        client.stop.assert_called_once_with(preserve_state=True)
+        self.assertEqual(client.stop.call_count, 2)
+        self.assertEqual(client.stop.call_args.kwargs, {})
+        self.assertEqual(lifecycle.release(client), errors)
+        self.assertEqual(client.stop.call_count, 2)
 
     def test_native_lifecycle_transfers_preserved_session_ownership(self) -> None:
         predecessor = Mock(profile="acceptance-alice-old")
@@ -705,12 +852,12 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             else:
                 os.environ["PT_ACCEPTANCE_RUNTIME_CELL"] = previous
 
-    def test_runtime_identity_is_clean_source_bound(self) -> None:
+    def test_runtime_identity_is_snapshot_source_bound(self) -> None:
         support = (
             ROOT / "tooling/acceptance/gates/chat/native_support.py"
         ).read_text(encoding="utf-8")
         for contract in (
-            'source.get("workspaceDigest") == "clean"',
+            "runtime_source_matches(",
             'station.get("workspaceDigest") == "clean"',
             'runtime_cell.get("state") == "LEASED"',
             'cell_source.get("remoteCheckoutClean") is True',
@@ -810,6 +957,8 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             gate["id"]: gate
             for gate in plan["selected_gates"]
         }
+        catalog = json.loads((ROOT / "tooling/acceptance/gates.yaml").read_text())
+        definitions = catalog["gates"]
         for gate_id in (
             "chat-native-two-client-e2e",
             "chat-native-interactions-e2e",
@@ -820,7 +969,9 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         ):
             with self.subTest(gate=gate_id):
                 self.assertEqual(
-                    selected[gate_id]["requiredRuntimeCells"],
+                    selected[gate_id].get(
+                        "requiredRuntimeCells", definitions[gate_id]["requiredRuntimeCells"],
+                    ),
                     [
                         "desktop-macos-native",
                         "desktop-linux-native",
@@ -1247,8 +1398,15 @@ INSERT INTO conversation_read_cursors VALUES
                     node
                     for node in ast.walk(tree)
                     if isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Name)
-                    and node.func.id == "async_harness"
+                    and (
+                        isinstance(node.func, ast.Name)
+                        and node.func.id == "async_harness"
+                        or filename == "native_interactions_runner.py"
+                        and isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "self"
+                        and node.func.attr == "harness"
+                    )
                     and len(node.args) >= 3
                     and isinstance(node.args[1], ast.Constant)
                     and node.args[1].value == "createGroup"
@@ -1337,8 +1495,15 @@ INSERT INTO conversation_read_cursors VALUES
                     node
                     for node in ast.walk(tree)
                     if isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Name)
-                    and node.func.id == "async_harness"
+                    and (
+                        isinstance(node.func, ast.Name)
+                        and node.func.id == "async_harness"
+                        or filename == "native_interactions_runner.py"
+                        and isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "self"
+                        and node.func.attr == "harness"
+                    )
                     and len(node.args) >= 3
                     and isinstance(node.args[1], ast.Constant)
                     and node.args[1].value == "createDirectConversation"

@@ -94,6 +94,7 @@ class _OAuth2ClientLocalProvisioner(EnvironmentProvisioner):
                 self._manifest,
                 reason=error.reason,
                 resource=error.resource,
+                diagnostic=error.diagnostic,
             )
 
 

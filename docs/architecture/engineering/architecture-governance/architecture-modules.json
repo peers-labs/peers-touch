@@ -30,7 +30,6 @@
     "docs/architecture/domains/social/core",
     "docs/architecture/domains/social/federation",
     "docs/architecture/domains/social/runtime",
-    "docs/architecture/engineering/acceptance",
     "docs/architecture/engineering/api-governance",
     "docs/architecture/engineering/prototypes",
     "docs/architecture/engineering/quality",
@@ -43,16 +42,14 @@
     "docs/architecture/domains/federation",
     "docs/architecture/shared/i18n",
     "docs/architecture/domains/notification",
-    "docs/architecture/shared/security/secure-content",
-    "docs/architecture/domains/identity/mobile-scan-login",
-    "docs/architecture/shared/schema"
+    "docs/architecture/shared/security/secure-content"
   ],
   "modules": [
     {
-      "id": "mobile-scan-login",
-      "root": "docs/architecture/domains/identity/mobile-scan-login",
+      "id": "acceptance",
+      "root": "docs/architecture/engineering/acceptance",
       "status": "active",
-      "owner": "Identity and Access",
+      "owner": "Architecture Team",
       "characteristics": {
         "protocol": true,
         "stateMachine": true,
@@ -67,61 +64,57 @@
         "module-layout.md", "integration.md"
       ],
       "decisionIds": [
-        "MSL-D01", "MSL-D02", "MSL-D03", "MSL-D04",
-        "MSL-D05", "MSL-D06", "MSL-D07"
+        "D-01", "D-02", "D-04", "D-05", "D-06", "D-07", "D-08", "D-09",
+        "D-10", "D-11", "D-12", "D-13", "D-14", "D-15", "D-16", "D-17",
+        "D-18", "D-19", "D-20", "D-21", "D-22", "D-23"
       ],
       "governedPaths": [
-        "model/domain/auth/device_link.proto",
-        "apps/station/app/subserver/device_link",
-        "apps/desktop/src-tauri/src/application/device_link",
-        "apps/mobile/src-tauri/src/runtime/device_link",
-        "packages/device-link-core",
-        "docs/architecture/domains/identity/mobile-scan-login"
+        "docs/architecture/engineering/acceptance",
+        "tooling/acceptance/core",
+        "tooling/acceptance/tests",
+        "tooling/scripts/acceptance-run.py",
+        "tooling/scripts/acceptance-plan.py",
+        "tooling/scripts/acceptance-validate.py",
+        "tooling/scripts/acceptance-report.py",
+        "tooling/scripts/acceptance-gap-detect.py"
       ],
       "capabilities": [
         {
-          "id": "identity.device-link.authorize",
-          "owner": "identity.device-link",
+          "id": "acceptance.core.execution",
+          "owner": "acceptance.infra",
           "contractRoots": [
-            "model/domain/auth/device_link.proto",
-            "packages/device-link-core"
+            "tooling/acceptance/core",
+            "docs/architecture/engineering/acceptance"
           ],
           "consumers": [
-            "apps/station/app/main.go",
-            "packages/device-link-core/src",
-            "apps/desktop/src-tauri/src/application/device_link",
-            "apps/mobile/src-tauri/src/runtime/device_link"
+            "tooling/scripts/acceptance-run.py",
+            "tooling/scripts/acceptance-plan.py",
+            "tooling/scripts/acceptance-report.py",
+            "tooling/scripts/acceptance-gap-detect.py"
           ],
-          "allowedDependencies": [
-            "shared-schema", "node-connectivity", "station.access",
-            "actor.session", "actor.identity"
-          ],
+          "allowedDependencies": ["python.stdlib", "python.yaml"],
           "evidenceGates": [
-            "MSL-A01", "MSL-A02", "MSL-A03", "MSL-A04", "MSL-A05",
-            "MSL-A06", "MSL-A07", "MSL-A08", "MSL-A09"
+            "acceptance-plan-self",
+            "acceptance-infra-validation",
+            "acceptance-workflow-contract",
+            "acceptance-runtime-provisioning-self"
           ]
-        },
-        {
-          "id": "client.device-link.portable-core",
-          "owner": "identity.device-link",
-          "contractRoots": ["packages/device-link-core/Cargo.toml"],
-          "consumers": [
-            "apps/desktop/src-tauri/Cargo.toml",
-            "apps/mobile/src-tauri/Cargo.toml"
-          ],
-          "allowedDependencies": ["shared.schema", "station.access", "model.domain.auth"],
-          "evidenceGates": ["MSL-A01", "MSL-A02", "MSL-A03", "MSL-A07"],
-          "reuseLayer": "portable-rust-core"
         }
       ],
-      "externalCapabilityRegistries": []
+      "externalCapabilityRegistries": [
+        {
+          "path": "tooling/acceptance/capabilities/core.yaml",
+          "capabilityIds": ["acceptance-framework-self-consistency"],
+          "gate": "acceptance-infra-validation"
+        }
+      ]
     },
     {
       "id": "search",
       "root": "docs/architecture/domains/search",
       "status": "active",
       "owner": "Search / Client / Station",
-      "characteristics": {
+"characteristics": {
         "protocol": true,
         "stateMachine": true,
         "persistence": true,
@@ -166,7 +159,7 @@
         }
       ],
       "externalCapabilityRegistries": []
-    },
+},
     {
       "id": "architecture-module-governance",
       "root": "docs/architecture/engineering/architecture-governance",
@@ -243,115 +236,6 @@
           ],
           "evidenceGates": [
             "architecture-module-governance"
-          ]
-        }
-      ],
-      "externalCapabilityRegistries": []
-    },
-    {
-      "id": "experience-design",
-      "root": "docs/architecture/engineering/experience-design",
-      "status": "active",
-      "owner": "Developer Experience / Product Design",
-      "characteristics": {
-        "protocol": true,
-        "stateMachine": true,
-        "persistence": false,
-        "ownership": true,
-        "moduleLayout": true,
-        "crossRuntime": true,
-        "integration": true
-      },
-      "requiredDocuments": [
-        "README.md",
-        "design.md",
-        "decisions.md",
-        "data-model.md",
-        "module-layout.md",
-        "integration.md"
-      ],
-      "decisionIds": [
-        "EDX-D01",
-        "EDX-D02",
-        "EDX-D03",
-        "EDX-D04",
-        "EDX-D05",
-        "EDX-D06",
-        "EDX-D07",
-        "EDX-D08",
-        "EDX-RK-D01",
-        "EDX-RK-D02",
-        "EDX-RK-D03",
-        "EDX-RK-D04",
-        "EDX-RK-D05",
-        "EDX-RK-D06",
-        "EDX-RK-D07",
-        "EDX-RK-D08",
-        "CER-D01",
-        "CER-D02",
-        "CER-D03",
-        "CER-D04",
-        "CER-D05",
-        "CER-D06",
-        "CER-D07"
-      ],
-      "governedPaths": [
-        "docs/architecture/engineering/experience-design",
-        "docs/client/common/interaction-design-methodology.md",
-        "docs/client/common/ui-identity/grammar-bindings.json",
-        "tooling/scripts/experience-design",
-        "tooling/skills/pt-product-design-methodology",
-        "tooling/skills/pt-prototype-design",
-        "tooling/skills/pt-quality-check"
-      ],
-      "capabilities": [
-        {
-          "id": "experience.design.evaluate",
-          "owner": "experience.design",
-          "contractRoots": [
-            "docs/architecture/engineering/experience-design",
-            "docs/client/common/interaction-design-methodology.md",
-            "docs/client/common/ui-identity/grammar-bindings.json",
-            "tooling/scripts/experience-design"
-          ],
-          "consumers": [
-            "tooling/skills/pt-product-design-methodology/SKILL.md",
-            "tooling/skills/pt-prototype-design/SKILL.md",
-            "tooling/skills/pt-quality-check/SKILL.md"
-          ],
-          "allowedDependencies": [
-            "node.crypto",
-            "node.fs",
-            "node.path",
-            "node.url"
-          ],
-          "evidenceGates": [
-            "experience-design-control-plane"
-          ]
-        },
-        {
-          "id": "experience.design.compare",
-          "owner": "experience.design",
-          "contractRoots": [
-            "docs/architecture/engineering/experience-design/comparative-experience-review.md",
-            "docs/architecture/engineering/experience-design/data-model.md",
-            "docs/client/common/interaction-design-methodology.md",
-            "tooling/scripts/experience-design"
-          ],
-          "consumers": [
-            "tooling/skills/pt-product-design-methodology/SKILL.md",
-            "tooling/skills/pt-prototype-design/SKILL.md",
-            "tooling/skills/pt-quality-check/SKILL.md"
-          ],
-          "allowedDependencies": [
-            "node.crypto",
-            "node.fs",
-            "node.os",
-            "node.path",
-            "node.url"
-          ],
-          "evidenceGates": [
-            "experience-design-control-plane"
           ]
         }
       ],
@@ -830,7 +714,6 @@
       "governedPaths": [
         "apps/station/frame/core/federation",
         "apps/station/frame/core/plugin/native/relay",
-        "apps/station/frame/core/plugin/native/bootstrapblob",
         "apps/station/frame/core/plugin/native/subserver/relay",
         "apps/station/frame/core/plugin/native/transport",
         "apps/station/frame/core/plugin/native/registry",
@@ -840,34 +723,9 @@
         "apps/desktop/src-tauri/src/infrastructure/station",
         "apps/mobile/src-tauri/src/runtime/station_route.rs",
         "docs/architecture/platform/runtime/node-connectivity",
-        "packages/station-libp2p-http",
-        "packages/station-trust/src",
-        "packages/station-trust/build.rs"
+        "packages/station-libp2p-http"
       ],
       "capabilities": [
-        {
-          "id": "station.connectivity.bootstrap",
-          "owner": "node.connectivity",
-          "contractRoots": [
-            "apps/station/frame/core/plugin/native/bootstrapblob",
-            "packages/station-trust/src/bootstrap.rs"
-          ],
-          "consumers": [
-            "apps/station/frame/core/plugin/native/subserver/bootstrap",
-            "apps/station/frame/core/plugin/native/subserver/relay",
-            "apps/station/frame/core/plugin/native/relay/bootstrap_blob.go"
-          ],
-          "allowedDependencies": [
-            "model.domain.peer",
-            "station.node-authorization",
-            "relay.control.enrollment"
-          ],
-          "evidenceGates": [
-            "station-api-ownership",
-            "relay-role-security-contract"
-          ],
-          "reuseLayer": "portable-rust-core"
-        },
         {
           "id": "relay.control.enrollment",
           "owner": "node.connectivity",
@@ -1560,63 +1418,6 @@
       "externalCapabilityRegistries": []
     },
     {
-      "id": "shared-schema",
-      "root": "docs/architecture/shared/schema",
-      "status": "active",
-      "owner": "Shared Client Interaction",
-      "characteristics": {
-        "protocol": true,
-        "stateMachine": false,
-        "persistence": false,
-        "ownership": true,
-        "moduleLayout": true,
-        "crossRuntime": true,
-        "integration": true
-      },
-      "requiredDocuments": [
-        "README.md",
-        "design.md",
-        "decisions.md",
-        "data-model.md",
-        "module-layout.md",
-        "integration.md"
-      ],
-      "decisionIds": ["SCH-D01", "SCH-D02", "SCH-D03", "SCH-D04"],
-      "governedPaths": [
-        "model/domain/schema",
-        "packages/schema-core",
-        "packages/schema",
-        "docs/architecture/shared/schema"
-      ],
-      "capabilities": [
-        {
-          "id": "client.schema.link",
-          "owner": "shared.schema",
-          "contractRoots": ["model/domain/schema", "packages/schema-core"],
-          "consumers": [
-            "apps/desktop/src-tauri/Cargo.toml",
-            "apps/mobile/src-tauri/Cargo.toml"
-          ],
-          "allowedDependencies": ["model.domain", "station-trust"],
-          "evidenceGates": ["schema-link-vectors", "MSL-A07"],
-          "reuseLayer": "portable-rust-core"
-        },
-        {
-          "id": "client.schema.qr",
-          "owner": "shared.schema",
-          "contractRoots": ["packages/schema"],
-          "consumers": [
-            "apps/desktop/package.json",
-            "apps/mobile/package.json"
-          ],
-          "allowedDependencies": ["model.domain", "qrcode-generator", "react"],
-          "evidenceGates": ["schema-independent-decoder", "schema-browser-renderer", "MSL-A07"],
-          "reuseLayer": "shared-ts-core"
-        }
-      ],
-      "externalCapabilityRegistries": []
-    },
-    {
       "id": "mobile-social-parity",
       "root": "docs/architecture/platform/client/mobile/social-parity",
       "status": "active",
@@ -1756,6 +1557,240 @@
         "docs/architecture/shared/security/secure-content"
       ],
       "capabilities": [],
+      "externalCapabilityRegistries": []
+    },
+{
+      "id": "mobile-scan-login",
+      "root": "docs/architecture/domains/identity/mobile-scan-login",
+      "status": "active",
+      "owner": "Identity and Access",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md", "design.md", "decisions.md", "data-model.md",
+        "module-layout.md", "integration.md"
+      ],
+      "decisionIds": [
+        "MSL-D01", "MSL-D02", "MSL-D03", "MSL-D04",
+        "MSL-D05", "MSL-D06", "MSL-D07"
+      ],
+      "governedPaths": [
+        "model/domain/auth/device_link.proto",
+        "apps/station/app/subserver/device_link",
+        "apps/desktop/src-tauri/src/application/device_link",
+        "apps/mobile/src-tauri/src/runtime/device_link",
+        "packages/device-link-core",
+        "docs/architecture/domains/identity/mobile-scan-login"
+      ],
+      "capabilities": [
+        {
+          "id": "identity.device-link.authorize",
+          "owner": "identity.device-link",
+          "contractRoots": [
+            "model/domain/auth/device_link.proto",
+            "packages/device-link-core"
+          ],
+          "consumers": [
+            "apps/station/app/main.go",
+            "packages/device-link-core/src",
+            "apps/desktop/src-tauri/src/application/device_link",
+            "apps/mobile/src-tauri/src/runtime/device_link"
+          ],
+          "allowedDependencies": [
+            "shared-schema", "node-connectivity", "station.access",
+            "actor.session", "actor.identity"
+          ],
+          "evidenceGates": [
+            "MSL-A01", "MSL-A02", "MSL-A03", "MSL-A04", "MSL-A05",
+            "MSL-A06", "MSL-A07", "MSL-A08", "MSL-A09"
+          ]
+        },
+        {
+          "id": "client.device-link.portable-core",
+          "owner": "identity.device-link",
+          "contractRoots": ["packages/device-link-core/Cargo.toml"],
+          "consumers": [
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
+          ],
+          "allowedDependencies": ["shared.schema", "station.access", "model.domain.auth"],
+          "evidenceGates": ["MSL-A01", "MSL-A02", "MSL-A03", "MSL-A07"],
+          "reuseLayer": "portable-rust-core"
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+{
+      "id": "experience-design",
+      "root": "docs/architecture/engineering/experience-design",
+      "status": "active",
+      "owner": "Developer Experience / Product Design",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": false,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "EDX-D01",
+        "EDX-D02",
+        "EDX-D03",
+        "EDX-D04",
+        "EDX-D05",
+        "EDX-D06",
+        "EDX-D07",
+        "EDX-D08",
+        "EDX-RK-D01",
+        "EDX-RK-D02",
+        "EDX-RK-D03",
+        "EDX-RK-D04",
+        "EDX-RK-D05",
+        "EDX-RK-D06",
+        "EDX-RK-D07",
+        "EDX-RK-D08",
+        "CER-D01",
+        "CER-D02",
+        "CER-D03",
+        "CER-D04",
+        "CER-D05",
+        "CER-D06",
+        "CER-D07"
+      ],
+      "governedPaths": [
+        "docs/architecture/engineering/experience-design",
+        "docs/client/common/interaction-design-methodology.md",
+        "docs/client/common/ui-identity/grammar-bindings.json",
+        "tooling/scripts/experience-design",
+        "tooling/skills/pt-product-design-methodology",
+        "tooling/skills/pt-prototype-design",
+        "tooling/skills/pt-quality-check"
+      ],
+      "capabilities": [
+        {
+          "id": "experience.design.evaluate",
+          "owner": "experience.design",
+          "contractRoots": [
+            "docs/architecture/engineering/experience-design",
+            "docs/client/common/interaction-design-methodology.md",
+            "docs/client/common/ui-identity/grammar-bindings.json",
+            "tooling/scripts/experience-design"
+          ],
+          "consumers": [
+            "tooling/skills/pt-product-design-methodology/SKILL.md",
+            "tooling/skills/pt-prototype-design/SKILL.md",
+            "tooling/skills/pt-quality-check/SKILL.md"
+          ],
+          "allowedDependencies": [
+            "node.crypto",
+            "node.fs",
+            "node.path",
+            "node.url"
+          ],
+          "evidenceGates": [
+            "experience-design-control-plane"
+          ]
+        },
+        {
+          "id": "experience.design.compare",
+          "owner": "experience.design",
+          "contractRoots": [
+            "docs/architecture/engineering/experience-design/comparative-experience-review.md",
+            "docs/architecture/engineering/experience-design/data-model.md",
+            "docs/client/common/interaction-design-methodology.md",
+            "tooling/scripts/experience-design"
+          ],
+          "consumers": [
+            "tooling/skills/pt-product-design-methodology/SKILL.md",
+            "tooling/skills/pt-prototype-design/SKILL.md",
+            "tooling/skills/pt-quality-check/SKILL.md"
+          ],
+          "allowedDependencies": [
+            "node.crypto",
+            "node.fs",
+            "node.os",
+            "node.path",
+            "node.url"
+          ],
+          "evidenceGates": [
+            "experience-design-control-plane"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+{
+      "id": "shared-schema",
+      "root": "docs/architecture/shared/schema",
+      "status": "active",
+      "owner": "Shared Client Interaction",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": false,
+        "persistence": false,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": ["SCH-D01", "SCH-D02", "SCH-D03", "SCH-D04"],
+      "governedPaths": [
+        "model/domain/schema",
+        "packages/schema-core",
+        "packages/schema",
+        "docs/architecture/shared/schema"
+      ],
+      "capabilities": [
+        {
+          "id": "client.schema.link",
+          "owner": "shared.schema",
+          "contractRoots": ["model/domain/schema", "packages/schema-core"],
+          "consumers": [
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
+          ],
+          "allowedDependencies": ["model.domain", "station-trust"],
+          "evidenceGates": ["schema-link-vectors", "MSL-A07"],
+          "reuseLayer": "portable-rust-core"
+        },
+        {
+          "id": "client.schema.qr",
+          "owner": "shared.schema",
+          "contractRoots": ["packages/schema"],
+          "consumers": [
+            "apps/desktop/package.json",
+            "apps/mobile/package.json"
+          ],
+          "allowedDependencies": ["model.domain", "qrcode-generator", "react"],
+          "evidenceGates": ["schema-independent-decoder", "schema-browser-renderer", "MSL-A07"],
+          "reuseLayer": "shared-ts-core"
+        }
+      ],
       "externalCapabilityRegistries": []
     }
   ],

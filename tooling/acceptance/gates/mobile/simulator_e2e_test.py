@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import io
 import json
+import threading
 import time
 import unittest
 import urllib.error
@@ -1294,9 +1295,14 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
             "sim-ios",
             fail_first_projection=True,
         )
+        peer_session = FakeSimulatorSession("sim-ios-peer")
         gate = SimulatorCallbackRoutingGate(
             session_factory=(  # type: ignore[arg-type]
-                lambda _url, _spec: failing_session
+                lambda _url, spec: (
+                    failing_session
+                    if spec.client_id == "sim-ios"
+                    else peer_session
+                )
             )
         )
         manifest = runtime_manifest()
@@ -1313,23 +1319,22 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertTrue(failing_session.stopped)
+        self.assertTrue(peer_session.stopped)
         self.assertEqual(gate.sessions, [])
+        cleanup_resources = artifacts.json_values[
+            "mobile-simulator/cleanup.json"
+        ]["resources"]
         self.assertEqual(
-            artifacts.json_values["mobile-simulator/cleanup.json"][
-                "resources"
-            ],
-            [
-                {
-                    "clientId": "sim-ios",
-                    "resource": "product-harness",
-                    "status": "passed",
-                },
-                {
-                    "clientId": "sim-ios",
-                    "resource": "appium-session",
-                    "status": "passed",
-                },
-            ],
+            {
+                (item["clientId"], item["resource"], item["status"])
+                for item in cleanup_resources
+            },
+            {
+                ("sim-ios", "product-harness", "passed"),
+                ("sim-ios", "appium-session", "passed"),
+                ("sim-ios-peer", "product-harness", "passed"),
+                ("sim-ios-peer", "appium-session", "passed"),
+            },
         )
 
     def test_cleanup_failure_does_not_hide_primary_failure(self) -> None:
@@ -1412,6 +1417,37 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
         )
         gate._cleanup_sessions(artifacts)
         self.assertTrue(all(session.stopped for session in sessions.values()))
+
+    def test_isolated_client_journeys_run_concurrently(self) -> None:
+        artifacts = FakeEvidenceWriter()
+        barrier = threading.Barrier(2)
+        observed: list[str] = []
+
+        def exercise(
+            _artifacts: FakeEvidenceWriter,
+            _session: FakeSimulatorSession,
+            spec: SimulatorClientSpec,
+        ) -> dict[str, Any]:
+            observed.append(spec.client_id)
+            barrier.wait(timeout=1)
+            return {"clientId": spec.client_id}
+
+        gate = SimulatorCallbackRoutingGate(
+            session_factory=(  # type: ignore[arg-type]
+                lambda _server_url, spec: FakeSimulatorSession(spec.client_id)
+            )
+        )
+        with patch.object(gate, "_exercise_client", side_effect=exercise):
+            result = gate._run_journeys(artifacts, runtime_manifest())
+
+        self.assertEqual(
+            set(observed),
+            {"sim-ios", "sim-ios-peer"},
+        )
+        self.assertEqual(
+            set(result["clients"]),
+            {"sim-ios", "sim-ios-peer"},
+        )
 
 
 if __name__ == "__main__":

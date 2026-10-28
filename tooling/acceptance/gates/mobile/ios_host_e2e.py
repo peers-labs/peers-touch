@@ -8,7 +8,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from .unified_host_suite import UnifiedHostSuiteGate
+from .unified_host_suite import UnifiedHostSuiteGate, host_prerequisite_diagnostic
 
 
 GATE_ID = "unified-client-ios-host-e2e"
@@ -19,11 +19,14 @@ def runtime_blockers(
     *,
     devicectl_path: str | None,
     device_inventory: str,
+    inventory_evaluated: bool = True,
 ) -> list[str]:
     blockers: list[str] = []
     if not devicectl_path:
         blockers.append("xcode-devicectl-unavailable")
-    if not any(
+    if not inventory_evaluated:
+        blockers.append("physical-ios-device-inventory-not-evaluated")
+    elif not any(
         re.search(r"\bphysical\b", line) and re.search(r"\bavailable\b", line)
         for line in device_inventory.splitlines()
     ):
@@ -43,28 +46,44 @@ def main(argv: Sequence[str] | None = None) -> int:
     xcrun = shutil.which("xcrun")
     devicectl_path = xcrun
     inventory = ""
+    inventory_evaluated = False
     if xcrun:
-        completed = subprocess.run(
-            [xcrun, "devicectl", "list", "devices"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if completed.returncode == 0:
-            inventory = completed.stdout
-        else:
+        try:
+            completed = subprocess.run(
+                [xcrun, "devicectl", "list", "devices"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            inventory_evaluated = completed.returncode == 0
+            if inventory_evaluated:
+                inventory = completed.stdout
+            else:
+                devicectl_path = None
+        except (OSError, subprocess.TimeoutExpired):
             devicectl_path = None
     blockers = runtime_blockers(
         os.environ,
         devicectl_path=devicectl_path,
         device_inventory=inventory,
+        inventory_evaluated=inventory_evaluated,
     )
     return UnifiedHostSuiteGate(
         platform="ios",
         reuse_suite_runtime=arguments.reuse_suite_runtime,
         runtime_evidence=arguments.runtime_evidence,
         blockers=blockers,
+        diagnostic=host_prerequisite_diagnostic(
+            platform="ios",
+            tool_path=xcrun,
+            physical_device_count=sum(
+                bool(re.search(r"\bphysical\b", line) and re.search(r"\bavailable\b", line))
+                for line in inventory.splitlines()
+            ),
+            inventory_evaluated=inventory_evaluated,
+            environment=dict(os.environ),
+        ),
     ).execute()
 
 

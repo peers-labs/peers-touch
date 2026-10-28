@@ -22,6 +22,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     journey_for_gate,
 )
 from tooling.acceptance.gates.chat.native_support import runtime_station_service
+from tooling.acceptance.core.runtime_cell import runtime_source_matches
 
 
 GATE_ID = "chat-native-two-client-e2e"
@@ -130,8 +131,14 @@ def validate_report(
     source_commit = str(orchestrator.get("commit") or "")
     require(
         bool(source_commit)
-        and orchestrator.get("workspaceDigest") == "clean",
-        "orchestrator source must be a clean commit",
+        and (
+            orchestrator.get("workspaceDigest") == "clean"
+            or re.fullmatch(
+                r"sha256:[0-9a-f]{64}",
+                str(orchestrator.get("workspaceDigest") or ""),
+            ) is not None
+        ),
+        "orchestrator source must identify the exact candidate snapshot",
     )
     require(
         isinstance(station, dict)
@@ -142,7 +149,7 @@ def validate_report(
             str(station.get("protocolDigest") or ""),
         )
         is not None,
-        "Station attestation must match the clean source and proto",
+        "Station attestation must match the deployed source and proto",
     )
     require(isinstance(station_live, dict), "live Station identity is required")
     require(
@@ -181,12 +188,12 @@ def validate_report(
     )
     cell_source = runtime_identity.get("source")
     require(
-        isinstance(cell_source, dict)
-        and cell_source.get("commit") == source_commit
-        and cell_source.get("workspaceDigest") == "clean"
+        runtime_source_matches(
+            orchestrator, cell_source, remote=runtime_cell != "desktop-macos-native",
+        )
         and cell_source.get("binarySha256")
         == binary_identity.get("sha256"),
-        "runtime-cell source identity is stale or dirty",
+        "runtime-cell source identity differs from the candidate snapshot",
     )
     if runtime_cell == "desktop-linux-native":
         require(

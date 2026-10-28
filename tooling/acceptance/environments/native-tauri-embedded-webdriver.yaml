@@ -7,6 +7,7 @@
   "services": {
     "station-four": {
       "kind": "station",
+      "profile_ref": "profile:four",
       "required": true,
       "runtime_identity_required": true,
       "ready_action": "station",
@@ -16,6 +17,7 @@
     },
     "station-five": {
       "kind": "station",
+      "profile_ref": "profile:fiveArm",
       "required": true,
       "runtime_identity_required": true,
       "ready_action": "station",
@@ -102,7 +104,7 @@
     {
       "id": "chat-native-actors",
       "authorization_required": true,
-      "authorization_ref": "env:CHAT_ACCEPTANCE_RESET"
+      "authorization_ref": "station.reset:chat-native-actors"
     }
   ],
   "credentials": [],

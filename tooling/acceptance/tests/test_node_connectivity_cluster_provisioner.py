@@ -103,14 +103,21 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
             "environmentId": "node-connectivity-cluster",
             "gateId": "NCP-G06",
             "runId": "0123456789abcdef",
+            "profile": {"resolvedName": "assigned-station"},
         }
         module = (
             "tooling.acceptance.provisioners.node_connectivity_cluster"
         )
         with patch(
+            f"{module}.resolve_reviewed_profile_environment",
+            return_value=(Path("/reviewed/profile.env"), {
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_DEPLOY_ENV": "assigned-deployment",
+            }),
+        ) as resolve_profile, patch(
             f"{module}.resolve_deployment_environment_path",
-            return_value=Path("/tmp/station-1.env"),
-        ), patch(
+            return_value=Path("/tmp/assigned-deployment.env"),
+        ) as resolve_deployment, patch(
             f"{module}.load_env_file",
             return_value={
                 "PT_DEPLOY_HOST": "station.example",
@@ -125,6 +132,8 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
                 "message-1",
             )
 
+        resolve_profile.assert_called_once_with("assigned-station")
+        resolve_deployment.assert_called_once_with("assigned-deployment")
         command = transport.run_argv.call_args_list[0].args[0]
         sql = command[-1]
         self.assertIn("WHERE message_id = 'message-1'", sql)

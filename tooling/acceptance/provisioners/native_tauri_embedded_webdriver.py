@@ -36,23 +36,23 @@ from tooling.acceptance.core.provisioning import (
     RuntimeManifest,
     ServiceAttestation,
 )
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
+from tooling.acceptance.core.profile_bindings import resolve_service_profiles
 from tooling.acceptance.fixtures.chat_native_actors import (
     fixture_password,
     produce_bound_actor_manifest,
 )
+from tooling.acceptance.fixtures.chat_reset_targets import (
+    PROFILE_BINDINGS_ENV,
+    bound_reset_profiles,
+    reviewed_profile_bindings,
+)
 
 from .home_station import HomeStationProvisioner
 from .remote_source_identity import resolve_remote_source_identity
+from .station_equipment import equip_station_profile
 
 
-_SERVICE_PROFILES = {
-    "station-four": "four",
-    "station-five": "fiveArm",
-}
-_CROSS_STATION_SOCIAL_SERVICE_PROFILES = {
-    "station-four": "four",
-    "station-five-arm": "fiveArm",
-}
 _CROSS_STATION_SOCIAL_GATE_ROLES = {
     "federation-two-station-lifecycle-e2e": (
         "alice",
@@ -73,7 +73,6 @@ PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
     environment_id = "native-tauri-embedded-webdriver"
     fixture_id = "chat-native-actors"
-    default_authorization_ref = "env:CHAT_ACCEPTANCE_RESET"
     product_label = "Native Chat"
 
     def __init__(
@@ -83,13 +82,20 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
         station_profiles: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(contract)
-        self._station_profiles = dict(
-            _SERVICE_PROFILES
-            if not station_profiles
-            else station_profiles
+        self._station_profiles = dict(station_profiles or {})
+
+    def prepare_fixture_authority(self, *, budget_seconds: float) -> dict[str, str]:
+        environment = super().prepare_fixture_authority(budget_seconds=budget_seconds)
+        environment[PROFILE_BINDINGS_ENV] = json.dumps(
+            reviewed_profile_bindings(self._required_station_profiles().values()),
         )
+        return environment
 
     def _required_station_profiles(self) -> dict[str, str]:
+        self._station_profiles = resolve_service_profiles(
+            self.contract, self._station_profiles,
+            kinds=frozenset({"station"}), repo_root=REPO_ROOT,
+        )
         expected = {
             service_id
             for service_id, service in self.contract.services.items()
@@ -172,17 +178,70 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             resource=resource,
         )
 
+    def _station_health_failure(
+        self,
+        manifest: RuntimeManifest,
+        service_id: str,
+        profile_name: str,
+        deployment_environment: str,
+        observation: dict[str, object],
+    ) -> BlockedError:
+        resource = f"service-health:{service_id}"
+        return BlockedError(
+            reason=(
+                f"{self.product_label} service {service_id!r} is not healthy "
+                f"at {observation['endpoint']}: {json.dumps(observation, sort_keys=True)}"
+            ),
+            resource=resource,
+            diagnostic=ResourceDiagnostic(
+                owner="native-tauri-embedded-webdriver-provisioner",
+                recovery_action=(
+                    f"Inspect the recorded health probe for Profile {profile_name} "
+                    f"(deployment {deployment_environment}); restore that reviewed "
+                    f"Station through make station, then repeat its health probe "
+                    f"and source attestation for {manifest.source_commit}."
+                ),
+                resource_checks=[
+                    {
+                        "resource": resource,
+                        "expected": {
+                            "serviceId": service_id,
+                            "profile": profile_name,
+                            "deployment": deployment_environment,
+                            "endpoint": observation["endpoint"],
+                            "statusCode": "200..299",
+                        },
+                        "state": "OBSERVED",
+                        "observed": observation,
+                    },
+                    {
+                        "resource": f"source-identity:{service_id}",
+                        "expected": {"commit": manifest.source_commit},
+                        "state": "NOT_EVALUATED",
+                        "reason": "Health preparation failed before Station source attestation.",
+                    },
+                ],
+            ),
+        )
+
     def _provision_station_services(
         self,
         manifest: RuntimeManifest,
     ) -> dict[str, ServiceAttestation]:
         services: dict[str, ServiceAttestation] = {}
         local_proto_digest = source_proto_digest(REPO_ROOT)
-        for service_id, profile_name in self._required_station_profiles().items():
-            profile_path, profile_env = resolve_reviewed_profile_environment(
-                profile_name,
-                repo_root=REPO_ROOT,
-            )
+        profiles = {
+            service_id: (profile, resolve_reviewed_profile_environment(
+                profile, repo_root=REPO_ROOT,
+            )[1])
+            for service_id, profile in self._required_station_profiles().items()
+        }
+        for profile_name, profile_env in profiles.values():
+            if profile_env.get("PT_STATION_MODE", "").strip() == "remote":
+                equip_station_profile(
+                    profile_name, manifest.source_commit, repo_root=REPO_ROOT,
+                )
+        for service_id, (profile_name, profile_env) in profiles.items():
             mode = (
                 profile_env.get("PT_STATION_MODE", "local").strip() or "local"
             )
@@ -214,61 +273,34 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                     deployment_environment,
                     owner,
                 )
-            if not self._station_ready(station_url, health_url):
+            health = self._station_health(station_url, health_url)
+            if not health["ready"]:
                 if mode == "remote":
-                    raise BlockedError(
-                        reason=(
-                            f"{self.product_label} service {service_id!r} is not "
-                            "healthy at its declared profile endpoint"
-                        ),
-                        resource=f"service-health:{service_id}",
+                    raise self._station_health_failure(
+                        manifest, service_id, profile_name,
+                        deployment_environment, health,
                     )
                 station_environment = {
                     **os.environ,
-                    "PT_DEV_PROFILE_FILE": str(profile_path),
+                    "PT_DEV_TARGET_PROFILE": profile_name,
                 }
-                station_script = (
-                    REPO_ROOT
-                    / "tooling"
-                    / "scripts"
-                    / "local-dev"
-                    / "station-dev.sh"
-                )
-                completed = subprocess.run(
-                    ["bash", str(station_script)],
-                    cwd=REPO_ROOT,
-                    env=station_environment,
-                    capture_output=True,
-                    text=True,
-                    timeout=180,
-                    check=False,
-                )
-                if completed.returncode != 0 or not self._station_ready(
-                    station_url,
-                    health_url,
+                for field in (
+                    "PT_DEV_PROFILE_FILE", "PT_DEV_PROFILE_FILE_AUTHORITY",
+                    "PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT",
                 ):
-                    detail = (
-                        completed.stderr.strip()
-                        or completed.stdout.strip()
-                        or "Station remained unavailable"
-                    )
-                    raise BlockedError(
-                        reason=f"Local Station provisioning failed: {detail}",
-                        resource=f"service-health:{service_id}",
-                    )
-
+                    station_environment.pop(field, None)
+                equip_station_profile(
+                    profile_name, manifest.source_commit, repo_root=REPO_ROOT,
+                )
                 def stop_local_station(
                     environment: dict[str, str] = station_environment,
+                    target_profile: str = profile_name,
                 ) -> None:
-                    stop_script = (
-                        REPO_ROOT
-                        / "tooling"
-                        / "scripts"
-                        / "local-dev"
-                        / "stop.sh"
-                    )
                     stopped = subprocess.run(
-                        ["bash", str(stop_script), "station"],
+                        [
+                            "node", str(REPO_ROOT / "tooling/devctl/index.mjs"),
+                            "station", "stop", "--target-profile", target_profile,
+                        ],
                         cwd=REPO_ROOT,
                         env=environment,
                         capture_output=True,
@@ -288,6 +320,12 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                     f"local-station:{service_id}",
                     stop_local_station,
                 )
+                health = self._station_health(station_url, health_url)
+                if not health["ready"]:
+                    raise self._station_health_failure(
+                        manifest, service_id, profile_name,
+                        deployment_environment, health,
+                    )
             attestation = produce_station_attestation(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
@@ -311,6 +349,27 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                         f"not match client source {manifest.source_commit}"
                     ),
                     resource=f"source-identity:{service_id}:commit",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-tauri-embedded-webdriver-provisioner",
+                        recovery_action=(
+                            f"Deploy checked source {manifest.source_commit} through "
+                            f"make station for Profile {profile_name} "
+                            f"(deployment {deployment_environment}), then verify "
+                            f"{station_url}/app-meta/version."
+                        ),
+                        resource=f"source-identity:{service_id}:commit",
+                        expected={
+                            "commit": manifest.source_commit,
+                            "serviceId": service_id,
+                            "profile": profile_name,
+                            "deployment": deployment_environment,
+                        },
+                        observed={
+                            "commit": attestation.live_commit,
+                            "stationUrl": station_url,
+                            "runtimeIdentity": attestation.runtime_identity,
+                        },
+                    ),
                 )
             if attestation.protocol_digest != local_proto_digest:
                 raise BlockedError(
@@ -319,6 +378,27 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                         "client source"
                     ),
                     resource=f"source-identity:{service_id}:proto",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="native-tauri-embedded-webdriver-provisioner",
+                        recovery_action=(
+                            f"Deploy checked source {manifest.source_commit} through "
+                            f"make station for Profile {profile_name} "
+                            f"(deployment {deployment_environment}), then verify "
+                            f"{station_url}/app-meta/version and protocol digest."
+                        ),
+                        resource=f"source-identity:{service_id}:proto",
+                        expected={
+                            "protocolDigest": local_proto_digest,
+                            "serviceId": service_id,
+                            "profile": profile_name,
+                            "deployment": deployment_environment,
+                        },
+                        observed={
+                            "protocolDigest": attestation.protocol_digest,
+                            "stationUrl": station_url,
+                            "runtimeIdentity": attestation.runtime_identity,
+                        },
+                    ),
                 )
             services[service_id] = attestation
         return services
@@ -495,14 +575,6 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                     ),
                     resource=f"fixture:{self.fixture_id}",
                 )
-            authorization_ref = (
-                fixture.authorization_ref or self.default_authorization_ref
-            )
-            authorization_name = authorization_ref.removeprefix("env:")
-            reset_authorized = (
-                not fixture.authorization_required
-                or os.environ.get(authorization_name) == "1"
-            )
             roles = self._actor_roles(gate_id)
             clients = self._clients(gate_id, manifest.run_id, slot)
             role_targets = self._actor_role_targets(
@@ -511,14 +583,15 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 self.contract.clients,
                 services,
             )
-            actor_manifest, _, actor_ref = produce_bound_actor_manifest(
-                environment_id=self.environment_id,
-                run_id=manifest.run_id,
-                role_targets=role_targets,
-                credential_ref=credential_refs[0] if credential_refs else "",
-                reset_authorized=reset_authorized,
-                fixture_id=self.fixture_id,
-            )
+            with bound_reset_profiles(self._required_station_profiles().values()):
+                actor_manifest, _, actor_ref = produce_bound_actor_manifest(
+                    environment_id=self.environment_id,
+                    run_id=manifest.run_id,
+                    role_targets=role_targets,
+                    credential_ref=credential_refs[0] if credential_refs else "",
+                    reset_authorized=None,
+                    fixture_id=self.fixture_id,
+                )
             if gate_id == "federation-two-station-lifecycle-e2e":
                 actor_ref = self._persist_station_keyed_actor_manifest(
                     manifest=actor_manifest,
@@ -538,13 +611,14 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 self._manifest,
                 reason=error.reason,
                 resource=error.resource,
+                diagnostic=error.diagnostic,
             )
 
         runtime_cell = os.environ.get(
             "PT_ACCEPTANCE_RUNTIME_CELL",
             "",
         ).strip()
-        if runtime_cell and runtime_cell != "desktop-macos-native":
+        if runtime_cell:
             return manifest
         try:
             self._run_preflight_command(
@@ -570,6 +644,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
     @staticmethod
@@ -591,7 +666,6 @@ class CrossStationSocialNativeProvisioner(
     environment_id = "cross-station-social-native"
     required_slot = 13
     fixture_id = "cross-station-social-actors"
-    default_authorization_ref = "env:SOCIAL_CROSS_STATION_ACCEPTANCE_RESET"
     product_label = "Cross-Station Social"
 
     def __init__(
@@ -602,11 +676,7 @@ class CrossStationSocialNativeProvisioner(
     ) -> None:
         super().__init__(
             contract,
-            station_profiles=(
-                _CROSS_STATION_SOCIAL_SERVICE_PROFILES
-                if not station_profiles
-                else station_profiles
-            ),
+            station_profiles=station_profiles,
         )
 
     def _resolve_active_profile(self) -> tuple[str, Path, int, dict[str, str]]:

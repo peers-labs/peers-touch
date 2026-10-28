@@ -34,6 +34,7 @@ from tooling.acceptance.drivers.tauri import ProvisionedTauriLauncher
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core.lease import RemoteGitSourceLease
 from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.source_sync import (
     RemoteSourceSynchronizer,
     SourceSyncRequest,
@@ -311,6 +312,13 @@ class LinuxCellProfile:
                     "Create it from the documented profile contract."
                 ),
                 resource=f"runtime-cell-profile:{name}",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="native-desktop-linux-provisioner",
+                    recovery_action=f"Prepare the reviewed Linux Runtime Cell Profile at {path}; its host and display cannot be probed until this binding exists.",
+                    resource=f"runtime-cell-profile:{name}",
+                    expected={"path": str(path), "filePresent": True},
+                    observed={"path": str(path), "filePresent": False},
+                ),
             )
         values = load_env_file(path)
         profile = cls(
@@ -579,6 +587,13 @@ class NativeDesktopLinuxProvisioner:
                 resource=(
                     "runtime-cell-deploy-environment:"
                     f"{self.profile.deploy_environment}"
+                ),
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="native-desktop-linux-provisioner",
+                    recovery_action=f"Prepare the reviewed Linux deployment descriptor at {deploy_path}; then resolve its host and display through the Runtime Cell.",
+                    resource=f"runtime-cell-deploy-environment:{self.profile.deploy_environment}",
+                    expected={"path": str(deploy_path), "filePresent": True},
+                    observed={"path": str(deploy_path), "filePresent": False},
                 ),
             )
         self.deploy_values = load_env_file(deploy_path)
@@ -2121,13 +2136,20 @@ class NativeDesktopLinuxProvisioner:
         completed = self.transport.run_argv(
             ("sh", "-lc", command),
             timeout=30,
-            check=True,
+            check=False,
         )
         lines = completed.stdout.splitlines()
-        if len(lines) != 3 or not lines[0].startswith("Ubuntu 20.04"):
+        if completed.returncode != 0 or len(lines) != 3 or not lines[0].startswith("Ubuntu 20.04"):
             raise BlockedError(
                 reason="Linux runtime-cell host must remain Ubuntu 20.04 x86_64",
                 resource=f"runtime-cell-host:{self.contract.cell_id}",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="native-desktop-linux-provisioner",
+                    recovery_action=f"Repair the reviewed Linux host {self.profile.deploy_environment} to satisfy Ubuntu 20.04, x86_64 and Docker preflight before launching the Cell.",
+                    resource=f"runtime-cell-host:{self.contract.cell_id}",
+                    expected={"distribution": "Ubuntu 20.04", "architecture": "x86_64", "dockerProbeExitCode": 0},
+                    observed={"preflightExitCode": completed.returncode, "hostReadback": lines},
+                ),
             )
         return {
             "distribution": lines[0],
@@ -2610,6 +2632,21 @@ class NativeDesktopLinuxProvisioner:
         raise BlockedError(
             reason=f"Linux runtime-cell readiness failed: {detail[-8000:]}",
             resource=f"runtime-cell-container:{container_name}",
+            diagnostic=ResourceDiagnostic(
+                owner="native-desktop-linux-provisioner",
+                recovery_action=f"Inspect the owned {container_name} startup logs and repair the Runtime Cell startup; repeat readiness with display {self.profile.display}.",
+                resource_checks=[{
+                    "resource": f"runtime-cell-container:{container_name}",
+                    "expected": {"readyDocument": True},
+                    "state": "OBSERVED",
+                    "observed": {"readyReadExitCode": completed.returncode, "readyDocument": False},
+                }, {
+                    "resource": f"runtime-cell-display:{self.contract.cell_id}",
+                    "expected": {"display": self.profile.display, "ready": True},
+                    "state": "NOT_EVALUATED",
+                    "reason": "The Cell did not publish its ready document; this observation does not establish display availability.",
+                }],
+            ),
         )
 
     def _start_remote_actor(

@@ -17,6 +17,7 @@ from tooling.acceptance.core import (
     REPO_ROOT,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
+from tooling.acceptance.core.evidence_store import write_current_artifact
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
@@ -111,13 +112,39 @@ def selected_runtime() -> tuple[
     return selected.manifest, selected.actor_manifest, selected.binding
 
 
-def message_dom_snapshot(client: TauriSession, message_id: str) -> dict[str, Any] | None:
+def message_dom_observation(client: TauriSession, message_id: str) -> dict[str, Any]:
     value = client.execute_script(
         """
         const id = arguments[0];
         const row = document.querySelector(`[data-message-ulid="${CSS.escape(id)}"]`);
-        if (!row) return null;
-        return {
+        if (!row) {
+          return {
+            message: null,
+            activePanes: Array.from(
+              document.querySelectorAll('[data-chat-conversation-pane]'),
+            ).map((pane) => ({
+              conversationId: pane.getAttribute('data-chat-conversation-pane') || '',
+              groupSecurity: pane.getAttribute('data-group-security') || '',
+            })),
+            visibleRows: Array.from(
+              document.querySelectorAll('[data-message-ulid]'),
+            ).map((item) => ({
+              messageId: item.getAttribute('data-message-ulid') || '',
+              text: item.querySelector('[data-message-text]')?.innerText || '',
+              threadRoot: item.getAttribute('data-message-thread-root') || '',
+            })),
+            scrolls: Array.from(document.querySelectorAll('.chat-message-scroll'))
+              .map((scroll) => ({
+                top: scroll.scrollTop,
+                height: scroll.clientHeight,
+                contentHeight: scroll.scrollHeight,
+              })),
+            threadRoots: Array.from(
+              document.querySelectorAll('[data-chat-thread-panel="open"]'),
+            ).map((panel) => panel.getAttribute('data-chat-thread-root') || ''),
+          };
+        }
+        return { message: {
           messageId: id,
           text: row.innerText || '',
           edited: row.getAttribute('data-message-edited') || '',
@@ -136,11 +163,11 @@ def message_dom_snapshot(client: TauriSession, message_id: str) -> dict[str, Any
             .map((item) => item.getAttribute('data-message-reaction') || ''),
           receipt: row.querySelector('[data-message-receipt]')
             ?.getAttribute('data-message-receipt') || '',
-        };
+        }};
         """,
         message_id,
     )
-    return value if isinstance(value, dict) else None
+    return value if isinstance(value, dict) else {"message": None}
 
 
 def thread_dom_snapshot(client: TauriSession) -> dict[str, Any] | None:
@@ -193,18 +220,6 @@ def recipient_queue_item_ids(
         for item in evidence.get("queue") or []
         if item.get("recipientPtid") == ptid
         and item.get("recipientDeviceId") == device_id
-    )
-
-
-def station_readback(
-    station_url: str,
-    conversation_id: str,
-    message_id: str,
-) -> dict[str, Any]:
-    return shared_station_readback(
-        conversation_id,
-        message_id,
-        station_url=station_url,
     )
 
 
@@ -306,6 +321,8 @@ class NativeInteractionsGate(AcceptanceGate):
             else current_workspace_digest()
         )
         self.steps: list[dict[str, Any]] = []
+        self._step_observation_sequence = 0
+        self._predicate_probes: list[dict[str, Any]] = []
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
         self.client_lifecycles = NativeClientLifecycleLedger()
@@ -368,20 +385,208 @@ class NativeInteractionsGate(AcceptanceGate):
         self.report.runtime["sourceIdentity"] = identity
         return identity
 
-    def step(self, name: str, action: Callable[[], Any], client: str = "") -> Any:
+    def observe_step(
+        self,
+        name: str,
+        client: str,
+        state: str,
+        started: float,
+        *,
+        predicate: dict[str, Any] | None = None,
+    ) -> None:
+        self._step_observation_sequence += 1
+        observation = {
+            "artifactKind": "acceptance-step-observation",
+            "evidenceClass": "SUPPORTING_OBSERVATION",
+            "proofStatus": "NOT_APPLICABLE",
+            "gateId": self.gate_id,
+            "sequence": self._step_observation_sequence,
+            "source": {
+                "commit": self.tested_commit,
+                "workspaceDigest": self.workspace_digest,
+            },
+            "step": name,
+            "client": client,
+            "state": state,
+            "elapsedMs": int((time.monotonic() - started) * 1000),
+        }
+        if predicate is not None:
+            observation["predicate"] = predicate
+        write_current_artifact(
+            f"observations/step-{self._step_observation_sequence:05d}.json",
+            (json.dumps(observation, sort_keys=True) + "\n").encode("utf-8"),
+            repo_root=REPO_ROOT,
+        )
+        print(json.dumps(observation, sort_keys=True), flush=True)
+
+    def wait_step(
+        self,
+        name: str,
+        probe: Callable[[], Any],
+        client: str,
+        *,
+        expected: Any = "non-empty projection",
+        ready: Callable[[Any], bool] = bool,
+        timeout: float = STEP_TIMEOUT,
+        interval: float = 0.25,
+    ) -> Any:
         started = time.monotonic()
+        last_serialized = ""
+        last_recorded = float("-inf")
+
+        def predicate() -> Any:
+            nonlocal last_serialized, last_recorded
+            failure: Exception | None = None
+            probes: dict[str, Any] = {}
+            self._predicate_probes.append(probes)
+            try:
+                value = probe()
+                accepted = ready(value)
+                sample = {"expected": expected, "observed": value, "accepted": accepted}
+            except Exception as error:
+                failure = error
+                sample = {
+                    "expected": expected,
+                    "errorType": type(error).__name__,
+                    "error": str(error),
+                    "accepted": False,
+                }
+                value = None
+                accepted = False
+            finally:
+                self._predicate_probes.pop()
+            if probes:
+                sample["probes"] = probes
+            serialized = json.dumps(sample, sort_keys=True)
+            now = time.monotonic()
+            if serialized != last_serialized and (
+                accepted or now - last_recorded >= 1
+            ):
+                self.observe_step(
+                    name, client, "PREDICATE", started, predicate=sample,
+                )
+                last_serialized = serialized
+                last_recorded = now
+            if failure is not None:
+                raise failure
+            return value if accepted else None
+
+        return self.step(
+            name,
+            lambda: wait_until(predicate, name, timeout, interval),
+            client,
+        )
+
+    def wait_until(
+        self,
+        predicate: Callable[[], Any],
+        description: str,
+        timeout: float = 120,
+        interval: float = 0.25,
+        *,
+        expected: Any = "predicate returns a truthy value",
+    ) -> Any:
+        actor = description.split(" ", 1)[0]
+        return self.wait_step(
+            description,
+            predicate,
+            actor if actor in self.clients else "",
+            expected=expected,
+            timeout=timeout,
+            interval=interval,
+        )
+
+    def observe_probe(self, operation: str, actor: str, value: Any) -> Any:
+        if self._predicate_probes:
+            self._predicate_probes[-1][f"{actor}.{operation}"] = value
+        return value
+
+    def harness(
+        self,
+        client: TauriSession,
+        method: str,
+        payload: dict[str, Any],
+        timeout: float = 45.0,
+        *,
+        actor: str = "",
+    ) -> Any:
+        actor = actor or next(
+            (name for name, session in self.clients.items() if session is client),
+            "",
+        )
+        action = lambda: async_harness(client, method, payload, timeout)
+        if self._predicate_probes:
+            return self.observe_probe(method, actor, action())
+        # A caller may intentionally catch a rejected product operation.
+        # Its enclosing assertion owns failure judgment, not this RPC boundary.
+        return self.step(
+            f"harness.{method}", action, actor, judge_failure=False,
+        )
+
+    def station_readback(
+        self,
+        station_url: str,
+        conversation_id: str,
+        message_id: str,
+        *,
+        deployment_environment: str = "",
+    ) -> dict[str, Any]:
+        action = lambda: shared_station_readback(
+            conversation_id,
+            message_id,
+            station_url=station_url,
+            deployment_environment=deployment_environment,
+        )
+        if self._predicate_probes:
+            return self.observe_probe("stationReadback", station_url, action())
+        return self.step(f"station.readback:{conversation_id}:{message_id}", action)
+
+    def message_dom_snapshot(
+        self, client: TauriSession, message_id: str,
+    ) -> dict[str, Any] | None:
+        actor = next(
+            (actor for actor, session in self.clients.items() if session is client),
+            "",
+        )
+        observation = self.observe_probe(
+            f"messageDom:{message_id}", actor,
+            message_dom_observation(client, message_id),
+        )
+        message = observation.get("message")
+        return message if isinstance(message, dict) else None
+
+    def thread_dom_snapshot(self, client: TauriSession) -> dict[str, Any] | None:
+        actor = next(
+            (actor for actor, session in self.clients.items() if session is client),
+            "",
+        )
+        return self.observe_probe("threadDom", actor, thread_dom_snapshot(client))
+
+    def step(
+        self,
+        name: str,
+        action: Callable[[], Any],
+        client: str = "",
+        *,
+        judge_failure: bool = True,
+    ) -> Any:
+        started = time.monotonic()
+        self.observe_step(name, client, "STARTED", started)
         try:
             value = action()
         except Exception as error:
+            if judge_failure:
+                self.report.runtime.setdefault("firstFailedStep", name)
             self.steps.append(
                 {
                     "step": name,
                     "client": client,
-                    "status": "fail",
+                    "status": "fail" if judge_failure else "error",
                     "durationMs": int((time.monotonic() - started) * 1000),
                     "error": str(error),
                 }
             )
+            self.observe_step(name, client, "FAILED", started)
             raise
         self.steps.append(
             {
@@ -391,6 +596,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 "durationMs": int((time.monotonic() - started) * 1000),
             }
         )
+        self.observe_step(name, client, "COMPLETED", started)
         return value
 
     def start_client(self, actor: str) -> None:
@@ -398,7 +604,7 @@ class NativeInteractionsGate(AcceptanceGate):
         self.register_driver(client)
         self.clients[actor] = client
         self.ptids[actor] = ptid
-        device = async_harness(client, "getRealtimeDevice", {})
+        device = self.harness(client, "getRealtimeDevice", {})
         device_id = str((device or {}).get("deviceId") or "")
         if not device_id:
             raise GateError(f"{actor}: messaging device ID is missing")
@@ -454,7 +660,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 account_ref = str(
                     self.actor_specs[actor].get("accountRef") or ""
                 )
-                login = async_harness(
+                login = self.harness(
                     client,
                     "loginWithPassword",
                     {
@@ -462,17 +668,12 @@ class NativeInteractionsGate(AcceptanceGate):
                         "password": DEV_ACCOUNT_PASSWORD,
                     },
                     timeout=30,
+                    actor=actor,
                 )
                 if not (login or {}).get("authenticated"):
                     raise GateError(f"{actor} login did not authenticate")
                 self.client_lifecycles.mark_authenticated(client)
-                hydration = async_harness(
-                    client,
-                    "hydrateActiveActor",
-                    {},
-                    timeout=30,
-                )
-                ptid = str((hydration or {}).get("actorPtid") or "")
+                ptid = str((login or {}).get("actorPtid") or "")
                 if ptid != expected_ptid:
                     raise GateError(
                         f"{actor} login identity mismatch: "
@@ -498,11 +699,11 @@ class NativeInteractionsGate(AcceptanceGate):
         client: TauriSession,
         expected_ptid: str,
     ) -> dict[str, Any]:
-        return wait_until(
+        return self.wait_until(
             lambda: (
                 device
                 if (
-                    device := async_harness(
+                    device := self.harness(
                         client,
                         "getRealtimeDevice",
                         {},
@@ -521,10 +722,10 @@ class NativeInteractionsGate(AcceptanceGate):
         method = "syncFriendSession" if kind == "friend" else "syncGroup"
         key = "sessionUlid" if kind == "friend" else "groupUlid"
         if kind == "friend":
-            async_harness(self.clients[actor], method, {key: conversation_id})
+            self.harness(self.clients[actor], method, {key: conversation_id})
             return
-        wait_until(
-            lambda: async_harness(
+        self.wait_until(
+            lambda: self.harness(
                 self.clients[actor],
                 method,
                 {key: conversation_id},
@@ -540,12 +741,15 @@ class NativeInteractionsGate(AcceptanceGate):
         actor: str,
         conversation_id: str,
     ) -> dict[str, Any] | None:
-        value = async_harness(
+        value = self.harness(
             self.clients[actor],
             "groupLifecycleSnapshot",
             {"groupUlid": conversation_id},
         )
-        return value if isinstance(value, dict) else None
+        return self.observe_probe(
+            f"groupLifecycle:{conversation_id}", actor,
+            value if isinstance(value, dict) else None,
+        )
 
     def wait_group_lifecycle(
         self,
@@ -566,7 +770,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 return snapshots
             return None
 
-        return wait_until(
+        return self.wait_until(
             converged,
             description,
             STEP_TIMEOUT,
@@ -598,11 +802,11 @@ class NativeInteractionsGate(AcceptanceGate):
         self.client_lifecycles.mark_authenticated(client)
         self.register_driver(client)
         self.clients[actor] = client
-        history = wait_until(
+        history = self.wait_until(
             lambda: (
                 page
                 if isinstance(
-                    page := async_harness(
+                    page := self.harness(
                         client,
                         "messagePage",
                         {
@@ -629,7 +833,7 @@ class NativeInteractionsGate(AcceptanceGate):
             "retained Group members observe active lifecycle state",
         )
         renamed = f"Lifecycle {time.time_ns()}"
-        async_harness(
+        self.harness(
             self.clients["alice"],
             "updateGroup",
             {"groupUlid": group_id, "name": renamed},
@@ -642,7 +846,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         self.assert_condition("group_rename_convergence", True)
 
-        async_harness(
+        self.harness(
             self.clients["alice"],
             "updateGroupMember",
             {
@@ -663,7 +867,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         self.assert_condition("group_role_convergence", True)
 
-        async_harness(
+        self.harness(
             self.clients["alice"],
             "transferGroupOwnership",
             {
@@ -679,7 +883,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         self.assert_condition("group_owner_transfer_convergence", True)
 
-        async_harness(
+        self.harness(
             self.clients["bob"],
             "updateGroupMember",
             {
@@ -700,7 +904,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         self.assert_condition("group_remote_owner_mutation", True)
 
-        async_harness(
+        self.harness(
             self.clients["alice"],
             "leaveGroup",
             {"groupUlid": group_id},
@@ -720,12 +924,12 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         self.assert_condition("group_leave_convergence", True)
 
-        async_harness(
+        self.harness(
             self.clients["bob"],
             "dissolveGroup",
             {"groupUlid": group_id},
         )
-        wait_until(
+        self.wait_until(
             lambda: (
                 snapshot
                 if isinstance(
@@ -763,7 +967,7 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id: str,
         thread_root_message_id: str = "",
     ) -> dict[str, Any] | None:
-        value = async_harness(
+        value = self.harness(
             self.clients[actor],
             "interactionProjection",
             {
@@ -773,7 +977,10 @@ class NativeInteractionsGate(AcceptanceGate):
                 "threadRootMessageId": thread_root_message_id,
             },
         )
-        return value if isinstance(value, dict) else None
+        return self.observe_probe(
+            f"interactionProjection:{message_id}", actor,
+            value if isinstance(value, dict) else None,
+        )
 
     def send(
         self,
@@ -785,7 +992,7 @@ class NativeInteractionsGate(AcceptanceGate):
         reply_to: str = "",
         thread_root: str = "",
     ) -> dict[str, Any]:
-        result = async_harness(
+        result = self.harness(
             self.clients[actor],
             "sendInteractionMessage",
             {
@@ -801,11 +1008,14 @@ class NativeInteractionsGate(AcceptanceGate):
         return result
 
     def expect_rejected(self, action: Callable[[], Any], description: str) -> None:
-        try:
-            action()
-        except Exception:
-            return
-        raise GateError(f"unauthorized action succeeded: {description}")
+        def verify() -> None:
+            try:
+                action()
+            except Exception:
+                return
+            raise GateError(f"unauthorized action succeeded: {description}")
+
+        self.step(f"authorization.rejected:{description}", verify)
 
     def engine_snapshot(
         self,
@@ -814,7 +1024,7 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id: str,
         command_id: str = "",
     ) -> dict[str, Any]:
-        result = async_harness(
+        result = self.harness(
             self.clients[actor],
             "engineInteractionSnapshot",
             {
@@ -828,7 +1038,9 @@ class NativeInteractionsGate(AcceptanceGate):
             raise GateError(
                 "engineInteractionSnapshot returned invalid evidence"
             )
-        return result
+        return self.observe_probe(
+            f"engineInteractionSnapshot:{message_id}:{command_id}", actor, result,
+        )
 
     def prove_lifecycle(
         self,
@@ -848,10 +1060,10 @@ class NativeInteractionsGate(AcceptanceGate):
         for actor in members:
             self.step(
                 f"{claim_kind}.message.visible",
-                lambda actor=actor: wait_until(
+                lambda actor=actor: self.wait_until(
                     lambda: (
                         self.sync(actor, kind, conversation_id)
-                        or message_dom_snapshot(self.clients[actor], message_id)
+                        or self.message_dom_snapshot(self.clients[actor], message_id)
                     ),
                     f"{actor} {claim_kind} base DOM",
                     STEP_TIMEOUT,
@@ -871,15 +1083,15 @@ class NativeInteractionsGate(AcceptanceGate):
             "bob",
         )
         reply_id = str(reply["messageId"])
-        wait_until(
+        self.wait_step(
+            f"{claim_kind}.reply.authority-projection",
             lambda: self.projection(
                 "alice",
                 kind,
                 conversation_id,
                 reply_id,
             ),
-            f"alice {claim_kind} reply authority projection",
-            STEP_TIMEOUT,
+            "alice",
         )
         thread = self.step(
             f"{claim_kind}.thread.send",
@@ -893,7 +1105,8 @@ class NativeInteractionsGate(AcceptanceGate):
             "bob",
         )
         thread_id = str(thread["messageId"])
-        wait_until(
+        self.wait_step(
+            f"{claim_kind}.thread.authority-projection",
             lambda: self.projection(
                 "alice",
                 kind,
@@ -901,8 +1114,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 thread_id,
                 message_id,
             ),
-            f"alice {claim_kind} thread authority projection",
-            STEP_TIMEOUT,
+            "alice",
         )
         nested = self.step(
             f"{claim_kind}.thread.nested.send",
@@ -920,18 +1132,23 @@ class NativeInteractionsGate(AcceptanceGate):
         self.message_ids[f"{claim_kind}.thread.first"] = thread_id
         self.message_ids[f"{claim_kind}.thread.nested"] = nested_id
         for actor in members:
-            self.sync(actor, kind, conversation_id)
-            reply_projection = wait_until(
+            self.step(
+                f"{claim_kind}.reply-thread.sync",
+                lambda actor=actor: self.sync(actor, kind, conversation_id),
+                actor,
+            )
+            reply_projection = self.wait_step(
+                f"{claim_kind}.reply.projection",
                 lambda actor=actor: self.projection(
                     actor,
                     kind,
                     conversation_id,
                     reply_id,
                 ),
-                f"{actor} {claim_kind} reply projection",
-                STEP_TIMEOUT,
+                actor,
             )
-            thread_projection = wait_until(
+            thread_projection = self.wait_step(
+                f"{claim_kind}.thread.projection",
                 lambda actor=actor: self.projection(
                     actor,
                     kind,
@@ -939,14 +1156,14 @@ class NativeInteractionsGate(AcceptanceGate):
                     thread_id,
                     message_id,
                 ),
-                f"{actor} {claim_kind} thread projection",
-                STEP_TIMEOUT,
+                actor,
             )
             if reply_projection.get("replyToMessageId") != message_id:
                 raise GateError(f"{actor} {claim_kind} reply linkage mismatch")
             if thread_projection.get("threadRootMessageId") != message_id:
                 raise GateError(f"{actor} {claim_kind} thread linkage mismatch")
-            nested_projection = wait_until(
+            nested_projection = self.wait_step(
+                f"{claim_kind}.thread.nested.projection",
                 lambda actor=actor: self.projection(
                     actor,
                     kind,
@@ -954,8 +1171,7 @@ class NativeInteractionsGate(AcceptanceGate):
                     nested_id,
                     message_id,
                 ),
-                f"{actor} {claim_kind} nested thread projection",
-                STEP_TIMEOUT,
+                actor,
             )
             if (
                 nested_projection.get("replyToMessageId") != thread_id
@@ -964,29 +1180,35 @@ class NativeInteractionsGate(AcceptanceGate):
                 raise GateError(
                     f"{actor} {claim_kind} nested thread linkage mismatch"
                 )
-            async_harness(
-                self.clients[actor],
-                "openInteractionThread",
-                {
-                    "conversationId": conversation_id,
-                    "kind": kind,
-                    "messageId": message_id,
-                },
+            self.step(
+                f"{claim_kind}.thread.panel.open",
+                lambda actor=actor: self.harness(
+                    self.clients[actor],
+                    "openInteractionThread",
+                    {
+                        "conversationId": conversation_id,
+                        "kind": kind,
+                        "messageId": message_id,
+                    },
+                ),
+                actor,
             )
-            panel = wait_until(
-                lambda actor=actor: (
-                    snapshot
-                    if (
-                        snapshot := thread_dom_snapshot(self.clients[actor])
-                    )
-                    and snapshot.get("rootMessageId") == message_id
+            panel = self.wait_step(
+                f"{claim_kind}.thread.panel.count-and-order",
+                lambda actor=actor: self.thread_dom_snapshot(self.clients[actor]),
+                actor,
+                expected={
+                    "rootMessageId": message_id,
+                    "replyCount": 2,
+                    "replyMessageIds": [thread_id, nested_id],
+                    "orders": [0, 1, 2],
+                },
+                ready=lambda snapshot: bool(
+                    snapshot and snapshot.get("rootMessageId") == message_id
                     and snapshot.get("replyCount") == 2
                     and snapshot.get("replyMessageIds") == [thread_id, nested_id]
                     and snapshot.get("orders") == [0, 1, 2]
-                    else None
                 ),
-                f"{actor} {claim_kind} thread panel count and order",
-                STEP_TIMEOUT,
             )
             if panel.get("replyMessageIds") != [thread_id, nested_id]:
                 raise GateError(
@@ -1019,7 +1241,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         unavailable_reply_id = str(unavailable_reply["messageId"])
         for actor in members:
-            wait_until(
+            self.wait_until(
                 lambda actor=actor: (
                     self.sync(actor, kind, conversation_id)
                     or self.projection(
@@ -1032,8 +1254,8 @@ class NativeInteractionsGate(AcceptanceGate):
                 f"{actor} {claim_kind} reply before local target deletion",
                 STEP_TIMEOUT,
             )
-            wait_until(
-                lambda actor=actor: message_dom_snapshot(
+            self.wait_until(
+                lambda actor=actor: self.message_dom_snapshot(
                     self.clients[actor],
                     unavailable_reply_id,
                 ),
@@ -1041,7 +1263,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 STEP_TIMEOUT,
             )
         target_actor = "bob"
-        target_station = station_readback(
+        target_station = self.station_readback(
             self.station_url,
             conversation_id,
             unavailable_reply_id,
@@ -1057,7 +1279,7 @@ class NativeInteractionsGate(AcceptanceGate):
             raise GateError(
                 f"{claim_kind} actor-hide target has no Authority sequence"
             )
-        wait_until(
+        self.wait_until(
             lambda: (
                 snapshot
                 if (
@@ -1088,7 +1310,7 @@ class NativeInteractionsGate(AcceptanceGate):
             f"{target_actor} {claim_kind} authority head before actor-hide",
             STEP_TIMEOUT,
         )
-        deleted = async_harness(
+        deleted = self.harness(
             self.clients[target_actor],
             "deleteLocalInteractionMessage",
             {
@@ -1101,7 +1323,7 @@ class NativeInteractionsGate(AcceptanceGate):
             raise GateError(
                 f"{target_actor} {claim_kind} actor-hide submission failed"
             )
-        wait_until(
+        self.wait_until(
             lambda: (
                 True
                 if self.projection(
@@ -1116,11 +1338,11 @@ class NativeInteractionsGate(AcceptanceGate):
             f"{target_actor} {claim_kind} actor-hide convergence",
             STEP_TIMEOUT,
         )
-        wait_until(
+        self.wait_until(
             lambda: (
                 snapshot
                 if (
-                    snapshot := message_dom_snapshot(
+                    snapshot := self.message_dom_snapshot(
                         self.clients[target_actor],
                         unavailable_reply_id,
                     )
@@ -1136,7 +1358,7 @@ class NativeInteractionsGate(AcceptanceGate):
         edited_text = f"{prefix}-edited"
         edit = self.step(
             f"{claim_kind}.edit.submit",
-            lambda: async_harness(
+            lambda: self.harness(
                 self.clients["alice"],
                 "editInteractionMessage",
                 {
@@ -1153,47 +1375,37 @@ class NativeInteractionsGate(AcceptanceGate):
             raise GateError(f"{claim_kind} edit returned no command ID")
         self.command_ids[f"{claim_kind}.edit"] = edit_command
         for actor in members:
-            wait_until(
-                lambda actor=actor: (
-                    snapshot
-                    if (
-                        snapshot := self.projection(
-                            actor,
-                            kind,
-                            conversation_id,
-                            message_id,
-                        )
-                    )
-                    and snapshot.get("content") == edited_text
+            self.wait_step(
+                f"{claim_kind}.edit.projection",
+                lambda actor=actor: self.projection(
+                    actor, kind, conversation_id, message_id,
+                ),
+                actor,
+                expected={"content": edited_text, "edited": True},
+                ready=lambda snapshot: bool(
+                    snapshot and snapshot.get("content") == edited_text
                     and snapshot.get("edited") is True
-                    else None
                 ),
-                f"{actor} {claim_kind} edited projection",
-                STEP_TIMEOUT,
             )
-            wait_until(
-                lambda actor=actor: (
-                    snapshot
-                    if (
-                        snapshot := message_dom_snapshot(
-                            self.clients[actor],
-                            message_id,
-                        )
-                    )
-                    and snapshot.get("edited") == "true"
+            self.wait_step(
+                f"{claim_kind}.edit.dom",
+                lambda actor=actor: self.message_dom_snapshot(
+                    self.clients[actor], message_id,
+                ),
+                actor,
+                expected={"textContains": edited_text, "edited": "true"},
+                ready=lambda snapshot: bool(
+                    snapshot and snapshot.get("edited") == "true"
                     and edited_text in str(snapshot.get("text") or "")
-                    else None
                 ),
-                f"{actor} {claim_kind} edited DOM",
-                STEP_TIMEOUT,
             )
-        before_unauthorized_edit = station_readback(
+        before_unauthorized_edit = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
         )
         self.expect_rejected(
-            lambda: async_harness(
+            lambda: self.harness(
                 self.clients["bob"],
                 "editInteractionMessage",
                 {
@@ -1205,7 +1417,7 @@ class NativeInteractionsGate(AcceptanceGate):
             ),
             f"bob edits alice {claim_kind} message",
         )
-        after_unauthorized_edit = station_readback(
+        after_unauthorized_edit = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
@@ -1230,7 +1442,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 )
                 for actor in members
             }
-            reaction = async_harness(
+            reaction = self.harness(
                 self.clients["bob"],
                 "submitMetadataInteraction",
                 {
@@ -1251,7 +1463,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 raise GateError(
                     f"{claim_kind} reaction attempt returned no command ID"
                 )
-            wait_until(
+            self.wait_until(
                 lambda: (
                     snapshot
                     if (
@@ -1270,7 +1482,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 STEP_TIMEOUT,
             )
             for actor in members:
-                wait_until(
+                self.wait_until(
                     lambda actor=actor: (
                         snapshot
                         if (
@@ -1287,8 +1499,11 @@ class NativeInteractionsGate(AcceptanceGate):
                     f"{actor} {claim_kind} reaction attempt "
                     f"{attempt + 1} consumption",
                     STEP_TIMEOUT,
+                    expected={
+                        "consumptionCount": {"greaterThan": before_consumption[actor]},
+                    },
                 )
-                wait_until(
+                self.wait_until(
                     lambda actor=actor: (
                         snapshot
                         if (
@@ -1306,7 +1521,7 @@ class NativeInteractionsGate(AcceptanceGate):
                     STEP_TIMEOUT,
                 )
         self.assert_condition(f"{claim_kind}_reaction_idempotency", True)
-        async_harness(
+        self.harness(
             self.clients["bob"],
             "submitMetadataInteraction",
             {
@@ -1319,7 +1534,7 @@ class NativeInteractionsGate(AcceptanceGate):
             },
         )
         for actor in members:
-            wait_until(
+            self.wait_until(
                 lambda actor=actor: (
                     snapshot
                     if (
@@ -1336,11 +1551,11 @@ class NativeInteractionsGate(AcceptanceGate):
                 f"{actor} {claim_kind} reaction removal projection",
                 STEP_TIMEOUT,
             )
-            wait_until(
+            self.wait_until(
                 lambda actor=actor: (
                     snapshot
                     if (
-                        snapshot := message_dom_snapshot(
+                        snapshot := self.message_dom_snapshot(
                             self.clients[actor],
                             message_id,
                         )
@@ -1353,7 +1568,7 @@ class NativeInteractionsGate(AcceptanceGate):
             )
         self.assert_condition(f"{claim_kind}_reaction_remove_convergence", True)
 
-        pin = async_harness(
+        pin = self.harness(
             self.clients["alice"],
             "submitMetadataInteraction",
             {
@@ -1366,7 +1581,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         pin_command = str((pin or {}).get("command_id") or (pin or {}).get("commandId") or "")
         for actor in members:
-            wait_until(
+            self.wait_until(
                 lambda actor=actor: (
                     snapshot
                     if (
@@ -1383,7 +1598,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 f"{actor} {claim_kind} pin",
                 STEP_TIMEOUT,
             )
-        async_harness(
+        self.harness(
             self.clients["bob"],
             "submitMetadataInteraction",
             {
@@ -1395,7 +1610,7 @@ class NativeInteractionsGate(AcceptanceGate):
             },
         )
         for actor in members:
-            wait_until(
+            self.wait_until(
                 lambda actor=actor: (
                     snapshot
                     if (
@@ -1414,7 +1629,7 @@ class NativeInteractionsGate(AcceptanceGate):
             )
         self.assert_condition(f"{claim_kind}_pin_convergence", True)
 
-        read = async_harness(
+        read = self.harness(
             self.clients["bob"],
             "submitReadCursor",
             {"conversationId": conversation_id, "kind": kind},
@@ -1422,7 +1637,7 @@ class NativeInteractionsGate(AcceptanceGate):
         read_sequence = int((read or {}).get("lastReadSequence") or 0)
         if read_sequence <= 0:
             raise GateError(f"{claim_kind} read cursor returned no sequence")
-        alice_engine = wait_until(
+        alice_engine = self.wait_until(
             lambda: (
                 snapshot
                 if (
@@ -1444,11 +1659,11 @@ class NativeInteractionsGate(AcceptanceGate):
             STEP_TIMEOUT,
         )
         self.engine_evidence[f"{claim_kind}.alice"] = alice_engine
-        wait_until(
+        self.wait_until(
             lambda: (
                 snapshot
                 if (
-                    snapshot := message_dom_snapshot(
+                    snapshot := self.message_dom_snapshot(
                         self.clients["alice"],
                         message_id,
                     )
@@ -1468,13 +1683,13 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         self.assert_condition(f"{claim_kind}_read_progression", True)
 
-        before_unauthorized_retract = station_readback(
+        before_unauthorized_retract = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
         )
         self.expect_rejected(
-            lambda: async_harness(
+            lambda: self.harness(
                 self.clients["bob"],
                 "submitMetadataInteraction",
                 {
@@ -1487,7 +1702,7 @@ class NativeInteractionsGate(AcceptanceGate):
             ),
             f"bob retracts alice {claim_kind} message",
         )
-        after_unauthorized_retract = station_readback(
+        after_unauthorized_retract = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
@@ -1500,7 +1715,7 @@ class NativeInteractionsGate(AcceptanceGate):
             )
         self.assert_condition(f"{claim_kind}_author_only_retract", True)
 
-        retract = async_harness(
+        retract = self.harness(
             self.clients["alice"],
             "submitMetadataInteraction",
             {
@@ -1517,11 +1732,11 @@ class NativeInteractionsGate(AcceptanceGate):
             or ""
         )
         for actor in members:
-            wait_until(
+            self.wait_until(
                 lambda actor=actor: (
                     snapshot
                     if (
-                        snapshot := message_dom_snapshot(
+                        snapshot := self.message_dom_snapshot(
                             self.clients[actor],
                             message_id,
                         )
@@ -1549,7 +1764,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 f"{claim_kind} Engine durable interaction evidence is incomplete"
             )
         self.engine_evidence[f"{claim_kind}.terminal"] = engine
-        station = station_readback(
+        station = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
@@ -1577,8 +1792,8 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id = str(base["messageId"])
         for actor in ("alice", "bob", *online_members):
             self.sync(actor, kind, conversation_id)
-            wait_until(
-                lambda actor=actor: message_dom_snapshot(
+            self.wait_until(
+                lambda actor=actor: self.message_dom_snapshot(
                     self.clients[actor],
                     message_id,
                 ),
@@ -1588,7 +1803,7 @@ class NativeInteractionsGate(AcceptanceGate):
 
         self.stop_client_for_restart("bob")
         edited_text = f"{prefix}-edited"
-        edit = async_harness(
+        edit = self.harness(
             self.clients["alice"],
             "editInteractionMessage",
             {
@@ -1605,7 +1820,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         if not edit_command:
             raise GateError(f"{claim_kind} offline edit returned no command ID")
-        wait_until(
+        self.wait_until(
             lambda: (
                 snapshot
                 if (
@@ -1622,7 +1837,7 @@ class NativeInteractionsGate(AcceptanceGate):
             f"alice {claim_kind} offline edit commit",
             STEP_TIMEOUT,
         )
-        reaction = async_harness(
+        reaction = self.harness(
             self.clients["alice"],
             "submitMetadataInteraction",
             {
@@ -1643,7 +1858,7 @@ class NativeInteractionsGate(AcceptanceGate):
             raise GateError(
                 f"{claim_kind} offline reaction returned no command ID"
             )
-        wait_until(
+        self.wait_until(
             lambda: (
                 snapshot
                 if (
@@ -1660,7 +1875,7 @@ class NativeInteractionsGate(AcceptanceGate):
             f"alice {claim_kind} offline reaction commit",
             STEP_TIMEOUT,
         )
-        async_harness(
+        self.harness(
             self.clients["alice"],
             "submitMetadataInteraction",
             {
@@ -1672,7 +1887,7 @@ class NativeInteractionsGate(AcceptanceGate):
             },
         )
         for actor in ("alice", *online_members):
-            wait_until(
+            self.wait_until(
                 lambda actor=actor: (
                     snapshot
                     if (
@@ -1699,7 +1914,7 @@ class NativeInteractionsGate(AcceptanceGate):
             conversation_id,
             stop_existing=False,
         )
-        wait_until(
+        self.wait_until(
             lambda: (
                 snapshot
                 if (
@@ -1719,11 +1934,11 @@ class NativeInteractionsGate(AcceptanceGate):
             f"bob {claim_kind} offline queue recovery",
             STEP_TIMEOUT,
         )
-        wait_until(
+        self.wait_until(
             lambda: (
                 snapshot
                 if (
-                    snapshot := message_dom_snapshot(
+                    snapshot := self.message_dom_snapshot(
                         self.clients["bob"],
                         message_id,
                     )
@@ -1744,7 +1959,7 @@ class NativeInteractionsGate(AcceptanceGate):
             edit_command,
         )
         self.restart_client("bob", kind, conversation_id)
-        after_restart = wait_until(
+        after_restart = self.wait_until(
             lambda: (
                 snapshot
                 if (
@@ -1769,7 +1984,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 f"{claim_kind} offline recovery duplicated consumption after restart"
             )
         self.engine_evidence[f"{claim_kind}.offline"] = after_restart
-        self.station_evidence[f"{claim_kind}.offline"] = station_readback(
+        self.station_evidence[f"{claim_kind}.offline"] = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
@@ -1802,10 +2017,10 @@ class NativeInteractionsGate(AcceptanceGate):
             )
 
         def delivery_station_readback() -> dict[str, Any]:
-            return shared_station_readback(
+            return self.station_readback(
+                delivery_station_url,
                 conversation_id,
                 message_id,
-                station_url=delivery_station_url,
                 deployment_environment=delivery_environment,
             )
 
@@ -1834,7 +2049,7 @@ class NativeInteractionsGate(AcceptanceGate):
             conversation_id,
             message_id,
         )
-        before_dom = message_dom_snapshot(self.clients[actor], message_id)
+        before_dom = self.message_dom_snapshot(self.clients[actor], message_id)
         try:
             source_device = str(
                 source.get("recipientDeviceId") or self.device_ids[actor]
@@ -1865,12 +2080,12 @@ class NativeInteractionsGate(AcceptanceGate):
             )
             return evidence if acknowledged else None
 
-        after_station = wait_until(
+        after_station = self.wait_until(
             acked_duplicate,
             f"{actor} {claim_kind} duplicate queue delivery ACK",
             STEP_TIMEOUT,
         )
-        after_engine = wait_until(
+        after_engine = self.wait_until(
             lambda: (
                 snapshot
                 if (
@@ -1886,7 +2101,7 @@ class NativeInteractionsGate(AcceptanceGate):
             f"{actor} {claim_kind} duplicate queue replay Engine cursor",
             STEP_TIMEOUT,
         )
-        after_dom = message_dom_snapshot(self.clients[actor], message_id)
+        after_dom = self.message_dom_snapshot(self.clients[actor], message_id)
         for field in ("projection", "reactions", "pins"):
             if before_engine.get(field) != after_engine.get(field):
                 raise GateError(
@@ -1918,8 +2133,8 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id = str(base["messageId"])
         for actor in ("alice", "bob"):
             self.sync(actor, kind, conversation_id)
-            wait_until(
-                lambda actor=actor: message_dom_snapshot(
+            self.wait_until(
+                lambda actor=actor: self.message_dom_snapshot(
                     self.clients[actor],
                     message_id,
                 ),
@@ -1927,7 +2142,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 STEP_TIMEOUT,
             )
 
-        before_station = station_readback(
+        before_station = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
@@ -1950,7 +2165,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 },
             )
             lifecycle_paused = True
-            edit = async_harness(
+            edit = self.harness(
                 self.clients["alice"],
                 "editInteractionMessage",
                 {
@@ -1997,7 +2212,7 @@ class NativeInteractionsGate(AcceptanceGate):
             )
             lifecycle_paused = False
 
-            fault_evidence = wait_until(
+            fault_evidence = self.wait_until(
                 lambda: (
                     evidence
                     if (
@@ -2032,7 +2247,7 @@ class NativeInteractionsGate(AcceptanceGate):
             )
             lifecycle_paused = True
 
-            pending_engine = wait_until(
+            pending_engine = self.wait_until(
                 lambda: (
                     snapshot
                     if (
@@ -2073,7 +2288,7 @@ class NativeInteractionsGate(AcceptanceGate):
                     "transport-failed command"
                 )
             def _sender_settled() -> dict[str, Any] | None:
-                value = async_harness(
+                value = self.harness(
                     self.clients["alice"],
                     "interactionProjection",
                     {
@@ -2105,12 +2320,12 @@ class NativeInteractionsGate(AcceptanceGate):
                     f"edited={None if proj is None else proj.get('edited')}"
                 )
 
-            sender_projection = wait_until(
+            sender_projection = self.wait_until(
                 _sender_settled,
                 f"Alice {claim_kind} original preserved during retry_wait",
                 STEP_TIMEOUT,
             )
-            sender_dom = message_dom_snapshot(
+            sender_dom = self.message_dom_snapshot(
                 self.clients["alice"],
                 message_id,
             )
@@ -2122,7 +2337,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 raise GateError(
                     "timeout changed the original sender-visible DOM"
                 )
-            during_station = station_readback(
+            during_station = self.station_readback(
                 self.station_url,
                 conversation_id,
                 message_id,
@@ -2172,7 +2387,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 state = str((snapshot.get("outbox") or {}).get("state") or "")
                 return snapshot if state in {"submitted", "committed"} else None
 
-            final_engine = wait_until(
+            final_engine = self.wait_until(
                 dispatch_until_submitted,
                 "Alice exact interaction retry submission",
                 STEP_TIMEOUT,
@@ -2182,7 +2397,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 != command_sha
             ):
                 raise GateError("interaction retry changed exact command bytes")
-            wait_until(
+            self.wait_until(
                 lambda: (
                     snapshot
                     if (
@@ -2200,11 +2415,11 @@ class NativeInteractionsGate(AcceptanceGate):
                 f"Bob {claim_kind} timeout retry edited projection",
                 STEP_TIMEOUT,
             )
-            receiver_dom = wait_until(
+            receiver_dom = self.wait_until(
                 lambda: (
                     snapshot
                     if (
-                        (snapshot := message_dom_snapshot(
+                        (snapshot := self.message_dom_snapshot(
                             self.clients["bob"],
                             message_id,
                         ))
@@ -2227,7 +2442,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 )
                 or 0
             )
-            after_station = station_readback(
+            after_station = self.station_readback(
                 self.station_url,
                 conversation_id,
                 message_id,
@@ -2263,7 +2478,7 @@ class NativeInteractionsGate(AcceptanceGate):
                     diagnostics["failedEngine"] = self.engine_snapshot(
                         "alice", conversation_id, message_id, command_id,
                     )
-                    diagnostics["failedStation"] = station_readback(
+                    diagnostics["failedStation"] = self.station_readback(
                         self.station_url, conversation_id, message_id,
                     )
                 except Exception as diagnostic_error:
@@ -2335,7 +2550,7 @@ class NativeInteractionsGate(AcceptanceGate):
         device = (
             self.wait_for_realtime_device(client, ptid)
             if self.runtime_binding is not None
-            else async_harness(client, "getRealtimeDevice", {})
+            else self.harness(client, "getRealtimeDevice", {})
         )
         device_id = str((device or {}).get("deviceId") or "")
         if device_id != self.device_ids[actor]:
@@ -2372,7 +2587,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 return (
                     snapshot
                     if (
-                        snapshot := message_dom_snapshot(
+                        snapshot := self.message_dom_snapshot(
                             self.clients[actor],
                             message_id,
                         )
@@ -2383,12 +2598,12 @@ class NativeInteractionsGate(AcceptanceGate):
                     else None
                 )
 
-            wait_until(
+            self.wait_until(
                 _sync_and_dom,
                 f"{actor} {claim_kind} terminal state after Station restart",
                 STEP_TIMEOUT,
             )
-            async_harness(
+            self.harness(
                 self.clients[actor],
                 "openInteractionThread",
                 {
@@ -2397,11 +2612,11 @@ class NativeInteractionsGate(AcceptanceGate):
                     "messageId": message_id,
                 },
             )
-            wait_until(
+            self.wait_until(
                 lambda actor=actor: (
                     snapshot
                     if (
-                        snapshot := thread_dom_snapshot(self.clients[actor])
+                        snapshot := self.thread_dom_snapshot(self.clients[actor])
                     )
                     and snapshot.get("rootMessageId") == message_id
                     and snapshot.get("replyMessageIds") == thread_ids
@@ -2423,8 +2638,8 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id = str(base["messageId"])
         for actor in ACTORS:
             self.sync(actor, "group", conversation_id)
-            wait_until(
-                lambda actor=actor: message_dom_snapshot(
+            self.wait_until(
+                lambda actor=actor: self.message_dom_snapshot(
                     self.clients[actor],
                     message_id,
                 ),
@@ -2432,7 +2647,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 STEP_TIMEOUT,
             )
 
-        removed = async_harness(
+        removed = self.harness(
             self.clients["alice"],
             "removeGroupMember",
             {
@@ -2442,13 +2657,13 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         if not isinstance(removed, dict) or removed.get("success") is not True:
             raise GateError("Charlie Group removal did not succeed")
-        before_denied = station_readback(
+        before_denied = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
         )
         self.expect_rejected(
-            lambda: async_harness(
+            lambda: self.harness(
                 self.clients["charlie"],
                 "submitMetadataInteraction",
                 {
@@ -2462,7 +2677,7 @@ class NativeInteractionsGate(AcceptanceGate):
             ),
             "removed Group member submits interaction",
         )
-        after_denied = station_readback(
+        after_denied = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
@@ -2472,7 +2687,7 @@ class NativeInteractionsGate(AcceptanceGate):
         ):
             raise GateError("removed Group member mutated authority or queue")
 
-        async_harness(
+        self.harness(
             self.clients["alice"],
             "submitMetadataInteraction",
             {
@@ -2484,7 +2699,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 "remove": False,
             },
         )
-        wait_until(
+        self.wait_until(
             lambda: (
                 snapshot
                 if (
@@ -2501,7 +2716,7 @@ class NativeInteractionsGate(AcceptanceGate):
             "Bob receives post-removal Group interaction",
             STEP_TIMEOUT,
         )
-        after_allowed = station_readback(
+        after_allowed = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
@@ -2518,7 +2733,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         if charlie_after != charlie_before:
             raise GateError("removed Group member received a future queue item")
-        charlie_dom = message_dom_snapshot(self.clients["charlie"], message_id)
+        charlie_dom = self.message_dom_snapshot(self.clients["charlie"], message_id)
         if charlie_dom and charlie_dom.get("reactions"):
             raise GateError("removed Group member observed a future interaction")
         self.station_evidence["group.removed"] = after_allowed
@@ -2535,8 +2750,8 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id = str(base["messageId"])
         for actor in ("alice", "bob"):
             self.sync(actor, "friend", conversation_id)
-            wait_until(
-                lambda actor=actor: message_dom_snapshot(
+            self.wait_until(
+                lambda actor=actor: self.message_dom_snapshot(
                     self.clients[actor],
                     message_id,
                 ),
@@ -2544,7 +2759,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 STEP_TIMEOUT,
             )
 
-        revoked = async_harness(
+        revoked = self.harness(
             self.clients["bob"],
             "revokeCurrentDevice",
             {},
@@ -2554,14 +2769,14 @@ class NativeInteractionsGate(AcceptanceGate):
             or (revoked or {}).get("deviceId") != self.device_ids["bob"]
         ):
             raise GateError("Bob current-device revocation did not succeed")
-        before_denied = station_readback(
+        before_denied = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
         )
         rejection = ""
         try:
-            async_harness(
+            self.harness(
                 self.clients["bob"],
                 "submitMetadataInteraction",
                 {
@@ -2582,7 +2797,7 @@ class NativeInteractionsGate(AcceptanceGate):
             )
 
         def denied_reaction_absent_after_settle() -> bool:
-            snapshot = station_readback(
+            snapshot = self.station_readback(
                 self.station_url,
                 conversation_id,
                 message_id,
@@ -2594,12 +2809,12 @@ class NativeInteractionsGate(AcceptanceGate):
                     return False
             return len(events) >= len(before_denied.get("events") or [])
 
-        wait_until(
+        self.wait_until(
             denied_reaction_absent_after_settle,
             "revoked-device denied reaction produces no Authority event",
             STEP_TIMEOUT,
         )
-        after_denied = station_readback(
+        after_denied = self.station_readback(
             self.station_url,
             conversation_id,
             message_id,
@@ -2706,7 +2921,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 }
             )
             released = bool(
-                wait_until(
+                self.wait_until(
                     lambda: all(self.port_is_free(port) for port in ports),
                     "Native interaction client port release",
                     30,
@@ -2732,8 +2947,6 @@ class NativeInteractionsGate(AcceptanceGate):
         return cleanup
 
     def run(self) -> dict[str, Any]:
-        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
         if self.runtime_binding is None:
             try:
                 acceptance_station_environment(self.station_url)
@@ -2784,34 +2997,42 @@ class NativeInteractionsGate(AcceptanceGate):
                 lambda: shared_federation_id(self.clients, ACTORS),
             )
 
-            wait_for_peer_key_bundle(
-                self.clients["alice"],
-                self.ptids["bob"],
-                str(
-                    runtime_station_service(
-                        self.manifest,
-                        "bob",
-                    ).get("runtimeIdentity")
-                    or ""
+            self.step(
+                "direct.peer_key_bundle",
+                lambda: wait_for_peer_key_bundle(
+                    self.clients["alice"],
+                    self.ptids["bob"],
+                    str(
+                        runtime_station_service(
+                            self.manifest,
+                            "bob",
+                        ).get("runtimeIdentity")
+                        or ""
+                    ),
                 ),
+                "alice",
             )
-            direct = async_harness(
-                self.clients["alice"],
-                "createDirectConversation",
-                {
-                    "peerPtid": self.ptids["bob"],
-                    "federationId": federation_id,
-                },
+            direct = self.step(
+                "direct.create",
+                lambda: self.harness(
+                    self.clients["alice"],
+                    "createDirectConversation",
+                    {
+                        "peerPtid": self.ptids["bob"],
+                        "federationId": federation_id,
+                    },
+                ),
+                "alice",
             )
             direct_id = str((direct or {}).get("conversationId") or "")
             if not direct_id:
                 raise GateError("Direct conversation creation returned no ID")
             self.conversations["direct"] = direct_id
             for actor in ("alice", "bob"):
-                self.sync(actor, "friend", direct_id)
-            self.prove_lifecycle("friend", direct_id, ("alice", "bob"))
-            self.prove_pending_timeout_retry("friend", direct_id)
-            self.prove_offline_recovery("friend", direct_id, ())
+                self.step("direct.sync", lambda actor=actor: self.sync(actor, "friend", direct_id), actor)
+            self.step("direct.interactions", lambda: self.prove_lifecycle("friend", direct_id, ("alice", "bob")))
+            self.step("direct.timeout_retry", lambda: self.prove_pending_timeout_retry("friend", direct_id))
+            self.step("direct.offline_recovery", lambda: self.prove_offline_recovery("friend", direct_id, ()))
 
             self.step(
                 "direct.client.restart",
@@ -2819,11 +3040,11 @@ class NativeInteractionsGate(AcceptanceGate):
                 "bob",
             )
             direct_terminal = self.message_ids["direct.base"]
-            wait_until(
+            self.wait_until(
                 lambda: (
                     snapshot
                     if (
-                        snapshot := message_dom_snapshot(
+                        snapshot := self.message_dom_snapshot(
                             self.clients["bob"],
                             direct_terminal,
                         )
@@ -2836,28 +3057,32 @@ class NativeInteractionsGate(AcceptanceGate):
             )
             self.assert_condition("direct_client_restart", True)
 
-            group = async_harness(
-                self.clients["alice"],
-                "createGroup",
-                {
-                    "name": f"acceptance-{time.time_ns()}",
-                    "federationId": federation_id,
-                    "memberPtids": [
-                        self.ptids["bob"],
-                        self.ptids["charlie"],
-                    ],
-                },
+            group = self.step(
+                "group.create",
+                lambda: self.harness(
+                    self.clients["alice"],
+                    "createGroup",
+                    {
+                        "name": f"acceptance-{time.time_ns()}",
+                        "federationId": federation_id,
+                        "memberPtids": [
+                            self.ptids["bob"],
+                            self.ptids["charlie"],
+                        ],
+                    },
+                ),
+                "alice",
             )
             group_id = str((group or {}).get("groupUlid") or "")
             if not group_id:
                 raise GateError("Group creation returned no conversation_id")
             self.conversations["group"] = group_id
             for actor in ACTORS:
-                self.sync(actor, "group", group_id)
-            self.prove_lifecycle("group", group_id, ACTORS)
-            self.prove_pending_timeout_retry("group", group_id)
+                self.step("group.sync", lambda actor=actor: self.sync(actor, "group", group_id), actor)
+            self.step("group.interactions", lambda: self.prove_lifecycle("group", group_id, ACTORS))
+            self.step("group.timeout_retry", lambda: self.prove_pending_timeout_retry("group", group_id))
             self.assert_condition("pending_interaction_timeout_retry", True)
-            self.prove_offline_recovery("group", group_id, ("charlie",))
+            self.step("group.offline_recovery", lambda: self.prove_offline_recovery("group", group_id, ("charlie",)))
 
             self.step("station.restart", self.restart_station)
             self.step(

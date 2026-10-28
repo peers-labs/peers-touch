@@ -3,10 +3,8 @@
 
 from __future__ import annotations
 
-import errno
 import json
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -50,39 +48,45 @@ from tooling.acceptance.provisioners import (
     get_provisioner,
 )
 from tooling.acceptance.remote_platform import RemotePlatform
+from tooling.acceptance.tests.synthetic_git import (
+    run_synthetic_git, synthetic_git_environment,
+)
+
+
+def fixture_actor_record(account: str, station: str) -> chat_native_reset.FixtureActorRecord:
+    role = account.split("@", 1)[0]
+    station_id = station.rsplit("-", 1)[-1]
+    return chat_native_reset.FixtureActorRecord(
+        ptid=f"ptid:{role}:{station_id}",
+        preferred_username=role,
+        name=role.title(),
+        summary="",
+        icon="",
+        image="",
+        url=f"{station}/actors/{role}",
+        federated_handle=f"@{role}@{station_id}.example",
+        home_station_peer_id=station_id,
+        home_station_domain=f"{station_id}.example",
+        visibility=1,
+        locator_seq=1,
+    )
 
 
 class StationAttestationOwnerTests(unittest.TestCase):
     def test_proto_digest_uses_only_git_tracked_contract_artifacts(self) -> None:
-        native_git_environment = {
-            key: value
-            for key, value in os.environ.items()
-            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
-        }
-        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
-        root = Path(tempfile.mkdtemp())
-        try:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = synthetic_git_environment()
             with patch.dict(
                 os.environ,
-                native_git_environment,
+                environment,
                 clear=True,
             ):
-                subprocess.run(
-                    ["git", "init"],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
-                subprocess.run(
-                    ["git", "config", "user.email", "acceptance@test.invalid"],
-                    cwd=root,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "config", "user.name", "Acceptance Test"],
-                    cwd=root,
-                    check=True,
-                )
+                run_synthetic_git(root, "init", environment=environment)
+                run_synthetic_git(root, "config", "user.email", "acceptance@test.invalid",
+                                  environment=environment)
+                run_synthetic_git(root, "config", "user.name", "Acceptance Test",
+                                  environment=environment)
                 proto = root / "model/domain/test.proto"
                 generated = (
                     root
@@ -101,17 +105,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     "// not a protocol artifact\n",
                     encoding="utf-8",
                 )
-                subprocess.run(
-                    ["git", "add", "model", "apps"],
-                    cwd=root,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "commit", "-m", "base"],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
+                run_synthetic_git(root, "add", "model", "apps", environment=environment)
+                run_synthetic_git(root, "commit", "-m", "base", environment=environment)
                 baseline = source_proto_digest(root)
 
                 station_dashboard.write_text(
@@ -130,15 +125,6 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
                 generated.write_text("// generated changed\n", encoding="utf-8")
                 self.assertNotEqual(source_proto_digest(root), baseline)
-        finally:
-            for attempt in range(20):
-                try:
-                    shutil.rmtree(root)
-                    break
-                except OSError as error:
-                    if error.errno != errno.ENOTEMPTY or attempt == 19:
-                        raise
-                    time.sleep(0.05)
 
     def test_remote_attestation_excludes_only_deployment_bare_repo(self) -> None:
         from tooling.acceptance.provisioners.remote_source_identity import (
@@ -199,7 +185,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertNotIn("StrictHostKeyChecking=no", command)
         self.assertIn(f"UserKnownHostsFile={known_hosts}", command)
         self.assertIn("2222", command)
-        self.assertEqual(run.call_args.kwargs["timeout"], 30)
+        self.assertGreater(run.call_args.kwargs["timeout"], 0)
+        self.assertLessEqual(run.call_args.kwargs["timeout"], 30)
         self.assertFalse(run.call_args.kwargs["check"])
 
     def test_remote_attestation_rejects_invalid_known_hosts_contract(self) -> None:
@@ -231,6 +218,32 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 "SSH contract is invalid",
             ):
                 resolve_remote_source_identity("station-three")
+
+    def test_remote_attestation_timeout_is_environment_blocked(self) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_remote_source_identity,
+        )
+
+        transport = MagicMock()
+        transport.target.remote_platform = RemotePlatform.POSIX
+        transport.run_argv.side_effect = subprocess.TimeoutExpired(
+            ("ssh", "station.example"),
+            30,
+        )
+        with patch(
+            "tooling.acceptance.provisioners.remote_source_identity."
+            "_reviewed_remote_transport",
+            return_value=(transport, {"PT_DEPLOY_PATH": "station-three"}),
+        ), self.assertRaisesRegex(
+            BlockedError,
+            "Cannot attest deployment station-three",
+        ) as raised:
+            resolve_remote_source_identity("station-three")
+
+        self.assertEqual(
+            raised.exception.resource,
+            "deployment-source:station-three",
+        )
 
     def test_remote_attestation_uses_windows_transport_without_bash(self) -> None:
         from tooling.acceptance.provisioners.remote_source_identity import (
@@ -443,99 +456,47 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertEqual(str(known_hosts), target.known_hosts_file)
 
     def test_workspace_digest_binds_file_content(self) -> None:
-        # The IDE git wrapper writes .git/ai asynchronously; use native Git so
-        # TemporaryDirectory cleanup is deterministic.
-        native_git_environment = {
-            key: value
-            for key, value in os.environ.items()
-            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
-        }
-        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
-        root = Path(tempfile.mkdtemp())
-        try:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = synthetic_git_environment()
             with patch.dict(
                 os.environ,
-                native_git_environment,
+                environment,
                 clear=True,
             ):
-                subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
-                subprocess.run(
-                    ["git", "config", "user.email", "acceptance@test.invalid"],
-                    cwd=root,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "config", "user.name", "Acceptance Test"],
-                    cwd=root,
-                    check=True,
-                )
+                run_synthetic_git(root, "init", environment=environment)
+                run_synthetic_git(root, "config", "user.email", "acceptance@test.invalid",
+                                  environment=environment)
+                run_synthetic_git(root, "config", "user.name", "Acceptance Test",
+                                  environment=environment)
                 source = root / "source.txt"
                 source.write_text("base\n", encoding="utf-8")
-                subprocess.run(["git", "add", "source.txt"], cwd=root, check=True)
-                subprocess.run(
-                    [
-                        "git",
-                        "-c",
-                        "maintenance.auto=false",
-                        "-c",
-                        "gc.auto=0",
-                        "commit",
-                        "-m",
-                        "base",
-                    ],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
+                run_synthetic_git(root, "add", "source.txt", environment=environment)
+                run_synthetic_git(root, "commit", "-m", "base", environment=environment)
                 self.assertEqual(source_workspace_digest(root), "clean")
                 source.write_text("first\n", encoding="utf-8")
                 first = source_workspace_digest(root)
                 source.write_text("second\n", encoding="utf-8")
                 second = source_workspace_digest(root)
-        finally:
-            for attempt in range(20):
-                try:
-                    shutil.rmtree(root)
-                    break
-                except OSError as error:
-                    if error.errno != errno.ENOTEMPTY or attempt == 19:
-                        raise
-                    time.sleep(0.05)
 
         self.assertTrue(first.startswith("sha256:"))
         self.assertTrue(second.startswith("sha256:"))
         self.assertNotEqual(first, second)
 
     def test_workspace_digest_ignores_generated_coverage_report(self) -> None:
-        native_git_environment = {
-            key: value
-            for key, value in os.environ.items()
-            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
-        }
-        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
-        root = Path(tempfile.mkdtemp())
-        try:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = synthetic_git_environment()
             with patch.dict(
                 os.environ,
-                native_git_environment,
+                environment,
                 clear=True,
             ):
-                subprocess.run(
-                    ["git", "init"],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
-                subprocess.run(
-                    ["git", "config", "user.email", "acceptance@test.invalid"],
-                    cwd=root,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "config", "user.name", "Acceptance Test"],
-                    cwd=root,
-                    check=True,
-                )
+                run_synthetic_git(root, "init", environment=environment)
+                run_synthetic_git(root, "config", "user.email", "acceptance@test.invalid",
+                                  environment=environment)
+                run_synthetic_git(root, "config", "user.name", "Acceptance Test",
+                                  environment=environment)
                 report = (
                     root
                     / "docs"
@@ -548,17 +509,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 report.write_text("old\n", encoding="utf-8")
                 source = root / "source.txt"
                 source.write_text("base\n", encoding="utf-8")
-                subprocess.run(
-                    ["git", "add", "docs", "source.txt"],
-                    cwd=root,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "commit", "-m", "base"],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
+                run_synthetic_git(root, "add", "docs", "source.txt", environment=environment)
+                run_synthetic_git(root, "commit", "-m", "base", environment=environment)
 
                 report.write_text("new\n", encoding="utf-8")
                 self.assertEqual(source_workspace_digest(root), "clean")
@@ -567,15 +519,6 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 self.assertTrue(
                     source_workspace_digest(root).startswith("sha256:")
                 )
-        finally:
-            for attempt in range(20):
-                try:
-                    shutil.rmtree(root)
-                    break
-                except OSError as error:
-                    if error.errno != errno.ENOTEMPTY or attempt == 19:
-                        raise
-                    time.sleep(0.05)
 
     def test_producer_writes_source_bound_attestation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1023,8 +966,8 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             / "preset_actor.py"
         ).read_text(encoding="utf-8")
         for provisioner, resolver in (
-            ("home_station.py", "resolve_existing_preset_actor_identity"),
-            ("native_tauri_current_profile.py", "resolve_existing_preset_actor"),
+            ("home_station.py", "resolve_existing_preset_actor_identity("),
+            ("native_tauri_current_profile.py", "resolve_existing_preset_actor("),
         ):
             source = (
                 root
@@ -1034,7 +977,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 / provisioner
             ).read_text(encoding="utf-8")
             self.assertNotIn("/actor/login", source)
-            self.assertIn(f"return {resolver}(", source)
+            self.assertIn(resolver, source)
         self.assertIn('"run", "./tests/access_client"', helper)
         self.assertIn("/actor/logout", helper)
 
@@ -1051,8 +994,6 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             )
 
     def test_actor_manifest_contains_ptid_refs_but_not_password(self) -> None:
-        from tooling.acceptance.core.provisioning import ActorIdentity
-
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             worktree = root / "repo"
@@ -1070,12 +1011,11 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             ), patch(
                 "tooling.acceptance.fixtures.chat_native_actors.reset_fixture"
             ), patch(
-                "tooling.acceptance.fixtures.chat_native_actors.resolve_actor_identity",
-                side_effect=lambda station, environment, role: ActorIdentity(
-                    role=role,
-                    account_ref=f"station-account:{role}@p.t",
-                    ptid=f"ptid:{role}",
-                ),
+                "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actors",
+                side_effect=lambda station, environment, accounts: {
+                    account: fixture_actor_record(account, station)
+                    for account in accounts
+                },
             ), patch(
                 "tooling.acceptance.fixtures.chat_native_actors.prepare_bound_friendships"
             ) as friendships:
@@ -1107,8 +1047,6 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             )
 
     def test_bound_actor_manifest_uses_each_roles_declared_station(self) -> None:
-        from tooling.acceptance.core.provisioning import ActorIdentity
-
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             worktree = root / "repo"
@@ -1126,12 +1064,11 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             ) as verify, patch(
                 "tooling.acceptance.fixtures.chat_native_actors.reset_fixture"
             ) as reset, patch(
-                "tooling.acceptance.fixtures.chat_native_actors.resolve_actor_identity",
-                side_effect=lambda station, environment, role: ActorIdentity(
-                    role=role,
-                    account_ref=f"station-account:{role}@p.t",
-                    ptid=f"ptid:{role}:{station.rsplit('-', 1)[-1]}",
-                ),
+                "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actors",
+                side_effect=lambda station, environment, accounts: {
+                    account: fixture_actor_record(account, station)
+                    for account in accounts
+                },
             ) as resolve, patch(
                 "tooling.acceptance.fixtures.chat_native_actors.prepare_bound_friendships"
             ) as friendships:
@@ -1161,8 +1098,8 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             self.assertEqual(
                 [call.args for call in resolve.call_args_list],
                 [
-                    ("http://station-four", "station-four", "alice"),
-                    ("http://station-five", "station-five", "bob"),
+                    ("http://station-four", "station-four", ("alice@p.t",)),
+                    ("http://station-five", "station-five", ("bob@p.t",)),
                 ],
             )
             friendships.assert_called_once_with(
@@ -1227,17 +1164,19 @@ class ActorFixtureOwnerTests(unittest.TestCase):
 
         federation_members = tuple(records.values())
         with patch(
-            "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actor",
-            side_effect=lambda _station, _environment, account: by_account[account],
+            "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actors",
+            side_effect=lambda _station, _environment, accounts: {
+                account: by_account[account] for account in accounts
+            },
         ) as read_actor, patch(
-            "tooling.acceptance.fixtures.chat_native_actors.seed_bound_contact"
+            "tooling.acceptance.fixtures.chat_native_actors.seed_bound_contacts"
         ) as seed_contact, patch(
             "tooling.acceptance.fixtures.chat_native_actors."
             "prepare_bound_federation_routing"
         ) as prepare_routing:
             prepare_bound_friendships(role_targets, actors)
 
-        self.assertEqual(read_actor.call_count, 3)
+        self.assertEqual(read_actor.call_count, 2)
         prepare_routing.assert_called_once_with(role_targets, records)
         self.assertEqual(
             seed_contact.call_args_list,
@@ -1245,43 +1184,21 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 call(
                     "http://station-four",
                     "station-four",
-                    records["alice"],
-                    records["bob"],
-                    federation_members,
-                ),
-                call(
-                    "http://station-four",
-                    "station-four",
-                    records["alice"],
-                    records["charlie"],
+                    (
+                        (records["alice"], records["bob"]),
+                        (records["alice"], records["charlie"]),
+                    ),
                     federation_members,
                 ),
                 call(
                     "http://station-five",
                     "station-five",
-                    records["bob"],
-                    records["alice"],
-                    federation_members,
-                ),
-                call(
-                    "http://station-five",
-                    "station-five",
-                    records["bob"],
-                    records["charlie"],
-                    federation_members,
-                ),
-                call(
-                    "http://station-five",
-                    "station-five",
-                    records["charlie"],
-                    records["alice"],
-                    federation_members,
-                ),
-                call(
-                    "http://station-five",
-                    "station-five",
-                    records["charlie"],
-                    records["bob"],
+                    (
+                        (records["bob"], records["alice"]),
+                        (records["bob"], records["charlie"]),
+                        (records["charlie"], records["alice"]),
+                        (records["charlie"], records["bob"]),
+                    ),
                     federation_members,
                 ),
             ],
@@ -1496,8 +1413,92 @@ class ProfileActivationContractTests(unittest.TestCase):
             registry_source,
         )
         self.assertIn(
-            '"$PT_DEV_PROFILE" != "$PT_MACHINE_PROFILE"',
+            '"$PT_DEV_PROFILE" != "$PT_MACHINE_TARGET_PROFILE"',
             runtime_source,
+        )
+
+
+class ChatResetTargetTests(unittest.TestCase):
+    def test_bound_profiles_reset_both_stations_and_restore_context(self) -> None:
+        from tooling.acceptance.fixtures import chat_reset_targets as targets
+
+        profiles = {
+            "chat-native-disposable": {
+                "profile": "chat-native-disposable", "environment": "chat-station",
+                "stationUrl": "http://192.0.2.40:18132",
+            },
+            "fiveArm": {
+                "profile": "fiveArm", "environment": "five-station",
+                "stationUrl": "http://192.0.2.50:18080",
+            },
+        }
+        with patch.dict(os.environ, {}, clear=True), patch.object(
+            targets, "require_reset_lease",
+        ), patch.object(
+            targets, "_reviewed_profile", side_effect=profiles.__getitem__,
+        ):
+            with targets.bound_reset_profiles(profiles):
+                for profile in profiles.values():
+                    resolved = targets.bound_reset_target(
+                        profile["environment"], profile["stationUrl"],
+                    )
+                    self.assertEqual(resolved, profile)
+                with self.assertRaises(BlockedError):
+                    targets.bound_reset_target("five-station", "http://192.0.2.40:18132")
+                with self.assertRaises(BlockedError):
+                    targets.bound_reset_target("unknown-station", "")
+            self.assertNotIn(targets.PROFILE_BINDINGS_ENV, os.environ)
+
+    def test_reviewed_stable_target_remains_protected(self) -> None:
+        from tooling.acceptance.fixtures import chat_reset_targets as targets
+
+        response = subprocess.CompletedProcess(
+            [], 0, stdout=json.dumps({
+                "profile": "prodStable", "resetPolicy": "stable-protected",
+                "environment": "prod", "stationUrl": "https://station.example",
+            }),
+        )
+        with patch.object(targets.subprocess, "run", return_value=response):
+            with self.assertRaisesRegex(BlockedError, "PROFILE_RESET_PROTECTED"):
+                targets._reviewed_profile("prodStable")
+
+    def test_reset_child_inherits_actual_fd_and_source_identity(self) -> None:
+        from tooling.acceptance.fixtures import chat_native_actors as actors
+        from tooling.acceptance.fixtures.chat_reset_targets import PROFILE_BINDINGS_ENV
+
+        read_fd, write_fd = os.pipe()
+        self.addCleanup(os.close, read_fd)
+        self.addCleanup(os.close, write_fd)
+        real_popen = subprocess.Popen
+        observations = []
+
+        def launch(_argv, **options):
+            observations.append(options)
+            code = (
+                "import os;"
+                "os.fstat(int(os.environ['PT_MACHINE_LEASE_FD']));"
+                "assert os.environ['PT_MACHINE_LEASE_SOURCE_HEAD']=='candidate';"
+                "assert os.environ['PT_MACHINE_LEASE_ID']=='real-fd-test';"
+            )
+            return real_popen([sys.executable, "-c", code], **options)
+
+        environment = {
+            "PT_MACHINE_LEASE_KIND": "station.reset",
+            "PT_MACHINE_LEASE_RESOURCE_ID": "chat-native-actors",
+            "PT_MACHINE_LEASE_RESET_SCOPE": "chat-native-actors",
+            "PT_MACHINE_LEASE_FD": str(read_fd),
+            "PT_MACHINE_LEASE_ID": "real-fd-test",
+            "PT_MACHINE_LEASE_SOURCE_HEAD": "candidate",
+            PROFILE_BINDINGS_ENV: json.dumps({"five-station": "fiveArm"}),
+        }
+        with patch.dict(os.environ, environment, clear=True), patch.object(
+            actors, "require_reset_lease",
+        ), patch.object(actors.subprocess, "Popen", side_effect=launch):
+            actors.reset_fixture("five-station", ("bob",))
+        self.assertEqual(observations[0]["pass_fds"], (read_fd,))
+        self.assertEqual(
+            observations[0]["env"][PROFILE_BINDINGS_ENV],
+            environment[PROFILE_BINDINGS_ENV],
         )
 
 

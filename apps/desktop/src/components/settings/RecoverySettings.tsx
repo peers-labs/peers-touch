@@ -26,6 +26,7 @@ import { useTranslation } from 'react-i18next';
 import { SettingsItemCard, SettingsRow, SettingsSection } from './SettingsLayout';
 import { messagingRecoveryService } from '../../services/messaging-recovery-service';
 import { useMessagingRecoveryStore } from '../../store/messagingRecovery';
+import { useSessionStore } from '../../store/session';
 import { log } from '../../utils/logger';
 
 const { Text } = Typography;
@@ -239,6 +240,12 @@ function RestoreModal({
 // ---------------------------------------------------------------------------
 
 export function RecoverySettings() {
+  const actorPtid = useSessionStore((s) =>
+    s.authenticated ? s.currentUser?.actorPtid ?? null : null);
+  return actorPtid ? <AuthenticatedRecoverySettings key={actorPtid} /> : null;
+}
+
+function AuthenticatedRecoverySettings() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
 
@@ -247,6 +254,9 @@ export function RecoverySettings() {
   const latestRevision = useMessagingRecoveryStore((s) => s.latest);
   const creating = useMessagingRecoveryStore((s) => s.creating);
   const restoring = useMessagingRecoveryStore((s) => s.restoring);
+  const loading = useMessagingRecoveryStore((s) => s.loading);
+  const error = useMessagingRecoveryStore((s) => s.error);
+  const refresh = useMessagingRecoveryStore((s) => s.refresh);
   const createRevision = useMessagingRecoveryStore((s) => s.createRevision);
   const restoreLatest = useMessagingRecoveryStore((s) => s.restoreLatest);
 
@@ -317,26 +327,17 @@ export function RecoverySettings() {
     });
   };
 
-  if (!identity?.ready) {
-    return (
-      <SettingsSection
-        icon={<Shield size={18} style={{ color: token.colorTextTertiary }} />}
-        title={t('provider.account.recovery.title')}
-        subtitle={t('provider.account.recovery.subtitle')}
-      >
-        <Text type="secondary">
-          {t('provider.account.recovery.notInitialized')}
-        </Text>
-      </SettingsSection>
-    );
-  }
-
   return (
     <SettingsSection
       icon={<Shield size={18} style={{ color: token.colorPrimary }} />}
       title={t('provider.account.recovery.title')}
       subtitle={t('provider.account.recovery.subtitle')}
     >
+        {!identity?.ready && !loading && !error && (
+          <Text type="secondary">
+            {t('provider.account.recovery.notInitialized')}
+          </Text>
+        )}
         {/* Backup Status */}
         <SettingsItemCard>
           <Flexbox gap={12}>
@@ -344,6 +345,8 @@ export function RecoverySettings() {
               <Flexbox horizontal align="center" gap={8}>
                 {backupExists ? (
                   <CheckCircle2 size={16} style={{ color: token.colorSuccess }} />
+                ) : loading || error ? (
+                  <Shield size={16} style={{ color: token.colorTextTertiary }} />
                 ) : (
                   <AlertTriangle size={16} style={{ color: token.colorWarning }} />
                 )}
@@ -351,10 +354,23 @@ export function RecoverySettings() {
                   {t('provider.account.recovery.backupStatus')}
                 </Text>
               </Flexbox>
-              {(creating || restoring) && <Spin size="small" />}
+              {(loading || creating || restoring) && <Spin size="small" />}
             </Flexbox>
 
-            {backupExists ? (
+            {error ? (
+              <Flexbox gap={8}>
+                <Alert type="error" showIcon message={t('provider.account.recovery.statusFailed')} />
+                <Button onClick={() => {
+                  void refresh().catch((err) => {
+                    log.warn('RecoverySettings', 'status retry failed', { err });
+                  });
+                }} loading={loading}>
+                  {t('common:common.action.retry')}
+                </Button>
+              </Flexbox>
+            ) : loading ? (
+              <Text type="secondary">{t('common:common.state.loading')}</Text>
+            ) : backupExists ? (
               <Flexbox gap={4}>
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   {t('provider.account.recovery.lastBackup', {
@@ -362,7 +378,7 @@ export function RecoverySettings() {
                   })}
                 </Text>
               </Flexbox>
-            ) : (
+            ) : identity?.ready ? (
               <Alert
                 type="warning"
                 showIcon
@@ -370,12 +386,12 @@ export function RecoverySettings() {
                 message={t('provider.account.recovery.noBackupWarning')}
                 style={{ borderRadius: 8 }}
               />
-            )}
+            ) : null}
           </Flexbox>
         </SettingsItemCard>
 
         {/* Recovery Phrase Generation */}
-        <SettingsItemCard>
+        {identity?.ready && <SettingsItemCard>
           <Flexbox gap={12}>
             <SettingsRow
               label={t('provider.account.recovery.recoveryKey')}
@@ -394,17 +410,18 @@ export function RecoverySettings() {
                   icon={<Key size={14} />}
                   onClick={handleGenerateRecoverySecret}
                   loading={generating}
+                  disabled={loading || Boolean(error) || creating || restoring}
                 >
                   {t('provider.account.recovery.generateKey')}
                 </Button>
               )}
             </SettingsRow>
           </Flexbox>
-        </SettingsItemCard>
+        </SettingsItemCard>}
 
         {/* Actions */}
         <Flexbox horizontal gap={12} style={{ flexWrap: 'wrap' }}>
-          <Tooltip
+          {identity?.ready && <Tooltip
             title={
               !recoveryWords
                 ? t('provider.account.recovery.generateFirstTooltip')
@@ -417,17 +434,17 @@ export function RecoverySettings() {
               type="primary"
               onClick={handleCreateBackup}
               loading={creating}
-              disabled={!recoveryWords || creating || restoring}
+              disabled={!recoveryWords || loading || creating || restoring}
             >
               {t('provider.account.recovery.createBackup')}
             </Button>
-          </Tooltip>
+          </Tooltip>}
 
           <Button
             data-recovery-restore-open
             icon={<Download size={14} />}
             onClick={() => setRestoreOpen(true)}
-            disabled={creating || restoring}
+            disabled={!backupExists || loading || Boolean(error) || creating || restoring}
           >
             {t('provider.account.recovery.restoreFromBackup')}
           </Button>

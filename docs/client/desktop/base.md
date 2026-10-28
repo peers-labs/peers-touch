@@ -41,6 +41,13 @@ relationships are defined by
    - Desktop Rust composes ports and local stores.
    - Portable cores do not own Station business truth or Desktop presentation.
 
+6. Native file preview boundary:
+   - A native file picker must authorize the exact selected file through
+     `interface::tauri_commands::allow_file_preview` before returning success.
+   - Materialized Messaging previews use the same Tauri asset-scope owner.
+   - Authorization failure propagates through the command result. Picking a
+     file does not authorize its directory or unselected neighboring files.
+
 ## Directory Baseline
 
 ```

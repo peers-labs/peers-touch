@@ -5,6 +5,17 @@ status: active
 owns:
   - apps/desktop/src-tauri/src/interface/tauri_commands/messaging_recovery.rs
   - apps/desktop/src-tauri/src/messaging/
+  - apps/desktop/src/acceptance/chat/harness.ts
+  - apps/desktop/src/acceptance/chat/harness.test.ts
+  - apps/desktop/src/components/settings/RecoverySettings.tsx
+  - apps/desktop/src/services/messaging-recovery-service.ts
+  - apps/desktop/src/services/appRuntime.ts
+  - apps/desktop/src/store/messagingRecovery.ts
+  - apps/desktop/src/store/messagingRecovery.test.ts
+  - apps/desktop/src/runtimes/messagingRecoveryRuntime.ts
+  - apps/desktop/src/runtimes/messagingRecoveryRuntime.test.ts
+  - apps/desktop/src/messaging/runtime.ts
+  - apps/desktop/src/messaging/runtime.test.ts
   - tooling/development/secure_content/runtime_owner.py
 referenced-by: []
 related:
@@ -73,8 +84,48 @@ projection and actor scope.
   whole encrypted archive.
 - Replacement clients start to an authenticated session, perform recovery and
   enrollment, and only then require Moments readiness.
+- Chat's password-login Harness returns the canonical Actor PTID from the
+  authenticated Session. It must not install Chat runtimes or initialize Social
+  encryption as part of authentication; a replacement device's Engine may only
+  become available after recovery. Explicit `hydrateActiveActor` remains the
+  post-recovery Chat readiness operation and propagates Engine failures.
+- Recovery status and revision reads use the authenticated Session before an
+  Engine exists. Typed Registry readiness validates Actor binding; missing
+  local identity stays null. The UI exposes Restore only for an actual backup,
+  while phrase generation and backup creation require the real local identity.
+- The Recovery runtime bootstraps before Messaging, resets on accepted Session
+  and Station edges and periodically reconciles. Its store fences every
+  asynchronous completion and failure by Actor, Session epoch and reset
+  generation, and invalidates older status reads after create/restore.
+  Actor-keyed UI lifetime clears recovery phrase drafts.
+- Native restore returns the committed Actor/Profile/Home Station/Endpoint
+  binding under the identity-transition lock. Recovery publishes typed
+  `messaging.profile_activated` before fetching backup status. Messaging
+  validates the Session epoch and native scope readback, invalidates old scope
+  immediately and owns the new bootstrap. Missing pre-recovery Engine must
+  not remove its periodic retry. Queued work cannot survive teardown or a new
+  same-Actor Session. Recovery status, authentication events and committed
+  inbox invalidations are distinct; none may fabricate another owner's event.
 
 ## How To Detect A Recurrence
+
+```bash
+pnpm --dir apps/desktop exec vitest run \
+  src/acceptance/chat/harness.test.ts \
+  src/acceptance/chat/passwordLogin.test.ts \
+  src/store/messagingRecovery.test.ts \
+  src/messaging/runtime.test.ts \
+  src/runtimes/messagingRecoveryRuntime.test.ts
+```
+
+The native replacement-device Journey must authenticate with empty identity,
+show the real backup, operate the visible Restore control, recover, refresh
+identity and then reach Chat readiness. A direct restore command cannot prove
+the visible entry is usable.
+Native restoration must populate the existing group projection and continue
+encrypted receiving on the replacement endpoint without Gate-installed Chat
+bootstrap. Unit checks must cover same-Actor Session replacement, activation
+binding mismatch, lost activation wake and teardown of queued refreshes.
 
 ```bash
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml \

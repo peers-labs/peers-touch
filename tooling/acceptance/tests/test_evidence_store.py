@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -25,6 +26,7 @@ from tooling.acceptance.core.evidence_store import (
     write_current_artifact,
     workspace_id,
 )
+from tooling.acceptance.core import evidence_store
 from tooling.acceptance.core.errors import (
     EvidenceConflict,
     EvidenceManifestInvalid,
@@ -37,7 +39,7 @@ from tooling.acceptance.core.errors import (
     EvidenceRunActive,
     EvidenceSymlinkRejected,
 )
-from tooling.acceptance.core.redaction import REDACTED
+from tooling.acceptance.core.redaction import REDACTED, redact_artifact_bytes
 
 
 def _process_writer(
@@ -252,6 +254,21 @@ class EvidenceStoreTests(unittest.TestCase):
             source={"authorization": secret},
         )
         run.configure_redaction((secret,))
+
+        report = run.write_json("reports/result.json", {
+            "results": [{"secretScan": secret_scan}],
+            "untrusted": {"secretScan": {**secret_scan, "password": secret}},
+            "string": {"secretScan": secret},
+            "scannedPath": {"secretScan": {
+                **secret_scan, "redactedArtifacts": [secret],
+            }},
+        }, role="report")
+        projected = self.store.read_json(report)
+        self.assertEqual(projected["results"][0]["secretScan"], secret_scan)
+        self.assertEqual(projected["untrusted"]["secretScan"], REDACTED)
+        self.assertEqual(projected["string"]["secretScan"], REDACTED)
+        self.assertEqual(projected["scannedPath"]["secretScan"]["redactedArtifacts"], [REDACTED])
+        self.assertNotIn(secret, json.dumps(projected))
 
         manifest = run.finalize(
             result={
@@ -1106,6 +1123,195 @@ class EvidenceStoreTests(unittest.TestCase):
                     worktree=self.worktree,
                 )
         self.assertEqual(list(self.worktree.iterdir()), [])
+
+
+class PublicMetadataTests(unittest.TestCase):
+    def test_inventory_preserves_public_roles_and_redacts_secret_payload(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            store = EvidenceStore(Path(temporary) / "evidence",
+                                  worktree=Path(temporary) / "worktree")
+            with store.begin_run("auth-key-token-check", source={}) as run:
+                run.configure_redaction(("synthetic-credential-value",))
+                refs = {
+                    role: run.write_json(f"reports/{role}.json", {
+                        "password": "synthetic-credential-value",
+                        "description": "contains synthetic-credential-value",
+                    }, role=role)
+                    for role in ("auth-check", "key-rotation", "token-report")
+                }
+                manifest = run.finalize(result={"status": "passed"})
+                for role, ref in refs.items():
+                    self.assertEqual(ArtifactRef.from_dict(
+                        manifest["artifacts"][role]), ref)
+                    payload = store.read_json(ref)
+                    self.assertEqual(payload["password"], REDACTED)
+                    self.assertNotIn("synthetic-credential-value",
+                                     json.dumps(payload))
+
+    def test_graph_mapping_survives_the_real_writer(self):
+        from tooling.acceptance.core.execution_graph import compile_graph
+        from tooling.acceptance.core.execution_budget import digest
+
+        definitions = {
+            "auth-key-check": {"argv": ["true"]},
+            "token-consumer": {"dependsOn": ["auth-key-check"], "argv": ["true"]},
+        }
+        graph = compile_graph(definitions, ["token-consumer"])
+        with tempfile.TemporaryDirectory() as temporary:
+            store = EvidenceStore(Path(temporary) / "evidence",
+                                  worktree=Path(temporary) / "worktree")
+            with store.begin_run("graph-metadata", source={}) as run:
+                ref = run.write_json("reports/graph.json", graph, role="execution-graph")
+                original = store.resolve(ref).read_bytes()
+                self.assertEqual(redact_artifact_bytes(original), (original, False))
+                observed = store.read_json(ref)
+                self.assertEqual(observed["dependencies"]["token-consumer"],
+                                 ["auth-key-check"])
+                self.assertEqual(observed["definitionDigests"]["auth-key-check"],
+                                 digest(definitions["auth-key-check"]))
+                identity = observed.pop("digest")
+                self.assertEqual(digest(observed), identity)
+
+    def test_public_metadata_rejects_secrets_mutation_and_untyped_claims(self):
+        from tooling.acceptance.core.execution_graph import compile_graph, ExecutionGraph
+        from tooling.acceptance.core.execution_budget import ExecutionBudgetError
+
+        graph = compile_graph({"auth-key-check": {"argv": ["true"]}},
+                              ["auth-key-check"])
+        with tempfile.TemporaryDirectory() as temporary:
+            store = EvidenceStore(Path(temporary) / "evidence",
+                                  worktree=Path(temporary) / "worktree")
+            with store.begin_run("metadata-security", source={}) as run:
+                run.configure_redaction(("sample-secret-value",))
+                with self.assertRaises(EvidenceManifestInvalid):
+                    run.write_json("reports/secret-role.json", {},
+                                   role="sample-secret-value")
+                self.assertFalse((run.run_dir / "reports/secret-role.json").exists())
+                secret_graph = compile_graph(
+                    {"sample-secret-value": {"argv": ["true"]}},
+                    ["sample-secret-value"],
+                )
+                with self.assertRaises(EvidenceManifestInvalid):
+                    run.write_json("reports/secret-graph.json", secret_graph)
+                self.assertFalse((run.run_dir / "reports/secret-graph.json").exists())
+                plain = run.write_json("reports/untyped.json", {
+                    "graph": dict(graph), "password": "sample-secret-value",
+                }, redact=False)
+                observed = store.read_json(plain)
+                self.assertEqual(observed["graph"]["dependencies"]["auth-key-check"],
+                                 REDACTED)
+                self.assertEqual(observed["password"], REDACTED)
+                with self.assertRaises(ExecutionBudgetError):
+                    ExecutionGraph({**graph, "password": "sample-secret-value"})
+                graph["dependencies"]["auth-key-check"] = ["unregistered"]
+                with self.assertRaises(ExecutionBudgetError):
+                    run.write_json("reports/mutated-graph.json", graph)
+
+    def test_inventory_tampering_prevents_durable_publication_and_read(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            store = EvidenceStore(Path(temporary) / "evidence",
+                                  worktree=Path(temporary) / "worktree")
+            with store.begin_run("inventory-security", source={}) as run:
+                ref = run.write_json("reports/content.json", {}, role="auth-content")
+                with self.assertRaises(EvidenceManifestInvalid):
+                    ArtifactRef.from_dict({**ref.to_dict(), "payload": "unexpected"})
+                manifest = run.finalize(result={"status": "passed"})
+                manifest_ref = run.manifest_ref
+            store.resolve(ref).write_text('{"changed": true}')
+            with self.assertRaises(EvidenceManifestInvalid):
+                store.read_run_manifest(manifest_ref, manifest_sha256=manifest_ref.sha256)
+            with store.begin_run("inventory-before-seal", source={}) as run:
+                ref = run.write_json("reports/content.json", {}, role="key-content")
+                store.resolve(ref).write_text('{"changed": true}')
+                with self.assertRaises(EvidenceManifestInvalid):
+                    run.finalize(result={"status": "passed"})
+                self.assertFalse((run.run_dir / "manifest.json").exists())
+                self.assertNotEqual(run.state, "DURABLE")
+
+    def test_child_json_writer_preserves_nested_compiler_metadata(self):
+        from tooling.acceptance.core.execution_graph import compile_graph
+
+        with tempfile.TemporaryDirectory() as temporary:
+            worktree = Path(temporary) / "worktree"
+            store = EvidenceStore(Path(temporary) / "evidence", worktree=worktree)
+            graph = compile_graph({"token-check": {"argv": ["true"]}},
+                                  ["token-check"])
+            with store.begin_run("plan-child", source={}) as run:
+                with patch.dict(os.environ, run.subprocess_environment(os.environ)):
+                    with ArtifactSession(repo_root=worktree, gate_id="plan-child") as child:
+                        ref = child.write_json("reports/plan.json", {"execution_graph": graph},
+                                               role="plan-token-role")
+                run.collect_existing_artifacts()
+                manifest = run.finalize(result={"status": "passed"})
+                self.assertEqual(manifest["artifacts"]["plan-token-role"], ref.to_dict())
+                observed = store.read_json(ref)
+                self.assertEqual(observed["execution_graph"], graph)
+                original = store.resolve(ref).read_bytes()
+                self.assertEqual(redact_artifact_bytes(original), (original, False))
+
+    def test_serialized_graph_scan_retains_secret_and_closure_checks(self):
+        from tooling.acceptance.core.execution_graph import compile_graph
+
+        graph = compile_graph({
+            "auth-key-check": {"argv": ["true"]},
+            "token-consumer": {"dependsOn": ["auth-key-check"], "argv": ["true"]},
+        }, ["token-consumer"])
+        invalid = [
+            {**graph, "password": "1"},
+            {key: value for key, value in graph.items() if key != "digest"},
+            {**graph, "digest": "0" * 64},
+            {**graph, "dependencies": {"auth-key-check": ["token-consumer"],
+                                      "token-consumer": []}},
+            {"artifactKind": "acceptance-execution-graph", "password": "1"},
+        ]
+        for index, candidate in enumerate(invalid):
+            with self.subTest(invalid_graph=index):
+                raw = json.dumps({"graph": candidate}).encode()
+                redacted, changed = redact_artifact_bytes(raw)
+                self.assertTrue(changed)
+                self.assertIn(REDACTED, redacted.decode())
+        for secret in ("auth-key-check", graph["definitionDigests"]["auth-key-check"]):
+            with self.subTest(secret=secret):
+                raw = json.dumps({"graph": graph}).encode()
+                redacted, changed = redact_artifact_bytes(raw, (secret,))
+                self.assertTrue(changed)
+                self.assertNotIn(secret, redacted.decode())
+        raw = json.dumps({"graph": graph, "password": "1",
+                          "description": "synthetic-secret-value"}).encode()
+        redacted, changed = redact_artifact_bytes(raw, ("synthetic-secret-value",))
+        self.assertTrue(changed)
+        observed = json.loads(redacted)
+        self.assertEqual(observed["graph"], graph)
+        self.assertEqual(observed["password"], REDACTED)
+        self.assertEqual(observed["description"], REDACTED)
+
+
+@unittest.skipIf(os.name == "nt", "POSIX held-lock control")
+class EvidenceLockLivenessTests(unittest.TestCase):
+    def test_contended_blocking_lock_has_finite_protection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary).resolve() / "held.lock"
+            holder = evidence_store._FileLock(path)
+            contender = evidence_store._FileLock(path)
+            holder.acquire(blocking=False)
+            # A bounded watchdog releases the actual held lock even before repair.
+            watchdog = threading.Timer(0.2, holder.release)
+            watchdog.start()
+            started = time.monotonic()
+            try:
+                with patch.object(
+                    evidence_store, "EVIDENCE_LOCK_TIMEOUT_SECONDS", 0.03, create=True,
+                ), self.assertRaises(EvidenceConflict):
+                    contender.acquire(blocking=True)
+                self.assertLess(time.monotonic() - started, 0.15)
+                self.assertIsNone(contender._handle)
+            finally:
+                contender.release()
+                watchdog.join(timeout=1)
+                holder.release()
+                self.assertFalse(watchdog.is_alive())
+            self.assertTrue(contender.acquire(blocking=False))
+            contender.release()
 
 
 if __name__ == "__main__":

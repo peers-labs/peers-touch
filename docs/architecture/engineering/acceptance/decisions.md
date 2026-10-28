@@ -34,12 +34,13 @@
 | D-20 | Formal Execution Plan owns Acceptance scheduling | accepted |
 | D-21 | Multi-Scenario Proof 使用一个 Suite Runtime | accepted |
 | D-22 | Desktop 输入按非侵入式语义与隔离原生证明分级 | accepted |
+| D-23 | Fixed scope continues through explicit bounded requests and original proof | accepted |
 
 ---
 
 ## D-01: Capability Graph 是验收架构的一等模型
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-06-03
 
 ### Context
@@ -451,6 +452,18 @@ artifact必须写入source tree之外的canonical artifact root：
 <root>/<workspace-id>/<gate-id>/<run-id>/
 ```
 
+证真判定由 `core/proof.py` 唯一实现。所有消费者必须核验原始 inventory、
+源码、终态 cleanup、扫描和原报告断言；调用方标签不构成证明。Legacy 原
+producer 可以被显式引用，已激活 finalizer 的 Gate 必须满足其唯一 authority。
+Coverage 的分母包括全部声明，领域显示顺序不能删除责任。缺失或矛盾材料
+拒绝证明，业务 Oracle 继续拥有所需观察集合。
+跨 Capability 的领域交叉引用不构成重复 Feature；按 product_area 报表
+分组并保留 domain_relations，无声明分组的多领域 Feature 进入 shared。
+同 Gate canonical JSON report 在缺失或改指 sourceArtifact 时仍核验，
+sealed identity 漂移同样拒绝。Evidence Store 的所有阻塞 OS 锁使用统一
+有限等待，保留较短保护和外层原取消；实际 wait/hold/competition 写入
+有界阶段诊断，不授予性能或业务证明。
+
 `PT_ACCEPTANCE_ARTIFACT_ROOT`是CI和隔离测试的显式override。未设置或空白时，
 本机开发使用机器 Dev Control Plane 下的 canonical default：
 
@@ -573,6 +586,13 @@ Infra 发现注入缺口时输出 `BUSINESS_INJECTION_REQUIRED`，只阻塞对�
 Infra readiness 只消费 `acceptance_core_self_validation`。方向为
 `product_domain_validates_acceptance` 的 capability 只提供附加反向证据，默认不作为
 每次 Infra PR 的合并门。
+
+Domain/Infra 结构校验只消费合同与源码，不读取验收现场或结果 envelope。
+只有显式请求 `--require-proven` 才进入原有证明读取与 source/完整性核验。
+结构报告以 `proof_assessment=not-evaluated` 和缺口字段 `null` 表示未评估
+产品证明；不得从 `structurally_valid` 推导产品就绪。两种模式在同一
+`validate_capability` 输入边界拒绝互换证据集合，不另设兼容入口。
+结构 Gate 的工具链身份由独立只读 Owner 核验，不能借此复用业务证据。
 
 ### Rationale
 
@@ -1637,6 +1657,16 @@ release/full-test user intent.
 - A changed path that implies an undeclared Gate fails with
   `ACCEPTANCE_PLAN_DRIFT`.
 
+### Rationale
+
+An explicit closure distinguishes immediate verification from completion and
+full release obligations. Impact discovery remains a conservative projection.
+
+### Alternatives Considered
+
+Executing every impacted Gate from the latest generated pointer conflates
+discovery and scheduling and can launch expensive proof without that intent.
+
 ---
 
 ## D-21: Multi-Scenario Proof Uses One Suite Runtime
@@ -1697,6 +1727,16 @@ Replace this decision only if every expensive Acceptance resource becomes
 stateless and negligible to recreate, while a stronger receiver-visible proof
 contract preserves the same source, isolation, and cleanup guarantees.
 
+### Rationale
+
+Suite ownership amortizes resource setup while retaining each Scenario's real
+UI action, receiver assertion and terminal cleanup evidence.
+
+### Alternatives Considered
+
+Per-Scenario provisioning repeats setup; Harness-only proof omits the visible
+Journey. Neither satisfies the declared shared-runtime contract.
+
 ---
 
 ## D-22: Desktop Input Separates Non-Intrusive Semantics From Isolated Native Proof
@@ -1723,14 +1763,97 @@ focus or HID delivery.
 - Desktop interaction declares one of two closed modes:
   `semantic-nonintrusive` or `exclusive-native-input`.
 - Local Desktop development defaults to `semantic-nonintrusive`.
+- Semantic startup sets the SDK's initial window and WebView focus before
+  creation and uses Accessory activation policy on macOS. The Desktop lockfile
+  must resolve Wry 0.57.1 or later within the supported SDK line: earlier Wry
+  constructors unconditionally request application activation even when focus
+  is false. The official fix gates application activation and first-responder
+  assignment on both visibility and focus. Do not replace it with hidden
+  startup windows, delayed activation-policy transitions, method interception
+  or dependency-cache edits.
+  Qualification verifies an on-screen process-owned native window; a hidden
+  WebView screenshot cannot substitute for presentation.
+  `activate_ignoring_other_apps(false)` alone does not qualify background
+  startup. The complete launch/action/stop operator oracle remains required.
+  Exclusive and production activation retain their own behavior.
+- Cell qualification freezes the actual operator state before client launch,
+  rejects a target-client operator baseline, and compares that same state after
+  launch, semantic actions, and owned stop. A changed sample is not replaced by
+  a new baseline inside the same qualification.
 - Semantic interaction uses the embedded WebDriver and must not activate an
   application, move the system pointer, or post global keyboard/mouse events.
+- Semantic mouse clicks use the existing Selenium element-origin Actions
+  sequence so the visible hit target receives mouse press, release and click.
+  A JavaScript `element.click()` alone does not represent that sequence.
+  Failed Actions remain failures; no global-input or product-specific fallback
+  may replace them.
 - A native Accessibility action may join the semantic mode only after a
   focused non-interference contract proves that frontmost PID, pointer
   location, and operator keyboard focus remain unchanged.
+- Process-scoped file chooser qualification is a separate closed capability.
+  The parent Cell executes a real native open/select/close using the current
+  binary, verifies exact selected-path and fixture digests, and observes owned
+  stop before emitting `nativeAdapter.fileChooser`. Its identity binds that
+  Cell run and source. Ordered lifecycle samples retain one prelaunch operator
+  baseline; an intermediate mismatch cannot be cleared by a later sample.
+  The Driver owns all operator sampling and the exact-PID AX primitive.
+  macOS uses one bounded native observation implementation for operator-only,
+  operator plus panel, focused control and pointer reads. Each observation
+  owns one subprocess and releases it before returning; no persistent worker
+  or cached operator/panel state supplies a sample. The same subprocess
+  initializes AX/AppKit once and independently reads two consecutive stable
+  focus samples. Pointer observation uses the same ctypes boundary for
+  CoreGraphics and releases its event; it does not initialize a separate Quartz
+  Python module. Focus must stabilize within the original one-second deadline,
+  including child initialization; control and full observation retain their
+  two- and three-second subprocess limits respectively.
+  Probe failure diagnostics retain the original child exception type and code
+  location separately from the adapter's response-decoding exception. Code
+  function and line identify the failure without exporting Accessibility
+  values, exception messages or private window titles. A passing replay
+  cannot establish the cause of an earlier observation failure.
+  Failed AXWindows reads retain their measured attribute-read duration.
+  Shared AX attribute reads preserve their status, attribute name, returned-value
+  presence and duration. Only explicit NoValue or AttributeUnsupported may
+  represent optional absence; required AXWindows cannot accept absent, failed
+  or null results. All operator control attributes consume the same original
+  focus deadline, cap messaging waits at the lesser of 0.5 seconds and remaining
+  time, and reject expiry before or after a native call. Failure releases any
+  returned CF value and stops subsequent reads.
+  The shared control reader retains the actual queried application PID in
+  `actualControlRequestPid` on that same exception. Operator sampling may
+  receive caller PID zero or a chooser target while querying another frontmost
+  application; the caller PID cannot identify the failed AX recipient.
+  Original status, read duration, deadline and code origin remain unchanged.
+  Chooser Home lookup first requires an AXStaticText node inside the AXOutline
+  sidebar, then reads its AXValue. Structural nodes are not text candidates;
+  an actual eligible-node read failure still stops selection. The selector
+  keeps the existing exact-PID traversal, actions and timeout.
+  Operator observation supplies the failing lifecycle phase while preserving
+  the original Driver owner, checks and sticky exception. Subsequent reads
+  cannot overwrite that phase or retry a failed sample.
+  Parent qualification and picker use `NativeOperatorObservation.file_chooser`
+  to observe panel state and unchanged operator together at every chooser
+  phase. Pending panel samples also compare against the frozen baseline;
+  a mismatch stops immediately and remains sticky. Original panel waiting
+  windows, exact path/hash checks and owned-stop observation remain required.
+  Observation and selection share one AX panel finder. Typed panel presence
+  must transition absent/present/absent; macOS can expose a panel inside the
+  existing AX window without changing window or sheet counts. Unavailable
+  native observation fails closed rather than reporting an absent panel.
+  The shared path finder checks all controls at a depth before descending
+  into file-list contents. It retains the original depth bound and releases
+  copied child arrays on every exit. A failed read still propagates when no
+  earlier native target exists; traversal order cannot convert refusal to
+  optional absence.
+  The local Binding admits this capability only from its prepared Cell.
+  The shared picker uses the visible trigger and real panel, checks closure
+  and fixture identity, and leaves product and receiver oracles with the Gate.
+  Qualification is equipment evidence, not product proof.
 - `exclusive-native-input` is the only mode allowed to use AppKit activation,
-  CoreGraphics HID events, native hover/drag, system file panels, permission
-  sheets, or physical-focus assertions.
+  CoreGraphics HID events, native hover/drag, permission sheets, physical-focus
+  assertions or a file-panel mechanism without separately qualified
+  process-scoped non-interference.
 - A local exclusive run is admitted only with an explicit
   `isolated-gui-session` declaration. A shared user session fails closed.
 - Remote runtime cells may retain exclusive native input because their
@@ -1746,8 +1869,15 @@ focus or HID delivery.
 - Platform adapters reject accidental global input before the OS call.
 - Acceptance windows are not forced to always-on-top or screen-saver level in
   semantic mode.
-- Native file chooser, permission, physical drag, and native-focus claims stay
-  `BLOCKED/UNPROVEN` without an isolated GUI session.
+- Missing or stale process-scoped chooser qualification remains
+  `BLOCKED/UNPROVEN`; a platform or mode flag cannot admit it. Permission,
+  physical drag, native-focus and global-input chooser claims still require
+  an isolated GUI session.
+- The input policy owner records the attempted operation, actual mode or
+  isolation value, expected capability and recovery action in a structured
+  resource diagnostic. Runner and Reporter preserve that same observation.
+  A Station Profile is not a GUI isolation resource; absent observations do
+  not establish missing hardware or source drift.
 - Business Gate assertions remain unchanged; only their admitted interaction
   mechanism and evidence classification differ.
 
@@ -1756,3 +1886,133 @@ focus or HID delivery.
 Replace this decision only if the operating system provides a verified
 process-scoped input primitive with equivalent native semantics and a
 non-interference proof across supported runtime cells.
+
+### Rationale
+
+The actual input primitive determines what the observation proves. Explicit
+modes preserve operator isolation and prevent semantic evidence from being
+misrepresented as physical input.
+
+### Alternatives Considered
+
+Global HID input in shared sessions competes with the operator. Treating
+WebView input as native focus proof exceeds its observable guarantees.
+
+---
+
+## D-23: Fixed Scope Continues Through Explicit Bounded Requests
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+A finite request deadline can expire before the complete required Gate graph
+finishes. Requiring every resumed request to replay the proved prefix wastes
+that deadline. Payload redaction can also destroy public role references whose
+names contain auth, key or token, making original producer proof unauditable.
+
+### Decision
+
+`ExecutionSession` retains the complete required scope and original request
+reports. Runner owns dispatch and consumes only a DURABLE session manifest.
+Each request holds the existing Evidence Store OS lock primitive and consumes
+one persistent sequence outside the evidence namespace. The prior request must
+have a verified terminal manifest and completed handle cleanup; stale,
+concurrent, consumed or crashed requests fail closed.
+
+Only a unique request-work expiry with actual successful cleanup enters
+`PAUSED_REQUEST_EXHAUSTED`. One explicit invocation then creates one bounded
+request under the same policy. Other stops require qualified owner repair;
+UNKNOWN remains `NEEDS_JUDGMENT`. Cancelled work restarts the complete Gate.
+
+Reuse reads original producer manifests, every inventory hash, current source,
+definition, policy and input context, DONE/PROVEN, cleanup and current
+`authoritative_latest` resolution. D-19 enforcement remains mandatory.
+Local ci-structure/ci-cheap/local-evidence results require a closed owner-declared
+`executionInputs.environmentKeys` contract before they can be reused.
+Child inheritance is constrained to standard tool variables plus these keys;
+their actual values are hashed independently for each Gate. Global context
+binds explicit Plan/runtime/Profile inputs, not unrelated ambient variables.
+Changed declared inputs invalidate that Gate and consumers; source, graph,
+policy or global candidate changes still invalidate all prior completion.
+An original consumer must refer to the exact revalidated producer manifests.
+Opaque or live runtime/provider/oracle/action-plan input remains pending until
+its owner supplies current identity; environment names cannot authorize reuse.
+The owner supplies one bounded read-only `executionInputs.identityProbe` with
+an exact owner ID, argv and timeout. Its closed observation binds actual runtime,
+provider, oracle, action-plan and fixture digests. Runner completes owned
+equipment before the first probe and product command. It captures actual
+Environment/Runtime Cell ArtifactRefs and prerequisite references in one
+immutable same-run input-artifacts record, validates inventory and bytes,
+and binds its reference into execution identity. The same original equipment
+record is checked after cleanup before sealing, and again on resume.
+Resume never provisions replacement equipment or substitutes current latest.
+The concrete Owner verifies original equipment and current material provider
+state; the old READY record alone supplies no current runtime proof.
+Read-only store access carries no credentials, lease or launch authority.
+Probe errors, wrong IDs,
+incomplete observations and material drift supply no current-input proof.
+The existing Launcher owns probe children under the unchanged request and exit
+limits. Core cannot substitute Profile names, historical service manifests or
+invented fixture identities. Concrete source and runtime owners provide these
+inputs outside Core; Gates without qualified injection remain fresh.
+Input launch failure retains `InputIdentityProbeFailed` with the actual
+Launcher exception, ResourceDiagnostic and bounded output. The normal Runner
+writer seals an `input-owner-failure` supporting artifact; entry validation
+retains the same diagnostic rather than discarding it as an input mismatch.
+Concrete source owners reuse OperationObserver for internal installation and
+configuration stages. Neither liveness samples nor a successful diagnostic
+replay establish the cause of an earlier unobserved transient timeout.
+Input process cleanup failures retain a typed `InputIdentityCleanupFailed`;
+they cannot become ordinary missing identity or pending reuse. They stop
+dispatch independently of the optional stop-on-failure flag. Initialization
+failure consumes the current request and seals a full-scope repair-required
+Session terminal, preventing replay of the previous clean request.
+Successful probe cleanup remains within the current phase. Request cancellation
+unwinds work protection before using the same fixed Gate cleanup tail.
+The source owner rejects non-local, provisioned, Runtime Cell and ephemeral
+inputs; disposable experiments require their own qualified owner.
+Source-owner qualification binds the actual Python installation and effective
+import roots, installed source and bytecode, native executable bytes and
+non-system shared-library bytes. System libraries bind to the OS build.
+An unknown script/shim or second interpreter cannot qualify by hashing its
+wrapper. Installed links remain contained; an exact sysconfig-owned Python
+framework file is separately hashed without granting directory traversal.
+Installation traversal carries the resolved directory boundary and reads each
+entry's own metadata once. Only symbolic links require target resolution.
+Names, bytes, modes, bytecode, link targets, exclusions and repeated-target
+references retain their complete identity. Every observation reads current
+material; no persistent inventory cache or larger probe deadline is permitted.
+Each request resolves attempted incomplete roots and their producers first, then
+unstarted roots in frozen order, then unrelated fresh reruns. Dependency closure
+is visited per root; an unstarted aggregate cannot promote a completed prefix
+ahead of an interrupted independent root. The frozen graph and full scope remain intact.
+Sole request expiry records administrative preemption, distinct from owner limits.
+Bounded operation heartbeats record liveness only; safe stderr backpressure and
+joined observer shutdown cannot renew deadlines or supply business progress.
+
+Evidence Store serializes only closed compiler graphs and actual ArtifactRefs
+as public metadata, while all secret text and known-value scans remain active.
+Payload fields retain sensitive-field redaction. Invalid metadata or inventory
+fails publication and read; historical damaged evidence is never repaired.
+
+### Rationale
+
+Separating the complete obligation from the bounded dispatch preserves scope
+and proof while allowing finite work to advance. Original producer references
+retain historical costs and authority; fresh verification has its own cost.
+
+### Alternatives Considered
+
+- Replaying every prefix repeats already proved work.
+- Shrinking required scope or copying PASS loses obligations and identity.
+- Renewing deadlines silently removes the request resource boundary.
+- Name whitelists or disabling redaction can expose secret payload.
+
+### Consequences
+
+Reports account for every required Gate and distinguish original completion,
+validation and actual dispatch. Request metadata is supporting-only. No new
+business assertions, smaller observation windows, uniform work caps, automatic
+budget growth or Gate scope changes follow from this decision.

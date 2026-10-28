@@ -23,6 +23,7 @@ from tooling.acceptance.core import (
     ActorRuntime,
     BaseDriver,
     BaseFixture,
+    BlockedError,
     DomDriver,
     EvidenceReport,
     GateError,
@@ -251,6 +252,39 @@ class AcceptanceGateBaseClassTests(unittest.TestCase):
             self.assertIn("intentional failure", report["error"])
             self.assertEqual(report["error_type"], "RuntimeError")
             self.assertTrue(gate.driver._stopped, "driver.stop() must be called on failure")
+
+    def test_gate_execute_preserves_blocked_semantics(self):
+        class BlockedGate(AcceptanceGate):
+            gate_id = "unit-test-blocked"
+
+            def __init__(self, tmpdir: Path):
+                super().__init__()
+                self.report_path = tmpdir / "blocked.json"
+
+            def run(self):
+                raise BlockedError(
+                    "required runtime is unavailable",
+                    resource="runtime-cell:synthetic",
+                )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gate = BlockedGate(Path(tmpdir))
+            self.assertEqual(gate.execute(), 2)
+            report = json.loads(gate.report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(report["completionStatus"], "BLOCKED")
+        self.assertEqual(report["proofStatus"], "UNPROVEN")
+        self.assertFalse(report["sampleEmissionAllowed"])
+        self.assertEqual(report["error_type"], "BlockedError")
+        self.assertEqual(
+            report["blockedReason"],
+            "required runtime is unavailable",
+        )
+        self.assertEqual(
+            report["blockedResource"],
+            "runtime-cell:synthetic",
+        )
 
     def test_gate_drivers_cleanup_on_exception(self):
         class FailMidwayGate(AcceptanceGate):
@@ -521,7 +555,10 @@ class FixtureInterfaceTests(unittest.TestCase):
 class HarnessBridgeTests(unittest.TestCase):
     def test_async_harness_preserves_javascript_stack(self):
         self.assertIn("error && error.stack", ASYNC_HARNESS_SCRIPT)
-        self.assertIn("done({ error: stack || message })", ASYNC_HARNESS_SCRIPT)
+        self.assertIn(
+            "done({ error: stack ? `${message}\n${stack}` : message })",
+            ASYNC_HARNESS_SCRIPT,
+        )
 
     def test_call_async_harness_returns_value(self):
         mock_driver = MockDriver()

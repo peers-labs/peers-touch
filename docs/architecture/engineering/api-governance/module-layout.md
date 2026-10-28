@@ -76,8 +76,12 @@ apps/station/frame/core/federation/
 ├── auth/                   # Station peer authentication
 └── registry/               # typed domain payload dispatch
 
-tooling/acceptance/gates/architecture/
-└── station_api_ownership.py
+apps/station/app/cmd/station_api_ownership/
+├── main.go                # Gate CLI
+├── analyzer.go            # registry and assertion orchestration
+├── route_inventory.go     # Go AST route discovery
+├── source_inventory.go    # proto, retired symbols, stores and DDD imports
+└── source_tree.go         # shared bounded directory scanner
 ```
 
 Exact implementation paths may be refined by the execution plan, but the owner and

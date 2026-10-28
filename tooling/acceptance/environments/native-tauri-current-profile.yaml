@@ -44,17 +44,11 @@
   "fixtures": [
     {
       "id": "chat-native-actors",
-      "authorization_required": false
+      "authorization_required": true,
+      "authorization_ref": "station.reset:chat-current-profile-actors"
     }
   ],
-  "credentials": [
-    {
-      "id": "chat-password",
-      "source_ref": "fixture:apps/station/app/conf/actor.yml#preset_users",
-      "required": true,
-      "generated_if_missing": false
-    }
-  ],
+  "credentials": [],
   "cleanup": {
     "resources": ["processes", "ports", "storage", "sessions"]
   }

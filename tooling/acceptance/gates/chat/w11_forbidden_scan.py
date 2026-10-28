@@ -14,8 +14,9 @@ from __future__ import annotations
 import json
 import os
 import re
-import sys
 from pathlib import Path
+
+from tooling.acceptance.core import AcceptanceGate, BlockedError
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 MANIFEST_PATH = Path(
@@ -28,12 +29,10 @@ MANIFEST_PATH = Path(
 
 def load_manifest() -> dict:
     if not MANIFEST_PATH.exists():
-        print(
-            f"FAIL: contract manifest not found at {MANIFEST_PATH}. "
-            "Run acceptance-closure-gen.py first.",
-            file=sys.stderr,
+        raise BlockedError(
+            reason="W11 contract manifest is missing; run acceptance-closure-gen.py",
+            resource=str(MANIFEST_PATH),
         )
-        sys.exit(2)
     return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
@@ -163,46 +162,32 @@ SCANNERS = {
     "tauri-command-absent": scan_tauri_command_absent,
 }
 
-REPORT_PATH = REPO_ROOT / "tooling" / "acceptance" / "reports" / "chat-w11-forbidden-scan.json"
+class W11ForbiddenScanGate(AcceptanceGate):
+    gate_id = "chat-w11-forbidden-scan"
 
-
-def write_report(checked: int, violations: list[str]) -> None:
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    report = {
-        "status": "PASS" if not violations else "FAIL",
-        "assertions": [{"name": f"target-{i}", "passed": True} for i in range(checked)],
-        "violations": violations,
-        "checkedTargets": checked,
-    }
-    REPORT_PATH.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    def run(self) -> dict:
+        manifest = load_manifest()
+        violations: list[str] = []
+        checked = 0
+        for deliverable_id, target in manifest.get("scan_targets", {}).items():
+            scanner = SCANNERS.get(target.get("type", ""))
+            if scanner is None:
+                continue
+            checked += 1
+            findings = scanner(target)
+            violations.extend(findings)
+            self.report.add_assertion(
+                deliverable_id, not findings, "\n".join(findings) or None,
+            )
+        self.report.runtime.update({
+            "violations": violations, "checkedTargets": checked,
+        })
+        self.assert_condition("forbidden-targets-clean", not violations, "\n".join(violations))
+        return {"checkedTargets": checked}
 
 
 def main() -> int:
-    manifest = load_manifest()
-    targets = manifest.get("scan_targets", {})
-    violations: list[str] = []
-    checked = 0
-
-    for did, target in targets.items():
-        vtype = target.get("type", "")
-        scanner = SCANNERS.get(vtype)
-        if scanner is None:
-            continue
-        if vtype in {"gates-passed", "gate-passed"}:
-            continue
-        checked += 1
-        violations.extend(scanner(target))
-
-    write_report(checked, violations)
-
-    if violations:
-        print(f"FAIL: W11 forbidden scan found {len(violations)} violation(s):")
-        for v in violations:
-            print(f"  - {v}")
-        return 1
-
-    print(f"PASS: W11 forbidden scan ({checked} scan targets clean)")
-    return 0
+    return W11ForbiddenScanGate().execute()
 
 
 if __name__ == "__main__":

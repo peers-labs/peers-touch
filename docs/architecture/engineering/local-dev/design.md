@@ -35,6 +35,22 @@
 10. **Profile-ID reset policy**: the canonical Profile ID is the only reset
     policy source. A case-insensitive terminal `stable` suffix protects the Profile
     from autonomous reset; every other reviewed Profile is Agent-resettable.
+
+An operation may name `targetProfile` without selecting a new workspace Profile.
+Machine Dev resolves the target through the same reviewed definition owner;
+the registration, local slot and current Git source remain workspace-owned.
+The operation requires the workspace capability, target policy and exact
+deployment identity. Stable deployment additionally requires the workspace's
+explicit binding to that stable Profile. A target never borrows a non-stable
+Profile's reset policy. The target is frozen into lease validation and inherited
+command projection; admission is repeated after locking and before mutation.
+
+Acceptance Station equipment calls this operation through native `devctl`
+readiness/deploy. Equipment completes before the Suite retains its remote
+source lease; source/runtime/protocol attestation then runs under that retained
+lease. This prevents nested source-lock deadlock and closes the readiness-to-use
+race. Equipment is bounded by the caller's deadline; its logs and errors are
+observations, while product oracles remain business-owned.
     The policy never replaces capabilities, exact reset scope,
     leases, topology validation, or source identity.
 11. **One read-only development projection**: Workflow Snapshot joins each

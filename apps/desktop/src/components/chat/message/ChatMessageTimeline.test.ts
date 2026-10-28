@@ -11,9 +11,7 @@ import {
   shouldVirtualizeChatMessageTimeline,
 } from './chatMessageTimelinePolicy';
 import {
-  loadedThreadReplyCount,
-  loadedThreadReplyIds,
-  resolvedThreadReplyCount,
+  resolveChatMessageThreadStats,
 } from './chatMessageThreadStats';
 import type { ChatMessage } from './chatMessageModel';
 
@@ -41,10 +39,47 @@ describe('loaded thread reply ids', () => {
       { ulid: 'reply-3', threadRootUlid: 'root' },
     ] as ChatMessage[];
 
-    expect(loadedThreadReplyIds(messages, 'root')).toEqual(['reply-2', 'reply-3']);
-    expect(loadedThreadReplyCount(messages, 'root')).toBe(2);
-    expect(resolvedThreadReplyCount(messages, 'root', 3)).toBe(3);
-    expect(resolvedThreadReplyCount(messages, 'root', 1)).toBe(2);
+    const stats = (projectedReplyCount?: number) => resolveChatMessageThreadStats({
+      rootUlid: 'root',
+      currentMessages: messages,
+      loadedThreadMessages: [],
+      projectedReplyCount,
+    });
+    expect(stats()).toEqual({ replyCount: 2, replyIds: ['reply-2', 'reply-3'] });
+    expect(stats(3).replyCount).toBe(3);
+    expect(stats(1).replyCount).toBe(2);
+  });
+
+  it('exposes reply identities loaded by the thread owner after a cold timeline', () => {
+    const currentMessages = [{ ulid: 'root', threadRootUlid: '' }] as ChatMessage[];
+    const options = { rootUlid: 'root', currentMessages, projectedReplyCount: 2 };
+    expect(resolveChatMessageThreadStats({
+      ...options,
+      loadedThreadMessages: [],
+    })).toEqual({ replyCount: 2, replyIds: [] });
+    expect(resolveChatMessageThreadStats({
+      ...options,
+      loadedThreadMessages: [
+        currentMessages[0],
+        { ulid: 'first-reply', threadRootUlid: 'root' },
+        { ulid: 'nested-reply', threadRootUlid: 'root', replyToUlid: 'first-reply' },
+      ] as ChatMessage[],
+    })).toEqual({ replyCount: 2, replyIds: ['first-reply', 'nested-reply'] });
+  });
+
+  it('uses the current thread projection when the timeline still has stale replies', () => {
+    expect(resolveChatMessageThreadStats({
+      rootUlid: 'root',
+      currentMessages: [
+        { ulid: 'root', threadRootUlid: '' },
+        { ulid: 'stale-reply', threadRootUlid: 'root' },
+      ] as ChatMessage[],
+      loadedThreadMessages: [
+        { ulid: 'root', threadRootUlid: '' },
+        { ulid: 'current-reply', threadRootUlid: 'root' },
+      ] as ChatMessage[],
+      projectedReplyCount: 1,
+    })).toEqual({ replyCount: 1, replyIds: ['current-reply'] });
   });
 });
 

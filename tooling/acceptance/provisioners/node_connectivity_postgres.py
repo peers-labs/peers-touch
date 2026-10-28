@@ -264,6 +264,7 @@ class NodeConnectivityPostgresProcessProvisioner(EnvironmentProvisioner):
                 self._manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )
 
     def _additional_services(

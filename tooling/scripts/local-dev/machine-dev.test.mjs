@@ -259,6 +259,89 @@ function waitForChild(child) {
   });
 }
 
+test('target Profile deploy preserves the workspace binding and freezes its target', () => {
+  const scope = fixture();
+  try {
+    registerWorkspace(registrationOptions(scope));
+    const registryFile = machineRegistryPath(scope.home);
+    const original = readFileSync(registryFile, 'utf8');
+    const options = {
+      ...registrationOptions(scope),
+      targetProfile: 'fiveArm',
+      resourceKind: 'station.deploy',
+      resourceId: 'station-five',
+      budgetSeconds: 5,
+    };
+    const resolved = checkWorkspace(options);
+    assert.equal(resolved.binding.profile, 'four');
+    assert.equal(resolved.binding.slot, 5);
+    assert.equal(resolved.profile.profile, 'fiveArm');
+    const runner = buildLeaseCommand({
+      ...options,
+      command: [process.execPath, '-e', 'process.stdout.write(process.env.PT_DEV_TARGET_PROFILE)'],
+    });
+    const result = spawnSync(runner.executable, runner.arguments, { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, 'fiveArm');
+    assert.equal(readFileSync(registryFile, 'utf8'), original);
+    const local = buildLeaseCommand({
+      ...registrationOptions(scope),
+      resourceKind: 'local.slot', resourceId: '5', budgetSeconds: 5,
+      command: [
+        process.execPath, '-e',
+        'process.stdout.write(JSON.stringify({file:process.env.PT_DEV_PROFILE_FILE,target:process.env.PT_DEV_TARGET_PROFILE ?? null}))',
+      ],
+    });
+    const contained = spawnSync(local.executable, local.arguments, {
+      encoding: 'utf8',
+      env: { ...process.env, PT_DEV_PROFILE_FILE: '/contained/runtime.env' },
+    });
+    assert.equal(contained.status, 0, contained.stderr);
+    assert.deepEqual(JSON.parse(contained.stdout), {
+      file: '/contained/runtime.env', target: null,
+    });
+    expectCode('DEPLOY_TARGET_MISMATCH', () =>
+      validateLeaseRequest({ ...options, resourceId: 'station-four' }));
+    const blocked = buildLeaseCommand({
+      ...options, command: [process.execPath, '-e', 'process.stdout.write("unexpected")'],
+    });
+    writeFileSync(path.join(scope.envRepo, 'peers-touch/fiveArm/unreviewed'), 'dirty\n');
+    const refused = spawnSync(blocked.executable, blocked.arguments, { encoding: 'utf8' });
+    assert.equal(refused.status, 2);
+    assert.equal(refused.stdout.includes('unexpected'), false);
+    assert.equal(readFileSync(machineLeasePath('station.deploy', 'station-five', scope.home), 'utf8'), '');
+  } finally {
+    scope.close();
+  }
+});
+
+test('target Profile cannot borrow deployment authority for a stable Profile', () => {
+  const scope = fixture();
+  try {
+    addProfile(scope, {
+      name: 'corpStable', stationUrl: 'http://192.0.2.6:18080',
+      deployEnvironment: 'station-stable', deployHost: '192.0.2.6',
+    });
+    registerWorkspace(registrationOptions(scope));
+    const options = { ...registrationOptions(scope), targetProfile: 'corpStable' };
+    assert.equal(checkWorkspace({ ...options, capabilities: 'station.connect' }).profile.profile, 'corpStable');
+    expectCode('WORKSPACE_CAPABILITY_MISSING', () => checkWorkspace({
+      ...options, capabilities: 'station.deploy',
+    }));
+    expectCode('PROFILE_RESET_PROTECTED', () => checkWorkspace({
+      ...options, capabilities: 'station.reset',
+    }));
+    updateWorkspace(registrationOptions(scope, {
+      profile: 'corpStable', capabilities: 'station.connect,station.deploy',
+    }));
+    assert.equal(checkWorkspace({
+      ...options, profile: 'corpStable', capabilities: 'station.deploy',
+    }).profile.profile, 'corpStable');
+  } finally {
+    scope.close();
+  }
+});
+
 test('concurrent lease observers do not impersonate live holders', async () => {
   const scope = fixture();
   try {

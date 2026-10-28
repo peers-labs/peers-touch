@@ -2,9 +2,8 @@
 """CCU aggregate gate: verify all preceding CCU gates passed.
 
 Final aggregate gate for the Chat Capability Unification (CCU-07) project.
-Reads every required Gate's authoritative latest Evidence Store manifest,
-requires clean exact-source proof, and emits its own immutable aggregate
-report.
+Reads the Runner's original prerequisite manifests, requires complete
+current-source proof and cleanup, and emits its own immutable aggregate report.
 
 GATE_ID: chat-lifecycle-ccu-aggregate-e2e
 """
@@ -12,14 +11,16 @@ GATE_ID: chat-lifecycle-ccu-aggregate-e2e
 from __future__ import annotations
 
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict
 from pathlib import Path
 
 from tooling.acceptance.core import (
     ArtifactSession,
-    EvidenceError,
     EvidenceStore,
     source_identity,
+)
+from tooling.acceptance.station_access_evidence import (
+    AggregateResult, GateSpec, check_gate,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -31,12 +32,6 @@ REPORT_RELATIVE_PATH = f"reports/{GATE_ID}.json"
 # Preceding CCU gates
 # ---------------------------------------------------------------------------
 
-@dataclass(frozen=True)
-class GateSpec:
-    acceptance_id: str
-    gate_id: str
-
-
 PRECEDING_GATES: tuple[GateSpec, ...] = (
     GateSpec("CHAT-G15", "messaging-platform-contract"),
     GateSpec("CHAT-G16", "chat-lifecycle-mixed-client-same-station-e2e"),
@@ -46,141 +41,6 @@ PRECEDING_GATES: tuple[GateSpec, ...] = (
     GateSpec("CHAT-G20", "chat-lifecycle-mixed-client-group-mls-e2e"),
     GateSpec("CHAT-G21", "chat-lifecycle-tree-zero-reference-e2e"),
 )
-
-
-# ---------------------------------------------------------------------------
-# Data model
-# ---------------------------------------------------------------------------
-
-@dataclass
-class GateResult:
-    acceptance_id: str
-    gate_id: str
-    run_id: str | None
-    status: str  # "PASS", "FAIL", "MISSING", "STALE", "ERROR"
-    detail: str = ""
-
-
-@dataclass
-class AggregateResult:
-    source: dict[str, str]
-    gates: list[GateResult] = field(default_factory=list)
-
-    @property
-    def passed(self) -> bool:
-        return (
-            self.source.get("workspaceDigest") == "clean"
-            and all(g.status == "PASS" for g in self.gates)
-        )
-
-    @property
-    def unproven(self) -> bool:
-        return (
-            self.source.get("workspaceDigest") != "clean"
-            or any(g.status in {"MISSING", "STALE", "ERROR"} for g in self.gates)
-        )
-
-
-# ---------------------------------------------------------------------------
-# Report loading
-# ---------------------------------------------------------------------------
-
-def check_gate(
-    store: EvidenceStore,
-    spec: GateSpec,
-    *,
-    expected_source: dict[str, str],
-) -> GateResult:
-    """Check one required Gate's immutable authoritative latest manifest."""
-    try:
-        manifest = store.latest(spec.gate_id)
-    except EvidenceError as error:
-        status = (
-            "MISSING"
-            if "latest pointer is unavailable" in str(error)
-            else "ERROR"
-        )
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=None,
-            status=status,
-            detail=str(error),
-        )
-
-    run_id = manifest.get("runId")
-    if (
-        manifest.get("artifactKind") != "acceptance-run-manifest"
-        or manifest.get("state") != "DURABLE"
-        or manifest.get("workspaceId") != store.workspace_id
-        or manifest.get("gateId") != spec.gate_id
-        or not isinstance(run_id, str)
-        or not run_id
-    ):
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=run_id if isinstance(run_id, str) else None,
-            status="ERROR",
-            detail="authoritative latest manifest identity is invalid",
-        )
-
-    observed_source = manifest.get("source")
-    if observed_source != expected_source:
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=run_id,
-            status="STALE",
-            detail=(
-                "latest evidence source does not match the aggregate source: "
-                f"observed={observed_source!r}"
-            ),
-        )
-
-    result = manifest.get("result")
-    if not isinstance(result, dict):
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=run_id,
-            status="ERROR",
-            detail="authoritative latest manifest has no result object",
-        )
-
-    expected_result = {
-        "status": "passed",
-        "completionStatus": "DONE",
-        "proofStatus": "PROVEN",
-    }
-    observed_result = {
-        key: result.get(key)
-        for key in expected_result
-    }
-    secret_scan = result.get("secretScan")
-    if (
-        observed_result != expected_result
-        or not isinstance(secret_scan, dict)
-        or secret_scan.get("status") != "passed"
-        or manifest.get("redaction", {}).get("status") != "passed"
-    ):
-        return GateResult(
-            acceptance_id=spec.acceptance_id,
-            gate_id=spec.gate_id,
-            run_id=run_id,
-            status="FAIL",
-            detail=(
-                "authoritative latest result is not passed/DONE/PROVEN with "
-                f"clean evidence: result={observed_result!r}"
-            ),
-        )
-
-    return GateResult(
-        acceptance_id=spec.acceptance_id,
-        gate_id=spec.gate_id,
-        run_id=run_id,
-        status="PASS",
-    )
 
 
 # ---------------------------------------------------------------------------

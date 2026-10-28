@@ -76,7 +76,7 @@ import {
   normalizeConversations,
   type FriendRequestData,
 } from './socialNormalizers';
-import { currentAuthenticatedActorPtid } from './session';
+import { currentAuthenticatedActorPtid, useSessionStore } from './session';
 import {
   accountProfileFromFederationResolve,
   actorDisplayName,
@@ -941,13 +941,30 @@ const initialSocialState: Pick<
 };
 
 let loadSessionsGeneration = 0;
+let messagingProjectionGeneration = 0;
+let socialProfileGeneration = 0;
+
+function profileReadIsCurrent(): () => boolean {
+  const actorPtid = currentAuthenticatedActorPtid();
+  const sessionEpoch = useSessionStore.getState().sessionEpoch;
+  const generation = socialProfileGeneration;
+  return () => Boolean(actorPtid)
+    && currentAuthenticatedActorPtid() === actorPtid
+    && useSessionStore.getState().sessionEpoch === sessionEpoch
+    && socialProfileGeneration === generation;
+}
 
 export const useSocialChatStore = createDesktopStore<SocialChatState>('socialChat', (set, get) => ({
   ...initialSocialState,
 
-  reset: () => set({ ...initialSocialState }),
+  reset: () => {
+    messagingProjectionGeneration += 1;
+    socialProfileGeneration += 1;
+    set({ ...initialSocialState });
+  },
   resetMessagingProjection: () => {
     loadSessionsGeneration += 1;
+    messagingProjectionGeneration += 1;
     set({
       conversations: [],
       conversationMembers: {},
@@ -1348,8 +1365,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     },
 
   loadMessages: async (ulid, kind, anchorMessageId) => {
-    if (!hasAuthenticatedActor()) return;
-    const scope = messagingDomainRuntime.requireActiveScope();
+    const actorPtid = currentAuthenticatedActorPtid();
+    if (!actorPtid) return;
+    const generation = messagingProjectionGeneration;
+    const isCurrentProjection = () => (
+      generation === messagingProjectionGeneration
+      && currentAuthenticatedActorPtid() === actorPtid
+    );
     const activeTab = kind ?? get().activeTab;
     // Fast path: if messages are already loaded for this conversation, render
     // them immediately without blocking on network+decrypt. A background
@@ -1360,9 +1382,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     set({ loading: false });
     try {
       const page = await imServiceV1.messaging.listMessages(ulid, { anchorMessageId });
+      if (!isCurrentProjection()) return;
       const projections = page.messages;
       const serviceMessages = await fetchServiceMessageMap(ulid);
-      if (!messagingDomainRuntime.isCurrent(scope)) return;
+      if (!isCurrentProjection()) return;
       const pageMessages = projections.map(projection => {
         const message = projectMessagingProjection(activeTab, ulid, projection);
         const serviceMessage = serviceMessages.get(message.ulid);
@@ -1436,8 +1459,20 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       if (rootUlids.length > 0) {
         await get().refreshThreadCounts(ulid, rootUlids, activeTab);
       }
+      if (!isCurrentProjection()) return;
+      const refreshed = get();
+      const activeUlid = activeTab === 'friend'
+        ? refreshed.activeSessionUlid
+        : refreshed.activeGroupUlid;
+      if (
+        refreshed.activeTab === activeTab
+        && activeUlid === ulid
+        && refreshed.openThreadRootUlid
+      ) {
+        await refreshed.loadThreadMessages(ulid, refreshed.openThreadRootUlid, activeTab);
+      }
     } catch (error) {
-      if (!messagingDomainRuntime.isCurrent(scope)) return;
+      if (!isCurrentProjection()) return;
       if (isUnauthorizedError(error)) {
         set({ loading: false });
         return;
@@ -1586,7 +1621,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadThreadMessages: async (ulid, rootUlid, kind, options) => {
-    const scope = messagingDomainRuntime.requireActiveScope();
+    const actorPtid = currentAuthenticatedActorPtid();
+    if (!actorPtid) return;
+    const generation = messagingProjectionGeneration;
+    const isCurrentProjection = () => (
+      generation === messagingProjectionGeneration
+      && currentAuthenticatedActorPtid() === actorPtid
+    );
     const activeKind = kind ?? get().activeTab;
     const key = socialThreadKey(activeKind, ulid, rootUlid);
     const append = options?.append === true;
@@ -1598,7 +1639,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }));
     try {
       const projections = await imServiceV1.messaging.listThreadMessages(ulid, rootUlid);
-      if (!messagingDomainRuntime.isCurrent(scope)) return;
+      if (!isCurrentProjection()) return;
       const nextMessages = projections.map(projection =>
         projectMessagingProjection(activeKind, ulid, projection),
       );
@@ -1616,7 +1657,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }));
       await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
     } catch (error) {
-      if (!messagingDomainRuntime.isCurrent(scope)) return;
+      if (!isCurrentProjection()) return;
       log.error('socialChat', 'loadThreadMessages failed', error);
       set((state) => ({
         threadMessages: state.threadMessages,
@@ -1632,12 +1673,17 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   refreshThreadCounts: async (ulid, rootUlids, kind) => {
-    const scope = messagingDomainRuntime.requireActiveScope();
+    const actorPtid = currentAuthenticatedActorPtid();
+    if (!actorPtid) return;
+    const generation = messagingProjectionGeneration;
     const activeKind = kind ?? get().activeTab;
     const uniqueRootUlids = Array.from(new Set(rootUlids.filter(Boolean)));
     if (uniqueRootUlids.length === 0) return;
     const data = await imServiceV1.messaging.threadCounts(ulid, uniqueRootUlids);
-    if (!messagingDomainRuntime.isCurrent(scope)) return;
+    if (
+      generation !== messagingProjectionGeneration
+      || currentAuthenticatedActorPtid() !== actorPtid
+    ) return;
     const counts = data.counts;
     set((state) => {
       const next = { ...state.threadCounts };
@@ -1652,10 +1698,16 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     const activeKind = kind ?? get().activeTab;
     if (!ulid || !rootUlid) return;
     try {
-      const messages = get().threadMessages[socialThreadKey(activeKind, ulid, rootUlid)] ?? [];
-      const lastReadSeq = messages.find((message) => message.ulid === lastReadUlid)
-        ? messageGroupSeq(messages.find((message) => message.ulid === lastReadUlid)!)
+      const state = get();
+      const messages = [
+        ...(state.messages[ulid] ?? []).filter((message) => message.ulid === rootUlid),
+        ...(state.threadMessages[socialThreadKey(activeKind, ulid, rootUlid)] ?? []),
+      ].filter((message) => messageGroupSeq(message) > 0);
+      const lastReadMessage = messages.find((message) => message.ulid === lastReadUlid);
+      const lastReadSeq = lastReadMessage
+        ? messageGroupSeq(lastReadMessage)
         : messages.reduce((max, message) => Math.max(max, messageGroupSeq(message)), 0);
+      if (lastReadSeq <= 0) return;
       await api.messagingReadCursor(ulid, lastReadSeq);
       await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
     } catch (error) {
@@ -1920,11 +1972,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadCurrentUserProfile: async () => {
-    const actorPtid = currentAuthenticatedActorPtid();
-    if (!actorPtid) return;
+    const isCurrent = profileReadIsCurrent();
+    if (!isCurrent()) return;
     try {
       const profile = await api.actorGetMyProfile();
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
+      if (!isCurrent()) return;
       const profilePtid = profile?.actorPtid?.trim() || null;
       const persistedConversationLocalState =
         loadConversationLocalState(profilePtid);
@@ -1939,7 +1991,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ),
       }));
     } catch (error) {
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
+      if (!isCurrent()) return;
       if (isUnauthorizedError(error)) return;
       const message = error instanceof Error ? error.message : String(error);
       set((state) => ({ loadError: state.loadError || message }));
@@ -1949,7 +2001,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadPeerProfile: async (peerPtid, force = false) => {
-    if (!hasAuthenticatedActor()) return;
+    const isCurrent = profileReadIsCurrent();
+    if (!isCurrent()) return;
     const did = (peerPtid || '').trim();
     if (!did) return;
     const state = get();
@@ -1965,6 +2018,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }));
     try {
       let profile = await api.peerProfileGet(did);
+      if (!isCurrent()) return;
       const federatedHandle = remoteProfileHandle(profile);
       const federationId = state.getIMConversations()
         .find((conversation) => conversation.peerPtid === did)
@@ -1991,17 +2045,18 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           });
         }
       }
+      if (!isCurrent()) return;
       set((prev) => ({
         peerProfiles: { ...prev.peerProfiles, [did]: profile ?? null },
         peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
       }));
     } catch (error) {
+      if (!isCurrent()) return;
       log.warn('socialChat', 'loadPeerProfile failed', { peerPtid: did, error });
       set((prev) => ({
-        // Cache `null` so the UI stops spinning and falls back to the
-        // session-derived display name + avatar; a future force-refresh
-        // (e.g. on profile-updated event) will retry.
-        peerProfiles: { ...prev.peerProfiles, [did]: null },
+        // A failed read has no newer profile truth. Keep this actor's last
+        // successful projection until a runtime-owned refresh succeeds.
+        peerProfiles: { ...prev.peerProfiles, [did]: prev.peerProfiles[did] ?? null },
         peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
       }));
     }

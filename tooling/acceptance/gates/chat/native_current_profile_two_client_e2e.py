@@ -14,9 +14,8 @@ from tooling.acceptance.gates.chat.native_two_client_e2e import (
     write_validation,
 )
 from tooling.acceptance.gates.chat.native_two_client_runner import (
-    CURRENT_PROFILE_ACTOR_WORKTREES,
+    CURRENT_PROFILE_ACTORS,
     CURRENT_PROFILE_GATE_ID,
-    CURRENT_PROFILE_INITIAL_SENDER,
     CURRENT_PROFILE_REQUIRED_ASSERTIONS,
     REQUIRED_ASSERTIONS,
 )
@@ -24,7 +23,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
 
 REQUIRED_CURRENT_PROFILE_STEPS = (
     REQUIRED_STEPS - {"fixture.reset"}
-    | {"fixture.existing", "runtime.cross_worktree"}
+    | {"fixture.existing", "runtime.instance_isolation", "client.restart", "conversation.restore"}
 )
 REQUIRED_CURRENT_PROFILE_ASSERTIONS = (
     REQUIRED_ASSERTIONS | CURRENT_PROFILE_REQUIRED_ASSERTIONS
@@ -33,178 +32,110 @@ REQUIRED_CURRENT_PROFILE_ASSERTIONS = (
 
 def validate_current_profile_topology(report: dict[str, Any]) -> None:
     manifest = report.get("manifest")
-    require(isinstance(manifest, dict), "runtime manifest is required")
-    raw_clients = manifest.get("clients")
-    require(
-        isinstance(raw_clients, list),
-        "runtime manifest clients are required",
-    )
+    runtime = report.get("runtime")
+    require(isinstance(manifest, dict) and isinstance(runtime, dict),
+            "Runtime manifest and evidence are required")
+    source = manifest.get("source")
+    require(isinstance(source, dict), "Current source identity is required")
     clients = {
         str(client.get("actor") or ""): client
-        for client in raw_clients
+        for client in manifest.get("clients", [])
         if isinstance(client, dict)
     }
-    require(
-        set(clients) == set(CURRENT_PROFILE_ACTOR_WORKTREES),
-        "current-profile clients must bind Alice and Bob",
-    )
-
-    runtime = report.get("runtime")
-    require(isinstance(runtime, dict), "runtime evidence is required")
-    topology = runtime.get("worktreeTopology")
-    require(
-        isinstance(topology, dict)
-        and set(topology) == set(CURRENT_PROFILE_ACTOR_WORKTREES),
-        "current-profile worktree topology is required",
-    )
-    source = manifest.get("source")
-    source_commit = str(
-        source.get("commit") if isinstance(source, dict) else ""
-    )
-    for actor, expected_name in CURRENT_PROFILE_ACTOR_WORKTREES.items():
+    require(set(clients) == set(CURRENT_PROFILE_ACTORS),
+            "Current-profile clients must bind Alice and Bob")
+    topology = runtime.get("instanceTopology")
+    require(isinstance(topology, dict) and set(topology) == set(CURRENT_PROFILE_ACTORS),
+            "Current-profile instance topology is required")
+    for actor in CURRENT_PROFILE_ACTORS:
         identity = topology[actor]
+        client = clients[actor]
+        require(isinstance(identity, dict), f"{actor} instance identity is required")
         require(
-            isinstance(identity, dict),
-            f"{actor} worktree identity must be an object",
+            identity.get("clientId") == client.get("id")
+            and identity.get("canonicalRoot") == str(Path(client["worktree"]).resolve())
+            and identity.get("canonicalRoot") == str(Path(source["worktree"]).resolve())
+            and identity.get("commit") == source.get("commit")
+            and identity.get("workspaceDigest") == source.get("workspaceDigest")
+            and re.fullmatch(r"[0-9a-f]{16}", str(identity.get("workspaceId") or "")) is not None
+            and re.fullmatch(r"[0-9a-f]{64}", str(identity.get("binarySha256") or "")) is not None
+            and isinstance(identity.get("processId"), int) and identity["processId"] > 0
+            and str(identity.get("actorPtid") or "").startswith("ptid:")
+            and bool(identity.get("deviceId"))
+            and identity.get("profile") == client.get("profile")
+            and identity.get("gatewayPort") == client.get("gateway_port")
+            and identity.get("webdriverPort") == client.get("webdriver_port")
+            and identity.get("storageRoot") == client.get("storage_root")
+            and client.get("storage_lifecycle") == "ephemeral",
+            f"{actor} current-source instance identity is incomplete or mismatched",
         )
-        client_root = Path(
-            str(clients[actor].get("worktree") or "")
-        ).expanduser().resolve()
+    require(all(
+        len({item[field] for item in topology.values()}) == 1
+        for field in ("canonicalRoot", "workspaceId", "commit", "workspaceDigest", "binarySha256")
+    ), "Current-profile instances must use one source snapshot and build")
+    require(all(
+        len({item[field] for item in topology.values()}) == 2
+        for field in ("processId", "actorPtid", "deviceId", "profile",
+                      "storageRoot", "gatewayPort", "webdriverPort")
+    ), "Current-profile instances must have isolated actors, processes, devices, ports and storage")
+    require(runtime.get("launchOrder") == runtime.get("directionOrder") == ["bob", "alice"],
+            "Bob must launch and initiate before Alice")
+    restarts = runtime.get("deviceRestartState")
+    expected_messages = runtime.get("restartMessages")
+    require(isinstance(expected_messages, list) and bool(expected_messages),
+            "Restart must prove actual run-created messages")
+    require(isinstance(restarts, dict) and set(restarts) == set(CURRENT_PROFILE_ACTORS),
+            "Current-profile device restart evidence is required")
+    for actor in CURRENT_PROFILE_ACTORS:
+        state = restarts[actor]
+        require(isinstance(state, dict), f"{actor} restart state is required")
+        before, after, messages = state.get("before"), state.get("after"), state.get("messages")
         require(
-            identity.get("clientId") == clients[actor].get("id")
-            and identity.get("logicalName") == expected_name
-            and identity.get("expectedLogicalName") == expected_name
-            and identity.get("canonicalRoot") == str(client_root)
-            and identity.get("clean") is True
-            and re.fullmatch(
-                r"[0-9a-f]{16}",
-                str(identity.get("workspaceId") or ""),
-            )
-            is not None
-            and re.fullmatch(
-                r"[0-9a-f]{16}",
-                str(identity.get("repositoryId") or ""),
-            )
-            is not None
-            and re.fullmatch(
-                r"[0-9a-f]{40,64}",
-                str(identity.get("head") or ""),
-            )
-            is not None
-            and re.fullmatch(
-                r"[0-9a-f]{40,64}",
-                str(identity.get("tree") or ""),
-            )
-            is not None,
-            f"{actor} worktree identity is incomplete or mismatched",
+            before == topology[actor] and isinstance(after, dict)
+            and isinstance(after.get("processId"), int) and after["processId"] > 0
+            and after.get("processId") != before["processId"]
+            and all(after.get(field) == before[field] for field in before if field != "processId"),
+            f"{actor} native restart must preserve the exact device and source state",
         )
-    require(
-        len(
-            {
-                str(topology[actor].get("canonicalRoot") or "")
-                for actor in CURRENT_PROFILE_ACTOR_WORKTREES
-            }
-        )
-        == 2
-        and len(
-            {
-                str(topology[actor].get("workspaceId") or "")
-                for actor in CURRENT_PROFILE_ACTOR_WORKTREES
-            }
-        )
-        == 2,
-        "current-profile clients must use distinct worktrees",
-    )
-    require(
-        len(
-            {
-                str(topology[actor].get("repositoryId") or "")
-                for actor in CURRENT_PROFILE_ACTOR_WORKTREES
-            }
-        )
-        == 1,
-        "current-profile clients must belong to one Git repository",
-    )
-    require(
-        topology["alice"].get("tree") == topology["bob"].get("tree"),
-        "current-profile worktrees must have identical source trees",
-    )
-    require(
-        topology[CURRENT_PROFILE_INITIAL_SENDER].get("head")
-        == source_commit,
-        "group-chat initiator must match the orchestrator source commit",
-    )
-    expected_direction = [
-        CURRENT_PROFILE_INITIAL_SENDER,
-        next(
-            actor
-            for actor in CURRENT_PROFILE_ACTOR_WORKTREES
-            if actor != CURRENT_PROFILE_INITIAL_SENDER
-        ),
-    ]
-    require(
-        runtime.get("launchOrder") == expected_direction
-        and runtime.get("directionOrder") == expected_direction,
-        "peers-group-chat must launch and initiate before peers-chat-high-chat",
-    )
-    persistent_state = runtime.get("persistentDeviceState")
-    require(
-        isinstance(persistent_state, dict)
-        and set(persistent_state) == set(CURRENT_PROFILE_ACTOR_WORKTREES),
-        "current-profile persistent device state evidence is required",
-    )
-    storage_roots: set[str] = set()
-    for actor in CURRENT_PROFILE_ACTOR_WORKTREES:
-        state = persistent_state[actor]
         require(
-            isinstance(state, dict)
-            and state.get("storageLifecycle") == "persistent"
-            and state.get("storageRoot")
-            == clients[actor].get("storage_root")
-            and clients[actor].get("storage_lifecycle") == "persistent",
-            f"{actor} persistent device state is incomplete or mismatched",
+            isinstance(messages, list) and len(messages) == len(expected_messages)
+            and all(
+                isinstance(observed, dict) and isinstance(expected, dict)
+                and bool(expected.get("messageId")) and bool(expected.get("plaintext"))
+                and observed.get("messageUlid") == expected["messageId"]
+                and expected["plaintext"] in str(observed.get("text") or "")
+                for observed, expected in zip(messages, expected_messages)
+            ),
+            f"{actor} native restart must retain exact visible plaintext and message identity",
         )
-        storage_roots.add(str(state["storageRoot"]))
+    cleanup = runtime.get("cleanup")
     require(
-        len(storage_roots) == len(CURRENT_PROFILE_ACTOR_WORKTREES),
-        "current-profile persistent device states must be isolated",
+        isinstance(cleanup, dict) and cleanup.get("storageReleased") is True
+        and not cleanup.get("retainedStorageRoots"),
+        "Run-owned client storage must be released",
     )
 
 
 def main() -> int:
-    store = EvidenceStore.from_environment(
-        repo_root=REPO_ROOT,
-        worktree=REPO_ROOT,
-    )
+    store = EvidenceStore.from_environment(repo_root=REPO_ROOT, worktree=REPO_ROOT)
     report, source_ref = load_report(store, CURRENT_PROFILE_GATE_ID)
     validate_report(
-        report,
-        source_ref=source_ref,
-        store=store,
-        gate_id=CURRENT_PROFILE_GATE_ID,
+        report, source_ref=source_ref, store=store, gate_id=CURRENT_PROFILE_GATE_ID,
         required_steps=REQUIRED_CURRENT_PROFILE_STEPS,
         required_assertions=REQUIRED_CURRENT_PROFILE_ASSERTIONS,
     )
     validate_current_profile_topology(report)
     validation_ref = write_validation(
-        report,
-        source_ref=source_ref,
-        gate_id=CURRENT_PROFILE_GATE_ID,
+        report, source_ref=source_ref, gate_id=CURRENT_PROFILE_GATE_ID,
         required_assertions=REQUIRED_CURRENT_PROFILE_ASSERTIONS,
     )
-    print("Chat Native Current-Profile Two-Client E2E")
-    print("==========================================")
-    print(f"[OK] source: {source_ref.path}")
-    print(f"[OK] report: {validation_ref.path}")
+    print(f"[OK] Chat Native Current-Profile Two-Client E2E: {validation_ref.path}")
     return 0
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except Exception as error:  # noqa: BLE001
-        print(
-            f"chat native current-profile two-client validation failed: {error}",
-            file=sys.stderr,
-        )
+    except Exception as error:
+        print(f"Chat native current-profile validation failed: {error}", file=sys.stderr)
         raise SystemExit(1)

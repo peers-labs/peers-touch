@@ -64,7 +64,7 @@ use messaging_core::storage_governance::retention::{
     RetentionRepository, RetentionResume, RETENTION_SCOPE_KIND,
 };
 use messaging_core::store::{
-    migrate_messaging_schema, DirectOutboundEditCommit, DirectOutboundRepository,
+    ensure_messaging_schema, DirectOutboundEditCommit, DirectOutboundRepository,
     DirectOutboundSendCommit, DirectOutboundSession, DirectSessionAdvance, MessagingRepository,
     MessagingSchemaBackend, MlsInboundRepository, MlsKeyPackageRepository, MlsOutboundEditCommit,
     MlsOutboundRepository, MlsOutboundSendCommit, MlsStartupRepository, MlsTransitionRepository,
@@ -89,16 +89,6 @@ impl MessagingSchemaBackend for RusqliteMessagingSchema<'_> {
         self.0.execute_batch(sql).map_err(|error| error.to_string())
     }
 
-    fn table_columns(&self, table: &str) -> Result<Vec<String>, String> {
-        self.0
-            .prepare(&format!("PRAGMA table_info({table})"))
-            .map_err(|error| error.to_string())?
-            .query_map([], |row| row.get::<_, String>(1))
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())
-    }
-
     fn table_exists(&self, table: &str) -> Result<bool, String> {
         self.0
             .query_row(
@@ -115,38 +105,6 @@ impl MessagingSchemaBackend for RusqliteMessagingSchema<'_> {
         self.0
             .query_row(sql, [], |row| row.get(0))
             .map_err(|error| error.to_string())
-    }
-
-    fn migrate_legacy_attachment_rows(&self) -> Result<(), String> {
-        for table in [
-            "messaging_pending_attachments",
-            "messaging_message_attachments",
-        ] {
-            if !self.table_exists(table)? {
-                continue;
-            }
-            let mut statement = self
-                .0
-                .prepare(&format!(
-                    "SELECT message_id, metadata_bytes FROM {table} ORDER BY message_id, attachment_id"
-                ))
-                .map_err(|error| error.to_string())?;
-            let rows = statement
-                .query_map([], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
-                })
-                .map_err(|error| error.to_string())?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| error.to_string())?;
-            for (message_id, bytes) in rows {
-                let metadata =
-                    AttachmentPlaintextMetadata::decode(bytes.as_slice()).map_err(|_| {
-                        "legacy Mobile messaging attachment metadata is invalid".to_string()
-                    })?;
-                persist_received_message_attachments(self.0, &message_id, &[metadata])?;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -2936,7 +2894,7 @@ impl MobileMessagingStore {
         mut connection: Connection,
         database_path: Option<PathBuf>,
     ) -> Result<Self, String> {
-        migrate_messaging_schema(&RusqliteMessagingSchema(&connection))?;
+        ensure_messaging_schema(&RusqliteMessagingSchema(&connection))?;
         create_mobile_messaging_adapter_schema(&connection)?;
         search::initialize(&mut connection)?;
         let search_changes = Arc::new(AtomicU64::new(0));

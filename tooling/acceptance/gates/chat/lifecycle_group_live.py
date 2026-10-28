@@ -530,9 +530,6 @@ class LifecycleGroupLiveGate(AcceptanceGate):
             raise GateError(f"{actor} cannot select group call mode {mode}")
 
     def run(self) -> dict[str, Any]:
-        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
-
         version = self.step(
             "station.identity",
             lambda: read_station_version(self.station_url),

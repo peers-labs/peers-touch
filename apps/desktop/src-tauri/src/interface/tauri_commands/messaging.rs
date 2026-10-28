@@ -1394,10 +1394,8 @@ pub async fn messaging_acceptance_create_restorable_command(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> Result<AppResult<Value>, String> {
-    let recovery_fixture = std::env::var("PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND")
-        .ok()
-        .as_deref()
-        == Some("1");
+    let recovery_fixture = std::env::var("PT_ACCEPTANCE_GATE_ID").ok().as_deref()
+        == Some("chat-native-submitted-command-recovery-e2e");
     let direct_retry_fixture =
         std::env::var("PT_ACCEPTANCE_GATE_ID").ok().as_deref() == Some("chat-lifecycle-direct-e2e");
     if !recovery_fixture && !direct_retry_fixture {
@@ -1506,10 +1504,10 @@ pub fn messaging_acceptance_prepare_submitted_command(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    if std::env::var("PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND")
+    if std::env::var("PT_ACCEPTANCE_GATE_ID")
         .ok()
         .as_deref()
-        != Some("1")
+        != Some("chat-native-submitted-command-recovery-e2e")
     {
         return AppResult::fail(
             ErrorCode::Forbidden,

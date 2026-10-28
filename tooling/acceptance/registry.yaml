@@ -1810,9 +1810,9 @@
           "apps/desktop/src/main.tsx",
           "apps/desktop/src/acceptance/chat/**",
           "tooling/acceptance/fixtures/chat_native_reset.py",
-          "tooling/acceptance/fixtures/chat_submit_fault_proxy.py",
+          "tooling/acceptance/node_connectivity_native_support.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
-          "tooling/acceptance/gates/chat/chat_submit_fault_proxy_test.py",
+          "tooling/acceptance/gates/station_access/node_connectivity_native_e2e_test.py",
           "tooling/acceptance/gates/chat/native_interactions_runner.py",
           "tooling/acceptance/gates/chat/lifecycle_interactions_group.py",
           "tooling/acceptance/gates/chat/native_interactions_static_test.py",
@@ -1970,8 +1970,8 @@
           "apps/desktop/src/store/socialChat.ts",
           "apps/desktop/src/services/socialRealtime.ts",
           "apps/desktop/src/services/socialChatRealtime.ts",
-          "tooling/acceptance/fixtures/chat_contact_message_fault_proxy.py",
-          "tooling/acceptance/gates/chat/chat_contact_message_fault_proxy_test.py",
+          "tooling/acceptance/node_connectivity_native_support.py",
+          "tooling/acceptance/gates/station_access/node_connectivity_native_e2e_test.py",
           "tooling/acceptance/gates/chat/contact_message_resilience_runner.py"
         ]
       },

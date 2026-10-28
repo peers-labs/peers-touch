@@ -205,9 +205,8 @@ class NativeDesktopAdapterInputTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True), patch(
             "tooling.acceptance.drivers.native.runtime.sys.platform",
             "darwin",
-        ), patch(
-            "tooling.acceptance.drivers.native.runtime.find_app_binary",
-            return_value="/tmp/peers-touch-desktop",
+        ), patch.object(
+            LocalMacOSRuntimeBinding, "_consume_prepared_binary",
         ):
             binding = LocalMacOSRuntimeBinding()
 
@@ -1251,7 +1250,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             "http://station.example/sub-oss/healthz",
         )
 
-    def test_prelaunch_transport_override_keeps_original_peer_identity(self) -> None:
+    def test_prelaunch_transport_override_keeps_canonical_discovery_and_origin(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
         binding = LinuxNativeDesktopRuntimeBinding(
             "chat-native", "source-commit", lifecycle,
@@ -1275,13 +1274,13 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         ):
             session = binding.create_bound_session("alice")
         configure.assert_called_once_with(
-            session, "http://127.0.0.1:40123/proxy", "station-four", "station-peer-four",
+            session, "http://station.example", "station-four", "station-peer-four",
         )
         self.assertEqual(
             persist.call_args.kwargs["observed_runtime_identity"], "station-peer-four",
         )
         self.assertEqual(
-            lifecycle.calls[-1][1][2]["PT_STATION_URL"], "http://127.0.0.1:40123/proxy",
+            lifecycle.calls[-1][1][2]["PT_STATION_URL"], "http://station.example",
         )
 
     def test_relay_binding_stages_attested_tls_anchor_before_launch(
@@ -1925,6 +1924,40 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 cleanup["releasedStorageRoots"],
                 [str(ephemeral)],
             )
+
+    def test_macos_cleanup_shares_release_budget_and_preserves_live_storage(self) -> None:
+        for ports_free, process_stopped in ((True, True), (False, True), (True, False), (False, False)):
+            with self.subTest(ports_free=ports_free, process_stopped=process_stopped):
+                with tempfile.TemporaryDirectory() as tmp:
+                    storage = Path(tmp) / "owned"
+                    storage.mkdir()
+                    specs = {"alice": {
+                        "webdriver_port": 4445, "gateway_port": 3140,
+                        "renderer_port": 3410, "storage_root": str(storage),
+                    }}
+                    session = Mock(spec=TauriSession)
+                    session.process_id = 12345
+                    session.log_path = None
+                    with patch.dict("os.environ", {"PT_ACCEPTANCE_NATIVE_DEV": "1"}):
+                        binding = LocalMacOSRuntimeBinding()
+                    clock = [0.0]
+
+                    def advance(seconds: float) -> None:
+                        clock[0] += seconds
+
+                    with (
+                        patch("tooling.acceptance.drivers.native.runtime.time.monotonic", side_effect=lambda: clock[0]),
+                        patch("tooling.acceptance.drivers.native.runtime.time.sleep", side_effect=advance),
+                        patch("tooling.acceptance.drivers.native.runtime._port_is_free", return_value=ports_free),
+                        patch("tooling.acceptance.drivers.native.runtime._pid_is_stopped", return_value=process_stopped),
+                    ):
+                        cleanup = binding.finalize_cleanup([session], specs)
+                    self.assertLessEqual(clock[0], 30.0 + 1e-9)
+                    self.assertEqual(cleanup["portsReleased"], ports_free)
+                    self.assertEqual(cleanup["processesReleased"], process_stopped)
+                    self.assertEqual(cleanup["pids"], [12345])
+                    self.assertEqual(storage.exists(), not process_stopped)
+                    self.assertEqual(cleanup["storageReleased"], process_stopped)
 
     def test_macos_cleanup_rejects_unknown_storage_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

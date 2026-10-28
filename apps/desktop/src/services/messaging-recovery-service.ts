@@ -31,7 +31,7 @@ export interface MessagingRecoveryRevision {
 }
 
 export interface MessagingRecoveryStatus {
-  identity: MessagingRecoveryIdentity;
+  identity: MessagingRecoveryIdentity | null;
   exists: boolean;
   latest: MessagingRecoveryRevision | null;
 }
@@ -46,6 +46,9 @@ export interface MessagingRecoveryResult {
 }
 
 export interface MessagingRecoveryRestoreResult extends MessagingRecoveryResult {
+  actorPtid: string;
+  profileId: string;
+  stationPeerId: string;
   deviceId: string;
   fingerprint: string;
   conversations: unknown[];

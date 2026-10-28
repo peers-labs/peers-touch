@@ -46,8 +46,8 @@ function main() {
   assertCheck(
     checks,
     'close-navigates-before-release',
-    /navigation\.navigateTo\('applets'\);[\s\S]*requestPageRuntimeRelease\(pageId, 'explicit-close'\)/.test(appletRuntimePage),
-    '`AppletRuntimePage` close must navigate home before requesting runtime release.',
+    /navigation\.navigateTo\(exitPage\);[\s\S]*requestPageRuntimeRelease\(pageId, 'explicit-close'\)/.test(appletRuntimePage),
+    '`AppletRuntimePage` close must navigate to its owning exit surface before requesting runtime release.',
   );
   assertCheck(
     checks,

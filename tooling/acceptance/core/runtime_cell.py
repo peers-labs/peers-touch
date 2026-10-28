@@ -12,6 +12,7 @@ this module through the runner and validator.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -78,6 +79,33 @@ _FORBIDDEN_SESSION_TYPES = ("xvfb",)
 _SLUG_MAX = 128
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _GEOMETRY_PATTERN = re.compile(r"^[1-9][0-9]*x[1-9][0-9]*$")
+
+
+def runtime_source_matches(
+    source: object, cell_source: object, *, remote: bool = False,
+) -> bool:
+    """Match a runtime to the candidate snapshot without relabelling it clean."""
+    if not isinstance(source, dict) or not isinstance(cell_source, dict):
+        return False
+    workspace = source.get("workspaceDigest")
+    return (
+        isinstance(source.get("commit"), str)
+        and bool(source["commit"])
+        and isinstance(workspace, str)
+        and (
+            workspace == "clean"
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", workspace) is not None
+        )
+        and cell_source.get("commit") == source["commit"]
+        and cell_source.get("workspaceDigest") == workspace
+        and (
+            not remote
+            or (
+                workspace == "clean"
+                and cell_source.get("remoteCheckoutClean") is True
+            )
+        )
+    )
 
 
 def _is_slug(value: object) -> bool:
@@ -537,6 +565,8 @@ class CellSourceIdentity:
     remote_checkout_clean: bool
     binary_sha256: str
     artifact_kind: str = "acceptance-binary"
+    canonical_root: str = ""
+    binary_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -552,7 +582,18 @@ class CellNonInterferenceIdentity:
 
     def unchanged(self) -> bool:
         return (
-            self.frontmost_pid_before > 0
+            all(
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(value)
+                for value in (
+                    self.pointer_x_before, self.pointer_y_before,
+                    self.pointer_x_after, self.pointer_y_after,
+                )
+            )
+            and type(self.frontmost_pid_before) is int
+            and type(self.frontmost_pid_after) is int
+            and self.frontmost_pid_before > 0
             and self.frontmost_pid_after > 0
             and self.frontmost_pid_before == self.frontmost_pid_after
             and abs(self.pointer_x_before - self.pointer_x_after)
@@ -583,6 +624,157 @@ class CellNonInterferenceIdentity:
             ),
         }
 
+    @classmethod
+    def from_dict(cls, raw: object) -> "CellNonInterferenceIdentity":
+        expected = {
+            "frontmostPidBefore", "frontmostPidAfter", "pointerBefore",
+            "pointerAfter", "keyboardFocusBeforeSha256",
+            "keyboardFocusAfterSha256",
+        }
+        if not isinstance(raw, dict) or set(raw) != expected:
+            raise ProvisioningError("invalid non-interference identity shape")
+        before, after = raw["pointerBefore"], raw["pointerAfter"]
+        if any(
+            not isinstance(point, dict) or set(point) != {"x", "y"}
+            for point in (before, after)
+        ):
+            raise ProvisioningError("invalid non-interference pointer shape")
+        identity = cls(
+            raw["frontmostPidBefore"], raw["frontmostPidAfter"],
+            before["x"], before["y"], after["x"], after["y"],
+            raw["keyboardFocusBeforeSha256"], raw["keyboardFocusAfterSha256"],
+        )
+        if any(
+            not isinstance(value, str) or not _SHA256_PATTERN.fullmatch(value)
+            for value in (
+                identity.keyboard_focus_before_sha256,
+                identity.keyboard_focus_after_sha256,
+            )
+        ):
+            raise ProvisioningError("invalid non-interference focus identity")
+        return identity
+
+
+_FILE_CHOOSER_PHASES = (
+    "launch-ready", "semantic-ready", "chooser-before",
+    "chooser-open", "chooser-selected", "owned-stop",
+)
+
+
+@dataclass(frozen=True)
+class CellFileChooserIdentity:
+    """Observed process-scoped chooser qualification, separate from HID proof."""
+
+    cell_id: str
+    run_id: str
+    source_commit: str
+    workspace_digest: str
+    binary_sha256: str
+    backend: str
+    target_process_id: int
+    requested_path_sha256: str
+    selected_path_sha256: str
+    fixture_sha256: str
+    selected_file_sha256: str
+    panel_presence: tuple[bool, bool, bool]
+    observations: tuple[CellNonInterferenceIdentity, ...]
+
+    def validate(
+        self, *, cell_id: str, run_id: str, source: dict[str, Any],
+    ) -> None:
+        if (
+            self.cell_id != cell_id or self.run_id != run_id or not run_id
+            or self.source_commit != source.get("commit")
+            or self.workspace_digest != source.get("workspaceDigest")
+            or self.binary_sha256 != source.get("binarySha256")
+            or not _is_slug(self.backend)
+            or type(self.target_process_id) is not int
+            or self.target_process_id <= 0
+        ):
+            raise ProvisioningError("file chooser qualification identity mismatch")
+        for value in (
+            self.binary_sha256, self.requested_path_sha256,
+            self.selected_path_sha256, self.fixture_sha256,
+            self.selected_file_sha256,
+        ):
+            if not isinstance(value, str) or not _SHA256_PATTERN.fullmatch(value):
+                raise ProvisioningError("invalid file chooser qualification digest")
+        if (
+            self.requested_path_sha256 != self.selected_path_sha256
+            or self.fixture_sha256 != self.selected_file_sha256
+        ):
+            raise ProvisioningError("file chooser selected a different fixture")
+        if (
+            len(self.panel_presence) != 3
+            or any(type(value) is not bool for value in self.panel_presence)
+            or self.panel_presence != (False, True, False)
+        ):
+            raise ProvisioningError("file chooser open/select/close is incomplete")
+        if len(self.observations) != len(_FILE_CHOOSER_PHASES):
+            raise ProvisioningError("file chooser lifecycle observations are incomplete")
+        baseline = self.observations[0].to_dict()
+        for identity in self.observations:
+            # Validate serialized shape and hashes through the same Core reader.
+            CellNonInterferenceIdentity.from_dict(identity.to_dict())
+            value = identity.to_dict()
+            if (
+                not identity.unchanged()
+                or identity.frontmost_pid_before == self.target_process_id
+                or any(value[key] != baseline[key] for key in (
+                    "frontmostPidBefore", "pointerBefore",
+                    "keyboardFocusBeforeSha256",
+                ))
+            ):
+                raise ProvisioningError("file chooser changed the operator baseline")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "cellId": self.cell_id, "runId": self.run_id,
+            "sourceCommit": self.source_commit,
+            "workspaceDigest": self.workspace_digest,
+            "binarySha256": self.binary_sha256, "backend": self.backend,
+            "targetProcessId": self.target_process_id,
+            "requestedPathSha256": self.requested_path_sha256,
+            "selectedPathSha256": self.selected_path_sha256,
+            "fixtureSha256": self.fixture_sha256,
+            "selectedFileSha256": self.selected_file_sha256,
+            "panelPresence": list(self.panel_presence),
+            "observations": [
+                {"phase": phase, "nonInterference": identity.to_dict()}
+                for phase, identity in zip(_FILE_CHOOSER_PHASES, self.observations)
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, raw: object) -> "CellFileChooserIdentity":
+        names = (
+            "cellId", "runId", "sourceCommit", "workspaceDigest", "binarySha256",
+            "backend", "targetProcessId", "requestedPathSha256",
+            "selectedPathSha256", "fixtureSha256", "selectedFileSha256",
+            "panelPresence", "observations",
+        )
+        if not isinstance(raw, dict) or set(raw) != set(names):
+            raise ProvisioningError("invalid file chooser qualification shape")
+        samples = raw["observations"]
+        if (
+            not isinstance(samples, list) or len(samples) != len(_FILE_CHOOSER_PHASES)
+            or any(
+                not isinstance(sample, dict)
+                or set(sample) != {"phase", "nonInterference"}
+                or sample["phase"] != phase
+                for phase, sample in zip(_FILE_CHOOSER_PHASES, samples)
+            )
+            or not isinstance(raw["panelPresence"], list)
+        ):
+            raise ProvisioningError("invalid file chooser lifecycle shape")
+        return cls(
+            *(raw[name] for name in names[:11]),
+            tuple(raw["panelPresence"]),
+            tuple(CellNonInterferenceIdentity.from_dict(
+                sample["nonInterference"],
+            ) for sample in samples),
+        )
+
 
 @dataclass(frozen=True)
 class CellAdapterIdentity:
@@ -599,6 +791,7 @@ class CellAdapterIdentity:
     semantic_screenshot_probe: bool = False
     non_interference_probe: bool = False
     non_interference: CellNonInterferenceIdentity | None = None
+    file_chooser: CellFileChooserIdentity | None = None
 
 
 @dataclass(frozen=True)
@@ -690,6 +883,7 @@ class RuntimeCellManifest:
             )
         if (
             contract.source.clean_commit_required_for_proof
+            and self.source.mode == "git-object-sync"
             and (
                 not self.source.remote_checkout_clean
                 or self.source.workspace_digest != "clean"
@@ -697,6 +891,13 @@ class RuntimeCellManifest:
         ):
             raise ProvisioningError(
                 f"runtime cell {self.cell_id}: source checkout is not clean"
+            )
+        if self.source.mode == "local-worktree" and (
+            self.source.workspace_digest != "clean"
+            and re.fullmatch(r"sha256:[0-9a-f]{64}", self.source.workspace_digest) is None
+        ):
+            raise ProvisioningError(
+                f"runtime cell {self.cell_id}: local source snapshot is invalid"
             )
         if not self.source.commit:
             raise ProvisioningError(
@@ -765,6 +966,15 @@ class RuntimeCellManifest:
             raise ProvisioningError(
                 f"runtime cell {self.cell_id}: cleanup resources missing: "
                 f"{sorted(missing_cleanup)}"
+            )
+        if self.native_adapter.file_chooser is not None:
+            self.native_adapter.file_chooser.validate(
+                cell_id=self.cell_id, run_id=self.run_id,
+                source={
+                    "commit": self.source.commit,
+                    "workspaceDigest": self.source.workspace_digest,
+                    "binarySha256": self.source.binary_sha256,
+                },
             )
 
     def _validate_semantic_adapter_identity(self) -> None:
@@ -865,6 +1075,8 @@ class RuntimeCellManifest:
                     "remoteCheckoutClean": self.source.remote_checkout_clean,
                     "binarySha256": self.source.binary_sha256,
                     "artifactKind": self.source.artifact_kind,
+                    "canonicalRoot": self.source.canonical_root,
+                    "binaryPath": self.source.binary_path,
                 },
                 "nativeAdapter": {
                     "inputMode": self.native_adapter.input_mode,
@@ -890,6 +1102,11 @@ class RuntimeCellManifest:
                     "nonInterference": (
                         self.native_adapter.non_interference.to_dict()
                         if self.native_adapter.non_interference is not None
+                        else None
+                    ),
+                    "fileChooser": (
+                        self.native_adapter.file_chooser.to_dict()
+                        if self.native_adapter.file_chooser is not None
                         else None
                     ),
                 },

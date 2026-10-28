@@ -216,13 +216,6 @@ class ChatStorageNativeProvisioner(HomeStationProvisioner):
                     ),
                     resource="fixture:chat-native-actors",
                 )
-            authorization_name = (
-                fixture.authorization_ref or "env:CHAT_ACCEPTANCE_RESET"
-            ).removeprefix("env:")
-            reset_authorized = (
-                not fixture.authorization_required
-                or os.environ.get(authorization_name) == "1"
-            )
             credential_refs, _ = self._resolve_credentials()
             _, _, actor_ref = produce_actor_manifest(
                 environment_id=self.environment_id,
@@ -231,7 +224,7 @@ class ChatStorageNativeProvisioner(HomeStationProvisioner):
                 deployment_environment=deployment_environment,
                 roles=("alice", "bob"),
                 credential_ref=credential_refs[0] if credential_refs else "",
-                reset_authorized=reset_authorized,
+                reset_authorized=None,
             )
             clients = super()._clients(
                 "chat-native-two-client-e2e",
@@ -290,4 +283,5 @@ class ChatStorageNativeProvisioner(HomeStationProvisioner):
                 manifest,
                 reason=blocked.reason,
                 resource=blocked.resource,
+                diagnostic=blocked.diagnostic,
             )

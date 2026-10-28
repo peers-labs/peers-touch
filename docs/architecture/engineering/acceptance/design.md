@@ -8,6 +8,21 @@
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
+当前执行预算由 [execution-budget.md](execution-budget.md) 约束：
+Runner 冻结显式全量范围，生命周期阶段消费绝对 deadline，
+预留 cleanup/publish 尾部并在首个超标后停止所有后续 dispatch。
+Gate 成本和产品 proof 独立；未执行项保持 UNPROVEN。
+结构检查的显式 dependsOn 由同一个编译器处理，生产者只执行一次，
+消费者引用当前源码的原始 durable manifest；不自动合并业务资源。
+POSIX source lease 在相同 Environment 生命周期内持有并借出 OpenSSH 连接；
+每次操作验证实际连接 owner 和远端锁，失效时拒绝重连，最后随租约清理。
+此传输复用不共享产品 proof，具体上下文和失败合同仍由执行预算文档约束。
+固定范围跨请求恢复与公共元数据合同也由同一文档拥有：
+Session 保留整个 required 集合，唯一 Runner 复核原 producer 的完整证明后
+执行剩余依赖闭包；只有清理完整的 request-work 耗尽允许一次显式新请求。
+公开 inventory 和 compiler metadata 由 Evidence Store 按闭合类型序列化，
+秘密 payload、文本与已知秘密值仍检查，身份受损时拒绝不可变发布。
+
 ---
 
 ## 1. 核心原则
@@ -472,6 +487,31 @@ Gap Detector 与 Acceptance Engineering 职责不同：
 - Gap Detector 不创建 Gate、不修改产品代码、不生成伪证据，也不替代 completion audit。
 
 ### 3.9 Acceptance Evidence Store
+
+所有正式证真读取入口使用 `core/proof.py::read_gate_proof`。Evidence Store
+负责原始 manifest 的完整 inventory、身份、SHA-256 和 finalizer authority；
+共享读取器核验当前源码、显式终态 cleanup、扫描、原报告断言及调用方结果与
+原始记录的一致性。Coverage、Gap、能力验证、前置依赖、业务聚合和续跑不得
+独立接受 PASS/DONE/PROVEN 标签。结构或廉价 Gate 也没有标签豁免。
+读取器检查 inventory 中每个唯一 JSON 对象的同 Gate canonical report；
+删除或改指 `sourceArtifact` 不能隐藏失败断言。支持性数组或标量保留原义，
+明确 source report 必须是对象，sealed result 的 Gate identity 不得漂移。
+`EvidenceReport` 只有非空且全部为真实布尔 true 的断言才能声明 PROVEN；
+业务 Oracle 仍负责声明哪些断言和观察构成完整业务证明。
+
+Coverage 从所有 Feature 文件取得分母，领域顺序只控制显示；未知或新领域仍
+必须入账。Core 自检与产品 Feature 分开计数，但每个声明都必须展示。
+同 Feature 的多个 Capability 领域关系是有效交叉引用；按其声明 product_area
+归组且只计数一次，保留全部 domain_relations。无 product_area 的多领域
+Feature 进入 shared 组，不能任选最后一个领域或删除该责任。
+一次报告只取得一个源码快照、逐唯一 Gate 核验一次，发布前复验源码稳定；
+这种单次投影复用不能跨报告保留输入或证据身份。
+
+Evidence Store 的阻塞锁等待统一使用非阻塞 OS 尝试与有限保护，最大 60 秒；
+显式较短保护和已有执行 owner deadline 优先生效。每个已观察阶段记录实际
+wait、hold、attempt 和失败类型，晚于取得阶段的释放保留原取得 owner。
+样本容量有界，丢弃样本仍保留累计数量和耗时。该诊断不决定业务进展、
+性能合格或新增执行权限；Machine Dev/Profile 的独立锁仍由原 owner 管理。
 
 Evidence Store是runtime-generated artifact的唯一owner，位于repository之外。它由以下
 domain-neutral contracts组成：

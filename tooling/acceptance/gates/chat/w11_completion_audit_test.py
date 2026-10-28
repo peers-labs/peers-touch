@@ -633,20 +633,14 @@ class W11CompletionAuditTests(unittest.TestCase):
         results = immutable_results_by_gate(
             json.dumps(
                 [
-                    {"id": "gate-a", "runManifest": {"immutable": "a"}},
-                    {"id": "gate-b", "runManifest": {"immutable": "b"}},
-                    {"id": "chat-w11-forbidden-scan", "runManifest": {}},
+                    {"gateId": "gate-a", "runManifest": {"immutable": "a"}},
+                    {"gateId": "gate-b", "runManifest": {"immutable": "b"}},
                 ]
             ),
             expected_gates={"gate-a", "gate-b"},
-            allowed_supplemental_gates={"chat-w11-forbidden-scan"},
         )
 
-        self.assertEqual(set(results), {
-            "gate-a",
-            "gate-b",
-            "chat-w11-forbidden-scan",
-        })
+        self.assertEqual(set(results), {"gate-a", "gate-b"})
 
     def test_classifies_native_gate_from_catalog_not_name(self) -> None:
         gates = runtime_cell_gates(
@@ -662,9 +656,8 @@ class W11CompletionAuditTests(unittest.TestCase):
     def test_rejects_parent_aggregate_missing_canonical_gate(self) -> None:
         with self.assertRaisesRegex(AssertionError, "missing=\\['gate-b'\\]"):
             immutable_results_by_gate(
-                json.dumps([{"id": "gate-a", "runManifest": {}}]),
+                json.dumps([{"gateId": "gate-a", "runManifest": {}}]),
                 expected_gates={"gate-a", "gate-b"},
-                allowed_supplemental_gates=set(),
             )
 
     def test_rejects_parent_aggregate_with_unexpected_gate(self) -> None:
@@ -672,12 +665,11 @@ class W11CompletionAuditTests(unittest.TestCase):
             immutable_results_by_gate(
                 json.dumps(
                     [
-                        {"id": "gate-a", "runManifest": {}},
-                        {"id": "stale-gate", "runManifest": {}},
+                        {"gateId": "gate-a", "runManifest": {}},
+                        {"gateId": "stale-gate", "runManifest": {}},
                     ]
                 ),
                 expected_gates={"gate-a"},
-                allowed_supplemental_gates=set(),
             )
 
     def test_rejects_parent_aggregate_duplicate_gate(self) -> None:
@@ -685,12 +677,11 @@ class W11CompletionAuditTests(unittest.TestCase):
             immutable_results_by_gate(
                 json.dumps(
                     [
-                        {"id": "gate-a", "runManifest": {}},
-                        {"id": "gate-a", "runManifest": {}},
+                        {"gateId": "gate-a", "runManifest": {}},
+                        {"gateId": "gate-a", "runManifest": {}},
                     ]
                 ),
                 expected_gates={"gate-a"},
-                allowed_supplemental_gates=set(),
             )
 
 

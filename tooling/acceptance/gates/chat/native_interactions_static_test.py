@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.chat.contact_message_resilience_runner import (
@@ -20,6 +21,27 @@ ROOT = Path(__file__).resolve().parents[4]
 class NativeInteractionContractsTest(unittest.TestCase):
     def source(self, path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
+
+    def test_missing_message_preserves_visible_dom_without_satisfying_wait(self) -> None:
+        gate = object.__new__(NativeInteractionsGate)
+        client = Mock()
+        gate.clients = {"bob": client}
+        probes = {}
+        gate._predicate_probes = [probes]
+        missing = {
+            "message": None,
+            "activePanes": [{"conversationId": "conversation"}],
+            "visibleRows": [{"messageId": "another", "text": "visible content"}],
+            "scrolls": [{"top": 0, "height": 100, "contentHeight": 500}],
+            "threadRoots": ["open-thread"],
+        }
+        matched = {"messageId": "expected", "text": "required content"}
+        client.execute_script.side_effect = [missing, {"message": matched}]
+
+        self.assertIsNone(gate.message_dom_snapshot(client, "expected"))
+        self.assertEqual(probes["bob.messageDom:expected"], missing)
+        self.assertEqual(gate.message_dom_snapshot(client, "expected"), matched)
+        self.assertEqual(probes["bob.messageDom:expected"]["message"], matched)
 
     def test_harness_uses_canonical_production_actions(self) -> None:
         source = self.source("apps/desktop/src/acceptance/chat/harness.ts")
@@ -252,7 +274,7 @@ class NativeInteractionContractsTest(unittest.TestCase):
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
         start = source.index('        target_actor = "bob"')
-        end = source.index("        deleted = async_harness(", start)
+        end = source.index("        deleted = self.harness(", start)
         actor_hide = source[start:end]
 
         self.assertIn("target_authority_sequence", actor_hide)
@@ -275,7 +297,8 @@ class NativeInteractionContractsTest(unittest.TestCase):
             "self.runtime_binding.finalize_cleanup(",
             'bool(cleanup.get("processesReleased"))',
             'bool(cleanup.get("storageReleased"))',
-            '"hydrateActiveActor"',
+            '"loginWithPassword"',
+            'ptid = str((login or {}).get("actorPtid") or "")',
         ):
             self.assertIn(required, source)
         self.assertNotIn("expose_orchestrator_endpoint(", source)
@@ -427,10 +450,6 @@ class NativeInteractionContractsTest(unittest.TestCase):
                 '"messaging_acceptance_pause_lifecycle"',
             ),
             2,
-        )
-        self.assertNotIn(
-            "AcceptanceStationSubmitFaultProxy",
-            timeout_retry,
         )
         self.assertNotIn("DirectRouteFaultProxy", timeout_retry)
 
@@ -595,11 +614,11 @@ class NativeInteractionContractsTest(unittest.TestCase):
             registry,
         )
         self.assertIn(
-            '"tooling/acceptance/fixtures/chat_submit_fault_proxy.py"',
+            '"tooling/acceptance/node_connectivity_native_support.py"',
             registry,
         )
         self.assertIn(
-            '"tooling/acceptance/gates/chat/chat_submit_fault_proxy_test.py"',
+            '"tooling/acceptance/gates/station_access/node_connectivity_native_e2e_test.py"',
             registry,
         )
 
@@ -678,8 +697,10 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "runtime_binding.cell_id != selected_cell",
             "self.runtime_binding.create_bound_session(",
             "self.runtime_binding.create_transport_override(",
-            "self.runtime_binding.apply_transport_override(",
-            "self.runtime_binding.clear_transport_override(",
+            "self.runtime_binding.apply_verified_direct_route_override(",
+            "self.runtime_binding.clear_verified_direct_route_override(",
+            "active_direct_route_multiaddr(",
+            'route_probe(self.client, "direct_only")',
             "native_runtime_source_identity(",
             "self.runtime_binding.finalize_cleanup(",
             'bool(cleanup.get("processesReleased"))',
@@ -814,23 +835,44 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "Secure Content leases recreated during recovery must be fenced after profile replacement",
         )
 
-    def test_in_place_recovery_preserves_installation_device_signing_identity(self) -> None:
+    def test_replacement_recovery_preserves_authenticated_device_endpoint(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/engine.rs")
         restore = src.find("pub fn restore_profile(")
         self.assertGreater(restore, 0)
         replacement = src.find("let device_identity = recovery_device_identity(", restore)
-        verification = src.find("super::device_identity_backup::verify_recovery_enrollment(", replacement)
+        verification = src.find(
+            "super::device_identity_backup::verify_recovery_enrollment(",
+            replacement,
+        )
         worker = src.find("let (worker, worker_token)", replacement)
         self.assertGreater(replacement, restore)
         self.assertGreater(verification, replacement)
         self.assertGreater(worker, verification)
+        branch = src[replacement:worker]
+        self.assertIn("current_device_identity,", branch)
+        self.assertIn("preserve_device_continuity,", branch)
+        self.assertIn(
+            "super::device_identity_backup::verify_recovery_enrollment(",
+            branch,
+        )
         helper_start = src.index("fn recovery_device_identity(")
-        helper = src[helper_start:src.index("\n#[cfg(test)]", helper_start)]
+        helper_end = src.index("\n#[cfg(test)]", helper_start)
+        helper = src[helper_start:helper_end]
         self.assertIn("if preserve_device_continuity", helper)
-        self.assertIn("return Ok(current)", helper)
+        self.assertIn("return Ok(current);", helper)
         self.assertIn("generate_device_identity_for_device_from_parts(", helper)
+        self.assertIn("&device_id,", helper)
         self.assertIn("Some(&current.device_signing_seed)", helper)
         self.assertNotIn("generate_fresh_device_identity_from_seed(", helper)
+        self.assertNotIn("generate_fresh_device_identity(", helper)
+        self.assertIn(
+            "fn recovery_rebinds_actor_without_rotating_enrolled_device_signing_material()",
+            src,
+        )
+        self.assertIn(
+            "fn fresh_profile_restore_installs_recovered_actor_with_new_device()",
+            src,
+        )
 
     def test_private_recovery_reactivates_secure_content_after_identity_fence(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/social/mod.rs")

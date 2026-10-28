@@ -4,7 +4,7 @@ import base64
 import json
 import re
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote, quote_plus
 
 
@@ -309,32 +309,65 @@ def _secret_representations(secret_values: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(sorted(representations, key=len, reverse=True))
 
 
+def secret_text_redactor(secret_values: tuple[str, ...]) -> Callable[[str], str]:
+    representations = _secret_representations(secret_values)
+
+    def text(value: str) -> str:
+        result = redact_text(value)
+        for representation in representations:
+            result = result.replace(representation, REDACTED)
+        return result
+
+    return text
+
+
 def redact_text_with_values(text: str, secret_values: tuple[str, ...]) -> str:
-    redacted = redact_text(text)
-    for representation in _secret_representations(secret_values):
-        redacted = redacted.replace(representation, REDACTED)
-    return redacted
+    return secret_text_redactor(secret_values)(text)
 
 
 def redact_value_with_values(
     value: Any,
     secret_values: tuple[str, ...],
+    *,
+    serialized_metadata: bool = False,
 ) -> Any:
-    redacted = redact_value(value)
-    if isinstance(redacted, dict):
-        return {
-            redact_text_with_values(str(key), secret_values):
-                redact_value_with_values(item, secret_values)
-            for key, item in redacted.items()
-        }
-    if isinstance(redacted, list):
-        return [
-            redact_value_with_values(item, secret_values)
-            for item in redacted
-        ]
-    if isinstance(redacted, str):
-        return redact_text_with_values(redacted, secret_values)
-    return redacted
+    text = secret_text_redactor(secret_values)
+
+    def visit(item: Any, *, public_metadata: bool = False) -> Any:
+        if isinstance(item, Mapping):
+            if (
+                serialized_metadata and not public_metadata
+                and type(item) is dict
+                and item.get("artifactKind") == "acceptance-execution-graph"
+            ):
+                from .execution_graph import ExecutionGraph
+                from .execution_budget import ExecutionBudgetError
+
+                try:
+                    ExecutionGraph(item)
+                except ExecutionBudgetError:
+                    pass
+                else:
+                    public_metadata = True
+            return {
+                text(str(key)): (
+                    child if not public_metadata and is_sensitive_key(key) and isinstance(child, bool)
+                    else REDACTED if not public_metadata and is_sensitive_key(key)
+                    else visit(child, public_metadata=public_metadata)
+                )
+                for key, child in item.items()
+            }
+        if isinstance(item, (list, tuple)):
+            return [visit(child, public_metadata=public_metadata) for child in item]
+        if isinstance(item, str):
+            return text(item)
+        if isinstance(item, (bytes, bytearray, memoryview)):
+            return REDACTED
+        if item is None or isinstance(item, (bool, int, float)):
+            return item
+        return text(str(item))
+
+    return visit(value)
 
 
 def redact_artifact_bytes(
@@ -358,7 +391,9 @@ def redact_artifact_bytes(
     except json.JSONDecodeError:
         structured = None
     else:
-        redacted_val = redact_value_with_values(structured, secret_values)
+        redacted_val = redact_value_with_values(
+            structured, secret_values, serialized_metadata=True,
+        )
         if redacted_val != structured:
             encoded = (
                 json.dumps(redacted_val, indent=2, sort_keys=True, default=str)

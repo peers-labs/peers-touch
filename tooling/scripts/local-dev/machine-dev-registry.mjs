@@ -1491,8 +1491,25 @@ export function checkWorkspace(options = {}) {
   const definition = resolveProfileDefinition({
     workspaceRoot: workspace.canonicalRoot,
     envRepo: options.envRepo,
-    profile: registration.profile,
+    profile: options.targetProfile ?? registration.profile,
   });
+  if (
+    options.targetProfile !== undefined &&
+    !registration.allowedCapabilities.includes('station.connect')
+  ) {
+    fail('WORKSPACE_CAPABILITY_MISSING', 'target Profile requires station.connect');
+  }
+  if (
+    definition.resetPolicy === 'stable-protected' &&
+    capabilities.includes('station.deploy') &&
+    definition.profile !== registration.profile
+  ) {
+    fail(
+      'WORKSPACE_CAPABILITY_MISSING',
+      'stable deployment requires an explicit binding to that Profile',
+      { profile: definition.profile, boundProfile: registration.profile },
+    );
+  }
   validateProfileCapabilities(definition, capabilities);
   return {
     authority: registry.authority,
@@ -1586,6 +1603,9 @@ export function prepareLease(options) {
     resourceKind,
     resourceId,
     budgetSeconds,
+    ...(options.targetProfile === undefined
+      ? {}
+      : { targetProfile: resolved.profile.profile }),
     workspaceId: resolved.binding.workspaceId,
     source: resolved.source,
     leaseFile:
@@ -1660,6 +1680,10 @@ export function verifyHeldLease(options) {
   const workspace = captureWorkspace(options.workspaceRoot ?? repoRoot);
   const resourceKind = requiredText(options.resourceKind, 'resourceKind', 64);
   const resourceId = requiredIdentifier(options.resourceId, 'resourceId');
+  const heldProfile = process.env.PT_MACHINE_LEASE_TARGET_PROFILE;
+  if (heldProfile && options.targetProfile && heldProfile !== options.targetProfile) {
+    fail('RUNTIME_IDENTITY_MISMATCH', 'inherited lease targets a different Profile');
+  }
   const leaseFd = Number(
     requiredText(
       options.leaseFd ?? process.env.PT_MACHINE_LEASE_FD,
@@ -1712,6 +1736,7 @@ export function verifyHeldLease(options) {
     const held = JSON.parse(output);
     validateLeaseRequest({
       ...options,
+      targetProfile: heldProfile ?? options.targetProfile,
       budgetSeconds: options.budgetSeconds ?? 1,
       expectedBranch:
         options.expectedBranch ??
@@ -1830,6 +1855,9 @@ export function buildLeaseCommand(options) {
   if (options.home) {
     validationCommand.push('--home', options.home);
   }
+  if (request.targetProfile) {
+    validationCommand.push('--target-profile', request.targetProfile);
+  }
   if (options.resetScope) {
     validationCommand.push(
       '--reset-scope',
@@ -1862,6 +1890,9 @@ export function buildLeaseCommand(options) {
     '--validation-command-json',
     JSON.stringify(validationCommand),
   ];
+  if (request.targetProfile) {
+    arguments_.push('--target-profile', request.targetProfile);
+  }
   if (options.resetScope) {
     arguments_.push(
       '--reset-scope',

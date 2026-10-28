@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
 
 from ._paths import REPO_ROOT
@@ -29,6 +30,12 @@ from .provisioning import (
     RuntimeManifest,
     blocked_manifest,
     new_manifest,
+)
+from .resource_diagnostic import ResourceDiagnostic
+from .reset_authority import (
+    STATION_RESET_AUTHORITY_PREFIX,
+    acquire_station_reset_authority,
+    require_station_reset_authority,
 )
 
 PROFILE_ENV_OVERRIDES = (
@@ -92,6 +99,13 @@ def resolve_machine_profile_environment(
         raise BlockedError(
             reason=f"Machine Dev profile binding is unavailable: {error}",
             resource="profile:machine-control-plane",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="machine-profile-binding",
+                recovery_action=f"Restore the Machine Dev executable for {root} and repeat profile resolution.",
+                resource="profile:machine-control-plane",
+                expected={"command": "machine-dev check", "exitCode": 0},
+                observed={"errorType": type(error).__name__},
+            ),
         ) from error
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
@@ -101,6 +115,13 @@ def resolve_machine_profile_environment(
                 f"{detail or 'machine-dev check returned no output'}"
             ),
             resource="profile:machine-control-plane",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="machine-profile-binding",
+                recovery_action=f"Resolve the workspace Profile capability with make profile in {root}, then repeat machine-dev check.",
+                resource="profile:machine-control-plane",
+                expected={"command": "machine-dev check", "exitCode": 0},
+                observed={"exitCode": completed.returncode},
+            ),
         )
     try:
         resolved = json.loads(completed.stdout)
@@ -145,8 +166,21 @@ def resolve_machine_profile_environment(
         raise BlockedError(
             reason="Machine Dev profile binding is not authoritative",
             resource="profile:machine-control-plane",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="machine-profile-binding",
+                recovery_action=f"Reconcile the reviewed Profile binding for {root} through Machine Dev.",
+                resource="profile:machine-control-plane",
+                expected={"authority": "machine-control-plane", "sourceState": "tracked-clean"},
+                observed={"authority": resolved.get("authority"), "sourceState": profile.get("sourceState")},
+            ),
         )
     declared_profile = values.get("PT_DEV_PROFILE", "")
+    expected_profile = os.environ.get("PT_ACCEPTANCE_PROFILE", "").strip()
+    if expected_profile and expected_profile != profile_name:
+        raise BlockedError(
+            reason=f"Acceptance Profile {expected_profile!r} differs from active {profile_name!r}",
+            resource="profile:identity",
+        )
     if require_identity_match and declared_profile != profile_name:
         raise BlockedError(
             reason=(
@@ -154,6 +188,13 @@ def resolve_machine_profile_environment(
                 f"but machine binding is {profile_name}"
             ),
             resource=f"profile:identity:{profile_name}",
+            diagnostic=ResourceDiagnostic.observed(
+                owner="machine-profile-binding",
+                recovery_action=f"Align the reviewed {profile_name} Profile ID and Machine Dev binding; repeat profile selection.",
+                resource=f"profile:identity:{profile_name}",
+                expected={"profile": profile_name},
+                observed={"profile": declared_profile},
+            ),
         )
     port_fields = {
         "desktopAppGateway": "PT_DESKTOP_APP_GATEWAY_PORT",
@@ -388,6 +429,47 @@ class EnvironmentProvisioner(ABC):
         ) = None
         self._credential_preparation_error: Exception | None = None
         self._evidence_run: RunHandle | None = None
+        self._source_leases: list[RemoteGitSourceLease] = []
+        self._remote_source_context_depth = 0
+
+    @property
+    def remote_source_environment(self) -> dict[str, str]:
+        from tooling.acceptance.transports.ssh import SSH_CONNECTIONS_ENV
+
+        descriptors = [
+            descriptor for lease in self._source_leases
+            if (descriptor := lease.connection_descriptor) is not None
+        ]
+        return (
+            {SSH_CONNECTIONS_ENV: json.dumps(descriptors, separators=(",", ":"))}
+            if descriptors else {}
+        )
+
+    def _refresh_remote_source_context(self) -> None:
+        from tooling.acceptance.transports.ssh import SSH_CONNECTIONS_ENV
+
+        environment = self.remote_source_environment
+        if SSH_CONNECTIONS_ENV in environment:
+            os.environ[SSH_CONNECTIONS_ENV] = environment[SSH_CONNECTIONS_ENV]
+        else:
+            os.environ.pop(SSH_CONNECTIONS_ENV, None)
+
+    @contextmanager
+    def remote_source_context(self):
+        """Project only this owner's live connections for synchronous operations."""
+        from tooling.acceptance.transports.ssh import SSH_CONNECTIONS_ENV
+
+        previous = os.environ.get(SSH_CONNECTIONS_ENV)
+        self._remote_source_context_depth += 1
+        try:
+            self._refresh_remote_source_context()
+            yield
+        finally:
+            self._remote_source_context_depth -= 1
+            if previous is None:
+                os.environ.pop(SSH_CONNECTIONS_ENV, None)
+            else:
+                os.environ[SSH_CONNECTIONS_ENV] = previous
 
     def bind_evidence_run(self, run: RunHandle) -> None:
         if self._manifest is not None:
@@ -440,12 +522,41 @@ class EnvironmentProvisioner(ABC):
             except Exception as error:
                 failures.append(f"{name}: {error}")
         self._cleanup_handlers.clear()
+        self._source_leases.clear()
         if failures:
             raise ProvisioningError(f"cleanup failed: {'; '.join(failures)}")
         return tuple(completed)
 
     def register_cleanup(self, name: str, handler: Callable[[], None]) -> None:
         self._cleanup_handlers.append((name, handler))
+
+    def prepare_fixture_authority(self, *, budget_seconds: float) -> dict[str, str]:
+        """Hold injected reset authority until reverse resource cleanup ends."""
+        scopes = {
+            fixture.authorization_ref[len(STATION_RESET_AUTHORITY_PREFIX):]
+            for fixture in self.contract.fixtures
+            if fixture.authorization_required
+            and fixture.authorization_ref.startswith(STATION_RESET_AUTHORITY_PREFIX)
+        }
+        if not scopes:
+            return {}
+        if len(scopes) != 1:
+            raise ProvisioningError(
+                "one Environment requires one canonical reset scope; "
+                f"received {sorted(scopes)!r}"
+            )
+        scope = next(iter(scopes))
+        if (
+            os.environ.get("PT_MACHINE_LEASE_KIND") == "station.reset"
+            and os.environ.get("PT_MACHINE_LEASE_RESOURCE_ID") == scope
+        ):
+            require_station_reset_authority(scope)
+            return {}
+        if self._cleanup_handlers:
+            raise ProvisioningError("fixture authority must precede resource acquisition")
+        lease = acquire_station_reset_authority(scope, budget_seconds=budget_seconds)
+        self.register_cleanup(f"station.reset:{scope}", lease.release)
+        return lease.environment
 
     @property
     def resolved_credential_values(self) -> tuple[str, ...]:
@@ -510,6 +621,21 @@ class EnvironmentProvisioner(ABC):
                         f"{credential.source_ref}: {error}"
                     ),
                     resource=f"credential-ref:{credential.source_ref}",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner=f"environment-provisioner:{self.environment_id}",
+                        recovery_action=f"Prepare the required credential at {credential.source_ref} through its owner, then repeat provisioning.",
+                        resource=f"credential-ref:{credential.source_ref}",
+                        expected={"resolved": True},
+                        observed={
+                            "resolved": False,
+                            "resolverErrorType": type(error).__name__,
+                            "environmentVariablePresent": (
+                                bool(os.environ.get(credential.source_ref[4:], ""))
+                                if credential.source_ref.startswith("env:")
+                                else None
+                            ),
+                        },
+                    ),
                 ) from error
             if len(value) < 4:
                 raise BlockedError(
@@ -519,6 +645,13 @@ class EnvironmentProvisioner(ABC):
                         "evidence redaction"
                     ),
                     resource=f"credential-ref:{credential.source_ref}",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner=f"environment-provisioner:{self.environment_id}",
+                        recovery_action=f"Prepare a credential that satisfies the safe-redaction contract at {credential.source_ref}.",
+                        resource=f"credential-ref:{credential.source_ref}",
+                        expected={"present": True, "safeRedactionLength": True},
+                        observed={"present": bool(value), "safeRedactionLength": False},
+                    ),
                 )
             refs.append(credential.source_ref)
             values[credential.id] = value
@@ -534,9 +667,20 @@ class EnvironmentProvisioner(ABC):
         try:
             lease.acquire()
         except ProfileLeaseUnavailable as error:
+            resource = f"profile-lease:{error.resource}"
             raise BlockedError(
                 reason=str(error),
-                resource=f"profile-lease:{error.resource}",
+                resource=resource,
+                diagnostic=ResourceDiagnostic.observed(
+                    owner=f"environment-provisioner:{self.environment_id}",
+                    recovery_action=(
+                        "Coordinate with the recorded lease holder and retry "
+                        "the same reviewed Profile after its owner releases it."
+                    ),
+                    resource=resource,
+                    expected={"leaseAcquired": True},
+                    observed={"leaseAcquired": False, "holder": error.owner},
+                ),
             ) from error
         self.register_cleanup(
             f"profile-lease:{lease.resource}",
@@ -554,6 +698,13 @@ class EnvironmentProvisioner(ABC):
             raise BlockedError(
                 reason=str(error),
                 resource="source-lease:invalid-resource",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner=f"environment-provisioner:{self.environment_id}",
+                    recovery_action="Use the reviewed canonical deployment environment name.",
+                    resource="source-lease:invalid-resource",
+                    expected="canonical deployment environment name",
+                    observed={"requestedResource": resource, "error": str(error)},
+                ),
             ) from error
         if environment_name != resource:
             raise BlockedError(
@@ -562,10 +713,18 @@ class EnvironmentProvisioner(ABC):
                     "canonical lease resource"
                 ),
                 resource="source-lease:invalid-resource",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner=f"environment-provisioner:{self.environment_id}",
+                    recovery_action="Use the reviewed canonical deployment environment name.",
+                    resource="source-lease:invalid-resource",
+                    expected={"requestedResource": environment_name},
+                    observed={"requestedResource": resource},
+                ),
             )
-        environment_path = resolve_deployment_environment_path(environment_name)
-        environment = load_env_file(environment_path)
+        environment: dict[str, str] = {}
         try:
+            environment_path = resolve_deployment_environment_path(environment_name)
+            environment = load_env_file(environment_path)
             lease = RemoteGitSourceLease(
                 environment_name,
                 owner,
@@ -577,21 +736,60 @@ class EnvironmentProvisioner(ABC):
                     "PT_DEPLOY_KNOWN_HOSTS_FILE",
                     "",
                 ),
+                **(
+                    {"reuse_connection": True}
+                    if self._remote_source_context_depth > 0 and os.name == "posix"
+                    else {}
+                ),
             )
             lease.acquire()
         except (
             ValueError,
+            OSError,
             ProvisioningError,
             RemoteGitSourceLeaseUnavailable,
         ) as error:
+            blocked_resource = f"source-lease:{environment_name}"
             raise BlockedError(
                 reason=str(error),
-                resource=f"source-lease:{environment_name}",
+                resource=blocked_resource,
+                diagnostic=ResourceDiagnostic(
+                    owner=f"environment-provisioner:{self.environment_id}",
+                    recovery_action=(
+                        f"Verify deployment environment {environment_name}, "
+                        "its configured SSH endpoint and lease handshake; "
+                        "coordinate any recorded holder's release, then retry "
+                        "the same reviewed Profile. A handshake failure does "
+                        "not establish remote lock ownership or source drift."
+                    ),
+                    resource_checks=[{
+                        "resource": blocked_resource,
+                        "expected": {"leaseAcquired": True},
+                        "state": "OBSERVED",
+                        "observed": {
+                            "leaseAcquired": False,
+                            "environment": environment_name,
+                            "host": environment.get("PT_DEPLOY_HOST", ""),
+                            "port": environment.get("PT_DEPLOY_SSH_PORT", "22"),
+                            "deployPath": environment.get("PT_DEPLOY_PATH", ""),
+                            "errorType": type(error).__name__,
+                            "error": str(error),
+                        },
+                    }, {
+                        "resource": f"deployment-source:{environment_name}",
+                        "expected": "source verification under an acquired lease",
+                        "state": "NOT_EVALUATED",
+                        "reason": "Source lease acquisition failed before source verification.",
+                    }],
+                ),
             ) from error
         self.register_cleanup(
             f"source-lease:{lease.resource}",
             lease.release,
         )
+        self._source_leases.append(lease)
+        if self._remote_source_context_depth:
+            self._refresh_remote_source_context()
 
     def _git_commit(self) -> str:
         completed = subprocess.run(
@@ -619,14 +817,30 @@ class EnvironmentProvisioner(ABC):
             require_identity_match=self.contract.profile.identity_match,
         )
 
-    def _station_ready(self, station_url: str, health_url: str = "") -> bool:
+    def _station_health(self, station_url: str, health_url: str = "") -> dict[str, object]:
         url = health_url or f"{station_url.rstrip('/')}/api/oauth/providers"
         request = urllib.request.Request(url, headers={"Accept": "application/json"})
+        observation = {"endpoint": url, "timeoutSeconds": 8, "ready": False}
         try:
             with urllib.request.urlopen(request, timeout=8) as response:
-                return 200 <= response.status < 300
-        except (urllib.error.URLError, OSError, TimeoutError):
-            return False
+                observation.update(
+                    statusCode=response.status,
+                    ready=200 <= response.status < 300,
+                )
+        except urllib.error.HTTPError as error:
+            observation.update(statusCode=error.code, errorType=type(error).__name__)
+            error.close()
+        except (urllib.error.URLError, OSError, TimeoutError) as error:
+            cause = error.reason if isinstance(error, urllib.error.URLError) else error
+            observation.update(
+                errorType=type(error).__name__,
+                causeType=type(cause).__name__,
+                errno=getattr(cause, "errno", None),
+            )
+        return observation
+
+    def _station_ready(self, station_url: str, health_url: str = "") -> bool:
+        return bool(self._station_health(station_url, health_url)["ready"])
 
     def _new_base_manifest(self, gate_id: str) -> RuntimeManifest:
         return new_manifest(
@@ -663,8 +877,11 @@ class EnvironmentProvisioner(ABC):
         *,
         reason: str,
         resource: str,
+        diagnostic: ResourceDiagnostic | None = None,
     ) -> RuntimeManifest:
-        blocked = blocked_manifest(manifest, reason=reason, resource=resource)
+        blocked = blocked_manifest(
+            manifest, reason=reason, resource=resource, diagnostic=diagnostic,
+        )
         self._manifest = blocked
         return blocked
 

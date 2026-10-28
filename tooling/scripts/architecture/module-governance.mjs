@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseDocument } from 'yaml';
 
 export const REGISTRY_KIND = 'peers-touch-architecture-module-registry';
 export const REGISTRY_SCHEMA_VERSION = 5;
@@ -98,33 +99,6 @@ const ACCEPTANCE_GATES_PATH = 'tooling/acceptance/gates.yaml';
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MODULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const DEPENDENCY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
-const PYTHON_YAML_IDS = String.raw`
-import json
-import pathlib
-import sys
-import yaml
-
-value = yaml.safe_load(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-if not isinstance(value, dict) or not isinstance(value.get("capabilities"), list):
-    raise ValueError("capabilities must be a list")
-ids = []
-for item in value["capabilities"]:
-    if not isinstance(item, dict) or not isinstance(item.get("id"), str):
-        raise ValueError("each capability must have a string id")
-    ids.append(item["id"])
-sys.stdout.write(json.dumps(ids))
-`;
-const PYTHON_YAML_GATE_IDS = String.raw`
-import json
-import pathlib
-import sys
-import yaml
-
-value = yaml.safe_load(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-if not isinstance(value, dict) or not isinstance(value.get("gates"), dict):
-    raise ValueError("gates must be an object")
-sys.stdout.write(json.dumps(sorted(value["gates"].keys())))
-`;
 
 export class ArchitectureGovernanceError extends Error {
   constructor(code, message, details = undefined) {
@@ -512,22 +486,33 @@ function loadExternalCapabilityIds(repoRoot, relative) {
     });
     return new Set(ids);
   }
-  const result = spawnSync('python3', ['-c', PYTHON_YAML_IDS, absolute], {
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024,
-  });
-  if (result.status !== 0) {
+  if (fs.statSync(absolute).size > 1024 * 1024) {
+    fail(
+      'ARCHITECTURE_REGISTRY_INVALID',
+      `${relative} exceeds the 1 MiB registry input budget`,
+    );
+  }
+  const source = fs.readFileSync(absolute, 'utf8');
+  const document = parseDocument(source, { uniqueKeys: true, merge: true });
+  if (document.errors.length) {
     fail(
       'ARCHITECTURE_REGISTRY_INVALID',
       `${relative} could not be parsed as a capability registry`,
-      { reason: commandFailureReason(result) },
+      { reason: document.errors[0].message },
     );
   }
-  const ids = parseJson(
-    result.stdout,
-    'ARCHITECTURE_REGISTRY_INVALID',
-    `${relative} capability IDs`,
-  );
+  let value;
+  try {
+    value = document.toJS({ maxAliasCount: 100 });
+  } catch (error) {
+    fail('ARCHITECTURE_REGISTRY_INVALID', `${relative} YAML expansion failed`, {
+      reason: error.message,
+    });
+  }
+  if (!isPlainObject(value) || !Array.isArray(value.capabilities)) {
+    fail('ARCHITECTURE_REGISTRY_INVALID', `${relative} capabilities must be an array`);
+  }
+  const ids = value.capabilities.map((item) => item?.id);
   assertUniqueStrings(ids, `${relative}.capabilityIds`, {
     min: 1,
     pattern: ID_PATTERN,
@@ -551,26 +536,38 @@ function loadAcceptanceGateIds(repoRoot) {
     'Acceptance gate registry',
     'ARCHITECTURE_REUSE_INVALID',
   );
-  const result = spawnSync(
-    'python3',
-    ['-c', PYTHON_YAML_GATE_IDS, absolute],
-    {
-      encoding: 'utf8',
-      maxBuffer: 1024 * 1024,
-    },
-  );
-  if (result.status !== 0) {
+  if (fs.statSync(absolute).size > 1024 * 1024) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      'Acceptance gate registry exceeds the 1 MiB input budget',
+    );
+  }
+  const source = fs.readFileSync(absolute, 'utf8');
+  const document = parseDocument(source, { uniqueKeys: true, merge: true });
+  if (document.errors.length) {
     fail(
       'ARCHITECTURE_REUSE_INVALID',
       'Acceptance gate registry could not be resolved',
-      { reason: commandFailureReason(result) },
+      { reason: document.errors[0].message },
     );
   }
-  const ids = parseJson(
-    result.stdout,
-    'ARCHITECTURE_REUSE_INVALID',
-    'Acceptance gate IDs',
-  );
+  let value;
+  try {
+    value = document.toJS({ maxAliasCount: 100 });
+  } catch (error) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      'Acceptance gate registry YAML expansion failed',
+      { reason: error.message },
+    );
+  }
+  if (!isPlainObject(value) || !isPlainObject(value.gates)) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      'Acceptance gate registry gates must be an object',
+    );
+  }
+  const ids = Object.keys(value.gates).sort();
   assertUniqueStrings(ids, 'Acceptance gate IDs', {
     min: 1,
     pattern: ID_PATTERN,

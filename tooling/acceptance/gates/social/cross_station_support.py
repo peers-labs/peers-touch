@@ -17,6 +17,7 @@ from typing import Any
 
 from tooling.acceptance.core import (
     AcceptanceGate,
+    BlockedError,
     GateError,
     ProvisioningError,
     RuntimeReuseContract,
@@ -360,9 +361,12 @@ def discover_suite_result(
                 )
             )
     if not candidates:
-        raise GateError(
-            "current-control CSS-09 suite result is unavailable: "
-            f"{exact_result}"
+        raise BlockedError(
+            reason=(
+                "current-control CSS-09 suite result is unavailable: "
+                f"{exact_result}"
+            ),
+            resource="social-cross-station:css-09-suite-result",
         )
     candidates.sort(key=lambda item: (item[0], str(item[1])))
     return candidates[0][1], root, resolved_control, resolved_workspace

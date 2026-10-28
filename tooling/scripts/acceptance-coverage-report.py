@@ -1,548 +1,235 @@
 #!/usr/bin/env python3
-"""
-Acceptance Coverage Report Generator
-
-Reads capability, feature, and gate declarations from tooling/acceptance/
-and produces a Markdown coverage report grouped by domain.
-
-Usage:
-    python3 tooling/scripts/acceptance-coverage-report.py
-"""
-
+"""Read canonical Feature declarations and immutable current-source proof."""
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from datetime import date
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
-from tooling.acceptance.finalizers import (  # noqa: E402
-    load_finalizer_bindings,
-    load_strict_json_object,
-)
-ACCEPTANCE_ROOT = REPO_ROOT / "tooling" / "acceptance"
+from tooling.acceptance.finalizers import load_finalizer_bindings, load_strict_json_object
+from tooling.acceptance.core.proof import read_gate_proof
+
+logger = logging.getLogger(__name__)
+ACCEPTANCE_ROOT = REPO_ROOT / "tooling/acceptance"
 CAPABILITIES_DIR = ACCEPTANCE_ROOT / "capabilities"
 FEATURES_DIR = ACCEPTANCE_ROOT / "features"
 GATES_FILE = ACCEPTANCE_ROOT / "gates.yaml"
-OUTPUT_PATH = (
-    REPO_ROOT
-    / "docs"
-    / "architecture"
-    / "engineering"
-    / "acceptance"
-    / "coverage-report.md"
-)
-
-# Domain display order and mapping
+OUTPUT_PATH = REPO_ROOT / "docs/architecture/engineering/acceptance/coverage-report.md"
 DOMAIN_ORDER = ["chat", "mobile", "federation", "applet", "station-dashboard"]
 DOMAIN_DISPLAY = {
-    "chat": "Chat",
-    "mobile": "Mobile",
-    "federation": "Federation",
-    "applet": "Applet",
-    "station-dashboard": "Station Dashboard",
+    "chat": "Chat", "mobile": "Mobile", "federation": "Federation",
+    "applet": "Applet", "station-dashboard": "Station Dashboard",
 }
 INFRA_DOMAINS = {"delivery-quality"}
 
 
-# ---------------------------------------------------------------------------
-# YAML/JSON loading (gates.yaml and capabilities are actually JSON despite .yaml ext)
-# ---------------------------------------------------------------------------
-
-
 def load_json_or_yaml(path: Path) -> dict:
-    """Load an authority-bearing JSON document without lossy decoding."""
     return load_strict_json_object(path, str(path))
 
 
-# ---------------------------------------------------------------------------
-# Data collection
-# ---------------------------------------------------------------------------
-
-
 def load_registered_gates() -> dict[str, dict]:
-    """Return Gate definitions keyed by registered Gate ID."""
-    if not GATES_FILE.exists():
-        logger.warning("gates.yaml not found at %s", GATES_FILE)
-        return {}
-    data = load_json_or_yaml(GATES_FILE)
-    gates = data.get("gates", {})
-    return gates if isinstance(gates, dict) else {}
+    return load_json_or_yaml(GATES_FILE)["gates"]
 
 
 def load_capabilities() -> list:
-    """Load all capability declarations from capabilities/*.yaml."""
-    capabilities = []
-    if not CAPABILITIES_DIR.exists():
-        return capabilities
-    for f in sorted(CAPABILITIES_DIR.glob("*.yaml")):
-        data = load_json_or_yaml(f)
-        for cap in data.get("capabilities", []):
-            capabilities.append(cap)
-    return capabilities
+    return [
+        capability
+        for path in sorted(CAPABILITIES_DIR.glob("*.yaml"))
+        for capability in load_json_or_yaml(path).get("capabilities", [])
+    ]
 
 
 def load_features() -> dict:
-    """Load all feature declarations. Returns {feature_id: feature_dict}."""
     features = {}
-    if not FEATURES_DIR.exists():
-        return features
-    for f in sorted(FEATURES_DIR.glob("*.yaml")):
-        data = load_json_or_yaml(f)
-        fid = data.get("id")
-        if fid:
-            features[fid] = data
+    for path in sorted(FEATURES_DIR.glob("*.yaml")):
+        feature = load_json_or_yaml(path)
+        identity = feature.get("id")
+        if not isinstance(identity, str) or not identity or identity in features:
+            raise ValueError(f"missing or duplicate Feature identity: {path}")
+        features[identity] = feature
     return features
 
 
 def has_evidence_for_gate(
-    gate_id: str,
-    gate_definition: dict | None = None,
-    finalizer_binding: Any | None = None,
+    gate_id: str, gate_definition: dict | None = None,
+    finalizer_binding: Any | None = None, *,
+    store: Any = None, current_source: Any = None,
 ) -> bool:
-    """Return whether the canonical latest run durably proves the Gate."""
-    from tooling.acceptance.core import (
-        ArtifactRef,
-        CanonicalResultTuple,
-        EvidenceError,
-        EvidenceStore,
-        PlatformCellResult,
-        PlatformMatrixResult,
-        source_identity,
-    )
+    from tooling.acceptance.core import EvidenceError, EvidenceStore, source_identity
     try:
-        store = EvidenceStore.from_environment(repo_root=REPO_ROOT)
-        current_source = source_identity(REPO_ROOT)
-
-        def manifest_proves(
-            manifest: dict[str, Any],
-            *,
-            expected_cell: str | None = None,
-        ) -> bool:
-            result = manifest.get("result")
-            artifacts = manifest.get("artifacts")
-            source = manifest.get("source")
-            redaction = manifest.get("redaction")
-            secret_scan = (
-                result.get("secretScan")
-                if isinstance(result, dict)
-                else None
+        store = store or EvidenceStore.from_environment(repo_root=REPO_ROOT)
+        current_source = current_source or source_identity(REPO_ROOT)
+        cells = (gate_definition or {}).get("requiredRuntimeCells") or [None]
+        for cell in cells:
+            read_gate_proof(
+                store, gate_id, current_source,
+                gate_definition=gate_definition, runtime_cell=cell,
             )
-            runtime_manifest = (
-                result.get("manifest")
-                if isinstance(result, dict)
-                else None
-            )
-            credential_refs = (
-                runtime_manifest.get("credentialRefs")
-                if isinstance(runtime_manifest, dict)
-                else []
-            )
-            sensitive_credential_refs = (
-                [
-                    reference
-                    for reference in credential_refs
-                    if isinstance(reference, str)
-                    and reference.startswith(("auto:", "env:", "file:"))
-                ]
-                if isinstance(credential_refs, list)
-                else []
-            )
-            scanned_credentials = (
-                secret_scan.get("scannedCredentialValues")
-                if isinstance(secret_scan, dict)
-                else None
-            )
-            source_artifact = (
-                result.get("sourceArtifact")
-                if isinstance(result, dict)
-                else None
-            )
-            environment_proof = (
-                (gate_definition or {}).get("tier") == "env-evidence"
-            )
-            if (
-                manifest.get("artifactKind") != "acceptance-run-manifest"
-                or manifest.get("state") != "DURABLE"
-                or manifest.get("workspaceId") != store.workspace_id
-                or manifest.get("gateId") != gate_id
-                or not isinstance(manifest.get("runId"), str)
-                or not manifest.get("runId")
-                or not isinstance(redaction, dict)
-                or redaction.get("status") != "passed"
-                or not isinstance(source, dict)
-                or source.get("commit") != current_source["commit"]
-                or source.get("workspaceDigest")
-                != current_source["workspaceDigest"]
-                or not isinstance(result, dict)
-                or result.get("status") != "passed"
-                or result.get("completionStatus") != "DONE"
-                or result.get("proofStatus") != "PROVEN"
-                or not isinstance(secret_scan, dict)
-                or secret_scan.get("status") != "passed"
-                or not isinstance(
-                    secret_scan.get("redactedArtifacts"),
-                    list,
-                )
-                or isinstance(scanned_credentials, bool)
-                or not isinstance(scanned_credentials, int)
-                or scanned_credentials < 0
-                or not isinstance(credential_refs, list)
-                or any(
-                    not isinstance(reference, str)
-                    for reference in credential_refs
-                )
-                or scanned_credentials < len(sensitive_credential_refs)
-                or (
-                    expected_cell is not None
-                    and result.get("runtimeCell") != expected_cell
-                )
-                or not isinstance(artifacts, dict)
-                or not artifacts
-            ):
-                return False
-
-            requires_finalizer = (
-                isinstance(gate_definition, dict)
-                and "evidenceFinalizer" in gate_definition
-            )
-            if requires_finalizer:
-                # W1/W2 define contracts and registration only. W3/W7 own the
-                # authoritative finalization reader, so legacy latest manifests
-                # must remain UNPROVEN until that cutover is complete.
-                return False
-
-            source_reference = None
-            if environment_proof:
-                if (
-                    result.get("evidenceGateId") != gate_id
-                    or result.get("sourceArtifactKind")
-                    != "acceptance-gate-evidence-report"
-                    or not isinstance(source_artifact, dict)
-                ):
-                    return False
-                source_reference = ArtifactRef.from_dict(source_artifact)
-
-            resolved_references: list[ArtifactRef] = []
-            for reference_data in artifacts.values():
-                reference = ArtifactRef.from_dict(reference_data)
-                if (
-                    reference.workspace_id != manifest["workspaceId"]
-                    or reference.gate_id != manifest["gateId"]
-                    or reference.run_id != manifest.get("runId")
-                ):
-                    return False
-                store.resolve(reference, verify_hash=True)
-                resolved_references.append(reference)
-            if (
-                source_reference is not None
-                and source_reference not in resolved_references
-            ):
-                return False
-            if source_reference is not None:
-                source_report = store.read_json(source_reference)
-                if (
-                    source_report.get("artifactKind")
-                    != result.get("sourceArtifactKind")
-                    or source_report.get("gateId") != gate_id
-                    or str(source_report.get("status") or "").lower()
-                    not in {"pass", "passed"}
-                    or source_report.get("completionStatus") != "DONE"
-                    or source_report.get("proofStatus") != "PROVEN"
-                ):
-                    return False
-            return True
-
-        required_cells = tuple(
-            (gate_definition or {}).get("requiredRuntimeCells") or ()
-        )
-        if not required_cells:
-            return manifest_proves(store.latest(gate_id))
-
-        cell_results: dict[str, PlatformCellResult] = {}
-        for cell_id in required_cells:
-            manifest = store.latest(gate_id, runtime_cell=cell_id)
-            if not manifest_proves(manifest, expected_cell=cell_id):
-                return False
-            cell_results[cell_id] = PlatformCellResult(
-                cell_id=cell_id,
-                source_commit=current_source["commit"],
-                result_tuple=CanonicalResultTuple.PassedDoneProven,
-            )
-        matrix = PlatformMatrixResult.create(
-            gate_id,
-            current_source["commit"],
-            required_cells,
-            cell_results,
-        )
-        return matrix.result_tuple is CanonicalResultTuple.PassedDoneProven
+        return True
     except (EvidenceError, KeyError, OSError, TypeError, ValueError):
         return False
 
 
-# ---------------------------------------------------------------------------
-# Analysis
-# ---------------------------------------------------------------------------
-
-
 def analyze_feature(
-    feature_id: str,
-    feature_data: dict,
+    feature_id: str, feature_data: dict,
     registered_gates: dict[str, dict],
-    finalizer_bindings: dict[str, Any] | None = None,
+    finalizer_bindings: dict[str, Any] | None = None, *,
+    gate_proofs: dict[str, bool] | None = None,
 ) -> dict:
-    """
-    Analyze a single feature and determine its coverage state.
-
-    Returns dict with: id, required_gates, registered (list), proven (list), status
-    """
-    required_gates = feature_data.get("required_gates", [])
-
-    registered = [g for g in required_gates if g in registered_gates]
+    required = feature_data.get("required_gates", [])
+    registered = [gate for gate in required if gate in registered_gates]
     proven = [
-        g
-        for g in registered
-        if has_evidence_for_gate(
-            g,
-            registered_gates[g],
-            (finalizer_bindings or {}).get(g),
+        gate for gate in registered
+        if (
+            gate_proofs.get(gate, False) if gate_proofs is not None else
+            has_evidence_for_gate(
+                gate, registered_gates[gate], (finalizer_bindings or {}).get(gate),
+            )
         )
     ]
-
-    if not required_gates:
-        status = "DECLARED"
-    elif len(registered) < len(required_gates):
-        status = "PARTIAL"
-    elif len(proven) == len(required_gates):
-        status = "COMPLETE"
-    else:
-        status = "WIRED"
-
+    status = (
+        "DECLARED" if not required else
+        "PARTIAL" if len(registered) < len(required) else
+        "COMPLETE" if len(proven) == len(required) else "WIRED"
+    )
     return {
-        "id": feature_id,
-        "required_gates": required_gates,
-        "registered": registered,
-        "proven": proven,
-        "status": status,
+        "id": feature_id, "required_gates": required,
+        "registered": registered, "proven": proven, "status": status,
     }
 
 
 def build_domain_report(
-    capabilities: list,
-    features: dict,
-    registered_gates: dict[str, dict],
-    finalizer_bindings: dict[str, Any] | None = None,
-) -> dict:
-    """
-    Build per-domain feature analysis.
-
-    Returns: {domain: [feature_analysis, ...]}
-    Also returns infra features separately.
-    """
-    # Map feature -> domain from capabilities
-    feature_domain_map = {}
-    for cap in capabilities:
-        domain = cap.get("domain", "unknown")
-        for fid in cap.get("features", []):
-            if fid not in feature_domain_map:
-                feature_domain_map[fid] = domain
-
-    # Also infer domain from feature files' product_area field
-    for fid, fdata in features.items():
-        if fid not in feature_domain_map:
-            pa = fdata.get("product_area", "unknown")
-            feature_domain_map[fid] = pa
-
-    # Analyze each feature
-    domain_features = {}
-    infra_features = []
-
-    for fid, fdata in features.items():
-        domain = feature_domain_map.get(fid, "unknown")
+    capabilities: list, features: dict, registered_gates: dict[str, dict],
+    finalizer_bindings: dict[str, Any] | None = None, *,
+    gate_proofs: dict[str, bool] | None = None,
+) -> tuple[dict, list]:
+    relations: dict[str, set[str]] = {}
+    for capability in capabilities:
+        for identity in capability.get("features", []):
+            domain = capability.get("domain", "unknown")
+            relations.setdefault(identity, set()).add(domain)
+    domains: dict[str, list] = {}
+    infra = []
+    for identity, feature in features.items():
+        linked = relations.get(identity, set())
+        area = feature.get("product_area")
+        if area is not None and (not isinstance(area, str) or not area):
+            raise ValueError(f"Feature product_area is invalid: {identity}")
+        # A Feature is one obligation even when multiple capabilities refer to
+        # it. The declared product area groups it; relationships remain visible.
+        domain = area or (next(iter(linked)) if len(linked) == 1 else
+                          "shared" if linked else "unknown")
         analysis = analyze_feature(
-            fid,
-            fdata,
-            registered_gates,
-            finalizer_bindings,
+            identity, feature, registered_gates, finalizer_bindings,
+            gate_proofs=gate_proofs,
         )
-
-        if domain in INFRA_DOMAINS:
-            infra_features.append(analysis)
-        else:
-            domain_features.setdefault(domain, []).append(analysis)
-
-    return domain_features, infra_features
+        analysis["domain_relations"] = sorted(linked | ({area} if area else set()))
+        (infra if domain in INFRA_DOMAINS else domains.setdefault(domain, [])).append(analysis)
+    return domains, infra
 
 
-# ---------------------------------------------------------------------------
-# Report generation
-# ---------------------------------------------------------------------------
-
-
-def format_gate_list(gates: list) -> str:
-    """Format a list of gates as comma-separated inline code."""
-    if not gates:
-        return "-"
-    return ", ".join(f"`{g}`" for g in gates)
+def ordered_domains(domain_features: dict) -> list[str]:
+    return [domain for domain in DOMAIN_ORDER if domain in domain_features] + sorted(
+        set(domain_features) - set(DOMAIN_ORDER)
+    )
 
 
 def compute_summary(domain_features: dict) -> list:
-    """Compute summary stats per domain."""
     rows = []
-    total_features = 0
-    total_wired = 0
-    total_proven = 0
-
-    for domain in DOMAIN_ORDER:
-        features = domain_features.get(domain, [])
-        n_features = len(features)
-        n_wired = sum(1 for f in features if f["status"] in ("WIRED", "COMPLETE"))
-        n_proven = sum(1 for f in features if f["status"] == "COMPLETE")
-        coverage = (n_proven / n_features * 100) if n_features > 0 else 0
-
+    for domain in ordered_domains(domain_features):
+        features = domain_features[domain]
+        proven = sum(item["status"] == "COMPLETE" for item in features)
         rows.append({
-            "domain": domain,
-            "features": n_features,
-            "wired": n_wired,
-            "proven": n_proven,
-            "coverage": coverage,
+            "domain": domain, "features": len(features),
+            "wired": sum(item["status"] in {"WIRED", "COMPLETE"} for item in features),
+            "proven": proven, "coverage": proven / len(features) * 100 if features else 0,
         })
-
-        total_features += n_features
-        total_wired += n_wired
-        total_proven += n_proven
-
-    total_coverage = (total_proven / total_features * 100) if total_features > 0 else 0
+    total = {key: sum(row[key] for row in rows) for key in ("features", "wired", "proven")}
     rows.append({
-        "domain": "**Total**",
-        "features": total_features,
-        "wired": total_wired,
-        "proven": total_proven,
-        "coverage": total_coverage,
+        "domain": "**Total**", **total,
+        "coverage": total["proven"] / total["features"] * 100 if total["features"] else 0,
     })
-
     return rows
 
 
+def format_gate_list(gates: list) -> str:
+    return ", ".join(f"`{gate}`" for gate in gates) or "-"
+
+
 def generate_report(domain_features: dict, infra_features: list) -> str:
-    """Generate the full Markdown report."""
-    lines = []
-
-    lines.append("# Acceptance Coverage Report")
-    lines.append("")
-    lines.append("> Auto-generated by `tooling/scripts/acceptance-coverage-report.py`")
-    lines.append(f"> Last updated: {date.today().isoformat()}")
-    lines.append("")
-
-    # Summary table
-    lines.append("## Summary")
-    lines.append("")
-    lines.append("| Domain | Features | Wired | Proven | Coverage |")
-    lines.append("|--------|----------|-------|--------|----------|")
-
-    summary = compute_summary(domain_features)
-    for row in summary:
-        domain_label = row["domain"]
-        if domain_label != "**Total**":
-            domain_label = DOMAIN_DISPLAY.get(domain_label, domain_label)
+    lines = [
+        "# Acceptance Coverage Report", "",
+        "> Auto-generated by `tooling/scripts/acceptance-coverage-report.py`",
+        f"> Last updated: {date.today().isoformat()}", "",
+        f"Declared Features: {sum(map(len, domain_features.values())) + len(infra_features)}. "
+        f"Core self-validation Features: {len(infra_features)}.", "",
+        "## Summary", "",
+        "| Domain | Features | Wired | Proven | Coverage |",
+        "|--------|----------|-------|--------|----------|",
+    ]
+    for row in compute_summary(domain_features):
         lines.append(
-            f"| {domain_label} | {row['features']} | {row['wired']} | "
-            f"{row['proven']} | {row['coverage']:.0f}% |"
+            f"| {DOMAIN_DISPLAY.get(row['domain'], row['domain'])} | {row['features']} | "
+            f"{row['wired']} | {row['proven']} | {row['coverage']:.0f}% |"
         )
-
-    lines.append("")
-
-    # Infra section
-    lines.append("## Infra (Core Self-Validation)")
-    lines.append("")
-    lines.append("| Feature | Gates | Registered | Status |")
-    lines.append("|---------|-------|------------|--------|")
-
-    for f in infra_features:
-        gates_str = format_gate_list(f["required_gates"])
-        reg_count = f"{len(f['registered'])}/{len(f['required_gates'])}"
-        lines.append(f"| `{f['id']}` | {gates_str} | {reg_count} | {f['status']} |")
-
-    lines.append("")
-
-    # Per-domain sections
-    for domain in DOMAIN_ORDER:
-        display_name = DOMAIN_DISPLAY.get(domain, domain)
-        lines.append(f"## {display_name}")
-        lines.append("")
-        lines.append("| Feature | Required Gates | Registered | Proven | Status |")
-        lines.append("|---------|---------------|------------|--------|--------|")
-
-        features = domain_features.get(domain, [])
-        for f in sorted(features, key=lambda x: x["id"]):
-            gates_str = format_gate_list(f["required_gates"])
-            reg_count = f"{len(f['registered'])}/{len(f['required_gates'])}"
-            proven_count = f"{len(f['proven'])}/{len(f['required_gates'])}"
+    lines += ["", "## Infra (Core Self-Validation)", "",
+              "| Feature | Gates | Registered | Status |",
+              "|---------|-------|------------|--------|"]
+    for feature in infra_features:
+        lines.append(
+            f"| `{feature['id']}` | {format_gate_list(feature['required_gates'])} | "
+            f"{len(feature['registered'])}/{len(feature['required_gates'])} | {feature['status']} |"
+        )
+    for domain in ordered_domains(domain_features):
+        lines += ["", f"## {DOMAIN_DISPLAY.get(domain, domain)}", "",
+                  "| Feature | Required Gates | Registered | Proven | Status | Domain relationships |",
+                  "|---------|---------------|------------|--------|--------|----------------------|"]
+        for feature in sorted(domain_features[domain], key=lambda item: item["id"]):
+            count = len(feature["required_gates"])
             lines.append(
-                f"| `{f['id']}` | {gates_str} | {reg_count} | {proven_count} | {f['status']} |"
+                f"| `{feature['id']}` | {format_gate_list(feature['required_gates'])} | "
+                f"{len(feature['registered'])}/{count} | {len(feature['proven'])}/{count} | "
+                f"{feature['status']} | {', '.join(feature.get('domain_relations', [])) or '-'} |"
             )
-
-        lines.append("")
-
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+    return "\n".join(lines) + "\n"
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    # Validate paths
-    if not ACCEPTANCE_ROOT.exists():
-        logger.error("Acceptance root not found: %s", ACCEPTANCE_ROOT)
+    from tooling.acceptance.core import EvidenceError, EvidenceStore, source_identity
+    logging.basicConfig(level=logging.INFO)
+    try:
+        gates = load_registered_gates()
+        bindings = dict(load_finalizer_bindings(ACCEPTANCE_ROOT, gates))
+        features = load_features()
+        if not features:
+            raise ValueError("no Feature declarations")
+        # One source snapshot and one assessment per unique Gate per report.
+        source = source_identity(REPO_ROOT)
+        store = EvidenceStore.from_environment(repo_root=REPO_ROOT)
+        proofs = {
+            gate: has_evidence_for_gate(
+                gate, gates[gate], bindings.get(gate), store=store, current_source=source,
+            )
+            for gate in sorted({
+                gate for feature in features.values()
+                for gate in feature.get("required_gates", []) if gate in gates
+            })
+        }
+        domains, infra = build_domain_report(
+            load_capabilities(), features, gates, bindings, gate_proofs=proofs,
+        )
+        if source != source_identity(REPO_ROOT):
+            raise ValueError("source changed during coverage assessment")
+        OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        OUTPUT_PATH.write_text(generate_report(domains, infra), encoding="utf-8")
+        return 0
+    except (EvidenceError, OSError, TypeError, ValueError) as error:
+        logger.error("coverage assessment failed closed: %s", error)
         return 1
-
-    # Load data
-    registered_gates = load_registered_gates()
-    finalizer_bindings = dict(
-        load_finalizer_bindings(ACCEPTANCE_ROOT, registered_gates)
-    )
-    capabilities = load_capabilities()
-    features = load_features()
-
-    if not features:
-        logger.error("No feature files found in %s", FEATURES_DIR)
-        return 1
-
-    logger.info("Loaded %d registered gates", len(registered_gates))
-    logger.info("Loaded %d capabilities", len(capabilities))
-    logger.info("Loaded %d features", len(features))
-
-    # Build analysis
-    domain_features, infra_features = build_domain_report(
-        capabilities,
-        features,
-        registered_gates,
-        finalizer_bindings,
-    )
-
-    # Generate report
-    report = generate_report(domain_features, infra_features)
-
-    # Write output
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.write_text(report, encoding="utf-8")
-
-    logger.info("Coverage report written to %s", OUTPUT_PATH.relative_to(REPO_ROOT))
-    return 0
 
 
 if __name__ == "__main__":

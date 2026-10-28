@@ -5,8 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -41,10 +39,10 @@ type constantResolver struct {
 }
 
 func discoverRoutes(
-	root string,
+	inventory *sourceInventory,
 	registrationRoots []string,
 ) ([]discoveredRoute, []diagnostic, int) {
-	files, parseDiagnostics, parsedCount := parseGoFiles(root, registrationRoots)
+	files, parseDiagnostics, parsedCount := parseGoFiles(inventory, registrationRoots)
 	resolvers := buildConstantResolvers(files)
 	routes := make([]discoveredRoute, 0)
 
@@ -173,9 +171,10 @@ func routeFromActorHandlerFields(
 }
 
 func parseGoFiles(
-	root string,
+	inventory *sourceInventory,
 	searchRoots []string,
 ) ([]parsedGoFile, []diagnostic, int) {
+	root := inventory.root
 	fileSet := token.NewFileSet()
 	seen := make(map[string]struct{})
 	paths := make([]string, 0)
@@ -183,29 +182,20 @@ func parseGoFiles(
 
 	for _, searchRoot := range searchRoots {
 		absoluteRoot := filepath.Join(root, filepath.FromSlash(searchRoot))
-		err := filepath.WalkDir(absoluteRoot, func(path string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if entry.IsDir() {
-				if shouldSkipDirectory(entry.Name()) && path != absoluteRoot {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !strings.HasSuffix(entry.Name(), ".go") ||
-				strings.HasSuffix(entry.Name(), "_test.go") ||
-				strings.HasSuffix(entry.Name(), ".pb.go") {
-				return nil
+		discovered, err := inventory.tree(absoluteRoot)
+		for _, path := range discovered {
+			if !strings.HasSuffix(path, ".go") ||
+				strings.HasSuffix(path, "_test.go") ||
+				strings.HasSuffix(path, ".pb.go") {
+				continue
 			}
 			cleanPath := filepath.Clean(path)
 			if _, exists := seen[cleanPath]; exists {
-				return nil
+				continue
 			}
 			seen[cleanPath] = struct{}{}
 			paths = append(paths, cleanPath)
-			return nil
-		})
+		}
 		if err != nil {
 			relativeRoot := filepath.ToSlash(searchRoot)
 			diagnostics = append(diagnostics, diagnostic{
@@ -217,13 +207,14 @@ func parseGoFiles(
 	sort.Strings(paths)
 
 	files := make([]parsedGoFile, 0, len(paths))
-	for _, path := range paths {
+	for _, input := range inventory.readFiles(paths) {
+		path := input.path
 		relativePath, relErr := filepath.Rel(root, path)
 		if relErr != nil {
 			relativePath = path
 		}
 		relativePath = filepath.ToSlash(relativePath)
-		content, readErr := os.ReadFile(path)
+		content, readErr := input.content, input.err
 		if readErr != nil {
 			diagnostics = append(diagnostics, diagnostic{
 				Code:      "source_inventory_failed",

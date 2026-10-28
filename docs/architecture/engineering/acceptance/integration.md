@@ -8,6 +8,97 @@
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/core/`
 
+当前 [执行预算合同](execution-budget.md) 在既有 Runner 和
+GateProcessLauncher 集成 scope、deadline、计时和停止记录。
+YAML governance parser 使用 Node 的显式 `yaml` 依赖，
+删除跨 Python 解析子进程；输入与 alias expansion 有界，失败不跳过 registry。
+共享场景与具体资源迁移尚未发生，旧产品证明要求保持有效。
+固定范围恢复和公共元数据消费同一 [执行合同](execution-budget.md)：
+Runner 保留完整 required 范围及原 producer 引用，每个新请求有独立期限；
+Planner、RunHandle、ArtifactSession 共享 Evidence Store 的类型化 JSON writer。
+只允许真实 ArtifactRef / ExecutionGraph 公共结构，所有字符串继续秘密扫描，
+所有 manifest inventory 继续逐项解析、校验身份和 hash。
+
+CCU、Chat storage、Station Access lifecycle、Relay 与 X Config 的聚合证明
+统一由 `station_access_evidence.py` 消费。生产者只从当前 Runner 注入的
+`prerequisiteProofs` 和 `current_result_proof_envelope` 交集选取；禁止独立查询
+latest 补齐缺失证明或替换原 run。业务聚合、Coverage、Gap、能力验证、前置依赖
+和续跑统一调用 `core/proof.py::read_gate_proof`；由 Evidence Store 校验
+完整 inventory、bytes 与 finalizer authority，由共享证真读取器比较原
+manifest、当前 envelope、source、DONE/PROVEN、显式 cleanup、扫描、原报告
+断言及请求的 Runtime Cell。报告保留原 manifest ArtifactRef。
+同 Gate canonical JSON report 即使未被 sourceArtifact 绑定仍核验断言。
+证据锁诊断由 Evidence Store 实际取得/释放调用写入当前 OperationObserver；
+消费者不复制锁管理、延长期限或从锁样本推导业务进展。
+缺失、冲突、损坏或来源变化仍为未证明。匹配 SHA 的本地快照可以聚合；
+远端源码同步与 release owner 的 clean 限制不由此改变。
+Session-class 的正式证明同样使用共享读取器；开发态只读取当前 envelope
+引用的原 functional manifest 与完整 inventory，复验 source、result 和
+cleanup，保持 `proofStatus=NOT_APPLICABLE`，禁止读取 latest 或转成正式证明。
+
+Station API AST 源码 Gate 使用具体 Go input Owner：实际 native Go 和
+compiler/asm/link、解析后的标准库文件与安装 module、workspace 和生效配置
+共同进入输入身份。命令与探针禁用持久配置、自动工具链下载、网络依赖解析及
+CGO，验证编译缓存。未知 shim、外部 replacement、原生对象与产品装备不进入
+该闭包。由调用方提供满足仓库版本的已安装工具链，Owner 不安装或切换。
+
+Profile 到资源的解析由 `core/profile_bindings.py` 统一负责。显式
+`SERVICE_ID=PROFILE` 覆盖环境服务声明的 `profile_ref: profile:<name>`；
+同一种服务只有一个角色时使用当前 Machine Dev Profile。多个同类服务必须
+显式绑定或由环境声明，禁止从角色顺序、URL 或客户端顺序推断拓扑。
+注册表只按 Provisioner 支持的参数交付绑定；构造阶段不查询 Profile 或装备资源。
+Provisioner 在所选 Gate 的资源准备阶段调用同一解析器，Mobile 的 Station 与
+Relay 都从 reviewed Profile 投影到既有 endpoint/deployment refs。
+`PROFILE` 的 Make 投影只核对当前绑定，不能改写目标或扩大 capability。
+
+Station 装备由共享 `provisioners/station_equipment.py` 调用既有
+`devctl station start --target-profile`。目标 Profile 在 Machine Dev 中解析，
+活动绑定和 slot 不变；装备失败保留原部署日志和 typed code。Native/Mobile
+不再把远端源码不匹配作为人工部署前置条件。装备先完成，随后取得持续
+remote source lease 并重新执行健康、源码与协议 attestation；这避免嵌套
+source-sync 重复取锁，也拒绝装备与验收间发生的部署竞态。
+Current-Profile Native 使用同一装备入口，健康检查必须在持续租约内执行；
+运行账号与客户端准备只能消费装备后的独立 attestation。
+装备子进程只承担普通 Station readiness/deploy，不继承父验收的环境 ID、
+运行 ID、Agent scenario control 或 external-runtime 参数。失败日志仍由
+父装备 Owner 使用原验收上下文发布，保留相同 run、原错误码与 ArtifactRef。
+Station 装备与 Desktop 构建保留原 `EphemeralLaunchCleanupFailed`，不能将其
+转换为普通 `BlockedError`。Runner 分别记录 provisioning process 与已取得
+Environment/Cell 资源的清理：后者成功不能覆盖前者失败。清理失败停止后续
+Gate，独立于 `stop-on-failure`；仍执行剩余资源的反向清理并封存完整范围。
+
+本地 Desktop 构建与 macOS Cell 使用实际 commit、workspace digest 和
+canonical worktree hash。干净工作区记录 `clean`，开发态记录实际
+`sha256:<digest>`；构建身份还绑定配置、工具链、外部输入和产物 hash。
+构建前后、Cell 探针完成后、客户端启动和身份读回时必须复验同一快照，变化即拒绝。
+本地 Runtime Binding 保存准备时的源码身份与产物 hash，禁止在读回时重新标记
+当前源码为运行中的构建；Acceptance 客户端不搜索或启动未经构建 owner 验证的产物。
+远端 `git-object-sync` 仍要求 clean checkout；本地快照不能证明未部署的
+Station 改动，服务 attestation 与 protocol 校验仍由原生产者负责。
+Chat Native 的本地候选包含 Station、Note service、model、Go SDK 或 Go workspace
+未提交输入时，必须先取得对应部署证明，禁止沿用同 commit 的旧远端证明。
+所有 Native Chat Runner 共用 `native_runtime_source_identity`，客户端快照匹配由
+domain-neutral `core.runtime_cell.runtime_source_matches` 负责。
+同一源码构建可供多个隔离客户端实例使用，实例隔离由进程、端口、设备与
+storage identity 证明。恢复 Fixture 必须在运行内通过真实产品操作形成状态，
+再执行故障、重启和 receiver readback；不依赖旧 worktree 或外部种子。
+当前 Profile 的 Chat Provisioner 复用现有生产账号 registrar，为每个运行创建
+独立账号；Fixture 只初始化这些新账号的头像和 contact/Federation context，
+不重置既有 Station Actor。两个客户端共用 Desktop build owner 验证的同一产物，
+由 Runtime Cell parent 装备并冻结 `source.canonicalRoot/binaryPath/binarySha256`。
+child 从已传入的 Cell manifest 校验 Gate、lease、平台、input mode、源码快照、
+工作区内可执行路径和实际 bytes；绑定构造完成前必须消费并冻结该凭据，
+身份读回与客户端启动共用已验证状态。首次启动不能承担凭据准备，
+启动前身份读取也不能触发编译；child 不调用 build owner。
+分别在 run-owned ephemeral storage 中通过认证产生设备与密钥。`ephemeral` 表示
+运行结束回收，不能在场景重启时删除。Station 保留新账号及 Authority 审计记录，
+客户端会话、进程、端口和本地存储必须全部释放。
+Submitted-command Gate 先暂停派发，再通过可见 composer 创建真实 pending command。
+故障注入只对该精确 message/command 做事务内 `submitted` 状态转换，保持 bytes/hash、
+lane checkpoint 和原身份。Gate 身份限定注入权限；外部装备布尔值不是执行前提。
+真实 Native 重启后，两端必须保持设备身份并显示相同 message ID 与精确明文。
+validator 独立复算准备、故障、重启与收敛次序、命令 hash 和 receiver-visible 结果。
+
 ---
 
 ## 1. 与现有模块的映射
@@ -142,7 +233,7 @@ Gate Catalog
 
 | Cell | WebView | Native input/window backend | Platform-only evidence |
 |---|---|---|---|
-| `desktop-macos-native` | WKWebView semantic input | AppKit + CoreGraphics + Accessibility（exclusive only） | Spaces、frontmost PID、AX focus |
+| `desktop-macos-native` | WKWebView semantic input | AppKit/CoreGraphics exclusive input；独立资格的 process-scoped AX chooser | Spaces、frontmost PID、AX focus |
 | `desktop-linux-native` | WebKitGTK | X11 XTest + EWMH | active window、stack/point owner、X11 focus |
 | `desktop-windows-native` | WebView2 | Win32 `SendInput` + UI Automation | foreground HWND、process/window ownership |
 
@@ -190,8 +281,23 @@ Business Gate
 ```
 
 该路径不得调用 `activate_process`、`CGEventPost` 或 always-on-top window level。
-需要 native file panel、permission sheet、physical hover/drag 或 native-focus proof
-时，Gate 进入 `exclusive-native-input`；本地执行必须同时声明
+macOS chooser 调用链为 parent Cell 的真实 open/select/close/owned-stop qualification
+→ 当前 Cell/source 绑定的 `nativeAdapter.fileChooser` → local Binding admission
+→ shared picker 的可见触发器 → exact-PID AX selection → 原有 product/receiver oracle。
+parent 与 picker 共用 Driver 的操作员采样。缺少或陈旧 descriptor 在触发面板前
+fail closed，不能通过 Profile、平台名或输入 flag 推导资格。该能力不需要全局
+激活、HID 或 clipboard，也不授予 physical input proof。
+parent 与 picker 从 `NativeOperatorObservation.file_chooser` 消费同一次真实读取的
+typed panel presence 与 operator identity。每个等待样本都对照同一 baseline；
+任一 mismatch 保持失败，不等面板状态收敛后才检测。
+macOS 的 operator-only/operator+panel/control/pointer 复用一个有界 native probe。
+每次只启动一个受管子进程，其中独立读取两次稳定 focus；禁止持久 worker 或
+缓存现场状态。focus 截止时间包含子进程初始化，保留原 1s 稳定、2s control、
+3s observation 限制和原面板等待窗口。
+Driver 的只读观测与选择复用同一个 AX 面板查找器。生命周期必须 absent →
+present → absent；窗口/sheet 数量只是其它窗口诊断，不能替代面板观测。
+需要未独立取得资格的 native file panel、permission sheet、physical hover/drag
+或 native-focus proof 时，Gate 进入 `exclusive-native-input`；本地执行必须同时声明
 `isolated-gui-session`，否则在 OS mutation 前 fail closed。
 
 ### 1.6 Linux Candidate Cell Preflight Baseline
@@ -260,6 +366,21 @@ Provisioner prepares durable resources
   quarantine，不得由cleanup错误地释放回共享pool。
 - Mobile Gate只把`device_broker` constructor注入替换为Core child client adapter；
   产品variant、assertion和evidence语义不变。
+- Current-Profile Chat Provisioner注册`chat.runtime-account-login`，在parent保留
+  符合生产signup规则的run-generated密码。Handler只接受已绑定actor的现存Native
+  WebDriver session，复验canonical Station后调用现有login harness；child只收到
+  authentication结果。借用session不创建或删除session，secret不经channel输出，
+  仍参与Evidence redaction且在context关闭时zeroize。Child消费typed client已投影的
+  结果；两端首次认证完成即关闭channel，后续restart使用保留的产品session。
+- Desktop build owner在Make导出的tool path前统一放置已选Python interpreter目录，
+  去重后才计算environment identity；Python纳入tool identity。Make与Cell使用相同
+  interpreter时复用同一源码构建，实际source/tool/config变化仍使receipt失效。
+- Desktop build的成功frontend stage独立保留receipt，绑定完整candidate identity、
+  非空且不含symlink的dist输出清单、逐文件hash及原producer耗时/日志。Rust失败
+  不删除已成功stage；后续request只有复验相同输入和全部输出才attach复用。
+  frontend失败、source drift或产物改变必须重建；最终binary仍由Cargo产生，并在
+  source和frontend输出复查后原子发布完整receipt。阶段复用不扩大request预算，
+  不发布失败binary，不把build checkpoint视作product或Gate PASS。
 - 无launch context的现有Gate保持当前执行路径；不得为它们创建空context或隐式
   capability。
 

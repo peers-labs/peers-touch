@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from tooling.acceptance.core import AcceptanceGate, GateError
+from tooling.acceptance.core import AcceptanceGate, BlockedError, GateError
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -129,10 +129,17 @@ class LinuxDesktopInstallGate(AcceptanceGate):
 
     def run(self) -> dict[str, Any]:
         if not sys.platform.startswith("linux"):
-            raise GateError("Linux Desktop install proof requires a Linux host")
+            raise BlockedError(
+                reason="Linux Desktop install proof requires a Linux host",
+                resource="desktop-linux-install:host",
+            )
         if not os.environ.get("DISPLAY", "").strip():
-            raise GateError(
-                "Linux Desktop install proof requires an active graphical DISPLAY"
+            raise BlockedError(
+                reason=(
+                    "Linux Desktop install proof requires an active graphical "
+                    "DISPLAY"
+                ),
+                resource="desktop-linux-install:display",
             )
 
         source_commit = _git("rev-parse", "HEAD")
@@ -140,8 +147,12 @@ class LinuxDesktopInstallGate(AcceptanceGate):
             raise GateError("Linux Desktop install proof requires a Git commit")
         source_status = _git("status", "--porcelain=v1", "--untracked-files=no")
         if source_status:
-            raise GateError(
-                "Linux Desktop install proof requires a clean tracked source tree"
+            raise BlockedError(
+                reason=(
+                    "Linux Desktop install proof requires a clean tracked source "
+                    "tree"
+                ),
+                resource="desktop-linux-install:source",
             )
 
         with tempfile.TemporaryDirectory(

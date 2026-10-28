@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from tooling.acceptance.core import AcceptanceGate, GateError
+from tooling.acceptance.core.launch_context import EphemeralGateClient
 from tooling.acceptance.drivers.native import resolve_native_desktop_runtime
 from tooling.acceptance.gates.chat.native_two_client_runner import (
     NativeTwoClientGate,
@@ -35,18 +36,30 @@ class NativeSubmittedCommandRecoveryEntrypoint(NativeTwoClientGate):
             source_commit=source_commit,
         )
         runtime_binding.set_runtime_manifest(manifest)
+        login_client = EphemeralGateClient.from_environment()
+        if login_client is None:
+            raise GateError("Current-profile accounts require their runtime login capability")
         super().__init__(
             manifest=manifest,
             actor_manifest=actor_manifest,
             runtime_binding=runtime_binding,
             gate_id=self.gate_id,
             allow_existing_fixture=True,
+            account_login_client=login_client,
         )
 
 
 def main() -> int:
     gate: AcceptanceGate = NativeSubmittedCommandRecoveryEntrypoint()
-    return gate.execute()
+    try:
+        result = gate.execute()
+    finally:
+        if gate.account_login_client is not None:
+            gate.account_login_client.close()
+    if result:
+        return result
+    from tooling.acceptance.gates.chat.native_submitted_command_recovery_e2e import main as validate
+    return validate()
 
 
 if __name__ == "__main__":

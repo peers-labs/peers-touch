@@ -74,6 +74,8 @@ class StationResetAuthorityTest(unittest.TestCase):
         self.assertIn("--reset-scope", command)
         self.assertEqual(options["pass_fds"], (read_fd,))
         self.assertEqual(options["cwd"], Path("/repo"))
+        self.assertGreater(options["timeout"], 0)
+        self.assertLessEqual(options["timeout"], 10)
 
     def test_rejects_non_current_or_mismatched_receipt(self) -> None:
         read_fd, write_fd = os.pipe()

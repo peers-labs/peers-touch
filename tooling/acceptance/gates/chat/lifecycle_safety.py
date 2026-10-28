@@ -9,6 +9,8 @@ import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from tooling.acceptance.core import AcceptanceGate
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PRODUCTION_ROOTS = (
     Path("apps/station/app/subserver/conversation"),
@@ -198,19 +200,30 @@ def scan_repository(root: Path) -> list[SafetyFinding]:
     )
 
 
+class ChatLifecycleSafetyGate(AcceptanceGate):
+    gate_id = "chat-lifecycle-safety-e2e"
+
+    def __init__(self, root: Path) -> None:
+        super().__init__()
+        self.root = root
+
+    def run(self) -> dict:
+        findings = scan_repository(self.root)
+        self.report.runtime["findings"] = [asdict(finding) for finding in findings]
+        self.assert_condition(
+            "no-debug-egress-or-fabricated-identity",
+            not findings,
+            json.dumps(self.report.runtime["findings"], sort_keys=True),
+        )
+        return {"sourceRoot": str(self.root)}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     args = parser.parse_args()
 
-    findings = scan_repository(args.root.resolve())
-    payload = {
-        "gate": "chat-lifecycle-safety-e2e",
-        "status": "PASS" if not findings else "FAIL",
-        "findings": [asdict(finding) for finding in findings],
-    }
-    print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0 if not findings else 1
+    return ChatLifecycleSafetyGate(args.root.resolve()).execute()
 
 
 if __name__ == "__main__":
