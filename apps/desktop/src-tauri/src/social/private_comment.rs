@@ -977,14 +977,18 @@ impl<'a> PrivateCommentOrchestrator<'a> {
             Err(error) if error.http_status == Some(404) => {
                 // An unresolved command may not have committed yet. Absence
                 // denies only an already acquired resource, not a future retry.
-                let acquired = self.with_current_store("COMMENT_READ_POLICY_UNAVAILABLE", |store| {
-                    if store.comment_projection(&draft.post_id, &comment_id)?.is_some() {
-                        store.purge_private_comment_material(&draft.post_id, &comment_id)?;
-                        Ok(true)
-                    } else {
-                        Ok(false)
-                    }
-                })?;
+                let acquired =
+                    self.with_current_store("COMMENT_READ_POLICY_UNAVAILABLE", |store| {
+                        if store
+                            .comment_projection(&draft.post_id, &comment_id)?
+                            .is_some()
+                        {
+                            store.purge_private_comment_material(&draft.post_id, &comment_id)?;
+                            Ok(true)
+                        } else {
+                            Ok(false)
+                        }
+                    })?;
                 if acquired {
                     let failure = PrivateCommentFailure {
                         state: CommentState::ParentUnavailable,
@@ -2223,8 +2227,8 @@ impl From<String> for PrivateCommentFailure {
 mod tests {
     use super::*;
     use crate::application::station_runtime::client::{
-        StationClient, StationRequest, StationRequestExecutor, StationRequestScope, StationResponse,
-        StationTransportError,
+        StationClient, StationRequest, StationRequestExecutor, StationRequestScope,
+        StationResponse, StationTransportError,
     };
     use crate::secure_content::station_trust::TrustedStationSigningKey;
     use crate::secure_content::{SecureContentSession, SecureContentSessionKey};
@@ -2263,7 +2267,10 @@ mod tests {
     struct CommentReadStatus(u16);
 
     impl StationRequestExecutor for CommentReadStatus {
-        fn execute(&self, request: StationRequest) -> Result<StationResponse, StationTransportError> {
+        fn execute(
+            &self,
+            request: StationRequest,
+        ) -> Result<StationResponse, StationTransportError> {
             assert_eq!(request.method, reqwest::Method::GET);
             assert!(request.path_and_query.contains("/comments/"));
             assert_eq!(request.expected_scope, self.active_scope());

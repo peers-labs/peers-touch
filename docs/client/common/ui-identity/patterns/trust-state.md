@@ -1,8 +1,12 @@
-# Trust State Pattern
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-12
+review-cadence: semiannual
+next-review: 2027-04-27
+---
 
-> Status: Shared UI pattern for trust, identity, privacy, and policy states.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-10-12.
+# Trust State Pattern
 
 ## 1. Purpose
 

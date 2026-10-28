@@ -1,8 +1,12 @@
-# Social UI Identity Validation Examples
+---
+status: active
+owner: Client Platform Team
+updated: 2026-06-18
+review-cadence: semiannual
+next-review: 2027-04-27
+---
 
-> Status: Validation cases for Social UI Identity.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-18.
+# Social UI Identity Validation Examples
 
 ## 1. Purpose
 

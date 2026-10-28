@@ -1,8 +1,12 @@
-# UI Identity Components
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-17
+review-cadence: quarterly
+next-review: 2027-01-27
+---
 
-> Status: Canonical shared component identity contract.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-10-17.
+# UI Identity Components
 
 ## 1. Purpose
 

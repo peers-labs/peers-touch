@@ -1,8 +1,17 @@
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-27
+review-cadence: quarterly
+next-review: 2027-01-27
+related:
+  - docs/client/common/ux-design-methodology.md
+  - docs/client/common/ui-identity/component-spec-map.md
+---
+
 # Client UI Identity
 
-> Status: Canonical client-level UI identity contract.
 > Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-18.
 
 ## 1. Purpose
 
@@ -65,7 +74,8 @@ recurring workflow surfaces:
 9. [frontend-component-tree.md](./frontend-component-tree.md) — Frontend component tree, alive policy, render boundary, and jank-prevention standard.
 10. [frontend-component-tree-registry.md](./frontend-component-tree-registry.md) — Alive / non-alive / lazy / LRU registry for primary modules, settings, applets, and large content surfaces.
 11. [review-checklist.md](./review-checklist.md) — UI review checklist for humans and AI agents.
-12. [new-identity.md](./new-identity.md) — Structured Expressive Minimalism 的方向来源与迁移背景；规范性工艺要求已收敛到 `craft-quality.md`。
+12. [component-spec-map.md](./component-spec-map.md) — component→token→value benchmarking map (skeleton/inventory for the full component contract).
+13. [new-identity.md](./new-identity.md) — Structured Expressive Minimalism 的方向来源与迁移背景；规范性工艺要求已收敛到 `craft-quality.md`。
 
 ## 5. Module Contracts
 
@@ -94,6 +104,7 @@ Patterns are reusable surface contracts across modules:
 - [feed.md](./patterns/feed.md) — activity feed surfaces.
 - [composer.md](./patterns/composer.md) — post, reply, prompt, and message composition surfaces.
 - [trust-state.md](./patterns/trust-state.md) — identity, station, audience, moderation, permission, and risk states.
+- [optimistic-commit.md](./patterns/optimistic-commit.md) — immediate local preview, real progress, authoritative swap, and rollback for visible commits/media uploads.
 
 ## 7. Implementation Rules
 
@@ -124,3 +135,46 @@ Before editing client UI:
 - [ ] Validate material keyboard, touch, assistive-technology,
   localization-expansion, reduced-motion, and performance paths.
 - [ ] If a screenshot reveals a reusable issue, follow `docs/knowledge/playbooks/ux-case-to-contract.md`.
+
+## 9. Doc metadata and review cadence
+
+Contracts drift when they have no owner and no re-read date. Every contract
+document in this directory and the client-level contracts under
+`docs/client/common/*.md` carries one YAML frontmatter block so staleness is
+machine-checkable:
+
+```yaml
+---
+status: active | draft | superseded-by:<relative-path>
+owner: <owning team>
+updated: YYYY-MM-DD          # last content change
+review-cadence: quarterly | semiannual | annual | on-change
+next-review: YYYY-MM-DD      # required unless cadence is on-change or status is superseded
+related:                     # optional cross-references
+  - <repo path or doc>
+---
+```
+
+Cadence assignment:
+
+| Cadence | Applies to |
+| --- | --- |
+| `quarterly` | canonical core contracts (this README, foundations, tokens, layout, components, interaction, accessibility, craft-quality, review-checklist), the UX methodology, and base |
+| `semiannual` | shared patterns and module contracts |
+| `annual` | long-lived references/registries that change with features |
+| `on-change` | inventories/registries updated as part of feature work, and historical direction docs |
+
+Rules:
+
+- Editing a contract bumps `updated`; a normative change also advances
+  `next-review` by the cadence. Do not backfill an invented creation date.
+- A past `next-review` date means "re-read and confirm or correct"; it does
+  not block merges but must be cleared during the next contract-affecting
+  change.
+- Superseded contracts point at their replacement with
+  `status: superseded-by:<path>` and leave a pointer instead of being deleted.
+- Enforcement: `tooling/scripts/review/doc-review-cadence.sh`
+  (`--warn-only` for advisory runs); it is part of the review pipeline in
+  `tooling/scripts/review/run.sh`. Operational knowledge
+  (`docs/knowledge/`) keeps its own frontmatter contract and adds the same
+  cadence fields via its template.

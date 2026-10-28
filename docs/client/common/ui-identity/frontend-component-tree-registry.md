@@ -1,10 +1,11 @@
-# Frontend Component Tree Registry
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-27
+review-cadence: on-change
+---
 
-> **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-10-18
-> **Owner**: Client Platform Team
-> **Module**: `docs/client/common/ui-identity/`
+# Frontend Component Tree Registry
 
 ---
 

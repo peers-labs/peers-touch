@@ -1,12 +1,33 @@
-# UI Identity Tokens
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-27
+review-cadence: quarterly
+next-review: 2027-01-27
+related:
+  - docs/client/common/ui-identity/component-spec-map.md
+  - docs/client/common/ui-identity/components.md
+---
 
-> Status: Canonical token contract for client UI identity.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-18.
+# UI Identity Tokens
 
 ## 1. Purpose
 
-This document defines token intent. Concrete values may live in theme code, but implementation must preserve these roles.
+This document is the **value layer** of the UI contract. It defines token
+roles and, where a value has been normalized, the concrete reference value
+(duration, easing curve, size). The remaining concrete color/size values are
+being promoted from theme code into this file incrementally; the inventory
+and fill status live in [component-spec-map.md](./component-spec-map.md).
+
+Rules:
+
+- Concrete theme code is **derived from** the reference values here; the
+  library (LobeUI/antd) seed is the reference implementation, not a license
+  to invent per-surface values.
+- A deviation from a reference value is registered in this file or in the
+  relevant component spec, never introduced as a one-off inline style.
+- This file fixes roles and reference values; module contracts may narrow
+  usage but must not redefine them.
 
 Tokens prevent pages from mixing LobeUI defaults, antd defaults, and one-off inline styles into one inconsistent visual language.
 
@@ -129,15 +150,31 @@ Rules:
 
 ## 8. Motion Roles
 
-| Role             | Meaning                    |
-| ---------------- | -------------------------- |
-| `motion.instant` | no perceptible delay       |
-| `motion.fast`    | hover, press, small state  |
-| `motion.normal`  | panel, popover, tab switch |
-| `motion.slow`    | major route transition     |
+| Role             | Meaning                    | Reference duration | antd token            |
+| ---------------- | -------------------------- | ------------------ | --------------------- |
+| `motion.instant` | no perceptible delay       | 0ms                | —                     |
+| `motion.fast`    | hover, press, small state  | 100ms              | `motionDurationFast`  |
+| `motion.normal`  | panel, popover, tab switch | 200ms              | `motionDurationMid`   |
+| `motion.slow`    | major route transition     | 300ms              | `motionDurationSlow`  |
+
+Easing curves (reference values are the antd v6 seed; use the matching
+antd token where one exists, never a hand-written cubic-bezier in component
+code):
+
+| Role                | Curve                              | Use                                        |
+| ------------------- | ---------------------------------- | ------------------------------------------ |
+| `motion.ease.standard` | `cubic-bezier(0.645, 0.045, 0.355, 1)` | default enter/exit and continuous state reveal (`motionEaseInOut`) |
+| `motion.ease.out`      | `cubic-bezier(0.215, 0.61, 0.355, 1)`  | elements entering / progress arriving (`motionEaseOut`) |
+| `motion.ease.emphasized` | `cubic-bezier(0.78, 0.14, 0.15, 0.86)` | deliberate, high-attention transitions only (`motionEaseInOutCirc`) |
+| `motion.ease.overshoot` | `cubic-bezier(0.12, 0.4, 0.29, 1.46)` | rare spring/overshoot affordance; never for dismissal or data (`motionEaseOutBack`) |
 
 Rules:
 
+- Pick duration and easing by role; raw millisecond values and inline
+  cubic-beziers in component code are defects.
+- Continuous reveal driven by real progress (e.g. an upload fill) uses
+  `motion.fast` linear interpolation between samples; it is not an enter/exit
+  transition. See [patterns/optimistic-commit.md](./patterns/optimistic-commit.md).
 - Social reading surfaces should avoid decorative motion.
 - Loading and optimistic updates must be understandable even if motion is disabled.
 - Focus and keyboard transitions must not depend on animation.

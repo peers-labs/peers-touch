@@ -1,8 +1,12 @@
-# UI Identity Accessibility
+---
+status: active
+owner: Client Platform Team
+updated: 2026-06-18
+review-cadence: quarterly
+next-review: 2027-01-27
+---
 
-> Status: Canonical accessibility contract for client UI identity.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-18.
+# UI Identity Accessibility
 
 ## 1. Purpose
 

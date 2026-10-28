@@ -1,8 +1,12 @@
-# Auth UI Identity
+---
+status: active
+owner: Client Platform Team
+updated: 2026-06-20
+review-cadence: semiannual
+next-review: 2027-04-27
+---
 
-> Status: Canonical module UI identity for sign-in, account selection, and station handoff.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-20.
+# Auth UI Identity
 
 ## 1. Purpose
 

@@ -118,19 +118,29 @@ fn private_social_search_duplicate_projection_preserves_read_revision() {
     commit_comment(&store, "post-1", "comment-1", "needle");
     assert_eq!(store.search_revision().unwrap(), revision);
     assert_eq!(
-        store.search_read_resources(&references, &|| Ok(())).unwrap().len(),
+        store
+            .search_read_resources(&references, &|| Ok(()))
+            .unwrap()
+            .len(),
         2
     );
     commit_post(&store, "post-1", 1, "changed");
     assert_ne!(store.search_revision().unwrap(), revision);
     assert_eq!(
-        store.with_search_revision(&revision, || Ok(())).unwrap_err(),
+        store
+            .with_search_revision(&revision, || Ok(()))
+            .unwrap_err(),
         SearchError::SourceChanged
     );
     store.mark_private_resource_purge_pending("post-1").unwrap();
     assert!(store
         .commit_comment_root(
-            "content-comment-1", 1, "post-1", "comment-1", &[8; 32], None,
+            "content-comment-1",
+            1,
+            "post-1",
+            "comment-1",
+            &[8; 32],
+            None,
             &comment("post-1", "comment-1", 1, "needle"),
         )
         .is_err());

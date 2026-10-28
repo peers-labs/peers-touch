@@ -1,6 +1,11 @@
-# Client Common: GlobalContext Shared Semantics
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-27
+review-cadence: on-change
+---
 
-> Platform-level source for what `GlobalContext` means as a cross-client shared abstraction, and where its boundaries stop.
+# Client Common: GlobalContext Shared Semantics
 
 ---
 

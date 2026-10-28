@@ -1,8 +1,12 @@
-# Feed Pattern
+---
+status: active
+owner: Client Platform Team
+updated: 2026-06-18
+review-cadence: semiannual
+next-review: 2027-04-27
+---
 
-> Status: Shared UI pattern for activity feeds.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-18.
+# Feed Pattern
 
 ## 1. Purpose
 

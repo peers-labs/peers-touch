@@ -58,6 +58,7 @@ export VITE_PORT=3000
 | `review/code_structure_decision.py` | 推荐 | 准备、记录并验证结构审查 verdict | 仅需选择 `--range`、`--path [--depth]` 或 `--pr`；自动派生文件、排除项、signals、source identity、rubric hash 与逐文件 coverage，并写入外部 Evidence Store |
 | `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错及已退役产品标识（tracked 内容与路径）；无 Proto diff 时仅允许与隔离目录内 canonical Mobile Web regeneration 完全一致的生成物变更 |
 | `review/knowledge-match.sh` | 推荐 | 匹配 `docs/knowledge/` 的 `owns:` | 输出 PR 必读 invariant / pitfall / playbook，并支持 strict 新鲜度校验 |
+| `review/doc-review-cadence.sh` | 推荐 | 校验客户端契约文档的 frontmatter 与复审周期 | 检查 `docs/client/common` 契约的 `owner/review-cadence/next-review`，报告缺失字段与过期文档；`--warn-only` 仅提示 |
 | `review/skill-check.sh` | 推荐 | 校验 Review Skill 完整性与新鲜度 | 检查 skill 结构、上游文档 hash、golden fixtures 和危险指令 |
 | `agent-integration-control.py` | 推荐 | 通过 `make skills IDE=<host>` 投影当前 worktree 的 Skills 与可选提示 Hook | 只修改选定根；Hook 失败不撤销 Skills，不读取任务或会话 authority |
 | `agent-integration-audit.py` | 推荐 | 分别审计当前根的 Skill 与 Hook 能力 | 校验绝对解释器、精确 Hook 原文与受限 PATH 回放；无 Hook 为降级而非研发准入失败 |

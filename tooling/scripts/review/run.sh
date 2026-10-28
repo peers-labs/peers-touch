@@ -95,6 +95,14 @@ else
   tooling/scripts/review/knowledge-match.sh --range "$diff_range"
 fi
 
+echo
+echo "== Doc review cadence =="
+if [[ "$strict_knowledge" -eq 1 ]]; then
+  tooling/scripts/review/doc-review-cadence.sh
+else
+  tooling/scripts/review/doc-review-cadence.sh --warn-only
+fi
+
 if ! changed_for_skill="$(git diff --name-only "$diff_range" --)"; then
   echo "review run: invalid or unreadable git range: $diff_range" >&2
   exit 1

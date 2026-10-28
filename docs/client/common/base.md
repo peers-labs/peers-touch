@@ -1,9 +1,12 @@
-# Client Common Architecture
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-17
+review-cadence: quarterly
+next-review: 2027-01-27
+---
 
-> **Status**: active
-> **Version**: v2.1
-> **Updated**: 2026-10-17
-> **Owner**: Client Platform Team
+# Client Common Architecture
 
 ---
 

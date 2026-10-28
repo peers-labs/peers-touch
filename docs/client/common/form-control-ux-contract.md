@@ -1,8 +1,12 @@
-# Form Control UX Contract
+---
+status: active
+owner: Client Platform Team
+updated: 2026-06-16
+review-cadence: semiannual
+next-review: 2027-04-27
+---
 
-> Status: Canonical client-level contract.
-> Audience: Desktop, Mobile, reviewers, and AI agents generating form UI.
-> Updated: 2026-06-16.
+# Form Control UX Contract
 
 ## 1. Purpose
 

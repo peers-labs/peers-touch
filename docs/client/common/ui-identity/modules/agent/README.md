@@ -1,8 +1,12 @@
-# Agent UI Identity
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-27
+review-cadence: semiannual
+next-review: 2027-04-27
+---
 
-> Status: active module refinement.
-> Inherits: `docs/client/common/ui-identity/`.
-> Applies to: Agent Chat, Agent Profile, Atelier, Atelier orchestration mode, and shared Agent rails.
+# Agent UI Identity
 
 ## Product Identity
 
@@ -68,7 +72,7 @@ Desktop Shell
 - Attachments remain bound to the owning Agent/topic before send and become readable message metadata after send; they must not disappear merely because the file chooser closed.
 - Profile follows the measured reference identity grid: a 64px left track, 12px column gap, and one right content track. The 36px Back button and 64px avatar share the same left edge; the avatar has no nested button frame and shares its top edge with the 64px description field. Name and description share the same left edge. SOUL/AGENTS editors fill the remaining desktop height and stack on narrow containers.
 - Autosave feedback is transient Shell toast feedback, never a persistent line that changes the identity row height. Successful and failed identity, document, avatar, extension, and Provider saves use the same LobeUI notification owner at the Chat-standard bottom-right placement.
-- Agent avatar is one persisted identity value (`initial | emoji | image`) projected consistently into roster and Profile. Upload validates image type and 2 MB size, previews before Save, and preserves the old value on Cancel.
+- Agent avatar is one persisted identity value (`initial | emoji | image`) projected consistently into roster and Profile. Upload validates image type and 2 MB size, previews before Save, and preserves the old value on Cancel. An immediate preview with progress on production media uploads follows [../../patterns/optimistic-commit.md](../../patterns/optimistic-commit.md).
 - Profile does not own model configuration. Provider→Models is the model directory source of truth; Settings owns the global default and a new Topic inherits it. The composer exposes the same searchable, collapsible Provider tree for an optional Topic-local override.
 - Provider Settings keeps Direct and CLI profiles in one mixed list. Type is chosen only inside Add Provider; there are no persistent Direct/CLI tabs. `Show usable only` defaults on, persists the user's choice, and limits the list to enabled, configured providers. Selecting a row mounts exactly one schema: Direct owns API key/base URL/models, while CLI owns a Station-registered adapter, default model, startup args, environment, check/restore/save, and an on-demand Advanced subtree. Both kinds can be disabled. Provider and model availability has one shared owner consumed by Settings and the composer, so disabled entries leave the composer tree immediately and an invalid current selection projects to an available model. AI / Models owns only the default-model selector and does not duplicate the Provider model tree. Registered commands and isolated workspace policy are read-only, and arbitrary binary paths or shell templates are not client inputs.
 - Profile Extensions shows only capabilities already bound to that Agent. Each Skills/MCP group exposes one icon-only `+` action with tooltip/ARIA; the Settings-owned catalog opens only after that action, selection adds one bound row, and that row owns enable/disable and remove.

@@ -1,8 +1,12 @@
-# Composer Pattern
+---
+status: active
+owner: Client Platform Team
+updated: 2026-06-18
+review-cadence: semiannual
+next-review: 2027-04-27
+---
 
-> Status: Shared UI pattern for composition surfaces.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-18.
+# Composer Pattern
 
 ## 1. Purpose
 
@@ -77,6 +81,10 @@ slab, and never a surface glued to one window edge:
 - Audience/target selection must survive failure.
 - Retry should be local to the composer.
 - Sensitive submissions must not show false success before server acknowledgement.
+- Media upload that previews immediately and reports progress follows
+  [optimistic-commit.md](./optimistic-commit.md) (real byte progress,
+  authoritative swap, rollback, reduced-motion semantics); do not redefine
+  these per composer.
 
 ## 7. Incomplete Capability Rules
 

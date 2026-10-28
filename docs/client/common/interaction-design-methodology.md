@@ -1,8 +1,15 @@
-# Client Interaction Design Methodology
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-22
+review-cadence: quarterly
+next-review: 2027-01-27
+related:
+  - docs/client/common/ux-design-methodology.md
+  - docs/client/common/ui-identity/README.md
+---
 
-> Status: Canonical client-level interaction methodology.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-10-22.
+# Client Interaction Design Methodology
 
 ## 1. Purpose
 

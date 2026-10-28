@@ -1,8 +1,15 @@
-# UI Identity Layout
+---
+status: active
+owner: Client Platform Team
+updated: 2026-10-27
+review-cadence: quarterly
+next-review: 2027-01-27
+related:
+  - docs/client/common/ui-identity/review-checklist.md
+  - docs/client/common/ui-identity/components.md
+---
 
-> Status: Canonical layout contract for client UI identity.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-18.
+# UI Identity Layout
 
 ## 1. Purpose
 
@@ -55,6 +62,27 @@ Rules:
   1 CSS pixel across wide/narrow, mixed action sets, multiline content,
   metadata expansion and state transitions. Also inspect real screenshots
   for optical balance; do not encode literal screenshot coordinates.
+
+### 3.2 Multi-phase overlay geometry
+
+A dialog/sheet that walks through phases (e.g. QR → approval → processing →
+complete) must keep one constant geometry; phase content swapping height is
+the modal equivalent of a shifting row and is a defect.
+
+Rules:
+
+- Reserve the **terminal** geometry up front. All phases render inside one
+  fixed-size stage using absolutely-positioned layers of identical bounds;
+  only one phase layer is in the layout flow at a time.
+- Status/error text occupies one reserved line (error merges into the status
+  slot, never appends a second row).
+- The footer action area reserves the real button height even when no
+  action is available in the current phase; appearing/disappearing buttons
+  must not grow or shrink the overlay.
+- Verify with measured geometry across every phase transition, not a single
+  state: the overlay width/height must be identical for all phases (the
+  device-link modal is the reference, constant 360×497). See
+  [review-checklist.md §13](./review-checklist.md#13-geometric-measurement-gate).
 
 ## 4. Header And CTA
 

@@ -1,8 +1,12 @@
-# Client UX Design Methodology
+---
+status: active
+owner: Client Platform Team
+updated: 2026-06-09
+review-cadence: quarterly
+next-review: 2027-01-27
+---
 
-> Status: Canonical client-level methodology.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-09.
+# Client UX Design Methodology
 
 ## 1. Purpose
 
