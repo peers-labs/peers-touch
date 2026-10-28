@@ -1,6 +1,6 @@
 use std::io::Read;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use prost::Message;
@@ -284,6 +284,81 @@ impl SecureContentTransport {
         post_id: &str,
     ) -> Result<social::GetMomentResourceResponse, NativeTransportError> {
         self.get_proto(&format!("/api/v1/social/moments/{post_id}"), None)
+    }
+
+    /// One read-only batch, bounded by the caller's existing query deadline.
+    pub(crate) fn check_moment_read_policy(
+        &self,
+        request: &social::CheckMomentReadPolicyRequest,
+        deadline: Instant,
+        check: &(dyn Fn() -> Result<(), String> + Sync),
+    ) -> Result<social::CheckMomentReadPolicyResponse, NativeTransportError> {
+        check().map_err(cancelled_error)?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() || !self.session.search_is_authorized() {
+            return Err(cancelled_error("private Social read deadline expired"));
+        }
+        if request.targets.is_empty() || request.targets.len() > super::search::SEARCH_BATCH_MAX {
+            return Err(invalid_local_request(
+                "private Social policy batch exceeds its bound",
+            ));
+        }
+        require_authenticated_station_transport(self.session.station_client())
+            .map_err(invalid_local_request)?;
+        let guard = self.session.begin_request().map_err(cancelled_error)?;
+        let mut headers = proto_headers()?;
+        headers.insert(
+            AUTHORIZATION,
+            header_value(format!("Bearer {}", guard.token()))?,
+        );
+        headers.insert("x-device-id", header_value(&self.session.key.device_id)?);
+        let cancellation = self.session.request_cancellation();
+        let request = StationRequest {
+            method: reqwest::Method::POST,
+            path_and_query: "/api/v1/social/moments/read-policy".to_string(),
+            headers,
+            body: StationRequestBody::Bytes(request.encode_to_vec()),
+            timeout: remaining,
+            admission_timeout: remaining.min(SECURE_CONTENT_ADMISSION_TIMEOUT),
+            traffic_class: TrafficClass::Interactive,
+            route_security: StationRouteSecurity::HttpOrHttps,
+            route_policy: crate::application::station_runtime::client::StationRoutePolicy::Auto,
+            replay_policy: ReplayPolicy::Never,
+            cancellation: cancellation.clone(),
+            expected_scope: Some(self.session.station_scope()),
+        };
+        // Station admission and response have separate budgets. This bounded
+        // watcher cancels both at the shared deadline or query cancellation.
+        let result = std::thread::scope(|scope| {
+            let (stop, stopped) = std::sync::mpsc::channel::<()>();
+            let session = &self.session;
+            scope.spawn(move || loop {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() || !session.search_is_authorized() || check().is_err() {
+                    cancellation.cancel();
+                    break;
+                }
+                match stopped.recv_timeout(remaining.min(Duration::from_millis(10))) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                }
+            });
+            let result = self
+                .session
+                .station_client()
+                .execute_raw(request)
+                .map_err(|error| station_client_error(error, RequestCommitSemantics::ReadOnly))
+                .and_then(|response| {
+                    decode_proto_response(response, RequestCommitSemantics::ReadOnly)
+                });
+            drop(stop);
+            result
+        });
+        check().map_err(cancelled_error)?;
+        if Instant::now() >= deadline || !self.session.search_is_authorized() {
+            return Err(cancelled_error("private Social read deadline expired"));
+        }
+        result
     }
 
     pub fn get_actor_federation_profile(
@@ -574,6 +649,12 @@ fn station_client_error(
         },
         _ => NativeErrorDisposition::Terminal,
     };
+    tracing::warn!(
+        transport_error_kind = ?error.kind,
+        disposition = ?disposition,
+        mutation = matches!(semantics, RequestCommitSemantics::MayCommit),
+        "secure content Station request failed"
+    );
     NativeTransportError {
         http_status,
         stable_code: error_model::ErrorCode::Undefined as i32,

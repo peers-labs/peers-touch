@@ -7,7 +7,7 @@
  * lists are bounded.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, Checkbox, Empty, Input, List, Modal, Radio, Spin, Tag, Typography } from 'antd';
 import { ArrowLeft, Ban, Check, ChevronRight, Globe, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 
@@ -62,6 +62,7 @@ interface ContactsPageProps {
   readonly onOpenOverlay: (route: MobileOverlayRoute) => void;
   readonly onCloseOverlay: () => void;
   readonly onBack: () => void;
+  readonly searchEntry?: ReactNode;
 }
 
 export function ContactsPage(props: ContactsPageProps) {
@@ -85,6 +86,7 @@ function ContactsPageInner({
   onOpenOverlay,
   onCloseOverlay,
   onBack,
+  searchEntry,
 }: ContactsPageProps) {
   const { t } = useMobileI18n();
 
@@ -502,6 +504,7 @@ function ContactsPageInner({
     <div className="page-container" data-product-surface="contacts.list">
       <header className="page-header">
         <h1 className="header-title">{t('mobile.contacts.title')}</h1>
+        {searchEntry}
         <button
           className="header-action"
           type="button"

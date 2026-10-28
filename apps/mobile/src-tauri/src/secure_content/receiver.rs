@@ -144,6 +144,8 @@ pub struct PrivateReactionSummaryProjection {
 #[serde(rename_all = "camelCase")]
 pub struct PrivateMomentReadProjection {
     pub post_id: String,
+    #[serde(default)]
+    pub authority_namespace: String,
     pub content_id: String,
     pub generation: String,
     pub author_ptid: String,
@@ -560,7 +562,12 @@ pub fn decrypt_text_projection(
         (content_key, Some(stored.key_id.clone()))
     };
 
-    decrypt_text_with_content_key(response, content_key, consumed_prekey_id)
+    decrypt_text_with_content_key(
+        response,
+        content_key,
+        consumed_prekey_id,
+        &session.scope.station_peer_id,
+    )
 }
 
 pub fn decrypt_text_projection_with_recovery(
@@ -606,13 +613,14 @@ pub fn decrypt_text_projection_with_recovery(
                 message: Some("private Social recovery key is unavailable".to_string()),
             }
         })?;
-    decrypt_text_with_content_key(response, content_key, None)
+    decrypt_text_with_content_key(response, content_key, None, &session.scope.station_peer_id)
 }
 
 fn decrypt_text_with_content_key(
     response: &social::GetMomentResourceResponse,
     content_key: ContentKey,
     consumed_prekey_id: Option<String>,
+    local_station_peer_id: &str,
 ) -> Result<DecryptedPrivateTextMoment, PrivateReadError> {
     let parts = private_response_parts(response)?;
     let metadata = parts.metadata;
@@ -679,6 +687,22 @@ fn decrypt_text_with_content_key(
     Ok(DecryptedPrivateMoment {
         projection: PrivateMomentReadProjection {
             post_id: metadata.post_id.clone(),
+            authority_namespace: format!(
+                "social:{}",
+                response
+                    .explanation
+                    .as_ref()
+                    .and_then(|explanation| explanation.source.as_ref())
+                    .map(|source| source.station_peer_id.as_str())
+                    .filter(|peer| !peer.is_empty())
+                    .or_else(|| parts
+                        .verification
+                        .receiver_verified_sender_signing_key
+                        .as_ref()
+                        .map(|key| key.home_station_peer_id.as_str())
+                        .filter(|peer| !peer.is_empty()))
+                    .unwrap_or(local_station_peer_id)
+            ),
             content_id: metadata.content_id.clone(),
             generation: resource.generation.to_string(),
             author_ptid: metadata
@@ -1356,6 +1380,7 @@ fn terminal_projection(
 ) -> PrivateMomentReadProjection {
     PrivateMomentReadProjection {
         post_id: post_id.to_string(),
+        authority_namespace: String::new(),
         content_id: format!("unavailable:{post_id}"),
         generation: "0".to_string(),
         author_ptid: String::new(),

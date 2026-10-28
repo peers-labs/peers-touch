@@ -261,7 +261,7 @@ export interface MessagingServiceContract {
   ): Promise<MessagingSendOutcome>
   listMessages(
     conversationId: string,
-    options?: { beforeSequence?: number; limit?: number },
+    options?: { beforeSequence?: number; limit?: number; anchorMessageId?: string },
   ): Promise<MessagingMessagePage>
   listServiceMessages(
     conversationId: string,
@@ -292,7 +292,6 @@ export interface MessagingServiceContract {
       limit?: number
     },
   ): Promise<MessagingProjection[]>
-  openAttachment(attachmentId: string): Promise<string>
 }
 
 export type MessagingActorMembershipIntent =

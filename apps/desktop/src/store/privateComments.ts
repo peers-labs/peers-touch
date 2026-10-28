@@ -22,6 +22,14 @@ interface PrivateCommentScope {
   nativeSessionGeneration: string | null;
 }
 
+interface PrivateCommentRead {
+  scope: PrivateCommentScope;
+  cursor: string;
+  refresh: boolean;
+  anchorCommentId?: string;
+  completion: Promise<void>;
+}
+
 export interface PrivateCommentThread {
   comments: PrivateCommentProjection[];
   nextCursor: string;
@@ -46,7 +54,8 @@ interface PrivateCommentsState {
     reason: string,
     rendererGeneration: number,
   ) => Promise<void>;
-  loadComments: (postId: string, refresh?: boolean) => Promise<void>;
+  loadComments: (postId: string, refresh?: boolean, anchorCommentId?: string) => Promise<void>;
+  setCommentTarget: (postId?: string, commentId?: string) => void;
   submitComment: (
     postId: string,
     text: string,
@@ -248,6 +257,15 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
   (set, get) => {
     let draftMutationVersion = 0;
     const draftMutationVersionByPost = new Map<string, number>();
+    const commentReads = new Map<string, PrivateCommentRead>();
+    let activeTarget: { postId: string; commentId?: string } | null = null;
+    const isCurrentRead = (postId: string, read: PrivateCommentRead): boolean => {
+      const scope = get().scope;
+      return commentReads.get(postId) === read
+        && scope.actorPtid === read.scope.actorPtid
+        && scope.rendererGeneration === read.scope.rendererGeneration
+        && scope.nativeSessionGeneration === read.scope.nativeSessionGeneration;
+    };
     const markDraftMutation = (postId: string): void => {
       draftMutationVersion += 1;
       draftMutationVersionByPost.set(postId, draftMutationVersion);
@@ -405,6 +423,8 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
       ...initialData(),
 
       activateActor: (actorPtid, rendererGeneration) => {
+        activeTarget = null;
+        commentReads.clear();
         set({
           ...initialData(rendererGeneration),
           scope: {
@@ -416,6 +436,8 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
       },
 
       deactivate: (rendererGeneration) => {
+        activeTarget = null;
+        commentReads.clear();
         set(initialData(rendererGeneration));
       },
 
@@ -437,6 +459,15 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
         ) {
           return;
         }
+        const currentNativeGeneration = get().scope.nativeSessionGeneration;
+        if (
+          currentNativeGeneration
+          && compareGeneration(snapshot.sessionGeneration, currentNativeGeneration) < 0
+        ) {
+          return;
+        }
+        const replacesSession = currentNativeGeneration !== snapshot.sessionGeneration;
+        if (replacesSession) commentReads.clear();
         set((state) => {
           if (!isCurrentScope(state.scope, actorPtid, rendererGeneration)) return state;
           if (
@@ -449,6 +480,11 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
             return state;
           }
           const threadsByPost = { ...state.threadsByPost };
+          if (replacesSession) {
+            for (const [postId, thread] of Object.entries(threadsByPost)) {
+              if (thread.loading) threadsByPost[postId] = { ...thread, loading: false };
+            }
+          }
           for (const comment of snapshot.comments) {
             const thread = threadsByPost[comment.postId] ?? emptyThread();
             if (thread.state === 'COMMENT_PARENT_UNAVAILABLE') continue;
@@ -506,7 +542,25 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
         );
       },
 
-      loadComments: async (postId, refresh = false) => {
+      setCommentTarget: (postId, commentId) => {
+        const nextPostId = postId?.trim();
+        const nextCommentId = commentId?.trim() || undefined;
+        if (activeTarget?.postId === nextPostId && activeTarget?.commentId === nextCommentId) return;
+        const previous = activeTarget?.postId;
+        activeTarget = nextPostId ? { postId: nextPostId, commentId: nextCommentId } : null;
+        for (const id of new Set([previous, nextPostId])) {
+          if (!id) continue;
+          commentReads.delete(id);
+          set(state => {
+            const thread = state.threadsByPost[id];
+            return thread?.loading
+              ? { threadsByPost: { ...state.threadsByPost, [id]: { ...thread, loading: false } } }
+              : state;
+          });
+        }
+      },
+
+      loadComments: async (postId, refresh = false, anchorCommentId) => {
         const trimmedPostId = postId.trim();
         const scope = get().scope;
         const actorPtid = scope.actorPtid;
@@ -527,8 +581,73 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
           return;
         }
         const current = get().threadsByPost[trimmedPostId] ?? emptyThread();
-        if (current.loading) return;
         if (current.state === 'COMMENT_PARENT_UNAVAILABLE') return;
+        const anchor = anchorCommentId?.trim()
+          || (refresh && activeTarget?.postId === trimmedPostId ? activeTarget.commentId : undefined);
+        const replace = refresh || !!anchor;
+        const cursor = replace ? '' : current.nextCursor;
+        const pending = commentReads.get(trimmedPostId);
+        if (
+          pending
+          && isCurrentRead(trimmedPostId, pending)
+          && pending.cursor === cursor
+          && pending.refresh === replace
+          && pending.anchorCommentId === anchor
+        ) {
+          return pending.completion;
+        }
+        const completion: Promise<void> = Promise.resolve().then(async () => {
+          if (!isCurrentRead(trimmedPostId, read)) return;
+          try {
+            const page = await privateCommentsNative.list({
+              actorPtid,
+              rendererGeneration: scope.rendererGeneration,
+              postId: trimmedPostId,
+              cursor,
+              limit: 20,
+              anchorCommentId: anchor,
+            });
+            if (!isCurrentRead(trimmedPostId, read)) return;
+            applyPage(page, replace, actorPtid, scope.rendererGeneration);
+          } catch (error) {
+            if (!isCurrentRead(trimmedPostId, read)) return;
+            const nativeError = error instanceof PrivateCommentsNativeError ? error : undefined;
+            log.warn(TAG, 'private Comment list failed', {
+              postId: trimmedPostId,
+              state: nativeError?.state ?? 'COMMENT_FAILED',
+              errorCode: nativeError?.code ?? 'COMMENT_FAILED',
+            });
+            set((state) => {
+              const currentThread = state.threadsByPost[trimmedPostId] ?? emptyThread();
+              if (currentThread.state === 'COMMENT_PARENT_UNAVAILABLE') return state;
+              return {
+                threadsByPost: {
+                  ...state.threadsByPost,
+                  [trimmedPostId]: {
+                    ...currentThread,
+                    comments: nativeError?.state === 'COMMENT_PARENT_UNAVAILABLE'
+                      ? []
+                      : currentThread.comments,
+                    loading: false,
+                    loaded: true,
+                    hasMore: false,
+                    state: nativeError?.state ?? 'COMMENT_FAILED',
+                    errorCode: nativeError?.code ?? 'COMMENT_FAILED',
+                  },
+                },
+              };
+            });
+            throw error;
+          } finally {
+            if (commentReads.get(trimmedPostId) === read) {
+              commentReads.delete(trimmedPostId);
+            }
+          }
+        });
+        const read: PrivateCommentRead = {
+          scope, cursor, refresh: replace, anchorCommentId: anchor, completion,
+        };
+        commentReads.set(trimmedPostId, read);
         set((state) => ({
           threadsByPost: {
             ...state.threadsByPost,
@@ -540,45 +659,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
             },
           },
         }));
-        try {
-          const page = await privateCommentsNative.list({
-            actorPtid,
-            rendererGeneration: scope.rendererGeneration,
-            postId: trimmedPostId,
-            cursor: refresh ? '' : current.nextCursor,
-            limit: 20,
-          });
-          applyPage(page, refresh, actorPtid, scope.rendererGeneration);
-        } catch (error) {
-          if (!isCurrentScope(get().scope, actorPtid, scope.rendererGeneration)) return;
-          const nativeError = error instanceof PrivateCommentsNativeError ? error : undefined;
-          log.warn(TAG, 'private Comment list failed', {
-            postId: trimmedPostId,
-            state: nativeError?.state ?? 'COMMENT_FAILED',
-            errorCode: nativeError?.code ?? 'COMMENT_FAILED',
-          });
-          set((state) => {
-            const currentThread = state.threadsByPost[trimmedPostId] ?? emptyThread();
-            if (currentThread.state === 'COMMENT_PARENT_UNAVAILABLE') return state;
-            return {
-              threadsByPost: {
-                ...state.threadsByPost,
-                [trimmedPostId]: {
-                  ...currentThread,
-                  comments: nativeError?.state === 'COMMENT_PARENT_UNAVAILABLE'
-                    ? []
-                    : currentThread.comments,
-                  loading: false,
-                  loaded: true,
-                  hasMore: false,
-                  state: nativeError?.state ?? 'COMMENT_FAILED',
-                  errorCode: nativeError?.code ?? 'COMMENT_FAILED',
-                },
-              },
-            };
-          });
-          throw error;
-        }
+        return completion;
       },
 
       submitComment: async (postId, text, replyToCommentId, mentions = []) => {
@@ -733,6 +814,8 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
       },
 
       markParentUnavailable: (postId, errorCode = 'COMMENT_PARENT_UNAVAILABLE') => {
+        if (activeTarget?.postId === postId) activeTarget = null;
+        commentReads.delete(postId);
         set((state) => ({
           threadsByPost: {
             ...state.threadsByPost,
@@ -750,6 +833,8 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
       },
 
       clearPost: (postId) => {
+        if (activeTarget?.postId === postId) activeTarget = null;
+        commentReads.delete(postId);
         set((state) => {
           const threadsByPost = { ...state.threadsByPost };
           const activeDraftByPost = { ...state.activeDraftByPost };
@@ -761,6 +846,8 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
       },
 
       reset: () => {
+        activeTarget = null;
+        commentReads.clear();
         draftMutationVersion += 1;
         draftMutationVersionByPost.clear();
         set(initialData());

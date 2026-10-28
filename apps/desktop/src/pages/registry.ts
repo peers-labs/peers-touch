@@ -9,7 +9,6 @@
 // (so the boot pipeline can install + bootstrap them in order).
 
 import { registerHomePage } from './HomePage.descriptor';
-import { registerSearchPage } from './SearchPage.descriptor';
 import { registerSocialChatPage } from './SocialChatPage.descriptor';
 import { registerSettingsPage } from './SettingsPage.descriptor';
 import { registerAppletsPage } from './AppletsPage.descriptor';
@@ -28,7 +27,6 @@ export function registerKernelPages(): void {
   if (registered) return;
   registered = true;
   registerHomePage();
-  registerSearchPage();
   registerSocialChatPage();
   registerAgentChatPage();
   registerSettingsPage();

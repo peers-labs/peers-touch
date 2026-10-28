@@ -139,3 +139,20 @@ UNIQUE(callee_actor_ptid, call_id)
 - Endpoint 使用当前 Actor Directory 验证的 `device_id`。
 - Home Station 路由 metadata 与 crypto endpoint identity 分离。
 - Station 只持有业务路由和短时仲裁信息；private content 与媒体仍由端侧 owner 持有。
+
+## 7. Device-local attachment access
+
+`model/domain/chat/attachment.proto` 定义 `AttachmentAccessProjection`、
+`AttachmentAccessState`、`AttachmentFileActionRequest` 和
+`AttachmentFileActionResult`。这些契约仅在设备本地使用，不作为 Station API 或
+`MessagePrivateContent` 的组成部分。
+
+可见状态为 remote、downloading、verifying、ready、cancelled 和 failed。
+Ready 必须来自当前 Engine 的缓存字节校验；完成的 checkpoint 不等于缓存仍存在。
+进度统计已提交 ciphertext chunk，不以网络瞬时流量或明文文件大小虚构进度。
+投影只包含文件元信息、进度和当前 scope 下的 opaque handle/asset URL，不包含
+object key、nonce、hash commitment 或本地路径。
+
+Native 每次 external open/save 都重新验证当前 scope 和字节 commitment。
+保存的副本独立于附件 cache retention；预览状态随既有 Messaging scope 失效。
+完整使用与失败语义由 [attachment-viewing.md](./attachment-viewing.md) 定义。

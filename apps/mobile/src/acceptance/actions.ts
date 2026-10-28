@@ -1,6 +1,9 @@
-import { create, toBinary } from '@bufbuild/protobuf';
+import { create, fromJson, toBinary } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { invoke } from '@tauri-apps/api/core';
+import { SearchResponseSchema } from '../gen/proto/domain/search/search_pb';
+import { mobileSearchAcceptanceActions } from './searchActions';
+import { mobileSocialSearchAcceptanceActions } from './socialSearchActions';
 
 import {
   currentAccessGate,
@@ -102,6 +105,7 @@ import {
   updateCurrentSocialProfile,
 } from '../features/social/socialRuntime';
 import type { PeerProfile } from '../features/social/socialTypes';
+import { projectMomentsRuntimeDiagnostics } from './momentsProjection';
 import {
   ChatDraftPayloadSchema,
   MobileDraftEnvelopeV2Schema,
@@ -159,8 +163,7 @@ import {
   messagingCreateGroup,
   messagingListConversations,
   messagingListMessages,
-  messagingOpenAttachment,
-  messagingSearchMessages,
+  messagingAttachmentAccess,
   messagingSendMessage,
   messagingStageAttachment,
   messagingStatus,
@@ -825,19 +828,25 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   },
 
   'messaging.attachment.open': async (input) => {
-    const result = await messagingOpenAttachment({
-      ...requireMessagingAccount(),
+    const account = requireMessagingAccount();
+    const result = await messagingAttachmentAccess({
+      ...account,
       attachmentId: requireString(
         input?.attachmentId,
         'messaging.attachment.open.attachmentId',
       ),
     });
-    return result.state === 'ready'
+    if (result.accessHandle) {
+      await invoke('messaging_release_attachment', {
+        input: { ...account, accessHandle: result.accessHandle },
+      });
+    }
+    return result.state === 4
       ? { state: 'ready', available: true }
       : {
         state: 'pending',
         available: false,
-        nextAttemptAtUnixMs: result.nextAttemptAtUnixMs,
+        nextAttemptAtUnixMs: Number(result.nextAttemptAtUnixMs),
       };
   },
 
@@ -944,19 +953,20 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     ),
   }),
 
-  'messaging.search': async (input) => sanitizeMessagingMessages(
-    await messagingSearchMessages({
-      ...requireMessagingAccount(),
-      conversationId: requireString(
-        input?.conversationId,
-        'messaging.search.conversationId',
-      ),
-      query: requireString(input?.query, 'messaging.search.query'),
-      limit: input?.limit === undefined
-        ? undefined
-        : requirePositiveInteger(input.limit, 'messaging.search.limit'),
-    }),
-  ),
+  ...mobileSearchAcceptanceActions,
+  ...mobileSocialSearchAcceptanceActions,
+  'messaging.search': async (input) => {
+    const conversationId = requireString(input?.conversationId, 'messaging.search.conversationId');
+    const result = await mobileSearchAcceptanceActions['search.page']({
+      conversationId, query: requireString(input?.query, 'messaging.search.query'),
+      limit: input?.limit === undefined ? 50 : requirePositiveInteger(input.limit, 'messaging.search.limit'),
+    });
+    if (!result.accepted) throw new Error(result.errorCode);
+    const page = fromJson(SearchResponseSchema, result.value);
+    const ids = new Set(page.items.map(item => item.resource?.messageId || item.resource?.id));
+    const messages = await messagingListMessages({ ...requireMessagingAccount(), conversationId });
+    return sanitizeMessagingMessages(messages.filter(message => ids.has(message.messageId)));
+  },
 
   'messaging.projection.read': async (input) => {
     const account = requireMessagingAccount();
@@ -1273,7 +1283,10 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'social.reconcile': async () => reconcileSocialRuntime(),
 
-  'social.projection.read': async () => readSocialRuntimeProjection(),
+  'social.projection.read': async () => ({
+    ...readSocialRuntimeProjection(),
+    moments: projectMomentsRuntimeDiagnostics(readCurrentActiveMomentsRuntime()),
+  }),
 
   'moments.private.acceptance.prepareKeys': async () => {
     const snapshot = readPrivateMomentsSnapshot();

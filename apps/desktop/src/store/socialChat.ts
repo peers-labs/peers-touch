@@ -25,6 +25,7 @@ import {
 } from '../gen/proto/domain/chat/conversation_pb';
 import { ActorKind } from '../gen/proto/domain/actor/actor_pb';
 import { imServiceV1 } from '../services/im-service';
+import { messagingDomainRuntime } from '../messaging/runtime';
 import { shouldApplyPresenceRevision } from '../services/chatPresence';
 import type {
   MessagingLocalAttachmentIntent,
@@ -473,7 +474,7 @@ interface SocialChatState {
   setActiveTab: (tab: 'friend' | 'group') => void;
   selectSession: (ulid: string) => void;
   selectGroup: (ulid: string) => void;
-  loadMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
+  loadMessages: (ulid: string, kind?: 'friend' | 'group', anchorMessageId?: string) => Promise<void>;
   clearConversationProjection: (ulid: string) => void;
   loadOlderMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
   retryMessage: (
@@ -1363,7 +1364,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       get().markGroupRead(ulid).catch(() => {});
     },
 
-  loadMessages: async (ulid, kind) => {
+  loadMessages: async (ulid, kind, anchorMessageId) => {
     const actorPtid = currentAuthenticatedActorPtid();
     if (!actorPtid) return;
     const generation = messagingProjectionGeneration;
@@ -1380,7 +1381,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     // in the background, not a visible spinner on every tab click.
     set({ loading: false });
     try {
-      const page = await imServiceV1.messaging.listMessages(ulid);
+      const page = await imServiceV1.messaging.listMessages(ulid, { anchorMessageId });
       if (!isCurrentProjection()) return;
       const projections = page.messages;
       const serviceMessages = await fetchServiceMessageMap(ulid);
@@ -1545,6 +1546,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadOlderMessages: async (ulid, kind) => {
+    const scope = messagingDomainRuntime.requireActiveScope();
     const activeKind = kind ?? get().activeTab;
     const beforeSequence = get().messageNextBeforeSequence[ulid];
     if (!beforeSequence || !get().messageHasMore[ulid]) return;
@@ -1557,6 +1559,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       });
       const projections = page.messages;
       const serviceMessages = await fetchServiceMessageMap(ulid);
+      if (!messagingDomainRuntime.isCurrent(scope)) return;
       const olderMessages = projections.map(projection => {
         const message = projectMessagingProjection(activeKind, ulid, projection);
         const serviceMessage = serviceMessages.get(message.ulid);
@@ -1602,6 +1605,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         await get().refreshThreadCounts(ulid, rootUlids, activeKind);
       }
     } catch (error) {
+      if (!messagingDomainRuntime.isCurrent(scope)) return;
       set((state) => ({
         messageLoadingMore: { ...state.messageLoadingMore, [ulid]: false },
       }));
@@ -2610,7 +2614,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             conversationId,
             scope,
             senderPtid: message.senderPtid,
-            content: message.plaintext,
+            content: message.editedText ?? message.plaintext,
             sentAt: message.timestampUnixMs,
             conversationName: conversationName || conversationId.slice(0, 12),
             attachments: message.attachments.map(attachment => ({

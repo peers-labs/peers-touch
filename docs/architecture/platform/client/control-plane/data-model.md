@@ -1,8 +1,8 @@
 # X Config - Data Model
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-10-17 | **Updated**: 2026-10-20
+> **Version**: v2.2
+> **Created**: 2026-10-17 | **Updated**: 2026-10-24
 > **Owner**: Client Platform
 > **Module**: `apps/x-config/`
 
@@ -25,6 +25,19 @@ message XConfigSnapshotStatement {
   google.protobuf.Timestamp expires_at = 5;
   repeated EndpointSeed endpoint_seeds = 6;
   repeated ReleaseDescriptor releases = 7;
+  // field 8: directives (XCFG-D04); field 9: distribution (XCFG-D06).
+  repeated Directive directives = 8;
+  DistributionConfig distribution = 9;
+}
+
+message DistributionConfig {
+  // Ordered future-fetch origins (failover sequence); each entry passes
+  // the closed snapshot-origin admission policy.
+  repeated DistributionOrigin origins = 1;
+}
+
+message DistributionOrigin {
+  string origin = 1; // clean base URL, no path/query/fragment/credentials
 }
 ```
 
@@ -47,6 +60,8 @@ Catalog
   channel
   endpoints[]
   releases[]
+  directives[]            # XCFG-D04
+  distribution.origins[]  # XCFG-D06
 ```
 
 Endpoint rules:
@@ -66,6 +81,21 @@ Release rules:
 - SHA-256 manifest digest;
 - explicit release signing key ID;
 - no command or executable payload.
+
+Directive rules (XCFG-D04):
+
+- at most 32 directives, 16 rules per directive, 8 values per target field;
+- keys belong to the closed registry (`network.default_relay`,
+  `network.default_station`); endpoint-valued directives reference existing
+  seeds of matching kind; fallback is required and same-typed.
+
+Distribution rules (XCFG-D06):
+
+- at most 4 unique origins per snapshot in declared failover order;
+- each origin is a clean base URL under the snapshot-origin admission
+  policy: HTTPS for any host, plain HTTP only for loopback/RFC1918/
+  link-local IPv4 or IPv6 loopback; no path, query, fragment, or credentials;
+- the section is advisory transport: it never carries publisher trust.
 
 ## 3. Draft
 
@@ -222,6 +252,18 @@ XConfigCache
   expires_at
   etag?
 
+Origin set (XCFG-D06) — derived per refresh, NOT a separate persisted object:
+  advertised_origins[]   # derived from the accepted snapshot's distribution section
+  active_origin?         # in-memory diagnostic; origin serving the last accepted snapshot/304
+
+Advertised origins need no dedicated store: they are read from the
+persisted signed snapshot, so they survive restarts through the snapshot
+cache and watermark. Merge order, admission, and failover semantics are
+defined once by XCFG-D06 in `decisions.md` and by
+`packages/x-config-core/src/origins.rs` + `failover.rs` (override,
+advertised, baked anchors; dedup first occurrence; effective list capped
+at 8 after admission).
+
 StationSuggestion
   seed_id
   kind
@@ -234,9 +276,11 @@ StationSuggestion
 ```
 
 The secure watermark is `(channel, sequence, statement_sha256, signing_key_id)`.
-Cache persistence precedes watermark advancement. Cloud refresh never mutates
-verified Station entries, active route, Session, Actor, Device, or Federation
-scope.
+Cache persistence precedes watermark advancement. Advertised origins become
+visible only after the same signed acceptance; unsigned origin mutation is
+impossible.
+Cloud refresh never mutates verified Station entries, active route, Session,
+Actor, Device, or Federation scope.
 
 ## 8. State Machines
 
@@ -263,17 +307,36 @@ or independent ledger state.
 
 ### 8.2 Client Refresh
 
+Desktop construction publishes `unavailable` without storage I/O. The async
+refresh worker first resolves the secure watermark and committed local cache.
+Unknown watermark remains unknown; it must not become sequence zero.
+
 ```text
+constructed_unavailable
+  -> initializing_local (worker)
+  -> ready_local (published independently of worker I/O)
 ready_local
-  -> fetching
+  -> origin_list_built      # override ++ advertised ++ baked, validated
+  -> fetching(origin[0])
   -> verifying
   -> accepted
+  -> origins_persisted
   -> ready_current
 
-fetching -> backoff -> ready_local
-verifying -> rejected -> ready_local
+fetching(origin[i]) -> origin_unreachable -> fetching(origin[i+1])
+fetching(last) -> backoff -> ready_local
+verifying -> rejected -> fetching(next origin) | ready_local
 accepted -> persistence_failed -> ready_local
+initializing_local -> storage_denied | decode_failed
+  -> advisory_unavailable + backoff
+  -> initializing_local (later retry)
 ```
+
+A refresh round only succeeds on a snapshot that passes keyring and watermark
+checks; individual origin failures never replace the current snapshot.
+Concurrent refresh requests coalesce to the current read view. Reads do not
+wait for the initialization/refresh owner, and expiry is evaluated at read
+time. Profile and verified Station state are not part of this state machine.
 
 ## 9. Error Model
 

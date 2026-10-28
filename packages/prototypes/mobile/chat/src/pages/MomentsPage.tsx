@@ -172,7 +172,7 @@ const EXTRA_COMMENTS: MomentComment[] = Array.from({ length: 10 }, (_, index) =>
   time: `${index + 2}h`,
 }));
 
-function preparedMoments(): Moment[] {
+export function preparedMoments(): Moment[] {
   const base = demoMoments.map((moment, index) => ({
     ...moment,
     source: index === 0 ? 'alice.station' : 'bob.remote',
@@ -224,7 +224,11 @@ function preparedMoments(): Moment[] {
 export function MomentsPage({
   scenario = 'social-parity',
   onImmersiveVisibilityChange,
+  headerActions,
+  searchTarget,
 }: {
+  headerActions?: ReactNode;
+  searchTarget?: { postId: string; commentId?: string };
   scenario?: MomentsEvidenceScenario;
   onImmersiveVisibilityChange?: (visible: boolean) => void;
 }) {
@@ -270,6 +274,23 @@ export function MomentsPage({
     setExpandedCommentListId(null);
     setReactionPickerId(null);
   }, [scenario]);
+
+  useEffect(() => {
+    if (searchTarget?.commentId) setExpandedCommentListId(searchTarget.postId);
+  }, [searchTarget]);
+
+  useEffect(() => {
+    if (!searchTarget) return;
+    const post = document.querySelector<HTMLElement>(
+      `[data-moment-id="${CSS.escape(searchTarget.postId)}"]`,
+    );
+    const target = searchTarget.commentId ? post?.querySelector<HTMLElement>(
+      `[data-comment-id="${CSS.escape(searchTarget.commentId)}"]`,
+    ) : post;
+    target?.setAttribute('data-search-target', 'true');
+    target?.scrollIntoView({ block: 'center' });
+    target?.focus({ preventScroll: true });
+  }, [searchTarget, expandedCommentListId]);
 
   useEffect(() => {
     onImmersiveVisibilityChange?.(view !== 'feed');
@@ -422,6 +443,7 @@ export function MomentsPage({
       <header className="mp-header">
         <h1 className="mp-header-title">Moments</h1>
         <div className="mp-social-header-actions">
+          {headerActions}
           <IconButton label="Search people" onClick={() => navigate('search')}><Search size={19} /></IconButton>
           <IconButton label="Manage circles" onClick={() => navigate('circles')}><UsersRound size={19} /></IconButton>
           <IconButton label="New post" onClick={() => setShowComposer(true)}><ImagePlus size={20} /></IconButton>
@@ -745,7 +767,7 @@ function MomentArticle({
   const hiddenCommentCount = Math.max(0, moment.comments.length - visibleComments.length);
   const myReactions = new Set(moment.myReactions ?? []);
   return (
-    <article className="mp-social-moment">
+    <article className="mp-social-moment" data-moment-id={moment.id} tabIndex={-1}>
       <div className="mp-social-author-row">
         <button type="button" className="mp-social-author" onClick={onOpenProfile}>
           <UserSquareAvatar background={moment.avatarGradient} name={moment.name} size={42} />
@@ -884,7 +906,7 @@ function MomentArticle({
       {!hidesPlaintext && (moment.comments.length > 0 || commentComposerOpen) && (
         <section className="mp-social-comments mp-social-comments-inline" aria-label={`Comments on ${moment.name}'s Moment`}>
           {visibleComments.map((comment) => (
-            <div key={comment.id} className="mp-moment-comment">
+            <div key={comment.id} className="mp-moment-comment" data-comment-id={comment.id} tabIndex={-1}>
               <UserSquareAvatar background={comment.avatarGradient} name={comment.name} size={28} />
               <div className="mp-moment-comment-body">
                 <Text strong className="mp-moment-comment-name">{comment.name}</Text>

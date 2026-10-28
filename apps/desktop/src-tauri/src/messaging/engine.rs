@@ -97,6 +97,7 @@ use messaging_core::storage_governance::retention::{
 use messaging_core::storage_governance::{
     measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
 };
+use messaging_native_filesystem::file_access::{attachment_asset_url, AttachmentFileAccess};
 use messaging_native_filesystem::{path_ref, path_refs, NativeMessagingFilesystem};
 use prost::Message;
 use reqwest::Method;
@@ -118,8 +119,6 @@ use zeroize::Zeroizing;
 const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
 const COMMAND_PLAN_CONVERGENCE_TIMEOUT: Duration = Duration::from_secs(15);
 const COMMAND_PLAN_CONVERGENCE_INTERVAL: Duration = Duration::from_millis(200);
-const ATTACHMENT_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
-const ATTACHMENT_OPEN_RETRY_FLOOR: Duration = Duration::from_millis(10);
 const PREKEY_INVENTORY_RECONCILIATION_INTERVAL_MS: i64 = 60_000;
 const SENDER_ATTACHMENT_SOURCE_INVALID: &str = "messaging sender attachment source is invalid";
 const MEMBER_AUTHORITY_COMMAND_LIFETIME_MS: i64 = 5 * 60 * 1_000;
@@ -465,37 +464,6 @@ fn checkpoint_fresh_direct_receiver(
     Ok(bootstrapped)
 }
 
-fn drive_attachment_open<F, S>(
-    deadline: Instant,
-    mut open_once: F,
-    mut sleep: S,
-) -> Result<String, String>
-where
-    F: FnMut() -> Result<AttachmentOpenProgress, String>,
-    S: FnMut(Duration),
-{
-    loop {
-        match open_once()? {
-            AttachmentOpenProgress::Ready(path) => return Ok(path),
-            AttachmentOpenProgress::Pending {
-                next_attempt_at_unix_ms,
-            } => {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
-                    return Err(
-                        "messaging attachment download did not complete before open deadline"
-                            .to_string(),
-                    );
-                }
-                let retry_delay_ms = next_attempt_at_unix_ms
-                    .saturating_sub(now_unix_ms())
-                    .max(ATTACHMENT_OPEN_RETRY_FLOOR.as_millis() as i64);
-                sleep(Duration::from_millis(retry_delay_ms as u64).min(remaining));
-            }
-        }
-    }
-}
-
 type CoreItemConsumer = MessagingItemConsumer<MessagingStore, MlsItemProcessor<MessagingStore>>;
 
 pub struct MessagingEngine {
@@ -513,6 +481,7 @@ pub struct MessagingEngine {
     membership_transition_lock: Mutex<()>,
     prekey_maintenance: Mutex<PreKeyMaintenanceState>,
     attachment_source_lock: Mutex<()>,
+    pub(crate) attachment_file_access: AttachmentFileAccess,
     storage_governance_lock: Mutex<()>,
     attachment_transfer_control: Arc<AttachmentTransferControl>,
     runtime_consumer_epoch: Arc<AtomicU64>,
@@ -520,6 +489,10 @@ pub struct MessagingEngine {
 }
 
 impl MessagingEngine {
+    pub(crate) fn incarnation(&self) -> &str {
+        &self.consumer_id
+    }
+
     pub(crate) fn station_client(&self) -> &StationClient {
         &self.station_client
     }
@@ -767,6 +740,7 @@ impl MessagingEngine {
             attachment_source_lock: Mutex::new(()),
             storage_governance_lock: Mutex::new(()),
             attachment_transfer_control: Arc::new(AttachmentTransferControl::new()),
+            attachment_file_access: AttachmentFileAccess::default(),
             runtime_consumer_epoch: Arc::new(AtomicU64::new(0)),
             projection_notifier: Mutex::new(None),
         })
@@ -1241,6 +1215,7 @@ impl MessagingEngine {
     }
 
     pub fn request_attachment_transfer_shutdown(&self) {
+        self.attachment_file_access.revoke_all();
         self.attachment_transfer_control.request_shutdown();
     }
 
@@ -1362,12 +1337,204 @@ impl MessagingEngine {
         Ok(cleaned)
     }
 
-    pub fn open_attachment(&self, token: &str, attachment_id: &str) -> Result<String, String> {
-        drive_attachment_open(
-            Instant::now() + ATTACHMENT_OPEN_TIMEOUT,
-            || self.open_attachment_once(token, attachment_id),
-            std::thread::sleep,
+    pub fn attachment_access(
+        &self,
+        token: &str,
+        owner: &str,
+        attachment_id: &str,
+        start_download: bool,
+        retry: bool,
+    ) -> Result<messaging_core::proto::chat::AttachmentAccessProjection, String> {
+        use messaging_core::attachment::attachment_access_projection;
+        use messaging_core::proto::chat::AttachmentAccessState;
+        if attachment_id.is_empty()
+            || attachment_id == "."
+            || attachment_id == ".."
+            || attachment_id.contains(['/', '\\'])
+        {
+            return Err("FILE_ID_INVALID".into());
+        }
+        let mut projection = self
+            .store
+            .attachment_download_projection(attachment_id)?
+            .ok_or("FILE_PROJECTION_UNAVAILABLE")?;
+        let cache = attachment_cache_path(&self.profile_id, attachment_id)?;
+        {
+            let _guard = self
+                .attachment_source_lock
+                .lock()
+                .map_err(|_| "FILE_SOURCE_UNAVAILABLE")?;
+            if let Some(source) = self
+                .store
+                .completed_sender_attachment_source(attachment_id)?
+            {
+                match self.promote_sender_attachment_cache(&source) {
+                    Ok(_) => {
+                        projection = self
+                            .store
+                            .attachment_download_projection(attachment_id)?
+                            .ok_or("FILE_PROJECTION_UNAVAILABLE")?;
+                    }
+                    Err(error) if error == SENDER_ATTACHMENT_SOURCE_INVALID => {}
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        let mut transfer = self.store.attachment_transfer(attachment_id)?;
+        if let Some(access) = self.cached_attachment_access(
+            owner, &projection, transfer.as_ref(), retry,
+        )? {
+            return Ok(access);
+        }
+        if start_download && !cache.is_file()
+            && transfer.as_ref().is_some_and(|value| {
+                value.direction == 2 && value.state
+                    == messaging_core::proto::chat::AttachmentTransferState::Complete as i32
+            })
+        {
+            let descriptor = projection.metadata.object.as_ref()
+                .ok_or("FILE_DESCRIPTOR_UNAVAILABLE")?;
+            let plaintext_sha256 = projection.metadata.plaintext_sha256.as_slice()
+                .try_into().map_err(|_| "FILE_COMMITMENT_INVALID")?;
+            self.attachment_transfer_worker(token.to_string())?
+                .restore_download_cache(
+                    attachment_id, descriptor, &plaintext_sha256,
+                    &cache.to_string_lossy(), now_unix_ms(),
+                )?;
+            transfer = self.store.attachment_transfer(attachment_id)?;
+            if let Some(access) = self.cached_attachment_access(
+                owner, &projection, transfer.as_ref(), retry,
+            )? {
+                return Ok(access);
+            }
+        }
+        let access =
+            attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
+        if start_download
+            && !matches!(access.state, value if value == AttachmentAccessState::Cancelled as i32 || value == AttachmentAccessState::Failed as i32)
+        {
+            let download =
+                attachment_download_transfer(&self.profile_id, &projection, now_unix_ms())?;
+            let _guard = self
+                .attachment_source_lock
+                .lock()
+                .map_err(|_| "FILE_SOURCE_UNAVAILABLE")?;
+            match transfer.as_ref() {
+                Some(existing) if existing.direction == 1 => {
+                    self.store
+                        .replace_completed_upload_with_download(&download)?;
+                }
+                None => {
+                    self.store.create_attachment_transfer(&download)?;
+                }
+                _ => {}
+            }
+        }
+        transfer = self.store.attachment_transfer(attachment_id)?;
+        if retry
+            && transfer.as_ref().is_some_and(|value| {
+                matches!(
+                    messaging_core::proto::chat::AttachmentTransferState::try_from(value.state),
+                    Ok(
+                        messaging_core::proto::chat::AttachmentTransferState::Cancelled
+                            | messaging_core::proto::chat::AttachmentTransferState::RetryWait
+                    )
+                )
+            })
+        {
+            self.attachment_transfer_worker(token.to_string())?
+                .retry(attachment_id, now_unix_ms())?;
+        }
+        transfer = self.store.attachment_transfer(attachment_id)?;
+        Ok(attachment_access_projection(
+            &projection.metadata,
+            transfer.as_ref(),
+            false,
+        ))
+    }
+
+    fn cached_attachment_access(
+        &self,
+        owner: &str,
+        projection: &AttachmentDownloadProjection,
+        transfer: Option<&AttachmentTransferRecord>,
+        retry: bool,
+    ) -> Result<Option<messaging_core::proto::chat::AttachmentAccessProjection>, String> {
+        use messaging_core::attachment::attachment_access_projection;
+        use messaging_core::proto::chat::AttachmentAccessState;
+        let attachment_id = &projection.metadata.attachment_id;
+        let cache = attachment_cache_path(&self.profile_id, attachment_id)?;
+        if !cache.is_file() {
+            return Ok(None);
+        }
+        match self.attachment_file_access.grant(
+            owner,
+            attachment_id,
+            cache.parent().ok_or("FILE_ROOT_UNAVAILABLE")?,
+            &cache,
+            &projection.metadata.filename,
+            &projection.metadata.mime_type,
+            projection.metadata.plaintext_size,
+            &projection.metadata.plaintext_sha256,
+        ) {
+            Ok(handle) => {
+                let mut access = attachment_access_projection(&projection.metadata, transfer, true);
+                access.asset_url = attachment_asset_url(&handle);
+                access.access_handle = handle;
+                Ok(Some(access))
+            }
+            Err(error) if error == "FILE_INTEGRITY_FAILED" => {
+                if retry {
+                    std::fs::remove_file(&cache).map_err(|_| "FILE_CACHE_CLEANUP_FAILED")?;
+                    Ok(None)
+                } else {
+                    let mut access = attachment_access_projection(&projection.metadata, transfer, false);
+                    access.state = AttachmentAccessState::Failed as i32;
+                    access.error_code = messaging_core::proto::chat::AttachmentTransferErrorCode::IntegrityFailed as i32;
+                    access.retryable = true;
+                    Ok(Some(access))
+                }
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub(crate) fn attachment_handoff_root(&self) -> Result<PathBuf, String> {
+        let profile_hash = hex::encode(Sha256::digest(self.profile_id.as_bytes()));
+        let anchor = storage::app_file_path(
+            "desktop",
+            StorageKind::Cache,
+            &["file-handoff", &profile_hash, ".anchor"],
         )
+        .map_err(|_| "FILE_STAGING_UNAVAILABLE".to_string())?;
+        anchor
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or("FILE_STAGING_UNAVAILABLE".into())
+    }
+
+    pub(crate) fn validate_attachment_handle(
+        &self,
+        owner: &str,
+        handle: &str,
+        attachment_id: &str,
+    ) -> Result<(), String> {
+        if self.attachment_file_access.attachment_id(owner, handle)? != attachment_id
+            || self
+                .store
+                .attachment_download_projection(attachment_id)?
+                .is_none()
+        {
+            return Err("FILE_ACCESS_STALE".into());
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn acceptance_attachment_cache_path(&self, attachment_id: &str) -> Result<String, String> {
+        Ok(attachment_cache_path(&self.profile_id, attachment_id)?
+            .display()
+            .to_string())
     }
 
     fn open_attachment_once(
@@ -2620,6 +2787,46 @@ impl MessagingEngine {
             .conversation_message_page(conversation_id, before_sequence, limit)
     }
 
+    pub(crate) fn message_anchor_page(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        limit: usize,
+    ) -> Result<ConversationMessagePage, String> {
+        let anchor = self
+            .store
+            .message_anchor(conversation_id, message_id, &self.endpoint.ptid)?
+            .ok_or_else(|| "message anchor unavailable".to_string())?;
+        if anchor
+            .thread_root_message_id
+            .as_deref()
+            .is_some_and(|id| !id.is_empty())
+        {
+            return Ok(ConversationMessagePage {
+                messages: vec![anchor],
+                has_more: false,
+                next_before_sequence: None,
+            });
+        }
+        let sequence = anchor
+            .event_sequence
+            .ok_or_else(|| "message anchor sequence missing".to_string())?;
+        let before = sequence
+            .checked_add(1)
+            .ok_or_else(|| "message anchor sequence invalid".to_string())?;
+        let page = self
+            .store
+            .conversation_message_page(conversation_id, Some(before), limit)?;
+        if !page
+            .messages
+            .iter()
+            .any(|message| message.message_id == message_id)
+        {
+            return Err("message anchor unavailable".into());
+        }
+        Ok(page)
+    }
+
     pub fn conversation_summary(
         &self,
         conversation_id: &str,
@@ -2658,6 +2865,145 @@ impl MessagingEngine {
     ) -> Result<Vec<ConversationMessageProjection>, String> {
         self.store
             .search_message_projections(conversation_id, query, before, limit)
+    }
+
+    pub(crate) fn search_revision(&self) -> Result<String, String> {
+        self.store.search_revision()
+    }
+
+    pub(crate) fn search_authorities(&self) -> Result<Vec<String>, String> {
+        let mut namespaces = self.store.search_authorities(&self.endpoint.ptid)?;
+        let home = self
+            .station_client
+            .active_station_peer_id()
+            .ok_or_else(|| "search Station identity unavailable".to_string())?;
+        let home = format!("station:{home}");
+        if !namespaces.contains(&home) {
+            namespaces.push(home);
+        }
+        namespaces.sort();
+        Ok(namespaces)
+    }
+
+    pub(crate) fn with_search_revision<T>(
+        &self,
+        expected: &str,
+        publish: impl FnOnce() -> Result<T, search_core::SearchError>,
+    ) -> Result<T, search_core::SearchError> {
+        self.store.with_search_revision(expected, publish)
+    }
+
+    pub(crate) fn search_read_resources(
+        &self,
+        refs: &[search_core::ResourceRef],
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<search_core::ScoredDocument>, String> {
+        self.store
+            .search_read_resources(refs, &self.endpoint.ptid, check)
+    }
+
+    /// Cross-conversation device search for the closed-domain Search overlay.
+    /// Returns fused search-core documents from the encrypted local FTS
+    /// projection. Conversation display names are resolved from the local
+    /// conversations table so the renderer never joins store tables itself.
+    pub fn search_device_documents(
+        &self,
+        conversation: Option<&str>,
+        query: &str,
+        attachment_names_only: bool,
+        before: Option<(i64, &str, &str)>,
+        limit: usize,
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<search_core::ScoredDocument>, String> {
+        use search_core::model::{ResourceRef, ResultKind, TrustZone};
+        check()?;
+        let hits = self.store.search_message_hits_page_checked(
+            conversation,
+            query,
+            attachment_names_only,
+            before,
+            limit,
+            Some(&self.endpoint.ptid),
+            check,
+        )?;
+        check()?;
+        let mut documents = Vec::with_capacity(hits.len());
+        for hit in hits {
+            check()?;
+            let conversation_title = hit.conversation_title;
+            documents.push(search_core::ScoredDocument {
+                resource: ResourceRef {
+                    kind: "message".to_string(),
+                    id: hit.message_id.clone(),
+                    conversation_id: hit.conversation_id.clone(),
+                    message_id: hit.message_id.clone(),
+                    target_page: String::new(),
+                    authority_namespace: hit.authority_namespace,
+                    anchor: Some(search_core::model::wire::ResourceAnchor {
+                        kind: "message".into(),
+                        id: hit.message_id,
+                    }),
+                    ..Default::default()
+                },
+                kind: ResultKind::Message,
+                zone: TrustZone::DeviceE2ee,
+                title: conversation_title.clone(),
+                snippet: hit.plaintext.chars().take(512).collect(),
+                conversation_title,
+                author_ptid: hit.sender_ptid,
+                created_at_unix_ms: hit.committed_at_unix_ms,
+                score: 0.0,
+            });
+        }
+        Ok(documents)
+    }
+
+    /// Immediate in-conversation name suggestions for the overlay's
+    /// suggestion phase (no full-text scan). Returns conversation resources.
+    pub fn suggest_conversations(
+        &self,
+        conversation: Option<&str>,
+        query: &str,
+        limit: usize,
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<search_core::ScoredDocument>, String> {
+        use search_core::model::{ResourceRef, ResultKind, TrustZone};
+        check()?;
+        let conversations = self.store.suggest_conversation_names(
+            conversation,
+            query,
+            limit,
+            &self.endpoint.ptid,
+            check,
+        )?;
+        check()?;
+        let mut documents = Vec::new();
+        for (conversation_id, name, updated_at_unix_ms, authority_namespace) in conversations {
+            check()?;
+            documents.push(search_core::ScoredDocument {
+                resource: ResourceRef {
+                    kind: "conversation".to_string(),
+                    id: conversation_id.clone(),
+                    conversation_id,
+                    message_id: String::new(),
+                    target_page: String::new(),
+                    authority_namespace,
+                    ..Default::default()
+                },
+                kind: ResultKind::Conversation,
+                zone: TrustZone::DeviceE2ee,
+                title: name.clone(),
+                snippet: String::new(),
+                conversation_title: name,
+                author_ptid: String::new(),
+                created_at_unix_ms: updated_at_unix_ms,
+                score: 0.0,
+            });
+            if documents.len() >= limit {
+                break;
+            }
+        }
+        Ok(documents)
     }
 
     pub fn create_direct_conversation(
@@ -3623,7 +3969,7 @@ impl MessagingEngine {
 
 impl Drop for MessagingEngine {
     fn drop(&mut self) {
-        self.attachment_transfer_control.request_shutdown();
+        self.request_attachment_transfer_shutdown();
     }
 }
 
@@ -3930,6 +4276,10 @@ impl EngineRegistry {
             .profile_transition
             .lock()
             .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
+        // Fence cloned engines before draining workers, including stop failures.
+        if let Some(engine) = self.get(profile_id)? {
+            engine.request_attachment_transfer_shutdown();
+        }
         let worker = self
             .workers
             .lock()
@@ -3952,6 +4302,14 @@ impl EngineRegistry {
             .profile_transition
             .lock()
             .map_err(|_| "messaging profile transition lock poisoned".to_string())?;
+        for engine in self
+            .engines
+            .lock()
+            .map_err(|_| "messaging engine registry lock poisoned".to_string())?
+            .values()
+        {
+            engine.request_attachment_transfer_shutdown();
+        }
         let workers = self
             .workers
             .lock()
@@ -5274,47 +5632,6 @@ mod tests {
     }
 
     #[test]
-    fn attachment_open_retries_pending_transfer_until_ready() {
-        let mut attempts = VecDeque::from([
-            AttachmentOpenProgress::Pending {
-                next_attempt_at_unix_ms: now_unix_ms(),
-            },
-            AttachmentOpenProgress::Ready("/tmp/verified-cache".to_string()),
-        ]);
-        let mut sleeps = Vec::new();
-
-        let path = drive_attachment_open(
-            Instant::now() + Duration::from_secs(1),
-            || Ok(attempts.pop_front().expect("attachment open attempt")),
-            |delay| sleeps.push(delay),
-        )
-        .expect("pending attachment should become ready");
-
-        assert_eq!(path, "/tmp/verified-cache");
-        assert!(attempts.is_empty());
-        assert_eq!(sleeps, vec![ATTACHMENT_OPEN_RETRY_FLOOR]);
-    }
-
-    #[test]
-    fn attachment_open_stops_at_deadline() {
-        let error = drive_attachment_open(
-            Instant::now(),
-            || {
-                Ok(AttachmentOpenProgress::Pending {
-                    next_attempt_at_unix_ms: now_unix_ms(),
-                })
-            },
-            |_| panic!("expired attachment open must not sleep"),
-        )
-        .expect_err("expired attachment open must fail");
-
-        assert_eq!(
-            error,
-            "messaging attachment download did not complete before open deadline"
-        );
-    }
-
-    #[test]
     fn attachment_paths_use_canonical_desktop_storage_layout() {
         let profile_id = "profile-1";
         let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
@@ -5337,6 +5654,96 @@ mod tests {
             )
             .unwrap()
         );
+    }
+
+    #[test]
+    fn corrupt_completed_attachment_retry_recovers_or_queues_in_the_same_call() {
+        let _guard = crate::infrastructure::storage::test_storage_env_lock();
+        for recoverable_staging in [true, false] {
+            let profile = format!("attachment-integrity-retry-{}", Ulid::new());
+            let fixture = std::env::temp_dir().join(&profile);
+            std::fs::create_dir_all(&fixture).unwrap();
+            let database = fixture.join("fixture.db");
+            let store = Arc::new(MessagingStore::from_connection(
+                rusqlite::Connection::open(&database).unwrap(),
+            ).unwrap());
+            let bytes = b"verified completed receiver attachment";
+            let material = AttachmentCryptoMaterial::generate(bytes.len() as u64).unwrap();
+            let encrypted = secure_content_core::object::encrypt_object_chunk(
+                &material, 0, bytes,
+            ).unwrap();
+            let descriptor = crate::model::chat::EncryptedObjectDescriptor {
+                object_id: "object".into(),
+                storage_ref: "opaque".into(),
+                ciphertext_size: encrypted.ciphertext.len() as u64,
+                ciphertext_sha256: encrypted.ciphertext_sha256.to_vec(),
+                media_type: "application/octet-stream".into(),
+                chunk_size: material.chunk_size(),
+                chunk_count: 1,
+                encryption_suite: 1,
+                tag_size: 16,
+                nonce_strategy: 1,
+                chunk_ciphertext_sha256: vec![encrypted.ciphertext_sha256.to_vec()],
+            };
+            let cache = attachment_cache_path(&profile, "attachment").unwrap();
+            std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+            std::fs::write(&cache, b"corrupt receiver bytes").unwrap();
+            if recoverable_staging {
+                std::fs::write(format!("{}.decrypting", cache.display()), bytes).unwrap();
+            }
+            let connection = rusqlite::Connection::open(&database).unwrap();
+            connection.execute_batch(
+                "INSERT INTO messaging_conversations
+                   (conversation_id,authority_station_id,federation_id,kind,name,owner_ptid,
+                    membership_epoch,mls_epoch,active,updated_at_unix_ms)
+                 VALUES ('conversation','station','federation',2,'fixture','ptid:alice',1,1,1,10);
+                 INSERT INTO messaging_message_projections
+                   (conversation_id,event_id,event_sequence,message_id,sender_ptid,
+                    sender_device_id,plaintext,delivery_state,committed_at_unix_ms)
+                 VALUES ('conversation','event',1,'message','ptid:alice','device','',
+                         'consumed',10);",
+            ).unwrap();
+            connection.execute(
+                "INSERT INTO messaging_attachment_projections
+                   (message_id,attachment_id,object_id,storage_ref,filename,mime_type,
+                    content_kind,plaintext_size,plaintext_sha256,object_key,base_nonce,
+                    descriptor_bytes,availability_state,local_cache_path)
+                 VALUES ('message','attachment','object','opaque','report.txt','text/plain',
+                         1,?1,?2,?3,?4,?5,'available',?6)",
+                rusqlite::params![
+                    bytes.len() as u64, Sha256::digest(bytes).as_slice(),
+                    material.object_key().as_slice(), material.base_nonce().as_slice(),
+                    descriptor.encode_to_vec(), cache.to_string_lossy().as_ref(),
+                ],
+            ).unwrap();
+            drop(connection);
+            let projection = store.attachment_download_projection("attachment").unwrap().unwrap();
+            let mut transfer = attachment_download_transfer(&profile, &projection, 10).unwrap();
+            transfer.state = AttachmentTransferState::Complete as i32;
+            transfer.descriptor_sha256 = Sha256::digest(descriptor.encode_to_vec()).to_vec();
+            transfer.completed_chunk_bitmap = vec![1];
+            store.create_attachment_transfer(&transfer).unwrap();
+            let engine = MessagingEngine::from_store(
+                StationClient::testing_unavailable(), profile.clone(), endpoint("device"), store,
+            ).unwrap();
+            let failed = engine.attachment_access("token", "window", "attachment", true, false).unwrap();
+            assert_eq!(failed.state, messaging_core::proto::chat::AttachmentAccessState::Failed as i32);
+            assert!(failed.retryable && cache.is_file());
+            let restored = engine.attachment_access("token", "window", "attachment", true, true).unwrap();
+            if recoverable_staging {
+                assert_eq!(restored.state, messaging_core::proto::chat::AttachmentAccessState::Ready as i32);
+                assert!(!restored.access_handle.is_empty());
+                assert_eq!(std::fs::read(&cache).unwrap(), bytes);
+            } else {
+                assert_eq!(restored.state, messaging_core::proto::chat::AttachmentAccessState::Downloading as i32);
+                assert_eq!(engine.store.next_due_attachment_download(i64::MAX).unwrap(),
+                           Some("attachment".into()));
+                assert!(!cache.exists());
+            }
+            drop(engine);
+            std::fs::remove_dir_all(fixture).unwrap();
+            std::fs::remove_dir_all(cache.parent().unwrap()).unwrap();
+        }
     }
 
     #[test]
@@ -5742,6 +6149,64 @@ mod tests {
             recovered.enrollment.certificate.signing_key_id,
             current_signing_key_id
         );
+    }
+
+    #[test]
+    fn registry_teardown_fences_file_operations_on_retained_engines() {
+        for (all_profiles, fail_worker_drain) in [(false, false), (true, false), (false, true), (true, true)] {
+            let registry = EngineRegistry::default();
+            let engine = Arc::new(
+                MessagingEngine::from_profile_store(
+                    StationClient::testing_unavailable(),
+                    "file-revocation-profile".to_string(),
+                    "ptid:alice".to_string(),
+                    &[17; 32],
+                    3,
+                    false,
+                    Arc::new(MessagingStore::in_memory().unwrap()),
+                ).unwrap(),
+            );
+            registry.engines.lock().unwrap()
+                .insert(engine.profile_id().to_string(), engine.clone());
+            let root = std::env::temp_dir().join(format!("chat-teardown-{}", Ulid::new()));
+            std::fs::create_dir_all(&root).unwrap();
+            let cache = root.join("cached.txt");
+            let bytes = b"verified attachment before logout";
+            std::fs::write(&cache, bytes).unwrap();
+            let handle = engine.attachment_file_access.grant(
+                "window", "attachment", &root, &cache, "report.txt", "text/plain",
+                bytes.len() as u64, &Sha256::digest(bytes),
+            ).unwrap();
+            let epoch = engine.attachment_file_access.epoch();
+            assert!(engine.attachment_file_access.read_asset(
+                "window", &handle, None, false,
+            ).is_ok());
+            if fail_worker_drain {
+                std::thread::scope(|scope| {
+                    let registry_ref = &registry;
+                    let _ = scope.spawn(move || {
+                        let _guard = registry_ref.workers.lock().unwrap();
+                        panic!("injected worker registry failure");
+                    }).join();
+                });
+            }
+            let result = if all_profiles {
+                registry.deactivate_all().map(|_| ())
+            } else {
+                registry.deactivate(engine.profile_id()).map(|_| ())
+            };
+            assert_eq!(result.is_err(), fail_worker_drain);
+            assert!(!engine.attachment_file_access.epoch_is_current(epoch));
+            assert!(engine.attachment_file_access.read_asset(
+                "window", &handle, None, false,
+            ).is_err());
+            let exported = root.join("exported.txt");
+            assert!(engine.attachment_file_access.save_copy(
+                "window", &handle, &exported,
+            ).is_err());
+            assert!(!exported.exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

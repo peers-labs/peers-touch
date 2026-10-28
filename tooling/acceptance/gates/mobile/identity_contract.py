@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 from tooling.acceptance.core import AcceptanceGate, GateError
@@ -26,19 +28,24 @@ IDENTITY_SOURCE_ROOTS = (
     REPO_ROOT / "packages",
 )
 SOURCE_SUFFIXES = {".go", ".rs", ".ts", ".tsx"}
+EXCLUDED_SOURCE_DIRECTORIES = {
+    ".git", ".next", "__pycache__", "dist", "node_modules", "target",
+}
 PROTO_NON_ACTOR_ID_ALLOWLIST = {
     Path("model/domain/applet/applet.proto"): {"owner_id"},
+    # Channel envelopes and requester authorization retain external provider
+    # identities. They do not address a Peers Actor or expose its storage ID.
+    Path("model/domain/channel/channel.proto"): {
+        "user_id",
+        "sender_id",
+        "sender_user_id",
+        "provider_user_id",
+        "owner_provider_user_id",
+    },
     Path("model/domain/oauth/oauth.proto"): {"provider_user_id"},
     Path("model/domain/oauth/broker_bridge.proto"): {
         "provider_user_id",
         "receiver_id",
-    },
-    Path("model/domain/channel/channel.proto"): {
-        "owner_provider_user_id",
-        "provider_user_id",
-        "sender_id",
-        "sender_user_id",
-        "user_id",
     },
 }
 LEGACY_MIGRATION_ALLOWLIST = {
@@ -83,8 +90,7 @@ LEGACY_MIGRATION_ALLOWLIST = {
         "actor_did",
     },
     Path(
-        "apps/station/app/subserver/key_exchange/infrastructure/"
-        "canonical_store.go"
+        "apps/station/app/subserver/key_exchange/infrastructure/canonical_store.go"
     ): {
         "actor_did",
     },
@@ -142,6 +148,17 @@ def fail(message: str) -> None:
     raise GateError(f"mobile identity contract failed: {message}")
 
 
+def _source_files(root: Path) -> Iterator[Path]:
+    # Prune before descending: build caches and third-party packages are not
+    # first-party identity sources and can contain millions of entries.
+    for directory, children, filenames in os.walk(root):
+        children[:] = sorted(set(children) - EXCLUDED_SOURCE_DIRECTORIES)
+        for filename in sorted(filenames):
+            path = Path(directory) / filename
+            if path.suffix in SOURCE_SUFFIXES:
+                yield path
+
+
 def validate_identity_contract() -> None:
     actor_proto = ACTOR_PROTO.read_text(encoding="utf-8")
     actor_ref = re.search(
@@ -167,14 +184,15 @@ def validate_identity_contract() -> None:
             start=1,
         ):
             identity_id = re.search(
-                r"\b(?:u?int(?:32|64)|string)\s+"
+                r"\b(?P<type>u?int(?:32|64)|string)\s+"
                 r"([a-z_]*(?:actor|user|sender|recipient|owner|author|"
                 r"member|mentioned|participant|subject|receiver|inviter|"
                 r"invitee|uploader|reader)_ids?)\b",
                 line,
             )
-            if identity_id and identity_id.group(1) not in (
-                PROTO_NON_ACTOR_ID_ALLOWLIST.get(relative, set())
+            if identity_id and not (
+                identity_id.group("type") == "string"
+                and identity_id.group(2) in PROTO_NON_ACTOR_ID_ALLOWLIST.get(relative, set())
             ):
                 forbidden_proto_fields.append(f"{relative}:{line_number}")
             elif re.search(
@@ -193,12 +211,8 @@ def validate_identity_contract() -> None:
 
     forbidden_source_aliases: list[str] = []
     for root in IDENTITY_SOURCE_ROOTS:
-        for path in sorted(root.rglob("*")):
-            if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
-                continue
+        for path in _source_files(root):
             relative = path.relative_to(REPO_ROOT)
-            if "target" in relative.parts or "dist" in relative.parts:
-                continue
             if path.name.endswith(".pb.go") or path.name.endswith("_pb.ts"):
                 continue
             if relative.parts[:5] == (

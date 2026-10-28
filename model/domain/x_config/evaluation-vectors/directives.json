@@ -1,0 +1,188 @@
+{
+  "schema": "x-config-directive-vectors/v1",
+  "vectors": [
+    {
+      "name": "region and flavor match selects rule, otherwise fallback",
+      "seeds": [
+        { "seed_id": "relay-global", "kind": "relay" },
+        { "seed_id": "relay-cn-1", "kind": "relay" }
+      ],
+      "directives": [
+        {
+          "key": "network.default_relay",
+          "fallback": { "endpoint_seed_id": "relay-global" },
+          "rules": [
+            {
+              "id": "cn-geek",
+              "match": { "products": ["desktop"], "flavors": ["geek", "xx"], "regions": ["cn"] },
+              "value": { "endpoint_seed_id": "relay-cn-1" }
+            }
+          ]
+        }
+      ],
+      "cases": [
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "xx", "channel": "stable", "environment": "prod", "region": "cn", "version": "0.2.0", "labels": {}, "device_id": "user-001" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-cn-1" }, "matched_rule_id": "cn-geek" }
+        },
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "geek", "channel": "stable", "environment": "prod", "region": "sg", "version": "0.2.0", "labels": {}, "device_id": "user-001" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-global" }, "matched_rule_id": null }
+        },
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "geek", "channel": "stable", "environment": "prod", "region": "unknown", "version": "0.2.0", "labels": {}, "device_id": "user-001" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-global" }, "matched_rule_id": null }
+        },
+        {
+          "context": { "product": "mobile", "platform": "ios", "architecture": "arm64", "flavor": "xx", "channel": "stable", "environment": "prod", "region": "cn", "version": "0.2.0", "labels": {}, "device_id": "user-001" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-global" }, "matched_rule_id": null }
+        }
+      ]
+    },
+    {
+      "name": "version constraints floor and ceiling",
+      "seeds": [{ "seed_id": "relay-global", "kind": "relay" }, { "seed_id": "relay-new", "kind": "relay" }],
+      "directives": [
+        {
+          "key": "network.default_relay",
+          "fallback": { "endpoint_seed_id": "relay-global" },
+          "rules": [
+            {
+              "id": "v02-floor",
+              "match": { "versions": [{ "comparator": ">=", "version": "0.2.0" }] },
+              "value": { "endpoint_seed_id": "relay-new" }
+            }
+          ]
+        }
+      ],
+      "cases": [
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "geek", "channel": "stable", "environment": "prod", "region": "global", "version": "0.2.0", "labels": {}, "device_id": "u" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-new" }, "matched_rule_id": "v02-floor" }
+        },
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "geek", "channel": "stable", "environment": "prod", "region": "global", "version": "0.1.9", "labels": {}, "device_id": "u" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-global" }, "matched_rule_id": null }
+        }
+      ]
+    },
+    {
+      "name": "caret constraint bounds minor for 0.x",
+      "seeds": [{ "seed_id": "relay-global", "kind": "relay" }, { "seed_id": "relay-new", "kind": "relay" }],
+      "directives": [
+        {
+          "key": "network.default_relay",
+          "fallback": { "endpoint_seed_id": "relay-global" },
+          "rules": [
+            {
+              "id": "caret-02",
+              "match": { "versions": [{ "comparator": "^", "version": "0.2.1" }] },
+              "value": { "endpoint_seed_id": "relay-new" }
+            }
+          ]
+        }
+      ],
+      "cases": [
+        {
+          "context": { "product": "desktop", "platform": "linux", "architecture": "x86_64", "flavor": "geek", "channel": "stable", "environment": "prod", "region": "global", "version": "0.2.9", "labels": {}, "device_id": "u" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-new" }, "matched_rule_id": "caret-02" }
+        },
+        {
+          "context": { "product": "desktop", "platform": "linux", "architecture": "x86_64", "flavor": "geek", "channel": "stable", "environment": "prod", "region": "global", "version": "0.3.0", "labels": {}, "device_id": "u" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-global" }, "matched_rule_id": null }
+        },
+        {
+          "context": { "product": "desktop", "platform": "linux", "architecture": "x86_64", "flavor": "geek", "channel": "stable", "environment": "prod", "region": "global", "version": "0.2.0", "labels": {}, "device_id": "u" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-global" }, "matched_rule_id": null }
+        }
+      ]
+    },
+    {
+      "name": "ordered rules take first match and labels must all match",
+      "seeds": [{ "seed_id": "relay-global", "kind": "relay" }, { "seed_id": "relay-beta", "kind": "relay" }, { "seed_id": "relay-cn", "kind": "relay" }],
+      "directives": [
+        {
+          "key": "network.default_relay",
+          "fallback": { "endpoint_seed_id": "relay-global" },
+          "rules": [
+            {
+              "id": "cn-first",
+              "match": { "regions": ["cn"], "labels": [{ "key": "dist.audience", "value": "vip" }] },
+              "value": { "endpoint_seed_id": "relay-cn" }
+            },
+            {
+              "id": "beta-channel",
+              "match": { "channels": ["beta"] },
+              "value": { "endpoint_seed_id": "relay-beta" }
+            }
+          ]
+        }
+      ],
+      "cases": [
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "xx", "channel": "beta", "environment": "prod", "region": "cn", "version": "0.2.0", "labels": { "dist.audience": "vip" }, "device_id": "u" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-cn" }, "matched_rule_id": "cn-first" }
+        },
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "xx", "channel": "beta", "environment": "prod", "region": "cn", "version": "0.2.0", "labels": {}, "device_id": "u" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-beta" }, "matched_rule_id": "beta-channel" }
+        },
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "xx", "channel": "stable", "environment": "prod", "region": "cn", "version": "0.2.0", "labels": {}, "device_id": "u" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-global" }, "matched_rule_id": null }
+        }
+      ]
+    },
+    {
+      "name": "partial permille rollout uses device id bucket",
+      "seeds": [{ "seed_id": "relay-global", "kind": "relay" }, { "seed_id": "relay-canary", "kind": "relay" }],
+      "directives": [
+        {
+          "key": "network.default_relay",
+          "fallback": { "endpoint_seed_id": "relay-global" },
+          "rules": [
+            {
+              "id": "rollout-rule",
+              "match": { "regions": ["cn"] },
+              "value": { "endpoint_seed_id": "relay-canary" },
+              "rollout_permille": 200
+            }
+          ]
+        }
+      ],
+      "cases": [
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "geek", "channel": "stable", "environment": "prod", "region": "cn", "version": "0.2.0", "labels": {}, "device_id": "user-002" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-canary" }, "matched_rule_id": "rollout-rule" }
+        },
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "geek", "channel": "stable", "environment": "prod", "region": "cn", "version": "0.2.0", "labels": {}, "device_id": "user-001" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-global" }, "matched_rule_id": null }
+        },
+        {
+          "context": { "product": "desktop", "platform": "macos", "architecture": "arm64", "flavor": "geek", "channel": "stable", "environment": "prod", "region": "cn", "version": "0.2.0", "labels": {}, "device_id": "" },
+          "expect": { "key": "network.default_relay", "value": { "endpoint_seed_id": "relay-global" }, "matched_rule_id": null }
+        }
+      ]
+    },
+    {
+      "name": "scalar value kinds project through",
+      "seeds": [],
+      "directives": [
+        { "key": "feature.flag", "fallback": { "bool_value": false }, "rules": [{ "id": "on", "match": { "environments": ["staging"] }, "value": { "bool_value": true } }] },
+        { "key": "network.timeout_ms", "fallback": { "int_value": 5000 }, "rules": [{ "id": "slow", "match": { "regions": ["cn"] }, "value": { "int_value": 10000 } }] },
+        { "key": "network.note", "fallback": { "string_value": "default" }, "rules": [] }
+      ],
+      "cases": [
+        {
+          "context": { "product": "station", "platform": "linux", "architecture": "x86_64", "flavor": "geek", "channel": "stable", "environment": "staging", "region": "cn", "version": "1.0.0", "labels": {}, "device_id": "s" },
+          "expect_kv": {
+            "feature.flag": { "bool_value": true },
+            "network.timeout_ms": { "int_value": 10000 },
+            "network.note": { "string_value": "default" }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Peers-Touch Product World",
+    "subtitle": "Use Desktop and Mobile to enter one personal digital home; capabilities may execute on a client or Station while the Federation connects independent homes.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/product-world.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "daily-use",
+        "focus": [
+          "person",
+          "desktop",
+          "mobile",
+          "station"
+        ],
+        "label": "Daily use",
+        "note": "One person enters the same Home Station from either product center."
+      },
+      {
+        "id": "open-network",
+        "focus": [
+          "station",
+          "federation",
+          "people",
+          "communities"
+        ],
+        "label": "Open network",
+        "note": "Independent Stations remain connected through Federation context."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "person",
+      "type": "external",
+      "label": "You",
+      "sublabel": "one identity",
+      "tag": "person",
+      "pos": [
+        10,
+        230
+      ],
+      "size": [
+        120,
+        64
+      ]
+    },
+    {
+      "id": "desktop",
+      "type": "frontend",
+      "label": "Desktop",
+      "sublabel": "work · create · manage",
+      "tag": "product center",
+      "pos": [
+        180,
+        130
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/pages/registry.ts",
+          "label": "registry.ts",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "mobile",
+      "type": "frontend",
+      "label": "Mobile",
+      "sublabel": "connect everywhere",
+      "tag": "product center",
+      "pos": [
+        180,
+        330
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "label": "App.tsx",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "station",
+      "type": "backend",
+      "label": "Home Station",
+      "sublabel": "identity · relations · messages · content",
+      "tag": "your digital home",
+      "pos": [
+        430,
+        230
+      ],
+      "size": [
+        210,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "cloud",
+      "label": "Personal Agent",
+      "sublabel": "Station or client execution",
+      "tag": "governed capability",
+      "pos": [
+        430,
+        70
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/agent/design.md",
+          "label": "design.md",
+          "line": 1,
+          "end_line": 108
+        }
+      ]
+    },
+    {
+      "id": "applets",
+      "type": "frontend",
+      "label": "Applets",
+      "sublabel": "client Lynx runtime + Station service",
+      "tag": "composable products",
+      "pos": [
+        430,
+        390
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/applets/README.md",
+          "label": "README.md",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "federation",
+      "type": "security",
+      "label": "Federated Network",
+      "sublabel": "membership · governance · discovery",
+      "tag": "open social topology",
+      "pos": [
+        720,
+        230
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture/domains/federation/README.md",
+          "label": "README.md",
+          "line": 1,
+          "end_line": 93
+        }
+      ]
+    },
+    {
+      "id": "people",
+      "type": "external",
+      "label": "People",
+      "sublabel": "independent Stations",
+      "tag": "follow · chat · share",
+      "pos": [
+        1010,
+        130
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "communities",
+      "type": "external",
+      "label": "Communities",
+      "sublabel": "shared Federation context",
+      "tag": "discover · participate",
+      "pos": [
+        1010,
+        330
+      ],
+      "size": [
+        180,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "wraps": [
+        "desktop",
+        "mobile"
+      ],
+      "label": "Your product surfaces",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "station"
+      ],
+      "label": "Your Home Station",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "federation",
+        "people",
+        "communities"
+      ],
+      "label": "The open network",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "person-desktop",
+      "from": "person",
+      "to": "desktop",
+      "variant": "emphasis",
+      "label": "uses"
+    },
+    {
+      "id": "person-mobile",
+      "from": "person",
+      "to": "mobile",
+      "variant": "emphasis",
+      "label": "uses"
+    },
+    {
+      "id": "desktop-station",
+      "from": "desktop",
+      "to": "station",
+      "variant": "emphasis",
+      "label": "binds to personal authority"
+    },
+    {
+      "id": "mobile-station",
+      "from": "mobile",
+      "to": "station",
+      "variant": "emphasis",
+      "label": "binds to personal authority"
+    },
+    {
+      "id": "station-agent",
+      "from": "station",
+      "to": "agent",
+      "variant": "dashed",
+      "label": "provides context + durable orchestration"
+    },
+    {
+      "id": "station-applets",
+      "from": "station",
+      "to": "applets",
+      "variant": "dashed",
+      "label": "binds durable services"
+    },
+    {
+      "id": "station-federation",
+      "from": "station",
+      "to": "federation",
+      "variant": "emphasis",
+      "label": "joins governed topology"
+    },
+    {
+      "id": "federation-people",
+      "from": "federation",
+      "to": "people",
+      "variant": "emphasis",
+      "label": "discovers independent identities"
+    },
+    {
+      "id": "federation-communities",
+      "from": "federation",
+      "to": "communities",
+      "variant": "emphasis",
+      "label": "discovers shared contexts"
+    },
+    {
+      "id": "desktop-applets",
+      "from": "desktop",
+      "to": "applets",
+      "variant": "dashed",
+      "label": "hosts Lynx UI"
+    },
+    {
+      "id": "mobile-applets",
+      "from": "mobile",
+      "to": "applets",
+      "variant": "dashed",
+      "label": "hosts Lynx UI"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Product promise",
+      "items": [
+        "Two first-class products enter one user-owned digital home.",
+        "People interact with identities and communities, not server administration."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Placement is not ownership",
+      "items": [
+        "Agent work can execute at Station or through a client capability.",
+        "Applet UI runs in a client host while durable service state remains Station-owned."
+      ]
+    }
+  ]
+}

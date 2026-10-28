@@ -96,6 +96,33 @@ pub struct NativeSystemActionOutcome {
     pub reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeFileActionRequest<'a> {
+    pub request_id: &'a str,
+    pub kind: &'a str,
+    pub local_path: &'a str,
+    pub mime_type: &'a str,
+    pub deadline_ms: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeFileActionOutcome {
+    pub request_id: String,
+    pub state: NativeSystemActionState,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LifecycleObservationResponse {
+    pub platform: String,
+    pub state: String,
+    pub sequence: u64,
+    pub timestamp_ms: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkObservationResponse {
@@ -302,6 +329,25 @@ impl<R: Runtime> PlatformPermissions<R> {
         }
     }
 
+    pub async fn observe_lifecycle(&self) -> Result<LifecycleObservationResponse> {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            return self
+                .plugin_handle
+                .run_mobile_plugin_async("observeLifecycle", ())
+                .await
+                .map_err(|error| Error::invoke("observe lifecycle", error));
+        }
+
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            Err(Error {
+                operation: "observe lifecycle",
+                detail: "mobile host is unavailable".into(),
+            })
+        }
+    }
+
     pub async fn start_network_observation(&self) -> Result<NetworkObservationResponse> {
         #[cfg(any(target_os = "android", target_os = "ios"))]
         {
@@ -321,6 +367,47 @@ impl<R: Runtime> PlatformPermissions<R> {
                 sequence: 0,
                 timestamp_ms: 0,
             })
+        }
+    }
+
+    pub async fn execute_file_action(
+        &self,
+        request: NativeFileActionRequest<'_>,
+    ) -> Result<NativeFileActionOutcome> {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            return self
+                .plugin_handle
+                .run_mobile_plugin_async("executeFileAction", request)
+                .await
+                .map_err(|error| Error::invoke("file action", error));
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            Ok(NativeFileActionOutcome {
+                request_id: request.request_id.into(),
+                state: NativeSystemActionState::Unavailable,
+                reason: Some("mobile host is unavailable".into()),
+            })
+        }
+    }
+
+    pub async fn cancel_file_action(&self, request_id: &str) -> Result<()> {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            return self
+                .plugin_handle
+                .run_mobile_plugin_async(
+                    "cancelFileAction",
+                    FileActionCancellationArgs { request_id },
+                )
+                .await
+                .map_err(|error| Error::invoke("cancel file action", error));
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            let _ = request_id;
+            Ok(())
         }
     }
 
@@ -507,6 +594,13 @@ struct SystemActionArgs<'a> {
     kind: &'a str,
     text: Option<&'a str>,
     url: Option<&'a str>,
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileActionCancellationArgs<'a> {
+    request_id: &'a str,
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]

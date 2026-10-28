@@ -1,0 +1,368 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Federation 网络中心",
+    "subtitle": "独立 Station 组成的持久虚拟网络：治理事实持久化，普通社交流量不上账本。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/federation-center.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "governance",
+        "focus": [
+          "operator",
+          "manifest",
+          "membership",
+          "sequencer",
+          "ledger",
+          "projection"
+        ],
+        "label": "治理控制面",
+        "note": "可验证治理事实形成 Federation 语境。"
+      },
+      {
+        "id": "social-data",
+        "focus": [
+          "source-app",
+          "transport",
+          "target-app",
+          "people"
+        ],
+        "label": "社交数据面",
+        "note": "普通社交 Payload 在业务 Owner 之间直接流动。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "授权治理者",
+      "sublabel": "提案 · 签名",
+      "tag": "治理角色",
+      "pos": [
+        20,
+        170
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "manifest",
+      "type": "security",
+      "label": "Manifest / Genesis",
+      "sublabel": "Federation 身份 · Policy Root",
+      "tag": "持久实体",
+      "pos": [
+        200,
+        170
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/federation_service.go",
+          "label": "federation_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "membership",
+      "type": "security",
+      "label": "Membership + Roles",
+      "sublabel": "加入 · 退出 · Admin · Member",
+      "tag": "控制语境",
+      "pos": [
+        410,
+        170
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/federation_service.go",
+          "label": "federation_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "sequencer",
+      "type": "backend",
+      "label": "Active Sequencer",
+      "sublabel": "单一有序 Head",
+      "tag": "排序 Owner",
+      "pos": [
+        630,
+        170
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/ledger_service.go",
+          "label": "ledger_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "ledger",
+      "type": "database",
+      "label": "Governance Ledger",
+      "sublabel": "追加式可验证事实",
+      "tag": "控制面真源",
+      "pos": [
+        840,
+        170
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/infrastructure/repos.go",
+          "label": "repos.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "projection",
+      "type": "database",
+      "label": "Projection + Catalog",
+      "sublabel": "成员 · 发现 · Resolver",
+      "tag": "物化语境",
+      "pos": [
+        1050,
+        170
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/projection_service.go",
+          "label": "projection_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "source-app",
+      "type": "backend",
+      "label": "源 App Domain",
+      "sublabel": "Social · Conversation",
+      "tag": "业务 Owner",
+      "pos": [
+        180,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "transport",
+      "type": "messagebus",
+      "label": "Authenticated Pull Transport",
+      "sublabel": "拉取有序 Ledger Range",
+      "tag": "复制数据面",
+      "pos": [
+        450,
+        390
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/transport.go",
+          "label": "transport.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "target-app",
+      "type": "external",
+      "label": "Replica Apply",
+      "sublabel": "验签 · PrevHash · 原子提交",
+      "tag": "成员本地权威",
+      "pos": [
+        730,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "people",
+      "type": "external",
+      "label": "人与社区",
+      "sublabel": "发现 · 关注 · 参与",
+      "tag": "产品结果",
+      "pos": [
+        1030,
+        390
+      ],
+      "size": [
+        180,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "wraps": [
+        "operator",
+        "manifest",
+        "membership",
+        "sequencer",
+        "ledger",
+        "projection"
+      ],
+      "label": "Federation 控制面",
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "wraps": [
+        "source-app",
+        "transport",
+        "target-app",
+        "people"
+      ],
+      "label": "联邦业务数据面",
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "operator-manifest",
+      "from": "operator",
+      "to": "manifest",
+      "variant": "security",
+      "label": "签名提案"
+    },
+    {
+      "id": "manifest-membership",
+      "from": "manifest",
+      "to": "membership",
+      "variant": "security",
+      "label": "Policy Root"
+    },
+    {
+      "id": "membership-sequencer",
+      "from": "membership",
+      "to": "sequencer",
+      "variant": "security",
+      "label": "授权"
+    },
+    {
+      "id": "sequencer-ledger",
+      "from": "sequencer",
+      "to": "ledger",
+      "variant": "emphasis",
+      "label": "有序追加"
+    },
+    {
+      "id": "ledger-projection",
+      "from": "ledger",
+      "to": "projection",
+      "variant": "dashed",
+      "label": "原子投影"
+    },
+    {
+      "id": "source-transport",
+      "from": "source-app",
+      "to": "transport",
+      "variant": "emphasis",
+      "label": "Fetch Range"
+    },
+    {
+      "id": "transport-target",
+      "from": "transport",
+      "to": "target-app",
+      "variant": "emphasis",
+      "label": "Signed Event"
+    },
+    {
+      "id": "target-people",
+      "from": "target-app",
+      "to": "people",
+      "variant": "emphasis",
+      "label": "本地语境"
+    },
+    {
+      "id": "projection-source",
+      "from": "projection",
+      "to": "source-app",
+      "variant": "dashed",
+      "label": "Endpoint + Cursor"
+    },
+    {
+      "id": "projection-target",
+      "from": "projection",
+      "to": "target-app",
+      "variant": "dashed",
+      "label": "Membership Context"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "控制面真源",
+      "items": [
+        "Manifest、Membership 与治理事实在 Ledger 中排序。",
+        "普通聊天、动态、点赞和评论仍在治理 Ledger 之外。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "副本合同",
+      "items": [
+        "成员拉取 Event，验证签名与 PrevHash，再原子提交 Ledger + Projection。",
+        "只有已提交的本地 Projection 才会发布给本地业务 Actor。"
+      ]
+    }
+  ]
+}

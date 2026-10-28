@@ -19,6 +19,7 @@ import {
   type ReactionSummary,
 } from '../../gen/proto/domain/social/post_pb';
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
+import type { MomentDetailReadOptions } from '../../services/gateways/momentsGateway';
 import type {
   MomentsProjectionController,
   MomentsProjectionState,
@@ -179,25 +180,34 @@ export interface UseMomentDetailResult {
 export function useMomentDetail(
   store: MomentsFeedStoreController | null,
   postId: string,
+  options: MomentDetailReadOptions = {},
 ): UseMomentDetailResult {
   const state = useMomentsStoreState(store);
+  const sourceId = options.sourceId ?? 'station.social.public';
+  const anchorCommentId = options.anchorCommentId ?? '';
   const selectedDetail = state?.selectedDetail;
   const detail = selectedDetail?.postId === postId
+    && (selectedDetail.sourceId ?? 'station.social.public') === sourceId
+    && (selectedDetail.anchorCommentId ?? '') === anchorCommentId
     ? selectedDetail.readback
     : LOADING_DETAIL;
-  const commentsState = state?.commentsByPost.get(postId);
+  const retainedComments = state?.commentsByPost.get(postId);
+  const commentsState = detail.kind === 'available'
+    && (retainedComments?.sourceId ?? 'station.social.public') === sourceId
+    && (retainedComments?.anchorCommentId ?? '') === anchorCommentId
+    ? retainedComments : undefined;
 
   useEffect(() => {
     if (!store || !postId) return;
-    void store.ensureMoment(postId);
-  }, [store, postId]);
+    void store.ensureMoment(postId, { sourceId, anchorCommentId });
+  }, [store, postId, sourceId, anchorCommentId]);
 
   const loadMore = useCallback(() => {
     void store?.loadMoreComments(postId);
   }, [store, postId]);
   const reloadMoment = useCallback(
-    () => store?.reloadMoment(postId) ?? Promise.resolve(false),
-    [store, postId],
+    () => store?.reloadMoment(postId, { sourceId, anchorCommentId }) ?? Promise.resolve(false),
+    [store, postId, sourceId, anchorCommentId],
   );
 
   return {

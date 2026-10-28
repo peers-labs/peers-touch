@@ -46,6 +46,8 @@ interface ChatMessageTimelineProps {
     senderPtid: string,
   ) => DesktopIMSenderProfileProjection;
   highlightedMessageUlid: string | null;
+  scrollToMessageUlid?: string | null;
+  onAnchorReached?: () => void;
   isPinned: (message: ChatMessage) => boolean;
   messages: ChatMessage[];
   onTimelineMeasured: () => void;
@@ -120,6 +122,8 @@ export function ChatMessageTimeline({
   currentUserPtid,
   getSenderProfile,
   highlightedMessageUlid,
+  scrollToMessageUlid,
+  onAnchorReached,
   isPinned,
   messages,
   onTimelineMeasured,
@@ -141,15 +145,16 @@ export function ChatMessageTimeline({
   const [expandedServiceGroups, setExpandedServiceGroups] = useState<Set<string>>(new Set());
   useEffect(() => setExpandedServiceGroups(new Set()), [activeConversationId]);
   useEffect(() => {
-    if (!highlightedMessageUlid) return;
-    const highlighted = messages.find(message => message.ulid === highlightedMessageUlid);
+    const anchor = scrollToMessageUlid || highlightedMessageUlid;
+    if (!anchor) return;
+    const highlighted = messages.find(message => message.ulid === anchor);
     if (!highlighted) return;
     const key = serviceAggregationKey(highlighted);
     if (!key) return;
     setExpandedServiceGroups(current => current.has(key)
       ? current
       : new Set([...current, key]));
-  }, [highlightedMessageUlid, messages]);
+  }, [highlightedMessageUlid, scrollToMessageUlid, messages]);
   const foldedRows = useMemo(
     () => aggregateServiceEvents(messages, expandedServiceGroups),
     [expandedServiceGroups, messages],
@@ -174,10 +179,10 @@ export function ChatMessageTimeline({
     });
   }, []);
 
-  const surfaceItems = buildChatMessageSurfaceItems({
+  const surfaceItems = useMemo(() => buildChatMessageSurfaceItems({
     messages: surfaceMessages,
     resolveTimestampMs: messageTimestampMs,
-  });
+  }), [surfaceMessages]);
 
   const measureRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const closeActionsTimerRef = useRef<number | null>(null);
@@ -277,6 +282,31 @@ export function ChatMessageTimeline({
   useLayoutEffect(() => {
     onTimelineMeasured();
   }, [onTimelineMeasured, surfaceItems, totalSize]);
+
+  useLayoutEffect(() => {
+    if (!scrollToMessageUlid) return;
+    const index = surfaceItems.findIndex(item => item.message.ulid === scrollToMessageUlid);
+    if (index < 0) return;
+    if (virtualized) virtualizer.scrollToIndex(index, { align: 'center' });
+  }, [scrollToMessageUlid, surfaceItems, virtualized, virtualizer]);
+
+  // A virtual row may mount after the requested scroll commits. Focus in the
+  // commit that actually contains it; render churn must not cancel one RAF
+  // forever while the target is already present in the window.
+  useLayoutEffect(() => {
+    if (!scrollToMessageUlid) return;
+    const element = Array.from(scrollContainerRef.current?.querySelectorAll<HTMLElement>('[data-message-ulid]') ?? [])
+      .find(node => node.dataset.messageUlid === scrollToMessageUlid);
+    const viewport = scrollContainerRef.current;
+    if (!element || !viewport) return;
+    const target = element.getBoundingClientRect();
+    const bounds = viewport.getBoundingClientRect();
+    viewport.scrollTop += target.top - bounds.top - (viewport.clientHeight - target.height) / 2;
+    element.tabIndex = -1;
+    element.dataset.messageAnchorFocused = 'true';
+    element.focus({ preventScroll: true });
+    onAnchorReached?.();
+  });
 
   return (
     <>

@@ -26,7 +26,6 @@ const PAGE_ICONS: Record<string, string> = {
   chat: 'MessageSquare',
   agent: 'Bot',
   settings: 'Settings',
-  search: 'Search',
   'agent-profile': 'UserCircle',
   'agent-groups': 'Users',
 };
@@ -46,7 +45,6 @@ export function useCommandMenuItems(deps: CommandMenuDeps): GroupedCommands {
       { id: 'page:home', page: 'home', titleKey: 'agent.commandMenu.page.home' },
       { id: 'page:chat', page: 'chat', titleKey: 'agent.commandMenu.page.chat' },
       { id: 'page:agent', page: 'agent', titleKey: 'agent.commandMenu.page.agent' },
-      { id: 'page:search', page: 'search', titleKey: 'agent.commandMenu.page.search' },
       { id: 'page:agent-groups', page: 'agent-groups', titleKey: 'agent.commandMenu.page.agentGroups' },
       { id: 'page:settings', page: 'settings', titleKey: 'agent.commandMenu.page.settings' },
     ];

@@ -1,0 +1,38 @@
+{
+  "channel": "corpstable",
+  "comment": "Reviewed intent source for the fiveArm corpstable channel. No timestamps and no connection_material_base64: the ephemeral publish generator stamps deterministic material and the one-hour availability window at publish time. distribution.origins (XCFG-D06) advertises snapshot failover/migration origins inside the signed statement; append real mirrors here when they are deployed. Clients merge dev override, advertised origins, then package-baked anchors, so the channel self-origin is a harmless redundant anchor.",
+  "origin": "http://10.37.221.38:18082",
+  "publisher_key_id": "publisher-2026-10-corpstable",
+  "distribution": {
+    "origins": ["http://10.37.221.38:18082"]
+  },
+  "endpoints": [
+    {
+      "seed_id": "relay-home-1",
+      "kind": "relay",
+      "display_name": "Home Relay 1",
+      "discovery_origin": "https://peers.shux.me:28443",
+      "relay_peer_id": "12D3KooWNtzsjYX1oripWgdZoWTbvJG5QUTpX1Hrwzuz1ZW8P1hK",
+      "regions": ["cn"]
+    }
+  ],
+  "directives": [
+    {
+      "key": "network.default_relay",
+      "rules": [
+        {
+          "id": "cn-xx",
+          "match": {
+            "products": ["desktop", "mobile"],
+            "flavors": ["xx"],
+            "regions": ["cn"]
+          },
+          "value": { "endpoint_seed_id": "relay-home-1" },
+          "rollout_permille": 1000
+        }
+      ],
+      "fallback": { "endpoint_seed_id": "relay-home-1" }
+    }
+  ],
+  "releases": []
+}

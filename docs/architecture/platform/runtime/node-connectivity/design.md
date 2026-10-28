@@ -151,6 +151,16 @@ the Node Connectivity side of route execution. Station Access retains ownership
 of binding and route selection; it publishes immutable `RouteLease` values to
 the transport instead of exposing mutable registry state.
 
+Synchronous SDK reply waits observe the originating request cancellation and
+bounded admission/operation duration, including before HTTP submission while
+dialing. Shared pending dials retain live subscribers; the driver aborts the
+upstream pending connection after the last subscriber leaves. Dial completion
+errors match the connection ID so a retired attempt cannot reject a newer dial.
+The driver admits a same-peer replacement with the upstream `Disconnected`
+condition: live driver waiters still share one dial, established peers are
+reused, and an aborted pool entry may drain after replacement admission.
+Transport errors preserve the actual HTTP submission phase.
+
 The transport owner starts during Tauri setup and shuts down from
 `ExitRequested`. It owns the libp2p driver, bounded command admission, route
 sessions, cancellation, draining and thread join. Getters, URL projections and

@@ -141,6 +141,36 @@ an SHA-256 ETag, `application/protobuf`, and no credential.
 Desktop and Mobile own HTTP, secure watermark persistence, scheduling, and UI
 projection. Station identity proof stays in Station Access.
 
+#### Desktop optional lifecycle
+
+`XConfigRuntime::new` constructs in-memory owners only. It does not read
+Keychain or snapshot files and does not fetch network bytes. The existing
+async Tauri refresh command runs initialization and refresh in a blocking
+worker. Profile discovery and the verified Station registry remain independent.
+
+One worker owns the coordinator for the entire initialization/refresh round.
+Concurrent refresh requests, including forced requests, return the published
+read view instead of waiting or starting another round. Projection and
+suggestion-material reads clone an immutable view under a separate short lock;
+they never acquire the coordinator lock. Cached state is published after
+initialization, before network I/O. Each read recomputes expiry and
+actionability against the current clock.
+
+macOS accesses the same login-keychain generic password service/account using
+the Security SDK's per-query noninteractive failure policy for reads, updates,
+and adds. It does not change global Keychain interaction policy or storage
+backend. Only actual item-not-found represents absence. Denied access,
+decode failures, and persistence failures preserve unknown watermark status
+and do not admit a snapshot. Initialization failure stops that refresh before
+network fetch, publishes an advisory error and backoff, and can retry later.
+
+The coordinator publishes a remote snapshot only after exact-byte verification,
+cache persistence and watermark commit. Failed rounds retain the last accepted
+view; an expired view is stale and nonactionable. Worker unwind clears the
+published refreshing flag and leaves reads available, with further refresh
+failing closed if the worker state is poisoned. No refresh completion can
+replace an active Station or import credentials.
+
 ## 4. Publication Transaction
 
 ```text

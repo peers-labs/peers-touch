@@ -1,4 +1,5 @@
 import { ImagePlus, Search, SlidersHorizontal, UsersRound } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { TimelineSort } from '../../gen/proto/domain/social/post_pb';
@@ -13,6 +14,7 @@ interface MomentsScopeHeaderProps {
   readonly onOpenCircles: () => void;
   readonly onOpenComposer: () => void;
   readonly onOpenSort: () => void;
+  readonly searchEntry?: ReactNode;
 }
 
 export function MomentsScopeHeader({
@@ -23,6 +25,7 @@ export function MomentsScopeHeader({
   onOpenCircles,
   onOpenComposer,
   onOpenSort,
+  searchEntry,
 }: MomentsScopeHeaderProps) {
   const { t } = useMobileI18n();
 
@@ -31,6 +34,7 @@ export function MomentsScopeHeader({
       <header className="moments-header">
         <h1>{t('mobile.moments.title')}</h1>
         <div className="moments-header-actions">
+          {searchEntry}
           <button
             type="button"
             data-acceptance-id="social-search-open"

@@ -40,6 +40,7 @@
     "@peers-touch/client-storage": "workspace:*",
     "@peers-touch/sdk-ts": "workspace:*",
     "@peers-touch/ui-desktop": "workspace:*",
+    "@tanstack/query-core": "5.104.5",
     "@tanstack/react-virtual": "^3.14.7",
     "@tauri-apps/api": "2.0.1",
     "@tauri-apps/plugin-deep-link": "2.0.1",

@@ -29,6 +29,7 @@ pub mod key_exchange;
 pub mod mcp;
 pub mod memory;
 pub mod messaging;
+pub mod messaging_files;
 pub mod messaging_recovery;
 pub mod model_config;
 
@@ -55,20 +56,6 @@ pub mod tts;
 use crate::contracts::StubPayload;
 use crate::contracts::CONTRACT_VERSION;
 use crate::error::{AppResult, ErrorCode};
-
-/// Authorize only the selected or materialized file for native WebView preview.
-pub(crate) fn allow_file_preview(
-    window: &tauri::Window,
-    path: &std::path::Path,
-) -> Result<(), String> {
-    use tauri::Manager;
-
-    window
-        .app_handle()
-        .asset_protocol_scope()
-        .allow_file(path)
-        .map_err(|error| format!("allow local file preview: {error}"))
-}
 
 pub fn not_implemented(command: &str) -> AppResult<StubPayload> {
     AppResult::fail(

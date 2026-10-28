@@ -46,13 +46,13 @@ class StorageGovernanceContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("pub fn measure_storage(", core)
-        self.assertIn("pub struct PhysicalStorageFile", core)
+        self.assertIn("pub trait StorageMeasurementPort", core)
         self.assertIn("pub physical_identity: String", core)
+        self.assertIn(".entry(file.physical_identity)", core)
         self.assertNotIn("rusqlite", core)
         self.assertNotIn("tauri", core)
         for engine in (desktop_engine, mobile_engine):
-            self.assertIn("measure_storage(", engine)
-            self.assertIn("StorageAccountingInput {", engine)
+            self.assertRegex(engine, r"measure_storage\(\s*StorageAccountingInput\s*\{")
 
     def test_both_clients_register_scope_fenced_snapshot_commands(self) -> None:
         desktop_command = (
@@ -276,6 +276,9 @@ class StorageGovernanceContractTest(unittest.TestCase):
             ROOT / "apps/mobile/src/pages/settings/SettingsSections.tsx"
         ).read_text(encoding="utf-8")
         recovery = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/recovery.rs"
+        ).read_text(encoding="utf-8")
+        recovery_types = (
             ROOT / "packages/messaging-core/src/recovery/types.rs"
         ).read_text(encoding="utf-8")
 
@@ -300,8 +303,10 @@ class StorageGovernanceContractTest(unittest.TestCase):
         self.assertIn("chat_storage_acceptance_seed_retention", mobile_registry)
         self.assertIn("data-chat-storage-retention-option", desktop_ui)
         self.assertIn("data-chat-storage-retention-option", mobile_ui)
-        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 4", recovery)
-        self.assertIn("retention_floors", recovery)
+        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 4", recovery_types)
+        self.assertIn("pub retention_floors: Vec<RecoveryRetentionFloor>", recovery_types)
+        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION", recovery)
+        self.assertIn("messaging_core::recovery", recovery)
 
     def test_retention_gate_uses_one_station_mobile_runtime(self) -> None:
         gates = json.loads(
@@ -364,9 +369,6 @@ class StorageGovernanceContractTest(unittest.TestCase):
         mobile_ui = (
             ROOT / "apps/mobile/src/pages/ChatPage.tsx"
         ).read_text(encoding="utf-8")
-        mobile_overlay = (
-            ROOT / "apps/mobile/src/pages/chat/ChatOverlayHost.tsx"
-        ).read_text(encoding="utf-8")
 
         expected_gates = [
             "chat-storage-delete-reclaim-e2e",
@@ -398,7 +400,7 @@ class StorageGovernanceContractTest(unittest.TestCase):
         ):
             self.assertIn(symbol, core)
         self.assertIn('data-chat-history-action="clear"', desktop_ui)
-        self.assertIn("'chat.conversation-actions'", mobile_overlay)
+        self.assertIn("data-chat-actions-open", mobile_ui)
         self.assertIn("data-chat-conversation-clear-result", mobile_ui)
         self.assertIn(
             "storage.conversation-clear.seed",

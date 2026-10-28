@@ -368,6 +368,7 @@ impl MobileMessagingRuntime {
         }
         let previous_lifecycle =
             if let Some(ActiveMessagingRuntime { engine, worker }) = active.take() {
+                engine.attachment_file_access.revoke_all();
                 let lifecycle = worker.stop()?;
                 drop(engine);
                 Some(lifecycle)
@@ -554,6 +555,7 @@ impl MobileMessagingRuntime {
         let active_runtime = active
             .take()
             .ok_or_else(|| MobileError::messaging("mobile messaging runtime disappeared"))?;
+        active_runtime.engine.attachment_file_access.revoke_all();
         drop(active);
         let lifecycle = active_runtime
             .worker
@@ -571,6 +573,7 @@ impl MobileMessagingRuntime {
             .lock()
             .map_err(|_| MobileError::messaging("mobile messaging runtime lock poisoned"))?;
         if let Some(runtime) = active.as_ref() {
+            runtime.engine.attachment_file_access.revoke_all();
             runtime.worker.suspend().map_err(MobileError::messaging)?;
         }
         Ok(())
@@ -585,7 +588,9 @@ impl MobileMessagingRuntime {
             .as_ref()
             .ok_or_else(|| MobileError::messaging("mobile messaging runtime is not active"))?;
         validate_active_scope(&runtime.engine, station_peer_id, actor_ptid)?;
-        runtime.worker.resume().map_err(MobileError::messaging)
+        runtime.worker.resume().map_err(MobileError::messaging)?;
+        runtime.engine.attachment_file_access.resume();
+        Ok(())
     }
 
     pub fn wake(&self, station_peer_id: &str, actor_ptid: &str) -> MobileResult<u64> {
@@ -635,6 +640,44 @@ impl MobileMessagingRuntime {
         Ok((runtime.worker.waiter(), cycle_id))
     }
 
+    pub(crate) fn file_access_scope(
+        &self,
+        owner: &str,
+    ) -> MobileResult<(Arc<MobileMessagingEngine>, String)> {
+        self.file_access_context(owner, true)
+    }
+
+    pub(crate) fn file_release_scope(
+        &self,
+        owner: &str,
+    ) -> MobileResult<(Arc<MobileMessagingEngine>, String)> {
+        self.file_access_context(owner, false)
+    }
+
+    fn file_access_context(
+        &self,
+        owner: &str,
+        require_running: bool,
+    ) -> MobileResult<(Arc<MobileMessagingEngine>, String)> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| MobileError::messaging("FILE_SCOPE_UNAVAILABLE"))?;
+        let runtime = active
+            .as_ref()
+            .ok_or_else(|| MobileError::messaging("FILE_SCOPE_UNAVAILABLE"))?;
+        if require_running
+            && runtime.worker.phase().map_err(MobileError::messaging)? != MessagingWorkerPhase::Running
+        {
+            return Err(MobileError::messaging("FILE_SCOPE_UNAVAILABLE"));
+        }
+        let generation = runtime
+            .worker
+            .lifecycle_generation()
+            .map_err(MobileError::messaging)?;
+        Ok((runtime.engine.clone(), format!("{owner}:{generation}")))
+    }
+
     pub(crate) fn active_engine(
         &self,
         station_peer_id: &str,
@@ -649,6 +692,34 @@ impl MobileMessagingRuntime {
             .ok_or_else(|| MobileError::messaging("mobile messaging runtime is not active"))?;
         validate_active_scope(&engine, station_peer_id, actor_ptid)?;
         Ok(engine)
+    }
+
+    /// Publication shares the active-runtime lock with suspend, resume and
+    /// replacement. Pointer identity rejects A→B→A engine reincarnations.
+    pub(crate) fn with_search_engine<T>(
+        &self,
+        engine: &Arc<MobileMessagingEngine>,
+        publish: impl FnOnce() -> Result<T, search_core::SearchError>,
+    ) -> Result<T, search_core::SearchError> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| search_core::SearchError::Cancelled)?;
+        let current = active.as_ref().ok_or(search_core::SearchError::Cancelled)?;
+        if !Arc::ptr_eq(&current.engine, engine)
+            || current
+                .worker
+                .phase()
+                .map_err(|_| search_core::SearchError::Cancelled)?
+                == MessagingWorkerPhase::Suspended
+            || !current
+                .worker
+                .is_active()
+                .map_err(|_| search_core::SearchError::Cancelled)?
+        {
+            return Err(search_core::SearchError::Cancelled);
+        }
+        publish()
     }
 
     pub(crate) fn secure_content_runtime_identity(
@@ -1018,6 +1089,24 @@ fn worker_loop(
             }
         };
 
+        // Local derived-index repair has no network prerequisite. Yield the
+        // Store lock between 128-row batches and recheck the lifecycle fence.
+        match engine.store().rebuild_search_index_batch() {
+            Ok(false) => {
+                let mut guard = match state.0.lock() {
+                    Ok(guard) => guard,
+                    Err(_) => return,
+                };
+                guard.cycle_running = false;
+                if validate_active_engine(&guard.lifecycle, fence, cancellation.as_ref()).is_ok() {
+                    guard.wake_pending = true;
+                }
+                state.1.notify_all();
+                continue;
+            }
+            Ok(true) => {}
+            Err(error) => log::warn!("mobile messaging index repair remains pending: {error}"),
+        }
         let (mut result, backlog, retry_deadline) = run_worker_batch(
             &state,
             engine.as_ref(),

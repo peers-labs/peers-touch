@@ -18,7 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { toBinary, create } from '@bufbuild/protobuf';
+import { toBinary, fromBinary, create } from '@bufbuild/protobuf';
 import type { DescMessage, MessageInitShape } from '@bufbuild/protobuf';
 import {
   AudienceSchema,
@@ -70,6 +70,16 @@ import {
   socialStationModerationUpsert,
   type MomentDraft,
 } from '../services/social_api';
+import {
+  SearchReadStateSchema, SearchResponseSchema, SubmitRequestSchema, SourceState,
+} from '../gen/proto/domain/search/search_pb';
+import { emptySearchState, useSearchStore } from '../store/search';
+import { clearSearchQueries, invalidateSearchSources, reconcileSearchQuery, runSearchQuery } from '../runtimes/searchQueries';
+import { searchActions } from '../runtimes/searchRuntime';
+import { useMomentsNavigationStore } from '../store/momentsNavigation';
+import * as socialApi from '../services/social_api';
+import { QueryClient } from '@tanstack/query-core';
+import { searchRowKey, searchService } from '../services/search';
 
 vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: vi.fn((path: string, protocol = 'asset') => (
@@ -150,9 +160,12 @@ function dataOk(status: unknown) {
 
 beforeEach(() => {
   momentsRuntime.teardown();
+  clearSearchQueries();
+  useSearchStore.setState(emptySearchState());
   invokeMock.mockReset();
   pending = [];
   useMomentsStore.getState().reset();
+  useMomentsNavigationStore.getState().reset();
   usePrivateCommentsStore.getState().reset();
   usePrivateMomentsStore.getState().reset();
   useRelationshipsStore.getState().reset();
@@ -170,8 +183,384 @@ beforeEach(() => {
 
 afterEach(() => {
   momentsRuntime.teardown();
+  clearSearchQueries();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe('Desktop Search no-store page continuity', () => {
+  function searchFixture() {
+    useSessionStore.setState({
+      authenticated: true, currentUser: { actorPtid: 'alice' } as never, sessionEpoch: 1,
+    });
+    useSearchStore.setState({
+      open: true, query: 'history', mode: 'submit', contentFilter: 'social',
+    });
+    let pages = [['first'], ['later-a', 'later-b'], ['last']];
+    let traversal = 0;
+    const continuations = new Map<string, number>();
+    const source = {
+      sourceId: 'social-private', bindingId: 'private', readScope: 'alice',
+      sourceRevision: '1', policyRevision: '1', state: SourceState.READY, noStore: true,
+    };
+    const publicSource = { ...source, sourceId: 'social-public', bindingId: 'public' };
+    const sources = [source, publicSource];
+    const submit = vi.fn(async (input: ReturnType<typeof fromBinary<typeof SubmitRequestSchema>>) => {
+      let ordinal = 0;
+      if (input.cursor) {
+        const next = continuations.get(input.cursor);
+        if (next === undefined) throw new Error('consumed cursor');
+        ordinal = next;
+        continuations.delete(input.cursor);
+      } else traversal++;
+      const nextCursor = ordinal + 1 < pages.length ? `${traversal}:${ordinal + 1}` : '';
+      if (nextCursor) continuations.set(nextCursor, ordinal + 1);
+      return bytesOk(SearchResponseSchema, {
+        partition: 'alice', sources,
+        expiresAtUnixMs: BigInt(Date.now() + 60_000),
+        coverage: sources.map(item => ({ sourceId: item.sourceId, state: SourceState.READY })),
+        nextCursor, hasMore: !!nextCursor,
+        items: (pages[ordinal] ?? []).map(id => ({
+          sourceId: id.startsWith('public-') ? publicSource.sourceId : source.sourceId, title: id,
+          resource: {
+            authorityNamespace: 'social-private:alice', kind: 'social-comment', id,
+            contentRevision: String(traversal), anchor: { kind: 'comment', id },
+          },
+          readValidity: { readScope: 'alice', policyRevision: '1' },
+        })),
+      });
+    });
+    invokeMock.mockImplementation(async (cmd, args) => {
+      if (cmd === 'frontend_log' || cmd === 'search_cancel') return undefined;
+      if (cmd === 'search_read_state') {
+        return bytesOk(SearchReadStateSchema, { partition: 'alice', sources });
+      }
+      if (cmd === 'search_submit') {
+        return submit(fromBinary(SubmitRequestSchema, Uint8Array.from(
+          (args as { input: { request_bytes: number[] } }).input.request_bytes,
+        )));
+      }
+      throw new Error(`unexpected invoke(${cmd})`);
+    });
+    return { submit, changePages: (next: string[][]) => { pages = next; } };
+  }
+
+  const resultIds = () => useSearchStore.getState().response?.items.map(item => item.resource?.id);
+  function selectResult(index: number): string {
+    const selectedKey = searchRowKey(useSearchStore.getState().response!.items[index].resource);
+    useSearchStore.setState({ selectedKey, scrollTop: 93 });
+    return selectedKey;
+  }
+  async function settle() {
+    await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('ready'));
+  }
+
+  it('freshly traverses to the displayed ordinal without replaying a consumed cursor', async () => {
+    const { submit } = searchFixture();
+    const removals = vi.spyOn(QueryClient.prototype, 'removeQueries');
+    await runSearchQuery('en');
+    await settle();
+    await runSearchQuery('en', false, true);
+    await settle();
+    expect(resultIds()).toEqual(['later-a', 'later-b']);
+    const selectedKey = selectResult(1);
+
+    await reconcileSearchQuery('en');
+    await settle();
+    expect(resultIds()).toEqual(['later-a', 'later-b']);
+    expect(submit.mock.calls.map(([input]) => [input.cursor, input.refresh]))
+      .toEqual([['', false], ['1:1', false], ['', true], ['2:1', false]]);
+    expect(useSearchStore.getState()).toMatchObject({
+      selectedKey, scrollTop: 93,
+    });
+    const client = removals.mock.contexts[0] as QueryClient;
+    expect(client.getQueryCache().getAll().some(entry =>
+      (entry.state.data as { traversal?: { noStore: boolean } } | undefined)?.traversal?.noStore,
+    )).toBe(false);
+  });
+
+  it('restores the later page on same-scope reopen without retaining no-store rows', async () => {
+    searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    await runSearchQuery('en', false, true);
+    await settle();
+    const selectedKey = selectResult(1);
+    searchActions.close();
+    expect(useSearchStore.getState().response).toBeNull();
+    searchActions.open('moments', 'en');
+    await settle();
+    expect(resultIds()).toEqual(['later-a', 'later-b']);
+    expect(useSearchStore.getState()).toMatchObject({ selectedKey, scrollTop: 93 });
+  });
+
+  it.each(['current', 'superseded'] as const)(
+    'restores selected ResourceKey after a %s no-store Return read failure',
+    async failureOwner => {
+      const { submit, changePages } = searchFixture();
+      const ids = ['private-comment', 'public-comment', 'private-post', '360890531888234499'];
+      changePages([ids]);
+      await runSearchQuery('en');
+      await settle();
+      const selectedKey = selectResult(3);
+      const before = useSearchStore.getState().traversal!;
+      searchActions.close();
+      expect(useSearchStore.getState().response).toBeNull();
+
+      let fail!: () => void;
+      submit.mockImplementationOnce(() => new Promise(resolve => {
+        fail = () => resolve({
+          ok: false, error: { code: 'INVALID_ARGUMENT', message: 'search cancelled' },
+        } as never);
+      }) as never);
+      searchActions.open('moments', 'en');
+      await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+      if (failureOwner === 'superseded') {
+        await runSearchQuery('en');
+        await settle();
+      }
+      fail();
+      if (failureOwner === 'current') {
+        await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('error'));
+        expect(useSearchStore.getState().response).toBeNull();
+        searchActions.close();
+        searchActions.open('moments', 'en');
+      }
+      await settle();
+      expect(resultIds()).toEqual(ids);
+      expect(useSearchStore.getState().traversal).toMatchObject({
+        identity: before.identity, ordinal: before.ordinal, rowKeys: before.rowKeys,
+      });
+      expect(useSearchStore.getState()).toMatchObject({
+        selectedKey, scrollTop: 93,
+      });
+    },
+  );
+
+  it('does not select another resource when an authorized Return page loses the selected key', async () => {
+    const { changePages } = searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    selectResult(0);
+    searchActions.close();
+    changePages([['replacement']]);
+    searchActions.open('moments', 'en');
+    await settle();
+    expect(resultIds()).toEqual(['replacement']);
+    expect(useSearchStore.getState()).toMatchObject({
+      selectedKey: null, scrollTop: 0,
+    });
+  });
+
+  it('retains addressed selection through source concealment and unchanged reacquisition', async () => {
+    searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    await runSearchQuery('en', false, true);
+    await settle();
+    const selectedKey = selectResult(1);
+    const before = useSearchStore.getState().traversal!;
+
+    expect(invalidateSearchSources(['social-private'])).toBe(true);
+    expect(resultIds()).toEqual([]);
+    expect(useSearchStore.getState().traversal).toEqual(before);
+    expect(useSearchStore.getState()).toMatchObject({
+      selectedKey, scrollTop: 93,
+    });
+    searchActions.close();
+    searchActions.open('moments', 'en');
+    await settle();
+    expect(resultIds()).toEqual(['later-a', 'later-b']);
+    expect(useSearchStore.getState()).toMatchObject({
+      selectedKey, scrollTop: 93,
+    });
+  });
+
+  it('ignores concealed viewport clamping and records scroll again after qualification', async () => {
+    searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    const selectedKey = selectResult(0);
+    invalidateSearchSources(['social-private']);
+    searchActions.scroll(0);
+    expect(useSearchStore.getState()).toMatchObject({ selectedKey, scrollTop: 93 });
+    searchActions.close();
+    searchActions.scroll(0);
+    expect(useSearchStore.getState().scrollTop).toBe(93);
+    searchActions.open('moments', 'en');
+    await settle();
+    searchActions.scroll(47);
+    expect(useSearchStore.getState()).toMatchObject({ selectedKey, scrollTop: 47 });
+  });
+
+  it.each(['private-a', 'public-b'])(
+    'keeps the user-selected %s authoritative across partial concealment',
+    async selectedId => {
+      const { changePages } = searchFixture();
+      changePages([['private-a', 'public-a', 'public-b']]);
+      await runSearchQuery('en');
+      await settle();
+      const selectedKey = selectResult(0);
+      const before = useSearchStore.getState().traversal!;
+      invalidateSearchSources(['social-private']);
+      expect(resultIds()).toEqual(['public-a', 'public-b']);
+      expect(useSearchStore.getState().traversal).toEqual(before);
+      expect(useSearchStore.getState().selectedKey).toBe(selectedKey);
+      const chosenKey = selectedId === 'public-b' ? selectResult(1) : selectedKey;
+      searchActions.scroll(0);
+      expect(useSearchStore.getState().scrollTop).toBe(93);
+      await runSearchQuery('en');
+      await settle();
+      expect(resultIds()).toEqual(['private-a', 'public-a', 'public-b']);
+      expect(useSearchStore.getState()).toMatchObject({ selectedKey: chosenKey, scrollTop: 93 });
+    },
+  );
+
+  it('clears a concealed selection only when the qualified final page loses that resource', async () => {
+    const { changePages } = searchFixture();
+    changePages([['private-a', 'public-a']]);
+    await runSearchQuery('en');
+    await settle();
+    const selectedKey = selectResult(0);
+    invalidateSearchSources(['social-private']);
+    expect(useSearchStore.getState().selectedKey).toBe(selectedKey);
+    changePages([['public-a']]);
+    await runSearchQuery('en');
+    await settle();
+    expect(resultIds()).toEqual(['public-a']);
+    expect(useSearchStore.getState()).toMatchObject({ selectedKey: null, scrollTop: 0 });
+  });
+
+  it('resets concealed browsing metadata on a qualified new query intent', async () => {
+    searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    selectResult(0);
+    invalidateSearchSources(['social-private']);
+    useSearchStore.setState({ query: 'different' });
+    await runSearchQuery('en');
+    await settle();
+    expect(useSearchStore.getState()).toMatchObject({
+      displayedQuery: 'different', selectedKey: null, scrollTop: 0,
+    });
+  });
+
+  it('adjusts changed snapshot rows and ResourceKey selection in one publication', async () => {
+    const { changePages } = searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    await runSearchQuery('en', false, true);
+    await settle();
+    const selectedKey = selectResult(1);
+    changePages([['new-first'], ['later-b', 'new-later']]);
+    const publications: Array<{ ids: string[]; selected: string | null; scroll: number }> = [];
+    const remove = useSearchStore.subscribe(state => {
+      if (state.response?.items[0]?.resource?.id === 'later-b') publications.push({
+        ids: state.response.items.map(item => item.resource!.id),
+        selected: state.selectedKey, scroll: state.scrollTop,
+      });
+    });
+    await reconcileSearchQuery('en');
+    await settle();
+    remove();
+    expect(publications.length).toBeGreaterThan(0);
+    expect(publications.every(value => value.selected === selectedKey && value.scroll === 0)).toBe(true);
+    expect(resultIds()).toEqual(['later-b', 'new-later']);
+    expect(useSearchStore.getState().selectedKey).toBe(selectedKey);
+  });
+
+  it('fails a shortened traversal without publishing its first page or losing the addressed ordinal', async () => {
+    const { changePages } = searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    await runSearchQuery('en', false, true);
+    await settle();
+    changePages([['new-first']]);
+    await reconcileSearchQuery('en');
+    await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('error'));
+    expect(useSearchStore.getState()).toMatchObject({
+      response: null, errorKey: 'search.error.sourceChanged', traversal: { ordinal: 1 },
+    });
+  });
+
+  it('bounds a stalled fresh traversal and fences its late completion', async () => {
+    const { submit } = searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    await runSearchQuery('en', false, true);
+    await settle();
+    let release!: (value: unknown) => void;
+    submit.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }) as never);
+    vi.useFakeTimers();
+    try {
+      await reconcileSearchQuery('en');
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(useSearchStore.getState()).toMatchObject({
+        status: 'error', response: null, errorKey: 'search.error.timeout', traversal: { ordinal: 1 },
+      });
+      release(bytesOk(SearchResponseSchema, {}));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(useSearchStore.getState().response).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('caps traversal metadata instead of silently restarting outside its page budget', async () => {
+    const { submit } = searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    useSearchStore.setState({
+      traversal: { ...useSearchStore.getState().traversal!, ordinal: 32 },
+    });
+    await reconcileSearchQuery('en');
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(useSearchStore.getState()).toMatchObject({
+      status: 'error', errorKey: 'search.error.cursorExpired', traversal: { ordinal: 32 },
+    });
+  });
+
+  it('settles unresolved preflight read-state at the same request deadline', async () => {
+    const { submit } = searchFixture();
+    const readState = vi.spyOn(searchService, 'readState')
+      .mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    try {
+      const pending = runSearchQuery('en');
+      await vi.advanceTimersByTimeAsync(5_001);
+      await pending;
+      expect(useSearchStore.getState()).toMatchObject({
+        status: 'error', errorKey: 'search.error.timeout', response: null,
+      });
+      expect(submit).not.toHaveBeenCalled();
+    } finally {
+      readState.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('cannot clear a newer stalled/deadline timer from a superseded query finalizer', async () => {
+    const { submit } = searchFixture();
+    let releaseOld!: (value: unknown) => void;
+    submit.mockImplementationOnce(() => new Promise(resolve => { releaseOld = resolve; }) as never)
+      .mockImplementationOnce(() => new Promise(() => {}) as never);
+    vi.useFakeTimers();
+    try {
+      await runSearchQuery('en');
+      await vi.advanceTimersByTimeAsync(1_000);
+      useSearchStore.setState({ query: 'new-history' });
+      await runSearchQuery('en');
+      releaseOld(bytesOk(SearchResponseSchema, {}));
+      await vi.advanceTimersByTimeAsync(201);
+      expect(useSearchStore.getState()).toMatchObject({ status: 'loading', stalled: true });
+      await vi.advanceTimersByTimeAsync(4_800);
+      expect(useSearchStore.getState()).toMatchObject({
+        status: 'error', stalled: false, errorKey: 'search.error.timeout',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('moments store: loadFeed', () => {
@@ -1422,6 +1811,126 @@ describe('private Moments Native projection', () => {
 });
 
 describe('moments store: comments', () => {
+  const publicPage = (id: string) => create(ListMomentCommentsResponseSchema, {
+    comments: [{
+      metadata: { commentId: id, contentId: id, postId: 'p1', author: { ptid: 'alice' } },
+      body: { case: 'publicContent', value: { text: id } },
+    }],
+  });
+
+  it('shares equivalent public read completion with reentrant subscribers', async () => {
+    let release!: (value: ReturnType<typeof publicPage>) => void;
+    const native = new Promise<ReturnType<typeof publicPage>>(resolve => { release = resolve; });
+    const list = vi.spyOn(socialApi, 'socialGetComments').mockReturnValue(native);
+    let joined: Promise<void> | undefined;
+    const remove = useMomentsStore.subscribe(state => {
+      if (state.commentsLoading.p1 && !joined) {
+        remove();
+        joined = state.loadComments(' p1 ', true, 'historical');
+      }
+    });
+    const first = useMomentsStore.getState().loadComments('p1', true, 'historical');
+    let completed = false;
+    const second = useMomentsStore.getState().loadComments('p1', true, 'historical')
+      .then(() => { completed = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(completed).toBe(false);
+    release(publicPage('historical'));
+    await Promise.all([first, second, joined]);
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(useMomentsStore.getState().comments.p1[0].id).toBe('historical');
+  });
+
+  it('shares an equivalent public error and permits a new retry', async () => {
+    const error = new Error('public read unavailable');
+    const list = vi.spyOn(socialApi, 'socialGetComments').mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(publicPage('retry'));
+    const first = useMomentsStore.getState().loadComments('p1', true);
+    const second = useMomentsStore.getState().loadComments('p1', true);
+    expect(await Promise.allSettled([first, second])).toEqual([
+      { status: 'rejected', reason: error }, { status: 'rejected', reason: error },
+    ]);
+    await useMomentsStore.getState().loadComments('p1', true);
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(useMomentsStore.getState().commentsLoading.p1).toBe(false);
+  });
+
+  it('retains the active public anchor for refreshes, clearing and fencing it on navigation', async () => {
+    let release!: (value: ReturnType<typeof publicPage>) => void;
+    const list = vi.spyOn(socialApi, 'socialGetComments')
+      .mockResolvedValueOnce(publicPage('historical'))
+      .mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+      .mockResolvedValueOnce(publicPage('default'));
+    useMomentsNavigationStore.getState().setView({
+      kind: 'detail', postId: 'p1', commentId: 'historical', from: 'feed',
+    });
+    await useMomentsStore.getState().loadComments('p1', true);
+    const old = useMomentsStore.getState().loadComments('p1', true);
+    await Promise.resolve();
+    useMomentsNavigationStore.getState().setView({ kind: 'tab', tab: 'feed' });
+    await useMomentsStore.getState().loadComments('p1', true);
+    release(publicPage('obsolete'));
+    await old;
+    expect(list.mock.calls.map(call => call[3])).toEqual(['historical', 'historical', undefined]);
+    expect(useMomentsStore.getState().comments.p1[0].id).toBe('default');
+  });
+
+  it('discards a superseded public anchor error and scope-reset completion', async () => {
+    let reject!: (error: unknown) => void;
+    const list = vi.spyOn(socialApi, 'socialGetComments')
+      .mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }))
+      .mockResolvedValueOnce(publicPage('anchor-b'));
+    const old = useMomentsStore.getState().loadComments('p1', true, 'anchor-a');
+    await Promise.resolve();
+    await useMomentsStore.getState().loadComments('p1', true, 'anchor-b');
+    reject(new Error('obsolete'));
+    await old;
+    expect(useMomentsStore.getState().comments.p1[0].id).toBe('anchor-b');
+    let release!: (value: ReturnType<typeof publicPage>) => void;
+    list.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const scoped = useMomentsStore.getState().loadComments('p1', true);
+    await Promise.resolve();
+    useMomentsStore.getState().reset();
+    release(publicPage('old-scope'));
+    await scoped;
+    expect(useMomentsStore.getState().comments).toEqual({});
+  });
+
+  it('executes a distinct historical anchor while pagination is pending and fences the old page', async () => {
+    const reply = (commentId: string, nextCursor = '') => bytesOk(ListMomentCommentsResponseSchema, {
+      comments: [{
+        metadata: { commentId, contentId: commentId, postId: 'p1', author: { ptid: 'alice' } },
+        body: { case: 'publicContent', value: { text: commentId } },
+      }],
+      nextCursor, hasMore: !!nextCursor,
+    });
+    enqueue('social_get_comments', reply('initial', 'next-1'));
+    await useMomentsStore.getState().loadComments('p1', true);
+    let releaseOld!: (value: unknown) => void;
+    let releaseAnchor!: (value: unknown) => void;
+    enqueue('social_get_comments', new Promise(resolve => { releaseOld = resolve; }));
+    enqueue('social_get_comments', new Promise(resolve => { releaseAnchor = resolve; }));
+    const old = useMomentsStore.getState().loadComments('p1');
+    await Promise.resolve();
+    let completed = false;
+    const anchor = useMomentsStore.getState().loadComments('p1', true, 'historical')
+      .then(() => { completed = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+    const completedBeforeNative = completed;
+    releaseOld(reply('obsolete', 'next-2'));
+    await old;
+    const loadingAfterOld = useMomentsStore.getState().commentsLoading['p1'];
+    releaseAnchor(reply('historical'));
+    await anchor;
+
+    expect(completedBeforeNative).toBe(false);
+    expect(loadingAfterOld).toBe(true);
+    expect(useMomentsStore.getState().comments['p1'].map(row => row.id)).toEqual(['historical']);
+    expect(invokeMock.mock.calls.filter(([cmd]) => cmd === 'social_get_comments')).toHaveLength(3);
+  });
+
   it('returns a stable empty comments fallback for missing post threads', () => {
     const state = useMomentsStore.getState();
 
@@ -2041,7 +2550,7 @@ describe('moments store: comments', () => {
     );
     rejectList?.(new Error('late list failure'));
 
-    await expect(pendingList).rejects.toThrow('late list failure');
+    await expect(pendingList).resolves.toBeUndefined();
     expect(selectPrivateCommentThread(
       usePrivateCommentsStore.getState(),
       'private-post',

@@ -15,7 +15,8 @@
 3. 统计、候选选择、删除顺序、journal 和 compact 条件由共享 Rust Core 唯一拥有。
 4. 可靠性、crypto、草稿和活跃传输优先于空间回收。
 5. 清理边界用 authority sequence/hash 表达，不单独依赖设备墙钟。
-6. 无历史用户，旧 schema、archive 和兼容路径直接硬切。
+6. 旧业务语义、archive 和兼容 reader 直接硬切；canonical schema owner
+   删除退役列、拒绝不兼容结构并保护已有 authority rows。
 7. 批量清理只编排 canonical 单会话命令，不创建第二套删除协议或持久状态。
 
 ## 2. 系统架构
@@ -152,8 +153,17 @@ retired checkpoints；这些 continuity rows 不进入 Recovery archive，也不
 - 删除 Desktop `deletedMessageUlids`。
 - 删除 `disappear_timer_seconds` 全链路。
 - 删除固定零值 `statistics_get` 或由其真实非 Chat owner 重建。
-- 删除受影响的 backfill、compat reader、旧 archive schema 和测试。
-- 重置获批开发数据，不编写迁移。
+- 删除受影响的业务 backfill、compat reader 和旧 archive schema；保留证明
+  旧列被删除、旧结构被拒绝且已有 authority rows 未丢失的回归测试。
+- Station production 唯一委托 `persistence.MigrateCanonicalSchema` 删除退役列，
+  并在启用 authority 前验证 canonical schema。它不读取旧字段恢复业务语义。
+- Device Messaging Engine 的 shared schema owner 安装当前字段；通用 column
+  manifest 和 `ALTER TABLE` 语法不是旧业务能力。
+- 仅重置已获批的开发数据；schema retirement 不要求删除 Station authority 数据。
+- 九维扫描要求旧业务零引用。删除、拒绝与回归保护引用由
+  `legacy-inventory.json` 的 `retirementProofs` 绑定完整文件 SHA-256，
+  单独报告；新增引用、保护源码变化或丢失均 fail closed。禁止按目录、文件名
+  或测试类型批量忽略。
 
 ## 11. 目标布局
 

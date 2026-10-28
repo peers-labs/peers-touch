@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Badge, Input, List, Typography } from 'antd';
 import { MessageCircle, Pencil, Search } from 'lucide-react';
 import type { ChatListEvidenceState, Conversation, MobileUiEvidence } from '../types';
@@ -16,7 +16,8 @@ import {
 const { Text } = Typography;
 const conversationKey = (conversation: Conversation) => conversation.key;
 
-export function ChatPage({ conversations = demoConversations, listMemory, uiEvidence, onConversationClick }: {
+export function ChatPage({ conversations = demoConversations, listMemory, uiEvidence, onConversationClick, headerActions }: {
+  headerActions?: ReactNode;
   conversations?: Conversation[];
   listMemory: PrototypeListMemory;
   uiEvidence: MobileUiEvidence;
@@ -58,6 +59,7 @@ export function ChatPage({ conversations = demoConversations, listMemory, uiEvid
     <div className="mp-page" data-prototype-page="chats">
       <header className="mp-header">
         <h1 className="mp-header-title">Chats</h1>
+        {headerActions}
         <button type="button" className="mp-header-action" aria-label="Compose">
           <Pencil size={20} />
         </button>

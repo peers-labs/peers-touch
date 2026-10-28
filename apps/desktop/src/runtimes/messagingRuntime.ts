@@ -12,13 +12,30 @@ import {
   teardownMessagingProjectionBridge,
 } from '../services/messagingProjection';
 import { useSocialChatStore } from '../store/socialChat';
+import { useNavigationBadgeStore } from '../store/navigationBadges';
+import { messagingAttachmentAccess } from '../messaging/attachmentAccess';
+
+let unsubscribeConversation: (() => void) | null = null;
+let unsubscribeVisibility: (() => void) | null = null;
 
 messagingDomainRuntime.configure({
   install(): void {
+    unsubscribeConversation = useSocialChatStore.subscribe((state, previous) => {
+      if (state.activeTab !== previous.activeTab
+        || state.activeSessionUlid !== previous.activeSessionUlid
+        || state.activeGroupUlid !== previous.activeGroupUlid) messagingAttachmentAccess.close();
+    });
+    unsubscribeVisibility = useNavigationBadgeStore.subscribe((state) => {
+      if (!state.chatSurfaceVisible) messagingAttachmentAccess.close();
+    });
     installMessagingRealtimeBridge();
     void installMessagingProjectionBridge();
   },
   teardown(): void {
+    unsubscribeConversation?.();
+    unsubscribeConversation = null;
+    unsubscribeVisibility?.();
+    unsubscribeVisibility = null;
     teardownMessagingProjectionBridge();
     teardownMessagingRealtimeBridge();
   },

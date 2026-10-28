@@ -1,21 +1,36 @@
+import { fromJson, toJson, type JsonValue } from '@bufbuild/protobuf';
 import { identityRuntime } from '../../kernel/identityRuntime';
+import { create, toBinary } from '@bufbuild/protobuf';
+import { messagingAttachmentAccess } from '../../messaging/attachmentAccess';
 import { messagingDomainRuntime } from '../../messaging/runtime';
 import {
   chatStorageProjectionRuntime,
   type ChatStorageBatchAcceptanceScenario,
 } from '../../runtimes/chatStorageRuntime';
-import { api } from '../../services/desktop_api';
+import { installAuthenticatedCriticalRuntimes } from '../../services/appRuntime';
+import { api, RustCommandException } from '../../services/desktop_api';
+import { searchService } from '../../services/search';
+import {
+  ResourceRefSchema, ResolvedResourceSchema, SearchKind, SearchReadStateSchema, SearchResponseSchema,
+} from '../../gen/proto/domain/search/search_pb';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
+import type { MessagingLocalAttachmentIntent } from '../../services/im-service-contract';
 import {
   refreshPeerPresence,
   refreshSocialProjection,
 } from '../../services/socialRealtime';
 import { useRelationshipsStore } from '../../store/relationships';
 import { useSessionStore } from '../../store/session';
+import { useSearchStore } from '../../store/search';
 import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
 import { messageGroupSeq, type SocialMessage } from '../../store/socialProjection';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
+import {
+  AttachmentAccessState,
+  AttachmentFileAction,
+  AttachmentFileActionRequestSchema,
+} from '../../gen/proto/domain/chat/attachment_pb';
 import { groupCallManager } from '../../modules/groupCall';
 import { callP2p } from '../../modules/p2p/callP2p';
 import { registerAcceptanceHarness } from '../registry';
@@ -159,6 +174,7 @@ interface SendInteractionMessageInput {
   content: string;
   replyToMessageId?: string;
   threadRootMessageId?: string;
+  attachments?: MessagingLocalAttachmentIntent[];
 }
 
 interface SendInteractionMessageBatchInput {
@@ -452,6 +468,34 @@ export function installAcceptanceHarness(): void {
       attachmentId: string;
     }) => nativeAcceptanceBridge.openAttachment(input),
 
+    attachmentFileGrant: async (input: { actorPtid: string; attachmentId: string }) => {
+      if (requireCanonicalAcceptancePtid(input.actorPtid) !== activeActorPtid()) {
+        throw new Error('acceptance.chat.actorPtidMismatch');
+      }
+      if (messagingAttachmentAccess.selectedId() !== input.attachmentId) {
+        throw new Error('acceptance.chat.fileDetailNotSelected');
+      }
+      // Observe the actual selected UI grant. Never create, refresh or release
+      // a grant here: the negative oracle must replay the one revoked by UI.
+      const projection = messagingAttachmentAccess.snapshot(input.attachmentId).projection;
+      if (projection?.state !== AttachmentAccessState.READY
+        || !projection.accessHandle || !projection.assetUrl) {
+        throw new Error('acceptance.chat.fileDetailNotReady');
+      }
+      return {
+        attachmentId: projection.attachmentId,
+        assetUrl: projection.assetUrl,
+        requests: [
+          AttachmentFileAction.PREVIEW,
+          AttachmentFileAction.OPEN_EXTERNAL,
+          AttachmentFileAction.SAVE_COPY,
+        ].map(action => Array.from(toBinary(AttachmentFileActionRequestSchema, create(
+          AttachmentFileActionRequestSchema,
+          { attachmentId: projection.attachmentId, accessHandle: projection.accessHandle, action },
+        )))),
+      };
+    },
+
     identityState: () => nativeAcceptanceBridge.identityState(),
 
     async loginWithPassword({ account, password }: LoginInput) {
@@ -478,6 +522,7 @@ export function installAcceptanceHarness(): void {
           identityRuntime.completeCurrentSession(),
       }, account, password);
       const actorPtid = requireCanonicalAcceptancePtid(activeSessionActorPtid());
+      await installAuthenticatedCriticalRuntimes(actorPtid);
       return {
         authenticated: true,
         actorPtid,
@@ -546,6 +591,52 @@ export function installAcceptanceHarness(): void {
         messageIds: useSocialChatStore.getState().searchResults
           .map((result) => result.messageId),
       };
+    },
+
+    // Supporting native-owner diagnostics. Search UI actions remain in the Journey.
+    async deviceSearchState() {
+      return toJson(SearchReadStateSchema, await searchService.readState());
+    },
+
+    async deviceSearchPresentation() {
+      const view = useSearchStore.getState();
+      return {
+        open: view.open,
+        status: view.status,
+        query: view.displayedQuery,
+        filter: view.displayedFilter,
+        page: view.response ? toJson(SearchResponseSchema, view.response) : null,
+      };
+    },
+
+    async deviceSearchPage({ query, requestId, cursor = '', kinds = [SearchKind.MESSAGE] }: {
+      query: string; requestId: string; cursor?: string; kinds?: SearchKind[];
+    }) {
+      try {
+        const page = await searchService.submit(query, requestId, 'en', cursor, false, kinds);
+        return { accepted: true, page: toJson(SearchResponseSchema, page) };
+      } catch (error) {
+        return {
+          accepted: false,
+          errorCode: error instanceof RustCommandException
+            ? error.details?.search_error_code : null,
+        };
+      }
+    },
+
+    async deviceSearchResolve({ resource, sourceId, requestId }: {
+      resource: JsonValue; sourceId: string; requestId: string;
+    }) {
+      try {
+        const resolved = await searchService.resolve(fromJson(ResourceRefSchema, resource), sourceId, requestId);
+        return { accepted: true, resolved: toJson(ResolvedResourceSchema, resolved) };
+      } catch (error) {
+        return {
+          accepted: false,
+          errorCode: error instanceof RustCommandException
+            ? error.details?.search_error_code : null,
+        };
+      }
     },
 
     async prepareOnboardingPeer({ peerPtid }: OnboardingPeerInput) {
@@ -707,12 +798,13 @@ export function installAcceptanceHarness(): void {
       content,
       replyToMessageId = '',
       threadRootMessageId = '',
+      attachments = [],
     }: SendInteractionMessageInput) {
       const outcome = await imServiceV1.messaging.sendMessage(
         conversationId,
         kind === 'friend' ? 'direct' : 'group',
         content,
-        [],
+        attachments,
         {
           replyToMessageId: replyToMessageId || undefined,
           threadRootMessageId: threadRootMessageId || undefined,

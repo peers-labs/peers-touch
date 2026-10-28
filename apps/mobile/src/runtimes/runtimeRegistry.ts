@@ -28,7 +28,10 @@ import {
   type AccessDecision,
   type MobileAuthSession,
 } from '../features/auth/authSession';
-import { isMobileAuthSessionValid } from '../features/auth/mobileAuthIdentity';
+import {
+  isMobileAuthSessionValid,
+  mobileAuthScopeKey,
+} from '../features/auth/mobileAuthIdentity';
 import { useAuthStore } from '../features/auth/authStore';
 import {
   activeStationEntry,
@@ -54,6 +57,7 @@ import { createDeviceSettingsRuntimeDescriptor } from './deviceSettingsRuntime';
 import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
 import { fetchLifecycleGeneration } from './nativeLifecycleBridge';
 import { createMessagingRuntimeDescriptor } from './messagingRuntime';
+import { createSearchRuntimeDescriptor, fenceMobileSearch } from './searchRuntime';
 import { createChatStorageRuntimeDescriptor } from './chatStorageRuntime';
 import {
   createPrivateMomentsRuntimeDescriptor,
@@ -258,6 +262,7 @@ function createNativeEventBridgeDescriptor(): MobileRuntimeDescriptor {
 
 function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
   let controller: SocialRuntimeController | null = null;
+  let controllerSessionKey = '';
   let unsubscribe: (() => void) | null = null;
   let suspended = false;
   let lifecycleRevision = 0;
@@ -269,6 +274,7 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
     await previousController?.teardown();
     await previousController?.drain();
     controller = null;
+    controllerSessionKey = '';
     if (!isCurrent()) return;
     useSocialStore.getState().bindSession(session);
     if (!session || suspended) return;
@@ -276,10 +282,12 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
       session,
       useSocialStore.getState,
     );
+    controllerSessionKey = runtimeSessionKey(session);
     if (!isCurrent()) {
       await controller.teardown();
       await controller.drain();
       controller = null;
+      controllerSessionKey = '';
       return;
     }
     await applyReliabilityProjectionCheckpoints(
@@ -345,7 +353,8 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
       suspended = false;
       const session = admittedRuntimeSession(useAuthStore.getState());
       await enqueueSession(session, async (activeSession, isCurrent) => {
-        if (controller && activeSession) {
+        if (controller && activeSession
+            && controllerSessionKey === runtimeSessionKey(activeSession)) {
           useSocialStore.getState().bindSession(activeSession);
           await controller.resume();
         } else {
@@ -365,6 +374,7 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
       await activeController?.teardown();
       await activeController?.drain();
       controller = null;
+      controllerSessionKey = '';
       useSocialStore.getState().bindSession(null);
       return {
         runtimeId: 'social',
@@ -735,6 +745,7 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
     createSessionRuntimeDescriptor(),
     createNativeEventBridgeDescriptor(),
     createMessagingRuntimeDescriptor(),
+    createSearchRuntimeDescriptor(),
     createChatStorageRuntimeDescriptor(),
     createCommandRuntimeDescriptor(),
     createSocialRuntimeDescriptor(),
@@ -764,6 +775,7 @@ export function fenceMobileRuntimeProjections(
   fenceAccessRuntimeProjection();
   fenceSessionRuntimeProjection();
   fencePrivateMomentsRuntimeProjection();
+  fenceMobileSearch();
   resetMobileNavigation();
   useSocialStore.getState().bindSession(null);
   destroyRecoveryProjection();
@@ -877,7 +889,7 @@ export function readMobileRuntimeScopeProjection() {
 
 function runtimeSessionKey(session: MobileAuthSession | null): string {
   return session
-    ? `${session.stationPeerId}\u001f${session.actorRef.ptid}\u001f${session.sessionId}`
+    ? `${mobileAuthScopeKey(session)}\u001f${session.sessionId}`
     : '';
 }
 

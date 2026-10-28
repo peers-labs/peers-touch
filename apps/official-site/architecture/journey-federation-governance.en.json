@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Federation Replica Pull and Atomic Projection",
+    "subtitle": "Each member pulls ordered governance events, verifies membership, signature and PrevHash, then atomically commits its local Ledger and Projection before publishing context.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/journey-federation-governance.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "remote",
+      "type": "external",
+      "label": "Remote Sequencer",
+      "sublabel": "ordered ledger source",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/handler.go",
+          "label": "handler.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "sync",
+      "type": "backend",
+      "label": "Replica Sync Manager",
+      "sublabel": "cursor + range fetch",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/sync_manager.go",
+          "label": "sync_manager.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "validator",
+      "type": "security",
+      "label": "Remote Event Validator",
+      "sublabel": "membership · signature · PrevHash",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/ledger_service.go",
+          "label": "ledger_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "uow",
+      "type": "database",
+      "label": "Ledger + Projection UoW",
+      "sublabel": "atomic local commit",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/ledger_service.go",
+          "label": "ledger_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "projection",
+      "type": "database",
+      "label": "Local Projection",
+      "sublabel": "membership · catalog · resolver",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/projection_service.go",
+          "label": "projection_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "actors",
+      "type": "backend",
+      "label": "Local Business Actors",
+      "sublabel": "committed context consumer",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/sync_manager.go",
+          "label": "sync_manager.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 285,
+      "label": "Fetch"
+    },
+    {
+      "from": 295,
+      "to": 445,
+      "label": "Verify + commit"
+    },
+    {
+      "from": 455,
+      "to": 590,
+      "label": "Publish local context"
+    }
+  ],
+  "messages": [
+    {
+      "id": "fetch",
+      "from": "sync",
+      "to": "remote",
+      "y": 170,
+      "label": "fetch events after local cursor",
+      "variant": "emphasis"
+    },
+    {
+      "id": "batch",
+      "from": "remote",
+      "to": "sync",
+      "y": 225,
+      "label": "ordered signed event range",
+      "variant": "return"
+    },
+    {
+      "id": "validate",
+      "from": "sync",
+      "to": "validator",
+      "y": 315,
+      "label": "validate membership + signature + PrevHash",
+      "variant": "security"
+    },
+    {
+      "id": "accepted",
+      "from": "validator",
+      "to": "uow",
+      "y": 370,
+      "label": "produce verified projection mutation",
+      "variant": "security"
+    },
+    {
+      "id": "commit",
+      "from": "uow",
+      "to": "projection",
+      "y": 425,
+      "label": "atomically commit Ledger + Projection",
+      "variant": "emphasis"
+    },
+    {
+      "id": "publish",
+      "from": "projection",
+      "to": "actors",
+      "y": 495,
+      "label": "publish committed local context",
+      "variant": "emphasis"
+    },
+    {
+      "id": "advance",
+      "from": "projection",
+      "to": "sync",
+      "y": 550,
+      "label": "advance replica cursor",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Fail closed",
+      "items": [
+        "Invalid signature, membership or PrevHash stops apply; no partial projection is published."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Local authority",
+      "items": [
+        "Every member commits its own verified replica before local business actors observe the context."
+      ]
+    }
+  ]
+}

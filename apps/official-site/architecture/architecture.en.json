@@ -1,0 +1,700 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Peers-Touch Multicenter Network Architecture",
+    "subtitle": "Desktop and Mobile own experience; Home Station owns business truth; Federation owns social topology; connectivity provides reachability.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/architecture.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "desktop-journey",
+        "label": "Desktop journey",
+        "focus": [
+          "desktop-ui",
+          "desktop-runtime",
+          "desktop-route",
+          "station-edge",
+          "station-frame",
+          "station-apps",
+          "station-state"
+        ],
+        "note": "Desktop enters the same Home Station through a verified route."
+      },
+      {
+        "id": "mobile-journey",
+        "label": "Mobile journey",
+        "focus": [
+          "mobile-ui",
+          "mobile-runtime",
+          "mobile-route",
+          "station-edge",
+          "station-frame",
+          "station-apps",
+          "station-state"
+        ],
+        "note": "Mobile has its own lifecycle and local state, but shares Station business truth."
+      },
+      {
+        "id": "station-authority",
+        "label": "Station authority",
+        "focus": [
+          "station-edge",
+          "station-frame",
+          "station-apps",
+          "station-state"
+        ],
+        "note": "Platform ingress stays separate from App business authority and durable state."
+      },
+      {
+        "id": "federation-topology",
+        "label": "Federation topology",
+        "focus": [
+          "station-apps",
+          "federation-governance",
+          "federation-context",
+          "federation-members"
+        ],
+        "note": "Persistent membership, governance and discovery organize independent Stations."
+      },
+      {
+        "id": "cross-station-social",
+        "label": "Cross-Station social action",
+        "focus": [
+          "station-state",
+          "station-edge",
+          "peer-transport",
+          "federation-members"
+        ],
+        "note": "Business commit and authenticated peer delivery remain separate completion boundaries."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "desktop-ui",
+      "type": "frontend",
+      "label": "Desktop Experience",
+      "sublabel": "feed · chat · agent · applets",
+      "tag": "product surface",
+      "pos": [
+        60,
+        80
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src/pages/registry.ts",
+          "label": "registry.ts",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "desktop-runtime",
+      "type": "backend",
+      "label": "Desktop Runtime",
+      "sublabel": "Tauri · React · Rust",
+      "tag": "independent install",
+      "pos": [
+        60,
+        190
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/state/mod.rs",
+          "line": 20,
+          "end_line": 49,
+          "label": "mod.rs"
+        }
+      ]
+    },
+    {
+      "id": "desktop-local",
+      "type": "database",
+      "label": "Desktop Local State",
+      "sublabel": "draft · cache · projection · keys",
+      "tag": "device-owned",
+      "pos": [
+        60,
+        300
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/secure_content/store.rs",
+          "label": "store.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "mobile-ui",
+      "type": "frontend",
+      "label": "Mobile Experience",
+      "sublabel": "feed · chat · agent · applets",
+      "tag": "product surface",
+      "pos": [
+        350,
+        80
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "label": "App.tsx",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "mobile-runtime",
+      "type": "backend",
+      "label": "Mobile Runtime",
+      "sublabel": "Tauri Mobile · native plugins",
+      "tag": "independent install",
+      "pos": [
+        350,
+        190
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "mobile-local",
+      "type": "database",
+      "label": "Mobile Local State",
+      "sublabel": "recovery · cache · projection · keys",
+      "tag": "device-owned",
+      "pos": [
+        350,
+        300
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/secure_content/store.rs",
+          "label": "store.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "station-state",
+      "type": "database",
+      "label": "Station Durable State",
+      "sublabel": "business truth · inbox / outbox · objects",
+      "tag": "authority",
+      "pos": [
+        640,
+        80
+      ],
+      "size": [
+        220,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/delivery/gorm_unit_of_work.go",
+          "line": 20,
+          "end_line": 113,
+          "label": "gorm_unit_of_work.go"
+        },
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "line": 70,
+          "end_line": 92,
+          "label": "events.go"
+        }
+      ]
+    },
+    {
+      "id": "station-apps",
+      "type": "backend",
+      "label": "Station App Domains",
+      "sublabel": "social · conversation · agent · applets",
+      "tag": "business authority",
+      "pos": [
+        640,
+        190
+      ],
+      "size": [
+        220,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "line": 24,
+          "end_line": 86,
+          "label": "main.go"
+        }
+      ]
+    },
+    {
+      "id": "station-frame",
+      "type": "security",
+      "label": "Frame / Touch",
+      "sublabel": "ingress · access · session · events",
+      "tag": "platform boundary",
+      "pos": [
+        640,
+        300
+      ],
+      "size": [
+        220,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
+          "line": 29,
+          "end_line": 126,
+          "label": "access_endpoint.go"
+        },
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "line": 45,
+          "end_line": 100,
+          "label": "session_finalizer.go"
+        }
+      ]
+    },
+    {
+      "id": "federation-governance",
+      "type": "database",
+      "label": "Governance Ledger",
+      "sublabel": "manifest · sequencer · projection",
+      "tag": "persistent network",
+      "pos": [
+        940,
+        80
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/ledger_service.go",
+          "label": "ledger_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "federation-context",
+      "type": "security",
+      "label": "Federation Context",
+      "sublabel": "membership · roles · policy",
+      "tag": "network governance",
+      "pos": [
+        940,
+        190
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/federation_service.go",
+          "label": "federation_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "federation-members",
+      "type": "external",
+      "label": "Member Stations",
+      "sublabel": "catalog · discovery · independent authority",
+      "tag": "social topology",
+      "pos": [
+        940,
+        300
+      ],
+      "size": [
+        230,
+        64
+      ]
+    },
+    {
+      "id": "desktop-route",
+      "type": "security",
+      "label": "Desktop Route",
+      "sublabel": "station identity · Direct / Circuit",
+      "tag": "reachability",
+      "pos": [
+        60,
+        490
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+          "line": 11,
+          "end_line": 89,
+          "label": "mod.rs"
+        },
+        {
+          "path": "packages/station-trust/src/lib.rs",
+          "line": 48,
+          "end_line": 83,
+          "label": "lib.rs"
+        }
+      ]
+    },
+    {
+      "id": "mobile-route",
+      "type": "security",
+      "label": "Mobile Route",
+      "sublabel": "station identity · Direct / Circuit",
+      "tag": "reachability",
+      "pos": [
+        350,
+        490
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/runtime/station_route.rs",
+          "label": "station_route.rs",
+          "line": 1,
+          "end_line": 120
+        },
+        {
+          "path": "packages/station-trust/src/lib.rs",
+          "line": 48,
+          "end_line": 83,
+          "label": "lib.rs"
+        }
+      ]
+    },
+    {
+      "id": "station-edge",
+      "type": "backend",
+      "label": "Station Network Edge",
+      "sublabel": "canonical ingress · signed Frame",
+      "tag": "same Station scope",
+      "pos": [
+        640,
+        490
+      ],
+      "size": [
+        220,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/server/canonical_protobuf_handler.go",
+          "label": "canonical_protobuf_handler.go",
+          "line": 1,
+          "end_line": 120
+        },
+        {
+          "path": "apps/station/frame/core/federation/runtime.go",
+          "line": 17,
+          "end_line": 55,
+          "label": "runtime.go"
+        }
+      ]
+    },
+    {
+      "id": "peer-transport",
+      "type": "messagebus",
+      "label": "Peer Transport",
+      "sublabel": "authenticated Station-to-Station channel",
+      "tag": "no business authority",
+      "pos": [
+        940,
+        490
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/transport.go",
+          "label": "transport.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Desktop product center",
+      "wraps": [
+        "desktop-ui",
+        "desktop-runtime",
+        "desktop-local"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Mobile product center",
+      "wraps": [
+        "mobile-ui",
+        "mobile-runtime",
+        "mobile-local"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Home Station authority center",
+      "wraps": [
+        "station-state",
+        "station-apps",
+        "station-frame"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Federation network center",
+      "wraps": [
+        "federation-governance",
+        "federation-context",
+        "federation-members"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Connectivity substrate · identity, Direct, Relay and authenticated peers",
+      "wraps": [
+        "desktop-route",
+        "mobile-route",
+        "station-edge",
+        "peer-transport"
+      ],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "desktop-ui-runtime",
+      "from": "desktop-ui",
+      "to": "desktop-runtime",
+      "variant": "emphasis",
+      "label": "mounts"
+    },
+    {
+      "id": "desktop-runtime-local",
+      "from": "desktop-runtime",
+      "to": "desktop-local",
+      "variant": "dashed",
+      "label": "owns device-local state"
+    },
+    {
+      "id": "desktop-runtime-route",
+      "from": "desktop-runtime",
+      "to": "desktop-route",
+      "variant": "emphasis",
+      "label": "acquires verified RouteLease"
+    },
+    {
+      "id": "mobile-ui-runtime",
+      "from": "mobile-ui",
+      "to": "mobile-runtime",
+      "variant": "emphasis",
+      "label": "mounts"
+    },
+    {
+      "id": "mobile-runtime-local",
+      "from": "mobile-runtime",
+      "to": "mobile-local",
+      "variant": "dashed",
+      "label": "owns fenced recovery state"
+    },
+    {
+      "id": "mobile-runtime-route",
+      "from": "mobile-runtime",
+      "to": "mobile-route",
+      "variant": "emphasis",
+      "label": "acquires verified RouteLease"
+    },
+    {
+      "id": "station-edge-frame",
+      "from": "station-edge",
+      "to": "station-frame",
+      "variant": "emphasis",
+      "label": "enters platform boundary"
+    },
+    {
+      "id": "station-frame-apps",
+      "from": "station-frame",
+      "to": "station-apps",
+      "variant": "security",
+      "label": "injects scoped Session context"
+    },
+    {
+      "id": "station-apps-state",
+      "from": "station-apps",
+      "to": "station-state",
+      "variant": "emphasis",
+      "label": "commits business truth"
+    },
+    {
+      "id": "federation-governance-context",
+      "from": "federation-governance",
+      "to": "federation-context",
+      "variant": "dashed",
+      "label": "materializes verified governance"
+    },
+    {
+      "id": "federation-context-members",
+      "from": "federation-context",
+      "to": "federation-members",
+      "variant": "dashed",
+      "label": "organizes independent members"
+    },
+    {
+      "id": "station-apps-context",
+      "from": "station-apps",
+      "to": "federation-context",
+      "variant": "security",
+      "label": "uses context"
+    },
+    {
+      "id": "desktop-route-edge",
+      "from": "desktop-route",
+      "to": "station-edge",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          165,
+          625
+        ],
+        [
+          750,
+          625
+        ]
+      ],
+      "labelAt": [
+        460,
+        625
+      ],
+      "label": "Direct / opaque Circuit"
+    },
+    {
+      "id": "mobile-route-edge",
+      "from": "mobile-route",
+      "to": "station-edge",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight",
+      "label": "route"
+    },
+    {
+      "id": "station-state-edge",
+      "from": "station-state",
+      "to": "station-edge",
+      "variant": "dashed",
+      "label": "recovers durable truth"
+    },
+    {
+      "id": "station-edge-peer",
+      "from": "station-edge",
+      "to": "peer-transport",
+      "variant": "emphasis",
+      "label": "opens authenticated peer channel"
+    },
+    {
+      "id": "peer-members",
+      "from": "peer-transport",
+      "to": "federation-members",
+      "variant": "emphasis",
+      "label": "delivers to independent authority"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Product centers",
+      "items": [
+        "Desktop and Mobile are independent products, not skins over one web page.",
+        "Each installation owns local lifecycle, keys, drafts, cache and projections."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Authority center",
+      "items": [
+        "Home Station owns cross-device business truth, policy, Session and durable state.",
+        "Frame / Touch platform mechanics stay separate from App business semantics."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Network center",
+      "items": [
+        "Federation is a persistent social topology of independent Stations.",
+        "Membership, governance, catalog and discovery are not transport concerns."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Connectivity substrate",
+      "items": [
+        "Identity, Direct, Relay and authenticated peer transport only establish reachability.",
+        "Relay never becomes Station or Federation authority."
+      ]
+    }
+  ]
+}

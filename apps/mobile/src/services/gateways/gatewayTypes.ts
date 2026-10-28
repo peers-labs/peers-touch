@@ -351,6 +351,7 @@ function resolveParameterizedGatewayOperation(
       post_id: decodePathValue(postComments[1]),
       cursor: optionalString(options.query?.cursor),
       limit: requiredNumber(options.query?.limit, 'limit'),
+      anchor_comment_id: optionalString(options.query?.anchor_comment_id),
     };
   }
   if (postComments && options.method === 'POST') {

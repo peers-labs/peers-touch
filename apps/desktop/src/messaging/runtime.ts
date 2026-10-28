@@ -18,6 +18,7 @@ import {
   useSessionStore,
 } from '../store/session';
 import { log } from '../utils/logger';
+import { messagingAttachmentAccess } from './attachmentAccess';
 
 const RECONCILE_INTERVAL_MS = 30_000;
 
@@ -167,6 +168,7 @@ class DesktopMessagingDomainRuntime {
     };
     this.activeScope = scope;
     this.scopeSessionEpoch = sessionEpoch;
+    messagingAttachmentAccess.setScope(scope, JSON.stringify(scope));
     await this.requireLifecycle().reconcile('runtime:bootstrap', scope);
     this.assertCurrent(scope);
     this.publishScope();
@@ -176,6 +178,7 @@ class DesktopMessagingDomainRuntime {
     const scope = this.requireActiveScope();
     await this.requireLifecycle().reconcile(`runtime:reconcile:${reason}`, scope);
     this.assertCurrent(scope);
+    messagingAttachmentAccess.refreshPending();
   }
 
   teardown(): void {
@@ -266,6 +269,7 @@ class DesktopMessagingDomainRuntime {
     this.pendingScopeGeneration = null;
     this.activeScope = null;
     this.scopeSessionEpoch = null;
+    messagingAttachmentAccess.setScope(null);
     this.lifecycle?.resetProjection();
     this.publishScope();
   }

@@ -249,6 +249,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
   private var registeredScheduledIdentifiers: Set<String> = []
   private var activeMediaPick: (args: MediaPickArgs, invoke: Invoke)?
   private weak var activeMediaPickerController: UIViewController?
+  private let fileActions = NativeFileActions()
 
   override func load(webview: WKWebView) {
     super.load(webview: webview)
@@ -314,6 +315,14 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     }
   }
 
+  @objc public func observeLifecycle(_ invoke: Invoke) {
+    DispatchQueue.main.async { [self] in
+      let state: LifecycleState = UIApplication.shared.applicationState == .active
+        ? .foreground : .background
+      invoke.resolve(makeLifecycleSignal(state))
+    }
+  }
+
   @objc public func observeCapability(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(CapabilityObservationArgs.self)
@@ -332,6 +341,29 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
         "invalid capability observation",
         code: "PLATFORM_CAPABILITY_INVALID"
       )
+    }
+  }
+
+  @objc public func executeFileAction(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(NativeFileActionArgs.self)
+      DispatchQueue.main.async {
+        self.fileActions.execute(args, invoke: invoke, presenter: self.manager.viewController)
+      }
+    } catch {
+      invoke.reject("invalid file action", code: "FILE_ACTION_INVALID")
+    }
+  }
+
+  @objc public func cancelFileAction(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(NativeFileActionCancellationArgs.self)
+      DispatchQueue.main.async {
+        self.fileActions.cancel(args.requestId)
+        invoke.resolve()
+      }
+    } catch {
+      invoke.reject("invalid file cancellation", code: "FILE_ACTION_INVALID")
     }
   }
 
@@ -1046,16 +1078,19 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     )
   }
 
-  private func emitLifecycleSignal(_ state: LifecycleState) {
+  private func makeLifecycleSignal(_ state: LifecycleState) -> LifecycleSignal {
     lifecycleSequence += 1
-    let signal = LifecycleSignal(
+    return LifecycleSignal(
       platform: "ios",
       state: state,
       sequence: lifecycleSequence,
       timestampMs: Int(Date().timeIntervalSince1970 * 1_000)
     )
+  }
+
+  private func emitLifecycleSignal(_ state: LifecycleState) {
     do {
-      try trigger(lifecycleEvent, data: signal)
+      try trigger(lifecycleEvent, data: makeLifecycleSignal(state))
     } catch {
       Logger.error("platform-permissions lifecycle signal failed")
     }

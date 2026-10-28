@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Typography } from 'antd';
 import {
   Ban, Bell, ChevronRight, Fingerprint, Globe,
@@ -8,12 +8,13 @@ import {
 import type { SettingEntry, SettingGroup } from '../types';
 import copy from '../../../../../locales/en/common.json';
 import type { AvatarRenderState } from '../types';
-import { demoAvatarUrls } from '../data';
+import { demoSelfIdentity } from '../data';
 import { IdentityAvatar } from '../components/IdentityAvatar';
 
 const { Text } = Typography;
 
-export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
+export function ProfilePage({ avatarState, onChangeStation, onSettingClick, headerActions }: {
+  headerActions?: ReactNode;
   avatarState: AvatarRenderState;
   onChangeStation: () => void;
   onSettingClick: (s: SettingEntry) => void;
@@ -57,6 +58,7 @@ export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
     <div className="mp-page">
       <header className="mp-header">
         <h1 className="mp-header-title">Me</h1>
+        {headerActions}
         <button type="button" className="mp-header-action" aria-label="Settings" onClick={() => onSettingClick({ id: 'account-info', label: 'Account Info', icon: User, tint: 'primary' })}>
           <SettingsIcon size={20} />
         </button>
@@ -70,10 +72,10 @@ export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
         >
           <section className="mp-profile-header-card">
           <div className="mp-profile-header">
-            <IdentityAvatar name="Alice Chen" initials="AC" src={demoAvatarUrls.alice}
+            <IdentityAvatar name={demoSelfIdentity.name} initials={demoSelfIdentity.initials} src={demoSelfIdentity.avatarUrl}
               size={64} renderState={avatarState} />
             <div className="mp-profile-info">
-              <Text strong className="mp-profile-name">Alice Chen</Text>
+              <Text strong className="mp-profile-name">{demoSelfIdentity.name}</Text>
               <Text type="secondary" className="mp-profile-did">Local identity · Local Station</Text>
             </div>
             <ChevronRight size={20} className="mp-row-chevron" />

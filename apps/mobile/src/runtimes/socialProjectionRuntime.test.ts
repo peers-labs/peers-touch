@@ -434,6 +434,28 @@ describe('social projection runtime', () => {
       'reconcile:messaging:runtime_resume',
       expect.any(Error),
     );
+    wakeMessaging.mockRejectedValueOnce(new Error('messaging still unavailable'));
+    await runtime.reconcile('periodic');
+    expect(wakeMessaging).toHaveBeenCalledTimes(2);
+    expect(wakeMessaging).toHaveBeenLastCalledWith({ onlyIfFailed: true });
+    expect(() => requireMobileMutationAdmission(
+      mobileAuthScopeKey(session),
+      'social',
+    )).toThrow();
+
+    gatewayMocks.fetchFeed.mockImplementationOnce(async () => {
+      expect(wakeMessaging).toHaveBeenCalledTimes(3);
+      return { ok: true, data: { posts: [], nextCursor: '', hasMore: false } };
+    });
+    await runtime.reconcile('periodic');
+    expect(readActiveSocialIngressState()).toMatchObject({
+      lifecycle: 'active',
+      writeAdmission: { open: true },
+    });
+    expect(() => requireMobileMutationAdmission(
+      mobileAuthScopeKey(session),
+      'social',
+    )).not.toThrow();
     await runtime.teardown();
   });
 

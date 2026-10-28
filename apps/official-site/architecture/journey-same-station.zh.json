@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "同 Station 业务 Mutation",
+    "subtitle": "业务 Command 只有在授权与 Owner Transaction Commit 后才 Accepted；Realtime Wake 明确位于该完成边界之外。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/journey-same-station.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "Client",
+      "sublabel": "本地 Intent"
+    },
+    {
+      "id": "ingress",
+      "type": "backend",
+      "label": "Canonical Ingress",
+      "sublabel": "类型化请求",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/server/canonical_protobuf_handler.go",
+          "label": "canonical_protobuf_handler.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Access Gate",
+      "sublabel": "Session Context",
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "App Domain",
+      "sublabel": "业务状态机",
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "uow",
+      "type": "database",
+      "label": "Owned Unit of Work",
+      "sublabel": "State + Outbox + Event Fact",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/store/rds.go",
+          "label": "rds.go",
+          "line": 1,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "wake",
+      "type": "messagebus",
+      "label": "Wake Stream",
+      "sublabel": "仅 Commit 后提示",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/bus.go",
+          "label": "bus.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 280,
+      "label": "授权"
+    },
+    {
+      "from": 290,
+      "to": 440,
+      "label": "提交"
+    },
+    {
+      "from": 450,
+      "to": 570,
+      "label": "确认"
+    }
+  ],
+  "messages": [
+    {
+      "id": "command",
+      "from": "client",
+      "to": "ingress",
+      "y": 170,
+      "label": "类型化 Command + Idempotency Context",
+      "variant": "emphasis"
+    },
+    {
+      "id": "session",
+      "from": "ingress",
+      "to": "access",
+      "y": 215,
+      "label": "验证 Actor + Device + Client Class",
+      "variant": "security"
+    },
+    {
+      "id": "authorize",
+      "from": "access",
+      "to": "domain",
+      "y": 260,
+      "label": "注入 Scoped Session Context",
+      "variant": "security"
+    },
+    {
+      "id": "mutate",
+      "from": "domain",
+      "to": "uow",
+      "y": 330,
+      "label": "提交业务状态 + 必要 Fact",
+      "variant": "emphasis"
+    },
+    {
+      "id": "committed",
+      "from": "uow",
+      "to": "domain",
+      "y": 390,
+      "label": "持久 Commit",
+      "variant": "return"
+    },
+    {
+      "id": "wake",
+      "from": "domain",
+      "to": "wake",
+      "y": 465,
+      "label": "发出 Commit 后 Wake Hint",
+      "variant": "dashed"
+    },
+    {
+      "id": "accepted",
+      "from": "domain",
+      "to": "client",
+      "y": 525,
+      "label": "在权威 Commit 后 Accepted",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "权威边界",
+      "items": [
+        "本地可有 Optimistic UI，但绝不能替代 Station Transaction Result。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Wake 不是真源",
+      "items": [
+        "Realtime Delivery 可在 Commit 后失败；恢复读取 Durable State 或 Cursor。"
+      ]
+    }
+  ]
+}

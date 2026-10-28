@@ -223,13 +223,11 @@ fn media_chunk_aad(chunk_index: u32, plaintext_size: u64, chunk_size: usize) -> 
 
 #[tauri::command]
 pub async fn oss_pick_local_file(window: Window) -> AppResult<StubPayload> {
+    let _ = window;
     tracing::info!("Opening local file picker for OSS");
     let dialog = rfd::AsyncFileDialog::new().set_title("Select File");
     match dialog.pick_file().await {
         Some(handle) => {
-            if let Err(error) = super::allow_file_preview(&window, handle.path()) {
-                return AppResult::fail(ErrorCode::InternalError, error, None);
-            }
             let path_str = handle.path().to_string_lossy().to_string();
             tracing::info!(path = %path_str, "OSS local file selected");
             AppResult::success(StubPayload {
@@ -458,6 +456,7 @@ pub async fn oss_pick_image_social(
     input: OssPickImageSocialInput,
     window: Window,
 ) -> AppResult<StubPayload> {
+    let _ = window;
     let max_count = if input.max_count == 0 {
         1
     } else {
@@ -481,13 +480,11 @@ pub async fn oss_pick_image_social(
         Some(handles) if !handles.is_empty() => {
             // Truncate silently so the caller never has to defend against
             // the cap. Renderer trusts whatever this returns.
-            let mut paths = Vec::new();
-            for handle in handles.into_iter().take(max_count) {
-                if let Err(error) = super::allow_file_preview(&window, handle.path()) {
-                    return AppResult::fail(ErrorCode::InternalError, error, None);
-                }
-                paths.push(handle.path().to_string_lossy().to_string());
-            }
+            let mut paths: Vec<String> = handles
+                .into_iter()
+                .take(max_count)
+                .map(|h| h.path().to_string_lossy().to_string())
+                .collect();
             paths.sort();
             tracing::info!(count = paths.len(), "Image picker returned");
             // We pass the paths via JSON in `status` to keep the

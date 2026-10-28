@@ -23,12 +23,28 @@ use runtime::oauth::OAuthCoordinator;
 use runtime::reliability::ReliabilityRuntime;
 use runtime::station_transport::StationTransportRuntime;
 use social::MobilePrivateSocialRuntime;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mobile_platform = MobilePlatform::from_compiled_target()
         .expect("failed to resolve the Mobile release target");
     let builder = tauri::Builder::default()
+        .register_uri_scheme_protocol("chat-file", |context, request| {
+            let runtime = context.app_handle().state::<MobileMessagingRuntime>();
+            messaging::file_access::asset_response(runtime.inner(), context.webview_label(), &request)
+        })
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Off)
+                .level_for("search", log::LevelFilter::Debug)
+                .level_for("station-route", log::LevelFilter::Warn)
+                .filter(|metadata| matches!(metadata.target(), "search" | "station-route"))
+                .targets([tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                )])
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_peers_platform_permissions::init())
@@ -39,6 +55,7 @@ pub fn run() {
         .manage(MobilePrivateSocialRuntime::default())
         .manage(PushBridgeRuntime::default())
         .manage(ReliabilityRuntime::default())
+        .manage(runtime::search::MobileSearchState::default())
         .manage(MobileXConfigRuntime::default())
         .manage(StationTransportRuntime::default());
 

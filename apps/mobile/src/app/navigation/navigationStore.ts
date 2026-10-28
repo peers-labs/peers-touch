@@ -28,10 +28,17 @@ export type MobileDetailRoute =
   | {
       readonly routeId: 'detail:chat-conversation';
       readonly sessionUlid: string;
+      readonly messageId?: string;
+      readonly threadRootMessageId?: string;
     }
   | {
       readonly routeId: 'detail:group-conversation';
       readonly groupUlid: string;
+      readonly messageId?: string;
+      readonly threadRootMessageId?: string;
+    }
+  | {
+      readonly routeId: 'detail:search';
     }
   | {
       readonly routeId: 'detail:contact-profile';
@@ -40,6 +47,8 @@ export type MobileDetailRoute =
   | {
       readonly routeId: 'detail:moment';
       readonly postId: string;
+      readonly commentId?: string;
+      readonly readSource?: 'device' | 'station';
     }
   | {
       readonly routeId: 'detail:social-search';
@@ -189,13 +198,15 @@ export function navigationLocationKey(
 
   switch (route.routeId) {
     case 'detail:chat-conversation':
-      return `${route.routeId}:${route.sessionUlid}`;
+      return `${route.routeId}:${route.sessionUlid}${route.messageId ? `:${route.messageId}` : ''}`;
     case 'detail:group-conversation':
-      return `${route.routeId}:${route.groupUlid}`;
+      return `${route.routeId}:${route.groupUlid}${route.messageId ? `:${route.messageId}` : ''}`;
+    case 'detail:search':
+      return route.routeId;
     case 'detail:contact-profile':
       return `${route.routeId}:${route.actorPtid}`;
     case 'detail:moment':
-      return `${route.routeId}:${route.postId}`;
+      return `${route.routeId}:${route.postId}${route.commentId ? `:${route.commentId}` : ''}${route.readSource ? `:${route.readSource}` : ''}`;
     case 'detail:social-search':
       return route.routeId;
     case 'detail:social-profile':

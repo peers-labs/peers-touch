@@ -829,6 +829,15 @@ pub fn social_get_comments(
             None,
         );
     }
+    if input.cursor.as_ref().is_some_and(|value| !value.is_empty())
+        && input.anchor_comment_id.as_ref().is_some_and(|value| !value.is_empty())
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "comment cursor and anchor are mutually exclusive",
+            None,
+        );
+    }
     let mut query: Vec<(&str, String)> = Vec::new();
     if let Some(c) = input.cursor {
         if !c.is_empty() {
@@ -836,6 +845,9 @@ pub fn social_get_comments(
         }
     }
     query.push(("limit", limit.to_string()));
+    if let Some(anchor) = input.anchor_comment_id.filter(|value| !value.is_empty()) {
+        query.push(("anchor_comment_id", anchor));
+    }
     let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
     let resp: model::social::ListMomentCommentsResponse = match get_proto_optional_auth(
         state.station.client(),
@@ -1069,6 +1081,36 @@ pub fn social_get_relationship(
         Err(e) => return station_error_proto(e, "get relationship failed"),
     };
     AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_get_relationship_status(
+    input: SocialGetRelationshipInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.target_actor_ptid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "target_actor_ptid is required",
+            None,
+        );
+    }
+    let query = vec![("target_actor_ptid", input.target_actor_ptid)];
+    let response: model::social::GetSocialRelationshipStatusResponse = match get_proto(
+        state.station.client(),
+        "/api/v1/social/relationships/status",
+        &token,
+        Some(&query),
+    ) {
+        Ok(response) => response,
+        Err(error) => return station_error_proto(error, "get Social relationship status failed"),
+    };
+    AppResult::success(response.encode_to_vec())
 }
 
 #[tauri::command]

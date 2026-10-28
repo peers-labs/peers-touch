@@ -65,7 +65,7 @@ func (r *publicPostRepo) Create(ctx context.Context, p *domain.Post) error {
 func (r *publicPostRepo) GetByID(ctx context.Context, id uint64) (*domain.Post, error) {
 	var row db.SocialPublicPost
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND deleted_at IS NULL", id).
+		Where("id = ? AND audience_kind = 'PUBLIC' AND deleted_at IS NULL", id).
 		First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -74,6 +74,19 @@ func (r *publicPostRepo) GetByID(ctx context.Context, id uint64) (*domain.Post, 
 		return nil, err
 	}
 	return r.hydrateOne(ctx, &row)
+}
+
+func (r *publicPostRepo) GetByIDs(ctx context.Context, ids []uint64) ([]*domain.Post, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var rows []*db.SocialPublicPost
+	if err := r.db.WithContext(ctx).
+		Where("id IN ? AND audience_kind = 'PUBLIC' AND deleted_at IS NULL", ids).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return r.hydrate(ctx, rows)
 }
 
 func (r *publicPostRepo) ProbeRecordState(
@@ -243,12 +256,18 @@ func (r *publicPostRepo) UpdateReactionsCount(ctx context.Context, id uint64, sn
 }
 
 func (r *publicPostRepo) hydrate(ctx context.Context, rows []*db.SocialPublicPost) ([]*domain.Post, error) {
+	ids := make([]uint64, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.AuthorID)
+	}
+	ptids, err := r.identity.PTIDsByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]*domain.Post, 0, len(rows))
 	for _, row := range rows {
-		post, err := r.hydrateOne(ctx, row)
-		if err != nil {
-			return nil, err
-		}
+		post := r.conv.PublicDBToDomain(row)
+		post.AuthorPTID = ptids[row.AuthorID]
 		out = append(out, post)
 	}
 	return out, nil

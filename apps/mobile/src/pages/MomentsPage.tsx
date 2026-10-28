@@ -22,7 +22,7 @@
  * binds runtime projections and intents to the Home/Explore surface.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button, Typography } from 'antd';
 import { ArrowLeft } from 'lucide-react';
 
@@ -116,11 +116,14 @@ function nativeErrorCode(error: unknown): string {
 
 interface MomentsPageProps {
   readonly activePostId: string | null;
+  readonly activeCommentId?: string | null;
+  readonly activeReadSource?: 'device' | 'station' | null;
   readonly onOpenProfile: (actorPtid: string, federationId: string) => void;
   readonly onOpenSearch: () => void;
   readonly onOpenCircles: () => void;
   readonly onImmersiveVisibilityChange: (visible: boolean) => void;
   readonly onBack: () => void;
+  readonly searchEntry?: ReactNode;
 }
 
 export async function submitInlineCommentIntent(
@@ -143,11 +146,14 @@ export async function retryMomentsRuntime(
 
 export function MomentsPage({
   activePostId,
+  activeCommentId,
+  activeReadSource,
   onOpenProfile,
   onOpenSearch,
   onOpenCircles,
   onImmersiveVisibilityChange,
   onBack,
+  searchEntry,
 }: MomentsPageProps) {
   const fixture = useMomentsSurfaceFixture();
   if (fixture.surfaceId) {
@@ -161,22 +167,28 @@ export function MomentsPage({
   return (
     <MomentsPageInner
       activePostId={activePostId}
+      activeCommentId={activeCommentId}
+      activeReadSource={activeReadSource}
       onOpenProfile={onOpenProfile}
       onOpenSearch={onOpenSearch}
       onOpenCircles={onOpenCircles}
       onImmersiveVisibilityChange={onImmersiveVisibilityChange}
       onBack={onBack}
+      searchEntry={searchEntry}
     />
   );
 }
 
 function MomentsPageInner({
   activePostId,
+  activeCommentId,
+  activeReadSource,
   onOpenProfile,
   onOpenSearch,
   onOpenCircles,
   onImmersiveVisibilityChange,
   onBack,
+  searchEntry,
 }: MomentsPageProps) {
   const { t } = useMobileI18n();
   const authSession = useAuthStore((state) => state.session);
@@ -495,19 +507,23 @@ function MomentsPageInner({
   const routeDetailPostId = activePostId ?? undefined;
   if (routeDetailPostId !== undefined) {
     const activePost = feed.posts.find((post) => post.id === routeDetailPostId);
-    const privateBlockingState = blockingPrivateStates.find(
+    const privateBlockingState = activeReadSource === 'station' ? undefined : blockingPrivateStates.find(
       (privateProjection) => privateProjection.postId === routeDetailPostId,
     );
+    const canReadDetail = Boolean(facade && (activeReadSource || !isUnavailable));
     return (
       <div
         className="page-container moments-page moments-route-detail"
         data-product-surface="moments.detail-comments"
       >
-        {facade && !isUnavailable && privateBlockingState ? (
+        {canReadDetail && privateBlockingState ? (
           renderPrivateBlockingState(privateBlockingState, onBack)
-        ) : facade && !isUnavailable ? (
+        ) : facade && canReadDetail ? (
           <MomentCommentsSection
             postId={routeDetailPostId}
+            commentId={activeCommentId ?? undefined}
+            sourceId={activeReadSource === 'device' ? 'device.social'
+              : activeReadSource === 'station' ? 'station.social.public' : undefined}
             post={activePost}
             mode="detail"
             intents={facade.intents}
@@ -560,6 +576,7 @@ function MomentsPageInner({
       data-product-surface="moments.feed"
     >
       <MomentsScopeHeader
+        searchEntry={searchEntry}
         scope={feedScope}
         exploreSort={facade?.feeds?.explore.sort() ?? TimelineSort.RECENT}
         onChangeScope={(scope) => {

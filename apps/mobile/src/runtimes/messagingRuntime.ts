@@ -26,6 +26,8 @@ import {
 import { readableErrorMessage } from '../utils/errorMessage';
 import { getRecoveryProjection } from './recoveryProjection';
 import { runRuntimeSessionTransition } from './runtimeSessionTransition';
+import { mobileAttachmentAccess } from './attachmentAccess';
+import { useMobileNavigationStore } from '../app/navigation/navigationStore';
 
 export const MOBILE_MESSAGING_RECONCILED_EVENT = 'mobile:messaging-reconciled';
 export const MOBILE_MESSAGING_PROJECTION_CHANGED_EVENT = 'mobile:messaging-projection-changed';
@@ -54,10 +56,15 @@ interface MessagingRuntimeErrorEventDetail {
 }
 
 interface MessagingRuntimeReadinessPort {
+  requiresRecovery(): boolean;
   fail(operation: string, error?: string): void;
   recover(operation: string): void;
   recoverAll(): void;
   observeReady(): void;
+}
+
+export interface MessagingWakeOptions {
+  readonly onlyIfFailed?: boolean;
 }
 
 const MESSAGING_READINESS_FAILURE_OPERATIONS = new Set([
@@ -85,11 +92,13 @@ const projectionScopeListeners = new Set<
 
 export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
   let unsubscribe: (() => void) | null = null;
+  let unsubscribeNavigation: (() => void) | null = null;
   let unlistenProjection: UnlistenFn | null = null;
   let runtimeContext: MobileRuntimeContext | null = null;
   const readinessFailures = new Set<string>();
 
   const readinessPort: MessagingRuntimeReadinessPort = {
+    requiresRecovery: () => readinessFailures.size > 0,
     fail(operation, error): void {
       if (!runtimeContext || readinessFailures.has(operation)) return;
       if (readinessFailures.size > 0) {
@@ -148,6 +157,11 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
       runtimeContext = context;
       activeRuntimeReadinessPort = readinessPort;
       window.addEventListener(MOBILE_MESSAGING_RUNTIME_ERROR_EVENT, onRuntimeError);
+      unsubscribeNavigation = useMobileNavigationStore.subscribe((state, previous) => {
+        if (state.primaryRouteId !== previous.primaryRouteId || state.detailStack !== previous.detailStack) {
+          mobileAttachmentAccess.close();
+        }
+      });
       unlistenProjection = await listen<MessagingProjectionEvent>(
         MOBILE_MESSAGING_PROJECTION_CHANGED_EVENT,
         (event) => enqueueProjectionDelivery(event.payload),
@@ -156,6 +170,7 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
         const session = admittedSession(state);
         const previousSession = admittedSession(previous);
         if (sessionKey(session) === sessionKey(previousSession)) return;
+        mobileAttachmentAccess.setScope(null);
         if (runtimeContext) {
           enqueueSessionTransition(session, runtimeContext, readinessPort);
         }
@@ -168,6 +183,7 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
     },
 
     async suspend(): Promise<void> {
+      mobileAttachmentAccess.setScope(null);
       await transition;
       await invoke<void>('messaging_suspend');
     },
@@ -195,6 +211,8 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
       runtimeContext = null;
       unsubscribe?.();
       unsubscribe = null;
+      unsubscribeNavigation?.();
+      unsubscribeNavigation = null;
       unlistenProjection?.();
       unlistenProjection = null;
       await transition;
@@ -213,7 +231,12 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
   };
 }
 
-export async function wakeActiveMessagingSession(): Promise<MessagingReconcileResult | null> {
+export async function wakeActiveMessagingSession(
+  options: MessagingWakeOptions = {},
+): Promise<MessagingReconcileResult | null> {
+  if (options.onlyIfFailed && !activeRuntimeReadinessPort?.requiresRecovery()) {
+    return null;
+  }
   try {
     return await reconcileActiveMessagingSession();
   } catch (error) {
@@ -339,6 +362,7 @@ async function synchronizeSession(
 }
 
 function enqueueProjectionDelivery(event: MessagingProjectionEvent): void {
+  mobileAttachmentAccess.refreshPending();
   projectionDelivery = projectionDelivery
     .then(async () => {
       if (
@@ -497,6 +521,7 @@ function clearActiveProjectionScope(): void {
 
 function publishProjectionScope(): void {
   const scope = currentMessagingProjectionScope();
+  mobileAttachmentAccess.setScope(scope, scope ? JSON.stringify(scope) : '');
   projectionScopeListeners.forEach((listener) => listener(scope));
 }
 

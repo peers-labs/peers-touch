@@ -1649,6 +1649,22 @@ END $fixture$;
     _remote_psql(environment, "BEGIN;\n" + "\n".join(statements) + "\nCOMMIT;")
 
 
+def seed_bound_contact(
+    station_url: str,
+    environment_name: str,
+    actor: FixtureActorRecord,
+    peer: FixtureActorRecord,
+    federation_members: Iterable[FixtureActorRecord],
+) -> None:
+    """Seed a single contact pair through the canonical plural owner."""
+    seed_bound_contacts(
+        station_url,
+        environment_name,
+        ((actor, peer),),
+        federation_members,
+    )
+
+
 def seed_bound_contacts(
     station_url: str,
     environment_name: str,

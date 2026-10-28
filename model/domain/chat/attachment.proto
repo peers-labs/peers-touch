@@ -277,3 +277,56 @@ message AttachmentTransferCheckpoint {
   int64 next_attempt_at_unix_ms = 10;
   AttachmentTransferErrorCode last_error_code = 11;
 }
+
+// Device-local presentation contract. Never sent to Station or included in an
+// encrypted message. A handle is usable only in the active Engine scope.
+enum AttachmentAccessState {
+  ATTACHMENT_ACCESS_STATE_UNSPECIFIED = 0;
+  ATTACHMENT_ACCESS_STATE_REMOTE = 1;
+  ATTACHMENT_ACCESS_STATE_DOWNLOADING = 2;
+  ATTACHMENT_ACCESS_STATE_VERIFYING = 3;
+  ATTACHMENT_ACCESS_STATE_READY = 4;
+  ATTACHMENT_ACCESS_STATE_CANCELLED = 5;
+  ATTACHMENT_ACCESS_STATE_FAILED = 6;
+}
+
+enum AttachmentFileAction {
+  ATTACHMENT_FILE_ACTION_UNSPECIFIED = 0;
+  ATTACHMENT_FILE_ACTION_PREVIEW = 1;
+  ATTACHMENT_FILE_ACTION_OPEN_EXTERNAL = 2;
+  ATTACHMENT_FILE_ACTION_SAVE_COPY = 3;
+}
+
+enum AttachmentFileActionState {
+  ATTACHMENT_FILE_ACTION_STATE_UNSPECIFIED = 0;
+  ATTACHMENT_FILE_ACTION_STATE_COMPLETED = 1;
+  ATTACHMENT_FILE_ACTION_STATE_CANCELLED = 2;
+  ATTACHMENT_FILE_ACTION_STATE_UNAVAILABLE = 3;
+  ATTACHMENT_FILE_ACTION_STATE_FAILED = 4;
+}
+
+message AttachmentAccessProjection {
+  string attachment_id = 1;
+  string filename = 2;
+  string mime_type = 3;
+  uint64 plaintext_size = 4;
+  AttachmentAccessState state = 5;
+  uint64 transferred_bytes = 6;
+  uint64 transfer_total_bytes = 7;
+  string access_handle = 8;
+  string asset_url = 9;
+  bool retryable = 10;
+  AttachmentTransferErrorCode error_code = 11;
+  int64 next_attempt_at_unix_ms = 12;
+}
+
+message AttachmentFileActionRequest {
+  string attachment_id = 1;
+  string access_handle = 2;
+  AttachmentFileAction action = 3;
+}
+
+message AttachmentFileActionResult {
+  AttachmentFileActionState state = 1;
+  string error_code = 2;
+}

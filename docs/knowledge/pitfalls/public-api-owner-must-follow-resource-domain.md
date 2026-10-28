@@ -9,6 +9,7 @@ owns:
   - apps/mobile/src-tauri/src/
   - model/domain/
   - tooling/acceptance/
+  - docs/architecture/engineering/api-governance/station-api-capabilities.yaml
 referenced-by: []
 related:
   - ../../architecture/engineering/api-governance/README.md
@@ -60,6 +61,10 @@ python3 -m unittest tooling.acceptance.gates.chat.messaging_platform_contract_te
 
 Reviewers must also reject any public capability whose route owner is derived
 from an internal package name rather than the resource domain.
+Under API Governance design §7, a read-only policy consumer declares a dependency
+on an existing projection owner; reading that projection cannot make its table
+a second authoritative store family. The private Moment read-policy entry must
+retain the remote projection's existing owner while consuming its read contract.
 
 ## Crosswalks
 

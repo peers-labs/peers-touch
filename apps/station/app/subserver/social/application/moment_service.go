@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -412,29 +413,20 @@ func (s *MomentService) GetMomentDetail(
 	postIDStr string,
 	viewerPTID string,
 ) (*model.Post, model.PostDetailOutcome, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	postID := domain.ParseID(postIDStr)
 	if postID == 0 {
 		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE,
 			fmt.Errorf("invalid post_id %q", postIDStr)
 	}
 
-	if p, err := s.repos.PublicPosts.GetByID(ctx, postID); err != nil {
+	batch, err := NewPublicReadPort(s.repos).Read(ctx, viewerPTID, []uint64{postID}, nil)
+	if err != nil {
 		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
-	} else if p != nil {
-		viewer, err := buildViewerForAuthors(ctx, viewerPTID, s.repos, s.groups, []string{p.AuthorPTID})
-		if err != nil {
-			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE,
-				fmt.Errorf("build viewer: %w", err)
-		}
-		if ok, _ := domain.CanRead(viewer, p.AuthorPTID, p.Audience, p.IsDeleted()); !ok {
-			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
-		}
-		if blocked, err := actorStationModerated(ctx, s.repos.Moderation, p.AuthorPTID); err != nil {
-			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
-		} else if blocked {
-			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
-		}
-		post, err := s.hydratePost(ctx, p, viewerPTID)
+	}
+	if p := batch.Posts[postID]; p != nil {
+		post, err := s.hydratePostWith(ctx, p, viewerPTID, batch.Authors)
 		if err != nil {
 			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
 		}
@@ -528,11 +520,6 @@ func (s *MomentService) ListByAuthorPage(
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	moderated, err := actorStationModerated(ctx, s.repos.Moderation, authorPTID)
-	if err != nil {
-		return nil, "", false, 0, err
-	}
-
 	pubPosts, err := s.repos.PublicPosts.ListByAuthor(ctx, authorPTID, c, limit+1)
 	if err != nil {
 		return nil, "", false, 0, err
@@ -543,16 +530,13 @@ func (s *MomentService) ListByAuthorPage(
 	}
 	scannedCount := len(pubPosts)
 
-	viewer, err := buildViewerForAuthors(ctx, viewerPTID, s.repos, s.groups, postAuthorPTIDs(pubPosts))
+	batch, err := NewPublicReadPort(s.repos).authorize(ctx, viewerPTID, pubPosts, nil)
 	if err != nil {
-		return nil, "", false, scannedCount, fmt.Errorf("build viewer: %w", err)
+		return nil, "", false, scannedCount, err
 	}
 	readable := make([]*domain.Post, 0, len(pubPosts))
-	if !moderated {
-		for _, p := range pubPosts {
-			if ok, _ := domain.CanRead(viewer, p.AuthorPTID, p.Audience, p.IsDeleted()); !ok {
-				continue
-			}
+	for _, p := range pubPosts {
+		if batch.Posts[p.ID] != nil {
 			readable = append(readable, p)
 		}
 	}

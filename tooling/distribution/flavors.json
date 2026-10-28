@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "flavors": {
+    "geek": {
+      "display_name": "Peers",
+      "identifier_suffix": null,
+      "url_scheme_suffix": null,
+      "default_channel": "stable",
+      "default_region": "",
+      "allowed_labels": []
+    },
+    "dev": {
+      "display_name": "Peers Dev",
+      "identifier_suffix": "dev",
+      "url_scheme_suffix": "dev",
+      "default_channel": "stable",
+      "default_region": "",
+      "allowed_labels": []
+    },
+    "xx": {
+      "display_name": "Peers XX",
+      "identifier_suffix": "xx",
+      "url_scheme_suffix": "xx",
+      "default_channel": "stable",
+      "default_region": "cn",
+      "allowed_labels": ["dist.audience", "dist.partner"]
+    }
+  }
+}

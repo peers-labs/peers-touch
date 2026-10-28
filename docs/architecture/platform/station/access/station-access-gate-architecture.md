@@ -245,6 +245,20 @@ before token creation.
 
 Transport can be HTTP/Tauri bridge during implementation, but payload models must come from proto.
 
+### 9.2 Password Session Finalization
+
+`FinalizeGrantedSession` owns one transaction for the granted attempt, Actor
+lookup, same-client-class session replacement, new session and attempt binding.
+An idempotent retry reissues credentials for the same committed session.
+
+JWT issuance and replay read the Station access key authority through that
+same transaction using `StationAccessKeyringInTransaction` and the existing
+JWT provider's explicit keyring option. This handle performs no migration or
+rotation, rejects non-transaction handles, and cannot outlive its transaction.
+It must not acquire another connection from the process-global keyring while
+the finalizer holds the transaction. SQLite deliberately uses one connection;
+increasing its pool or the client timeout does not satisfy this contract.
+
 ---
 
 ## 10. Client Integration

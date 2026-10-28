@@ -62,7 +62,20 @@ Do not use this playbook for small bug fixes, local copy changes, or narrow comp
 5. **Update discoverability** — Update the nearest `README.md` and, when the document becomes a current source, update `docs/README.md`.
    - A future engineer should find the document from `docs/README.md` without knowing the chat history.
 
-6. **Report formal paths before implementation** — Tell the user where the formal design and execution plan live.
+6. **Enforce one source of truth, no redundant description** — Architecture decisions, schemas, and procedural detail each live in exactly one layer.
+   - The new document references rather than restates decisions owned elsewhere (link the ADR/decision ID); delete prose that duplicates an upstream source instead of keeping two copies to maintain.
+   - Persistence/state descriptions must name what is actually stored vs derived in code; do not document a separate store, object, or lifecycle that the implementation does not have.
+   - Run `rg -n "<key-term>" docs/` to surface competing descriptions; reconcile or link them.
+
+7. **Decide knowledge-layer sedimentation** — For each new stable rule, paid-for failure, recurring procedure, or domain term, choose exactly one:
+   - `invariants/` — a cross-cutting rule future edits to the `owns:` paths MUST preserve (negative-space "must not" form, with a runnable "How to verify");
+   - `pitfalls/` — a concrete bug/near-miss with symptom, root cause, mitigation, and a copy-pasteable recurrence check;
+   - `playbooks/` — a procedure done at least twice (promote when repeated);
+   - `glossary.md` — a project-specific term that is not standard CS vocabulary;
+   - or explicit `no_growth_needed` with the reason recorded in the delivery summary.
+   - Wire `owns:` to the repo paths the entry governs so `pt-read-before-edit` and `knowledge-match.sh` load it; register active entries in `docs/knowledge/README.md`. Architecture boundary/trade-off content stays in `docs/architecture/`, never duplicated into knowledge.
+
+8. **Report formal paths before implementation** — Tell the user where the formal design and execution plan live.
    - Do this before large implementation begins, or immediately when a missing formal doc is discovered.
 
 ## Verification
@@ -70,6 +83,9 @@ Do not use this playbook for small bug fixes, local copy changes, or narrow comp
 - [ ] `rg -n "<new-doc-name>|<capability-name>" docs/README.md docs/architecture docs/client docs/station` finds the formal document.
 - [ ] The nearest directory `README.md` links to the new design or plan.
 - [ ] Private or local working notes are not the only place containing the durable design.
+- [ ] No rule is described in two layers: decisions live in the decision doc; knowledge entries reference it rather than restating it.
+- [ ] Every documented stored object/state has a matching implementation owner, or is explicitly marked derived/in-memory.
+- [ ] For each new invariant/pitfall/playbook/term, either a knowledge entry exists with valid frontmatter and `owns:` (and README index), or the delivery records an explicit `no_growth_needed` reason.
 - [ ] The final response lists the formal docs paths.
 
 ## Crosswalks

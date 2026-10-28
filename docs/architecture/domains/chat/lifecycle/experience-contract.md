@@ -104,7 +104,9 @@ Recovery:
     uploads and persists asynchronously; failure rolls the preview back and
     preserves an explicit retry action.
 12. Search the active canonical conversation for known durable message text,
-    clear the query from the input-owned suffix, and jump to the exact result.
+    including the latest edited body. The result snippet and keyword highlight
+    use that same body. Clear the query from the input-owned suffix and jump to
+    the exact result.
 13. Clear the current device's conversation data after explicit confirmation;
     the removed plaintext stays absent after restart, while later messages
     continue to arrive.
@@ -130,6 +132,7 @@ then:
   - presence comes from Station snapshot or realtime events
   - the local background preview appears before upload finishes
   - search reads the canonical local message projection and finds the message
+  - edited message search snippets and highlights use the latest durable body
   - the removed plaintext stays absent after restart and later messages continue
 visual_invariants:
   - the search clear control remains inside the input suffix boundary
@@ -139,6 +142,7 @@ forbidden:
   - guessed presence
   - waiting for upload before local preview
   - legacy session arrays as message-search authority
+  - superseded plaintext in a search snippet for an edited message
   - presenting incomplete compaction as a successful clear
 evidence:
   - native interaction trace
@@ -156,6 +160,12 @@ evidence:
 3. The receiver sees the exact media metadata and opens byte-identical content.
 4. Interrupted upload/download resumes from durable checkpoints.
 5. Restart and fresh recovery preserve entitled attachment access.
+
+Sender and receiver follow [attachment-viewing.md](./attachment-viewing.md):
+file selection immediately displays filename/type/size and a recoverable detail
+surface, pending downloads show progress/cancel/retry, supported files preview,
+and external opening and saving are explicit native actions on isolated copies.
+Closing a detail surface or switching scope never causes a delayed system open.
 
 Screenshot capture keeps the Desktop window geometry and rendered layout
 stable before, during, and after the system selection UI. Hiding and restoring

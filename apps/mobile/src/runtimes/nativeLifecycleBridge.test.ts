@@ -54,6 +54,10 @@ function initialNetworkResult() {
   };
 }
 
+function initialLifecycleResult() {
+  return { accepted: true, generation: 0, reason: null };
+}
+
 describe('nativeLifecycleBridge', () => {
   let handlers: Map<string, (event: { payload: unknown }) => void>;
   let unlisteners: Map<string, ReturnType<typeof vi.fn>>;
@@ -68,6 +72,7 @@ describe('nativeLifecycleBridge', () => {
     bridgeMocks.addPluginListener.mockReset();
     bridgeMocks.invoke.mockReset();
     bridgeMocks.invoke.mockImplementation(async (command: string) => {
+      if (command === 'lifecycle_observe') return initialLifecycleResult();
       if (command === 'network_start_observation') return initialNetworkResult();
       if (command === 'network_ingest_native_signal') {
         return {
@@ -338,6 +343,45 @@ describe('nativeLifecycleBridge', () => {
       ]);
   });
 
+  it('waits for the initial OS lifecycle fact before network and read readiness', async () => {
+    const observation = Promise.withResolvers<unknown>();
+    const onNativeListenerReady = vi.fn();
+    const onLifecycleEvent = vi.fn();
+    bridgeMocks.invoke.mockImplementation(async (command: string) => {
+      if (command === 'lifecycle_observe') return observation.promise;
+      if (command === 'network_start_observation') return {
+        ...initialNetworkResult(), generation: 4,
+      };
+      return undefined;
+    });
+    const installation = installNativeLifecycleBridge({
+      onNativeListenerReady, onLifecycleEvent,
+    });
+    await vi.waitFor(() => expect(bridgeMocks.invoke).toHaveBeenCalledWith('lifecycle_observe', undefined));
+    expect(onNativeListenerReady).not.toHaveBeenCalled();
+    expect(bridgeMocks.invoke).not.toHaveBeenCalledWith('network_start_observation', undefined);
+    observation.resolve({ accepted: true, generation: 4, reason: null });
+    await installation.ready;
+    expect(getLifecycleGeneration()).toBe(4);
+    expect(onNativeListenerReady).toHaveBeenCalledOnce();
+    expect(onLifecycleEvent).not.toHaveBeenCalled();
+    await installation.teardown();
+  });
+
+  it('keeps dependent readiness closed when the initial lifecycle fact is unknown', async () => {
+    bridgeMocks.invoke.mockImplementation(async (command: string) => (
+      command === 'network_start_observation' ? initialNetworkResult() : undefined
+    ));
+    const onNativeListenerReady = vi.fn();
+    const installation = installNativeLifecycleBridge({ onNativeListenerReady });
+    await expect(installation.ready).rejects.toMatchObject({
+      code: 'MOBILE_NATIVE_READBACK_INVALID', operation: 'lifecycle-observation',
+    });
+    expect(onNativeListenerReady).not.toHaveBeenCalled();
+    expect(bridgeMocks.invoke).not.toHaveBeenCalledWith('network_start_observation', undefined);
+    await installation.teardown();
+  });
+
   it('rejects readiness when initial network observation does not start', async () => {
     bridgeMocks.invoke.mockImplementation(async (command: string) => (
       command === 'network_start_observation'
@@ -345,7 +389,7 @@ describe('nativeLifecycleBridge', () => {
             ...initialNetworkResult(),
             state: { ...initialNetworkResult().state, updatedAtMs: 0 },
           }
-        : undefined
+        : command === 'lifecycle_observe' ? initialLifecycleResult() : undefined
     ));
 
     const installation = installNativeLifecycleBridge();
@@ -359,6 +403,7 @@ describe('nativeLifecycleBridge', () => {
 
   it('rejects readiness when initial network observation fails', async () => {
     bridgeMocks.invoke.mockImplementation(async (command: string) => {
+      if (command === 'lifecycle_observe') return initialLifecycleResult();
       if (command === 'network_start_observation') {
         throw new Error('observation unavailable');
       }
@@ -376,6 +421,7 @@ describe('nativeLifecycleBridge', () => {
 
   it('routes typed native callbacks through Rust before canonical delivery', async () => {
     bridgeMocks.invoke.mockImplementation(async (command: string) => {
+      if (command === 'lifecycle_observe') return initialLifecycleResult();
       if (command === 'network_start_observation') return initialNetworkResult();
       return {
         accepted: true,
@@ -463,6 +509,7 @@ describe('nativeLifecycleBridge', () => {
     const onNetworkStateChange = vi.fn();
     const onNativeNetworkListenerReady = vi.fn();
     bridgeMocks.invoke.mockImplementation(async (command: string) => {
+      if (command === 'lifecycle_observe') return initialLifecycleResult();
       if (command === 'network_start_observation') return {
         ...initialNetworkResult(),
         accepted: false,

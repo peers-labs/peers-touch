@@ -840,26 +840,39 @@ class ContactMessageResilienceTest(unittest.TestCase):
         restore = src.find("pub fn restore_profile(")
         self.assertGreater(restore, 0)
         replacement = src.find("let device_identity = recovery_device_identity(", restore)
+        verification = src.find(
+            "super::device_identity_backup::verify_recovery_enrollment(",
+            replacement,
+        )
         worker = src.find("let (worker, worker_token)", replacement)
         self.assertGreater(replacement, restore)
-        self.assertGreater(worker, replacement)
+        self.assertGreater(verification, replacement)
+        self.assertGreater(worker, verification)
         branch = src[replacement:worker]
         self.assertIn("current_device_identity,", branch)
         self.assertIn("preserve_device_continuity,", branch)
-        self.assertIn("verify_recovery_enrollment(", branch)
-        helper_start = src.index("\nfn recovery_device_identity(")
+        self.assertIn(
+            "super::device_identity_backup::verify_recovery_enrollment(",
+            branch,
+        )
+        helper_start = src.index("fn recovery_device_identity(")
         helper_end = src.index("\n#[cfg(test)]", helper_start)
         helper = src[helper_start:helper_end]
+        self.assertIn("if preserve_device_continuity", helper)
         self.assertIn("return Ok(current);", helper)
         self.assertIn("generate_device_identity_for_device_from_parts(", helper)
         self.assertIn("&device_id,", helper)
         self.assertIn("Some(&current.device_signing_seed)", helper)
-        self.assertNotIn("generate_fresh_device_identity", helper)
+        self.assertNotIn("generate_fresh_device_identity_from_seed(", helper)
+        self.assertNotIn("generate_fresh_device_identity(", helper)
         self.assertIn(
             "fn recovery_rebinds_actor_without_rotating_enrolled_device_signing_material()",
             src,
         )
-        self.assertIn("fn fresh_profile_restore_installs_recovered_actor_with_new_device()", src)
+        self.assertIn(
+            "fn fresh_profile_restore_installs_recovered_actor_with_new_device()",
+            src,
+        )
 
     def test_private_recovery_reactivates_secure_content_after_identity_fence(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/social/mod.rs")

@@ -568,6 +568,28 @@ impl AttachmentTransferWorker {
             .map_err(|failure| core_failure_to_chat(failure).to_string())
     }
 
+    pub fn restore_download_cache(
+        &self,
+        attachment_id: &str,
+        descriptor: &EncryptedObjectDescriptor,
+        expected_plaintext_sha256: &[u8; 32],
+        cache_ref: &str,
+        now_unix_ms: i64,
+    ) -> Result<(), String> {
+        let descriptor = chat_descriptor_to_core(descriptor)?;
+        self.inner
+            .restore_download_cache(
+                attachment_id, &descriptor, expected_plaintext_sha256, cache_ref, now_unix_ms,
+            )
+            .map_err(|failure| core_failure_to_chat(failure).to_string())
+    }
+
+    pub fn retry(&self, attachment_id: &str, now_unix_ms: i64) -> Result<(), String> {
+        self.inner
+            .retry(attachment_id, now_unix_ms)
+            .map_err(|failure| core_failure_to_chat(failure).to_string())
+    }
+
     fn persist_terminal_descriptor_failure(
         &self,
         attachment_id: &str,

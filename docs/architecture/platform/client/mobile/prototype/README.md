@@ -1,10 +1,59 @@
 # Mobile Prototype
 
-> **Status**: confirmed
+> **Status**: pending-review（当前消息布局修正；既有确认范围保留）
 > **Version**: v1.2
-> **Created**: 2026-07-08 | **Updated**: 2026-10-12
+> **Created**: 2026-07-08 | **Updated**: 2026-10-25
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
+
+## 当前消息布局与文件卡片
+
+文件详情已同步分页预览设计样本，PDF/文本/Office 显示页内导航，工作表显示
+工作表与行列页；模拟字节和系统操作不构成产品证明。沿用当前详情关闭/卸载策略，
+验证范围与未证明项见
+[文件查看原型入口](../../../../domains/chat/lifecycle/prototype/README.md)。
+
+当前待审范围为 Chat 消息阅读布局。左右使用等宽的 34px 头像列和 8px 列间距，
+12px 视口内边距保持镜像；首条正文与头像顶边对齐，群聊名称占独立行。
+连续消息行间隔 8px，消息组间隔 16px。正文、时间、回复和失败动作各自保留
+所属区域，隐藏头像不会改变正文宽度。自己的头像与 Me 复用同一身份数据。
+文件卡片移除浏览器默认边框，长文件名换行；键盘焦点显示 2px 品牌环。
+详情关闭通过组件关闭生命周期恢复卡片焦点，关闭动画完成后卸载。
+
+合同与证据：
+
+- [消息布局合同](../../../../domains/chat/lifecycle/prototype/README.md)
+- [截图对比](./evidence/20261025-message-layout/comparison.png)
+- [几何与交互记录](./evidence/20261025-message-layout/message-layout.json)
+- `evidence/20261025-message-layout/` 包含全部 42 张截图及六张视口/主题联系图。
+
+现有 `check-layout.mjs` 增加消息布局检查模式。修正前的 18 个样本均出现几何
+缺陷；当前 1440x1100、554x954、390x844 × 亮/暗主题共 42 个渲染样本通过，
+覆盖单行、多行、连续消息、回复、文件、失败、unknown、恢复和长内容。
+长文件名是明确标注的 CSS stress 注入，不能视为真实附件或完整本地化证明。
+六组 touch/keyboard 路径通过文件打开、下载取消/重试、保存取消反馈、
+Escape、关闭卸载、焦点恢复、键盘品牌环、消息 Retry 和 Check status。
+故意移动正文 4px、破坏视口镜像内边距都会使同一几何检查失败。
+
+页面异常与产品 console error 为零；Portal 的独立 `favicon.ico` 404 单列记录。
+Mobile Vite 构建通过，TypeScript 整包检查仍被共享 ReactionChip/ReactionPicker
+既有 `react/jsx-runtime` 与 `lucide-react` 解析错误阻塞，不能声明整包类型检查通过。
+
+Frontend Tree Review：MessageContent 为 `virtualized content`，上限 200 行，
+稳定 key 与 Shell-owned list memory 保留；详情为 `on-visit + none`。
+没有新增页面、隐藏树、runtime 或缓存 owner，registry 无需改变生命周期。
+L1/L2/L3 为当前原型证据；物理设备 touch、VoiceOver/TalkBack、200% 动态字号、
+全 Shell 本地化、真实键盘、Native 文件操作和性能基准保持 `UNPROVEN`。
+当前原型运行在本 worktree 的 `make run-prototype` / localhost:3200，供本次查看。
+本修正尚未 Owner 确认，也不建立 Native 产品或文件验收结论。
+
+重跑：
+
+```bash
+PROTOTYPE_MESSAGE_LAYOUT_ONLY=1 PROTOTYPE_BROWSER_CHANNEL=chrome \
+PROTOTYPE_EVIDENCE_DIR=/tmp/pt-message-layout \
+node packages/prototypes/mobile/chat/scripts/check-layout.mjs
+```
 
 ## 2026-10-12 Interaction Review Reset
 
@@ -551,6 +600,27 @@ node packages/prototypes/mobile/chat/scripts/check-residual-parity.mjs
 
 ## Acceptance Notes
 
+- **Unified device Search, 2026-10-23:** four primary header actions and Chat
+  History Search enter one full-height Shell detail. Message/attachment-name/
+  function filters, explicit conversation scope, original message/thread focus
+  and returning input are represented in `src/pages/SearchPage.tsx`. Portal
+  touch checks cover these routes plus dark/narrow, loading and error/retry.
+  Shell owns the sample message snapshot used by Chat, thread replies and
+  Search. Sending, editing and hiding survive selected-page unmounts; search
+  entry/exit fences controlled tickets. A thread entered manually from a
+  Search-opened message returns to that message before returning to Search.
+  The migrated long-list script traverses all 480 scoped results at three
+  viewports, retains original-reader/live-tail anchors, and checks sent-message
+  remount, scope isolation, cross-conversation original opening, hide
+  revalidation and thread-reply remount. The residual script passes 40 checks
+  at two viewports, including discarded query/close/remount completions.
+  Approved generated portraits are blocked offline in the residual check and
+  reported separately from prohibited business/external traffic.
+  Fresh touch screenshots and seven-group result:
+  `/tmp/mobile-search-prototype-continuity-20261023/`; long-list and residual
+  screenshots remain in their external runtime target directories.
+  Native Android/iOS behavior, account fencing and complete localization remain
+  unproven; sample rendering does not establish production readiness.
 - **W6A long-list sample: source/render synchronized for the covered subset.**
   Previous/Next, search paging, older-history anchors, large request/member
   collections, and controlled search loading/failure/retry now have repeatable

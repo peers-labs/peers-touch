@@ -9,6 +9,7 @@ import { ChatContactsDetailPanel } from '../components/chat/ChatContactsDetailPa
 import { ChatMessageArea } from '../components/chat/ChatMessageArea';
 import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
+import { AttachmentDetailHost } from '../components/chat/AttachmentDetailHost';
 import { CallSurface } from '../components/chat/CallSurface';
 import { GroupCallSurface } from '../components/chat/GroupCallSurface';
 import {
@@ -357,6 +358,7 @@ export function SocialChatPage() {
       {/* Right area: the active sub-page owns its own content semantics. */}
       {subPage === 'chats' ? (
         <>
+          <AttachmentDetailHost />
           <ChatMessageArea
             directOpenIntent={directOpenIntent}
             onRetryDirectOpen={() => {

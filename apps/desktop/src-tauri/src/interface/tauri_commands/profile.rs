@@ -179,6 +179,7 @@ pub fn profile_update_privacy(
 // blocks the main thread while NSOpenPanel also needs the main run-loop.
 #[tauri::command]
 pub async fn pick_image_file(window: Window) -> AppResult<StubPayload> {
+    let _ = window;
     tracing::info!("Opening file picker dialog for image selection");
     let dialog = rfd::AsyncFileDialog::new()
         .set_title("Select Image")
@@ -186,9 +187,6 @@ pub async fn pick_image_file(window: Window) -> AppResult<StubPayload> {
 
     match dialog.pick_file().await {
         Some(handle) => {
-            if let Err(error) = super::allow_file_preview(&window, handle.path()) {
-                return AppResult::fail(ErrorCode::InternalError, error, None);
-            }
             let path_str = handle.path().to_string_lossy().to_string();
             tracing::info!(path = %path_str, "Image file selected");
             AppResult::success(StubPayload {

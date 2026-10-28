@@ -8092,20 +8092,23 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             contract_clients = {
                 client.id: client
                 for client in environment_clients
-                if client.runtime == "tauri-ios-simulator"
+                if client.runtime in {
+                    "tauri-ios-simulator", "tauri-android-emulator"
+                }
             }
             base_clients = {
                 client.profile: client for client in base_manifest.clients
             }
-            required_client_ids = ("sim-ios", "sim-ios-peer")
+            required_client_ids = tuple(contract_clients)
             if (
+                len(required_client_ids) != 2
+                or
                 set(base_clients) != set(required_client_ids)
-                or set(contract_clients) != set(required_client_ids)
             ):
                 raise BlockedError(
                     reason=(
-                        f"{self.environment_id} requires both isolated iOS "
-                        "simulator clients"
+                        f"{self.environment_id} requires its two isolated "
+                        "contract-selected Mobile clients"
                     ),
                     resource=f"{self.environment_id}:clients",
                 )
@@ -9291,6 +9294,7 @@ class MobileDirectSimulatorProvisioner(
     station_profile_keys = MOBILE_DIRECT_STATION_PROFILE_KEYS
     actor_manifest_kind = "mobile-direct-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-direct-simulator-actors.json"
+    station_outage_gate_ids = frozenset({MOBILE_RECOVERY_GATE_ID})
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -9353,7 +9357,7 @@ class MobileDirectSimulatorProvisioner(
         required_capabilities: tuple[str, ...],
     ) -> EphemeralGateLaunchContext:
         if (
-            gate_id != MOBILE_RECOVERY_GATE_ID
+            gate_id not in self.station_outage_gate_ids
             or required_capabilities
             != (MOBILE_STATION_OUTAGE_CAPABILITY_ID,)
         ):

@@ -20,6 +20,22 @@ from tooling.acceptance.drivers.native import (
 )
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.gates.chat.lifecycle_file_viewing import (
+    REQUIRED_FILE_VIEWING_ASSERTIONS,
+    prove_file_detail,
+    prove_file_download_recovery,
+    prove_file_format_preview,
+)
+from tooling.acceptance.gates.chat.lifecycle_file_fixtures import (
+    FILE_FORMAT_KINDS,
+    create_file_format_fixtures,
+)
+from tooling.acceptance.gates.chat.lifecycle_file_native import (
+    prove_export_retention,
+    prove_external_file_isolation,
+    prove_file_grant_revocation,
+    prove_native_file_preview,
+)
 from tooling.acceptance.gates.chat.native_file_picker import (
     select_native_file,
     wait_for_actionable_file_trigger,
@@ -43,7 +59,7 @@ from tooling.acceptance.node_connectivity_native_support import (
 GATE_ID = LIFECYCLE_RICH_VOICE_GATE_ID
 REPORT_PATH = None
 STEP_TIMEOUT = 120.0
-REQUIRED_RICH_VOICE_ASSERTIONS = {
+REQUIRED_RICH_VOICE_ASSERTIONS = REQUIRED_FILE_VIEWING_ASSERTIONS | {
     "rich_attachment_retry_retained",
     "rich_attachment_upload_retry_identity",
     "rich_attachment_download_retry_identity",
@@ -59,6 +75,7 @@ REQUIRED_RICH_VOICE_ASSERTIONS = {
     "voice_playback_progress_seek_pause",
     "voice_playback_terminal_end",
     "voice_playback_failure_retry",
+    "voice_asset_eviction_fault",
     "voice_restart_recovery",
 }
 
@@ -942,7 +959,13 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                 "station",
                 download_override,
             )
-            download_proxy.arm_once()
+            download_proxy.arm()
+            download_recovery = prove_file_download_recovery(
+                client=self.clients[peer],
+                attachment_id=attachment_id,
+                resume_transport=download_proxy.disarm,
+                assert_condition=self.assert_condition,
+            )
             peer_path = self._open_attachment(peer, attachment_id)
             hashes[peer] = self.runtime_binding.native_file_sha256(
                 peer,
@@ -954,7 +977,7 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                     if (
                         (snapshot := download_proxy.evidence())[
                             "failureCount"
-                        ] == 1
+                        ] >= 1
                         and snapshot["forwardedConnections"] >= 1
                     )
                     else None
@@ -964,7 +987,7 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
             )
             self.assert_condition(
                 "rich_attachment_download_retry_identity",
-                download_evidence["failureCount"] == 1
+                download_evidence["failureCount"] >= 1
                 and download_evidence["dropRemaining"] == 0
                 and hashes[peer] == expected_hash,
                 json.dumps(
@@ -985,6 +1008,7 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                 "projections": projections,
                 "uploadRetry": upload_evidence,
                 "downloadRetry": download_evidence,
+                "downloadRecovery": download_recovery,
             }
             self.assert_condition(
                 "rich_attachment_byte_identity",
@@ -1029,6 +1053,226 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                     "rich attachment fault transport cleanup failed: "
                     + "; ".join(cleanup_errors)
                 )
+
+    def _prove_file_format_matrix(
+        self,
+        actor: str,
+        peer: str,
+        conversation_id: str,
+        root: Path,
+    ) -> dict[str, Any]:
+        files = create_file_format_fixtures(root)
+        observations: dict[str, Any] = {}
+        for index, (format_id, source) in enumerate(files.items()):
+            sender, receiver = (actor, peer) if index % 2 == 0 else (peer, actor)
+            client = self.clients[sender]
+            composer = client.find_element(f'[data-chat-composer="{conversation_id}"]', 10)
+            revision = int(composer.get_attribute("data-chat-send-outcome-revision") or 0)
+            self._select_native_file(sender, "[data-chat-attachment-picker]", source)
+            wait_until(
+                lambda: next(
+                    (item for item in client.find_elements(
+                        '[data-chat-attachment-draft][data-chat-attachment-status="ready"]'
+                    ) if item.is_displayed()), None,
+                ),
+                f"{sender} {format_id} draft", timeout=30,
+            )
+            client.find_element("[data-chat-send]", 10).click()
+            outcome = wait_until(
+                lambda: self._composer_outcome(client, conversation_id, revision),
+                f"{sender} {format_id} send outcome", timeout=60,
+            )
+            if (
+                outcome["state"] != "pending" or not outcome["messageId"]
+                or len(outcome["attachmentIds"]) != 1
+            ):
+                raise GateError(f"file-format send outcome is invalid: {outcome}")
+            message_id = str(outcome["messageId"])
+            attachment_id = str(outcome["attachmentIds"][0])
+            expected_hash = file_sha256(source)
+            observations[format_id] = {
+                "messageId": message_id, "attachmentId": attachment_id,
+                "senderActor": sender, "receiverActor": receiver,
+            }
+            for participant, role in ((sender, "sender"), (receiver, "receiver")):
+                wait_until(
+                    lambda participant=participant: self._engine_attachment(
+                        participant, conversation_id, message_id, attachment_id,
+                    ),
+                    f"{participant} {format_id} encrypted projection", timeout=60,
+                )
+                evidence_root = root / "file-format-evidence" / format_id / role
+                retained = {}
+                def retain_evidence(observed):
+                    for image in sorted(evidence_root.glob("*.png")):
+                        if str(image) in retained:
+                            continue
+                        retained[str(image)] = self.report.add_evidence_file(
+                            f"file-format-{format_id}-{role}-{image.name}", image,
+                            destination_dir=self.evidence_dir,
+                        )
+                    for record in sorted(evidence_root.glob("*.json")):
+                        if str(record) in retained:
+                            continue
+                        pixels = json.loads(record.read_text())
+                        for key in ("screenshot", "contentScreenshot", "headerScreenshot", "navigationScreenshot"):
+                            if pixels.get(key) in retained:
+                                pixels[key] = retained[pixels[key]]
+                        record.write_text(json.dumps(pixels, ensure_ascii=False, indent=2))
+                        retained[str(record)] = self.report.add_evidence_file(
+                            f"file-format-{format_id}-{role}-{record.name}", record,
+                            destination_dir=self.evidence_dir,
+                        )
+                    for pixels in (observed.get("pixelsEvidence", {}), observed.get("nextPixelsEvidence", {})):
+                        for key in ("screenshot", "contentScreenshot", "headerScreenshot", "navigationScreenshot"):
+                            if pixels.get(key) in retained:
+                                pixels[key] = retained[pixels[key]]
+                observed = prove_file_format_preview(
+                    client=self.clients[participant],
+                    attachment_id=attachment_id,
+                    source=source,
+                    format_id=format_id,
+                    role=role,
+                    evidence_root=evidence_root,
+                    assert_condition=self.assert_condition,
+                    retain_evidence=retain_evidence,
+                )
+                # Cache hashes supplement the actual card and decoder evidence.
+                path = self._open_attachment(participant, attachment_id)
+                actual_hash = self.runtime_binding.native_file_sha256(participant, path)
+                self.assert_condition(
+                    f"rich_file_format_{format_id}_{role}_bytes",
+                    actual_hash == expected_hash,
+                    json.dumps({"expected": expected_hash, "actual": actual_hash}),
+                )
+                observations[format_id][role] = observed
+        self.assert_condition(
+            "rich_file_supported_format_matrix",
+            set(observations) == set(FILE_FORMAT_KINDS)
+            and all("sender" in item and "receiver" in item for item in observations.values()),
+            json.dumps(observations, sort_keys=True),
+        )
+        return observations
+
+    def _prove_file_scope_boundaries(
+        self,
+        actor: str,
+        peer: str,
+        conversation_id: str,
+        attachment_id: str,
+    ) -> dict[str, Any]:
+        observations: dict[str, Any] = {}
+        for participant, role in ((actor, "sender"), (peer, "receiver")):
+            client = self.clients[participant]
+
+            def restore() -> None:
+                enter_chat_page(client)
+                client.find_element(
+                    f'[data-pt-conversation-item="{conversation_id}"]', 15,
+                ).click()
+
+            def close_detail() -> dict[str, Any]:
+                client.find_element(".ant-modal-close", 5).click()
+                return {"boundary": "detail-close"}
+
+            def leave_chat() -> dict[str, Any]:
+                client.find_element(
+                    '[data-pt-primary-nav="settings"] button, '
+                    '[data-pt-primary-nav="settings"] [role="button"]', 10,
+                ).click()
+                route = wait_until(
+                    lambda: value if (
+                        (value := client.execute_script("return location.hash"))
+                        and value != "#/chat"
+                    ) else None,
+                    "real primary navigation left Chat", timeout=15,
+                )
+                return {"boundary": "leave-chat", "route": route}
+
+            observations[role] = {}
+            for boundary, transition in (("close", close_detail), ("leave_chat", leave_chat)):
+                result = prove_file_grant_revocation(
+                    client=client, runtime_binding=self.runtime_binding,
+                    attachment_id=attachment_id, actor_ptid=self.ptids[participant],
+                    transition=transition, restore=restore,
+                )
+                self.assert_condition(
+                    f"rich_file_scope_{role}_{boundary}",
+                    result["afterStatus"] == 404
+                    and len(result["rejectedIntents"]) == 3
+                    and result["nativeResourcesUnchanged"],
+                    json.dumps(result, sort_keys=True),
+                )
+                observations[role][boundary] = result
+        # These observations deliberately do not emit rich_file_scope_fencing.
+        # Conversation/account/Station changes remain independent obligations.
+        observations["unprovenBoundaries"] = ["conversation", "account", "station"]
+        return observations
+
+    def _prove_native_file_actions(
+        self,
+        actor: str,
+        peer: str,
+        attachment: dict[str, Any],
+        source: Path,
+        format_matrix: dict[str, Any],
+        root: Path,
+    ) -> dict[str, Any]:
+        observations: dict[str, Any] = {}
+        for participant, role in ((actor, "sender"), (peer, "receiver")):
+            client = self.clients[participant]
+            cache_path = self._open_attachment(participant, str(attachment["attachmentId"]))
+            evidence_root = root / "native-file-evidence" / role
+            native_click = lambda selector, participant=participant: self._native_click(
+                participant, selector,
+            )
+            actions = {}
+            try:
+                actions["preview"] = prove_native_file_preview(
+                    client=client, runtime_binding=self.runtime_binding,
+                    attachment_id=str(format_matrix["pdf"]["attachmentId"]),
+                    source=root / "formats" / "format-report.pdf",
+                    evidence_root=evidence_root,
+                    native_click=native_click,
+                    expected_text="File viewing page 1",
+                )
+                actions["externalCopy"] = prove_external_file_isolation(
+                    client=client, runtime_binding=self.runtime_binding,
+                    attachment_id=str(attachment["attachmentId"]),
+                    source=source, cache_path=cache_path,
+                    evidence_root=evidence_root, native_click=native_click,
+                )
+                actions["export"] = prove_export_retention(
+                    client=client, runtime_binding=self.runtime_binding,
+                    attachment_id=str(attachment["attachmentId"]),
+                    source=source, cache_path=cache_path,
+                    destination=root / "exports" / role / source.name,
+                    evidence_root=evidence_root, native_click=native_click,
+                )
+            finally:
+                # Persist native observations before the Suite fixture root is
+                # reclaimed, including screenshots preceding a failed action.
+                for path in evidence_root.glob("*.png"):
+                    reference = self.report.add_evidence_file(
+                        f"file-{role}-{path.stem}", path,
+                        destination_dir=self.evidence_dir,
+                    )
+                    for action in actions.values():
+                        if action.get("screenshot") == str(path):
+                            action["screenshot"] = reference
+            observations[role] = actions
+        for name, field in (
+            ("rich_file_native_preview", "preview"),
+            ("rich_file_external_copy_isolation", "externalCopy"),
+            ("rich_file_export_survives_eviction", "export"),
+        ):
+            self.assert_condition(
+                name,
+                all(field in observations[role] for role in ("sender", "receiver")),
+                json.dumps({role: actions[field] for role, actions in observations.items()},
+                           sort_keys=True),
+            )
+        return observations
 
     def _record_until_preview(
         self,
@@ -1388,14 +1632,35 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
         )
 
         paths[peer].unlink()
-        peer_client.execute_script(
+        fault = peer_client.driver.execute_async_script(
             """
+            const done = arguments[arguments.length - 1];
             const root = document.querySelector(arguments[0]);
             const audio = root?.querySelector('audio');
-            if (!audio) throw new Error('voice audio element missing');
-            audio.load();
+            (async () => {
+                if (!audio?.src) throw new Error('voice audio source missing');
+                const source = audio.src;
+                const handle = new URL(source).pathname.replace(/^\\/+/, '');
+                if (!handle) throw new Error('voice access handle missing');
+                // This is a native fault injection. Recovery still uses the
+                // production visible retry control below.
+                await window.__TAURI__.core.invoke('messaging_release_attachment', {
+                    input: { access_handle: handle },
+                });
+                const response = await fetch(source, {
+                    headers: { Range: 'bytes=0-31' }, cache: 'no-store',
+                });
+                audio.load();
+                done({ ok: true, assetStatus: response.status });
+            })().catch(error => done({ ok: false, error: String(error) }));
             """,
             voice_selector,
+        )
+        self.assert_condition(
+            "voice_asset_eviction_fault",
+            isinstance(fault, dict) and fault.get("ok") is True
+            and fault.get("assetStatus") == 404 and not paths[peer].exists(),
+            json.dumps(fault, sort_keys=True),
         )
         retry = wait_until(
             lambda: next(
@@ -1465,7 +1730,7 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
             root = Path(raw)
             empty_file = root / "empty.png"
             empty_file.write_bytes(b"")
-            source_file = root / "rich-attachment.bin"
+            source_file = root / "rich-attachment.txt"
             source_file.write_bytes(
                 b"peers-touch-chat-rich-voice-byte-identity\n"
             )
@@ -1480,6 +1745,29 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                 peer,
                 conversation_id,
                 source_file,
+            )
+            viewing = {
+                participant: prove_file_detail(
+                    client=self.clients[participant],
+                    runtime_binding=self.runtime_binding,
+                    attachment_id=str(attachment["attachmentId"]),
+                    source=source_file,
+                    role=role,
+                    native_click=lambda selector, participant=participant: self._native_click(
+                        participant, selector,
+                    ),
+                    assert_condition=self.assert_condition,
+                )
+                for participant, role in ((actor, "sender"), (peer, "receiver"))
+            }
+            format_matrix = self._prove_file_format_matrix(
+                actor, peer, conversation_id, root / "formats",
+            )
+            native_files = self._prove_native_file_actions(
+                actor, peer, attachment, source_file, format_matrix, root,
+            )
+            file_scope = self._prove_file_scope_boundaries(
+                actor, peer, conversation_id, str(attachment["attachmentId"]),
             )
             voice_boundaries = self._prove_voice_cancel_and_discard(actor)
             voice = self._prove_voice_message(
@@ -1561,6 +1849,10 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
             "screenshotCancel": cancel_geometry,
             "screenshotConfirm": confirm_geometry,
             "attachment": attachment,
+            "fileViewing": viewing,
+            "fileFormatMatrix": format_matrix,
+            "nativeFileActions": native_files,
+            "fileScopeBoundaries": file_scope,
             "voiceBoundaries": voice_boundaries,
             "voice": voice,
             "attachmentRestart": attachment_restart_evidence,

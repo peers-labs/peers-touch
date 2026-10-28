@@ -1,0 +1,30 @@
+@import '@peers-touch/client-chat-core/src/attachmentPreview.css';
+
+.chat-file-modal { max-width: calc(100vw - 32px); padding-bottom: 0; }
+.chat-file-modal .ant-modal-container { overflow: hidden; }
+.chat-file-modal .ant-modal-header { margin-bottom: 12px; }
+.chat-file-modal .ant-modal-title { padding-right: 36px; text-align: start; width: 100%; }
+.chat-file-title { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-file-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.chat-file-metadata { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--chat-preview-secondary); }
+.chat-file-metadata [role="status"] { margin-inline-start: auto; }
+.chat-file-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: clamp(200px, calc(100dvh - 240px), 720px);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--chat-preview-border);
+  border-radius: 8px;
+  background: var(--chat-preview-canvas);
+  overscroll-behavior: contain;
+}
+.chat-file-transfer { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.chat-file-transfer progress { width: 100%; }
+.chat-file-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .chat-file-modal .ant-modal-body { padding-inline: 12px !important; }
+  .chat-file-actions { justify-content: flex-start; }
+}

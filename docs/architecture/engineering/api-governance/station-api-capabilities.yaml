@@ -23,6 +23,8 @@ governed_prefixes:
   - /api/v1/social/friend-request
   - /api/v1/social/friend-requests
   - /api/v1/social/moments/remote-private
+  - /api/v1/social/moments/read-policy
+  - /api/v1/social/search/
   - /api/v1/social/relationships/block
   - /api/v1/social/relationships/unblock
   - /api/v1/social/relationships/blocked
@@ -52,6 +54,8 @@ owner_roots:
     - apps/station/app/subserver/key_exchange/
   station.social:
     - apps/station/app/subserver/social/handler.go
+    - apps/station/app/subserver/social/search_handler.go
+    - apps/station/app/subserver/social/read_policy_handler.go
   station.notification:
     - apps/station/app/subserver/notification/
   station.federation:
@@ -612,6 +616,54 @@ capabilities:
     superseded_symbols:
       - peers_touch.model.chat.v1.GetLatestRecoveryRevisionRequest
       - peers_touch.model.chat.v1.GetLatestRecoveryRevisionResponse
+
+  - id: social.search.query
+    domain_owner: station.social
+    truth_owner: social.public_content
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/search/query }
+    request_proto: peers_touch.model.search.v1.QueryIntent
+    response_proto: peers_touch.model.search.v1.SourcePage
+    truth_stores: [social_public_posts, social_comments]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: social.search.hydrate
+    domain_owner: station.social
+    truth_owner: social.public_content
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/search/hydrate }
+    request_proto: peers_touch.model.search.v1.HydrationRequest
+    response_proto: peers_touch.model.search.v1.HydrationReply
+    truth_stores: [social_public_posts, social_comments]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: social.search.resolve
+    domain_owner: station.social
+    truth_owner: social.public_content
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/search/resolve }
+    request_proto: peers_touch.model.search.v1.ResolveRequest
+    response_proto: peers_touch.model.search.v1.ResolvedResource
+    truth_stores: [social_public_posts, social_comments]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: social.moments.read_policy
+    domain_owner: station.social
+    truth_owner: social.private_content
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/moments/read-policy }
+    request_proto: peers_touch.model.social.v1.CheckMomentReadPolicyRequest
+    response_proto: peers_touch.model.social.v1.CheckMomentReadPolicyResponse
+    truth_stores: [social_private_posts, social_private_comments, social_private_recipient_grants]
+    allowed_dependencies: [social.private_moment.remote_projection_list]
+    forbidden_aliases: []
+    superseded_symbols: []
 
   - id: social.friend_request.send
     domain_owner: station.social

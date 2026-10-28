@@ -16,6 +16,35 @@ func NewActorIdentity(db *gorm.DB) *ActorIdentity {
 	return &ActorIdentity{db: db}
 }
 
+func (r *ActorIdentity) ActorsByPTIDs(ctx context.Context, ptids []string) (map[string]*db.Actor, error) {
+	out := make(map[string]*db.Actor)
+	if len(ptids) == 0 {
+		return out, nil
+	}
+	var rows []*db.Actor
+	err := r.db.WithContext(ctx).
+		Select("id", "ptid", "preferred_username", "name", "icon",
+			"federated_handle", "home_station_domain", "home_station_peer_id").
+		Where("ptid IN ?", ptids).Find(&rows).Error
+	for _, row := range rows {
+		out[row.PTID] = row
+	}
+	return out, err
+}
+
+func (r *ActorIdentity) PTIDsByIDs(ctx context.Context, ids []uint64) (map[uint64]string, error) {
+	out := make(map[uint64]string)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []db.Actor
+	err := r.db.WithContext(ctx).Select("id", "ptid").Where("id IN ?", ids).Find(&rows).Error
+	for _, row := range rows {
+		out[row.ID] = row.PTID
+	}
+	return out, err
+}
+
 func (r *ActorIdentity) ResolvePTIDs(ctx context.Context, actorPTIDs []string) ([]uint64, error) {
 	ids := make([]uint64, len(actorPTIDs))
 	if len(actorPTIDs) == 0 {

@@ -39,6 +39,13 @@ The regression guard is [`docs/knowledge/invariants/desktop-identity-lifecycle-c
 Pages and popovers may render identity state. They must not become the owner of
 session/profile/account/avatar freshness.
 
+Ordinary launch, completed login, PIN unlock and account switch land on Chat.
+Only renderer reload of an already authenticated session restores its current
+page. Search is an explicit Shell overlay and has no restorable route.
+The native window registry keeps its publication revision for an identical
+account/PTID/token binding; a token replacement, unbind/rebind, account change
+or Station cutover changes the revision and invalidates private reads.
+
 ## 3. Phase Model
 
 The top-level phase is `IdentityPhase`:

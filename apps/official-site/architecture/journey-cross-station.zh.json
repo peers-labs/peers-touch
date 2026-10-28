@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "跨 Station Durable 社交投递",
+    "subtitle": "源站 Accepted 不是完成：仍需目标验签、去重、Domain Commit 与接收端可见。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/journey-cross-station.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "source",
+      "type": "backend",
+      "label": "源 + Outbox",
+      "sublabel": "源 Transaction",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/delivery/gorm_unit_of_work.go",
+          "label": "gorm_unit_of_work.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "delivery",
+      "type": "messagebus",
+      "label": "Dispatcher",
+      "sublabel": "Retry + Signed Frame",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/delivery/dispatcher.go",
+          "label": "dispatcher.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "transport",
+      "type": "messagebus",
+      "label": "Peer Transport",
+      "sublabel": "认证通道",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/transport.go",
+          "label": "transport.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "target",
+      "type": "backend",
+      "label": "目标 Inbox + UoW",
+      "sublabel": "验签 · 去重 · Commit",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/delivery/gorm_unit_of_work.go",
+          "label": "gorm_unit_of_work.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "deviceInbox",
+      "type": "database",
+      "label": "Device Inbox",
+      "sublabel": "接收端 Cursor 真源",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/conversation/production_realtime.go",
+          "label": "production_realtime.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Device Engine",
+      "sublabel": "Pull · 解密 · Commit",
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
+          "label": "lifecycle.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "visible",
+      "type": "frontend",
+      "label": "Receiver UI",
+      "sublabel": "可见结果 + ACK"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 280,
+      "label": "源站提交"
+    },
+    {
+      "from": 290,
+      "to": 430,
+      "label": "认证投递"
+    },
+    {
+      "from": 440,
+      "to": 590,
+      "label": "目标提交 + 可见"
+    }
+  ],
+  "messages": [
+    {
+      "id": "source-commit",
+      "from": "source",
+      "to": "delivery",
+      "y": 170,
+      "label": "提交源状态 + Durable Outbox",
+      "variant": "emphasis"
+    },
+    {
+      "id": "accepted",
+      "from": "delivery",
+      "to": "source",
+      "y": 215,
+      "label": "源站 Accepted",
+      "variant": "return"
+    },
+    {
+      "id": "frame",
+      "from": "delivery",
+      "to": "transport",
+      "y": 300,
+      "label": "重试 Signed Idempotent Frame",
+      "variant": "emphasis"
+    },
+    {
+      "id": "deliver",
+      "from": "transport",
+      "to": "target",
+      "y": 350,
+      "label": "认证 Station 通道",
+      "variant": "emphasis"
+    },
+    {
+      "id": "target-commit",
+      "from": "target",
+      "to": "deviceInbox",
+      "y": 435,
+      "label": "验签 + Inbox 去重 + Domain Commit",
+      "variant": "security"
+    },
+    {
+      "id": "pull",
+      "from": "engine",
+      "to": "deviceInbox",
+      "y": 490,
+      "label": "拉取已提交 Receiver Event",
+      "variant": "emphasis"
+    },
+    {
+      "id": "apply",
+      "from": "deviceInbox",
+      "to": "engine",
+      "y": 535,
+      "label": "有序加密 Event",
+      "variant": "return"
+    },
+    {
+      "id": "visible",
+      "from": "engine",
+      "to": "visible",
+      "y": 580,
+      "label": "本地 Commit → Visible → Cursor ACK",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "三个边界",
+      "items": [
+        "源站 Accepted → 目标站 Committed → 接收设备 Visible"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "重试安全",
+      "items": [
+        "源 Outbox 重试；目标 Inbox 去重与设备 Cursor ACK 防止重复 Mutation 或 Projection。"
+      ]
+    }
+  ]
+}

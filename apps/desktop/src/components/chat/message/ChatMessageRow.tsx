@@ -19,6 +19,7 @@ import {
 import {
   CHAT_MESSAGE_METADATA_RAIL_HEIGHT,
   CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
+  CHAT_MESSAGE_SPACING,
 } from '../chatGeometry';
 import { MessageStatus } from '../../../gen/proto/domain/chat/chat_pb';
 import type { DesktopIMSenderProfileProjection } from '../../../store/socialProjection';
@@ -200,14 +201,14 @@ function MessageInteractionRail({
       })
     : t('chat.social.thread.summary', { count: threadReplyCount });
 
+  if (!hasContent) return null;
   return (
     <Flexbox
       data-message-metadata-rail={message.ulid}
-      data-message-metadata-state={hasContent ? 'populated' : 'reserved'}
+      data-message-metadata-state="populated"
       horizontal
       align="center"
       gap={4}
-      aria-hidden={hasContent ? undefined : true}
       style={{
         alignSelf: isOwn ? 'flex-end' : 'flex-start',
         boxSizing: 'border-box',
@@ -220,8 +221,6 @@ function MessageInteractionRail({
         paddingLeft: isOwn ? 0 : 4,
         paddingRight: isOwn ? 4 : 0,
         overflow: 'hidden',
-        visibility: hasContent ? 'visible' : 'hidden',
-        pointerEvents: hasContent ? 'auto' : 'none',
       }}
     >
       <Flexbox
@@ -376,6 +375,12 @@ function MessageInteractionRail({
 export function ChatMessageRowInteractionStyle() {
   const { token } = theme.useToken();
   const rowInteractionStyle = `
+    .msg-row[data-message-anchor-focused]:focus {
+      outline: none;
+    }
+    .msg-row[data-message-anchor-focused]:focus .msg-bubble {
+      box-shadow: 0 0 0 2px ${token.colorPrimaryBorder}, ${token.boxShadowSecondary} !important;
+    }
     .msg-row.highlighted .msg-bubble {
       box-shadow: 0 0 0 2px ${token.colorPrimaryBorder}, ${token.boxShadowSecondary} !important;
     }
@@ -528,6 +533,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         width: 'fit-content',
         position: 'relative',
         marginTop: timelineGap ? (compact ? 6 : 8) : 0,
+        paddingBottom: compact ? CHAT_MESSAGE_SPACING.compactItem : CHAT_MESSAGE_SPACING.item,
       }}
       gap={avatarGap}
     >
@@ -619,36 +625,19 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           />
         </Flexbox>
 
-        <MessageInteractionRail
-          isOwn={isOwn}
-          message={message}
-          onOpenThread={() => onOpenThread(threadRootUlid)}
-          onPin={() => onPin(message)}
-          onReact={(emoji) => onReact(message, emoji)}
-          onRetryReaction={() => onRetryReaction(message)}
-          pinned={pinned}
-          reactionMutationEmoji={reactionMutationEmoji}
-          reactionMutationPhase={reactionMutationPhase}
-          reactions={reactions ?? []}
-          showThreadSummary={showThreadSummary && !isRecalled}
-          threadReplyCount={threadReplyCount}
-          threadUnreadCount={threadUnreadCount}
-        />
-
         <Flexbox
+          data-message-meta={message.ulid}
           horizontal
           align="center"
           justify={isOwn ? 'flex-end' : 'flex-start'}
           gap={5}
           style={{
             alignSelf: isOwn ? 'flex-end' : 'flex-start',
-            marginTop: compact ? 3 : 4,
+            marginTop: CHAT_MESSAGE_SPACING.meta,
             paddingLeft: isOwn ? 0 : 4,
             paddingRight: isOwn ? 4 : 0,
             boxSizing: 'border-box',
-            height: 16,
             minHeight: 16,
-            maxHeight: 16,
             maxWidth: '100%',
             overflow: 'hidden',
             whiteSpace: 'nowrap',
@@ -721,6 +710,21 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             </Button>
           )}
         </Flexbox>
+        <MessageInteractionRail
+          isOwn={isOwn}
+          message={message}
+          onOpenThread={() => onOpenThread(threadRootUlid)}
+          onPin={() => onPin(message)}
+          onReact={(emoji) => onReact(message, emoji)}
+          onRetryReaction={() => onRetryReaction(message)}
+          pinned={pinned}
+          reactionMutationEmoji={reactionMutationEmoji}
+          reactionMutationPhase={reactionMutationPhase}
+          reactions={reactions ?? []}
+          showThreadSummary={showThreadSummary && !isRecalled}
+          threadReplyCount={threadReplyCount}
+          threadUnreadCount={threadUnreadCount}
+        />
       </Flexbox>
 
       {isOwn && (

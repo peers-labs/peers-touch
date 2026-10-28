@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "权威与状态所有权",
+    "subtitle": "每类状态只有一个 Mutation Authority；其它位置只能是投影、缓存或生成物。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/authority.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "client",
+        "focus": [
+          "desktop",
+          "mobile",
+          "hosts"
+        ],
+        "label": "Client 本地权威",
+        "note": "Client 拥有本地体验与编排，绝不拥有跨设备业务真源。"
+      },
+      {
+        "id": "station",
+        "focus": [
+          "frame",
+          "apps"
+        ],
+        "label": "Station 权威",
+        "note": "Station 内的平台权威与业务权威保持分离。"
+      },
+      {
+        "id": "network",
+        "focus": [
+          "federation",
+          "relay"
+        ],
+        "label": "网络权威",
+        "note": "Federation 治理与 Relay Admission 是不同真源。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "desktop",
+      "type": "frontend",
+      "label": "Desktop Owner",
+      "sublabel": "窗口 · 草稿 · 缓存 · 投影",
+      "tag": "设备本地",
+      "pos": [
+        40,
+        100
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/state/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 51
+        }
+      ]
+    },
+    {
+      "id": "mobile",
+      "type": "frontend",
+      "label": "Mobile Owner",
+      "sublabel": "生命周期 · 恢复 · 缓存 · 投影",
+      "tag": "设备本地",
+      "pos": [
+        300,
+        100
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "frame",
+      "type": "security",
+      "label": "Frame / Touch Owner",
+      "sublabel": "Router · Access Gate · Session · Transport",
+      "tag": "平台权威",
+      "pos": [
+        560,
+        100
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "apps",
+      "type": "backend",
+      "label": "Station App Owner",
+      "sublabel": "业务状态 · 授权 · 策略",
+      "tag": "业务权威",
+      "pos": [
+        820,
+        100
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "federation",
+      "type": "database",
+      "label": "Federation Owner",
+      "sublabel": "Manifest · Membership · Ledger · Projection",
+      "tag": "网络权威",
+      "pos": [
+        40,
+        270
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/application/ledger_service.go",
+          "label": "ledger_service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "type": "external",
+      "label": "Relay Owner",
+      "sublabel": "Endpoint · Grant · Reservation · Admission",
+      "tag": "传输权威",
+      "pos": [
+        300,
+        270
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/runtime/role/role.go",
+          "label": "role.go",
+          "line": 1,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "type": "cloud",
+      "label": "Model Owner",
+      "sublabel": "Wire Shape · 共享语义",
+      "tag": "契约权威",
+      "pos": [
+        560,
+        270
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "model/domain/peer/station_identity.proto",
+          "label": "station_identity.proto",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "hosts",
+      "type": "external",
+      "label": "Platform Hosts",
+      "sublabel": "系统能力观察",
+      "tag": "Host 权威",
+      "pos": [
+        820,
+        270
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src/platform/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 14
+        }
+      ]
+    }
+  ],
+  "boundaries": [],
+  "connections": [],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "阅读规则",
+      "items": [
+        "没有箭头：每个区域表示互斥 Mutation Owner。",
+        "共享副本明确属于投影、缓存或生成 Binding。"
+      ]
+    }
+  ]
+}

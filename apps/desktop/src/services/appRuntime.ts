@@ -65,7 +65,6 @@ let criticalInstallInFlight: {
 
 function deferredAppRuntimeIds(): string[] {
   return [
-    searchRuntime.id,
     settingsRuntime.id,
     federationRuntime.id,
     ...(getDesktopHostPolicy().nativeSocialEnabled ? [momentsRuntime.id] : []),
@@ -75,6 +74,7 @@ function deferredAppRuntimeIds(): string[] {
 export const CRITICAL_SESSION_RUNTIME_IDS: ReadonlyArray<string> = [
   messagingRecoveryRuntime.id,
   messagingRuntime.id,
+  searchRuntime.id,
   callRuntime.id,
   chatRuntime.id,
   homeRuntime.id,

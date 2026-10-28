@@ -177,6 +177,48 @@ Native selection returns a bounded result to Rust. Rust owns:
 
 The plugin does not become a media store or upload owner.
 
+### Chat file actions
+
+`MessagingEngine` authorizes a private attachment and returns the local
+`AttachmentAccessProjection` protobuf. Its asset URL identifies a bounded
+`chat-file` grant bound to the active actor, Station, profile, device,
+activation generation and WebView. The protocol accepts GET/HEAD and a single
+byte range; MIME normalization prevents active text from becoming executable
+Web content.
+
+`platform-permissions.executeFileAction` receives only a Rust-created verified
+copy under the OS cache `peers-touch-file-handoff` root. Its typed request
+contains request ID, preview/open/export intent, local path, MIME type and a
+bounded deadline. The terminal outcome contains the same request ID,
+completed/cancelled/unavailable/failed and a reason. Paths stay inside the
+Rust-to-plugin boundary.
+Rust captures that deadline before authorization; it cannot mint a newer
+issuance after a plugin cancel-all watermark. Per-request cancellation reaches
+the plugin even when the issuing Engine is already suspended or unavailable.
+
+iOS uses Quick Look, the Open In application picker and document export with
+copy semantics. Android uses a dedicated FileProvider restricted to this
+handoff directory, read-only grants and ACTION_VIEW for explicit external
+opening; ACTION_CREATE_DOCUMENT selects a user export destination. Android
+keeps the owned destination picker within the explicit operation's deadline.
+Its own Activity stop does not suspend and cancel that export. Returning to the
+Host clears this presentation stop; cancellation, timeout or teardown while
+still stopped releases the deferred background signal. Account and Station
+revocation continue to cancel the operation.
+Android
+native document preview returns unavailable so the detail surface can offer
+an explicit external action. Browser-supported media/PDF/text preview stays
+in the file detail surface.
+
+The plugin serializes file presentation, rejects stale IDs/deadlines and
+normalizes late callbacks. Rust revokes grants and requests plugin cancellation
+on scope teardown/suspension. The destination is owned by the user; Attachment
+cache eviction does not remove exported files. Native handoff copies have
+bounded count and retention and are never writable attachment-cache aliases.
+Quick Look completes on dismissal. Rust removes its copy after that result and
+removes export copies after the destination operation; failed/stale handoffs
+are discarded. Successful external-opening copies remain under bounded retention.
+
 ## 10. Verification
 
 Each capability requires:

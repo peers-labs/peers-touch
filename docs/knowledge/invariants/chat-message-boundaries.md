@@ -27,6 +27,12 @@ detected: 2026-06-09
 
 Chat message body content MUST remain readable and actionable across Mobile and Desktop. Message action surfaces, metadata rows, retry controls, composers, safe areas, side panels, and floating layers MUST NOT cover text, image bodies, file names, voice scrubbers, or other primary message content.
 
+Time and read state belong directly after their own body. Empty reaction rails
+must not introduce a larger body-to-status gap than the gap to the next message.
+Desktop uses a 4px metadata gap and 8px item gap (6px compact); populated
+interaction rows follow the status. Retry controls grow the status row rather
+than clipping inside a fixed 16px height.
+
 ## Why this is non-negotiable
 
 Chat is the primary product surface for trust and continuity. If message menus, hover actions, timestamps, or input areas cover the body of a message, the user loses the ability to read, copy, preview, retry, or verify content.
@@ -40,6 +46,9 @@ The failure mode is subtle: a visually acceptable bubble for short text can brea
 - `rg "position:\\s*absolute|absolute" apps/mobile/src/pages/ChatPage.tsx apps/mobile/src/features/chat apps/desktop/src/components/chat apps/desktop/src/pages/SocialChatPage.tsx apps/desktop/src/pages/ChatPage.tsx apps/desktop/src/components/MessageBubble.tsx apps/desktop/src/components/MessageComposer.tsx apps/desktop/src/components/ChatInput.tsx` — review every hit and confirm it does not place actions or metadata over primary message content.
 - `rg "ContextMenu|Dropdown|Popover|BottomSheet|ActionAnchor|MetaRow|MessageBubble|Composer" apps/mobile/src/pages/ChatPage.tsx apps/mobile/src/features/chat apps/desktop/src/components/chat apps/desktop/src/pages/SocialChatPage.tsx apps/desktop/src/pages/ChatPage.tsx apps/desktop/src/components/MessageBubble.tsx apps/desktop/src/components/MessageComposer.tsx apps/desktop/src/components/ChatInput.tsx` — review message action and metadata placement for collision handling.
 - Manual acceptance: check text, image, file, voice, failed, sending, and system messages near the top, middle, and bottom of the conversation viewport.
+- Measure each message body/status/following body: metadata gap stays at 4px,
+  following gap is at least 6px, no empty interaction row remains. Check
+  reaction insertion with scroll anchoring and failure retry hit targets.
 
 ## Crosswalks
 

@@ -15,8 +15,6 @@ use std::path::Path;
 use std::sync::Arc;
 use tauri::{Manager, State, Window};
 
-use super::allow_file_preview;
-
 #[derive(Debug, Deserialize)]
 pub struct MessagingLocalAttachmentInput {
     pub file_path: String,
@@ -57,6 +55,8 @@ pub struct MessagingListMessagesInput {
     pub before_sequence: Option<i64>,
     #[serde(default = "default_message_page_limit")]
     pub limit: usize,
+    #[serde(default)]
+    pub anchor_message_id: Option<String>,
 }
 
 fn default_message_page_limit() -> usize {
@@ -125,11 +125,6 @@ pub struct MessagingEditInput {
     pub conversation_id: String,
     pub message_id: String,
     pub plaintext: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct MessagingOpenAttachmentInput {
-    pub attachment_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -612,7 +607,7 @@ pub(crate) fn messaging_update_member_settings_result(
     }
 }
 
-fn active_engine(
+pub(crate) fn active_engine(
     state: &Arc<AppState>,
     window: &Window,
 ) -> Result<(String, String, Arc<crate::messaging::MessagingEngine>), AppResult<Value>> {
@@ -1075,6 +1070,14 @@ fn attachment_projection_json(
     })
 }
 
+fn allow_attachment_preview(window: &Window, path: &Path) -> Result<(), String> {
+    let scope = window.app_handle().asset_protocol_scope();
+    scope
+        .allow_file(path)
+        .map_err(|error| format!("allow messaging attachment preview: {error}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn messaging_pick_attachment_source(
     state: State<'_, Arc<AppState>>,
@@ -1142,7 +1145,7 @@ pub async fn messaging_pick_attachment_source(
         };
         (std::path::PathBuf::from(local_path), true)
     };
-    if let Err(error) = allow_file_preview(&window, &preview_path) {
+    if let Err(error) = allow_attachment_preview(&window, &preview_path) {
         let cleanup = if managed_source {
             engine
                 .discard_staged_attachment_source(&preview_path.to_string_lossy())
@@ -1486,7 +1489,9 @@ pub fn messaging_acceptance_prepare_submitted_command(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    if std::env::var("PT_ACCEPTANCE_GATE_ID").ok().as_deref()
+    if std::env::var("PT_ACCEPTANCE_GATE_ID")
+        .ok()
+        .as_deref()
         != Some("chat-native-submitted-command-recovery-e2e")
     {
         return AppResult::fail(
@@ -2409,7 +2414,7 @@ pub async fn messaging_stage_attachment_source(
             ))
         }
     };
-    if let Err(error) = allow_file_preview(&window, Path::new(&local_path)) {
+    if let Err(error) = allow_attachment_preview(&window, Path::new(&local_path)) {
         let cleanup = engine
             .discard_staged_attachment_source(&local_path)
             .err()
@@ -2494,7 +2499,7 @@ pub fn messaging_capture_attachment_source(
             None,
         );
     }
-    if let Err(error) = allow_file_preview(&window, Path::new(&local_path)) {
+    if let Err(error) = allow_attachment_preview(&window, Path::new(&local_path)) {
         let cleanup = engine
             .discard_staged_attachment_source(&local_path)
             .err()
@@ -2661,11 +2666,22 @@ pub(crate) fn messaging_list_messages_result(
             None,
         );
     }
-    let page = match engine.conversation_message_page(
-        &input.conversation_id,
-        input.before_sequence,
-        input.limit,
-    ) {
+    if input.anchor_message_id.is_some() && input.before_sequence.is_some() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "anchor and cursor are mutually exclusive",
+            None,
+        );
+    }
+    let read = match input.anchor_message_id.as_deref() {
+        Some(anchor) => engine.message_anchor_page(&input.conversation_id, anchor, input.limit),
+        None => engine.conversation_message_page(
+            &input.conversation_id,
+            input.before_sequence,
+            input.limit,
+        ),
+    };
+    let page = match read {
         Ok(page) => page,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
@@ -2767,47 +2783,6 @@ pub fn messaging_update_member_settings(
         Err(error) => return error,
     };
     messaging_update_member_settings_result(state.station.client(), &token, &engine, input)
-}
-
-#[tauri::command]
-pub async fn messaging_open_attachment(
-    input: MessagingOpenAttachmentInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> Result<AppResult<Value>, String> {
-    if input.attachment_id.trim().is_empty() {
-        return Ok(AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "attachment_id is required",
-            None,
-        ));
-    }
-    let (_, token, engine) = match active_engine(state.inner(), &window) {
-        Ok(value) => value,
-        Err(error) => return Ok(error),
-    };
-    let attachment_id = input.attachment_id;
-    let local_path = match tauri::async_runtime::spawn_blocking(move || {
-        engine.open_attachment(&token, &attachment_id)
-    })
-    .await
-    {
-        Ok(Ok(value)) => value,
-        Ok(Err(error)) => return Ok(AppResult::fail(ErrorCode::InternalError, error, None)),
-        Err(error) => {
-            return Ok(AppResult::fail(
-                ErrorCode::InternalError,
-                format!("messaging attachment worker failed: {error}"),
-                None,
-            ))
-        }
-    };
-    if let Err(error) = allow_file_preview(&window, Path::new(&local_path)) {
-        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
-    }
-    Ok(AppResult::success(json!({
-        "local_path": local_path,
-    })))
 }
 
 #[tauri::command]

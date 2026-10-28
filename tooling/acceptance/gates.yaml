@@ -1,6 +1,56 @@
 {
   "version": 1,
   "gates": {
+    "social-content-search-contract": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_contract"],
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate Social Search contract injection, original read authority and source-bound native proof requirements; source evidence only."
+    },
+    "social-content-search-desktop-native-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_desktop"],
+      "timeout_seconds": 1200,
+      "environment": "chat-storage-native",
+      "provisioner": "chat-storage-native",
+      "requiredRuntimeCells": ["desktop-macos-native"],
+      "runtimeCellArtifact": "acceptance-binary",
+      "ephemeralCapabilities": ["mobile.station-outage"],
+      "tier": "env-evidence",
+      "description": "Reuse one exact-source native Desktop Suite for mixed Search, public/private posts and comments, exact historical anchors, Return and read-policy invalidation."
+    },
+    "social-content-search-mobile-native-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_mobile"],
+      "timeout_seconds": 1800,
+      "environment": "chat-mobile-search-simulator",
+      "provisioner": "chat-mobile-search-simulator",
+      "ephemeralCapabilities": ["mobile.station-outage"],
+      "tier": "env-evidence",
+      "description": "Reuse one exact-source iOS/Android Suite for public/private content Search, independent comment anchors, Return, current policy and account/lifecycle isolation."
+    },
+    "chat-device-search-contract": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.chat.device_search_contract"],
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate Search business injection, contributor authority, cache scope and native Journey proof obligations without claiming runtime proof."
+    },
+    "chat-device-search-native-e2e": {
+      "command": "RUST_LOG=info,search=debug PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.device_search_runner && PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.device_search_e2e",
+      "timeout_seconds": 2400,
+      "environment": "chat-storage-native",
+      "provisioner": "chat-storage-native",
+      "tier": "env-evidence",
+      "description": "Reuse one same-Station native Alice/Bob runtime for Chinese and attachment search, historical/thread open, cache return, real edit/hide invalidation, typed errors, functions and same-window account isolation; require exact-source UI and immutable evidence."
+    },
+    "chat-mobile-device-search-native-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.chat.mobile_device_search"],
+      "timeout_seconds": 2400,
+      "environment": "chat-mobile-search-simulator",
+      "provisioner": "chat-mobile-search-simulator",
+      "tier": "env-evidence",
+      "description": "Reuse one source-bound iOS/Android Suite for bilateral receiver Search, real message/thread anchors, long filenames, scoped paging, cost, content and lifecycle fences, Settings and terminal cleanup."
+    },
     "x-config-home-operator-login-e2e": {
       "argv": ["python3", "-m", "tooling.acceptance.gates.x_config.home_operator_login"],
       "timeout_seconds": 2400,
@@ -928,7 +978,7 @@
       "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
-      "tier": "ci-cheap",
+      "tier": "local-evidence",
       "description": "Require current-source DONE and PROVEN evidence for Relay role isolation, enrollment, signed discovery, standard Circuit admission, and native route security."
     },
     "unified-relay-station-access-aggregate-e2e": {
@@ -945,7 +995,7 @@
       "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
-      "tier": "ci-cheap",
+      "tier": "local-evidence",
       "description": "Require current-source DONE and PROVEN evidence for all Relay server, Dashboard, Desktop, Mobile, and security closure Gates."
     },
     "station-access-auth-e2e": {
@@ -1276,7 +1326,7 @@
       "command": "python3 -m tooling.acceptance.gates.station_access.lifecycle_aggregate",
       "timeout_seconds": 180,
       "environment": "local",
-      "tier": "ci-cheap",
+      "tier": "local-evidence",
       "description": "Require current-source DONE and PROVEN evidence for every Station Access capability and release gate."
     },
     "station-messaging-unit": {
@@ -1661,6 +1711,9 @@
         "acceptance-workflow-contract",
         "acceptance-runtime-provisioning-self",
         "browser-social-zero-registration",
+        "social-content-search-mobile-native-e2e",
+        "social-content-search-desktop-native-e2e",
+        "social-content-search-contract",
         "social-cross-station-contract",
         "social-cross-station-delivery",
         "social-cross-station-desktop-functional",
@@ -1895,6 +1948,8 @@
         "acceptance-workflow-contract",
         "acceptance-runtime-provisioning-self",
         "chat-contact-message-resilience-e2e",
+        "chat-device-search-contract",
+        "chat-device-search-native-e2e",
         "chat-lifecycle-call-resolution-e2e",
         "chat-lifecycle-direct-e2e",
         "chat-lifecycle-group-live-e2e",
@@ -1908,6 +1963,7 @@
         "chat-lifecycle-rich-voice-e2e",
         "chat-lifecycle-tree-zero-reference-e2e",
         "chat-message-publishing-native-e2e",
+        "chat-mobile-device-search-native-e2e",
         "chat-native-current-profile-two-client-e2e",
         "chat-native-group-mls-e2e",
         "chat-native-interactions-e2e",

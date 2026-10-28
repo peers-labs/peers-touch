@@ -11,6 +11,9 @@ use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+pub mod file_access;
+mod image_preview;
+
 const CLEANUP_QUARANTINE_PREFIX: &str = ".pt-cleanup-";
 
 #[derive(Debug, Clone, Copy, Default)]

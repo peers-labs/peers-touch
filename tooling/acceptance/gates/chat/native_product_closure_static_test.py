@@ -1728,44 +1728,28 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("messages: s.messages", details)
         self.assertIn("projectDesktopIMMessages(", details)
         self.assertNotIn("getIMMessages: s.getIMMessages", details)
-        commands = ROOT / "apps/desktop/src-tauri/src/interface/tauri_commands"
-        native_commands = (commands / "mod.rs").read_text(encoding="utf-8")
-        profile_commands = (commands / "profile.rs").read_text(encoding="utf-8")
-        oss_commands = (commands / "oss.rs").read_text(encoding="utf-8")
-        self.assertIn("use super::allow_file_preview;", messaging)
+        self.assertIn("fn allow_attachment_preview(", messaging)
+        self.assertIn(".asset_protocol_scope()", messaging)
         self.assertEqual(
-            messaging.count("allow_file_preview(&window,"),
-            4,
+            messaging.count("allow_attachment_preview(&window,"),
+            3,
         )
-        preview_scope = native_commands[
-            native_commands.index("pub(crate) fn allow_file_preview("):
-            native_commands.index("pub fn not_implemented(")
+        file_commands = (
+            ROOT / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_files.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("pub async fn messaging_attachment_access", file_commands)
+        self.assertIn(
+            'register_uri_scheme_protocol("chat-file"',
+            (ROOT / "apps/desktop/src-tauri/src/main.rs").read_text(encoding="utf-8"),
+        )
+        preview_scope = messaging[
+            messaging.index("fn allow_attachment_preview("):
+            messaging.index(
+                "#[tauri::command]\npub async fn messaging_pick_attachment_source",
+            )
         ]
-        self.assertIn(".asset_protocol_scope()", preview_scope)
         self.assertIn(".allow_file(path)", preview_scope)
-        self.assertIn(".map_err(", preview_scope)
-        self.assertNotIn(".allow_directory(", preview_scope)
-        all_commands = native_commands + messaging + profile_commands + oss_commands
-        self.assertEqual(all_commands.count("fn allow_file_preview("), 1)
-        self.assertNotIn("allow_attachment_preview", all_commands)
-        for source, command in (
-            (profile_commands, "pick_image_file"),
-            (oss_commands, "oss_pick_local_file"),
-            (oss_commands, "oss_pick_image_social"),
-        ):
-            with self.subTest(command=command):
-                picker = source[
-                    source.index(f"pub async fn {command}("):
-                ].split("\n#[tauri::command]", 1)[0]
-                self.assertIn("super::allow_file_preview(&window, handle.path())", picker)
-                self.assertIn(
-                    "return AppResult::fail(ErrorCode::InternalError, error, None)",
-                    picker,
-                )
-                self.assertLess(
-                    picker.index("super::allow_file_preview("),
-                    picker.index("AppResult::success("),
-                )
+        self.assertIn("allow messaging attachment preview", preview_scope)
         self.assertNotIn("tauri::async_runtime::spawn", preview_scope)
         self.assertNotIn("reqwest::Client", preview_scope)
         self.assertNotIn("127.0.0.1", preview_scope)
@@ -3098,11 +3082,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
     def test_message_action_anchor_includes_reaction_and_metadata_rows(self) -> None:
         anchor_index = self.message_row.index("data-message-action-anchor")
         bubble_index = self.message_row.index("data-message-content", anchor_index)
-        rail_index = self.message_row.index("<MessageInteractionRail", bubble_index)
-        metadata_index = self.message_row.index("formatMsgTime(message.sentAtMs)", rail_index)
+        metadata_index = self.message_row.index(
+            "formatMsgTime(message.sentAtMs)", bubble_index
+        )
+        rail_index = self.message_row.index("<MessageInteractionRail", metadata_index)
         self.assertLess(anchor_index, bubble_index)
-        self.assertLess(bubble_index, rail_index)
-        self.assertLess(rail_index, metadata_index)
+        self.assertLess(bubble_index, metadata_index)
+        self.assertLess(metadata_index, rail_index)
         self.assertIn(
             "data-message-reaction={emoji}",
             self.message_row,

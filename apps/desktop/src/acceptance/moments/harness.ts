@@ -19,6 +19,7 @@ import { api } from '../../services/desktop_api';
 import {
   socialBlockActor,
   socialFollow,
+  socialGetRelationshipStatus,
   socialUnblockActor,
   type MomentDraft,
 } from '../../services/social_api';
@@ -1356,6 +1357,28 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async relationshipStatus(input: { actorPtid: string }) {
+      if (!input?.actorPtid?.trim()) {
+        throw new Error('moments.acceptance.relationshipInputInvalid');
+      }
+      const response = await socialGetRelationshipStatus(input.actorPtid);
+      const projection = response.relationship;
+      if (
+        !projection
+        || projection.targetActor?.ptid !== input.actorPtid
+        || projection.revision < 0n
+        || projection.revision > BigInt(Number.MAX_SAFE_INTEGER)
+      ) {
+        throw new Error('moments.acceptance.relationshipStatusInvalid');
+      }
+      return {
+        blockedByViewer: projection.blockedByViewer,
+        revision: Number(projection.revision),
+        interactionAllowed: projection.interactionAllowed,
+        targetActorPtidSha256: await sha256(input.actorPtid),
+      };
+    },
+
     async blockActor(input: {
       actorPtid: string;
       homeStationPeerId: string;
@@ -1604,6 +1627,23 @@ export function installAcceptanceHarness(): void {
         postIdSha256: await sha256(postId),
         textSha256: await sha256(input.text),
       };
+    },
+
+    async submitPublicComment(input: { postId: string; text: string }) {
+      if (!input?.postId?.trim() || !input?.text?.trim()) {
+        throw new Error('moments.acceptance.publicCommentInvalid');
+      }
+      await useMomentsStore.getState().createComment(input.postId, input.text);
+      const comment = useMomentsStore.getState().comments[input.postId]
+        ?.find(candidate => candidate.content === input.text);
+      if (!comment) throw new Error('moments.acceptance.publicCommentMissing');
+      return { commentId: comment.id, postId: input.postId };
+    },
+
+    async deletePublicMoment(input: { postId: string }) {
+      if (!input?.postId?.trim()) throw new Error('moments.acceptance.postIdMissing');
+      await useMomentsStore.getState().deletePost(input.postId);
+      return { postId: input.postId };
     },
 
     async clearLocalState() {

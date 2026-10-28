@@ -20,6 +20,11 @@ const (
 
 type AuthHandler struct {
 	Service operatorauth.Service
+	// SecureCookies must reflect the operator console origin scheme. It is
+	// true for HTTPS deployments and false for flag-gated private corp
+	// deployments served over plain HTTP on IP literals, where browsers
+	// reject Secure cookies outright.
+	SecureCookies bool
 }
 
 func (h *AuthHandler) Start(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +54,7 @@ func (h *AuthHandler) Start(w http.ResponseWriter, r *http.Request) {
 		Expires:  result.ExpiresAt,
 		MaxAge:   maxAge(result.ExpiresAt),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, result.AuthorizeURL, http.StatusFound)
@@ -74,7 +79,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		strings.TrimSpace(r.URL.Query().Get("code")),
 	)
 	if err != nil {
-		clearCookie(w, loginAttemptCookie, "/api/admin/auth/callback", true)
+		h.clearCookie(w, loginAttemptCookie, "/api/admin/auth/callback", true)
 		log.Printf("x_config_auth event=callback outcome=rejected")
 		writeError(w, http.StatusUnauthorized, "operator_login_rejected")
 		return
@@ -94,7 +99,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 			timing("operator-session-commit", result.SessionCommitDuration),
 		}, ", "),
 	)
-	clearCookie(w, loginAttemptCookie, "/api/admin/auth/callback", true)
+	h.clearCookie(w, loginAttemptCookie, "/api/admin/auth/callback", true)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    result.SessionToken,
@@ -102,7 +107,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		Expires:  result.ExpiresAt,
 		MaxAge:   maxAge(result.ExpiresAt),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
 	http.SetCookie(w, &http.Cookie{
@@ -112,7 +117,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		Expires:  result.ExpiresAt,
 		MaxAge:   maxAge(result.ExpiresAt),
 		HttpOnly: false,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
 	http.Redirect(w, r, result.RedirectURL, http.StatusSeeOther)
@@ -183,8 +188,8 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("x_config_auth event=logout outcome=success")
-	clearCookie(w, sessionCookie, "/api/admin", true)
-	clearCookie(w, csrfCookie, "/", false)
+	h.clearCookie(w, sessionCookie, "/api/admin", true)
+	h.clearCookie(w, csrfCookie, "/", false)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -195,7 +200,12 @@ func setSecurityHeaders(header http.Header) {
 	header.Set("X-Content-Type-Options", "nosniff")
 }
 
-func clearCookie(w http.ResponseWriter, name string, path string, httpOnly bool) {
+func (h *AuthHandler) clearCookie(
+	w http.ResponseWriter,
+	name string,
+	path string,
+	httpOnly bool,
+) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    "",
@@ -203,7 +213,7 @@ func clearCookie(w http.ResponseWriter, name string, path string, httpOnly bool)
 		MaxAge:   -1,
 		Expires:  time.Unix(1, 0),
 		HttpOnly: httpOnly,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
 }

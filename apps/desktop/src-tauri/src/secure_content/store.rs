@@ -318,8 +318,8 @@ pub struct StoredObjectTransfer {
 }
 
 pub struct SecureContentStore {
-    connection: Mutex<Connection>,
-    session_generation: AtomicU64,
+    pub(super) connection: Mutex<Connection>,
+    pub(super) session_generation: AtomicU64,
 }
 
 impl SecureContentStore {
@@ -351,7 +351,7 @@ impl SecureContentStore {
         })
     }
 
-    fn connection(&self) -> Result<MutexGuard<'_, Connection>, String> {
+    pub(super) fn connection(&self) -> Result<MutexGuard<'_, Connection>, String> {
         self.connection
             .lock()
             .map_err(|_| "secure content store lock poisoned".to_string())
@@ -1690,6 +1690,13 @@ impl SecureContentStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
+        super::search::ensure_not_denied(
+            &transaction,
+            "social-comment",
+            comment_id,
+            post_id,
+            Some(generation),
+        )?;
         transaction
             .execute(
                 "INSERT INTO secure_content_roots(
@@ -1752,6 +1759,15 @@ impl SecureContentStore {
                 );
             }
         }
+        super::search::refresh(
+            &transaction,
+            "social-comment",
+            comment_id,
+            post_id,
+            content_id,
+            generation,
+            projection_bytes,
+        )?;
         transaction.commit().map_err(|error| error.to_string())
     }
 
@@ -1788,13 +1804,18 @@ impl SecureContentStore {
     }
 
     pub fn clear_comment_projections(&self, post_id: &str) -> Result<(), String> {
-        self.connection()?
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        super::search::deny(&transaction, "comment_thread", post_id)?;
+        transaction
             .execute(
                 "DELETE FROM secure_content_comment_projections WHERE post_id = ?1",
                 params![post_id],
             )
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())
     }
 
     pub fn commit_content_root(
@@ -1810,6 +1831,13 @@ impl SecureContentStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
+        super::search::ensure_not_denied(
+            &transaction,
+            "social-post",
+            post_id,
+            post_id,
+            Some(generation),
+        )?;
         transaction
             .execute(
                 "INSERT INTO secure_content_roots(
@@ -1870,6 +1898,15 @@ impl SecureContentStore {
                 );
             }
         }
+        super::search::refresh(
+            &transaction,
+            "social-post",
+            post_id,
+            post_id,
+            content_id,
+            generation,
+            projection_bytes,
+        )?;
         transaction.commit().map_err(|error| error.to_string())
     }
 
@@ -1890,14 +1927,44 @@ impl SecureContentStore {
     }
 
     pub fn save_projection(&self, post_id: &str, projection_bytes: &[u8]) -> Result<(), String> {
-        self.connection()?
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        if let Some(incoming) = crate::social::search_projection::decode(
+            "social-post",
+            post_id,
+            post_id,
+            projection_bytes,
+        ) {
+            super::search::ensure_not_denied(
+                &transaction,
+                "social-post",
+                post_id,
+                post_id,
+                Some(incoming.generation),
+            )?;
+            let matches: bool = transaction
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM secure_content_moment_projections
+                 WHERE post_id = ?1 AND content_id = ?2 AND generation = ?3)",
+                    params![post_id, incoming.content_id, incoming.generation as i64],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            if !matches {
+                return Err("private Social projection revision changed".to_string());
+            }
+        }
+        transaction
             .execute(
                 "UPDATE secure_content_moment_projections
                  SET projection_bytes = ?1, updated_at_unix_ms = ?2 WHERE post_id = ?3",
                 params![projection_bytes, now_unix_ms(), post_id],
             )
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        super::search::refresh_existing_post(&transaction, post_id, projection_bytes)?;
+        transaction.commit().map_err(|error| error.to_string())
     }
 
     pub fn projection(&self, post_id: &str) -> Result<Option<Vec<u8>>, String> {
@@ -2209,6 +2276,7 @@ impl SecureContentStore {
             )
             .map_err(|error| error.to_string())?;
         if changed == 1 {
+            super::search::ensure_not_denied(&transaction, "social-post", post_id, post_id, None)?;
             let projection_changed = transaction
                 .execute(
                     "UPDATE secure_content_moment_projections
@@ -2223,6 +2291,7 @@ impl SecureContentStore {
                         .to_string(),
                 );
             }
+            super::search::refresh_existing_post(&transaction, post_id, projection_bytes)?;
         }
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(changed == 1)
@@ -2386,6 +2455,7 @@ impl SecureContentStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
+        super::search::deny(&transaction, "social-post", post_id)?;
         transaction
             .execute(
                 "DELETE FROM secure_content_object_transfers
@@ -2424,6 +2494,12 @@ impl SecureContentStore {
             .map_err(|error| error.to_string())?;
         transaction
             .execute(
+                "DELETE FROM secure_content_comment_projections WHERE post_id = ?1",
+                params![post_id],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
                 "DELETE FROM secure_content_roots WHERE post_id = ?1",
                 params![post_id],
             )
@@ -2445,6 +2521,7 @@ impl SecureContentStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
+        super::search::deny(&transaction, "social-post", post_id)?;
         transaction
             .execute(
                 "INSERT INTO secure_content_pending_purges(post_id, updated_at_unix_ms)
@@ -3667,6 +3744,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             .map_err(|error| error.to_string())?;
     }
     migrate_operation_schema(connection)?;
+    super::search::migrate(connection)?;
     Ok(())
 }
 

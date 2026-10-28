@@ -135,7 +135,7 @@ describe('Chat authentication harness', () => {
       account: 'alice@p.t',
       password: 'test-credential',
     })).resolves.toEqual({ authenticated: true, actorPtid: 'ptid:alice' });
-    expect(mocks.installCriticalRuntimes).not.toHaveBeenCalled();
+    expect(mocks.installCriticalRuntimes).toHaveBeenCalledWith('ptid:alice');
     expect(mocks.hydrate).not.toHaveBeenCalled();
     expect(mocks.initEncryption).not.toHaveBeenCalled();
   });

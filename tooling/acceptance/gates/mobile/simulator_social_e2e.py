@@ -172,14 +172,18 @@ STATION_RESTART_TIMEOUT_SECONDS = 180.0
 
 
 class SimulatorSocialGate(SimulatorCallbackRoutingGate):
+    client_assignments = CLIENT_ASSIGNMENTS
+    scenario_gates = SCENARIO_GATES
+    scenario_metadata = SCENARIO_METADATA
+
     def __init__(
         self,
         scenario: str,
         **kwargs: Any,
     ) -> None:
-        if scenario not in SCENARIO_GATES:
+        if scenario not in self.scenario_gates:
             raise ValueError(f"unsupported Mobile social scenario: {scenario}")
-        self.gate_id = SCENARIO_GATES[scenario]
+        self.gate_id = self.scenario_gates[scenario]
         super().__init__(**kwargs)
         self.scenario = scenario
         self.environment_id = (
@@ -261,10 +265,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             )
             if suite_report is not None:
                 suite_report_ref = artifacts.write_json(
-                    "mobile-simulator-social/ios-social-parity/"
-                    "suite-runtime.json",
+                    f"mobile-simulator-social/{self.scenario}/suite-runtime.json",
                     suite_report,
-                    role="mobile-social-ios-suite-runtime",
+                    role=("mobile-social-ios-suite-runtime"
+                          if self.scenario == "ios-social-parity"
+                          else f"mobile-{self.scenario}-suite-runtime"),
                 )
                 result["suiteRuntime"] = {
                     "report": (
@@ -658,6 +663,8 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
     def _prepare_fresh_actor_identity(
         session: Any,
         actor: MessagingActor,
+        *,
+        seed: bytearray | None = None,
     ) -> dict[str, Any]:
         if (
             not actor.station_peer_id.strip()
@@ -672,8 +679,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             + b"\x1f"
             + actor.ptid.encode("utf-8")
         ).digest()[:16].hex()
-        seed = bytearray(secrets.token_bytes(32))
-        seed_base64 = base64.b64encode(seed).decode("ascii")
+        identity_seed = bytearray(secrets.token_bytes(32) if seed is None else seed)
+        if len(identity_seed) != 32:
+            identity_seed[:] = b"\x00" * len(identity_seed)
+            raise GateError("fresh Actor identity seed must contain 32 bytes")
+        seed_base64 = base64.b64encode(identity_seed).decode("ascii")
         try:
             prepared = session.call_action(
                 "runtime.prepareActorIdentity",
@@ -685,7 +695,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 },
             )
         finally:
-            seed[:] = b"\x00" * len(seed)
+            identity_seed[:] = b"\x00" * len(identity_seed)
             seed_base64 = ""
         if prepared != {"prepared": True}:
             raise GateError(
@@ -747,7 +757,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "Mobile social actor manifest",
         )
         actors: dict[str, MessagingActor] = {}
-        for client_id, (service_id, role) in CLIENT_ASSIGNMENTS.items():
+        for client_id, (service_id, role) in self.client_assignments.items():
             service = require_runtime_service(manifest, service_id, "station")
             station = self._required_object(
                 stations,
@@ -4571,8 +4581,9 @@ return {
     def _restart_source_bound_station(
         *,
         during_outage: Callable[[], None],
+        capability_client: EphemeralGateClient | None = None,
     ) -> dict[str, Any]:
-        client = EphemeralGateClient.from_environment()
+        client = capability_client or EphemeralGateClient.from_environment()
         if client is None:
             raise GateError(
                 "Mobile Station outage capability is unavailable"
@@ -4601,7 +4612,8 @@ return {
                 f"{redact_text(str(error))}"
             ) from error
         finally:
-            client.close()
+            if capability_client is None:
+                client.close()
         if (
             stopped.get("stopped") is not True
             or restored.get("restored") is not True
@@ -5277,7 +5289,7 @@ return {
         return value.strip()
 
     def _result_base(self, status: str) -> dict[str, Any]:
-        metadata = SCENARIO_METADATA[self.scenario]
+        metadata = self.scenario_metadata[self.scenario]
         return {
             "artifactKind": "acceptance-gate-evidence-report",
             "gateId": self.gate_id,

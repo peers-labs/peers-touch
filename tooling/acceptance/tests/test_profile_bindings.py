@@ -100,46 +100,42 @@ class ProfileBindingsTests(unittest.TestCase):
 
     def test_registration_routes_resolved_kinds_and_rejects_conflicting_aliases(self):
         from tooling.acceptance.provisioners import get_provisioner
-        contract = EnvironmentContract(id="mobile-relay-simulator", services={
+        contract = EnvironmentContract(id="cross-station-social-native", services={
             "primary": ServiceRequirement(kind="station", profile_ref="profile:first"),
-            "secondary": ServiceRequirement(kind="station", profile_ref="profile:second"),
-            "relay": ServiceRequirement(kind="relay", profile_ref="profile:relay-profile"),
         })
-        with patch("tooling.acceptance.provisioners._resolve") as resolve:
-            with self.assertRaisesRegex(
-                ProvisioningError, "conflicting station and service profile bindings",
-            ):
-                get_provisioner(
-                    contract, station_profiles={"primary": "one"},
-                    service_profiles={"primary": "two"},
-                )
-            resolve.assert_not_called()
-
-    def test_shared_registration_merges_disjoint_roles_before_adapter_construction(self):
-        from tooling.acceptance.core.provisioner import EnvironmentProvisioner
-        from tooling.acceptance.provisioners import get_provisioner
-
-        contract = EnvironmentContract(id="cross-station-social-native")
-        captured = {}
-
-        class SyntheticOwner(EnvironmentProvisioner):
-            environment_id = contract.id
-
-            def __init__(self, selected, *, station_profiles):
-                super().__init__(selected)
-                captured.update(station_profiles)
-
-            def provision(self, gate_id):
-                raise AssertionError("Registration cannot acquire a runtime")
-
-        with patch(
-            "tooling.acceptance.provisioners._resolve", return_value=SyntheticOwner,
+        with self.assertRaisesRegex(
+            ProvisioningError, "conflicting station and service profile bindings",
         ):
+            get_provisioner(
+                contract, station_profiles={"primary": "one"},
+                service_profiles={"primary": "two"},
+            )
+
+    def test_shared_registration_passes_disjoint_roles_to_adapter_construction(self):
+        from tooling.acceptance.provisioners import get_provisioner
+        from tooling.acceptance.provisioners.mobile_simulator import (
+            MobileDirectSimulatorProvisioner,
+        )
+
+        contract = EnvironmentContract(id="mobile-direct-simulator")
+        with patch.object(
+            MobileDirectSimulatorProvisioner,
+            "__init__",
+            autospec=True,
+            return_value=None,
+        ) as init:
             get_provisioner(
                 contract, station_profiles={"primary": "first"},
                 service_profiles={"secondary": "second"},
             )
-        self.assertEqual(captured, {"primary": "first", "secondary": "second"})
+        self.assertEqual(init.call_args.args[1:], (contract,))
+        self.assertEqual(
+            init.call_args.kwargs,
+            {
+                "station_profiles": {"primary": "first"},
+                "service_profiles": {"secondary": "second"},
+            },
+        )
 
 
 if __name__ == "__main__":

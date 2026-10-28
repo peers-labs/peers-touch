@@ -61,6 +61,12 @@ Slot rules:
 
 - `Bubble` owns only primary content: text, image, file, voice, link preview, system copy, or quoted preview.
 - `MetaRow` owns time, sent/delivered/read state, failure state, and retry entry.
+- `MetaRow` immediately follows its own content (Desktop gap 4px). It precedes
+  populated reaction/thread rows; absent reactions reserve no empty row.
+  The complete MessageItem has a following gap (Desktop 8px, compact 6px),
+  so its state is visually closer to its own content than to the next message.
+  New interaction rows may increase item height; body dimensions and the
+  visible scroll anchor remain stable through the existing timeline owner.
 - `ActionAnchor` owns placement for context menus, hover actions, long-press actions, and overflow controls.
 - `AvatarSlot` and `SenderSlot` may collapse in consecutive message groups, but their absence MUST NOT change message body width unpredictably.
 

@@ -8,10 +8,11 @@ import type {
   PrivateCommentState,
 } from '../../services/privateCommentsNative';
 import { useIsPageActive } from '../../kernel/PageActivityContext';
-import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { MomentCommentAuthorName } from './MomentCommentAuthorName';
+import { MomentCommentRow } from './MomentCommentRow';
 import { resolvePrivateCommentComposerAction } from './privateCommentComposerState';
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 const { TextArea } = Input;
 
 // CommentList — paginated thread for a single post.
@@ -44,6 +45,7 @@ export interface MomentCommentItem {
 
 interface CommentListProps {
   postId: string;
+  targetCommentId?: string;
   comments: MomentCommentItem[];
   loading?: boolean;
   hasMore?: boolean;
@@ -63,6 +65,7 @@ interface CommentListProps {
 
 export function CommentList({
   postId,
+  targetCommentId,
   comments,
   loading,
   hasMore,
@@ -190,30 +193,8 @@ export function CommentList({
 
       {comments.map((c) => {
         const isMine = !!viewerActorPtid && c.authorPtid === viewerActorPtid;
-        const authorName = c.author?.displayName || c.author?.username || t('moments.author.unknown');
         return (
-          <div key={c.id} style={{ display: 'flex', gap: 10, padding: '2px 0' }}>
-            <UserSquareAvatar
-              remoteUrl={c.author?.avatarUrl || undefined}
-              name={authorName}
-              size={26}
-            />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Space size={6} align="baseline">
-                <Text strong style={{ fontSize: 13 }}>
-                  {authorName}
-                </Text>
-                {c.replyToCommentId && (
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {t('moments.comment.replyingTo')}
-                  </Text>
-                )}
-              </Space>
-              <Paragraph
-                style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 13 }}
-              >
-                {c.content}
-              </Paragraph>
+          <MomentCommentRow key={c.id} comment={c} highlighted={c.id === targetCommentId}>
               <Space size={8} style={{ marginTop: 2 }}>
                 <Button
                   size="small"
@@ -249,8 +230,7 @@ export function CommentList({
                   </Button>
                 )}
               </Space>
-            </div>
-          </div>
+          </MomentCommentRow>
         );
       })}
 
@@ -284,11 +264,7 @@ export function CommentList({
           <Space size={8}>
             <Text type="secondary" style={{ fontSize: 12 }}>
               {t('moments.comment.replyingTo')}{' '}
-              <Text strong style={{ fontSize: 12 }}>
-                {replyTarget.author?.displayName ||
-                  replyTarget.author?.username ||
-                  t('moments.author.unknown')}
-              </Text>
+              <MomentCommentAuthorName actorPtid={replyTarget.authorPtid} />
             </Text>
             <Button
               size="small"

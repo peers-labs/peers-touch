@@ -227,7 +227,10 @@ UI 同时展示估算、实际释放量和待压缩状态。
 **Decision**
 
 双端原生、same/cross-Station、多设备、重启、Recovery 与物理字节 E2E 全部通过，
-且九维遗产扫描为零，模块才可完成。
+且九维旧业务引用为零，模块才可完成。canonical schema owner 删除退役列、
+拒绝旧结构和保护已有 authority rows 的源码与回归测试保持；其引用逐行报告，
+由 inventory 绑定完整文件摘要。新增引用、保护源码变化或丢失均失败，禁止
+按目录或测试类型忽略。
 
 **Rationale**
 

@@ -2,7 +2,7 @@
 
 > Status: Canonical. Owner: Architecture.
 > Audience: humans AND AI agents acting on this codebase.
-> Updated: 2026-09-19
+> Updated: 2026-10-24
 
 ---
 
@@ -174,6 +174,9 @@ Pick one based on intent:
 - [`invariants/desktop-vite-entry-readiness.md`](invariants/desktop-vite-entry-readiness.md) — Desktop startup and reuse require the Vite renderer entry module to respond successfully.
 - [`invariants/acceptance-suite-runtime-reuse.md`](invariants/acceptance-suite-runtime-reuse.md) — multi-scenario Acceptance provisions expensive resources once at Suite scope and keeps Scenarios attach-only.
 - [`invariants/desktop-sqlite-path-budget.md`](invariants/desktop-sqlite-path-budget.md) — Desktop database paths compact oversized identity-derived scopes without changing encryption identity or existing short paths.
+- [`invariants/private-comment-read-completion.md`](invariants/private-comment-read-completion.md) — private Comment Store reads share completion and reject stale scope, page, anchor, and removed-post publication.
+- [`invariants/x-config-origins-never-extend-trust.md`](invariants/x-config-origins-never-extend-trust.md) — x-config origin lists choose fetch transport only; publisher trust stays app-baked, key rotation requires a release.
+- [`invariants/x-config-must-not-block-local-startup.md`](invariants/x-config-must-not-block-local-startup.md) — optional configuration I/O cannot block local startup or readers; denied watermarks stay unknown and concurrent refreshes coalesce.
 
 ### Pitfalls
 
@@ -182,6 +185,8 @@ Pick one based on intent:
 - [`pitfalls/social-ui-identity-surface-fragmentation.md`](pitfalls/social-ui-identity-surface-fragmentation.md) — Social UI surfaces must not fragment content rail, action row, trust meta, thread, or incomplete-capability states.
 - [`pitfalls/mobile-chat-conversation-actions-right-drawer.md`](pitfalls/mobile-chat-conversation-actions-right-drawer.md) — Mobile Chat conversation actions must use bottom sheets or settings pages, not phone-width right drawers.
 - [`pitfalls/mobile-private-runtime-policy-readiness-divergence.md`](pitfalls/mobile-private-runtime-policy-readiness-divergence.md) — Private Mobile runtimes must reuse shared Station-origin policy and publish asynchronous activation failures through lifecycle readiness.
+- [`pitfalls/mobile-messaging-failure-periodic-repair.md`](pitfalls/mobile-messaging-failure-periodic-repair.md) — Existing Social periodic repair recovers failed Messaging through its original readiness owner before repairing dependents.
+- [`pitfalls/mobile-route-preexpiry-renewal-single-owner.md`](pitfalls/mobile-route-preexpiry-renewal-single-owner.md) — Native renewal uses the Web preexpiry window, coalesces matching callers and preserves selection/removal fences.
 - [`pitfalls/acceptance-core-transport-import-cycle.md`](pitfalls/acceptance-core-transport-import-cycle.md) — Core attestation must receive remote source identity from a Provisioner adapter instead of importing concrete SSH transport.
 - [`pitfalls/acceptance-mutable-artifact-rewrite.md`](pitfalls/acceptance-mutable-artifact-rewrite.md) — mutable runtime logs must be written once, after the producing client stops, when the Evidence Store path is immutable.
 - [`pitfalls/acceptance-shared-validator-variant-assumptions.md`](pitfalls/acceptance-shared-validator-variant-assumptions.md) — shared Gate validators must derive journey and topology semantics from the active Gate variant.
@@ -195,6 +200,8 @@ Pick one based on intent:
 - [`pitfalls/runtime-owner-optional-workflow-state.md`](pitfalls/runtime-owner-optional-workflow-state.md) — runtime owners derive source-bound contract metadata without requiring optional task or declaration state.
 - [`pitfalls/fresh-recovery-cannot-require-active-engine.md`](pitfalls/fresh-recovery-cannot-require-active-engine.md) — fresh Actor recovery must establish the Messaging Engine instead of requiring one before archive restore.
 - [`pitfalls/json-fallback-decode-state.md`](pitfalls/json-fallback-decode-state.md) — fallback JSON parsers isolate destinations because failed decodes may leave partial state.
+- [`pitfalls/sqlcipher-raw-key-no-utf8-lossy.md`](pitfalls/sqlcipher-raw-key-no-utf8-lossy.md) — SQLCipher keys are 32 random bytes and must reach `sqlite3_key_v2` unmodified; UTF-8 lossy conversion folds their entropy.
+- [`pitfalls/mobile-proto-regen-import-closure.md`](pitfalls/mobile-proto-regen-import-closure.md) — shipping one regenerated mobile proto file without its import closure breaks tsc; regen to a staging dir and sync the closure, not a single file.
 
 ### Playbooks
 

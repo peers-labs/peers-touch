@@ -2,6 +2,40 @@
   "version": 1,
   "capabilities": [
     {
+      "id": "chat-device-search",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-device-search", "chat-mobile-device-search"],
+      "required_gates": ["chat-device-search-contract", "chat-device-search-native-e2e", "chat-mobile-device-search-native-e2e"],
+      "synthetic_paths": [
+        "packages/search-core/src/cache.rs",
+        "packages/search-core/src/contributor.rs",
+        "model/domain/search/search.proto",
+        "apps/desktop/src-tauri/src/application/search/runtime.rs",
+        "apps/desktop/src/components/search/SearchOverlay.tsx",
+        "apps/desktop/src/runtimes/searchRuntime.ts",
+        "apps/desktop/src/messaging/openResource.ts",
+        "tooling/acceptance/gates/chat/device_search_runner.py",
+        "apps/mobile/src/runtimes/searchRuntime.ts",
+        "apps/mobile/src/pages/SearchPage.tsx",
+        "apps/mobile/src-tauri/src/runtime/search.rs",
+        "tooling/acceptance/gates/chat/mobile_device_search.py"
+      ],
+      "evidence": {
+        "truth_sources": ["Messaging authorized device projections", "SearchContributor", "native Search UI"],
+        "surfaces": ["Desktop Global Search", "Mobile full-screen Search", "Chat message and thread anchors", "Settings"],
+        "proven_by": ["chat-device-search-contract", "chat-device-search-native-e2e", "chat-mobile-device-search-native-e2e"],
+        "proven_scope": [
+          "Native Chinese and attachment filename search with real received messages",
+          "Message and thread open, return, cached repeat/reopen/backspace and explicit refresh",
+          "Real edit/hide invalidation, stale-reference denial and same-window account isolation",
+          "Functions navigation, empty query results and invalid-query recovery",
+          "Mobile assertions require a current-source native iOS and Android receiver Suite"
+        ],
+        "unproven_scope": ["Applet contributors", "physical Mobile hardware", "Station Search", "Ask", "member-removal transport"]
+      }
+    },
+    {
       "id": "chat-proto-service-contract",
       "domain": "chat",
       "direction": "acceptance_validates_product",
@@ -261,6 +295,17 @@
       ],
       "synthetic_paths": [
         "model/domain/chat/attachment.proto",
+        "packages/client-chat-core/src/attachmentAccess.ts",
+        "packages/client-chat-core/src/attachmentPreview.ts",
+        "packages/client-chat-core/src/pdfPreview.ts",
+        "packages/client-chat-core/src/officePreview.ts",
+        "packages/client-chat-core/src/officeWorker.ts",
+        "packages/client-chat-core/src/officeArchive.ts",
+        "packages/client-chat-core/src/attachmentByteReader.ts",
+        "packages/client-chat-core/src/textPreview.ts",
+        "packages/client-chat-core/src/previewNavigation.ts",
+        "packages/messaging-native-filesystem/src/file_access.rs",
+        "packages/messaging-native-filesystem/src/image_preview.rs",
         "packages/messaging-core/src/codec/private_content.rs",
         "packages/messaging-core/src/store/schema.rs",
         "packages/client-chat-core/src/index.ts",
@@ -271,6 +316,7 @@
         "apps/desktop/src-tauri/src/messaging/private_content.rs",
         "apps/desktop/src-tauri/src/messaging/store.rs",
         "apps/desktop/src/components/chat/AttachmentItem.tsx",
+        "apps/desktop/src/acceptance/chat/harness.ts",
         "apps/desktop/src/components/chat/ChatComposer.tsx",
         "apps/desktop/src/components/chat/composer/useChatAttachmentDrafts.ts",
         "apps/desktop/src/components/chat/composer/useChatVoiceRecorder.ts",
@@ -278,7 +324,8 @@
         "apps/desktop/src/store/socialChat.ts",
         "apps/mobile/src-tauri/src/messaging/adapter.rs",
         "packages/prototypes/desktop/features/social-chat/src/components/ChatArea.tsx",
-        "tooling/acceptance/gates/chat/lifecycle_rich_voice.py"
+        "tooling/acceptance/gates/chat/lifecycle_rich_voice.py",
+        "tooling/acceptance/gates/chat/lifecycle_file_native.py"
       ],
       "evidence": {
         "truth_sources": [
@@ -290,7 +337,8 @@
           "Native Desktop attachment drafts",
           "Native Desktop screenshot capture",
           "Native Desktop voice recording preview",
-          "Native Desktop receiver voice playback"
+          "Native Desktop receiver voice playback",
+          "Desktop and Mobile selected attachment detail and native file actions"
         ],
         "proven_by": ["chat-lifecycle-rich-voice-e2e"],
         "proven_scope": [
@@ -300,7 +348,9 @@
         ],
         "unproven_scope": [
           "Linux and Windows Native Desktop rich-media runtime cells",
-          "Mobile voice recorder and inline playback parity"
+          "Mobile voice recorder and inline playback parity",
+          "Current-source Desktop and Mobile attachment preview, OS external handoff, destination picker, saved-copy retention and scope-fencing Journeys",
+          "iOS and Android native file-action runtime cells"
         ]
       }
     },

@@ -7,7 +7,14 @@ description: Audit and clean Peers-Touch build artifacts by active task, product
 
 ## Core Rule
 
-Rebuildable does not mean disposable. Classify every candidate by:
+Apply the cleanup authority in `docs/global/workflow.md`, section
+“编译缓存与开发环境清理”. Current-worktree rebuildable compilation caches
+are authorized development maintenance, including complete Cargo profiles,
+Gradle/Xcode build output and compiler caches. Do not ask again or stop the
+development run for that maintenance. Previously authorized cleanup in another
+worktree also proceeds within its explicit scope.
+
+Classify every candidate by:
 
 `worktree x current task x product surface x platform x profile x artifact role`
 
@@ -27,13 +34,20 @@ Never decide from directory age, branch name, or whole-worktree activity alone.
    - dirty source paths;
    - process working directories and platform-specific build commands;
    - actual Desktop, Mobile host, iOS, Android, Node, Gradle, and Xcode outputs.
-3. Preserve `keep_hot`, `keep_warm`, `evidence_review`, and `blocked`.
-4. Explain cold-build consequences for `current_task_irrelevant` and
-   `derived_idle`.
-5. Treat whole components and all non-Cargo outputs as report-only. Their build
-   tools do not provide a cleanup exclusion lock shared with this scanner.
-6. Ask once before a supported Rust generation or stale test-binary deletion.
-7. Report the measured filesystem free-space delta. Candidate sizes are upper
+3. Apply the explicit current task even when optional declarations are absent.
+   Preserve evidence and unknown data. Exclude active writers before cleanup.
+4. Prefer obsolete generations or task-irrelevant output. For disk pressure,
+   release a verified complete compilation cache even when it is `keep_hot` or
+   `keep_warm`; record the cold-build cost and rebuild it before verification.
+5. For scanner-supported Rust groups, use the locked cleanup command. For a
+   whole profile or non-Cargo build output, verify its compiler-only contents
+   and exclude writers/open files through the original build owner and locks.
+   Scanner report-only means that it does not implement that cleanup; it is
+   not a human approval requirement.
+6. Supply `--confirm` and rebuild-acceptance flags directly for authorized
+   cleanup. Do not use partial-generation cleanup when fingerprint proof fails.
+7. Report the measured filesystem free-space delta and continue development.
+   Candidate sizes are upper
    bounds, especially on APFS.
 
 ## Classification
@@ -52,7 +66,8 @@ Never decide from directory age, branch name, or whole-worktree activity alone.
   retained fingerprint closure. It is removable inside an active worktree
   after accepting that an old alternate configuration may rebuild.
 - `rebuildable_cache`: source-safe compiler cache whose deletion causes
-  substantial recompilation. Report only.
+  substantial recompilation. Current-worktree cleanup is authorized once its
+  contents and concurrent writers are verified.
 - `evidence_review`: logs, screenshots, app bundles, test results, and unknown
   artifacts requiring an owner retention decision.
 - `blocked`: active writer, open file, Cargo lock, primary data, or unknown
@@ -137,10 +152,11 @@ Delete these only through:
 bash tooling/skills/pt-debug-space-clean/scan.sh --clean-safe --confirm
 ```
 
-Do not manually delete `.rlib`, `.rmeta`, `.d`, `.o`, `.dylib`,
-`.fingerprint`, `build/`, incremental sessions, or `.cargo-lock`. Hashed
-compiler artifacts are removable only as one scanner-proven unreachable
-generation.
+Do not cherry-pick `.rlib`, `.rmeta`, `.d`, `.o`, `.dylib`, `.fingerprint`,
+`build/` or incremental files outside a scanner-proven generation. A verified
+compiler-only whole profile may instead be released as one unit under the
+workflow's cache authority after writers and open files are excluded. Hold the
+original build lock through deletion; never remove a live `.cargo-lock`.
 
 ## Safety Gates
 
@@ -148,15 +164,20 @@ generation.
   worktrees automatically.
 - Revalidate processes, open files, classification, and Cargo locks immediately
   before deletion.
-- Fail closed when Git, process, open-file, or fingerprint probes fail.
+- Fail closed for the affected operation when Git, process or open-file probes
+  fail. A failed fingerprint probe blocks selective generation deletion; it
+  does not replace independent whole-cache identification.
 - Reject cleanup paths containing symbolic links.
 - Never remove a whole Cargo `target` when it contains custom evidence.
-- Do not automatically delete whole Cargo profiles, Gradle/Xcode output,
-  `node_modules`, or language caches; report them for owner action.
+- Automatically clean verified current-worktree Cargo profiles, Gradle/Xcode
+  output and compiler caches when needed. Keep the original build owner and
+  concurrent-writer checks; no new permission checkpoint is required.
 - Never delete `node_modules` from a current worktree.
 - Never delete Acceptance evidence without an owner retention manifest.
-- Never delete `.local` wholesale, workspace bindings, Station data, secrets,
-  databases, Docker volumes, or TRAE product state.
+- Never delete `.local` wholesale, workspace bindings, secrets, unrelated
+  databases, Docker volumes or TRAE product state. Development/test data reset
+  uses the exact reviewed non-stable Profile capability and canonical reset
+  owner; an existing grant requires no renewed prompt.
 - Global Go, Cargo, pnpm, Xcode, and simulator caches are report-only unless a
   dedicated owner-specific cleanup rule authorizes them.
 
@@ -179,10 +200,13 @@ Never:
 
 - equate "rebuildable" with "safe now";
 - infer task scope from a branch name;
-- protect or delete every platform because any process uses the worktree;
-- delete iOS output for an active iOS task or Android output for an active
-  Android task;
+- infer task scope only from optional declarations or protect every platform
+  because any process uses the worktree;
+- clean an actively written profile or discard hot output without recording
+  its rebuild cost and rebuilding before verification;
 - run builds during a low-space scan;
 - count a parent together with classified children;
 - claim candidate bytes equal actual reclaimed bytes;
 - delete files merely because they are old.
+- stop authorized development to ask again for current-worktree compilation
+  cache cleanup or exact-scope non-stable development data reset.

@@ -1410,24 +1410,6 @@ pub struct AgentWorkspaceCleanInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchPrimaryInput {
-    pub provider: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchQueryInput {
-    pub query: String,
-    pub source: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AiSearchInput {
-    pub query: String,
-    pub web: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreferencesSetInput {
     pub prefs: serde_json::Value,
 }
@@ -1800,6 +1782,8 @@ pub struct SocialGetCommentsInput {
     pub cursor: Option<String>,
     #[serde(default)]
     pub limit: Option<i32>,
+    #[serde(default)]
+    pub anchor_comment_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

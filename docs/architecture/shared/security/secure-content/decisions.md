@@ -1403,17 +1403,32 @@ SC-D23 remains the complete mutation, allowlist, public-snapshot, object-owner,
 lease, journal, and failure contract. No second migration or schema mutator is
 introduced.
 
-SC-D24 supersedes only SC-D23's task-timing clauses
-`W12 may target only` and `the reset command requires the exact W12
-declaration`. They become: only a Plan-declared reset task with one closed reset
-intent may target the two already accepted SC-D23 scopes. SC-D23's target
-profiles, destructive scopes, database/object allowlists, dependency order,
-public snapshot, journal, failure behavior, and final W12 evidence meaning
-remain unchanged.
+Reset admission follows the current Local Dev Control Plane contract: a
+reviewed non-stable Profile, `station.reset` capability, exact scope, clean
+source and OS-held lease authorize disposable schema activation. A Plan is
+optional. Its absence is represented by an empty `plan_id`; `task_id` and the
+source-bound declaration digest remain required audit metadata. Historical
+Plan-directed final cuts retain their declared task/intent restrictions.
+Stable Profiles always reject reset.
+
+The closed development target set includes `three` /
+`station-three-social-private`, `four` / `station-four-social-private`,
+`fiveArm` / `station-five-arm-social-private`, and
+`chat-native-disposable` / `chat-native-disposable-social-private`; each must
+match its tracked deployment environment. SC-D23's database/object allowlists,
+dependency order, public snapshot, journal and failure behavior remain
+unchanged. These runtime targets do not widen the historical W12 delivery scope.
+
+`tooling/development/secure_content/runtime_schema.py` prepares private Social
+state once before a native Suite provisions actors or launches clients. It
+uses the same audited maintenance session, immutable manifest, exact-scope
+lease and two-phase deployment boundary as Plan-directed activation. Both
+Desktop and Mobile Social Search provisioners consume the resulting canonical
+schema attestation. Scenario execution remains attach-only.
 
 The reset path has exactly three owners:
 
-- Local Dev Control Plane authenticates the workspace, plan/task, exact
+- Local Dev Control Plane authenticates the workspace, Profile capability, exact
   destructive scope, source HEAD, and live `station.reset` lease.
 - The Secure Content Development reset owner creates and verifies the immutable
   reset manifest, quiesces the selected Station, invokes owner operations, and
@@ -1428,6 +1443,12 @@ route. The wrapper holds the inherited advisory-lock descriptor for the
 complete remote command, while the reset owner revalidates binding,
 declaration, source, profile, scope, and process identity after lease
 acquisition and before every remote stage.
+
+An outer Suite actor-reset lease remains in its parent process while schema
+activation obtains the separate exact-scope maintenance lease. Profile selection
+and Station deployment children acquire their own deployment authority and receive
+no `PT_MACHINE_LEASE_*` metadata from that parent. This preserves the parent lease
+without advertising a descriptor closed by the subprocess exec boundary.
 
 Each remote attempt receives one canonical `SecureContentResetInvocationV1`
 over SSH stdin. The CLI validates its compiled source commit, deployment

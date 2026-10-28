@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
+mod search;
 
 use messaging_core::attachment::{
     upload_commitment_fields, validate_chat_attachment_transfer_record,
@@ -1893,6 +1896,9 @@ pub struct AcceptanceConversationClearFixture {
 pub struct MobileMessagingStore {
     connection: Mutex<Connection>,
     database_path: Option<PathBuf>,
+    search_changes: Arc<AtomicU64>,
+    search_authority_changes: Arc<AtomicU64>,
+    search_authority_cache: Mutex<Option<(String, Vec<String>)>>,
 }
 
 struct PreparedMessageRedactionCleanup {
@@ -2885,15 +2891,46 @@ impl MobileMessagingStore {
     }
 
     fn from_connection_with_path(
-        connection: Connection,
+        mut connection: Connection,
         database_path: Option<PathBuf>,
     ) -> Result<Self, String> {
         ensure_messaging_schema(&RusqliteMessagingSchema(&connection))?;
         create_mobile_messaging_adapter_schema(&connection)?;
-        Ok(Self {
+        search::initialize(&mut connection)?;
+        let search_changes = Arc::new(AtomicU64::new(0));
+        let changes = search_changes.clone();
+        let search_authority_changes = Arc::new(AtomicU64::new(0));
+        let authority_changes = search_authority_changes.clone();
+        connection.update_hook(Some(move |_, _: &str, table: &str, _| {
+            if search::dependency(table) {
+                changes.fetch_add(1, Ordering::Relaxed);
+            }
+            if matches!(
+                table,
+                "messaging_conversations" | "messaging_conversation_members"
+            ) {
+                authority_changes.fetch_add(1, Ordering::Relaxed);
+            }
+        }));
+        connection.authorizer(Some(
+            |context: rusqlite::hooks::AuthContext<'_>| match context.action {
+                rusqlite::hooks::AuthAction::Delete { table_name }
+                    if search::dependency(table_name) =>
+                {
+                    rusqlite::hooks::Authorization::Ignore
+                }
+                _ => rusqlite::hooks::Authorization::Allow,
+            },
+        ));
+        let store = Self {
             connection: Mutex::new(connection),
             database_path,
-        })
+            search_changes,
+            search_authority_changes,
+            search_authority_cache: Mutex::new(None),
+        };
+        store.rebuild_search_index_batch()?;
+        Ok(store)
     }
 
     pub(crate) fn mobile_conversation_projections(
@@ -3875,7 +3912,7 @@ impl MobileMessagingStore {
                 "SELECT attachment_id
                  FROM messaging_attachment_transfers
                  WHERE direction = ?1
-                   AND state IN (?2, ?3, ?4)
+                   AND state IN (?2, ?3, ?4, ?6)
                    AND next_attempt_at_unix_ms <= ?5
                  ORDER BY next_attempt_at_unix_ms ASC,
                           updated_at_unix_ms ASC,
@@ -3887,6 +3924,7 @@ impl MobileMessagingStore {
                     AttachmentTransferState::Transferring as i32,
                     AttachmentTransferState::RetryWait as i32,
                     now_unix_ms,
+                    AttachmentTransferState::Verifying as i32,
                 ],
                 |row| row.get(0),
             )
@@ -10376,12 +10414,15 @@ fn index_message_search(
             params![
                 conversation_id,
                 message_id,
-                plaintext,
-                attachments
-                    .iter()
-                    .map(|attachment| attachment.filename.as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n")
+                search_core::tokenize(plaintext).join(" "),
+                search_core::tokenize(
+                    &attachments
+                        .iter()
+                        .map(|attachment| attachment.filename.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+                .join(" ")
             ],
         )
         .map(|_| ())
@@ -10539,11 +10580,7 @@ fn load_pending_message_attachments(
 }
 
 fn fts_phrase_query(query: &str) -> Result<String, String> {
-    let normalized = query.trim();
-    if normalized.is_empty() || normalized.chars().count() > 256 {
-        return Err("mobile messaging search query exceeds policy".to_string());
-    }
-    Ok(format!("\"{}\"", normalized.replace('"', "\"\"")))
+    search_core::build_match_expression(query).map_err(|error| error.to_string())
 }
 
 fn conversation_message_from_row(

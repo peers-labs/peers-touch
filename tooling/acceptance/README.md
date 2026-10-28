@@ -25,6 +25,9 @@ conformance do not substitute for required UI or receiver-visible evidence.
 - `domains/`: domain status and validation profiles.
 - `gates.yaml`: Gate commands, dependencies, inputs, timeouts, tiers, and cells.
 - `gates/`: stable product and framework evidence producers.
+- `search_capture.py`: shared Search capture scripts for Messaging and Social
+  Desktop/Mobile Gates and source-contract replays; domain-neutral Core owns no
+  Search selectors.
 - `behavior-rules/`: operation-language behavior rules.
 - `environments/`: typed environment and service requirements.
 - `runtime-cells/`: platform-cell contracts.

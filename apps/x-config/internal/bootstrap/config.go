@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -81,13 +82,24 @@ func LoadConfig() (Config, error) {
 	if err := loadSigningKeysAndAllowlist(&config); err != nil {
 		return Config{}, err
 	}
+	// Private corp deployments (e.g. fiveArm) serve plain HTTP on RFC1918
+	// addresses; the ed25519 snapshot signature remains the integrity
+	// boundary. Public origins still require HTTPS.
+	allowPrivateHTTP := os.Getenv("X_CONFIG_ALLOW_PRIVATE_HTTP") == "1"
+	config.Operator.AllowPrivateHTTP = allowPrivateHTTP
+	originAllowed := validHTTPSURL
+	if allowPrivateHTTP {
+		originAllowed = func(raw string) bool {
+			return validHTTPSURL(raw) || validPrivateHTTPURL(raw)
+		}
+	}
 	for _, raw := range []string{
 		config.Operator.BrokerStartURL,
 		config.Operator.CallbackURL,
 		config.Operator.ConsoleURL,
 		config.OAuthRedeemURL,
 	} {
-		if !validHTTPSURL(raw) {
+		if !originAllowed(raw) {
 			return Config{}, errors.New("invalid_x_config_oauth_url")
 		}
 	}
@@ -229,6 +241,23 @@ func validHTTPSURL(raw string) bool {
 		parsed.Host != "" &&
 		parsed.User == nil &&
 		parsed.Fragment == ""
+}
+
+// validPrivateHTTPURL permits plain HTTP only on loopback or private
+// (RFC1918 / link-local / unique-local) hosts. Hostnames must be IP literals
+// so a public DNS name can never downgrade transport.
+func validPrivateHTTPURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme != "http" || parsed.Host == "" ||
+		parsed.User != nil || parsed.Fragment != "" {
+		return false
+	}
+	host := parsed.Hostname()
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
 }
 
 func envOr(name string, fallback string) string {

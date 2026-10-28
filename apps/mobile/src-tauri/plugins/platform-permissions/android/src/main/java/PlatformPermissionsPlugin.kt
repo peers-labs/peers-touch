@@ -23,6 +23,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType as WorkNetworkType
@@ -148,6 +150,13 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
     private var pushLifecycleGeneration: Long? = null
     private var pushEnvironment: String? = null
     private var activeMediaPick: ActiveMediaPick? = null
+    private var ownedExportStop = false
+    private val fileActions = NativeFileActions(activity) {
+        if (backgrounded && ownedExportStop) {
+            ownedExportStop = false
+            emitLifecycleSignal(LifecycleState.Background)
+        }
+    }
 
     init {
         activeInstance = this
@@ -161,6 +170,34 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
 
     override fun onNewIntent(intent: Intent) {
         ingestNotificationTap(intent)
+    }
+
+    @Command
+    fun executeFileAction(invoke: Invoke) {
+        activity.runOnUiThread {
+            try {
+                fileActions.execute(invoke) { intent ->
+                    startActivityForResult(invoke, intent, "fileExportCompleted")
+                }
+            } catch (_: Exception) {
+                invoke.reject("invalid file action", "FILE_ACTION_INVALID")
+            }
+        }
+    }
+
+    @ActivityCallback
+    fun fileExportCompleted(invoke: Invoke, result: ActivityResult) {
+        val args = invoke.parseArgs(NativeFileActionArgs::class.java)
+        fileActions.exported(args.requestId, result)
+    }
+
+    @Command
+    fun cancelFileAction(invoke: Invoke) {
+        val args = invoke.parseArgs(NativeFileActionCancellationArgs::class.java)
+        activity.runOnUiThread {
+            fileActions.cancel(args.requestId)
+            invoke.resolve()
+        }
     }
 
     @Command
@@ -300,6 +337,22 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
                         "system_action_failed",
                     )
                 }
+            }
+        }
+    }
+
+    @Command
+    fun observeLifecycle(invoke: Invoke) {
+        activity.runOnUiThread {
+            execute(invoke, "observe-lifecycle") {
+                val owner = activity as? LifecycleOwner
+                    ?: throw IllegalStateException("activity lifecycle is unavailable")
+                val state = if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    LifecycleState.Foreground
+                } else {
+                    LifecycleState.Background
+                }
+                invoke.resolve(makeLifecycleSignal(state))
             }
         }
     }
@@ -678,18 +731,23 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
     override fun onStop() {
         if (!backgrounded) {
             backgrounded = true
-            emitLifecycleSignal(LifecycleState.Background)
+            // The destination picker is part of the explicit export, with its
+            // own deadline. Suspending here would cancel that same operation.
+            ownedExportStop = fileActions.ownsExportPresentation()
+            if (!ownedExportStop) emitLifecycleSignal(LifecycleState.Background)
         }
     }
 
     override fun onResume() {
         if (backgrounded) {
             backgrounded = false
-            emitLifecycleSignal(LifecycleState.Foreground)
+            if (!ownedExportStop) emitLifecycleSignal(LifecycleState.Foreground)
+            ownedExportStop = false
         }
     }
 
     override fun onDestroy() {
+        fileActions.cancel("")
         synchronized(this) {
             networkCallback?.let { callback ->
                 connectivityManager?.unregisterNetworkCallback(callback)
@@ -982,13 +1040,17 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
         invoke.resolve(response)
     }
 
-    private fun emitLifecycleSignal(state: LifecycleState) {
+    private fun makeLifecycleSignal(state: LifecycleState): JSObject {
         val payload = JSObject()
         payload.put("platform", "android")
         payload.put("state", state.wireValue)
         payload.put("sequence", lifecycleSequence.incrementAndGet())
         payload.put("timestampMs", System.currentTimeMillis())
-        trigger(LIFECYCLE_EVENT, payload)
+        return payload
+    }
+
+    private fun emitLifecycleSignal(state: LifecycleState) {
+        trigger(LIFECYCLE_EVENT, makeLifecycleSignal(state))
     }
 
     private fun emitCurrentNetworkSignal(onEmitted: (JSObject) -> Unit = { _ -> }) {

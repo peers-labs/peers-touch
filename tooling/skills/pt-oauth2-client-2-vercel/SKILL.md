@@ -179,6 +179,22 @@ key ID, signing key, and redeem-secret values. The signing key and redeem
 secret are synchronized as Secret values; they are never printed or passed in
 argv.
 
+Additional operator consoles beyond the generic single-site block use
+site-scoped variables `OAUTH_OPERATOR_LOGIN_<SITE>_{AUDIENCE,CALLBACK_URL,
+SIGNING_KEY_ID,SIGNING_PRIVATE_KEY_B64,REDEEM_SECRET_B64,ALLOW_PRIVATE_HTTP}`,
+where `<SITE>` is the upper-snake-cased site ID. The site must also be present
+in `apps/oauth2-client/config/sites.json`. Site-scoped secrets are passed to
+Vercel through stdin with the same visibility rules; the standard sync script's
+single-site value model does not cover them.
+
+Operator callbacks must be HTTPS with no fragment. Plain HTTP is accepted only
+when the site sets `allow_private_http`/`..._ALLOW_PRIVATE_HTTP=1` and the
+callback host is an IP literal on loopback, RFC1918 private, or link-local
+IPv4 (IPv6 accepts loopback only); DNS names, public IPs, credentials, query,
+and fragment remain forbidden. Private-HTTP callbacks carry only a one-time
+handoff challenge; the signed assertion is exchanged server-to-server over
+the redeem channel and integrity never depends on the browser transport.
+
 ### 5. Deploy And Verify Preview
 
 1. From clean source, prepare a temporary upload artifact outside Git:
@@ -260,9 +276,10 @@ python3 tooling/skills/pt-oauth2-client-2-vercel/scripts/verify_deployment.py \
      302. The report records `startEntry: "operator-handoff"`; a direct site
      reports `"direct"`.
 
-   The operator callback must be HTTPS with no fragment. Missing operator env
-   keys block with `OPERATOR_LOGIN_CONFIG_INCOMPLETE`; a malformed callback
-   blocks with `OPERATOR_LOGIN_CALLBACK_URL_INVALID`.
+   The operator callback must be HTTPS with no fragment, or a flag-enabled
+   private-IP HTTP callback under the exact gating rules in §4. Missing
+   operator env keys block with `OPERATOR_LOGIN_CONFIG_INCOMPLETE`; a
+   malformed callback blocks with `OPERATOR_LOGIN_CALLBACK_URL_INVALID`.
 
 8. For each selected Provider on a direct (non-operator-locked) site, start
    one run-bound verifier. It captures the
@@ -358,7 +375,7 @@ storage configuration.
 | `PROVIDER_START_CONTRACT_FAILED` | Start redirect host, scheme, state, or registered `redirect_uri` is wrong | Reconcile stable callback config and catalog; redeploy |
 | `PROVIDER_PKCE_CONTRACT_FAILED` | A catalog S256 Provider start omitted the PKCE challenge/method | Fix Provider start construction; do not promote |
 | `OPERATOR_LOGIN_CONFIG_INCOMPLETE` | An operator-locked site is missing operator callback/audience/key/redeem env | Complete the allowlisted operator env through the env-repository task |
-| `OPERATOR_LOGIN_CALLBACK_URL_INVALID` | The operator callback is not HTTPS or carries a fragment | Correct `OAUTH_OPERATOR_LOGIN_CALLBACK_URL` and resync |
+| `OPERATOR_LOGIN_CALLBACK_URL_INVALID` | The operator callback is not HTTPS, or is plain HTTP outside the flag-enabled private-IP-literal gate, or carries a fragment/query/credentials | Correct the callback and its `ALLOW_PRIVATE_HTTP` gating, then resync |
 | `OPERATOR_START_BINDING_FAILED` | A bare start was accepted or a bound start was rejected unexpectedly | Investigate operator-lock enforcement; keep Production blocked |
 | `OPERATOR_LOGIN_LIVE_PROVIDER_UNSUPPORTED` | Consumer `--run-live-provider` was requested on an operator-locked site | Prove operator login through its own handoff/assertion journey instead |
 | `LIVE_CALLBACK_RECEIVER_MISMATCH` | Callback is not bound to this verifier's receiver ID and challenge | Reject it and restart that Provider flow |

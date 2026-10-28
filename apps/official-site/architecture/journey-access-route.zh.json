@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "可信接入与 Route 汇合",
+    "subtitle": "Route 失败可以从 Direct 切换 Circuit，但绝不能改变 Station 身份或 Session 权威。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/journey-access-route.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "Client Runtime",
+      "sublabel": "Desktop / Mobile",
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+          "label": "mod.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "trust",
+      "type": "security",
+      "label": "Identity + RouteLease",
+      "sublabel": "Root · Node · Generation Fence",
+      "sources": [
+        {
+          "path": "packages/station-trust/src/lib.rs",
+          "label": "lib.rs",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "route",
+      "type": "external",
+      "label": "Direct / Relay",
+      "sublabel": "可替换候选",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/runtime/role/role.go",
+          "label": "role.go",
+          "line": 1,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "ingress",
+      "type": "backend",
+      "label": "Canonical Ingress",
+      "sublabel": "同一 Station Scope",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/server/canonical_protobuf_handler.go",
+          "label": "canonical_protobuf_handler.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Access Gate",
+      "sublabel": "Actor + Device",
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "apps",
+      "type": "backend",
+      "label": "App Domains",
+      "sublabel": "Scope-bound Runtime",
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 270,
+      "label": "验证"
+    },
+    {
+      "from": 280,
+      "to": 390,
+      "label": "选择路径"
+    },
+    {
+      "from": 400,
+      "to": 540,
+      "label": "完成接入"
+    }
+  ],
+  "messages": [
+    {
+      "id": "load-binding",
+      "from": "client",
+      "to": "trust",
+      "y": 170,
+      "label": "验证 Station Root + Route Generation",
+      "variant": "security"
+    },
+    {
+      "id": "lease",
+      "from": "trust",
+      "to": "client",
+      "y": 205,
+      "label": "签发 Station-scoped RouteLease",
+      "variant": "return"
+    },
+    {
+      "id": "direct-open",
+      "from": "client",
+      "to": "route",
+      "y": 295,
+      "label": "尝试已验证 Direct Candidate",
+      "variant": "emphasis"
+    },
+    {
+      "id": "direct-failed",
+      "from": "route",
+      "to": "client",
+      "y": 330,
+      "label": "请求提交前不可达",
+      "variant": "return"
+    },
+    {
+      "id": "relay-open",
+      "from": "client",
+      "to": "route",
+      "y": 365,
+      "label": "仅 SafeRead / Idempotent 可 Fallback",
+      "variant": "dashed"
+    },
+    {
+      "id": "same-ingress",
+      "from": "route",
+      "to": "ingress",
+      "y": 420,
+      "label": "不透明 Circuit 进入同一 Station",
+      "variant": "emphasis"
+    },
+    {
+      "id": "access-request",
+      "from": "ingress",
+      "to": "access",
+      "y": 455,
+      "label": "完成 Actor + Device + Client Class",
+      "variant": "security"
+    },
+    {
+      "id": "session",
+      "from": "access",
+      "to": "apps",
+      "y": 490,
+      "label": "注入 Station-scoped Session Context",
+      "variant": "security"
+    },
+    {
+      "id": "ready",
+      "from": "apps",
+      "to": "client",
+      "y": 525,
+      "label": "Runtime 在 Lease Generation 就绪",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "身份不变量",
+      "items": [
+        "Fallback 只改变 Transport；Station Identity 与 Scope 保持不变。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Replay 不变量",
+      "items": [
+        "结果未知的 Write 不 Replay；自动 Fallback 需要 SafeRead 或显式 Idempotency Key。"
+      ]
+    }
+  ]
+}

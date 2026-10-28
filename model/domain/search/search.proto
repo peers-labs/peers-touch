@@ -1,0 +1,327 @@
+syntax = "proto3";
+
+package peers_touch.model.search.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/model/search;search";
+
+// Closed Peers-domain reads. Hosts authenticate the source set; contributors
+// narrow scope and retain original-domain read authority. Federation, Ask and
+// external connectors are not admitted by the current production composition.
+
+// What the user is trying to do. FIND retrieves content; OPEN resolves a
+// known resource (used by deep links and recent items).
+enum SearchIntent {
+  SEARCH_INTENT_UNSPECIFIED = 0;
+  SEARCH_INTENT_FIND = 1;
+  SEARCH_INTENT_OPEN = 2;
+}
+
+enum SearchKind {
+  SEARCH_KIND_UNSPECIFIED = 0;
+  SEARCH_KIND_PERSON = 1;
+  SEARCH_KIND_CONVERSATION = 2;
+  SEARCH_KIND_MESSAGE = 3;
+  SEARCH_KIND_SOCIAL_POST = 4;
+  SEARCH_KIND_AGENT = 5;
+  SEARCH_KIND_KNOWLEDGE = 6;
+  SEARCH_KIND_ATTACHMENT = 7;
+  SEARCH_KIND_FUNCTION = 8;
+  SEARCH_KIND_SOCIAL_COMMENT = 9;
+}
+
+// Trust zone of a result. FUNCTION shortcuts are local navigation and leave
+// zone unset (SEARCH_ZONE_UNSPECIFIED) — they carry no source trust claim.
+enum SearchZone {
+  SEARCH_ZONE_UNSPECIFIED = 0;
+  // Device-only end-to-end encrypted content, never leaves the device.
+  SEARCH_ZONE_DEVICE_E2EE = 1;
+  // Station-held content visible under the actor read policy.
+  SEARCH_ZONE_STATION = 2;
+  // Federated content authorized within an existing federation context.
+  // Reserved; not produced by the device milestone.
+  SEARCH_ZONE_FEDERATION = 3;
+}
+
+enum SearchScope {
+  SEARCH_SCOPE_UNSPECIFIED = 0;
+  SEARCH_SCOPE_DEVICE = 1;
+  SEARCH_SCOPE_STATION = 2;
+  SEARCH_SCOPE_FEDERATION = 3;
+}
+
+enum SourceState {
+  SOURCE_STATE_UNSPECIFIED = 0;
+  SOURCE_STATE_READY = 1;
+  SOURCE_STATE_PARTIAL = 2;
+  SOURCE_STATE_UNAVAILABLE = 3;
+  SOURCE_STATE_INDEXING = 4;
+}
+
+enum CoverageExtent {
+  COVERAGE_EXTENT_UNSPECIFIED = 0;
+  // Complete within the source's declared, currently authorized scope.
+  COVERAGE_EXTENT_DECLARED_SCOPE = 1;
+  // Only projections already acquired by this device.
+  COVERAGE_EXTENT_ACQUIRED_LOCAL = 2;
+  COVERAGE_EXTENT_RECOVERING = 3;
+}
+
+enum SearchErrorCode {
+  SEARCH_ERROR_CODE_UNSPECIFIED = 0;
+  // The request named web, OS files, or an external connector — all outside
+  // the closed search domain (D-19).
+  SEARCH_ERROR_CODE_SCOPE_OUTSIDE_SEARCH_DOMAIN = 1;
+  SEARCH_ERROR_CODE_INVALID_QUERY = 2;
+  SEARCH_ERROR_CODE_CANCELLED = 3;
+  SEARCH_ERROR_CODE_SOURCE_UNAVAILABLE = 4;
+  SEARCH_ERROR_CODE_CURSOR_EXPIRED = 5;
+  SEARCH_ERROR_CODE_SOURCE_TIMEOUT = 6;
+  SEARCH_ERROR_CODE_PROTOCOL = 7;
+  SEARCH_ERROR_CODE_RESOURCE_UNAVAILABLE = 8;
+  SEARCH_ERROR_CODE_SOURCE_CHANGED = 9;
+}
+
+// Canonical address of one searchable object. kind/id identify the object;
+// the optional conversation/message fields carry the message anchor.
+message ResourceRef {
+  string kind = 1;
+  string id = 2;
+  string conversation_id = 3;
+  string message_id = 4;
+  // Typed navigation target for function results (settings section, agent
+  // create flow, etc.). Content results resolve through the owning module.
+  string target_page = 5;
+  // Stable data authority, independent of device, package and runtime session.
+  string authority_namespace = 6;
+  string content_revision = 7;
+  ResourceAnchor anchor = 8;
+  // Independent comment identity with its canonical post parent. No content,
+  // endpoint or authorization grant is carried by this relationship.
+  ResourceRef parent = 9;
+}
+
+message ResourceAnchor {
+  string kind = 1;
+  string id = 2;
+}
+
+// The binding is resolved by the host. It is neither an endpoint nor a grant.
+message SearchContributorDescriptor {
+  string source_id = 1;
+  string owning_module = 2;
+  repeated string authority_namespaces = 3;
+  repeated SearchKind kinds = 4;
+  string binding_id = 5;
+  string descriptor_revision = 6;
+  bool supports_paging = 7;
+  uint32 max_batch = 8;
+  repeated SearchScope scopes = 9;
+}
+
+enum ProjectionField {
+  PROJECTION_FIELD_UNSPECIFIED = 0;
+  PROJECTION_FIELD_RESULT = 1;
+}
+
+message QueryIntent {
+  string text = 1;
+  // Empty selects all kinds allowed by the trusted source composition.
+  repeated SearchKind kinds = 2;
+  // Explicit scopes; suggestions are Device-only. No scope grants read rights.
+  repeated SearchScope scopes = 3;
+  uint32 limit = 4;
+  string cursor = 5;
+  string locale = 6;
+  bool suggestions = 7;
+  // Read requirement, excluded from semantic cache identity.
+  bool refresh = 8;
+  // Empty selects all currently readable local conversations. This is a
+  // content filter, never an account selector or an authorization grant.
+  string conversation_id = 9;
+  // Match only attachment filenames, returning the containing message anchor.
+  // This does not search attachment bodies or create attachment resources.
+  bool attachment_names_only = 10;
+}
+
+message SourceCandidate {
+  ResourceRef resource = 1;
+  double source_rank = 2;
+}
+
+// Content and authority are independent. No lease means the original owner
+// must check each publication; successful content validation grants no access.
+message ReadValidity {
+  string read_scope = 1;
+  string policy_revision = 2;
+  int64 lease_until_unix_ms = 3;
+  bool owner_check_required = 4;
+}
+
+message CacheMetadata {
+  string validator = 1;
+  string source_revision = 2;
+  int64 content_fresh_until_unix_ms = 3;
+  ReadValidity read_validity = 4;
+  bool no_store = 5;
+}
+
+message SourcePage {
+  repeated SourceCandidate candidates = 1;
+  string next_cursor = 2;
+  SourceCoverage coverage = 3;
+  CacheMetadata cache = 4;
+  // All continuations preserve the original session expiry.
+  int64 expires_at_unix_ms = 5;
+}
+
+message HydrationItem {
+  string item_id = 1;
+  ResourceRef resource = 2;
+  repeated ProjectionField fields = 3;
+  string known_validator = 4;
+}
+
+message HydrationRequest {
+  repeated HydrationItem items = 1;
+  bool refresh = 2;
+}
+
+message AuthorizedProjection {
+  ResultItem result = 1;
+  repeated ProjectionField fields = 2;
+  CacheMetadata cache = 3;
+}
+
+message UnchangedProjection {
+  string validator = 1;
+  repeated ProjectionField fields = 2;
+  CacheMetadata cache = 3;
+}
+
+// No sensitive resource/title is included in unavailable or retryable.
+message UnavailableResource {}
+message RetryableRead {}
+
+message HydrationOutcome {
+  string item_id = 1;
+  oneof outcome {
+    AuthorizedProjection changed = 2;
+    UnchangedProjection unchanged = 3;
+    UnavailableResource unavailable = 4;
+    RetryableRead retryable = 5;
+  }
+}
+
+message HydrationReply {
+  repeated HydrationOutcome outcomes = 1;
+}
+
+message ResolvedResource {
+  ResourceRef resource = 1;
+  // Host allowlisted resolver identity, never a URL, path or script.
+  string resolver_binding = 2;
+  CacheMetadata cache = 3;
+}
+
+message ResolveRequest {
+  ResourceRef resource = 1;
+  string request_id = 2;
+  // Selects a trusted mounted source; the host verifies that this source issued
+  // the reference in the current query session before dispatching. In
+  // particular, a private reference must never be tried against a Station.
+  string source_id = 3;
+}
+
+// A source-specific original-owner state; no content or private cursor.
+message SourceReadState {
+  string source_id = 1;
+  string binding_id = 2;
+  string source_revision = 3;
+  string read_scope = 4;
+  string policy_revision = 5;
+  SourceState state = 6;
+  CoverageExtent extent = 7;
+  // Owner metadata does not permit reusable content. Renderer caches must
+  // observe the same restriction as the native read cache.
+  bool no_store = 8;
+}
+
+// Trusted authentication partition and independent source state vector.
+message SearchReadState {
+  reserved 1, 2;
+  repeated SourceReadState sources = 3;
+  string partition = 4;
+}
+
+// Local suggestion request: exact objects available on the device without a
+// full retrieval pass. Must never trigger a network request.
+message SuggestRequest {
+  string query = 1;
+  repeated SearchKind kinds = 2;
+  int32 limit = 3;
+  // Client-generated id used to cancel an in-flight suggestion.
+  string request_id = 4;
+  string conversation_id = 5;
+  bool attachment_names_only = 6;
+}
+
+message SubmitRequest {
+  string query = 1;
+  SearchIntent intent = 2;
+  repeated SearchKind kinds = 3;
+  repeated SearchScope scopes = 4;
+  // Empty on first page; pass the opaque cursor from the previous response.
+  string cursor = 5;
+  int32 limit = 6;
+  string request_id = 7;
+  string locale = 8;
+  bool refresh = 9;
+  string conversation_id = 10;
+  bool attachment_names_only = 11;
+}
+
+message CancelRequest {
+  string request_id = 1;
+}
+
+message ResultItem {
+  ResourceRef resource = 1;
+  SearchKind kind = 2;
+  SearchZone zone = 3;
+  string title = 4;
+  // Short matched fragment, already policy-filtered by the producer. Snippet
+  // text must never be hydrated for an object the actor cannot open.
+  string snippet = 5;
+  string conversation_title = 6;
+  string author_ptid = 7;
+  int64 created_at_unix_ms = 8;
+  // Producer-local relevance, fused by the coordinator; not user-visible.
+  double score = 9;
+  string source_id = 10;
+  // Read authority belongs to this item/source, never to another source's lease.
+  ReadValidity read_validity = 11;
+}
+
+message SourceCoverage {
+  string source_id = 1;
+  SourceState state = 2;
+  // i18n key in packages/locales; the wire never carries display copy.
+  string detail_key = 3;
+  CoverageExtent extent = 4;
+}
+
+message SearchResponse {
+  repeated ResultItem items = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+  repeated SourceCoverage coverage = 4;
+  int64 expires_at_unix_ms = 5;
+  reserved 6, 7;
+  repeated SourceReadState sources = 8;
+  string partition = 9;
+}
+
+message CancelResponse {
+  string request_id = 1;
+  bool cancelled = 2;
+}

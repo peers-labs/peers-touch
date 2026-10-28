@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Same-Station Business Mutation",
+    "subtitle": "A business command is accepted only after authorization and owned transaction commit; realtime wake is explicitly outside this completion boundary.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/journey-same-station.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "Client",
+      "sublabel": "local intent"
+    },
+    {
+      "id": "ingress",
+      "type": "backend",
+      "label": "Canonical Ingress",
+      "sublabel": "typed request",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/server/canonical_protobuf_handler.go",
+          "label": "canonical_protobuf_handler.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Access Gate",
+      "sublabel": "Session context",
+      "sources": [
+        {
+          "path": "apps/station/frame/touch/accessgate/session_finalizer.go",
+          "label": "session_finalizer.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "App Domain",
+      "sublabel": "business state machine",
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "uow",
+      "type": "database",
+      "label": "Owned Unit of Work",
+      "sublabel": "state + outbox + event facts",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/store/rds.go",
+          "label": "rds.go",
+          "line": 1,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "wake",
+      "type": "messagebus",
+      "label": "Wake Stream",
+      "sublabel": "post-commit hint only",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/bus.go",
+          "label": "bus.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 280,
+      "label": "Authorize"
+    },
+    {
+      "from": 290,
+      "to": 440,
+      "label": "Commit"
+    },
+    {
+      "from": 450,
+      "to": 570,
+      "label": "Acknowledge"
+    }
+  ],
+  "messages": [
+    {
+      "id": "command",
+      "from": "client",
+      "to": "ingress",
+      "y": 170,
+      "label": "typed command + idempotency context",
+      "variant": "emphasis"
+    },
+    {
+      "id": "session",
+      "from": "ingress",
+      "to": "access",
+      "y": 215,
+      "label": "verify actor + device + client class",
+      "variant": "security"
+    },
+    {
+      "id": "authorize",
+      "from": "access",
+      "to": "domain",
+      "y": 260,
+      "label": "inject scoped Session context",
+      "variant": "security"
+    },
+    {
+      "id": "mutate",
+      "from": "domain",
+      "to": "uow",
+      "y": 330,
+      "label": "commit business state + required facts",
+      "variant": "emphasis"
+    },
+    {
+      "id": "committed",
+      "from": "uow",
+      "to": "domain",
+      "y": 390,
+      "label": "durable commit",
+      "variant": "return"
+    },
+    {
+      "id": "wake",
+      "from": "domain",
+      "to": "wake",
+      "y": 465,
+      "label": "emit post-commit wake hint",
+      "variant": "dashed"
+    },
+    {
+      "id": "accepted",
+      "from": "domain",
+      "to": "client",
+      "y": 525,
+      "label": "accepted at authoritative commit",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Authority boundary",
+      "items": [
+        "Optimistic UI may exist locally, but it never replaces the Station transaction result."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Wake is not truth",
+      "items": [
+        "Realtime delivery may fail after commit; recovery reads durable state or cursor."
+      ]
+    }
+  ]
+}
