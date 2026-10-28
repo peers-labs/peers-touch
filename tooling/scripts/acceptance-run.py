@@ -16,6 +16,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -69,6 +70,10 @@ from tooling.acceptance.core.execution_budget import (
 )
 from tooling.acceptance.core.execution_graph import (
     compile_graph, efficiency_report, prerequisite_results, request_dispatch_order,
+)
+from tooling.acceptance.core.e2e_preflight import (
+    PREFLIGHT_ENV, prepare_e2e, preflight_binding, require_ready,
+    revalidate_preflight, validate_e2e_definition,
 )
 from tooling.acceptance.core.execution_identity import (
     gate_execution_identity as input_execution_identity, inherited_gate_environment,
@@ -280,6 +285,10 @@ def publish_initialization_stop(
     from tooling.acceptance.core.execution_budget import deadline
 
     with deadline(5, ExecutionDeadline("stop-record", "publish", "publish")):
+        if isinstance(store, SimpleNamespace):
+            from tooling.acceptance.core import EvidenceStore
+
+            store = EvidenceStore.from_environment(repo_root=REPO_ROOT, worktree=REPO_ROOT)
         with store.begin_run("acceptance-execution-stop", source=source) as diagnostic:
             stop = {
                 "artifactKind": "acceptance-execution-stop",
@@ -1252,6 +1261,7 @@ def is_supported_context_argv(argv: list[str]) -> bool:
 
 def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, Any]:
     validate_execution_inputs(gate_id, definition)
+    validate_e2e_definition(gate_id, definition)
     gate = {
         "id": gate_id,
         **gate_launch_fields(gate_id, definition),
@@ -1266,6 +1276,8 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
     }
     if "executionInputs" in definition:
         gate["executionInputs"] = definition["executionInputs"]
+    if "e2e" in definition:
+        gate["e2e"] = definition["e2e"]
     artifact_kind = definition.get("runtimeCellArtifact")
     if artifact_kind is not None:
         if artifact_kind not in ("acceptance-binary", "installed-appimage"):
@@ -1364,6 +1376,7 @@ def plan_gate_from_entry(entry: Any, definitions: dict[str, Any]) -> dict[str, A
         "dependsOn",
         "judgment",
         "executionInputs",
+        "e2e",
     ):
         if field in entry and entry[field] != gate.get(field):
             raise SystemExit(
@@ -2592,12 +2605,11 @@ def main() -> int:
         if (
             args.completion
             or args.full
-            or args.dry_run
             or candidate_mode
             or args.run_id
         ):
             raise SystemExit(
-                "development execution forbids completion/full, dry-run, "
+                "development execution forbids completion/full, "
                 "candidate handoff, and formal --run-id"
             )
         if args.development_manifest_out or args.development_journey_id:
@@ -2648,20 +2660,8 @@ def main() -> int:
     session_validation = None
     preparation_owner = planning
     try:
-        if args.execution_policy == "development":
-            store = EvidenceStore(
-                development_artifact_root(
-                    str(args.work_item),
-                    workspace_id(REPO_ROOT),
-                ),
-                worktree=REPO_ROOT,
-            )
-        else:
-            store = execute_stage(
-                planning, "evidence-store", EvidenceStore.from_environment,
-                repo_root=REPO_ROOT,
-                worktree=REPO_ROOT,
-            )
+        # Planning only needs an external path, not an allocated Evidence Store.
+        store = SimpleNamespace(root=Path(tempfile.gettempdir()))
         if (args.gate or args.all_gates) and not args.plan and not args.execution_plan:
             plan = {"selected_gates": []}
             plan_source = {
@@ -2736,6 +2736,43 @@ def main() -> int:
         aggregate_source = execute_stage(
             planning, "source-snapshot", source_identity, REPO_ROOT
         )
+        e2e_preflight = execute_stage(
+            planning, "e2e-preflight", prepare_e2e, definitions, graph, aggregate_source,
+            repo_root=REPO_ROOT, catalog_path=Path(args.gates),
+            execution_policy=args.execution_policy,
+        )
+        if args.dry_run:
+            preview = {
+                "artifactKind": "acceptance-execution-preview",
+                "executionPolicy": args.execution_policy, "executionGraph": graph,
+                "e2ePreflight": e2e_preflight, "proofStatus": "UNPROVEN",
+                "gates": [
+                    {**{key: gate.get(key) for key in (
+                        "id", "command", "argv", "environment", "provisioner",
+                        "tier", "timeout_seconds",
+                    )}, "status": "dry-run", "runtimeCell": select_runtime_cell(
+                        gate, runtime_cell_bindings.get(gate["id"], str(args.runtime_cell or "")),
+                    ) or None}
+                    for gate in gates
+                ],
+            }
+            print("preview: " + json.dumps(preview, sort_keys=True))
+            if planning is not None:
+                planning.finish()
+            return 0 if e2e_preflight["ready"] else 2
+        print("e2e-preflight: " + json.dumps(e2e_preflight, sort_keys=True))
+        require_ready(e2e_preflight)
+        if args.execution_policy == "development":
+            store = execute_stage(
+                planning, "evidence-store", EvidenceStore,
+                development_artifact_root(str(args.work_item), workspace_id(REPO_ROOT)),
+                worktree=REPO_ROOT,
+            )
+        else:
+            store = execute_stage(
+                planning, "evidence-store", EvidenceStore.from_environment,
+                repo_root=REPO_ROOT, worktree=REPO_ROOT,
+            )
         session = None
         if policy is not None and not args.dry_run:
             from tooling.acceptance.core import ArtifactRef
@@ -2777,6 +2814,10 @@ def main() -> int:
                 )
             aggregate_source = execute_stage(
                 planning, "locked-source-snapshot", source_identity, REPO_ROOT,
+            )
+            execute_stage(
+                planning, "locked-e2e-preflight", revalidate_preflight,
+                e2e_preflight, aggregate_source, repo_root=REPO_ROOT,
             )
             context_identity = execution_context_digest(args, plan_source)
             probe_context = {
@@ -2843,7 +2884,7 @@ def main() -> int:
     except (EvidenceError, ExecutionBudgetError, ExecutionDeadline, KeyboardInterrupt, KeyError, ValueError, TypeError, OSError) as error:
         if (
             isinstance(error, (ExecutionDeadline, KeyboardInterrupt))
-            and policy is not None and "graph" in locals()
+            and policy is not None and "graph" in locals() and not args.dry_run
         ):
             try:
                 publish_initialization_stop(
@@ -2892,6 +2933,10 @@ def main() -> int:
             preparation_owner, "graph-persist", aggregate_run.write_json,
             "reports/graph.json", graph, role="execution-graph",
         )
+        preflight_ref = execute_stage(
+            preparation_owner, "e2e-preflight-persist", aggregate_run.write_json,
+            "reports/e2e-preflight.json", e2e_preflight, role="e2e-preflight",
+        )
         if scope is not None:
             scope_ref = execute_stage(
                 preparation_owner, "scope-persist", aggregate_run.write_json,
@@ -2931,24 +2976,15 @@ def main() -> int:
                 if policy else None
             )
 
-            if args.dry_run:
-                results.append(
-                    {
-                        "id": gate_id,
-                        "command": command,
-                        "environment": environment,
-                        "runtimeCell": runtime_cell or None,
-                        "tier": tier,
-                        "status": "dry-run",
-                        "duration_seconds": 0,
-                    }
-                )
-                continue
-
             try:
                 gate_source = execute_stage(
                     execution, "source-snapshot", source_identity, REPO_ROOT
                 )
+                if any(item["disposition"] != "NOT_DECLARED" for item in e2e_preflight["gates"]):
+                    execute_stage(
+                        execution, "e2e-preflight-revalidate", revalidate_preflight,
+                        e2e_preflight, gate_source, repo_root=REPO_ROOT,
+                    )
                 if session is not None and gate_source == aggregate_source:
                     entry_results, entry_validation = execute_stage(
                         execution, "original-completion-validation", revalidate_session_results,
@@ -3083,6 +3119,7 @@ def main() -> int:
             prerequisite_refs, unproven_dependencies = execute_stage(
                 execution, "prerequisite-proof", prerequisite_results,
                 gate, results, aggregate_source, store,
+                execution_policy=args.execution_policy,
             )
             if result is None and unproven_dependencies:
                 output_text = "Required prerequisite proof is unavailable.\n"
@@ -3321,6 +3358,13 @@ def main() -> int:
                             duration_seconds=round(time.time() - started, 3),
                         )
                 if result is None:
+                    if "e2e" in gate:
+                        execute_stage(
+                            execution, "e2e-before-command", revalidate_preflight,
+                            e2e_preflight,
+                            execute_stage(execution, "e2e-command-source", source_identity, REPO_ROOT),
+                            repo_root=REPO_ROOT,
+                        )
                     if gate.get("ephemeralCapabilities"):
                         gate_env = context_gate_subprocess_environment(
                             gate_run,
@@ -3342,6 +3386,8 @@ def main() -> int:
                         ensure_ascii=True,
                         separators=(",", ":"),
                     )
+                    if "e2e" in gate:
+                        gate_env[PREFLIGHT_ENV] = preflight_binding(e2e_preflight)
                     gate_env["PT_ACCEPTANCE_CURRENT_RESULTS"] = json.dumps(
                         current_result_proof_envelope(
                             aggregate_run.source,
@@ -4119,6 +4165,10 @@ def main() -> int:
         report["executionGraph"] = {
             "artifact": graph_ref.to_dict(), "digest": graph["digest"],
             "efficiency": efficiency_report(graph, execution_reports),
+        }
+        report["e2ePreflight"] = {
+            "artifact": preflight_ref.to_dict(), "digest": e2e_preflight["digest"],
+            "proofStatus": "UNPROVEN",
         }
         if policy is not None:
             report["executionBudget"] = {

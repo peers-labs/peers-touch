@@ -23,6 +23,23 @@ This Skill is the project owner for runtime verification. TRAE, Cursor, Codex,
 and future hosts are optional tool transports. They never own the Journey,
 PASS/FAIL interpretation, evidence classification, or cleanup policy.
 
+## E2E Preparation
+
+Before building, resetting a Fixture, launching a client or logging in, use
+`acceptance-run.py --gate <id> --dry-run` with the required runtime cell.
+Add `--execution-policy development --work-item <id>` for a functional run;
+remove `--dry-run` to execute the same selection after checking its preparation.
+The shared runner calls the deterministic E2E Hook without an IDE.
+
+Use the Catalog's explicit `e2e` Journeys and existing implementation refs.
+Consume `REUSE_IMPLEMENTATION`, repair `ENHANCE_REQUIRED` at the original
+Gate/Driver/Harness/Fixture owner, and leave resource qualification to that owner.
+Repeat the same selected Gate plus necessary declared dependencies.
+Do not generate replacement login/input scripts or widen into full/completion.
+`make desktop` remains independent interactive startup.
+
+Contract: `docs/architecture/engineering/acceptance/e2e-execution-hook.md`.
+
 ## Control Layers
 
 ```text

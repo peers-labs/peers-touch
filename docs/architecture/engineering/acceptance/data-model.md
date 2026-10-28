@@ -39,6 +39,21 @@ Domain/Infra 结构报告只评估合同闭包。Capability 的
 
 ## 2. Environment Provisioning Contract
 
+Gate Catalog 可声明 `e2e.journeys`（`id`、`uses`）和
+`e2e.implementations`（`ref`、`purpose`、`lifetime`、`dependsOn`、
+`invalidatedBy`）。`ref` 使用仓库内 `.py` 路径与公开符号，以 `#` 分隔；
+生命周期为 `implementation | suite | scenario`，依赖不能指向更短生命周期。
+这是一份实现引用描述，不存储操作脚本、账号或资源。
+
+`acceptance-e2e-preflight` 是派生只读视图，绑定源码、Catalog、原执行图、
+明确选择和验证模式，记录实现观察、缺口 owner 及待原 owner 核验的资源。
+它的 `ready` 仅说明实现引用可用，`proofStatus` 恒为 `UNPROVEN`。
+实际运行通过原 Evidence Store 的 `e2e-preflight` role 保存该视图；
+预览只打印 `acceptance-execution-preview`，不创建 run。
+子进程中的 `PT_ACCEPTANCE_E2E_PREFLIGHT` 仅传递选择描述与摘要，重新读取当前
+实现检查一致性；它没有授权、锁、回执或证据准入语义。
+完整合同由 [e2e-execution-hook.md](e2e-execution-hook.md) 拥有。
+
 Contract 是仓库内长期定义，描述一个 Gate environment 需要什么，不记录某次运行
 实际获得了什么。
 

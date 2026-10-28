@@ -4,6 +4,10 @@ title: Acceptance scope belongs to the runner that executes it
 status: active
 owns:
   - tooling/scripts/acceptance-run.py
+  - tooling/acceptance/core/e2e_preflight.py
+  - tooling/acceptance/core/gate.py
+  - tooling/acceptance/gates/chat/native_support.py
+  - tooling/acceptance/tests/test_e2e_preflight.py
   - tooling/scripts/acceptance-gap-detect.py
   - tooling/scripts/review/
   - tooling/make/acceptance.mk
@@ -13,6 +17,7 @@ referenced-by:
 related:
   - docs/architecture/engineering/development-workflow/design.md
   - docs/architecture/engineering/acceptance/design.md
+  - docs/architecture/engineering/acceptance/e2e-execution-hook.md
 detected: 2026-10-14
 ---
 
@@ -30,6 +35,12 @@ record, or Hook receipt may select or authorize the scope. Functional
 readiness remains a workflow ordering rule and must not be manufactured by
 formal proof.
 
+The runner's E2E preparation follows the resolved dependency graph before
+resource allocation. Implementation references never dispatch another Gate.
+Independent entries recheck the same source-bound selection; preparation
+is a work description, not authorization. Gaps return to their original owner.
+The exact declaration and preview contract belongs to `e2e-execution-hook.md`.
+
 ## Why this is non-negotiable
 
 A generic admission wrapper duplicates the actual runner's selection logic and
@@ -40,6 +51,8 @@ weakening Gate assertions, current-source evidence, or runtime admission.
 ## How to verify
 
 - `python3 tooling/scripts/acceptance-run-test.py` passes.
+- `python3 -m unittest tooling.acceptance.tests.test_e2e_preflight` verifies
+  manual execution, owner repair, child scope, mode separation and pure preview.
 - `python3 tooling/scripts/acceptance-gap-detect-test.py` passes.
 - `rg -n 'acceptance[_-]admission|require_acceptance_admission' tooling`
   finds no live implementation or import.

@@ -36,6 +36,16 @@ Session-class 的正式证明同样使用共享读取器；开发态只读取当
 引用的原 functional manifest 与完整 inventory，复验 source、result 和
 cleanup，保持 `proofStatus=NOT_APPLICABLE`，禁止读取 latest 或转成正式证明。
 
+E2E 准备由 `acceptance-run.py` 在冻结依赖图和读取当前源码之后、Evidence Store
+及资源分配之前调用 `core/e2e_preflight.py::prepare_e2e`。原 Runner 的源码锁、
+逐 Gate 准备及独立子入口再次复核同一选择。`AcceptanceGate` 在构造和执行
+边界检查；构造 Gate 前就读取或准备资源的入口必须显式调用
+`preflight_gate_entry`，Chat 的 `native_support.selected_native_runtime` 执行该检查。
+Planner 和 Validator 共享声明检查，实际实现缺口由运行前检查报告。
+宿主 Hook 保持 advisory，`make desktop` 不接入该准备阶段。
+Development 的依赖引用保留 `developmentManifest`，正式模式保留 `runManifest`，
+两者不能替代。具体引用结构与失败边界见 [E2E 合同](e2e-execution-hook.md)。
+
 Station API AST 源码 Gate 使用具体 Go input Owner：实际 native Go 和
 compiler/asm/link、解析后的标准库文件与安装 module、workspace 和生效配置
 共同进入输入身份。命令与探针禁用持久配置、自动工具链下载、网络依赖解析及

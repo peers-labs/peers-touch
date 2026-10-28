@@ -23,6 +23,14 @@ Session 保留整个 required 集合，唯一 Runner 复核原 producer 的完�
 公开 inventory 和 compiler metadata 由 Evidence Store 按闭合类型序列化，
 秘密 payload、文本与已知秘密值仍检查，身份受损时拒绝不可变发布。
 
+[E2E 执行前 Hook](e2e-execution-hook.md) 由共享 Runner 在依赖闭包和源码解析后、
+任何资源准备前调用。Catalog 的 `e2e` 只引用原 Journey 和公开实现，Core 只读
+检查符号、实现依赖与生命周期，不导入业务模块。Development 与正式模式共用
+该流程；只读预览不分配 Evidence Store。源码与 Catalog 变化须重新检查，
+缺口回原 owner 增强，不自动扩展 Gate 范围或创建第二套资源账本。
+Development 前置依赖核验当前请求的原 functional manifest、完整 inventory、
+当前源码、功能结果和清理，保留 `NOT_APPLICABLE`；正式依赖仍要求原始证明。
+
 ---
 
 ## 1. 核心原则

@@ -36,7 +36,8 @@ Missing business injection remains `UNPROVEN` or
 
 1. Capability and Feature contracts declare required Gates and proof surfaces.
 2. Registry and explicit selection produce a closed requested scope.
-3. Runner resolves prerequisites, runtime cells, execution inputs, and budgets.
+3. Runner resolves prerequisites, runtime cells, execution inputs, and budgets,
+   then performs read-only E2E implementation preflight before resources.
 4. Provisioners establish source-attested resources and typed service bindings.
 5. Gates perform bounded operations and emit assertions plus immutable artifacts.
 6. Cleanup and required finalizers complete before the run is sealed.
@@ -67,6 +68,8 @@ templates, validators, and intentional fixtures only.
 - [module-layout.md](module-layout.md): implemented ownership and dependencies.
 - [integration.md](integration.md): integration with Profiles, Fixtures, and Gates.
 - [execution-budget.md](execution-budget.md): active budget and continuation rules.
+- [e2e-execution-hook.md](e2e-execution-hook.md): implementation reuse, fixed E2E
+  selection, original-owner enhancement, and manual/Agent preparation.
 - [domain-onboarding.md](domain-onboarding.md): business-domain onboarding.
 - [coverage-report.md](coverage-report.md): current coverage projection and gaps.
 - [operation-language-design.md](operation-language-design.md): operation-language

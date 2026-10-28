@@ -36,6 +36,16 @@
       "description": "Validate Search business injection, contributor authority, cache scope and native Journey proof obligations without claiming runtime proof."
     },
     "chat-device-search-native-e2e": {
+      "e2e": {
+        "journeys": [{"id": "device-search", "uses": ["tooling/acceptance/gates/chat/device_search_runner.py#DeviceSearchGate.run"]}],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/chat/device_search_runner.py#DeviceSearchGate.run", "purpose": "Execute the existing Search actions and required UI/receiver assertions", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client", "tooling/acceptance/drivers/tauri.py#TauriSession.semantic_replace_text", "tooling/acceptance/drivers/tauri.py#TauriSession.semantic_key_sequence"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client", "purpose": "Reuse bound native client launch, password login and actor hydration", "lifetime": "suite", "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "environment", "fixture", "client", "session"]},
+          {"ref": "tooling/acceptance/core/harness.py#call_async_harness", "purpose": "Reuse the existing asynchronous Harness transport", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]},
+          {"ref": "tooling/acceptance/drivers/tauri.py#TauriSession.semantic_replace_text", "purpose": "Reuse embedded WebDriver text input", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]},
+          {"ref": "tooling/acceptance/drivers/tauri.py#TauriSession.semantic_key_sequence", "purpose": "Reuse embedded WebDriver keyboard actions", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]}
+        ]
+      },
       "command": "RUST_LOG=info,search=debug PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.device_search_runner && PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.device_search_e2e",
       "timeout_seconds": 2400,
       "environment": "chat-storage-native",
@@ -432,7 +442,7 @@
     },
     "acceptance-run-static-gate": {
       "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "machine-dev-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.machine_dev_toolchain", "--gate", "acceptance-run-static-gate"], "timeoutSeconds": 10}},
-      "command": "python3 tooling/scripts/acceptance-run-test.py && python3 -m unittest tooling.acceptance.tests.test_input_owner_diagnostics tooling.acceptance.tests.test_machine_dev_input_owner",
+      "command": "python3 tooling/scripts/acceptance-run-test.py && python3 -m unittest tooling.acceptance.tests.test_e2e_preflight tooling.acceptance.tests.test_input_owner_diagnostics tooling.acceptance.tests.test_machine_dev_input_owner",
       "timeout_seconds": 30,
       "environment": "local",
       "tier": "local-evidence",
@@ -1471,6 +1481,15 @@
       "description": "Fail closed on undeclared Chat debug egress and request-echoed identity evidence."
     },
     "chat-lifecycle-onboarding-e2e": {
+      "e2e": {
+        "journeys": [{"id": "onboarding-first-message", "uses": ["tooling/acceptance/gates/chat/lifecycle_onboarding.py#LifecycleOnboardingGate.run"]}],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/chat/lifecycle_onboarding.py#LifecycleOnboardingGate.run", "purpose": "Execute the existing discovery, friendship and first-message Journey", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client", "tooling/acceptance/drivers/tauri.py#TauriSession.semantic_replace_text"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client", "purpose": "Reuse bound native client launch, password login and actor hydration", "lifetime": "suite", "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "environment", "fixture", "client", "session"]},
+          {"ref": "tooling/acceptance/core/harness.py#call_async_harness", "purpose": "Reuse the existing asynchronous Harness transport", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]},
+          {"ref": "tooling/acceptance/drivers/tauri.py#TauriSession.semantic_replace_text", "purpose": "Reuse embedded WebDriver text input", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]}
+        ]
+      },
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_onboarding && python3 -m tooling.acceptance.gates.chat.lifecycle_onboarding_e2e",
       "timeout_seconds": 1800,
       "environment": "native-tauri-embedded-webdriver",

@@ -307,6 +307,9 @@ class NativeClientLifecycleLedger:
 
 
 def selected_native_runtime(gate_id: str) -> SelectedNativeRuntime | None:
+    from tooling.acceptance.core.e2e_preflight import preflight_gate_entry
+
+    preflight_gate_entry(gate_id, repo_root=REPO_ROOT)
     cell_id = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL", "").strip()
     if not cell_id:
         raise GateError(

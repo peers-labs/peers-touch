@@ -2207,9 +2207,11 @@ def validate_gate_catalog(
 def validate_gate_launch(gate_id: str, gate: dict[str, Any]) -> None:
     from tooling.acceptance.core.execution_identity import validate_execution_inputs
     from tooling.acceptance.core.execution_budget import ExecutionBudgetError
+    from tooling.acceptance.core.e2e_preflight import validate_e2e_definition
 
     try:
         validate_execution_inputs(gate_id, gate)
+        validate_e2e_definition(gate_id, gate)
     except ExecutionBudgetError as error:
         raise RuntimeError(f"STRUCTURAL_GAP: {error}") from error
     if "judgment" in gate:

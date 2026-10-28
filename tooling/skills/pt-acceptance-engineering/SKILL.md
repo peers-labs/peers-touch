@@ -138,6 +138,13 @@ The mandatory execution order is:
 9. Report, release resources, and update coverage
 ```
 
+Between Steps 6 and 7, consume the shared Runner's read-only E2E preparation
+before any build, Fixture reset, client launch or login. Declare the existing
+Journey and implementation refs in the selected Gate's `e2e` field. Enhance
+missing actions at their original owner and repeat the same selected dependency
+closure. Implementation availability never qualifies a resource or product proof.
+The exact contract is `docs/architecture/engineering/acceptance/e2e-execution-hook.md`.
+
 When two or more Scenarios share expensive services, actors, clients, devices,
 or login state, the owning Task must declare `runtimeReuse` and pass
 `pt-acceptance-pipeline-auditor`. Build, deploy, account provisioning, client

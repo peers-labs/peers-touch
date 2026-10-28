@@ -23,6 +23,7 @@ tooling/acceptance/
 │   ├── execution_budget.py         # 范围冻结、阶段deadline、成本和停止投影
 │   ├── scope_ownership.py          # 所选Catalog的Capability/Feature/Registry/Domain归属闭包
 │   ├── execution_graph.py          # 显式证明依赖、唯一生产者、原始manifest验证与效率投影
+│   ├── e2e_preflight.py            # 只读Journey/实现引用、依赖/生命周期检查及独立入口复核
 │   ├── execution_session.py        # 固定完整范围、有界请求、清理后续跑或归因修复
 │   ├── execution_identity.py       # 闭合输入、只读Owner探测、环境约束和逐Gate身份
 │   ├── input_artifacts.py          # 装备后捕获原始引用、inventory核验与续跑原始上下文

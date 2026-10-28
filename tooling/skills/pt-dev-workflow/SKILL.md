@@ -113,6 +113,13 @@ not stop ordinary work.
 
 ### 6. Verify
 
+For an explicit E2E request, dispatch through the shared Acceptance runner's
+preparation phase before expensive setup. Read its resolved Journey,
+implementation refs, dependencies and gaps. Enhance the referenced original
+owner before repeating the same selection. Development and formal policies
+use this one mechanism; optional Host Hooks do not trigger or authorize it.
+Source-only checks and `make desktop` stay outside E2E classification.
+
 Keep these evidence classes separate:
 
 - `SOURCE_CHECK`

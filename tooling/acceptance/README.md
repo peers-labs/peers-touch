@@ -23,7 +23,8 @@ conformance do not substitute for required UI or receiver-visible evidence.
 - `features/`: feature contracts, visible surfaces, and required Gates.
 - `registry.yaml`: changed-path impact mapping.
 - `domains/`: domain status and validation profiles.
-- `gates.yaml`: Gate commands, dependencies, inputs, timeouts, tiers, and cells.
+- `gates.yaml`: Gate commands, dependencies, inputs, timeouts, tiers, cells,
+  and explicit E2E Journeys with references to existing implementations.
 - `gates/`: stable product and framework evidence producers.
 - `search_capture.py`: shared Search capture scripts for Messaging and Social
   Desktop/Mobile Gates and source-contract replays; domain-neutral Core owns no
@@ -48,6 +49,7 @@ execution mechanics and must return `BUSINESS_INJECTION_REQUIRED` or
 ```text
 selection
   -> scope and dependency closure
+  -> read-only E2E implementation preflight
   -> execution-input qualification
   -> environment and runtime-cell provisioning
   -> bounded Gate operation
@@ -107,6 +109,31 @@ python3 tooling/scripts/acceptance-run.py --plan <plan.json>
 Use `--dry-run` before an expensive or remote scope to inspect the resolved
 closure. A path match alone does not authorize resources outside the selected
 scope.
+
+For an explicit E2E Gate, humans and Agents use the same entry:
+
+```bash
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-lifecycle-onboarding-e2e \
+  --runtime-cell desktop-macos-native --dry-run
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-lifecycle-onboarding-e2e \
+  --runtime-cell desktop-macos-native \
+  --execution-policy development --work-item onboarding-check
+```
+
+Omit the development options for formal Acceptance. Preview allocates no
+Evidence Store and starts no product resources. The runner reads declared
+public Python symbols without importing business modules, then returns
+`REUSE_IMPLEMENTATION`, `ENHANCE_REQUIRED`, and `QUALIFY_AT_OWNER`.
+Repair a gap at the referenced original owner and repeat the same selection.
+Only selected Gates and their explicit `dependsOn` closure execute.
+
+No IDE is required. Independent Python Gate entries recheck the same contract;
+entry code calls `preflight_gate_entry` before resource preparation outside
+`AcceptanceGate.run`. Source-only Gates have no inferred E2E classification.
+The preparation artifact is supporting information with `UNPROVEN` proof.
+See [the E2E contract](../../docs/architecture/engineering/acceptance/e2e-execution-hook.md).
 
 ## Execution Modes
 

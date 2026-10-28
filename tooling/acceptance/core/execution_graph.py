@@ -185,31 +185,58 @@ def request_dispatch_order(
 def prerequisite_results(
     gate: Mapping[str, Any], results: list[dict[str, Any]],
     source: Mapping[str, str], store: Any,
+    *, execution_policy: str = "acceptance",
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Require sealed current-source producer results, including cleanup."""
+    """Require original current-source results under the requested proof policy."""
+    from .evidence_store import ArtifactRef
     from .errors import EvidenceError
     from .proof import read_gate_proof
 
+    if execution_policy not in {"acceptance", "development"}:
+        raise ExecutionBudgetError("unknown prerequisite verification policy")
     by_id = {result["id"]: result for result in results}
     references: list[dict[str, Any]] = []
     unproven: list[str] = []
     for producer in dependencies(gate["id"], gate):
         result = by_id.get(producer, {})
-        reference = result.get("runManifest")
+        reference_field = "developmentManifest" if execution_policy == "development" else "runManifest"
+        reference = result.get(reference_field)
         if (
             result.get("status") != "passed"
             or result.get("completionStatus") != "DONE"
-            or result.get("proofStatus") != "PROVEN"
+            or result.get("proofStatus") != (
+                "NOT_APPLICABLE" if execution_policy == "development" else "PROVEN"
+            )
             or result.get("cleanupStatus") not in {"passed", "not-required"}
             or not reference
         ):
             unproven.append(producer)
             continue
         try:
-            read_gate_proof(store, producer, source, result=result)
+            if execution_policy == "development":
+                ref = ArtifactRef.from_dict(reference)
+                manifest = store.read_run_manifest(
+                    ref, manifest_sha256=ref.sha256, expected_gate_id=producer,
+                )
+                sealed = manifest["result"]
+                if (
+                    manifest.get("source") != dict(source)
+                    or ref.workspace_id != store.workspace_id
+                    or result.get("artifactKind") != "development-functional-result"
+                    or result.get("verificationClass") != "FUNCTIONAL_CHECK"
+                    or result.get("developmentRunId") != ref.run_id
+                    or any(sealed.get(key) != result.get(key) for key in (
+                        "id", "status", "completionStatus", "proofStatus",
+                        "cleanupStatus", "verificationClass", "artifactKind", "developmentArtifact",
+                    ))
+                    or sealed.get("secretScan", {}).get("status") != "passed"
+                ):
+                    raise ExecutionBudgetError(f"{producer}: original functional result changed")
+            else:
+                read_gate_proof(store, producer, source, result=result)
         except (EvidenceError, KeyError, TypeError, ValueError, OSError) as error:
             raise ExecutionBudgetError(f"{producer}: prerequisite source or proof mismatch") from error
-        references.append({"gateId": producer, "runManifest": reference})
+        references.append({"gateId": producer, reference_field: reference})
     return references, unproven
 
 
