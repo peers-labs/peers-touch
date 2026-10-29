@@ -167,3 +167,62 @@ func TestSettleTerminalAssistantMessageSkipsPreAdmissionTurn(t *testing.T) {
 		t.Fatalf("projected messages = %d, want 0 for pre-admission turn", count)
 	}
 }
+
+func TestTerminalMessagePreservesAdmittedLineageAndSelectedSibling(t *testing.T) {
+	for _, selected := range []string{"msg_user_2", "msg_sibling"} {
+		t.Run(selected, func(t *testing.T) {
+			db := openConversationAuthorityDB(t, "terminal_lineage_"+selected)
+			now := time.Now()
+			seedTerminalSettlementConversation(t, db, now)
+			rows := []persistence.AgentMessage{
+				{ID: "msg_root", ConversationID: "conv_terminal", Role: "user", Seq: 1},
+				{ID: "msg_sibling", ConversationID: "conv_terminal", Role: "assistant", Seq: 2, ParentMessageID: optionalString("msg_root")},
+				{ID: "msg_prior", ConversationID: "conv_terminal", Role: "assistant", Seq: 3, ParentMessageID: optionalString("msg_root")},
+				{ID: "msg_user_2", ConversationID: "conv_terminal", Role: "user", Seq: 4,
+					TurnID: optionalString("turn_terminal"), ParentMessageID: optionalString("msg_prior"),
+					BranchID: optionalString("branch_2"), ModelName: optionalString("ep-model-1")},
+			}
+			for i := range rows {
+				rows[i].Status = "completed"
+				if err := db.Create(&rows[i]).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := db.Model(&persistence.Conversation{}).Where("id = ?", "conv_terminal").
+				Update("active_branch_message_id", selected).Error; err != nil {
+				t.Fatal(err)
+			}
+			settle := func() error {
+				return db.Transaction(func(tx *gorm.DB) error {
+					return settleTerminalAssistantMessageTx(context.Background(), tx,
+						"turn_terminal", "conv_terminal", "cancelled", []string{"pending"}, nil, now)
+				})
+			}
+			if err := settle(); err != nil {
+				t.Fatal(err)
+			}
+			if err := settle(); err != nil {
+				t.Fatal(err)
+			}
+			var assistants []persistence.AgentMessage
+			if err := db.Where("turn_id = ? AND role = ?", "turn_terminal", "assistant").Find(&assistants).Error; err != nil {
+				t.Fatal(err)
+			}
+			if len(assistants) != 1 || revisionStringValue(assistants[0].ParentMessageID) != "msg_user_2" ||
+				revisionStringValue(assistants[0].BranchID) != "branch_2" {
+				t.Fatalf("terminal projection lost admitted lineage: %+v", assistants)
+			}
+			var conversation persistence.Conversation
+			if err := db.First(&conversation, "id = ?", "conv_terminal").Error; err != nil {
+				t.Fatal(err)
+			}
+			expected := selected
+			if selected == "msg_user_2" {
+				expected = assistants[0].ID
+			}
+			if conversation.ActiveBranchMessageID != expected {
+				t.Fatalf("selected head = %s, want %s", conversation.ActiveBranchMessageID, expected)
+			}
+		})
+	}
+}

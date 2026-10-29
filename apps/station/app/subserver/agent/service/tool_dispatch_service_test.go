@@ -37,6 +37,11 @@ type toolDispatchFixture struct {
 func newToolDispatchFixture(t *testing.T) toolDispatchFixture {
 	t.Helper()
 	db := openConversationAuthorityDB(t, "tool_dispatch_"+strings.ReplaceAll(t.Name(), "/", "_"))
+	return newToolDispatchFixtureWithDB(t, db)
+}
+
+func newToolDispatchFixtureWithDB(t *testing.T, db *gorm.DB) toolDispatchFixture {
+	t.Helper()
 	if err := db.AutoMigrate(
 		&persistence.ToolCall{},
 		&persistence.ClientCapabilityLease{},
@@ -1159,6 +1164,7 @@ func TestToolDispatchServiceMapsRetiredToolToUnknownBeforeProjection(t *testing.
 		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
 		true,
 	)
+	fixture.seedTurnAuthority(t, proposal)
 	retiredAt := fixture.now.Add(time.Second)
 	if err := fixture.db.Model(&persistence.CapabilityManifest{}).
 		Where(
@@ -1267,6 +1273,7 @@ func TestToolDispatchServiceKeepsAuthorityDriftInvalidSourceState(t *testing.T) 
 				model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
 				true,
 			)
+			fixture.seedTurnAuthority(t, proposal)
 			test.mutate(t, fixture, proposal)
 			projected := false
 			decisions, projectionCommitted, err :=
@@ -1303,6 +1310,7 @@ func TestToolDispatchServiceReplaysPinnedBatchAfterBindingDisabled(t *testing.T)
 		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
 		true,
 	)
+	fixture.seedTurnAuthority(t, proposal)
 	projectionCount := 0
 	first, projected, err := fixture.service.proposeAuthorizedBatchWithProjection(
 		context.Background(),
@@ -1378,6 +1386,7 @@ func TestToolDispatchServiceProjectionFailureRollsBackNewBatch(t *testing.T) {
 		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
 		true,
 	)
+	fixture.seedTurnAuthority(t, proposal)
 	projectionErr := errors.New("projection failed")
 	decisions, projected, err :=
 		fixture.service.proposeAuthorizedBatchWithProjection(

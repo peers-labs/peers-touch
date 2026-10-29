@@ -573,7 +573,6 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
   const sendDisabled =
     (!input.trim() && readyAttachments.length === 0)
-    || isStreaming
     || uploading
     || failed
     || !readinessCanSend
