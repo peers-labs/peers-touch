@@ -44,6 +44,11 @@ activation keep their respective behavior.
 The Desktop manifest requires Tauri 2.12.2, which exposes the launch activation
 control. Verify the version resolved in the Desktop Cargo lockfile; a different
 SDK installed in the global Cargo cache does not establish the compiled API.
+Semantic startup sets `activate_ignoring_other_apps(false)` on the Builder and
+Accessory policy before the event loop. The initial visible window is unfocused;
+setup must not hide it or switch through Prohibited and later presentation.
+The native Cell's prelaunch and `launch-ready` samples independently verify
+that the compiled startup follows this contract.
 
 The Native Cell freezes the real operator before launch, rejects a baseline
 whose PID is the target, and preserves the same baseline through readiness,

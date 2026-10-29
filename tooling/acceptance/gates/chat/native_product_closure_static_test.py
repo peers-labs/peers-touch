@@ -1957,7 +1957,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, self.source)
 
-    @unittest.skip("pending post-merge port to the AXReadSession macOS driver (PR #163 follow-up)")
     def test_macos_file_chooser_selection_binds_exact_staged_path(self) -> None:
         adapter = MacOSNativeDesktopAdapter(
             NativeInputMode.SEMANTIC_NON_INTRUSIVE
