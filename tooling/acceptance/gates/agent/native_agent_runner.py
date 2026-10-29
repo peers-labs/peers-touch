@@ -606,7 +606,14 @@ class AgentNativeJourney:
         )
         self.runtime_profile.chmod(0o600)
 
-    def start(self, *, require_initial_route: bool = True) -> None:
+    def start(
+        self,
+        *,
+        require_initial_route: bool = True,
+        restore_session: bool | None = None,
+    ) -> None:
+        if restore_session is None:
+            restore_session = not require_initial_route
         cell_id = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL", "").strip()
         if self.journey.startswith("chat-"):
             require(bool(cell_id), "Native Chat requires an explicit Runtime Cell")
@@ -626,7 +633,7 @@ class AgentNativeJourney:
             self.tauri_driver = self.runtime_binding.create_bound_session(
                 self.client["id"],
                 NativeLaunchOptions(
-                    restore_session=not require_initial_route,
+                    restore_session=restore_session,
                     storage_fixtures=(
                         (resolve_chat_identity_fixture(self.profile_env, self.actor_ptid),)
                         if self.journey.startswith("chat-") and require_initial_route
@@ -728,7 +735,7 @@ class AgentNativeJourney:
             "reused": True,
         }
 
-    def restart_native_runtime(self) -> dict[str, Any]:
+    def restart_native_runtime(self, *, reconfigure_station: bool = False) -> dict[str, Any]:
         require(
             self.tauri_driver is not None,
             "native runtime is not started",
@@ -737,7 +744,14 @@ class AgentNativeJourney:
             self.tauri_driver.stop(preserve_state=True)
             self.tauri_driver = None
             self.driver = None
-            self.start(require_initial_route=False)
+            # The public Station origin is restored before this relaunch;
+            # a session-restore launch would skip station reconfiguration and
+            # keep observing the stale loopback binding, so origin-toggling
+            # journeys must rebind to produce a fresh generation proof.
+            self.start(
+                require_initial_route=False,
+                restore_session=not reconfigure_station,
+            )
             return {"restarted": True, "storageRootPreserved": True}
         self.tauri_driver.stop()
         self.tauri_driver = None
@@ -2806,7 +2820,10 @@ class AgentNativeJourney:
             ),
         )
         recovered_turn_id = str(recoverable["operation"]["turnId"])
-        self.step("restart_active_native_runtime", self.restart_native_runtime)
+        self.step(
+            "restart_active_native_runtime",
+            lambda: self.restart_native_runtime(reconfigure_station=True),
+        )
         self.step("restore_agent_navigation", lambda: self.click_primary_navigation("agent", "Agent after restart"))
         self.step(
             "recovered_stop_native",
@@ -2843,7 +2860,10 @@ class AgentNativeJourney:
             "recovered_terminal_visible",
             lambda: self.wait_visible_element(terminal_selector, "visible recovered cancellation"),
         )
-        self.step("restart_terminal_native_runtime", self.restart_native_runtime)
+        self.step(
+            "restart_terminal_native_runtime",
+            lambda: self.restart_native_runtime(reconfigure_station=True),
+        )
         self.step("reload_agent_navigation", lambda: self.click_primary_navigation("agent", "reloaded Agent"))
         self.dom_evidence["reloaded"] = self.step(
             "terminal_history_reloaded",
