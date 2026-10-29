@@ -120,7 +120,7 @@ class MacOSAccessibilityResponsivenessTests(unittest.TestCase):
     ]:
         probe = _FILE_CHOOSER_SELECTION_PROBE.split("try:\n    home_path =")[0]
         probe += """
-panel = open_panel()
+panel = open_panel(application)
 sys.stdout.write(json.dumps({"panelFound": bool(panel)}))
 if panel:
     core_foundation.CFRelease(panel)

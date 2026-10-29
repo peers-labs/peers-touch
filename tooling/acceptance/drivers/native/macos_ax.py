@@ -17,6 +17,20 @@ _READ_BUDGET_SECONDS = 1.5
 _MESSAGE_TIMEOUT_SECONDS = 0.5
 
 
+class NativeAXReadUnavailable(RuntimeError):
+    def __init__(
+        self, attribute: str, status: int | None, value_present: bool,
+        elapsed_seconds: float, *, deadline_exceeded: bool = False,
+    ) -> None:
+        self.observed = {
+            "axAttribute": attribute, "axStatus": status,
+            "valuePresent": value_present,
+            "axReadElapsedSeconds": elapsed_seconds,
+            "focusDeadlineExceeded": deadline_exceeded,
+        }
+        super().__init__(f"{attribute} inspection failed: AX error {status}")
+
+
 class AXReadSession:
     def __init__(
         self, ax: ctypes.CDLL, cf: ctypes.CDLL, *, deadline: float,
@@ -57,7 +71,9 @@ class AXReadSession:
             if remaining <= 0:
                 if error in _TRANSIENT_READ_ERRORS:
                     return error
-                raise RuntimeError(f"{name} inspection exceeded the AX read budget")
+                raise NativeAXReadUnavailable(
+                    name, None, False, 0.0, deadline_exceeded=True,
+                )
             self._check(
                 self.ax.AXUIElementSetMessagingTimeout(
                     element, min(_MESSAGE_TIMEOUT_SECONDS, remaining),
@@ -79,7 +95,11 @@ class AXReadSession:
 
     def copy_attribute(
         self, element: _REF, name: str, *, required: bool = False,
+        deadline: float | None = None,
     ) -> _REF | None:
+        if deadline is not None:
+            self.read_deadline = min(self.read_deadline, deadline)
+        started = time.monotonic()
         key = self.string(name)
         value = _REF()
 
@@ -94,12 +114,18 @@ class AXReadSession:
 
         try:
             error = self.read(element, name, copy)
+            elapsed = time.monotonic() - started
+            expired = time.monotonic() >= self.read_deadline
+            if expired:
+                raise NativeAXReadUnavailable(
+                    name, error, bool(value), elapsed, deadline_exceeded=True,
+                )
             if error != 0:
                 if required or error not in _OPTIONAL_ABSENCE:
-                    self._check(error, f"{name} inspection")
+                    raise NativeAXReadUnavailable(name, error, bool(value), elapsed)
                 return None
-            if required and not value:
-                raise RuntimeError(f"{name} inspection returned no value")
+            if not value:
+                raise NativeAXReadUnavailable(name, error, False, elapsed)
             result, value = value, _REF()
             return result
         finally:
