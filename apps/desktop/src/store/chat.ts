@@ -3407,11 +3407,20 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   stopOperation: (sessionKey: string) => {
     const stateBeforeStop = get();
-    const direct = stateBeforeStop.operations[sessionKey];
-    const entry = direct && isActiveOperation(direct) && !direct.awaitingAdmission
-      ? [sessionKey, direct] as const
-      : sessionOperationEntries(stateBeforeStop.operations, sessionKey)
-        .find(([, operation]) => isActiveOperation(operation) && !operation.awaitingAdmission);
+    const eligible = (operation: ChatOperation | undefined): operation is ChatOperation =>
+      Boolean(operation && isActiveOperation(operation) && !operation.awaitingAdmission);
+    // With FIFO queueing, a queued successor can occupy the session key
+    // while the still-running predecessor lives under a parallel key.
+    // Stop must durably cancel an admitted turn (bound turnId): selecting
+    // the unbound queued op would only tear down the local stream and leave
+    // the running turn orphaned until it completes.
+    const entries = sessionOperationEntries(stateBeforeStop.operations, sessionKey)
+      .filter(([, operation]) => eligible(operation));
+    // Prefer the admitted running turn even when the session key is held by
+    // an unbound queued successor; without a bound turn, stop the first
+    // active operation (pre-admission local cancellation, as before).
+    const bound = entries.find(([, operation]) => Boolean(operation.turnId));
+    const entry = bound ?? entries[0];
     if (!entry) return;
     const [operationKey, op] = entry;
     const conversationKey = op.sessionKey;
