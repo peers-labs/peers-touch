@@ -88,6 +88,22 @@ Binding consumes qualification and the shared picker uses the same observation
 contract for its visible trigger and exact-PID native selection. Permission,
 physical focus and HID remain separately guarded.
 
+The XPC-hosted column browser advertises a mutable `AXSelectedChildren`
+but the cross-service write is rejected with -25205, and row
+`AXOpen`/`AXConfirm` do not commit a file. The exact-PID semantic fallback
+commits the panel Search field (`AXIdentifier="Search"`) with
+`AXValue` + `AXConfirm`, requires exactly one `AXFilename` match, selects
+the `AXOutline ListView` row through `AXSelectedRows`, then presses OK.
+No match, ambiguous matches, or a panel left open stay as an unavailable
+semantic sentinel rather than a fabricated selection; a unique qualification
+filename makes the single match exact and the parent still verifies path and
+file bytes. The loopback HTTP fault proxy is switched in only after the bound
+session discovers the reviewed manifest origin; Station canonical origin is
+restarted to loopback then, and restored to the public origin before any native
+restart/rebind. Launching a session against the loopback origin before the
+public-origin `station_add` completes yields
+`station_discovery_invalid: Endpoint statement fields are invalid`.
+
 Run `test_file_chooser_qualification` to reject copied source/Cell identity,
 missing/reordered phases, unclosed panels, changed file bytes, invalid pointer
 numbers and an intermediate operator mismatch followed by a matching sample.

@@ -1026,11 +1026,15 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
             for item in mounts
             if isinstance(item, Mapping)
         } if isinstance(mounts, list) else {}
+        # Compose defaults the optional host-CLI bind to /dev/null when the
+        # per-env mount is unset; that disables the feature and must read as
+        # "absent", exactly like the entrypoint's regular-file gate.
+        def real_mount_source(destination: str) -> str:
+            source = mount_sources.get(destination, "").strip()
+            return "" if source in ("", "/dev/null") else source
+
         binary = env.get("PEERS_HOST_CLI_BIN", "").strip()
-        binary_source = mount_sources.get(
-            "/usr/local/bin/host-cli-bin",
-            "",
-        ).strip()
+        binary_source = real_mount_source("/usr/local/bin/host-cli-bin")
         if bool(binary) != bool(binary_source):
             raise BlockedError(
                 reason="Station CLI runtime binding is incomplete",
@@ -1043,7 +1047,7 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
             f"PEERS_HOST_CLI_BIN={binary}",
         ]
         cli_home = env.get("PEERS_HOST_CLI_HOME", "").strip()
-        home_source = mount_sources.get("/root/.host-cli-home", "").strip()
+        home_source = real_mount_source("/root/.host-cli-home")
         if bool(cli_home) != bool(home_source):
             raise BlockedError(
                 reason="Station CLI home binding is incomplete",

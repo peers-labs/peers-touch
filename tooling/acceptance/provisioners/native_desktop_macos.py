@@ -671,7 +671,12 @@ class NativeDesktopMacOSProvisioner:
         with tempfile.TemporaryDirectory(
             prefix="PeersTouchChooserQualification-", dir=Path.home(),
         ) as raw:
-            target = Path(raw).resolve() / "qualification.bin"
+            # Unique filename makes the exact-PID AX search fallback match a
+            # single row; the exact path and file hash are still read back.
+            target = (
+                Path(raw).resolve()
+                / f"qualification-{secrets.token_hex(6)}.bin"
+            )
             target.write_bytes(secrets.token_bytes(32))
             fixture_hash = _file_sha256(target)
             baseline = operator.file_chooser(

@@ -422,14 +422,53 @@ class MacOSStatusItemAdapterTests(unittest.TestCase):
                 with self.assertRaisesRegex(DriverError, "did not select"):
                     adapter.select_file_chooser_path_to_process(123, target.name)
 
-    def test_chooser_probe_reports_unsupported_list_selection_as_a_sentinel(self) -> None:
-        self.assertIn("class ListSelectionUnsupported", _FILE_CHOOSER_SELECTION_PROBE)
-        self.assertIn("list-selection-unsupported", _FILE_CHOOSER_SELECTION_PROBE)
-        compile(
-            _FILE_CHOOSER_SELECTION_PROBE,
-            "_FILE_CHOOSER_SELECTION_PROBE",
-            "exec",
-        )
+    def test_chooser_probe_falls_back_to_exact_pid_search_commit(self) -> None:
+        probe = _FILE_CHOOSER_SELECTION_PROBE
+        self.assertIn("class ListSelectionUnsupported", probe)
+        self.assertIn("def select_file_via_search(", probe)
+        # The semantic fallback commits through the Search field and rows.
+        self.assertIn('"AXIdentifier") == "Search"', probe)
+        self.assertIn('perform_action(search[-1], "AXConfirm")', probe)
+        self.assertIn('"AXSelectedRows"', probe)
+        # Ambiguous search results remain unsupported, never arbitrary.
+        self.assertIn('"search-multiple-matches"', probe)
+        compile(probe, "_FILE_CHOOSER_SELECTION_PROBE", "exec")
+
+    def test_search_unavailability_sentinels_fall_back_without_faking(self) -> None:
+        adapter = MacOSNativeDesktopAdapter(NativeInputMode.EXCLUSIVE_NATIVE_INPUT)
+        owner = NativeControlSnapshot(frontmost=True, actual_frontmost_pid=123)
+        with tempfile.NamedTemporaryFile(dir=Path.home(), suffix=".txt") as target:
+            for reason in (
+                "search-field-unavailable",
+                "search-no-match",
+                "search-multiple-matches",
+                "search-selection-unsupported",
+                "search-confirm-unavailable",
+                "search-panel-remained-open",
+            ):
+                with (
+                    mock.patch.object(adapter, "_validated_process_id", return_value=123),
+                    mock.patch.object(adapter, "focused_control", return_value=owner),
+                    mock.patch(
+                        "tooling.acceptance.drivers.native.macos.subprocess.run",
+                        return_value=subprocess.CompletedProcess(
+                            [],
+                            0,
+                            json.dumps({
+                                "selected": False,
+                                "reason": reason,
+                                "path": target.name,
+                            }),
+                            "",
+                        ),
+                    ),
+                ):
+                    self.assertIsNone(
+                        adapter.select_file_chooser_path_to_process(
+                            123, target.name
+                        ),
+                        reason,
+                    )
 
 
 class AXTransientReadRetryTest(unittest.TestCase):

@@ -835,18 +835,33 @@ def select_visible_item(filename):
     if item_path is None or button_path is None:
         release_path(item_path)
         release_path(button_path)
-        raise RuntimeError(
+        # The current browser view exposes no walkable/committable row;
+        # fall back to exact-PID search commit instead of failing the cell.
+        raise ListSelectionUnsupported(
             f"Native file chooser item is unavailable: {filename}"
         )
     try:
         selection_container_index = next(
-            index
-            for index in range(len(item_path) - 1, -1, -1)
-            if attribute_is_settable(
-                item_path[index],
-                "AXSelectedChildren",
-            )
+            (
+                index
+                for index in range(len(item_path) - 1, -1, -1)
+                if attribute_is_settable(
+                    item_path[index],
+                    "AXSelectedChildren",
+                )
+            ),
+            None,
         )
+        if (
+            selection_container_index is None
+            or selection_container_index + 1 >= len(item_path)
+        ):
+            # List/column browsers that expose no mutable selection admit
+            # no list write (the panel may persist in List view); the exact
+            # PID search-commit fallback owns selection.
+            raise ListSelectionUnsupported(
+                "no mutable AXSelectedChildren container"
+            )
         selection_item = item_path[selection_container_index + 1]
         values = (CFRef * 1)(selection_item)
         selection = core_foundation.CFArrayCreate(
@@ -878,6 +893,146 @@ def select_visible_item(filename):
         release_path(button_path)
 
 
+def search_in_panel(predicate, timeout):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            panel = open_panel(application)
+        except NativeAXWindowsUnavailable:
+            panel = None
+        if panel is not None:
+            try:
+                found = find_path(panel, predicate)
+            finally:
+                core_foundation.CFRelease(panel)
+            if found is not None:
+                return found
+        time.sleep(0.1)
+    return None
+
+
+def collect_panel_paths(predicate, depth_limit=14):
+    try:
+        panel = open_panel(application)
+    except NativeAXWindowsUnavailable:
+        return []
+    if panel is None:
+        return []
+    found = []
+    owned = []
+    frontier = [(panel,)]
+    depth = 0
+    try:
+        while frontier and depth <= depth_limit:
+            descendants = []
+            for path in frontier:
+                if predicate(path[-1], path):
+                    found.append(
+                        tuple(core_foundation.CFRetain(node) for node in path)
+                    )
+                children = copy_attribute(path[-1], "AXChildren")
+                if children:
+                    owned.append(children)
+                descendants.extend(
+                    (*path, child) for child in array_items(children)
+                )
+            frontier = descendants
+            depth += 1
+    finally:
+        for children in owned:
+            core_foundation.CFRelease(children)
+        core_foundation.CFRelease(panel)
+    return found
+
+
+def select_file_via_search(filename):
+    # macOS Search results expose an AXOutline ("ListView") whose
+    # AXSelectedRows mutation is accepted, unlike the XPC-hosted column
+    # browser's AXSelectedChildren (-25205). Commit the field through
+    # AXConfirm and require one exact filename match; ambiguous matches
+    # remain unsupported and never select an arbitrary row.
+    search = search_in_panel(
+        lambda element, _: copied_text(element, "AXIdentifier") == "Search",
+        8.0,
+    )
+    if search is None:
+        return False, "search-field-unavailable"
+    try:
+        value = core_foundation.CFStringCreateWithCString(
+            None, filename.encode("utf-8"), UTF8,
+        )
+        try:
+            reads.set_attribute(search[-1], "AXValue", value)
+            perform_action(search[-1], "AXConfirm")
+        finally:
+            core_foundation.CFRelease(value)
+    finally:
+        release_path(search)
+
+    deadline = time.monotonic() + 8.0
+    rows = []
+    while time.monotonic() < deadline:
+        rows = collect_panel_paths(
+            lambda element, _: copied_text(element, "AXFilename") == filename,
+        )
+        if rows:
+            break
+        time.sleep(0.2)
+    if not rows:
+        return False, "search-no-match"
+    if len(rows) != 1:
+        for row in rows:
+            release_path(row)
+        return False, "search-multiple-matches"
+
+    row = rows[0]
+    try:
+        container_index = next(
+            (
+                index
+                for index in range(len(row) - 1, -1, -1)
+                if attribute_is_settable(row[index], "AXSelectedRows")
+                or attribute_is_settable(row[index], "AXSelectedChildren")
+            ),
+            None,
+        )
+        if container_index is None:
+            return False, "search-selection-unsupported"
+        attribute = (
+            "AXSelectedRows"
+            if attribute_is_settable(row[container_index], "AXSelectedRows")
+            else "AXSelectedChildren"
+        )
+        values = (CFRef * 1)(row[container_index + 1])
+        selection = core_foundation.CFArrayCreate(None, values, 1, None)
+        try:
+            reads.set_attribute(
+                row[container_index], attribute, selection,
+            )
+        finally:
+            core_foundation.CFRelease(selection)
+    finally:
+        release_path(row)
+
+    button = search_in_panel(
+        lambda element, _: copied_text(element, "AXIdentifier") == "OKButton",
+        2.0,
+    )
+    if button is None:
+        return False, "search-confirm-unavailable"
+    try:
+        perform_action(button[-1], "AXPress")
+    finally:
+        release_path(button)
+
+    close_deadline = time.monotonic() + 5.0
+    while time.monotonic() < close_deadline:
+        if open_panel(application) is None:
+            return True, ""
+        time.sleep(0.05)
+    return False, "search-panel-remained-open"
+
+
 try:
     home_path = wait_for_path(
         lambda element, path: (
@@ -899,28 +1054,32 @@ try:
     # navigation; the first filename wait proves the resulting location.
     try:
         outline_index = next(
-            index
-            for index, ancestor in enumerate(home_path[:-1])
-            if copied_text(ancestor, "AXRole") == "AXOutline"
-            and copied_text(ancestor, "AXDescription") == "sidebar"
+            (
+                index
+                for index, ancestor in enumerate(home_path[:-1])
+                if copied_text(ancestor, "AXRole") == "AXOutline"
+                and copied_text(ancestor, "AXDescription") == "sidebar"
+            ),
+            None,
         )
-        values = (CFRef * 1)(home_path[outline_index + 1])
-        selection = core_foundation.CFArrayCreate(None, values, 1, None)
-        try:
-            reads.set_attribute(
-                home_path[outline_index], "AXSelectedRows", selection,
-            )
-        except RuntimeError:
-            if find_in_panel(
-                lambda element, _: (
-                    copied_text(element, "AXFilename") == path_parts[0]
+        if outline_index is not None:
+            values = (CFRef * 1)(home_path[outline_index + 1])
+            selection = core_foundation.CFArrayCreate(None, values, 1, None)
+            try:
+                reads.set_attribute(
+                    home_path[outline_index], "AXSelectedRows", selection,
                 )
-            ) is None:
-                raise RuntimeError(
-                    "Native file chooser Home sidebar selection is unavailable"
-                )
-        finally:
-            core_foundation.CFRelease(selection)
+            except RuntimeError:
+                if find_in_panel(
+                    lambda element, _: (
+                        copied_text(element, "AXFilename") == path_parts[0]
+                    )
+                ) is None:
+                    raise RuntimeError(
+                        "Native file chooser Home sidebar selection is unavailable"
+                    )
+            finally:
+                core_foundation.CFRelease(selection)
     finally:
         release_path(home_path)
 
@@ -953,17 +1112,19 @@ try:
             "Native file chooser remained open after file selection"
         )
 except ListSelectionUnsupported:
-    core_foundation.CFRelease(application)
-    sys.stdout.write(
-        json.dumps(
-            {
-                "selected": False,
-                "reason": "list-selection-unsupported",
-                "path": str(target_path),
-            }
+    committed, search_reason = select_file_via_search(path_parts[-1])
+    if not committed:
+        core_foundation.CFRelease(application)
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "selected": False,
+                    "reason": search_reason,
+                    "path": str(target_path),
+                }
+            )
         )
-    )
-    raise SystemExit(0)
+        raise SystemExit(0)
 except Exception as error:
     core_foundation.CFRelease(application)
     raise SystemExit(f"{type(error).__name__}: {error}")
@@ -1117,6 +1278,19 @@ class MacOSStatusItemSnapshot:
             },
             "menuItems": list(self.menu_items),
         }
+
+
+_SEMANTIC_SELECTION_UNAVAILABLE_REASONS = frozenset(
+    (
+        "list-selection-unsupported",
+        "search-field-unavailable",
+        "search-no-match",
+        "search-multiple-matches",
+        "search-selection-unsupported",
+        "search-confirm-unavailable",
+        "search-panel-remained-open",
+    )
+)
 
 
 class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
@@ -1707,10 +1881,11 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
         if (
             isinstance(result, dict)
             and result.get("selected") is False
-            and result.get("reason") == "list-selection-unsupported"
+            and result.get("reason") in _SEMANTIC_SELECTION_UNAVAILABLE_REASONS
         ):
-            # The panel browser rejects AX list mutation; the caller owns the
-            # location-field fallback. No selection result may be invented.
+            # The panel rejects exact-PID semantic selection (column list
+            # mutation, search field, or ambiguous results); the caller owns
+            # the fallback. No selection result may be invented.
             return None
         if (
             not isinstance(result, dict)

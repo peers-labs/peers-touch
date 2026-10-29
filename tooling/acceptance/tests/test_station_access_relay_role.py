@@ -1046,6 +1046,74 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         ):
             self.assertIn(assignment, argv)
 
+    def test_disposable_station_without_host_cli_treats_dev_null_as_absent(
+        self,
+    ) -> None:
+        config = _config("station")
+        transport = Mock()
+        transport.run_argv.side_effect = (
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="station-container\n", stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps([{
+                    "Config": {"Env": []},
+                    "Mounts": [
+                        {
+                            "Destination": "/usr/local/bin/host-cli-bin",
+                            "Source": "/dev/null",
+                        },
+                        {
+                            "Destination": "/root/.host-cli-home",
+                            "Source": "/dev/null",
+                        },
+                    ],
+                }]),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="", stderr="",
+            ),
+        )
+        config.transport = Mock(return_value=transport)
+        with (
+            patch.object(
+                PosixServiceRuntimeConfig, "transport",
+                return_value=transport,
+            ),
+            patch.object(
+                StationAccessRelayRoleProvisioner, "_remote_home",
+                return_value="/home/operator",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_deployment_environment_path",
+                return_value=Path("/tmp/station.env"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "load_env_file",
+                return_value={
+                    "PT_DEPLOY_RESTART_CMD": (
+                        "docker compose --env-file "
+                        "$HOME/peers-touch/station.env up -d station"
+                    )
+                },
+            ),
+        ):
+            StationAccessRelayRoleProvisioner._restart_station_origin(
+                config, "https://station.example",
+            )
+
+        argv = transport.run_argv.call_args.args[0]
+        self.assertFalse(
+            any("PEERS_HOST_CLI_BIN" in value or "PEERS_HOST_CLI_HOME" in value
+                for value in argv),
+            argv,
+        )
+
     def test_relay_ca_install_restarts_the_same_station_container(self) -> None:
         provisioner = StationAccessRelayRoleProvisioner(self.contract)
         config = _config("station")
