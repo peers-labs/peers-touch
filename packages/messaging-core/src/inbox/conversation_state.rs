@@ -4,8 +4,9 @@ use crate::contracts::{
     CryptoEndpoint, ReceiveCommitResult,
 };
 use crate::proto::chat::{
-    conversation_event, ConversationStateMarker, DeviceConsumptionReceipt, DurableDeviceInboxItem,
-    MemberRole, PreparedEndpointPayloadKind,
+    conversation_event, ConversationKind, ConversationScopeKind, ConversationStateMarker,
+    DeviceConsumptionReceipt, DurableDeviceInboxItem, MemberRole,
+    PreparedEndpointPayloadKind,
 };
 use crate::store::MessagingRepository;
 
@@ -13,12 +14,40 @@ use super::ClaimedItemConsumer;
 use prost::Message;
 use std::sync::Arc;
 
+/// Validate the Local/Federation scope carried by a ConversationCreated fact
+/// and return its authority post-state.
+///
+/// Local Direct scope intentionally carries an empty federation id because the
+/// scope is derived from the two participating Home Stations. Federation scope
+/// and every Group conversation still require a non-empty Federation id.
+fn validate_conversation_created_scope(
+    created: &crate::proto::chat::ConversationCreatedFact,
+) -> Result<&crate::proto::chat::ConversationAuthoritySnapshot, String> {
+    let post_state = created
+        .post_state
+        .as_ref()
+        .ok_or_else(|| "messaging conversation-state post-state is missing".to_string())?;
+    let scope = ConversationScopeKind::try_from(post_state.scope_kind).map_err(|_| {
+        "messaging conversation-state scope kind is invalid".to_string()
+    })?;
+    let federation_id = post_state.federation_id.trim();
+    let is_group = created.kind == ConversationKind::Group as i32;
+    if scope == ConversationScopeKind::Federation && federation_id.is_empty() {
+        return Err(
+            "messaging conversation-state Federation scope requires a federation id".to_string(),
+        );
+    }
+    if is_group && federation_id.is_empty() {
+        return Err("messaging group conversation-state requires a federation id".to_string());
+    }
+    Ok(post_state)
+}
+
 pub struct ConversationStateProcessor<R> {
     store: Arc<R>,
     endpoint: CryptoEndpoint,
     clock: fn() -> i64,
 }
-
 impl<R: MessagingRepository> ConversationStateProcessor<R> {
     pub fn new(
         store: Arc<R>,
@@ -74,13 +103,7 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
             Some(conversation_event::Payload::ConversationCreated(created)) => created,
             _ => return Err("messaging conversation-state event is unsupported".to_string()),
         };
-        let post_state = created
-            .post_state
-            .as_ref()
-            .filter(|state| !state.federation_id.trim().is_empty())
-            .ok_or_else(|| {
-                "messaging conversation-state Federation projection is missing".to_string()
-            })?;
+        let post_state = validate_conversation_created_scope(created)?;
         if !created
             .members
             .iter()
@@ -174,5 +197,67 @@ fn authority_member_projection(
 impl<R: MessagingRepository> ClaimedItemConsumer for ConversationStateProcessor<R> {
     fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_conversation_created_scope;
+    use crate::proto::chat::{
+        ConversationAuthoritySnapshot, ConversationCreatedFact,
+        ConversationKind, ConversationScopeKind,
+    };
+
+    fn created(kind: ConversationKind, scope: ConversationScopeKind, federation_id: &str) -> ConversationCreatedFact {
+        ConversationCreatedFact {
+            kind: kind as i32,
+            post_state: Some(ConversationAuthoritySnapshot {
+                kind: kind as i32,
+                federation_id: federation_id.to_string(),
+                scope_kind: scope as i32,
+                ..ConversationAuthoritySnapshot::default()
+            }),
+            ..ConversationCreatedFact::default()
+        }
+    }
+
+    #[test]
+    fn local_direct_accepts_empty_federation() {
+        let fact = created(
+            ConversationKind::Direct,
+            ConversationScopeKind::Local,
+            "",
+        );
+        let state = validate_conversation_created_scope(&fact).expect("local direct is valid");
+        assert_eq!(state.scope_kind, ConversationScopeKind::Local as i32);
+        assert!(state.federation_id.is_empty());
+    }
+
+    #[test]
+    fn federation_scope_requires_federation_id() {
+        let fact = created(
+            ConversationKind::Direct,
+            ConversationScopeKind::Federation,
+            "",
+        );
+        assert!(validate_conversation_created_scope(&fact).is_err());
+        let fact = created(
+            ConversationKind::Direct,
+            ConversationScopeKind::Federation,
+            "fed_1",
+        );
+        assert!(validate_conversation_created_scope(&fact).is_ok());
+    }
+
+    #[test]
+    fn group_always_requires_federation_id() {
+        let fact = created(ConversationKind::Group, ConversationScopeKind::Local, "");
+        assert!(validate_conversation_created_scope(&fact).is_err());
+        let fact = created(
+            ConversationKind::Group,
+            ConversationScopeKind::Federation,
+            "fed_1",
+        );
+        assert!(validate_conversation_created_scope(&fact).is_ok());
     }
 }
