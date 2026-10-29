@@ -9,7 +9,6 @@ owns:
   - apps/desktop/src/pages/SocialChatPage.tsx
   - apps/desktop/src/pages/ChatPage.tsx
   - apps/desktop/src/components/MessageBubble.tsx
-  - apps/desktop/src/components/MessageComposer.tsx
   - apps/desktop/src/components/ChatInput.tsx
 referenced-by:
   - docs/knowledge/invariants/mobile-chat-layout-boundaries.md
@@ -43,8 +42,8 @@ The failure mode is subtle: a visually acceptable bubble for short text can brea
 
 ## How to verify
 
-- `rg "position:\\s*absolute|absolute" apps/mobile/src/pages/ChatPage.tsx apps/mobile/src/features/chat apps/desktop/src/components/chat apps/desktop/src/pages/SocialChatPage.tsx apps/desktop/src/pages/ChatPage.tsx apps/desktop/src/components/MessageBubble.tsx apps/desktop/src/components/MessageComposer.tsx apps/desktop/src/components/ChatInput.tsx` — review every hit and confirm it does not place actions or metadata over primary message content.
-- `rg "ContextMenu|Dropdown|Popover|BottomSheet|ActionAnchor|MetaRow|MessageBubble|Composer" apps/mobile/src/pages/ChatPage.tsx apps/mobile/src/features/chat apps/desktop/src/components/chat apps/desktop/src/pages/SocialChatPage.tsx apps/desktop/src/pages/ChatPage.tsx apps/desktop/src/components/MessageBubble.tsx apps/desktop/src/components/MessageComposer.tsx apps/desktop/src/components/ChatInput.tsx` — review message action and metadata placement for collision handling.
+- `rg "position:\\s*absolute|absolute" apps/mobile/src/pages/ChatPage.tsx apps/mobile/src/features/chat apps/desktop/src/components/chat apps/desktop/src/pages/SocialChatPage.tsx apps/desktop/src/pages/ChatPage.tsx apps/desktop/src/components/MessageBubble.tsx apps/desktop/src/components/ChatInput.tsx` — review every hit and confirm it does not place actions or metadata over primary message content.
+- `rg "ContextMenu|Dropdown|Popover|BottomSheet|ActionAnchor|MetaRow|MessageBubble|Composer" apps/mobile/src/pages/ChatPage.tsx apps/mobile/src/features/chat apps/desktop/src/components/chat apps/desktop/src/pages/SocialChatPage.tsx apps/desktop/src/pages/ChatPage.tsx apps/desktop/src/components/MessageBubble.tsx apps/desktop/src/components/ChatInput.tsx` — review message action and metadata placement for collision handling.
 - Manual acceptance: check text, image, file, voice, failed, sending, and system messages near the top, middle, and bottom of the conversation viewport.
 - Measure each message body/status/following body: metadata gap stays at 4px,
   following gap is at least 6px, no empty interaction row remains. Check
