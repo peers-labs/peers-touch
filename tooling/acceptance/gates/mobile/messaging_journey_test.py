@@ -167,20 +167,30 @@ class FakeMessagingSession:
                 self.contact_open_preparing_count -= 1
                 raise DriverError("mobile.contacts.conversationPreparing")
             peer_ptid = str(body["peerPtid"])
-            federation_id = str(body["federationId"])
-            accepted = any(
-                request["status"] == 2
-                and request["federationId"] == federation_id
-                and {
-                    request["senderPtid"],
-                    request["receiverPtid"],
-                }
-                == {self.actor.ptid, peer_ptid}
-                for request in self.network.friend_requests
-            )
+            federation_id = body.get("federationId")
+            if federation_id is None:
+                # Local scope: the same-Station relationship is seeded by the
+                # provisioner; no federated friend request is involved.
+                peer = self.network.actors.get(peer_ptid)
+                accepted = (
+                    peer is not None
+                    and peer.station_peer_id == self.actor.station_peer_id
+                )
+            else:
+                federation_id = str(federation_id)
+                accepted = any(
+                    request["status"] == 2
+                    and request["federationId"] == federation_id
+                    and {
+                        request["senderPtid"],
+                        request["receiverPtid"],
+                    }
+                    == {self.actor.ptid, peer_ptid}
+                    for request in self.network.friend_requests
+                )
             if not accepted:
                 raise AssertionError(
-                    "Contact Direct creation requires an accepted Federation"
+                    "Contact Direct creation requires an accepted relationship"
                 )
             conversation_id = "-".join(
                 sorted((self.actor.ptid, peer_ptid))
@@ -533,7 +543,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         message = self.network.messages[result["conversationId"]][0]
         self.assertIn("ptid:bob", message["readByPtids"])
 
-    def test_same_station_direct_uses_catalog_prefix(self) -> None:
+    def test_same_station_direct_is_local_and_federation_free(self) -> None:
         receiver = MessagingActor(
             client_id="sim-ios-peer",
             role="bob",
@@ -542,27 +552,32 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             ptid="ptid:bob",
             account_ref="station-account:bob@p.t",
             federated_handle="@bob@station-primary.example",
-            federation_id=self.sender.federation_id,
+            federation_id="",
         )
         receiver_session = FakeMessagingSession(self.network, receiver)
         self.sender_session.social_runtime_active = True
         receiver_session.social_runtime_active = True
 
-        self.journey._create_direct(
-            self.sender_session,
-            receiver_session,
-            self.sender,
-            receiver,
-        )
-        self.journey._create_direct(
-            self.sender_session,
-            receiver_session,
-            self.sender,
-            receiver,
-        )
+        for _ in range(2):
+            self.journey._create_direct(
+                self.sender_session,
+                receiver_session,
+                self.sender,
+                receiver,
+            )
 
-        self.assertEqual(self.sender_session.people_search_queries, ["bob", "bob"])
-        self.assertEqual(self.sender_session.friend_request_send_count, 1)
+        # Local scope never performs a federated people search or federated
+        # friend request; the Station derives scope from the shared Station.
+        self.assertEqual(self.sender_session.people_search_queries, [])
+        self.assertEqual(self.sender_session.friend_request_send_count, 0)
+        self.assertEqual(
+            self.sender_session.contact_open_inputs,
+            [{"peerPtid": "ptid:bob"}, {"peerPtid": "ptid:bob"}],
+        )
+        self.assertEqual(
+            self.journey.direct_scope(self.sender, receiver),
+            "local",
+        )
 
     def test_contact_direct_waits_for_effective_write_admission(self) -> None:
         self.journey.authenticate(self.sender_session, self.sender, password="1")
