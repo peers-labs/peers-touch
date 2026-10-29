@@ -22,7 +22,7 @@ type Participant struct {
 type CreateInput struct {
 	ID               valueobject.ConversationID
 	Kind             valueobject.ConversationKind
-	FederationID     valueobject.FederationID
+	Scope            valueobject.Scope
 	AuthorityStation valueobject.StationID
 	AuthorityEpoch   valueobject.AuthorityEpoch
 	Owner            valueobject.PTID
@@ -46,7 +46,7 @@ type Snapshot struct {
 	ID               valueobject.ConversationID
 	Kind             valueobject.ConversationKind
 	Status           valueobject.ConversationStatus
-	FederationID     valueobject.FederationID
+	Scope            valueobject.Scope
 	AuthorityStation valueobject.StationID
 	AuthorityEpoch   valueobject.AuthorityEpoch
 	Owner            valueobject.PTID
@@ -62,7 +62,7 @@ type Conversation struct {
 	id               valueobject.ConversationID
 	kind             valueobject.ConversationKind
 	status           valueobject.ConversationStatus
-	federationID     valueobject.FederationID
+	scope            valueobject.Scope
 	authorityStation valueobject.StationID
 	authorityEpoch   valueobject.AuthorityEpoch
 	owner            valueobject.PTID
@@ -118,7 +118,7 @@ type MemberAuthorityCommand struct {
 	Muted                  *bool
 	MutedUntil             *time.Time
 	ObservedAuthorityHead  valueobject.AuthorityHead
-	ObservedFederationID   valueobject.FederationID
+	ObservedScope          valueobject.Scope
 	ObservedAuthorityEpoch valueobject.AuthorityEpoch
 	Deadline               time.Time
 }
@@ -208,11 +208,14 @@ func create(
 	membershipEpoch valueobject.Epoch,
 	mlsEpoch valueobject.Epoch,
 ) (*Conversation, Transition, error) {
-	if input.ID == "" || input.FederationID == "" ||
+	if input.ID == "" || input.Scope.IsZero() ||
 		input.AuthorityStation == "" || input.AuthorityEpoch == 0 ||
 		input.CommandID == "" ||
 		input.Creator.Validate() != nil || input.CreatedAt.IsZero() {
 		return nil, Transition{}, invalid("aggregate.create", "input", "complete creation identity and time are required")
+	}
+	if input.Kind == valueobject.ConversationKindGroup && !input.Scope.IsFederation() {
+		return nil, Transition{}, invalid("aggregate.create", "scope", "group conversations require a federation scope")
 	}
 	if err := input.Kind.Validate(); err != nil {
 		return nil, Transition{}, err
@@ -224,7 +227,7 @@ func create(
 		id:               input.ID,
 		kind:             input.Kind,
 		status:           valueobject.ConversationStatusActive,
-		federationID:     input.FederationID,
+		scope:            input.Scope,
 		authorityStation: input.AuthorityStation,
 		authorityEpoch:   input.AuthorityEpoch,
 		owner:            input.Owner,
@@ -343,7 +346,7 @@ func create(
 }
 
 func Rehydrate(snapshot Snapshot) (*Conversation, error) {
-	if snapshot.ID == "" || snapshot.FederationID == "" ||
+	if snapshot.ID == "" || snapshot.Scope.IsZero() ||
 		snapshot.AuthorityStation == "" || snapshot.AuthorityEpoch == 0 ||
 		snapshot.Owner == "" ||
 		snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.IsZero() {
@@ -374,22 +377,31 @@ func Rehydrate(snapshot Snapshot) (*Conversation, error) {
 			"sequence and event hash disagree",
 		)
 	}
-	if snapshot.Kind == valueobject.ConversationKindGroup &&
-		(snapshot.Head.MembershipEpoch == 0 ||
+	if snapshot.Kind == valueobject.ConversationKindGroup {
+		if !snapshot.Scope.IsFederation() {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeInvalidArgument,
+				"aggregate.rehydrate",
+				"scope",
+				"group conversations require a federation scope",
+			)
+		}
+		if snapshot.Head.MembershipEpoch == 0 ||
 			snapshot.Head.MLSEpoch == 0 ||
-			snapshot.Head.MembershipEpoch < snapshot.Head.MLSEpoch) {
-		return nil, conversationdomain.NewError(
-			conversationdomain.ErrorCodeStaleMembershipEpoch,
-			"aggregate.rehydrate",
-			"authority_head",
-			"group membership epoch must be at least the non-zero MLS epoch",
-		)
+			snapshot.Head.MembershipEpoch < snapshot.Head.MLSEpoch {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeStaleMembershipEpoch,
+				"aggregate.rehydrate",
+				"authority_head",
+				"group membership epoch must be at least the non-zero MLS epoch",
+			)
+		}
 	}
 	conversation := &Conversation{
 		id:               snapshot.ID,
 		kind:             snapshot.Kind,
 		status:           snapshot.Status,
-		federationID:     snapshot.FederationID,
+		scope:            snapshot.Scope,
 		authorityStation: snapshot.AuthorityStation,
 		authorityEpoch:   snapshot.AuthorityEpoch,
 		owner:            snapshot.Owner,
@@ -445,7 +457,7 @@ func ReconcileCommittedMembershipProjection(
 	if post.ID != current.ID ||
 		post.Kind != current.Kind ||
 		post.Status != current.Status ||
-		post.FederationID != current.FederationID ||
+		!post.Scope.Equal(current.Scope) ||
 		post.AuthorityStation != current.AuthorityStation ||
 		post.AuthorityEpoch != current.AuthorityEpoch ||
 		post.Owner != current.Owner ||
@@ -503,7 +515,7 @@ func ReconcileCommittedMemberAuthorityProjection(
 	if post.ID != current.ID ||
 		post.Kind != current.Kind ||
 		post.Status != current.Status ||
-		post.FederationID != current.FederationID ||
+		!post.Scope.Equal(current.Scope) ||
 		post.AuthorityStation != current.AuthorityStation ||
 		post.AuthorityEpoch != current.AuthorityEpoch ||
 		post.Settings != current.Settings ||
@@ -545,7 +557,7 @@ func (c *Conversation) Snapshot() Snapshot {
 		ID:               c.id,
 		Kind:             c.kind,
 		Status:           c.status,
-		FederationID:     c.federationID,
+		Scope:            c.scope,
 		AuthorityStation: c.authorityStation,
 		AuthorityEpoch:   c.authorityEpoch,
 		Owner:            c.owner,
@@ -562,8 +574,8 @@ func (c *Conversation) AuthorityHead() valueobject.AuthorityHead {
 	return c.head
 }
 
-func (c *Conversation) FederationID() valueobject.FederationID {
-	return c.federationID
+func (c *Conversation) Scope() valueobject.Scope {
+	return c.scope
 }
 
 func (c *Conversation) AuthorityEpoch() valueobject.AuthorityEpoch {
@@ -899,7 +911,7 @@ func (c *Conversation) ApplyMemberAuthority(
 	if err := c.validateCommand(command.Command); err != nil {
 		return Transition{}, err
 	}
-	if command.ObservedFederationID != c.federationID ||
+	if !command.ObservedScope.Equal(c.scope) ||
 		command.ObservedAuthorityEpoch != c.authorityEpoch ||
 		command.ObservedAuthorityHead.Sequence != c.head.Sequence ||
 		command.ObservedAuthorityHead.EventHash != c.head.EventHash {
@@ -1938,7 +1950,7 @@ func (c *Conversation) clone() *Conversation {
 func (c *Conversation) eventState() *domainevent.ConversationState {
 	return &domainevent.ConversationState{
 		Kind:            c.kind,
-		FederationID:    c.federationID,
+		Scope:           c.scope,
 		AuthorityEpoch:  c.authorityEpoch,
 		Owner:           c.owner,
 		Settings:        c.settings,

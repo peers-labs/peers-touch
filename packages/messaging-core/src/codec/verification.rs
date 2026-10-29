@@ -57,6 +57,19 @@ pub fn verify_direct_genesis_event<'a>(
         .post_state
         .as_ref()
         .ok_or_else(|| "messaging Direct genesis authority snapshot is missing".to_string())?;
+    let scope = crate::proto::chat::ConversationScopeKind::try_from(snapshot.scope_kind)
+        .map_err(|_| "messaging Direct genesis scope kind is invalid".to_string())?;
+    // Local Direct scope is derived from the two Home Stations and carries no
+    // Federation id; Federation scope still requires a non-empty one.
+    let federation_binding_valid = match scope {
+        crate::proto::chat::ConversationScopeKind::Local => true,
+        crate::proto::chat::ConversationScopeKind::Federation => {
+            !snapshot.federation_id.trim().is_empty()
+        }
+        crate::proto::chat::ConversationScopeKind::Unspecified => {
+            !snapshot.federation_id.trim().is_empty()
+        }
+    };
     if local_ptid.trim().is_empty()
         || event.sequence != 1
         || !event.previous_hash.is_empty()
@@ -69,7 +82,7 @@ pub fn verify_direct_genesis_event<'a>(
         || snapshot.name != created.name
         || snapshot.owner_ptid != created.owner_ptid
         || snapshot.active_members != created.members
-        || snapshot.federation_id.trim().is_empty()
+        || !federation_binding_valid
         || snapshot.authority_epoch <= 0
         || snapshot.membership_epoch != event.membership_epoch
         || snapshot.mls_epoch != event.mls_epoch

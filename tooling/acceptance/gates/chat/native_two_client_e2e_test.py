@@ -125,7 +125,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         ):
             self.assertIn(f"kemodel::{request}", source)
 
-    def test_native_runners_bind_conversation_creation_to_federation(self) -> None:
+    def test_native_runners_keep_group_but_not_direct_bound_to_federation(self) -> None:
         root = Path(__file__).resolve().parents[4]
         runners = (
             "native_two_client_runner.py",
@@ -163,7 +163,15 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                     for key in call.args[2].keys
                     if isinstance(key, ast.Constant)
                 }
-                self.assertIn("federationId", keys, filename)
+                action = call.args[1].value
+                if action == "createDirectConversation":
+                    # Direct scope is derived server-side from the two Home
+                    # Stations; the client never selects a Federation for it.
+                    self.assertIn("peerPtid", keys, filename)
+                    self.assertNotIn("federationId", keys, filename)
+                else:
+                    # Group conversations remain Federation-only.
+                    self.assertIn("federationId", keys, filename)
             if any(
                 call.args[1].value == "createDirectConversation"
                 for call in creation_calls
@@ -1599,9 +1607,11 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             )[0],
         )
         self.assertIn('"federationContext"', runner)
-        self.assertIn('"federationId": federation_id', runner)
+        # Direct creation never carries a client-selected federation id; the
+        # Station derives Local vs Federation scope from the Home Stations.
+        self.assertNotIn('"federationId": federation_id', runner)
         self.assertIn(
-            "Alice and Bob have no shared Federation",
+            "cross-Station Direct requires a shared Federation",
             runner,
         )
         self.assertIn("async federationContext()", harness)

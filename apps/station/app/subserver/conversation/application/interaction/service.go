@@ -177,7 +177,7 @@ func (s *Service) SubmitTyping(
 		)
 	}
 	pulse.ExpiresAt = expiresAt
-	view, _, err := s.authorizeMemberEndpoint(
+	view, conversation, err := s.authorizeMemberEndpoint(
 		ctx,
 		pulse.ConversationID,
 		pulse.Sender,
@@ -186,14 +186,6 @@ func (s *Service) SubmitTyping(
 	)
 	if err != nil {
 		return TypingResult{}, err
-	}
-	if s.typingFrames == nil {
-		return TypingResult{}, NewError(
-			ErrorCodeInvalidArgument,
-			"interaction.submit_typing",
-			"federation",
-			"ephemeral Federation dispatcher is not configured",
-		)
 	}
 	pulse.Scope = "sender-home"
 	admission, err := s.pulses.Admit(
@@ -205,12 +197,23 @@ func (s *Service) SubmitTyping(
 	if err != nil || !admission.Accepted {
 		return admission, err
 	}
+	if view.Conversation.Scope.IsLocal() {
+		return s.dispatchLocalTyping(ctx, conversation, pulse, admission)
+	}
+	if s.typingFrames == nil {
+		return TypingResult{}, NewError(
+			ErrorCodeInvalidArgument,
+			"interaction.submit_typing",
+			"federation",
+			"ephemeral Federation dispatcher is not configured",
+		)
+	}
 	_, err = s.typingFrames.DispatchTyping(
 		ctx,
 		view.Conversation.AuthorityStation,
 		FederatedTypingSignal{
 			Phase:             FederatedTypingPhaseAuthorityAdmission,
-			FederationID:      view.Conversation.FederationID,
+			FederationID:      view.Conversation.Scope.FederationIDOrEmpty(),
 			ConversationID:    pulse.ConversationID,
 			AuthorityStation:  view.Conversation.AuthorityStation,
 			AuthorityEpoch:    view.Conversation.AuthorityEpoch,
@@ -229,6 +232,65 @@ func (s *Service) SubmitTyping(
 		)
 	}
 
+	return admission, nil
+}
+
+// dispatchLocalTyping publishes a typing pulse directly to the other active
+// members homed on the same Station. Local scope never crosses a Federation
+// frame, so admission is the only ledger interaction and delivery is the same
+// local realtime publish used by the Home-fanout phase.
+func (s *Service) dispatchLocalTyping(
+	ctx context.Context,
+	conversation *aggregate.Conversation,
+	pulse TypingPulse,
+	admission TypingResult,
+) (TypingResult, error) {
+	if s.typingRoutes == nil {
+		return TypingResult{}, NewError(
+			ErrorCodeInvalidArgument,
+			"interaction.submit_typing",
+			"routes",
+			"typing route directory is not configured",
+		)
+	}
+	recipientActors := make([]valueobject.PTID, 0, len(conversation.Members()))
+	for _, member := range conversation.Members() {
+		if member.Active() &&
+			member.Actor != pulse.Sender.Actor &&
+			member.HomeStation == s.localStation {
+			recipientActors = append(recipientActors, member.Actor)
+		}
+	}
+	routes, err := s.typingRoutes.ListActiveEndpoints(ctx, recipientActors)
+	if err != nil {
+		return TypingResult{}, WrapError(
+			ErrorCodePersistence,
+			"interaction.submit_typing.local_routes",
+			err,
+		)
+	}
+	recipients := make(map[valueobject.PTID]struct{}, len(routes))
+	for _, route := range routes {
+		if route.HomeStation != s.localStation ||
+			!conversation.IsActiveMember(route.Endpoint.Actor) {
+			return TypingResult{}, NewError(
+				ErrorCodeIntegrityFailed,
+				"interaction.submit_typing",
+				"route",
+				"local typing route does not match same-Station membership",
+			)
+		}
+		recipients[route.Endpoint.Actor] = struct{}{}
+	}
+	for recipient := range recipients {
+		if publishErr := s.typing.PublishTyping(ctx, recipient, pulse); publishErr != nil {
+			return TypingResult{}, WrapError(
+				ErrorCodePersistence,
+				"interaction.submit_typing.publish",
+				publishErr,
+			)
+		}
+	}
 	return admission, nil
 }
 
@@ -279,8 +341,16 @@ func (s *Service) receiveTypingAuthorityAdmission(
 	if err != nil {
 		return FederatedTypingResult{}, err
 	}
-	if view.Source != query.SourceAuthority ||
-		view.Conversation.FederationID != signal.FederationID ||
+	if view.Source != query.SourceAuthority {
+		return FederatedTypingResult{}, NewError(
+			ErrorCodeUnauthorized,
+			"interaction.receive_typing_authority_admission",
+			"source",
+			"authority admission requires the authority projection",
+		)
+	}
+	signalFederationID, federationScope := view.Conversation.Scope.FederationID()
+	if !federationScope || signalFederationID != signal.FederationID ||
 		view.Conversation.AuthorityStation != s.localStation ||
 		view.Conversation.AuthorityEpoch != signal.AuthorityEpoch ||
 		!conversation.Status().Writable() ||
@@ -389,7 +459,8 @@ func (s *Service) receiveTypingHomeFanout(
 	if err != nil {
 		return FederatedTypingResult{}, err
 	}
-	if view.Conversation.FederationID != signal.FederationID ||
+	signalFederationID, federationScope := view.Conversation.Scope.FederationID()
+	if !federationScope || signalFederationID != signal.FederationID ||
 		view.Conversation.AuthorityStation != source ||
 		view.Conversation.AuthorityEpoch != signal.AuthorityEpoch ||
 		!conversation.Status().Writable() ||
@@ -690,7 +761,7 @@ func (s *Service) SubmitReadCursor(
 		replay, err := s.cursorForward.ForwardReadCursor(
 			ctx,
 			view.Conversation.AuthorityStation,
-			view.Conversation.FederationID,
+			view.Conversation.Scope.FederationIDOrEmpty(),
 			view.Conversation.AuthorityEpoch,
 			request,
 		)

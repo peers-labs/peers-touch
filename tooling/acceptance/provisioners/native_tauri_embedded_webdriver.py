@@ -660,6 +660,20 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
         return roles
 
 
+class NativeTauriSingleStationWebDriverProvisioner(
+    NativeTauriEmbeddedWebDriverProvisioner
+):
+    """Single-Station embedded-WebDriver provisioner for same-Station Direct.
+
+    Both actors bind the one Station service declared by the environment
+    contract. The Station derives the Direct Local scope from the matching
+    Home Stations; the run-time ``--station-profile`` binding retargets the
+    single ``station-four`` service to the reviewed disposable profile.
+    """
+
+    environment_id = "native-tauri-single-station-webdriver"
+
+
 class CrossStationSocialNativeProvisioner(
     NativeTauriEmbeddedWebDriverProvisioner
 ):

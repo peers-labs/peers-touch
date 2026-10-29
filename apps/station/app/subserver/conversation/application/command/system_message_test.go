@@ -249,6 +249,14 @@ func (systemFederation) IsActiveStation(
 	return true, nil
 }
 
+func (systemFederation) ResolveSharedFederation(
+	_ context.Context,
+	_ valueobject.StationID,
+	_ valueobject.StationID,
+) (valueobject.FederationID, error) {
+	return "federation-test", nil
+}
+
 type scriptedSystemGrant struct {
 	calls []systemGrantCall
 	deny  error
@@ -529,7 +537,7 @@ func newSystemHarness(t *testing.T, ownerDevices []ports.EndpointRoute) *systemH
 	}
 	conversation, _, err := aggregate.CreateDirect(aggregate.CreateInput{
 		AuthorityStation: station,
-		FederationID:     "federation-bot",
+		Scope:            valueobject.MustFederationScope("federation-bot"),
 		AuthorityEpoch:   1,
 		Participants: []aggregate.Participant{
 			{Actor: bot.Actor, HomeStation: station},

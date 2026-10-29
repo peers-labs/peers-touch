@@ -977,7 +977,6 @@ class NativeTypingGate(AcceptanceGate):
                 "createDirectConversation",
                 {
                     "peerPtid": self.ptids["bob"],
-                    "federationId": federation_id,
                 },
             )
             direct_id = str((direct or {}).get("conversationId") or "")

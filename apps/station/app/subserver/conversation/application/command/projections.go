@@ -385,7 +385,7 @@ func (s *Service) SubmitLeaveIntent(
 		if err != nil {
 			return err
 		}
-		if request.FederationID != snapshot.FederationID ||
+		if request.FederationID != snapshot.Scope.FederationIDOrEmpty() ||
 			request.AuthorityStation != snapshot.AuthorityStation ||
 			request.AuthorityEpoch != snapshot.AuthorityEpoch ||
 			request.AuthorityHead != conversation.AuthorityHead() {
@@ -864,7 +864,7 @@ func deriveFollowerProjection(
 	snapshot := current.Conversation
 	switch {
 	case event.Fact.PostState != nil:
-		if event.Fact.PostState.FederationID != current.Conversation.FederationID ||
+		if !event.Fact.PostState.Scope.Equal(current.Conversation.Scope) ||
 			event.Fact.PostState.AuthorityEpoch != current.Conversation.AuthorityEpoch {
 			return repository.FollowerProjection{}, conversationdomain.NewError(
 				conversationdomain.ErrorCodeHashChainInvalid,
@@ -1083,7 +1083,7 @@ func snapshotFromEventState(
 	status valueobject.ConversationStatus,
 	state domainevent.ConversationState,
 ) (aggregate.Snapshot, error) {
-	if state.FederationID == "" || state.AuthorityEpoch == 0 ||
+	if !state.Scope.IsFederation() || state.AuthorityEpoch == 0 ||
 		state.MembershipEpoch != head.MembershipEpoch ||
 		state.MLSEpoch != head.MLSEpoch ||
 		len(state.ActiveMembers) == 0 ||
@@ -1095,14 +1095,14 @@ func snapshotFromEventState(
 		return aggregate.Snapshot{}, invalid(
 			"application.apply_follower_event",
 			"post_state",
-			"must contain the complete active member and endpoint state",
+			"must contain a federation scope and the complete active member and endpoint state",
 		)
 	}
 	snapshot := aggregate.Snapshot{
 		ID:               conversationID,
 		Kind:             state.Kind,
 		Status:           status,
-		FederationID:     state.FederationID,
+		Scope:            state.Scope,
 		AuthorityStation: authorityStation,
 		AuthorityEpoch:   state.AuthorityEpoch,
 		Owner:            state.Owner,

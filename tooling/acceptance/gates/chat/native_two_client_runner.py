@@ -49,6 +49,7 @@ from tooling.acceptance.gates.chat.native_support import (
 
 
 GATE_ID = "chat-native-two-client-e2e"
+SINGLE_STATION_GATE_ID = "chat-native-single-station-two-client-e2e"
 CURRENT_PROFILE_GATE_ID = "chat-native-current-profile-two-client-e2e"
 LIFECYCLE_ONBOARDING_GATE_ID = "chat-lifecycle-onboarding-e2e"
 LIFECYCLE_DIRECT_GATE_ID = "chat-lifecycle-direct-e2e"
@@ -533,6 +534,7 @@ class NativeTwoClientGate(AcceptanceGate):
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
+        self.direct_scope = ""
         self.station_access: dict[str, dict[str, Any]] = {}
         self._reconciliation_target: dict[str, str] | None = None
         self.restart_messages: list[dict[str, str]] = []
@@ -927,45 +929,62 @@ class NativeTwoClientGate(AcceptanceGate):
                 or ""
             ),
         )
-        initiator_context = async_harness(
-            initiator,
-            "federationContext",
-            {},
+        initiator_station = str(
+            runtime_station_service(
+                self.manifest,
+                initiator_name,
+            ).get("runtimeIdentity")
+            or ""
         )
-        receiver_context = async_harness(
-            receiver,
-            "federationContext",
-            {},
+        receiver_station = str(
+            runtime_station_service(
+                self.manifest,
+                receiver_name,
+            ).get("runtimeIdentity")
+            or ""
         )
-        initiator_federations = [
-            str(item.get("federationId") or "")
-            for item in (initiator_context or {}).get("federations", [])
-            if isinstance(item, dict) and item.get("federationId")
-        ]
-        receiver_federations = {
-            str(item.get("federationId") or "")
-            for item in (receiver_context or {}).get("federations", [])
-            if isinstance(item, dict) and item.get("federationId")
-        }
-        federation_id = next(
-            (
-                candidate
-                for candidate in initiator_federations
-                if candidate in receiver_federations
-            ),
-            "",
+        same_station = bool(
+            initiator_station
+            and receiver_station
+            and initiator_station == receiver_station
         )
-        if not federation_id:
-            raise GateError(
-                "Alice and Bob have no shared Federation for Direct Chat"
+        if same_station:
+            # Same-Station Direct is a Local scope: it requires no Federation
+            # context and never selects one. This proves the no-federation path.
+            self.direct_scope = "local"
+        else:
+            # Cross-Station Direct still needs an active shared Federation for
+            # routing/membership, but the client never selects it: the Station
+            # resolves the Federation from the two participating Home Stations.
+            initiator_context = async_harness(
+                initiator,
+                "federationContext",
+                {},
             )
+            receiver_context = async_harness(
+                receiver,
+                "federationContext",
+                {},
+            )
+            shared_federations = {
+                str(item.get("federationId") or "")
+                for item in (initiator_context or {}).get("federations", [])
+                if isinstance(item, dict) and item.get("federationId")
+            }.intersection(
+                str(item.get("federationId") or "")
+                for item in (receiver_context or {}).get("federations", [])
+                if isinstance(item, dict) and item.get("federationId")
+            )
+            if not shared_federations:
+                raise GateError(
+                    "cross-Station Direct requires a shared Federation "
+                    "context for routing"
+                )
+            self.direct_scope = "federation"
         created = async_harness(
             initiator,
             "createDirectConversation",
-            {
-                "peerPtid": self.ptids[receiver_name],
-                "federationId": federation_id,
-            },
+            {"peerPtid": self.ptids[receiver_name]},
         )
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:
@@ -1627,6 +1646,7 @@ class NativeTwoClientGate(AcceptanceGate):
             "runtimeCellRunId": source_identity["runtimeCell"]["runId"],
             "journey": self.journey_id,
             "conversationId": conversation_id,
+            "directScope": self.direct_scope,
             "sourceIdentity": source_identity,
             "launchOrder": order,
             "directionOrder": list(self.direction_order),

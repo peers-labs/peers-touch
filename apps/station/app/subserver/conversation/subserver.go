@@ -38,6 +38,7 @@ type subServer struct {
 	localStation  valueobject.StationID
 	gate          *ConversationGateEvaluator
 	relationships *ConversationRelationshipAdapter
+	federations   *productionFederationDirectory
 	database      *gorm.DB
 	attachments   storage.Backend
 
@@ -112,13 +113,16 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		database,
 		composition.QueryService,
 	)
+	federationDirectory := newProductionFederationDirectory(database)
+	crossStationAuthorizer := newProductionCrossStationAuthorizer(federationDirectory)
 
 	s.mu.Lock()
 	s.composition = composition
 	s.localStation = localStation
 	s.jwtWrapper = jwtWrapper
 	s.relationships = relationships
-	s.gate = NewConversationGateEvaluator(relationships, nil, nil)
+	s.federations = federationDirectory
+	s.gate = NewConversationGateEvaluator(relationships, nil, crossStationAuthorizer)
 	s.database = database
 	s.attachments = attachmentBackend
 	s.mu.Unlock()
@@ -581,14 +585,11 @@ func (s *subServer) queryService() *query.Service {
 
 func (s *subServer) evaluateCreateDirect(
 	ctx context.Context,
-	peerPTID string,
+	op social_gate.Operation,
 ) error {
 	if s.gate == nil {
 		return fmt.Errorf("Conversation social policy is unavailable")
 	}
 
-	return s.gate.Evaluate(ctx, social_gate.Operation{
-		Action:     "create_direct",
-		TargetPtid: peerPTID,
-	})
+	return s.gate.Evaluate(ctx, op)
 }

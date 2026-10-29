@@ -408,9 +408,9 @@ pub(crate) fn hydrate_projections_from_station(
     let station_client = engine.station_client();
     let current_projections = engine.store().conversation_projections()?;
     if !current_projections.is_empty()
-        && current_projections.iter().all(|projection| {
-            !projection.federation_id.trim().is_empty() && !projection.members.is_empty()
-        })
+        && current_projections
+            .iter()
+            .all(|projection| !projection.members.is_empty())
     {
         return Ok(0);
     }
@@ -439,12 +439,10 @@ pub(crate) fn hydrate_projections_from_station(
         } else {
             conversation.authority_station_peer_id
         };
+        // Local-scope Direct conversations carry no Federation id (the scope
+        // is derived from same-Station ownership); only Federation scope
+        // populates it. An empty value is therefore valid for Local scope.
         let federation_id = conversation.federation_id;
-        if federation_id.is_empty() {
-            return Err(format!(
-                "conversation {conversation_id} has no Federation projection"
-            ));
-        }
         let member_query = [("conversation_id", conversation_id.clone())];
         let member_response = station_client.request_proto_for_device::<
             GetConversationMembersRequest,

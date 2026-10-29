@@ -11,6 +11,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	"gorm.io/gorm"
 )
 
@@ -23,7 +24,6 @@ type TransactionalAdapters struct {
 	Publishing             ports.PublishingStore
 	PublishingObjects      ports.PublishedObjectDirectory
 	ServiceNotifications   ports.ServiceNotificationProducer
-	LocalScope             ports.LocalScope
 	DeviceInbox            ports.DeviceInboxWriter
 	FederationOutbox       ports.FederationOutboxWriter
 	DeliveryCommitments    ports.AuthorityDeliveryCommitmentWriter
@@ -80,6 +80,7 @@ func requireCanonicalSchema(db *gorm.DB) error {
 			columns: []string{
 				"current_sequence",
 				"current_event_hash",
+				"scope_kind",
 				"federation_id",
 				"authority_epoch",
 			},
@@ -240,6 +241,40 @@ func requireCanonicalSchema(db *gorm.DB) error {
 				return err
 			}
 		}
+	}
+	if err := requireCanonicalConversationScopes(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// requireCanonicalConversationScopes enforces the Local/Federation scope
+// invariant on stored conversations: the discriminator is one of the two
+// canonical kinds, Federation scope keeps a non-empty federation_id, and Local
+// scope never stores one.
+func requireCanonicalConversationScopes(db *gorm.DB) error {
+	var invalidRows int64
+	err := db.Model(&ConversationModel{}).
+		Where(
+			"scope_kind NOT IN ? OR "+
+				"(scope_kind = ? AND (federation_id IS NULL OR federation_id = '')) OR "+
+				"(scope_kind = ? AND federation_id IS NOT NULL AND federation_id <> '')",
+			[]string{
+				string(valueobject.ScopeKindLocal),
+				string(valueobject.ScopeKindFederation),
+			},
+			string(valueobject.ScopeKindFederation),
+			string(valueobject.ScopeKindLocal),
+		).
+		Count(&invalidRows).Error
+	if err != nil {
+		return fmt.Errorf("conversation persistence: validate canonical conversation scopes: %w", err)
+	}
+	if invalidRows != 0 {
+		return fmt.Errorf(
+			"conversation persistence: %d conversation(s) violate the Local/Federation scope contract; reset the development database",
+			invalidRows,
+		)
 	}
 	return nil
 }
@@ -547,7 +582,6 @@ func (u *UnitOfWork) bindTransaction(tx *gorm.DB) (ports.Transaction, error) {
 		Publishing:             adapters.Publishing,
 		PublishingObjects:      adapters.PublishingObjects,
 		ServiceNotifications:   adapters.ServiceNotifications,
-		LocalScope:             adapters.LocalScope,
 		DeviceInbox:            adapters.DeviceInbox,
 		FederationOutbox:       adapters.FederationOutbox,
 		DeliveryCommitments:    adapters.DeliveryCommitments,

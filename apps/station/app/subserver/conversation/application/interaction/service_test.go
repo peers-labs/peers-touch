@@ -507,7 +507,7 @@ func TestServiceForwardsFollowerReadCursorWithoutLocalAuthorityMutation(t *testi
 		t.Fatalf("follower mutated authority cursor: %+v", readCursors.requests)
 	}
 	if forwarder.authority != snapshot.AuthorityStation ||
-		forwarder.cursorFederation != snapshot.FederationID ||
+		forwarder.cursorFederation != snapshot.Scope.FederationIDOrEmpty() ||
 		forwarder.cursorEpoch != snapshot.AuthorityEpoch ||
 		forwarder.cursor == nil ||
 		*forwarder.cursor != request {
@@ -704,7 +704,7 @@ func interactionConversationSnapshot(
 		ID:               "conversation-1",
 		Kind:             valueobject.ConversationKindGroup,
 		Status:           valueobject.ConversationStatusActive,
-		FederationID:     "federation-1",
+		Scope:            valueobject.MustFederationScope("federation-1"),
 		AuthorityStation: "station:local",
 		AuthorityEpoch:   1,
 		Owner:            aliceOne.Actor,
@@ -759,7 +759,7 @@ func directInteractionConversationSnapshot(
 		ID:               conversationID,
 		Kind:             valueobject.ConversationKindDirect,
 		Status:           valueobject.ConversationStatusActive,
-		FederationID:     "federation-1",
+		Scope:            valueobject.MustFederationScope("federation-1"),
 		AuthorityStation: "station:local",
 		AuthorityEpoch:   1,
 		Owner:            owner,

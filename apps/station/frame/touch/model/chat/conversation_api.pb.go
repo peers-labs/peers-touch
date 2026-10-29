@@ -192,7 +192,6 @@ func (FederatedConversationTypingPhase) EnumDescriptor() ([]byte, []int) {
 type CreateDirectConversationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PeerPtid      string                 `protobuf:"bytes,1,opt,name=peer_ptid,json=peerPtid,proto3" json:"peer_ptid,omitempty"`
-	FederationId  string                 `protobuf:"bytes,3,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
 	Creator       *model.ActorDeviceRef  `protobuf:"bytes,4,opt,name=creator,proto3" json:"creator,omitempty"`
 	CommandId     string                 `protobuf:"bytes,5,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -232,13 +231,6 @@ func (*CreateDirectConversationRequest) Descriptor() ([]byte, []int) {
 func (x *CreateDirectConversationRequest) GetPeerPtid() string {
 	if x != nil {
 		return x.PeerPtid
-	}
-	return ""
-}
-
-func (x *CreateDirectConversationRequest) GetFederationId() string {
-	if x != nil {
-		return x.FederationId
 	}
 	return ""
 }
@@ -3723,13 +3715,12 @@ var File_domain_chat_conversation_api_proto protoreflect.FileDescriptor
 
 const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\n" +
-	"\"domain/chat/conversation_api.proto\x12\x19peers_touch.model.chat.v1\x1a\x18domain/actor/actor.proto\x1a\x19domain/chat/command.proto\x1a\x1edomain/chat/conversation.proto\x1a\x17domain/chat/event.proto\x1a&domain/key_exchange/key_exchange.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe4\x01\n" +
+	"\"domain/chat/conversation_api.proto\x12\x19peers_touch.model.chat.v1\x1a\x18domain/actor/actor.proto\x1a\x19domain/chat/command.proto\x1a\x1edomain/chat/conversation.proto\x1a\x17domain/chat/event.proto\x1a&domain/key_exchange/key_exchange.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd4\x01\n" +
 	"\x1fCreateDirectConversationRequest\x12\x1b\n" +
-	"\tpeer_ptid\x18\x01 \x01(\tR\bpeerPtid\x12#\n" +
-	"\rfederation_id\x18\x03 \x01(\tR\ffederationId\x12D\n" +
+	"\tpeer_ptid\x18\x01 \x01(\tR\bpeerPtid\x12D\n" +
 	"\acreator\x18\x04 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\acreator\x12\x1d\n" +
 	"\n" +
-	"command_id\x18\x05 \x01(\tR\tcommandIdJ\x04\b\x02\x10\x03R\x14peer_station_peer_id\"\xb3\x01\n" +
+	"command_id\x18\x05 \x01(\tR\tcommandIdJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\x14peer_station_peer_idR\rfederation_id\"\xb3\x01\n" +
 	" CreateDirectConversationResponse\x12K\n" +
 	"\fconversation\x18\x01 \x01(\v2'.peers_touch.model.chat.v1.ConversationR\fconversation\x12B\n" +
 	"\x05event\x18\x02 \x01(\v2,.peers_touch.model.chat.v1.ConversationEventR\x05event\"\xc3\x01\n" +

@@ -314,7 +314,6 @@ func publishingTestTransaction(
 		Publishing:             store,
 		PublishingObjects:      publishingTestObjects{state: state},
 		ServiceNotifications:   publishingTestNotifications{state: state},
-		LocalScope:             publishingTestLocalScope{station: station},
 		DeviceInbox:            publishingTestInbox{state: state},
 		FederationOutbox:       publishingTestOutbox{},
 		DeliveryCommitments:    publishingTestCommitments{state: state},
@@ -665,6 +664,14 @@ func (publishingTestFederation) IsActiveStation(
 	return true, nil
 }
 
+func (publishingTestFederation) ResolveSharedFederation(
+	context.Context,
+	valueobject.StationID,
+	valueobject.StationID,
+) (valueobject.FederationID, error) {
+	return "federation-local", nil
+}
+
 type publishingTestSystemSender struct {
 	state *publishingTestState
 }
@@ -731,16 +738,6 @@ func (p publishingTestNotifications) ProduceInTx(
 		Produced:       true,
 		NotificationID: fmt.Sprintf("notification-%d", len(p.state.notifications)),
 	}, nil
-}
-
-type publishingTestLocalScope struct {
-	station valueobject.StationID
-}
-
-func (s publishingTestLocalScope) LocalFederation(
-	context.Context,
-) (valueobject.FederationID, valueobject.AuthorityEpoch, error) {
-	return "federation-local", 1, nil
 }
 
 type publishingTestInbox struct {

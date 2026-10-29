@@ -69,6 +69,15 @@ type FederationDirectory interface {
 		federationID valueobject.FederationID,
 		station valueobject.StationID,
 	) (bool, error)
+	// ResolveSharedFederation returns the unique active Federation that both
+	// Stations belong to. It derives the cross-station Direct scope server-side
+	// because clients no longer send a federation id. Zero shared Federations
+	// is a not-federated error; more than one is an ambiguity error.
+	ResolveSharedFederation(
+		ctx context.Context,
+		stationA valueobject.StationID,
+		stationB valueobject.StationID,
+	) (valueobject.FederationID, error)
 }
 
 // SystemSenderAuthorization verifies one live Conversation-owned delegation.
@@ -157,16 +166,6 @@ type ServiceNotificationWake struct {
 // the delivery transaction commits.
 type ServiceNotificationPublisher interface {
 	PublishServiceNotification(ctx context.Context, wake ServiceNotificationWake) error
-}
-
-// LocalScope resolves the internal Federation scope for system-authored
-// conversations (no client-supplied Federation id; v1 home-local only).
-type LocalScope interface {
-	LocalFederation(ctx context.Context) (
-		federationID valueobject.FederationID,
-		authorityEpoch valueobject.AuthorityEpoch,
-		err error,
-	)
 }
 
 type DeviceInboxIntent struct {
@@ -273,7 +272,6 @@ type Transaction struct {
 	Publishing             PublishingStore
 	PublishingObjects      PublishedObjectDirectory
 	ServiceNotifications   ServiceNotificationProducer
-	LocalScope             LocalScope
 	DeviceInbox            DeviceInboxWriter
 	FederationOutbox       FederationOutboxWriter
 	DeliveryCommitments    AuthorityDeliveryCommitmentWriter

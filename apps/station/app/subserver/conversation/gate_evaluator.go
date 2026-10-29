@@ -21,21 +21,25 @@ const (
 )
 
 // ConversationGateEvaluator implements social_gate.SocialGate by composing
-// relationship, group role, and federation trust checks for conversation operations.
+// relationship, group role, and cross-station federation authorization for
+// conversation operations.
 type ConversationGateEvaluator struct {
-	rel  social_gate.RelationshipQuerier
-	role social_gate.GroupRoleQuerier
-	fed  social_gate.FederationTrustQuerier
+	rel   social_gate.RelationshipQuerier
+	role  social_gate.GroupRoleQuerier
+	cross social_gate.CrossStationAuthorizer
 }
 
-// NewConversationGateEvaluator creates a gate evaluator with the provided queriers.
-// Any querier may be nil to skip that category of checks (open mode).
+// NewConversationGateEvaluator creates a gate evaluator with the provided
+// queriers. Relationship/role queriers may be nil for open mode. The cross
+// authorizer is consulted only for cross-station operations; a nil authorizer
+// leaves federation authorization to the existing transport/membership layers
+// (no positive membership decision is made here).
 func NewConversationGateEvaluator(
 	rel social_gate.RelationshipQuerier,
 	role social_gate.GroupRoleQuerier,
-	fed social_gate.FederationTrustQuerier,
+	cross social_gate.CrossStationAuthorizer,
 ) *ConversationGateEvaluator {
-	return &ConversationGateEvaluator{rel: rel, role: role, fed: fed}
+	return &ConversationGateEvaluator{rel: rel, role: role, cross: cross}
 }
 
 // Evaluate dispatches policy evaluation based on the operation action.
@@ -51,7 +55,7 @@ func (e *ConversationGateEvaluator) Evaluate(ctx context.Context, op social_gate
 
 	switch op.Action {
 	case "create_direct":
-		return e.evaluateCreateDirect(ctx, subjectPtid, op.TargetPtid)
+		return e.evaluateCreateDirect(ctx, subjectPtid, op)
 	case "send_message", "dkx_send":
 		return e.evaluateConversationMember(ctx, subjectPtid, op.ConversationID, op.Action)
 	case "add_member":
@@ -68,57 +72,96 @@ func (e *ConversationGateEvaluator) Evaluate(ctx context.Context, op social_gate
 	return nil
 }
 
-// evaluateCreateDirect checks bilateral relationship requirements for direct conversations.
+// evaluateCreateDirect checks bilateral relationship requirements for direct
+// conversations and applies the authorization wrapper branch:
+//   - same-station: local scope; relationship policy only, never invokes the
+//     cross-station authorizer and requires no Federation;
+//   - cross-station: relationship policy plus CrossStationAuthorizer under
+//     the supplied Federation scope; a local scope on a cross-station action
+//     is rejected fail-closed.
+//
 // Policy: blocked => deny; mutual followers OR shared conversation => allow; else deny.
-func (e *ConversationGateEvaluator) evaluateCreateDirect(ctx context.Context, subjectPtid, targetPtid string) error {
-	if e.rel == nil {
-		// No relationship service configured: open mode
-		return nil
-	}
+func (e *ConversationGateEvaluator) evaluateCreateDirect(ctx context.Context, subjectPtid string, op social_gate.Operation) error {
+	targetPtid := op.TargetPtid
 
-	blocked, err := e.rel.IsBlocked(ctx, targetPtid, subjectPtid)
-	if err != nil {
-		return fmt.Errorf("gate: relationship check failed: %w", err)
-	}
-	if blocked {
-		return &social_gate.PolicyDeniedError{
-			Code:   "BLOCKED",
-			Reason: "target actor has blocked the subject",
+	if e.rel != nil {
+		blocked, err := e.rel.IsBlocked(ctx, targetPtid, subjectPtid)
+		if err != nil {
+			return fmt.Errorf("gate: relationship check failed: %w", err)
+		}
+		if blocked {
+			return &social_gate.PolicyDeniedError{
+				Code:   "BLOCKED",
+				Reason: "target actor has blocked the subject",
+			}
+		}
+
+		// Also check the reverse direction: subject blocked the target
+		blockedReverse, err := e.rel.IsBlocked(ctx, subjectPtid, targetPtid)
+		if err != nil {
+			return fmt.Errorf("gate: relationship check failed: %w", err)
+		}
+		if blockedReverse {
+			return &social_gate.PolicyDeniedError{
+				Code:   "BLOCKED",
+				Reason: "subject has blocked the target actor",
+			}
+		}
+
+		mutual, err := e.rel.AreMutualFollowers(ctx, subjectPtid, targetPtid)
+		if err != nil {
+			return fmt.Errorf("gate: mutual followers check failed: %w", err)
+		}
+		if !mutual {
+			shared, err := e.rel.HaveSharedConversation(ctx, subjectPtid, targetPtid)
+			if err != nil {
+				return fmt.Errorf("gate: shared conversation check failed: %w", err)
+			}
+			if !shared {
+				return &social_gate.PolicyDeniedError{
+					Code:   "RELATIONSHIP_REQUIRED",
+					Reason: "actors must be mutual followers or share a conversation",
+				}
+			}
 		}
 	}
 
-	// Also check the reverse direction: subject blocked the target
-	blockedReverse, err := e.rel.IsBlocked(ctx, subjectPtid, targetPtid)
-	if err != nil {
-		return fmt.Errorf("gate: relationship check failed: %w", err)
+	// Same-station actors use the local scope: same Home Station, and a local
+	// scope may never cross stations.
+	if op.SameStation() {
+		if op.ScopeKind != "" && op.ScopeKind != social_gate.ScopeKindLocal {
+			return &social_gate.PolicyDeniedError{
+				Code:   "SCOPE_STATION_MISMATCH",
+				Reason: "same-station conversation must use the local scope",
+			}
+		}
+		return nil
 	}
-	if blockedReverse {
+
+	// Cross-station. A local scope is invalid here even if station fields
+	// disagree or are missing on either side.
+	if op.LocalScope() {
 		return &social_gate.PolicyDeniedError{
-			Code:   "BLOCKED",
-			Reason: "subject has blocked the target actor",
+			Code:   "SCOPE_STATION_MISMATCH",
+			Reason: "local scope cannot span different Home Stations",
 		}
 	}
-
-	mutual, err := e.rel.AreMutualFollowers(ctx, subjectPtid, targetPtid)
-	if err != nil {
-		return fmt.Errorf("gate: mutual followers check failed: %w", err)
+	if e.cross != nil {
+		if err := e.cross.AuthorizeCrossStation(ctx, social_gate.CrossStationOperation{
+			Action:               op.Action,
+			Scope:                op.Scope,
+			SubjectStationPeerID: op.SubjectStationPeerID,
+			TargetStationPeerID:  op.TargetStationPeerID,
+			SubjectPTID:          subjectPtid,
+			TargetPTID:           targetPtid,
+		}); err != nil {
+			return &social_gate.PolicyDeniedError{
+				Code:   "FEDERATION_UNAUTHORIZED",
+				Reason: err.Error(),
+			}
+		}
 	}
-	if mutual {
-		return nil
-	}
-
-	shared, err := e.rel.HaveSharedConversation(ctx, subjectPtid, targetPtid)
-	if err != nil {
-		return fmt.Errorf("gate: shared conversation check failed: %w", err)
-	}
-	if shared {
-		return nil
-	}
-
-	return &social_gate.PolicyDeniedError{
-		Code:   "RELATIONSHIP_REQUIRED",
-		Reason: "actors must be mutual followers or share a conversation",
-	}
+	return nil
 }
 
 // evaluateConversationMember verifies the subject is an active member of the conversation.

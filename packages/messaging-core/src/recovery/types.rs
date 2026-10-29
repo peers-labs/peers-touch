@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-pub const MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 4;
+pub const MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryMessageProjection {
@@ -23,6 +23,11 @@ pub struct RecoveryConversationProjection {
     pub conversation_id: String,
     pub authority_station_id: String,
     pub federation_id: String,
+    /// ConversationScopeKind discriminator (1 = Local, 2 = Federation).
+    /// Defaults to 0 only for pre-v5 archives, whose scope is inferred from
+    /// kind and federation_id during validation.
+    #[serde(default)]
+    pub scope_kind: i32,
     pub kind: i32,
     pub name: String,
     #[serde(default)]
@@ -43,6 +48,7 @@ impl Zeroize for RecoveryConversationProjection {
         self.conversation_id.zeroize();
         self.authority_station_id.zeroize();
         self.federation_id.zeroize();
+        self.scope_kind.zeroize();
         self.kind.zeroize();
         self.name.zeroize();
         self.description.zeroize();

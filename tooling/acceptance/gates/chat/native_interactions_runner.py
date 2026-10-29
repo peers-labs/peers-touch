@@ -3019,7 +3019,6 @@ class NativeInteractionsGate(AcceptanceGate):
                     "createDirectConversation",
                     {
                         "peerPtid": self.ptids["bob"],
-                        "federationId": federation_id,
                     },
                 ),
                 "alice",

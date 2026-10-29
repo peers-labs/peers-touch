@@ -6086,10 +6086,18 @@ impl MessagingStore {
                 .map(|(ptid, _)| ptid.clone())
                 .collect::<Vec<_>>();
             let member_roles = members.into_iter().collect::<BTreeMap<_, _>>();
+            let scope_kind = if row.3 == ConversationKind::Direct as i32
+                && row.2.trim().is_empty()
+            {
+                messaging_core::proto::chat::ConversationScopeKind::Local as i32
+            } else {
+                messaging_core::proto::chat::ConversationScopeKind::Federation as i32
+            };
             conversations.push(RecoveryConversationProjection {
                 conversation_id: row.0,
                 authority_station_id: row.1,
                 federation_id: row.2,
+                scope_kind,
                 kind: row.3,
                 name: row.4,
                 description: row.5,
@@ -12467,7 +12475,8 @@ fn validate_conversation_projection(
         .map_err(|_| "messaging conversation-state kind is invalid".to_string())?;
     if projection.conversation_id != conversation_id
         || projection.authority_station_id.trim().is_empty()
-        || projection.federation_id.trim().is_empty()
+        || (kind == ConversationKind::Group
+            && projection.federation_id.trim().is_empty())
         || kind == ConversationKind::Unspecified
         || projection.owner_ptid.trim().is_empty()
         || projection.members.is_empty()
@@ -17635,6 +17644,8 @@ mod tests {
                 conversation_id: "restored-conversation".to_string(),
                 authority_station_id: "station-local".to_string(),
                 federation_id: "federation-1".to_string(),
+                scope_kind: messaging_core::proto::chat::ConversationScopeKind::Federation
+                    as i32,
                 kind: 1,
                 name: String::new(),
                 description: "Restored description".to_string(),

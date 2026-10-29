@@ -33,3 +33,24 @@ type FederationTrustQuerier interface {
 	// is currently in the trusted set.
 	IsTrustedStation(stationPeerID string) bool
 }
+
+// CrossStationOperation is one authorization decision for an action that
+// crosses Home Station boundaries under a Federation scope.
+type CrossStationOperation struct {
+	Action               string
+	Scope                string
+	SubjectStationPeerID string
+	TargetStationPeerID  string
+	SubjectPTID          string
+	TargetPTID           string
+}
+
+// CrossStationAuthorizer is the wrapper seam for cross-station business
+// authorization. Implementations live in the app layer and decide from
+// Federation membership/role projections whether the scope permits the
+// action. Same-station operations never reach this authorizer. A nil
+// authorizer means "no business federation policy wired" and MUST NOT be
+// interpreted as a positive membership decision by production callers.
+type CrossStationAuthorizer interface {
+	AuthorizeCrossStation(ctx context.Context, op CrossStationOperation) error
+}

@@ -56,30 +56,6 @@ use tauri::{Emitter, Manager};
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
-fn show_acceptance_background_windows(app: &tauri::App) -> std::io::Result<()> {
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSWindow};
-
-    let main_thread = MainThreadMarker::new()
-        .ok_or_else(|| std::io::Error::other("acceptance setup requires the AppKit main thread"))?;
-    if !NSApplication::sharedApplication(main_thread)
-        .setActivationPolicy(NSApplicationActivationPolicy::Accessory)
-    {
-        return Err(std::io::Error::other(
-            "acceptance background activation policy was rejected",
-        ));
-    }
-    for window in app.webview_windows().values() {
-        let ns_window = window.ns_window().map_err(|error| {
-            std::io::Error::other(format!("acceptance native window lookup failed: {error}"))
-        })?;
-        // Order behind the operator without making the window key or activating the app.
-        unsafe { &*(ns_window as *mut NSWindow) }.orderBack(None);
-    }
-    Ok(())
-}
-
-#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 fn configure_acceptance_window_level(window: &tauri::WebviewWindow) -> std::io::Result<()> {
     use dispatch2::DispatchQueue;
     use objc2_app_kit::{NSNormalWindowLevel, NSWindow, NSWindowCollectionBehavior};
@@ -593,6 +569,13 @@ fn main() {
     #[cfg(feature = "acceptance-webdriver")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
+    #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+    let builder = if exclusive_native_input {
+        builder
+    } else {
+        builder.activate_ignoring_other_apps(false)
+    };
+
     // Dev-only socket bridge for the tauri-playwright e2e transport
     // (apps/desktop/e2e). The socket path defaults to the fixtures' path and
     // can be overridden per cell via PT_PLAYWRIGHT_SOCKET.
@@ -610,10 +593,9 @@ fn main() {
     let context = {
         let mut context = context;
         for window in &mut context.config_mut().app.windows {
-            // Tao activates visible windows during launch regardless of initial focus.
-            window.focus = false;
             if !exclusive_native_input {
-                window.visible = false;
+                // Wry gates WebView activation on visible && focused.
+                window.focus = false;
             }
             window.background_throttling =
                 Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
@@ -656,11 +638,6 @@ fn main() {
                     exclusive_native_input,
                 )?;
             }
-            #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
-            if !exclusive_native_input {
-                show_acceptance_background_windows(app)?;
-            }
-
             let resource_dir = app.path()
                 .resource_dir()
                 .unwrap_or_else(|e| {
@@ -1384,8 +1361,7 @@ fn main() {
     let app = {
         let mut app = app;
         if !exclusive_native_input {
-            // Suppress Tao's unconditional launch activation before its event loop runs.
-            app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
         }
         app
     };

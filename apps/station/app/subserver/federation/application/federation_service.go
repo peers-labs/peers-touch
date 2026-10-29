@@ -5,7 +5,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 
-	"github.com/oklog/ulid/v2"
+	"github.com/peers-labs/peers-touch/station/app/internal/identity"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 	"google.golang.org/protobuf/proto"
@@ -53,7 +53,7 @@ type CreateFederationInput struct {
 }
 
 func (s *FederationService) CreateFederation(ctx context.Context, input *CreateFederationInput) (*domain.FederationRecord, error) {
-	federationID := "fed_" + ulid.Make().String()
+	federationID := identity.NewFederationID()
 
 	actorPub, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, input.ActorPTID)
 	if err != nil {
@@ -611,5 +611,3 @@ func (s *FederationService) DeleteFederation(ctx context.Context, input *DeleteF
 	)
 	return err
 }
-
-var _ = ulid.Make

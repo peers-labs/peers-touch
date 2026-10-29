@@ -268,6 +268,32 @@ fn initial_recovery_epoch() -> u64 {
     1
 }
 
+fn recovery_conversation_scope_valid(
+    conversation: &RecoveryConversationProjection,
+) -> bool {
+    use crate::proto::chat::{ConversationKind, ConversationScopeKind};
+
+    let kind = ConversationKind::try_from(conversation.kind).ok();
+    let federation_empty = conversation.federation_id.trim().is_empty();
+    // Pre-v5 archives carry no scope discriminator: a Direct with an empty
+    // federation id is a Local conversation; everything else was Federation.
+    let scope = match ConversationScopeKind::try_from(conversation.scope_kind) {
+        Ok(ConversationScopeKind::Local) => ConversationScopeKind::Local,
+        Ok(ConversationScopeKind::Federation) => ConversationScopeKind::Federation,
+        _ if kind == Some(ConversationKind::Direct) && federation_empty => {
+            ConversationScopeKind::Local
+        }
+        _ => ConversationScopeKind::Federation,
+    };
+    match scope {
+        ConversationScopeKind::Local => {
+            kind == Some(ConversationKind::Direct) && federation_empty
+        }
+        ConversationScopeKind::Federation => !federation_empty,
+        ConversationScopeKind::Unspecified => false,
+    }
+}
+
 pub fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(), String> {
     let message_ids = archive
         .messages
@@ -332,7 +358,7 @@ pub fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(), String
         || archive.conversations.iter().any(|conversation| {
             conversation.conversation_id.trim().is_empty()
                 || conversation.authority_station_id.trim().is_empty()
-                || conversation.federation_id.trim().is_empty()
+                || !recovery_conversation_scope_valid(conversation)
                 || conversation.kind == 0
                 || conversation.owner_ptid.trim().is_empty()
                 || conversation.member_ptids.len() < 2
@@ -623,6 +649,7 @@ mod tests {
                 conversation_id: "conversation-1".to_string(),
                 authority_station_id: "station-local".to_string(),
                 federation_id: "federation-1".to_string(),
+                scope_kind: crate::proto::chat::ConversationScopeKind::Federation as i32,
                 kind: 1,
                 name: String::new(),
                 description: "Recovery description".to_string(),
@@ -712,7 +739,37 @@ mod tests {
     }
 
     #[test]
-    fn recovery_v4_rejects_conversation_projection_without_required_scope() {
+    fn local_direct_recovery_archive_allows_empty_federation() {
+        let mut local = archive();
+        local.conversations[0].scope_kind =
+            crate::proto::chat::ConversationScopeKind::Local as i32;
+        local.conversations[0].federation_id.clear();
+        assert!(validate_archive(&local).is_ok());
+
+        // Legacy pre-v5 projection without scope_kind infers Local for a
+        // Direct with an empty federation id.
+        let mut legacy = serde_json::to_value(archive()).unwrap();
+        legacy["conversations"][0].as_object_mut().unwrap().remove("scope_kind");
+        legacy["conversations"][0]["federation_id"] = serde_json::json!("");
+        let legacy: MessagingRecoveryArchive = serde_json::from_value(legacy).unwrap();
+        assert!(validate_archive(&legacy).is_ok());
+
+        // Local scope is restricted to Direct conversations.
+        let mut group_local = archive();
+        group_local.conversations[0].scope_kind =
+            crate::proto::chat::ConversationScopeKind::Local as i32;
+        group_local.conversations[0].federation_id.clear();
+        group_local.conversations[0].kind = crate::proto::chat::ConversationKind::Group as i32;
+        assert!(validate_archive(&group_local).is_err());
+
+        // Federation scope still requires a non-empty federation id.
+        let mut federation_without_id = archive();
+        federation_without_id.conversations[0].federation_id.clear();
+        assert!(validate_archive(&federation_without_id).is_err());
+    }
+
+    #[test]
+    fn recovery_archive_rejects_conversation_projection_without_required_fields() {
         let mut value = serde_json::to_value(archive()).unwrap();
         value["conversations"][0]
             .as_object_mut()

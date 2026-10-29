@@ -34,7 +34,7 @@ type MessagePage struct {
 type PublicHead struct {
 	ConversationID   valueobject.ConversationID
 	Source           Source
-	FederationID     valueobject.FederationID
+	Scope            valueobject.Scope
 	AuthorityStation valueobject.StationID
 	AuthorityEpoch   valueobject.AuthorityEpoch
 	Head             valueobject.AuthorityHead
@@ -298,7 +298,7 @@ func (s *Service) PublicHead(
 	return PublicHead{
 		ConversationID:   conversationID,
 		Source:           view.Source,
-		FederationID:     view.Conversation.FederationID,
+		Scope:            view.Conversation.Scope,
 		AuthorityStation: view.Conversation.AuthorityStation,
 		AuthorityEpoch:   view.Conversation.AuthorityEpoch,
 		Head:             view.Conversation.Head,

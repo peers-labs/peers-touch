@@ -137,7 +137,6 @@ export function SocialChatPage() {
 
     void imServiceV1.messaging.createDirect({
       peerPtid: contact.peerPtid,
-      federationId: contact.federationId,
     }).then((conversation) => {
       if (directOpenGenerationRef.current !== requestGeneration) return;
       selectSession(conversation.conversationId);

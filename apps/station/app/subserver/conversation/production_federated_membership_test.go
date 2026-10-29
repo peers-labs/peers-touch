@@ -59,7 +59,7 @@ func TestFederatedMembershipPrepareDispatchesRemoteOwnerAndFencesClaims(t *testi
 		ID:               "remote-owner-leave-group",
 		Kind:             valueobject.ConversationKindGroup,
 		Status:           valueobject.ConversationStatusActive,
-		FederationID:     "federation-1",
+		Scope:            valueobject.MustFederationScope("federation-1"),
 		AuthorityStation: productionManifestTestLocalStation,
 		AuthorityEpoch:   7,
 		Owner:            fixture.bob.Actor,
@@ -148,7 +148,7 @@ func TestFederatedMembershipPrepareDispatchesRemoteOwnerAndFencesClaims(t *testi
 		Issuer: productionManifestTestRemoteStation, Audience: productionManifestTestLocalStation,
 		Subject: string(fixture.bob.Actor),
 		Custom: map[string]string{
-			federationruntime.ClaimFederationID:        string(snapshot.FederationID),
+			federationruntime.ClaimFederationID:        string(snapshot.Scope.FederationIDOrEmpty()),
 			federationruntime.ClaimConversationID:      string(snapshot.ID),
 			federationruntime.ClaimActorPTID:           string(fixture.bob.Actor),
 			federationruntime.ClaimDeviceID:            string(fixture.bob.Device),

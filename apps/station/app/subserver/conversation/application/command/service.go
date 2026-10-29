@@ -27,6 +27,10 @@ const (
 	leaveIntentVersion         = uint32(1)
 	commandProposalVersion     = uint32(1)
 	commandProposalScope       = "conversation-command-proposal"
+	// LocalAuthorityEpoch is the single immutable authority epoch for Local
+	// scope conversations. Local scope has no Federation membership ledger, so
+	// its authority never advances through federation epochs.
+	LocalAuthorityEpoch valueobject.AuthorityEpoch = 1
 )
 
 type directCreationStageError struct {
@@ -188,7 +192,7 @@ func (s *Service) BindPostCommitPublisher(
 type CreateDirectRequest struct {
 	Creator           valueobject.Endpoint
 	Peer              valueobject.PTID
-	FederationID      valueobject.FederationID
+	Scope             valueobject.Scope
 	AuthorityEpoch    valueobject.AuthorityEpoch
 	CommandID         valueobject.CommandID
 	VerifiedRoutes    []ports.EndpointRoute
@@ -458,7 +462,7 @@ func (s *Service) createDirect(
 	request CreateDirectRequest,
 ) (Result, error) {
 	if request.Creator.Validate() != nil || request.Peer == "" ||
-		request.FederationID == "" || request.AuthorityEpoch == 0 ||
+		request.Scope.IsZero() || request.AuthorityEpoch == 0 ||
 		request.CommandID == "" || len(request.ExactCommandBytes) == 0 {
 		return Result{}, invalid("application.create_direct", "request", "complete creation input is required")
 	}
@@ -580,22 +584,24 @@ func (s *Service) createDirect(
 					"creator is absent from the verified endpoint routes",
 				)
 			}
-			for _, station := range routeStations(routes) {
-				federationActive, federationErr := transaction.Federation.IsActiveStation(
-					ctx,
-					request.FederationID,
-					station,
-				)
-				if federationErr != nil {
-					return directCreationStage("check_federation", federationErr)
-				}
-				if !federationActive {
-					return conversationdomain.NewError(
-						conversationdomain.ErrorCodeFederationInactive,
-						"application.create_direct",
-						"home_station",
-						"is not an active Federation Station",
+			if federationID, isFederation := request.Scope.FederationID(); isFederation {
+				for _, station := range routeStations(routes) {
+					federationActive, federationErr := transaction.Federation.IsActiveStation(
+						ctx,
+						federationID,
+						station,
 					)
+					if federationErr != nil {
+						return directCreationStage("check_federation", federationErr)
+					}
+					if !federationActive {
+						return conversationdomain.NewError(
+							conversationdomain.ErrorCodeFederationInactive,
+							"application.create_direct",
+							"home_station",
+							"is not an active Federation Station",
+						)
+					}
 				}
 			}
 			participants, devices, buildErr := participantsAndDevices(
@@ -618,7 +624,7 @@ func (s *Service) createDirect(
 			created, transition, createErr := aggregate.CreateDirect(aggregate.CreateInput{
 				ID:               conversationID,
 				Kind:             valueobject.ConversationKindDirect,
-				FederationID:     request.FederationID,
+				Scope:            request.Scope,
 				AuthorityStation: s.localStation,
 				AuthorityEpoch:   request.AuthorityEpoch,
 				Participants:     participants,
@@ -705,7 +711,7 @@ func validateExistingDirect(
 	_, hasPeer := activeActors[request.Peer]
 	if snapshot.Kind != valueobject.ConversationKindDirect ||
 		snapshot.Status != valueobject.ConversationStatusActive ||
-		snapshot.FederationID != request.FederationID ||
+		!snapshot.Scope.Equal(request.Scope) ||
 		snapshot.AuthorityStation == "" ||
 		snapshot.AuthorityEpoch != request.AuthorityEpoch ||
 		len(snapshot.Members) != 2 ||
@@ -1026,7 +1032,7 @@ func (s *Service) CreateGroup(
 			created, transition, createErr := aggregate.CreateGroup(aggregate.CreateInput{
 				ID:               request.ConversationID,
 				Kind:             valueobject.ConversationKindGroup,
-				FederationID:     plan.FederationID,
+				Scope:            valueobject.MustFederationScope(plan.FederationID),
 				AuthorityStation: s.localStation,
 				AuthorityEpoch:   plan.AuthorityEpoch,
 				Owner:            request.Owner.Actor,
@@ -1319,7 +1325,7 @@ func (s *Service) PrepareMembership(
 		planHash := authorityPlanHash(
 			planID,
 			request.ConversationID,
-			snapshot.FederationID,
+			snapshot.Scope.FederationIDOrEmpty(),
 			snapshot.AuthorityEpoch,
 			request.Requester,
 			"",
@@ -1333,7 +1339,7 @@ func (s *Service) PrepareMembership(
 		plan, err := entity.NewAuthorityPlan(entity.AuthorityPlan{
 			ID:                        planID,
 			ConversationID:            request.ConversationID,
-			FederationID:              snapshot.FederationID,
+			FederationID:              snapshot.Scope.FederationIDOrEmpty(),
 			AuthorityEpoch:            snapshot.AuthorityEpoch,
 			Requester:                 request.Requester,
 			AuthorityHead:             preview.Head,
@@ -1404,7 +1410,8 @@ func (s *Service) submit(
 		}
 		var forwardedVerification ports.DeviceSignatureVerification
 		if forwarded != nil {
-			if snapshot.FederationID != forwarded.FederationID ||
+			snapshotFederationID, federationScope := snapshot.Scope.FederationID()
+			if !federationScope || snapshotFederationID != forwarded.FederationID ||
 				snapshot.AuthorityStation != forwarded.AuthorityStation ||
 				snapshot.AuthorityEpoch != forwarded.AuthorityEpoch {
 				return conversationdomain.NewError(
@@ -1829,7 +1836,7 @@ func (s *Service) applyMembership(
 		)
 	}
 	if plan.ConversationID != conversation.ID() ||
-		plan.FederationID != conversation.FederationID() ||
+		plan.FederationID != conversation.Scope().FederationIDOrEmpty() ||
 		plan.AuthorityEpoch != conversation.AuthorityEpoch() ||
 		!bytes.Equal(plan.Hash[:], request.AuthorityPlanHash[:]) {
 		if err := supersedePlan(ctx, transaction, &plan, now); err != nil {
@@ -2063,7 +2070,7 @@ func consumeLeaveIntent(
 		return nil, err
 	}
 	if intent.State != repository.LeaveIntentStatePending ||
-		intent.FederationID != conversation.FederationID() ||
+		intent.FederationID != conversation.Scope().FederationIDOrEmpty() ||
 		intent.ConversationID != conversation.ID() ||
 		intent.Actor.Actor != leaveActor ||
 		intent.AuthorityEpoch != conversation.AuthorityEpoch() ||
@@ -2690,9 +2697,18 @@ func (s *Service) authorizeCommandSender(
 		}
 		return nil
 	}
+	federationID, isFederation := conversation.Scope().FederationID()
+	if !isFederation {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnauthorized,
+			"application.authorize_command_sender",
+			"home_station",
+			"local scope does not authorize a remote Station sender",
+		)
+	}
 	active, err := transaction.Federation.IsActiveStation(
 		ctx,
-		conversation.FederationID(),
+		federationID,
 		senderHomeStation,
 	)
 	if err != nil {

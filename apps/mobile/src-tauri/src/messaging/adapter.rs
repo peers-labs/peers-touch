@@ -3188,9 +3188,10 @@ impl MobileMessagingStore {
         authority_station_id: &str,
         federation_id: &str,
     ) -> Result<bool, String> {
+        // federation_id is intentionally empty for Local-scope Direct
+        // conversations; only the authority station is always required.
         if conversation_id.trim().is_empty()
             || authority_station_id.trim().is_empty()
-            || federation_id.trim().is_empty()
         {
             return Err("mobile messaging conversation authority scope is incomplete".to_string());
         }

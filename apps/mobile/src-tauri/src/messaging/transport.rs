@@ -1158,12 +1158,10 @@ impl StationConversationTransport {
     pub fn create_direct(
         &self,
         peer_ptid: &str,
-        federation_id: &str,
         command_id: &str,
     ) -> Result<CreateDirectConversationResponse, String> {
         if peer_ptid.trim().is_empty()
             || peer_ptid == self.endpoint.ptid
-            || federation_id.trim().is_empty()
             || command_id.trim().is_empty()
         {
             return Err("mobile messaging direct peer identity is invalid".to_string());
@@ -1173,9 +1171,10 @@ impl StationConversationTransport {
             self.access_token.as_str(),
             &self.device_id,
             "/conversation/direct",
+            // Scope (Local vs Federation) is derived server-side; Direct
+            // creation carries no federation_id.
             &CreateDirectConversationRequest {
                 peer_ptid: peer_ptid.to_string(),
-                federation_id: federation_id.to_string(),
                 creator: Some(actor_device_ref(
                     self.endpoint.ptid.clone(),
                     self.endpoint.device_id.clone(),

@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Button, Checkbox, Empty, Input, List, Modal, Radio, Spin, Tag, Typography } from 'antd';
+import { Button, Checkbox, Empty, Input, List, Modal, Spin, Tag, Typography } from 'antd';
 import { ArrowLeft, Ban, Check, ChevronRight, Globe, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
@@ -103,7 +103,6 @@ function ContactsPageInner({
   const [localActionError, setLocalActionError] = useState('');
   const [sendingRequest, setSendingRequest] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
-  const [directScope, setDirectScope] = useState({ peerPtid: '', federationId: '' });
   const [requestDecisionRevision, setRequestDecisionRevision] = useState(0);
   const activeContactRef = useRef(activeContactPtid);
   const mountedRef = useRef(true);
@@ -187,10 +186,6 @@ function ContactsPageInner({
   const requestFederationId = peopleFederations.some(
     (federation) => federation.federationId === selectedFederationId,
   ) ? selectedFederationId : peopleFederations.length === 1 ? peopleFederations[0].federationId : '';
-  const directFederationId = selectedContact?.peerPtid === directScope.peerPtid
-    && selectedContact.federationIds.includes(directScope.federationId)
-    ? directScope.federationId
-    : selectedContact?.federationIds.length === 1 ? selectedContact.federationIds[0] : '';
   const requestDecisionScope = authSession
     ? `${authSession.stationPeerId}\u0000${authSession.actorRef.ptid}`
     : '';
@@ -376,11 +371,11 @@ function ContactsPageInner({
   };
 
   const openContactChat = async (contact: SocialContact) => {
-    if (openingChat || !directFederationId) return;
+    if (openingChat) return;
     setOpeningChat(true);
     setLocalActionError('');
     try {
-      const sessionUlid = await dispatchOpenContactChat(contact.peerPtid, directFederationId);
+      const sessionUlid = await dispatchOpenContactChat(contact.peerPtid);
       if (activeContactRef.current !== contact.peerPtid) return;
       onOpenChat({ routeId: 'detail:chat-conversation', sessionUlid });
       void selectSession(sessionUlid);
@@ -462,22 +457,8 @@ function ContactsPageInner({
               ) : null}
               {selectedProfileError ? <Text type="danger">{formatSocialError(selectedProfileError)}</Text> : null}
               {selectedBlocked ? <Tag color="error">{t('mobile.contacts.blocked')}</Tag> : null}
-              {selectedContact.federationIds.length > 1 ? (
-                <fieldset>
-                  <legend>{t('mobile.contacts.federation')}</legend>
-                  <Radio.Group value={directFederationId} onChange={(event) => setDirectScope({
-                    peerPtid: selectedContact.peerPtid,
-                    federationId: String(event.target.value),
-                  })}>
-                    {selectedContact.federationIds.map((federationId) => (
-                      <Radio key={federationId} value={federationId}>{federationId}</Radio>
-                    ))}
-                  </Radio.Group>
-                </fieldset>
-              ) : null}
-              {!directFederationId ? <MobileNotice>{t('mobile.contacts.federationRequired')}</MobileNotice> : null}
               {localActionError ? <MobileNotice tone="error">{localActionError}</MobileNotice> : null}
-              <Button type="primary" block loading={openingChat} disabled={selectedBlocked || !directFederationId} onClick={() => void openContactChat(selectedContact)}>
+              <Button type="primary" block loading={openingChat} disabled={selectedBlocked} onClick={() => void openContactChat(selectedContact)}>
                 {t('mobile.contacts.openChat')}
               </Button>
               {selectedBlocked ? (

@@ -133,10 +133,6 @@ func (s *subServer) handleCreateDirectConversation(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
-	federationID, err := valueobject.NewFederationID(request.GetFederationId())
-	if err != nil {
-		return nil, mapProductionConversationError(ctx, err)
-	}
 	commandID, err := valueobject.NewCommandID(request.GetCommandId())
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
@@ -144,6 +140,42 @@ func (s *subServer) handleCreateDirectConversation(
 	conversationID, err := valueobject.DirectConversationID(endpoint.Actor, peer)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
+	}
+	// Same-station Direct conversations are Local scope: derived from Actor
+	// home-station ownership, no Federation membership. A cross-station peer
+	// resolves the unique shared Federation server-side from the station pair;
+	// the client never supplies a federation id for Direct creation.
+	peerHomeStation, homeErr := s.composition.ActorCapabilities.
+		ResolveActorHomeStationPeerID(ctx, string(peer))
+	sameStation := homeErr == nil && peerHomeStation == string(s.localStation)
+	var scope valueobject.Scope
+	if sameStation {
+		scope, err = valueobject.LocalScope(s.localStation)
+		if err != nil {
+			return nil, mapProductionConversationError(ctx, err)
+		}
+	} else {
+		if homeErr != nil {
+			return nil, mapProductionConversationError(
+				ctx,
+				productionStage(operation, "resolve_peer_home_station", homeErr),
+			)
+		}
+		federationID, federationErr := s.federations.ResolveSharedFederation(
+			ctx,
+			s.localStation,
+			valueobject.StationID(peerHomeStation),
+		)
+		if federationErr != nil {
+			return nil, mapProductionConversationError(
+				ctx,
+				productionStage(operation, "resolve_scope", federationErr),
+			)
+		}
+		scope, err = valueobject.FederationScope(federationID)
+		if err != nil {
+			return nil, mapProductionConversationError(ctx, err)
+		}
 	}
 	requiresVerifiedRoutes := false
 	existing, getErr := s.composition.QueryService.Get(
@@ -155,7 +187,7 @@ func (s *subServer) handleCreateDirectConversation(
 	case getErr == nil:
 		if !existingDirectCanReopen(
 			existing,
-			federationID,
+			scope,
 			endpoint.Actor,
 			peer,
 			s.localStation,
@@ -177,7 +209,14 @@ func (s *subServer) handleCreateDirectConversation(
 		}
 	case conversationdomain.IsCode(getErr, conversationdomain.ErrorCodeNotFound):
 		requiresVerifiedRoutes = true
-		if gateErr := s.evaluateCreateDirect(ctx, request.GetPeerPtid()); gateErr != nil {
+		if gateErr := s.evaluateCreateDirect(ctx, social_gate.Operation{
+			Action:               "create_direct",
+			TargetPtid:           request.GetPeerPtid(),
+			ScopeKind:            social_gate.ScopeKind(scope.Kind()),
+			Scope:                string(scope.FederationIDOrEmpty()),
+			SubjectStationPeerID: string(s.localStation),
+			TargetStationPeerID:  peerHomeStation,
+		}); gateErr != nil {
 			return nil, mapProductionConversationError(
 				ctx,
 				productionStage(operation, "social_gate", gateErr),
@@ -215,7 +254,7 @@ func (s *subServer) handleCreateDirectConversation(
 		command.CreateDirectRequest{
 			Creator:           endpoint,
 			Peer:              peer,
-			FederationID:      federationID,
+			Scope:             scope,
 			AuthorityEpoch:    initialConversationAuthorityEpoch,
 			CommandID:         commandID,
 			VerifiedRoutes:    verifiedRoutes,
@@ -2153,7 +2192,8 @@ func productionConversation(snapshot aggregate.Snapshot) *chatmodel.Conversation
 		OwnerPtid:              string(snapshot.Owner),
 		Visibility:             productionConversationVisibility(snapshot.Settings.Visibility),
 		MlsEpoch:               int64(snapshot.Head.MLSEpoch),
-		FederationId:           string(snapshot.FederationID),
+		FederationId:           string(snapshot.Scope.FederationIDOrEmpty()),
+		ScopeKind:              productionScopeKind(snapshot.Scope.Kind()),
 		AuthorityEpoch:         int64(snapshot.AuthorityEpoch),
 	}
 }
@@ -2198,7 +2238,8 @@ func productionPublicHead(head query.PublicHead) *chatmodel.ConversationPublicHe
 	return &chatmodel.ConversationPublicHead{
 		ConversationId:         string(head.ConversationID),
 		Source:                 source,
-		FederationId:           string(head.FederationID),
+		FederationId:           string(head.Scope.FederationIDOrEmpty()),
+		ScopeKind:              productionScopeKind(head.Scope.Kind()),
 		AuthorityStationPeerId: string(head.AuthorityStation),
 		AuthorityEpoch:         int64(head.AuthorityEpoch),
 		GroupSeq:               int64(head.Head.Sequence),
@@ -2234,6 +2275,17 @@ func productionConversationKind(
 		return chatmodel.ConversationKind_CONVERSATION_KIND_GROUP
 	default:
 		return chatmodel.ConversationKind_CONVERSATION_KIND_UNSPECIFIED
+	}
+}
+
+func productionScopeKind(kind valueobject.ScopeKind) chatmodel.ConversationScopeKind {
+	switch kind {
+	case valueobject.ScopeKindLocal:
+		return chatmodel.ConversationScopeKind_CONVERSATION_SCOPE_KIND_LOCAL
+	case valueobject.ScopeKindFederation:
+		return chatmodel.ConversationScopeKind_CONVERSATION_SCOPE_KIND_FEDERATION
+	default:
+		return chatmodel.ConversationScopeKind_CONVERSATION_SCOPE_KIND_UNSPECIFIED
 	}
 }
 

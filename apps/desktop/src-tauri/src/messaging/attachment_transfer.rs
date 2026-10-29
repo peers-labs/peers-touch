@@ -614,10 +614,8 @@ mod tests {
 
                 let peer_ptid = std::env::var("MESSAGING_ATTACHMENT_PEER_PTID")
                     .expect("MESSAGING_ATTACHMENT_PEER_PTID is required without a local route");
-                let federation_id = std::env::var("MESSAGING_ATTACHMENT_FEDERATION_ID")
-                    .expect("MESSAGING_ATTACHMENT_FEDERATION_ID is required without a local route");
                 let conversation_id = engine
-                    .create_direct_conversation(&session.token, &peer_ptid, &federation_id)
+                    .create_direct_conversation(&session.token, &peer_ptid)
                     .unwrap();
                 let response = station_client.request_proto_for_device::<
                     ListConversationsRequest,

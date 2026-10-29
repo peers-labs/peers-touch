@@ -180,7 +180,6 @@ fn attachment_mime_type(path: &std::path::Path) -> &'static str {
 #[derive(Debug, Deserialize)]
 pub struct MessagingCreateDirectInput {
     pub peer_ptid: String,
-    pub federation_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1190,10 +1189,10 @@ pub fn messaging_create_direct(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    if input.peer_ptid.trim().is_empty() || input.federation_id.trim().is_empty() {
+    if input.peer_ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "peer_ptid and federation_id are required",
+            "peer_ptid is required",
             None,
         );
     }
@@ -1202,7 +1201,7 @@ pub fn messaging_create_direct(
         Err(error) => return error,
     };
     let conversation_id =
-        match engine.create_direct_conversation(&token, &input.peer_ptid, &input.federation_id) {
+        match engine.create_direct_conversation(&token, &input.peer_ptid) {
             Ok(conversation_id) => conversation_id,
             Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
         };

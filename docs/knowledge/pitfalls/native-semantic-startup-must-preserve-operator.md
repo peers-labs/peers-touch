@@ -44,6 +44,11 @@ activation keep their respective behavior.
 The Desktop manifest requires Tauri 2.12.2, which exposes the launch activation
 control. Verify the version resolved in the Desktop Cargo lockfile; a different
 SDK installed in the global Cargo cache does not establish the compiled API.
+Semantic startup sets `activate_ignoring_other_apps(false)` on the Builder and
+Accessory policy before the event loop. The initial visible window is unfocused;
+setup must not hide it or switch through Prohibited and later presentation.
+The native Cell's prelaunch and `launch-ready` samples independently verify
+that the compiled startup follows this contract.
 
 The Native Cell freezes the real operator before launch, rejects a baseline
 whose PID is the target, and preserves the same baseline through readiness,
@@ -67,6 +72,21 @@ Verify the resolved Wry version in the Desktop lockfile before interpreting a
 focus-false run. An unclosed diagnostic authorization sheet is not a valid
 operator baseline for subsequent qualification.
 
+## Pointer must stay on the Cell window display
+
+Observed 2026-10-29 on a multi-display console: when the frozen operator
+pointer sat on a display other than the Cell window display, Window Server
+nudged the pointer a few points during chooser commit and the
+`chooser-selected` (sometimes `launch-ready`) non-interference sample blocked
+the Cell; with the pointer parked on the Cell window display all six chooser
+phases kept the exact same pointer. Frontmost PID and keyboard focus were
+unchanged in both cases, so the mismatch is pointer-only and environmental,
+not an activation or rebaseline issue. Semantic mode must not warp the pointer
+to manufacture a baseline. Park the operator pointer on the probe window
+display before launch, and serialize against other native Gates on the same
+shared GUI session; their Station reset leases do not mutually exclude but
+both contend for the one operator pointer.
+
 ## Chooser qualification and observation ownership
 
 Requiring exclusive input for an exact-PID AX chooser prevented an otherwise
@@ -82,6 +102,22 @@ against the same prelaunch operator. Driver is the only operator-sampling owner;
 Binding consumes qualification and the shared picker uses the same observation
 contract for its visible trigger and exact-PID native selection. Permission,
 physical focus and HID remain separately guarded.
+
+The XPC-hosted column browser advertises a mutable `AXSelectedChildren`
+but the cross-service write is rejected with -25205, and row
+`AXOpen`/`AXConfirm` do not commit a file. The exact-PID semantic fallback
+commits the panel Search field (`AXIdentifier="Search"`) with
+`AXValue` + `AXConfirm`, requires exactly one `AXFilename` match, selects
+the `AXOutline ListView` row through `AXSelectedRows`, then presses OK.
+No match, ambiguous matches, or a panel left open stay as an unavailable
+semantic sentinel rather than a fabricated selection; a unique qualification
+filename makes the single match exact and the parent still verifies path and
+file bytes. The loopback HTTP fault proxy is switched in only after the bound
+session discovers the reviewed manifest origin; Station canonical origin is
+restarted to loopback then, and restored to the public origin before any native
+restart/rebind. Launching a session against the loopback origin before the
+public-origin `station_add` completes yields
+`station_discovery_invalid: Endpoint statement fields are invalid`.
 
 Run `test_file_chooser_qualification` to reject copied source/Cell identity,
 missing/reordered phases, unclosed panels, changed file bytes, invalid pointer
@@ -193,7 +229,9 @@ Required AXWindows cannot accept failed, unsupported or null reads. Every
 operator attribute receives the original focus deadline and limits its own
 messaging timeout to the lesser of 0.5 seconds and remaining time. Expiry
 before or after the native read fails, releases returned CF values and stops
-subsequent reads. No retry, cached state or new deadline supplies focus proof.
+subsequent reads. The shared `macos_ax.AXReadSession` owns bounded transient
+read retries; they consume that same original deadline. Mutations remain
+one-shot. Cached state or a new deadline cannot supply focus proof.
 
 Run `test_native_observation_diagnostics` for failed status with/without CF
 values, required versus optional absence, actual text/boolean decoding, expiry

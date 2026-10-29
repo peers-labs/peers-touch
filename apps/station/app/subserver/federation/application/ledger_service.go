@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/oklog/ulid/v2"
+	"github.com/peers-labs/peers-touch/station/app/internal/identity"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain/policy"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
@@ -371,7 +371,7 @@ func ProjectionMutationForEvent(
 }
 
 func generateEventID() string {
-	return "evt_" + ulid.Make().String()
+	return identity.NewLedgerEventID()
 }
 
 func (s *LedgerService) FetchEvents(ctx context.Context, federationID string, fromSeq uint64, limit uint32) ([]*pb.LedgerEvent, error) {

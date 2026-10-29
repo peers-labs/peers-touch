@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from tooling.acceptance.core import (
@@ -16,7 +17,10 @@ from tooling.acceptance.core import (
     REPO_ROOT,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
-from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
+from tooling.acceptance.drivers.native.runtime import (
+    CloneStorageEntry,
+    NativeLaunchOptions,
+)
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
@@ -44,6 +48,27 @@ from tooling.acceptance.gates.chat.native_support import (
 
 GATE_ID = "chat-native-multi-device-e2e"
 REPORT_PATH = None
+# Relative storage roots cloned from bob1 into bob2 before the replacement
+# login. The actor identity keys preserve the PTID (and avoid
+# ErrActorIdentityConflict); the installation device id is the binding the
+# Station keys same-device session revocation on, so without it bob1 is never
+# revoked and bob2 enrolls as a peer device instead of replacing the install.
+ACTOR_IDENTITY_KEYS_RELATIVE = (
+    "peers-touch/desktop/data/secure-store/identity-keys"
+)
+# The Station replaces only sessions bound to the same installation; its
+# revocation key is the canonical install id persisted by
+# device_install under the launch profile's data/auth directory.
+INSTALL_DEVICE_ID_NAME = "device_id"
+
+
+def install_device_id_relative(profile: str) -> str:
+    # The installation device id lives under the launch profile segment
+    # (StorageLayout honors PT_PROFILE), unlike the profile-independent
+    # crypto sandbox identity keys.
+    return f"peers-touch/{profile}/data/auth/{INSTALL_DEVICE_ID_NAME}"
+
+
 CLIENT_PORTS = {"alice": 4447, "bob1": 4448, "bob2": 4449}
 CLIENT_ACTOR_ROLES = {
     "alice": "alice",
@@ -303,10 +328,9 @@ class NativeMultiDeviceGate(AcceptanceGate):
         alice = self.clients["alice"]
         for client in self.clients.values():
             enter_chat_page(client)
-        federation_id = shared_federation_id(
-            self.clients,
-            ("alice", "bob1"),
-        )
+        # Cross-Station Federation readiness (Station resolves it from the two
+        # Home Stations); the Direct creation payload itself stays peer-only.
+        shared_federation_id(self.clients, ("alice", "bob1"))
         wait_for_peer_key_bundle(
             alice,
             self.ptids["bob1"],
@@ -321,10 +345,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
         created = async_harness(
             alice,
             "createDirectConversation",
-            {
-                "peerPtid": self.ptids["bob1"],
-                "federationId": federation_id,
-            },
+            {"peerPtid": self.ptids["bob1"]},
         )
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:
@@ -539,7 +560,8 @@ class NativeMultiDeviceGate(AcceptanceGate):
             bob1 = self.clients["bob1"]
             enter_chat_page(alice)
             enter_chat_page(bob1)
-            federation_id = self.step(
+            # Cross-Station Federation readiness before the peer-only Direct open.
+            self.step(
                 "federation.shared",
                 lambda: shared_federation_id(
                     self.clients,
@@ -566,10 +588,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
                     created = async_harness(
                         alice,
                         "createDirectConversation",
-                        {
-                            "peerPtid": self.ptids["bob1"],
-                            "federationId": federation_id,
-                        },
+                        {"peerPtid": self.ptids["bob1"]},
                     )
                     conversation_id = str((created or {}).get("conversationId") or "")
                 except GateError:
@@ -595,28 +614,62 @@ class NativeMultiDeviceGate(AcceptanceGate):
             )
 
             # Phase 2: bob2 logs in (session kick).
-            # Copy bob1's actor identity key to bob2's storage so the same PTID
-            # can enroll a second device without ErrActorIdentityConflict.
+            # Copy bob1's actor identity keys to bob2's storage so the same
+            # PTID enrolls without ErrActorIdentityConflict, and copy the
+            # installation device id so the Station treats bob2 as the same
+            # install and revokes bob1's session (same-device CreateWithKick).
+            bob1_profile = str(self.client_specs["bob1"].get("profile") or "")
+            bob2_profile = str(self.client_specs["bob2"].get("profile") or "")
+            if not bob1_profile or not bob2_profile:
+                raise GateError("bob1/bob2 launch profiles are required")
+            bob1_device_relative = install_device_id_relative(bob1_profile)
+            bob2_device_relative = install_device_id_relative(bob2_profile)
             if self.runtime_binding is None:
+                storage_root = webdriver_root
                 bob1_keys = (
-                    webdriver_root / "bob1" / "storage" / "peers-touch"
-                    / "desktop" / "data" / "secure-store" / "identity-keys"
+                    storage_root / "bob1" / "storage"
+                    / Path(ACTOR_IDENTITY_KEYS_RELATIVE)
                 )
                 bob2_keys = (
-                    webdriver_root / "bob2" / "storage" / "peers-touch"
-                    / "desktop" / "data" / "secure-store" / "identity-keys"
+                    storage_root / "bob2" / "storage"
+                    / Path(ACTOR_IDENTITY_KEYS_RELATIVE)
                 )
-                if bob1_keys.exists():
-                    bob2_keys.mkdir(parents=True, exist_ok=True)
-                    for key_file in bob1_keys.iterdir():
-                        shutil.copy2(key_file, bob2_keys / key_file.name)
+                if not bob1_keys.is_dir():
+                    raise GateError(
+                        "bob1 actor identity keys are missing: "
+                        f"{bob1_keys}"
+                    )
+                bob2_keys.mkdir(parents=True, exist_ok=True)
+                for key_file in bob1_keys.iterdir():
+                    shutil.copy2(key_file, bob2_keys / key_file.name)
+                bob1_device_id = (
+                    storage_root / "bob1" / "storage"
+                    / Path(bob1_device_relative)
+                )
+                if not bob1_device_id.is_file():
+                    raise GateError(
+                        "bob1 installation device id is missing: "
+                        f"{bob1_device_id}"
+                    )
+                bob2_device_id = (
+                    storage_root / "bob2" / "storage"
+                    / Path(bob2_device_relative)
+                )
+                bob2_device_id.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(bob1_device_id, bob2_device_id)
             else:
                 self.runtime_binding.clone_actor_storage(
                     "bob1",
                     self.client_specs["bob1"],
                     "bob2",
                     self.client_specs["bob2"],
-                    "peers-touch/desktop/data/secure-store/identity-keys",
+                    (
+                        ACTOR_IDENTITY_KEYS_RELATIVE,
+                        CloneStorageEntry(
+                            bob1_device_relative,
+                            bob2_device_relative,
+                        ),
+                    ),
                 )
 
             self.step(
@@ -630,10 +683,14 @@ class NativeMultiDeviceGate(AcceptanceGate):
                 "bob1",
             )
             self.client_lifecycles.mark_auth_revoked(bob1)
+            # CreateWithKick replaces only the slot of the SAME installation:
+            # same Actor and same installation device id, different session.
+            # Other installations coexist and are never revoked.
             self.assert_condition(
                 "session_handoff",
                 self.ptids["bob1"] == self.ptids["bob2"]
-                and self.device_ids.get("bob1") != self.device_ids.get("bob2"),
+                and bool(self.device_ids.get("bob1"))
+                and self.device_ids.get("bob1") == self.device_ids.get("bob2"),
                 json.dumps(bob1_revoked, sort_keys=True),
             )
 
@@ -662,10 +719,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
                     created2 = async_harness(
                         bob2,
                         "createDirectConversation",
-                        {
-                            "peerPtid": self.ptids["alice"],
-                            "federationId": federation_id,
-                        },
+                        {"peerPtid": self.ptids["alice"]},
                     )
                     conversation2_id = str((created2 or {}).get("conversationId") or "")
                 except GateError:

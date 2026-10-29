@@ -1060,6 +1060,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "rand 0.8.7",
+ "search-core",
  "secure-content-core",
  "serde",
  "serde_json",
@@ -1774,6 +1775,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "search-core"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "hmac",
+ "log",
+ "prost",
+ "prost-build",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

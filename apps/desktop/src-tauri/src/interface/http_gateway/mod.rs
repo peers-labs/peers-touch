@@ -7710,18 +7710,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            if input.peer_ptid.trim().is_empty() || input.federation_id.trim().is_empty() {
+            if input.peer_ptid.trim().is_empty() {
                 return to_json(AppResult::<Value>::fail(
                     ErrorCode::InvalidArgument,
-                    "peer_ptid and federation_id are required",
+                    "peer_ptid is required",
                     None,
                 ));
             }
-            let conversation_id = match engine.create_direct_conversation(
-                &token,
-                &input.peer_ptid,
-                &input.federation_id,
-            ) {
+            let conversation_id = match engine
+                .create_direct_conversation(&token, &input.peer_ptid)
+            {
                 Ok(id) => id,
                 Err(e) => {
                     return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None))

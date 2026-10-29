@@ -24,10 +24,14 @@ export async function dispatchSendFriendRequest(
 
 export async function dispatchOpenContactChat(
   peerPtid: string,
-  federationId: string,
+  federationId?: string,
 ): Promise<string> {
+  // federationId is deprecated for Direct: the Station derives the scope from
+  // the two actors' Home Stations. The parameter is accepted for call-site
+  // compatibility but never used.
+  void federationId;
   const conversationId = await useSocialStore.getState()
-    .openDirectConversation(peerPtid, federationId);
+    .openDirectConversation(peerPtid);
   await wakeActiveMessagingSession();
   if (!useSocialStore.getState().sessions.some(
     (session) => session.ulid === conversationId,

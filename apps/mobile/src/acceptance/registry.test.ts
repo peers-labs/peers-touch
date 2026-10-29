@@ -380,13 +380,11 @@ describe('Mobile Acceptance Harness', () => {
     });
   });
 
-  it('prepares a parent-supplied actor identity without returning the seed', async () => {
+  it('prepares a parent-supplied actor identity through the acceptance-only identity command', async () => {
     const seedBase64 = 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=';
     const storageKey =
       'mobile-crypto-identity.v1.identity.0123456789abcdef0123456789abcdef';
-    invokeMock
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(seedBase64);
+    invokeMock.mockResolvedValueOnce(undefined);
 
     const result = await createMobileAcceptanceHarness()[
       'runtime.prepareActorIdentity'
@@ -394,15 +392,29 @@ describe('Mobile Acceptance Harness', () => {
 
     expect(result).toEqual({ prepared: true });
     expect(result).not.toHaveProperty('seedBase64');
+    expect(invokeMock).toHaveBeenCalledTimes(1);
     expect(invokeMock).toHaveBeenNthCalledWith(
       1,
-      'secure_storage_set',
-      { key: storageKey, value: seedBase64 },
+      'secure_storage_acceptance_seed_identity',
+      { key: storageKey, seedBase64 },
     );
-    expect(invokeMock).toHaveBeenNthCalledWith(
-      2,
-      'secure_storage_get',
-      { key: storageKey },
+  });
+
+  it('never addresses the Rust identity namespace through generic web storage commands', async () => {
+    const actionsSource = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+    const identityActionBody = actionsSource.slice(
+      actionsSource.indexOf("'runtime.prepareActorIdentity'"),
+      actionsSource.indexOf("'station.add'"),
+    );
+
+    expect(identityActionBody).toMatch(
+      /secure_storage_acceptance_seed_identity/,
+    );
+    expect(identityActionBody).not.toMatch(
+      /secure_storage_(?:get|set|remove)/,
     );
   });
 
@@ -1147,7 +1159,7 @@ describe('Mobile Acceptance Harness', () => {
 
     const result = await createMobileAcceptanceHarness()[
       'messaging.createDirect'
-    ]({ peerPtid: 'ptid:bob', federationId: 'federation-1' })
+    ]({ peerPtid: 'ptid:bob' })
       .finally(releaseAdmission);
 
     expect(result).toEqual({
@@ -1162,7 +1174,6 @@ describe('Mobile Acceptance Harness', () => {
         deviceId: 'device-1',
         lifecycleGeneration: 1,
         peerPtid: 'ptid:bob',
-        federationId: 'federation-1',
       },
     });
   });
@@ -1217,7 +1228,7 @@ describe('Mobile Acceptance Harness', () => {
 
       expect(settled).toBe(false);
       expect(openContactChatMock).toHaveBeenCalledExactlyOnceWith(
-        'ptid:bob', 'federation-1',
+        'ptid:bob',
       );
       expect(invokeMock).not.toHaveBeenCalled();
       resolveOpen('station-returned-conversation');
@@ -1237,12 +1248,11 @@ describe('Mobile Acceptance Harness', () => {
       expect(invokeMock).not.toHaveBeenCalled();
     });
 
-    it.each([
-      [{ peerPtid: '', federationId: 'federation-1' }, 'peerPtid'],
-      [{ peerPtid: 'ptid:bob', federationId: '' }, 'federationId'],
-    ])('rejects missing contact scope before dispatch: %s', async (input, field) => {
-      await expect(createMobileAcceptanceHarness()['social.contact.open'](input))
-        .rejects.toThrow(`social.contact.open.${field}`);
+    it('rejects missing contact peer before dispatch', async () => {
+      await expect(createMobileAcceptanceHarness()['social.contact.open']({
+        peerPtid: '',
+      }))
+        .rejects.toThrow('social.contact.open.peerPtid');
       expect(openContactChatMock).not.toHaveBeenCalled();
       expect(invokeMock).not.toHaveBeenCalled();
     });

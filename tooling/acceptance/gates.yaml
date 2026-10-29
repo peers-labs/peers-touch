@@ -483,6 +483,17 @@
       "tier": "env-evidence",
       "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext, DELIVERED receipt visibility, unobscured newest-message geometry, and bundled demo-avatar rendering."
     },
+    "chat-native-single-station-two-client-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.native_single_station_two_client_entry && python3 -m tooling.acceptance.gates.chat.native_single_station_two_client_e2e",
+      "timeout_seconds": 1800,
+      "environment": "native-tauri-single-station-webdriver",
+      "provisioner": "native-tauri-single-station-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run two isolated embedded-WebDriver Tauri clients on one Station and prove a no-federation Local Direct with bidirectional plaintext, DELIVERED receipt visibility, and Local scope persistence."
+    },
     "chat-presence-layout-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_presence_layout && python3 -m tooling.acceptance.gates.chat.lifecycle_presence_layout_e2e",
       "timeout_seconds": 2100,

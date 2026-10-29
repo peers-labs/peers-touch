@@ -307,7 +307,12 @@ export interface MessagingConversationProjection {
 
 export interface MessagingCreateDirectInput extends MessagingMutationScopeInput {
   peerPtid: string;
-  federationId: string;
+  /**
+   * Deprecated for Direct creation: the Station derives the scope (Local vs
+   * Federation) from the two actors' Home Stations. Retained as optional only
+   * so older acceptance call sites compile during the migration.
+   */
+  federationId?: string;
 }
 
 export interface MessagingCreateDirectResult {
@@ -1197,7 +1202,19 @@ export async function messagingCreateDirect(
   input: MessagingCreateDirectInput,
 ): Promise<MessagingCreateDirectResult> {
   requireMessagingMutation(input, 'social');
-  return invoke<MessagingCreateDirectResult>('messaging_create_direct', { input });
+  // Scope (Local vs Federation) is derived server-side from the two actors'
+  // Home Stations, so federationId is intentionally omitted. The account
+  // mutation scope is still required by the Tauri command to route the command
+  // to the active account-scoped engine.
+  return invoke<MessagingCreateDirectResult>('messaging_create_direct', {
+    input: {
+      stationPeerId: input.stationPeerId,
+      actorPtid: input.actorPtid,
+      deviceId: input.deviceId,
+      lifecycleGeneration: input.lifecycleGeneration,
+      peerPtid: input.peerPtid,
+    },
+  });
 }
 
 export async function messagingCreateGroup(

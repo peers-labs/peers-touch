@@ -46,7 +46,7 @@ func TestSubServerPrepareGroupRecipientSnapshot(t *testing.T) {
 			HomeStationPeerID: "station-z",
 		},
 	}
-	if prepared.FederationID != string(fixture.snapshot.FederationID) ||
+	if prepared.FederationID != string(fixture.snapshot.Scope.FederationIDOrEmpty()) ||
 		prepared.ConversationID != string(fixture.snapshot.ID) ||
 		prepared.AuthorPTID != string(fixture.author.Actor) ||
 		prepared.MembershipEpoch != uint64(fixture.snapshot.Head.MembershipEpoch) ||
@@ -307,7 +307,7 @@ func groupSnapshotCapabilitySnapshot(
 	}
 	conversation, _, err := aggregate.CreateGroup(aggregate.CreateInput{
 		ID:               "group-snapshot-capability",
-		FederationID:     "federation-snapshot-capability",
+		Scope:            valueobject.MustFederationScope("federation-snapshot-capability"),
 		AuthorityStation: "station-a",
 		AuthorityEpoch:   1,
 		Owner:            author.Actor,

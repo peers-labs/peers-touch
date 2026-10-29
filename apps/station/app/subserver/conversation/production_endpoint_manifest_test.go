@@ -578,7 +578,7 @@ func TestAcceptedRelationshipDirectMatchesExactActivePair(t *testing.T) {
 		ID:               "existing-direct",
 		Kind:             valueobject.ConversationKindDirect,
 		Status:           valueobject.ConversationStatusActive,
-		FederationID:     "federation-one",
+		Scope:            valueobject.MustFederationScope("federation-one"),
 		AuthorityStation: productionManifestTestRemoteStation,
 		AuthorityEpoch:   1,
 		Members: []entity.Member{
@@ -593,7 +593,7 @@ func TestAcceptedRelationshipDirectMatchesExactActivePair(t *testing.T) {
 	}
 	if !existingDirectCanReopen(
 		view,
-		"federation-one",
+		valueobject.MustFederationScope("federation-one"),
 		alice,
 		bob,
 		productionManifestTestLocalStation,
@@ -604,7 +604,7 @@ func TestAcceptedRelationshipDirectMatchesExactActivePair(t *testing.T) {
 	view.FollowerStatus = repository.FollowerStatusReadOnly
 	if existingDirectCanReopen(
 		view,
-		"federation-one",
+		valueobject.MustFederationScope("federation-one"),
 		alice,
 		bob,
 		productionManifestTestLocalStation,
@@ -612,10 +612,10 @@ func TestAcceptedRelationshipDirectMatchesExactActivePair(t *testing.T) {
 		t.Fatal("read-only follower Direct was reusable")
 	}
 	view.FollowerStatus = repository.FollowerStatusActive
-	view.Conversation.FederationID = "federation-two"
+	view.Conversation.Scope = valueobject.MustFederationScope("federation-two")
 	if existingDirectCanReopen(
 		view,
-		"federation-one",
+		valueobject.MustFederationScope("federation-one"),
 		alice,
 		bob,
 		productionManifestTestLocalStation,

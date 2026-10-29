@@ -26,7 +26,6 @@ describe('IM service boundary', () => {
 
     await expect(imServiceV1.messaging.createDirect({
       peerPtid: 'ptid:bob',
-      federationId: 'federation-1',
     })).resolves.toEqual({
       conversationId: 'conversation-1',
       state: 'projected',
@@ -35,7 +34,6 @@ describe('IM service boundary', () => {
     expect(invokeMock).toHaveBeenCalledWith('messaging_create_direct', {
       input: {
         peer_ptid: 'ptid:bob',
-        federation_id: 'federation-1',
       },
     })
   })

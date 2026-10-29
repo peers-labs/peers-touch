@@ -122,9 +122,7 @@ func (f *ProductionTransactionalAdapterFactory) Bind(
 	}
 
 	identity := &productionIdentityDirectory{db: tx}
-	federation := &productionFederationDirectory{
-		membership: federationinfra.NewRepos(tx).Membership,
-	}
+	federation := newProductionFederationDirectory(tx)
 
 	deviceInboxRepository, err := deliveryinfra.NewRepository(tx, f.deviceInboxLimits)
 	if err != nil {
@@ -187,10 +185,6 @@ func (f *ProductionTransactionalAdapterFactory) Bind(
 		},
 		ServiceNotifications: &productionServiceNotifications{
 			producer: notificationinfra.NewTxProducer(tx),
-		},
-		LocalScope: &productionLocalScope{
-			db:           tx,
-			localStation: f.localStation,
 		},
 		DeviceInbox:         deviceInbox,
 		FederationOutbox:    federationOutbox,
@@ -502,6 +496,15 @@ type productionFederationDirectory struct {
 	membership federationdomain.MembershipRepository
 }
 
+// newProductionFederationDirectory builds the non-transactional Federation
+// membership view shared by transaction-scoped adapters and the cross-station
+// social gate.
+func newProductionFederationDirectory(db *gorm.DB) *productionFederationDirectory {
+	return &productionFederationDirectory{
+		membership: federationinfra.NewRepos(db).Membership,
+	}
+}
+
 func (d *productionFederationDirectory) IsActiveStation(
 	ctx context.Context,
 	federationID valueobject.FederationID,
@@ -531,6 +534,76 @@ func (d *productionFederationDirectory) IsActiveStation(
 	}
 
 	return record != nil && strings.EqualFold(record.Status, "active"), nil
+}
+
+func (d *productionFederationDirectory) ResolveSharedFederation(
+	ctx context.Context,
+	stationA valueobject.StationID,
+	stationB valueobject.StationID,
+) (valueobject.FederationID, error) {
+	if d == nil || d.membership == nil ||
+		strings.TrimSpace(string(stationA)) == "" ||
+		strings.TrimSpace(string(stationB)) == "" {
+		return "", conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"production_federation.resolve_shared",
+			"stations",
+			"both Stations are required",
+		)
+	}
+	membershipsA, err := d.membership.ListByStation(ctx, string(stationA))
+	if err != nil {
+		return "", fmt.Errorf(
+			"conversation production Federation: list subject memberships: %w",
+			err,
+		)
+	}
+	activeByID := make(map[string]struct{}, len(membershipsA))
+	for _, membership := range membershipsA {
+		if membership != nil && strings.EqualFold(membership.Status, "active") {
+			activeByID[membership.FederationID] = struct{}{}
+		}
+	}
+	membershipsB, err := d.membership.ListByStation(ctx, string(stationB))
+	if err != nil {
+		return "", fmt.Errorf(
+			"conversation production Federation: list target memberships: %w",
+			err,
+		)
+	}
+	shared := make([]string, 0, 1)
+	for _, membership := range membershipsB {
+		if membership == nil || !strings.EqualFold(membership.Status, "active") {
+			continue
+		}
+		if _, ok := activeByID[membership.FederationID]; ok {
+			shared = append(shared, membership.FederationID)
+		}
+	}
+	if len(shared) == 0 {
+		return "", conversationdomain.NewError(
+			conversationdomain.ErrorCodeFederationInactive,
+			"production_federation.resolve_shared",
+			"federation",
+			"the two Stations share no active Federation",
+		)
+	}
+	if len(shared) > 1 {
+		return "", conversationdomain.NewError(
+			conversationdomain.ErrorCodeFederationInactive,
+			"production_federation.resolve_shared",
+			"federation",
+			"the two Stations share multiple active Federations; scope is ambiguous",
+		)
+	}
+	federationID, err := valueobject.NewFederationID(shared[0])
+	if err != nil {
+		return "", fmt.Errorf(
+			"conversation production Federation: canonical shared federation id: %w",
+			err,
+		)
+	}
+	return federationID, nil
 }
 
 type productionFederationOutboxWriter struct {

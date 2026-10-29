@@ -41,6 +41,10 @@ from tooling.acceptance.core.source_sync import (
     SourceSyncResult,
 )
 from tooling.acceptance.drivers.tauri import ProvisionedTauriLauncher
+from tooling.acceptance.drivers.native.runtime import (
+    CloneStorageRoots,
+    normalize_clone_paths,
+)
 from tooling.acceptance.provisioners.transport_endpoint import (
     parse_orchestrator_endpoint,
 )
@@ -1073,49 +1077,56 @@ class NativeDesktopWindowsProvisioner:
         self,
         source_actor: str,
         target_actor: str,
-        relative_path: str,
+        relative_path: CloneStorageRoots,
     ) -> None:
         state = self._require_state()
         source = self._active_actor(source_actor)
         target = self._actor_id(target_actor)
-        relative = PureWindowsPath(relative_path)
-        if (
-            not relative_path
-            or relative.is_absolute()
-            or ".." in relative.parts
-        ):
-            raise ProvisioningError(
-                "Windows runtime-cell actor storage path is invalid"
-            )
+        entries = normalize_clone_paths(relative_path)
+        nodes = [
+            (PureWindowsPath(entry.source), PureWindowsPath(entry.target))
+            for entry in entries
+        ]
         if target in self._actors:
             raise ProvisioningError(
                 f"Windows runtime-cell actor {target!r} is active"
             )
-        source_path = _windows_verbatim_path(_windows_join(
-            str(state["brokerRoot"]),
-            "actors",
-            str(state["runId"]),
-            source,
-            "storage",
-            str(relative),
-        ))
-        target_path = _windows_verbatim_path(_windows_join(
+        target_storage = _windows_verbatim_path(_windows_join(
             str(state["brokerRoot"]),
             "actors",
             str(state["runId"]),
             target,
             "storage",
-            str(relative),
         ))
-        script = (
-            "$ErrorActionPreference='Stop'; "
-            f"if (Test-Path -LiteralPath '{target_path}') {{ "
-            "throw 'target storage already exists' }; "
-            f"New-Item -ItemType Directory -Force -Path "
-            f"'{str(PureWindowsPath(target_path).parent)}' | Out-Null; "
-            f"Copy-Item -Recurse -LiteralPath '{source_path}' "
-            f"-Destination '{target_path}'"
-        )
+        copy_commands: list[str] = [
+            "$ErrorActionPreference='Stop';",
+            f"if (Test-Path -LiteralPath '{target_storage}') {{ "
+            "throw 'target storage already exists' };",
+        ]
+        for source_node, target_node in nodes:
+            source_path = _windows_verbatim_path(_windows_join(
+                str(state["brokerRoot"]),
+                "actors",
+                str(state["runId"]),
+                source,
+                "storage",
+                str(source_node),
+            ))
+            target_path = _windows_verbatim_path(_windows_join(
+                str(state["brokerRoot"]),
+                "actors",
+                str(state["runId"]),
+                target,
+                "storage",
+                str(target_node),
+            ))
+            copy_commands.extend([
+                f"New-Item -ItemType Directory -Force -Path "
+                f"'{str(PureWindowsPath(target_path).parent)}' | Out-Null;",
+                f"Copy-Item -Recurse -LiteralPath '{source_path}' "
+                f"-Destination '{target_path}';",
+            ])
+        script = " ".join(copy_commands)
         self.transport.run_argv(
             (
                 "powershell.exe",

@@ -183,6 +183,7 @@ class MobileMessagingJourney:
         total_elapsed_ms = int((self.monotonic() - started_at) * 1000)
         return {
             "scenario": "social-convergence",
+            "directScope": self.direct_scope(sender, receiver),
             "conversationId": conversation_id,
             "messageId": message_id,
             "senderPtid": sender.ptid,
@@ -293,17 +294,97 @@ class MobileMessagingJourney:
         sender: MessagingActor,
         receiver: MessagingActor,
     ) -> str:
+        same_station = self._same_station(sender, receiver)
+        open_payload: dict[str, Any] = {"peerPtid": receiver.ptid}
+        if same_station:
+            # Local scope: both actors are attested against the same Home
+            # Station and the accepted relationship is seeded for it. The
+            # Station derives the Direct scope, so the client never performs a
+            # federated search nor selects a Federation id.
+            if not (sender.ptid.strip() and receiver.ptid.strip()) or (
+                sender.ptid == receiver.ptid
+            ):
+                raise GateError(
+                    "Mobile same-Station Direct requires two distinct PTIDs"
+                )
+        else:
+            federation_id = self._resolve_cross_station_federation(
+                sender_session,
+                sender=sender,
+                receiver=receiver,
+            )
+            self._ensure_accepted_relationship(
+                sender_session,
+                receiver_session,
+                sender=sender,
+                receiver=receiver,
+                receiver_home_station_peer_id=receiver.station_peer_id,
+                federation_id=federation_id,
+            )
+            open_payload["federationId"] = federation_id
+        self._await_write_admission(
+            sender_session,
+            f"{sender.client_id} contact Direct write admission",
+        )
+        conversation: dict[str, Any] = {}
+
+        def contact_ready() -> bool:
+            nonlocal conversation
+            try:
+                value = sender_session.call_action(
+                    "social.contact.open",
+                    open_payload,
+                )
+            except DriverError as error:
+                if "mobile.contacts.conversationPreparing" in str(error):
+                    return False
+                raise
+            conversation = self._mapping(value, "Contact Direct creation")
+            return bool(conversation.get("conversationId"))
+
+        self._await_condition(
+            contact_ready,
+            f"{sender.client_id} contact Direct conversation",
+        )
+        conversation_id = self._text(
+            conversation.get("conversationId"),
+            "Direct conversation ID",
+        )
+        self._await_conversation(sender_session, conversation_id, kind=1)
+        self._await_conversation(receiver_session, conversation_id, kind=1)
+        return conversation_id
+
+    @staticmethod
+    def _same_station(
+        sender: MessagingActor,
+        receiver: MessagingActor,
+    ) -> bool:
+        return bool(
+            sender.station_peer_id.strip()
+            and sender.station_peer_id == receiver.station_peer_id
+        )
+
+    @staticmethod
+    def direct_scope(sender: MessagingActor, receiver: MessagingActor) -> str:
+        return (
+            "local"
+            if MobileMessagingJourney._same_station(sender, receiver)
+            else "federation"
+        )
+
+    def _resolve_cross_station_federation(
+        self,
+        sender_session: MessagingJourneySession,
+        *,
+        sender: MessagingActor,
+        receiver: MessagingActor,
+    ) -> str:
         if sender.federation_id != receiver.federation_id:
             raise GateError("Mobile actors do not share one explicit Federation")
-        query = (
-            receiver.role
-            if sender.station_peer_id == receiver.station_peer_id
-            else receiver.federated_handle
-        )
         results = sender_session.call_action(
             "social.people.search",
             {
-                "query": query,
+                "query": receiver.federated_handle,
                 "federationId": sender.federation_id,
             },
         )
@@ -343,48 +424,7 @@ class MobileMessagingJourney:
             raise GateError(
                 f"{sender.client_id} resolved the receiver in the wrong Federation"
             )
-        self._ensure_accepted_relationship(
-            sender_session,
-            receiver_session,
-            sender=sender,
-            receiver=receiver,
-            receiver_home_station_peer_id=receiver_home_station_peer_id,
-            federation_id=federation_id,
-        )
-        self._await_write_admission(
-            sender_session,
-            f"{sender.client_id} contact Direct write admission",
-        )
-        conversation: dict[str, Any] = {}
-
-        def contact_ready() -> bool:
-            nonlocal conversation
-            try:
-                value = sender_session.call_action(
-                    "social.contact.open",
-                    {
-                        "peerPtid": receiver.ptid,
-                        "federationId": federation_id,
-                    },
-                )
-            except DriverError as error:
-                if "mobile.contacts.conversationPreparing" in str(error):
-                    return False
-                raise
-            conversation = self._mapping(value, "Contact Direct creation")
-            return bool(conversation.get("conversationId"))
-
-        self._await_condition(
-            contact_ready,
-            f"{sender.client_id} contact Direct conversation",
-        )
-        conversation_id = self._text(
-            conversation.get("conversationId"),
-            "Direct conversation ID",
-        )
-        self._await_conversation(sender_session, conversation_id, kind=1)
-        self._await_conversation(receiver_session, conversation_id, kind=1)
-        return conversation_id
+        return federation_id
 
     def _ensure_accepted_relationship(
         self,

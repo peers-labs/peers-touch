@@ -257,7 +257,6 @@ class FileChooserQualificationTests(unittest.TestCase):
         ))
         self.assertNotIn("invoke_app_result", json.dumps(session.method_calls, default=str))
 
-    @unittest.skip("pending post-merge port onto macos_ax.AXReadSession (PR #163 follow-up)")
     def test_native_panel_observation_rejects_foreign_pid_invalid_types_and_probe_failure(self) -> None:
         adapter = MacOSNativeDesktopAdapter()
         for value in (

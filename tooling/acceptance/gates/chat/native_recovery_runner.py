@@ -297,10 +297,10 @@ class NativeRecoveryGate(AcceptanceGate):
         bob = self.clients["bob"]
         for client in (alice, bob):
             enter_chat_page(client)
-        federation_id = shared_federation_id(
-            self.clients,
-            ("alice", "bob"),
-        )
+        # Cross-Station readiness: a shared Federation must be active before the
+        # Direct is opened. The client still creates it peer-only; the Station
+        # resolves the Federation from the two Home Stations.
+        shared_federation_id(self.clients, ("alice", "bob"))
         wait_for_peer_key_bundle(
             alice,
             self.ptids["bob"],
@@ -315,10 +315,7 @@ class NativeRecoveryGate(AcceptanceGate):
         created = async_harness(
             alice,
             "createDirectConversation",
-            {
-                "peerPtid": self.ptids["bob"],
-                "federationId": federation_id,
-            },
+            {"peerPtid": self.ptids["bob"]},
         )
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:

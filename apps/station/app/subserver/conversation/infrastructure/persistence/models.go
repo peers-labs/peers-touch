@@ -6,7 +6,8 @@ type ConversationModel struct {
 	ConversationID         string    `gorm:"column:conversation_id;size:128;primaryKey"`
 	Kind                   string    `gorm:"column:kind;size:16;not null"`
 	Status                 string    `gorm:"column:status;size:32;not null;index"`
-	FederationID           string    `gorm:"column:federation_id;size:128;not null"`
+	ScopeKind              string    `gorm:"column:scope_kind;size:16;index"`
+	FederationID           string    `gorm:"column:federation_id;size:128;index"`
 	AuthorityStationPeerID string    `gorm:"column:authority_station_peer_id;size:255;not null"`
 	AuthorityEpoch         uint64    `gorm:"column:authority_epoch;not null"`
 	OwnerPTID              string    `gorm:"column:owner_ptid;size:255;not null"`

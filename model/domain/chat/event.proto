@@ -127,6 +127,7 @@ message ConversationAuthoritySnapshot {
   string avatar_object_id = 12;
   GroupVisibilityV1 visibility = 13;
   reserved 14;
+  ConversationScopeKind scope_kind = 15;
 }
 
 message MembershipTransitionCommittedFact {
