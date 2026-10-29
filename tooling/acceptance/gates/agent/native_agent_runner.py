@@ -618,20 +618,11 @@ class AgentNativeJourney:
                     source_commit=self.runtime_manifest["source"]["commit"],
                 )
                 self.runtime_binding.set_runtime_manifest(self.runtime_manifest)
-                if self.proxy is not None:
-                    self.proxy.start()
-                    transport_handle = self.runtime_binding.create_transport_override(
-                        self.client["id"], "station", self.proxy.url,
-                    )
-                    self.station_transport_override = transport_handle
-                    canonical_origin = self.runtime_binding.transport_override_endpoint(
-                        self.client["id"], "station", transport_handle,
-                    )
-                    self.client_station_transport_url = canonical_origin
-                    self.chat_station_origin = ChatStationOrigin(
-                        self.profile_env, self.station_url,
-                    )
-                    self.chat_station_origin.activate(canonical_origin)
+            # Canonical discovery during launch must use the reviewed
+            # manifest origin; the loopback fault-proxy origin is switched in
+            # only after the bound session exists, and switched back before
+            # any rebind (native restart).
+            self._restore_public_station_origin()
             self.tauri_driver = self.runtime_binding.create_bound_session(
                 self.client["id"],
                 NativeLaunchOptions(
@@ -646,6 +637,8 @@ class AgentNativeJourney:
             self.runtime_sessions.append(self.tauri_driver)
             self.driver = self.tauri_driver.driver
             self.tauri_driver.wait_for_acceptance_harness()
+            if self.proxy is not None:
+                self._activate_loopback_station_origin()
             return
         if self.proxy is not None:
             self.proxy.start()
@@ -692,6 +685,28 @@ class AgentNativeJourney:
             ),
             "Agent acceptance Harness namespace is unavailable",
         )
+
+    def _restore_public_station_origin(self) -> None:
+        if (
+            self.chat_station_origin is not None
+            and self.chat_station_origin.active
+        ):
+            self.chat_station_origin.restore()
+        self.chat_station_origin = None
+        self.client_station_transport_url = self.station_url
+
+    def _activate_loopback_station_origin(self) -> None:
+        require(
+            self.proxy is not None,
+            "loopback Station origin needs a proxy",
+        )
+        self.proxy.start()
+        canonical_origin = self.proxy.url
+        self.client_station_transport_url = canonical_origin
+        self.chat_station_origin = ChatStationOrigin(
+            self.profile_env, self.station_url,
+        )
+        self.chat_station_origin.activate(canonical_origin)
 
     def seed_minimum_usable_actor_identity(self) -> dict[str, Any]:
         seeded = seed_native_actor_identity(
