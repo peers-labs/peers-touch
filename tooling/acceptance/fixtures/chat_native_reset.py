@@ -108,6 +108,41 @@ CHAT_TABLES = (
     "social_friend_requests",
     "social_relationship_projections",
 )
+# Per-actor Agent workspace runtime state. Pinned conversation runtime
+# authority references provider configuration versions, so reusing stale
+# agent rows across disposable resets wedges the first new turn; reset
+# therefore starts the Agent runtime family from the same clean baseline.
+# Reference/catalog seed tables (agents, agent_skills, capability manifests)
+# are intentionally retained.
+AGENT_RUNTIME_TABLES = (
+    "agent_bot_inbound_turn",
+    "agent_client_capability_commands",
+    "agent_client_capability_leases",
+    "agent_client_capability_resource_grants",
+    "agent_conversations",
+    "agent_credential_pool",
+    "agent_direct_runs",
+    "agent_executor_leases",
+    "agent_interrupt_requests",
+    "agent_messages",
+    "agent_offline_ops",
+    "agent_providers",
+    "agent_runtime_defaults",
+    "agent_capability_operation_commands",
+    "agent_capability_operation_events",
+    "agent_capability_operation_leases",
+    "agent_capability_operation_outbox",
+    "agent_capability_operation_event_rejections",
+    "agent_threads",
+    "agent_turn_artifacts",
+    "agent_turn_attempts",
+    "agent_turn_events",
+    "agent_turn_queue",
+    "agent_turn_todos",
+    "agent_turn_traces",
+    "agent_turns",
+    "bot_agent_binding",
+)
 RETIRED_CHAT_TABLES = (
     "conversation_command_proposals",
     "conversation_follower_applied_events",
@@ -2828,7 +2863,7 @@ def reset_station_chat_state(environment_name: str) -> None:
     verify_disposable_station_runtime(environment)
     container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
     canonical_table_names = ", ".join(
-        _sql_literal(table) for table in CHAT_TABLES
+        _sql_literal(table) for table in (*CHAT_TABLES, *AGENT_RUNTIME_TABLES)
     )
     retired_table_names = ", ".join(RETIRED_CHAT_TABLES)
     sql = f"""
