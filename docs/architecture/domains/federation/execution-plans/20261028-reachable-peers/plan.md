@@ -152,14 +152,30 @@ type CommunicationScope interface {
   （reserved）；`Conversation`/`ConversationPublicHead`/`ConversationAuthoritySnapshot`
   增加 `ConversationScopeKind scope_kind` 与对应枚举，Go/TS 经 `model/build.sh` 重生成、
   Rust 经 messaging-core build.rs 重生成。
-- **T6 验证（单测 + 同站 Journey 已证；跨站 Journey 待跑）**
+- **T6 验证（单测 + 同站/跨站 Journey 已证）**
   Go conversation/social/federation 全包 + frame gate、Rust messaging、TS services/store
   单测全绿；新增 Local scope 构造/JSON/迁移、gate 同站/跨站分支、CrossStationAuthorizer、
   ResolveSharedFederation（0/1/多交集）单测。
   同站真实 Journey 已证：干净库·无联邦·两同站用户 Direct 可建可收发——Desktop
   `chat-native-single-station-two-client-e2e`（PG 真值 local/NULL）与 Mobile
   `mobile-simulator-social-convergence-e2e`（双模拟器、directScope=local）PROVEN。
-  待补：两站 `federation-full-lifecycle` 回归（make desktop / make station，非单测）。
+  跨站真实 Journey 已证（2026-10-29，一次性站对 chat-native-four/chat-native-five）：
+  `federation-two-station-lifecycle-e2e` PROVEN（270s，create/join/幂等/leave/rejoin/
+  restart/archive 全周期）；`chat-native-multi-device-e2e` 的联邦 Direct 关键断言通过——
+  peer-only 创建成功、`bob1_initial_delivery` 跨站送达，PG 真值 `scope_kind=federation`、
+  `federation_id` 非空，站对恰好 1 个共享 active Federation（无歧义）。
+  已知遗留（与 scope 迁移无关）：multi-device gate 尾部「bob1 权威会话吊销」超时失败。
+  根因是验收基建缺陷——runner 只克隆 `data/secure-store/identity-keys`，而 device id
+  存于 `data/meta/device-id`（application/meta），bob2 取得不同 device id；服务端
+  `revokeReplacedDeviceSessionsLocked` 仅按相同 device_id 踢人，故 bob1 不被吊销。
+  persistent four/fiveArm 站另有历史数据问题：站对现存 8 个双端 active Federation，
+  `ResolveSharedFederation` 按设计返回歧义（409），跨站 gate 必须使用一次性站对。
+- **T7 Recovery 归档 Local 支持（已完成代码+单测，Journey 待跑）**：归档为 serde JSON
+  （非 proto），`RecoveryConversationProjection` 增加 `#[serde(default)] scope_kind`，
+  归档格式 v4→v5（版本严格匹配）。Local Direct 允许空 federation；Federation 行仍强制非空；
+  Local group 拒绝；无 scope 字段的 pre-v5 投影按「Direct+空 federation=Local」推断。
+  Desktop 导出从本地会话行派生 scope。messaging-core 177 项、desktop recovery 47 项全绿
+  （checkpoint de43f83ab）。未跑真实 Recovery Journey（`chat-native-recovery-e2e`）。
 
 每批保持现有联邦验收断言通过。T1–T3 可在 Station 侧独立闭环；T4–T5 是端到端所需。
 
