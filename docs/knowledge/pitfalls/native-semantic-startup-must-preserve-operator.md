@@ -72,6 +72,21 @@ Verify the resolved Wry version in the Desktop lockfile before interpreting a
 focus-false run. An unclosed diagnostic authorization sheet is not a valid
 operator baseline for subsequent qualification.
 
+## Pointer must stay on the Cell window display
+
+Observed 2026-10-29 on a multi-display console: when the frozen operator
+pointer sat on a display other than the Cell window display, Window Server
+nudged the pointer a few points during chooser commit and the
+`chooser-selected` (sometimes `launch-ready`) non-interference sample blocked
+the Cell; with the pointer parked on the Cell window display all six chooser
+phases kept the exact same pointer. Frontmost PID and keyboard focus were
+unchanged in both cases, so the mismatch is pointer-only and environmental,
+not an activation or rebaseline issue. Semantic mode must not warp the pointer
+to manufacture a baseline. Park the operator pointer on the probe window
+display before launch, and serialize against other native Gates on the same
+shared GUI session; their Station reset leases do not mutually exclude but
+both contend for the one operator pointer.
+
 ## Chooser qualification and observation ownership
 
 Requiring exclusive input for an exact-PID AX chooser prevented an otherwise
