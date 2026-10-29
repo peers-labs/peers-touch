@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Sequence
+from typing import Any
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -31,7 +31,10 @@ from tooling.acceptance.core import (
     RuntimeCellState,
 )
 from tooling.acceptance.drivers.tauri import ProvisionedTauriLauncher
-from tooling.acceptance.drivers.native.runtime import normalize_clone_paths
+from tooling.acceptance.drivers.native.runtime import (
+    CloneStorageRoots,
+    normalize_clone_paths,
+)
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core.lease import RemoteGitSourceLease
 from tooling.acceptance.core.provisioner import load_env_file
@@ -1510,7 +1513,7 @@ class NativeDesktopLinuxProvisioner:
         self,
         source_actor: str,
         target_actor: str,
-        relative_path: str | Sequence[str],
+        relative_path: CloneStorageRoots,
     ) -> None:
         state = self._require_state()
         normalized_source = source_actor.strip()
@@ -1533,18 +1536,23 @@ class NativeDesktopLinuxProvisioner:
             raise ProvisioningError(
                 f"Linux runtime-cell actor {normalized_target!r} is already active"
             )
-        relative_paths = normalize_clone_paths(relative_path)
-        relative_nodes = [PurePosixPath(path) for path in relative_paths]
+        entries = normalize_clone_paths(relative_path)
+        nodes = [
+            (PurePosixPath(entry.source), PurePosixPath(entry.target))
+            for entry in entries
+        ]
         actor_root = PurePosixPath("/workspace/run/actors")
         target_root = actor_root / normalized_target
         temporary_root = actor_root / (
             f".clone-{normalized_target}-{secrets.token_hex(8)}"
         )
         container_name = str(state["containerName"])
-        for node in relative_nodes:
-            source = actor_root / normalized_source / "storage" / node
+        for source_node, _target_node in nodes:
+            source = actor_root / normalized_source / "storage" / source_node
+            # Entries may be a directory (identity keys) or a single file
+            # (installation device id); cp -a reproduces either into place.
             self.transport.run_argv(
-                ("docker", "exec", container_name, "test", "-d", str(source)),
+                ("docker", "exec", container_name, "test", "-e", str(source)),
                 timeout=15,
                 check=True,
             )
@@ -1566,9 +1574,9 @@ class NativeDesktopLinuxProvisioner:
                 "Linux runtime-cell target actor storage already exists"
             )
         try:
-            for node in relative_nodes:
-                source = actor_root / normalized_source / "storage" / node
-                temporary = temporary_root / "storage" / node
+            for source_node, target_node in nodes:
+                source = actor_root / normalized_source / "storage" / source_node
+                temporary = temporary_root / "storage" / target_node
                 self.transport.run_argv(
                     (
                         "docker",

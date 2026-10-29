@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from tooling.acceptance.core import (
@@ -16,7 +17,10 @@ from tooling.acceptance.core import (
     REPO_ROOT,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
-from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
+from tooling.acceptance.drivers.native.runtime import (
+    CloneStorageEntry,
+    NativeLaunchOptions,
+)
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
@@ -52,8 +56,19 @@ REPORT_PATH = None
 ACTOR_IDENTITY_KEYS_RELATIVE = (
     "peers-touch/desktop/data/secure-store/identity-keys"
 )
-INSTALL_DEVICE_ID_RELATIVE = "peers-touch/desktop/data/meta/device-id"
-INSTALL_DEVICE_META_RELATIVE = "peers-touch/desktop/data/meta"
+# The Station replaces only sessions bound to the same installation; its
+# revocation key is the canonical install id persisted by
+# device_install under the launch profile's data/auth directory.
+INSTALL_DEVICE_ID_NAME = "device_id"
+
+
+def install_device_id_relative(profile: str) -> str:
+    # The installation device id lives under the launch profile segment
+    # (StorageLayout honors PT_PROFILE), unlike the profile-independent
+    # crypto sandbox identity keys.
+    return f"peers-touch/{profile}/data/auth/{INSTALL_DEVICE_ID_NAME}"
+
+
 CLIENT_PORTS = {"alice": 4447, "bob1": 4448, "bob2": 4449}
 CLIENT_ACTOR_ROLES = {
     "alice": "alice",
@@ -603,33 +618,45 @@ class NativeMultiDeviceGate(AcceptanceGate):
             # PTID enrolls without ErrActorIdentityConflict, and copy the
             # installation device id so the Station treats bob2 as the same
             # install and revokes bob1's session (same-device CreateWithKick).
+            bob1_profile = str(self.client_specs["bob1"].get("profile") or "")
+            bob2_profile = str(self.client_specs["bob2"].get("profile") or "")
+            if not bob1_profile or not bob2_profile:
+                raise GateError("bob1/bob2 launch profiles are required")
+            bob1_device_relative = install_device_id_relative(bob1_profile)
+            bob2_device_relative = install_device_id_relative(bob2_profile)
             if self.runtime_binding is None:
-                bob1_data = (
-                    webdriver_root / "bob1" / "storage" / "peers-touch"
-                    / "desktop" / "data"
+                storage_root = webdriver_root
+                bob1_keys = (
+                    storage_root / "bob1" / "storage"
+                    / Path(ACTOR_IDENTITY_KEYS_RELATIVE)
                 )
-                bob2_data = (
-                    webdriver_root / "bob2" / "storage" / "peers-touch"
-                    / "desktop" / "data"
+                bob2_keys = (
+                    storage_root / "bob2" / "storage"
+                    / Path(ACTOR_IDENTITY_KEYS_RELATIVE)
                 )
-                bob1_keys = bob1_data / "secure-store" / "identity-keys"
-                bob2_keys = bob2_data / "secure-store" / "identity-keys"
-                if bob1_keys.exists():
-                    bob2_keys.mkdir(parents=True, exist_ok=True)
-                    for key_file in bob1_keys.iterdir():
-                        shutil.copy2(key_file, bob2_keys / key_file.name)
-                bob1_device_id = bob1_data / "meta" / "device-id"
+                if not bob1_keys.is_dir():
+                    raise GateError(
+                        "bob1 actor identity keys are missing: "
+                        f"{bob1_keys}"
+                    )
+                bob2_keys.mkdir(parents=True, exist_ok=True)
+                for key_file in bob1_keys.iterdir():
+                    shutil.copy2(key_file, bob2_keys / key_file.name)
+                bob1_device_id = (
+                    storage_root / "bob1" / "storage"
+                    / Path(bob1_device_relative)
+                )
                 if not bob1_device_id.is_file():
                     raise GateError(
                         "bob1 installation device id is missing: "
                         f"{bob1_device_id}"
                     )
-                bob2_meta = bob2_data / "meta"
-                bob2_meta.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(
-                    bob1_device_id,
-                    bob2_meta / "device-id",
+                bob2_device_id = (
+                    storage_root / "bob2" / "storage"
+                    / Path(bob2_device_relative)
                 )
+                bob2_device_id.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(bob1_device_id, bob2_device_id)
             else:
                 self.runtime_binding.clone_actor_storage(
                     "bob1",
@@ -638,7 +665,10 @@ class NativeMultiDeviceGate(AcceptanceGate):
                     self.client_specs["bob2"],
                     (
                         ACTOR_IDENTITY_KEYS_RELATIVE,
-                        INSTALL_DEVICE_META_RELATIVE,
+                        CloneStorageEntry(
+                            bob1_device_relative,
+                            bob2_device_relative,
+                        ),
                     ),
                 )
 
@@ -653,10 +683,14 @@ class NativeMultiDeviceGate(AcceptanceGate):
                 "bob1",
             )
             self.client_lifecycles.mark_auth_revoked(bob1)
+            # CreateWithKick replaces only the slot of the SAME installation:
+            # same Actor and same installation device id, different session.
+            # Other installations coexist and are never revoked.
             self.assert_condition(
                 "session_handoff",
                 self.ptids["bob1"] == self.ptids["bob2"]
-                and self.device_ids.get("bob1") != self.device_ids.get("bob2"),
+                and bool(self.device_ids.get("bob1"))
+                and self.device_ids.get("bob1") == self.device_ids.get("bob2"),
                 json.dumps(bob1_revoked, sort_keys=True),
             )
 

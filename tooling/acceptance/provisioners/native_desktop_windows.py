@@ -17,7 +17,7 @@ import zlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
-from typing import Any, Sequence
+from typing import Any
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -41,7 +41,10 @@ from tooling.acceptance.core.source_sync import (
     SourceSyncResult,
 )
 from tooling.acceptance.drivers.tauri import ProvisionedTauriLauncher
-from tooling.acceptance.drivers.native.runtime import normalize_clone_paths
+from tooling.acceptance.drivers.native.runtime import (
+    CloneStorageRoots,
+    normalize_clone_paths,
+)
 from tooling.acceptance.provisioners.transport_endpoint import (
     parse_orchestrator_endpoint,
 )
@@ -1074,13 +1077,16 @@ class NativeDesktopWindowsProvisioner:
         self,
         source_actor: str,
         target_actor: str,
-        relative_path: str | Sequence[str],
+        relative_path: CloneStorageRoots,
     ) -> None:
         state = self._require_state()
         source = self._active_actor(source_actor)
         target = self._actor_id(target_actor)
-        relative_paths = normalize_clone_paths(relative_path)
-        relative_nodes = [PureWindowsPath(path) for path in relative_paths]
+        entries = normalize_clone_paths(relative_path)
+        nodes = [
+            (PureWindowsPath(entry.source), PureWindowsPath(entry.target))
+            for entry in entries
+        ]
         if target in self._actors:
             raise ProvisioningError(
                 f"Windows runtime-cell actor {target!r} is active"
@@ -1097,14 +1103,14 @@ class NativeDesktopWindowsProvisioner:
             f"if (Test-Path -LiteralPath '{target_storage}') {{ "
             "throw 'target storage already exists' };",
         ]
-        for node in relative_nodes:
+        for source_node, target_node in nodes:
             source_path = _windows_verbatim_path(_windows_join(
                 str(state["brokerRoot"]),
                 "actors",
                 str(state["runId"]),
                 source,
                 "storage",
-                str(node),
+                str(source_node),
             ))
             target_path = _windows_verbatim_path(_windows_join(
                 str(state["brokerRoot"]),
@@ -1112,7 +1118,7 @@ class NativeDesktopWindowsProvisioner:
                 str(state["runId"]),
                 target,
                 "storage",
-                str(node),
+                str(target_node),
             ))
             copy_commands.extend([
                 f"New-Item -ItemType Directory -Force -Path "

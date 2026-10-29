@@ -14,7 +14,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any, Mapping, Protocol, Sequence, cast
+from typing import Any, Mapping, NamedTuple, Protocol, Sequence, cast
 from urllib.parse import urlsplit
 
 from tooling.acceptance.core._paths import REPO_ROOT
@@ -64,38 +64,74 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def normalize_clone_paths(relative_path: str | Sequence[str]) -> tuple[str, ...]:
-    """Normalize the actor-storage clone argument to a validated path tuple.
+class CloneStorageEntry(NamedTuple):
+    """One clone subtree with independent source and target relative paths.
+
+    Profile-scoped storage (such as the installation device id) lives under
+    the actor's profile segment, so handing an install from bob1 to bob2 must
+    remap ``peers-touch/<source profile>/...`` onto the target profile while
+    profile-independent roots such as the actor identity keys stay symmetric.
+    """
+
+    source: str
+    target: str
+
+
+CloneStorageRoot = CloneStorageEntry | str
+CloneStorageRoots = CloneStorageRoot | Sequence[CloneStorageRoot]
+
+
+def normalize_clone_paths(relative_path: CloneStorageRoots) -> tuple[CloneStorageEntry, ...]:
+    """Normalize the actor-storage clone argument to validated entry pairs.
 
     A single clone call may copy several relative subtrees (for example the
     actor identity keys together with the installation device id) while the
-    target actor storage itself is still created at most once.
+    target actor storage itself is still created at most once. A plain string
+    clones the same relative root on both sides; a ``CloneStorageEntry``
+    declares an explicit source-to-target remap.
     """
-    if isinstance(relative_path, str):
+    if isinstance(relative_path, (str, CloneStorageEntry)):
         candidates = (relative_path,)
     else:
         candidates = tuple(relative_path)
     if not candidates:
         raise DriverError("Native actor storage clone requires at least one path")
-    normalized: list[str] = []
+    normalized: list[CloneStorageEntry] = []
+    seen_sources: set[str] = set()
+    seen_targets: set[str] = set()
     for candidate in candidates:
-        path = str(candidate)
+        if isinstance(candidate, CloneStorageEntry):
+            entry = CloneStorageEntry(str(candidate.source), str(candidate.target))
+        else:
+            path = str(candidate)
+            entry = CloneStorageEntry(path, path)
         # pathlib collapses "." segments out of ``parts``, so the raw path
         # string must be checked explicitly to keep every clone root inside
         # the actor storage root on both POSIX and Windows.
-        segments = path.replace("\\", "/").split("/")
-        windows = PureWindowsPath(path)
-        if (
-            not path
-            or PurePosixPath(path).is_absolute()
-            or windows.is_absolute()
-            or bool(windows.drive)
-            or any(segment in {"", ".", ".."} for segment in segments)
-        ):
-            raise DriverError(f"Native actor storage path must be relative: {path!r}")
-        if path in normalized:
-            raise DriverError(f"Native actor storage clone path duplicated: {path!r}")
-        normalized.append(path)
+        for label, path in (("source", entry.source), ("target", entry.target)):
+            segments = path.replace("\\", "/").split("/")
+            windows = PureWindowsPath(path)
+            if (
+                not path
+                or PurePosixPath(path).is_absolute()
+                or windows.is_absolute()
+                or bool(windows.drive)
+                or any(segment in {"", ".", ".."} for segment in segments)
+            ):
+                raise DriverError(
+                    f"Native actor storage clone {label} path must be relative: {path!r}"
+                )
+        if entry.source in seen_sources:
+            raise DriverError(
+                f"Native actor storage clone source path duplicated: {entry.source!r}"
+            )
+        if entry.target in seen_targets:
+            raise DriverError(
+                f"Native actor storage clone target path duplicated: {entry.target!r}"
+            )
+        seen_sources.add(entry.source)
+        seen_targets.add(entry.target)
+        normalized.append(entry)
     return tuple(normalized)
 
 
@@ -159,7 +195,7 @@ class RemoteNativeRuntimeCellLifecycle(RuntimeCellLifecycle, Protocol):
         self,
         source_actor: str,
         target_actor: str,
-        relative_path: str | Sequence[str],
+        relative_path: CloneStorageRoots,
     ) -> None:
         ...
 
@@ -965,7 +1001,7 @@ class NativeDesktopRuntimeBinding(ABC):
         source_spec: Mapping[str, Any],
         target_actor: str,
         target_spec: Mapping[str, Any],
-        relative_path: str | Sequence[str],
+        relative_path: CloneStorageRoots,
     ) -> None:
         ...
 
@@ -1425,7 +1461,7 @@ class RemoteNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         source_spec: Mapping[str, Any],
         target_actor: str,
         target_spec: Mapping[str, Any],
-        relative_path: str | Sequence[str],
+        relative_path: CloneStorageRoots,
     ) -> None:
         del source_spec, target_spec
         self._cell.clone_actor_storage(
@@ -1773,14 +1809,17 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         source_spec: Mapping[str, Any],
         target_actor: str,
         target_spec: Mapping[str, Any],
-        relative_path: str | Sequence[str],
+        relative_path: CloneStorageRoots,
     ) -> None:
         del source_actor, target_actor
-        relative_paths = normalize_clone_paths(relative_path)
+        entries = normalize_clone_paths(relative_path)
         source_root = Path(str(source_spec["storage_root"]))
         target_root = Path(str(target_spec["storage_root"]))
-        sources = [source_root / path for path in relative_paths]
-        missing = [str(source) for source in sources if not source.is_dir()]
+        sources = [source_root / entry.source for entry in entries]
+        missing = [
+            str(source) for source in sources
+            if not source.is_dir() and not source.is_file()
+        ]
         if missing:
             raise DriverError(
                 "Native actor storage source is missing: "
@@ -1794,12 +1833,13 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             f".{target_root.name}.clone-{os.getpid()}-{time.time_ns()}"
         )
         try:
-            for relative, source in zip(
-                [Path(path) for path in relative_paths], sources
-            ):
-                temporary = temporary_root / relative
+            for entry, source in zip(entries, sources):
+                temporary = temporary_root / entry.target
                 temporary.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(source, temporary)
+                if source.is_dir():
+                    shutil.copytree(source, temporary)
+                else:
+                    shutil.copy2(source, temporary)
             os.replace(temporary_root, target_root)
         except Exception as error:
             try:

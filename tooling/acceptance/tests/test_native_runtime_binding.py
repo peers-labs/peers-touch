@@ -6,7 +6,6 @@ import json
 import os
 import tempfile
 import unittest
-from collections.abc import Sequence
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
@@ -26,6 +25,8 @@ from tooling.acceptance.drivers.native.base import (
     resolve_native_input_mode,
 )
 from tooling.acceptance.drivers.native.runtime import (
+    CloneStorageEntry,
+    CloneStorageRoots,
     LinuxNativeDesktopRuntimeBinding,
     LocalMacOSRuntimeBinding,
     NativeLaunchOptions,
@@ -121,7 +122,7 @@ class SyntheticRemoteNativeLifecycle:
         self,
         source_actor: str,
         target_actor: str,
-        relative_path: str | Sequence[str],
+        relative_path: CloneStorageRoots,
     ) -> None:
         self.calls.append(
             (
@@ -1120,21 +1121,35 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
     def test_clone_path_normalization_rejects_unsafe_inputs(self) -> None:
         self.assertEqual(
             normalize_clone_paths("peers-touch/desktop/data/meta"),
-            ("peers-touch/desktop/data/meta",),
+            (
+                CloneStorageEntry(
+                    "peers-touch/desktop/data/meta",
+                    "peers-touch/desktop/data/meta",
+                ),
+            ),
         )
         self.assertEqual(
             normalize_clone_paths(
                 [
                     "peers-touch/desktop/data/secure-store/identity-keys",
-                    "peers-touch/desktop/data/meta",
+                    CloneStorageEntry(
+                        "peers-touch/chat-native-bob1/data/auth/device_id",
+                        "peers-touch/chat-native-bob2/data/auth/device_id",
+                    ),
                 ]
             ),
             (
-                "peers-touch/desktop/data/secure-store/identity-keys",
-                "peers-touch/desktop/data/meta",
+                CloneStorageEntry(
+                    "peers-touch/desktop/data/secure-store/identity-keys",
+                    "peers-touch/desktop/data/secure-store/identity-keys",
+                ),
+                CloneStorageEntry(
+                    "peers-touch/chat-native-bob1/data/auth/device_id",
+                    "peers-touch/chat-native-bob2/data/auth/device_id",
+                ),
             ),
         )
-        for invalid in (
+        invalid_entries = [
             "",
             ".",
             "..",
@@ -1146,7 +1161,14 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             r"a\..\b",
             ["a", "a"],
             [],
-        ):
+            CloneStorageEntry("a", "/abs/target"),
+            CloneStorageEntry("../a", "b"),
+            CloneStorageEntry("a", "b/../c"),
+            CloneStorageEntry("a", ""),
+            # Two remaps landing on the same target are ambiguous.
+            [CloneStorageEntry("a", "c"), CloneStorageEntry("b", "c")],
+        ]
+        for invalid in invalid_entries:
             with self.subTest(invalid=invalid):
                 with self.assertRaises(DriverError):
                     normalize_clone_paths(invalid)
@@ -1162,9 +1184,14 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             keys = source_root / "secure-store" / "identity-keys"
             keys.mkdir(parents=True)
             (keys / "actor.key").write_text("identity", encoding="utf-8")
-            meta = source_root / "meta"
-            meta.mkdir(parents=True)
-            (meta / "device-id").write_text("desktop-device", encoding="utf-8")
+            source_auth = (
+                source_root / "peers-touch" / "chat-native-bob1" / "data"
+                / "auth"
+            )
+            source_auth.mkdir(parents=True)
+            (source_auth / "device_id").write_text(
+                "01JINSTALLDEVICEID", encoding="utf-8"
+            )
 
             binding.clone_actor_storage(
                 "bob1",
@@ -1173,7 +1200,10 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 {"storage_root": target_root},
                 (
                     "secure-store/identity-keys",
-                    "meta",
+                    CloneStorageEntry(
+                        "peers-touch/chat-native-bob1/data/auth/device_id",
+                        "peers-touch/chat-native-bob2/data/auth/device_id",
+                    ),
                 ),
             )
 
@@ -1183,10 +1213,19 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 / "identity-keys"
                 / "actor.key"
             )
-            copied_device = target_root / "meta" / "device-id"
+            copied_device = (
+                target_root / "peers-touch" / "chat-native-bob2" / "data"
+                / "auth" / "device_id"
+            )
             self.assertEqual(copied_key.read_text(encoding="utf-8"), "identity")
             self.assertEqual(
-                copied_device.read_text(encoding="utf-8"), "desktop-device"
+                copied_device.read_text(encoding="utf-8"),
+                "01JINSTALLDEVICEID",
+            )
+            self.assertFalse(
+                (
+                    target_root / "peers-touch" / "chat-native-bob1"
+                ).exists()
             )
 
     def test_verified_direct_override_keeps_station_discovery_untouched(
