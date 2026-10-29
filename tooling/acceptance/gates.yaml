@@ -2093,7 +2093,7 @@
           {"ref": "tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.click_visible", "purpose": "Reuse native visible control activation", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]}
         ]
       },
-      "requiredRuntimeCells": ["desktop-macos-native"],
+      "requiredRuntimeCells": ["desktop-macos-native", "desktop-linux-native"],
       "argv": [
         "python3",
         "tooling/acceptance/gates/agent/native_agent_runner.py"

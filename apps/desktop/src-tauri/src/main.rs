@@ -589,16 +589,19 @@ fn main() {
     };
 
     let context = tauri::generate_context!();
-    #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+    #[cfg(feature = "acceptance-webdriver")]
     let context = {
         let mut context = context;
         for window in &mut context.config_mut().app.windows {
             if !exclusive_native_input {
-                // Wry gates WebView activation on visible && focused.
+                // Semantic startup preserves the operator's keyboard focus.
                 window.focus = false;
             }
-            window.background_throttling =
-                Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
+            #[cfg(target_os = "macos")]
+            {
+                window.background_throttling =
+                    Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
+            }
         }
         context
     };
