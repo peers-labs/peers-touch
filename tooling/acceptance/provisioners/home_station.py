@@ -83,6 +83,7 @@ GATE_ROLES = {
     "agent-cli-provider-primary-native-e2e": ("alice",),
     "agent-core-lifecycle-native-e2e": ("alice",),
     "agent-minimum-usable-chat-native-e2e": ("charlie",),
+    "agent-native-turn-e2e": ("alice",),
     "agent-stream-resilience-e2e": ("alice",),
     "agent-v2-capability-binding-e2e": ("alice", "bob"),
     "agent-v2-governed-tool-loop-e2e": ("bob",),
@@ -142,6 +143,7 @@ AGENT_NATIVE_GATES = frozenset(
         AGENT_CLI_PROVIDER_GATE,
         "agent-core-lifecycle-native-e2e",
         AGENT_MINIMUM_USABLE_CHAT_GATE,
+        "agent-native-turn-e2e",
         "agent-stream-resilience-e2e",
     }
 ) | AGENT_DEPTH_GATES
@@ -212,6 +214,7 @@ def agent_native_requires_runtime_binding(gate_id: str) -> bool:
         gate_id.startswith("agent-chat-")
         or gate_id in AGENT_DEPTH_GATES
         or gate_id == AGENT_CORE_LIFECYCLE_GATE
+        or gate_id == "agent-native-turn-e2e"
     )
 
 

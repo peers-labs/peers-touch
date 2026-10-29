@@ -7449,13 +7449,25 @@ func settleTerminalAssistantMessageTx(
 		return nil
 	}
 
-	var admittedUserMessageCount int64
-	if err := tx.Model(&persistence.AgentMessage{}).
+	var admittedUserMessage persistence.AgentMessage
+	if err := tx.
 		Where("turn_id = ? AND role = ?", turnID, string(domain.MessageRoleUser)).
-		Count(&admittedUserMessageCount).Error; err != nil {
+		Order("seq DESC").
+		First(&admittedUserMessage).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
 		return err
 	}
-	if admittedUserMessageCount == 0 {
+
+	// The admitted turn's own chain is immutable under branch selection.
+	// Tool-only projections extend that chain even before any text exists.
+	var parent persistence.AgentMessage
+	if err := tx.Where("turn_id = ? AND conversation_id = ?", turnID, conversationID).
+		Order("seq DESC").First(&parent).Error; err != nil {
+		return err
+	}
+	if parent.Role == string(domain.MessageRoleAssistant) && parent.Status == terminalStatus {
 		return nil
 	}
 
@@ -7475,19 +7487,6 @@ func settleTerminalAssistantMessageTx(
 	// The model resolved at admission is recorded on the user message; the
 	// terminal projection inherits it so turn diagnostics show the runtime
 	// even when the turn ended before any assistant text was projected.
-	var modelName string
-	// Model inheritance is diagnostic enrichment only: a lookup failure must
-	// not block terminal settlement, but it is logged rather than swallowed.
-	if err := tx.Model(&persistence.AgentMessage{}).
-		Where("turn_id = ? AND role = ? AND COALESCE(model_name, '') <> ''",
-			turnID, string(domain.MessageRoleUser)).
-		Order("seq DESC").
-		Limit(1).
-		Select("model_name").
-		Scan(&modelName).Error; err != nil {
-		logger.Warnf(ctx, "terminal assistant message: inherit model_name failed: turn_id=%s err=%v", turnID, err)
-	}
-
 	content := ""
 	messageID := generateID("msg")
 	row := persistence.AgentMessage{
@@ -7498,24 +7497,26 @@ func settleTerminalAssistantMessageTx(
 		Status:          terminalStatus,
 		Content:         &content,
 		Seq:             maxSeq.MaxSeq + 1,
-		ParentMessageID: optionalString(conversation.ActiveBranchMessageID),
+		ParentMessageID: optionalString(parent.ID),
+		BranchID:        parent.BranchID,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
 	if len(outcomeErrorJSON) > 0 {
 		row.ErrorJSON = append(json.RawMessage(nil), outcomeErrorJSON...)
 	}
-	if strings.TrimSpace(modelName) != "" {
-		row.ModelName = optionalString(modelName)
-	}
+	row.ModelName = admittedUserMessage.ModelName
 	if err := tx.Create(&row).Error; err != nil {
 		return err
 	}
-	return tx.Model(&conversation).Updates(map[string]interface{}{
-		"active_branch_message_id": messageID,
-		"updated_at":               now,
-		"version":                  gorm.Expr("version + 1"),
-	}).Error
+	updates = map[string]interface{}{
+		"updated_at": now,
+		"version":    gorm.Expr("version + 1"),
+	}
+	if conversation.ActiveBranchMessageID == parent.ID {
+		updates["active_branch_message_id"] = messageID
+	}
+	return tx.Model(&conversation).Updates(updates).Error
 }
 
 // ---------------------------------------------------------------------------

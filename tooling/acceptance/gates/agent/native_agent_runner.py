@@ -2716,7 +2716,19 @@ class AgentNativeJourney:
     def run_turn(self) -> None:
         self.step("login", self.login)
         self.step("navigate_and_configure", self.navigate_and_configure)
-        self.step("send_turn", lambda: self.send_long_turn("Native Agent turn"))
+        marker = f"FIFO-{self.runtime_manifest['runId']}"
+        composer = "[data-pt-agent-composer-input]"
+        send = "[data-pt-agent-composer-send]"
+
+        def send_running_turn() -> None:
+            self.set_input_value(
+                composer,
+                "Count from 1 through 10000, one number per line, with no other text.",
+                "running turn input",
+            )
+            self.click_visible(send, "send running turn")
+
+        self.step("send_turn_native", send_running_turn)
         active = self.step(
             "wait_active_turn",
             lambda: wait_until(
@@ -2725,21 +2737,125 @@ class AgentNativeJourney:
             ),
         )
         conversation_id = str(active["operation"]["conversationId"])
-        completed = self.step(
-            "wait_turn_completed",
+        first_turn_id = str(active["operation"]["turnId"])
+
+        def enqueue_native() -> dict[str, Any]:
+            self.set_input_value(composer, f"Reply with exactly {marker}.", "FIFO input")
+            self.click_visible(send, "Send while the first turn runs")
+            return self.wait_visible_element(
+                "[data-pt-agent-message-queued]", "visible FIFO successor",
+            )
+
+        self.dom_evidence["queued"] = self.step("enqueue_native", enqueue_native)
+        self.step(
+            "stop_first_turn_native",
+            lambda: self.click_visible("[data-pt-agent-stop]", "Stop first turn"),
+        )
+
+        def fifo_readback() -> dict[str, Any] | None:
+            readback = self.conversation_readback(conversation_id)
+            messages = readback.get("messages", [])
+            cancelled = [
+                row for row in messages if row.get("role") == "assistant"
+                and row.get("turnId") == first_turn_id
+                and row.get("status") == "cancelled"
+            ]
+            successors = [
+                row for row in messages if row.get("role") == "assistant"
+                and row.get("turnId") != first_turn_id
+                and row.get("status") == "completed"
+                and marker in str(row.get("content") or "")
+            ]
+            return readback if len(cancelled) == 1 and len(successors) == 1 else None
+
+        self.station_readback["fifo"] = self.step(
+            "fifo_cancel_and_successor_readback",
+            lambda: wait_until(fifo_readback, "cancelled first turn and completed FIFO successor"),
+        )
+        self.dom_evidence["successor"] = self.step(
+            "fifo_successor_visible",
             lambda: wait_until(
-                lambda: self.completed_snapshot(conversation_id),
-                "completed Agent turn",
-                DEFAULT_TIMEOUT,
+                lambda: self.driver.execute_script(
+                    """
+                    const row = [...document.querySelectorAll('[data-pt-agent-message-id]')]
+                      .find(element => element.getClientRects().length
+                        && element.innerText.includes(arguments[0]));
+                    return row ? {messageId: row.dataset.ptAgentMessageId, text: row.innerText} : null;
+                    """,
+                    marker,
+                ),
+                "visible FIFO response",
             ),
         )
-        self.assertions.append(
-            {
-                "id": "agent.native.turn.completed",
-                "status": "pass",
-                "assistantMessageId": completed["assistant"]["id"],
-            }
+        self.step("send_recoverable_turn_native", send_running_turn)
+        recoverable = self.step(
+            "wait_recoverable_turn",
+            lambda: wait_until(
+                lambda: self.active_snapshot(minimum_seq=1),
+                "admitted recoverable turn",
+            ),
         )
+        recovered_turn_id = str(recoverable["operation"]["turnId"])
+        self.step("restart_active_native_runtime", self.restart_native_runtime)
+        self.step("restore_agent_navigation", lambda: self.click_primary_navigation("agent", "Agent after restart"))
+        self.step(
+            "recovered_stop_native",
+            lambda: self.click_visible("[data-pt-agent-stop]", "Stop recovered turn"),
+        )
+        def terminal_readback() -> dict[str, Any] | None:
+            readback = self.conversation_readback(conversation_id)
+            messages = [
+                row for row in readback.get("messages", [])
+                if row.get("turnId") == recovered_turn_id
+            ]
+            users = [row for row in messages if row.get("role") == "user"]
+            assistants = [row for row in messages if row.get("role") == "assistant"]
+            if len(users) != 1 or len(assistants) != 1:
+                return None
+            assistant = assistants[0]
+            require(assistant.get("parentMessageId") == users[0].get("messageId"),
+                    "recovered cancellation lost its admitted user lineage")
+            return readback if assistant.get("status") == "cancelled" else None
+
+        self.station_readback["recovered"] = self.step(
+            "recovered_terminal_readback",
+            lambda: wait_until(terminal_readback, "one durable recovered terminal"),
+        )
+        terminal_message = next(
+            row for row in self.station_readback["recovered"]["messages"]
+            if row.get("turnId") == recovered_turn_id and row.get("role") == "assistant"
+        )
+        terminal_selector = (
+            f'[data-pt-agent-message-id="{terminal_message["messageId"]}"]'
+            '[data-pt-agent-terminal-status="cancelled"]'
+        )
+        self.dom_evidence["cancelled"] = self.step(
+            "recovered_terminal_visible",
+            lambda: self.wait_visible_element(terminal_selector, "visible recovered cancellation"),
+        )
+        self.step("restart_terminal_native_runtime", self.restart_native_runtime)
+        self.step("reload_agent_navigation", lambda: self.click_primary_navigation("agent", "reloaded Agent"))
+        self.dom_evidence["reloaded"] = self.step(
+            "terminal_history_reloaded",
+            lambda: self.wait_visible_element(
+                terminal_selector,
+                "cancelled history after restart",
+            ),
+        )
+        require(self.runtime_snapshot().get("isStreaming") is False,
+                "terminal history left a loading projection after restart")
+        require(self.dom_state(
+            f'[data-pt-agent-message-id="{terminal_message["messageId"]}"]',
+        )["count"] == 1, "restart duplicated the recovered assistant")
+        for assertion_id in (
+            "agent.native.turn.send-while-running",
+            "agent.native.turn.fifo-successor",
+            "agent.native.turn.stop-isolated",
+            "agent.native.turn.recovered-stop",
+            "agent.native.turn.terminal-lineage",
+            "agent.native.turn.restart-no-loading-orphan",
+        ):
+            self.assertions.append({"id": assertion_id, "status": "pass"})
 
     def run_stream_resilience(self) -> None:
         proxy = self.proxy
@@ -3513,6 +3629,15 @@ def run_journey(journey_name: str) -> int:
                 "Agent core lifecycle requires native create, list, select, edit, "
                 "duplicate, default, session-start, delete, negative state, "
                 "Station readback, and cleanup evidence."
+            )
+        elif journey_name == "turn":
+            phase = "Agent Turn Projection Ownership"
+            bom = ["agent-turn-projection"]
+            spec = ["docs/knowledge/invariants/agent-turn-projection-ownership.md"]
+            gate_claim = (
+                "Native Send admits a visible FIFO successor during streaming; "
+                "Stop cancels only its owner; native restart restores a stoppable "
+                "turn and one terminal assistant with admitted user lineage."
             )
         else:
             phase = "Residual Product Closure"
