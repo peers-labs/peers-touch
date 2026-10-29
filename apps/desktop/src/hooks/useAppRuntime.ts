@@ -24,18 +24,20 @@ import type { AppLifecycle } from '../types/navigation';
 export function useAppRuntime(lifecycle: AppLifecycle): boolean {
   const actorPtid = useSessionStore((state) =>
     state.authenticated ? state.currentUser?.actorPtid ?? null : null);
-  const [criticalActorPtid, setCriticalActorPtid] = useState<string | null>(null);
+  const sessionEpoch = useSessionStore((state) => state.sessionEpoch);
+  const [criticalSessionEpoch, setCriticalSessionEpoch] = useState<number | null>(null);
   useRuntimeInstall(lifecycle);
   useAuthenticatedRuntimes(
     lifecycle,
     actorPtid,
-    setCriticalActorPtid,
+    sessionEpoch,
+    setCriticalSessionEpoch,
   );
   usePresence();
   useEventStreamBridge();
   useSessionRevocationNotice(lifecycle);
   return !lifecycle.authenticated
-    || (actorPtid !== null && criticalActorPtid === actorPtid);
+    || (actorPtid !== null && criticalSessionEpoch === sessionEpoch);
 }
 
 function useRuntimeInstall(lifecycle: AppLifecycle): void {
@@ -49,25 +51,26 @@ function useRuntimeInstall(lifecycle: AppLifecycle): void {
 function useAuthenticatedRuntimes(
   lifecycle: AppLifecycle,
   actorPtid: string | null,
-  setCriticalActorPtid: (actorPtid: string | null) => void,
+  sessionEpoch: number,
+  setCriticalSessionEpoch: (epoch: number | null) => void,
 ): void {
   useEffect(() => {
     if (!lifecycle.authenticated || !actorPtid) {
-      setCriticalActorPtid(null);
+      setCriticalSessionEpoch(null);
       tearDownSessionRuntimes();
       return;
     }
     let cancelled = false;
     let cancelDeferredProjections: (() => void) | null = null;
     let cancelIdleRuntimes: (() => void) | null = null;
-    setCriticalActorPtid(null);
+    setCriticalSessionEpoch(null);
     markPhaseStart('runtime:critical');
     cancelDeferredProjections = scheduleIdle(() => {
       void installDeferredAppRuntimeProjections(actorPtid);
     });
     void installAuthenticatedCriticalRuntimes(actorPtid).then(() => {
       if (cancelled) return;
-      setCriticalActorPtid(actorPtid);
+      setCriticalSessionEpoch(sessionEpoch);
       markPhaseEnd('runtime:critical', {
         actorPtid,
         critical: CRITICAL_SESSION_RUNTIME_IDS,
@@ -82,7 +85,7 @@ function useAuthenticatedRuntimes(
       cancelIdleRuntimes?.();
       tearDownSessionRuntimes();
     };
-  }, [actorPtid, lifecycle.authenticated, setCriticalActorPtid]);
+  }, [actorPtid, sessionEpoch, lifecycle.authenticated, setCriticalSessionEpoch]);
 }
 
 function useEventStreamBridge(): void {

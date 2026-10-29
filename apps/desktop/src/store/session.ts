@@ -2,7 +2,7 @@ import { createDesktopStore } from './createDesktopStore';
 import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
-import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
+import { sessionIdentityScope } from '../kernel/sessionIdentity';
 import { primeResolvedLocal } from '../components/common/SquareAvatar';
 import {
   accessSubmissionDescriptor,
@@ -39,6 +39,7 @@ const initialState = {
   authenticated: false,
   restoring: false,
   sessionEpoch: 0,
+  stationPeerId: null as string | null,
 };
 
 interface SessionStore {
@@ -47,6 +48,8 @@ interface SessionStore {
   restoring: boolean;
   /** Monotonic owner signal for every accepted or cleared native session. */
   sessionEpoch: number;
+  /** Canonical Station identity from the completed native binding. */
+  stationPeerId: string | null;
 
   reset: () => void;
   hydrate: (actorPtid: string) => Promise<void>;
@@ -62,7 +65,7 @@ interface SessionStore {
   accessCancel: (attemptId: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
-  activateAuthenticatedSession: (response: AuthSessionResponse) => void;
+  activateAuthenticatedSession: (response: AuthSessionResponse, stationPeerId: string | null) => void;
   activateAppletLaunchSession: (user: CurrentUser) => void;
   /** Update the current actor profile projection after identity reconciliation. */
   updateProfile: (profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl'>>) => void;
@@ -72,9 +75,10 @@ interface SessionStore {
 
 // ── Helpers (exported for tests; mapping mirrors `restoreSession`) ──
 
-async function completeStationBindingOrRollback(): Promise<void> {
+async function completeStationBindingOrRollback(): Promise<string | null> {
   try {
-    await api.stationBindingComplete();
+    const binding = await api.stationBindingComplete();
+    return binding?.phase === 'bound' ? binding.station_peer_id ?? null : null;
   } catch (error) {
     const bindingError = stationAccessError(error);
     try {
@@ -148,6 +152,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   },
 
   accessSubmitLogin: async (attemptId, gate, account, password) => {
+    const previousScope = sessionIdentityScope(get());
     markLocalIdentityAction();
     const { key, ...descriptor } = accessSubmissionDescriptor(attemptId, gate);
     let resp;
@@ -161,14 +166,14 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     } catch (error) {
       throw stationAccessError(error);
     }
-    await completeStationBindingOrRollback();
+    const stationPeerId = await completeStationBindingOrRollback();
     completeAccessSubmission(key);
-    get().activateAuthenticatedSession(resp);
+    get().activateAuthenticatedSession(resp, stationPeerId);
     await runIdentityPipeline({
       reason: 'login',
       actorPtid: resp.actor_ptid ?? null,
       loginMethod: 'password',
-    });
+    }, previousScope);
   },
 
   accessCancel: async (attemptId) => {
@@ -180,23 +185,24 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   },
 
   loginWithOAuth: async (_providerId: string) => {
+    const previousScope = sessionIdentityScope(get());
     markLocalIdentityAction();
     const resp = await api.ensureStationSession();
-    await completeStationBindingOrRollback();
-    get().activateAuthenticatedSession(resp);
+    const stationPeerId = await completeStationBindingOrRollback();
+    get().activateAuthenticatedSession(resp, stationPeerId);
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
       reason: 'oauth_bridge',
       actorPtid: resp.actor_ptid ?? null,
       loginMethod: method,
-    });
+    }, previousScope);
   },
 
   restoreSession: async () => {
     set({ restoring: true });
     try {
       const resp = await api.authRestoreSession();
-      await completeStationBindingOrRollback();
+      const stationPeerId = await completeStationBindingOrRollback();
       const method = resp.login_method || 'password';
       const isOAuth = method !== 'password';
       const user = userFromAuthResponse(resp, isOAuth ? 'oauth' : 'password', isOAuth ? method : undefined);
@@ -206,6 +212,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
         authenticated: Boolean(user),
         restoring: false,
         sessionEpoch: state.sessionEpoch + 1,
+        stationPeerId,
       }));
     } catch (error) {
       if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {
@@ -218,6 +225,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
           authenticated: false,
           restoring: false,
           sessionEpoch: state.sessionEpoch + 1,
+          stationPeerId: null,
         }));
         return;
       }
@@ -228,39 +236,25 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 
   logout: async () => {
     markLocalIdentityAction();
-    // Capture the actor before the command tears down the session: the logout
-    // identity pipeline intentionally runs without an actor PTID, so the
-    // actor-scoped storage must be hard-deleted here, mirroring the Mobile
-    // session revoke path.
-    const actorPtid = get().currentUser?.actorPtid ?? null;
+    const previousScope = sessionIdentityScope(get());
     let cleanupError: unknown;
     try {
       await api.authLogout();
     } catch (error) {
       cleanupError = error;
     }
-    if (actorPtid && typeof window !== 'undefined') {
-      await createDesktopClientStorageRuntime({ ptid: actorPtid }).kernel.invalidateDomains([
-        'asset.avatar',
-        'chat.conversation-settings',
-        'chat.message',
-        'config.preference',
-        'identity.trust',
-        'profile.peer',
-        'runtime.projection',
-      ]);
-    }
-    await runIdentityPipeline({
+    const result = await runIdentityPipeline({
       reason: 'logout',
       actorPtid: null,
       loginMethod: null,
-    });
+    }, previousScope);
+    if (!result.ok && !cleanupError) cleanupError = result.failures[0]?.error;
     if (cleanupError) {
       throw cleanupError;
     }
   },
 
-  activateAuthenticatedSession: (response) => {
+  activateAuthenticatedSession: (response, stationPeerId) => {
     const method = response.login_method || 'password';
     const isOAuth = method !== 'password';
     const user = userFromAuthResponse(
@@ -274,6 +268,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       authenticated: Boolean(user),
       restoring: false,
       sessionEpoch: state.sessionEpoch + 1,
+      stationPeerId,
     }));
   },
 
@@ -284,6 +279,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       authenticated: true,
       restoring: false,
       sessionEpoch: state.sessionEpoch + 1,
+      stationPeerId: null,
     }));
   },
 

@@ -820,10 +820,11 @@ Settings does not gain one aggregate persistence message. It composes:
 - a `NotificationPreferencesSnapshot` and push-device contracts;
 - Social `RelationshipProjection` plus paginated outgoing blocked actors;
 - a typed L2 device-actor preferences record for theme, font size, compact
-  density, language, cache controls, permission state, and app metadata,
+  density and media auto-download, plus a separate typed language record,
   keyed by `(app, station, actor)` in `config.preference` and hard-deleted on
-  session revoke (pre-identity surfaces use OS defaults); cache maintenance
-  operations and app metadata stay L3 install-scoped.
+  session revoke (pre-identity surfaces use OS defaults);
+- cache maintenance operations, permission state, Station registry and app
+  metadata remain L3 install-scoped under their own owners.
 
 There is no additional account-preference field, service, runtime, or
 placeholder section in the current release.

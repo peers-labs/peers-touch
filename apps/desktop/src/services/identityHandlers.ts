@@ -10,24 +10,37 @@ import { useSidebarStore } from '../store/sidebar';
 import { useGlobalContextStore } from '../kernel/global-context/store';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
+import { useSettingsStore } from '../store/settings';
+import { resetPersonalizedLanguage } from '../i18n';
 
 registerIdentityHandler('clear-zustand-stores', async (payload) => {
   const currentActorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
-  if (payload.reason === 'logout' || payload.reason === 'revoked' || currentActorPtid !== payload.actorPtid) {
+  if (payload.reason === 'logout' || payload.reason === 'revoked' || payload.reason === 'switch'
+    || currentActorPtid !== payload.actorPtid
+    || (payload.previousScope && payload.previousScope.actorPtid !== payload.actorPtid)) {
     useChatStore.getState().reset();
     toolRuntime.reset();
-    useSessionStore.getState().reset();
+    if (payload.reason === 'logout' || payload.reason === 'revoked' || currentActorPtid !== payload.actorPtid) {
+      useSessionStore.getState().reset();
+    }
     useSocialChatStore.getState().reset();
     useNotificationStore.getState().reset();
     useNavigationBadgeStore.getState().reset();
     useAccountIdentityStore.getState().reset();
     useSidebarStore.getState().reset();
     useGlobalContextStore.getState().reset();
+    useSettingsStore.getState().resetPersonalization();
+    await resetPersonalizedLanguage();
   }
 });
 
 registerIdentityHandler('clear-client-storage-caches', async (payload) => {
-  await createDesktopClientStorageRuntime({ ptid: payload.actorPtid ?? null }).kernel.invalidateDomains([
+  const previous = payload.previousScope;
+  if (!previous || (payload.reason !== 'logout' && payload.reason !== 'revoked' && payload.reason !== 'switch'
+    && previous.actorPtid === payload.actorPtid)) return;
+  await createDesktopClientStorageRuntime({
+    ptid: previous.actorPtid, stationPeerId: previous.stationPeerId,
+  }).kernel.invalidateDomains([
     'asset.avatar',
     'chat.conversation-settings',
     'chat.message',

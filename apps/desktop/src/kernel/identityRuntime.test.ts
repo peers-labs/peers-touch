@@ -395,17 +395,18 @@ describe('identityRuntime account switch ordering', () => {
   it('cleans the old actor projection before activating the restored actor', async () => {
     await identityRuntime.switchAccount('local-account-new');
 
-    expect(mocks.order.slice(0, 4)).toEqual([
+    expect(mocks.order.slice(0, 5)).toEqual([
       'switch',
       'validate',
       'pipeline:ptid:person:old',
+      'station-bound',
       'activate',
     ]);
     expect(mocks.runIdentityPipeline).toHaveBeenCalledWith({
       reason: 'switch',
       actorPtid: 'ptid:person:new',
       loginMethod: 'password',
-    });
+    }, null);
     expect(mocks.session.currentUser?.actorPtid).toBe('ptid:person:new');
   });
 
@@ -422,16 +423,17 @@ describe('identityRuntime account switch ordering', () => {
 
     await identityRuntime.unlockWithPin('local-account-new', '12345678');
 
-    expect(mocks.order.slice(0, 3)).toEqual([
+    expect(mocks.order.slice(0, 4)).toEqual([
       'unlock',
       'pipeline:ptid:person:old',
+      'station-bound',
       'activate',
     ]);
     expect(mocks.runIdentityPipeline).toHaveBeenCalledWith({
       reason: 'unlock',
       actorPtid: 'ptid:person:new',
       loginMethod: 'password',
-    });
+    }, null);
     expect(mocks.session.currentUser?.actorPtid).toBe('ptid:person:new');
     expect(mocks.session.authenticated).toBe(true);
   });
@@ -484,7 +486,7 @@ describe('identityRuntime account switch ordering', () => {
       reason: 'revoked',
       actorPtid: 'ptid:person:old',
       loginMethod: null,
-    });
+    }, null);
   });
 
   it('enters the logged-out account gate before propagating cleanup failure', async () => {

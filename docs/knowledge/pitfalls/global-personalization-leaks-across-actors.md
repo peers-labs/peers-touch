@@ -1,7 +1,7 @@
 ---
 kind: pitfall
 title: Global settings stores leak one actor's personalization to the next
-status: active
+status: superseded-by:docs/knowledge/pitfalls/personalization-identity-and-async-lifetime.md
 owns:
   - apps/desktop/src/runtimes/personalization.ts
   - apps/desktop/src/runtimes/settingsRuntime.ts

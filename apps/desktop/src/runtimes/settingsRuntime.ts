@@ -22,35 +22,17 @@
 // path lean while still warming sections before the user clicks them.
 
 import { useSettingsStore } from '../store/settings';
-import { useSessionStore } from '../store/session';
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import {
   applyPersonalizedLanguage,
   resetPersonalizedLanguage,
 } from '../i18n';
 
-let unsubscribeSession: (() => void) | null = null;
-
 export const settingsRuntime: RuntimeDescriptor = {
   id: 'settings',
   scope: 'session',
-  install(): void {
-    if (unsubscribeSession) return;
-    let lastActorPtid: string | null = null;
-    unsubscribeSession = useSessionStore.subscribe((state) => {
-      const actorPtid = state.authenticated ? state.currentUser?.actorPtid ?? null : null;
-      if (actorPtid === lastActorPtid) return;
-      lastActorPtid = actorPtid;
-      // Account-shape may change on login/logout/PIN edits; keep the
-      // settings projection in lockstep.
-      void useSettingsStore.getState().refreshActiveAccount();
-    });
-  },
+  install(): void {},
   teardown(): void {
-    if (unsubscribeSession) {
-      unsubscribeSession();
-      unsubscribeSession = null;
-    }
     // Logout / actor switch must not leave one actor's personalization
     // visible to the next sign-in on this device.
     useSettingsStore.getState().resetPersonalization();
@@ -65,7 +47,7 @@ export const settingsRuntime: RuntimeDescriptor = {
       store.loadProviderPreferences(),
     ];
     if (actorPtid) {
-      loads.push(applyPersonalizedLanguage(actorPtid));
+      loads.push(applyPersonalizedLanguage());
     }
     await Promise.allSettled(loads);
   },
