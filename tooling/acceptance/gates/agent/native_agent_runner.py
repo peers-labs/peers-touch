@@ -2740,7 +2740,17 @@ class AgentNativeJourney:
         first_turn_id = str(active["operation"]["turnId"])
 
         def enqueue_native() -> dict[str, Any]:
-            self.set_input_value(composer, f"Reply with exactly {marker}.", "FIFO input")
+            # The successor is queued behind a deliberately long first turn,
+            # so it must explicitly supersede that instruction. Reasoning
+            # models otherwise reconcile the two user requests indefinitely
+            # behind the stream and never emit answer text within the
+            # observation window.
+            self.set_input_value(
+                composer,
+                f"Ignore any previous request in this conversation. "
+                f"Reply with exactly {marker} and nothing else.",
+                "FIFO input",
+            )
             self.click_visible(send, "Send while the first turn runs")
             return self.wait_visible_element(
                 "[data-pt-agent-message-queued]", "visible FIFO successor",
