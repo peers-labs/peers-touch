@@ -1,10 +1,10 @@
 import { memo, useCallback, type HTMLAttributes } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
+import { Empty } from '@lobehub/ui';
 import {
   Alert,
   Button,
-  Empty,
   Popconfirm,
   Progress,
   Space,
@@ -12,7 +12,7 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import { Play, RotateCcw, Square, Trash2 } from 'lucide-react';
+import { ClipboardList, Play, RotateCcw, Square, Trash2 } from 'lucide-react';
 import type { ColumnsType } from 'antd/es/table';
 
 import {
@@ -253,8 +253,10 @@ export const EvaluationRunDetail = memo<EvaluationRunDetailProps>(({
 
       {results.length === 0 ? (
         <Empty
+          icon={ClipboardList}
+          title={t('agent.eval.noResults')}
           data-pt-evaluation-empty="results"
-          description={t('agent.eval.noResults')}
+          padding="48px 16px"
         />
       ) : (
         <Table

@@ -8,10 +8,10 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
+import { Empty } from '@lobehub/ui';
 import {
   App,
   Button,
-  Empty,
   Form,
   Modal,
   Popconfirm,
@@ -21,7 +21,7 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import { Plus, Trash2 } from 'lucide-react';
+import { FlaskConical, Plus, Trash2 } from 'lucide-react';
 import type { ColumnsType } from 'antd/es/table';
 
 import {
@@ -282,8 +282,10 @@ export const EvaluationRunList = memo(() => {
 
       {runs.length === 0 ? (
         <Empty
+          icon={FlaskConical}
+          title={t('agent.eval.noRuns')}
           data-pt-evaluation-empty="runs"
-          description={t('agent.eval.noRuns')}
+          padding="48px 16px"
         />
       ) : (
         <Table

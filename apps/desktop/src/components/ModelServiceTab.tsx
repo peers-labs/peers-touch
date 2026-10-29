@@ -76,7 +76,7 @@ export function ModelServiceTab() {
   const noModels = models.length === 0;
 
   return (
-    <SettingsContainer fullHeight>
+    <SettingsContainer fullHeight tier="standard">
       <Flexbox gap={0}>
         <Title level={5} style={{ margin: '0 0 4px' }}>{t('provider.modelService.title')}</Title>
         <Text type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Empty, Spin, Tag, Typography, theme } from 'antd';
-import { Download, RefreshCw } from 'lucide-react';
+import { Empty as LobeEmpty } from '@lobehub/ui';
+import { Button, Spin, Tag, Typography, theme } from 'antd';
+import { AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { Flexbox } from 'react-layout-kit';
 import { useTranslation } from 'react-i18next';
 
@@ -96,11 +97,19 @@ export function TurnDetailsView({ turnId }: { turnId: string }) {
 
   if (error || !diagnostics?.replay) {
     return (
-      <Flexbox data-turn-details data-turn-details-state="error" gap={12} align="center">
-        <Empty description={t('chat.message.turnDetails.loadFailed')} />
-        <Button icon={<RefreshCw size={14} />} onClick={() => void load()}>
-          {t('chat.message.turnDetails.retry')}
-        </Button>
+      <Flexbox data-turn-details data-turn-details-state="error">
+        <LobeEmpty
+          icon={AlertTriangle}
+          title={t('chat.message.turnDetails.loadFailed')}
+          action={
+            <Button
+              icon={<RefreshCw size={14} />}
+              onClick={() => void load()}
+            >
+              {t('chat.message.turnDetails.retry')}
+            </Button>
+          }
+        />
       </Flexbox>
     );
   }

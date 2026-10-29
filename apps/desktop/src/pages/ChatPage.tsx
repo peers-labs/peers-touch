@@ -15,8 +15,8 @@ import { Flexbox } from 'react-layout-kit';
 
 import { ChatInput } from '../components/ChatInput';
 import { MessageList } from '../components/MessageList';
-import { OpStatusTray } from '../components/OpStatusTray';
 import { TurnQueueTray } from '../components/chat/TurnQueueTray';
+import { conversationContentWidth, CONVERSATION_DOCK_WIDTH } from './conversationLayout';
 import { resolveI18nValue } from '../i18n';
 import { useAgentStore } from '../store/agent';
 import { extractMessageArtifacts, useChatStore } from '../store/chat';
@@ -46,9 +46,7 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
   const selectedAgentData = agents.find((agent) => agent.name === selectedAgent);
   const currentSession = sessions.find((session) => session.key === currentSessionKey);
   const topicTitle = resolveI18nValue(currentSession?.title) || t('agent.sidebar.newTopic');
-  const contentWidth = narrow
-    ? 'calc(100% - 28px)'
-    : 'min(720px, calc(100% - 36px))';
+  const contentWidth = conversationContentWidth(narrow);
   const currentRevisionFailure = revisionCommandFailure?.conversationId === currentSessionKey
     ? revisionCommandFailure
     : null;
@@ -256,7 +254,6 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
           flex: 1,
           minHeight: 0,
           overflow: 'auto',
-          padding: '20px 0',
           boxSizing: 'border-box',
         }}
       >
@@ -317,7 +314,15 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
             </Flexbox>
           </Flexbox>
         ) : (
-          <div style={{ width: contentWidth, margin: '0 auto', boxSizing: 'border-box' }}>
+          <div
+            style={{
+              width: contentWidth,
+              minHeight: '100%',
+              margin: '0 auto',
+              padding: '22px 0 18px',
+              boxSizing: 'border-box',
+            }}
+          >
             <MessageList
               scrollRef={scrollRef}
               highlightedMessageId={highlightedMessageId}
@@ -326,7 +331,24 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
         )}
       </div>
 
-      <div style={{ width: contentWidth, margin: '0 auto 6px', flexShrink: 0 }}>
+      <div
+        data-pt-agent-composer-bar
+        style={{
+          flexShrink: 0,
+          borderTop: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgContainer,
+          padding: '6px 0',
+        }}
+      >
+        <div
+          style={{
+            width: CONVERSATION_DOCK_WIDTH,
+            margin: '0 auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
         {currentRevisionFailure && (
           <div
             aria-live="polite"
@@ -395,12 +417,10 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
             </button>
           </div>
         )}
-        <TurnQueueTray />
-        <div style={{ marginBottom: 8 }}>
-          <OpStatusTray />
+          <TurnQueueTray />
+          <ChatInput />
         </div>
       </div>
-      <ChatInput />
     </div>
   );
 }

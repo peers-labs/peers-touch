@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Input } from '@lobehub/ui';
+import { Empty as LobeEmpty, Input } from '@lobehub/ui';
 import { Button, Empty, Modal, Spin, Tag, Typography, theme } from 'antd';
-import { ArrowRight, FileText, Image as ImageIcon, MessageSquare, MessagesSquare, Music, Search, Users, Video, X } from 'lucide-react';
+import { ArrowRight, FileText, Image as ImageIcon, MessageSquare, MessagesSquare, Music, Search, SearchX, Users, Video, X } from 'lucide-react';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import type { SearchResult } from '../../store/socialChat';
 import { actorDisplayName, resolveActorIdentity } from '../../store/socialProfileProjection';
@@ -438,7 +438,7 @@ export function SearchMessagesModal({
               </>
             )}
             {searchResults.length > 0 && filteredResults.length === 0 ? (
-              <Empty description={t('chat.social.search.noFilterResults')} />
+              <LobeEmpty icon={SearchX} title={t('chat.social.search.noFilterResults')} />
             ) : searchResults.length > 0 ? (
               <Flexbox
                 gap={0}

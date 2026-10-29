@@ -5180,18 +5180,16 @@ func (s *TurnService) interruptTurnWithOutcomeErrorForActor(
 				}).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&persistence.AgentMessage{}).
-				Where(
-					"turn_id = ? AND role = ? AND status IN ?",
-					turnID,
-					string(domain.MessageRoleAssistant),
-					[]string{"pending", "completed"},
-				).
-				Updates(map[string]interface{}{
-					"status":     string(domain.TurnStatusInterrupted),
-					"error_json": outcomeErrorJSON,
-					"updated_at": now,
-				}).Error; err != nil {
+			if err := settleTerminalAssistantMessageTx(
+				ctx,
+				tx,
+				turnID,
+				conversationID,
+				string(domain.TurnStatusInterrupted),
+				[]string{"pending", "completed"},
+				outcomeErrorJSON,
+				now,
+			); err != nil {
 				return err
 			}
 			if strings.TrimSpace(stepID) != "" {
@@ -7409,6 +7407,117 @@ func (s *TurnService) completeAssistantMessageTx(
 	}).Error
 }
 
+// settleTerminalAssistantMessageTx projects a turn's terminal status onto its
+// assistant message row. Existing assistant rows in priorStatuses are updated
+// in place. A turn that terminated before its first assistant text projection
+// has no assistant message row at all; in that case a terminal placeholder row
+// is created whenever the turn was admitted (its user message exists), so
+// history hydration keeps cancelled/failed/interrupted turns visible instead
+// of silently dropping the assistant side of the conversation.
+//
+// Pre-admission terminations (no user message) project nothing, matching the
+// rule that admission failures must not orphan assistant messages.
+func settleTerminalAssistantMessageTx(
+	ctx context.Context,
+	tx *gorm.DB,
+	turnID string,
+	conversationID string,
+	terminalStatus string,
+	priorStatuses []string,
+	outcomeErrorJSON json.RawMessage,
+	now time.Time,
+) error {
+	updates := map[string]interface{}{
+		"status":     terminalStatus,
+		"updated_at": now,
+	}
+	if len(outcomeErrorJSON) > 0 {
+		updates["error_json"] = outcomeErrorJSON
+	}
+	result := tx.Model(&persistence.AgentMessage{}).
+		Where(
+			"turn_id = ? AND role = ? AND status IN ?",
+			turnID,
+			string(domain.MessageRoleAssistant),
+			priorStatuses,
+		).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+
+	var admittedUserMessageCount int64
+	if err := tx.Model(&persistence.AgentMessage{}).
+		Where("turn_id = ? AND role = ?", turnID, string(domain.MessageRoleUser)).
+		Count(&admittedUserMessageCount).Error; err != nil {
+		return err
+	}
+	if admittedUserMessageCount == 0 {
+		return nil
+	}
+
+	var conversation persistence.Conversation
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", conversationID).
+		First(&conversation).Error; err != nil {
+		return err
+	}
+	var maxSeq struct{ MaxSeq int64 }
+	if err := tx.Model(&persistence.AgentMessage{}).
+		Where("conversation_id = ?", conversationID).
+		Select("COALESCE(MAX(seq), 0) AS max_seq").
+		Scan(&maxSeq).Error; err != nil {
+		return err
+	}
+	// The model resolved at admission is recorded on the user message; the
+	// terminal projection inherits it so turn diagnostics show the runtime
+	// even when the turn ended before any assistant text was projected.
+	var modelName string
+	// Model inheritance is diagnostic enrichment only: a lookup failure must
+	// not block terminal settlement, but it is logged rather than swallowed.
+	if err := tx.Model(&persistence.AgentMessage{}).
+		Where("turn_id = ? AND role = ? AND COALESCE(model_name, '') <> ''",
+			turnID, string(domain.MessageRoleUser)).
+		Order("seq DESC").
+		Limit(1).
+		Select("model_name").
+		Scan(&modelName).Error; err != nil {
+		logger.Warnf(ctx, "terminal assistant message: inherit model_name failed: turn_id=%s err=%v", turnID, err)
+	}
+
+	content := ""
+	messageID := generateID("msg")
+	row := persistence.AgentMessage{
+		ID:              messageID,
+		ConversationID:  conversationID,
+		TurnID:          optionalString(turnID),
+		Role:            string(domain.MessageRoleAssistant),
+		Status:          terminalStatus,
+		Content:         &content,
+		Seq:             maxSeq.MaxSeq + 1,
+		ParentMessageID: optionalString(conversation.ActiveBranchMessageID),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if len(outcomeErrorJSON) > 0 {
+		row.ErrorJSON = append(json.RawMessage(nil), outcomeErrorJSON...)
+	}
+	if strings.TrimSpace(modelName) != "" {
+		row.ModelName = optionalString(modelName)
+	}
+	if err := tx.Create(&row).Error; err != nil {
+		return err
+	}
+	return tx.Model(&conversation).Updates(map[string]interface{}{
+		"active_branch_message_id": messageID,
+		"updated_at":               now,
+		"version":                  gorm.Expr("version + 1"),
+	}).Error
+}
+
 // ---------------------------------------------------------------------------
 // Helper: failTurn
 // ---------------------------------------------------------------------------
@@ -7543,68 +7652,17 @@ func (s *TurnService) failTurnWithEvent(
 				}).Error; err != nil {
 				return err
 			}
-			messageUpdates := map[string]interface{}{
-				"status":     string(domain.TurnStatusFailed),
-				"updated_at": now,
-			}
-			if len(errorJSON) > 0 {
-				messageUpdates["error_json"] = errorJSON
-			}
-			messageResult := tx.Model(&persistence.AgentMessage{}).
-				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
-				Updates(messageUpdates)
-			if messageResult.Error != nil {
-				return messageResult.Error
-			}
-			if messageResult.RowsAffected == 0 && len(errorJSON) > 0 {
-				// Pre-message admission failures must not create an orphan
-				// assistant message, while later failures still append their
-				// terminal outcome to an existing message lineage.
-				var admittedUserMessageCount int64
-				if err := tx.Model(&persistence.AgentMessage{}).
-					Where("turn_id = ? AND role = ?", turnID, string(domain.MessageRoleUser)).
-					Count(&admittedUserMessageCount).Error; err != nil {
-					return err
-				}
-				if admittedUserMessageCount > 0 {
-					var conversation persistence.Conversation
-					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-						Where("id = ?", turn.ConversationID).
-						First(&conversation).Error; err != nil {
-						return err
-					}
-					var maxSeq struct{ MaxSeq int64 }
-					if err := tx.Model(&persistence.AgentMessage{}).
-						Where("conversation_id = ?", turn.ConversationID).
-						Select("COALESCE(MAX(seq), 0) AS max_seq").
-						Scan(&maxSeq).Error; err != nil {
-						return err
-					}
-					content := ""
-					messageID := generateID("msg")
-					if err := tx.Create(&persistence.AgentMessage{
-						ID:              messageID,
-						ConversationID:  turn.ConversationID,
-						TurnID:          &turnID,
-						Role:            string(domain.MessageRoleAssistant),
-						Status:          string(domain.TurnStatusFailed),
-						Content:         &content,
-						ErrorJSON:       errorJSON,
-						Seq:             maxSeq.MaxSeq + 1,
-						ParentMessageID: optionalString(conversation.ActiveBranchMessageID),
-						CreatedAt:       now,
-						UpdatedAt:       now,
-					}).Error; err != nil {
-						return err
-					}
-					if err := tx.Model(&conversation).Updates(map[string]interface{}{
-						"active_branch_message_id": messageID,
-						"updated_at":               now,
-						"version":                  gorm.Expr("version + 1"),
-					}).Error; err != nil {
-						return err
-					}
-				}
+			if err := settleTerminalAssistantMessageTx(
+				ctx,
+				tx,
+				turnID,
+				turn.ConversationID,
+				string(domain.TurnStatusFailed),
+				[]string{"pending"},
+				errorJSON,
+				now,
+			); err != nil {
+				return err
 			}
 			var boundStep persistence.ExecutionStep
 			if strings.TrimSpace(stepID) == "" {
@@ -7845,13 +7903,16 @@ func (s *TurnService) cancelTurnWithResult(
 				}).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&persistence.AgentMessage{}).
-				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
-				Updates(map[string]interface{}{
-					"status":     string(domain.TurnStatusCancelled),
-					"error_json": outcomeErrorJSON,
-					"updated_at": now,
-				}).Error; err != nil {
+			if err := settleTerminalAssistantMessageTx(
+				ctx,
+				tx,
+				turnID,
+				turn.ConversationID,
+				string(domain.TurnStatusCancelled),
+				[]string{"pending"},
+				outcomeErrorJSON,
+				now,
+			); err != nil {
 				return err
 			}
 			var boundStep persistence.ExecutionStep

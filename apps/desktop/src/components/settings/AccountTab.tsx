@@ -4,7 +4,6 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { Flexbox } from 'react-layout-kit';
 import { Tooltip, toast } from '@lobehub/ui';
 import {
-  Empty,
   Input,
   AutoComplete,
   Select,
@@ -18,13 +17,14 @@ import {
   Clock3,
   Copy,
   Hash,
+  IdCard,
   Link2,
   MapPin,
   Pencil,
   Plus,
   Trash2,
 } from 'lucide-react';
-import { Button } from '@lobehub/ui';
+import { Button, Empty as LobeEmpty } from '@lobehub/ui';
 import {
   api,
   type AccountProfile,
@@ -874,7 +874,7 @@ export function AccountTab() {
   if (!profile) {
     return (
       <Flexbox align="center" justify="center" style={{ padding: 64 }}>
-        <Empty description={t('provider.account.noProfile')} />
+        <LobeEmpty icon={IdCard} title={t('provider.account.noProfile')} />
       </Flexbox>
     );
   }

@@ -141,6 +141,9 @@ export function LoginPage({
   const [gateLoading, setGateLoading] = useState(false);
   const [gateInviteCode, setGateInviteCode] = useState('');
 
+  // ── Email login error (inline on the login card) ──
+  const [emailError, setEmailError] = useState('');
+
   // ── Refs for email login (needed for gate chain) ──
   const emailRef = useRef('');
   const passwordRef = useRef('');
@@ -590,11 +593,12 @@ export function LoginPage({
     emailRef.current = email;
     passwordRef.current = password;
     setGateError('');
+    setEmailError('');
     try {
       const decision = await accessStart();
       const gate = currentGate(decision);
       if (isAccessBlocked(decision)) {
-        message.error(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
+        setEmailError(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
         return;
       }
       if (isInviteCodeGate(gate)) {
@@ -604,7 +608,10 @@ export function LoginPage({
       }
       await finishLoginGate(decision);
     } catch (err: unknown) {
-      message.error(errorMessage(err, t('auth.login.failed')));
+      // Inline error on the login card is the durable surface: a transient
+      // toast alone is easy to miss (and static message API may not render
+      // outside App context).
+      setEmailError(errorMessage(err, t('auth.login.failed')));
     }
   }, [accessStart, finishLoginGate, t]);
 
@@ -833,6 +840,7 @@ export function LoginPage({
             oauthActionProviderId={connectProvider?.id}
             oauthActionState={authState}
             oauthActionError={authError}
+            emailError={emailError}
             onBack={handleRecoveryCancel}
             onEmailLogin={handleEmailLogin}
             onOAuthLogin={handleOAuthConnect}
@@ -885,6 +893,7 @@ export function LoginPage({
             oauthActionProviderId={connectProvider?.id}
             oauthActionState={authState}
             oauthActionError={authError}
+            emailError={emailError}
             onBack={handleBackToWelcome}
             onEmailLogin={handleEmailLogin}
             onOAuthLogin={handleOAuthConnect}

@@ -66,7 +66,7 @@ export function MemorySettingsTab() {
 
   if (loading) {
     return (
-      <SettingsContainer fullHeight>
+      <SettingsContainer fullHeight tier="standard">
         <Flexbox align="center" justify="center" style={{ padding: 60 }}><Spin /></Flexbox>
       </SettingsContainer>
     );
@@ -75,7 +75,7 @@ export function MemorySettingsTab() {
   const embeddingReady = !!embedding?.provider && !!embedding?.model;
 
   return (
-    <SettingsContainer fullHeight>
+    <SettingsContainer fullHeight tier="standard">
       <SettingsSection
         icon={<Database size={16} style={{ color: token.colorPrimary }} />}
         title={t('provider.memory.memory')}

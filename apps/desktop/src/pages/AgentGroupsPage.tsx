@@ -3,10 +3,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Card, Modal, Form, Input, Select, Tag, Empty, Popconfirm, Avatar, theme } from 'antd';
+import { Empty } from '@lobehub/ui';
+import { Button, Card, Modal, Form, Input, Select, Tag, Popconfirm, Avatar, theme } from 'antd';
 import { PlusOutlined, DeleteOutlined, TeamOutlined, UserAddOutlined } from '@ant-design/icons';
+import { UserPlus, Users } from 'lucide-react';
 
 import { useAgentGroupsStore, type AgentGroup, type OrchestrationMode } from '../store/agentGroups';
+import { PageColumn } from '../layout/PageColumn';
 import { useAgentStore } from '../store/agent';
 
 interface CreateFormValues {
@@ -85,7 +88,7 @@ function MemberPicker({
             </Flexbox>
           ))}
           {availableAgents.length === 0 && (
-            <Empty description={t('agent.groups.empty')} />
+            <Empty icon={UserPlus} title={t('agent.groups.empty')} />
           )}
         </Flexbox>
       </Modal>
@@ -223,11 +226,12 @@ export function AgentGroupsPage() {
     <Flexbox
       style={{
         height: '100%',
-        padding: 24,
+        padding: '8px 0 24px',
         overflow: 'auto',
         background: token.colorBgLayout,
       }}
     >
+      <PageColumn tier="standard">
       {/* Page header */}
       <Flexbox horizontal align="center" distribution="space-between" style={{ marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>
@@ -241,8 +245,19 @@ export function AgentGroupsPage() {
       {/* Group list */}
       {groups.length === 0 ? (
         <Empty
-          description={t('agent.groups.empty')}
-          style={{ marginTop: 60 }}
+          icon={Users}
+          title={t('agent.groups.empty')}
+          description={t('agent.groups.emptyHint')}
+          action={
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setCreateModalOpen(true)}
+            >
+              {t('agent.groups.create')}
+            </Button>
+          }
+          padding="72px 16px"
         />
       ) : (
         groups.map((group) => <GroupCard key={group.id} group={group} />)
@@ -281,6 +296,7 @@ export function AgentGroupsPage() {
           </Form.Item>
         </Form>
       </Modal>
+      </PageColumn>
     </Flexbox>
   );
 }

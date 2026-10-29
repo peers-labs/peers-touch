@@ -69,7 +69,7 @@ function VoiceSettings() {
   );
 
   return (
-    <SettingsContainer fullHeight>
+    <SettingsContainer fullHeight tier="standard">
       <Form form={form} layout="vertical" onValuesChange={handleValuesChange} disabled={loading}>
         <Flexbox gap={4}>
           <Title level={5} style={{ margin: 0 }}>

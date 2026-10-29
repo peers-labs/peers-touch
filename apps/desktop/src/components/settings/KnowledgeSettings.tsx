@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Empty, Input, Popconfirm, Spin, Tag, theme } from 'antd';
-import { ActionIcon } from '@lobehub/ui';
+import { Alert, Button, Card, Input, Popconfirm, Spin, Tag, theme } from 'antd';
+import { ActionIcon, Empty as LobeEmpty } from '@lobehub/ui';
 import { ArrowLeft, BookOpen, Package, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
@@ -352,9 +352,10 @@ export function KnowledgeSettings() {
         />
         {loading ? <Flexbox align="center" padding={32}><Spin /></Flexbox> : null}
         {!loading && visible.length === 0 ? (
-          <Empty
-            image={<Package size={32} />}
-            description={query ? t('settings.knowledge.emptySearch') : t('settings.knowledge.empty')}
+          <LobeEmpty
+            icon={Package}
+            title={query ? t('settings.knowledge.emptySearch') : t('settings.knowledge.empty')}
+            padding="48px 16px"
           />
         ) : null}
         {!loading ? (

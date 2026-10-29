@@ -13,7 +13,7 @@ import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, Tag, toast } from '@lobehub/ui';
 import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, RefreshCw, Search, ServerCog, Slash } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, Image as ImageIcon, RefreshCw, Search, ServerCog, Slash } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
@@ -49,6 +49,7 @@ import {
 import { ProviderIcon } from './settings/ProviderIcon';
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
 import { removeRejectedInlineReferences } from './composer/invalidReferenceRecovery';
+import { SendControl } from './composer/SendControl';
 import { log } from '../utils/logger';
 import type { AgentCapabilityBinding } from '../gen/proto/domain/agent/capability_pb';
 import { AgentCommandPalette } from './agent/AgentCommandPalette';
@@ -58,7 +59,6 @@ import { EVENT, eventBus } from '../kernel/events';
 const COMPOSER_COLORS = {
   border: '#d1d1d1',
   borderSoft: '#ececec',
-  primaryDisabled: '#d8d3fb',
   textTertiary: '#9b9b9b',
   toolButtonShadow: '0 1px 4px rgba(15,23,42,0.04)',
 } as const;
@@ -68,13 +68,6 @@ const EMPTY_CAPABILITY_BINDINGS: AgentCapabilityBinding[] = [];
 type ComposerReadinessDisplayState =
   | AgentComposerReadinessState
   | 'checking';
-
-function shortSnapshotId(snapshotId: string): string {
-  if (!snapshotId) return '';
-  return snapshotId.length > 18
-    ? `${snapshotId.slice(0, 18)}…`
-    : snapshotId;
-}
 
 function readinessTagColor(
   state: ComposerReadinessDisplayState,
@@ -135,6 +128,8 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const { t } = useTranslation('chat');
 
   const sendMessage = useChatStore(s => s.sendMessage);
+  const isStreaming = useChatStore(s => s.isStreaming);
+  const stopStreaming = useChatStore(s => s.stopStreaming);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const input = useChatStore(
     (state) => state.composerDrafts[state.currentSessionKey] ?? '',
@@ -578,6 +573,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
   const sendDisabled =
     (!input.trim() && readyAttachments.length === 0)
+    || isStreaming
     || uploading
     || failed
     || !readinessCanSend
@@ -592,9 +588,6 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     || modelInfo?.provider_id
     || selectedProviderId
     || t('chat.input.runtimeSnapshot.unknown');
-  const runtimeSnapshotLabel = shortSnapshotId(
-    composerReadiness.runtimeSnapshotId,
-  ) || t('chat.input.runtimeSnapshot.unknown');
   const readinessReasonKey = selectedAgentSaveState === 'saving'
     ? 'checking'
     : composerReadiness.state;
@@ -703,10 +696,12 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         width: '100%',
         minHeight,
         border: `1px solid ${COMPOSER_COLORS.border}`,
-        borderRadius: 18,
-        background: '#ffffff',
+        // Grounded dock inside the composer bar: a surface tile, not a floating
+        // card. Geometry owner is pages/conversationLayout.ts.
+        borderRadius: 12,
+        background: token.colorFillQuaternary,
         boxSizing: 'border-box',
-        padding: '12px 14px 10px',
+        padding: '8px 12px',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
@@ -743,7 +738,15 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       >
         <ServerCog size={14} style={{ flexShrink: 0 }} />
         <span
-          title={`${providerLabel} / ${modelLabel}`}
+          // The Station readiness snapshot id is an internal engineering
+          // fingerprint: keep it out of the visible composer (it adds no
+          // decision value for the user) but preserve it in the tooltip for
+          // support/diagnostics.
+          title={
+            composerReadiness.runtimeSnapshotId
+              ? `${providerLabel} / ${modelLabel} · ${composerReadiness.runtimeSnapshotId}`
+              : `${providerLabel} / ${modelLabel}`
+          }
           style={{
             minWidth: 0,
             overflow: 'hidden',
@@ -756,21 +759,11 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
             provider: providerLabel,
           })}
         </span>
-        <span aria-hidden style={{ color: token.colorTextQuaternary }}>·</span>
-        <span
-          title={composerReadiness.runtimeSnapshotId}
-          style={{
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
+        <Tag
+          color={readinessTagColor(readinessDisplayState)}
+          style={{ margin: 0 }}
+          data-runtime-snapshot-id={composerReadiness.runtimeSnapshotId || undefined}
         >
-          {t('chat.input.runtimeSnapshot.snapshot', {
-            snapshot: runtimeSnapshotLabel,
-          })}
-        </span>
-        <Tag color={readinessTagColor(readinessDisplayState)} style={{ margin: 0 }}>
           {t(`chat.input.runtimeSnapshot.state.${readinessDisplayState}`)}
         </Tag>
       </Flexbox>
@@ -992,19 +985,14 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         </div>
 
         <Flexbox horizontal align="center" gap={8} justify="flex-end">
-          <ActionIcon
-            data-pt-agent-composer-send
-            icon={ArrowUp}
-            onClick={handleSend}
+          {/* SendControl owns the single send/stop contract for every composer
+              surface: while a turn runs Stop stays actionable and Send is
+              rendered disabled (single turn owner — no slot-flip footgun). */}
+          <SendControl
+            isStreaming={isStreaming}
             disabled={sendDisabled}
-            title={t('chat.input.send')}
-            size={{ blockSize: 34, size: 16 }}
-            style={{
-              borderRadius: 10,
-              background: sendDisabled ? COMPOSER_COLORS.primaryDisabled : token.colorPrimary,
-              color: sendDisabled ? COMPOSER_COLORS.textTertiary : '#ffffff',
-              cursor: sendDisabled ? 'default' : 'pointer',
-            }}
+            onSend={handleSend}
+            onStop={stopStreaming}
           />
         </Flexbox>
       </Flexbox>

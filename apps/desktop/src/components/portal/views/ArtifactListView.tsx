@@ -1,5 +1,6 @@
 import { Flexbox } from 'react-layout-kit';
-import { theme, Typography, Empty } from 'antd';
+import { Empty } from '@lobehub/ui';
+import { theme, Typography } from 'antd';
 import { Cloud, FileText, HardDrive } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,7 +16,7 @@ export function ArtifactListView({ artifacts }: ArtifactListViewProps) {
   const { t } = useTranslation('agent');
 
   if (artifacts.length === 0) {
-    return <Empty description={t('agent.portal.artifact.empty')} style={{ marginTop: 48 }} />;
+    return <Empty icon={FileText} title={t('agent.portal.artifact.empty')} padding="48px 16px" />;
   }
 
   return (

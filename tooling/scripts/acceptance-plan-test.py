@@ -788,7 +788,8 @@ class BehaviorRuleTests(unittest.TestCase):
     def test_agent_replay_and_identity_owners_select_stream_resilience(self) -> None:
         for path in (
             "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
-            "apps/desktop/src/components/OpStatusTray.tsx",
+            "apps/desktop/src/components/messages/AssistantMessage.tsx",
+            "apps/desktop/src/components/messages/ThinkingBlock.tsx",
             "apps/desktop/src/kernel/identityRuntime.ts",
             "apps/desktop/src/services/identityHandlers.ts",
             "apps/desktop/src/store/chatOperationEvent.test.ts",
