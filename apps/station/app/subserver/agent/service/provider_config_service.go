@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -120,6 +121,44 @@ func newProviderRecord(req ProviderCreateRequest) *persistence.AgentProvider {
 	return provider
 }
 
+// providerUpdateIsNoop reports whether an update request leaves every
+// effective provider field unchanged. Runtime config JSON is compared by
+// canonicalized value so equivalent formatting never bumps the version.
+func providerUpdateIsNoop(provider *persistence.AgentProvider, req ProviderUpdateRequest) bool {
+	if req.DisplayName != nil && *req.DisplayName != provider.DisplayName {
+		return false
+	}
+	if req.BaseURL != nil && *req.BaseURL != provider.BaseURL {
+		return false
+	}
+	if req.Enabled != nil && *req.Enabled != provider.Enabled {
+		return false
+	}
+	if len(req.ConfigJSON) > 0 && !canonicalJSONEqual(provider.Config, req.ConfigJSON) {
+		return false
+	}
+	return true
+}
+
+// canonicalJSONEqual compares two JSON values by semantic content. Values
+// that are not both valid JSON fall back to trimmed byte equality.
+func canonicalJSONEqual(current, proposed []byte) bool {
+	var currentValue, proposedValue any
+	if json.Unmarshal(current, &currentValue) != nil ||
+		json.Unmarshal(proposed, &proposedValue) != nil {
+		return bytes.Equal(bytes.TrimSpace(current), bytes.TrimSpace(proposed))
+	}
+	currentCanonical, err := json.Marshal(currentValue)
+	if err != nil {
+		return false
+	}
+	proposedCanonical, err := json.Marshal(proposedValue)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(currentCanonical, proposedCanonical)
+}
+
 func providerRecordSupportedByFrozenProfile(provider *persistence.AgentProvider) bool {
 	if provider == nil {
 		return false
@@ -152,6 +191,16 @@ func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRe
 	if provider.Version != req.Version {
 		return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
 			fmt.Sprintf("version conflict: current=%d, submitted=%d", provider.Version, req.Version), nil)
+	}
+
+	// A configuration save that changes no effective field must remain a
+	// no-op. Provider version participates in the pinned conversation
+	// runtime authority, so unconditional bumps wedged every bound
+	// conversation after an identical re-configuration.
+	if providerUpdateIsNoop(&provider, req) {
+		logger.Infof(ctx, "provider update unchanged, keeping version: actor_ptid=%s, provider=%s, version=%d",
+			req.ActorPTID, req.ProviderID, provider.Version)
+		return &provider, nil
 	}
 
 	newVersion := provider.Version + 1

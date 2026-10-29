@@ -7552,32 +7552,47 @@ func applyTypedTurnError(event *TurnEvent, cause error) {
 		return
 	}
 	var biz *errcode.BizError
-	if !errors.As(cause, &biz) || biz.Payload == nil {
+	if !errors.As(cause, &biz) {
 		return
 	}
-	retryable := biz.Payload.GetRetryable()
-	terminal := biz.Payload.GetTerminal()
-	details := make(map[string]string, len(biz.Payload.GetDetails()))
-	for key, value := range biz.Payload.GetDetails() {
-		details[key] = value
+	if biz.Payload != nil {
+		retryable := biz.Payload.GetRetryable()
+		terminal := biz.Payload.GetTerminal()
+		details := make(map[string]string, len(biz.Payload.GetDetails()))
+		for key, value := range biz.Payload.GetDetails() {
+			details[key] = value
+		}
+		event.Error = biz.Payload.GetError()
+		event.ErrorType = biz.Payload.GetErrorType()
+		event.LocaleKey = biz.Payload.GetLocaleKey()
+		event.Retryable = &retryable
+		event.Terminal = &terminal
+		event.Details = details
+		return
 	}
-	event.Error = biz.Payload.GetError()
-	event.ErrorType = biz.Payload.GetErrorType()
-	event.LocaleKey = biz.Payload.GetLocaleKey()
-	event.Retryable = &retryable
-	event.Terminal = &terminal
-	event.Details = details
+	// Errors created via the generic errcode.New carry no localized
+	// ErrorPayload, but their typed code and message must still survive
+	// terminal turn persistence instead of collapsing to the outer stage.
+	event.Error = biz.Message
+	event.ErrorType = string(biz.Code)
 }
 
 func typedTurnErrorJSON(cause error) (json.RawMessage, error) {
 	var biz *errcode.BizError
-	if !errors.As(cause, &biz) || biz.Payload == nil {
+	if !errors.As(cause, &biz) {
 		return nil, nil
+	}
+	payload := biz.Payload
+	if payload == nil {
+		payload = &model.ErrorPayload{
+			Error:     biz.Message,
+			ErrorType: string(biz.Code),
+		}
 	}
 	return protojson.MarshalOptions{
 		UseProtoNames:   true,
 		EmitUnpopulated: true,
-	}.Marshal(biz.Payload)
+	}.Marshal(payload)
 }
 
 func (s *TurnService) failTurnWithEvent(
