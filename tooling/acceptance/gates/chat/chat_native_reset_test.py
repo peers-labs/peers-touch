@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from tooling.acceptance.fixtures.chat_native_reset import (
+    AGENT_RUNTIME_TABLES,
     CHAT_TABLES,
     INDEXED_ACTOR_VISIBILITY,
     RETIRED_CHAT_TABLES,
@@ -1664,6 +1665,8 @@ ORDER BY owner_ptid
             )
         self.assertIn("native Chat preset actor PTIDs are invalid", sql)
         self.assertNotIn("_actor_id::text", sql)
+        for table in AGENT_RUNTIME_TABLES:
+            self.assertIn(f"'{table}'", sql)
 
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"}, clear=True)
     def test_station_reset_requires_live_lease_even_with_boolean(self) -> None:
@@ -1734,6 +1737,29 @@ ORDER BY owner_ptid
             - set(RETIRED_CHAT_TABLES),
             set(),
         )
+
+    def test_station_reset_includes_agent_runtime_authority_tables(self) -> None:
+        required_tables = {
+            "agent_conversations",
+            "agent_messages",
+            "agent_providers",
+            "agent_credential_pool",
+            "agent_turns",
+            "agent_turn_attempts",
+            "agent_turn_events",
+            "agent_turn_traces",
+            "agent_client_capability_leases",
+            "agent_executor_leases",
+        }
+        self.assertEqual(required_tables - set(AGENT_RUNTIME_TABLES), set())
+        self.assertEqual(set(AGENT_RUNTIME_TABLES) & set(CHAT_TABLES), set())
+        self.assertEqual(
+            set(AGENT_RUNTIME_TABLES) & set(RETIRED_CHAT_TABLES), set()
+        )
+        # Reference/catalog seed data must survive the actor reset.
+        self.assertNotIn("agents", AGENT_RUNTIME_TABLES)
+        self.assertNotIn("agent_skills", AGENT_RUNTIME_TABLES)
+
 
 if __name__ == "__main__":
     unittest.main()
