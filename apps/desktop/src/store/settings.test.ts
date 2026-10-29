@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const personalization = vi.hoisted(() => ({
   readPersonalization: vi.fn(),
   writePersonalization: vi.fn(),
+  capturePersonalizationScope: () => null,
+  isPersonalizationScopeCurrent: () => true,
 }));
 
 const api = vi.hoisted(() => ({
@@ -16,8 +18,13 @@ vi.mock('../runtimes/personalization', () => ({
   PERSONALIZATION_SHOW_USABLE_PROVIDERS_KEY: 'settings.providers.showUsableOnly',
   readPersonalization: personalization.readPersonalization,
   writePersonalization: personalization.writePersonalization,
+  capturePersonalizationScope: personalization.capturePersonalizationScope,
+  isPersonalizationScopeCurrent: personalization.isPersonalizationScopeCurrent,
 }));
 
+vi.mock('./session', () => ({
+  useSessionStore: { getState: () => ({ sessionEpoch: 0 }) },
+}));
 vi.mock('../services/desktop_api', () => ({ api }));
 vi.mock('../services/tool-service', () => ({
   toolService: { list: vi.fn() },
@@ -43,6 +50,7 @@ describe('provider display preference', () => {
 
     expect(personalization.readPersonalization).toHaveBeenCalledWith(
       'settings.providers.showUsableOnly',
+      null,
     );
     expect(useSettingsStore.getState().showUsableProvidersOnly).toBe(false);
   });
@@ -61,6 +69,7 @@ describe('provider display preference', () => {
     expect(personalization.writePersonalization).toHaveBeenCalledWith(
       'settings.providers.showUsableOnly',
       false,
+      null,
     );
     expect(useSettingsStore.getState().showUsableProvidersOnly).toBe(false);
   });
@@ -69,6 +78,11 @@ describe('provider display preference', () => {
 describe('chat screenshot shortcut preference', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useSettingsStore.setState({
+      showUsableProvidersOnly: true,
+      chatScreenshotShortcut: 'Mod+Shift+A',
+      error: null,
+    });
     personalization.writePersonalization.mockResolvedValue(true);
     api.chatScreenshotShortcutRegister.mockResolvedValue({ ok: true });
   });
@@ -80,6 +94,7 @@ describe('chat screenshot shortcut preference', () => {
 
     expect(personalization.readPersonalization).toHaveBeenCalledWith(
       'settings.chat.screenshotShortcut',
+      null,
     );
     expect(useSettingsStore.getState().chatScreenshotShortcut).toBe('Mod+Shift+S');
     expect(api.chatScreenshotShortcutRegister).toHaveBeenCalledWith({
@@ -87,13 +102,14 @@ describe('chat screenshot shortcut preference', () => {
     });
   });
 
-  it('resets to identity-independent defaults', () => {
+  it('resets to identity-independent defaults', async () => {
     useSettingsStore.setState({
       chatScreenshotShortcut: 'Mod+Shift+S',
       showUsableProvidersOnly: false,
     });
 
     useSettingsStore.getState().resetPersonalization();
+    await vi.waitFor(() => expect(api.chatScreenshotShortcutRegister).toHaveBeenCalled());
 
     const state = useSettingsStore.getState();
     expect(state.chatScreenshotShortcut).toBe('Mod+Shift+A');
@@ -101,5 +117,43 @@ describe('chat screenshot shortcut preference', () => {
     expect(api.chatScreenshotShortcutRegister).toHaveBeenCalledWith({
       shortcut: 'Mod+Shift+A',
     });
+  });
+
+  it('discards a delayed preference read after reset, including its native effect', async () => {
+    let resolve!: (value: unknown) => void;
+    personalization.readPersonalization.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const pending = useSettingsStore.getState().loadChatPreferences();
+    useSettingsStore.getState().resetPersonalization();
+    resolve('Mod+Shift+S');
+    await pending;
+    expect(useSettingsStore.getState().chatScreenshotShortcut).toBe('Mod+Shift+A');
+    await vi.waitFor(() => expect(api.chatScreenshotShortcutRegister).toHaveBeenLastCalledWith({ shortcut: 'Mod+Shift+A' }));
+  });
+
+  it('discards delayed Station projection errors after reset', async () => {
+    let reject!: (value: unknown) => void;
+    api.listAgents.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+    const pending = useSettingsStore.getState().loadAgents();
+    useSettingsStore.getState().resetPersonalization();
+    reject(new Error('actor A unavailable'));
+    await pending;
+    expect(useSettingsStore.getState()).toMatchObject({ agents: [], loading: false, error: null });
+  });
+
+  it('preserves a newer user choice when an older load finishes', async () => {
+    let resolve!: (value: unknown) => void;
+    personalization.readPersonalization.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const pending = useSettingsStore.getState().loadProviderPreferences();
+    await useSettingsStore.getState().setShowUsableOnly(false);
+    resolve(true);
+    await pending;
+    expect(useSettingsStore.getState().showUsableProvidersOnly).toBe(false);
+  });
+
+  it('rejects the retired string boolean format', async () => {
+    personalization.readPersonalization.mockResolvedValueOnce('false');
+    await useSettingsStore.getState().loadProviderPreferences();
+    expect(useSettingsStore.getState().showUsableProvidersOnly).toBe(true);
+    expect(useSettingsStore.getState().error).toBe('Invalid Provider display preference');
   });
 });

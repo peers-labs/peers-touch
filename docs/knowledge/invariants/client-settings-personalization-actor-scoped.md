@@ -10,10 +10,12 @@ owns:
   - apps/mobile/src/runtimes/deviceSettingsRuntime.ts
   - apps/mobile/src/runtimes/sessionRuntime.ts
   - apps/mobile/src/app/mobileI18n.tsx
+  - apps/mobile/src/runtimes/personalizationScope.ts
+  - apps/mobile/src/runtimes/languageRuntime.ts
   - packages/client-storage/src/index.ts
   - docs/architecture/platform/client/settings-ownership.md
 referenced-by:
-  - pitfalls/global-personalization-leaks-across-actors.md
+  - pitfalls/personalization-identity-and-async-lifetime.md
 related:
   - docs/architecture/platform/client/settings-ownership.md
   - docs/global/coding-guide/mobile/storage.md
@@ -81,6 +83,6 @@ namespace.
 
 ## Crosswalks
 
-- See pitfall `pitfalls/global-personalization-leaks-across-actors.md` for the leak that this invariant closes.
+- See pitfall `pitfalls/personalization-identity-and-async-lifetime.md` for the storage and asynchronous lifecycle leaks that this invariant closes.
 - See `docs/architecture/platform/client/settings-ownership.md` for the full three-layer contract and control inventory.
 - See `docs/global/coding-guide/mobile/storage.md §5` for the storage scope decision rule.

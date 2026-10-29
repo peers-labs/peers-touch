@@ -13,7 +13,7 @@ export interface DesktopClientStorageRuntime {
   readonly cache: CacheStore;
   readonly repositories: {
     readonly avatars: DomainCacheRepository<string>;
-    readonly chatPreferences: DomainCacheRepository<Record<string, unknown>>;
+    readonly chatPreferences: DomainCacheRepository<unknown>;
     readonly conversationSettings: DomainCacheRepository<unknown>;
     readonly identityTrust: DomainCacheRepository<unknown>;
     readonly messages: DomainCacheRepository<unknown>;
@@ -29,7 +29,7 @@ export interface DesktopClientStorageRuntime {
 }
 
 export interface DesktopStorageSessionScope {
-  readonly stationUrl?: string | null;
+  readonly stationPeerId?: string | null;
   readonly ptid?: string | null;
   readonly deviceId?: string | null;
   readonly sessionId?: string | null;
@@ -46,7 +46,7 @@ export function createDesktopClientStorageRuntime(scope: DesktopStorageSessionSc
     cache: kernel.cache,
     repositories: {
       avatars: kernel.repository<string>('asset.avatar'),
-      chatPreferences: kernel.repository<Record<string, unknown>>('config.preference'),
+      chatPreferences: kernel.repository<unknown>('config.preference'),
       conversationSettings: kernel.repository<unknown>('chat.conversation-settings'),
       identityTrust: kernel.repository<unknown>('identity.trust'),
       messages: kernel.repository<unknown>('chat.message'),
@@ -117,7 +117,7 @@ export function removeDesktopDomainValueSync(domain: ClientStorageDomainId, key:
 export function desktopStorageScope(scope: DesktopStorageSessionScope): ClientStorageScope {
   return {
     app: 'desktop',
-    station: scope.stationUrl ?? null,
+    station: scope.stationPeerId ?? null,
     actor: scope.ptid ?? null,
     device: scope.deviceId ?? null,
     session: scope.sessionId ?? null,

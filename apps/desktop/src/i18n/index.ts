@@ -17,6 +17,8 @@ import {
   PERSONALIZATION_LANGUAGE_KEY,
   readPersonalization,
   writePersonalization,
+  capturePersonalizationScope,
+  isPersonalizationScopeCurrent,
 } from '../runtimes/personalization';
 
 const i18n = createInstance();
@@ -34,6 +36,16 @@ export interface I18nResources {
 }
 
 let availableLanguages: LanguageInfo[] = [];
+let generation = 0;
+let languageEffects = Promise.resolve();
+
+function applyLanguage(lang: string, current: () => boolean): Promise<void> {
+  const operation = languageEffects.then(async () => {
+    if (current() && i18n.language !== lang) await i18n.changeLanguage(lang);
+  });
+  languageEffects = operation.catch(() => undefined);
+  return operation;
+}
 
 export function getAvailableLanguages(): LanguageInfo[] {
   return availableLanguages;
@@ -105,32 +117,44 @@ export async function initI18n() {
 }
 
 /** Apply the authenticated actor's stored language, falling back to OS. */
-export async function applyPersonalizedLanguage(actorPtid: string): Promise<void> {
+export async function applyPersonalizedLanguage(): Promise<void> {
   if (availableLanguages.length === 0) return;
+  const scope = capturePersonalizationScope();
+  const observed = generation;
+  const current = () => observed === generation && isPersonalizationScopeCurrent(scope);
   const availableCodes = availableLanguages.map((l) => l.code);
-  const stored = await readPersonalization<string>(
+  const stored = await readPersonalization(
     PERSONALIZATION_LANGUAGE_KEY,
-    actorPtid,
+    scope,
   );
-  const next = stored && availableCodes.includes(stored)
+  if (!current()) return;
+  if (stored !== null && (typeof stored !== 'string' || !availableCodes.includes(stored))) {
+    throw new Error('Invalid language preference');
+  }
+  const next = typeof stored === 'string'
     ? stored
     : systemLanguage(availableCodes);
-  if (i18n.language !== next) await i18n.changeLanguage(next);
+  await applyLanguage(next, current);
 }
 
 /** Return to the OS language after logout / before any identity exists. */
 export async function resetPersonalizedLanguage(): Promise<void> {
+  generation += 1;
+  const observed = generation;
   if (availableLanguages.length === 0) return;
   const next = systemLanguage(availableLanguages.map((l) => l.code));
-  if (i18n.language !== next) await i18n.changeLanguage(next);
+  await applyLanguage(next, () => observed === generation);
 }
 
 export function changeLanguage(lang: string) {
-  // Apply immediately; persist only for an authenticated actor. A language
+  // Persist before applying for an authenticated actor. A language
   // picked on the pre-login gate is an in-memory choice for this run and must
   // not become the next actor's personalization.
-  void writePersonalization(PERSONALIZATION_LANGUAGE_KEY, lang);
-  return i18n.changeLanguage(lang);
+  const scope = capturePersonalizationScope();
+  const observed = ++generation;
+  const current = () => observed === generation && isPersonalizationScopeCurrent(scope);
+  return writePersonalization(PERSONALIZATION_LANGUAGE_KEY, lang, scope)
+    .then(() => applyLanguage(lang, current));
 }
 
 const I18N_PREFIX = 'i18n:';

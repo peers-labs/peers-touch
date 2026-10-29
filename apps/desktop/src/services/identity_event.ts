@@ -10,6 +10,7 @@ import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { api, type PresenceTrigger } from './desktop_api';
 import { useSessionStore } from '../store/session';
+import { sessionIdentityScope } from '../kernel/sessionIdentity';
 import {
   runIdentityPipeline,
   type IdentityChangePayload,
@@ -37,7 +38,6 @@ function presenceTriggerFor(reason: IdentityChangeReason): PresenceTrigger {
 }
 
 /** In-process flag while this window initiates an identity mutation (see `markLocalIdentityAction`). */
-export const LOCAL_IDENTITY_FLAG = 'pt.identity.local_pipeline';
 let localIdentityActionPending = false;
 
 const TAURI_EVENT_NAME = 'auth:identity-changed';
@@ -92,12 +92,6 @@ export function clearLocalIdentityAction(): void {
 
 let installed = false;
 
-const DEBUG_FORCE_RELOAD =
-  typeof import.meta !== 'undefined' &&
-  Boolean((import.meta as any).env?.DEV) &&
-  typeof window !== 'undefined' &&
-  window.location.search.includes('identity_debug_reload=1');
-
 export function installIdentityChangedBridge(): void {
   if (installed) return;
   installed = true;
@@ -141,20 +135,8 @@ export function installIdentityChangedBridge(): void {
       }
     }
 
-    if (DEBUG_FORCE_RELOAD) {
-      log.warn('identity', 'DEBUG identity_debug_reload: forcing full reload instead of pipeline');
-      setTimeout(() => {
-        try {
-          window.location.reload();
-        } catch {
-          /* noop in test env */
-        }
-      }, 50);
-      return;
-    }
-
     void (async () => {
-      await runIdentityPipeline(payload);
+      await runIdentityPipeline(payload, sessionIdentityScope(useSessionStore.getState()));
       // After the pipeline drops actor-scoped state, ask the presence
       // supervisor to reconcile (`/online` + `/pending` + `/ack`) for
       // the new actor — or tear down if logging out. This is the

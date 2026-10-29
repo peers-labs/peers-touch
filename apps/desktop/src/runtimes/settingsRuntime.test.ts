@@ -55,7 +55,7 @@ describe('settingsRuntime', () => {
     expect(settingsStore.loadAgents).toHaveBeenCalledTimes(1);
     expect(settingsStore.loadChatPreferences).toHaveBeenCalledTimes(1);
     expect(settingsStore.loadProviderPreferences).toHaveBeenCalledTimes(1);
-    expect(i18n.applyPersonalizedLanguage).toHaveBeenCalledWith('actor-a');
+    expect(i18n.applyPersonalizedLanguage).toHaveBeenCalledWith();
   });
 
   it('does not apply actor language without an identity', async () => {

@@ -131,6 +131,25 @@ than assuming a layer by default.
 - Station-owned saves keep authoritative readback, observed revision, and
   typed conflict outcomes (MS-D22A).
 
+### Runtime identity and asynchronous work
+
+The session owner supplies the canonical Station identity and actor before
+personalization admission. A route URL is not a Station identity. Missing
+identity admits OS defaults only, with no persistence.
+
+Every queued operation captures the initiating identity and generation. Identity
+edges invalidate pending reads, writes, retries, errors, projections and native
+effects before exposing the next identity. Old work cannot resolve storage from
+the current session when it eventually runs. New identity work does not wait for
+an obsolete read. Mobile language is a runtime projection; its React provider
+only renders translations and invokes runtime actions.
+
+Desktop local commands and external identity events use one transition pipeline.
+The pipeline captures the outgoing scope before resetting stores and deletes
+only that scope on logout, revocation or identity replacement. Same-identity
+unlock preserves personalization. Handler failure never skips the remaining
+teardown handlers. Settings bootstrap is exclusively session scoped.
+
 ## 5. Admission Rule For New Settings
 
 A PR adding or moving a Settings control must include in its description:

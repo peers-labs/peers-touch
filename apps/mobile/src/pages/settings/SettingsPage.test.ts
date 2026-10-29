@@ -17,10 +17,6 @@ const devicePreferencesSource = readFileSync(
   new URL('./devicePreferences.ts', import.meta.url),
   'utf8',
 );
-const i18nSource = readFileSync(
-  new URL('../../app/mobileI18n.tsx', import.meta.url),
-  'utf8',
-);
 
 describe('Settings functional surface contract', () => {
   it('uses canonical relationship, Group, and Moments projections for counts', () => {
@@ -169,18 +165,4 @@ describe('Settings functional surface contract', () => {
     expect(pageSource).toContain('onClick={requestLogout}');
   });
 
-  it('commits language storage before changing the visible canonical selection', () => {
-    const persistenceIndex = i18nSource.indexOf(
-      'await persistMobileLanguage(nextLanguage)',
-    );
-    const projectionIndex = i18nSource.indexOf(
-      'setLanguageState(nextLanguage)',
-    );
-
-    expect(persistenceIndex).toBeGreaterThan(-1);
-    expect(projectionIndex).toBeGreaterThan(persistenceIndex);
-    expect(i18nSource).toContain(
-      "setLanguageError('mobile.settings.language.saveFailed')",
-    );
-  });
 });
