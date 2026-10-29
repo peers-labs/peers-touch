@@ -199,7 +199,7 @@ export interface SocialState {
     federationId: string,
     message?: string,
   ) => Promise<FriendRequestMutationResult['command']>;
-  openDirectConversation: (peerPtid: string, federationId: string) => Promise<string>;
+  openDirectConversation: (peerPtid: string, federationId?: string) => Promise<string>;
   createGroup: (input: {
     conversationId: string;
     name: string;
@@ -1084,18 +1084,12 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
 
-  openDirectConversation: async (peerPtid, federationId) => {
+  openDirectConversation: async (peerPtid) => {
     const state = get();
     const account = messagingAccount(state);
-    const contact = projectAcceptedContacts(
-      state.friendRequests,
-      state.currentUserPtid,
-      state.peerOnline,
-    ).find((entry) => entry.peerPtid === peerPtid);
-    if (!contact?.federationIds.includes(federationId)) {
-      throw new Error('mobile.contacts.federationRequired');
-    }
-    const result = await messagingCreateDirect({ ...account, peerPtid, federationId });
+    // Scope (Local vs Federation) is derived server-side from the two actors'
+    // Home Stations; the client no longer selects or validates a federation.
+    const result = await messagingCreateDirect({ ...account, peerPtid });
     if (get().authSession !== state.authSession) {
       throw new Error('mobile.social.notAuthenticated');
     }

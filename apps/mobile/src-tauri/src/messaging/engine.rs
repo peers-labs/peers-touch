@@ -1138,7 +1138,11 @@ impl MobileMessagingEngine {
             .conversation_projections()?
             .into_iter()
             .filter(|conversation| {
-                conversation.active && conversation.federation_id.trim().is_empty()
+                // Local-scope Direct conversations legitimately carry an
+                // empty federation id; only a missing authority station is an
+                // incomplete projection worth re-hydrating from the Station.
+                conversation.active
+                    && conversation.authority_station_id.trim().is_empty()
             })
             .map(|conversation| conversation.conversation_id)
             .collect::<Vec<_>>();
@@ -1475,10 +1479,9 @@ impl MobileMessagingEngine {
     pub fn create_direct_conversation(
         &self,
         peer_ptid: &str,
-        federation_id: &str,
     ) -> Result<PreparedDirectConversation, String> {
         let command_id = Ulid::new().to_string();
-        let result = self.try_create_direct_conversation(peer_ptid, federation_id, &command_id);
+        let result = self.try_create_direct_conversation(peer_ptid, &command_id);
         match result {
             Ok(conversation) => Ok(conversation),
             Err(error) if is_stale_endpoint_error(&error) => {
@@ -1487,7 +1490,7 @@ impl MobileMessagingEngine {
                 );
                 let _ = self.recover_stale_enrollment(&error);
                 self.enroll_pending_device()?;
-                self.try_create_direct_conversation(peer_ptid, federation_id, &command_id)
+                self.try_create_direct_conversation(peer_ptid, &command_id)
             }
             Err(error) => Err(error),
         }
@@ -1496,7 +1499,6 @@ impl MobileMessagingEngine {
     fn try_create_direct_conversation(
         &self,
         peer_ptid: &str,
-        federation_id: &str,
         command_id: &str,
     ) -> Result<PreparedDirectConversation, String> {
         let response = StationConversationTransport::new(
@@ -1505,14 +1507,16 @@ impl MobileMessagingEngine {
             self.scope.device_id.clone(),
             self.proto_endpoint(),
         )?
-        .create_direct(peer_ptid, federation_id, command_id)?;
+        .create_direct(peer_ptid, command_id)?;
         let conversation = response.conversation.ok_or_else(|| {
             "mobile messaging Station returned no direct conversation".to_string()
         })?;
+        // The scope is derived server-side (Local carries an empty federation
+        // id, Federation carries the shared federation resource id), so the
+        // client no longer compares against a client-supplied federation id.
         if conversation.conversation_id.trim().is_empty()
             || conversation.kind != ConversationKind::Direct as i32
             || conversation.status != ConversationStatus::Active as i32
-            || conversation.federation_id != federation_id
             || conversation.authority_station_peer_id.trim().is_empty()
         {
             return Err("mobile messaging direct conversation response is invalid".to_string());
@@ -4656,9 +4660,10 @@ impl RelationshipResolverTransport for MobileMessagingEngine {
 }
 
 fn conversation_authority_scope(conversation: &Conversation) -> Result<(&str, &str), String> {
+    // Federation id is empty for Local-scope Direct conversations; only the
+    // authority station is always present.
     if conversation.conversation_id.trim().is_empty()
         || conversation.authority_station_peer_id.trim().is_empty()
-        || conversation.federation_id.trim().is_empty()
     {
         return Err(
             "mobile messaging Station returned an incomplete Conversation projection".to_string(),
@@ -4996,6 +5001,29 @@ mod tests {
         assert_ne!(first, replacement_command_id("command-1", &[8; 32]));
         assert_ne!(first, replacement_command_id("command-2", &[7; 32]));
         assert!(Ulid::from_string(&first).is_ok());
+    }
+
+    #[test]
+    fn authority_scope_accepts_local_direct_without_federation() {
+        let local = Conversation {
+            conversation_id: "direct-1".to_string(),
+            authority_station_peer_id: "station-a".to_string(),
+            federation_id: String::new(),
+            kind: ConversationKind::Direct as i32,
+            status: ConversationStatus::Active as i32,
+            ..Default::default()
+        };
+        let (authority_station, federation) = conversation_authority_scope(&local)
+            .expect("Local-scope Direct must be valid with an empty federation id");
+        assert_eq!(authority_station, "station-a");
+        assert_eq!(federation, "");
+
+        let no_authority = Conversation {
+            conversation_id: "direct-2".to_string(),
+            federation_id: String::new(),
+            ..Default::default()
+        };
+        assert!(conversation_authority_scope(&no_authority).is_err());
     }
 
     #[test]

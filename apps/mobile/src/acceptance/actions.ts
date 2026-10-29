@@ -765,10 +765,6 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     return messagingCreateDirect({
       ...account,
       peerPtid: requirePtid(input?.peerPtid, 'messaging.createDirect.peerPtid'),
-      federationId: requireString(
-        input?.federationId,
-        'messaging.createDirect.federationId',
-      ),
     });
   },
 
@@ -1274,9 +1270,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'social.contact.open': async (input) => {
     requireMessagingAccount();
+    // federationId is ignored for Direct: scope is derived server-side.
     const conversationId = await dispatchOpenContactChat(
       requirePtid(input?.peerPtid, 'social.contact.open.peerPtid'),
-      requireString(input?.federationId, 'social.contact.open.federationId'),
     );
     return { conversationId };
   },

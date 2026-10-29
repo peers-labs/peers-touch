@@ -199,7 +199,12 @@ export interface MessagingCommandStatus {
 
 export interface CreateDirectConversationInput {
   peerPtid: string
-  federationId: string
+  /**
+   * Deprecated for Direct creation: scope (Local vs Federation) is derived
+   * server-side from the two actors' Home Stations. Retained as optional only
+   * so older call sites keep compiling during the migration.
+   */
+  federationId?: string
 }
 
 export interface MessagingServiceContract {

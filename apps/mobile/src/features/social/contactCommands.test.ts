@@ -68,7 +68,6 @@ describe('Contact command ownership', () => {
       .resolves.toBe('conversation-1');
     expect(ports.state.openDirectConversation).toHaveBeenCalledWith(
       'ptid:bob',
-      'federation-1',
     );
     expect(ports.wakeMessaging).toHaveBeenCalledOnce();
   });

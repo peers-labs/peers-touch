@@ -3031,24 +3031,19 @@ impl MessagingEngine {
         &self,
         token: &str,
         peer_ptid: &str,
-        federation_id: &str,
     ) -> Result<String, String> {
-        if peer_ptid.trim().is_empty()
-            || federation_id.trim().is_empty()
-            || peer_ptid == self.endpoint.ptid
-        {
+        if peer_ptid.trim().is_empty() || peer_ptid == self.endpoint.ptid {
             return Err("messaging direct peer identity is invalid".to_string());
         }
         let command_id = Ulid::new().to_string();
-        let result =
-            self.try_create_direct_conversation(token, peer_ptid, federation_id, &command_id);
+        let result = self.try_create_direct_conversation(token, peer_ptid, &command_id);
         match result {
             Ok(id) => Ok(id),
             Err(error) if is_stale_endpoint_error(&error) => {
                 tracing::warn!(error = %error, "createDirect: device not active, attempting re-enrollment");
                 let _ = self.recover_stale_enrollment(&error);
                 self.enroll_pending_device(token, "Desktop".to_string())?;
-                self.try_create_direct_conversation(token, peer_ptid, federation_id, &command_id)
+                self.try_create_direct_conversation(token, peer_ptid, &command_id)
             }
             Err(error) => Err(error),
         }
@@ -3058,7 +3053,6 @@ impl MessagingEngine {
         &self,
         token: &str,
         peer_ptid: &str,
-        federation_id: &str,
         command_id: &str,
     ) -> Result<String, String> {
         let response = self.station_client.request_proto_for_device::<
@@ -3069,9 +3063,10 @@ impl MessagingEngine {
             "/conversation/direct",
             token,
             None,
+            // Scope (Local vs Federation) is derived server-side from the two
+            // actors' Home Stations; the client no longer sends a federation id.
             Some(&CreateDirectConversationRequest {
                 peer_ptid: peer_ptid.to_string(),
-                federation_id: federation_id.to_string(),
                 creator: Some(actor_device_ref(
                     &self.endpoint.ptid,
                     &self.endpoint.device_id,

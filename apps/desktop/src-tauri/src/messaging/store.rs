@@ -12467,7 +12467,8 @@ fn validate_conversation_projection(
         .map_err(|_| "messaging conversation-state kind is invalid".to_string())?;
     if projection.conversation_id != conversation_id
         || projection.authority_station_id.trim().is_empty()
-        || projection.federation_id.trim().is_empty()
+        || (kind == ConversationKind::Group
+            && projection.federation_id.trim().is_empty())
         || kind == ConversationKind::Unspecified
         || projection.owner_ptid.trim().is_empty()
         || projection.members.is_empty()

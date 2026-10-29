@@ -1377,10 +1377,10 @@ INSERT INTO conversation_read_cursors VALUES
         for call in create_direct_calls:
             payload = call.args[2]
             self.assertIsInstance(payload, ast.Dict)
-            self.assertIn(
-                "federationId",
-                [ast.literal_eval(key) for key in payload.keys],
-            )
+            payload_keys = [ast.literal_eval(key) for key in payload.keys]
+            # Direct scope is derived server-side; the client sends no federation.
+            self.assertIn("peerPtid", payload_keys)
+            self.assertNotIn("federationId", payload_keys)
 
     def test_group_creation_uses_current_production_harness_contract(
         self,
@@ -1512,10 +1512,13 @@ INSERT INTO conversation_read_cursors VALUES
                 for call in create_direct_calls:
                     payload = call.args[2]
                     self.assertIsInstance(payload, ast.Dict)
-                    self.assertIn(
-                        "federationId",
-                        [ast.literal_eval(key) for key in payload.keys],
-                    )
+                    payload_keys = [
+                        ast.literal_eval(key) for key in payload.keys
+                    ]
+                    # Direct scope is derived server-side from the Home Stations;
+                    # the client sends only the peer identity, never federation.
+                    self.assertIn("peerPtid", payload_keys)
+                    self.assertNotIn("federationId", payload_keys)
 
     def test_typing_lifecycle_uses_native_surface_events(self) -> None:
         source = (

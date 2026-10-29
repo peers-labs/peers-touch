@@ -144,7 +144,6 @@ describe('Contacts relationship and Direct journey', () => {
       deviceId: 'device-a',
       lifecycleGeneration: 1,
       peerPtid: 'ptid:bob',
-      federationId: 'fed-a',
     });
     expect(useSocialStore.getState().refreshSessions).not.toHaveBeenCalled();
   });
@@ -155,13 +154,16 @@ describe('Contacts relationship and Direct journey', () => {
     expect(useSocialStore.getState().sessions).toEqual([]);
   });
 
-  it('does not open a conversation with an unaccepted or guessed scope', async () => {
-    await expect(useSocialStore.getState().openDirectConversation('ptid:bob', 'guessed'))
-      .rejects.toThrow('mobile.contacts.federationRequired');
+  it('delegates scope derivation to the Station instead of rejecting locally', async () => {
+    // The client no longer gates Direct creation on an accepted contact or a
+    // client-chosen federation; the Station derives Local/Federation scope and
+    // enforces relationship policy.
     useSocialStore.setState({ friendRequests: [{ ...accepted, status: FriendRequestState.PENDING }] });
-    await expect(useSocialStore.getState().openDirectConversation('ptid:bob', 'fed-a'))
-      .rejects.toThrow('mobile.contacts.federationRequired');
-    expect(messagingCreateDirect).not.toHaveBeenCalled();
+    await expect(useSocialStore.getState().openDirectConversation('ptid:bob', 'guessed'))
+      .resolves.toBe('conversation-authoritative');
+    expect(messagingCreateDirect).toHaveBeenCalledWith(expect.objectContaining({
+      peerPtid: 'ptid:bob',
+    }));
   });
 
   it('does not return a conversation ID to a replacement account', async () => {

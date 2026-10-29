@@ -39,6 +39,7 @@ from .native_desktop_windows import NativeDesktopWindowsProvisioner
 from .native_tauri_embedded_webdriver import (
     CrossStationSocialNativeProvisioner,
     NativeTauriEmbeddedWebDriverProvisioner,
+    NativeTauriSingleStationWebDriverProvisioner,
 )
 from .native_tauri_current_profile import (
     NativeTauriCurrentProfileProvisioner,
@@ -125,6 +126,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
         StationAccessRelayRoleProvisioner
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
+    NativeTauriSingleStationWebDriverProvisioner.environment_id: (
+        NativeTauriSingleStationWebDriverProvisioner
+    ),
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
     NodeConnectivityAgentFencingProvisioner.environment_id: (
         NodeConnectivityAgentFencingProvisioner
@@ -190,7 +194,10 @@ def get_provisioner(
             contract,
             station_profiles=service_profiles or station_profiles,
         )
-    if provisioner_class is NativeTauriEmbeddedWebDriverProvisioner:
+    if provisioner_class in (
+        NativeTauriEmbeddedWebDriverProvisioner,
+        NativeTauriSingleStationWebDriverProvisioner,
+    ):
         if service_profiles:
             raise ProvisioningError(
                 f"environment {contract.id!r} does not accept service profile bindings"
@@ -265,6 +272,7 @@ __all__ = [
     "ChatStorageNativeProvisioner",
     "XConfigHomeProvisioner",
     "CrossStationSocialNativeProvisioner",
+    "NativeTauriSingleStationWebDriverProvisioner",
     "DesktopPrimaryNavigationNativeProvisioner",
     "DesktopShellNativeProvisioner",
     "HomeStationProvisioner",

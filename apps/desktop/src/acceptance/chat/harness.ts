@@ -679,14 +679,13 @@ export function installAcceptanceHarness(): void {
 
     async createDirectConversation({
       peerPtid,
-      federationId,
     }: {
       peerPtid: string;
-      federationId: string;
     }) {
+      // Direct scope (Local vs Federation) is derived by the Station from the
+      // two Home Stations; the client never selects or sends a federation id.
       const conversation = await imServiceV1.messaging.createDirect({
         peerPtid,
-        federationId,
       });
       await useSocialChatStore.getState().loadSessions();
       return { conversationId: conversation.conversationId };

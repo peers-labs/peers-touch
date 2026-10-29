@@ -303,10 +303,9 @@ class NativeMultiDeviceGate(AcceptanceGate):
         alice = self.clients["alice"]
         for client in self.clients.values():
             enter_chat_page(client)
-        federation_id = shared_federation_id(
-            self.clients,
-            ("alice", "bob1"),
-        )
+        # Cross-Station Federation readiness (Station resolves it from the two
+        # Home Stations); the Direct creation payload itself stays peer-only.
+        shared_federation_id(self.clients, ("alice", "bob1"))
         wait_for_peer_key_bundle(
             alice,
             self.ptids["bob1"],
@@ -321,10 +320,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
         created = async_harness(
             alice,
             "createDirectConversation",
-            {
-                "peerPtid": self.ptids["bob1"],
-                "federationId": federation_id,
-            },
+            {"peerPtid": self.ptids["bob1"]},
         )
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:
@@ -539,7 +535,8 @@ class NativeMultiDeviceGate(AcceptanceGate):
             bob1 = self.clients["bob1"]
             enter_chat_page(alice)
             enter_chat_page(bob1)
-            federation_id = self.step(
+            # Cross-Station Federation readiness before the peer-only Direct open.
+            self.step(
                 "federation.shared",
                 lambda: shared_federation_id(
                     self.clients,
@@ -566,10 +563,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
                     created = async_harness(
                         alice,
                         "createDirectConversation",
-                        {
-                            "peerPtid": self.ptids["bob1"],
-                            "federationId": federation_id,
-                        },
+                        {"peerPtid": self.ptids["bob1"]},
                     )
                     conversation_id = str((created or {}).get("conversationId") or "")
                 except GateError:
@@ -662,10 +656,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
                     created2 = async_harness(
                         bob2,
                         "createDirectConversation",
-                        {
-                            "peerPtid": self.ptids["alice"],
-                            "federationId": federation_id,
-                        },
+                        {"peerPtid": self.ptids["alice"]},
                     )
                     conversation2_id = str((created2 or {}).get("conversationId") or "")
                 except GateError:

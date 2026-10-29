@@ -308,7 +308,6 @@ pub struct MessagingCreateDirectInput {
     station_peer_id: String,
     actor_ptid: String,
     peer_ptid: String,
-    federation_id: String,
 }
 
 #[derive(Deserialize)]
@@ -1732,10 +1731,8 @@ pub async fn messaging_create_direct(
     let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
     let creation_engine = engine.clone();
     let peer_ptid = input.peer_ptid;
-    let federation_id = input.federation_id;
-    let creation_federation_id = federation_id.clone();
     let prepared = tauri::async_runtime::spawn_blocking(move || {
-        creation_engine.create_direct_conversation(&peer_ptid, &creation_federation_id)
+        creation_engine.create_direct_conversation(&peer_ptid)
     })
     .await
     .map_err(|error| {
@@ -1745,7 +1742,7 @@ pub async fn messaging_create_direct(
 
     assist_creation_reconcile(&runtime, &input.station_peer_id, &input.actor_ptid).await;
     let projection_ready =
-        conversation_projection_ready(&engine, &prepared.conversation_id, &federation_id);
+        conversation_projection_ready(&engine, &prepared.conversation_id);
     Ok(MessagingCreateConversationResult {
         conversation_id: prepared.conversation_id,
         command_id: Some(prepared.command_id),
@@ -1792,7 +1789,7 @@ pub async fn messaging_create_group(
         .map_err(MobileError::messaging)?
         .unwrap_or(initial_status);
     let projection_ready =
-        conversation_projection_ready(&engine, &prepared.conversation_id, &federation_id);
+        conversation_projection_ready(&engine, &prepared.conversation_id);
     Ok(MessagingCreateConversationResult {
         conversation_id: prepared.conversation_id,
         command_id: Some(prepared.command_id),
@@ -2428,10 +2425,9 @@ fn validate_direct_creation_input(input: &MessagingCreateDirectInput) -> MobileR
     if !input.peer_ptid.starts_with("ptid:")
         || input.peer_ptid == input.actor_ptid
         || input.actor_ptid.trim().is_empty()
-        || input.federation_id.trim().is_empty()
     {
         return Err(MobileError::invalid_input(
-            "mobile messaging direct identity or federation scope is invalid",
+            "mobile messaging direct identity is invalid",
         ));
     }
     Ok(())
@@ -2484,13 +2480,11 @@ async fn assist_creation_reconcile(
 fn conversation_projection_ready(
     engine: &super::engine::MobileMessagingEngine,
     conversation_id: &str,
-    federation_id: &str,
 ) -> bool {
     match engine.conversations() {
-        Ok(conversations) => conversations.iter().any(|conversation| {
-            conversation.conversation_id == conversation_id
-                && conversation.federation_id == federation_id
-        }),
+        Ok(conversations) => conversations
+            .iter()
+            .any(|conversation| conversation.conversation_id == conversation_id),
         Err(error) => {
             log::warn!(
                 "mobile messaging conversation projection read failed after durable state: {error}"
@@ -2777,14 +2771,20 @@ mod tests {
             station_peer_id: "station-1".to_string(),
             actor_ptid: "ptid:alice".to_string(),
             peer_ptid: "ptid:alice".to_string(),
-            federation_id: "federation-1".to_string(),
         })
         .is_err());
+        // Local-scope Direct no longer carries a federation id; a distinct,
+        // well-formed peer is valid without one.
         assert!(validate_direct_creation_input(&MessagingCreateDirectInput {
             station_peer_id: "station-1".to_string(),
             actor_ptid: "ptid:alice".to_string(),
             peer_ptid: "ptid:bob".to_string(),
-            federation_id: String::new(),
+        })
+        .is_ok());
+        assert!(validate_direct_creation_input(&MessagingCreateDirectInput {
+            station_peer_id: "station-1".to_string(),
+            actor_ptid: "ptid:alice".to_string(),
+            peer_ptid: "bob".to_string(),
         })
         .is_err());
         assert!(validate_group_creation_input(&MessagingCreateGroupInput {

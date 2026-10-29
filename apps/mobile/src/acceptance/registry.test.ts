@@ -1147,7 +1147,7 @@ describe('Mobile Acceptance Harness', () => {
 
     const result = await createMobileAcceptanceHarness()[
       'messaging.createDirect'
-    ]({ peerPtid: 'ptid:bob', federationId: 'federation-1' })
+    ]({ peerPtid: 'ptid:bob' })
       .finally(releaseAdmission);
 
     expect(result).toEqual({
@@ -1162,7 +1162,6 @@ describe('Mobile Acceptance Harness', () => {
         deviceId: 'device-1',
         lifecycleGeneration: 1,
         peerPtid: 'ptid:bob',
-        federationId: 'federation-1',
       },
     });
   });
@@ -1217,7 +1216,7 @@ describe('Mobile Acceptance Harness', () => {
 
       expect(settled).toBe(false);
       expect(openContactChatMock).toHaveBeenCalledExactlyOnceWith(
-        'ptid:bob', 'federation-1',
+        'ptid:bob',
       );
       expect(invokeMock).not.toHaveBeenCalled();
       resolveOpen('station-returned-conversation');
@@ -1237,12 +1236,11 @@ describe('Mobile Acceptance Harness', () => {
       expect(invokeMock).not.toHaveBeenCalled();
     });
 
-    it.each([
-      [{ peerPtid: '', federationId: 'federation-1' }, 'peerPtid'],
-      [{ peerPtid: 'ptid:bob', federationId: '' }, 'federationId'],
-    ])('rejects missing contact scope before dispatch: %s', async (input, field) => {
-      await expect(createMobileAcceptanceHarness()['social.contact.open'](input))
-        .rejects.toThrow(`social.contact.open.${field}`);
+    it('rejects missing contact peer before dispatch', async () => {
+      await expect(createMobileAcceptanceHarness()['social.contact.open']({
+        peerPtid: '',
+      }))
+        .rejects.toThrow('social.contact.open.peerPtid');
       expect(openContactChatMock).not.toHaveBeenCalled();
       expect(invokeMock).not.toHaveBeenCalled();
     });

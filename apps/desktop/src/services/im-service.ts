@@ -444,11 +444,10 @@ function projectMessagingMessage(message: MessagingMessageWire): MessagingProjec
 const messagingService: MessagingServiceContract = {
   async createDirect(input) {
     const response = await cmd<
-      { peer_ptid: string; federation_id: string },
+      { peer_ptid: string },
       { conversation_id: string; state: 'projected' }
     >('messaging_create_direct', {
       peer_ptid: input.peerPtid,
-      federation_id: input.federationId,
     })
     return {
       conversationId: response.conversation_id,
