@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Empty as LobeEmpty } from '@lobehub/ui';
 import {
   Button,
-  Empty,
   Input,
   Modal,
   Popconfirm,
@@ -465,7 +465,7 @@ export function BotsSettings() {
   ];
 
   return (
-    <SettingsContainer fullHeight maxWidth={1260}>
+    <SettingsContainer fullHeight tier="wide">
       <SettingsPanelHeader
         icon={<Bot size={20} />}
         title={tt('settings.bots.title', 'Bots')}
@@ -500,7 +500,7 @@ export function BotsSettings() {
         </Paragraph>
         <Spin spinning={loading}>
           {bots.length === 0 && !loading ? (
-            <Empty description={tt('settings.bots.empty', 'No bots yet')} />
+            <LobeEmpty icon={Bot} title={tt('settings.bots.empty', 'No bots yet')} padding="48px 16px" />
           ) : (
             <Table
               rowKey="botPtid"

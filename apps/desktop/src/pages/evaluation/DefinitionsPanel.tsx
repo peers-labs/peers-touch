@@ -1,10 +1,10 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
+import { Empty } from '@lobehub/ui';
 import {
   App,
   Button,
-  Empty,
   Form,
   Input,
   Modal,
@@ -15,7 +15,7 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Database, Library, ListChecks, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { ColumnsType } from 'antd/es/table';
 
 import type {
@@ -298,8 +298,10 @@ export const EvaluationDefinitionsPanel = memo(() => {
 
       {!selectedBenchmark ? (
         <Empty
+          icon={Library}
+          title={t('agent.eval.noBenchmarks')}
           data-pt-evaluation-empty="benchmarks"
-          description={t('agent.eval.noBenchmarks')}
+          padding="48px 16px"
         />
       ) : (
         <>
@@ -364,8 +366,10 @@ export const EvaluationDefinitionsPanel = memo(() => {
           </Flexbox>
           {!selectedDataset ? (
             <Empty
+              icon={Database}
+              title={t('agent.eval.noDatasets')}
               data-pt-evaluation-empty="datasets"
-              description={t('agent.eval.noDatasets')}
+              padding="32px 16px"
             />
           ) : (
             <Flexbox gap={12}>
@@ -386,8 +390,10 @@ export const EvaluationDefinitionsPanel = memo(() => {
               </Flexbox>
               {testCases.length === 0 ? (
                 <Empty
+                  icon={ListChecks}
+                  title={t('agent.eval.noCases')}
                   data-pt-evaluation-empty="cases"
-                  description={t('agent.eval.noCases')}
+                  padding="32px 16px"
                 />
               ) : (
                 <Table

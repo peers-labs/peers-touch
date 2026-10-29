@@ -62,6 +62,41 @@ export function visibleAttributionEntries(
   );
 }
 
+export interface AttributionKindGroup {
+  kind: TurnAttributionKind;
+  entries: TurnAttributionEntry[];
+  truncated: boolean;
+}
+
+// Groups visible attribution entries by kind, preserving first-occurrence
+// order. Two different tools must collapse into one counted chip rather than
+// render as two identical "Tool" labels; truncated membership flags the group.
+export function groupAttributionEntriesByKind(
+  entries: readonly TurnAttributionEntry[],
+): AttributionKindGroup[] {
+  const order: TurnAttributionKind[] = [];
+  const buckets = new Map<TurnAttributionKind, TurnAttributionEntry[]>();
+  for (const entry of entries) {
+    const bucket = buckets.get(entry.kind);
+    if (bucket) {
+      bucket.push(entry);
+    } else {
+      buckets.set(entry.kind, [entry]);
+      order.push(entry.kind);
+    }
+  }
+  return order.map((kind) => {
+    const groupEntries = buckets.get(kind) ?? [];
+    return {
+      kind,
+      entries: groupEntries,
+      truncated: groupEntries.some(
+        (entry) => entry.outcome === TurnAttributionOutcome.TRUNCATED,
+      ),
+    };
+  });
+}
+
 function attributionOutcomeKey(outcome: TurnAttributionOutcome): string {
   switch (outcome) {
     case TurnAttributionOutcome.INCLUDED:
@@ -106,6 +141,10 @@ export function TurnAttribution({
   const visible = visibleAttributionEntries(projection);
   if (visible.length === 0) return null;
 
+  // Collapse entries of the same kind into one chip so two different tools
+  // do not render as two identical "Tool" labels.
+  const groups = groupAttributionEntriesByKind(visible);
+
   return (
     <div
       data-turn-attribution
@@ -120,25 +159,45 @@ export function TurnAttribution({
         wrap="wrap"
         aria-label={t('chat.message.attribution.sources')}
       >
-        {visible.map((entry) => {
-          const meta = KIND_META.get(entry.kind);
+        {groups.map((group) => {
+          const meta = KIND_META.get(group.kind);
           if (!meta) return null;
           const Icon = meta.icon;
-          const outcomeKey = attributionOutcomeKey(entry.outcome);
-          const displayName = entry.name
-            || t(`chat.message.attribution.kind.${meta.localeKey}`);
+          const kindLabel = t(`chat.message.attribution.kind.${meta.localeKey}`);
+          // The collapsed chip stays quiet and kind-level; individual tool
+          // names (which are machine identifiers) live in the expanded detail.
+          const label = group.entries.length > 1
+            ? t('chat.message.attribution.groupLabel', {
+                kind: kindLabel,
+                count: group.entries.length,
+              })
+            : kindLabel;
+          const representativeOutcome = group.truncated ? 'truncated' : 'included';
+          const outcomeLabel = t(
+            `chat.message.attribution.outcome.${representativeOutcome}`,
+          );
+          // Single chips keep the concrete source name for assistive tech;
+          // grouped chips announce kind + count with locale-correct word order.
+          const chipLabel = group.entries.length > 1
+            ? t('chat.message.attribution.groupBadgeLabel', {
+                kind: kindLabel,
+                count: group.entries.length,
+                outcome: outcomeLabel,
+              })
+            : t('chat.message.attribution.badgeLabel', {
+                kind: kindLabel,
+                name: group.entries[0]?.name || kindLabel,
+                outcome: outcomeLabel,
+              });
           return (
             <button
-              key={entry.attributionId}
+              key={`attribution-kind-${meta.localeKey}`}
               type="button"
               aria-expanded={open}
-              aria-label={t('chat.message.attribution.badgeLabel', {
-                kind: t(`chat.message.attribution.kind.${meta.localeKey}`),
-                name: displayName,
-                outcome: t(`chat.message.attribution.outcome.${outcomeKey}`),
-              })}
+              aria-label={chipLabel}
               data-attribution-kind={meta.localeKey}
-              data-attribution-outcome={outcomeKey}
+              data-attribution-count={group.entries.length}
+              data-attribution-outcome={representativeOutcome}
               onClick={() => setOpen((value) => !value)}
               style={{
                 minHeight: 26,
@@ -146,28 +205,35 @@ export function TurnAttribution({
                 alignItems: 'center',
                 gap: 5,
                 border: `1px solid ${
-                  entry.outcome === TurnAttributionOutcome.TRUNCATED
+                  group.truncated
                     ? token.colorWarningBorder
                     : token.colorBorderSecondary
                 }`,
                 borderRadius: token.borderRadiusSM,
                 background:
-                  entry.outcome === TurnAttributionOutcome.TRUNCATED
+                  group.truncated
                     ? token.colorWarningBg
                     : token.colorFillQuaternary,
                 color:
-                  entry.outcome === TurnAttributionOutcome.TRUNCATED
+                  group.truncated
                     ? token.colorWarningText
                     : token.colorTextSecondary,
                 padding: '0 7px',
                 fontSize: 11,
                 fontWeight: 600,
                 cursor: 'pointer',
+                maxWidth: 220,
               }}
             >
               <Icon size={12} />
-              <span>
-                {t(`chat.message.attribution.kind.${meta.localeKey}`)}
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {label}
               </span>
             </button>
           );

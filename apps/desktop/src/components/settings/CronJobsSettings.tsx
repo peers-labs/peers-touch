@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Empty,
   Popconfirm,
   message,
   Spin,
@@ -11,7 +10,7 @@ import {
   Collapse,
   Drawer,
 } from 'antd';
-import { Button, Tag, Tooltip, Input } from '@lobehub/ui';
+import { Button, Empty, Tag, Tooltip, Input } from '@lobehub/ui';
 import {
   Plus,
   Play,
@@ -177,7 +176,7 @@ export function CronJobsSettings() {
   const pausedCount = jobs.length - activeCount;
 
   return (
-    <SettingsContainer fullHeight maxWidth={1000}>
+    <SettingsContainer fullHeight tier="standard">
       <SettingsPanelHeader
         title={t('cron.header.title')}
         icon={<Clock size={20} />}
@@ -219,13 +218,18 @@ export function CronJobsSettings() {
           <Spin />
         </Flexbox>
       ) : filteredJobs.length === 0 ? (
-        <Empty description={search ? t('cron.list.noMatchingJobs') : t('cron.list.noJobsYet')}>
-          {!search && (
-            <Button type="primary" onClick={() => setDrawerOpen(true)}>
-              {t('cron.list.createFirst')}
-            </Button>
-          )}
-        </Empty>
+        <Empty
+          icon={CalendarClock}
+          title={search ? t('cron.list.noMatchingJobs') : t('cron.list.noJobsYet')}
+          action={
+            search ? undefined : (
+              <Button type="primary" onClick={() => setDrawerOpen(true)}>
+                {t('cron.list.createFirst')}
+              </Button>
+            )
+          }
+          padding="64px 16px"
+        />
       ) : (
         <Flexbox gap={8}>
           {filteredJobs.map((job) => (
@@ -371,7 +375,7 @@ export function CronJobsSettings() {
             <Spin />
           </Flexbox>
         ) : runsDrawer?.runs.length === 0 ? (
-          <Empty description={t('cron.runs.noRuns')} />
+          <Empty icon={History} title={t('cron.runs.noRuns')} padding="48px 16px" />
         ) : (
           <Collapse
             items={(runsDrawer?.runs || []).map((run) => ({

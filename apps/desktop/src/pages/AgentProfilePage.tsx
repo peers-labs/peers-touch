@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Button, SearchBar, toast } from '@lobehub/ui';
+import { Button, Empty as LobeEmpty, SearchBar, toast } from '@lobehub/ui';
 import {
   CapabilityAvailability,
   CapabilitySourceKind,
@@ -19,6 +19,7 @@ import { Empty, Modal, Switch, theme } from 'antd';
 import {
   ArrowLeft,
   BookOpen,
+  BotOff,
   Image as ImageIcon,
   Plug,
   Plus,
@@ -248,13 +249,18 @@ export function AgentProfilePage({
 
   if (!agent) {
     return (
-      <Flexbox align="center" justify="center" gap={10} style={{ height: '100%' }}>
-        <Empty description={t('agent.profile.notFound')} />
-        {onBack ? (
-          <Button type="text" onClick={onBack}>
-            {t('agent.profile.goBack')}
-          </Button>
-        ) : null}
+      <Flexbox align="center" justify="center" style={{ height: '100%' }}>
+        <LobeEmpty
+          icon={BotOff}
+          title={t('agent.profile.notFound')}
+          action={
+            onBack ? (
+              <Button type="text" onClick={onBack}>
+                {t('agent.profile.goBack')}
+              </Button>
+            ) : undefined
+          }
+        />
       </Flexbox>
     );
   }

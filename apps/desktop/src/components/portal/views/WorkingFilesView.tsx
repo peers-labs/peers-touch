@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Empty } from '@lobehub/ui';
 import { Tag, Typography, theme } from 'antd';
-import { FileText, Image, Code, File, Download } from 'lucide-react';
+import { FileText, FolderOpen, Image, Code, File, Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useChatStore, type ChatComposerAttachment } from '../../../store/chat';
@@ -53,7 +53,7 @@ export function WorkingFilesView({ sessionKey: _sessionKey }: WorkingFilesViewPr
   if (files.length === 0) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%', padding: 32 }}>
-        <Empty description={t('agent.working.noFiles')} />
+        <Empty icon={FolderOpen} title={t('agent.working.noFiles')} />
       </Flexbox>
     );
   }

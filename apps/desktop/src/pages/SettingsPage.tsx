@@ -872,7 +872,7 @@ export function StatisticsTab() {
   ];
 
   return (
-    <SettingsContainer fullHeight maxWidth={900}>
+    <SettingsContainer fullHeight tier="standard">
       <Flexbox gap={4}>
         <Flexbox horizontal align="center" gap={8}>
           <span style={{ fontSize: 16, fontWeight: 600 }}
@@ -1549,7 +1549,7 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
   }, [highlightId, groups]);
 
   return (
-    <SettingsContainer maxWidth={800}>
+    <SettingsContainer>
       <SettingsSection
         icon={<Sparkles size={18} />}
         title={t('settings.help.aboutTitle')}

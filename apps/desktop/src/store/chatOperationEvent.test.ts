@@ -769,6 +769,42 @@ describe('Agent turn event identity projection', () => {
     ]);
   });
 
+  it('projects a persisted user cancellation as a stopped turn without an error block', () => {
+    const cancelledOutcome = {
+      error: 'agent.errors.lifecycleCancelled',
+      error_type: 'LIFECYCLE_CANCELLED',
+      locale_key: 'agent.errors.lifecycleCancelled',
+      retryable: false,
+      terminal: true,
+      details: { resource_kind: 'turn', resource_id: 'turn-cancelled' },
+    };
+    const projected = cachedMessageToChatMessage({
+      messageId: 'message-cancelled',
+      conversationId: 'conversation-1',
+      turnId: 'turn-cancelled',
+      role: 'assistant',
+      status: 'cancelled',
+      content: '',
+      modelName: 'ep-model-1',
+      seq: 2,
+      errorJson: JSON.stringify(cancelledOutcome),
+      createdAt: '2026-09-11T00:00:00.000Z',
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    });
+
+    // Cancellation is a user action: no red error block, no error resolution;
+    // the neutral stopped banner + Retry owns the terminal state.
+    expect(projected).toMatchObject({
+      terminalStatus: 'cancelled',
+      cancelled: true,
+      loading: false,
+      error: undefined,
+      resolution: undefined,
+      model: 'ep-model-1',
+    });
+    expect(projected.typedError?.error_type).toBe('LIFECYCLE_CANCELLED');
+  });
+
   it('projects forbidden-actor recovery from a live error event', () => {
     const projected = reduceStreamEvent({
       id: 'message-1',

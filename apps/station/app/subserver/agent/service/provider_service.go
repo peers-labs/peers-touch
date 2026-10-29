@@ -67,8 +67,10 @@ const (
 	defaultMaxTokens    = 4096
 	maxResponseBytes    = 2 * 1024 * 1024 // 2 MiB safety limit on response body
 
-	// Provider-attempt deadline for all provider calls.
-	providerHTTPTimeout = 120 * time.Second
+	// Provider-attempt deadline for all provider calls. Vision inputs and
+	// reasoning models legitimately need several minutes end-to-end; 120s cut
+	// off healthy long-form turns (observed OCR answers finishing near 108s).
+	providerHTTPTimeout = 300 * time.Second
 )
 
 // apiVersionSuffix matches a base URL that already ends in a version segment,

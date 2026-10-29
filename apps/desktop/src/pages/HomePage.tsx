@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
+import { Empty } from '@lobehub/ui';
 import {
   Alert,
   Avatar,
   Button,
   Card,
-  Empty,
   Input,
   Progress,
   Segmented,
@@ -20,7 +20,9 @@ import {
   ArrowUp,
   CheckCircle2,
   Clock,
+  History,
   ListTodo,
+  Pin,
   RefreshCw,
 } from 'lucide-react';
 
@@ -38,6 +40,7 @@ import {
   submitHomeTask,
 } from '../runtimes/homeRuntime';
 import { useHomeStore } from '../store/home';
+import { PageColumn } from '../layout/PageColumn';
 import { openAgentCreateFlow } from '../components/agent/create';
 
 const { useToken } = theme;
@@ -172,9 +175,10 @@ export function HomePage() {
       }
       data-pt-home-revision={projection?.revision.toString() ?? '0'}
       gap={token.marginLG}
-      padding={token.paddingLG}
+      padding={`${token.paddingLG}px 0`}
       style={{ height: '100%', overflow: 'auto' }}
     >
+      <PageColumn tier="standard" style={{ display: 'flex', flexDirection: 'column', gap: token.marginLG }}>
       <Flexbox horizontal align="center" justify="space-between" gap={12}>
         <Flexbox gap={2}>
           <Typography.Title level={3} style={{ margin: 0 }}>
@@ -224,19 +228,24 @@ export function HomePage() {
         <HomeLoading />
       ) : pinnedAgents.length === 0 ? (
         <Card size="small">
-          <Empty description={t('agent.home.noPinnedAgents')}>
-            <Button
-              data-pt-agent-create
-              type="primary"
-              onClick={() =>
-                openAgentCreateFlow((agentName) =>
-                  navigation.navigateToAgentSurface(agentName, 'profile'),
-                )
-              }
-            >
-              {t('agent.home.createAgent')}
-            </Button>
-          </Empty>
+          <Empty
+            icon={Pin}
+            title={t('agent.home.noPinnedAgents')}
+            description={t('agent.home.noPinnedAgentsHint')}
+            action={
+              <Button
+                data-pt-agent-create
+                type="primary"
+                onClick={() =>
+                  openAgentCreateFlow((agentName) =>
+                    navigation.navigateToAgentSurface(agentName, 'profile'),
+                  )
+                }
+              >
+                {t('agent.home.createAgent')}
+              </Button>
+            }
+          />
         </Card>
       ) : (
         <div
@@ -357,10 +366,7 @@ export function HomePage() {
 
             <Card size="small" title={t('agent.home.recentWork')}>
               {recentWork.length === 0 ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={t('agent.home.noRecentTopics')}
-                />
+                <Empty icon={History} title={t('agent.home.noRecentTopics')} />
               ) : (
                 <Flexbox>
                   {recentWork.map((work) => (
@@ -482,6 +488,7 @@ export function HomePage() {
           </Flexbox>
         </div>
       )}
+      </PageColumn>
     </Flexbox>
   );
 }

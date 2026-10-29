@@ -63,6 +63,7 @@ export interface LoginFormViewProps {
   oauthActionProviderId?: string | null;
   oauthActionState: AuthState;
   oauthActionError?: string;
+  emailError?: string;
   onBack: () => void;
   onEmailLogin: (email: string, password: string) => Promise<void>;
   onOAuthLogin: (provider: OAuth2ProviderSummary) => void;
@@ -83,6 +84,7 @@ export const LoginFormView = memo(function LoginFormView({
   oauthActionProviderId,
   oauthActionState,
   oauthActionError,
+  emailError,
   onBack,
   onEmailLogin,
   onOAuthLogin,
@@ -523,6 +525,19 @@ export const LoginFormView = memo(function LoginFormView({
         ) : (
           <form onSubmit={handleEmailSubmit}>
             <Flexbox gap={10}>
+              {emailError && (
+                <Alert
+                  data-login-error
+                  type="error"
+                  showIcon
+                  style={{ borderRadius: 12, padding: '8px 12px' }}
+                  message={
+                    <Text type="danger" style={{ fontSize: 12 }}>
+                      {emailError}
+                    </Text>
+                  }
+                />
+              )}
               <Input
                 data-login-email
                 size="large"

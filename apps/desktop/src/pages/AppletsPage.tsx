@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { RuntimeAppletInfo } from '../store/applets';
 import { useActiveAppletsSlice } from './useActiveAppletsStore';
+import { PageColumn } from '../layout/PageColumn';
 import type { Page } from '../types/navigation';
 
 const { Text } = Typography;
@@ -163,10 +164,11 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: Page) => void 
         position: 'relative',
         height: '100%',
         overflow: 'hidden',
-        padding: '22px 26px 24px',
+        padding: '22px 0 24px',
         background: `linear-gradient(180deg, ${token.colorBgContainer}db, ${token.colorBgContainer}a3), ${token.colorBgLayout}`,
       }}
     >
+      <PageColumn tier="standard" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
       <Flexbox
         horizontal
         align="center"
@@ -305,7 +307,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: Page) => void 
             alignContent: 'start',
             gap: '22px 34px',
             maxHeight: 196,
-            padding: '24px 28px 0',
+            padding: '24px 0 0',
             overflow: 'auto',
           }}
         >
@@ -329,6 +331,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: Page) => void 
           onOpen={handleOpen}
         />
       )}
+      </PageColumn>
     </Flexbox>
   );
 }

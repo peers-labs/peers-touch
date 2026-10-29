@@ -1,13 +1,12 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, SearchBar } from '@lobehub/ui';
+import { Button, Empty, SearchBar } from '@lobehub/ui';
 import {
   Alert,
   App,
   Descriptions,
   Drawer,
-  Empty,
   Input,
   Modal,
   Segmented,
@@ -15,7 +14,7 @@ import {
   Tag,
   theme,
 } from 'antd';
-import { Bot, Plus, Puzzle, RefreshCw, ShieldCheck, Wrench } from 'lucide-react';
+import { Bot, Plus, Puzzle, RefreshCw, SearchX, ShieldCheck, Store, Wrench } from 'lucide-react';
 
 import { api } from '../../services/desktop_api';
 import type {
@@ -24,6 +23,7 @@ import type {
   MarketSummary,
 } from '../../services/desktop_api';
 import { usePrefetch } from '../../kernel/usePrefetch';
+import { PageColumn } from '../../layout/PageColumn';
 import { MarketplacePackageCard } from './discover/PackageCard';
 
 type TabKey = 'agents' | 'skills' | 'tools';
@@ -386,21 +386,27 @@ export const DiscoverSettings = memo(() => {
 
     if (markets.length === 0) {
       return (
-        <Flexbox align="center" gap={12} style={{ paddingBlock: 40 }}>
-          <Empty description={t('agent.marketplace.noMarketSource')} />
-          <Button icon={<Plus size={14} />} onClick={() => setAddSourceOpen(true)}>
-            {t('agent.marketplace.addSource')}
-          </Button>
-        </Flexbox>
+        <Empty
+          icon={Store}
+          title={t('agent.marketplace.noMarketSource')}
+          action={
+            <Button icon={<Plus size={14} />} onClick={() => setAddSourceOpen(true)}>
+              {t('agent.marketplace.addSource')}
+            </Button>
+          }
+          padding="64px 16px"
+        />
       );
     }
 
     if (filteredPackages.length === 0) {
       return (
         <Empty
-          description={search
+          icon={SearchX}
+          title={search
             ? t('agent.marketplace.noResults')
             : t('agent.marketplace.noPackagesForTab')}
+          padding="64px 16px"
         />
       );
     }
@@ -438,10 +444,10 @@ export const DiscoverSettings = memo(() => {
   return (
     <Flexbox
       data-testid="marketplace-page"
-      gap={token.marginLG}
-      padding={token.paddingLG}
       style={{ height: '100%', overflow: 'auto' }}
     >
+      <PageColumn tier="standard" style={{ paddingBlock: token.paddingLG }}>
+      <Flexbox gap={token.marginLG}>
       <Flexbox horizontal align="center" justify="space-between" wrap="wrap" gap={12}>
         <Flexbox gap={4}>
           <h2 style={{ margin: 0, fontSize: token.fontSizeHeading4, color: token.colorText }}>
@@ -709,6 +715,8 @@ export const DiscoverSettings = memo(() => {
           </Flexbox>
         ) : null}
       </Drawer>
+      </Flexbox>
+      </PageColumn>
     </Flexbox>
   );
 });

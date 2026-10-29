@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Empty } from '@lobehub/ui';
 import { Tag, Typography, theme } from 'antd';
-import { Loader2, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Activity, Loader2, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useChatStore, type ChatOperation } from '../../../store/chat';
@@ -76,7 +76,7 @@ export function WorkingProgressView() {
   if (sortedOperations.length === 0) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%', padding: 32 }}>
-        <Empty description={t('agent.working.noOperations')} />
+        <Empty icon={Activity} title={t('agent.working.noOperations')} />
       </Flexbox>
     );
   }

@@ -1025,10 +1025,14 @@ func domainKnowledgeChunkReferenceToProto(chunk *domain.KnowledgeChunkReference)
 	}
 }
 
+// truncateForTitle caps a user-supplied turn input used as the auto-generated
+// conversation title. The limit is applied to runes, not bytes: byte slicing
+// multibyte UTF-8 input (e.g. CJK turns) could split a codepoint and produce
+// invalid text that Postgres rejects with SQLSTATE 22021, aborting the turn.
 func truncateForTitle(s string) string {
 	s = strings.TrimSpace(s)
-	if len(s) > 50 {
-		return s[:50]
+	if runes := []rune(s); len(runes) > 50 {
+		return string(runes[:50])
 	}
 	return s
 }

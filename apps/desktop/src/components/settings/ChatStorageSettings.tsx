@@ -173,7 +173,7 @@ export function ChatStorageSettings() {
 
   if (!snapshot) {
     return (
-      <SettingsContainer fullHeight maxWidth={900}>
+      <SettingsContainer fullHeight tier="standard">
         <Flexbox align="center" justify="center" gap={12} style={{ padding: 64 }}>
           <HardDrive size={28} style={{ color: token.colorTextTertiary }} />
           <Text type="secondary">
@@ -222,7 +222,7 @@ export function ChatStorageSettings() {
   ];
 
   return (
-    <SettingsContainer fullHeight maxWidth={900}>
+    <SettingsContainer fullHeight tier="standard">
       <Flexbox
         horizontal
         align="center"
