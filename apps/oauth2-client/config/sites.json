@@ -34,6 +34,22 @@
           "enabled": false
         }
       }
+    },
+    {
+      "site_id": "x-config",
+      "success_url": "",
+      "error_url": "",
+      "providers": {
+        "github": {
+          "enabled": true
+        },
+        "google": {
+          "enabled": false
+        },
+        "weixin": {
+          "enabled": false
+        }
+      }
     }
   ]
 }
