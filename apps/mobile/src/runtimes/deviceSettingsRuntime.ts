@@ -2,12 +2,7 @@ import type {
   MobileRuntimeDescriptor,
   RuntimeOperationResult,
 } from '../app/lifecycle/types';
-import { createMobileActorStorageRuntime } from '../storage/mobileClientStorage';
-import {
-  assertSessionWriteAdmission,
-  readActiveSessionProjection,
-  subscribeSessionRuntime,
-} from './sessionRuntime';
+import { mobilePersonalizationScope } from './personalizationScope';
 
 export const DEVICE_SETTINGS_RUNTIME_ID = 'device-settings';
 
@@ -71,6 +66,7 @@ export interface DeviceSettingsRuntime {
   retry(): Promise<DevicePreferences>;
   replace(preferences: DevicePreferences): Promise<DevicePreferences>;
   retryWrite(): Promise<DevicePreferences>;
+  reset(): void;
   getSnapshot(): DeviceSettingsRuntimeSnapshot;
   subscribe(listener: () => void): () => void;
 }
@@ -111,11 +107,12 @@ export function normalizeDevicePreferences(raw: unknown): DevicePreferences {
 }
 
 export function createDeviceSettingsRuntime(
-  persistence: DeviceSettingsPersistence = deviceSettingsPersistence(),
+  persistence?: DeviceSettingsPersistence,
   applyPreferences: DeviceSettingsApplier = applyDevicePreferences,
 ): DeviceSettingsRuntime {
   let snapshot = loadingSnapshot;
   let operations = Promise.resolve();
+  let generation = 0;
   const listeners = new Set<() => void>();
 
   const publish = (next: DeviceSettingsRuntimeSnapshot): void => {
@@ -123,8 +120,23 @@ export function createDeviceSettingsRuntime(
     listeners.forEach((listener) => listener());
   };
 
-  const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
-    const result = operations.then(operation, operation);
+  const enqueue = <T>(operation: (storage: DeviceSettingsPersistence, current: () => boolean) => Promise<T>): Promise<T> => {
+    const scope = mobilePersonalizationScope.capture();
+    const observed = generation;
+    const current = () => observed === generation && (persistence !== undefined || scope.current());
+    const storage = persistence ?? {
+      read: () => scope.read(DEVICE_PREFERENCES_KEY),
+      write: (preferences: DevicePreferences) => scope.write(
+        DEVICE_PREFERENCES_KEY, { ...preferences },
+      ),
+    };
+    const run = () => {
+      if (!current()) throw new Error('mobile.auth.sessionChanged');
+      return operation(storage, current);
+    };
+    const result = persistence
+      ? operations.then(run, run)
+      : mobilePersonalizationScope.enqueue(run);
     operations = result.then(
       () => undefined,
       () => undefined,
@@ -133,11 +145,14 @@ export function createDeviceSettingsRuntime(
   };
 
   const loadFromStorage = async (
+    storage: DeviceSettingsPersistence,
+    current: () => boolean,
     allowMissingValue = true,
   ): Promise<DeviceSettingsRuntimeSnapshot> => {
     publish(loadingSnapshot);
     try {
-      const raw = await persistence.read();
+      const raw = await storage.read();
+      if (!current()) return snapshot;
       if (raw === null && !allowMissingValue) {
         throw new Error(DEVICE_SETTINGS_UNAVAILABLE_ERROR);
       }
@@ -154,6 +169,7 @@ export function createDeviceSettingsRuntime(
       publish(ready);
       return ready;
     } catch {
+      if (!current()) return snapshot;
       const unavailable: DeviceSettingsRuntimeSnapshot = {
         status: 'unavailable',
         preferences: null,
@@ -174,14 +190,18 @@ export function createDeviceSettingsRuntime(
 
   const replaceNow = async (
     preferences: DevicePreferences,
+    storage: DeviceSettingsPersistence,
+    current: () => boolean,
   ): Promise<DevicePreferences> => {
-    if (snapshot.status === 'loading') await loadFromStorage();
+    if (snapshot.status === 'loading') await loadFromStorage(storage, current);
+    if (!current()) throw new Error('mobile.auth.sessionChanged');
     const committed = requireReady(snapshot);
     const attemptedPreferences = normalizeDevicePreferences(preferences);
 
     try {
-      await persistence.write(attemptedPreferences);
+      await storage.write(attemptedPreferences);
     } catch {
+      if (!current()) throw new Error('mobile.auth.sessionChanged');
       publish({
         status: 'ready',
         preferences: committed,
@@ -194,7 +214,9 @@ export function createDeviceSettingsRuntime(
       throw new Error(DEVICE_SETTINGS_WRITE_FAILED_ERROR);
     }
 
-    const readback = await loadFromStorage(false);
+    if (!current()) throw new Error('mobile.auth.sessionChanged');
+    const readback = await loadFromStorage(storage, current, false);
+    if (!current()) throw new Error('mobile.auth.sessionChanged');
     if (readback.status !== 'ready' || readback.preferences === null) {
       throw new Error(DEVICE_SETTINGS_UNAVAILABLE_ERROR);
     }
@@ -202,25 +224,37 @@ export function createDeviceSettingsRuntime(
   };
 
   return {
-    bootstrap: () => enqueue(async () => (
-      snapshot.status === 'ready' ? snapshot : loadFromStorage()
+    bootstrap: () => enqueue(async (storage, current) => (
+      snapshot.status === 'ready' ? snapshot : loadFromStorage(storage, current)
     )),
 
-    read: () => enqueue(async () => {
-      if (snapshot.status === 'loading') await loadFromStorage();
+    read: () => enqueue(async (storage, current) => {
+      if (snapshot.status === 'loading') await loadFromStorage(storage, current);
+      if (!current()) throw new Error('mobile.auth.sessionChanged');
       return requireReady(snapshot);
     }),
 
-    retry: () => enqueue(async () => requireReady(await loadFromStorage())),
+    retry: () => enqueue(async (storage, current) => {
+      const next = await loadFromStorage(storage, current);
+      if (!current()) throw new Error('mobile.auth.sessionChanged');
+      return requireReady(next);
+    }),
 
-    replace: (preferences) => enqueue(() => replaceNow(preferences)),
+    replace: (preferences) => enqueue((storage, current) => replaceNow(preferences, storage, current)),
 
-    retryWrite: () => enqueue(async () => {
+    retryWrite: () => enqueue(async (storage, current) => {
       if (snapshot.status !== 'ready' || !snapshot.writeFailure) {
         return requireReady(snapshot);
       }
-      return replaceNow(snapshot.writeFailure.attemptedPreferences);
+      return replaceNow(snapshot.writeFailure.attemptedPreferences, storage, current);
     }),
+
+    reset: () => {
+      generation += 1;
+      operations = Promise.resolve();
+      applyPreferences(defaultDevicePreferences());
+      publish(loadingSnapshot);
+    },
 
     getSnapshot: () => snapshot,
 
@@ -283,24 +317,11 @@ export function subscribeDeviceSettingsRuntime(
   return deviceSettingsRuntime.subscribe(listener);
 }
 
-export function resetDevicePreferencesToSystemDefault(): void {
-  applyDevicePreferences(defaultDevicePreferences());
-}
-
 export function createDeviceSettingsRuntimeDescriptor(
-  runtime: Pick<DeviceSettingsRuntime, 'bootstrap' | 'retry'> = deviceSettingsRuntime,
-  options: {
-    readActiveIdentity?: () => string | null;
-    subscribeIdentity?: (listener: () => void) => () => void;
-  } = {},
+  runtime: Pick<DeviceSettingsRuntime, 'bootstrap' | 'reset'> = deviceSettingsRuntime,
 ): MobileRuntimeDescriptor {
-  const readActiveIdentity = options.readActiveIdentity ?? (() => {
-    const session = readActiveSessionProjection();
-    return session ? `${session.stationPeerId}\0${session.actorPtid}` : null;
-  });
-  const subscribeIdentity = options.subscribeIdentity ?? subscribeSessionRuntime;
-
   let releaseIdentity: (() => void) | null = null;
+  let releaseScope: (() => void) | null = null;
 
   return {
     id: DEVICE_SETTINGS_RUNTIME_ID,
@@ -310,22 +331,15 @@ export function createDeviceSettingsRuntimeDescriptor(
     dependsOn: ['session'],
 
     async bootstrap(): Promise<void> {
-      await runtime.bootstrap();
-      installDeviceSettingsSystemThemeListener();
       if (!releaseIdentity) {
-        let lastIdentity = readActiveIdentity();
-        releaseIdentity = subscribeIdentity(() => {
-          const identity = readActiveIdentity();
-          if (identity === lastIdentity) return;
-          lastIdentity = identity;
-          if (identity) {
-            void runtime.retry();
-          } else {
-            // Logout / Station switch: pre-login surfaces follow OS defaults.
-            resetDevicePreferencesToSystemDefault();
-          }
+        releaseIdentity = mobilePersonalizationScope.subscribe(() => {
+          runtime.reset();
+          void runtime.bootstrap();
         });
+        releaseScope = mobilePersonalizationScope.retain();
       }
+      installDeviceSettingsSystemThemeListener();
+      await runtime.bootstrap();
     },
 
     async suspend(): Promise<void> {
@@ -341,7 +355,9 @@ export function createDeviceSettingsRuntimeDescriptor(
       releaseSystemThemeListener = null;
       releaseIdentity?.();
       releaseIdentity = null;
-      resetDevicePreferencesToSystemDefault();
+      releaseScope?.();
+      releaseScope = null;
+      runtime.reset();
       return {
         runtimeId: DEVICE_SETTINGS_RUNTIME_ID,
         success: true,
@@ -362,35 +378,6 @@ function installDeviceSettingsSystemThemeListener(): void {
   };
   query.addEventListener('change', applyCurrent);
   releaseSystemThemeListener = () => query.removeEventListener('change', applyCurrent);
-}
-
-// Personalization is identity-scoped (Settings ownership layer L2):
-// preferences are keyed by (app, station, actor). A shared device must not
-// keep one actor's theme, font size, density, or media-download choice for
-// the next person who signs in. Pre-login reads resolve to OS defaults and
-// writes require an authenticated session. Logout hard-deletes the actor's
-// preference namespace in the session runtime.
-function deviceSettingsPersistence(): DeviceSettingsPersistence {
-  return {
-    read: async () => {
-      const session = readActiveSessionProjection();
-      if (!session) return null;
-      return createMobileActorStorageRuntime(
-        session.stationPeerId,
-        session.actorPtid,
-      ).repositories.chatPreferences.readValue(DEVICE_PREFERENCES_KEY);
-    },
-    write: async (preferences) => {
-      const session = assertSessionWriteAdmission();
-      await createMobileActorStorageRuntime(
-        session.stationPeerId,
-        session.actorPtid,
-      ).repositories.chatPreferences.write(
-        DEVICE_PREFERENCES_KEY,
-        preferences as unknown as Record<string, unknown>,
-      );
-    },
-  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

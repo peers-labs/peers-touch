@@ -225,7 +225,7 @@ describe('session authentication convergence', () => {
     expect(useSessionStore.getState().currentUser).toBeNull();
   });
 
-  it('hard-deletes the outgoing actor preference namespace and keeps L3 state', async () => {
+  it('delegates the outgoing scope to the identity pipeline and keeps L3 state', async () => {
     class MemoryStorage {
       private entries = new Map<string, string>();
 
@@ -258,14 +258,16 @@ describe('session authentication convergence', () => {
         '../storage/desktopClientStorage'
       );
       const actorPtid = 'ptid:person:alice';
-      const actorRuntime = createDesktopClientStorageRuntime({ ptid: actorPtid });
+      useSessionStore.setState({ stationPeerId: 'station-peer' });
+      const epoch = useSessionStore.getState().sessionEpoch;
+      const actorRuntime = createDesktopClientStorageRuntime({ ptid: actorPtid, stationPeerId: 'station-peer' });
       await actorRuntime.repositories.chatPreferences.write(
         'peers-touch-lang',
-        'zh-CN' as unknown as Record<string, unknown>,
+        'zh-CN',
       );
       await actorRuntime.repositories.chatPreferences.write(
         'settings.providers.showUsableOnly',
-        false as unknown as Record<string, unknown>,
+        false,
       );
       const appRuntime = createDesktopClientStorageRuntime({});
       await appRuntime.repositories.stationRegistry.write(
@@ -275,14 +277,10 @@ describe('session authentication convergence', () => {
 
       await useSessionStore.getState().logout();
 
-      await expect(
-        actorRuntime.repositories.chatPreferences.readValue('peers-touch-lang'),
-      ).resolves.toBeNull();
-      await expect(
-        actorRuntime.repositories.chatPreferences.readValue(
-          'settings.providers.showUsableOnly',
-        ),
-      ).resolves.toBeNull();
+      expect(mocks.runIdentityPipeline).toHaveBeenCalledWith(
+        { reason: 'logout', actorPtid: null, loginMethod: null },
+        { actorPtid, stationPeerId: 'station-peer', sessionEpoch: epoch },
+      );
       await expect(
         appRuntime.repositories.stationRegistry.readValue('active-station'),
       ).resolves.toEqual({ station_peer_id: 'station-peer' });

@@ -11,40 +11,47 @@
 
 import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
 import { useSessionStore } from '../store/session';
+import { sessionIdentityScope, type SessionIdentityScope } from '../kernel/sessionIdentity';
 
 export const PERSONALIZATION_LANGUAGE_KEY = 'peers-touch-lang';
 export const PERSONALIZATION_CHAT_SHORTCUT_KEY = 'settings.chat.screenshotShortcut';
 export const PERSONALIZATION_SHOW_USABLE_PROVIDERS_KEY = 'settings.providers.showUsableOnly';
 
-/** Actor PTID of the currently authenticated desktop session, or null. */
-export function activeActorPtid(): string | null {
-  const session = useSessionStore.getState();
-  if (!session.authenticated) return null;
-  return session.currentUser?.actorPtid ?? null;
+export function capturePersonalizationScope(): SessionIdentityScope | null {
+  return sessionIdentityScope(useSessionStore.getState());
 }
 
-function actorPreferences(actorPtid?: string | null) {
-  const ptid = actorPtid === undefined ? activeActorPtid() : actorPtid;
-  if (!ptid) return null;
-  return createDesktopClientStorageRuntime({ ptid }).repositories.chatPreferences;
+export function isPersonalizationScopeCurrent(scope: SessionIdentityScope | null): boolean {
+  const current = capturePersonalizationScope();
+  return current?.actorPtid === scope?.actorPtid
+    && current?.stationPeerId === scope?.stationPeerId
+    && current?.sessionEpoch === scope?.sessionEpoch;
 }
 
-export async function readPersonalization<T>(
+function actorPreferences(scope: SessionIdentityScope | null) {
+  if (!scope) return null;
+  return createDesktopClientStorageRuntime({
+    ptid: scope.actorPtid, stationPeerId: scope.stationPeerId,
+  }).repositories.chatPreferences;
+}
+
+export async function readPersonalization(
   key: string,
-  actorPtid?: string | null,
-): Promise<T | null> {
-  const repository = actorPreferences(actorPtid);
+  scope: SessionIdentityScope | null = capturePersonalizationScope(),
+): Promise<unknown | null> {
+  const repository = actorPreferences(scope);
   if (!repository) return null;
-  return (await repository.readValue(key)) as T | null;
+  return repository.readValue(key);
 }
 
-export async function writePersonalization<T>(
+export async function writePersonalization(
   key: string,
-  value: T,
-  actorPtid?: string | null,
+  value: string | boolean,
+  scope: SessionIdentityScope | null = capturePersonalizationScope(),
 ): Promise<boolean> {
-  const repository = actorPreferences(actorPtid);
+  if (!isPersonalizationScopeCurrent(scope)) return false;
+  const repository = actorPreferences(scope);
   if (!repository) return false;
-  await repository.write(key, value as Record<string, unknown>);
+  await repository.write(key, value);
   return true;
 }

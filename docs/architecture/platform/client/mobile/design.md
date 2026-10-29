@@ -96,8 +96,8 @@ Tauri Mobile App
 | Moments/posts/comments/reactions | Station | Station APIs | moments runtime |
 | Profile and privacy fields | Actor Profile | Actor Profile API | profile runtime |
 | Notification preferences and push registration | Notification | Notification APIs | notification runtime plus Rust push registrar |
-| Personalization (theme, language, font size, density, media auto-download) | device-actor local; hard-deleted on logout | `deviceSettingsRuntime` | identity-scoped `config.preference` in client storage |
-| Device/install state (Station registry, cache maintenance, permission grants, app metadata) | device local; survives identity change | `deviceSettingsRuntime` and native ports | app-scope client storage/native port |
+| Personalization (theme, language, font size, density, media auto-download) | device-actor local; hard-deleted on logout | `deviceSettingsRuntime` and `languageRuntime`, sharing `personalizationScope` | identity-scoped `config.preference` in client storage |
+| Device/install state (Station registry, cache maintenance, permission grants, app metadata) | device local; survives identity change | Station registry runtime, cache maintenance owner and native ports | app-scope client storage/native port |
 | Push/deep-link payload | Notification/OS wakeup only | Notification + native plugin | host adapter; never business store |
 | Native media selection | OS picker grant plus Rust-owned staging record | native picker plugin and Rust media staging | typed platform port |
 
@@ -714,14 +714,14 @@ Settings composes independent owners:
   registered push devices;
 - this release has no additional account-preference fields, owner, runtime, or
   placeholder section; `ActorPreferences` is not a public API;
-- `deviceSettingsRuntime` owns personalization — theme, font size, compact
-  density, media auto-download, and language — in the identity-scoped
+- `deviceSettingsRuntime` owns theme, font size, compact density and media
+  auto-download; `languageRuntime` owns language. Both use `personalizationScope`
+  to capture identity, fence asynchronous work and serialize mutations in the identity-scoped
   `(app, station, actor)` `config.preference` namespace (L2): it depends on
   the session runtime, reloads on identity edges, resets to OS defaults when
   no actor is active, and session revocation hard-deletes the namespace;
-- the same runtime keeps L3 device/install concerns (Station registry, cache
-  maintenance operations, permission state, app metadata) in app-scope
-  storage, which survives identity changes;
+- Station registry runtime, cache maintenance and native platform owners keep
+  L3 concerns in app-scope storage/native ports, surviving identity changes;
 - Social owns blocked users.
 
 The three-layer settings model (L1 Station-actor, L2 device-actor, L3 device)

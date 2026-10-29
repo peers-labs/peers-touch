@@ -1,11 +1,9 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
-  useRef,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 
@@ -17,14 +15,15 @@ import zhCommon from '../../../../packages/locales/zh-CN/common.json';
 import zhMoments from '../../../../packages/locales/zh-CN/moments.json';
 import zhChat from '../../../../packages/locales/zh-CN/chat.json';
 import zhSearch from '../../../../packages/locales/zh-CN/search.json';
-import { createMobileActorStorageRuntime } from '../storage/mobileClientStorage';
 import {
-  readActiveSessionProjection,
-  subscribeSessionRuntime,
-  type MobileSessionProjection,
-} from '../runtimes/sessionRuntime';
-
-export type MobileLanguage = 'en' | 'zh-CN';
+  installMobileLanguageRuntime,
+  readMobileLanguageSnapshot,
+  retryMobileLanguage,
+  setMobileLanguage,
+  subscribeMobileLanguage,
+  systemMobileLanguage,
+  type MobileLanguage,
+} from '../runtimes/languageRuntime';
 
 export interface MobileLanguageOption {
   code: MobileLanguage;
@@ -44,8 +43,6 @@ interface MobileI18nContextValue {
   t: (key: string, params?: TranslationParams) => string;
 }
 
-const MOBILE_LANGUAGE_KEY = 'peers-touch.mobile.language';
-
 const languages: MobileLanguageOption[] = [
   { code: 'zh-CN', nativeName: '简体中文', shortName: '中文' },
   { code: 'en', nativeName: 'English', shortName: 'EN' },
@@ -59,64 +56,12 @@ const resources: Record<MobileLanguage, Record<string, string>> = {
 const MobileI18nContext = createContext<MobileI18nContextValue | null>(null);
 
 export function MobileI18nProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<MobileLanguage>(() => detectInitialLanguage());
-  const [languageStatus, setLanguageStatus] =
-    useState<MobileI18nContextValue['languageStatus']>('idle');
-  const [languageError, setLanguageError] = useState<string | null>(null);
-  const failedLanguageRef = useRef<MobileLanguage | null>(null);
-  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const requestIdRef = useRef(0);
-
-  const setLanguage = useCallback((nextLanguage: MobileLanguage): Promise<boolean> => {
-    requestIdRef.current += 1;
-    const requestId = requestIdRef.current;
-    setLanguageStatus('saving');
-    setLanguageError(null);
-
-    const operation = writeQueueRef.current.then(async () => {
-      try {
-        await persistMobileLanguage(nextLanguage);
-        if (requestId === requestIdRef.current) {
-          failedLanguageRef.current = null;
-          setLanguageState(nextLanguage);
-          setLanguageStatus('idle');
-        }
-        return true;
-      } catch {
-        if (requestId === requestIdRef.current) {
-          failedLanguageRef.current = nextLanguage;
-          setLanguageStatus('failed');
-          setLanguageError('mobile.settings.language.saveFailed');
-        }
-        return false;
-      }
-    });
-    writeQueueRef.current = operation.then(
-      () => undefined,
-      () => undefined,
-    );
-    return operation;
-  }, []);
-
-  const retryLanguage = useCallback((): Promise<boolean> => {
-    const failedLanguage = failedLanguageRef.current;
-    if (failedLanguage) return setLanguage(failedLanguage);
-
-    setLanguageStatus('saving');
-    setLanguageError(null);
-    const session = readActiveSessionProjection();
-    return Promise.resolve(session ? readStoredLanguage(session) : null)
-      .then((stored) => {
-        setLanguageState(stored ?? detectInitialLanguage());
-        setLanguageStatus('idle');
-        return true;
-      })
-      .catch(() => {
-        setLanguageStatus('failed');
-        setLanguageError('mobile.settings.language.loadFailed');
-        return false;
-      });
-  }, [setLanguage]);
+  const { language, status: languageStatus, error: languageError } = useSyncExternalStore(
+    subscribeMobileLanguage,
+    readMobileLanguageSnapshot,
+    readSystemLanguageSnapshot,
+  );
+  useEffect(installMobileLanguageRuntime, []);
 
   const value = useMemo<MobileI18nContextValue>(
     () => ({
@@ -124,60 +69,16 @@ export function MobileI18nProvider({ children }: { children: ReactNode }) {
       languages,
       languageStatus,
       languageError,
-      setLanguage,
-      retryLanguage,
+      setLanguage: setMobileLanguage,
+      retryLanguage: retryMobileLanguage,
       t: (key, params) => interpolate(resources[language][key] ?? resources.en[key] ?? key, params),
     }),
     [
       language,
       languageError,
       languageStatus,
-      retryLanguage,
-      setLanguage,
     ],
   );
-
-  // Pre-login language follows the OS. The authenticated actor's own
-  // language loads on the session edge and resets to the OS language on
-  // logout/Station switch, so a shared device never inherits the previous
-  // actor's language (Settings ownership layer L2).
-  useEffect(() => {
-    let active = true;
-    let identity: string | null = null;
-    const applyForIdentity = async (session: MobileSessionProjection | null) => {
-      const nextIdentity = session
-        ? `${session.stationPeerId}\0${session.actorPtid}`
-        : null;
-      if (nextIdentity === identity) return;
-      identity = nextIdentity;
-      if (!active) return;
-      if (!session) {
-        setLanguageState(detectInitialLanguage());
-        return;
-      }
-      try {
-        const stored = await readStoredLanguage(session);
-        if (active && stored) setLanguageState(stored);
-      } catch {
-        if (active) {
-          setLanguageStatus('failed');
-          setLanguageError('mobile.settings.language.loadFailed');
-        }
-      }
-    };
-    const release = subscribeSessionRuntime(() => {
-      void applyForIdentity(readActiveSessionProjection());
-    });
-    void applyForIdentity(readActiveSessionProjection());
-    return () => {
-      active = false;
-      release();
-    };
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.lang = language;
-  }, [language]);
 
   return <MobileI18nContext.Provider value={value}>{children}</MobileI18nContext.Provider>;
 }
@@ -188,35 +89,8 @@ export function useMobileI18n() {
   return value;
 }
 
-function detectInitialLanguage(): MobileLanguage {
-  return navigator.language.startsWith('zh') ? 'zh-CN' : 'en';
-}
-
-async function readStoredLanguage(
-  session: MobileSessionProjection,
-): Promise<MobileLanguage | null> {
-  const value = await createMobileActorStorageRuntime(
-    session.stationPeerId,
-    session.actorPtid,
-  ).repositories.chatPreferences.readValue(MOBILE_LANGUAGE_KEY);
-  const language = typeof value === 'object' && value && 'language' in value ? (value as { language?: unknown }).language : value;
-  return language === 'en' || language === 'zh-CN' ? language : null;
-}
-
-export async function persistMobileLanguage(
-  language: MobileLanguage,
-): Promise<void> {
-  const session = readActiveSessionProjection();
-  // A language picked before sign-in is an in-memory run choice; it must not
-  // be persisted into a global namespace and leak to another actor.
-  if (!session) return;
-  await createMobileActorStorageRuntime(
-    session.stationPeerId,
-    session.actorPtid,
-  ).repositories.chatPreferences.write(
-    MOBILE_LANGUAGE_KEY,
-    { language },
-  );
+function readSystemLanguageSnapshot() {
+  return { language: systemMobileLanguage(), status: 'idle' as const, error: null };
 }
 
 function interpolate(value: string, params?: TranslationParams): string {
