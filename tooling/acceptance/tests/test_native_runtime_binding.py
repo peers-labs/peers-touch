@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
@@ -31,6 +32,7 @@ from tooling.acceptance.drivers.native.runtime import (
     NativeStorageFixture,
     WindowsNativeDesktopRuntimeBinding,
     _route_matches_bound_service,
+    normalize_clone_paths,
     resolve_native_desktop_runtime,
 )
 from tooling.acceptance.drivers.tauri import (
@@ -119,7 +121,7 @@ class SyntheticRemoteNativeLifecycle:
         self,
         source_actor: str,
         target_actor: str,
-        relative_path: str,
+        relative_path: str | Sequence[str],
     ) -> None:
         self.calls.append(
             (
@@ -1114,6 +1116,78 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertTrue(cleanup["processesReleased"])
         self.assertTrue(cleanup["endpointsReleased"])
         self.assertEqual(cleanup["cleanupErrors"], [])
+
+    def test_clone_path_normalization_rejects_unsafe_inputs(self) -> None:
+        self.assertEqual(
+            normalize_clone_paths("peers-touch/desktop/data/meta"),
+            ("peers-touch/desktop/data/meta",),
+        )
+        self.assertEqual(
+            normalize_clone_paths(
+                [
+                    "peers-touch/desktop/data/secure-store/identity-keys",
+                    "peers-touch/desktop/data/meta",
+                ]
+            ),
+            (
+                "peers-touch/desktop/data/secure-store/identity-keys",
+                "peers-touch/desktop/data/meta",
+            ),
+        )
+        for invalid in (
+            "",
+            ".",
+            "..",
+            "/abs/path",
+            "a/../b",
+            "a/./b",
+            r"\abs\path",
+            r"C:\abs\path",
+            r"a\..\b",
+            ["a", "a"],
+            [],
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(DriverError):
+                    normalize_clone_paths(invalid)
+
+    def test_local_clone_copies_multiple_relative_roots(self) -> None:
+        with patch.object(
+            LocalMacOSRuntimeBinding, "_consume_prepared_binary"
+        ):
+            binding = LocalMacOSRuntimeBinding()
+        with tempfile.TemporaryDirectory() as run_root:
+            source_root = Path(run_root) / "bob1" / "storage"
+            target_root = Path(run_root) / "bob2" / "storage"
+            keys = source_root / "secure-store" / "identity-keys"
+            keys.mkdir(parents=True)
+            (keys / "actor.key").write_text("identity", encoding="utf-8")
+            meta = source_root / "meta"
+            meta.mkdir(parents=True)
+            (meta / "device-id").write_text("desktop-device", encoding="utf-8")
+
+            binding.clone_actor_storage(
+                "bob1",
+                {"storage_root": source_root},
+                "bob2",
+                {"storage_root": target_root},
+                (
+                    "secure-store/identity-keys",
+                    "meta",
+                ),
+            )
+
+            copied_key = (
+                target_root
+                / "secure-store"
+                / "identity-keys"
+                / "actor.key"
+            )
+            copied_device = target_root / "meta" / "device-id"
+            self.assertEqual(copied_key.read_text(encoding="utf-8"), "identity")
+            self.assertEqual(
+                copied_device.read_text(encoding="utf-8"), "desktop-device"
+            )
 
     def test_verified_direct_override_keeps_station_discovery_untouched(
         self,

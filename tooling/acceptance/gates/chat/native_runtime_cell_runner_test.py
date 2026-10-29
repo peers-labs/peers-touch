@@ -918,6 +918,11 @@ gate.wait_step(
             "self.runtime_binding.clone_actor_storage(",
             source,
         )
+        # Same-device session revocation depends on the installation device
+        # id; the replacement login must clone it together with actor keys.
+        self.assertIn("ACTOR_IDENTITY_KEYS_RELATIVE", source)
+        self.assertIn("INSTALL_DEVICE_META_RELATIVE", source)
+        self.assertIn('"meta" / "device-id"', source)
 
     def test_make_entries_forward_the_selected_runtime_cell(self) -> None:
         makefile = (

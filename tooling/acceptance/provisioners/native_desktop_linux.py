@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Sequence
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -31,6 +31,7 @@ from tooling.acceptance.core import (
     RuntimeCellState,
 )
 from tooling.acceptance.drivers.tauri import ProvisionedTauriLauncher
+from tooling.acceptance.drivers.native.runtime import normalize_clone_paths
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core.lease import RemoteGitSourceLease
 from tooling.acceptance.core.provisioner import load_env_file
@@ -1509,7 +1510,7 @@ class NativeDesktopLinuxProvisioner:
         self,
         source_actor: str,
         target_actor: str,
-        relative_path: str,
+        relative_path: str | Sequence[str],
     ) -> None:
         state = self._require_state()
         normalized_source = source_actor.strip()
@@ -1532,28 +1533,21 @@ class NativeDesktopLinuxProvisioner:
             raise ProvisioningError(
                 f"Linux runtime-cell actor {normalized_target!r} is already active"
             )
-        relative = PurePosixPath(relative_path)
-        if (
-            not relative_path
-            or relative.is_absolute()
-            or any(part in {"", ".", ".."} for part in relative.parts)
-        ):
-            raise ProvisioningError(
-                "Linux runtime-cell actor storage path is invalid"
-            )
+        relative_paths = normalize_clone_paths(relative_path)
+        relative_nodes = [PurePosixPath(path) for path in relative_paths]
         actor_root = PurePosixPath("/workspace/run/actors")
-        source = actor_root / normalized_source / "storage" / relative
         target_root = actor_root / normalized_target
         temporary_root = actor_root / (
             f".clone-{normalized_target}-{secrets.token_hex(8)}"
         )
-        temporary = temporary_root / "storage" / relative
         container_name = str(state["containerName"])
-        self.transport.run_argv(
-            ("docker", "exec", container_name, "test", "-d", str(source)),
-            timeout=15,
-            check=True,
-        )
+        for node in relative_nodes:
+            source = actor_root / normalized_source / "storage" / node
+            self.transport.run_argv(
+                ("docker", "exec", container_name, "test", "-d", str(source)),
+                timeout=15,
+                check=True,
+            )
         target_absent = self.transport.run_argv(
             (
                 "docker",
@@ -1572,31 +1566,34 @@ class NativeDesktopLinuxProvisioner:
                 "Linux runtime-cell target actor storage already exists"
             )
         try:
-            self.transport.run_argv(
-                (
-                    "docker",
-                    "exec",
-                    container_name,
-                    "mkdir",
-                    "-p",
-                    str(temporary.parent),
-                ),
-                timeout=15,
-                check=True,
-            )
-            self.transport.run_argv(
-                (
-                    "docker",
-                    "exec",
-                    container_name,
-                    "cp",
-                    "-a",
-                    str(source),
-                    str(temporary),
-                ),
-                timeout=30,
-                check=True,
-            )
+            for node in relative_nodes:
+                source = actor_root / normalized_source / "storage" / node
+                temporary = temporary_root / "storage" / node
+                self.transport.run_argv(
+                    (
+                        "docker",
+                        "exec",
+                        container_name,
+                        "mkdir",
+                        "-p",
+                        str(temporary.parent),
+                    ),
+                    timeout=15,
+                    check=True,
+                )
+                self.transport.run_argv(
+                    (
+                        "docker",
+                        "exec",
+                        container_name,
+                        "cp",
+                        "-a",
+                        str(source),
+                        str(temporary),
+                    ),
+                    timeout=30,
+                    check=True,
+                )
             self.transport.run_argv(
                 (
                     "docker",

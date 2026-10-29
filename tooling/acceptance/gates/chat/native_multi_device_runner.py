@@ -44,6 +44,16 @@ from tooling.acceptance.gates.chat.native_support import (
 
 GATE_ID = "chat-native-multi-device-e2e"
 REPORT_PATH = None
+# Relative storage roots cloned from bob1 into bob2 before the replacement
+# login. The actor identity keys preserve the PTID (and avoid
+# ErrActorIdentityConflict); the installation device id is the binding the
+# Station keys same-device session revocation on, so without it bob1 is never
+# revoked and bob2 enrolls as a peer device instead of replacing the install.
+ACTOR_IDENTITY_KEYS_RELATIVE = (
+    "peers-touch/desktop/data/secure-store/identity-keys"
+)
+INSTALL_DEVICE_ID_RELATIVE = "peers-touch/desktop/data/meta/device-id"
+INSTALL_DEVICE_META_RELATIVE = "peers-touch/desktop/data/meta"
 CLIENT_PORTS = {"alice": 4447, "bob1": 4448, "bob2": 4449}
 CLIENT_ACTOR_ROLES = {
     "alice": "alice",
@@ -589,28 +599,47 @@ class NativeMultiDeviceGate(AcceptanceGate):
             )
 
             # Phase 2: bob2 logs in (session kick).
-            # Copy bob1's actor identity key to bob2's storage so the same PTID
-            # can enroll a second device without ErrActorIdentityConflict.
+            # Copy bob1's actor identity keys to bob2's storage so the same
+            # PTID enrolls without ErrActorIdentityConflict, and copy the
+            # installation device id so the Station treats bob2 as the same
+            # install and revokes bob1's session (same-device CreateWithKick).
             if self.runtime_binding is None:
-                bob1_keys = (
+                bob1_data = (
                     webdriver_root / "bob1" / "storage" / "peers-touch"
-                    / "desktop" / "data" / "secure-store" / "identity-keys"
+                    / "desktop" / "data"
                 )
-                bob2_keys = (
+                bob2_data = (
                     webdriver_root / "bob2" / "storage" / "peers-touch"
-                    / "desktop" / "data" / "secure-store" / "identity-keys"
+                    / "desktop" / "data"
                 )
+                bob1_keys = bob1_data / "secure-store" / "identity-keys"
+                bob2_keys = bob2_data / "secure-store" / "identity-keys"
                 if bob1_keys.exists():
                     bob2_keys.mkdir(parents=True, exist_ok=True)
                     for key_file in bob1_keys.iterdir():
                         shutil.copy2(key_file, bob2_keys / key_file.name)
+                bob1_device_id = bob1_data / "meta" / "device-id"
+                if not bob1_device_id.is_file():
+                    raise GateError(
+                        "bob1 installation device id is missing: "
+                        f"{bob1_device_id}"
+                    )
+                bob2_meta = bob2_data / "meta"
+                bob2_meta.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(
+                    bob1_device_id,
+                    bob2_meta / "device-id",
+                )
             else:
                 self.runtime_binding.clone_actor_storage(
                     "bob1",
                     self.client_specs["bob1"],
                     "bob2",
                     self.client_specs["bob2"],
-                    "peers-touch/desktop/data/secure-store/identity-keys",
+                    (
+                        ACTOR_IDENTITY_KEYS_RELATIVE,
+                        INSTALL_DEVICE_META_RELATIVE,
+                    ),
                 )
 
             self.step(
