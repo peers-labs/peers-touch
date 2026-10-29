@@ -380,13 +380,11 @@ describe('Mobile Acceptance Harness', () => {
     });
   });
 
-  it('prepares a parent-supplied actor identity without returning the seed', async () => {
+  it('prepares a parent-supplied actor identity through the acceptance-only identity command', async () => {
     const seedBase64 = 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=';
     const storageKey =
       'mobile-crypto-identity.v1.identity.0123456789abcdef0123456789abcdef';
-    invokeMock
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(seedBase64);
+    invokeMock.mockResolvedValueOnce(undefined);
 
     const result = await createMobileAcceptanceHarness()[
       'runtime.prepareActorIdentity'
@@ -394,15 +392,29 @@ describe('Mobile Acceptance Harness', () => {
 
     expect(result).toEqual({ prepared: true });
     expect(result).not.toHaveProperty('seedBase64');
+    expect(invokeMock).toHaveBeenCalledTimes(1);
     expect(invokeMock).toHaveBeenNthCalledWith(
       1,
-      'secure_storage_set',
-      { key: storageKey, value: seedBase64 },
+      'secure_storage_acceptance_seed_identity',
+      { key: storageKey, seedBase64 },
     );
-    expect(invokeMock).toHaveBeenNthCalledWith(
-      2,
-      'secure_storage_get',
-      { key: storageKey },
+  });
+
+  it('never addresses the Rust identity namespace through generic web storage commands', async () => {
+    const actionsSource = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+    const identityActionBody = actionsSource.slice(
+      actionsSource.indexOf("'runtime.prepareActorIdentity'"),
+      actionsSource.indexOf("'station.add'"),
+    );
+
+    expect(identityActionBody).toMatch(
+      /secure_storage_acceptance_seed_identity/,
+    );
+    expect(identityActionBody).not.toMatch(
+      /secure_storage_(?:get|set|remove)/,
     );
   });
 

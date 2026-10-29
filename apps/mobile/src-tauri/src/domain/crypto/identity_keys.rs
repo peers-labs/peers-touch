@@ -123,6 +123,47 @@ fn identity_seed_from_b64(seed_b64: &str) -> MobileResult<[u8; 32]> {
     Ok(bytes)
 }
 
+/// Acceptance-only: install a parent-provisioned actor identity seed before
+/// the first Session scope exists. Preset-identity harnesses own the seed and
+/// address the record by its scoped hash, so the namespace owner validates the
+/// record shape instead of deriving it from a live scope. Persistence is
+/// verified by read-back; production identity derivation never takes this
+/// path.
+#[cfg(feature = "acceptance-harness")]
+pub(crate) fn acceptance_replace_identity_seed(
+    storage: &SecureStorage,
+    storage_key: &str,
+    seed_b64: &str,
+) -> MobileResult<()> {
+    if !is_identity_storage_key_shape(storage_key) {
+        return Err(MobileError::invalid_input(
+            "acceptance actor identity storage key has an invalid shape",
+        ));
+    }
+    let seed = identity_seed_from_b64(seed_b64)?;
+    storage.set(storage_key, &B64.encode(seed))?;
+    let persisted = storage.get(storage_key)?.ok_or_else(|| {
+        MobileError::crypto("acceptance actor identity seed was not persisted")
+    })?;
+    if identity_seed_from_b64(&persisted)? != seed {
+        return Err(MobileError::crypto(
+            "acceptance actor identity seed read-back mismatch",
+        ));
+    }
+    Ok(())
+}
+
+fn is_identity_storage_key_shape(key: &str) -> bool {
+    let prefix = format!("{KEY_PREFIX}.v{STORE_VERSION}.identity.");
+    let Some(digest) = key.strip_prefix(prefix.as_str()) else {
+        return false;
+    };
+    digest.len() == 32
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn identity_key(user_scope: &str, actor_ptid: &str) -> String {
     format!(
         "{KEY_PREFIX}.v{STORE_VERSION}.identity.{}",
@@ -140,4 +181,39 @@ fn scoped_hash(user_scope: &str, actor_ptid: &str) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identity_storage_key_shape_accepts_derived_and_preset_keys() {
+        let valid_digest = "0123456789abcdef0123456789abcdef";
+        let valid_key = format!("{KEY_PREFIX}.v{STORE_VERSION}.identity.{valid_digest}");
+        assert!(is_identity_storage_key_shape(&valid_key));
+        assert!(is_identity_storage_key_shape(&identity_key(
+            "station-peer|ptid:actor",
+            "ptid:actor"
+        )));
+    }
+
+    #[test]
+    fn identity_storage_key_shape_rejects_foreign_or_malformed_keys() {
+        let valid_digest = "0123456789abcdef0123456789abcdef";
+        let base = format!("{KEY_PREFIX}.v{STORE_VERSION}.identity.{valid_digest}");
+
+        assert!(!is_identity_storage_key_shape("mobile.storage.smoke"));
+        assert!(!is_identity_storage_key_shape(&format!(
+            "{KEY_PREFIX}.v2.identity.{valid_digest}"
+        )));
+        assert!(!is_identity_storage_key_shape(&format!(
+            "{KEY_PREFIX}.v{STORE_VERSION}.identity.0123456789ABCDEF0123456789ABCDEF"
+        )));
+        assert!(!is_identity_storage_key_shape(&format!("{base}ff")));
+        assert!(!is_identity_storage_key_shape(
+            &base[..base.len() - 1]
+        ));
+        assert!(!is_identity_storage_key_shape(""));
+    }
 }

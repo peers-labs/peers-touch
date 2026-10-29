@@ -307,6 +307,7 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::runtime::x_config::x_config_refresh,
         crate::runtime::x_config::x_config_discover_suggestion,
         // Secure storage
+        secure_storage::secure_storage_acceptance_seed_identity,
         secure_storage::secure_storage_get,
         secure_storage::secure_storage_remove,
         secure_storage::secure_storage_set,

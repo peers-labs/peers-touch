@@ -28,6 +28,26 @@ pub fn secure_storage_remove(storage: State<'_, SecureStorage>, key: String) -> 
     storage.remove(&key).map_err(Into::into)
 }
 
+/// Acceptance-only bridge for parent-owned preset actor identities. The web
+/// acceptance harness holds no live Session scope, so it addresses the
+/// Rust-owned identity namespace by its scoped key; the crypto domain owns
+/// key/seed validation and read-back verification. The generic web storage
+/// fence above stays intact and production builds never register this
+/// command.
+#[cfg(feature = "acceptance-harness")]
+#[tauri::command]
+pub fn secure_storage_acceptance_seed_identity(
+    storage: State<'_, SecureStorage>,
+    key: String,
+    seed_base64: String,
+) -> MobileResult<()> {
+    crate::domain::crypto::identity_keys::acceptance_replace_identity_seed(
+        &storage,
+        &key,
+        &seed_base64,
+    )
+}
+
 fn validate_key(key: &str) -> MobileResult<()> {
     if key.trim().is_empty() {
         return Err(crate::error::MobileError::invalid_input(
@@ -78,6 +98,11 @@ mod tests {
         assert!(validate_key("peers-touch.mobile.reliability.scope-key-inventory.v1").is_err());
         assert!(validate_key("peers-touch.mobile.station-route-source.v1.deadbeef").is_err());
         assert!(validate_key("peers-touch.mobile.x-config.watermark.v1.stable").is_err());
+        assert!(validate_key(
+            "mobile-crypto-identity.v1.identity.0123456789abcdef0123456789abcdef"
+        )
+        .is_err());
+        assert!(validate_key("messaging.v1.device-signing-seed.deadbeef").is_err());
     }
 
     #[test]

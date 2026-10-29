@@ -171,8 +171,6 @@ import {
   messagingSubmitMetadataInteraction,
   messagingSubmitReadCursor,
   messagingSubmitTyping,
-  getSecureStorageValue,
-  setSecureStorageValue,
   type MessagingMutationScopeInput,
   type PrivateMomentKind,
   type PrivateMomentMention,
@@ -262,10 +260,13 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
         'acceptance.mobile.invalidInput:runtime.prepareActorIdentity',
       );
     }
-    await setSecureStorageValue(storageKey, seedBase64);
-    if (await getSecureStorageValue(storageKey) !== seedBase64) {
-      throw new Error('acceptance.mobile.actorIdentityPreparationFailed');
-    }
+    // The identity namespace is Rust-owned; the acceptance-only native command
+    // validates the scoped key and 32-byte seed and verifies persistence. The
+    // generic web storage fence must not be bypassed for this namespace.
+    await invoke('secure_storage_acceptance_seed_identity', {
+      key: storageKey,
+      seedBase64,
+    });
     return { prepared: true };
   },
 
