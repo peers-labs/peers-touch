@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import inspect
 import signal
@@ -1064,6 +1065,143 @@ class SimulatorSocialGateTests(unittest.TestCase):
             journey_id=artifacts.run_id[-12:],
             expected_build_identity=expected_identity,
         )
+
+    def _patch_social_convergence_dispatch(
+        self,
+        gate: SimulatorSocialGate,
+        journey: Mock,
+        actors: dict[str, MessagingActor],
+        expected_identity: dict[str, str],
+    ):
+        sender_session = Mock()
+        receiver_session = Mock()
+        patches = (
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "_validate_source_identity",
+                return_value={"commit": "a" * 40},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "_validate_runtime_identity",
+                return_value={"appium": "verified"},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "MobileMessagingJourney",
+                return_value=journey,
+            ),
+            patch.object(gate, "_reject_credentials"),
+            patch.object(
+                gate,
+                "_client_specs",
+                return_value=(
+                    SimpleNamespace(client_id="sim-ios"),
+                    SimpleNamespace(client_id="sim-ios-peer"),
+                ),
+            ),
+            patch.object(
+                gate,
+                "_start_social_session",
+                side_effect=[sender_session, receiver_session],
+            ),
+            patch.object(gate, "_load_actors", return_value=actors),
+            patch.object(
+                gate,
+                "_prepare_fresh_actor_identity",
+                side_effect=[
+                    {"clientId": "sim-ios", "prepared": True},
+                    {"clientId": "sim-ios-peer", "prepared": True},
+                ],
+            ),
+            patch.object(
+                gate,
+                "_capture_client",
+                return_value={"captured": True},
+            ),
+        )
+        manifest = {
+            "mobileSimulator": {
+                "applications": {
+                    "ios": {"buildIdentity": expected_identity},
+                },
+                "appium": {"serverUrl": "http://127.0.0.1:4723"},
+            },
+        }
+        return sender_session, receiver_session, manifest, patches
+
+    def test_social_convergence_dispatches_peer_only_and_accepts_local_scope(
+        self,
+    ) -> None:
+        gate = SimulatorSocialGate("social-convergence")
+        artifacts = Artifacts()
+        expected_identity = {
+            "schema": "peers-mobile-build-identity",
+            "buildId": "build-ios",
+        }
+        actors = {
+            "sim-ios": self._actor("sim-ios", "alice"),
+            "sim-ios-peer": self._actor("sim-ios-peer", "bob"),
+        }
+        journey = Mock()
+        journey.authenticate.side_effect = [
+            {"actor": "alice"},
+            {"actor": "bob"},
+        ]
+        journey.run_social_convergence.return_value = {
+            "scenario": "social-convergence",
+            "directScope": "local",
+        }
+        sender_session, receiver_session, manifest, patches = (
+            self._patch_social_convergence_dispatch(
+                gate, journey, actors, expected_identity
+            )
+        )
+
+        with contextlib.ExitStack() as stack:
+            for manager in patches:
+                stack.enter_context(manager)
+            gate._run_social_journey(artifacts, manifest)
+
+        journey.run_social_convergence.assert_called_once_with(
+            sender_session=sender_session,
+            receiver_session=receiver_session,
+            sender=actors["sim-ios"],
+            receiver=actors["sim-ios-peer"],
+            journey_id=artifacts.run_id[-12:],
+        )
+
+    def test_social_convergence_rejects_federation_scope(self) -> None:
+        gate = SimulatorSocialGate("social-convergence")
+        artifacts = Artifacts()
+        expected_identity = {
+            "schema": "peers-mobile-build-identity",
+            "buildId": "build-ios",
+        }
+        actors = {
+            "sim-ios": self._actor("sim-ios", "alice"),
+            "sim-ios-peer": self._actor("sim-ios-peer", "bob"),
+        }
+        journey = Mock()
+        journey.authenticate.side_effect = [
+            {"actor": "alice"},
+            {"actor": "bob"},
+        ]
+        journey.run_social_convergence.return_value = {
+            "scenario": "social-convergence",
+            "directScope": "federation",
+        }
+        _, _, manifest, patches = self._patch_social_convergence_dispatch(
+            gate, journey, actors, expected_identity
+        )
+
+        with contextlib.ExitStack() as stack:
+            for manager in patches:
+                stack.enter_context(manager)
+            with self.assertRaises(GateError):
+                gate._run_social_journey(artifacts, manifest)
+
+        journey.run_social_convergence.assert_called_once()
 
     def test_fresh_actor_identity_is_prepared_without_exposing_seed(
         self,

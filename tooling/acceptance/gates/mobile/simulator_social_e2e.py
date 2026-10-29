@@ -581,10 +581,15 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 receiver_session=sessions["sim-ios-peer"],
                 sender=sender,
                 receiver=receiver,
-                journey=journey,
                 journey_id=artifacts.run_id[-12:],
-                expected_build_identity=expected_build_identity,
             )
+            # Same-Station convergence must never fall back to Federation;
+            # the reported scope is evidence that the Local Direct path ran.
+            if journey_result.get("directScope") != "local":
+                raise GateError(
+                    "same-Station social convergence must prove Local Direct "
+                    f"scope, got {journey_result.get('directScope')!r}"
+                )
         elif self.scenario == "chat-contacts":
             journey_result = journey.run_chat_contacts(
                 sender_session=sessions["sim-ios"],
