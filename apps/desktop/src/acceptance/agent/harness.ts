@@ -33671,6 +33671,24 @@ export function installAcceptanceHarness(): void {
       }
     },
 
+    async setAgentThinkingMode({
+      agentId,
+      thinkingMode,
+    }: {
+      agentId?: string;
+      thinkingMode: 'auto' | 'enabled' | 'disabled';
+    }) {
+      const store = useAgentStore.getState();
+      await store.loadAgents();
+      const agents = useAgentStore.getState().agents;
+      const agent = agents.find((candidate) => candidate.id === agentId)
+        || agents.find((candidate) => candidate.name === useAgentStore.getState().selectedAgent)
+        || agents[0];
+      if (!agent) throw new Error('agent.acceptance.agentUnavailable');
+      await useAgentStore.getState().updateAgentProfile(agent.id, { thinkingMode });
+      return { agentId: agent.id, thinkingMode };
+    },
+
     async setupProviderFixture({ baseUrl, apiKey }: { providerId?: string; apiKey: string; modelId?: string; baseUrl: string }) {
       const runtimeFixture = await createGovernedToolRuntimeFixture(
         'evaluation-pre-auth',
