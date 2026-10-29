@@ -161,21 +161,40 @@ type CommunicationScope interface {
   `mobile-simulator-social-convergence-e2e`（双模拟器、directScope=local）PROVEN。
   跨站真实 Journey 已证（2026-10-29，一次性站对 chat-native-four/chat-native-five）：
   `federation-two-station-lifecycle-e2e` PROVEN（270s，create/join/幂等/leave/rejoin/
-  restart/archive 全周期）；`chat-native-multi-device-e2e` 的联邦 Direct 关键断言通过——
-  peer-only 创建成功、`bob1_initial_delivery` 跨站送达，PG 真值 `scope_kind=federation`、
-  `federation_id` 非空，站对恰好 1 个共享 active Federation（无歧义）。
-  已知遗留（与 scope 迁移无关）：multi-device gate 尾部「bob1 权威会话吊销」超时失败。
-  根因是验收基建缺陷——runner 只克隆 `data/secure-store/identity-keys`，而 device id
-  存于 `data/meta/device-id`（application/meta），bob2 取得不同 device id；服务端
-  `revokeReplacedDeviceSessionsLocked` 仅按相同 device_id 踢人，故 bob1 不被吊销。
+  restart/archive 全周期）；`chat-native-multi-device-e2e` PROVEN（run
+  20261029T093030556953Z-adbdd15827b03464ba2bf1e262715734，251s，5 断言：
+  native_runtime/actor_isolation/bob1_initial_delivery/session_handoff/
+  bob2_enrollment_operational 全 PROVEN）——peer-only 联邦 Direct 创建成功、
+  `bob1_initial_delivery` 跨站送达，bob2 同安装替换登录后 bob1 权威会话被吊销、
+  bob2 enrollment 可解析既有会话并继续收发。
+  multi-device 会话交接曾因验收基建缺陷失败：原 clone 只搬
+  `peers-touch/desktop/data/secure-store/identity-keys`，而服务端 CreateWithKick 的
+  替换键 `(station_peer_id, user_id, device_id)` 取的是 canonical 安装 id
+  `peers-touch/<PT_PROFILE>/data/auth/device_id`（device_install，遵循 launch
+  profile 段）。修复后 clone 合同以 CloneStorageEntry 表达源/目标相对路径，按 actor
+  profile 段重映射安装 id 文件，identity keys 仍走固定 crypto sandbox 段；session_handoff
+  断言更正为 Station Access 合同的「同 Actor + 同安装 id」（旧断言要求 device id
+  不同，是单会话设计残留）。见 docs/knowledge 跨显示器 operator 指针条目。
+  另：origin/master 的 macOS semantic Cell 资格探测存在回归（adapter 缺
+  snapshot_operator_state、启动抢焦、XPC NSOpenPanel 选择被 -25205 拒绝），本批一并
+  带入对应 tooling 修复使 Cell 可达 LEASED。
   persistent four/fiveArm 站另有历史数据问题：站对现存 8 个双端 active Federation，
   `ResolveSharedFederation` 按设计返回歧义（409），跨站 gate 必须使用一次性站对。
-- **T7 Recovery 归档 Local 支持（已完成代码+单测，Journey 待跑）**：归档为 serde JSON
+- **T7 Recovery 归档 Local 支持（已完成代码+单测，Journey 已证其管线）**：归档为 serde JSON
   （非 proto），`RecoveryConversationProjection` 增加 `#[serde(default)] scope_kind`，
   归档格式 v4→v5（版本严格匹配）。Local Direct 允许空 federation；Federation 行仍强制非空；
   Local group 拒绝；无 scope 字段的 pre-v5 投影按「Direct+空 federation=Local」推断。
-  Desktop 导出从本地会话行派生 scope。messaging-core 177 项、desktop recovery 47 项全绿
-  （checkpoint de43f83ab）。未跑真实 Recovery Journey（`chat-native-recovery-e2e`）。
+  Desktop 导出从本地会话行派生 scope。messaging-core、desktop recovery 单测全绿，
+  覆盖 Local Direct 空 federation、Local group 拒绝、pre-v5 推断等差异路径。
+  真实 Recovery Journey `chat-native-recovery-e2e` PROVEN（run
+  20261029T093905008810Z-a96d046d5487e578b8e9fa201b1784a9，132s）：source 身份、native
+  runtime、actor 隔离、明文收发、24 词助记词校验、同机无引擎恢复、重装恢复及恢复后三轮
+  收发全部 PROVEN，证明 v5 归档导出/恢复端到端管线。
+  证据边界（如实记录）：现有 recovery gate 在打开 Direct 前显式要求站对存在共享 active
+  Federation（`shared_federation_id` 前置），fixture 种子使 alice/bob 同属该 Federation，
+  故该 Journey 覆盖的是 federation 非空行；Local Direct recovery 的空-federation codec
+  差异仅由单测覆盖，尚无 local-only recovery gate。Local Direct 真实收发本身已由
+  chat-native-single-station-two-client-e2e PROVEN。
 
 每批保持现有联邦验收断言通过。T1–T3 可在 Station 侧独立闭环；T4–T5 是端到端所需。
 
