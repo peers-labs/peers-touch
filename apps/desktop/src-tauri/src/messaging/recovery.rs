@@ -449,6 +449,7 @@ mod tests {
                 conversation_id: "conversation-1".to_string(),
                 authority_station_id: "station-local".to_string(),
                 federation_id: "federation-1".to_string(),
+                scope_kind: crate::model::chat::ConversationScopeKind::Federation as i32,
                 kind: 1,
                 name: String::new(),
                 description: "Recovery description".to_string(),
