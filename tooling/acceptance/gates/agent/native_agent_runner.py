@@ -946,6 +946,20 @@ class AgentNativeJourney:
         )
         if self.provider_configuration_required:
             self.configure_provider()
+        # The seeded agent profile carries persona/exact-fact rules; with
+        # reasoning enabled the marker successor turn spends minutes
+        # deliberating against the deliberately long first-turn instruction.
+        # Disable thinking for this ownership journey so FIFO settlement
+        # reflects queue behavior rather than model reasoning latency.
+        configured_thinking = self.harness(
+            "setAgentThinkingMode",
+            {"thinkingMode": "disabled"},
+        )
+        require(
+            isinstance(configured_thinking, dict)
+            and configured_thinking.get("thinkingMode") == "disabled",
+            "Agent thinking mode setup failed",
+        )
 
     def runtime_snapshot(self) -> dict[str, Any]:
         snapshot = self.harness("getRuntimeSnapshot")
