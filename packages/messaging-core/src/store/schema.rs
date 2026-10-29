@@ -511,14 +511,16 @@ CREATE TABLE IF NOT EXISTS messaging_receipt_outbox (
     event_id TEXT NOT NULL,
     receipt_bytes BLOB NOT NULL,
     state TEXT NOT NULL,
-    created_at_unix_ms INTEGER NOT NULL
+    last_error_code TEXT NOT NULL DEFAULT '',
+    created_at_unix_ms INTEGER NOT NULL,
+    updated_at_unix_ms INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS messaging_schema_baseline (
     id INTEGER PRIMARY KEY CHECK(id = 1),
-    identity INTEGER NOT NULL CHECK(identity = 20260926)
+    identity INTEGER NOT NULL CHECK(identity = 20261029)
 );
 INSERT OR IGNORE INTO messaging_schema_baseline(id, identity)
-VALUES (1, 20260926);
+VALUES (1, 20261029);
 "#;
 
 pub trait MessagingSchemaBackend {
@@ -562,7 +564,7 @@ pub fn ensure_messaging_schema<B: MessagingSchemaBackend>(backend: &B) -> Result
 fn validate_canonical_baseline<B: MessagingSchemaBackend>(backend: &B) -> Result<(), String> {
     let matching_baselines = backend.query_i64(
         "SELECT COUNT(*) FROM messaging_schema_baseline
-         WHERE id = 1 AND identity = 20260926",
+         WHERE id = 1 AND identity = 20261029",
     )?;
     if matching_baselines != 1 {
         return Err(
