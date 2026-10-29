@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Empty as LobeEmpty } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import {
   Badge,
@@ -340,7 +341,7 @@ export function AgentGrowthTab({ agentId: initialAgentId }: AgentGrowthTabProps)
 
       {!agentId ? (
         <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-          <Empty description={t('settings.agentGrowth.empty')} />
+          <LobeEmpty icon={TrendingUp} title={t('settings.agentGrowth.empty')} />
         </Flexbox>
       ) : (
         <>

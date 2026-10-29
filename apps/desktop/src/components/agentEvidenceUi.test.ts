@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest';
 
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
 import { agentAttachmentDraftsBlockSend } from './composer/useAgentAttachmentDrafts';
-import { visibleAttributionEntries } from './messages/TurnAttribution';
+import {
+  groupAttributionEntriesByKind,
+  visibleAttributionEntries,
+} from './messages/TurnAttribution';
 import {
   acceptTurnDiagnostics,
   turnDiagnosticsExportFilename,
@@ -22,11 +25,13 @@ import {
 import type { ChatMessage } from '../store/chat';
 import {
   RuntimeCapabilitySnapshotSchema,
+  TurnAttributionEntrySchema,
   TurnAttributionKind,
   TurnAttributionOutcome,
   TurnAttributionProjectionSchema,
   TurnAttributionState,
   type ExportTurnDiagnosticsResponse,
+  type TurnAttributionEntry,
 } from '../gen/proto/domain/agent/agent_pb';
 import { CapabilityReadinessSnapshotSchema } from '../gen/proto/domain/agent/capability_pb';
 
@@ -68,6 +73,45 @@ describe('Agent evidence UI projections', () => {
     expect(visibleAttributionEntries(projection).map((entry) => (
       entry.attributionId
     ))).toEqual(['included', 'partial']);
+  });
+
+  const attributionEntry = (
+    attributionId: string,
+    kind: TurnAttributionKind,
+    name: string,
+    outcome: TurnAttributionOutcome,
+  ): TurnAttributionEntry => create(TurnAttributionEntrySchema, {
+    attributionId,
+    kind,
+    sourceId: name,
+    name,
+    version: '',
+    outcome,
+    reasonCode: '',
+  });
+
+  it('collapses same-kind attribution entries into one counted group', () => {
+    const groups = groupAttributionEntriesByKind([
+      attributionEntry('tool-1', TurnAttributionKind.TOOL, 'ask_user', TurnAttributionOutcome.INCLUDED),
+      attributionEntry('memory-1', TurnAttributionKind.MEMORY, 'preferences', TurnAttributionOutcome.INCLUDED),
+      attributionEntry('tool-2', TurnAttributionKind.TOOL, 'local_file_write', TurnAttributionOutcome.INCLUDED),
+    ]);
+
+    expect(groups.map((group) => [group.kind, group.entries.length])).toEqual([
+      [TurnAttributionKind.TOOL, 2],
+      [TurnAttributionKind.MEMORY, 1],
+    ]);
+    expect(groups[0]?.truncated).toBe(false);
+  });
+
+  it('flags a kind group as truncated when any member is partial', () => {
+    const groups = groupAttributionEntriesByKind([
+      attributionEntry('tool-1', TurnAttributionKind.TOOL, 'a', TurnAttributionOutcome.INCLUDED),
+      attributionEntry('tool-2', TurnAttributionKind.TOOL, 'b', TurnAttributionOutcome.TRUNCATED),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.truncated).toBe(true);
   });
 
   it('projects typed budget exhaustion details onto the affected message', () => {

@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionIcon } from '@lobehub/ui';
+import { useTranslation } from 'react-i18next';
+import { ActionIcon, Empty } from '@lobehub/ui';
 import { Bell, Check, CheckCheck, Trash2, UserPlus, UserCheck } from 'lucide-react';
-import { Badge, Empty, Popover, Spin, Tooltip, theme } from 'antd';
+import { Badge, Popover, Spin, Tooltip, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { useNotificationStore } from '../store/notification';
 import { useSessionStore } from '../store/session';
 import type { NotificationData } from '../services/desktop_api';
+import type { TFunction } from 'i18next';
 
-const CATEGORY_LABELS: Record<number, string> = {
-  1: 'Social',
-  2: 'Chat',
-  3: 'System',
-  4: 'Task',
+const CATEGORY_LOCALE_KEYS: Record<number, string> = {
+  1: 'desktop.notifications.category.social',
+  2: 'desktop.notifications.category.chat',
+  3: 'desktop.notifications.category.system',
+  4: 'desktop.notifications.category.task',
 };
 
 const TYPE_ICONS: Record<number, typeof Bell> = {
@@ -19,17 +21,17 @@ const TYPE_ICONS: Record<number, typeof Bell> = {
   201: UserCheck,
 };
 
-function formatTimeAgo(dateStr: string): string {
+function formatTimeAgo(dateStr: string, t: TFunction<'common'>): string {
   const now = Date.now();
   const then = new Date(dateStr).getTime();
   const diffMs = now - then;
   const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 1) return t('common.time.justNow');
+  if (diffMin < 60) return t('common.time.minutesAgo', { count: diffMin });
   const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h ago`;
+  if (diffH < 24) return t('common.time.hoursAgo', { count: diffH });
   const diffD = Math.floor(diffH / 24);
-  return `${diffD}d ago`;
+  return t('common.time.daysAgo', { count: diffD });
 }
 
 function NotificationItem({
@@ -42,6 +44,7 @@ function NotificationItem({
   onDelete: (id: string) => void;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('common');
   const isUnread = item.status === 1;
   const Icon = TYPE_ICONS[item.type] || Bell;
 
@@ -93,10 +96,10 @@ function NotificationItem({
               minWidth: 0,
             }}
           >
-            {item.title || item.metadata?.sender_name || 'Notification'}
+            {item.title || item.metadata?.sender_name || t('desktop.notifications.unknown')}
           </span>
           <span style={{ fontSize: 11, color: token.colorTextQuaternary, flexShrink: 0, marginLeft: 8 }}>
-            {formatTimeAgo(item.createdAt)}
+            {formatTimeAgo(item.createdAt, t)}
           </span>
         </Flexbox>
 
@@ -124,25 +127,27 @@ function NotificationItem({
               borderRadius: 3,
             }}
           >
-            {CATEGORY_LABELS[item.category] || 'Other'}
+            {t(CATEGORY_LOCALE_KEYS[item.category] || 'desktop.notifications.category.other')}
           </span>
         </Flexbox>
       </Flexbox>
 
       <Flexbox horizontal gap={4} style={{ flexShrink: 0, marginTop: 2 }}>
         {isUnread && (
-          <Tooltip title="Mark read">
+          <Tooltip title={t('desktop.notifications.markRead')}>
             <ActionIcon
               icon={Check}
               size="small"
+              aria-label={t('desktop.notifications.markRead')}
               onClick={(e) => { e.stopPropagation(); onMarkRead(item.id); }}
             />
           </Tooltip>
         )}
-        <Tooltip title="Delete">
+        <Tooltip title={t('common.action.delete')}>
           <ActionIcon
             icon={Trash2}
             size="small"
+            aria-label={t('common.action.delete')}
             onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
           />
         </Tooltip>
@@ -153,6 +158,7 @@ function NotificationItem({
 
 export function NotificationBell() {
   const { token } = theme.useToken();
+  const { t } = useTranslation('common');
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -219,11 +225,16 @@ export function NotificationBell() {
           flexShrink: 0,
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: 14 }}>Notifications</span>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>{t('desktop.notifications.title')}</span>
         <Flexbox horizontal gap={8} align="center">
           {unreadTotal > 0 && (
-            <Tooltip title="Mark all read">
-              <ActionIcon icon={CheckCheck} size="small" onClick={handleMarkAllRead} />
+            <Tooltip title={t('desktop.notifications.markAllRead')}>
+              <ActionIcon
+                icon={CheckCheck}
+                size="small"
+                aria-label={t('desktop.notifications.markAllRead')}
+                onClick={handleMarkAllRead}
+              />
             </Tooltip>
           )}
         </Flexbox>
@@ -235,11 +246,7 @@ export function NotificationBell() {
             <Spin size="small" />
           </Flexbox>
         ) : notifications.length === 0 ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="No notifications"
-            style={{ padding: '40px 0' }}
-          />
+          <Empty icon={Bell} title={t('desktop.notifications.empty')} padding="40px 16px" />
         ) : (
           notifications.map((item) => (
             <NotificationItem
@@ -271,7 +278,8 @@ export function NotificationBell() {
             icon={Bell}
             size="large"
             onClick={handleOpen}
-            title="Notifications"
+            title={t('desktop.notifications.title')}
+            aria-label={t('desktop.notifications.title')}
           />
         </Badge>
       </div>

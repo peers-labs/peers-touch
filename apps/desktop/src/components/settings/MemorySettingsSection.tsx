@@ -40,6 +40,7 @@ import {
 } from '../../services/desktop_api';
 import { useAgentStore } from '../../store/agent';
 import { AgentIconTile } from '../agent/AgentIconTile';
+import { PageColumn } from '../../layout/PageColumn';
 import { MemorySettingsTab } from './MemorySettingsTab';
 
 const { Text } = Typography;
@@ -171,8 +172,9 @@ export function MemorySettingsSection() {
     <Flexbox
       data-pt-memory-settings
       gap={18}
-      style={{ height: '100%', minHeight: 0, overflow: 'hidden', padding: 24 }}
+      style={{ height: '100%', minHeight: 0, overflow: 'hidden', padding: '18px 0' }}
     >
+      <PageColumn tier="standard" style={{ display: 'flex', flexDirection: 'column', gap: 18, minHeight: 0, height: '100%' }}>
       <Flexbox horizontal align="center" justify="space-between" gap={16}>
         <Flexbox gap={3}>
           <Text strong style={{ fontSize: 18 }}>{t('memory.header.title')}</Text>
@@ -261,6 +263,7 @@ export function MemorySettingsSection() {
           ]}
         />
       </Flexbox>
+      </PageColumn>
     </Flexbox>
   );
 }

@@ -1,7 +1,7 @@
 import { Flexbox } from 'react-layout-kit';
 import { Avatar, Empty } from '@lobehub/ui';
 import { Button, Descriptions, Typography, theme } from 'antd';
-import { Settings, MessageSquare } from 'lucide-react';
+import { BotOff, Settings, MessageSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useAgentStore } from '../../../store/agent';
@@ -24,7 +24,7 @@ export function AgentOverviewView({ agentId }: AgentOverviewViewProps) {
   if (!agent) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%', padding: 32 }}>
-        <Empty description={t('agent.profile.notFound')} />
+        <Empty icon={BotOff} title={t('agent.profile.notFound')} />
       </Flexbox>
     );
   }

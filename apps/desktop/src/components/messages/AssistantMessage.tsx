@@ -24,6 +24,7 @@ import {
   RotateCcw,
   Settings,
   X,
+  Ban,
 } from 'lucide-react';
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../../store/chat';
@@ -193,31 +194,36 @@ function DiagnosticsBlock({
   const failedTools = toolCalls.filter((tool) => tool.status === 'error' || tool.status === 'denied').length;
   const pendingTools = toolCalls.filter((tool) => tool.pending || tool.status === 'approval_required').length;
   const failedDelegations = delegationResults.filter((item) => item.status === 'failed' || item.status === 'timeout').length;
-  const presentedError = message.error
-    ? message.error.startsWith('agent.')
-      ? t(message.error, { ns: 'agent', defaultValue: message.error })
-      : t(message.error, { defaultValue: message.error })
+  // A user-cancelled turn owns one dedicated surface (the stopped banner with
+  // retry); never render its cancellation reason as a generic failure.
+  const diagnosticError = message.typedError?.error_type === 'LIFECYCLE_CANCELLED'
+    ? undefined
+    : message.error;
+  const presentedError = diagnosticError
+    ? diagnosticError.startsWith('agent.')
+      ? t(diagnosticError, { ns: 'agent', defaultValue: diagnosticError })
+      : t(diagnosticError, { defaultValue: diagnosticError })
     : undefined;
-  const hasRuntimeDiagnostics = !!message.thinking || !!message.error || message.processDuration != null || toolCalls.length > 0 || delegationResults.length > 0;
+  const hasRuntimeDiagnostics = !!message.thinking || !!diagnosticError || message.processDuration != null || toolCalls.length > 0 || delegationResults.length > 0;
   const hasDiagnostics = hasRuntimeDiagnostics;
 
   if (!hasDiagnostics) return null;
 
   return (
     <div
-      data-pt-agent-message-error={message.error}
+      data-pt-agent-message-error={diagnosticError}
       data-pt-agent-error-type={message.typedError?.error_type}
       data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
       style={{
       borderRadius: 8,
-      border: `1px solid ${message.error ? token.colorErrorBorder : token.colorBorderSecondary}`,
-      background: message.error ? token.colorErrorBg : token.colorFillQuaternary,
+      border: `1px solid ${diagnosticError ? token.colorErrorBorder : token.colorBorderSecondary}`,
+      background: diagnosticError ? token.colorErrorBg : token.colorFillQuaternary,
       marginBottom: message.content ? 6 : 0,
       overflow: 'hidden',
       }}
     >
       <div
-        data-pt-agent-message-error-toggle={message.error ? 'true' : undefined}
+        data-pt-agent-message-error-toggle={diagnosticError ? 'true' : undefined}
         data-pt-agent-activity-toggle
         role="button"
         tabIndex={0}
@@ -238,12 +244,12 @@ function DiagnosticsBlock({
           cursor: 'pointer',
           fontSize: 12,
           fontWeight: 500,
-          color: message.error ? token.colorErrorText : token.colorTextSecondary,
+          color: diagnosticError ? token.colorErrorText : token.colorTextSecondary,
         }}
       >
         {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        {message.error ? <AlertTriangle size={13} /> : <Activity size={13} />}
-        <span>{message.error ? t('chat.message.errorTitle', { defaultValue: 'Could not complete' }) : t('chat.message.diagnostics.title')}</span>
+        {diagnosticError ? <AlertTriangle size={13} /> : <Activity size={13} />}
+        <span>{diagnosticError ? t('chat.message.errorTitle', { defaultValue: 'Could not complete' }) : t('chat.message.diagnostics.title')}</span>
         {message.processDuration != null && (
           <Tag bordered={false} style={{ marginLeft: 'auto', fontSize: 11 }}>
             {t('chat.message.diagnostics.duration', { seconds: message.processDuration })}
@@ -252,11 +258,11 @@ function DiagnosticsBlock({
       </div>
       {expanded && (
         <Flexbox gap={8} style={{ padding: '8px 10px', borderTop: `1px solid ${token.colorBorderSecondary}` }}>
-          {message.error && (
+          {diagnosticError && (
             <Flexbox gap={3}>
               <span style={{ fontSize: 12, fontWeight: 600, color: token.colorErrorText }}>{t('chat.message.diagnostics.error')}</span>
               <span
-                data-pt-agent-message-error-text={message.error}
+                data-pt-agent-message-error-text={diagnosticError}
                 style={{ fontSize: 12, color: token.colorErrorText }}
               >
                 {presentedError}
@@ -359,14 +365,16 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const openThread = usePortalStore(s => s.openThread);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const operation = useChatStore((state) => {
-    const current = state.operations[state.currentSessionKey];
-    if (
-      current?.assistantMessageId === message.id
-      || (message.turnId && current?.turnId === message.turnId)
-    ) {
-      return current;
-    }
-    return undefined;
+    // The owning operation can sit under the session key or under a parallel
+    // operation key when two turns are active; match by the optimistic message
+    // id or the stamped turn id instead of trusting one storage key.
+    return Object.values(state.operations).find((candidate) => (
+      candidate.sessionKey === state.currentSessionKey
+      && (
+        candidate.assistantMessageId === message.id
+        || (Boolean(message.turnId) && candidate.turnId === message.turnId)
+      )
+    ));
   });
   // Turn-level chips (artifact bar, attribution) belong once per turn: a
   // multi-iteration turn persists several assistant rows, so render them only
@@ -749,6 +757,11 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-message="assistant"
       data-pt-agent-message-id={message.id}
       data-pt-turn-tail={isTurnTail ? 'true' : 'false'}
+      data-pt-agent-operation-status={
+        message.loading || message.queued
+          ? (operation?.runState ?? (message.queued ? 'queued' : 'streaming'))
+          : undefined
+      }
       data-pt-agent-turn-id={message.turnId}
       data-pt-agent-terminal-status={message.terminalStatus}
       data-pt-agent-error-type={message.typedError?.error_type}
@@ -890,6 +903,38 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             />
           )}
 
+          {/* User-stopped turn: neutral terminal notice (not an error) with an
+              explicit retry that re-runs the turn's original user input. */}
+          {message.terminalStatus === 'cancelled' && !message.loading && (
+            <Flexbox
+              data-pt-agent-turn-stopped
+              horizontal
+              align="center"
+              gap={8}
+              style={{
+                borderRadius: token.borderRadiusLG,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                background: token.colorFillQuaternary,
+                color: token.colorTextSecondary,
+                padding: '8px 12px',
+                marginBottom: message.content ? 8 : 0,
+                fontSize: 13,
+              }}
+            >
+              <Ban size={14} style={{ flexShrink: 0 }} />
+              <strong>{t('chat.message.turnStopped')}</strong>
+              <Button
+                size="small"
+                type="text"
+                icon={<RotateCcw size={13} />}
+                onClick={handleRetry}
+                style={{ marginLeft: 'auto' }}
+              >
+                {t('chat.message.turnStopped.retry')}
+              </Button>
+            </Flexbox>
+          )}
+
           {/* Real Station-persisted file artifacts produced by this turn.
               Render once per turn: only its final assistant node. */}
           {isTurnTail && <TurnArtifactBar turnId={message.turnId} />}
@@ -897,6 +942,16 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           {/* In-message code-block artifacts */}
           {artifacts.length > 0 && (
             <ArtifactBlock artifacts={artifacts} onOpenArtifact={onOpenArtifact} />
+          )}
+
+          {/* Progress remains visible while content and tools are streaming,
+              including reconnects after partial output has arrived. */}
+          {message.loading && !message.queued && (
+            <ThinkingIndicator
+              token={token}
+              runState={operation?.runState ?? 'streaming'}
+              startedAt={operation?.startedAt ?? null}
+            />
           )}
 
           {/* Content area */}
@@ -922,8 +977,6 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
               </Tag>
               <span>{t('chat.queue.waiting')}</span>
             </Flexbox>
-          ) : message.loading && !message.content && !(message.toolCalls && message.toolCalls.length > 0) ? (
-            <ThinkingIndicator token={token} />
           ) : collapsed ? (
             <div
               style={{ fontSize: 13, color: token.colorTextDescription, fontStyle: 'italic', cursor: 'pointer' }}
@@ -990,8 +1043,11 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             </div>
           )}
 
-          {/* Error block */}
-          {message.error && !message.budgetNotice && (
+          {/* Error block. A user-cancelled turn is expressed once by the
+              stopped banner, not as a failure strip. */}
+          {message.error
+            && !message.budgetNotice
+            && message.typedError?.error_type !== 'LIFECYCLE_CANCELLED' && (
             <div
               className="selectable"
               data-pt-agent-error-conversation-id={

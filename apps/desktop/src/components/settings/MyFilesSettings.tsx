@@ -669,7 +669,7 @@ export function MyFilesSettings() {
   ];
 
   return (
-    <SettingsContainer fullHeight maxWidth={1200}>
+    <SettingsContainer fullHeight tier="wide">
       <SettingsPanelHeader
         title={t('settings.myFiles.title')}
         subtitle={t('settings.myFiles.subtitle')}
@@ -764,7 +764,7 @@ export function MyFilesSettings() {
             locale={{
               emptyText: loading
                 ? t('settings.myFiles.loading')
-                : <Empty description={t('settings.myFiles.empty')} />,
+                : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('settings.myFiles.empty')} />,
             }}
           />
           {total > PAGE_SIZE && (

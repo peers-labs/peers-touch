@@ -214,6 +214,10 @@ export interface ChatMessage {
   replacementOf?: string;
   replacedBy?: string;
   turnId?: string;
+  // Client-generated correlation key for the owning send. It exists from the
+  // optimistic row onward and keeps one turn projected as one message even
+  // before the first turn-id-bearing event arrives.
+  clientIdempotencyKey?: string;
   queued?: boolean;
   queueEntryId?: string;
   queuePosition?: number;
@@ -332,7 +336,15 @@ export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMes
       typedError = undefined;
     }
   }
-  const resolution = resolveAgentTypedErrorAction(typedError);
+  // User cancellation is a user action, not a failure: keep the typed payload
+  // for audit attributes but do not project the red error block or an error
+  // resolution. The stopped banner with Retry owns this terminal state,
+  // mirroring the live streaming 'cancelled' projection.
+  const isCancelledAssistant = message.role === 'assistant' && persistedStatus === 'cancelled';
+  if (isCancelledAssistant && typedError?.error_type !== 'LIFECYCLE_CANCELLED') {
+    typedError = undefined;
+  }
+  const resolution = isCancelledAssistant ? undefined : resolveAgentTypedErrorAction(typedError);
   const chatMessage: ChatMessage = {
     id: message.messageId,
     role: message.role,
@@ -342,7 +354,7 @@ export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMes
     timestamp: new Date(message.createdAt).getTime(),
     model: message.modelName,
     turnId: message.turnId,
-    error: typedError?.locale_key,
+    error: isCancelledAssistant ? undefined : typedError?.locale_key,
     typedError,
     resolution,
     providerId: typedError?.details.provider_id,
@@ -643,6 +655,17 @@ function isInFlightMessage(message: ChatMessage): boolean {
   return message.loading === true || Boolean(message.error) || Boolean(message.terminalStatus);
 }
 
+function matchesTurnMessage(
+  message: ChatMessage,
+  role: ChatMessage['role'],
+  messageId: string | undefined,
+  turnId: string | undefined,
+): boolean {
+  return message.role === role && (
+    message.id === messageId || Boolean(turnId && message.turnId === turnId)
+  );
+}
+
 function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): ChatMessage {
   const sourceOwnsNonTerminalLeaseIncident =
     source.loading === true
@@ -719,7 +742,33 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
   };
 }
 
-export function mergeServerMessages(currentMessages: ChatMessage[], serverMessages: ChatMessage[]): ChatMessage[] {
+// turnId -> client idempotency key for live operations. It lets an optimistic
+// row that has not received its turn id yet join a server snapshot of the same
+// turn, which is what keeps the "one turn = one assistant projection"
+// invariant during slow provider connects.
+export interface ServerMessageCorrelation {
+  idempotencyByTurnId?: Map<string, string>;
+}
+
+export function liveTurnCorrelation(
+  operations: Record<string, ChatOperation>,
+  sessionKey?: string,
+): ServerMessageCorrelation {
+  const idempotencyByTurnId = new Map<string, string>();
+  for (const operation of Object.values(operations)) {
+    if (sessionKey && operation.sessionKey !== sessionKey) continue;
+    if (operation.turnId && operation.clientIdempotencyKey) {
+      idempotencyByTurnId.set(operation.turnId, operation.clientIdempotencyKey);
+    }
+  }
+  return { idempotencyByTurnId };
+}
+
+export function mergeServerMessages(
+  currentMessages: ChatMessage[],
+  serverMessages: ChatMessage[],
+  correlation: ServerMessageCorrelation = {},
+): ChatMessage[] {
   const currentById = new Map<string, ChatMessage>();
   const currentAssistantByTurnId = new Map<string, ChatMessage>();
   const currentUserByTurnId = new Map<string, ChatMessage>();
@@ -731,6 +780,19 @@ export function mergeServerMessages(currentMessages: ChatMessage[], serverMessag
       currentUserByTurnId.set(message.turnId, message);
     }
   }
+  const matchByIdempotency = (serverMessage: ChatMessage): ChatMessage | undefined => {
+    if (!serverMessage.turnId || !correlation.idempotencyByTurnId) return undefined;
+    const idempotencyKey = correlation.idempotencyByTurnId.get(serverMessage.turnId);
+    if (!idempotencyKey) return undefined;
+    return currentMessages.find((message) => (
+      message.role === serverMessage.role
+      && message.clientIdempotencyKey === idempotencyKey
+    ));
+  };
+
+  // Local optimistic rows absorbed onto a server row through correlation must
+  // not be appended again by the retention pass below.
+  const absorbedLocalIds = new Set<string>();
 
   const merged: ChatMessage[] = serverMessages.map((serverMessage) => {
     const match = currentById.get(serverMessage.id)
@@ -742,8 +804,10 @@ export function mergeServerMessages(currentMessages: ChatMessage[], serverMessag
               ? currentUserByTurnId.get(serverMessage.turnId)
               : undefined
           : undefined
-      );
+      )
+      ?? matchByIdempotency(serverMessage);
     if (!match) return serverMessage;
+    if (match.id !== serverMessage.id) absorbedLocalIds.add(match.id);
     return carryChainOfThoughtFields(serverMessage, match);
   });
 
@@ -787,6 +851,7 @@ export function mergeServerMessages(currentMessages: ChatMessage[], serverMessag
 
   for (const message of currentMessages) {
     if (mergedIds.has(message.id)) continue;
+    if (absorbedLocalIds.has(message.id)) continue;
     if (
       message.role === 'assistant'
       && message.turnId
@@ -1386,6 +1451,27 @@ function hasActiveSessionOperation(
     .some(([, operation]) => isActiveOperation(operation));
 }
 
+// Resolve the live operation a recovered turn belongs to. Recovery must bind
+// to the existing optimistic row instead of minting a recovered-* id, otherwise
+// one turn renders as two assistant rows until the next server merge.
+function findRecoverableOperationEntry(
+  operations: Record<string, ChatOperation>,
+  sessionKey: string,
+  turnId: string,
+): [string, ChatOperation] | undefined {
+  const entries = sessionOperationEntries(operations, sessionKey);
+  const byTurn = entries.find(([, operation]) => operation.turnId === turnId);
+  if (byTurn) return byTurn;
+  const unbound = entries.filter(([, operation]) => (
+    !operation.turnId
+    && operation.type === 'sendMessage'
+    && isActiveOperation(operation)
+  ));
+  // An unbound live op is ambiguous while parallel sends run; only claim it
+  // when it is the single candidate for the session.
+  return unbound.length === 1 ? unbound[0] : undefined;
+}
+
 function operationKeyForStreamEvent(
   operations: Record<string, ChatOperation>,
   sessionKey: string,
@@ -1606,6 +1692,7 @@ export function applyOperationEventIdentity(
   const terminalRunState =
     terminalStatus === 'queued' ? null : terminalStatus;
   let runState = ({
+    turn_identity: 'streaming',
     connection_lost: 'connection_lost',
     reconnecting: 'reconnecting',
     replaying: 'replaying',
@@ -1623,11 +1710,13 @@ export function applyOperationEventIdentity(
     ?? operation.runState;
   const awaitingAdmission = event.event === 'queued'
     ? true
-    : event.event === 'admission_replayed'
-      ? operation.awaitingAdmission ?? true
-      : terminalStatus === 'queued'
-        ? true
-        : operation.awaitingAdmission;
+    : event.event === 'turn_identity'
+      ? false
+      : event.event === 'admission_replayed'
+        ? operation.awaitingAdmission ?? true
+        : terminalStatus === 'queued'
+          ? true
+          : operation.awaitingAdmission;
   if (awaitingAdmission && runState === 'streaming') {
     runState = 'reconciling';
   }
@@ -1729,6 +1818,7 @@ async function loadSessionMessages(
       messages: mergeServerMessages(
         get().messages,
         attributedCachedMessages,
+        liveTurnCorrelation(get().operations, key),
       ),
     });
     void agentChatCache
@@ -1747,6 +1837,7 @@ async function loadSessionMessages(
           messages: mergeServerMessages(
             get().messages,
             attributedServerMessages,
+            liveTurnCorrelation(get().operations, key),
           ),
         });
       })
@@ -2040,6 +2131,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       const merged = mergeServerMessages(
         get().messages,
         attributedServerMessages,
+        liveTurnCorrelation(get().operations, currentSessionKey),
       );
       set({ messages: merged });
       reportFoundationApprovalReceiverDebug(
@@ -2076,7 +2168,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       void useChatArtifactStore.getState().load(conversationId).catch(() => []);
     }
     set((state) => {
-      const currentOperation = state.operations[conversationId];
+      // Live operations can live under the session key or under a parallel
+      // operation key; recovery must rebind to the optimistic row instead of
+      // minting a second assistant projection with a recovered-* id.
+      const currentEntry = findRecoverableOperationEntry(
+        state.operations,
+        conversationId,
+        turnId,
+      );
+      const currentOperation = currentEntry?.[1];
       const assistantMessageId =
         currentOperation?.assistantMessageId || `recovered-${turnId}`;
       const operation = currentOperation ?? {
@@ -2090,9 +2190,16 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         turnId,
         streamGeneration: Number(event.data?.streamGeneration || 0) || undefined,
       };
+      // Preserve the selected operation's key so recovery cannot overwrite a
+      // sibling turn or create a second writable entry for the same operation.
+      const operationKey = currentEntry?.[0] ?? (
+        state.operations[conversationId]
+          ? parallelOperationKey(conversationId, operation.id)
+          : conversationId
+      );
       const operations = {
         ...state.operations,
-        [conversationId]: operation,
+        [operationKey]: operation,
       };
       const recoveredEvent = {
         ...event,
@@ -2106,6 +2213,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         operations,
         conversationId,
         recoveredEvent,
+        operationKey,
       );
       if (!operationEvent.accepted) return state;
 
@@ -2117,13 +2225,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
       const applyTo = (messages: ChatMessage[]): ChatMessage[] => {
         const existingIndex = messages.findIndex(
-          (message) => (
-            message.role === 'assistant'
-            && (
-              message.id === assistantMessageId
-              || message.turnId === turnId
-            )
-          ),
+          (message) => matchesTurnMessage(message, 'assistant', assistantMessageId, turnId),
         );
         const existing: ChatMessage = existingIndex >= 0
           ? messages[existingIndex]
@@ -2134,10 +2236,13 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               loading: true,
               timestamp: operation.startedAt,
               turnId,
+              clientIdempotencyKey: operation.clientIdempotencyKey,
             };
         const projected = {
           ...applyProjectedStreamEvent(existing, event),
           turnId,
+          clientIdempotencyKey:
+            operation.clientIdempotencyKey ?? existing.clientIdempotencyKey,
         };
         if (existingIndex < 0) return [...messages, projected];
         const next = [...messages];
@@ -2186,13 +2291,19 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       // the in-memory operation lookup below.
       refreshTerminalTurnArtifacts(conversationId);
     }
-    const operation = get().operations[conversationId];
+    const operation = findRecoverableOperationEntry(
+      get().operations, conversationId, turnId,
+    )?.[1];
     if (operation?.turnId !== turnId) return;
     const serverMessages = reconcileToolMessages(
       synced.map(cachedMessageToChatMessage),
     );
     const reconcileMessages = (messages: ChatMessage[]) => {
-      const merged = mergeServerMessages(messages, serverMessages);
+      const merged = mergeServerMessages(
+        messages,
+        serverMessages,
+        liveTurnCorrelation(get().operations, conversationId),
+      );
       if (!terminal) return merged;
       return merged.map((message) => {
         if (message.role !== 'assistant' || message.turnId !== turnId) {
@@ -2213,8 +2324,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       });
     };
     set((state) => {
-      const current = state.operations[conversationId];
-      if (current?.turnId !== turnId) return state;
+      const entry = findRecoverableOperationEntry(
+        state.operations, conversationId, turnId,
+      );
+      if (!entry || entry[1].turnId !== turnId) return state;
+      const [operationKey, current] = entry;
+      const operations = terminal
+        ? { ...state.operations, [operationKey]: settleRecoveredOperation(current, terminal) }
+        : state.operations;
+      const anotherActive = hasActiveSessionOperation(operations, conversationId);
       const isCurrent = state.currentSessionKey === conversationId;
       const reconciledBuffer = reconcileMessages(
         state.sessionBuffers[conversationId] || [],
@@ -2223,21 +2341,16 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         messages: isCurrent
           ? reconcileMessages(state.messages)
           : state.messages,
-        operations: terminal
-          ? {
-              ...state.operations,
-              [conversationId]: settleRecoveredOperation(current, terminal),
-            }
-          : state.operations,
-        sessionBuffers: terminal
+        operations,
+        sessionBuffers: terminal && !anotherActive
           ? clearBuffer(state.sessionBuffers, conversationId)
           : {
               ...state.sessionBuffers,
               [conversationId]: reconciledBuffer,
             },
-        isStreaming: isCurrent && terminal ? false : state.isStreaming,
-        streamingStartedAt: isCurrent && terminal ? null : state.streamingStartedAt,
-        abortController: isCurrent && terminal ? null : state.abortController,
+        isStreaming: isCurrent && terminal ? anotherActive : state.isStreaming,
+        streamingStartedAt: isCurrent && terminal && !anotherActive ? null : state.streamingStartedAt,
+        abortController: isCurrent && terminal && !anotherActive ? null : state.abortController,
       };
     });
   },
@@ -2601,12 +2714,18 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
     set({ readinessErrorKey: null });
 
+    // One send owns one correlation key from the optimistic rows through the
+    // Station admission; snapshot merges join on it so a turn never projects
+    // as two assistant messages during the pre-identity connect window.
+    const clientIdempotencyKey = lifecycle?.clientIdempotencyKey || tempId();
+
     const userMsg: ChatMessage = {
       id: tempId(),
       role: 'user',
       content,
       attachments,
       timestamp: Date.now(),
+      clientIdempotencyKey,
     };
 
     const assistantMsg: ChatMessage = {
@@ -2615,6 +2734,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       content: '',
       loading: true,
       timestamp: Date.now(),
+      clientIdempotencyKey,
     };
 
     const startedAt = Date.now();
@@ -2649,7 +2769,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         content,
         attachments,
         lifecycle?.requestedBudget,
-        lifecycle?.clientIdempotencyKey,
+        clientIdempotencyKey,
         currentSessionKey,
       ),
       (event: StreamEvent) => {
@@ -2746,9 +2866,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
           const turnId = operationEvent.operations[selectedOperationKey]?.turnId;
           const applyTo = (list: ChatMessage[]): ChatMessage[] => {
-            const assistantIndex = list.findIndex((m) => m.id === assistantId);
+            // Snapshot reconciliation replaces optimistic IDs. The admitted
+            // turn remains the stream's identity after that replacement.
+            const assistantIndex = list.findIndex(
+              (message) => matchesTurnMessage(message, 'assistant', assistantId, turnId),
+            );
             const userIndex = turnId
-              ? list.findIndex((m) => m.id === userMsg.id)
+              ? list.findIndex(
+                (message) => matchesTurnMessage(message, 'user', userMsg.id, turnId),
+              )
               : -1;
             if (assistantIndex === -1 && userIndex === -1) return list;
             const next = [...list];
@@ -2857,8 +2983,11 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         );
         set((state) => {
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
+          const turnId = sessionOperationEntries(state.operations, resolvedSessionKey)
+            .find(([, operation]) => operation.clientIdempotencyKey === clientIdempotencyKey)
+            ?.[1].turnId;
           const applyError = (m: ChatMessage): ChatMessage => {
-            if (m.id !== assistantId) return m;
+            if (!matchesTurnMessage(m, 'assistant', assistantId, turnId)) return m;
             if (resolution) {
               return {
                 ...m,
@@ -2943,7 +3072,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       assistantMessageId: assistantId,
       abortController: controller,
       streamGeneration: controller.streamGeneration,
-      clientIdempotencyKey: lifecycle?.clientIdempotencyKey,
+      clientIdempotencyKey,
     });
     sendOperationKey = hasActiveSessionOperation(
       get().operations,
@@ -3174,7 +3303,42 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   requestTurnCancellation: async (turnId, assistantMessageId) => {
     try {
-      await api.cancelAgentTurn(turnId);
+      const cancellation = await api.cancelAgentTurn(turnId);
+      // A successful request can leave a queued turn unchanged. Only the
+      // matching Station cancellation result authorizes a terminal projection.
+      if (cancellation.turn_id !== turnId || cancellation.status !== 'cancelled') return;
+      // Station accepts the cancel synchronously, but the live SSE transport is
+      // aborted at the same moment and its terminal event often never arrives.
+      // Project the admitted cancel through the same reducer the stream would,
+      // so the turn settles immediately instead of showing an empty ghost row
+      // until the next snapshot reconcile.
+      const cancelEvent: StreamEvent = {
+        event: 'cancelled',
+        // Mirror the Station terminal payload contract.
+        data: {
+          turnId,
+          outcome_error: {
+            error_type: 'LIFECYCLE_CANCELLED',
+            locale_key: 'agent.errors.lifecycleCancelled',
+            retryable: false,
+            terminal: true,
+          },
+        },
+      };
+      const projectCancellation = (messages: ChatMessage[]): ChatMessage[] => messages.map((message) => {
+        if (!matchesTurnMessage(message, 'assistant', assistantMessageId, turnId)) return message;
+        const projected = applyStreamEvent(message, cancelEvent);
+        return projected === message ? message : projected;
+      });
+      set((state) => ({
+        messages: projectCancellation(state.messages),
+        sessionBuffers: Object.fromEntries(
+          Object.entries(state.sessionBuffers).map(([key, buffered]) => [
+            key,
+            projectCancellation(buffered),
+          ]),
+        ),
+      }));
     } catch (error) {
       const normalized = normalizeAgentTurnStreamError(error);
       const typedError = normalized.typedError;

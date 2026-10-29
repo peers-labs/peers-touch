@@ -3,7 +3,7 @@
 > **Plan**: `AUD-20261025`
 > **Version**: `agent-usability-depth-20261025-v3`
 > **用途**: 实施前确认预期效果，实施后按当前源码核对 TD-J01…J05 Journey 与假面清理
-> **当前阶段**: 计划冻结，结果仅允许按 current-source evidence 回填。O01–O11 `SOURCE_VERIFIED`；O12 于 2026-10-27（`c1992b380`）`FUNCTIONAL_PASS`。
+> **当前阶段**: 计划冻结，结果仅允许按 current-source evidence 回填。O01–O11 `SOURCE_VERIFIED`；O12（TD-J01…J05 原生 Journey）在共享基线 `87cbd2d74` 上为 `UNPROVEN`：2026-10-27 的 cell 顺序实跑发生在共享基线合并之前的旧集成树，且证据只存在于运行时报告目录（不入库），不构成可引用的当前源码证据；Owner 亲自验收前不提交 MR。
 
 ## Outcome Comparison Contract
 
@@ -161,14 +161,18 @@
 > 证据见 `tooling/acceptance/reports/agent-usability/provider-block-ark-403-20261026.json`。
 > 解除阻塞（恢复接入点公网访问/换新接入点或可信出口）后可直接复跑，规格无需再改。
 >
-> 最终回填（2026-10-27，HEAD `c1992b380`，pt-aud-cell，原生 GTK/WebKit）：
-> TD-J01…J05 顺序实跑 5/5 一次通过（11.5m，--workers=1，retries=0），O12 转 `FUNCTIONAL_PASS`，
-> 证据 `tooling/acceptance/reports/agent-usability/td-j0{1..5}.{json,png}`（commit=c1992b380）。
+> 开发观察（2026-10-27，HEAD `c1992b380`，pt-aud-cell，原生 GTK/WebKit；非正式证据）：
+> TD-J01…J05 曾在共享基线合并之前的旧集成树顺序实跑 5/5 一次通过（11.5m，--workers=1，retries=0）。
 > 顺序运行暴露并修复了一个真实缺陷：renderer reload 的 session takeover 踢掉旧 auth session 后，
 > 旧 capability lease 仍被 Station 判活，reload 后的 turn 会 pin 到孤儿 lease（J04 现场
 > turn_6412f2e0 → capability_session_e48cfb，tool_deadline_expired）。修复见 `7d35b8475`
 > （active-lease 判定统一要求父 actor_sessions 存活）与 `c1992b380`（Desktop 发送选路取
-> Station 会话真相 + 注册空窗 warmup 收敛）。Ark 接入点本轮可达，前序 403 未复现。
+> Station 会话真相 + 注册空窗 warmup 收敛），两项修复作为源码事实保留在 O02/O07 的 SOURCE_VERIFIED 证据中。
+> 该实跑不能回填为 FUNCTIONAL_PASS：其源码树先于共享基线 `87cbd2d74`（device-link、导航
+> NavigationLink 迁移等合入之后未重跑），运行产物 `tooling/acceptance/reports/agent-usability/
+> td-j0{1..5}.{json,png}` 被 `.gitignore` 排除、未入库，无法绑定当前 commit/source digest，
+> 且未经 Owner 亲自验收。O12 保持 `UNPROVEN`；仅当 Owner 在场在当前源码重跑 5 个 Journey
+> 并留下可引用证据后，才允许回填 FUNCTIONAL_PASS。Ark 接入点本轮可达，前序 403 未复现。
 
 ```json outcome-comparison-results
 {
@@ -192,7 +196,7 @@
     { "id": "AUD-O09", "status": "SOURCE_VERIFIED", "actualEffect": "内存 cron 与假 scheduler 控制面拆除（703c92c6e, 26e65da81），Growth Tab 挂持久调度；roster 同源由源码钉测试固定（agentRosterConsistency.test）；假 TTS/mock-gateway 已删（40baf34a1）。", "evidenceRefs": ["703c92c6e", "26e65da81", "40baf34a1", "pnpm vitest run agent-roster"], "deviation": "无。" },
     { "id": "AUD-O10", "status": "SOURCE_VERIFIED", "actualEffect": "新工具/调度/Bot 回复均复用既有租约、fenced receipt、SSRF、密钥只 Station 落账；Bot 密钥不回客户端（0bf1bb65b handler 校验）。", "evidenceRefs": ["3ec29ee7b", "9caffea66", "0bf1bb65b"], "deviation": "无；64KB fenced 上限未放宽。" },
     { "id": "AUD-O11", "status": "SOURCE_VERIFIED", "actualEffect": "ScheduledJob、BotAgentBinding、QuickCompletion、RuntimeDefault 均 proto-first 并经 ./model/build.sh 生成，无并行手写 DTO。", "evidenceRefs": ["e0428797f", "7da4f1030", "c20509d6", "a2187cba0"], "deviation": "Growth 其余未触及端点保持原状，未借机构造。" },
-    { "id": "AUD-O12", "status": "FUNCTIONAL_PASS", "actualEffect": "2026-10-27 在原生 Linux GTK/WebKit 验收单元 pt-aud-cell 以普通用户路径（socket-bridge TauriPage，无 mock/harness）顺序执行 TD-J01…J05，5/5 一次通过（11.5m，--workers=1，retries=0）：多步检索报告、目录编辑真实检查失败后修复复验、运行中 FIFO 排队与取消、AskUser 澄清同 turn 续跑且 reload 重启后不重复、长任务产物重开与历史归因均由真实 turn/工件/Station 真相锚定。修复了阻断顺序实跑的真实缺陷：renderer reload 的 session takeover 会踢掉旧 auth session，但旧 capability lease 行在自身 TTL 内仍被判活，导致 reload 后的 turn pin 到孤儿 lease、客户端工具无人 pull 到 deadline 超时（TD-J04 现场：turn_6412f2e0 pin capability_session_e48cfb，父 session 03:56:46 已 kicked，03:59:00 tool_deadline_expired）。Station 侧所有 active-lease 判定统一要求父 actor_sessions 未注销且未过期（7d35b8475），孤儿 lease 立即不可选、不可派发、入队 turn 在 admission 快速失败；Desktop 侧以 Station 会话列表真相在发送时解析 pin（readiness 选中项失效时回落到当前 live lease），并在 worker 重新注册的数秒空窗内做有界 warmup 收敛（c1992b380）。现场复验：reload 后 06:18:30 注册新 lease，06:18:31 turn 启动即 pin 新 lease，local_file_write 06:18:49 succeeded。", "evidenceRefs": ["c1992b380", "7d35b8475", "tooling/acceptance/reports/agent-usability/td-j01.json", "tooling/acceptance/reports/agent-usability/td-j02.json", "tooling/acceptance/reports/agent-usability/td-j03.json", "tooling/acceptance/reports/agent-usability/td-j04.json", "tooling/acceptance/reports/agent-usability/td-j05.json", "tooling/acceptance/reports/agent-usability/td-j01.png", "tooling/acceptance/reports/agent-usability/td-j02.png", "tooling/acceptance/reports/agent-usability/td-j03.png", "tooling/acceptance/reports/agent-usability/td-j04.png", "tooling/acceptance/reports/agent-usability/td-j05.png", "go test ./app/subserver/agent/...", "pnpm exec vitest run src/store src/runtimes", "cargo test --features e2e-testing snapshot_all_orders"], "deviation": "无。前序 Ark 接入点公网 403 在本轮未复现（J01 长检索链真实完成，接入点本轮可达）；FUNCTIONAL_PASS 仅覆盖上述 5 个 Journey 与单 worker 的 GTK/WebKit 单元，不延伸性能数值、多设备并发或正式 Acceptance/Station Suite 结论。" }
+    { "id": "AUD-O12", "status": "UNPROVEN", "actualEffect": "TD-J01…J05 的 tauri-playwright 规格已落地并可在 pt-aud-cell 实跑；2026-10-27 曾在共享基线合并之前的旧集成树（HEAD c1992b380）以普通用户路径（socket-bridge TauriPage，无 mock/harness）顺序实跑 5/5 一次通过（11.5m，--workers=1，retries=0），该次实跑同时暴露并修复了真实缺陷：renderer reload 的 session takeover 踢掉旧 auth session 后旧 capability lease 仍在自身 TTL 内被判活，导致 reload 后的 turn pin 到孤儿 lease（TD-J04 现场 turn_6412f2e0 → capability_session_e48cfb，父 session 已 kicked，tool_deadline_expired）；Station 侧修复为 active-lease 判定统一要求父 actor_sessions 未注销且未过期（7d35b8475），Desktop 侧发送选路取 Station 会话列表真相并对 worker 重新注册空窗做有界 warmup 收敛（c1992b380），两项修复本身由 Go/vitest 门禁在引用 commit 验证。但该 5/5 结果不构成 FUNCTIONAL_PASS 证据：源码树先于共享基线 87cbd2d74（device-link 与导航 NavigationLink 迁移合入后未重跑），td-j0{1..5} 报告位于 .gitignore 排除的运行时目录、未入库且无法绑定当前 commit/source digest，亦未经 Owner 亲自验收。当前源码状态：旅程规格存在，FUNCTIONAL_PASS 待 Owner 在场在共享基线上重跑回填。", "evidenceRefs": ["7d35b8475", "c1992b380", "apps/desktop/e2e/tests/agent-usability-journeys.spec.ts", "go test ./app/subserver/agent/...", "pnpm exec vitest run src/store src/runtimes", "cargo test --features e2e-testing snapshot_all_orders"], "deviation": "TD-J01…J05 原生 Journey 在共享基线 87cbd2d74 上未运行，O12 为 UNPROVEN；旧树 5/5 开发观察仅作历史，运行时报告不入库不可引用；AUD-10/11/13/14 的 make-desktop Journey 同样 UNPROVEN。前序 Ark 接入点公网 403 在最后一次开发观察中未复现，但接入点可达性须在重跑时重新确认；结论不延伸性能数值、多设备并发或正式 Acceptance/Station Suite。" }
   ]
 }
 ```

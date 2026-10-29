@@ -189,6 +189,7 @@ Pick one based on intent:
 
 ### Pitfalls
 
+- [`pitfalls/agent-user-message-identity-placeholder.md`](pitfalls/agent-user-message-identity-placeholder.md) — Agent user messages project the authenticated session actor through the shared avatar path.
 - [`pitfalls/c1-tombstone-only-broadcast.md`](pitfalls/c1-tombstone-only-broadcast.md) — first cut of Tier C1 fired invalidation only on tombstone, leaving BY_HANDLE/INDEXED transitions and profile updates on the slow path.
 - [`pitfalls/republisher-broadcast-spam.md`](pitfalls/republisher-broadcast-spam.md) — naive "broadcast on every PublishVisibility success" turns periodic republisher into a relay traffic generator.
 - [`pitfalls/social-ui-identity-surface-fragmentation.md`](pitfalls/social-ui-identity-surface-fragmentation.md) — Social UI surfaces must not fragment content rail, action row, trust meta, thread, or incomplete-capability states.

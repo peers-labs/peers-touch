@@ -179,12 +179,13 @@ export function UserProfilePopover({ children }: Props) {
   );
 }
 
-export function useUserAvatar(): { url?: string; name: string; provider?: string } {
+export function useUserAvatar(): { ptid?: string; url?: string; name: string; provider?: string } {
   const currentUser = useSessionStore((s) => s.currentUser);
   const { t } = useTranslation('layout');
 
   return useMemo(
     () => ({
+      ptid: currentUser?.actorPtid || undefined,
       url: currentUser?.avatarUrl || undefined,
       name: currentUser?.name || t('layout.user.defaultName'),
       provider: currentUser?.loginProvider || currentUser?.loginMethod || undefined,

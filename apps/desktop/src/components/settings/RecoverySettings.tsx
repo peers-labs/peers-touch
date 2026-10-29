@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { SettingsItemCard, SettingsRow, SettingsSection } from './SettingsLayout';
+import { SettingsContainer, SettingsItemCard, SettingsRow, SettingsSection } from './SettingsLayout';
 import { messagingRecoveryService } from '../../services/messaging-recovery-service';
 import { useMessagingRecoveryStore } from '../../store/messagingRecovery';
 import { useSessionStore } from '../../store/session';
@@ -328,6 +328,7 @@ function AuthenticatedRecoverySettings() {
   };
 
   return (
+    <SettingsContainer>
     <SettingsSection
       icon={<Shield size={18} style={{ color: token.colorPrimary }} />}
       title={t('provider.account.recovery.title')}
@@ -457,5 +458,6 @@ function AuthenticatedRecoverySettings() {
         t={t}
       />
     </SettingsSection>
+    </SettingsContainer>
   );
 }

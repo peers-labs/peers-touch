@@ -18,7 +18,6 @@ import { MiniButton, timeAgo, fullTime } from './messages/shared';
 
 interface Props {
   message: ChatMessage;
-  userAvatar?: { url?: string; name: string };
   onOpenArtifact?: (artifact: MessageArtifact) => void;
 }
 
@@ -27,7 +26,7 @@ interface Props {
  * Handles card messages and tool messages inline; delegates user/assistant
  * messages to their dedicated sub-components.
  */
-export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
+export function MessageBubble({ message, onOpenArtifact }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [hovered, setHovered] = useState(false);
@@ -142,7 +141,7 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
 
   // --- User message ---
   if (message.role === 'user') {
-    return <UserMessage message={message} userAvatar={userAvatar} />;
+    return <UserMessage message={message} />;
   }
 
   // --- Assistant message (default) ---

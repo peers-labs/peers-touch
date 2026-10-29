@@ -322,7 +322,7 @@ export function LogsTab() {
   };
 
   return (
-    <SettingsContainer fullHeight maxWidth={900} style={{ overflow: "hidden" }}>
+    <SettingsContainer fullHeight tier="standard" style={{ overflow: "hidden" }}>
       <Flexbox horizontal justify="space-between" align="center">
         <Flexbox gap={4}>
           <Flexbox horizontal align="center" gap={8}>

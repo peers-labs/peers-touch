@@ -1224,7 +1224,9 @@ fn stream_station_turn(
     let mut error_emitted = false;
     let mut terminal_received = false;
     let mut last_sequence = 0_i64;
-    let mut turn_id = admitted_turn_id;
+    // The running cursor starts from the admitted id; the original stays
+    // borrowed by the synthetic turn_identity event emitted below.
+    let mut turn_id = admitted_turn_id.clone();
     let mut transport_error: Option<String> = None;
     let mut transport_disconnect_requested =
         admission_control == LiveStreamControl::DisconnectTransport;
@@ -1233,6 +1235,26 @@ fn stream_station_turn(
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
+
+    // Publish the admitted Turn identity the moment the Station header arrives,
+    // before the executor emits its first body event. The webview binds this to
+    // the optimistic turn; without it, a snapshot reconcile during a slow
+    // provider connect projects the same turn twice.
+    if !admitted_turn_id.is_empty() {
+        emit_turn_stream_event_to(
+            app,
+            window_label,
+            stream_id,
+            ptid,
+            "turn_identity",
+            json!({
+                "type": "turn_identity",
+                "turnId": admitted_turn_id,
+                "conversationId": conversation_id,
+            }),
+        );
+    }
+
     let mut body = response.body;
     let mut buffer = Vec::new();
     let mut chunk_buffer = [0_u8; 4096];

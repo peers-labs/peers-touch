@@ -6,6 +6,7 @@ import { Badge, Collapse, theme, Typography, Empty } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
 import { groupAvatarRemoteUrl, peerOfSession, useSocialChatStore } from '../store/socialChat';
 import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
+import { PageColumn } from '../layout/PageColumn';
 import { log } from '../utils/logger';
 
 const { Text } = Typography;
@@ -242,16 +243,18 @@ export function ContactsPage() {
         height: '100%',
         width: '100%',
         overflow: 'auto',
-        padding: 16,
+        padding: '16px 0',
         background: token.colorBgLayout,
       }}
     >
-      <Collapse
-        bordered={false}
-        defaultActiveKey={['new-friends', 'saved-groups', 'friends']}
-        style={{ background: token.colorBgContainer, borderRadius: 8 }}
-        items={collapseItems}
-      />
+      <PageColumn tier="narrow">
+        <Collapse
+          bordered={false}
+          defaultActiveKey={['new-friends', 'saved-groups', 'friends']}
+          style={{ background: token.colorBgContainer, borderRadius: 8 }}
+          items={collapseItems}
+        />
+      </PageColumn>
     </Flexbox>
   );
 }

@@ -5,11 +5,11 @@ import {
   Card, Descriptions, Divider, Drawer, Empty, Modal,
   Popconfirm, Progress, Select, Spin, Switch, Typography, Upload, message, theme,
 } from 'antd';
-import { Alert, Avatar, Button, Input, Tabs, Tag, Tooltip, TextArea } from '@lobehub/ui';
+import { Alert, Avatar, Button, Empty as LobeEmpty, Input, Tabs, Tag, Tooltip, TextArea } from '@lobehub/ui';
 import {
-  BookOpen, ChevronRight, Code2, Download, Edit, ExternalLink,
-  FolderOpen, History, Link as LinkIcon, Plus, RefreshCw, RotateCcw, Search,
-  Trash2, Upload as UploadIcon,
+  Blocks, BookOpen, ChevronRight, Code2, Download, Edit, ExternalLink,
+  FolderOpen, History, Link as LinkIcon, PackageSearch, Plus, RefreshCw,
+  RotateCcw, Search, Sparkles, Store, Trash2, Upload as UploadIcon,
 } from 'lucide-react';
 import { LazyMarkdown } from './LazyMarkdown';
 import { chatMarkdownProps } from './messages/markdownConfig';
@@ -101,7 +101,7 @@ export function SkillsTab() {
   }, [builtins, query]);
 
   return (
-    <SettingsContainer fullHeight>
+    <SettingsContainer fullHeight tier="standard">
       <Flexbox horizontal justify="space-between" align="center">
         <Title level={5} style={{ margin: 0 }}>{t('provider.skills.title')}</Title>
         <Flexbox horizontal gap={8}>
@@ -154,7 +154,7 @@ export function SkillsTab() {
                   </Button>
                 </Flexbox>
                 {filteredInstalled.length === 0 && !loading && (
-                  <Empty description={t('provider.skills.noInstalled')} />
+                  <LobeEmpty icon={Sparkles} title={t('provider.skills.noInstalled')} />
                 )}
                 {filteredInstalled.map((s) => (
                   <SkillCard
@@ -175,7 +175,7 @@ export function SkillsTab() {
             children: (
               <Flexbox gap={12}>
                 {filteredBuiltins.length === 0 && !loading && (
-                  <Empty description={t('provider.skills.noBuiltin')} />
+                  <LobeEmpty icon={Blocks} title={t('provider.skills.noBuiltin')} />
                 )}
                 {filteredBuiltins.map((s) => (
                   <Card
@@ -304,8 +304,9 @@ function MarketTab({ onInstalled }: { onInstalled: () => void }) {
           />
         ))}
         {!loading && markets.length === 0 && (
-          <Empty
-            description={t('provider.skills.market.noMarkets')}
+          <LobeEmpty
+            icon={Store}
+            title={t('provider.skills.market.noMarkets')}
             style={{ gridColumn: '1 / -1' }}
           />
         )}
@@ -735,7 +736,7 @@ function MarketBrowserDialog({
           {loading && <Spin style={{ alignSelf: 'center', marginTop: 40 }} />}
 
           {!loading && skills.length === 0 && (
-            <Empty description={t('provider.skills.market.noSkills')} />
+            <LobeEmpty icon={PackageSearch} title={t('provider.skills.market.noSkills')} />
           )}
 
           <Flexbox gap={8}>
@@ -974,7 +975,9 @@ function MarketSkillDetailModal({
 
 function MarketSkillOverview({ detail }: { detail: MarketSkillDetail | null; token?: any }) {
   const { t } = useTranslation('provider');
-  if (!detail) return <Empty description={t('common.state.loading', { ns: 'common' })} />;
+  if (!detail) {
+    return <Flexbox align="center" justify="center" padding={48}><Spin /></Flexbox>;
+  }
 
   const sections = parseSkillProtocol(detail.content);
 
@@ -1042,8 +1045,9 @@ function MarketSkillOverview({ detail }: { detail: MarketSkillDetail | null; tok
 }
 
 function MarketSkillContent({ detail, token }: { detail: MarketSkillDetail | null; token: any }) {
-  const { t } = useTranslation('provider');
-  if (!detail) return <Empty description={t('common.state.loading', { ns: 'common' })} />;
+  if (!detail) {
+    return <Flexbox align="center" justify="center" padding={48}><Spin /></Flexbox>;
+  }
 
   return (
     <Flexbox gap={12} style={{ paddingBottom: 24 }}>
