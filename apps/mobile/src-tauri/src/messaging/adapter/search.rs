@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn legacy_index_rebuild_is_bounded_resumable_and_preserves_original_messages() {
         let connection = Connection::open_in_memory().unwrap();
-        super::super::migrate_messaging_schema(&super::super::RusqliteMessagingSchema(&connection))
+        super::super::ensure_messaging_schema(&super::super::RusqliteMessagingSchema(&connection))
             .unwrap();
         super::super::create_mobile_messaging_adapter_schema(&connection).unwrap();
         seed(&connection, 260);
