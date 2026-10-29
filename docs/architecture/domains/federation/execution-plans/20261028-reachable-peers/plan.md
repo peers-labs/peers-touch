@@ -126,12 +126,21 @@ type CommunicationScope interface {
   active 成员，fail-closed，并在 subserver 装配（不再传 nil）。Direct 跨站所需 Federation
   由 `FederationDirectory.ResolveSharedFederation(stationA, stationB)` 按站点对解析唯一共享
   Federation（0 个→未联合、多个→歧义），客户端 Direct 创建不再传 federation id。
-- **T4 Rust 端（Desktop + Mobile 已完成代码，待 Journey）**
+- **T4 Rust 端（Desktop + Mobile 已完成，Journey 已证）**
   两端 `create_direct_conversation` 与 Tauri/HTTP 入参去掉 `federation_id`，请求体不再发送；
   lifecycle 水合与 store/投影校验允许 Local Direct 的空 federation（仅群仍强制非空）。
   Desktop `cargo check` 通过、messaging 单测全绿；Mobile `src-tauri` `cargo test --offline`
   380 项全绿（含新增 `authority_scope_accepts_local_direct_without_federation`）。
-- **T5 TS/客户端（Desktop + Mobile 已完成代码，待 Journey）**
+  Journey：Desktop 原生双客户端同站 Gate
+  `chat-native-single-station-two-client-e2e` PROVEN（run 20261029T005949，
+  PG 真值 `scope_kind=local`、`federation_id IS NULL`、2 成员、3 事件、无联邦帧）；
+  Mobile 双 iOS 模拟器 Gate `mobile-simulator-social-convergence-e2e` PROVEN
+ （run 20261029T032148，`directScope=local`，typing 8ms / 送达 753ms / 回执 257ms，
+  无 mock，双端绑定同一 source-attested Station）。
+  Mobile 身份预置走新增的 acceptance-only 命令
+  `secure_storage_acceptance_seed_identity`（`acceptance-harness` feature 门控，
+  crypto 域校验 key 形状与 32B seed 并读回；生产 web storage fence 不变）。
+- **T5 TS/客户端（Desktop + Mobile 已完成，Journey 已证，见 T4 Gate）**
   `CreateDirectConversationInput` / Mobile `MessagingCreateDirectInput.federationId`
   改为可选且 IPC 不再透传（账户 mutation scope 仍照常发送，仅服务端派生会话 scope）；
   Desktop SocialChatPage、Mobile Contacts 发起 Direct 不再选联邦。Desktop `tsc --noEmit`
@@ -143,12 +152,14 @@ type CommunicationScope interface {
   （reserved）；`Conversation`/`ConversationPublicHead`/`ConversationAuthoritySnapshot`
   增加 `ConversationScopeKind scope_kind` 与对应枚举，Go/TS 经 `model/build.sh` 重生成、
   Rust 经 messaging-core build.rs 重生成。
-- **T6 验证（单测完成，Journey 待跑）**
+- **T6 验证（单测 + 同站 Journey 已证；跨站 Journey 待跑）**
   Go conversation/social/federation 全包 + frame gate、Rust messaging、TS services/store
   单测全绿；新增 Local scope 构造/JSON/迁移、gate 同站/跨站分支、CrossStationAuthorizer、
   ResolveSharedFederation（0/1/多交集）单测。
-  待补真实 Journey：干净库·无联邦·两同站用户 Direct 可建可收发；两站
-  `federation-full-lifecycle` 回归（make desktop / make station，非单测）。
+  同站真实 Journey 已证：干净库·无联邦·两同站用户 Direct 可建可收发——Desktop
+  `chat-native-single-station-two-client-e2e`（PG 真值 local/NULL）与 Mobile
+  `mobile-simulator-social-convergence-e2e`（双模拟器、directScope=local）PROVEN。
+  待补：两站 `federation-full-lifecycle` 回归（make desktop / make station，非单测）。
 
 每批保持现有联邦验收断言通过。T1–T3 可在 Station 侧独立闭环；T4–T5 是端到端所需。
 
