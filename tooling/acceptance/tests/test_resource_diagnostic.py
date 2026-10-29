@@ -132,7 +132,6 @@ class ResourceDiagnosticTests(unittest.TestCase):
                 )["missingFields"],
             )
 
-    @unittest.skip("pending post-merge port onto macos_ax.AXReadSession (PR #163 follow-up)")
     def test_operator_focus_refusals_seal_actual_pid_and_probe_state(self) -> None:
         runner = script_module("acceptance-run")
         reporter = script_module("acceptance-report")

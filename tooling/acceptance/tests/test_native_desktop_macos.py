@@ -36,18 +36,10 @@ from tooling.acceptance.drivers.native.base import (
     NativeWindowSnapshot,
     NativeWindowStack,
 )
-try:
-    from tooling.acceptance.drivers.native.macos import (
-        MacOSNativeDesktopAdapter,
-        _ACTIVATION_PROBE,
-        _NATIVE_OBSERVATION_BODY,
-        _NATIVE_OBSERVATION_PROBE,
-        _pixel_buffer_has_visible_alpha,
-    )
-except ImportError:
-    _MERGE_PORT_PENDING = True
-else:
-    _MERGE_PORT_PENDING = False
+from tooling.acceptance.drivers.native.macos import (
+    MacOSNativeDesktopAdapter, _ACTIVATION_PROBE, _NATIVE_OBSERVATION_BODY,
+    _NATIVE_OBSERVATION_PROBE, _pixel_buffer_has_visible_alpha,
+)
 from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 from tooling.acceptance.provisioners.native_desktop_macos import (
     NATIVE_FOCUS_READY_TIMEOUT_SECONDS,
@@ -72,7 +64,6 @@ def observation_probe(controls: list[dict[str, object]]) -> dict[str, object]:
     return namespace
 
 
-@unittest.skipIf(_MERGE_PORT_PENDING, "pending post-merge port onto macos_ax.AXReadSession after PR #164 (PR #163 follow-up)")
 class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.contract_path = (

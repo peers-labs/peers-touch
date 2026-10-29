@@ -193,7 +193,9 @@ Required AXWindows cannot accept failed, unsupported or null reads. Every
 operator attribute receives the original focus deadline and limits its own
 messaging timeout to the lesser of 0.5 seconds and remaining time. Expiry
 before or after the native read fails, releases returned CF values and stops
-subsequent reads. No retry, cached state or new deadline supplies focus proof.
+subsequent reads. The shared `macos_ax.AXReadSession` owns bounded transient
+read retries; they consume that same original deadline. Mutations remain
+one-shot. Cached state or a new deadline cannot supply focus proof.
 
 Run `test_native_observation_diagnostics` for failed status with/without CF
 values, required versus optional absence, actual text/boolean decoding, expiry
