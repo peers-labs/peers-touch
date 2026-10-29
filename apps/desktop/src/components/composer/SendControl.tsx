@@ -28,8 +28,8 @@ const iconButtonStyle: CSSProperties = {
  * Send/Stop controls in the composer footer.
  *
  * While a turn is running both controls stay visible as distinct affordances:
- * Stop cancels the running turn, and Send is rendered disabled (single turn
- * owner — a second turn cannot be queued). Keeping separate, labelled
+ * Stop cancels the running turn, and Send admits the next request to FIFO.
+ * Keeping separate, labelled
  * controls prevents the previous slot-flip where a second click on the
  * expected send position silently cancelled the running turn.
  */
@@ -60,13 +60,14 @@ export function SendControl({ isStreaming, disabled, onSend, onStop }: SendContr
           aria-label={t('chat.input.send')}
           title={t('chat.input.send')}
           data-pt-agent-composer-send
-          disabled
-          aria-disabled="true"
+          onClick={onSend}
+          disabled={disabled}
+          aria-disabled={disabled}
           style={{
             ...iconButtonStyle,
-            background: token.colorFillTertiary,
-            color: token.colorTextQuaternary,
-            cursor: 'default',
+            background: disabled ? token.colorFillTertiary : token.colorPrimary,
+            color: disabled ? token.colorTextQuaternary : token.colorTextLightSolid,
+            cursor: disabled ? 'default' : 'pointer',
           }}
         >
           <ArrowUp size={16} />

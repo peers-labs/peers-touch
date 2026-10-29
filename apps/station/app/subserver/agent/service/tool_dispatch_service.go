@@ -1135,6 +1135,21 @@ func (s *ToolDispatchService) proposeBatch(
 			return internalToolError("load existing tool batch", err)
 		}
 
+		if project != nil {
+			// Terminal settlement owns turn -> message -> conversation locks.
+			// Join that order before capability/batch writes or projection so
+			// cancellation cannot wait on a conversation held by this batch.
+			var turn persistence.AgentTurn
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND conversation_id = ?", proposal.TurnID, proposal.ConversationID).
+				First(&turn).Error; err != nil {
+				return internalToolError("lock projected tool batch turn", err)
+			}
+			if isTerminalTurnDomainStatus(domain.TurnStatus(turn.Status)) {
+				return errcode.NewLifecycleTerminalMutation(turn.ID, turn.Status)
+			}
+		}
+
 		var lease *model.ClientCapabilityLease
 		authorizations := make(
 			[]*toolCapabilityAuthorization,

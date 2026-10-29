@@ -26,6 +26,7 @@ import { useAgentStore, resolveAvailableModelSelection } from './agent';
 import { useAgentCapabilityStore } from './agentCapabilities';
 import { useAgentTopicStore } from './agentTopics';
 import { useChatArtifactStore } from './chatArtifacts';
+import { bindTurnMessageIdentity } from './chatTurnIdentity';
 import {
   agentTurnRecoveryPhaseForEvent,
   isAgentTurnRecoveryPhaseTransitionAllowed,
@@ -795,6 +796,7 @@ export function mergeServerMessages(
   const absorbedLocalIds = new Set<string>();
 
   const merged: ChatMessage[] = serverMessages.map((serverMessage) => {
+    const correlated = matchByIdempotency(serverMessage);
     const match = currentById.get(serverMessage.id)
       ?? (
         serverMessage.turnId
@@ -805,10 +807,13 @@ export function mergeServerMessages(
               : undefined
           : undefined
       )
-      ?? matchByIdempotency(serverMessage);
+      ?? correlated;
     if (!match) return serverMessage;
     if (match.id !== serverMessage.id) absorbedLocalIds.add(match.id);
-    return carryChainOfThoughtFields(serverMessage, match);
+    const projected = carryChainOfThoughtFields(serverMessage, match);
+    if (!correlated || correlated === match) return projected;
+    absorbedLocalIds.add(correlated.id);
+    return carryChainOfThoughtFields(projected, correlated);
   });
 
   for (const currentMessage of currentMessages) {
@@ -2224,6 +2229,9 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       toolRuntime.consume(recoveredEvent);
 
       const applyTo = (messages: ChatMessage[]): ChatMessage[] => {
+        messages = bindTurnMessageIdentity(
+          messages, 'assistant', assistantMessageId, turnId, carryChainOfThoughtFields,
+        );
         const existingIndex = messages.findIndex(
           (message) => matchesTurnMessage(message, 'assistant', assistantMessageId, turnId),
         );
@@ -2866,6 +2874,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
           const turnId = operationEvent.operations[selectedOperationKey]?.turnId;
           const applyTo = (list: ChatMessage[]): ChatMessage[] => {
+            list = bindTurnMessageIdentity(
+              list, 'assistant', assistantId, turnId, carryChainOfThoughtFields,
+            );
+            list = bindTurnMessageIdentity(
+              list, 'user', userMsg.id, turnId, carryChainOfThoughtFields,
+            );
             // Snapshot reconciliation replaces optimistic IDs. The admitted
             // turn remains the stream's identity after that replacement.
             const assistantIndex = list.findIndex(
@@ -3392,9 +3406,16 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   },
 
   stopOperation: (sessionKey: string) => {
-    log.info('chat', 'Streaming stopped', { sessionKey });
-    const op = get().operations[sessionKey];
-    if (!op || !isActiveOperation(op)) return;
+    const stateBeforeStop = get();
+    const direct = stateBeforeStop.operations[sessionKey];
+    const entry = direct && isActiveOperation(direct) && !direct.awaitingAdmission
+      ? [sessionKey, direct] as const
+      : sessionOperationEntries(stateBeforeStop.operations, sessionKey)
+        .find(([, operation]) => isActiveOperation(operation) && !operation.awaitingAdmission);
+    if (!entry) return;
+    const [operationKey, op] = entry;
+    const conversationKey = op.sessionKey;
+    log.info('chat', 'Streaming stopped', { sessionKey: conversationKey, operationKey });
     if (op.turnId) {
       void get().requestTurnCancellation(op.turnId, op.assistantMessageId)
         .catch((error) => {
@@ -3406,16 +3427,24 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
     const cancelled = cancelOperation(op);
     set((state) => {
-      const isCurrent = state.currentSessionKey === sessionKey;
+      const isCurrent = state.currentSessionKey === conversationKey;
+      const operations = { ...state.operations, [operationKey]: cancelled };
+      const anotherActive = hasActiveSessionOperation(operations, conversationKey);
+      const pendingQueue = state.turnQueues[conversationKey]?.entries.length ?? 0;
+      const stillStreaming = anotherActive || pendingQueue > 0;
       const finalizeList = (list: ChatMessage[]): ChatMessage[] =>
-        list.map((m) => (m.loading ? { ...m, loading: false } : m));
+        list.map((m) => (
+          m.loading && matchesTurnMessage(m, 'assistant', op.assistantMessageId, op.turnId)
+            ? { ...m, loading: false }
+            : m
+        ));
       return {
         messages: isCurrent ? finalizeList(state.messages) : state.messages,
-        sessionBuffers: setBuffer(state.sessionBuffers, sessionKey, finalizeList),
-        isStreaming: isCurrent ? false : state.isStreaming,
-        streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
-        abortController: isCurrent ? null : state.abortController,
-        operations: { ...state.operations, [sessionKey]: cancelled },
+        sessionBuffers: setBuffer(state.sessionBuffers, conversationKey, finalizeList),
+        isStreaming: isCurrent ? stillStreaming : state.isStreaming,
+        streamingStartedAt: isCurrent && !stillStreaming ? null : state.streamingStartedAt,
+        abortController: isCurrent && !anotherActive ? null : state.abortController,
+        operations,
       };
     });
   },

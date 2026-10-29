@@ -2072,6 +2072,17 @@
       "description": "Validate Agent native runner fail-closed evidence, lifecycle command/matrix wiring, selector bindings, canonical TauriDriver launch, and cleanup contracts without launching a live journey."
     },
     "agent-native-turn-e2e": {
+      "e2e": {
+        "journeys": [{"id": "agent-turn-projection", "uses": ["tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.run_turn"]}],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.run_turn", "purpose": "Verify native FIFO Send, isolated Stop, recovered cancellation and terminal lineage", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.start", "tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.login", "tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.set_input_value", "tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.click_visible"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.start", "purpose": "Reuse source-bound native client and isolated storage", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "client", "toolchain"]},
+          {"ref": "tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.login", "purpose": "Reuse canonical password login and actor fixture", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "fixture", "session"]},
+          {"ref": "tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.set_input_value", "purpose": "Reuse native semantic composer input", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]},
+          {"ref": "tooling/acceptance/gates/agent/native_agent_runner.py#AgentNativeJourney.click_visible", "purpose": "Reuse native visible control activation", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]}
+        ]
+      },
+      "requiredRuntimeCells": ["desktop-macos-native"],
       "argv": [
         "python3",
         "tooling/acceptance/gates/agent/native_agent_runner.py"
@@ -2080,7 +2091,7 @@
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "Run visible native Agent turn delivery from the provisioned One-profile runtime manifest: login, navigate, send, and verify streamed response."
+      "description": "Reuse one source-bound native actor to send during streaming, observe FIFO, cancel only the running owner, stop a recovered turn after native restart, and reload one terminal assistant with admitted user lineage."
     },
     "agent-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain agent --require-proven",
