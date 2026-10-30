@@ -19,6 +19,14 @@ export interface MessageActionGeometryRequest {
   selectedContentRect: GeometryRect;
   adjacentContentRects: readonly GeometryRect[];
   preferredPlacements: readonly MessageActionPlacement[];
+  /**
+   * Inner edge the toolbar hugs when placed above/below the bubble:
+   * an own (right-side) message aligns the toolbar's left edge to the
+   * bubble's left edge; an incoming (left-side) message aligns the
+   * toolbar's right edge to the bubble's right edge. Undefined keeps
+   * the legacy centered alignment.
+   */
+  anchorEdge?: 'left' | 'right';
   gap: number;
   boundaryPadding: number;
 }
@@ -111,12 +119,23 @@ function horizontalCandidates(
   obstacles: readonly GeometryRect[],
   bounds: GeometryRect,
   width: number,
+  anchorEdge?: 'left' | 'right',
 ): number[] {
   const minimum = bounds.left;
   const maximum = bounds.right - width;
-  const preferred = anchor.left + ((anchor.right - anchor.left) - width) / 2;
+  const centered = anchor.left + ((anchor.right - anchor.left) - width) / 2;
+  // The inner-edge hug is the primary position: below/above the bubble the
+  // toolbar sits at the bubble's conversation-center edge (left edge for own
+  // messages, right edge for incoming). Centering remains the first dodge.
+  const edgeAligned = anchorEdge === 'left'
+    ? anchor.left
+    : anchorEdge === 'right'
+      ? anchor.right - width
+      : centered;
+  const preferred = anchorEdge ? edgeAligned : centered;
   const candidates = uniqueFinite([
-    preferred,
+    edgeAligned,
+    centered,
     anchor.left,
     anchor.right - width,
     minimum,
@@ -159,11 +178,16 @@ function placementCandidates(
   bounds: GeometryRect,
   size: GeometrySize,
   gap: number,
+  anchorEdge?: 'left' | 'right',
 ): Point[] {
   if (placement === 'detached') {
-    const horizontal = horizontalCandidates(anchor, obstacles, bounds, size.width);
+    const horizontal = horizontalCandidates(anchor, obstacles, bounds, size.width, anchorEdge);
     const vertical = verticalCandidates(anchor, obstacles, bounds, size.height);
-    const preferredLeft = anchor.left + ((anchor.right - anchor.left) - size.width) / 2;
+    const preferredLeft = anchorEdge === 'left'
+      ? anchor.left
+      : anchorEdge === 'right'
+        ? anchor.right - size.width
+        : anchor.left + ((anchor.right - anchor.left) - size.width) / 2;
     const preferredTop = anchor.top + ((anchor.bottom - anchor.top) - size.height) / 2;
 
     return horizontal
@@ -179,7 +203,7 @@ function placementCandidates(
       ? anchor.top - gap - size.height
       : anchor.bottom + gap;
 
-    return horizontalCandidates(anchor, obstacles, bounds, size.width)
+    return horizontalCandidates(anchor, obstacles, bounds, size.width, anchorEdge)
       .map((left) => ({ left, top }));
   }
 
@@ -201,6 +225,7 @@ export function placeMessageActionSurface(
     selectedContentRect,
     adjacentContentRects,
     preferredPlacements,
+    anchorEdge,
     gap,
     boundaryPadding,
   } = request;
@@ -248,6 +273,7 @@ export function placeMessageActionSurface(
       bounds,
       surfaceSize,
       gap,
+      anchorEdge,
     );
 
     for (const candidate of candidates) {

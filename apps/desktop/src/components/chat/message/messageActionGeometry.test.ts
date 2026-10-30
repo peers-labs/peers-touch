@@ -84,6 +84,63 @@ describe('message action geometry', () => {
     });
   });
 
+  it('places an own-message toolbar below the bubble with its left edge on the bubble left edge', () => {
+    const result = placeMessageActionSurface(request({
+      preferredPlacements: ['below', 'above'],
+      anchorEdge: 'left',
+    }));
+
+    expect(result?.placement).toBe('below');
+    expect(result?.rect).toEqual({
+      left: 300,
+      top: 458,
+      right: 460,
+      bottom: 498,
+    });
+  });
+
+  it('places an incoming-message toolbar below the bubble with its right edge on the bubble right edge', () => {
+    const result = placeMessageActionSurface(request({
+      preferredPlacements: ['below', 'above'],
+      anchorEdge: 'right',
+    }));
+
+    expect(result?.placement).toBe('below');
+    expect(result?.rect).toEqual({
+      left: 340,
+      top: 458,
+      right: 500,
+      bottom: 498,
+    });
+  });
+
+  it('slides inward along the bubble edge instead of abandoning the below placement', () => {
+    const adjacentBelow = { left: 300, top: 452, right: 460, bottom: 500 };
+    const result = placeMessageActionSurface(request({
+      preferredPlacements: ['below', 'above'],
+      anchorEdge: 'left',
+      adjacentContentRects: [adjacentBelow],
+    }));
+
+    expect(result?.placement).toBe('below');
+    expect(overlaps(result!.rect, adjacentBelow)).toBe(false);
+    // Leaves the blocked inner-edge position but stays under the bubble.
+    expect(result!.rect.top).toBe(458);
+    expect(result!.rect.left).not.toBe(300);
+  });
+
+  it('keeps inner-edge hug above the bubble when below is unavailable', () => {
+    const adjacentBelow = { left: 112, top: 452, right: 688, bottom: 620 };
+    const result = placeMessageActionSurface(request({
+      preferredPlacements: ['below', 'above'],
+      anchorEdge: 'left',
+      adjacentContentRects: [adjacentBelow],
+    }));
+
+    expect(result?.placement).toBe('above');
+    expect(result?.rect.left).toBe(300);
+  });
+
   it('moves along the requested side to avoid adjacent message content', () => {
     const adjacentContentRect = { left: 300, top: 280, right: 500, bottom: 344 };
     const result = placeMessageActionSurface(request({

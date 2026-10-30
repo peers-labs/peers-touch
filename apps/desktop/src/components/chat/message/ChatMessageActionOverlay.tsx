@@ -145,7 +145,11 @@ export function ChatMessageActionOverlay({
 
         const paneRect = hostElement.getBoundingClientRect();
         const viewportRect = viewportElement.getBoundingClientRect();
-        const selectedContentRect = anchor.getBoundingClientRect();
+        // Anchor to the bubble itself rather than the full row column
+        // (bubble + thread preview + timestamp + reactions), so the
+        // toolbar hugs the message rather than its widest meta row.
+        const bubbleElement = anchor.querySelector<HTMLElement>('[data-message-content]');
+        const selectedContentRect = (bubbleElement ?? anchor).getBoundingClientRect();
         const adjacentContentRects = Array.from(
           viewportElement.querySelectorAll<HTMLElement>('[data-message-content]'),
         )
@@ -164,9 +168,12 @@ export function ChatMessageActionOverlay({
           viewportRect: toGeometryRect(viewportRect),
           selectedContentRect: toGeometryRect(selectedContentRect),
           adjacentContentRects,
-          preferredPlacements: pickerOpen
-            ? ['right', 'left', 'above', 'below']
-            : ['above', 'below', 'right', 'left'],
+          // The toolbar belongs under the hovered message; above/side
+          // placements are only collision dodges. It hugs the bubble's
+          // inner edge: own (right-side) bubble -> toolbar left edge,
+          // incoming (left-side) bubble -> toolbar right edge.
+          preferredPlacements: ['below', 'above', 'right', 'left'],
+          anchorEdge: isOwn ? 'left' : 'right',
           gap: 8,
           boundaryPadding: 8,
         }));
