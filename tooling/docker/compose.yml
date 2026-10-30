@@ -63,6 +63,8 @@ services:
         BUILD_LABEL: ${PEERS_TOUCH_BUILD_LABEL:-dev}
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [station]
+    # Reap orphaned CLI descendants after timeout or process-group teardown.
+    init: true
     logging: *json-logging
     environment:
       PEERS_NODE_ROLE: station
@@ -75,8 +77,8 @@ services:
       # Canonical Station-owned durable files, including Messaging attachment
       # blobs, must resolve inside the named peers_data volume.
       PEERS_DATA_DIR: /app/data
-      # Per-actor agent workspaces and per-actor managed CLI adapter
-      # installs (Codex/Claude/Cursor) live under the persistent volume.
+      # Shared managed CLI installations and private actor invocation state
+      # live under the persistent volume.
       PEERS_AGENT_WORKSPACE_BASE: /app/data/agent-workspaces
       # DSN points at the project's bridge-internal postgres service. Never
       # at the host. POSTGRES_DB / PEERS_DB_PASSWORD come from .env.<project>.

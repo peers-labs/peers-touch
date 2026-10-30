@@ -48,6 +48,13 @@ Jobs are process-local. After restart, executable and version facts determine
 the installation state. A failed upgrade reports `failed` while retaining the
 previous installed version for recovery.
 
+Installer and invocation cancellation terminate their owned process group.
+The Station Compose service enables Docker's standard init process to reap
+orphaned descendants, including children of vendor shell pipelines. The
+application waits for its direct child; the container init owns orphan
+reaping. Other container hosts must supply the same init behavior. A raw
+Station process as container PID 1 is not a complete CLI lifecycle host.
+
 ## Execution and discovery
 
 Wrappers locate shared code and never set HOME, XDG or tool configuration.
@@ -73,4 +80,6 @@ relocation, safe shell quoting, archive boundaries, job deduplication and
 failed upgrade recovery. Provider handler tests distinguish management catalog
 visibility from authorized consumer models. These are source checks; real
 installation, Dashboard interactions and account-switch journeys require
-current-source runtime observations.
+current-source runtime observations. Container lifecycle verification must
+confirm the init process, cancellation of owned descendants and absence of
+zombies after teardown; a failed install must not activate a staged version.

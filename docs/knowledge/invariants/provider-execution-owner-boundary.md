@@ -16,6 +16,7 @@ owns:
   - apps/station/app/subserver/dashboard/web/src/hooks/useControlPlaneAction.ts
   - apps/desktop/src/store/provider.ts
   - model/domain/agent/provider.proto
+  - tooling/docker/compose.yml
 referenced-by: []
 related:
   - docs/architecture/domains/agent/provider-control-plane.md
@@ -48,6 +49,9 @@ Machine PATH and managed binaries MUST use the same private environment.
 Availability checks MUST resolve structured catalog argv through the same
 managed PATH as execution; formatted display commands are not executable names.
 Installation success MUST NOT be interpreted as authentication or task success.
+The runtime host MUST satisfy the managed CLI contract's orphan-reaping
+boundary. Process-group cancellation alone does not reap descendants; the
+Station container requires its standard init process.
 
 ## Why this is non-negotiable
 
@@ -67,6 +71,8 @@ Keep lookup and installation facts in the Agent owner.
 - Run `go test ./subserver/agent/handler -run 'TestProvider(Management|Consumer)'`.
 - Run `go test ./subserver/agent/service/cli/...` for environment, process
   cancellation, structured argv, activation rollback and archive boundaries.
+- On the reviewed Station container, verify init is enabled and cancelled
+  owned process groups leave neither running descendants nor zombies.
 - Run `go test ./subserver/dashboard -run TestAIControlPlane` for live
   administrator, Actor JWT, role and revoked-session denial.
 - Verify a real current-source journey: configure and grant a shared model,
