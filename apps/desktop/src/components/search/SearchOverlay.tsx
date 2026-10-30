@@ -329,6 +329,10 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
             onCompositionStart={() => { composing.current = true; }}
             onCompositionEnd={event => { composing.current = false; searchActions.query(event.currentTarget.value); }}
             onChange={event => {
+              const nativeEvent = event.nativeEvent as InputEvent;
+              if (composing.current && !nativeEvent.isComposing) {
+                composing.current = false;
+              }
               searchActions.query(event.target.value, !composing.current);
             }} />
           <span className="pt-search-progress">
