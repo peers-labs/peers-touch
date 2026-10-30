@@ -69,6 +69,8 @@ func TestParseModelCapabilityFlagsRejectsMalformedAuthority(t *testing.T) {
 
 func openAdmissionTestDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
+	t.Setenv("PT_SECRET_KEK", "provider-focused-test-key-material")
+	t.Setenv("PT_SECRET_KEK_FILE", "")
 	db, err := gorm.Open(sqlite.Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open admission test database: %v", err)
@@ -77,11 +79,16 @@ func openAdmissionTestDB(t *testing.T, name string) *gorm.DB {
 		&persistence.AgentProvider{},
 		&persistence.AgentModel{},
 		&persistence.Credential{},
+		&persistence.ProviderPolicy{},
+		&persistence.ProviderAccessGrant{},
 		&persistence.TurnAttempt{},
 	); err != nil {
 		t.Fatalf("migrate admission test database: %v", err)
 	}
 	injectOrchestrationServiceTestStore(t, db)
+	if err := db.Create(&persistence.ProviderPolicy{ID: "station", PersonalProvidersEnabled: true}).Error; err != nil {
+		t.Fatal(err)
+	}
 	return db
 }
 
@@ -121,7 +128,18 @@ func seedTestProvider(t *testing.T, db *gorm.DB, actorID, name string, enabled b
 		Enabled:     true,
 		Protocol:    "openai-compatible",
 		RuntimeKind: "http",
-		KeyVaults:   keyVaults,
+		Scope:       ProviderScopeActor,
+	}
+	if keyVaults != "" {
+		var key map[string]string
+		if err := json.Unmarshal([]byte(keyVaults), &key); err != nil {
+			t.Fatal(err)
+		}
+		sealed, err := sealProviderCredential(&provider, key["api_key"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		provider.KeyVaults = sealed
 	}
 	if err := db.Create(&provider).Error; err != nil {
 		t.Fatalf("seed provider: %v", err)
@@ -200,14 +218,8 @@ func TestRuntimeAdmissionResolveRejectsDisabledProvider(t *testing.T) {
 	}
 	var bizErr *errcode.BizError
 	if !errors.As(err, &bizErr) ||
-		bizErr.Code != errcode.AgentRuntimeUnavailable ||
-		bizErr.HTTPStatus != 503 ||
-		bizErr.Payload.GetErrorType() != string(errcode.AgentRuntimeUnavailable) ||
-		bizErr.Payload.GetLocaleKey() != errcode.AgentRuntimeUnavailableLocaleKey ||
-		!bizErr.Payload.GetRetryable() ||
-		!bizErr.Payload.GetTerminal() ||
-		bizErr.Payload.GetDetails()["runtime_kind"] != "direct_model" ||
-		bizErr.Payload.GetDetails()["reason_code"] != "provider_disabled" {
+		bizErr.Code != errcode.AgentProviderDisabled ||
+		bizErr.HTTPStatus != 403 {
 		t.Fatalf("disabled provider payload = %+v", bizErr)
 	}
 }
@@ -241,13 +253,15 @@ func TestRuntimeAdmissionResolveRejectsMissingCredential(t *testing.T) {
 }
 
 func TestCredentialPoolLeaseRejectsMissingCredentialWithTypedPayload(t *testing.T) {
-	openAdmissionTestDB(t, "credential_pool_missing")
+	defer setupTestCatalog()()
+	db := openAdmissionTestDB(t, "credential_pool_missing")
+	seedTestProvider(t, db, "actor-1", "test-provider", true, "")
 
 	_, err := NewCredentialPoolService().Lease(
 		context.Background(),
 		"actor-1",
 		"test-provider",
-		domain.RotationRoundRobin,
+		"test-model", domain.RotationRoundRobin,
 	)
 	if err == nil {
 		t.Fatal("expected error for missing credential, got nil")
@@ -736,7 +750,12 @@ func TestRuntimeAdmissionConditionallyAdvertisesExternalAgent(t *testing.T) {
 		}},
 	}})
 	defer catalog.RestoreForTesting()
-	openAdmissionTestDB(t, "admission_external_runtime")
+	db := openAdmissionTestDB(t, "admission_external_runtime")
+	if err := db.Create(&persistence.AgentProvider{ID: generateID("prov"), Scope: ProviderScopeActor,
+		ActorPTID: "actor-1", Name: "external-agent", Enabled: true,
+		RuntimeKind: "external-agent", Protocol: "session-cli-v1"}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	resolver := NewRuntimeAdmissionResolver(
 		NewProviderConfigService(),
@@ -815,12 +834,15 @@ func TestRuntimeAdmissionConsumesActorScopedDiscoveredCatalog(t *testing.T) {
 		CLIArgv:     []string{os.Args[0]},
 	}})
 	defer catalog.RestoreForTesting()
-	openAdmissionTestDB(t, "admission_discovered_cli_catalog")
+	db := openAdmissionTestDB(t, "admission_discovered_cli_catalog")
+	record := newProviderRecord(ProviderCreateRequest{ActorPTID: "actor-a", ProviderID: "test-cli"})
+	if err := db.Create(record).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	runtimeCatalog := NewRuntimeModelCatalog()
 	runtimeCatalog.Replace(
-		"actor-a",
-		"test-cli",
+		record,
 		[]catalog.CatalogModel{{
 			ID:            "discovered-model",
 			DisplayName:   "Discovered Model",

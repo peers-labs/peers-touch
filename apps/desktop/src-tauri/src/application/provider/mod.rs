@@ -8,7 +8,6 @@ use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-pub(crate) mod remote;
 pub(crate) mod station_api;
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
@@ -153,34 +152,7 @@ pub fn provider_get(
         Err(e) => return station_error_to_result(e),
     };
 
-    let mut result = resp.clone();
-    if let Some(provider) = result.get_mut("provider") {
-        let is_configured = provider
-            .get("credential_status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("not_configured")
-            == "configured";
-        provider["has_api_key"] = json!(is_configured);
-
-        if is_configured {
-            if let Ok(cred) = station_api::resolve_credential(station_client, token, id) {
-                if !cred.api_key.is_empty() {
-                    provider["api_key"] = json!(cred.api_key);
-                }
-                if !cred.base_url.is_empty()
-                    && provider
-                        .get("base_url")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .is_empty()
-                {
-                    provider["base_url"] = json!(cred.base_url);
-                }
-            }
-        }
-    }
-
-    success_payload("provider_get", result)
+    success_payload("provider_get", resp)
 }
 
 pub fn provider_update(
@@ -194,11 +166,7 @@ pub fn provider_update(
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
 
-    let api_key = input
-        .key_vaults
-        .as_deref()
-        .and_then(parse_key_vault_api_key)
-        .filter(|api_key| !api_key.is_empty());
+    let api_key = input.api_key.filter(|api_key| !api_key.is_empty());
 
     let resp = match station_api::update_provider_full(
         station_client,
@@ -232,6 +200,41 @@ pub fn provider_check(
     }
     match station_api::check_provider(station_client, token, id) {
         Ok(response) => success_payload("provider_check", response),
+        Err(error) => station_error_to_result(error),
+    }
+}
+
+pub fn provider_policy(
+    station_client: &StationClient,
+    token: &str,
+) -> AppResult<StubPayload> {
+    match station_api::provider_policy(station_client, token) {
+        Ok(response) => success_payload("provider_policy", response),
+        Err(error) => station_error_to_result(error),
+    }
+}
+
+pub fn provider_personal_list(
+    station_client: &StationClient,
+    token: &str,
+) -> AppResult<StubPayload> {
+    match station_api::list_personal_providers(station_client, token) {
+        Ok(response) => success_payload("provider_personal_list", response),
+        Err(error) => station_error_to_result(error),
+    }
+}
+
+pub fn provider_personal_get(
+    station_client: &StationClient,
+    token: &str,
+    input: ProviderIdInput,
+) -> AppResult<StubPayload> {
+    let id = input.id.trim();
+    if id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
+    }
+    match station_api::get_personal_provider(station_client, token, id) {
+        Ok(response) => success_payload("provider_personal_get", response),
         Err(error) => station_error_to_result(error),
     }
 }
@@ -278,8 +281,10 @@ pub fn provider_create(
         Err(e) => return station_error_to_result(e),
     };
 
-    if let Some(api_key) = parse_key_vault_api_key(&input.key_vaults) {
-        let _ = station_api::set_credential(station_client, token, &provider.id, &api_key);
+    if let Some(api_key) = input.api_key.filter(|key| !key.is_empty()) {
+        if let Err(error) = station_api::set_credential(station_client, token, &provider.id, &api_key) {
+            return station_error_to_result(error);
+        }
     }
 
     success_payload(
@@ -480,10 +485,4 @@ pub fn model_delete(
         return station_error_to_result(e);
     }
     success_payload("model_delete", json!({ "ok": true }))
-}
-
-fn parse_key_vault_api_key(key_vaults: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(key_vaults)
-        .ok()
-        .and_then(|v| v.get("api_key").and_then(|k| k.as_str()).map(String::from))
 }

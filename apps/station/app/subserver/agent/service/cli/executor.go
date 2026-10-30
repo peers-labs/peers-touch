@@ -10,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli/environment"
 )
 
 const (
@@ -94,6 +96,7 @@ type ExecuteRequest struct {
 	Command        []string
 	StartupArgs    []string
 	Environment    map[string]string
+	Credentials    map[string]string
 	Timeout        time.Duration
 	SystemPrompt   string
 	Messages       []domain.Message
@@ -107,8 +110,15 @@ type ExecuteResult struct {
 
 type Executor struct {
 	WorkspaceManager *WorkspaceManager
+	Managed          ManagedResolver
 	Timeout          time.Duration
 	TerminationGrace time.Duration
+}
+
+// ManagedResolver resolves the Station managed-runtime bin directory
+// prepended to PATH. It is implemented by service/cli/managed.Manager.
+type ManagedResolver interface {
+	BinDir() string
 }
 
 func NewExecutor(workspaceManager *WorkspaceManager) *Executor {
@@ -120,6 +130,11 @@ func NewExecutor(workspaceManager *WorkspaceManager) *Executor {
 		Timeout:          defaultTimeout,
 		TerminationGrace: defaultTerminationGrace,
 	}
+}
+
+// SetManagedRuntime wires the Station managed CLI runtime.
+func (e *Executor) SetManagedRuntime(manager ManagedResolver) {
+	e.Managed = manager
 }
 
 func (e *Executor) Execute(
@@ -139,12 +154,30 @@ func (e *Executor) Execute(
 	program := req.Command[0]
 	adapter := adapterName(program)
 	delivery := promptMethod(adapter)
-	if _, err := exec.LookPath(program); err != nil {
+	if err := ValidateStartupArgs(req.StartupArgs); err != nil {
+		return nil, &ExecutionError{Kind: FailureInvalidCommand, Cause: err}
+	}
+	// Shared binaries execute with private actor state on every invocation.
+	resolvedProgram, err := e.resolveProgram(req.ActorPTID, program)
+	if err != nil {
 		return nil, &ExecutionError{
 			Kind:    FailureBinaryMissing,
 			Program: program,
 			Cause:   err,
 		}
+	}
+	program = resolvedProgram
+	stateRoot, err := e.WorkspaceManager.StateRoot(req.ActorPTID, firstNonEmpty(req.Provider, adapter))
+	if err != nil {
+		return nil, &ExecutionError{Kind: FailureInvalidCommand, Cause: err}
+	}
+	childEnv, err := environment.Build(stateRoot, e.actorPathEntries(req.ActorPTID), req.Environment)
+	if err != nil {
+		return nil, &ExecutionError{Kind: FailureInvalidCommand, Cause: err}
+	}
+	credentials, err := environment.Credentials(req.Credentials)
+	if err != nil {
+		return nil, &ExecutionError{Kind: FailureInvalidCommand, Cause: err}
 	}
 
 	sessionID := e.WorkspaceManager.SessionID()
@@ -163,6 +196,7 @@ func (e *Executor) Execute(
 	prompt := BuildConversationPrompt(req.SystemPrompt, req.Messages)
 	args := append([]string{}, req.Command[1:]...)
 	args = appendStartupArgs(args, req.StartupArgs, delivery)
+	args = appendStartupArgs(args, modelSelectionArgs(adapter, req.Model, req.Effort), delivery)
 	if delivery == PromptViaArgument {
 		args = append(args, prompt)
 	}
@@ -180,7 +214,7 @@ func (e *Executor) Execute(
 	process := exec.Command(program, args...)
 	process.Dir = workDir
 	configureProcessGroup(process)
-	process.Env = append(restrictedEnv(),
+	process.Env = append(childEnv,
 		"RUST_LOG=error",
 		"PEERS_TOUCH_AGENT_ID="+req.AgentID,
 		"PEERS_TOUCH_CONVERSATION_ID="+req.ConversationID,
@@ -190,9 +224,7 @@ func (e *Executor) Execute(
 		"PEERS_TOUCH_CLI_ADAPTER="+adapter,
 		"PEERS_TOUCH_AGENT_WORKSPACE="+workDir,
 	)
-	for key, value := range req.Environment {
-		process.Env = append(process.Env, key+"="+value)
-	}
+	process.Env = append(process.Env, credentials...)
 	if len(req.AllowedRoots) > 0 {
 		process.Env = append(
 			process.Env,
@@ -493,6 +525,12 @@ type CliVerifyResult struct {
 }
 
 func VerifyCliBinary(command []string) CliVerifyResult {
+	return VerifyCliBinaryFor(command, nil)
+}
+
+// VerifyCliBinaryFor resolves the command against extra PATH entries (the
+// actor's managed-runtime bin directory) before the process PATH.
+func VerifyCliBinaryFor(command []string, extraPathEntries []string) CliVerifyResult {
 	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
 		return CliVerifyResult{
 			Available: false,
@@ -501,7 +539,7 @@ func VerifyCliBinary(command []string) CliVerifyResult {
 	}
 
 	program := command[0]
-	path, err := exec.LookPath(program)
+	path, err := findProgram(program, extraPathEntries)
 	if err != nil {
 		return CliVerifyResult{
 			Available:   false,
@@ -535,6 +573,45 @@ func appendStartupArgs(
 	return append(commandArgs, startupArgs...)
 }
 
+func modelSelectionArgs(adapter, modelID, effort string) []string {
+	if adapter == "custom" {
+		return nil
+	}
+	var args []string
+	if modelID != "" && modelID != "default" {
+		args = append(args, "--model", modelID)
+	}
+	if effort != "" {
+		switch adapter {
+		case "codex", "trae":
+			args = append(args, "-c", "model_reasoning_effort="+strconv.Quote(effort))
+		case "claude":
+			args = append(args, "--effort", effort)
+		}
+	}
+	return args
+}
+
+func ValidateStartupArgs(arguments []string) error {
+	if len(arguments) > 64 {
+		return fmt.Errorf("CLI startup arguments exceed the allowed count")
+	}
+	for _, argument := range arguments {
+		if len(argument) > 4096 || strings.ContainsAny(argument, "\x00\r\n") {
+			return fmt.Errorf("CLI startup argument is invalid")
+		}
+		flag := strings.SplitN(argument, "=", 2)[0]
+		switch flag {
+		case "--model", "-m", "--effort", "--config", "-c", "--api-key":
+			return fmt.Errorf("CLI startup arguments cannot override model selection or credentials")
+		}
+		if !strings.HasPrefix(flag, "--") && (strings.HasPrefix(flag, "-m") || strings.HasPrefix(flag, "-c")) {
+			return fmt.Errorf("CLI startup arguments cannot override model selection or configuration")
+		}
+	}
+	return nil
+}
+
 func installHint(adapter string) string {
 	switch adapter {
 	case "trae":
@@ -550,34 +627,38 @@ func installHint(adapter string) string {
 	}
 }
 
-func restrictedEnv() []string {
-	allowed := []string{
-		"HOME",
-		"LANG",
-		"LC_ALL",
-		"SSL_CERT_DIR",
-		"SSL_CERT_FILE",
-		"TEMP",
-		"TMP",
-		"TMPDIR",
-		"TZ",
-	}
-	env := make([]string, 0, len(allowed)+1)
-	for _, key := range allowed {
-		if value, ok := os.LookupEnv(key); ok {
-			env = append(env, key+"="+value)
+func (e *Executor) actorPathEntries(actorPTID string) []string {
+	var entries []string
+	if e.Managed != nil {
+		if binDir := strings.TrimSpace(e.Managed.BinDir()); binDir != "" {
+			entries = append(entries, binDir)
 		}
 	}
-	pathDirs := []string{
-		os.ExpandEnv("$HOME/.local/bin"),
-		os.ExpandEnv("$HOME/.cargo/bin"),
-		"/usr/local/bin",
-		"/opt/homebrew/bin",
+	return entries
+}
+
+// resolveProgram finds the CLI binary, preferring the Station managed
+// runtime over the process PATH.
+func (e *Executor) resolveProgram(actorPTID, program string) (string, error) {
+	return findProgram(program, e.actorPathEntries(actorPTID))
+}
+
+// findProgram resolves a command name against extra PATH entries before the
+// process PATH. Absolute or path-containing commands use exec.LookPath.
+func findProgram(program string, extraPathEntries []string) (string, error) {
+	if filepath.IsAbs(program) || strings.ContainsAny(program, string(os.PathSeparator)) {
+		return exec.LookPath(program)
 	}
-	if existingPath := os.Getenv("PATH"); existingPath != "" {
-		pathDirs = append(pathDirs, existingPath)
+	for _, dir := range extraPathEntries {
+		if strings.TrimSpace(dir) == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, program)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return candidate, nil
+		}
 	}
-	return append(env, "PATH="+strings.Join(pathDirs, string(os.PathListSeparator)))
+	return exec.LookPath(program)
 }
 
 func superviseProcess(

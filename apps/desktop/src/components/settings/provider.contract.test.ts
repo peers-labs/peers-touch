@@ -20,13 +20,40 @@ describe('Provider settings product contract', () => {
     expect(menuSource).not.toContain('<Tabs');
   });
 
-  it('chooses Direct or CLI only inside Add Provider', () => {
-    expect(menuSource).toContain("Form.useWatch<'direct' | 'cli'>");
-    expect(menuSource).toContain('<Radio value="direct" className="pt-provider-kind-direct">');
-    expect(menuSource).toContain('<Radio value="cli" className="pt-provider-kind-cli">');
-    expect(menuSource).toContain('className="pt-provider-cli-adapter-select"');
-    expect(menuSource).toContain("className: 'pt-provider-cli-adapter-option'");
-    expect(menuSource).toContain('provider.runtime_kind === \'cli\'');
+  it('exposes personal configuration only when the Station policy allows it', () => {
+    expect(menuSource).toContain("managementMode === 'personal'");
+    expect(menuSource).toContain('personalProvidersEnabled');
+    expect(detailSource).toContain('AuthorizedProviderDetail');
+    expect(menuSource).not.toContain('CliAdapterField');
+  });
+
+  it('renders CLI adapters with inline install, progress and manual fallback', () => {
+    const installerSource = readFileSync(new URL(
+      '../../../../station/app/subserver/dashboard/web/src/components/AIInstallers.tsx', import.meta.url,
+    ), 'utf8');
+    expect(installerSource).toContain("['trae-cli', 'TRAE CLI']");
+    expect(installerSource).toContain("['codex-cli', 'Codex']");
+    expect(installerSource).toContain("['cursor-cli', 'Cursor']");
+    expect(installerSource).toContain("['claude-cli', 'Claude Code']");
+    // The option background becomes the install progress bar.
+    expect(installerSource).toContain('width: `${percent}%`');
+    // Failure offers retry and vendor manual download, never a dead empty list.
+    expect(installerSource).toContain("'retry'");
+    expect(installerSource).toContain("t('ai.guide')");
+    // Ready adapters are selectable; missing adapters never block listing.
+    expect(installerSource).toContain("state === 'ready'");
+    // Rows must render at natural width so four adapters are never clipped
+    // by antd Form.Item's 32px control container.
+    expect(installerSource).toContain('data-adapter={id}');
+    expect(installerSource).toContain('aria-valuenow={percent}');
+  });
+
+  it('keeps shared installation and credential management outside Desktop', () => {
+    const apiSource = readFileSync(new URL('../../services/desktop_api.ts', import.meta.url), 'utf8');
+    expect(apiSource).not.toContain('installProvider:');
+    const authorizedSource = readFileSync(new URL('./AuthorizedProviderDetail.tsx', import.meta.url), 'utf8');
+    expect(authorizedSource).not.toContain('InputPassword');
+    expect(authorizedSource).not.toContain('updateProvider');
   });
 
   it('mounts a dedicated CLI schema with Station-owned execution metadata', () => {
@@ -48,7 +75,9 @@ describe('Provider settings product contract', () => {
   });
 
   it('keeps Models focused on the global default only', () => {
-    expect(modelServiceSource).toContain("const SLOT_KEYS: (keyof ModelServiceConfig)[] = [\n  'default',\n]");
+    expect(modelServiceSource).toContain("const SLOT_KEYS = ['default'] as const");
+    expect(modelServiceSource).toContain('runtimeDefault');
+    expect(modelServiceSource).not.toContain('api.getModelConfig');
     expect(modelServiceSource).toContain('className="pt-model-service-default-select"');
     expect(modelSelectSource).toContain("className: 'pt-model-select-option'");
     expect(modelSelectSource).toContain("'data-pt-model-provider': m.provider_id");

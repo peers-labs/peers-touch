@@ -15,11 +15,7 @@ import type {
   FederationCatalogEntry,
 } from '../services/desktop_api';
 import { log } from '../utils/logger';
-
-export type FederationVisibilityLabel =
-  | 'hidden'
-  | 'by_handle'
-  | 'indexed';
+import { useSessionStore } from './session';
 
 export interface FederationActorStationCandidate {
   actorPtid: string;
@@ -70,7 +66,6 @@ export interface FederationState {
 
   refreshSelf: () => Promise<void>;
   refreshFederationContexts: () => Promise<void>;
-  setVisibility: (label: FederationVisibilityLabel) => Promise<void>;
   rememberCatalogEntries: (entries: readonly FederationCatalogEntry[]) => void;
   resolveActorStations: (
     candidates: readonly FederationActorStationCandidate[],
@@ -78,6 +73,9 @@ export interface FederationState {
   /** Drop session-bound state (called by FederationRuntime on logout). */
   clearSession: () => void;
 }
+
+let resetGeneration = 0;
+const currentScope = () => `${useSessionStore.getState().sessionEpoch}:${resetGeneration}`;
 
 export const useFederationStore = createDesktopStore<FederationState>('federation', (set, get) => ({
   self: null,
@@ -87,12 +85,15 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
   actorStationEntries: {},
 
   refreshSelf: async () => {
+    const scope = currentScope();
     const wasLoaded = get().self != null;
     if (!wasLoaded) set({ loading: true });
     try {
       const view = await api.profileGet();
+      if (scope !== currentScope()) return;
       set({ self: view, loading: false, lastError: null });
     } catch (err: unknown) {
+      if (scope !== currentScope()) return;
       const msg = err instanceof Error ? err.message : String(err);
       log.warn('federation', 'refreshSelf failed', { error: msg });
       set((state) => ({
@@ -105,31 +106,16 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
   },
 
   refreshFederationContexts: async () => {
+    const scope = currentScope();
     try {
       const resp = await api.federationListContexts();
+      if (scope !== currentScope()) return;
       set({ federations: resp.contexts ?? [] });
     } catch (err: unknown) {
+      if (scope !== currentScope()) return;
       const msg = err instanceof Error ? err.message : String(err);
       log.warn('federation', 'refreshFederationContexts failed', { error: msg });
       set({ lastError: msg });
-      throw err;
-    }
-  },
-
-  setVisibility: async (label) => {
-    const prev = get().self;
-    if (!prev) return;
-    set({ self: { ...prev, discoverability: label }, lastError: null });
-    try {
-      const result = await api.profileUpdate({
-        observed_revision: prev.profile_revision,
-        discoverability: label,
-      });
-      set({ self: result.profile, lastError: null });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log.warn('federation', 'setVisibility failed', { error: msg, label });
-      set({ self: prev, lastError: msg });
       throw err;
     }
   },
@@ -152,6 +138,7 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
   },
 
   resolveActorStations: async (candidates) => {
+    const scope = currentScope();
     const unresolved = candidates.filter((candidate) => (
       candidate.actorPtid.trim()
       && candidate.federationId.trim()
@@ -170,6 +157,7 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
         );
       }),
     );
+    if (scope !== currentScope()) return;
     get().rememberCatalogEntries(
       results.flatMap((result) => (
         result.status === 'fulfilled' && result.value
@@ -179,26 +167,18 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
     );
   },
 
-  clearSession: () =>
+  clearSession: () => {
+    resetGeneration++;
     set({
       self: null,
       loading: false,
       lastError: null,
       federations: [],
       actorStationEntries: {},
-    }),
+    });
+  },
 }));
 
 /** Selector helpers — keep components free of `useFederationStore` plumbing. */
 export const selectFederationHandle = (s: FederationState): string =>
   s.self?.federated_handle ?? '';
-
-export const selectFederationVisibility = (
-  s: FederationState,
-): FederationVisibilityLabel => {
-  const label = s.self?.discoverability;
-  if (label === 'hidden' || label === 'by_handle' || label === 'indexed') {
-    return label;
-  }
-  return 'by_handle';
-};

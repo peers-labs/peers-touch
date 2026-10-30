@@ -7,15 +7,16 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	providercli "github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 )
 
 func TestProviderModelDiscoveryReplacesCatalogOnlyAfterSuccess(t *testing.T) {
 	runtimeCatalog := NewRuntimeModelCatalog()
+	record := &persistence.AgentProvider{ActorPTID: "actor-a", Name: "trae-cli", Version: 1}
 	previousObservedAt := time.Now().UTC().Add(-time.Minute)
 	runtimeCatalog.Replace(
-		"actor-a",
-		"trae-cli",
+		record,
 		[]catalog.CatalogModel{{ID: "previous-model"}},
 		previousObservedAt,
 	)
@@ -41,11 +42,11 @@ func TestProviderModelDiscoveryReplacesCatalogOnlyAfterSuccess(t *testing.T) {
 		context.Background(),
 		"actor-a",
 		provider,
-		nil,
+		record,
 	); err == nil {
 		t.Fatal("failed discovery unexpectedly succeeded")
 	}
-	models, observedAt, ok := runtimeCatalog.Models("actor-a", "trae-cli")
+	models, observedAt, ok := runtimeCatalog.Models(record)
 	if !ok ||
 		len(models) != 1 ||
 		models[0].ID != "previous-model" ||
@@ -69,7 +70,7 @@ func TestProviderModelDiscoveryReplacesCatalogOnlyAfterSuccess(t *testing.T) {
 		context.Background(),
 		"actor-a",
 		provider,
-		nil,
+		record,
 	)
 	if err != nil {
 		t.Fatalf("successful discovery returned error: %v", err)
@@ -77,7 +78,7 @@ func TestProviderModelDiscoveryReplacesCatalogOnlyAfterSuccess(t *testing.T) {
 	if len(discovered) != 1 || discovered[0].ID != "new-model" {
 		t.Fatalf("discovered models = %+v", discovered)
 	}
-	stored, storedObservedAt, ok := runtimeCatalog.Models("actor-a", "trae-cli")
+	stored, storedObservedAt, ok := runtimeCatalog.Models(record)
 	if !ok ||
 		len(stored) != 1 ||
 		stored[0].ID != "new-model" ||

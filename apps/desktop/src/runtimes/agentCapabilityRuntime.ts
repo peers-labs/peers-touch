@@ -413,6 +413,8 @@ export const agentCapabilityRuntime: RuntimeDescriptor = {
     installProjectionInvalidation();
   },
   teardown() {
+    useProviderStore.getState().reset();
+    useAgentStore.setState({ availableModels: [], defaultModel: '', defaultProviderId: '' });
     useAgentStore.setState({ profileDraftsByAgentId: {}, saveStateByAgentId: {} });
     if (!installed) {
       useAgentCapabilityStore.getState().reset();

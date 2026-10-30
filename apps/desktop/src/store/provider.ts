@@ -10,6 +10,7 @@ import {
 } from '../services/desktop_api';
 import { log } from '../utils/logger';
 import { useAgentStore } from './agent';
+import { useSessionStore } from './session';
 import {
   mapProviderUIStatus,
   type ProviderReadiness,
@@ -29,6 +30,10 @@ interface ProviderState {
   loading: boolean;
   readinessById: Record<string, ProviderReadiness>;
   runtimeDefault: RuntimeDefaultSelection | null;
+  personalProvidersEnabled: boolean;
+  managementMode: 'authorized' | 'personal';
+  setManagementMode: (mode: 'authorized' | 'personal') => Promise<void>;
+  reset: () => void;
 
   // P0: per-provider operation tracking for optimistic UX
   providerLoadingIds: Set<string>;
@@ -64,6 +69,15 @@ interface ProviderState {
   refreshAfterMutation: (providerId?: string) => Promise<void>;
 }
 
+function providerOperation() {
+  const epoch = useSessionStore.getState().sessionEpoch;
+  const current = () => epoch === useSessionStore.getState().sessionEpoch;
+  const assertCurrent = () => {
+    if (!current()) throw new Error('provider.error.accountChanged');
+  };
+  return { current, assertCurrent };
+}
+
 export const useProviderStore = createDesktopStore<ProviderState>('provider', (set, get) => ({
   providers: [],
   selectedId: null,
@@ -71,13 +85,29 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
   loading: false,
   readinessById: {},
   runtimeDefault: null,
+  personalProvidersEnabled: false,
+  managementMode: 'authorized',
+  reset: () => {
+    set({
+      providers: [], selectedId: null, detail: null, loading: false, readinessById: {},
+      runtimeDefault: null, personalProvidersEnabled: false, managementMode: 'authorized',
+      providerLoadingIds: new Set(), detailCache: new Map(),
+    });
+  },
+  setManagementMode: async (mode) => {
+    if (mode === 'personal' && !get().personalProvidersEnabled) return;
+    set({ managementMode: mode, selectedId: null, detail: null, detailCache: new Map() });
+    await get().loadProviders();
+  },
   providerLoadingIds: new Set<string>(),
   detailCache: new Map<string, ProviderDetail>(),
 
   loadProviders: async () => {
+    const epoch = useSessionStore.getState().sessionEpoch;
+    const mode = get().managementMode;
     set({ loading: true });
     try {
-      const [providers, runtimeDefault] = await Promise.all([
+      const [authorized, runtimeDefault, policy] = await Promise.all([
         api.listProviders(),
         api.getRuntimeDefault().catch((error) => {
           log.warn('provider', 'Failed to load runtime default', {
@@ -85,35 +115,53 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
           });
           return null;
         }),
+        api.getProviderPolicy(),
       ]);
+      if (epoch !== useSessionStore.getState().sessionEpoch || mode !== get().managementMode) return;
+      const personalProvidersEnabled = policy.personal_providers_enabled;
+      let providers = authorized;
+      if (mode === 'personal' && personalProvidersEnabled) {
+        const shared = new Set(authorized.filter((p) => p.owner_scope === 'station').map((p) => p.id));
+        providers = (await api.listPersonalProviders()).filter((p) => !shared.has(p.id));
+      }
+      if (epoch !== useSessionStore.getState().sessionEpoch || mode !== get().managementMode) return;
       set({
         providers,
         runtimeDefault,
+        personalProvidersEnabled,
+        managementMode: personalProvidersEnabled ? mode : 'authorized',
         loading: false,
-        readinessById: Object.fromEntries(providers.map((provider) => [provider.id, mapProviderUIStatus(provider)])),
+        readinessById: Object.fromEntries(providers.map((provider) => [provider.id,
+          mode === 'authorized' ? { status: 'ready' as const } : mapProviderUIStatus(provider)])),
       });
+      if (get().selectedId && !providers.some((p) => p.id === get().selectedId)) set({ selectedId: null, detail: null, detailCache: new Map() });
       if (!get().selectedId && providers.length > 0) {
         void get().selectProvider(providers[0].id);
       }
     } catch (e) {
+      if (epoch !== useSessionStore.getState().sessionEpoch) return;
       log.error('provider', 'Failed to load providers', e);
       set({ loading: false });
     }
   },
 
   setRuntimeDefault: async (providerId, modelId) => {
+    const epoch = useSessionStore.getState().sessionEpoch;
     const expectedRevision = get().runtimeDefault?.revision ?? 0;
     const runtimeDefault = await api.setRuntimeDefault(
       providerId,
       modelId,
       expectedRevision,
     );
+    if (epoch !== useSessionStore.getState().sessionEpoch) throw new Error('provider.error.accountChanged');
     set({ runtimeDefault });
     await useAgentStore.getState().loadModels();
     return runtimeDefault;
   },
 
   selectProvider: async (id: string, skipLoading?: boolean) => {
+    const epoch = useSessionStore.getState().sessionEpoch;
+    const mode = get().managementMode;
     set({ selectedId: id });
 
     // Serve cached detail instantly to avoid flicker on re-selection
@@ -126,8 +174,8 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
       set({ loading: true });
     }
     try {
-      const detail = await api.getProvider(id);
-      if (get().selectedId === id) {
+      const detail = await api.getProvider(id, mode === 'personal');
+      if (epoch === useSessionStore.getState().sessionEpoch && mode === get().managementMode && get().selectedId === id) {
         // Update cache
         const nextCache = new Map(get().detailCache);
         nextCache.set(id, detail);
@@ -135,7 +183,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
       }
     } catch (e) {
       log.error('provider', 'Failed to load provider detail', e);
-      if (get().selectedId === id) {
+      if (epoch === useSessionStore.getState().sessionEpoch && mode === get().managementMode && get().selectedId === id) {
         set({ loading: false });
       }
     }
@@ -148,8 +196,10 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     enabled: boolean,
     runtimeConfig?: ProviderRuntimeConfig,
   ) => {
+    const operation = providerOperation();
     const selectedDetail = get().detail;
-    const detail = selectedDetail?.id === id ? selectedDetail : await api.getProvider(id);
+    const detail = selectedDetail?.id === id ? selectedDetail : await api.getProvider(id, true);
+    operation.assertCurrent();
     set((state) => ({
       readinessById: { ...state.readinessById, [id]: { status: 'saving' } },
     }));
@@ -162,10 +212,11 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
           ?? (detail.runtime_kind === 'cli' ? detail.runtime_config : undefined),
         version: detail.version,
       });
+      operation.assertCurrent();
       await get().refreshAfterMutation(id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      set((state) => ({
+      if (operation.current()) set((state) => ({
         readinessById: { ...state.readinessById, [id]: { status: 'error', error: message } },
       }));
       throw error;
@@ -173,7 +224,9 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
   },
 
   updateProviderRuntimeConfig: async (id, runtimeConfig) => {
-    const detail = get().detail?.id === id ? get().detail : await api.getProvider(id);
+    const operation = providerOperation();
+    const detail = get().detail?.id === id ? get().detail : await api.getProvider(id, true);
+    operation.assertCurrent();
     if (!detail) throw new Error(`Provider not found: ${id}`);
     await get().updateProvider(
       id,
@@ -185,6 +238,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
   },
 
   toggleProvider: async (id: string, enabled: boolean) => {
+    const operation = providerOperation();
     // Optimistic update: immediately reflect in providers list
     const prevProviders = get().providers;
     set({
@@ -201,8 +255,9 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
       if (currentDetail && currentDetail.id === id) {
         providerDetail = currentDetail;
       } else {
-        providerDetail = await api.getProvider(id);
+        providerDetail = await api.getProvider(id, true);
       }
+      operation.assertCurrent();
       apiKey = providerDetail.api_key || '';
       baseUrl = providerDetail.base_url || '';
 
@@ -215,26 +270,31 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
           : undefined,
         version: providerDetail.version,
       });
+      operation.assertCurrent();
       await get().refreshAfterMutation(id);
     } catch (e) {
       // Revert optimistic update on failure
-      set({ providers: prevProviders });
+      if (operation.current()) set({ providers: prevProviders });
       log.error('provider', 'Failed to toggle provider', e);
       throw e;
     } finally {
-      const loadingIds = new Set(get().providerLoadingIds);
-      loadingIds.delete(id);
-      set({ providerLoadingIds: loadingIds });
+      if (operation.current()) {
+        const loadingIds = new Set(get().providerLoadingIds);
+        loadingIds.delete(id);
+        set({ providerLoadingIds: loadingIds });
+      }
     }
   },
 
   checkProvider: async (id: string, apiKey?: string, baseUrl?: string, model?: string) => {
+    const operation = providerOperation();
     set((state) => ({
       readinessById: { ...state.readinessById, [id]: { status: 'checking' } },
     }));
     try {
       const result = await api.checkProvider(id, { api_key: apiKey, base_url: baseUrl, model });
-      set((state) => ({
+      operation.assertCurrent();
+      if (operation.current()) set((state) => ({
         readinessById: {
           ...state.readinessById,
           [id]: result.ok
@@ -249,7 +309,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      set((state) => ({
+      if (operation.current()) set((state) => ({
         readinessById: { ...state.readinessById, [id]: { status: 'error', error: message } },
       }));
       throw error;
@@ -257,34 +317,46 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
   },
 
   createProvider: async (data) => {
+    const operation = providerOperation();
     const created = await api.createProvider(data);
+    operation.assertCurrent();
     await get().loadProviders();
+    operation.assertCurrent();
     const nextId = created?.provider?.id || data.id;
-    get().selectProvider(nextId);
+    await get().selectProvider(nextId);
   },
 
   deleteProvider: async (id: string) => {
+    const operation = providerOperation();
     await api.deleteProvider(id);
+    operation.assertCurrent();
     // Clear from cache
     const nextCache = new Map(get().detailCache);
     nextCache.delete(id);
     set({ selectedId: null, detail: null, detailCache: nextCache });
     await get().loadProviders();
+    operation.assertCurrent();
     await useAgentStore.getState().loadModels();
   },
 
   addModel: async (providerId: string, data: ProviderModelCreateData) => {
+    const operation = providerOperation();
     await api.addModel(providerId, data);
+    operation.assertCurrent();
     await get().refreshAfterMutation(providerId);
   },
 
   updateModel: async (providerId: string, modelId: string, data: ProviderModelConfigInput) => {
+    const operation = providerOperation();
     await api.updateModel(providerId, modelId, data);
+    operation.assertCurrent();
     await get().refreshAfterMutation(providerId);
   },
 
   deleteModel: async (providerId: string, modelId: string) => {
+    const operation = providerOperation();
     await api.deleteModel(providerId, modelId);
+    operation.assertCurrent();
     const detail = get().detail;
     if (detail && detail.id === providerId) {
       set({ detail: { ...detail, models: detail.models.filter((m) => m.id !== modelId) } });
@@ -293,7 +365,9 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
   },
 
   discoverModels: async (providerId: string) => {
+    const operation = providerOperation();
     const result = await api.discoverModels(providerId);
+    operation.assertCurrent();
     await get().refreshAfterMutation(providerId);
     return {
       count: Array.isArray(result.models) ? result.models.length : 0,
@@ -302,16 +376,21 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
   },
 
   toggleModel: async (providerId: string, modelId: string, enabled: boolean) => {
+    const operation = providerOperation();
     await api.toggleModel(providerId, modelId, enabled);
+    operation.assertCurrent();
     await get().refreshAfterMutation(providerId);
   },
 
   refreshAfterMutation: async (providerId?: string) => {
+    const operation = providerOperation();
     await get().loadProviders();
+    operation.assertCurrent();
     const activeId = providerId ?? get().selectedId;
     if (activeId && get().selectedId === activeId) {
       await get().selectProvider(activeId, true);
     }
+    operation.assertCurrent();
     await useAgentStore.getState().loadModels();
   },
 }));

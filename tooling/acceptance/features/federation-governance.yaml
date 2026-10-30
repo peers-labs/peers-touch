@@ -4,7 +4,8 @@
   "product_area": "federation",
   "owners": [
     "apps/station/app/subserver/federation/**",
-    "apps/desktop/src/components/settings/FederationTab.tsx"
+    "apps/station/app/subserver/dashboard/handler_federation.go",
+    "apps/station/app/subserver/dashboard/web/src/pages/FederationPage.tsx"
   ],
   "truth_sources": ["federation_ledger_proposals", "federation_ledger_events"],
   "required_gates": ["station-federation-unit"],
@@ -15,5 +16,9 @@
       "sequencer handover and recovery are verifiable"
     ]
   },
-  "negative": ["notification and event stream must not become governance truth"]
+  "negative": [
+    "notification and event stream must not become governance truth",
+    "Actor sessions cannot authorize Federation lifecycle mutations",
+    "Dashboard must delegate governance and ledger signing to the Federation owner"
+  ]
 }

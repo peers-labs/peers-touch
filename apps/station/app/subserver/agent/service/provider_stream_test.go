@@ -198,7 +198,7 @@ func TestParseAnthropicStreamDeltaMetadata(t *testing.T) {
 	}
 }
 
-func TestProviderServiceExecutesCatalogCLIWithoutCredential(t *testing.T) {
+func TestProviderServiceExecutesConfiguredCredentiallessCLI(t *testing.T) {
 	openAdmissionTestDB(t, "provider_catalog_cli")
 	root := t.TempDir()
 	commandPath := filepath.Join(root, "traecli")
@@ -223,6 +223,11 @@ printf '%s\n' '{"type":"done"}'
 	t.Cleanup(func() {
 		catalogProvider.CLIArgv = originalCommand
 	})
+	if _, err := NewProviderConfigService().Create(context.Background(), ProviderCreateRequest{
+		ActorPTID: "actor-1", ProviderID: "trae-cli",
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	var streamed string
 	response, err := provider.Call(context.Background(), &ProviderCallRequest{
@@ -379,7 +384,7 @@ func TestProviderCallWithRetryBypassesCredentialLeaseForCLI(t *testing.T) {
 		ShowAPIKey:  &showAPIKey,
 		Protocol:    "cli",
 		RuntimeKind: "cli",
-		CLIArgv:     []string{"test-cli"},
+		CLIArgv:     []string{os.Args[0]},
 		Models: []catalog.CatalogModel{{
 			ID:            "default",
 			DisplayName:   "Default",
@@ -399,6 +404,11 @@ func TestProviderCallWithRetryBypassesCredentialLeaseForCLI(t *testing.T) {
 		t.Fatalf("migrate CLI runtime authority: %v", err)
 	}
 	seedRuntimeAuthorityRows(t, db, "turn-1", "attempt-1")
+	if _, err := NewProviderConfigService().Create(context.Background(), ProviderCreateRequest{
+		ActorPTID: "ptid:person:owner", ProviderID: "test-cli",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	resolver := NewRuntimeAdmissionResolver(
 		NewProviderConfigService(),
 		NewModelConfigService(),

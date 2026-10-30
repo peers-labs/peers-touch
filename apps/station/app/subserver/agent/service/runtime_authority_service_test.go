@@ -1352,6 +1352,7 @@ func TestProviderAdapterContinuationUsesPinnedCapabilitiesAfterContraction(t *te
 		context.Background(),
 		strictRequest,
 		&provider,
+		NewRuntimeAdmissionResolver(NewProviderConfigService(), NewModelConfigService()),
 	); err == nil {
 		t.Fatal("current provider authority accepted contracted capability source")
 	}
@@ -1369,6 +1370,7 @@ func TestProviderAdapterContinuationUsesPinnedCapabilitiesAfterContraction(t *te
 		context.Background(),
 		continuationRequest,
 		&provider,
+		NewRuntimeAdmissionResolver(NewProviderConfigService(), NewModelConfigService()),
 	)
 	if err != nil {
 		t.Fatalf("validate committed ToolCall continuation authority: %v", err)
@@ -2910,12 +2912,19 @@ func TestMigrateRuntimeSnapshotThinkingModesBackfillsAutoAndHash(t *testing.T) {
 
 func openRuntimeAuthorityDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
+	t.Setenv("PT_SECRET_KEK", "runtime-authority-test-key-material")
+	t.Setenv("PT_SECRET_KEK_FILE", "")
 	db := openConversationAuthorityDB(t, name)
 	if err := db.AutoMigrate(
 		&persistence.Agent{},
 		&persistence.TurnAttempt{},
+		&persistence.ProviderPolicy{},
+		&persistence.ProviderAccessGrant{},
 	); err != nil {
 		t.Fatalf("migrate runtime authority database: %v", err)
+	}
+	if err := db.Create(&persistence.ProviderPolicy{ID: "station", PersonalProvidersEnabled: true}).Error; err != nil {
+		t.Fatal(err)
 	}
 	return db
 }

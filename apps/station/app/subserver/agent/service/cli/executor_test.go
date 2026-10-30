@@ -117,6 +117,42 @@ printf '%s\n' '{"type":"done","content":"configured"}'
 	}
 }
 
+func TestExecutorBindsSelectedModelAndCredentialToAdapterInvocation(t *testing.T) {
+	root := t.TempDir()
+	argsPath, credentialPath := filepath.Join(root, "args"), filepath.Join(root, "credential")
+	command := writeExecutable(t, root, "codex", `#!/bin/sh
+printf '%s\n' "$@" > "$PEERS_TEST_ARGS_PATH"
+printf '%s' "${CODEX_API_KEY:-}" > "$PEERS_TEST_CREDENTIAL_PATH"
+cat >/dev/null
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"selected"}}' '{"type":"turn.completed"}'
+`)
+	t.Setenv("CODEX_API_KEY", "inherited-station-key")
+	executor := NewExecutor(&WorkspaceManager{BaseDir: filepath.Join(root, "workspaces")})
+	request := &ExecuteRequest{ActorPTID: "actor-1", Provider: "codex-cli",
+		Command: []string{command, "exec", "--json", "-"}, Model: "chosen-model", Effort: "high",
+		Environment: map[string]string{"PEERS_TEST_ARGS_PATH": argsPath, "PEERS_TEST_CREDENTIAL_PATH": credentialPath},
+		Credentials: map[string]string{"CODEX_API_KEY": "owner-bound-test-key"}}
+	result, err := executor.Execute(context.Background(), request, nil)
+	if err != nil || result.Content != "selected" {
+		t.Fatalf("adapter invocation = %+v %v", result, err)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(args) != "exec\n--json\n--model\nchosen-model\n-c\nmodel_reasoning_effort=\"high\"\n-\n" {
+		t.Fatalf("selected model did not reach adapter arguments: %q", args)
+	}
+	credential, err := os.ReadFile(credentialPath)
+	if err != nil || string(credential) != "owner-bound-test-key" {
+		t.Fatal("adapter did not use its explicit owner credential")
+	}
+	request.StartupArgs = []string{"--model", "bypass-model"}
+	if _, err := executor.Execute(context.Background(), request, nil); !IsFailureKind(err, FailureInvalidCommand) {
+		t.Fatalf("startup model override was accepted: %v", err)
+	}
+}
+
 func TestExecutorReturnsTypedMissingBinary(t *testing.T) {
 	executor := NewExecutor(&WorkspaceManager{BaseDir: t.TempDir()})
 	_, err := executor.Execute(context.Background(), &ExecuteRequest{
@@ -233,13 +269,17 @@ printf '%s\n' '{"type":"done","content":"safe"}'
 		t.Fatalf("read child environment: %v", err)
 	}
 	value := string(environment)
+	stateRoot, err := executor.WorkspaceManager.StateRoot("actor-1", adapterName(commandPath))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, forbidden := range []string{"PEERS_AUTH_SECRET=", "PEERS_DB_DSN="} {
 		if strings.Contains(value, forbidden) {
 			t.Fatalf("child environment contains %s", forbidden)
 		}
 	}
 	for _, required := range []string{
-		"HOME=" + root,
+		"HOME=" + filepath.Join(stateRoot, "home") + "\n",
 		"PEERS_TOUCH_AGENT_ID=agent-1",
 		"PEERS_TOUCH_CONVERSATION_ID=conversation-1",
 	} {

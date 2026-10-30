@@ -124,13 +124,15 @@ mkdir -p \
   /app/data/relay-credentials \
   /app/data/channel/plugins \
   /app/data/channel/lark-requesters \
+  /app/data/agent-workspaces \
   "$(dirname "/app/$PEERS_STATION_ROOT_KEY_FILE")" \
   "$(dirname "/app/$PEERS_STATION_NODE_KEY_FILE")" \
   "$(dirname "/app/$PEERS_LIBP2P_IDENTITY_KEY_FILE")"
 chmod 0700 \
   /app/data/channel \
   /app/data/channel/plugins \
-  /app/data/channel/lark-requesters
+  /app/data/channel/lark-requesters \
+  /app/data/agent-workspaces
 
 # ── Node label pattern injection ──────────────────────────────────────────────
 # Expand ${PEERS_NODE_LABEL} in actor.yml using envsubst.

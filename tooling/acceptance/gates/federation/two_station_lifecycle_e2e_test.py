@@ -15,7 +15,7 @@ from tooling.acceptance.gates.federation.two_station_lifecycle_e2e import (
 
 
 class FederationTwoStationLifecycleGateTest(unittest.TestCase):
-    def test_opens_single_section_federation_group_without_sidebar_item(
+    def test_opens_federation_contexts_through_real_find_people_actions(
         self,
     ) -> None:
         gate = object.__new__(FederationTwoStationLifecycleGate)
@@ -26,21 +26,28 @@ class FederationTwoStationLifecycleGateTest(unittest.TestCase):
         session = MagicMock()
         primary = MagicMock()
         primary.is_displayed.return_value = True
-        secondary = MagicMock()
-        secondary.is_displayed.return_value = True
+        menu = MagicMock()
+        menu.is_displayed.return_value = True
+        find_people = MagicMock()
+        find_people.is_displayed.return_value = True
         section = MagicMock()
         section.is_displayed.return_value = True
         elements = {
-            '[data-pt-primary-nav="settings"] [role="button"]': [primary],
-            '[data-pt-secondary-tab="federation"]': [secondary],
-            '[data-pt-section-host="federation"]': [section],
+            '[data-pt-primary-nav="chat"] [role="button"]': [primary],
+            '[data-chat-new-menu]': [menu],
+            '[data-chat-find-people-menu]': [find_people],
         }
-        session.find_elements.side_effect = elements.__getitem__
+        session.find_elements.side_effect = lambda selector: (
+            ([section] if find_people.click.called else [])
+            if selector == '[data-chat-find-people]'
+            else elements.get(selector, [])
+        )
 
-        gate._open_federation_settings(session)
+        gate._open_federation_contexts(session)
 
         primary.click.assert_called_once_with()
-        secondary.click.assert_called_once_with()
+        menu.click.assert_called_once_with()
+        find_people.click.assert_called_once_with()
         section.click.assert_not_called()
         session.find_element.assert_not_called()
 
@@ -54,7 +61,7 @@ class FederationTwoStationLifecycleGateTest(unittest.TestCase):
 
         selected = FederationTwoStationLifecycleGate._visible_element(
             session,
-            '[data-federation-context-id="fed-1"]',
+            '[data-chat-find-people-federation-id="fed-1"]',
         )
 
         self.assertIs(selected, visible)
@@ -68,7 +75,7 @@ class FederationTwoStationLifecycleGateTest(unittest.TestCase):
         session = MagicMock()
         session.find_elements.return_value = []
         gate.runtime.desktop_session.return_value = session
-        gate._open_federation_settings = MagicMock()
+        gate._open_federation_contexts = MagicMock()
         gate._visible_element = MagicMock(return_value=MagicMock())
         gate.save_screenshot = MagicMock()
         gate.save_dom = MagicMock()

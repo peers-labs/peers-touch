@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 )
 
 type RuntimeModelCatalog struct {
@@ -13,8 +14,9 @@ type RuntimeModelCatalog struct {
 }
 
 type runtimeModelCatalogKey struct {
-	actorPTID  string
+	owner      ProviderOwner
 	providerID string
+	version    int64
 }
 
 type runtimeModelSnapshot struct {
@@ -29,17 +31,17 @@ func NewRuntimeModelCatalog() *RuntimeModelCatalog {
 }
 
 func (c *RuntimeModelCatalog) Replace(
-	actorPTID string,
-	providerID string,
+	record *persistence.AgentProvider,
 	models []catalog.CatalogModel,
 	observedAt time.Time,
 ) {
-	if c == nil {
+	if c == nil || record == nil || providerOwner(record).Validate() != nil {
 		return
 	}
 	key := runtimeModelCatalogKey{
-		actorPTID:  actorPTID,
-		providerID: providerID,
+		owner:      providerOwner(record),
+		providerID: record.Name,
+		version:    record.Version,
 	}
 	c.mu.Lock()
 	c.snapshots[key] = runtimeModelSnapshot{
@@ -50,15 +52,15 @@ func (c *RuntimeModelCatalog) Replace(
 }
 
 func (c *RuntimeModelCatalog) Models(
-	actorPTID string,
-	providerID string,
+	record *persistence.AgentProvider,
 ) ([]catalog.CatalogModel, time.Time, bool) {
-	if c == nil {
+	if c == nil || record == nil || providerOwner(record).Validate() != nil {
 		return nil, time.Time{}, false
 	}
 	key := runtimeModelCatalogKey{
-		actorPTID:  actorPTID,
-		providerID: providerID,
+		owner:      providerOwner(record),
+		providerID: record.Name,
+		version:    record.Version,
 	}
 	c.mu.RLock()
 	snapshot, ok := c.snapshots[key]
@@ -72,10 +74,10 @@ func (c *RuntimeModelCatalog) Models(
 }
 
 func (c *RuntimeModelCatalog) EffectiveProvider(
-	actorPTID string,
+	record *persistence.AgentProvider,
 	provider catalog.CatalogProvider,
 ) catalog.CatalogProvider {
-	models, _, ok := c.Models(actorPTID, provider.ID)
+	models, _, ok := c.Models(record)
 	if !ok {
 		return provider
 	}

@@ -16187,6 +16187,8 @@ type QuickCompletionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	Prompt        string                 `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Provider      string                 `protobuf:"bytes,3,opt,name=provider,proto3" json:"provider,omitempty"`
+	Model         string                 `protobuf:"bytes,4,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -16235,9 +16237,25 @@ func (x *QuickCompletionRequest) GetPrompt() string {
 	return ""
 }
 
+func (x *QuickCompletionRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *QuickCompletionRequest) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
 type QuickCompletionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Content       string                 `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
+	Provider      string                 `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
+	Model         string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -16275,6 +16293,20 @@ func (*QuickCompletionResponse) Descriptor() ([]byte, []int) {
 func (x *QuickCompletionResponse) GetContent() string {
 	if x != nil {
 		return x.Content
+	}
+	return ""
+}
+
+func (x *QuickCompletionResponse) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *QuickCompletionResponse) GetModel() string {
+	if x != nil {
+		return x.Model
 	}
 	return ""
 }
@@ -17699,12 +17731,16 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"_\n" +
 	"\x1cListScheduledJobRunsResponse\x12?\n" +
-	"\x04runs\x18\x01 \x03(\v2+.peers_touch.model.agent.v1.ScheduledJobRunR\x04runs\"K\n" +
+	"\x04runs\x18\x01 \x03(\v2+.peers_touch.model.agent.v1.ScheduledJobRunR\x04runs\"}\n" +
 	"\x16QuickCompletionRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
-	"\x06prompt\x18\x02 \x01(\tR\x06prompt\"3\n" +
+	"\x06prompt\x18\x02 \x01(\tR\x06prompt\x12\x1a\n" +
+	"\bprovider\x18\x03 \x01(\tR\bprovider\x12\x14\n" +
+	"\x05model\x18\x04 \x01(\tR\x05model\"e\n" +
 	"\x17QuickCompletionResponse\x12\x18\n" +
-	"\acontent\x18\x01 \x01(\tR\acontent*\xad\x01\n" +
+	"\acontent\x18\x01 \x01(\tR\acontent\x12\x1a\n" +
+	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x14\n" +
+	"\x05model\x18\x03 \x01(\tR\x05model*\xad\x01\n" +
 	"\n" +
 	"TurnStatus\x12\x1b\n" +
 	"\x17TURN_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +

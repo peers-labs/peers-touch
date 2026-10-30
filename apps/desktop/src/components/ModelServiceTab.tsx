@@ -1,69 +1,37 @@
-/**
- * ModelServiceTab — Settings tab for configuring which model each scenario uses.
- *
- * Architecture:
- *   - Config stored in KV as "prefs:model-registry" (key-value map)
- *   - Each slot key: default, topicNaming, translation, etc.
- *   - API: GET/PUT /api/model-config/:key
- *   - Invalid references (disabled provider) show inline warnings
- */
-import { useCallback, useEffect, useRef, useState } from 'react';
+// Settings renders the account default owned by Station and the Provider store.
+import { useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Alert, toast } from '@lobehub/ui';
 import { Typography, theme } from 'antd';
-import { api, type ModelServiceConfig, type ModelRef } from '../services/desktop_api';
+import type { ModelRef } from '../services/desktop_api';
 import { ModelSelect } from './ModelSelect';
 import { SettingsContainer } from './settings/SettingsLayout';
 import { useTranslation } from 'react-i18next';
-import { log } from '../utils/logger';
 import { useAgentStore } from '../store/agent';
+import { useActiveProviderSlice } from './settings/useActiveSettingsStores';
 
 const { Title, Text } = Typography;
 
-const SLOT_KEYS: (keyof ModelServiceConfig)[] = [
-  'default',
-];
+const SLOT_KEYS = ['default'] as const;
 
 export function ModelServiceTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const [config, setConfig] = useState<ModelServiceConfig>({});
-  const [loading, setLoading] = useState(true);
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [saving, setSaving] = useState(false);
+  const { runtimeDefault, setRuntimeDefault, loading } = useActiveProviderSlice((s) => ({
+    runtimeDefault: s.runtimeDefault, setRuntimeDefault: s.setRuntimeDefault, loading: s.loading,
+  }));
+  const config = { default: runtimeDefault
+    ? { provider: runtimeDefault.providerId, model: runtimeDefault.modelId } : undefined };
   const models = useAgentStore((state) => state.availableModels);
   const modelsLoading = useAgentStore((state) => state.loading);
 
-  useEffect(() => {
-    api.listModelConfig()
-      .then((cfgMap) => {
-        setConfig(cfgMap as ModelServiceConfig);
-      })
-      .catch((err) => {
-        log.error('model-service', 'Failed to load model service config', err);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-  }, []);
-
-  const handleSlotChange = useCallback((key: keyof ModelServiceConfig, ref: ModelRef) => {
-    setConfig((prev) => {
-      const next = { ...prev, [key]: ref };
-
-      // Debounced save per key
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => {
-        const body = ref.provider || ref.model ? ref : null;
-        api.setModelConfig(key, body)
-          .then(() => useAgentStore.getState().loadModels())
-          .catch(() => toast.error(t('provider.modelService.failedToSave')));
-      }, 500);
-
-      return next;
-    });
-  }, [t]);
+  const handleDefaultChange = async (ref: ModelRef) => {
+    setSaving(true);
+    try { await setRuntimeDefault(ref.provider, ref.model); }
+    catch { toast.error(t('provider.modelService.failedToSave')); }
+    finally { setSaving(false); }
+  };
 
   if (loading || (modelsLoading && models.length === 0)) {
     return (
@@ -129,12 +97,12 @@ export function ModelServiceTab() {
                   className="pt-model-service-default-select"
                   value={ref}
                   onChange={(next) => {
-                    if (next) handleSlotChange(slotKey, next);
+                    if (next) void handleDefaultChange(next);
                   }}
                   models={models}
                   showWarning={!!isInvalid}
-                  style={{ width: 280 }}
-                  disabled={noModels}
+                  style={{ width: 280, maxWidth: '100%' }}
+                  disabled={noModels || saving}
                 />
               </Flexbox>
 

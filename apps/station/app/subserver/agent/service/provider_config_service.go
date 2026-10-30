@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
@@ -25,6 +27,7 @@ func NewProviderConfigService() *ProviderConfigService {
 }
 
 type ProviderCreateRequest struct {
+	Scope       string
 	ActorPTID   string
 	ProviderID  string
 	DisplayName string
@@ -34,6 +37,7 @@ type ProviderCreateRequest struct {
 }
 
 type ProviderUpdateRequest struct {
+	Scope       string
 	ActorPTID   string
 	ProviderID  string
 	Version     int64
@@ -44,30 +48,30 @@ type ProviderUpdateRequest struct {
 }
 
 type ProviderDeleteRequest struct {
+	Scope      string
 	ActorPTID  string
 	ProviderID string
 	Version    int64
 }
 
 func (s *ProviderConfigService) List(ctx context.Context, actorPTID string) ([]persistence.AgentProvider, error) {
-	db, err := s.getDB(ctx)
-	if err != nil {
+	if err := s.RequirePersonal(ctx, actorPTID); err != nil {
 		return nil, err
 	}
-
-	var providers []persistence.AgentProvider
-	if err := db.WithContext(ctx).
-		Where("actor_ptid = ?", actorPTID).
-		Order("created_at ASC").
-		Find(&providers).Error; err != nil {
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to list providers", err)
-	}
-
-	return providers, nil
+	return s.ListOwned(ctx, ActorProviderOwner(actorPTID))
 }
 
 func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRequest) (*persistence.AgentProvider, error) {
+	owner := requestProviderOwner(req.Scope, req.ActorPTID)
+	if err := s.validateManagementOwner(ctx, owner); err != nil {
+		return nil, err
+	}
+	if req.ProviderID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "provider_id is required", nil)
+	}
+	if err := validateProviderConfiguration(req.ProviderID, req.ConfigJSON); err != nil {
+		return nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -88,9 +92,102 @@ func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRe
 	return provider, nil
 }
 
+// Materialize creates a catalog Provider with its final configuration in one
+// write. Version zero means absent and never overwrites a concurrent create.
+func (s *ProviderConfigService) Materialize(ctx context.Context, req ProviderUpdateRequest) (*persistence.AgentProvider, error) {
+	owner := requestProviderOwner(req.Scope, req.ActorPTID)
+	if err := s.validateManagementOwner(ctx, owner); err != nil {
+		return nil, err
+	}
+	if req.Version != 0 || catalog.Find(req.ProviderID) == nil {
+		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "catalog provider not found", nil)
+	}
+	if err := validateProviderConfiguration(req.ProviderID, req.ConfigJSON); err != nil {
+		return nil, err
+	}
+	record := newProviderRecord(ProviderCreateRequest{Scope: owner.Scope, ActorPTID: owner.ActorPTID,
+		ProviderID: req.ProviderID, ConfigJSON: req.ConfigJSON})
+	if !providerRecordSupportedByFrozenProfile(record) {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "provider runtime is unsupported", nil)
+	}
+	if req.DisplayName != nil {
+		record.DisplayName = *req.DisplayName
+	}
+	if req.BaseURL != nil {
+		record.BaseURL = *req.BaseURL
+	}
+	if req.Enabled != nil {
+		record.Enabled = *req.Enabled
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	result := db.WithContext(ctx).Table(record.TableName()).
+		Clauses(clause.OnConflict{DoNothing: true}).Create(map[string]any{
+		"id": record.ID, "scope": record.Scope, "actor_ptid": record.ActorPTID, "name": record.Name,
+		"display_name": record.DisplayName, "base_url": record.BaseURL, "config": record.Config,
+		"source_type": record.SourceType, "runtime_kind": record.RuntimeKind, "cli_command": record.CliCommand,
+		"protocol": record.Protocol, "enabled": record.Enabled, "version": int64(1),
+		"access_revision": int64(0), "created_at": now, "updated_at": now,
+	})
+	if result.Error != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to configure provider", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "provider was configured concurrently", nil)
+	}
+	return s.GetOwned(ctx, owner, req.ProviderID)
+}
+
+func validateProviderConfiguration(providerID string, raw []byte) error {
+	if strings.TrimSpace(providerID) == "" || len(providerID) > 128 {
+		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "provider identity is invalid", nil)
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	var config map[string]any
+	if len(raw) > 64*1024 || json.Unmarshal(raw, &config) != nil || config == nil {
+		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "provider configuration must be a JSON object", nil)
+	}
+	var containsSecret func(any) bool
+	containsSecret = func(value any) bool {
+		switch typed := value.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				key = strings.ToUpper(strings.ReplaceAll(key, "-", "_"))
+				if strings.Contains(key, "SECRET") || key == "TOKEN" || strings.HasSuffix(key, "_TOKEN") || strings.Contains(key, "PASSWORD") ||
+					key == "APIKEY" || key == "KEY_VAULTS" || strings.HasSuffix(key, "_KEY") || containsSecret(child) {
+					return true
+				}
+			}
+		case []any:
+			for _, child := range typed {
+				if containsSecret(child) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if containsSecret(config) {
+		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "provider secrets belong in credential storage", nil)
+	}
+	if cp := catalog.Find(providerID); cp != nil && cp.RuntimeKind == providerRuntimeCLI {
+		record := &persistence.AgentProvider{Config: raw}
+		if err := ValidateProviderRuntimeConfig(cp, EffectiveProviderRuntimeConfig(cp, record)); err != nil {
+			return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "invalid CLI runtime configuration", err)
+		}
+	}
+	return nil
+}
+
 func newProviderRecord(req ProviderCreateRequest) *persistence.AgentProvider {
 	provider := &persistence.AgentProvider{
 		ID:          uuid.New().String(),
+		Scope:       requestProviderOwner(req.Scope, req.ActorPTID).Scope,
 		ActorPTID:   req.ActorPTID,
 		Name:        req.ProviderID,
 		DisplayName: req.DisplayName,
@@ -167,14 +264,21 @@ func providerRecordSupportedByFrozenProfile(provider *persistence.AgentProvider)
 }
 
 func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRequest) (*persistence.AgentProvider, error) {
+	owner := requestProviderOwner(req.Scope, req.ActorPTID)
+	if err := s.validateManagementOwner(ctx, owner); err != nil {
+		return nil, err
+	}
+	if err := validateProviderConfiguration(req.ProviderID, req.ConfigJSON); err != nil {
+		return nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	var provider persistence.AgentProvider
-	if err := db.WithContext(ctx).
-		Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
+	if err := owner.Query(db.WithContext(ctx)).
+		Where("name = ?", req.ProviderID).
 		First(&provider).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
@@ -221,16 +325,21 @@ func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRe
 		updates["config"] = req.ConfigJSON
 	}
 
-	if err := db.WithContext(ctx).
+	result := db.WithContext(ctx).
 		Model(&provider).
-		Updates(updates).Error; err != nil {
+		Where("version = ?", req.Version).
+		Updates(updates)
+	if result.Error != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to update provider", err)
+			"failed to update provider", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "provider changed during update", nil)
 	}
 
 	// Re-read to return authoritative state
-	if err := db.WithContext(ctx).
-		Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
+	if err := owner.Query(db.WithContext(ctx)).
+		Where("name = ?", req.ProviderID).
 		First(&provider).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to re-read provider after update", err)
@@ -241,6 +350,10 @@ func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRe
 }
 
 func (s *ProviderConfigService) Delete(ctx context.Context, req ProviderDeleteRequest) error {
+	owner := requestProviderOwner(req.Scope, req.ActorPTID)
+	if err := s.validateManagementOwner(ctx, owner); err != nil {
+		return err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -248,7 +361,7 @@ func (s *ProviderConfigService) Delete(ctx context.Context, req ProviderDeleteRe
 
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var provider persistence.AgentProvider
-		if err := tx.Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
+		if err := owner.Query(tx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", req.ProviderID).
 			First(&provider).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return errcode.New(errcode.AgentNotFound, http.StatusNotFound,
@@ -263,18 +376,21 @@ func (s *ProviderConfigService) Delete(ctx context.Context, req ProviderDeleteRe
 				fmt.Sprintf("version conflict: current=%d, submitted=%d", provider.Version, req.Version), nil)
 		}
 
-		if err := tx.Where("actor_ptid = ? AND provider = ?", req.ActorPTID, req.ProviderID).
+		if err := owner.Query(tx).Where("provider = ?", req.ProviderID).
 			Delete(&persistence.Credential{}).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"failed to cascade delete credentials", err)
 		}
 
-		if err := tx.Where("actor_ptid = ? AND provider_id = ?", req.ActorPTID, req.ProviderID).
+		if err := owner.Query(tx).Where("provider_id = ?", req.ProviderID).
 			Delete(&persistence.AgentModel{}).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"failed to cascade delete models", err)
 		}
 
+		if err := tx.Where("provider_record_id = ?", provider.ID).Delete(&persistence.ProviderAccessGrant{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Delete(&provider).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"failed to delete provider", err)
@@ -296,6 +412,9 @@ func (s *ProviderConfigService) getDB(ctx context.Context) (*gorm.DB, error) {
 
 // HideModel appends a model ID to the provider's hidden_models list.
 func (s *ProviderConfigService) HideModel(ctx context.Context, actorPTID, providerID, modelID string) error {
+	if err := s.RequirePersonal(ctx, actorPTID); err != nil {
+		return err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -328,6 +447,9 @@ func (s *ProviderConfigService) HideModel(ctx context.Context, actorPTID, provid
 
 // UnhideModel removes a model ID from the provider's hidden_models list.
 func (s *ProviderConfigService) UnhideModel(ctx context.Context, actorPTID, providerID, modelID string) error {
+	if err := s.RequirePersonal(ctx, actorPTID); err != nil {
+		return err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err

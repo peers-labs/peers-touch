@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import * as authApi from '../api/auth';
-import { getAuthToken, setAuthToken } from '../api/client';
+import { getAuthEpoch, getAuthToken, onAuthChange, setAuthToken } from '../api/client';
 import { log } from '../utils/logger';
 
 interface AuthState {
@@ -20,6 +20,7 @@ interface AuthState {
   clearError: () => void;
 }
 
+let loginOperation = 0;
 export const useAuthStore = create<AuthState>((set) => ({
   admin: null,
   loading: false,
@@ -27,9 +28,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
 
   login: async (username, password) => {
+    const operation = ++loginOperation;
+    const epoch = getAuthEpoch();
     set({ loading: true, error: null });
     try {
       const result = await authApi.login({ username, password });
+      if (operation !== loginOperation || result.token !== getAuthToken()) return false;
       set({
         admin: result.admin,
         isAuthenticated: true,
@@ -38,6 +42,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       log.info('auth', 'Login successful', { username });
       return true;
     } catch (err: unknown) {
+      if (operation !== loginOperation || epoch !== getAuthEpoch()) return false;
       const message =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Login failed';
       set({ error: message, loading: false });
@@ -46,16 +51,21 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
+    loginOperation++;
+    const epoch = getAuthEpoch();
     try {
       await authApi.logout();
     } catch {
       // Ignore logout errors — token may already be invalid
     }
-    setAuthToken(null);
-    set({ admin: null, isAuthenticated: false });
+    if (epoch === getAuthEpoch()) {
+      setAuthToken(null);
+      set({ admin: null, isAuthenticated: false });
+    }
   },
 
   checkAuth: async () => {
+    const epoch = getAuthEpoch();
     const token = getAuthToken();
     if (!token) {
       set({ isAuthenticated: false, admin: null });
@@ -63,9 +73,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     try {
       const admin = await authApi.getMe();
+      if (epoch !== getAuthEpoch()) return false;
       set({ admin, isAuthenticated: true });
       return true;
     } catch {
+      if (epoch !== getAuthEpoch()) return false;
       setAuthToken(null);
       set({ isAuthenticated: false, admin: null });
       return false;
@@ -74,3 +86,5 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   clearError: () => set({ error: null }),
 }));
+
+onAuthChange(() => useAuthStore.setState({ admin: null, isAuthenticated: false, error: null, loading: false }));

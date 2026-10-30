@@ -30,6 +30,8 @@ import (
 	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	providercli "github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
+	managedcli "github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli/managed"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/externalruntime"
 	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -64,6 +66,8 @@ type agentSubServer struct {
 	scheduledJobService    *service.ScheduledJobService
 	botTurnBridge          *service.BotTurnBridge
 	agentService           *service.AgentService
+	providerManagement     service.ProviderManagementPort
+	managedCLI             *managedcli.Manager
 	deviceKeys             *touchactor.DeviceStore
 	agentDB                *gorm.DB
 	nodeID                 string
@@ -106,6 +110,12 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 		return err
 	}
 	if err = rds.AutoMigrate(persistence.AllModels()...); err != nil {
+		return err
+	}
+	if err = persistence.MigrateProviderOwnerIndexes(rds); err != nil {
+		return fmt.Errorf("migrate provider owner indexes: %w", err)
+	}
+	if err = service.NewCredentialConfigService().MigrateSecrets(ctx); err != nil {
 		return err
 	}
 	if err = persistence.MigrateExecutorLeaseFencing(rds); err != nil {
@@ -170,6 +180,11 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
+	if s.managedCLI != nil {
+		if err := s.managedCLI.Resume(); err != nil {
+			return err
+		}
+	}
 	workerCtx := ctx
 	if s.turnService != nil {
 		workerCtx = s.turnService.SetExecutionLifecycle(ctx)
@@ -233,6 +248,12 @@ func (s *agentSubServer) Stop(ctx context.Context) error {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
 	s.status = server.StatusStopping
+	if s.managedCLI != nil {
+		if err := s.managedCLI.Stop(ctx); err != nil {
+			s.status = server.StatusError
+			return err
+		}
+	}
 	if s.turnService != nil {
 		if err := s.turnService.StopExecutionLifecycle(ctx); err != nil {
 			s.status = server.StatusError
@@ -318,8 +339,15 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	providerModelDiscoverySvc := service.NewProviderModelDiscoveryService(
 		runtimeModelCatalog,
 	)
+	// Station-wide binaries share the persistent workspace volume; each
+	// execution supplies private actor configuration and caches.
+	managedCLIManager := managedcli.NewManager(providercli.WorkspaceBaseDir())
+	s.managedCLI = managedCLIManager
+	providerSvc.CLIExecutor().SetManagedRuntime(managedCLIManager)
+	providerModelDiscoverySvc.SetManagedBin(managedCLIManager.BinDir)
 	admissionResolver := service.NewRuntimeAdmissionResolver(providerConfigSvc, modelConfigSvc)
 	admissionResolver.SetRuntimeModelCatalog(runtimeModelCatalog)
+	providerSvc.SetAdmissionResolver(admissionResolver)
 	runtimeEvidenceSvc := service.NewRuntimeEvidenceService()
 	credentialPoolSvc := service.NewCredentialPoolService()
 	delegationSvc := service.NewDelegationService()
@@ -459,7 +487,10 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		runtimeModelCatalog,
 		providerModelDiscoverySvc,
 		service.NewRuntimeDefaultService(),
+		managedCLIManager,
 	)
+	s.providerManagement = service.NewProviderManagementService(providerConfigSvc,
+		modelConfigSvc, credentialConfigSvc, runtimeModelCatalog, providerModelDiscoverySvc, managedCLIManager)
 	runtimeEvidenceHandlers := handler.NewRuntimeEvidenceHandlers(
 		runtimeEvidenceSvc,
 	)
@@ -659,6 +690,9 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-thread-messages", "/agent/thread/messages", server.POST, threadHandlers.HandleListThreadMessages, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-provider-list", "/agent/provider/list", server.POST, providerHandlers.HandleProviderList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-policy", "/agent/provider/policy", server.POST, providerHandlers.HandleProviderPolicy, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-personal-list", "/agent/provider/personal/list", server.POST, providerHandlers.HandlePersonalProviderList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-personal-get", "/agent/provider/personal/get", server.POST, providerHandlers.HandlePersonalProviderGet, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-get", "/agent/provider/get", server.POST, providerHandlers.HandleProviderGet, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-create", "/agent/provider/create", server.POST, providerHandlers.HandleProviderCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-update", "/agent/provider/update", server.POST, providerHandlers.HandleProviderUpdate, logIDWrapper, jwtWrapper),
@@ -668,6 +702,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-provider-check", "/agent/provider/check", server.POST, providerHandlers.HandleProviderCheck, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-model-discover", "/agent/provider/model/discover", server.POST, providerHandlers.HandleDiscoverProviderModels, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-list", "/agent/model/list", server.POST, providerHandlers.HandleModelList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-model-personal-list", "/agent/model/personal/list", server.POST, providerHandlers.HandlePersonalModelList, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-create", "/agent/model/create", server.POST, providerHandlers.HandleModelCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-update", "/agent/model/update", server.POST, providerHandlers.HandleModelUpdate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-available", "/agent/model/available", server.POST, providerHandlers.HandleListAvailableModels, logIDWrapper, jwtWrapper),

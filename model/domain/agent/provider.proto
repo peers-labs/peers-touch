@@ -41,6 +41,52 @@ message ProviderModelInfo {
   repeated string supported_reasoning_levels = 9;
 }
 
+enum ProviderResourceScope {
+  PROVIDER_RESOURCE_SCOPE_UNSPECIFIED = 0;
+  PROVIDER_RESOURCE_SCOPE_ACTOR = 1;
+  PROVIDER_RESOURCE_SCOPE_STATION = 2;
+}
+
+message ProviderResourceOwner {
+  ProviderResourceScope scope = 1;
+  // Required for actor ownership; empty for Station ownership.
+  string actor_ptid = 2;
+}
+
+message ProviderAccessGrant {
+  bool all_actors = 1;
+  string actor_ptid = 2;
+  bool all_models = 3;
+  string model_id = 4;
+}
+
+message ProviderAccess {
+  string provider_id = 1;
+  int64 revision = 2;
+  repeated ProviderAccessGrant grants = 3;
+}
+
+message ProviderPolicy {
+  bool personal_providers_enabled = 1;
+  int64 revision = 2;
+}
+
+message GetProviderPolicyRequest {}
+message GetProviderPolicyResponse { ProviderPolicy policy = 1; }
+message SetProviderPolicyRequest {
+  bool personal_providers_enabled = 1;
+  int64 revision = 2;
+}
+message SetProviderPolicyResponse { ProviderPolicy policy = 1; }
+message GetProviderAccessRequest { string provider_id = 1; }
+message GetProviderAccessResponse { ProviderAccess access = 1; }
+message SetProviderAccessRequest {
+  string provider_id = 1;
+  int64 revision = 2;
+  repeated ProviderAccessGrant grants = 3;
+}
+message SetProviderAccessResponse { ProviderAccess access = 1; }
+
 message AgentProviderInfo {
   reserved 19;
 
@@ -66,6 +112,44 @@ message AgentProviderInfo {
   ProviderRuntimeConfig default_runtime_config = 21;
   ProviderAdapterCapabilities adapter_capabilities = 22;
   string workspace_policy = 23;
+  // Station installation state for CLI adapters: ready, missing,
+  // installing, failed, manual_required or unsupported.
+  string install_state = 24;
+  // Whether the Station can install this adapter automatically.
+  bool install_supported = 25;
+  // Vendor installation guide linked from the UI when automatic install is
+  // unavailable or failed.
+  string manual_install_url = 26;
+  ProviderResourceOwner owner = 27;
+}
+
+// InstallProviderRequest starts an administrator-authorized Station CLI install.
+message InstallProviderRequest {
+  string provider_id = 1;
+}
+message InstallProviderResponse {
+  string install_state = 1;
+  string job_id = 2;
+  bool install_supported = 3;
+  string manual_install_url = 4;
+}
+
+// ProviderInstallStatusRequest polls one install job. An empty job_id returns
+// the current on-disk installation state.
+message ProviderInstallStatusRequest {
+  string provider_id = 1;
+  string job_id = 2;
+}
+message ProviderInstallStatusResponse {
+  string install_state = 1;
+  string job_id = 2;
+  string phase = 3;
+  int32 percent = 4;
+  string message = 5;
+  string error = 6;
+  bool install_supported = 7;
+  string manual_install_url = 8;
+  string installed_version = 9;
 }
 
 message AgentModelInfo {
@@ -80,6 +164,7 @@ message AgentModelInfo {
   google.protobuf.Timestamp updated_at = 9;
   int32 context_window = 10;
   ModelCapabilityConfig capabilities = 11;
+  ProviderResourceOwner owner = 12;
 }
 
 message CredentialStatusInfo {
@@ -147,7 +232,8 @@ message UpdateProviderRequest {
   optional string base_url = 4;
   optional bool enabled = 5;
   bytes config_json = 6;
-  string key_vaults = 7;
+  reserved 7;
+  reserved "key_vaults";
   ProviderRuntimeConfig runtime_config = 8;
 }
 message UpdateProviderResponse { AgentProviderInfo provider = 1; }

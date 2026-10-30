@@ -83,18 +83,19 @@ def configuration(runner: AgentNativeJourney) -> dict[str, Any]:
         return !document.querySelector('.ant-modal input#api_key')
           && !document.querySelector('.ant-modal input#base_url')
           && Boolean(document.querySelector(
-            '.ant-modal .pt-provider-cli-adapter-select'));
+            '.ant-modal [role="listbox"][aria-label]'));
         """
     ), "exclusive CLI creation schema")
+    wait_until(lambda: runner.driver.execute_script(
+        """
+        const row = document.querySelector(
+          '.ant-modal [role="option"][data-provider-id="trae-cli"]');
+        return row?.getAttribute('data-install-state') === 'ready';
+        """
+    ), "registered CLI adapter reported ready")
     runner.click_visible(
-        ".ant-modal .pt-provider-cli-adapter-select",
-        "registered CLI adapters",
-        pointer_sequence=True,
-    )
-    click_text(
-        runner,
-        ".pt-provider-cli-adapter-option",
-        cli["text"].splitlines()[0],
+        '.ant-modal [role="option"][data-provider-id="trae-cli"]',
+        "select registered CLI adapter",
     )
     click_text(runner, ".ant-modal button", labels["provider.menu.configureBtn"])
     wait_until(lambda: runner.visible_element_state(

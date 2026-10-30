@@ -75,7 +75,7 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 	ctx context.Context,
 	actorPTID string,
 ) ([]ResolvedAvailableModel, error) {
-	userProviders, err := r.providers.List(ctx, actorPTID)
+	userProviders, err := r.providers.ListEffective(ctx, actorPTID)
 	if err != nil {
 		return nil, err
 	}
@@ -90,14 +90,24 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 	var result []ResolvedAvailableModel
 
 	for _, registeredProvider := range catalog.List() {
+		userMatch := providerMap[registeredProvider.ID]
+		if userMatch == nil {
+			continue
+		}
+		allowed, err := r.providers.CanUse(ctx, actorPTID, userMatch, "")
+		if err != nil {
+			return nil, err
+		}
+		if !allowed {
+			continue
+		}
 		cp := registeredProvider
 		if r.runtimeModels != nil {
-			cp = r.runtimeModels.EffectiveProvider(actorPTID, registeredProvider)
+			cp = r.runtimeModels.EffectiveProvider(userMatch, registeredProvider)
 		}
 		if !catalogProviderAdvertised(cp) || !r.CatalogProviderAvailable(cp) {
 			continue
 		}
-		userMatch := providerMap[cp.ID]
 		if !admitProvider(cp, userMatch) {
 			continue
 		}
@@ -107,7 +117,7 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 			}
 			return ""
 		}())
-		dbModels, err := r.models.List(ctx, actorPTID, cp.ID)
+		dbModels, err := r.models.ListOwned(ctx, providerOwner(userMatch), cp.ID)
 		if err != nil {
 			return nil, errcode.New(
 				errcode.AgentInternal,
@@ -115,10 +125,6 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 				fmt.Sprintf("failed to load model capability source for provider %q", cp.ID),
 				err,
 			)
-		}
-		if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
-			dbModels = nil
-			hidden = nil
 		}
 		effectiveModels, err := ResolveEffectiveProviderModels(&cp, dbModels, hidden)
 		if err != nil {
@@ -133,6 +139,13 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 			if !effectiveModel.Enabled ||
 				effectiveModel.Type != "chat" ||
 				effectiveModel.ContextWindow <= 1 {
+				continue
+			}
+			allowed, err := r.providers.CanUse(ctx, actorPTID, userMatch, effectiveModel.ID)
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
 				continue
 			}
 			result = append(result, ResolvedAvailableModel{
@@ -156,7 +169,7 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 			continue
 		}
 		hidden := parseHiddenModels(provider.HiddenModels)
-		dbModels, err := r.models.List(ctx, actorPTID, provider.Name)
+		dbModels, err := r.models.ListOwned(ctx, providerOwner(provider), provider.Name)
 		if err != nil {
 			return nil, errcode.New(
 				errcode.AgentInternal,
@@ -177,6 +190,13 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 			if !databaseModel.Enabled ||
 				databaseModel.ContextWindow <= 1 ||
 				containsStr(hidden, databaseModel.ModelID) {
+				continue
+			}
+			allowed, err := r.providers.CanUse(ctx, actorPTID, provider, databaseModel.ModelID)
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
 				continue
 			}
 			capabilities, err := resolveModelCapabilityFacts(nil, databaseModel)
@@ -229,23 +249,14 @@ func (r *RuntimeAdmissionResolver) Resolve(
 			"model_id is required", nil)
 	}
 
-	userProviders, err := r.providers.List(ctx, actorPTID)
+	userMatch, err := r.providers.ResolveForActor(ctx, actorPTID, providerID, modelID)
 	if err != nil {
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to load provider configuration", err)
-	}
-
-	var userMatch *persistence.AgentProvider
-	for i := range userProviders {
-		if userProviders[i].Name == providerID {
-			userMatch = &userProviders[i]
-			break
-		}
+		return nil, err
 	}
 
 	cp := catalog.Find(providerID)
 	if cp != nil && r.runtimeModels != nil {
-		effective := r.runtimeModels.EffectiveProvider(actorPTID, *cp)
+		effective := r.runtimeModels.EffectiveProvider(userMatch, *cp)
 		cp = &effective
 	}
 	if cp == nil && userMatch == nil {
@@ -284,7 +295,8 @@ func (r *RuntimeAdmissionResolver) Resolve(
 	if cp != nil {
 		requiresAPIKey := cp.ShowAPIKey == nil || *cp.ShowAPIKey
 		if requiresAPIKey {
-			if userMatch == nil || parseKeyVaultAPIKey(userMatch.KeyVaults) == "" {
+			key, keyErr := providerCredentialAPIKey(userMatch)
+			if keyErr != nil || key == "" {
 				return nil, errcode.NewProviderCredentialMissing(providerID)
 			}
 		}
@@ -295,14 +307,10 @@ func (r *RuntimeAdmissionResolver) Resolve(
 	var modelType string
 	var catalogMatch *catalog.CatalogModel
 	var databaseMatch *persistence.AgentModel
-	dbModels, err := r.models.List(ctx, actorPTID, providerID)
+	dbModels, err := r.models.ListOwned(ctx, providerOwner(userMatch), providerID)
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to load model capability source", err)
-	}
-	if cp != nil &&
-		strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
-		dbModels = nil
 	}
 	for i := range dbModels {
 		if dbModels[i].ModelID == modelID {
@@ -322,9 +330,6 @@ func (r *RuntimeAdmissionResolver) Resolve(
 			}
 			return ""
 		}())
-		if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
-			hidden = nil
-		}
 		for _, m := range cp.Models {
 			if m.ID == modelID {
 				if !m.Enabled || m.Type != "chat" || containsStr(hidden, modelID) {
@@ -891,7 +896,11 @@ func admitProvider(cp catalog.CatalogProvider, userMatch *persistence.AgentProvi
 	if !requiresAPIKey {
 		return true
 	}
-	return userMatch != nil && parseKeyVaultAPIKey(userMatch.KeyVaults) != ""
+	if !ProviderCredentialConfigured(userMatch) {
+		return false
+	}
+	key, err := providerCredentialAPIKey(userMatch)
+	return err == nil && strings.TrimSpace(key) != ""
 }
 
 func admitCatalogModel(m catalog.CatalogModel, hidden []string) bool {
@@ -905,15 +914,4 @@ func containsStr(slice []string, item string) bool {
 		}
 	}
 	return false
-}
-
-func parseKeyVaultAPIKey(kv string) string {
-	var m map[string]interface{}
-	if err := json.Unmarshal([]byte(kv), &m); err != nil {
-		return ""
-	}
-	if v, ok := m["api_key"].(string); ok {
-		return v
-	}
-	return ""
 }

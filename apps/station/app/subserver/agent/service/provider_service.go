@@ -295,29 +295,14 @@ func (e *ProviderHTTPError) Error() string {
 // Provider DB access
 // ---------------------------------------------------------------------------
 
-// loadProvider queries the agent database for the provider record by ID.
-func (s *ProviderService) loadProvider(ctx context.Context, providerID string) (*persistence.AgentProvider, error) {
-	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
-	if err != nil {
-		logger.Errorf(ctx, "agent database not available: %v", err)
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to open agent db", err)
-	}
-
-	var provider persistence.AgentProvider
-	if err := db.WithContext(ctx).Where("id = ?", providerID).First(&provider).Error; err != nil {
-		logger.Errorf(ctx, "provider not found: provider_id=%s err=%v", providerID, err)
-		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
-			"provider not found", err)
-	}
-
-	return &provider, nil
-}
-
 func (s *ProviderService) resolveProviderForCall(
 	ctx context.Context,
 	req *ProviderCallRequest,
 ) (*persistence.AgentProvider, error) {
+	if req == nil || strings.TrimSpace(req.UserID) == "" || strings.TrimSpace(req.Model) == "" {
+		return nil, errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden,
+			"provider dispatch requires an authenticated actor and model", nil)
+	}
 	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
 	if err != nil {
 		return nil, errcode.New(
@@ -330,10 +315,8 @@ func (s *ProviderService) resolveProviderForCall(
 
 	var provider persistence.AgentProvider
 	query := db.WithContext(ctx).Where("id = ?", req.ProviderID).First(&provider)
-	if query.Error == nil {
-		return &provider, nil
-	}
-	if !errors.Is(query.Error, gorm.ErrRecordNotFound) {
+	foundByID := query.Error == nil
+	if query.Error != nil && !errors.Is(query.Error, gorm.ErrRecordNotFound) {
 		return nil, errcode.New(
 			errcode.AgentInternal,
 			http.StatusInternalServerError,
@@ -344,51 +327,24 @@ func (s *ProviderService) resolveProviderForCall(
 
 	logicalProviderID := strings.TrimSpace(req.ProviderType)
 	if logicalProviderID == "" {
-		logicalProviderID = strings.TrimSpace(req.ProviderID)
-	}
-	if strings.TrimSpace(req.UserID) != "" && logicalProviderID != "" {
-		query = db.WithContext(ctx).
-			Where("actor_ptid = ? AND name = ?", req.UserID, logicalProviderID).
-			First(&provider)
-		if query.Error == nil {
-			return &provider, nil
-		}
-		if !errors.Is(query.Error, gorm.ErrRecordNotFound) {
-			return nil, errcode.New(
-				errcode.AgentInternal,
-				http.StatusInternalServerError,
-				"failed to load provider",
-				query.Error,
-			)
+		if foundByID {
+			logicalProviderID = provider.Name
+		} else {
+			logicalProviderID = strings.TrimSpace(req.ProviderID)
 		}
 	}
-
-	cp := catalog.Find(logicalProviderID)
-	if cp != nil &&
-		strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
-		config, _ := json.Marshal(DefaultProviderRuntimeConfig(cp))
-		return &persistence.AgentProvider{
-			ID:          "catalog:" + cp.ID,
-			ActorPTID:   strings.TrimSpace(req.UserID),
-			Name:        cp.ID,
-			DisplayName: cp.Name,
-			BaseURL:     cp.DefaultBaseURL,
-			SourceType:  "catalog",
-			RuntimeKind: cp.RuntimeKind,
-			CliCommand:  catalog.FormatArgv(cp.CLIArgv),
-			Config:      config,
-			Protocol:    cp.Protocol,
-			Enabled:     cp.Enabled,
-			Version:     0,
-		}, nil
+	if !foundByID && req.ProviderID != logicalProviderID {
+		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "provider record not found", nil)
 	}
-
-	return nil, errcode.New(
-		errcode.AgentNotFound,
-		http.StatusNotFound,
-		"provider not found",
-		gorm.ErrRecordNotFound,
-	)
+	effective, err := NewProviderConfigService().ResolveForActor(ctx, req.UserID, logicalProviderID, req.Model)
+	if err != nil {
+		return nil, err
+	}
+	if foundByID && (effective.ID != provider.ID || provider.Name != logicalProviderID) {
+		return nil, errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden,
+			"provider record differs from authorized execution owner", nil)
+	}
+	return effective, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -400,20 +356,32 @@ func (s *ProviderService) resolveProviderForCall(
 // detects the provider type, applies prompt caching for Anthropic, and dispatches
 // the request to the appropriate API endpoint.
 type ProviderService struct {
-	cachingService  *PromptCachingService
-	httpClient      *http.Client
-	providerTimeout time.Duration
-	cliExecutor     *providercli.Executor
+	cachingService    *PromptCachingService
+	httpClient        *http.Client
+	providerTimeout   time.Duration
+	cliExecutor       *providercli.Executor
+	admissionResolver *RuntimeAdmissionResolver
 }
 
 // NewProviderService creates a ProviderService with the given caching dependency.
 func NewProviderService(cachingService *PromptCachingService) *ProviderService {
 	return &ProviderService{
-		cachingService:  cachingService,
-		httpClient:      &http.Client{},
-		providerTimeout: providerHTTPTimeout,
-		cliExecutor:     providercli.NewExecutor(providercli.NewWorkspaceManager("")),
+		cachingService:    cachingService,
+		httpClient:        &http.Client{},
+		providerTimeout:   providerHTTPTimeout,
+		cliExecutor:       providercli.NewExecutor(providercli.NewWorkspaceManager("")),
+		admissionResolver: NewRuntimeAdmissionResolver(NewProviderConfigService(), NewModelConfigService()),
 	}
+}
+
+func (s *ProviderService) SetAdmissionResolver(resolver *RuntimeAdmissionResolver) {
+	s.admissionResolver = resolver
+}
+
+// CLIExecutor exposes the CLI executor so wiring can attach the per-actor
+// managed runtime resolver.
+func (s *ProviderService) CLIExecutor() *providercli.Executor {
+	return s.cliExecutor
 }
 
 // ---------------------------------------------------------------------------
@@ -502,7 +470,10 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	}
 
 	// Step 2 — Extract base_url and api_key from provider record.
-	baseURL, apiKey := s.extractConfig(provider.Config, provider.KeyVaults)
+	baseURL, apiKey, credentialErr := extractProviderConfig(provider)
+	if credentialErr != nil {
+		return nil, errcode.NewProviderCredentialMissing(provider.Name)
+	}
 	if baseURL == "" {
 		baseURL = strings.TrimSpace(provider.BaseURL)
 	}
@@ -516,7 +487,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	}
 	reasoningSupported := false
 	if req.ExpectedCapabilitySourceVersion != "" {
-		capabilities, authorityErr := validateExpectedProviderAuthority(ctx, req, provider)
+		capabilities, authorityErr := validateExpectedProviderAuthority(ctx, req, provider, s.admissionResolver)
 		if authorityErr != nil {
 			return nil, authorityErr
 		}
@@ -539,6 +510,9 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		return nil, modeErr
 	}
 	if req.ExpectedCapabilitySourceVersion == "" {
+		if _, err := s.admissionResolver.Resolve(ctx, req.UserID, provider.Name, model); err != nil {
+			return nil, err
+		}
 		reasoningSupported = providerThinkingControl(provider.Name, model) != ""
 	}
 	dispatchThinkingMode, modeErr := providerDispatchThinkingMode(
@@ -566,9 +540,19 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 			ctx,
 			req,
 			finalProvider,
+			s.admissionResolver,
 		); err != nil {
 			return nil, err
 		}
+	}
+
+	finalProvider, err := s.resolveProviderForCall(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if finalProvider.ID != provider.ID || finalProvider.Version != provider.Version {
+		return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
+			"provider changed before dispatch", nil)
 	}
 
 	logger.Infof(ctx, "provider call: provider_id=%s type=%s model=%s messages=%d",
@@ -719,6 +703,10 @@ func (s *ProviderService) callCLI(
 	}
 
 	runtimeConfig := EffectiveProviderRuntimeConfig(registered, provider)
+	apiKey, credentialErr := providerCredentialAPIKey(provider)
+	if credentialErr != nil {
+		return nil, errcode.NewProviderCredentialMissing(provider.Name)
+	}
 	result, err := s.cliExecutor.Execute(ctx, &providercli.ExecuteRequest{
 		ActorPTID:      req.UserID,
 		AgentID:        req.AgentID,
@@ -729,6 +717,7 @@ func (s *ProviderService) callCLI(
 		Command:        registered.CLIArgv,
 		StartupArgs:    runtimeConfig.GetStartupArgs(),
 		Environment:    runtimeConfig.GetEnvironment(),
+		Credentials:    cliCredentialEnvironment(registered, apiKey),
 		Timeout: time.Duration(
 			runtimeConfig.GetTimeoutSeconds(),
 		) * time.Second,
@@ -792,6 +781,7 @@ func validateExpectedProviderAuthority(
 	ctx context.Context,
 	req *ProviderCallRequest,
 	provider *persistence.AgentProvider,
+	resolver *RuntimeAdmissionResolver,
 ) (*model.RuntimeCapabilitySnapshot, error) {
 	if req == nil ||
 		provider == nil ||
@@ -814,13 +804,12 @@ func validateExpectedProviderAuthority(
 			nil,
 		)
 	}
-	if provider.ActorPTID != strings.TrimSpace(req.UserID) {
-		return nil, errcode.New(
-			errcode.AgentSecurityViolation,
-			http.StatusForbidden,
-			"provider execution authority belongs to another actor",
-			nil,
-		)
+	if err := NewProviderConfigService().Authorize(ctx, req.UserID, provider, req.Model); err != nil {
+		return nil, err
+	}
+	current, resolveErr := resolver.Resolve(ctx, req.UserID, req.ProviderType, req.Model)
+	if resolveErr != nil {
+		return nil, resolveErr
 	}
 	if req.RuntimeAuthorityMode ==
 		providerRuntimeAuthorityCommittedToolContinuation {
@@ -860,18 +849,6 @@ func validateExpectedProviderAuthority(
 			)
 		}
 		return pinned, nil
-	}
-	current, resolveErr := NewRuntimeAdmissionResolver(
-		NewProviderConfigService(),
-		NewModelConfigService(),
-	).Resolve(ctx, req.UserID, req.ProviderType, req.Model)
-	if resolveErr != nil {
-		return nil, errcode.New(
-			errcode.AgentInvalidSourceState,
-			http.StatusConflict,
-			"runtime capability source changed before execution",
-			resolveErr,
-		)
 	}
 	if current.Capabilities.GetProvenance().GetSourceVersion() !=
 		req.ExpectedCapabilitySourceVersion {
@@ -935,37 +912,20 @@ func explicitProviderType(protocol string) (string, error) {
 // Config extraction
 // ---------------------------------------------------------------------------
 
-// extractConfig reads base_url from the provider's Config JSON and api_key
-// from the provider's KeyVaults (base64-encoded JSON).
-func (s *ProviderService) extractConfig(configJSON json.RawMessage, keyVaults string) (baseURL, apiKey string) {
-
-	// Parse base_url from config JSON.
+func extractProviderConfig(provider *persistence.AgentProvider) (baseURL, apiKey string, err error) {
 	cfg := map[string]any{}
-	_ = json.Unmarshal(configJSON, &cfg)
+	_ = json.Unmarshal(provider.Config, &cfg)
 
 	baseURL = asProviderString(cfg["base_url"])
+	if baseURL == "" {
+		baseURL = strings.TrimSpace(provider.BaseURL)
+	}
 	if baseURL != "" && !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 		baseURL = "http://" + baseURL
 	}
 
-	// Decode KeyVaults: try base64 first, then raw JSON.
-	rawKeyVault := keyVaults
-	if decoded, ok := decodeMaybeBase64Provider(rawKeyVault); ok {
-		rawKeyVault = decoded
-	}
-
-	kv := map[string]any{}
-	_ = json.Unmarshal([]byte(rawKeyVault), &kv)
-
-	apiKey = asProviderString(kv["api_key"])
-	if apiKey == "" {
-		apiKey = asProviderString(kv["key"])
-	}
-	if apiKey == "" {
-		apiKey = asProviderString(kv["token"])
-	}
-
-	return strings.TrimSpace(baseURL), strings.TrimSpace(apiKey)
+	apiKey, err = providerCredentialAPIKey(provider)
+	return strings.TrimSpace(baseURL), strings.TrimSpace(apiKey), err
 }
 
 // ---------------------------------------------------------------------------
@@ -2469,21 +2429,4 @@ func asProviderString(v any) string {
 		return ""
 	}
 	return s
-}
-
-// decodeMaybeBase64Provider attempts to base64-decode the input and returns
-// the decoded string if it looks like a JSON object. This matches the
-// KeyVaults encoding pattern used by the provider configuration system.
-func decodeMaybeBase64Provider(input string) (string, bool) {
-	decoded, err := base64.StdEncoding.DecodeString(input)
-	if err != nil {
-		return "", false
-	}
-
-	out := strings.TrimSpace(string(decoded))
-	if strings.HasPrefix(out, "{") && strings.HasSuffix(out, "}") {
-		return out, true
-	}
-
-	return "", false
 }

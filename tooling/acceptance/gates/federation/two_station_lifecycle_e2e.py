@@ -872,8 +872,8 @@ class FederationTwoStationLifecycleGate(AcceptanceGate):
         session = self.runtime.desktop_session(client_id)
         if session is None:
             raise GateError(f"Desktop client {client_id!r} is not active")
-        self._open_federation_settings(session)
-        selector = f'[data-federation-context-id="{federation_id}"]'
+        self._open_federation_contexts(session)
+        selector = f'[data-chat-find-people-federation-id="{federation_id}"]'
         self.runtime.wait_until(
             lambda: self._visible_element(session, selector),
             f"{client_id} visible Federation context {federation_id}",
@@ -881,7 +881,7 @@ class FederationTwoStationLifecycleGate(AcceptanceGate):
         )
         if (
             session.find_elements(
-                '[data-pt-section-host="federation"] button'
+                '[data-pt-secondary-tab="federation"]'
             )
             or session.find_elements(
                 '[data-federation-governance-action]'
@@ -907,16 +907,16 @@ class FederationTwoStationLifecycleGate(AcceptanceGate):
         session = self.runtime.desktop_session(client_id)
         if session is None:
             raise GateError(f"Desktop client {client_id!r} is not active")
-        self._open_federation_settings(session)
+        self._open_federation_contexts(session)
         self.runtime.wait_until(
             lambda: self._visible_element(
                 session,
-                '[data-pt-section-host="federation"]',
+                '[data-chat-find-people]',
             ),
-            f"{client_id} visible Federation settings",
+            f"{client_id} visible Federation discovery contexts",
             timeout_seconds=STEP_TIMEOUT,
         )
-        selector = f'[data-federation-context-id="{federation_id}"]'
+        selector = f'[data-chat-find-people-federation-id="{federation_id}"]'
         self.runtime.wait_until(
             lambda: self._visible_element(session, selector) is None,
             f"{client_id} visible Federation context removal {federation_id}",
@@ -931,15 +931,21 @@ class FederationTwoStationLifecycleGate(AcceptanceGate):
             f"{client_id}-federation-{evidence_label}",
         )
 
-    def _open_federation_settings(self, session: Any) -> None:
+    def _open_federation_contexts(self, session: Any) -> None:
+        if self._visible_element(session, '[data-chat-find-people]'):
+            return
         for selector, description in (
             (
-                '[data-pt-primary-nav="settings"] [role="button"]',
-                "visible Settings navigation",
+                '[data-pt-primary-nav="chat"] [role="button"]',
+                "visible Chat navigation",
             ),
             (
-                '[data-pt-secondary-tab="federation"]',
-                "visible Federation settings group",
+                '[data-chat-new-menu]',
+                "visible new Chat menu",
+            ),
+            (
+                '[data-chat-find-people-menu]',
+                "visible Find People action",
             ),
         ):
             element = self.runtime.wait_until(
@@ -954,9 +960,9 @@ class FederationTwoStationLifecycleGate(AcceptanceGate):
         self.runtime.wait_until(
             lambda: self._visible_element(
                 session,
-                '[data-pt-section-host="federation"]',
+                '[data-chat-find-people]',
             ),
-            "visible Federation settings section",
+            "visible Federation discovery context",
             timeout_seconds=STEP_TIMEOUT,
         )
 

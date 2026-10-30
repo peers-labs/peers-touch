@@ -84,6 +84,12 @@ Rules:
 | Local session PIN | L2 | Per-local-account session vault; device-local secret, deleted with the session, never synced (see `docs/client/desktop/pin-recovery.md`) |
 | Login sessions, credentials, HPKE material | L2 | Per-local-account auth identity storage; deleted on logout |
 
+Shared Provider/model/credential administration belongs in Station Dashboard.
+Desktop consumes authorized models and edits its account default. Personal
+Provider editors require the Station policy, which is disabled by default.
+The app-global Desktop `model-registry.json` implementation and all of its
+Tauri/HTTP commands are removed. Cron also consumes the Station account default.
+
 ### 3.2 Personalization
 
 | Control | Layer | Desktop | Mobile |

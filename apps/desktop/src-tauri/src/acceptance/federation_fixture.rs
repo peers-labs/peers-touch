@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use reqwest::Method;
+use prost::Message;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{State, Window};
@@ -58,6 +59,47 @@ fn token_or_unauthorized(
 
 fn station_failure(error: station_client::StationClientError, context: &str) -> AppResult<Value> {
     error.into_app_result(context)
+}
+
+// This module is mounted only by acceptance-webdriver. The fixture owner uses
+// the reviewed development Profile's Dashboard bootstrap credentials, never
+// the window's Actor JWT. Overrides stay in the native process environment.
+fn managed_fixture_request<Q: Message, R: Message + Default>(
+    station_client: &StationClient,
+    route: &str,
+    request: &Q,
+) -> Result<R, AppResult<Value>> {
+    let username = std::env::var("PT_ACCEPTANCE_DASHBOARD_USERNAME")
+        .unwrap_or_else(|_| "peers".to_string());
+    let password = std::env::var("PT_ACCEPTANCE_DASHBOARD_PASSWORD")
+        .unwrap_or_else(|_| "peers".to_string());
+    let login = station_client
+        .post_json_no_auth(
+            "/dashboard/api/auth/login",
+            json!({ "username": username, "password": password }),
+        )
+        .map_err(|error| station_failure(error, "Dashboard fixture authentication failed"))?;
+    let token = login.get("token").and_then(Value::as_str).unwrap_or_default();
+    if token.is_empty() {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Dashboard fixture authentication required",
+            None,
+        ));
+    }
+    let result = station_client.request_proto::<Q, R>(
+        Method::POST,
+        route,
+        token,
+        None,
+        Some(request),
+    );
+    // One bounded fixture action owns this separate administrator session.
+    let logout = station_client.post_json_with_auth("/dashboard/api/auth/logout", token, json!({}));
+    if result.is_ok() {
+        logout.map_err(|error| station_failure(error, "Dashboard fixture session cleanup failed"))?;
+    }
+    result.map_err(|error| station_failure(error, "Dashboard Federation fixture mutation failed"))
 }
 
 pub(crate) fn fixture_snapshot(
@@ -135,7 +177,6 @@ pub(crate) fn snapshot_result(station_client: &StationClient, token: &str) -> Ap
 
 pub(crate) fn create_fixture(
     station_client: &StationClient,
-    token: &str,
     input: FederationFixtureCreateInput,
 ) -> AppResult<Value> {
     let name = input.name.trim();
@@ -147,23 +188,20 @@ pub(crate) fn create_fixture(
         description: input.description.trim().to_string(),
         policy_type: "single_admin".to_string(),
     };
-    match station_client.request_proto::<CreateFederationRequest, CreateFederationResponse>(
-        Method::POST,
-        "/sub-federation/federations",
-        token,
-        None,
-        Some(&request),
+    match managed_fixture_request::<CreateFederationRequest, CreateFederationResponse>(
+        station_client,
+        "/dashboard/api/federation/create",
+        &request,
     ) {
         Ok(response) => AppResult::success(json!({
             "federationId": response.federation_id,
         })),
-        Err(error) => station_failure(error, "acceptance Federation fixture create failed"),
+        Err(error) => error,
     }
 }
 
 pub(crate) fn join_fixture(
     station_client: &StationClient,
-    token: &str,
     input: FederationFixtureJoinInput,
 ) -> AppResult<Value> {
     if input.federation_id.trim().is_empty() || input.federation_endpoint.trim().is_empty() {
@@ -178,24 +216,21 @@ pub(crate) fn join_fixture(
         federation_id: input.federation_id.trim().to_string(),
         message: input.message,
     };
-    match station_client.request_proto::<JoinFederationRequest, JoinFederationResponse>(
-        Method::POST,
-        "/sub-federation/federations/join",
-        token,
-        None,
-        Some(&request),
+    match managed_fixture_request::<JoinFederationRequest, JoinFederationResponse>(
+        station_client,
+        "/dashboard/api/federation/join",
+        &request,
     ) {
         Ok(response) => AppResult::success(json!({
             "status": response.status,
             "proposalId": response.proposal_id,
         })),
-        Err(error) => station_failure(error, "acceptance Federation fixture join failed"),
+        Err(error) => error,
     }
 }
 
 pub(crate) fn leave_fixture(
     station_client: &StationClient,
-    token: &str,
     input: FederationFixtureLeaveInput,
 ) -> AppResult<Value> {
     let federation_id = input.federation_id.trim();
@@ -210,25 +245,21 @@ pub(crate) fn leave_fixture(
         federation_id: federation_id.to_string(),
         reason: input.reason.trim().to_string(),
     };
-    let route = format!("/sub-federation/federations/{federation_id}/leave");
-    match station_client.request_proto::<LeaveFederationRequest, LeaveFederationResponse>(
-        Method::POST,
-        &route,
-        token,
-        None,
-        Some(&request),
+    match managed_fixture_request::<LeaveFederationRequest, LeaveFederationResponse>(
+        station_client,
+        "/dashboard/api/federation/leave",
+        &request,
     ) {
         Ok(response) => AppResult::success(json!({
             "federationId": federation_id,
             "success": response.success,
         })),
-        Err(error) => station_failure(error, "acceptance Federation fixture leave failed"),
+        Err(error) => error,
     }
 }
 
 pub(crate) fn delete_fixture(
     station_client: &StationClient,
-    token: &str,
     input: FederationFixtureDeleteInput,
 ) -> AppResult<Value> {
     let federation_id = input.federation_id.trim();
@@ -242,19 +273,16 @@ pub(crate) fn delete_fixture(
     let request = DeleteFederationRequest {
         federation_id: federation_id.to_string(),
     };
-    let route = format!("/sub-federation/federations/{federation_id}/delete");
-    match station_client.request_proto::<DeleteFederationRequest, DeleteFederationResponse>(
-        Method::POST,
-        &route,
-        token,
-        None,
-        Some(&request),
+    match managed_fixture_request::<DeleteFederationRequest, DeleteFederationResponse>(
+        station_client,
+        "/dashboard/api/federation/delete",
+        &request,
     ) {
         Ok(response) => AppResult::success(json!({
             "federationId": federation_id,
             "success": response.success,
         })),
-        Err(error) => station_failure(error, "acceptance Federation fixture delete failed"),
+        Err(error) => error,
     }
 }
 
@@ -273,51 +301,31 @@ pub fn acceptance_federation_fixture_snapshot(
 #[tauri::command]
 pub fn acceptance_federation_fixture_create(
     state: State<'_, Arc<AppState>>,
-    window: Window,
     input: FederationFixtureCreateInput,
 ) -> AppResult<Value> {
-    let token = match token_or_unauthorized(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    create_fixture(state.station.client(), &token, input)
+    create_fixture(state.station.client(), input)
 }
 
 #[tauri::command]
 pub fn acceptance_federation_fixture_join(
     state: State<'_, Arc<AppState>>,
-    window: Window,
     input: FederationFixtureJoinInput,
 ) -> AppResult<Value> {
-    let token = match token_or_unauthorized(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    join_fixture(state.station.client(), &token, input)
+    join_fixture(state.station.client(), input)
 }
 
 #[tauri::command]
 pub fn acceptance_federation_fixture_leave(
     state: State<'_, Arc<AppState>>,
-    window: Window,
     input: FederationFixtureLeaveInput,
 ) -> AppResult<Value> {
-    let token = match token_or_unauthorized(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    leave_fixture(state.station.client(), &token, input)
+    leave_fixture(state.station.client(), input)
 }
 
 #[tauri::command]
 pub fn acceptance_federation_fixture_delete(
     state: State<'_, Arc<AppState>>,
-    window: Window,
     input: FederationFixtureDeleteInput,
 ) -> AppResult<Value> {
-    let token = match token_or_unauthorized(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    delete_fixture(state.station.client(), &token, input)
+    delete_fixture(state.station.client(), input)
 }

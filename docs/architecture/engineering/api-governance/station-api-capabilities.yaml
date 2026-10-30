@@ -13,6 +13,8 @@ governed_prefixes:
   - /api/v1/relay/bootstrap-blobs
   - /sub-bootstrap/station-identity
   - /dashboard/api/relay
+  - /dashboard/api/ai/
+  - /dashboard/api/federation/
   - /api/v1/relay/grants
   - /api/v1/relay/routes
   - /actor/access/
@@ -44,6 +46,9 @@ owner_roots:
     - apps/station/frame/core/plugin/native/subserver/bootstrap/
   station.dashboard_access:
     - apps/station/app/subserver/dashboard/
+  station.agent:
+    - apps/station/app/subserver/agent/
+    - apps/station/app/subserver/dashboard/handler_ai.go
   station.access:
     - apps/station/frame/touch/
   station.conversation:
@@ -66,6 +71,8 @@ owner_roots:
     - apps/station/app/subserver/notification/
   station.federation:
     - apps/station/frame/core/federation/
+    - apps/station/app/subserver/federation/
+    - apps/station/app/subserver/dashboard/handler_federation.go
 
 ddd_layers:
   - name: conversation.domain
@@ -98,6 +105,293 @@ ddd_layers:
       - github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure
 
 capabilities:
+  - id: agent.provider.management.list
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/provider/list }
+    request_proto: peers_touch.model.agent.v1.ListProvidersRequest
+    response_proto: peers_touch.model.agent.v1.ListProvidersResponse
+    truth_stores: [agent_providers]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.management.get
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/provider/get }
+    request_proto: peers_touch.model.agent.v1.GetProviderRequest
+    response_proto: peers_touch.model.agent.v1.GetProviderResponse
+    truth_stores: [agent_providers]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.management.create
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/provider/create }
+    request_proto: peers_touch.model.agent.v1.CreateProviderRequest
+    response_proto: peers_touch.model.agent.v1.CreateProviderResponse
+    truth_stores: [agent_providers]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.management.update
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/provider/update }
+    request_proto: peers_touch.model.agent.v1.UpdateProviderRequest
+    response_proto: peers_touch.model.agent.v1.UpdateProviderResponse
+    truth_stores: [agent_providers]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.management.delete
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/provider/delete }
+    request_proto: peers_touch.model.agent.v1.DeleteProviderRequest
+    response_proto: peers_touch.model.agent.v1.DeleteProviderResponse
+    truth_stores: [agent_providers]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.model.management.list
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/model/list }
+    request_proto: peers_touch.model.agent.v1.ListModelsRequest
+    response_proto: peers_touch.model.agent.v1.ListModelsResponse
+    truth_stores: [agent_models]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.model.management.create
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/model/create }
+    request_proto: peers_touch.model.agent.v1.CreateModelRequest
+    response_proto: peers_touch.model.agent.v1.CreateModelResponse
+    truth_stores: [agent_models]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.model.management.update
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/model/update }
+    request_proto: peers_touch.model.agent.v1.UpdateModelRequest
+    response_proto: peers_touch.model.agent.v1.UpdateModelResponse
+    truth_stores: [agent_models]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.credential.management.set
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/credential/set }
+    request_proto: peers_touch.model.agent.v1.SetCredentialRequest
+    response_proto: peers_touch.model.agent.v1.SetCredentialResponse
+    truth_stores: [agent_providers, agent_credential_pool]
+    allowed_dependencies: [dashboard.admin_session.validate, station.secret_envelope.seal]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.credential.management.delete
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/credential/delete }
+    request_proto: peers_touch.model.agent.v1.DeleteCredentialRequest
+    response_proto: peers_touch.model.agent.v1.DeleteCredentialResponse
+    truth_stores: [agent_providers, agent_credential_pool]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.credential.management.status
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/credential/status }
+    request_proto: peers_touch.model.agent.v1.GetCredentialStatusRequest
+    response_proto: peers_touch.model.agent.v1.GetCredentialStatusResponse
+    truth_stores: [agent_credential_pool]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.policy.get
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/policy/get }
+    request_proto: peers_touch.model.agent.v1.GetProviderPolicyRequest
+    response_proto: peers_touch.model.agent.v1.GetProviderPolicyResponse
+    truth_stores: [agent_provider_policy]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.policy.set
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/policy/set }
+    request_proto: peers_touch.model.agent.v1.SetProviderPolicyRequest
+    response_proto: peers_touch.model.agent.v1.SetProviderPolicyResponse
+    truth_stores: [agent_provider_policy]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.access.get
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/access/get }
+    request_proto: peers_touch.model.agent.v1.GetProviderAccessRequest
+    response_proto: peers_touch.model.agent.v1.GetProviderAccessResponse
+    truth_stores: [agent_provider_access_grants]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.access.set
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/access/set }
+    request_proto: peers_touch.model.agent.v1.SetProviderAccessRequest
+    response_proto: peers_touch.model.agent.v1.SetProviderAccessResponse
+    truth_stores: [agent_provider_access_grants]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.install.start
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/install/start }
+    request_proto: peers_touch.model.agent.v1.InstallProviderRequest
+    response_proto: peers_touch.model.agent.v1.InstallProviderResponse
+    truth_stores: []
+    allowed_dependencies: [dashboard.admin_session.validate, agent.cli.install]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.install.status
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/install/status }
+    request_proto: peers_touch.model.agent.v1.ProviderInstallStatusRequest
+    response_proto: peers_touch.model.agent.v1.ProviderInstallStatusResponse
+    truth_stores: []
+    allowed_dependencies: [dashboard.admin_session.validate, agent.cli.install]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: agent.provider.model.discover
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/model/discover }
+    request_proto: peers_touch.model.agent.v1.DiscoverProviderModelsRequest
+    response_proto: peers_touch.model.agent.v1.DiscoverProviderModelsResponse
+    truth_stores: []
+    allowed_dependencies: [dashboard.admin_session.validate, agent.cli.discovery]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.management.list
+    domain_owner: station.federation
+    truth_owner: federation.membership
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/federation/list }
+    request_proto: ""
+    response_proto: peers_touch.model.federation.v1.ListFederationsResponse
+    truth_stores: [federation_station_membership, federation_actor_role]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.management.stations
+    domain_owner: station.federation
+    truth_owner: federation.membership
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/federation/stations }
+    request_proto: peers_touch.model.federation.v1.ListMemberStationsRequest
+    response_proto: peers_touch.model.federation.v1.ListMemberStationsResponse
+    truth_stores: [federation_station_membership]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.management.create
+    domain_owner: station.federation
+    truth_owner: federation.membership
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/federation/create }
+    request_proto: peers_touch.model.federation.v1.CreateFederationRequest
+    response_proto: peers_touch.model.federation.v1.CreateFederationResponse
+    truth_stores: [federation_ledger_events, federation_station_membership]
+    allowed_dependencies: [dashboard.admin_session.validate, federation.governance.sign]
+    forbidden_aliases: [{ method: POST, path: /sub-federation/federations }]
+    superseded_symbols: []
+
+  - id: federation.management.join
+    domain_owner: station.federation
+    truth_owner: federation.membership
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/federation/join }
+    request_proto: peers_touch.model.federation.v1.JoinFederationRequest
+    response_proto: peers_touch.model.federation.v1.JoinFederationResponse
+    truth_stores: [federation_ledger_proposals, federation_ledger_events]
+    allowed_dependencies: [dashboard.admin_session.validate, federation.governance.sign]
+    forbidden_aliases: [{ method: POST, path: /sub-federation/federations/join }]
+    superseded_symbols: []
+
+  - id: federation.management.leave
+    domain_owner: station.federation
+    truth_owner: federation.membership
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/federation/leave }
+    request_proto: peers_touch.model.federation.v1.LeaveFederationRequest
+    response_proto: peers_touch.model.federation.v1.LeaveFederationResponse
+    truth_stores: [federation_ledger_events, federation_station_membership]
+    allowed_dependencies: [dashboard.admin_session.validate, federation.governance.sign]
+    forbidden_aliases: [{ method: POST, path: "/sub-federation/federations/:id/leave" }]
+    superseded_symbols: []
+
+  - id: federation.management.delete
+    domain_owner: station.federation
+    truth_owner: federation.membership
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/federation/delete }
+    request_proto: peers_touch.model.federation.v1.DeleteFederationRequest
+    response_proto: peers_touch.model.federation.v1.DeleteFederationResponse
+    truth_stores: [federation_ledger_events, federation_station_membership]
+    allowed_dependencies: [dashboard.admin_session.validate, federation.governance.sign]
+    forbidden_aliases: [{ method: POST, path: "/sub-federation/federations/:id/delete" }]
+    superseded_symbols: []
   - id: identity.device_link.create
     domain_owner: station.device_link
     truth_owner: actor.device_link

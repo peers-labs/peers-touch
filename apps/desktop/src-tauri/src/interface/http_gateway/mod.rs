@@ -44,7 +44,6 @@ use crate::application::home as app_home;
 use crate::application::key_exchange::{device_install, wire};
 use crate::application::mcp as app_mcp;
 use crate::application::memory as app_memory;
-use crate::application::model_config as app_model_config;
 // FIXME: removed during merge — module deleted
 use crate::application::notebook as app_notebook;
 use crate::application::oauth2 as app_oauth2;
@@ -3100,6 +3099,28 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 &token,
             ))
         }
+        "provider_policy" => {
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_provider::provider_policy(state.station.client(), &token))
+        }
+        "provider_personal_list" => {
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_provider::provider_personal_list(state.station.client(), &token))
+        }
+        "provider_personal_get" => {
+            let input = match parse_args::<ProviderIdInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_provider::provider_personal_get(state.station.client(), &token, input))
+        }
+        "provider_runtime_default_get" => {
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_provider::runtime_default_get(state.station.client(), &token))
+        }
+        "provider_runtime_default_set" => {
+            let input = match parse_args::<app_provider::RuntimeDefaultInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_provider::runtime_default_set(state.station.client(), &token, input))
+        }
         "provider_get" => {
             let input = match parse_args::<ProviderIdInput>(args) {
                 Ok(v) => v,
@@ -5508,39 +5529,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // User scheduled jobs are Station-authoritative; the Desktop Tauri
         // commands proxy /agent/scheduled-job/* with an authenticated token.
         // The stateless web gateway intentionally exposes no fake surface.
-
-        // =================================================================
-        // Model Config (no state)
-        // =================================================================
-        "model_config_list" => to_json(app_model_config::model_config_list()),
-        "model_config_get" => {
-            let input = match parse_args::<ModelConfigKeyInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_model_config::model_config_get(input))
-        }
-        "model_config_set" => {
-            let input = match parse_args::<ModelConfigSetInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_model_config::model_config_set(input))
-        }
-        "model_config_delete" => {
-            let input = match parse_args::<ModelConfigKeyInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_model_config::model_config_delete(input))
-        }
-        "model_config_provider_references" => {
-            let input = match parse_args::<ProviderIdInputV2>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_model_config::model_config_provider_references(input))
-        }
 
         // =================================================================
         // Channels

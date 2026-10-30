@@ -14,6 +14,7 @@ import {
 import { ProviderIcon } from './ProviderIcon';
 import { UpdateProviderModal } from './UpdateProviderModal';
 import { CliProviderDetail } from './CliProviderDetail';
+import { AuthorizedProviderDetail } from './AuthorizedProviderDetail';
 import { api, type ProviderDetail as ProviderDetailRecord } from '../../services/desktop_api';
 import { useTranslation } from 'react-i18next';
 import { useActiveProviderSlice } from './useActiveSettingsStores';
@@ -91,10 +92,11 @@ function formatContextWindow(v: number): string {
 
 export function ProviderDetail() {
   const { t } = useTranslation('provider');
-  const { detail, loading, selectedId } = useActiveProviderSlice((state) => ({
+  const { detail, loading, selectedId, managementMode } = useActiveProviderSlice((state) => ({
     detail: state.detail,
     loading: state.loading,
     selectedId: state.selectedId,
+    managementMode: state.managementMode,
   }));
 
   if (loading && !detail) {
@@ -120,6 +122,8 @@ export function ProviderDetail() {
       </Flexbox>
     );
   }
+
+  if (managementMode === 'authorized') return <AuthorizedProviderDetail detail={detail} />;
 
   if (detail.runtime_kind === 'cli') {
     return <CliProviderDetail key={`${detail.id}:${detail.version}`} detail={detail} />;

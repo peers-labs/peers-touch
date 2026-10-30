@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Typography, Modal, Form, theme, Divider, Avatar, Radio, Select, Switch } from 'antd';
+import { Typography, Modal, Form, theme, Divider, Avatar, Radio, Switch } from 'antd';
 import { Input, Button, TextArea, InputPassword, Tag, toast } from '@lobehub/ui';
-import { Search, Plus, Brain, TerminalSquare, Star } from 'lucide-react';
+import { Search, Plus, Brain, Star } from 'lucide-react';
 import { ProviderIcon } from './ProviderIcon';
 import { useTranslation } from 'react-i18next';
 import { isProviderUsable, mapProviderUIStatus } from '../../store/providerReadiness';
@@ -23,6 +23,9 @@ export function ProviderMenu() {
     readinessById: s.readinessById,
     runtimeDefault: s.runtimeDefault,
     setRuntimeDefault: s.setRuntimeDefault,
+  }));
+  const { managementMode, personalProvidersEnabled, setManagementMode } = useActiveProviderSlice((s) => ({
+    managementMode: s.managementMode, personalProvidersEnabled: s.personalProvidersEnabled, setManagementMode: s.setManagementMode,
   }));
   const availableModels = useAgentStore((state) => state.availableModels);
   const { showUsableOnly, setShowUsableOnly } = useActiveSettingsSlice((state) => ({
@@ -169,14 +172,24 @@ export function ProviderMenu() {
           size="small"
           style={{ borderRadius: 8, flex: 1, fontSize: 12 }}
         />
-        <Button
+        {managementMode === 'personal' && personalProvidersEnabled && <Button
           icon={<Plus size={14} />}
           size="small"
           onClick={() => setShowCreate(true)}
           title={t('provider.menu.addCustomProvider')}
           style={{ borderRadius: 8, flexShrink: 0 }}
-        />
+        />}
       </Flexbox>
+
+      {personalProvidersEnabled && <Radio.Group
+        size="small"
+        value={managementMode}
+        onChange={(event) => void setManagementMode(event.target.value)}
+        aria-label={t('provider.menu.viewMode')}
+      >
+        <Radio.Button value="authorized">{t('provider.menu.authorized')}</Radio.Button>
+        <Radio.Button value="personal">{t('provider.menu.personal')}</Radio.Button>
+      </Radio.Group>}
 
       <Flexbox horizontal align="center" justify="space-between" style={{ minHeight: 32, padding: '0 4px' }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
@@ -216,16 +229,11 @@ export function ProviderMenu() {
         )}
       </Flexbox>
 
-      <CreateProviderModal
+      {managementMode === 'personal' && personalProvidersEnabled && <CreateProviderModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onCreate={createProvider}
-        providers={providers}
-        onSelectProvider={async (providerId) => {
-          if (showUsableOnly) await setShowUsableOnly(false);
-          await selectProvider(providerId);
-        }}
-      />
+      />}
     </Flexbox>
   );
 }
@@ -273,31 +281,21 @@ function CreateProviderModal({
   open,
   onClose,
   onCreate,
-  providers,
-  onSelectProvider,
 }: {
   open: boolean;
   onClose: () => void;
   onCreate: (data: { id: string; name: string; description?: string; logo?: string; base_url: string; api_key?: string }) => Promise<void>;
-  providers: Array<{ id: string; name: string; runtime_kind: string }>;
-  onSelectProvider: (providerId: string) => Promise<void>;
 }) {
   const { t } = useTranslation('provider');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const providerKind = Form.useWatch<'direct' | 'cli'>('kind', form) ?? 'direct';
-  const cliProviders = providers.filter((provider) => provider.runtime_kind === 'cli');
 
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
       setLoading(true);
-      if (values.kind === 'cli') {
-        await onSelectProvider(values.cli_provider_id);
-      } else {
-        await onCreate(values);
-        toast.success(t('provider.menu.created'));
-      }
+      await onCreate(values);
+      toast.success(t('provider.menu.created'));
       form.resetFields();
       onClose();
     } catch (e: unknown) {
@@ -317,6 +315,8 @@ function CreateProviderModal({
       }
       open={open}
       onCancel={onClose}
+      width={560}
+      styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
       footer={
         <Button
           type="primary"
@@ -326,52 +326,12 @@ function CreateProviderModal({
           onClick={handleOk}
           style={{ borderRadius: 8 }}
         >
-          {providerKind === 'cli'
-            ? t('provider.menu.configureBtn')
-            : t('provider.menu.createBtn')}
+          {t('provider.menu.createBtn')}
         </Button>
       }
       destroyOnHidden
-      width={520}
-      afterOpenChange={(nextOpen) => {
-        if (nextOpen) form.setFieldsValue({ kind: 'direct' });
-      }}
     >
       <Form form={form} layout="horizontal" labelCol={{ span: 8 }} wrapperCol={{ span: 16 }} style={{ marginTop: 8 }}>
-        <Form.Item name="kind" label={t('provider.menu.providerType')} initialValue="direct">
-          <Radio.Group>
-            <Radio value="direct" className="pt-provider-kind-direct">
-              {t('provider.menu.directModel')}
-            </Radio>
-            <Radio value="cli" className="pt-provider-kind-cli">
-              {t('provider.menu.cli')}
-            </Radio>
-          </Radio.Group>
-        </Form.Item>
-
-        {providerKind === 'cli' ? (
-          <Form.Item
-            name="cli_provider_id"
-            label={t('provider.menu.registeredAdapter')}
-            rules={[{ required: true, message: t('provider.menu.registeredAdapterRequired') }]}
-          >
-            <Select
-              className="pt-provider-cli-adapter-select"
-              options={cliProviders.map((provider) => ({
-                value: provider.id,
-                className: 'pt-provider-cli-adapter-option',
-                label: (
-                  <Flexbox horizontal align="center" gap={8}>
-                    <TerminalSquare size={14} />
-                    <span>{provider.name}</span>
-                  </Flexbox>
-                ),
-              }))}
-              placeholder={t('provider.menu.registeredAdapterPlaceholder')}
-            />
-          </Form.Item>
-        ) : (
-          <>
         <SectionTitle>{t('provider.menu.basicInfo')}</SectionTitle>
 
         <Form.Item
@@ -419,8 +379,6 @@ function CreateProviderModal({
             autoComplete="new-password"
           />
         </Form.Item>
-          </>
-        )}
       </Form>
     </Modal>
   );

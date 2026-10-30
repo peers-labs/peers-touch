@@ -1,111 +1,60 @@
-# Desktop Provider + Model Target Architecture
+# Desktop Provider and Model Architecture
 
-## 1. Authority
+## Authority
 
-Station is the only Provider and model-catalog authority.
+[Provider Control Plane](../../architecture/domains/agent/provider-control-plane.md)
+defines shared and personal authority. Station owns catalogs, credentials,
+configuration, access, discovery, installation and execution.
 
-- `providers.default.yaml` registers built-in Direct and CLI adapters.
-- Actor-scoped Provider records store enabled state, credentials, Direct configuration, and typed CLI runtime overrides.
-- Desktop Rust is a transport adapter. It must not execute Provider CLIs, parse model output, or keep a second model catalog.
-- Desktop Web renders Station projections and submits explicit user intent.
+Dashboard is the shared management surface. Desktop Rust is an authenticated
+transport. Desktop Web renders authorized data and submits personal intent.
+Shared installation and private Actor invocation state have separate owners.
 
-## 2. Provider Kinds
+## Ordinary Desktop Settings
 
-### 2.1 Direct
+Provider Settings has one authorized Provider list and a selected read-only
+`AuthorizedProviderDetail`. Shared credentials, commands, grants, installation
+paths and administration are absent.
 
-Direct providers own:
+Personal Provider editing appears only under the Station policy. Its selected
+Direct schema handles write-only credentials, Base URL and model CRUD. Its CLI
+schema exposes capability-declared runtime overrides and a read-only catalog;
+arbitrary executables and mutable CLI models are invalid.
 
-- An explicit, immutable Provider ID independent of the display name.
-- API credential and Base URL.
-- Custom model create, update, enable, and remove.
-- Provider reachability check through Station.
+AI / Models owns the Actor's composite default through the existing Station
+runtime-default API with its observed revision. No app-global
+`model-registry.json` or service-slot registry remains.
 
-### 2.2 CLI
+Settings preserves its alive shell and selected-only lazy schemas. The Provider
+list owns one inner vertical scroll container. Account changes discard form
+drafts and pending projection or mutation effects.
 
-CLI providers are registered adapters. Station owns:
+## Runtime
 
-- Structured execution argv and model-discovery argv.
-- Binary availability checks.
-- Isolated workspace policy.
-- Model discovery, parsing, normalization, and runtime catalog replacement.
-- Runtime admission and execution.
-
-Desktop may edit only capability-declared `ProviderRuntimeConfig` fields:
-
-- `default_model`
-- `startup_args`
-- `environment`
-- `timeout_seconds`
-
-Registered commands and workspace policy are read-only projections. Arbitrary executable paths and shell templates are not client inputs.
-
-## 3. Model Catalog
-
-- Direct model records are actor-scoped persisted configuration.
-- CLI models are a Station-discovered, read-only runtime catalog.
-- Explicit CLI refresh invokes `POST /agent/provider/model/discover`.
-- Discovery replaces the actor-scoped `(actor_ptid, provider_id)` in-memory runtime catalog atomically after successful parsing.
-- Failed discovery preserves the last valid catalog.
-- Provider detail and Agent runtime admission consume the same effective catalog.
-- CLI model CRUD, per-model toggles, and bulk toggles are invalid operations.
-
-Every model reference is the composite identity `(provider_id, model_id)`. A bare model ID may be migrated only when it is unique; ambiguous IDs must never select a Provider by list order.
-
-## 4. Contracts
-
-The canonical wire contract is:
-
-- `model/domain/agent/provider.proto`
-
-Important projections:
-
-- `ProviderRuntimeConfig`
-- `ProviderAdapterCapabilities`
-- `ProviderModelInfo`
-- `CheckProviderRequest/Response`
-- `DiscoverProviderModelsRequest/Response`
-
-Desktop commands proxy these Station endpoints without adding Provider semantics:
-
-- `provider_check`
-- `model_discover`
-- Provider/model CRUD for legal Direct operations
-
-## 5. UI Ownership
-
-Settings uses one mixed Provider list and mounts one selected schema.
-
-- `ProviderDetail.tsx` owns Direct providers.
-- `CliProviderDetail.tsx` owns CLI providers.
-- CLI model rows are read-only and Refresh is shown only when `model_discovery` is true.
-- AI / Models owns only the global default selector.
-- The Desktop default is persisted as a composite reference in the existing
-  config storage (`model-registry.json`) through the atomic file writer.
-  Native restart reloads this file; an unreadable registry fails explicitly.
-  It contains preference references only, while Station owns model metadata.
-- All model selectors use composite identities.
-- The Provider list has one inner vertical scroll owner; the Settings host does not add a second Provider scrollbar.
-
-## 6. Runtime Flow
+The `agent-capability` runtime bootstraps and reconciles Provider, model and
+default projections. All model selectors compare `(provider_id, model_id)`.
+Account or Station replacement clears projections and fences late reads,
+writes and rollback by Session epoch.
 
 ```text
-Desktop Web intent
-  -> Desktop Rust proxy
-  -> Station Provider handler
-  -> typed Provider service / CLI adapter
-  -> Station runtime model catalog
-  -> Provider detail + runtime admission
+Desktop intent
+  -> authenticated native Station proxy
+  -> effective-owner Agent service
+  -> current model/grant/revision admission
+  -> Station HTTP or CLI dispatch
+  -> Station response projection
 ```
 
-The Desktop process never becomes an execution or discovery authority.
+Applet `ai.chat` uses Station QuickCompletion with an explicit pair or the
+Actor's default and returns the actual Provider/model identity. Desktop executes
+neither upstream HTTP inference nor Provider subprocesses.
 
-## 7. Acceptance
+## Contracts and verification
 
-- Provider check is executed by Station.
-- TRAE model refresh returns normalized metadata from `traecli debug models`.
-- A discovery failure does not erase the prior valid catalog.
-- CLI configuration survives enable/disable updates.
-- CLI model mutation is rejected.
-- Direct custom model CRUD remains available.
-- Duplicate IDs such as `codex-cli/default` and `trae-cli/default` remain distinct in Settings defaults, Topic overrides, composer selection, and Cron overrides.
-- Wide and narrow Settings renders show one thin Provider-list scrollbar and no nested scroll owner.
+`model/domain/agent/provider.proto` and `agent.proto` define the wire contract.
+Provider/default/Agent/Session focused tests and native type checks support the
+contract. Real shared calls, revocation, account switching, policy changes and
+wide/narrow rendering require current-source product observations.
+
+Federation remains an internal read-only context runtime for communication.
+All Federation lifecycle management is in Dashboard.
