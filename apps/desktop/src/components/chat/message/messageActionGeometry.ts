@@ -119,7 +119,8 @@ function horizontalCandidates(
   obstacles: readonly GeometryRect[],
   bounds: GeometryRect,
   width: number,
-  anchorEdge?: 'left' | 'right',
+  anchorEdge: 'left' | 'right' | undefined,
+  attached: boolean,
 ): number[] {
   const minimum = bounds.left;
   const maximum = bounds.right - width;
@@ -133,18 +134,44 @@ function horizontalCandidates(
       ? anchor.right - width
       : centered;
   const preferred = anchorEdge ? edgeAligned : centered;
+
+  // While attached (above/below/left/right placements) the toolbar must keep
+  // reading as belonging to its bubble. Two rules:
+  // 1. dodge positions may slide at most one toolbar width beyond the anchor's
+  //    horizontal extent (the band below);
+  // 2. at least half the toolbar keeps overlapping the anchor along the
+  //    attachment axis (relative to the toolbar, not the bubble: a compact
+  //    bar beside a tall bubble still attaches);
+  // Without these a stacked neighbour bubble flung the toolbar hundreds of
+  // pixels into the pane gutter ("detached-looking"). Only the explicit
+  // `detached` fallback may leave the band.
+  const bandMinimum = attached ? anchor.left - width : minimum;
+  const bandMaximum = attached ? anchor.right : maximum;
+  // At least half of the toolbar must overlap the anchor's horizontal
+  // extent (relative to the smaller toolbar, not the bubble: a compact bar
+  // beside a tall bubble still attaches).
+  const requiredOverlap = width * 0.5;
+  const overlapsAnchorAxis = (candidate: number): boolean => {
+    if (!attached) return true;
+    const overlap = Math.min(candidate + width, anchor.right)
+      - Math.max(candidate, anchor.left);
+    return overlap + 0.5 >= requiredOverlap;
+  };
+  const inBand = (candidate: number): boolean =>
+    candidate >= bandMinimum - 0.5 && candidate <= bandMaximum + 0.5;
+
   const candidates = uniqueFinite([
     edgeAligned,
     centered,
     anchor.left,
     anchor.right - width,
-    minimum,
-    maximum,
+    ...(attached ? [] : [minimum, maximum]),
     ...obstacles.flatMap((obstacle) => [obstacle.left - width, obstacle.right]),
   ]);
 
   return candidates
     .map((candidate) => clamp(candidate, minimum, maximum))
+    .filter((candidate) => inBand(candidate) && overlapsAnchorAxis(candidate))
     .sort((first, second) => Math.abs(first - preferred) - Math.abs(second - preferred));
 }
 
@@ -153,21 +180,36 @@ function verticalCandidates(
   obstacles: readonly GeometryRect[],
   bounds: GeometryRect,
   height: number,
+  attached: boolean,
 ): number[] {
   const minimum = bounds.top;
   const maximum = bounds.bottom - height;
   const preferred = anchor.top + ((anchor.bottom - anchor.top) - height) / 2;
+  // Vertical counterpart of the horizontal attachment band: an attached side
+  // placement stays within one toolbar height of the anchor and overlaps its
+  // vertical extent by at least half.
+  const bandMinimum = attached ? anchor.top - height : minimum;
+  const bandMaximum = attached ? anchor.bottom : maximum;
+  const requiredOverlap = height * 0.5;
+  const inBand = (candidate: number): boolean =>
+    candidate >= bandMinimum - 0.5 && candidate <= bandMaximum + 0.5;
+  const overlapsAnchorAxis = (candidate: number): boolean => {
+    if (!attached) return true;
+    const overlap = Math.min(candidate + height, anchor.bottom)
+      - Math.max(candidate, anchor.top);
+    return overlap + 0.5 >= requiredOverlap;
+  };
   const candidates = uniqueFinite([
     preferred,
     anchor.top,
     anchor.bottom - height,
-    minimum,
-    maximum,
+    ...(attached ? [] : [minimum, maximum]),
     ...obstacles.flatMap((obstacle) => [obstacle.top - height, obstacle.bottom]),
   ]);
 
   return candidates
     .map((candidate) => clamp(candidate, minimum, maximum))
+    .filter((candidate) => inBand(candidate) && overlapsAnchorAxis(candidate))
     .sort((first, second) => Math.abs(first - preferred) - Math.abs(second - preferred));
 }
 
@@ -181,8 +223,10 @@ function placementCandidates(
   anchorEdge?: 'left' | 'right',
 ): Point[] {
   if (placement === 'detached') {
-    const horizontal = horizontalCandidates(anchor, obstacles, bounds, size.width, anchorEdge);
-    const vertical = verticalCandidates(anchor, obstacles, bounds, size.height);
+    const horizontal = horizontalCandidates(
+      anchor, obstacles, bounds, size.width, anchorEdge, false,
+    );
+    const vertical = verticalCandidates(anchor, obstacles, bounds, size.height, false);
     const preferredLeft = anchorEdge === 'left'
       ? anchor.left
       : anchorEdge === 'right'
@@ -203,7 +247,9 @@ function placementCandidates(
       ? anchor.top - gap - size.height
       : anchor.bottom + gap;
 
-    return horizontalCandidates(anchor, obstacles, bounds, size.width, anchorEdge)
+    return horizontalCandidates(
+      anchor, obstacles, bounds, size.width, anchorEdge, true,
+    )
       .map((left) => ({ left, top }));
   }
 
@@ -211,7 +257,7 @@ function placementCandidates(
     ? anchor.left - gap - size.width
     : anchor.right + gap;
 
-  return verticalCandidates(anchor, obstacles, bounds, size.height)
+  return verticalCandidates(anchor, obstacles, bounds, size.height, true)
     .map((top) => ({ left, top }));
 }
 

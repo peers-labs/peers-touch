@@ -247,7 +247,7 @@ export function ChatMessageArea({
     );
 
   const startGroupRename = () => {
-    setGroupNameDraft(activeGroup?.name || currentName || '');
+    setGroupNameDraft(currentName || activeGroup?.name || '');
     setEditingGroupName(true);
   };
   const cancelGroupRename = () => {
@@ -1048,6 +1048,7 @@ export function ChatMessageArea({
                   <Input
                     autoFocus
                     size="small"
+                    variant="borderless"
                     value={groupNameDraft}
                     disabled={groupNameSaving}
                     aria-label={t('chat.social.detail.groupName')}
@@ -1057,7 +1058,16 @@ export function ChatMessageArea({
                       if (event.key === 'Escape') cancelGroupRename();
                     }}
                     onBlur={() => void saveGroupRename()}
-                    style={{ width: 220, fontWeight: 600 }}
+                    style={{
+                      width: 220,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      lineHeight: 1.4,
+                      padding: '0 2px 1px',
+                      background: 'transparent',
+                      borderRadius: 0,
+                      borderBottom: `1px solid ${token.colorPrimary}`,
+                    }}
                     data-chat-group-name-editor
                   />
                 ) : (

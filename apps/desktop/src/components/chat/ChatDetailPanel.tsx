@@ -1407,7 +1407,7 @@ export function ChatDetailPanel() {
                   onBlur={() => void handleSaveGroupName()}
                   style={{
                     border: 'none',
-                    borderBottom: `2px solid ${token.colorPrimary}`,
+                    borderBottom: `1px solid ${token.colorPrimary}`,
                     background: 'transparent',
                     fontSize: 16,
                     fontWeight: 600,
@@ -1424,7 +1424,11 @@ export function ChatDetailPanel() {
                 strong
                 style={{ fontSize: 16, cursor: canManageGroupMembers ? 'pointer' : 'default' }}
                 onClick={canManageGroupMembers ? () => {
-                  setEditNameValue(activeGroup?.name || '');
+                  // Seed from the displayed projection: the legacy
+                  // `groups` array is empty after the conversation-list
+                  // projection moved onto `conversations`, so reading only
+                  // activeGroup.name opened an empty editor.
+                  setEditNameValue(currentName || '');
                   setEditingName(true);
                 } : undefined}
               >
