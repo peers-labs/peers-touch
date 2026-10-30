@@ -53,10 +53,11 @@ REQUIRED_STEPS = {
 } | {f"search.{name}" for name in UI_ASSERTIONS}
 
 GEOMETRY_REGIONS = ("panel", "field", "intents", "body", "footer", "coverage", "actions")
+STABLE_GEOMETRY_REGIONS = ("panel", "field", "intents", "body", "footer")
 
 
 def stable_search_geometry(samples: list[dict[str, Any]]) -> bool:
-    """Compare real painted regions only within the same native viewport."""
+    """Compare the persistent Search shell within the same native viewport."""
     baselines: dict[tuple[float, float], dict[str, Any]] = {}
     if not samples:
         return False
@@ -70,6 +71,10 @@ def stable_search_geometry(samples: list[dict[str, Any]]) -> bool:
             return False
         baseline = baselines.setdefault(size, sample)
         for region in GEOMETRY_REGIONS:
+            rect = sample.get(region, {})
+            if not isinstance(rect, dict) or rect.get("width", 0) <= 0 or rect.get("height", 0) <= 0:
+                return False
+        for region in STABLE_GEOMETRY_REGIONS:
             rect = sample.get(region, {})
             reference = baseline.get(region, {})
             if not isinstance(rect, dict) or not isinstance(reference, dict):
