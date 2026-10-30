@@ -563,6 +563,10 @@ function onMomentDeleted(payload: MomentDeletedPayload): void {
     payload,
     'moment deleted projection refresh',
     async (scope) => {
+      // Immediate local eviction of the public projection and every
+      // feed window (including paginated tails). This issues no write
+      // command — the server already committed the deletion.
+      useMomentsStore.getState().evictPost(payload.postId);
       usePrivateCommentsStore.getState().markParentUnavailable(
         payload.postId,
         'COMMENT_PARENT_UNAVAILABLE',
@@ -579,6 +583,10 @@ function onMomentRevoked(payload: MomentRevokedPayload): void {
     payload,
     'moment revocation projection refresh',
     async (scope) => {
+      // Revocation is a read-authority change: drop the local entity
+      // from all windows immediately (no write command), then converge
+      // the private projection.
+      useMomentsStore.getState().evictPost(payload.postId);
       usePrivateCommentsStore.getState().markParentUnavailable(
         payload.postId,
         `SOCIAL_PRIVATE_${payload.reason}`,
@@ -610,8 +618,41 @@ function onMomentReacted(payload: MomentReactedPayload): void {
   runScopedMomentEvent(
     payload,
     'moment reacted projection refresh',
-    (scope) => ensureMomentDetailProjectionNow(scope, payload.postId),
+    (scope) => wakePostReactionProjection(scope, payload.postId),
   );
+}
+
+// Post-scoped reaction wakeup: refresh only that post's reaction
+// summary. Open detail and visible feed cards both converge here;
+// comment threads are never reloaded by a reaction event.
+async function wakePostReactionProjection(
+  scope: MomentsRuntimeScope,
+  rawPostId: string,
+): Promise<void> {
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+  const postId = rawPostId.trim();
+  if (!postId) return;
+  const moments = useMomentsStore.getState();
+  const knownPost = moments.postsById[postId];
+  const privateStore = usePrivateMomentsStore.getState();
+  const privatePost = isPrivateMomentPost(knownPost)
+    ? knownPost
+    : privateStore.postsById[postId];
+  const view = useMomentsNavigationStore.getState().view;
+  const detailOpen = view.kind === 'detail' && view.postId === postId;
+  // Hidden (not on any card / open detail) reactions converge on the
+  // next periodic reconcile instead of issuing a network read.
+  if (!knownPost && !privatePost && !detailOpen) return;
+  if (privatePost) {
+    await privateStore.readMoment(postId);
+    // Re-project the refreshed private reaction summary into the
+    // public moments store without touching any comment thread.
+    moments.hydratePrivateMoments(
+      Object.values(usePrivateMomentsStore.getState().postsById),
+    );
+    return;
+  }
+  await moments.loadPost(postId);
 }
 
 function onRelationshipChanged(payload: RelationshipChangedPayload): void {

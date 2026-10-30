@@ -33,6 +33,8 @@ pub mod messaging_recovery;
 pub mod model_config;
 pub mod x_config;
 
+pub(crate) mod asset_preview;
+
 pub mod native_surface;
 pub mod notebook;
 pub mod notification;

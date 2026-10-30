@@ -278,6 +278,15 @@ type PrivateContentService struct {
 	federationMembership PrivateContentFederationMembership
 	interactionStore     infrastructure.FederatedPrivateInteractionStore
 	events               *MomentEventPublisher
+	mentionNotifications *CommentMentionNotifier
+}
+
+// ConfigureMentionNotifications attaches the best-effort @-mention
+// notification fan-out for private comments. The signed mention-routing
+// facts adjudicated during prepare are the audience authority for
+// delivery, so no second read-port lookup is performed.
+func (s *PrivateContentService) ConfigureMentionNotifications(notifier *CommentMentionNotifier) {
+	s.mentionNotifications = notifier
 }
 
 func NewPrivateContentService(
@@ -1170,6 +1179,27 @@ func (s *PrivateContentService) submitPrivateComment(
 	)
 	if err != nil {
 		return nil, err
+	}
+	if s.mentionNotifications != nil {
+		// Post-commit, best-effort: the signed routing facts carry
+		// exactly the recipients adjudicated against the audience
+		// snapshot during prepare. Notifications persist only static
+		// resource IDs; recipients re-authorize during readback.
+		targets := make([]string, 0, len(request.GetMentionRouting().GetFacts()))
+		for _, fact := range request.GetMentionRouting().GetFacts() {
+			if ptid := fact.GetMentionedActor().GetPtid(); ptid != "" {
+				targets = append(targets, ptid)
+			}
+		}
+		if len(targets) > 0 {
+			s.mentionNotifications.NotifyPrivateCommentMentions(
+				ctx,
+				request.GetPostId(),
+				response.GetComment().GetMetadata().GetCommentId(),
+				author.GetActor().GetPtid(),
+				targets,
+			)
+		}
 	}
 	return response, nil
 }

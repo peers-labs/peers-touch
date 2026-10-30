@@ -64,7 +64,12 @@ export function MomentsFeedView({
     await unreactToPost(postId, kind);
   };
 
-  const showInitialState = feed.loading || posts.length === 0;
+  // Background refresh never replaces existing cards with a
+  // page-level loading surface; the local list footer (MomentListState)
+  // carries the spinner. The loading state is only full-page when
+  // there is no data yet.
+  const showInitialEmpty = posts.length === 0 && !feed.loading;
+  const showInitialLoading = posts.length === 0 && feed.loading;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -81,11 +86,12 @@ export function MomentsFeedView({
         </SocialComposer>
       )}
 
-      {showInitialState && (
+      {showInitialLoading && <SocialEmptyState kind="loading" />}
+      {showInitialEmpty && (
         <SocialEmptyState
-          kind={feed.loading ? 'loading' : 'empty'}
-          title={feed.loading ? undefined : t('moments.placeholder.empty')}
-          description={feed.loading ? undefined : t('moments.placeholder.feedEmpty')}
+          kind="empty"
+          title={t('moments.placeholder.empty')}
+          description={t('moments.placeholder.feedEmpty')}
         />
       )}
 

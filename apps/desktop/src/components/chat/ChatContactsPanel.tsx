@@ -424,7 +424,7 @@ export function ChatContactsPanel({
               cursor: 'pointer',
             }}
           >
-            <UserSquareAvatar remoteUrl={resolvedAvatar} name={peerLabel} size={36} />
+            <UserSquareAvatar remoteUrl={resolvedAvatar} actorPtid={peerPtid} name={peerLabel} size={36} />
             <Flexbox flex={1} style={{ minWidth: 0 }} gap={5}>
               <Text
                 strong
@@ -606,6 +606,7 @@ export function ChatContactsPanel({
                 >
                   <UserSquareAvatar
                     remoteUrl={conversation.avatar}
+                    actorPtid={conversation.peerPtid || null}
                     name={displayName}
                     size={avatarSize}
                   />

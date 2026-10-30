@@ -71,7 +71,7 @@ export function ContactsPage() {
                     background: token.colorFillQuaternary,
                   }}
                 >
-                  <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={40} />
+                  <UserSquareAvatar remoteUrl={peerAvatar} actorPtid={req.senderPtid || null} name={peerLabel} size={40} />
                   <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
                     <Text strong ellipsis style={{ fontSize: 13 }}>
                       {peerLabel}

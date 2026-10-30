@@ -24,12 +24,20 @@ message Comment {
   
   string reply_to_comment_id = 20;
   int64 replies_count = 21;
+  // Position-aware mentions, reusing the Post Mention contract
+  // (UTF-16 offsets into `content`). Populated on readback from the
+  // existing social_comments.mentions_json column.
+  repeated Mention typed_mentions = 22;
 }
 
 message CreateCommentRequest {
   string post_id = 1;
   string content = 2;
   string reply_to_comment_id = 3;
+  // Position-aware mentions of human actors. Validated by the Station
+  // (UTF-16 range/display/actor/parent-post readability); mentions
+  // never widen the parent post audience.
+  repeated Mention typed_mentions = 4;
 }
 
 message CreateCommentResponse {

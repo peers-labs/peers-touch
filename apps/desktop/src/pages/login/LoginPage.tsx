@@ -40,6 +40,13 @@ const { Text } = Typography;
 interface Props {
   onComplete: () => Promise<void>;
   onLoginWithOAuthBridge: () => Promise<void>;
+  /**
+   * Notify the identity runtime that the login card's gate chain landed a
+   * fresh password session. The card drives the access-gate chain, but the
+   * authenticated edge and pending completion close through the runtime
+   * state machine instead of flipping the session directly (r3.1).
+   */
+  onFreshPasswordAuthenticated: () => Promise<void>;
   onSwitchAccount: (accountId: string) => Promise<void>;
   onUnlockWithPin: (accountId: string, pin: string) => Promise<void>;
   restoredUser?: SessionUser | null;
@@ -68,13 +75,10 @@ function isStationEmailConflict(error: unknown): boolean {
   return error.details?.error_code === ACTOR_EXISTS_ERROR_CODE;
 }
 
-function wait(milliseconds: number): Promise<void> {
-  return new Promise(resolve => window.setTimeout(resolve, milliseconds));
-}
-
 export function LoginPage({
   onComplete,
   onLoginWithOAuthBridge,
+  onFreshPasswordAuthenticated,
   onSwitchAccount,
   onUnlockWithPin,
   restoredUser,
@@ -258,10 +262,14 @@ export function LoginPage({
       emailRef.current,
       passwordRef.current,
     );
+    // Close the landed password session through the identity runtime's fresh
+    // edge (pending completion + epoch/avatar fencing) instead of letting the
+    // session activation stand on its own.
+    await onFreshPasswordAuthenticated();
     setGateDecision(null);
     setGateInviteCode('');
     await continueAfterFreshAuth();
-  }, [accessSubmitLogin, continueAfterFreshAuth]);
+  }, [accessSubmitLogin, continueAfterFreshAuth, onFreshPasswordAuthenticated]);
 
   // ── Route to provider login ──
 
@@ -555,7 +563,8 @@ export function LoginPage({
       if (oauthAttemptRef.current !== attempt) return;
 
       setAuthState('success');
-      await wait(650);
+      // Deterministic readiness: the bridge closes through the identity
+      // runtime's pending-completion closure; there is no fixed avatar wait.
       if (oauthAttemptRef.current !== attempt) return;
 
       await continueAfterFreshAuth();
@@ -683,7 +692,7 @@ export function LoginPage({
     accessCancel,
     cancelOAuthAccountLogin,
     continueAfterFreshAuth,
-    gateDecision?.attemptId,
+    gateDecision,
     onLoginWithOAuthBridge,
     pendingOAuthSessionId,
     t,

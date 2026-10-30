@@ -1,19 +1,51 @@
 use std::sync::Arc;
 
+use base64::Engine;
 use prost::Message;
 use search_core::model::wire::{
     CancelRequest, CancelResponse, QueryIntent, ResolveRequest, SearchErrorCode, SearchIntent,
     SearchReadState, SearchScope, SourceReadState, SubmitRequest, SuggestRequest,
 };
+use search_core::progress::ProgressObserver;
 use search_core::runtime::{SearchBinding, SearchRuntime};
-use search_core::SearchError;
+use search_core::{ProgressFrame, SearchError};
 use serde::Deserialize;
 use serde_json::json;
-use tauri::{Manager, State, Window};
+use tauri::{Emitter, Manager, State, Window};
 
 use crate::application::search as application_search;
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
+
+/// Internal native event carrying one request's progressive source frames to
+/// the initiating window. The domain SearchResponse travels encoded as
+/// standard base64; the domain proto contract is unchanged.
+pub const SEARCH_FRAME_EVENT: &str = "search:frame";
+
+/// Emits progressive frames to exactly the window that owns the request. The
+/// registry request token is the same CancelToken driving the pipeline, so a
+/// cancel IPC suppresses later frames inside Search Core before this runs.
+struct FrameEmitter {
+    app: tauri::AppHandle,
+    window: String,
+    request_id: String,
+}
+
+impl ProgressObserver for FrameEmitter {
+    fn observe(&self, frame: ProgressFrame) {
+        let payload = json!({
+            "requestId": self.request_id,
+            "frameKind": "progressive",
+            "sourceId": frame.source_id,
+            "frameBytesB64": base64::engine::general_purpose::STANDARD
+                .encode(frame.response.encode_to_vec()),
+        });
+        // Delivery is advisory: a closed window must not fail or rerun FIND.
+        if let Err(error) = self.app.emit_to(&self.window, SEARCH_FRAME_EVENT, &payload) {
+            tracing::debug!(target: "search", %error, "progressive frame delivery failed");
+        }
+    }
+}
 
 // ── New closed-domain search commands (SRCH-D03) ──────────────────────────
 
@@ -79,10 +111,12 @@ fn execute<M: Message>(
     state: &Arc<AppState>,
     _window: &Window,
     admission: Admission,
+    observer: Arc<dyn ProgressObserver>,
     run: impl FnOnce(
         &SearchRuntime<application_search::runtime::DesktopSearchExecutor>,
         &[application_search::runtime::Binding],
         &search_core::CancelToken,
+        &Arc<dyn ProgressObserver>,
     ) -> Result<(M, Vec<SourceReadState>), SearchError>,
 ) -> AppResult<Vec<u8>> {
     let Admission {
@@ -93,6 +127,7 @@ fn execute<M: Message>(
         &state.search_runtime,
         &composition.bindings,
         &request.cancel,
+        &observer,
     ) {
         Ok(response) => response,
         Err(error) => return failure(error),
@@ -137,29 +172,37 @@ pub async fn search_suggest(
         Ok(admission) => admission,
         Err(error) => return error,
     };
+    // Suggest stays Device-only and single-frame: no progressive channel.
+    let observer: Arc<dyn ProgressObserver> = Arc::new(|_frame: ProgressFrame| {});
     tauri::async_runtime::spawn_blocking(move || {
-        execute(&state, &window, admission, |runtime, binding, cancel| {
-            let response = runtime.query_all(
-                binding,
-                QueryIntent {
-                    text: request.query,
-                    kinds: request.kinds,
-                    scopes: vec![SearchScope::Device as i32],
-                    limit: if request.limit == 0 {
-                        12
-                    } else {
-                        request.limit.clamp(1, 100) as u32
+        execute(
+            &state,
+            &window,
+            admission,
+            observer,
+            |runtime, binding, cancel, _observer| {
+                let response = runtime.query_all(
+                    binding,
+                    QueryIntent {
+                        text: request.query,
+                        kinds: request.kinds,
+                        scopes: vec![SearchScope::Device as i32],
+                        limit: if request.limit == 0 {
+                            12
+                        } else {
+                            request.limit.clamp(1, 100) as u32
+                        },
+                        suggestions: true,
+                        conversation_id: request.conversation_id,
+                        attachment_names_only: request.attachment_names_only,
+                        ..Default::default()
                     },
-                    suggestions: true,
-                    conversation_id: request.conversation_id,
-                    attachment_names_only: request.attachment_names_only,
-                    ..Default::default()
-                },
-                cancel,
-            )?;
-            let sources = response.sources.clone();
-            Ok((response, sources))
-        })
+                    cancel,
+                )?;
+                let sources = response.sources.clone();
+                Ok((response, sources))
+            },
+        )
     })
     .await
     .unwrap_or_else(|_| failure(SearchError::Cancelled))
@@ -186,15 +229,26 @@ pub async fn search_submit(
         Ok(admission) => admission,
         Err(error) => return error,
     };
+    // One request-scoped channel to this window. Search Core emits at most one
+    // progressive frame per source on the first FIND page; continuation pages
+    // (non-empty cursor) ride the same call without observer events.
+    let observer: Arc<dyn ProgressObserver> = Arc::new(FrameEmitter {
+        app: app.clone(),
+        window: window.label().into(),
+        request_id: request.request_id.clone(),
+    });
     tauri::async_runtime::spawn_blocking(move || {
-        execute(&state, &window, admission, |runtime, binding, cancel| {
-            let response = runtime.query_all(
-                binding,
-                QueryIntent {
+        execute(
+            &state,
+            &window,
+            admission,
+            observer,
+            |runtime, binding, cancel, observer| {
+                let intent = QueryIntent {
                     text: request.query,
                     kinds: request.kinds,
                     scopes: request.scopes,
-                    cursor: request.cursor,
+                    cursor: request.cursor.clone(),
                     limit: if request.limit == 0 {
                         20
                     } else {
@@ -205,12 +259,16 @@ pub async fn search_submit(
                     suggestions: false,
                     conversation_id: request.conversation_id,
                     attachment_names_only: request.attachment_names_only,
-                },
-                cancel,
-            )?;
-            let sources = response.sources.clone();
-            Ok((response, sources))
-        })
+                };
+                let response = if request.cursor.is_empty() {
+                    runtime.query_all_with_progress(binding, intent, cancel, observer.clone())?
+                } else {
+                    runtime.query_all(binding, intent, cancel)?
+                };
+                let sources = response.sources.clone();
+                Ok((response, sources))
+            },
+        )
     })
     .await
     .unwrap_or_else(|_| failure(SearchError::Cancelled))
@@ -238,15 +296,22 @@ pub async fn search_resolve(
         Err(error) => return error,
     };
     tauri::async_runtime::spawn_blocking(move || {
-        execute(&state, &window, admission, |runtime, binding, cancel| {
-            let response = runtime.resolve_all(binding, &request.source_id, resource, cancel)?;
-            let source = binding
-                .iter()
-                .find(|binding| binding.source_id() == request.source_id)
-                .ok_or(SearchError::ResourceUnavailable)?
-                .read_state()?;
-            Ok((response, vec![source]))
-        })
+        execute(
+            &state,
+            &window,
+            admission,
+            Arc::new(|_frame: ProgressFrame| {}),
+            |runtime, binding, cancel, _observer| {
+                let response =
+                    runtime.resolve_all(binding, &request.source_id, resource, cancel)?;
+                let source = binding
+                    .iter()
+                    .find(|binding| binding.source_id() == request.source_id)
+                    .ok_or(SearchError::ResourceUnavailable)?
+                    .read_state()?;
+                Ok((response, vec![source]))
+            },
+        )
     })
     .await
     .unwrap_or_else(|_| failure(SearchError::Cancelled))

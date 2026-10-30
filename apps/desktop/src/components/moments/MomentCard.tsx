@@ -61,8 +61,8 @@ interface MomentCardProps {
   surface?: 'home' | 'federated' | 'profile' | 'circle';
   onOpen?: (postId: string) => void;
   onOpenComments?: (postId: string) => void;
-  onReact?: (postId: string, kind: ReactionKind) => Promise<void>;
-  onUnreact?: (postId: string, kind?: ReactionKind) => Promise<void>;
+  onReact?: (postId: string, kind: ReactionKind, operationId: string) => Promise<void> | void;
+  onUnreact?: (postId: string, kind: ReactionKind | undefined, operationId: string) => Promise<void> | void;
   onAuthorClick?: (actorPtid: string) => void;
   commentPreview?: Comment[];
   embedded?: boolean;
@@ -240,7 +240,6 @@ export function MomentCard({
     retryPrivateReaction: s.retryReaction,
   }));
   const [expanded, setExpanded] = useState(false);
-  const [reactionSubmitting, setReactionSubmitting] = useState(false);
 
   const author = post.author;
   const authorPtid = post.authorPtid || author?.id || '';
@@ -328,39 +327,32 @@ export function MomentCard({
     fallback: fallbackReason,
     t,
   });
-  const handleReact = async (kind: ReactionKind) => {
-    if (reactionSubmitting) return;
-    setReactionSubmitting(true);
+  const handleReact = async (kind: ReactionKind, operationId: string) => {
+    // Per-kind pending state lives in SocialActionBar; the store
+    // fences duplicate intents per post+kind.
     try {
-      await onReact?.(post.id, kind);
+      await onReact?.(post.id, kind, operationId);
     } catch {
       message.error(t('moments.reaction.status.REACTION_REJECTED'));
-    } finally {
-      setReactionSubmitting(false);
     }
   };
 
-  const handleUnreact = async (kind?: ReactionKind) => {
-    if (reactionSubmitting) return;
-    setReactionSubmitting(true);
+  const handleUnreact = async (
+    kind: ReactionKind | undefined,
+    operationId: string,
+  ) => {
     try {
-      await onUnreact?.(post.id, kind);
+      await onUnreact?.(post.id, kind, operationId);
     } catch {
       message.error(t('moments.reaction.status.REACTION_REJECTED'));
-    } finally {
-      setReactionSubmitting(false);
     }
   };
 
   const handleRetryReaction = async () => {
-    if (reactionSubmitting) return;
-    setReactionSubmitting(true);
     try {
       await retryPrivateReaction(post.id);
     } catch {
       message.error(t('moments.reaction.retryUnavailable'));
-    } finally {
-      setReactionSubmitting(false);
     }
   };
 
@@ -389,6 +381,7 @@ export function MomentCard({
         >
           <UserSquareAvatar
             remoteUrl={authorIdentity.avatarUrl || undefined}
+            actorPtid={authorPtid || null}
             name={displayName}
             size={44}
             radius={13}
@@ -414,25 +407,27 @@ export function MomentCard({
               )}
             </div>
 
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: [
-                  { key: 'open', label: t('moments.action.openPost') },
-                ],
-                onClick: ({ key, domEvent }) => {
-                  domEvent.stopPropagation();
-                  if (key === 'open') onOpen?.(post.id);
-                },
-              }}
-            >
-              <Button
-                type="text"
-                size="small"
-                icon={<MoreHorizontal size={16} />}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </Dropdown>
+            {onOpen && (
+              <Dropdown
+                trigger={['click']}
+                menu={{
+                  items: [
+                    { key: 'open', label: t('moments.action.openPost') },
+                  ],
+                  onClick: ({ key, domEvent }) => {
+                    domEvent.stopPropagation();
+                    if (key === 'open') onOpen(post.id);
+                  },
+                }}
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MoreHorizontal size={16} />}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </Dropdown>
+            )}
           </div>
 
           <SocialTrustMeta
@@ -630,6 +625,7 @@ export function MomentCard({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <UserSquareAvatar
                   remoteUrl={original.author?.avatarUrl || undefined}
+                  actorPtid={original.author?.id || null}
                   name={
                     original.author?.displayName ||
                     original.author?.username ||
@@ -650,7 +646,8 @@ export function MomentCard({
             </div>
           )}
 
-          {!isPrivate && (visibleComments.length > 0 || commentsCount > 0) && (
+          {!isPrivate && onOpenComments
+            && (visibleComments.length > 0 || commentsCount > 0) && (
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
@@ -679,24 +676,25 @@ export function MomentCard({
             </div>
           )}
 
-          <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 10 }}>
             <SocialActionBar
               reactions={visibleReactions}
               commentCount={commentsCount}
-              loading={reactionSubmitting}
-              onReact={
-                remoteSourceUnavailable
-                  ? undefined
-                  : (kind) => handleReact(kind)
-              }
-              onUnreact={remoteSourceUnavailable ? undefined : handleUnreact}
               reactionState={isPrivate ? privateReaction?.state : undefined}
               onRetryReaction={
                 isPrivate && !remoteSourceUnavailable
                   ? handleRetryReaction
                   : undefined
               }
-              onOpenComments={() => onOpenComments?.(post.id)}
+              onReact={
+                remoteSourceUnavailable
+                  ? undefined
+                  : handleReact
+              }
+              onUnreact={remoteSourceUnavailable ? undefined : handleUnreact}
+              onOpenComments={onOpenComments
+                ? () => onOpenComments(post.id)
+                : undefined}
             />
           </div>
         </div>

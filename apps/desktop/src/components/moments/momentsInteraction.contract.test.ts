@@ -48,9 +48,13 @@ describe('Desktop Moments interaction contract', () => {
   it('lets users collapse and restore the mounted comment composer', () => {
     expect(threadSource).toContain('data-moments-comments-toggle');
     expect(detailSource).toContain('data-moments-comments-region');
-    expect(detailSource).toContain('hidden={!commentsOpen}');
+    expect(detailSource).toContain('commentsOpen && (');
     expect(detailSource).toContain('<CommentList');
     expect(appSource).toContain('key={view.postId}');
+    // The thread composer must not be remounted by draft/native
+    // revision identity — only thread + viewer identity keys it.
+    expect(detailSource).not.toContain('draftRevision');
+    expect(detailSource).not.toContain('rendererGeneration');
   });
 
   it('keeps a committed private Comment actionable without plaintext', () => {
@@ -63,9 +67,15 @@ describe('Desktop Moments interaction contract', () => {
     })).toBe('reconcile');
     expect(detailSource).toContain('composerPublicationState');
     expect(commentListSource).toContain("t('moments.comment.confirmResult')");
-    expect(commentListSource).toContain('committedPendingReadback ? !onRetry : !text.trim()');
-    expect(commentListSource).toContain('setNowUnixMs(Date.now())');
-    expect(commentListSource).toContain('now >= composerRetryNotBeforeUnixMs');
+    expect(commentListSource).toContain(
+      "composerPublicationState === 'COMMITTED_PENDING_READBACK'",
+    );
+    expect(commentListSource).toContain("if (!onRetry) return 'submit'");
+    expect(commentListSource).toContain(
+      "composerState === 'COMMENT_RATE_LIMITED'",
+    );
+    expect(commentListSource).toContain('retryDeadlinePending');
+    expect(commentListSource).toContain('withinRetryDeadline');
     expect(detailSource).toContain(
       "privateThread.state === 'COMMENT_PARENT_UNAVAILABLE'",
     );
@@ -124,5 +134,48 @@ describe('Desktop Moments interaction contract', () => {
     expect(enMoments['moments.reaction.status.REACTION_PENDING']).toBe(
       'Reaction pending',
     );
+  });
+
+  it('binds the embedded detail card reactions to the moments store', () => {
+    // Detail reactions must call the same store actions as feeds; the
+    // embedded MomentCard must never render a no-op reaction row.
+    expect(detailSource).toContain('reactToPost: s.reactToPost');
+    expect(detailSource).toContain('unreactToPost: s.unreactToPost');
+    expect(detailSource).toContain('onReact={reactToPost}');
+    expect(detailSource).toContain('onUnreact={unreactToPost}');
+  });
+
+  it('keeps Reply available on every comment while gating Delete by ownership', () => {
+    expect(commentListSource).toContain('data-moments-comment-reply={comment.id}');
+    // The reply button renders outside the ownership gate.
+    const replyIndex = commentListSource.indexOf('data-moments-comment-reply');
+    const gateIndex = commentListSource.indexOf('canModerate && onDelete');
+    expect(replyIndex).toBeGreaterThan(-1);
+    expect(gateIndex).toBeGreaterThan(replyIndex);
+    expect(commentListSource).toContain("t('moments.comment.deleteFailed')");
+  });
+
+  it('routes production and harness PUBLIC media through one composer decision', () => {
+    const harnessSource = source('../../acceptance/moments/harness.ts');
+    expect(composerSource).toContain('decideComposerImageAttachments({');
+    expect(composerSource).toContain('sniffPickedImageMagic');
+    expect(composerSource).toContain('api.ossUploadAttachmentSocial');
+    // Private slots never go through the PUBLIC plaintext uploader.
+    expect(composerSource).toContain("audience.kind !== Audience_Kind.PUBLIC");
+    expect(harnessSource).toContain('decideComposerImageAttachments({');
+    // The deleted encrypted social upload command stays gone from
+    // production composer and acceptance harness.
+    expect(composerSource).not.toContain('ossUploadEncryptedAttachmentSocial');
+    expect(harnessSource).not.toContain('ossUploadEncryptedAttachmentSocial');
+    // Magic validation reads only a bounded header, not the full file.
+    const decisionSource = source('./composerMediaDecision.ts');
+    expect(decisionSource).toContain('MAGIC_HEADER_BYTES');
+    expect(decisionSource).toContain('reader.cancel()');
+  });
+
+  it('evicts deleted/revoked moments locally without issuing write commands', () => {
+    const runtimeSource = source('../../runtimes/momentsRuntime.ts');
+    expect(runtimeSource).toContain('evictPost(payload.postId)');
+    expect(detailSource).not.toContain('composerRetryNotBeforeUnixMs');
   });
 });

@@ -12,7 +12,18 @@ export type IdentityAuthGateReason =
 
 export type IdentityProfileStatus = 'unknown' | 'syncing' | 'ready' | 'stale' | 'failed';
 export type IdentityAccountCacheStatus = 'unknown' | 'refreshing' | 'ready' | 'failed';
-export type IdentityAvatarStatus = 'unknown' | 'remoteKnown';
+/**
+ * Presentation-only avatar state. Identity truth (canonical avatar identity,
+ * local path, profile revision) lives on the session mirror and on the
+ * React-free AvatarAssets owner; this substate only makes edge completion
+ * observable (r3.1) and must never become a second identity source.
+ */
+export type IdentityAvatarStatus =
+  | 'unknown'
+  | 'remoteKnown'
+  | 'absent'
+  | 'failed'
+  | 'degraded';
 export type IdentityBootSessionPolicy = 'restore_session' | 'auth_gate';
 export type IdentityAuthenticatedEdgeKind =
   | 'fresh_login'
@@ -68,6 +79,7 @@ export type IdentityEvent =
   | { type: 'PROFILE_SYNC_STARTED' }
   | { type: 'PROFILE_SYNC_SUCCEEDED'; user: SessionUser }
   | { type: 'PROFILE_SYNC_FAILED' }
+  | { type: 'AVATAR_PRESENTATION_UPDATED'; status: IdentityAvatarStatus }
   | { type: 'ACCOUNT_CACHE_REFRESH_STARTED' }
   | { type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED'; user?: SessionUser }
   | { type: 'ACCOUNT_CACHE_REFRESH_FAILED' }
@@ -121,6 +133,8 @@ const initialReadiness: IdentityReadiness = {
 };
 
 function avatarStatusForUser(user: SessionUser): IdentityAvatarStatus {
+  if (user.avatarState === 'absent') return 'absent';
+  if (user.avatarState === 'failed') return 'degraded';
   return user.avatar ? 'remoteKnown' : 'unknown';
 }
 
@@ -287,6 +301,8 @@ export function identityReducer(state: IdentityPhase, event: IdentityEvent): Ide
       );
     case 'PROFILE_SYNC_FAILED':
       return updateAuthenticated(state, {}, { profile: 'failed' });
+    case 'AVATAR_PRESENTATION_UPDATED':
+      return updateAuthenticated(state, {}, { avatar: event.status });
     case 'ACCOUNT_CACHE_REFRESH_STARTED':
       return updateAuthenticated(state, {}, { accountCache: 'refreshing' });
     case 'ACCOUNT_CACHE_REFRESH_SUCCEEDED':

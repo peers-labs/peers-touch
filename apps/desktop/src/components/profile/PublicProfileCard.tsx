@@ -131,6 +131,7 @@ export function PublicProfileCard({ compact, profile, avatarNode, actions }: Pub
         >
           <UserSquareAvatar
             remoteUrl={profile.avatar}
+            actorPtid={profile.did || null}
             name={profile.displayName}
             size={avatarSize}
             radius={avatarRadius}

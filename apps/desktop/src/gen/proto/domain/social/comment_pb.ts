@@ -6,7 +6,7 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
-import type { PostAuthor } from "./post_pb";
+import type { Mention, PostAuthor } from "./post_pb";
 import { file_domain_social_post } from "./post_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/social/comment.proto.
  */
 export const file_domain_social_comment: GenFile = /*@__PURE__*/
-  fileDesc("Chtkb21haW4vc29jaWFsL2NvbW1lbnQucHJvdG8SG3BlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MSLfAgoHQ29tbWVudBIKCgJpZBgBIAEoCRIPCgdwb3N0X2lkGAIgASgJEhMKC2F1dGhvcl9wdGlkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKaXNfZGVsZXRlZBgHIAEoCBI3CgZhdXRob3IYCiABKAsyJy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUG9zdEF1dGhvchITCgtsaWtlc19jb3VudBgLIAEoAxIQCghpc19saWtlZBgMIAEoCBIbChNyZXBseV90b19jb21tZW50X2lkGBQgASgJEhUKDXJlcGxpZXNfY291bnQYFSABKANSCWF1dGhvcl9pZCJVChRDcmVhdGVDb21tZW50UmVxdWVzdBIPCgdwb3N0X2lkGAEgASgJEg8KB2NvbnRlbnQYAiABKAkSGwoTcmVwbHlfdG9fY29tbWVudF9pZBgDIAEoCSJOChVDcmVhdGVDb21tZW50UmVzcG9uc2USNQoHY29tbWVudBgBIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Db21tZW50IjsKFFVwZGF0ZUNvbW1lbnRSZXF1ZXN0EhIKCmNvbW1lbnRfaWQYASABKAkSDwoHY29udGVudBgCIAEoCSJOChVVcGRhdGVDb21tZW50UmVzcG9uc2USNQoHY29tbWVudBgBIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Db21tZW50IioKFERlbGV0ZUNvbW1lbnRSZXF1ZXN0EhIKCmNvbW1lbnRfaWQYASABKAkiKAoVRGVsZXRlQ29tbWVudFJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgifAoSR2V0Q29tbWVudHNSZXF1ZXN0Eg8KB3Bvc3RfaWQYASABKAkSDgoGY3Vyc29yGAIgASgJEg0KBWxpbWl0GAMgASgFEjYKBHNvcnQYBCABKA4yKC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuQ29tbWVudFNvcnQidAoTR2V0Q29tbWVudHNSZXNwb25zZRI2Cghjb21tZW50cxgBIAMoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Db21tZW50EhMKC25leHRfY3Vyc29yGAIgASgJEhAKCGhhc19tb3JlGAMgASgIKjUKC0NvbW1lbnRTb3J0EgoKBk5FV0VTVBAAEgoKBk9MREVTVBABEg4KCk1PU1RfTElLRUQQAkJDWkFnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_google_protobuf_timestamp, file_domain_social_post]);
+  fileDesc("Chtkb21haW4vc29jaWFsL2NvbW1lbnQucHJvdG8SG3BlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MSKdAwoHQ29tbWVudBIKCgJpZBgBIAEoCRIPCgdwb3N0X2lkGAIgASgJEhMKC2F1dGhvcl9wdGlkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKaXNfZGVsZXRlZBgHIAEoCBI3CgZhdXRob3IYCiABKAsyJy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUG9zdEF1dGhvchITCgtsaWtlc19jb3VudBgLIAEoAxIQCghpc19saWtlZBgMIAEoCBIbChNyZXBseV90b19jb21tZW50X2lkGBQgASgJEhUKDXJlcGxpZXNfY291bnQYFSABKAMSPAoOdHlwZWRfbWVudGlvbnMYFiADKAsyJC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuTWVudGlvblIJYXV0aG9yX2lkIpMBChRDcmVhdGVDb21tZW50UmVxdWVzdBIPCgdwb3N0X2lkGAEgASgJEg8KB2NvbnRlbnQYAiABKAkSGwoTcmVwbHlfdG9fY29tbWVudF9pZBgDIAEoCRI8Cg50eXBlZF9tZW50aW9ucxgEIAMoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5NZW50aW9uIk4KFUNyZWF0ZUNvbW1lbnRSZXNwb25zZRI1Cgdjb21tZW50GAEgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkNvbW1lbnQiOwoUVXBkYXRlQ29tbWVudFJlcXVlc3QSEgoKY29tbWVudF9pZBgBIAEoCRIPCgdjb250ZW50GAIgASgJIk4KFVVwZGF0ZUNvbW1lbnRSZXNwb25zZRI1Cgdjb21tZW50GAEgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkNvbW1lbnQiKgoURGVsZXRlQ29tbWVudFJlcXVlc3QSEgoKY29tbWVudF9pZBgBIAEoCSIoChVEZWxldGVDb21tZW50UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCJ8ChJHZXRDb21tZW50c1JlcXVlc3QSDwoHcG9zdF9pZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUSNgoEc29ydBgEIAEoDjIoLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Db21tZW50U29ydCJ0ChNHZXRDb21tZW50c1Jlc3BvbnNlEjYKCGNvbW1lbnRzGAEgAygLMiQucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkNvbW1lbnQSEwoLbmV4dF9jdXJzb3IYAiABKAkSEAoIaGFzX21vcmUYAyABKAgqNQoLQ29tbWVudFNvcnQSCgoGTkVXRVNUEAASCgoGT0xERVNUEAESDgoKTU9TVF9MSUtFRBACQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp, file_domain_social_post]);
 
 /**
  * @generated from message peers_touch.model.social.v1.Comment
@@ -79,6 +79,15 @@ export type Comment = Message<"peers_touch.model.social.v1.Comment"> & {
    * @generated from field: int64 replies_count = 21;
    */
   repliesCount: bigint;
+
+  /**
+   * Position-aware mentions, reusing the Post Mention contract
+   * (UTF-16 offsets into `content`). Populated on readback from the
+   * existing social_comments.mentions_json column.
+   *
+   * @generated from field: repeated peers_touch.model.social.v1.Mention typed_mentions = 22;
+   */
+  typedMentions: Mention[];
 };
 
 /**
@@ -106,6 +115,15 @@ export type CreateCommentRequest = Message<"peers_touch.model.social.v1.CreateCo
    * @generated from field: string reply_to_comment_id = 3;
    */
   replyToCommentId: string;
+
+  /**
+   * Position-aware mentions of human actors. Validated by the Station
+   * (UTF-16 range/display/actor/parent-post readability); mentions
+   * never widen the parent post audience.
+   *
+   * @generated from field: repeated peers_touch.model.social.v1.Mention typed_mentions = 4;
+   */
+  typedMentions: Mention[];
 };
 
 /**

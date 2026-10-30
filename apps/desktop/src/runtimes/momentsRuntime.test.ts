@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => {
     loadComments: vi.fn<() => Promise<void>>(),
     setCommentTarget: vi.fn(),
     loadUserFeed: vi.fn<() => Promise<void>>(),
+    evictPost: vi.fn(),
+    refreshPostReactions: vi.fn<() => Promise<void>>(),
     reset: vi.fn(),
   };
   const privateMoments = {
@@ -268,7 +270,7 @@ describe('momentsRuntime identity fence', () => {
     expect(mocks.privateComments.loadComments).not.toHaveBeenCalled();
   });
 
-  it('retains the exact active comment on events and periodic refresh, then clears on navigation', async () => {
+  it('keeps reaction events post-scoped while periodic refresh retains the active comment', async () => {
     momentsRuntime.install();
     await flushRuntime();
     const postId = 'historical-post';
@@ -283,9 +285,13 @@ describe('momentsRuntime identity fence', () => {
       kind: 'REACTION_LIKE', removed: false, occurredAtUnixMs: 1,
     });
     await flushRuntime();
-    expect(mocks.moments.loadComments).toHaveBeenLastCalledWith(postId, true, 'old-comment');
+    // Reaction events are post-scoped: they refresh only the post
+    // projection, never the comment thread.
+    expect(mocks.moments.loadPost).toHaveBeenLastCalledWith(postId);
+    expect(mocks.moments.loadComments).not.toHaveBeenCalled();
     intervalCallbacks[0]();
     await flushRuntime();
+    // The periodic reconcile still re-reads the anchored comment.
     expect(mocks.moments.loadComments).toHaveBeenLastCalledWith(postId, true, 'old-comment');
     useMomentsNavigationStore.getState().setView({ kind: 'tab', tab: 'feed' });
     expect(mocks.moments.setCommentTarget).toHaveBeenLastCalledWith(undefined, undefined);
@@ -456,6 +462,46 @@ describe('momentsRuntime identity fence', () => {
     eventBus.publish(EVENT.MOMENT_REVOKED, wake);
     await Promise.resolve();
     expect(mocks.privateMoments.revokeMoment).toHaveBeenCalledTimes(1);
+  });
+
+  it('evicts the public projection immediately on deleted and revoked events', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    vi.clearAllMocks();
+
+    const deletedWake = {
+      eventId: 'remote-deleted-1',
+      targetActorPtid: 'ptid:alice',
+      sessionEpoch: 1,
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station-a.test',
+      postId: '01REMOTEDELETEDPOST',
+      authorActorPtid: 'ptid:bob',
+      occurredAtUnixMs: 462,
+    };
+    eventBus.publish(EVENT.MOMENT_DELETED, deletedWake);
+    await vi.waitFor(() => {
+      expect(mocks.moments.evictPost).toHaveBeenCalledWith('01REMOTEDELETEDPOST');
+      expect(mocks.privateMoments.purgeMoment).toHaveBeenCalledWith('01REMOTEDELETEDPOST');
+    });
+    // Local eviction is not a write command: the store mock has no
+    // delete action invoked by the runtime.
+    expect(mocks.moments.evictPost).toHaveBeenCalledTimes(1);
+
+    const revokedWake = {
+      eventId: 'remote-revoked-public-1',
+      targetActorPtid: 'ptid:alice',
+      sessionEpoch: 1,
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station-a.test',
+      postId: '01REMOTEPUBLICREVOKED',
+      occurredAtUnixMs: 463,
+      reason: 'RELATIONSHIP_REVOKED' as const,
+    };
+    eventBus.publish(EVENT.MOMENT_REVOKED, revokedWake);
+    await vi.waitFor(() => {
+      expect(mocks.moments.evictPost).toHaveBeenCalledWith('01REMOTEPUBLICREVOKED');
+    });
   });
 
   it('suppresses cached private posts immediately on a relationship block', async () => {

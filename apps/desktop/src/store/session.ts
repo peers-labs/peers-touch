@@ -1,8 +1,8 @@
 import { createDesktopStore } from './createDesktopStore';
-import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
+import { api, AuthCommandException, type AuthSessionResponse, type NativeAvatarState } from '../services/desktop_api';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
-import { primeResolvedLocal } from '../components/common/SquareAvatar';
+import { avatarAssets } from '../services/avatarAssets';
 import {
   accessSubmissionDescriptor,
   completeAccessSubmission,
@@ -22,13 +22,19 @@ export interface CurrentUser {
   actorPtid: string;
   name: string;
   email: string;
-  /** Remote avatar URL. The single piece of avatar state the frontend tracks;
-   *  local file caching is owned by the UserSquareAvatar component / Rust
-   *  avatar_cache infrastructure. */
+  /**
+   * Canonical avatar identity (raw Station path / external URL / data URI).
+   * The single piece of avatar identity the session mirror tracks; local
+   * file caching and decode readiness belong to services/avatarAssets.
+   */
   avatarUrl?: string;
-  /** Persisted local avatar file (from the native account identity). Kept so
-   *  session transitions can warm the avatar cache before the shell mounts. */
+  /** Persisted local avatar file (from the native account identity). Used as
+   *  the local decode fast lane on login / restore edges. */
   avatarLocalPath?: string;
+  /** Typed native avatar state from the latest authoritative sync. */
+  avatarState?: NativeAvatarState;
+  /** Canonical profile revision; drives same-URL content swaps. */
+  profileRevision?: number;
   loginMethod: string;
   loginProvider?: string;
 }
@@ -63,10 +69,47 @@ interface SessionStore {
   logout: () => Promise<void>;
   activateAuthenticatedSession: (response: AuthSessionResponse) => void;
   activateAppletLaunchSession: (user: CurrentUser) => void;
-  /** Update the current actor profile projection after identity reconciliation. */
-  updateProfile: (profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl'>>) => void;
+  /**
+   * Update the current actor profile projection. `fence` is captured by the
+   * caller before an await; when the current session epoch/actor no longer
+   * matches (a newer login/switch happened), the late update is dropped.
+   */
+  updateProfile: (
+    profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl' | 'avatarLocalPath' | 'avatarState' | 'profileRevision'>>,
+    fence?: { epoch: number; actorPtid: string },
+  ) => void;
   /** Update the remote avatar URL after upload or profile sync. */
   updateAvatar: (avatarUrl: string) => void;
+}
+
+type SessionMirrorState = Pick<ReturnType<typeof useSessionStore.getState>,
+  'currentUser' | 'authenticated' | 'restoring' | 'sessionEpoch'>;
+
+/**
+ * Commit an authenticated actor mirror and bind the React-free AvatarAssets
+ * owner to the new session epoch. The binding fences late responses from any
+ * previous actor/session and seeds the local decode fast lane.
+ */
+function commitAuthenticatedSession(
+  set: (updater: (state: SessionMirrorState) => Partial<SessionMirrorState>) => void,
+  user: CurrentUser | null,
+  restoring: boolean,
+): void {
+  set((state) => {
+    const sessionEpoch = state.sessionEpoch + 1;
+    if (user) {
+      avatarAssets.bindSession({
+        epoch: sessionEpoch,
+        actorPtid: user.actorPtid,
+        stationScope: null,
+        identity: user.avatarUrl ?? '',
+        revision: user.profileRevision ?? null,
+        localPath: user.avatarLocalPath ?? null,
+        state: user.avatarState,
+      });
+    }
+    return { currentUser: user, authenticated: Boolean(user), restoring, sessionEpoch };
+  });
 }
 
 // ── Helpers (exported for tests; mapping mirrors `restoreSession`) ──
@@ -106,10 +149,13 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
 export const useSessionStore = createDesktopStore<SessionStore>('session', (set, get) => ({
   ...initialState,
 
-  reset: () => set((state) => ({
-    ...initialState,
-    sessionEpoch: state.sessionEpoch + 1,
-  })),
+  reset: () => set((state) => {
+    avatarAssets.unbindSession();
+    return {
+      ...initialState,
+      sessionEpoch: state.sessionEpoch + 1,
+    };
+  }),
 
   hydrate: async () => {
     await get().restoreSession();
@@ -199,25 +245,22 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       const method = resp.login_method || 'password';
       const isOAuth = method !== 'password';
       const user = userFromAuthResponse(resp, isOAuth ? 'oauth' : 'password', isOAuth ? method : undefined);
-      if (user?.avatarUrl) primeResolvedLocal(user.avatarUrl, user.avatarLocalPath);
-      set((state) => ({
-        currentUser: user,
-        authenticated: Boolean(user),
-        restoring: false,
-        sessionEpoch: state.sessionEpoch + 1,
-      }));
+      commitAuthenticatedSession(set, user, false);
     } catch (error) {
       if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {
         if (error.details?.reason === 'oauth_acknowledgement_pending') {
           set({ restoring: false });
           throw error;
         }
-        set((state) => ({
-          currentUser: null,
-          authenticated: false,
-          restoring: false,
-          sessionEpoch: state.sessionEpoch + 1,
-        }));
+        set((state) => {
+          avatarAssets.unbindSession();
+          return {
+            currentUser: null,
+            authenticated: false,
+            restoring: false,
+            sessionEpoch: state.sessionEpoch + 1,
+          };
+        });
         return;
       }
       set({ restoring: false });
@@ -251,17 +294,20 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       isOAuth ? 'oauth' : 'password',
       isOAuth ? method : undefined,
     );
-    if (user?.avatarUrl) primeResolvedLocal(user.avatarUrl, user.avatarLocalPath);
-    set((state) => ({
-      currentUser: user,
-      authenticated: Boolean(user),
-      restoring: false,
-      sessionEpoch: state.sessionEpoch + 1,
-    }));
+    commitAuthenticatedSession(set, user, false);
   },
 
   activateAppletLaunchSession: (user) => {
-    if (user.avatarUrl) primeResolvedLocal(user.avatarUrl, user.avatarLocalPath);
+    // Synthetic applet actors carry no avatar; bind only the epoch fence.
+    avatarAssets.bindSession({
+      epoch: useSessionStore.getState().sessionEpoch + 1,
+      actorPtid: user.actorPtid,
+      stationScope: 'applet',
+      identity: '',
+      revision: null,
+      localPath: null,
+      state: 'absent',
+    });
     set((state) => ({
       currentUser: user,
       authenticated: true,
@@ -270,15 +316,37 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     }));
   },
 
-  updateProfile: (profile) => {
+  updateProfile: (profile, fence) => {
     set((state) => {
       if (!state.currentUser) return state;
-      return {
-        currentUser: {
-          ...state.currentUser,
-          ...profile,
-        },
+      // Drop late writes from an older session/actor; a newer edge owns state.
+      if (
+        fence
+        && (state.sessionEpoch !== fence.epoch || state.currentUser.actorPtid !== fence.actorPtid)
+      ) {
+        return state;
+      }
+      const currentUser = {
+        ...state.currentUser,
+        ...profile,
       };
+      if (
+        profile.avatarUrl !== undefined
+        || profile.avatarLocalPath !== undefined
+        || profile.avatarState !== undefined
+        || profile.profileRevision !== undefined
+      ) {
+        avatarAssets.bindSession({
+          epoch: state.sessionEpoch,
+          actorPtid: currentUser.actorPtid,
+          stationScope: null,
+          identity: currentUser.avatarUrl ?? '',
+          revision: currentUser.profileRevision ?? null,
+          localPath: currentUser.avatarLocalPath ?? null,
+          state: currentUser.avatarState,
+        });
+      }
+      return { currentUser };
     });
   },
 

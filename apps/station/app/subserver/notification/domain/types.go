@@ -194,4 +194,9 @@ const (
 	TypeFriendRequest  = 200
 	TypeFriendAccepted = 201
 	TypeFriendMessage  = 202
+	// TypeSocialCommentMention is produced by the Social subserver when a
+	// human actor is @-mentioned in a Moment comment. Public and private
+	// comments share the type; the Social owner keeps the payload to
+	// static resource references so recipients re-authorize on readback.
+	TypeSocialCommentMention = 210
 )

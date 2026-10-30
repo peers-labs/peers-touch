@@ -241,6 +241,7 @@
   "common.state.error": "出错了",
   "common.state.loading": "加载中...",
   "common.state.noData": "暂无数据",
+  "common.avatar.degraded": "头像暂不可用，正在显示上次保存的图片。",
   "common.time.hoursAgo": "{{count}} 小时前",
   "common.time.justNow": "刚刚",
   "common.time.minutesAgo": "{{count}} 分钟前",

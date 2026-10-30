@@ -1204,7 +1204,6 @@ fn main() {
             oss::oss_upload_agent_attachment_bytes,
             oss::oss_pick_image_social,
             oss::oss_upload_attachment_social,
-            oss::oss_upload_encrypted_attachment_social,
             oss::oss_resolve_url,
             oss::oss_list_my_files,
             oss::oss_delete_file,

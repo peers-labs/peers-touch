@@ -1,84 +1,227 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionIcon } from '@lobehub/ui';
-import { Bell, Check, CheckCheck, Trash2, UserPlus, UserCheck } from 'lucide-react';
-import { Badge, Empty, Popover, Spin, Tooltip, theme } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
+import { ActionIcon, Popover, Tooltip } from '@lobehub/ui';
+import { Badge, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
+import type { TFunction } from 'i18next';
+import {
+  Bell,
+  Check,
+  CheckCheck,
+  MessageSquareText,
+  Trash2,
+  UserCheck,
+  UserPlus,
+} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useNotificationStore } from '../store/notification';
-import { useSessionStore } from '../store/session';
+import { eventBus } from '../kernel/events';
+import { EVENT } from '../kernel/events/catalog';
 import type { NotificationData } from '../services/desktop_api';
+import { ensureMomentDetailProjection } from '../runtimes/momentsRuntime';
+import { useMomentsNavigationStore } from '../store/momentsNavigation';
+import { log } from '../utils/logger';
 
-const CATEGORY_LABELS: Record<number, string> = {
-  1: 'Social',
-  2: 'Chat',
-  3: 'System',
-  4: 'Task',
+const CATEGORY_SOCIAL = 1;
+const TYPE_FRIEND_REQUEST = 200;
+const TYPE_FRIEND_ACCEPTED = 201;
+/** Station Social owner type for @-mentions on comments. */
+const TYPE_SOCIAL_COMMENT_MENTION = 210;
+const TARGET_SOCIAL_COMMENT = 'social-comment';
+
+const CATEGORY_LABEL_KEY: Record<number, string> = {
+  1: 'moments.notification.categorySocial',
+  2: 'moments.notification.categoryChat',
+  3: 'moments.notification.categoryTask',
+  4: 'moments.notification.categorySystem',
 };
 
-const TYPE_ICONS: Record<number, typeof Bell> = {
-  200: UserPlus,
-  201: UserCheck,
-};
+function isCommentMention(item: NotificationData): boolean {
+  return item.type === TYPE_SOCIAL_COMMENT_MENTION
+    || (item.category === CATEGORY_SOCIAL
+      && item.targetType === TARGET_SOCIAL_COMMENT
+      && Boolean(item.metadata?.post_id));
+}
 
-function formatTimeAgo(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
+function formatTimeAgo(dateStr: string, t: TFunction): string {
+  const parsed = Date.parse(dateStr);
+  if (Number.isNaN(parsed)) return '';
+  const diffMs = Date.now() - parsed;
   const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 1) return t('moments.notification.timeJustNow');
+  if (diffMin < 60) return t('moments.notification.timeMinutesAgo', { count: diffMin });
   const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h ago`;
+  if (diffH < 24) return t('moments.notification.timeHoursAgo', { count: diffH });
   const diffD = Math.floor(diffH / 24);
-  return `${diffD}d ago`;
+  return t('moments.notification.timeDaysAgo', { count: diffD });
+}
+
+export function NotificationBell() {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('moments');
+  const notifications = useNotificationStore((s) => s.notifications);
+  const unreadTotal = useNotificationStore((s) => s.unreadTotal);
+  const startPolling = useNotificationStore((s) => s.startPolling);
+  const stopPolling = useNotificationStore((s) => s.stopPolling);
+  const loadNotifications = useNotificationStore((s) => s.loadNotifications);
+  const markRead = useNotificationStore((s) => s.markRead);
+  const markAllRead = useNotificationStore((s) => s.markAllRead);
+  const deleteNotifications = useNotificationStore((s) => s.deleteNotifications);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    void loadNotifications();
+  }, [open, loadNotifications]);
+
+  useEffect(() => {
+    startPolling();
+    return () => stopPolling();
+  }, [startPolling, stopPolling]);
+
+  const openCommentMention = useCallback((item: NotificationData) => {
+    const postId = item.metadata?.post_id?.trim();
+    const commentId = item.metadata?.comment_id?.trim() || undefined;
+    if (!postId) {
+      log.warn('NotificationBell', 'comment mention missing post id', { id: item.id });
+      return;
+    }
+    // Switch the shell to Social, then bind the moments detail view.
+    // The detail projection re-authorizes through the owner read
+    // path — the notification itself carries no content.
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'moments' });
+    useMomentsNavigationStore.getState().setView((previous) => ({
+      kind: 'detail',
+      postId,
+      commentId,
+      from: previous.kind === 'tab' ? previous.tab : previous.from,
+    }));
+    void ensureMomentDetailProjection(postId, { origin: 'device', commentId })
+      .catch((error) => log.warn(
+        'NotificationBell',
+        'comment mention projection failed',
+        { postId, error: String(error) },
+      ));
+  }, []);
+
+  const handleItemActivation = useCallback((item: NotificationData) => {
+    if (!isCommentMention(item)) return;
+    openCommentMention(item);
+    setOpen(false);
+    if (item.status === 1) void markRead([item.id]);
+  }, [markRead, openCommentMention]);
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      placement="rightBottom"
+      trigger="click"
+      content={
+        <div
+          style={{ width: 380, maxHeight: 480, display: 'flex', flexDirection: 'column' }}
+        >
+          <Flexbox
+            horizontal
+            align="center"
+            justify="space-between"
+            style={{ padding: '12px 14px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}
+          >
+            <span style={{ fontWeight: 600, fontSize: 14 }}>
+              {t('moments.notification.title')}
+            </span>
+            <Tooltip title={t('moments.notification.markAllRead')}>
+              <ActionIcon icon={CheckCheck} size="small" onClick={() => markAllRead()} />
+            </Tooltip>
+          </Flexbox>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {notifications.length === 0 ? (
+              <Flexbox align="center" justify="center" style={{ padding: '40px 0' }}>
+                <span style={{ color: 'rgba(0,0,0,0.45)', fontSize: 13 }}>
+                  {t('moments.notification.empty')}
+                </span>
+              </Flexbox>
+            ) : (
+              notifications.map((item) => (
+                <NotificationItem
+                  key={item.id}
+                  item={item}
+                  t={t}
+                  onActivate={handleItemActivation}
+                  onMarkRead={() => markRead([item.id])}
+                  onDelete={() => deleteNotifications([item.id])}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      }
+    >
+      <div>
+        <Badge count={unreadTotal} size="small" offset={[-2, 2]}>
+          <ActionIcon
+            icon={Bell}
+            size="large"
+            active={open}
+            title={t('moments.notification.title')}
+          />
+        </Badge>
+      </div>
+    </Popover>
+  );
 }
 
 function NotificationItem({
   item,
+  t,
+  onActivate,
   onMarkRead,
   onDelete,
 }: {
   item: NotificationData;
-  onMarkRead: (id: string) => void;
-  onDelete: (id: string) => void;
+  t: TFunction;
+  onActivate: (item: NotificationData) => void;
+  onMarkRead: () => void;
+  onDelete: () => void;
 }) {
   const { token } = theme.useToken();
   const isUnread = item.status === 1;
-  const Icon = TYPE_ICONS[item.type] || Bell;
+  const mention = isCommentMention(item);
+
+  const title = item.title || defaultTitle(item, t);
+  const body = item.body || (mention ? t('moments.notification.commentMentionBody') : '');
+  const categoryLabel = CATEGORY_LABEL_KEY[item.category]
+    ? t(CATEGORY_LABEL_KEY[item.category]!)
+    : '';
 
   return (
     <Flexbox
       horizontal
-      align="flex-start"
       gap={10}
+      align="flex-start"
+      data-notification-type={item.type}
+      data-notification-target={item.targetType}
+      onClick={() => onActivate(item)}
       style={{
         padding: '10px 14px',
-        background: isUnread ? token.colorFillQuaternary : 'transparent',
         borderBottom: `1px solid ${token.colorBorderSecondary}`,
-        cursor: 'default',
-        transition: 'background 0.15s',
-      }}
-      onMouseEnter={(e) => {
-        if (!isUnread) (e.currentTarget as HTMLElement).style.background = token.colorFillQuaternary;
-      }}
-      onMouseLeave={(e) => {
-        if (!isUnread) (e.currentTarget as HTMLElement).style.background = 'transparent';
+        background: isUnread ? token.colorFillQuaternary : 'transparent',
+        cursor: mention ? 'pointer' : 'default',
       }}
     >
-      <Flexbox
-        align="center"
-        justify="center"
+      <div
         style={{
           width: 32,
           height: 32,
           borderRadius: '50%',
-          background: isUnread ? token.colorPrimaryBg : token.colorFillSecondary,
+          background: token.colorFillSecondary,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           flexShrink: 0,
-          marginTop: 2,
         }}
       >
-        <Icon size={16} color={isUnread ? token.colorPrimary : token.colorTextTertiary} />
-      </Flexbox>
-
+        {notificationIcon(item)}
+      </div>
       <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
         <Flexbox horizontal justify="space-between" align="center" style={{ minWidth: 0 }}>
           <span
@@ -90,17 +233,15 @@ function NotificationItem({
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
               flex: 1,
-              minWidth: 0,
             }}
           >
-            {item.title || item.metadata?.sender_name || 'Notification'}
+            {title}
           </span>
-          <span style={{ fontSize: 11, color: token.colorTextQuaternary, flexShrink: 0, marginLeft: 8 }}>
-            {formatTimeAgo(item.createdAt)}
+          <span style={{ fontSize: 11, color: token.colorTextQuaternary, marginLeft: 8, flexShrink: 0 }}>
+            {formatTimeAgo(item.createdAt, t)}
           </span>
         </Flexbox>
-
-        {item.body && (
+        {body && (
           <span
             style={{
               fontSize: 12,
@@ -110,171 +251,79 @@ function NotificationItem({
               whiteSpace: 'nowrap',
             }}
           >
-            {item.body}
+            {body}
           </span>
         )}
-
         <Flexbox horizontal gap={4} style={{ marginTop: 2 }}>
-          <span
-            style={{
-              fontSize: 10,
-              color: token.colorTextQuaternary,
-              background: token.colorFillSecondary,
-              padding: '1px 6px',
-              borderRadius: 3,
-            }}
-          >
-            {CATEGORY_LABELS[item.category] || 'Other'}
-          </span>
+          {categoryLabel && (
+            <span
+              style={{
+                fontSize: 10,
+                padding: '1px 6px',
+                background: token.colorFillTertiary,
+                borderRadius: 3,
+                color: token.colorTextQuaternary,
+              }}
+            >
+              {categoryLabel}
+            </span>
+          )}
+          <Flexbox horizontal gap={4} style={{ marginLeft: 'auto' }}>
+            {isUnread && (
+              <Tooltip title={t('moments.notification.markRead')}>
+                <ActionIcon
+                  icon={Check}
+                  size="small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onMarkRead();
+                  }}
+                />
+              </Tooltip>
+            )}
+            <Tooltip title={t('moments.notification.delete')}>
+              <ActionIcon
+                icon={Trash2}
+                size="small"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete();
+                }}
+              />
+            </Tooltip>
+          </Flexbox>
         </Flexbox>
-      </Flexbox>
-
-      <Flexbox horizontal gap={4} style={{ flexShrink: 0, marginTop: 2 }}>
-        {isUnread && (
-          <Tooltip title="Mark read">
-            <ActionIcon
-              icon={Check}
-              size="small"
-              onClick={(e) => { e.stopPropagation(); onMarkRead(item.id); }}
-            />
-          </Tooltip>
-        )}
-        <Tooltip title="Delete">
-          <ActionIcon
-            icon={Trash2}
-            size="small"
-            onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
-          />
-        </Tooltip>
       </Flexbox>
     </Flexbox>
   );
 }
 
-export function NotificationBell() {
-  const { token } = theme.useToken();
-  const [open, setOpen] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  const notifications = useNotificationStore((s) => s.notifications);
-  const unreadTotal = useNotificationStore((s) => s.unreadTotal);
-  const loading = useNotificationStore((s) => s.loading);
-  const authenticatedActorPtid = useSessionStore((s) => (s.authenticated ? s.currentUser?.actorPtid ?? null : null));
-  const startPolling = useNotificationStore((s) => s.startPolling);
-  const stopPolling = useNotificationStore((s) => s.stopPolling);
-  const markRead = useNotificationStore((s) => s.markRead);
-  const markAllRead = useNotificationStore((s) => s.markAllRead);
-  const deleteNotifications = useNotificationStore((s) => s.deleteNotifications);
-  const loadNotifications = useNotificationStore((s) => s.loadNotifications);
-
-  useEffect(() => {
-    if (!authenticatedActorPtid) {
-      stopPolling();
-      return;
-    }
-    startPolling();
-    return () => stopPolling();
-  }, [authenticatedActorPtid, startPolling, stopPolling]);
-
-  const handleMarkRead = useCallback((id: string) => {
-    markRead([id]);
-  }, [markRead]);
-
-  const handleDelete = useCallback((id: string) => {
-    deleteNotifications([id]);
-  }, [deleteNotifications]);
-
-  const handleMarkAllRead = useCallback(() => {
-    markAllRead();
-  }, [markAllRead]);
-
-  const handleOpen = useCallback(() => {
-    if (!open) {
-      loadNotifications();
-    }
-    setOpen(!open);
-  }, [open, loadNotifications]);
-
-  const dropdownContent = (
-    <div
-      ref={panelRef}
-      style={{
-        width: 380,
-        maxHeight: 480,
-        background: token.colorBgElevated,
-        borderRadius: token.borderRadiusLG,
-        boxShadow: token.boxShadowSecondary,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <Flexbox
-        horizontal
-        align="center"
-        justify="space-between"
-        style={{
-          padding: '12px 14px',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontWeight: 600, fontSize: 14 }}>Notifications</span>
-        <Flexbox horizontal gap={8} align="center">
-          {unreadTotal > 0 && (
-            <Tooltip title="Mark all read">
-              <ActionIcon icon={CheckCheck} size="small" onClick={handleMarkAllRead} />
-            </Tooltip>
-          )}
-        </Flexbox>
-      </Flexbox>
-
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        {loading && notifications.length === 0 ? (
-          <Flexbox align="center" justify="center" style={{ padding: 40 }}>
-            <Spin size="small" />
-          </Flexbox>
-        ) : notifications.length === 0 ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="No notifications"
-            style={{ padding: '40px 0' }}
-          />
-        ) : (
-          notifications.map((item) => (
-            <NotificationItem
-              key={item.id}
-              item={item}
-              onMarkRead={handleMarkRead}
-              onDelete={handleDelete}
-            />
-          ))
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={setOpen}
-      trigger="click"
-      placement="rightBottom"
-      content={dropdownContent}
-      arrow={false}
-      overlayInnerStyle={{ padding: 0 }}
-      align={{ offset: [8, 0] }}
-    >
-      <div>
-        <Badge count={unreadTotal} size="small" offset={[-2, 2]}>
-          <ActionIcon
-            icon={Bell}
-            size="large"
-            onClick={handleOpen}
-            title="Notifications"
-          />
-        </Badge>
-      </div>
-    </Popover>
-  );
+function defaultTitle(item: NotificationData, t: TFunction): string {
+  if (isCommentMention(item)) {
+    return t('moments.notification.commentMentionTitle');
+  }
+  switch (item.type) {
+    case TYPE_FRIEND_REQUEST:
+      return t('moments.notification.friendRequestTitle');
+    case TYPE_FRIEND_ACCEPTED:
+      return t('moments.notification.friendAcceptedTitle');
+    default:
+      return t('moments.notification.fallbackTitle');
+  }
 }
+
+function notificationIcon(item: NotificationData) {
+  switch (item.type) {
+    case TYPE_FRIEND_REQUEST:
+      return <UserPlus size={16} color="var(--ant-color-primary, #1677ff)" />;
+    case TYPE_FRIEND_ACCEPTED:
+      return <UserCheck size={16} color="var(--ant-color-primary, #1677ff)" />;
+    case TYPE_SOCIAL_COMMENT_MENTION:
+      return <MessageSquareText size={16} color="var(--ant-color-primary, #1677ff)" />;
+    default:
+      return <Bell size={16} />;
+  }
+}
+
+// Re-exported for tests / external notification flows.
+export { TYPE_SOCIAL_COMMENT_MENTION, TARGET_SOCIAL_COMMENT };

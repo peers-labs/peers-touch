@@ -12,7 +12,7 @@ const ACTION_PREFIX = 'peers-touch://action/v1#';
 const encoder = new TextEncoder();
 
 export interface NavigationLink {
-  resource: 'cron' | 'sessions' | 'settings' | 'channels' | 'marketplace' | 'evaluation' | 'documents' | 'chat';
+  resource: 'cron' | 'sessions' | 'settings' | 'channels' | 'marketplace' | 'evaluation' | 'documents' | 'chat' | 'moments';
   id?: string;
   subResource?: 'runs';
   subId?: string;
@@ -86,8 +86,11 @@ export function parseNavigation(value: string): NavigationLink | null {
     }
   } else if (resource === 'sessions' || resource === 'settings' || resource === 'channels') {
     if (path.length <= 1) return { resource, ...(path[0] ? { id: path[0] } : {}) };
-  } else if (resource === 'marketplace' || resource === 'evaluation' || resource === 'documents' || resource === 'chat') {
+  } else if (resource === 'marketplace' || resource === 'evaluation' || resource === 'documents' || resource === 'chat' || resource === 'moments') {
     if (path.length === 0) return { resource };
+    if (resource === 'moments' && path.length <= 1) {
+      return { resource, ...(path[0] ? { id: path[0] } : {}) };
+    }
   }
   return null;
 }

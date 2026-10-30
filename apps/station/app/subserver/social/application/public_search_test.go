@@ -3,8 +3,10 @@ package application
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	searchpb "github.com/peers-labs/peers-touch/station/app/model/search"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
@@ -148,6 +150,40 @@ func TestPublicSearchHydrationRechecksKnownValidatorAndOrigin(t *testing.T) {
 	data, err := proto.Marshal(reply)
 	if err != nil || len(data) > 20 {
 		t.Fatalf("unavailable outcome retained resource/content: %x/%v", data, err)
+	}
+}
+
+func TestPublicSearchRejectsOverlongTextByUnicodeScalarCount(t *testing.T) {
+	// The boundary is 256 Unicode scalars, rejected (never truncated). Byte
+	// length is deliberately not the metric: multibyte text under the old
+	// 2048-byte guard must now fail once it passes 256 runes.
+	for _, text := range []string{
+		strings.Repeat("a", MaxPublicQueryRunes+1),
+		strings.Repeat("中", MaxPublicQueryRunes+1),
+		strings.Repeat("🙂", MaxPublicQueryRunes+1),
+	} {
+		_, _, err := validatePublicSearchQuery(&searchpb.QueryIntent{
+			Text:   text,
+			Scopes: []searchpb.SearchScope{searchpb.SearchScope_SEARCH_SCOPE_STATION},
+		})
+		var searchErr *PublicSearchError
+		if !errors.As(err, &searchErr) ||
+			searchErr.Code != searchpb.SearchErrorCode_SEARCH_ERROR_CODE_INVALID_QUERY {
+			t.Fatalf("rune length %d should be rejected as INVALID_QUERY: %v", utf8.RuneCountInString(text), err)
+		}
+	}
+	// Exactly the boundary, including multibyte scalars, is a valid FIND.
+	for _, text := range []string{
+		strings.Repeat("a", MaxPublicQueryRunes),
+		strings.Repeat("中", MaxPublicQueryRunes),
+		strings.Repeat("🙂", MaxPublicQueryRunes),
+	} {
+		if _, _, err := validatePublicSearchQuery(&searchpb.QueryIntent{
+			Text:   text,
+			Scopes: []searchpb.SearchScope{searchpb.SearchScope_SEARCH_SCOPE_STATION},
+		}); err != nil {
+			t.Fatalf("rune length %d must stay within the boundary: %v", utf8.RuneCountInString(text), err)
+		}
 	}
 }
 

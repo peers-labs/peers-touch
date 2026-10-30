@@ -13,12 +13,8 @@ import {
 import { create } from '@bufbuild/protobuf';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
-  clientMediaEncryptionDescriptorFromAttachment,
-} from '@peers-touch/client-media-security';
-import {
   Audience_Kind,
   AudienceSchema,
-  ImageAttachmentSchema,
   type Audience,
   type ImageAttachment,
 } from '../../gen/proto/domain/social/post_pb';
@@ -26,13 +22,19 @@ import {
   ConversationKind,
   ConversationStatus,
 } from '../../gen/proto/domain/chat/conversation_pb';
-import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
 import { AudiencePicker } from './AudiencePicker';
 import {
   audienceMayReachRemote,
   isAudienceSelectionComplete,
 } from './audienceSelection';
-import { api, type SocialEncryptedMediaDescriptorWire } from '../../services/desktop_api';
+import {
+  ComposerMediaError,
+  decideComposerImageAttachments,
+  uploadPublicComposerImage,
+  sniffPickedImageMagic,
+  type PublicComposerImage,
+} from './composerMediaDecision';
+import { api } from '../../services/desktop_api';
 import {
   preparePrivateAudience,
   prepareRemotePrivateRecipient,
@@ -104,6 +106,9 @@ interface PendingImage {
   cid?: string;
   /** Typed descriptor persisted into CreateImagePostRequest.images. */
   image?: ImageAttachment;
+  /** Shared decision-module result so publish can reuse an
+   * already-uploaded slot without re-uploading. */
+  uploaded?: PublicComposerImage;
   /** Populated when status === 'error'. */
   error?: string;
 }
@@ -112,46 +117,6 @@ let pendingIdSeq = 0;
 function makeLocalId(): string {
   pendingIdSeq += 1;
   return `pending-${Date.now()}-${pendingIdSeq}`;
-}
-
-function toEncryptedMediaDescriptor(wire: SocialEncryptedMediaDescriptorWire) {
-  const descriptor = clientMediaEncryptionDescriptorFromAttachment({
-    mediaEncryption: {
-      encrypted: wire.encrypted,
-      version: wire.version,
-      suite: wire.suite,
-      keyB64: wire.key_b64,
-      nonceB64: wire.nonce_b64,
-      plaintextSha256B64: wire.plaintext_sha256_b64,
-      ciphertextSha256B64: wire.ciphertext_sha256_b64,
-      plaintextSize: wire.plaintext_size,
-      ciphertextSize: wire.ciphertext_size,
-      chunking: wire.chunking,
-      chunkSize: wire.chunk_size,
-      chunkCount: wire.chunk_count,
-      tagSize: wire.tag_size,
-      nonceStrategy: wire.nonce_strategy,
-    },
-  });
-  if (!descriptor) {
-    throw new Error('desktop.moments.media.invalidDescriptor');
-  }
-  return create(EncryptedMediaDescriptorSchema, {
-    encrypted: descriptor.encrypted,
-    version: descriptor.version,
-    suite: descriptor.suite,
-    keyB64: descriptor.keyB64,
-    nonceB64: descriptor.nonceB64,
-    plaintextSha256B64: descriptor.plaintextSha256B64,
-    ciphertextSha256B64: descriptor.ciphertextSha256B64,
-    plaintextSize: BigInt(descriptor.plaintextSize),
-    ciphertextSize: BigInt(descriptor.ciphertextSize),
-    chunking: descriptor.chunking || 'single-aead',
-    chunkSize: descriptor.chunkSize ?? 0,
-    chunkCount: descriptor.chunkCount ?? 0,
-    tagSize: descriptor.tagSize ?? 0,
-    nonceStrategy: descriptor.nonceStrategy ?? '',
-  });
 }
 
 export function MomentComposer({ initialAudience, onPublished }: MomentComposerProps) {
@@ -403,23 +368,31 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
       )),
     );
     try {
-      const uploaded = await api.ossUploadEncryptedAttachmentSocial(filePath);
-      if (!uploaded?.cid) {
-        throw new Error('upload returned no cid');
+      // PUBLIC is the only path that reaches OSS, and it goes through
+      // the same audience decision the acceptance harness drives.
+      // PRIVATE slots are never uploaded; Secure Content consumes the
+      // local file intents at private publish time.
+      if (isPrivateAudience(audience)) {
+        const skipped: PendingImage = {
+          localId,
+          filePath,
+          previewSrc: pending.find((item) => item.localId === localId)?.previewSrc ?? '',
+          status: 'pending',
+        };
+        return skipped;
       }
-      const image = create(ImageAttachmentSchema, {
-        id: uploaded.cid,
-        url: uploaded.cid,
-        sizeBytes: BigInt(uploaded.media_encryption.plaintext_size || uploaded.size || 0),
-        mediaEncryption: toEncryptedMediaDescriptor(uploaded.media_encryption),
-      });
+      const result = await uploadPublicComposerImage(
+        { filePath },
+        (path) => api.ossUploadAttachmentSocial(path),
+      );
       const completed: PendingImage = {
         localId,
         filePath,
         previewSrc: pending.find((item) => item.localId === localId)?.previewSrc ?? '',
         status: 'done',
-        cid: uploaded.cid,
-        image,
+        cid: result.cid,
+        image: result.attachment,
+        uploaded: result,
       };
       setPending((prev) =>
         prev.map((p) =>
@@ -435,7 +408,9 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
         filePath,
         previewSrc: pending.find((item) => item.localId === localId)?.previewSrc ?? '',
         status: 'error',
-        error: String(err),
+        error: err instanceof ComposerMediaError
+          ? t(`moments.compose.media.${err.code}`, { defaultValue: err.code })
+          : String(err),
       };
       log.warn(TAG, 'image upload failed', { filePath, err: String(err) });
       setPending((prev) =>
@@ -463,7 +438,37 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
     }
     if (!paths.length) return;
 
-    const fresh: PendingImage[] = paths.map((p) => ({
+    // Cheap bounded magic-header preflight: an unsupported type
+    // (notably HEIC without a native transcoder) is rejected before it
+    // enters the draft, without decoding whole files at pick time.
+    // Full decode validation happens through the shared decision at
+    // upload. The native picker already granted exactly these files.
+    const picked = paths.map((p) => ({ filePath: p }));
+    const settled = await Promise.allSettled(
+      picked.map((file) => sniffPickedImageMagic(file)),
+    );
+    const accepted: string[] = [];
+    let rejected = 0;
+    settled.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        accepted.push(paths[index]!);
+      } else {
+        rejected += 1;
+        log.warn(TAG, 'picked image rejected', {
+          filePath: paths[index],
+          err: String(result.reason),
+        });
+      }
+    });
+    if (!accepted.length) {
+      message.error(t('moments.compose.media.IMAGE_TYPE_UNSUPPORTED'));
+      return;
+    }
+    if (rejected > 0) {
+      message.warning(t('moments.compose.media.IMAGE_TYPE_UNSUPPORTED'));
+    }
+
+    const fresh: PendingImage[] = accepted.map((p) => ({
       localId: makeLocalId(),
       filePath: p,
       previewSrc: convertFileSrc(p),
@@ -577,31 +582,43 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
 
     setSubmitting(true);
     try {
-      const uploaded: PendingImage[] = [];
-      for (const item of pending) {
-        if (item.status === 'done') {
-          uploaded.push(item);
-          continue;
-        }
-        const result = await uploadOne(item.filePath, item.localId);
-        if (!result || result.status !== 'done') {
-          throw new Error(result?.error ?? t('moments.compose.imageUploadFailed'));
-        }
-        uploaded.push(result);
+      // PUBLIC media converges on the single composer decision
+      // module — the exact same path the acceptance harness drives —
+      // so picker/preview/upload routing can never diverge. Already
+      // uploaded slots are reused; remaining ones are validated and
+      // uploaded here.
+      const files = pending.map((item) => ({ filePath: item.filePath }));
+      const preuploaded = new Map(
+        pending
+          .filter((item): item is PendingImage & { status: 'done' } =>
+            item.status === 'done' && !!item.uploaded)
+          .map((item) => [item.filePath, item.uploaded!]),
+      );
+      const decision = await decideComposerImageAttachments({
+        audience,
+        files,
+        uploader: (path) => api.ossUploadAttachmentSocial(path),
+        preuploaded,
+      });
+      if (decision.kind !== 'public-attachments') {
+        throw new Error(t('moments.compose.media.IMAGE_UPLOAD_FAILED'));
       }
-      const cids = uploaded
-        .filter((item) => item.cid)
-        .map((item) => item.cid as string);
-      const images = uploaded
-        .filter((item) => item.image)
-        .map((item) => item.image as ImageAttachment);
+      // Reflect freshly uploaded attachments on their slots.
+      setPending((prev) => prev.map((item, index) => {
+        const resolved = decision.kind === 'public-attachments'
+          ? decision.results[index]
+          : undefined;
+        return resolved
+          ? { ...item, status: 'done', cid: resolved.cid, image: resolved.attachment, uploaded: resolved }
+          : item;
+      }));
       const id =
-        cids.length > 0
+        decision.imageIds.length > 0
           ? await createPost({
               kind: 'image',
               text: trimmed,
-              imageIds: cids,
-              images,
+              imageIds: decision.imageIds,
+              images: decision.attachments,
               audience,
             })
           : await createPost({ kind: 'text', text: trimmed, audience });
@@ -611,7 +628,22 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
       clearDraft();
       onPublished?.(id);
     } catch (err) {
-      message.error(String(err));
+      // Preserve the draft and surface the failed slot so the user
+      // can retry that image instead of losing the selection.
+      if (err instanceof ComposerMediaError) {
+        setPending((prev) => prev.map((item) => (
+          item.filePath === err.filePath
+            ? {
+                ...item,
+                status: 'error',
+                error: t(`moments.compose.media.${err.code}`, { defaultValue: err.code }),
+              }
+            : item
+        )));
+        message.error(t(`moments.compose.media.${err.code}`, { defaultValue: err.code }));
+      } else {
+        message.error(String(err));
+      }
     } finally {
       setSubmitting(false);
     }

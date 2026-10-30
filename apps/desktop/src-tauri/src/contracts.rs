@@ -1789,12 +1789,24 @@ pub struct SocialGetCommentsInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialCommentMentionInput {
+    pub actor_ptid: String,
+    pub offset: i32,
+    pub length: i32,
+    pub display: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialCreateCommentInput {
     pub post_id: String,
     pub content: String,
     /// Empty string ↔ top-level comment.
     #[serde(default)]
     pub reply_to_comment_id: Option<String>,
+    /// Position-aware human-actor mentions (UTF-16 offsets). The
+    /// Station validates ranges, display text, and actor resolution.
+    #[serde(default)]
+    pub typed_mentions: Vec<SocialCommentMentionInput>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
