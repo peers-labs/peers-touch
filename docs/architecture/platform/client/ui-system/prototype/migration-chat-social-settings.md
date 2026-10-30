@@ -35,8 +35,8 @@
 | 1 | **会话轨 ConversationRail**（chat/social 共用） | Avatar/GroupAvatar、Badge、Button/IconButton、SearchField、List/ListItem、EmptyState、ScrollArea | SearchField（已训练） |
 | 2 | 对话窗 ConversationView | MessageList 自有渲染 + Avatar、TextArea/TextField、IconButton、InfiniteList/ScrollArea、EmptyState | 1 |
 | 3 | 发起会话/联系人选择 | Autocomplete 或 List+SearchField、Avatar、Button、Modal/Dialog | 1 |
-| 4 | 动态流 MomentsFeed | Card、Avatar、Badge、IconButton、Tag、EmptyState、InfiniteList | 2 |
-| 5 | 动态详情 / 发动态 / 圈友管理 | 同 4 + TextArea、Dialog、AvatarGroup | 4 |
+| 4 | **动态子系统 MomentsFeature**（范围导航/首页/探索/找人/圈友/详情/个人页/发动态） | Segmented、Popover、Menu、Dialog、AvatarGroup、Toggle、TextArea、TextField、Select、IconButton、Empty | 2 |
+| 5 | ~~动态详情 / 发动态 / 圈友管理~~（已并入增量 4；私密动态/媒体内容种类等保持延后） | 同 4 | — |
 | 6 | 设置框架 SettingsFrame | SectionNav、Accordion/Disclosure、Card/Surface、PageHeader | — |
 | 7 | 通用设置行 SettingsRow | Switch、Select、TextField、Button、InlineAlert | 6 |
 | 8 | 数据/存储设置 | Switch、Button、Progress、Alert、Table（保留项） | 7 |
@@ -61,11 +61,13 @@
 - [x] 3 发起会话/联系人选择（peers-ui Dialog + SearchField + Avatar + Empty；
       新联系人创建/已有打开、过滤空态、portal 弹层同皮肤令牌；合同
       components/contact-picker.md；门禁 18/18）
-- [x] 4 动态流 MomentsFeed（本轮纵切：peers-ui Card flat/Avatar/Tag/Toggle 文本流 +
-      真实本地点赞；图片/定位、回复详情、发布器、圈子与受众、多反应、分页、真实数据源
-      延后增量 5；卡片以窗框材质令牌重述边框/圆角/阴影，赞选中态走琥珀强调；合同
-      components/moments-feed.md；门禁 21/21，1360/390 双宽度）
-- [ ] 5 动态详情 / 发动态 / 圈友管理（+ TextArea/Dialog/AvatarGroup）
+- [x] 4 动态子系统 MomentsFeature（按 desktop 功能面重做：Segmented 四范围
+      首页/探索/找人/圈友，48 方圆头像与来源·理由·受众信任行，16 反应 Popover +
+      琥珀选中，图片网格灯箱，评论预览/详情/真实发评论，发动态 Dialog + 受众选择，
+      个人页 72 身份头与关注，圈友头像组与新建圈子，加载更多；身份层级轨 44/卡 48/
+      个人页 72；合同 components/moments-feature.md；门禁 31/31，1360/390 双宽度）
+- [x] 5 动态详情 / 发动态 / 圈友管理（并入增量 4；私密动态 native 状态机、视频/投票/
+      定位/转发等内容种类、真实图床与持久化保持 UNPROVEN）
 - [ ] 6 设置框架 SettingsFrame（SectionNav/Accordion/Card/PageHeader）
 - [ ] 7 通用设置行 SettingsRow（Switch/Select/TextField/Button/InlineAlert）
 - [ ] 8 数据/存储设置（Switch/Button/Progress/Alert/Table）

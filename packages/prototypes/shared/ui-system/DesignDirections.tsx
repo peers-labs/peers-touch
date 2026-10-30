@@ -15,10 +15,11 @@
 import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent, type KeyboardEvent } from 'react';
 import {
   Search, MessageCircle, Sparkles, Bell, Settings,
-  Upload, ImageIcon, X, UserPlus, MessagesSquare, Heart,
+  Upload, ImageIcon, X, UserPlus, MessagesSquare,
   type LucideIcon,
 } from 'lucide-react';
-import { Avatar, Badge, Button, Card, Dialog, Empty, IconButton, Tag, TextArea, Toggle, UIProvider } from '@peers-touch/ui';
+import { Avatar, Badge, Button, Dialog, Empty, IconButton, TextArea, UIProvider } from '@peers-touch/ui';
+import { MomentsFeature } from './moments/MomentsFeature';
 import './design-directions.css';
 
 type Skin = { id: string; name: string; desc: string };
@@ -297,60 +298,6 @@ function ContactPickerDialog({ open, people, existingIds, onDismiss, onPick }: {
   );
 }
 
-/* Increment 4 — MomentsFeed (social), composed from peers-ui.
-   Legacy: pages/moments/MomentsFeedPage.tsx. Images/detail/composer/circle
-   management are later increments; this is the text feed with real like state. */
-type Moment = {
-  id: string; who: string; tone: string; circle: string; at: string;
-  text: string; likes: number; replies: number;
-};
-const MOMENTS: Moment[] = [
-  { id: 'mo-1', who: '林晚', tone: '#c98a5a', circle: '小区生活圈', at: '刚刚 · 上海', likes: 24, replies: 6,
-    text: '周末把阳台的薄荷分了三盆，留一盆给自己。把生活过成喜欢的样子，不需要很大的事。' },
-  { id: 'mo-2', who: '周禾', tone: '#7f9c7a', circle: '小区生活圈', at: '2 小时前 · 同站', likes: 58, replies: 12,
-    text: '和邻居一起整理了小区共享书架，今天有人放了一本我找了很久的诗集。人和人这样接上的感觉真好。' },
-  { id: 'mo-3', who: '苏禾', tone: '#5d5a44', circle: '种子交换', at: '今天', likes: 17, replies: 3,
-    text: '番茄籽晒干了，周日种子交换见，想换罗勒和小葱。' },
-];
-
-function MomentsFeed() {
-  const [liked, setLiked] = useState<Record<string, boolean>>({});
-  return (
-    <div className="sk-moments">
-      {MOMENTS.map(m => {
-        const on = !!liked[m.id];
-        const likeCount = m.likes + (on ? 1 : 0);
-        return (
-          <Card key={m.id} className="sk-moment-card" flat
-            heading={
-              <div className="sk-moment-head">
-                <Avatar name={m.who} background={m.tone} size={40}
-                  style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
-                <span className="sk-moment-id">
-                  <strong>{m.who}</strong>
-                  <span>{m.at}</span>
-                </span>
-                <Tag tone="neutral" className="sk-moment-circle">{m.circle}</Tag>
-              </div>
-            }
-            footer={
-              <div className="sk-moment-actions">
-                <Toggle actionId={`moment.like.${m.id}`} emphasis="quiet"
-                  selected={on} onSelectedChange={() => setLiked(s => ({ ...s, [m.id]: !s[m.id] }))}
-                  leading={<Heart size={15} fill={on ? 'currentColor' : 'none'} />}
-                  label={`${likeCount} 赞`} aria-label={`赞 ${m.who}`}
-                  className={on ? 'is-liked' : ''} />
-                <span className="sk-moment-replies">{m.replies} 条回复（详情见增量 5）</span>
-              </div>
-            }>
-            <p className="sk-moment-text">{m.text}</p>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
 export function DesignDirections() {
   const [skinId, setSkinId] = useState('glass');
   const [wallpaper, setWallpaper] = useState<string>('none');
@@ -504,7 +451,7 @@ export function DesignDirections() {
               </div>
             )
           ) : railTab === 'moments' ? (
-            <MomentsFeed />
+            <MomentsFeature />
           ) : (
             <div className="sk-feed-list">
               <section className="sk-card sk-contract">

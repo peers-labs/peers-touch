@@ -282,7 +282,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-feed",
-      "title": "增量4：动态轨由 peers-ui Card/Avatar/Tag/Toggle 组合，3 条动态、头像方圆、圈子标签、赞为真实控件",
+      "title": "增量4：动态子系统首页——4 范围 Segmented/发动态 CTA/3 张完整卡片（48 头像、信任行、图片、评论预览、反应条、加载更多），工艺电池全清",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" }
@@ -290,48 +290,215 @@
       "oracles": [
         { "id": "moments-tab-current", "type": "attr", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)", "attr": "aria-current", "equals": "page" },
         { "id": "feed-title", "type": "textContains", "target": ".sk-feed-head h1", "contains": "朋友圈动态" },
-        { "id": "three-cards", "type": "count", "target": ".sk-moment-card", "equals": 3 },
-        { "id": "three-avatars", "type": "count", "target": ".sk-moments .pt-avatar", "equals": 3 },
-        { "id": "avatars-rounded-square", "type": "roundedSquareAll", "target": ".sk-moments .pt-avatar" },
-        { "id": "circle-tags", "type": "count", "target": ".sk-moment-circle.pt-tag", "equals": 3 },
-        { "id": "three-bodies", "type": "count", "target": ".sk-moment-text", "equals": 3 },
-        { "id": "like-toggles-unpressed", "type": "count", "target": ".sk-moment-actions .pt-button[aria-pressed='false']", "equals": 3 },
-        { "id": "like-count-initial", "type": "textContains", "target": ".sk-moment-card:first-of-type .pt-button", "contains": "24 赞" },
-        { "id": "replies-meta-not-control", "type": "count", "target": ".sk-moment-replies", "equals": 3 },
-        { "id": "no-conversation-rail", "type": "count", "scope": "global", "target": ".sk-conv-rail", "equals": 0 },
+        { "id": "scope-segmented", "type": "count", "target": ".sk-moments-subbar .pt-segmented .pt-button", "equals": 4 },
+        { "id": "compose-cta", "type": "exists", "target": ".sk-compose-open" },
+        { "id": "three-posts", "type": "count", "target": ".sk-post", "equals": 3 },
+        { "id": "post-avatars", "type": "count", "target": ".sk-post-head .pt-avatar", "equals": 3 },
+        { "id": "post-avatars-square", "type": "roundedSquareAll", "target": ".sk-post-head .pt-avatar" },
+        { "id": "post-avatar-48", "type": "computedStyle", "target": ".sk-post:first-of-type .sk-post-head .pt-avatar", "prop": "width", "equals": "48px" },
+        { "id": "post-avatar-radius", "type": "computedStyle", "target": ".sk-post:first-of-type .sk-post-head .pt-avatar", "prop": "borderTopLeftRadius", "equals": "13px" },
+        { "id": "rail-identity-44", "type": "computedStyle", "target": ".sk-rail-avatar", "prop": "width", "equals": "44px" },
+        { "id": "trust-lines", "type": "count", "target": ".sk-trust", "equals": 3 },
+        { "id": "image-tiles", "type": "count", "target": ".sk-img-tile", "equals": 4 },
+        { "id": "comment-preview-tiles", "type": "count", "target": ".sk-comments", "equals": 3 },
+        { "id": "action-bars", "type": "count", "target": ".sk-post-actions", "equals": 3 },
+        { "id": "load-more", "type": "exists", "target": "[data-action-id='moments.load-more']" },
+        { "id": "scope-hint", "type": "textContains", "target": ".sk-moments-hint", "contains": "关注" },
         { "id": "craft-clean", "type": "craftBattery" }
       ],
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.moments-like-on",
-      "title": "点赞：Toggle 翻转 aria-pressed 与琥珀选中态，计数 24→25，其余两条保持未赞",
+      "id": "ui.prototype.north-star.moments-load-more",
+      "title": "加载更多：3→6 张卡片，按钮消失并出现结尾标识",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
-        { "op": "click", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button" }
+        { "op": "click", "target": "[data-action-id='moments.load-more']" }
       ],
       "oracles": [
-        { "id": "pressed", "type": "attr", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button", "attr": "aria-pressed", "equals": "true" },
-        { "id": "count-25", "type": "textContains", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button", "contains": "25 赞" },
-        { "id": "amber-class", "type": "exists", "target": ".sk-moment-card:first-of-type .pt-button.is-liked" },
-        { "id": "others-unpressed", "type": "count", "target": ".sk-moment-actions .pt-button[aria-pressed='false']", "equals": 2 }
+        { "id": "six-posts", "type": "count", "target": ".sk-post", "equals": 6 },
+        { "id": "load-more-gone", "type": "missing", "target": "[data-action-id='moments.load-more']" },
+        { "id": "feed-end", "type": "exists", "target": ".sk-feed-end" }
       ],
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.moments-like-off",
-      "title": "取消赞：再点一次翻转回来，计数恢复 24，无选中态",
+      "id": "ui.prototype.north-star.moments-react-quick",
+      "title": "反应汇总胶囊：未赞首条显示 27（24赞+3喜欢），点击翻转为琥珀选中且总数 28",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
-        { "op": "click", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button" },
-        { "op": "click", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button" }
+        { "op": "click", "target": ".sk-post:first-of-type .sk-post-actions .pt-button[aria-pressed='false']" }
       ],
       "oracles": [
-        { "id": "unpressed", "type": "attr", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button", "attr": "aria-pressed", "equals": "false" },
-        { "id": "count-24", "type": "textContains", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button", "contains": "24 赞" },
-        { "id": "amber-class-gone", "type": "missing", "target": ".sk-moment-card:first-of-type .pt-button.is-liked" }
+        { "id": "reacted", "type": "attr", "target": ".sk-post:first-of-type .sk-post-actions .pt-button.is-liked", "attr": "aria-pressed", "equals": "true" },
+        { "id": "total-28", "type": "textContains", "target": ".sk-post:first-of-type .sk-post-actions .pt-button.is-liked", "contains": "28" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-react-picker-open",
+      "title": "更多反应打开 16 种反应的 Popover",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-post:first-of-type .sk-react-more" }
+      ],
+      "oracles": [
+        { "id": "picker-open", "type": "count", "scope": "global", "target": ".sk-react-picker .pt-button", "equals": 16 },
+        { "id": "popover-layer", "type": "exists", "scope": "global", "target": ".pt-popover" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-react-picker-select",
+      "title": "从选择器选第 3 种反应（大笑）：胶囊翻转为选中、总数 28、弹层关闭",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-post:first-of-type .sk-react-more" },
+        { "op": "clickGlobal", "target": ".sk-react-picker .pt-button:nth-child(3)" }
+      ],
+      "oracles": [
+        { "id": "picker-closed", "type": "missing", "scope": "global", "target": ".sk-react-picker" },
+        { "id": "reacted", "type": "exists", "target": ".sk-post:first-of-type .pt-button.is-liked" },
+        { "id": "total-28", "type": "textContains", "target": ".sk-post:first-of-type .sk-post-actions .pt-button.is-liked", "contains": "28" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-lightbox",
+      "title": "图片网格点击打开灯箱 Dialog，关闭后回到流",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-post:first-of-type .sk-img-tile" }
+      ],
+      "oracles": [
+        { "id": "lightbox-open", "type": "exists", "scope": "global", "target": ".pt-dialog[role='dialog'] .sk-lightbox img" },
+        { "id": "lightbox-counter", "type": "textContains", "scope": "global", "target": ".sk-lightbox-count", "contains": "1 / 1" }
+      ],
+      "finalizers": [
+        { "op": "clickGlobal", "target": ".pt-dialog-header .pt-icon-button" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.moments-detail-comment",
+      "title": "查看全部进详情：3 条评论，发送键空态禁用；发评论后变 4 条且输入清空",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-post:nth-of-type(2) .sk-comment-all" },
+        { "op": "type", "target": ".sk-comment-composer textarea", "value": "周末书架见" },
+        { "op": "click", "target": ".sk-comment-composer .pt-icon-button" }
+      ],
+      "oracles": [
+        { "id": "detail-open", "type": "exists", "target": ".sk-moment-detail" },
+        { "id": "four-comments", "type": "count", "target": ".sk-comment-item", "equals": 4 },
+        { "id": "last-comment", "type": "textContains", "target": ".sk-comment-item:last-of-type .sk-comment-body p", "contains": "书架见" },
+        { "id": "composer-cleared", "type": "attr", "target": ".sk-comment-composer textarea", "attr": "data-comment-value", "equals": "" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-compose",
+      "title": "发动态 Dialog 发布后插入首页首位，可见卡片 3→4，作者为本人",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-compose-open" },
+        { "op": "type", "scope": "global", "target": ".sk-compose textarea", "value": "测试一条新动态内容" },
+        { "op": "clickGlobal", "target": ".pt-dialog-footer [data-action-id='compose.publish']" }
+      ],
+      "oracles": [
+        { "id": "dialog-closed", "type": "missing", "scope": "global", "target": ".pt-dialog[role='dialog']" },
+        { "id": "four-posts", "type": "count", "target": ".sk-post", "equals": 4 },
+        { "id": "first-body", "type": "textContains", "target": ".sk-post:first-of-type .sk-post-body", "contains": "测试一条新动态" },
+        { "id": "first-author", "type": "textContains", "target": ".sk-post:first-of-type .sk-post-name", "contains": "林野" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-explore",
+      "title": "探索范围：联邦公开动态带远端站点信任信息，发动态 CTA 隐藏",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)" }
+      ],
+      "oracles": [
+        { "id": "two-remote-posts", "type": "count", "target": ".sk-post", "equals": 2 },
+        { "id": "remote-station", "type": "textContains", "target": ".sk-post:first-of-type .sk-trust", "contains": "松绿书屋站" },
+        { "id": "no-compose", "type": "missing", "target": ".sk-compose-open" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-people",
+      "title": "找人：6 人、3 人已关注；关注第 4 人翻转选中；搜索实时过滤为 1 行",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)" },
+        { "op": "click", "target": ".sk-people-list > li:nth-child(4) .sk-person-follow" },
+        { "op": "type", "target": ".sk-people .pt-input", "value": "苏" }
+      ],
+      "oracles": [
+        { "id": "six-people", "type": "count", "target": ".sk-person-row", "equals": 1 },
+        { "id": "only-suhe", "type": "textContains", "target": ".sk-person-row .sk-post-name", "contains": "苏禾" },
+        { "id": "suhe-followed", "type": "attr", "target": ".sk-person-row .sk-person-follow", "attr": "aria-pressed", "equals": "true" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-circles",
+      "title": "圈友：3 圈子与成员头像组；新建圈子对话框发布后变 4 个",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)" },
+        { "op": "click", "target": "[data-action-id='circle.open-create']" },
+        { "op": "type", "scope": "global", "target": ".sk-circle-name-input", "value": "夜跑小队" },
+        { "op": "clickGlobal", "target": ".pt-dialog-footer [data-action-id='circle.create']" }
+      ],
+      "oracles": [
+        { "id": "four-circles", "type": "count", "target": ".sk-circle-card", "equals": 4 },
+        { "id": "new-circle", "type": "textContains", "target": ".sk-circle-list", "contains": "夜跑小队" },
+        { "id": "member-avatars", "type": "count", "target": ".sk-circle-avatars .pt-avatar", "equals": 13 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-profile",
+      "title": "头像进个人页：72 方圆身份头、作者动态列表；返回回首页流",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-post:first-of-type .sk-post-author" },
+        { "op": "click", "target": "[data-action-id='profile.back']" }
+      ],
+      "oracles": [
+        { "id": "profile-gone", "type": "missing", "target": ".sk-profile" },
+        { "id": "feed-restored", "type": "count", "target": ".sk-post", "equals": 3 },
+        { "id": "segmented-restored", "type": "exists", "target": ".sk-moments-subbar" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-profile-content",
+      "title": "个人页内容断言（不返回）：72px 头像、姓名、本人 1 条动态",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-post:first-of-type .sk-post-author" }
+      ],
+      "oracles": [
+        { "id": "profile-open", "type": "exists", "target": ".sk-profile" },
+        { "id": "profile-avatar-72", "type": "computedStyle", "target": ".sk-profile .pt-avatar", "prop": "width", "equals": "72px" },
+        { "id": "profile-avatar-radius", "type": "computedStyle", "target": ".sk-profile .pt-avatar", "prop": "borderTopLeftRadius", "equals": "20px" },
+        { "id": "profile-name", "type": "textContains", "target": ".sk-profile-id h2", "contains": "林晚" },
+        { "id": "profile-posts", "type": "count", "target": ".sk-profile-posts .sk-post", "equals": 1 }
       ],
       "finalizers": []
     }
