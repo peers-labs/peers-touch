@@ -211,7 +211,7 @@ class DesktopShellTrayGate(AcceptanceGate):
         asset = inspect_rgba_png(ASSET_PATH)
         self.assert_condition(
             "retina_template_asset",
-            asset["width"] == 88
+            asset["width"] == 36
             and asset["height"] == 36
             and asset["transparent"] is True
             and asset["opaque"] is True
@@ -251,7 +251,7 @@ class DesktopShellTrayGate(AcceptanceGate):
             and status_item.get("subrole") == "AXMenuExtra"
             and status_item.get("help") == STATUS_HELP
             and status_item.get("size")
-            == {"width": 62.0, "height": 24.0},
+            == {"width": 36.0, "height": 24.0},
             json.dumps(status_item, sort_keys=True),
         )
         self.assert_condition(

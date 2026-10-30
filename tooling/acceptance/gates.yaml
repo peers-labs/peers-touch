@@ -1195,7 +1195,7 @@
         "desktop-macos-native"
       ],
       "tier": "env-evidence",
-      "description": "Build and launch the exact-source packaged macOS Desktop, prove the 88 x 36 Template Peers wordmark through a 62 x 24 AXMenuExtra status item, close-to-hide residency, native Show restoration, package/process identity, screenshot support, and reverse cleanup."
+      "description": "Build and launch the exact-source packaged macOS Desktop, prove the 36 x 36 Template rounded-square P through a targeted 36 x 24 AXMenuExtra status item, close-to-hide residency, native Show restoration, package/process identity, screenshot support, and reverse cleanup."
     },
     "desktop-shell-domain-validation": {
       "dependsOn": [

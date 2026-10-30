@@ -6,6 +6,7 @@
     "apps/desktop/src-tauri/src/application/tray/mod.rs",
     "apps/desktop/src-tauri/src/application/window_lifecycle.rs",
     "apps/desktop/src-tauri/icons/tray-icon-macos.png",
+    "apps/desktop/src-tauri/icons/tray-icon-macos.svg",
     "docs/client/desktop/tray-residency.md"
   ],
   "truth_sources": [
@@ -29,14 +30,14 @@
   "acceptance": {
     "runtime": [
       "the exact-source packaged process exposes one Peers Touch AXMenuBarItem / AXMenuExtra status item",
-      "the packaged binary embeds the exact 88 x 36 RGBA tray asset and matches the runtime-cell binary identity",
+      "the packaged binary embeds the exact 36 x 36 RGBA tray asset and matches the runtime-cell binary identity",
       "closing the main window keeps the process and status item alive",
       "the status-item Show Peers Touch action restores a focused frontmost main window",
       "process, status item, ports, storage, and sessions are released in reverse order"
     ],
     "visible": [
-      "the menu bar shows the full compact Peers wordmark rather than a single letter or application icon",
-      "the native status item occupies the accepted 62 x 24 point Accessibility bounds",
+      "the menu bar shows a rounded-square button with a cut-out P at 18 x 18 points",
+      "the native status item occupies the targeted 36 x 24 point Accessibility bounds, requiring fresh native proof",
       "macOS Template rendering owns light and dark appearance"
     ]
   },
