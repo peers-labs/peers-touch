@@ -1,7 +1,6 @@
 // Settings renders the account default owned by Station and the Provider store.
-import { useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Alert, toast } from '@lobehub/ui';
+import { Alert, Button, toast } from '@lobehub/ui';
 import { Typography, theme } from 'antd';
 import type { ModelRef } from '../services/desktop_api';
 import { ModelSelect } from './ModelSelect';
@@ -17,9 +16,9 @@ const SLOT_KEYS = ['default'] as const;
 export function ModelServiceTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const [saving, setSaving] = useState(false);
-  const { runtimeDefault, setRuntimeDefault, loading } = useActiveProviderSlice((s) => ({
-    runtimeDefault: s.runtimeDefault, setRuntimeDefault: s.setRuntimeDefault, loading: s.loading,
+  const { runtimeDefault, setRuntimeDefault, defaultStatus, defaultSaving, loadRuntimeDefault } = useActiveProviderSlice((s) => ({
+    runtimeDefault: s.runtimeDefault, setRuntimeDefault: s.setRuntimeDefault,
+    defaultStatus: s.defaultStatus, defaultSaving: s.defaultSaving, loadRuntimeDefault: s.loadRuntimeDefault,
   }));
   const config = { default: runtimeDefault
     ? { provider: runtimeDefault.providerId, model: runtimeDefault.modelId } : undefined };
@@ -27,13 +26,11 @@ export function ModelServiceTab() {
   const modelsLoading = useAgentStore((state) => state.loading);
 
   const handleDefaultChange = async (ref: ModelRef) => {
-    setSaving(true);
     try { await setRuntimeDefault(ref.provider, ref.model); }
     catch { toast.error(t('provider.modelService.failedToSave')); }
-    finally { setSaving(false); }
   };
 
-  if (loading || (modelsLoading && models.length === 0)) {
+  if (defaultStatus === 'idle' || defaultStatus === 'loading' || (modelsLoading && models.length === 0)) {
     return (
       <Flexbox align="center" justify="center" style={{ padding: 40 }}>
         <Text type="secondary">{t('provider.modelService.loading')}</Text>
@@ -51,6 +48,12 @@ export function ModelServiceTab() {
           {t('provider.modelService.desc')}
         </Text>
       </Flexbox>
+
+      {defaultStatus === 'error' && <Flexbox gap={8} style={{ marginBottom: token.margin }}>
+        <Text role="alert" type="secondary">{t('provider.modelService.defaultLoadFailed')}</Text>
+        <Button onClick={() => void loadRuntimeDefault()}>{t('provider.menu.retry')}</Button>
+      </Flexbox>}
+      {defaultSaving && <Text role="status" type="secondary">{t('provider.modelService.saving')}</Text>}
 
       {noModels && (
         <Alert
@@ -82,11 +85,10 @@ export function ModelServiceTab() {
               <Text strong style={{ fontSize: 15, marginBottom: 4 }}>{t(`provider.modelService.slot.${slotKey}.title`)}</Text>
 
               <Flexbox
-                horizontal
                 align="center"
                 justify="space-between"
                 gap={16}
-                style={{ marginTop: 4 }}
+                style={{ marginTop: 4, flexDirection: 'row', flexWrap: 'wrap' }}
               >
                 <Flexbox flex={1}>
                   <Text type="secondary" style={{ fontSize: 13 }}>{t('provider.modelService.modelLabel')}</Text>
@@ -102,7 +104,7 @@ export function ModelServiceTab() {
                   models={models}
                   showWarning={!!isInvalid}
                   style={{ width: 280, maxWidth: '100%' }}
-                  disabled={noModels || saving}
+                  disabled={noModels || defaultSaving || defaultStatus !== 'ready'}
                 />
               </Flexbox>
 

@@ -54,8 +54,6 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 					scope = model.ProviderResourceScope_PROVIDER_RESOURCE_SCOPE_STATION
 				}
 				provider.Owner = &model.ProviderResourceOwner{Scope: scope, ActorPtid: record.ActorPTID}
-				provider.Version = record.Version
-				provider.RuntimeKind = record.RuntimeKind
 				break
 			}
 			byID[item.ProviderID] = provider

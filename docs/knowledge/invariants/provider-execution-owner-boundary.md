@@ -44,6 +44,13 @@ in management projections. Actor JWTs MUST NOT authorize shared mutations or
 installation. Late asynchronous completions MUST NOT publish or mutate state
 for a different actor or administrator session.
 
+Desktop must apply the consumer projection lifecycle in the control-plane
+contract. Authorization is not a health check. Reconciliation must refresh
+selected models, and failed list/detail reads must not leave stale authority
+actionable. Personal view replacement or policy withdrawal invalidates pending
+effects independently of account changes. Default saves use an observed
+revision and invalidate older reads.
+
 The installer MUST own shared binaries independently of invocation state.
 Machine PATH and managed binaries MUST use the same private environment.
 Availability checks MUST resolve structured catalog argv through the same
@@ -69,6 +76,9 @@ Keep lookup and installation facts in the Agent owner.
 - Run affected service tests from `apps/station/app`:
   `go test ./subserver/agent/service -run 'Test(ProviderControlPlane|ProviderManagement|QuickCompletion|RuntimeDefaultCAS)'`.
 - Run `go test ./subserver/agent/handler -run 'TestProvider(Management|Consumer)'`.
+- Run Desktop `vitest run src/store/provider.session.test.ts` for overlapping
+  reads, selected-model revocation, failed-read recovery, policy withdrawal,
+  reset/session fences and serialized defaults.
 - Run `go test ./subserver/agent/service/cli/...` for environment, process
   cancellation, structured argv, activation rollback and archive boundaries.
 - On the reviewed Station container, verify init is enabled and cancelled

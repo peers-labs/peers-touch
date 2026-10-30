@@ -11,7 +11,7 @@ const modelServiceSource = readFileSync(
 const modelSelectSource = readFileSync(new URL('../ModelSelect.tsx', import.meta.url), 'utf8');
 
 describe('Provider settings product contract', () => {
-  it('uses one mixed list with a persisted usable-only preference', () => {
+  it('uses one scroll container with a persisted personal usable-only preference', () => {
     expect(menuSource).toContain('showUsableProvidersOnly');
     expect(menuSource).toContain('setShowUsableOnly');
     expect(menuSource).toContain('isProviderUsable');

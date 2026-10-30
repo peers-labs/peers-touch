@@ -86,7 +86,47 @@ def select_provider_settings(
         provider_id,
         f"{description} search",
     )
-    runner.click_visible(f'[data-item-id="{provider_id}"]', description)
+    runner.click_visible(f'[data-item-id="{provider_id}"] button[aria-pressed]', description)
+
+
+def authorized_provider_surface(
+    runner: AgentNativeJourney,
+    provider_id: str,
+    expected_model_ids: list[str],
+) -> dict[str, Any]:
+    """Inspect the consumer tree without exposing management values."""
+    settings_section(runner, "providers")
+    select_provider_settings(runner, provider_id, "authorized Provider")
+    wait_until(lambda: runner.driver.execute_script(
+        """
+        return [...document.querySelectorAll('[data-authorized-model]')]
+          .map(e => e.dataset.authorizedModel).sort();
+        """
+    ) == sorted(expected_model_ids), "current authorized model rows")
+    surface = runner.driver.execute_script(
+        """
+        const visible = e => e.getClientRects().length > 0;
+        const pane = document.querySelector('[data-authorized-provider-detail]');
+        return {
+          modelIds: [...pane.querySelectorAll('[data-authorized-model]')]
+            .map(e => e.dataset.authorizedModel),
+          credentialFields: [...document.querySelectorAll('input')]
+            .filter(visible).filter(e => /api.?key|base.?url/i.test([e.id,e.placeholder].join(' '))).length,
+          filters: [...document.querySelectorAll('[role="switch"]')].filter(visible).length,
+          runtimeTags: [...document.querySelectorAll('[data-item-id] .ant-tag')].filter(visible).length,
+          federation: [...document.querySelectorAll('[data-pt-section-item="federation"]')].filter(visible).length,
+          providerSelectors: [...document.querySelectorAll('[data-item-id] button[aria-pressed]')]
+            .filter(visible).length,
+          overflow: pane.scrollWidth > pane.clientWidth,
+        };
+        """
+    )
+    require(surface["credentialFields"] == 0 and surface["filters"] == 0
+            and surface["runtimeTags"] == 0 and surface["federation"] == 0,
+            "consumer Settings exposes a management control")
+    require(surface["providerSelectors"] > 0 and not surface["overflow"],
+            "consumer model surface is inaccessible or clipped")
+    return surface
 
 
 def settings_default(

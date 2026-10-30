@@ -5,6 +5,7 @@ const identity = vi.hoisted(() => ({ sessionEpoch: 1 }));
 const api = vi.hoisted(() => ({
   getProvider: vi.fn(), updateProvider: vi.fn(), listProviders: vi.fn(),
   getRuntimeDefault: vi.fn(), getProviderPolicy: vi.fn(), checkProvider: vi.fn(),
+  listPersonalProviders: vi.fn(), setRuntimeDefault: vi.fn(),
 }));
 const loadModels = vi.hoisted(() => vi.fn());
 vi.mock('./session', () => ({ useSessionStore: { getState: () => identity } }));
@@ -101,5 +102,170 @@ describe('Provider operations across account changes', () => {
     expect(useProviderStore.getState().providers).toEqual([]);
     expect(useProviderStore.getState().runtimeDefault).toBeNull();
     expect(api.getProvider).not.toHaveBeenCalled();
+  });
+});
+
+describe('Provider projection freshness', () => {
+  beforeEach(() => {
+    identity.sessionEpoch = 1;
+    vi.resetAllMocks();
+    useProviderStore.getState().reset();
+    api.listProviders.mockResolvedValue([row]);
+    api.listPersonalProviders.mockResolvedValue([row]);
+    api.getProvider.mockResolvedValue(detail);
+    api.getProviderPolicy.mockResolvedValue({ personal_providers_enabled: false });
+    api.getRuntimeDefault.mockResolvedValue({ providerId: '', modelId: '', revision: 0 });
+  });
+
+  it('does not equate authorization with a successful health check', async () => {
+    await useProviderStore.getState().loadProviders();
+    expect(useProviderStore.getState().readinessById.ark.status).toBe('unverified');
+  });
+
+  it('refreshes a selected detail when one model loses authorization', async () => {
+    const model = { id: 'allowed', display_name: 'Allowed', enabled: true };
+    api.getProvider.mockResolvedValueOnce({ ...detail, models: [model] });
+    await useProviderStore.getState().loadProviders();
+    expect(useProviderStore.getState().detail?.models).toHaveLength(1);
+    await useProviderStore.getState().loadProviders();
+    expect(useProviderStore.getState().detail?.models).toEqual([]);
+  });
+
+  it('clears a failed selected detail and permits retry', async () => {
+    await useProviderStore.getState().loadProviders();
+    api.getProvider.mockRejectedValueOnce(new Error('private backend detail'));
+    await useProviderStore.getState().selectProvider(row.id);
+    expect(useProviderStore.getState().detail).toBeNull();
+    expect(useProviderStore.getState().detailError).toBe(true);
+    await useProviderStore.getState().selectProvider(row.id);
+    expect(useProviderStore.getState().detail).toEqual(detail);
+    expect(useProviderStore.getState().detailError).toBe(false);
+  });
+
+  it('fails closed when the list or policy cannot be read', async () => {
+    await useProviderStore.getState().loadProviders();
+    api.getProviderPolicy.mockRejectedValueOnce(new Error('policy unavailable'));
+    await useProviderStore.getState().loadProviders();
+    const state = useProviderStore.getState();
+    expect(state.providers).toEqual([]);
+    expect(state.detail).toBeNull();
+    expect(state.personalProvidersEnabled).toBe(false);
+    expect(state.listError).toBe(true);
+  });
+
+  it('discards an older list that completes after a newer list', async () => {
+    const old = deferred<ProviderListItem[]>();
+    api.listProviders.mockReturnValueOnce(old.promise).mockResolvedValueOnce([]);
+    const first = useProviderStore.getState().loadProviders();
+    await useProviderStore.getState().loadProviders();
+    old.resolve([row]);
+    await first;
+    expect(useProviderStore.getState().providers).toEqual([]);
+    expect(api.getProvider).not.toHaveBeenCalled();
+  });
+
+  it('does not resurrect detail after leaving and returning to the same view', async () => {
+    useProviderStore.setState({ providers: [row], personalProvidersEnabled: true });
+    api.getProviderPolicy.mockResolvedValue({ personal_providers_enabled: true });
+    const old = deferred<ProviderDetail>();
+    api.getProvider.mockReturnValueOnce(old.promise);
+    const first = useProviderStore.getState().selectProvider(row.id);
+    await useProviderStore.getState().setManagementMode('personal');
+    await useProviderStore.getState().setManagementMode('authorized');
+    old.resolve({ ...detail, name: 'Stale detail' });
+    await first;
+    expect(useProviderStore.getState().detail?.name).toBe('Ark');
+  });
+
+  it('discards older reads of the same selected detail', async () => {
+    useProviderStore.setState({ providers: [row] });
+    const old = deferred<ProviderDetail>();
+    api.getProvider.mockReturnValueOnce(old.promise);
+    const first = useProviderStore.getState().selectProvider(row.id);
+    await useProviderStore.getState().selectProvider(row.id);
+    old.resolve({ ...detail, name: 'Stale detail' });
+    await first;
+    expect(useProviderStore.getState().detail?.name).toBe('Ark');
+  });
+
+  it('discards personal mutation completion after the policy is withdrawn', async () => {
+    useProviderStore.setState({
+      providers: [row], detail, personalProvidersEnabled: true, managementMode: 'personal',
+    });
+    const pending = deferred<void>();
+    api.updateProvider.mockReturnValue(pending.promise);
+    const mutation = useProviderStore.getState().updateProvider(row.id, '', detail.base_url, true)
+      .catch((error: Error) => error.message);
+    await useProviderStore.getState().loadProviders();
+    pending.resolve();
+    expect(await mutation).toBe('provider.error.selectionChanged');
+    expect(loadModels).not.toHaveBeenCalled();
+    expect(useProviderStore.getState().managementMode).toBe('authorized');
+  });
+
+  it('does not save a revision-zero default after its read fails', async () => {
+    api.getRuntimeDefault.mockRejectedValueOnce(new Error('read failed'));
+    await useProviderStore.getState().loadProviders();
+    const result = await useProviderStore.getState().setRuntimeDefault('ark', 'allowed')
+      .catch((error: Error) => error.message);
+    expect(result).toBe('provider.error.defaultUnavailable');
+    expect(api.setRuntimeDefault).not.toHaveBeenCalled();
+    expect(useProviderStore.getState().providers).toEqual([row]);
+  });
+
+  it('serializes default saves and ignores reads started before a save', async () => {
+    await useProviderStore.getState().loadProviders();
+    const old = deferred<{ providerId: string; modelId: string; revision: number }>();
+    api.getRuntimeDefault.mockReturnValueOnce(old.promise);
+    const refresh = useProviderStore.getState().loadProviders();
+    const pending = deferred<{ providerId: string; modelId: string; revision: number }>();
+    api.setRuntimeDefault.mockReturnValue(pending.promise);
+    const save = useProviderStore.getState().setRuntimeDefault('ark', 'new');
+    const duplicate = await useProviderStore.getState().setRuntimeDefault('ark', 'old')
+      .catch((error: Error) => error.message);
+    expect(duplicate).toBe('provider.error.defaultSaving');
+    pending.resolve({ providerId: 'ark', modelId: 'new', revision: 1 });
+    await save;
+    old.resolve({ providerId: '', modelId: '', revision: 0 });
+    await refresh;
+    expect(useProviderStore.getState().runtimeDefault?.modelId).toBe('new');
+    expect(api.setRuntimeDefault).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-reads the current revision after a rejected default save', async () => {
+    await useProviderStore.getState().loadProviders();
+    api.setRuntimeDefault.mockRejectedValueOnce(new Error('revision conflict'))
+      .mockResolvedValueOnce({ providerId: 'ark', modelId: 'next', revision: 6 });
+    api.getRuntimeDefault.mockResolvedValueOnce({ providerId: 'ark', modelId: 'other', revision: 5 });
+    await useProviderStore.getState().setRuntimeDefault('ark', 'next').catch(() => undefined);
+    await useProviderStore.getState().setRuntimeDefault('ark', 'next');
+    expect(api.setRuntimeDefault).toHaveBeenLastCalledWith('ark', 'next', 5);
+    expect(useProviderStore.getState().defaultSaving).toBe(false);
+  });
+
+  it('discards default save completion and its cleanup across account changes', async () => {
+    await useProviderStore.getState().loadProviders();
+    const pending = deferred<{ providerId: string; modelId: string; revision: number }>();
+    api.setRuntimeDefault.mockReturnValue(pending.promise);
+    const save = useProviderStore.getState().setRuntimeDefault('ark', 'next')
+      .catch((error: Error) => error.message);
+    switchAccount();
+    useProviderStore.setState({ defaultSaving: true });
+    pending.resolve({ providerId: 'ark', modelId: 'next', revision: 1 });
+    expect(await save).toBe('provider.error.accountChanged');
+    expect(useProviderStore.getState().runtimeDefault).toBeNull();
+    expect(useProviderStore.getState().defaultSaving).toBe(true);
+    expect(loadModels).not.toHaveBeenCalled();
+  });
+
+  it('invalidates pending reads on reset even if the Session epoch stays the same', async () => {
+    const pending = deferred<ProviderListItem[]>();
+    api.listProviders.mockReturnValueOnce(pending.promise);
+    const read = useProviderStore.getState().loadProviders();
+    useProviderStore.getState().reset();
+    pending.resolve([row]);
+    await read;
+    expect(useProviderStore.getState().providers).toEqual([]);
+    expect(useProviderStore.getState().defaultStatus).toBe('idle');
   });
 });

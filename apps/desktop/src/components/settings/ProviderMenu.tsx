@@ -15,7 +15,8 @@ const { Text } = Typography;
 
 export function ProviderMenu() {
   const { t } = useTranslation('provider');
-  const { providers, selectedId, selectProvider, createProvider, readinessById, runtimeDefault, setRuntimeDefault } = useActiveProviderSlice((s) => ({
+  const { providers, selectedId, selectProvider, createProvider, readinessById, runtimeDefault, setRuntimeDefault,
+    loading, listError, loadProviders, defaultSaving, defaultStatus } = useActiveProviderSlice((s) => ({
     providers: s.providers,
     selectedId: s.selectedId,
     selectProvider: s.selectProvider,
@@ -23,6 +24,8 @@ export function ProviderMenu() {
     readinessById: s.readinessById,
     runtimeDefault: s.runtimeDefault,
     setRuntimeDefault: s.setRuntimeDefault,
+    loading: s.loading, listError: s.listError, loadProviders: s.loadProviders,
+    defaultSaving: s.defaultSaving, defaultStatus: s.defaultStatus,
   }));
   const { managementMode, personalProvidersEnabled, setManagementMode } = useActiveProviderSlice((s) => ({
     managementMode: s.managementMode, personalProvidersEnabled: s.personalProvidersEnabled, setManagementMode: s.setManagementMode,
@@ -44,18 +47,18 @@ export function ProviderMenu() {
   );
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return (showUsableOnly ? usableProviders : providers).filter((provider) =>
+    return (managementMode === 'personal' && showUsableOnly ? usableProviders : providers).filter((provider) =>
       !query
       || provider.name.toLowerCase().includes(query)
       || provider.id.toLowerCase().includes(query),
     );
-  }, [providers, search, showUsableOnly, usableProviders]);
+  }, [managementMode, providers, search, showUsableOnly, usableProviders]);
 
   useEffect(() => {
-    if (!showUsableOnly || usableProviders.length === 0) return;
+    if (managementMode !== 'personal' || !showUsableOnly || usableProviders.length === 0) return;
     if (usableProviders.some((provider) => provider.id === selectedId)) return;
     void selectProvider(usableProviders[0].id);
-  }, [selectProvider, selectedId, showUsableOnly, usableProviders]);
+  }, [managementMode, selectProvider, selectedId, showUsableOnly, usableProviders]);
 
   const selectedProviderIsListed = filtered.some((provider) => provider.id === selectedId);
   useEffect(() => {
@@ -79,8 +82,8 @@ export function ProviderMenu() {
     try {
       await setRuntimeDefault(providerId, model.id);
       toast.success(t('provider.menu.defaultSet'));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'set runtime default failed');
+    } catch {
+      toast.error(t('provider.modelService.failedToSave'));
     }
   };
 
@@ -98,19 +101,21 @@ export function ProviderMenu() {
         horizontal
         align="center"
         gap={10}
-        onClick={(e) => {
-          e.stopPropagation();
-          selectProvider(p.id);
-        }}
         style={{
           padding: '10px 14px',
           borderRadius: 8,
-          cursor: 'pointer',
           background: isSelected ? token.colorPrimaryBg : 'transparent',
           border: isSelected ? `1px solid ${token.colorPrimaryBorderHover}` : '1px solid transparent',
           transition: 'all 0.15s',
         }}
       >
+        <Button
+          type="text"
+          aria-label={p.name}
+          aria-pressed={isSelected}
+          onClick={() => void selectProvider(p.id)}
+          style={{ flex: 1, minWidth: 0, height: 'auto', padding: 0, justifyContent: 'flex-start' }}
+        >
         {p.logo ? (
           <Avatar src={p.logo} shape="circle" size={28} />
         ) : (
@@ -118,16 +123,17 @@ export function ProviderMenu() {
         )}
         <Flexbox flex={1} gap={4} style={{ minWidth: 0 }}>
           <Text strong ellipsis style={{ fontSize: 14 }}>{p.name}</Text>
-          <Flexbox horizontal gap={4} style={{ flexWrap: 'wrap' }}>
+          {managementMode === 'personal' && <Flexbox horizontal gap={4} style={{ flexWrap: 'wrap' }}>
             <Tag
               color={p.runtime_kind === 'cli' ? 'purple' : 'blue'}
               style={{ margin: 0, fontSize: 10, lineHeight: '16px', paddingInline: 6 }}
             >
               {t(`provider.runtime.${p.runtime_kind}`)}
             </Tag>
-          </Flexbox>
+          </Flexbox>}
         </Flexbox>
-        <Button
+        </Button>
+        {managementMode === 'personal' ? <Button
           size="small"
           type="text"
           data-default-provider={isDefaultProvider ? 'true' : 'false'}
@@ -141,12 +147,17 @@ export function ProviderMenu() {
           title={isDefaultProvider
             ? t('provider.menu.defaultCurrent')
             : t('provider.menu.setDefault')}
+          aria-label={isDefaultProvider ? t('provider.menu.defaultCurrent') : t('provider.menu.setDefault')}
+          disabled={defaultSaving || defaultStatus !== 'ready'}
           onClick={(event) => {
             event.stopPropagation();
             void makeDefault(p.id);
           }}
-        />
-        <div
+        /> : isDefaultProvider && <Star
+          size={14} fill={token.colorWarning} color={token.colorWarning}
+          aria-label={t('provider.menu.defaultCurrent')} role="img"
+        />}
+        {managementMode === 'personal' && status !== 'unverified' && <div
           title={t(`provider.menu.status.${status}`)}
           style={{
             width: 8,
@@ -155,7 +166,7 @@ export function ProviderMenu() {
             background: dotColor,
             flexShrink: 0,
           }}
-        />
+        />}
       </Flexbox>
     );
   };
@@ -191,7 +202,7 @@ export function ProviderMenu() {
         <Radio.Button value="personal">{t('provider.menu.personal')}</Radio.Button>
       </Radio.Group>}
 
-      <Flexbox horizontal align="center" justify="space-between" style={{ minHeight: 32, padding: '0 4px' }}>
+      {managementMode === 'personal' && <Flexbox horizontal align="center" justify="space-between" style={{ minHeight: 32, padding: '0 4px' }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
           {t('provider.menu.showUsableOnly')}
         </Text>
@@ -205,7 +216,7 @@ export function ProviderMenu() {
             });
           }}
         />
-      </Flexbox>
+      </Flexbox>}
 
       <Flexbox
         ref={providerListRef}
@@ -220,9 +231,14 @@ export function ProviderMenu() {
         }}
       >
         {filtered.map(renderItem)}
-        {filtered.length === 0 && (
+        {listError && <Flexbox gap={8} style={{ padding: '16px 8px' }}>
+          <Text type="secondary" role="alert">{t('provider.menu.loadFailed')}</Text>
+          <Button size="small" onClick={() => void loadProviders()}>{t('provider.menu.retry')}</Button>
+        </Flexbox>}
+        {!listError && filtered.length === 0 && (
           <Text type="secondary" style={{ padding: '16px 8px', fontSize: 12 }}>
-            {showUsableOnly
+            {loading ? t('provider.modelService.loading') : search.trim() ? t('provider.menu.noMatchingProviders')
+              : managementMode === 'authorized' ? t('provider.menu.noAuthorizedProviders') : showUsableOnly
               ? t('provider.menu.noUsableProviders')
               : t('provider.menu.noMatchingProviders')}
           </Text>

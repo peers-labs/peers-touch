@@ -28,8 +28,13 @@ interface ProviderState {
   selectedId: string | null;
   detail: ProviderDetail | null;
   loading: boolean;
+  listError: boolean;
+  detailLoading: boolean;
+  detailError: boolean;
   readinessById: Record<string, ProviderReadiness>;
   runtimeDefault: RuntimeDefaultSelection | null;
+  defaultStatus: 'idle' | 'loading' | 'ready' | 'error';
+  defaultSaving: boolean;
   personalProvidersEnabled: boolean;
   managementMode: 'authorized' | 'personal';
   setManagementMode: (mode: 'authorized' | 'personal') => Promise<void>;
@@ -37,12 +42,10 @@ interface ProviderState {
 
   // P0: per-provider operation tracking for optimistic UX
   providerLoadingIds: Set<string>;
-  // P0: detail cache to avoid flicker on re-selection
-  detailCache: Map<string, ProviderDetail>;
-
   loadProviders: () => Promise<void>;
+  loadRuntimeDefault: () => Promise<void>;
   setRuntimeDefault: (providerId: string, modelId: string) => Promise<RuntimeDefaultSelection>;
-  selectProvider: (id: string, skipLoading?: boolean) => Promise<void>;
+  selectProvider: (id: string) => Promise<void>;
   updateProvider: (
     id: string,
     apiKey: string,
@@ -66,125 +69,190 @@ interface ProviderState {
   discoverModels: (providerId: string) => Promise<{ count: number; observedAt?: string }>;
   toggleModel: (providerId: string, modelId: string, enabled: boolean) => Promise<void>;
   // P0: consolidated post-mutation refresh
-  refreshAfterMutation: (providerId?: string) => Promise<void>;
+  refreshAfterMutation: () => Promise<void>;
 }
 
-function providerOperation() {
-  const epoch = useSessionStore.getState().sessionEpoch;
-  const current = () => epoch === useSessionStore.getState().sessionEpoch;
-  const assertCurrent = () => {
-    if (!current()) throw new Error('provider.error.accountChanged');
-  };
-  return { current, assertCurrent };
-}
+export const useProviderStore = createDesktopStore<ProviderState>('provider', (set, get) => {
+  let viewGeneration = 0;
+  let listRequest = 0;
+  let detailRequest = 0;
+  let defaultRequest = 0;
+  let resetGeneration = 0;
 
-export const useProviderStore = createDesktopStore<ProviderState>('provider', (set, get) => ({
+  function accountOperation() {
+    const epoch = useSessionStore.getState().sessionEpoch;
+    const generation = resetGeneration;
+    const current = () => epoch === useSessionStore.getState().sessionEpoch && generation === resetGeneration;
+    const assertCurrent = () => {
+      if (!current()) throw new Error('provider.error.accountChanged');
+    };
+    return { current, assertCurrent };
+  }
+
+  function providerOperation() {
+    const account = accountOperation();
+    const generation = viewGeneration;
+    const current = () => account.current() && generation === viewGeneration
+      && get().managementMode === 'personal' && get().personalProvidersEnabled;
+    const assertCurrent = () => {
+      account.assertCurrent();
+      if (!current()) throw new Error('provider.error.selectionChanged');
+    };
+    assertCurrent();
+    return { current, assertCurrent };
+  }
+
+  function clearView() {
+    viewGeneration++;
+    detailRequest++;
+    return {
+      providers: [], selectedId: null, detail: null, detailLoading: false, detailError: false,
+      readinessById: {}, providerLoadingIds: new Set<string>(),
+    };
+  }
+
+  return {
   providers: [],
   selectedId: null,
   detail: null,
   loading: false,
+  listError: false,
+  detailLoading: false,
+  detailError: false,
   readinessById: {},
   runtimeDefault: null,
+  defaultStatus: 'idle',
+  defaultSaving: false,
   personalProvidersEnabled: false,
   managementMode: 'authorized',
   reset: () => {
+    resetGeneration++;
+    listRequest++;
+    defaultRequest++;
     set({
-      providers: [], selectedId: null, detail: null, loading: false, readinessById: {},
+      ...clearView(), loading: false, listError: false,
       runtimeDefault: null, personalProvidersEnabled: false, managementMode: 'authorized',
-      providerLoadingIds: new Set(), detailCache: new Map(),
+      defaultStatus: 'idle', defaultSaving: false,
     });
   },
   setManagementMode: async (mode) => {
     if (mode === 'personal' && !get().personalProvidersEnabled) return;
-    set({ managementMode: mode, selectedId: null, detail: null, detailCache: new Map() });
+    if (mode === get().managementMode) return;
+    set({ ...clearView(), managementMode: mode, listError: false });
     await get().loadProviders();
   },
   providerLoadingIds: new Set<string>(),
-  detailCache: new Map<string, ProviderDetail>(),
 
   loadProviders: async () => {
-    const epoch = useSessionStore.getState().sessionEpoch;
+    const account = accountOperation();
+    const request = ++listRequest;
+    const generation = viewGeneration;
     const mode = get().managementMode;
-    set({ loading: true });
+    const current = () => account.current() && request === listRequest && generation === viewGeneration;
+    set({ loading: true, listError: false });
+    const defaultRead = get().loadRuntimeDefault();
     try {
-      const [authorized, runtimeDefault, policy] = await Promise.all([
+      const [authorized, policy] = await Promise.all([
         api.listProviders(),
-        api.getRuntimeDefault().catch((error) => {
-          log.warn('provider', 'Failed to load runtime default', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return null;
-        }),
         api.getProviderPolicy(),
       ]);
-      if (epoch !== useSessionStore.getState().sessionEpoch || mode !== get().managementMode) return;
+      if (!current()) return;
       const personalProvidersEnabled = policy.personal_providers_enabled;
       let providers = authorized;
       if (mode === 'personal' && personalProvidersEnabled) {
         const shared = new Set(authorized.filter((p) => p.owner_scope === 'station').map((p) => p.id));
         providers = (await api.listPersonalProviders()).filter((p) => !shared.has(p.id));
       }
-      if (epoch !== useSessionStore.getState().sessionEpoch || mode !== get().managementMode) return;
+      if (!current()) return;
+      const nextMode = personalProvidersEnabled ? mode : 'authorized';
+      const changedMode = mode !== nextMode;
+      if (changedMode) set(clearView());
+      const selectedId = providers.some((p) => p.id === get().selectedId)
+        ? get().selectedId : providers[0]?.id ?? null;
       set({
         providers,
-        runtimeDefault,
         personalProvidersEnabled,
-        managementMode: personalProvidersEnabled ? mode : 'authorized',
+        managementMode: nextMode,
         loading: false,
-        readinessById: Object.fromEntries(providers.map((provider) => [provider.id,
-          mode === 'authorized' ? { status: 'ready' as const } : mapProviderUIStatus(provider)])),
+        readinessById: Object.fromEntries(providers.map((provider) => [provider.id, mapProviderUIStatus(provider)])),
       });
-      if (get().selectedId && !providers.some((p) => p.id === get().selectedId)) set({ selectedId: null, detail: null, detailCache: new Map() });
-      if (!get().selectedId && providers.length > 0) {
-        void get().selectProvider(providers[0].id);
+      if (selectedId) {
+        await get().selectProvider(selectedId);
+      } else {
+        detailRequest++;
+        set({ selectedId: null, detail: null, detailLoading: false, detailError: false });
       }
     } catch (e) {
-      if (epoch !== useSessionStore.getState().sessionEpoch) return;
-      log.error('provider', 'Failed to load providers', e);
-      set({ loading: false });
+      if (!current()) return;
+      log.warn('provider', 'Provider projection unavailable');
+      set({ ...clearView(), loading: false, listError: true,
+        personalProvidersEnabled: false, managementMode: 'authorized' });
+    } finally {
+      await defaultRead;
+    }
+  },
+
+  loadRuntimeDefault: async () => {
+    if (get().defaultSaving) return;
+    const account = accountOperation();
+    const request = ++defaultRequest;
+    const current = () => account.current() && request === defaultRequest;
+    // A background refresh may retain the last known revision; an initial
+    // or failed read cannot supply revision zero for a subsequent write.
+    if (get().defaultStatus !== 'ready') set({ defaultStatus: 'loading' });
+    try {
+      const runtimeDefault = await api.getRuntimeDefault();
+      if (current()) set({ runtimeDefault, defaultStatus: 'ready' });
+    } catch {
+      if (current()) set({ runtimeDefault: null, defaultStatus: 'error' });
     }
   },
 
   setRuntimeDefault: async (providerId, modelId) => {
-    const epoch = useSessionStore.getState().sessionEpoch;
+    const account = accountOperation();
+    if (get().defaultSaving) throw new Error('provider.error.defaultSaving');
+    if (get().defaultStatus !== 'ready') throw new Error('provider.error.defaultUnavailable');
     const expectedRevision = get().runtimeDefault?.revision ?? 0;
-    const runtimeDefault = await api.setRuntimeDefault(
-      providerId,
-      modelId,
-      expectedRevision,
-    );
-    if (epoch !== useSessionStore.getState().sessionEpoch) throw new Error('provider.error.accountChanged');
-    set({ runtimeDefault });
-    await useAgentStore.getState().loadModels();
-    return runtimeDefault;
+    defaultRequest++;
+    set({ defaultSaving: true });
+    try {
+      const runtimeDefault = await api.setRuntimeDefault(providerId, modelId, expectedRevision);
+      account.assertCurrent();
+      set({ runtimeDefault, defaultStatus: 'ready' });
+      await useAgentStore.getState().loadModels();
+      account.assertCurrent();
+      return runtimeDefault;
+    } catch (error) {
+      if (account.current()) {
+        set({ defaultSaving: false, defaultStatus: 'loading' });
+        await get().loadRuntimeDefault();
+      }
+      throw error;
+    } finally {
+      if (account.current()) set({ defaultSaving: false });
+    }
   },
 
-  selectProvider: async (id: string, skipLoading?: boolean) => {
-    const epoch = useSessionStore.getState().sessionEpoch;
+  selectProvider: async (id: string) => {
+    if (!get().providers.some((p) => p.id === id)) return;
+    const account = accountOperation();
+    const generation = viewGeneration;
+    const request = ++detailRequest;
     const mode = get().managementMode;
-    set({ selectedId: id });
-
-    // Serve cached detail instantly to avoid flicker on re-selection
-    const cached = get().detailCache.get(id);
-    if (cached) {
-      set({ detail: cached });
-    }
-
-    if (!skipLoading && !cached) {
-      set({ loading: true });
-    }
+    const current = () => account.current() && generation === viewGeneration
+      && request === detailRequest && get().selectedId === id;
+    set({ selectedId: id, detail: get().detail?.id === id ? get().detail : null,
+      detailLoading: true, detailError: false });
     try {
       const detail = await api.getProvider(id, mode === 'personal');
-      if (epoch === useSessionStore.getState().sessionEpoch && mode === get().managementMode && get().selectedId === id) {
-        // Update cache
-        const nextCache = new Map(get().detailCache);
-        nextCache.set(id, detail);
-        set({ detail, loading: false, detailCache: nextCache });
+      if (current()) {
+        if (detail.id !== id) throw new Error('provider detail identity mismatch');
+        set({ detail, detailLoading: false });
       }
-    } catch (e) {
-      log.error('provider', 'Failed to load provider detail', e);
-      if (epoch === useSessionStore.getState().sessionEpoch && mode === get().managementMode && get().selectedId === id) {
-        set({ loading: false });
+    } catch {
+      if (current()) {
+        log.warn('provider', 'Selected provider projection unavailable');
+        set({ detail: null, detailLoading: false, detailError: true });
       }
     }
   },
@@ -213,7 +281,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
         version: detail.version,
       });
       operation.assertCurrent();
-      await get().refreshAfterMutation(id);
+      await get().refreshAfterMutation();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (operation.current()) set((state) => ({
@@ -239,10 +307,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
 
   toggleProvider: async (id: string, enabled: boolean) => {
     const operation = providerOperation();
-    // Optimistic update: immediately reflect in providers list
-    const prevProviders = get().providers;
     set({
-      providers: prevProviders.map((p) => (p.id === id ? { ...p, enabled } : p)),
       providerLoadingIds: new Set([...get().providerLoadingIds, id]),
     });
 
@@ -271,10 +336,8 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
         version: providerDetail.version,
       });
       operation.assertCurrent();
-      await get().refreshAfterMutation(id);
+      await get().refreshAfterMutation();
     } catch (e) {
-      // Revert optimistic update on failure
-      if (operation.current()) set({ providers: prevProviders });
       log.error('provider', 'Failed to toggle provider', e);
       throw e;
     } finally {
@@ -330,10 +393,8 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     const operation = providerOperation();
     await api.deleteProvider(id);
     operation.assertCurrent();
-    // Clear from cache
-    const nextCache = new Map(get().detailCache);
-    nextCache.delete(id);
-    set({ selectedId: null, detail: null, detailCache: nextCache });
+    detailRequest++;
+    set({ selectedId: null, detail: null, detailLoading: false, detailError: false });
     await get().loadProviders();
     operation.assertCurrent();
     await useAgentStore.getState().loadModels();
@@ -343,32 +404,28 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     const operation = providerOperation();
     await api.addModel(providerId, data);
     operation.assertCurrent();
-    await get().refreshAfterMutation(providerId);
+    await get().refreshAfterMutation();
   },
 
   updateModel: async (providerId: string, modelId: string, data: ProviderModelConfigInput) => {
     const operation = providerOperation();
     await api.updateModel(providerId, modelId, data);
     operation.assertCurrent();
-    await get().refreshAfterMutation(providerId);
+    await get().refreshAfterMutation();
   },
 
   deleteModel: async (providerId: string, modelId: string) => {
     const operation = providerOperation();
     await api.deleteModel(providerId, modelId);
     operation.assertCurrent();
-    const detail = get().detail;
-    if (detail && detail.id === providerId) {
-      set({ detail: { ...detail, models: detail.models.filter((m) => m.id !== modelId) } });
-    }
-    await useAgentStore.getState().loadModels();
+    await get().refreshAfterMutation();
   },
 
   discoverModels: async (providerId: string) => {
     const operation = providerOperation();
     const result = await api.discoverModels(providerId);
     operation.assertCurrent();
-    await get().refreshAfterMutation(providerId);
+    await get().refreshAfterMutation();
     return {
       count: Array.isArray(result.models) ? result.models.length : 0,
       observedAt: result.observed_at,
@@ -379,18 +436,14 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     const operation = providerOperation();
     await api.toggleModel(providerId, modelId, enabled);
     operation.assertCurrent();
-    await get().refreshAfterMutation(providerId);
+    await get().refreshAfterMutation();
   },
 
-  refreshAfterMutation: async (providerId?: string) => {
+  refreshAfterMutation: async () => {
     const operation = providerOperation();
     await get().loadProviders();
     operation.assertCurrent();
-    const activeId = providerId ?? get().selectedId;
-    if (activeId && get().selectedId === activeId) {
-      await get().selectProvider(activeId, true);
-    }
-    operation.assertCurrent();
     await useAgentStore.getState().loadModels();
   },
-}));
+  };
+});

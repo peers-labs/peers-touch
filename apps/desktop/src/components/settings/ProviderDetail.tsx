@@ -92,14 +92,23 @@ function formatContextWindow(v: number): string {
 
 export function ProviderDetail() {
   const { t } = useTranslation('provider');
-  const { detail, loading, selectedId, managementMode } = useActiveProviderSlice((state) => ({
+  const { detail, loading, selectedId, managementMode, detailLoading, detailError, listError, selectProvider } = useActiveProviderSlice((state) => ({
     detail: state.detail,
     loading: state.loading,
     selectedId: state.selectedId,
     managementMode: state.managementMode,
+    detailLoading: state.detailLoading, detailError: state.detailError,
+    listError: state.listError, selectProvider: state.selectProvider,
   }));
 
-  if (loading && !detail) {
+  if (detailError && selectedId) {
+    return <Flexbox flex={1} align="center" justify="center" gap={12}>
+      <Text role="alert" type="secondary">{t('provider.detail.loadFailed')}</Text>
+      <Button onClick={() => void selectProvider(selectedId)}>{t('provider.menu.retry')}</Button>
+    </Flexbox>;
+  }
+
+  if ((loading || detailLoading) && !detail) {
     return (
       <Flexbox flex={1} align="center" justify="center">
         <Spin />
@@ -110,7 +119,7 @@ export function ProviderDetail() {
   if (!detail) {
     return (
       <Flexbox flex={1} align="center" justify="center">
-        <Text type="secondary">{t('provider.detail.selectProvider')}</Text>
+        {!listError && <Text type="secondary">{t('provider.detail.selectProvider')}</Text>}
       </Flexbox>
     );
   }

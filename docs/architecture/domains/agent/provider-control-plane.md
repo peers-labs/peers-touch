@@ -90,6 +90,20 @@ Personal Provider management is available only under the Station policy.
 Installation, shared credential editing and access management have no
 ordinary Desktop command path.
 
+The consumer projection carries model identity and supported capabilities,
+without execution kind, management revision or health claims. Being authorized
+does not mean a successful upstream call. Consumer Settings presents model
+names and the account default; runtime badges, credential filters and
+administration instructions do not belong in that view.
+
+Provider list, selected detail and default reads have separate failure and
+request lifecycles. Reconciliation refreshes the selected detail so a
+model-specific revocation removes that model even when its Provider remains
+visible. Failed authority reads clear the affected projection and expose a
+plain-language retry. Session reset, view replacement and policy withdrawal
+invalidate pending work. Default saves serialize against the last observed
+account revision and cannot be overwritten by an older read.
+
 Federation management belongs in Dashboard. Desktop's internal Federation
 runtime may consume topology and identity projections for communication, but
 Settings exposes no Federation management section.

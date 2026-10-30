@@ -95,7 +95,8 @@ func TestProviderConsumerProjectionRetainsOnlyAuthorizedModels(t *testing.T) {
 	provider := list.GetProviders()[0]
 	if len(provider.GetModels()) != 1 || provider.GetModels()[0].GetId() != "allowed" ||
 		provider.GetCliCommand() != "" || provider.GetBaseUrl() != "" ||
-		provider.GetRuntimeConfig() != nil || provider.GetCredentialStatus() != "" || provider.GetInstallState() != "" {
+		provider.GetRuntimeConfig() != nil || provider.GetCredentialStatus() != "" || provider.GetInstallState() != "" ||
+		provider.GetRuntimeKind() != "" || provider.GetVersion() != 0 {
 		t.Fatalf("consumer projection leaked management data: %+v", provider)
 	}
 	otherCtx := coreauth.WithSubject(context.Background(), &coreauth.Subject{ID: "ptid:person:other"})
