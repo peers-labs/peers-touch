@@ -19,7 +19,7 @@ export default function AIModelEditor({ provider }: { provider: Provider }) {
   const version = (id: string) => models.find((m) => m.model_id === id)?.version ?? 0;
   const edit = (model: ModelInfo | 'new') => {
     form.resetFields();
-    form.setFieldsValue(model === 'new' ? { enabled: true, context_window: 0, flags: [] } : {
+    form.setFieldsValue(model === 'new' ? { enabled: true, flags: [] } : {
       ...model, flags: FLAGS.filter(([id]) => model.capabilities?.flags[id]).map(([id]) => id),
     });
     setEditing(model);
@@ -69,7 +69,10 @@ export default function AIModelEditor({ provider }: { provider: Provider }) {
           <Form.Item name="id" label={t('ai.modelId')} rules={[{ required: true }]}><Input disabled={editing !== 'new'} /></Form.Item>
           <Form.Item name="display_name" label={t('name')} rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="enabled" label={t('enabled')} valuePropName="checked"><Switch /></Form.Item>
-          <Form.Item name="context_window" label={t('ai.contextWindow')}><InputNumber min={0} max={10000000} /></Form.Item>
+          <Form.Item name="context_window" label={t('ai.contextWindow')} extra={t('ai.contextWindowHint')}
+            rules={[{ required: true, type: 'integer', min: 2, max: 10000000, message: t('ai.invalidContextWindow') }]}>
+            <InputNumber min={2} max={10000000} precision={0} />
+          </Form.Item>
           <Form.Item name="flags" label={t('ai.capabilities')}><Checkbox.Group options={FLAGS.map(([value, label]) => ({ value, label: t(`ai.flags.${label}`) }))} /></Form.Item>
         </Form>
         {error && <Alert type="error" title={error} />}

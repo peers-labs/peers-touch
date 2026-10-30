@@ -30,6 +30,13 @@ Unconfigured catalog entries remain readable in the administrator editor with
 empty grants and revision zero. Reads never materialize a Provider. Save the
 Provider configuration before writing its access grants.
 
+Custom model configuration requires a supported context window greater than
+one token. Zero is a catalog inheritance marker only when that exact catalog
+model supplies a valid window. Invalid explicit create or update values fail
+before persistence; partial updates preserve the existing context. The
+administrator model editor requires the model's supported token count rather
+than silently creating an unusable model.
+
 ## Execution authority
 
 The consumer catalog, runtime admission and Provider dispatch resolve the same

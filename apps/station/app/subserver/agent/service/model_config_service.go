@@ -180,7 +180,7 @@ func (s *ModelConfigService) Create(ctx context.Context, req ModelCreateRequest)
 	}
 	if strings.TrimSpace(req.ProviderID) == "" || len(req.ProviderID) > 128 ||
 		strings.TrimSpace(req.ModelID) == "" || len(req.ModelID) > 128 ||
-		len(req.DisplayName) > 256 || req.ContextWindow < 0 {
+		len(req.DisplayName) > 256 || !validModelContextWindow(req.ProviderID, req.ModelID, req.ContextWindow) {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "model configuration is invalid", nil)
 	}
 	db, err := s.getDB(ctx)
@@ -276,7 +276,7 @@ func (s *ModelConfigService) Update(ctx context.Context, req ModelUpdateRequest)
 		return nil, err
 	}
 	if (req.DisplayName != nil && len(*req.DisplayName) > 256) ||
-		(req.ContextWindow != nil && *req.ContextWindow < 0) {
+		(req.ContextWindow != nil && !validModelContextWindow(req.ProviderID, req.ModelID, *req.ContextWindow)) {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "model configuration is invalid", nil)
 	}
 	db, err := s.getDB(ctx)
@@ -367,4 +367,22 @@ func (s *ModelConfigService) getDB(ctx context.Context) (*gorm.DB, error) {
 			"database unavailable", err)
 	}
 	return db, nil
+}
+
+func validModelContextWindow(providerID, modelID string, window int) bool {
+	if window > 1 {
+		return true
+	}
+	// Zero is an inheritance marker only when the catalog supplies usable
+	// context. A custom model has no fallback and would disappear at admission.
+	if window == 0 {
+		if provider := catalog.Find(providerID); provider != nil {
+			for _, model := range provider.Models {
+				if model.ID == modelID {
+					return model.ContextWindow > 1
+				}
+			}
+		}
+	}
+	return false
 }

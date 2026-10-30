@@ -90,6 +90,8 @@
     "enableModel": "Enable {{name}}",
     "modelId": "Model ID",
     "contextWindow": "Context window",
+    "contextWindowHint": "Enter the model's supported context size in tokens.",
+    "invalidContextWindow": "Enter a whole number between 2 and 10,000,000 tokens.",
     "capabilities": "Capabilities",
     "flags": { "streaming": "Streaming", "tools": "Tool calling", "imageInput": "Image input", "reasoning": "Reasoning", "imageOutput": "Image output" },
     "allowPersonal": "Allow personal Providers",

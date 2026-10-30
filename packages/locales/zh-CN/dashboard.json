@@ -90,6 +90,8 @@
     "enableModel": "启用 {{name}}",
     "modelId": "模型 ID",
     "contextWindow": "上下文窗口",
+    "contextWindowHint": "填写该模型支持的上下文 token 数。",
+    "invalidContextWindow": "请输入 2 至 10,000,000 之间的整数 token 数。",
     "capabilities": "能力",
     "flags": { "streaming": "流式输出", "tools": "工具调用", "imageInput": "图像输入", "reasoning": "推理", "imageOutput": "图像输出" },
     "allowPersonal": "允许个人服务商",
