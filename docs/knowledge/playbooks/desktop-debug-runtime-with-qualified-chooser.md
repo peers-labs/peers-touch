@@ -31,6 +31,10 @@ installer, signing, or package-only validation.
    Formal Acceptance uses its declared parent Runtime Cell and the canonical
    source-bound build producer. A prepared child consumes that executable;
    it does not build again or select an installed app.
+   Launch profile selection is `PT_PROFILE` → last identity-verified profile
+   (`<storage-root>/active-profile.json`) → `desktop`; an envless installed-app
+   launch that empties the chat surface is a profile mismatch, not data loss —
+   see `pitfalls/desktop-gui-launch-profile-pointer.md`.
 2. Read the owning runtime/page contract before editing those surfaces.
    Keep the live runtime, logs and current-source identity available.
 3. Use embedded WebDriver semantic input by default. Do not activate the app,
@@ -63,3 +67,9 @@ restored baselines, hidden windows and any physical fallback in semantic mode.
 Use `test_file_chooser_qualification`, `test_native_desktop_macos`,
 `test_native_runtime_binding` and `native_file_picker_test` for synthetic
 contract coverage. Their PASS is framework evidence only.
+
+## Crosswalks
+
+- Pitfall `desktop-gui-launch-profile-pointer` — why an envless GUI launch must
+  resolve the last identity-verified profile instead of the hardcoded
+  `desktop` fallback, and how to diagnose continuity conflicts.

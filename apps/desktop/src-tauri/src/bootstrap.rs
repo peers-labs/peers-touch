@@ -3,7 +3,8 @@ use tracing_appender::non_blocking::WorkerGuard;
 use crate::application::station_runtime::StationRuntime;
 use crate::infrastructure::i18n::I18nService;
 use crate::infrastructure::logger;
-use crate::infrastructure::storage::{self, StorageKind, StorageLayout};
+use crate::infrastructure::storage::active_profile::ProfileSource;
+use crate::infrastructure::storage::{self, active_profile, StorageKind, StorageLayout};
 use crate::state::AppState;
 
 pub struct BootstrapResult {
@@ -14,7 +15,17 @@ pub struct BootstrapResult {
 pub fn run() -> BootstrapResult {
     tracing::info!("Peers Touch Desktop starting");
 
-    let layout = init_storage();
+    // Resolve the launch profile exactly once and publish it through
+    // PT_PROFILE so every later reader (storage layout, SQLCipher DB names,
+    // attachment/MCP components) shares the selection. Without this a
+    // Finder/Dock launch falls into the hardcoded "desktop" profile and can
+    // strand an identity verified under another profile; see
+    // infrastructure::storage::active_profile.
+    let (profile, profile_source) = active_profile::resolve_launch_profile()
+        .expect("[bootstrap] invalid PT_PROFILE profile id");
+    std::env::set_var("PT_PROFILE", &profile);
+    let layout = storage::initialize_app_storage(&profile)
+        .expect("[bootstrap] Failed to initialize storage layout");
     let log_guard = init_logger(&layout);
 
     let log_dir = layout
@@ -28,6 +39,12 @@ pub fn run() -> BootstrapResult {
         root = %layout.root.display(),
         source = layout.root_source,
         "Storage initialized"
+    );
+
+    tracing::info!(
+        profile = %profile,
+        selection = profile_source.as_str(),
+        "Launch profile resolved"
     );
 
     tracing::info!(log_dir = %log_dir, "Logger initialized");
@@ -84,12 +101,6 @@ fn configure_secure_stores(layout: &StorageLayout) {
     {
         tracing::warn!(%error, "failed to configure storage key file store");
     }
-}
-
-fn init_storage() -> StorageLayout {
-    let profile = std::env::var("PT_PROFILE").unwrap_or_else(|_| "desktop".to_string());
-    storage::initialize_app_storage(&profile)
-        .expect("[bootstrap] Failed to initialize storage layout")
 }
 
 fn init_logger(layout: &StorageLayout) -> WorkerGuard {

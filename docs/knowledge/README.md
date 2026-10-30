@@ -2,7 +2,7 @@
 
 > Status: Canonical. Owner: Architecture.
 > Audience: humans AND AI agents acting on this codebase.
-> Updated: 2026-10-24
+> Updated: 2026-10-30
 
 ---
 
@@ -212,6 +212,7 @@ Pick one based on intent:
 - [`pitfalls/fresh-recovery-cannot-require-active-engine.md`](pitfalls/fresh-recovery-cannot-require-active-engine.md) — fresh Actor recovery must establish the Messaging Engine instead of requiring one before archive restore.
 - [`pitfalls/json-fallback-decode-state.md`](pitfalls/json-fallback-decode-state.md) — fallback JSON parsers isolate destinations because failed decodes may leave partial state.
 - [`pitfalls/sqlcipher-raw-key-no-utf8-lossy.md`](pitfalls/sqlcipher-raw-key-no-utf8-lossy.md) — SQLCipher keys are 32 random bytes and must reach `sqlite3_key_v2` unmodified; UTF-8 lossy conversion folds their entropy.
+- [`pitfalls/desktop-gui-launch-profile-pointer.md`](pitfalls/desktop-gui-launch-profile-pointer.md) — double-click launches carry no `PT_PROFILE`; they must reuse the last identity-verified profile pointer instead of a hardcoded fallback, or identity-gated chat silently empties.
 - [`pitfalls/mobile-proto-regen-import-closure.md`](pitfalls/mobile-proto-regen-import-closure.md) — shipping one regenerated mobile proto file without its import closure breaks tsc; regen to a staging dir and sync the closure, not a single file.
 - [`pitfalls/global-personalization-leaks-across-actors.md`](pitfalls/global-personalization-leaks-across-actors.md) — app-global/OS-user settings stores survived logout and rendered actor A's language/theme/personalization to actor B on the same device.
 
