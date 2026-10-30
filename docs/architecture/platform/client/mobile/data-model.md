@@ -254,7 +254,8 @@ alias, URL-based migration, or silent state transfer is permitted.
 | Station registry | Mobile device | Remains local unless product scope later requires cross-device sync |
 | User message flag | Mobile device | Remains local under MS-C14 |
 | Chat Docs tab | deferred product domain | No schema under current scope |
-| Device preferences | Mobile device | No shared Proto; use a typed Tauri contract only when crossing Web/Rust |
+| Personalization (theme, language, font size, density, media download) | Mobile device-actor | Identity-scoped `config.preference`, hard-deleted on logout; no shared Proto; typed Tauri contract only when crossing Web/Rust |
+| Device/install settings (cache, permissions, app metadata) | Mobile device | App-scope local; no shared Proto |
 | Navigation and overlay state | Mobile navigation | Never enters business Proto |
 
 ## 4. Durable Command Projection
@@ -818,8 +819,12 @@ Settings does not gain one aggregate persistence message. It composes:
 - Actor Profile response/update fields for profile and four privacy values;
 - a `NotificationPreferencesSnapshot` and push-device contracts;
 - Social `RelationshipProjection` plus paginated outgoing blocked actors;
-- a typed device-local preferences record for theme, font size, compact
-  density, language, cache controls, permission state, and app metadata.
+- a typed L2 device-actor preferences record for theme, font size, compact
+  density and media auto-download, plus a separate typed language record,
+  keyed by `(app, station, actor)` in `config.preference` and hard-deleted on
+  session revoke (pre-identity surfaces use OS defaults);
+- cache maintenance operations, permission state, Station registry and app
+  metadata remain L3 install-scoped under their own owners.
 
 There is no additional account-preference field, service, runtime, or
 placeholder section in the current release.

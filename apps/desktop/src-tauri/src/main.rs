@@ -46,7 +46,7 @@ use interface::tauri_commands::{
     desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home, host_events,
     i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_files,
     messaging_recovery, model_config, native_surface, notebook, notification, oauth2, oss,
-    presence, profile, provider, realtime, runtime_evidence, search, settings, skills,
+    presence, profile, provider, realtime, runtime_evidence, search, skills,
     skills_market, social as social_commands, station, system, tools, x_config,
 };
 use std::path::PathBuf;
@@ -589,16 +589,19 @@ fn main() {
     };
 
     let context = tauri::generate_context!();
-    #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+    #[cfg(feature = "acceptance-webdriver")]
     let context = {
         let mut context = context;
         for window in &mut context.config_mut().app.windows {
             if !exclusive_native_input {
-                // Wry gates WebView activation on visible && focused.
+                // Semantic startup preserves the operator's keyboard focus.
                 window.focus = false;
             }
-            window.background_throttling =
-                Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
+            #[cfg(target_os = "macos")]
+            {
+                window.background_throttling =
+                    Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
+            }
         }
         context
     };
@@ -794,9 +797,6 @@ fn main() {
             auth::auth_restore_session,
             auth::auth_validate_token,
             auth::ensure_station_session,
-            settings::settings_get,
-            settings::settings_set,
-            settings::settings_reset,
             desktop_capture::chat_screenshot_shortcut_register,
             social_commands::social_create_moment,
             social_commands::social_get_moment,

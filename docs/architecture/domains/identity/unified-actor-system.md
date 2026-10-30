@@ -143,8 +143,8 @@ The historical `Type` column (ActivityPub literal, e.g. `"Person"`) remains as l
 | Component | Path (under `apps/desktop/src`) | Responsibility |
 |---|---|---|
 | `services/identityPipeline` | `services/identityPipeline.ts` | Ordered, idempotent identity-change pipeline; sole entry for state-mutating reactions to identity changes. |
-| `services/identityHandlers` | `services/identityHandlers.ts` | Default handlers, registered at boot: `clear-zustand-stores`, `clear-localstorage-caches`, `refresh-current-session`. |
-| `services/identity_event` | `services/identity_event.ts` | Tauri-side `auth.identity_changed` bridge; deduplicates the originator window via `LOCAL_IDENTITY_FLAG`. |
+| `services/identityHandlers` | `services/identityHandlers.ts` | Default handlers, registered at boot: `clear-zustand-stores`, `clear-client-storage-caches`, `refresh-current-session`. |
+| `services/identity_event` | `services/identity_event.ts` | Tauri-side `auth:identity-changed` bridge; deduplicates the originator window via `markLocalIdentityAction()` and its in-memory pending marker. |
 | `store/*` | `store` | Each top-level Zustand store implements `reset()`; identity-aware stores also implement `hydrate(actorPtid)`. |
 | `services/desktop_api` | `services/desktop_api.ts` | Sole binding to Tauri commands. `AccountIdentity` is the canonical TS Actor handle. |
 
@@ -192,8 +192,11 @@ Target user-domain state on disk is keyed by PTID:
 | `account/identities.json` (registry of per-Actor encrypted sessions) | OS-user | `infrastructure::auth_identity` |
 | `data/db/users/{ptid}/*.db` | per-Actor | `infrastructure::storage::resolve_database_path` |
 | `config/providers/users/{ptid}/override.yaml` | per-Actor | `application::provider::state` |
-| `config/settings.json` | OS-user (intentionally global) | `infrastructure::storage::settings_*` |
+| personalization (theme, language, shortcuts, filters) | per-Actor web storage `(app, station, actor)` | `runtimes/personalization.ts` via `@peers-touch/client-storage`; hard-deleted on logout |
 
+There is no OS-user-global settings KV: the former Rust `config/settings.json`
+is deleted (see
+[Client Settings Ownership](../../platform/client/settings-ownership.md)).
 There MUST NOT exist any single shared file at OS-user scope that holds per-Actor state, other than `identities.json` (itself a multi-entry registry).
 
 ### C-4 · In-memory store partitioning
@@ -220,11 +223,19 @@ Every command that successfully mutates the active identity (`auth_login`, `auth
 3. Emit `auth.identity_changed` with
    `IdentityChangedPayload { reason, actor_ptid, login_method }`.
 
-The originating window's frontend MUST set `LOCAL_IDENTITY_FLAG = '1'` in `sessionStorage` before invoking the command, so the listener path skips a duplicate pipeline run in the originating window.
+The originating window's frontend calls `markLocalIdentityAction()` before
+invoking the command. The bridge consumes the in-memory pending marker so the
+originating window does not repeat the local pipeline. There is no persistent
+deduplication flag or full-reload identity path.
 
 ### C-6 · Identity pipeline runs in both directions, exactly once per window
 
-Both originator and listener windows MUST run `runIdentityPipeline(payload)` once per identity change. Handlers MUST be idempotent: an unintended second run on the same window MUST NOT corrupt state. The default handlers (clear stores, clear localStorage prefixes, refresh session) satisfy this property.
+Both originator and listener windows run
+`runIdentityPipeline(payload, previousScope)` once per accepted identity change.
+Callers capture the outgoing canonical Station/actor/session-epoch scope before
+resetting the session. Handlers remain idempotent. Logout, revocation and account
+replacement invalidate outgoing personalization; same-identity unlock preserves
+it. See [Client Settings Ownership](../../platform/client/settings-ownership.md).
 
 ### C-7 · No process-global session authority
 
@@ -246,7 +257,7 @@ adapter, dual-write, or legacy identity reader remains.
 
 ```
 [ui] LoginPage
-  ① markLocalIdentityAction()                  // sets LOCAL_IDENTITY_FLAG
+  ① markLocalIdentityAction()                  // marks the local command in memory
   ② api.authLogin(window)
        [rust] auth_login(window)
          ↳ application::auth::login(token, …)
@@ -254,14 +265,15 @@ adapter, dual-write, or legacy identity reader remains.
          ↳ session_store::save(ptid, token, Password)      — C-3
          ↳ state.session.lock() = Some(...)                — legacy mirror, C-7
          ↳ identity_event::emit(Login)                     — C-5
-  ③ runIdentityPipeline({ reason:'login', actorPtid, … })  — C-6 originator
-       ↳ refresh-current-session validates the window-bound token
-         without issuing a takeover session
+  ③ activateAuthenticatedSession(response, stationPeerId)
+  ④ runIdentityPipeline({ reason:'login', actorPtid, … }, previousScope)
+       ↳ refresh-current-session skips the already-activated local session
 
 [other windows]
-  ④ Tauri event auth.identity_changed
-     ↳ identity_event bridge sees no flag
-     ↳ runIdentityPipeline(...)                            — C-6 listener
+  ⑤ Tauri event auth:identity-changed
+     ↳ identity_event bridge has no local pending marker
+     ↳ accepts the event according to the window's actor/session
+     ↳ runIdentityPipeline(payload, previousScope)          — C-6 listener
 ```
 
 ### 5.2 Account switch (multiple windows in one process)
@@ -277,7 +289,8 @@ Same shape as login. `account_switch` mutates only the originating window's bind
        ↳ state.sessions.unbind(label)
        ↳ session_store::delete(ptid)
        ↳ identity_event::emit(Logout)
-  ③ runIdentityPipeline({ reason:'logout', actorPtid:null }) — clears, no rehydrate
+  ③ runIdentityPipeline({ reason:'logout', actorPtid:null }, previousScope)
+       ↳ clears outgoing projections/preferences, no session restore
 ```
 
 ### 5.4 Restore on startup
@@ -345,26 +358,30 @@ Handlers run sequentially in registration order. The first thrown error halts th
 
 ### 7.2 Default handlers (registered at boot)
 
-1. `clear-zustand-stores` — calls `reset()` on every top-level store; for non-logout, follows up with `hydrate(actorPtid)` where supported.
-2. `clear-localstorage-caches` — removes keys with prefixes `user:`, `chat:`, `friend:`, `group:`, `profile:`, `accountSession:`, `socialChat:`. The prefix list is the contract: any new module that introduces actor-scoped cached keys MUST register its prefix here.
-3. `refresh-current-session` — for non-logout and non-switch transitions,
-   validates the current window-bound token through `api.authValidateToken({})`
-   and writes the result back into `useSessionStore`. It MUST NOT call
-   takeover-style persisted-session restore after a successful login, OAuth
-   bridge, or PIN unlock because that would revoke the session just issued to
-   the same window.
+1. `clear-zustand-stores` — resets outgoing actor projections and personalization
+   on logout, revocation or replacement, retaining an already-activated incoming
+   session when it matches the transition.
+2. `clear-client-storage-caches` — the sole deletion owner, invalidating
+   `asset.avatar`, `chat.conversation-settings`, `chat.message`,
+   `config.preference`, `identity.trust`, `profile.peer` and `runtime.projection`
+   only in the captured outgoing Station/actor namespace. App-scoped Station
+   registry remains intact. Same-actor unlock performs no preference deletion.
+3. `refresh-current-session` — restores a session only for a login/OAuth bridge
+   arriving in a renderer with no authenticated session. Logout, revocation,
+   switch, unlock and already-authenticated renderers skip restore. Local switch
+   and unlock callers activate their native response after outgoing cleanup.
 
 ### 7.3 Originator / listener deduplication
 
 ```
 Originator window
-  set LOCAL_IDENTITY_FLAG = '1'
+  markLocalIdentityAction()
   invoke Tauri command
-  on success → runIdentityPipeline(payload)
-  Tauri event arrives → bridge sees flag → remove flag → return
+  on success → runIdentityPipeline(payload, previousScope)
+  Tauri event arrives → bridge consumes pending marker → return
 
 Listener window
-  Tauri event arrives → bridge sees no flag → runIdentityPipeline(payload)
+  accepted Tauri event → capture outgoing scope → runIdentityPipeline(payload, previousScope)
 ```
 
 Idempotency note: if the flag is missed (process crash between `markLocalIdentityAction` and the Tauri call), the originator runs the pipeline twice. C-6 makes this safe.
@@ -403,8 +420,7 @@ $APP_SUPPORT/peers-touch/desktop/
 ├── data/
 │   └── db/users/{ptid}/*.db       ← per-Actor SQLite
 ├── config/
-│   ├── providers/users/{ptid}/override.yaml
-│   └── settings.json              ← OS-user-global, intentional
+│   └── providers/users/{ptid}/override.yaml
 └── cache/avatars/                 ← content-addressed
 ```
 
@@ -436,7 +452,6 @@ the target identity contract is complete.
 | 2 | Three parallel `ActorKind` definitions exist: prost-generated (Rust), `domain::identity::ActorKind` hand-coded (Rust), `identity.AccountType` hand-coded (Go). Bridges (`KindFromProto`, `ActorKindFromShorthand`) cover the runtime gap, but the duplication is real. | Planned: collapse hand-coded enums into the generated types in a follow-up. |
 | 3 | JWT `subject_id` still carries bare numeric `actor_id`. | Blocking migration: mint PTID subject identity before target Mobile session activation. |
 | 4 | `account_type` legacy proto string field has no scheduled removal. | Planned: remove one release after every client confirms adoption of `kind`. |
-| 5 | The `clear-localstorage-caches` prefix list is hand-maintained. New cached keys not on the list will leak across identity changes, with no automated detection. | Mitigation: ESLint rule or boot-time prefix registry. Out of scope here. |
 | 6 | No automated end-to-end test exercises a real two-window two-account scenario through the Tauri runtime. Coverage today is unit / type / build only. | Planned: WebDriver-based smoke under `tooling/`. |
 | 7 | The current `__default__` bucket absorbs empty identity. | Blocking migration: remove fallback and return a typed missing-PTID error. |
 

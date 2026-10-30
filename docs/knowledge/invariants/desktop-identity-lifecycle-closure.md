@@ -13,6 +13,7 @@ owns:
   - apps/desktop/src/components/settings/AccountTab.tsx
   - apps/desktop/src/components/UserProfilePopover.tsx
   - apps/desktop/src/components/AppSideNav.tsx
+  - apps/desktop/src/components/messages/UserMessage.tsx
   - docs/client/desktop/identity-lifecycle.md
 referenced-by:
   - docs/client/desktop/identity-lifecycle.md

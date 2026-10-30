@@ -1,6 +1,7 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { invoke } from '@tauri-apps/api/core';
 import { runIdentityPipeline } from '../../services/identityPipeline';
+import { sessionIdentityScope } from '../../kernel/sessionIdentity';
 import { markLocalIdentityAction } from '../../services/identity_event';
 import {
   api,
@@ -379,7 +380,7 @@ export const nativeAcceptanceBridge = createNativeAcceptanceBridge({
       reason: 'logout',
       actorPtid: null,
       loginMethod: null,
-    });
+    }, sessionIdentityScope(useSessionStore.getState()));
   },
   readInteractionSnapshot: (input) =>
     api.messagingAcceptanceInteractionSnapshot(input),

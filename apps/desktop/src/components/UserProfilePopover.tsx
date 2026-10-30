@@ -63,17 +63,21 @@ export function UserProfilePopover({ children }: Props) {
 
       {/* Profile body */}
       <Flexbox gap={12} style={{ padding: '0 16px 16px' }}>
-        {/* Avatar + name */}
-        <Flexbox horizontal gap={12} align="flex-end" style={{ marginTop: -24 }}>
-          <UserSquareAvatar
-            remoteUrl={avatarSrc}
-            name={displayName}
-            size={56}
-            radius={12}
-            border={`2px solid ${token.colorBgContainer}`}
-          />
+        {/* Avatar overlaps the banner; the name block stays on the body
+            background. Pulling the whole row up previously dragged the
+            two-line name/handle block onto the banner image. */}
+        <Flexbox horizontal gap={12} align="flex-start" style={{ marginTop: 4 }}>
+          <div style={{ marginTop: -20 }}>
+            <UserSquareAvatar
+              remoteUrl={avatarSrc}
+              name={displayName}
+              size={56}
+              radius={12}
+              border={`2px solid ${token.colorBgContainer}`}
+            />
+          </div>
 
-          <Flexbox gap={2} style={{ paddingBottom: 4, minWidth: 0 }}>
+          <Flexbox gap={2} style={{ paddingTop: 2, minWidth: 0 }}>
             <Text strong style={{ fontSize: 15, lineHeight: 1.3 }} ellipsis>
               {displayName}
             </Text>
@@ -179,12 +183,13 @@ export function UserProfilePopover({ children }: Props) {
   );
 }
 
-export function useUserAvatar(): { url?: string; name: string; provider?: string } {
+export function useUserAvatar(): { ptid?: string; url?: string; name: string; provider?: string } {
   const currentUser = useSessionStore((s) => s.currentUser);
   const { t } = useTranslation('layout');
 
   return useMemo(
     () => ({
+      ptid: currentUser?.actorPtid || undefined,
       url: currentUser?.avatarUrl || undefined,
       name: currentUser?.name || t('layout.user.defaultName'),
       provider: currentUser?.loginProvider || currentUser?.loginMethod || undefined,

@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { log } from '@/utils/logger';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Alert, Card, Modal, Switch, Empty,
+  Alert, Card, Modal, Switch,
   Typography, Select, message, Popconfirm, Progress, Spin, theme, Input as AntInput,
 } from 'antd';
-import { Button, Input, Tag, Tooltip } from '@lobehub/ui';
+import { Button, Empty, Input, Tag, Tooltip } from '@lobehub/ui';
 import {
-  Plus, Trash2, Play, Pencil, Upload, Monitor, Server,
+  Plus, Trash2, Play, Pencil, Puzzle, Upload, Monitor, Server,
   RotateCcw, Square,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -127,7 +127,7 @@ export function MCPTab() {
   };
 
   return (
-    <SettingsContainer fullHeight>
+    <SettingsContainer fullHeight tier="standard">
       <Flexbox horizontal justify="space-between" align="center">
         <Flexbox>
           <Title level={5} style={{ margin: 0 }}>{t('provider.mcp.title')}</Title>
@@ -168,7 +168,21 @@ export function MCPTab() {
           <Spin />
         </Flexbox>
       ) : servers.length === 0 ? (
-        <Empty description={t('provider.mcp.noServers')} />
+        <Empty
+          icon={Puzzle}
+          title={t('provider.mcp.noServers')}
+          description={t('provider.mcp.noServersHint')}
+          action={
+            <Button
+              type="primary"
+              icon={<Plus size={14} />}
+              onClick={() => setAddModal(true)}
+            >
+              {t('provider.mcp.addServer')}
+            </Button>
+          }
+          padding="64px 16px"
+        />
       ) : (
         <Flexbox gap={12}>
           {servers.map((srv) => (
@@ -556,14 +570,14 @@ function AddMCPServerModal({
           />
         </Flexbox>
         <Flexbox horizontal gap={8} align="center">
-          <Text style={{ width: 80 }}>Runtime</Text>
+          <Text style={{ width: 80 }}>{t('provider.mcp.runtime.label')}</Text>
           <Select
             value={executionOwner}
             onChange={setExecutionOwner}
             style={{ width: 140 }}
             options={[
-              { value: 'station', label: 'Station' },
-              { value: 'client', label: 'Desktop' },
+              { value: 'station', label: t('provider.mcp.runtime.station') },
+              { value: 'client', label: t('provider.mcp.runtime.client') },
             ]}
           />
         </Flexbox>
@@ -773,14 +787,14 @@ function MCPServerEditModal({
           />
         </Flexbox>
         <Flexbox horizontal gap={8} align="center">
-          <Text style={{ width: 80, fontSize: 12 }}>Runtime</Text>
+          <Text style={{ width: 80, fontSize: 12 }}>{t('provider.mcp.runtime.label')}</Text>
           <Select
             value={executionOwner}
             onChange={setExecutionOwner}
             style={{ width: 140 }}
             options={[
-              { value: 'station', label: 'Station' },
-              { value: 'client', label: 'Desktop' },
+              { value: 'station', label: t('provider.mcp.runtime.station') },
+              { value: 'client', label: t('provider.mcp.runtime.client') },
             ]}
           />
         </Flexbox>
@@ -793,7 +807,7 @@ function MCPServerEditModal({
             </div>
             <div>
               <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('provider.mcp.detail.args')}</Text>
-              <Input value={args} onChange={(e) => setArgs(e.target.value)} style={{ marginTop: 4 }} placeholder="arg1 arg2 ..." />
+              <Input value={args} onChange={(e) => setArgs(e.target.value)} style={{ marginTop: 4 }} placeholder={t('provider.mcp.add.argsPlaceholder')} />
             </div>
             <div>
               <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('provider.mcp.detail.env')}</Text>

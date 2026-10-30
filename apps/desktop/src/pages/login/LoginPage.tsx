@@ -141,6 +141,9 @@ export function LoginPage({
   const [gateLoading, setGateLoading] = useState(false);
   const [gateInviteCode, setGateInviteCode] = useState('');
 
+  // ── Email login error (inline on the login card) ──
+  const [emailError, setEmailError] = useState('');
+
   // ── Refs for email login (needed for gate chain) ──
   const emailRef = useRef('');
   const passwordRef = useRef('');
@@ -384,9 +387,15 @@ export function LoginPage({
       }
 
       if (details?.remaining_secs) {
-        setPinError(t('auth.pin.lockedOut', { defaultValue: `Account locked. Retry in ${details.remaining_secs}s` }));
+        setPinError(t('auth.pin.lockedOut', {
+          defaultValue: 'Account locked. Retry in {{remainingSecs}}s',
+          remainingSecs: details.remaining_secs,
+        }));
       } else if (details?.attempts_remaining !== undefined) {
-        setPinError(t('auth.pin.wrongPin', { defaultValue: `Wrong PIN. ${details.attempts_remaining} attempts left` }));
+        setPinError(t('auth.pin.wrongPin', {
+          defaultValue: 'Wrong PIN. {{attemptsRemaining}} attempts left',
+          attemptsRemaining: details.attempts_remaining,
+        }));
       } else {
         setPinError(err.message || t('auth.pin.error', { defaultValue: 'PIN verification failed' }));
       }
@@ -590,11 +599,12 @@ export function LoginPage({
     emailRef.current = email;
     passwordRef.current = password;
     setGateError('');
+    setEmailError('');
     try {
       const decision = await accessStart();
       const gate = currentGate(decision);
       if (isAccessBlocked(decision)) {
-        message.error(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
+        setEmailError(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
         return;
       }
       if (isInviteCodeGate(gate)) {
@@ -604,7 +614,10 @@ export function LoginPage({
       }
       await finishLoginGate(decision);
     } catch (err: unknown) {
-      message.error(errorMessage(err, t('auth.login.failed')));
+      // Inline error on the login card is the durable surface: a transient
+      // toast alone is easy to miss (and static message API may not render
+      // outside App context).
+      setEmailError(errorMessage(err, t('auth.login.failed')));
     }
   }, [accessStart, finishLoginGate, t]);
 
@@ -833,6 +846,7 @@ export function LoginPage({
             oauthActionProviderId={connectProvider?.id}
             oauthActionState={authState}
             oauthActionError={authError}
+            emailError={emailError}
             onBack={handleRecoveryCancel}
             onEmailLogin={handleEmailLogin}
             onOAuthLogin={handleOAuthConnect}
@@ -885,6 +899,7 @@ export function LoginPage({
             oauthActionProviderId={connectProvider?.id}
             oauthActionState={authState}
             oauthActionError={authError}
+            emailError={emailError}
             onBack={handleBackToWelcome}
             onEmailLogin={handleEmailLogin}
             onOAuthLogin={handleOAuthConnect}

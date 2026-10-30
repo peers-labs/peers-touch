@@ -1,6 +1,8 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
+
+import { PageColumn } from '../layout/PageColumn';
 import {
   Alert,
   Button,
@@ -47,14 +49,14 @@ export const EvaluationPage = memo(() => {
     <Flexbox
       data-pt-evaluation-page
       data-pt-evaluation-state={visibleState}
-      padding={24}
-      gap={18}
       style={{
         background: token.colorBgLayout,
         height: '100%',
         overflow: 'auto',
+        padding: '8px 0 24px',
       }}
     >
+      <PageColumn tier="standard" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <Flexbox horizontal align="center" justify="space-between" gap={16}>
         <Flexbox gap={2}>
           <Typography.Title level={4} style={{ margin: 0 }}>
@@ -144,6 +146,7 @@ export const EvaluationPage = memo(() => {
             : <EvaluationRunList />}
         </>
       )}
+      </PageColumn>
     </Flexbox>
   );
 });

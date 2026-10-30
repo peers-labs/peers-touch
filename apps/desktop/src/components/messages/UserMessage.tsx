@@ -12,19 +12,24 @@ import { ForwardMessageModal } from './ForwardMessageModal';
 import { MessageAttachments } from './MessageAttachments';
 import { useTranslation } from 'react-i18next';
 import { timeAgo, fullTime } from './shared';
+import { useUserAvatar } from '../UserProfilePopover';
 
 interface UserMessageProps {
   message: ChatMessage;
-  userAvatar?: { url?: string; name: string };
 }
 
 /**
  * Renders a user message including attachments, images, edit mode,
  * markdown content, and the action bar.
  */
-export function UserMessage({ message, userAvatar }: UserMessageProps) {
+export function UserMessage({ message }: UserMessageProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
+  // Agent conversations are single-owner (Station enforces ownership via
+  // JWT + conversation.actor_ptid), so the session actor is the author of
+  // every user message. This is the one identity source; messages carry no
+  // author field of their own.
+  const user = useUserAvatar();
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -34,8 +39,6 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
   const branchFromMessage = useChatStore(s => s.branchFromMessage);
   const deleteMessage = useChatStore(s => s.deleteMessage);
   const editMessage = useChatStore(s => s.editMessage);
-
-  const userDisplayName = userAvatar?.name;
 
   useEffect(() => {
     if (editing && editRef.current) {
@@ -77,6 +80,7 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
     <Flexbox
       data-pt-agent-message="user"
       data-pt-agent-message-id={message.id}
+      data-pt-user-actor-ptid={user.ptid}
       id={`agent-message-${message.id}`}
       align="flex-end"
       gap={8}
@@ -89,11 +93,15 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
         paddingInlineEnd: 0,
       }}
     >
-      {/* Header: avatar + name + timestamp */}
+      {/* Header: avatar + name + timestamp. The label stays "You"; the tile
+          renders the logged-in actor's real avatar (remote image or name
+          initial), resolved from the session identity. */}
       <Flexbox direction="horizontal-reverse" align="center" gap={8}>
-        <UserSquareAvatar remoteUrl={userAvatar?.url} name={userAvatar?.name} size={32} radius={8} />
+        <span title={user.name} style={{ display: 'inline-flex' }}>
+          <UserSquareAvatar remoteUrl={user.url} name={user.name} size={32} radius={8} />
+        </span>
         <strong style={{ fontSize: 13, color: token.colorText, fontWeight: 600 }}>
-          {userDisplayName || t('chat.message.you')}
+          {t('chat.message.you')}
         </strong>
         <span
           style={{

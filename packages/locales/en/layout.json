@@ -21,6 +21,10 @@
   "layout.splash.peers": "Peers",
 
   "layout.user.defaultName": "User",
+  "layout.user.posts": "posts",
+  "layout.user.following": "following",
+  "layout.user.followers": "followers",
+  "layout.user.joined": "Joined",
   "layout.user.accountsAvailable": "{{count}} account(s) available",
   "layout.user.noAccount": "No account connected",
   "layout.user.chooseActive": "Choose active account",

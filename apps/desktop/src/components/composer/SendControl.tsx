@@ -1,13 +1,10 @@
+import type { CSSProperties } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon } from '@lobehub/ui';
 import { ArrowUp, Square } from 'lucide-react';
 import { theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 
-const COMPOSER_COLORS = {
-  primaryDisabled: '#d8d3fb',
-  textTertiary: '#9b9b9b',
-} as const;
+const CONTROL_SIZE = 34;
 
 interface SendControlProps {
   isStreaming: boolean;
@@ -16,9 +13,25 @@ interface SendControlProps {
   onStop: () => void;
 }
 
+const iconButtonStyle: CSSProperties = {
+  width: CONTROL_SIZE,
+  height: CONTROL_SIZE,
+  borderRadius: 10,
+  border: 'none',
+  padding: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
 /**
- * Send/Stop button in the composer footer.
- * Shows a stop icon (red) during streaming, or an arrow-up send icon.
+ * Send/Stop controls in the composer footer.
+ *
+ * While a turn is running both controls stay visible as distinct affordances:
+ * Stop cancels the running turn, and Send admits the next request to FIFO.
+ * Keeping separate, labelled
+ * controls prevents the previous slot-flip where a second click on the
+ * expected send position silently cancelled the running turn.
  */
 export function SendControl({ isStreaming, disabled, onSend, onStop }: SendControlProps) {
   const { token } = theme.useToken();
@@ -27,36 +40,61 @@ export function SendControl({ isStreaming, disabled, onSend, onStop }: SendContr
   if (isStreaming) {
     return (
       <Flexbox horizontal align="center" gap={8} justify="flex-end">
-        <ActionIcon
-          icon={Square}
-          onClick={onStop}
+        <button
+          type="button"
+          aria-label={t('chat.input.stop')}
           title={t('chat.input.stop')}
-          size={{ blockSize: 34, size: 16 }}
+          data-pt-agent-stop
+          onClick={onStop}
           style={{
-            borderRadius: 10,
+            ...iconButtonStyle,
             background: token.colorError,
             color: '#ffffff',
+            cursor: 'pointer',
           }}
-        />
+        >
+          <Square size={16} />
+        </button>
+        <button
+          type="button"
+          aria-label={t('chat.input.send')}
+          title={t('chat.input.send')}
+          data-pt-agent-composer-send
+          onClick={onSend}
+          disabled={disabled}
+          aria-disabled={disabled}
+          style={{
+            ...iconButtonStyle,
+            background: disabled ? token.colorFillTertiary : token.colorPrimary,
+            color: disabled ? token.colorTextQuaternary : token.colorTextLightSolid,
+            cursor: disabled ? 'default' : 'pointer',
+          }}
+        >
+          <ArrowUp size={16} />
+        </button>
       </Flexbox>
     );
   }
 
   return (
     <Flexbox horizontal align="center" gap={8} justify="flex-end">
-      <ActionIcon
-        icon={ArrowUp}
+      <button
+        type="button"
+        aria-label={t('chat.input.send')}
+        title={t('chat.input.send')}
+        data-pt-agent-composer-send
         onClick={onSend}
         disabled={disabled}
-        title={t('chat.input.send')}
-        size={{ blockSize: 34, size: 16 }}
+        aria-disabled={disabled}
         style={{
-          borderRadius: 10,
-          background: disabled ? COMPOSER_COLORS.primaryDisabled : token.colorPrimary,
-          color: disabled ? COMPOSER_COLORS.textTertiary : '#ffffff',
+          ...iconButtonStyle,
+          background: disabled ? token.colorFillTertiary : token.colorPrimary,
+          color: disabled ? token.colorTextQuaternary : token.colorTextLightSolid,
           cursor: disabled ? 'default' : 'pointer',
         }}
-      />
+      >
+        <ArrowUp size={16} />
+      </button>
     </Flexbox>
   );
 }

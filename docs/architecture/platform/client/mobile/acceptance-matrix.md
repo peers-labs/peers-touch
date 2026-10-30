@@ -35,7 +35,7 @@ unregistered, missing, failed, or stale required cell is `UNPROVEN`.
 | MS-PA09 | MS-J04 | Accept friend request, inspect profile, start Direct chat | Relationship and conversation readback | two isolated Android clients + two isolated iOS clients |
 | MS-PA10 | MS-J04 | Create group and manage members by role | Conversation member/ownership readback | Android + iOS |
 | MS-PA11 | MS-J05 | Read, paginate, publish, react, comment, and reply in Moments | Post/comment/reaction readback | Android + iOS |
-| MS-PA12 | MS-J06 | Edit profile/privacy or device preference and reopen | Owner-specific or device-local readback | Android + iOS |
+| MS-PA12 | MS-J06 | Edit profile/privacy or L2 personalization and reopen | Owner-specific or identity-scoped readback; personalization absent after logout | Android + iOS |
 | MS-PA13 | MS-J06 | Change Station; old projections disappear before the new gate | Old scoped state absent | Android + iOS |
 | MS-PA14 | MS-J02..06 | Background/resume reconciles stale state before writes reopen | Cursor/reconcile evidence | physical Android + physical iOS |
 | MS-PA15 | MS-J03..05 | Long lists and rapid navigation stay within interaction budgets | Interaction-linked timing and bounded render | pinned physical Android + iOS |

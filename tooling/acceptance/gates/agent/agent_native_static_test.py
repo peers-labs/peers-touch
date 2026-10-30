@@ -4246,12 +4246,18 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
 class AgentSelectorsBoundInProductSource(unittest.TestCase):
     def test_composer_selector_bound(self) -> None:
         source = (ROOT / "apps/desktop/src/components/ChatInput.tsx").read_text(encoding="utf-8")
+        controls = (
+            ROOT / "apps/desktop/src/components/composer/SendControl.tsx"
+        ).read_text(encoding="utf-8")
+        # ChatInput owns the model picker and delegates send/stop to the single
+        # SendControl owner shared by every composer surface.
         self.assertIn("data-pt-agent-composer", source)
-        self.assertIn("data-pt-agent-composer-send", source)
-        self.assertIn("data-pt-agent-stop", source)
         self.assertIn("data-pt-agent-model-picker", source)
         self.assertIn("data-pt-agent-model-provider={model.provider_id}", source)
         self.assertIn("data-pt-agent-model-id={model.id}", source)
+        self.assertIn("SendControl", source)
+        self.assertIn("data-pt-agent-composer-send", controls)
+        self.assertIn("data-pt-agent-stop", controls)
 
     def test_message_selectors_bound(self) -> None:
         assistant = (ROOT / "apps/desktop/src/components/messages/AssistantMessage.tsx").read_text(encoding="utf-8")

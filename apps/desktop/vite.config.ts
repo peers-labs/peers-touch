@@ -1,4 +1,5 @@
-import { defineConfig, searchForWorkspaceRoot } from 'vite'
+import { defineConfig } from 'vitest/config'
+import { searchForWorkspaceRoot } from 'vite'
 import react from '@vitejs/plugin-react'
 import wasm from 'vite-plugin-wasm'
 import { cpSync, existsSync, rmSync } from 'node:fs'
@@ -136,6 +137,17 @@ export default defineConfig(({ command }) => ({
   },
   worker: {
     format: 'es',
+  },
+  test: {
+    // @lobehub/fluent-emoji ships a directory ESM import in its entry that
+    // Node native ESM rejects (ERR_UNSUPPORTED_DIR_IMPORT). LobeUI Empty
+    // (and Avatar) pull it in, so inline-transform the package under vitest.
+    server: {
+      deps: {
+        // Matches both specifier `@lobehub/...` and pnpm path `@lobehub+...`.
+        inline: [/@lobehub[+/\\]/],
+      },
+    },
   },
   optimizeDeps: {
     exclude: ['tiktoken', '@lynx-js/web-core', '@lynx-js/web-elements'],

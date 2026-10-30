@@ -2,15 +2,24 @@
 // Loads locale resources asynchronously from Rust via Tauri command.
 // The Rust layer scans config/i18n/ at runtime, discovering
 // all available languages including user-downloaded packs.
-// 2026-04-09: Initial creation for i18n architecture landing.
-// 2026-04-09: Refactored to reuse RustCommandResult from desktop_api.
+// Language choice is identity-scoped personalization (L2): pre-login the
+// product follows the OS language; after the authenticated-actor edge the
+// actor's own choice is applied and never leaks to another sign-in on the
+// same machine. See
+// docs/architecture/platform/client/settings-ownership.md.
 
 import { createInstance } from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import type { RustCommandResult } from '../services/desktop_api';
 import { log } from '../utils/logger';
-import { readDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
+import {
+  PERSONALIZATION_LANGUAGE_KEY,
+  readPersonalization,
+  writePersonalization,
+  capturePersonalizationScope,
+  isPersonalizationScopeCurrent,
+} from '../runtimes/personalization';
 
 const i18n = createInstance();
 
@@ -27,19 +36,25 @@ export interface I18nResources {
 }
 
 let availableLanguages: LanguageInfo[] = [];
+let generation = 0;
+let languageEffects = Promise.resolve();
+
+function applyLanguage(lang: string, current: () => boolean): Promise<void> {
+  const operation = languageEffects.then(async () => {
+    if (current() && i18n.language !== lang) await i18n.changeLanguage(lang);
+  });
+  languageEffects = operation.catch(() => undefined);
+  return operation;
+}
 
 export function getAvailableLanguages(): LanguageInfo[] {
   return availableLanguages;
 }
 
-function detectLanguage(availableCodes: string[]): string {
-  const stored = readDesktopPreferenceSync<string>('peers-touch-lang');
-  if (stored && availableCodes.includes(stored)) return stored;
-
+function systemLanguage(availableCodes: string[]): string {
   const nav = navigator.language;
   if (availableCodes.includes(nav)) return nav;
   if (nav.startsWith('zh') && availableCodes.includes('zh-CN')) return 'zh-CN';
-
   return 'en';
 }
 
@@ -82,8 +97,10 @@ export async function initI18n() {
   ));
 
   availableLanguages = languages;
-  const availableCodes = languages.map((l) => l.code);
-  const lng = detectLanguage(availableCodes);
+  // Before identity exists there is no actor personalization; the OS language
+  // is the only pre-login source. The authenticated-actor edge applies the
+  // actor's stored choice through applyPersonalizedLanguage().
+  const lng = systemLanguage(languages.map((l) => l.code));
 
   await i18n.use(initReactI18next).init({
     resources,
@@ -99,9 +116,45 @@ export async function initI18n() {
   return i18n;
 }
 
+/** Apply the authenticated actor's stored language, falling back to OS. */
+export async function applyPersonalizedLanguage(): Promise<void> {
+  if (availableLanguages.length === 0) return;
+  const scope = capturePersonalizationScope();
+  const observed = generation;
+  const current = () => observed === generation && isPersonalizationScopeCurrent(scope);
+  const availableCodes = availableLanguages.map((l) => l.code);
+  const stored = await readPersonalization(
+    PERSONALIZATION_LANGUAGE_KEY,
+    scope,
+  );
+  if (!current()) return;
+  if (stored !== null && (typeof stored !== 'string' || !availableCodes.includes(stored))) {
+    throw new Error('Invalid language preference');
+  }
+  const next = typeof stored === 'string'
+    ? stored
+    : systemLanguage(availableCodes);
+  await applyLanguage(next, current);
+}
+
+/** Return to the OS language after logout / before any identity exists. */
+export async function resetPersonalizedLanguage(): Promise<void> {
+  generation += 1;
+  const observed = generation;
+  if (availableLanguages.length === 0) return;
+  const next = systemLanguage(availableLanguages.map((l) => l.code));
+  await applyLanguage(next, () => observed === generation);
+}
+
 export function changeLanguage(lang: string) {
-  writeDesktopPreferenceSync('peers-touch-lang', lang);
-  return i18n.changeLanguage(lang);
+  // Persist before applying for an authenticated actor. A language
+  // picked on the pre-login gate is an in-memory choice for this run and must
+  // not become the next actor's personalization.
+  const scope = capturePersonalizationScope();
+  const observed = ++generation;
+  const current = () => observed === generation && isPersonalizationScopeCurrent(scope);
+  return writePersonalization(PERSONALIZATION_LANGUAGE_KEY, lang, scope)
+    .then(() => applyLanguage(lang, current));
 }
 
 const I18N_PREFIX = 'i18n:';

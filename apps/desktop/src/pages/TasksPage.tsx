@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
+import { Empty } from '@lobehub/ui';
 import {
   Button,
   Card,
@@ -11,7 +12,6 @@ import {
   Input,
   Select,
   Tag,
-  Empty,
   Popconfirm,
   Progress,
   Segmented,
@@ -29,9 +29,11 @@ import {
   ExclamationCircleOutlined,
   MinusCircleOutlined,
 } from '@ant-design/icons';
+import { ListChecks } from 'lucide-react';
 
 import { useTaskStore, type AgentTask, type TaskStatus, type TaskPriority } from '../store/tasks';
 import { useAgentStore } from '../store/agent';
+import { PageColumn } from '../layout/PageColumn';
 
 type FilterTab = 'all' | 'active' | 'completed';
 
@@ -300,11 +302,12 @@ export function TasksPage() {
     <Flexbox
       style={{
         height: '100%',
-        padding: 24,
+        padding: '8px 0 24px',
         overflow: 'auto',
         background: token.colorBgLayout,
       }}
     >
+      <PageColumn tier="standard">
       {/* Page header */}
       <Flexbox horizontal align="center" distribution="space-between" style={{ marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>
@@ -326,7 +329,16 @@ export function TasksPage() {
 
       {/* Task list */}
       {filteredTasks.length === 0 ? (
-        <Empty description={emptyDescription} style={{ marginTop: 60 }} />
+        <Empty
+          icon={ListChecks}
+          title={emptyDescription}
+          action={
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
+              {t('agent.tasks.create')}
+            </Button>
+          }
+          padding="72px 16px"
+        />
       ) : (
         filteredTasks
           .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -379,6 +391,7 @@ export function TasksPage() {
           </Form.Item>
         </Form>
       </Modal>
+      </PageColumn>
     </Flexbox>
   );
 }

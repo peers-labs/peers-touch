@@ -2,7 +2,7 @@ import type {
   MobileRuntimeDescriptor,
   RuntimeOperationResult,
 } from '../app/lifecycle/types';
-import { createMobileAppStorageRuntime } from '../storage/mobileClientStorage';
+import { mobilePersonalizationScope } from './personalizationScope';
 
 export const DEVICE_SETTINGS_RUNTIME_ID = 'device-settings';
 
@@ -66,6 +66,7 @@ export interface DeviceSettingsRuntime {
   retry(): Promise<DevicePreferences>;
   replace(preferences: DevicePreferences): Promise<DevicePreferences>;
   retryWrite(): Promise<DevicePreferences>;
+  reset(): void;
   getSnapshot(): DeviceSettingsRuntimeSnapshot;
   subscribe(listener: () => void): () => void;
 }
@@ -106,11 +107,12 @@ export function normalizeDevicePreferences(raw: unknown): DevicePreferences {
 }
 
 export function createDeviceSettingsRuntime(
-  persistence: DeviceSettingsPersistence = deviceSettingsPersistence(),
+  persistence?: DeviceSettingsPersistence,
   applyPreferences: DeviceSettingsApplier = applyDevicePreferences,
 ): DeviceSettingsRuntime {
   let snapshot = loadingSnapshot;
   let operations = Promise.resolve();
+  let generation = 0;
   const listeners = new Set<() => void>();
 
   const publish = (next: DeviceSettingsRuntimeSnapshot): void => {
@@ -118,8 +120,23 @@ export function createDeviceSettingsRuntime(
     listeners.forEach((listener) => listener());
   };
 
-  const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
-    const result = operations.then(operation, operation);
+  const enqueue = <T>(operation: (storage: DeviceSettingsPersistence, current: () => boolean) => Promise<T>): Promise<T> => {
+    const scope = mobilePersonalizationScope.capture();
+    const observed = generation;
+    const current = () => observed === generation && (persistence !== undefined || scope.current());
+    const storage = persistence ?? {
+      read: () => scope.read(DEVICE_PREFERENCES_KEY),
+      write: (preferences: DevicePreferences) => scope.write(
+        DEVICE_PREFERENCES_KEY, { ...preferences },
+      ),
+    };
+    const run = () => {
+      if (!current()) throw new Error('mobile.auth.sessionChanged');
+      return operation(storage, current);
+    };
+    const result = persistence
+      ? operations.then(run, run)
+      : mobilePersonalizationScope.enqueue(run);
     operations = result.then(
       () => undefined,
       () => undefined,
@@ -128,11 +145,14 @@ export function createDeviceSettingsRuntime(
   };
 
   const loadFromStorage = async (
+    storage: DeviceSettingsPersistence,
+    current: () => boolean,
     allowMissingValue = true,
   ): Promise<DeviceSettingsRuntimeSnapshot> => {
     publish(loadingSnapshot);
     try {
-      const raw = await persistence.read();
+      const raw = await storage.read();
+      if (!current()) return snapshot;
       if (raw === null && !allowMissingValue) {
         throw new Error(DEVICE_SETTINGS_UNAVAILABLE_ERROR);
       }
@@ -149,6 +169,7 @@ export function createDeviceSettingsRuntime(
       publish(ready);
       return ready;
     } catch {
+      if (!current()) return snapshot;
       const unavailable: DeviceSettingsRuntimeSnapshot = {
         status: 'unavailable',
         preferences: null,
@@ -169,14 +190,18 @@ export function createDeviceSettingsRuntime(
 
   const replaceNow = async (
     preferences: DevicePreferences,
+    storage: DeviceSettingsPersistence,
+    current: () => boolean,
   ): Promise<DevicePreferences> => {
-    if (snapshot.status === 'loading') await loadFromStorage();
+    if (snapshot.status === 'loading') await loadFromStorage(storage, current);
+    if (!current()) throw new Error('mobile.auth.sessionChanged');
     const committed = requireReady(snapshot);
     const attemptedPreferences = normalizeDevicePreferences(preferences);
 
     try {
-      await persistence.write(attemptedPreferences);
+      await storage.write(attemptedPreferences);
     } catch {
+      if (!current()) throw new Error('mobile.auth.sessionChanged');
       publish({
         status: 'ready',
         preferences: committed,
@@ -189,7 +214,9 @@ export function createDeviceSettingsRuntime(
       throw new Error(DEVICE_SETTINGS_WRITE_FAILED_ERROR);
     }
 
-    const readback = await loadFromStorage(false);
+    if (!current()) throw new Error('mobile.auth.sessionChanged');
+    const readback = await loadFromStorage(storage, current, false);
+    if (!current()) throw new Error('mobile.auth.sessionChanged');
     if (readback.status !== 'ready' || readback.preferences === null) {
       throw new Error(DEVICE_SETTINGS_UNAVAILABLE_ERROR);
     }
@@ -197,25 +224,37 @@ export function createDeviceSettingsRuntime(
   };
 
   return {
-    bootstrap: () => enqueue(async () => (
-      snapshot.status === 'ready' ? snapshot : loadFromStorage()
+    bootstrap: () => enqueue(async (storage, current) => (
+      snapshot.status === 'ready' ? snapshot : loadFromStorage(storage, current)
     )),
 
-    read: () => enqueue(async () => {
-      if (snapshot.status === 'loading') await loadFromStorage();
+    read: () => enqueue(async (storage, current) => {
+      if (snapshot.status === 'loading') await loadFromStorage(storage, current);
+      if (!current()) throw new Error('mobile.auth.sessionChanged');
       return requireReady(snapshot);
     }),
 
-    retry: () => enqueue(async () => requireReady(await loadFromStorage())),
+    retry: () => enqueue(async (storage, current) => {
+      const next = await loadFromStorage(storage, current);
+      if (!current()) throw new Error('mobile.auth.sessionChanged');
+      return requireReady(next);
+    }),
 
-    replace: (preferences) => enqueue(() => replaceNow(preferences)),
+    replace: (preferences) => enqueue((storage, current) => replaceNow(preferences, storage, current)),
 
-    retryWrite: () => enqueue(async () => {
+    retryWrite: () => enqueue(async (storage, current) => {
       if (snapshot.status !== 'ready' || !snapshot.writeFailure) {
         return requireReady(snapshot);
       }
-      return replaceNow(snapshot.writeFailure.attemptedPreferences);
+      return replaceNow(snapshot.writeFailure.attemptedPreferences, storage, current);
     }),
+
+    reset: () => {
+      generation += 1;
+      operations = Promise.resolve();
+      applyPreferences(defaultDevicePreferences());
+      publish(loadingSnapshot);
+    },
 
     getSnapshot: () => snapshot,
 
@@ -279,22 +318,32 @@ export function subscribeDeviceSettingsRuntime(
 }
 
 export function createDeviceSettingsRuntimeDescriptor(
-  runtime: Pick<DeviceSettingsRuntime, 'bootstrap'> = deviceSettingsRuntime,
+  runtime: Pick<DeviceSettingsRuntime, 'bootstrap' | 'reset'> = deviceSettingsRuntime,
 ): MobileRuntimeDescriptor {
+  let releaseIdentity: (() => void) | null = null;
+  let releaseScope: (() => void) | null = null;
+
   return {
     id: DEVICE_SETTINGS_RUNTIME_ID,
     title: 'Device Settings Runtime',
     responsibility:
-      'Owns app-scoped device preference loading, committed readback, mutation, and retryable local-storage failures.',
-    dependsOn: [],
+      'Owns identity-scoped preference loading, committed readback, mutation, and retryable local-storage failures.',
+    dependsOn: ['session'],
 
     async bootstrap(): Promise<void> {
-      await runtime.bootstrap();
+      if (!releaseIdentity) {
+        releaseIdentity = mobilePersonalizationScope.subscribe(() => {
+          runtime.reset();
+          void runtime.bootstrap();
+        });
+        releaseScope = mobilePersonalizationScope.retain();
+      }
       installDeviceSettingsSystemThemeListener();
+      await runtime.bootstrap();
     },
 
     async suspend(): Promise<void> {
-      // Device preferences have no active resource to suspend.
+      // Personalization has no active resource to suspend.
     },
 
     async resume(): Promise<void> {
@@ -304,6 +353,11 @@ export function createDeviceSettingsRuntimeDescriptor(
     async teardown(): Promise<RuntimeOperationResult> {
       releaseSystemThemeListener?.();
       releaseSystemThemeListener = null;
+      releaseIdentity?.();
+      releaseIdentity = null;
+      releaseScope?.();
+      releaseScope = null;
+      runtime.reset();
       return {
         runtimeId: DEVICE_SETTINGS_RUNTIME_ID,
         success: true,
@@ -324,22 +378,6 @@ function installDeviceSettingsSystemThemeListener(): void {
   };
   query.addEventListener('change', applyCurrent);
   releaseSystemThemeListener = () => query.removeEventListener('change', applyCurrent);
-}
-
-function deviceSettingsPersistence(): DeviceSettingsPersistence {
-  return {
-    read: async () => (
-      createMobileAppStorageRuntime()
-        .repositories.chatPreferences
-        .readValue(DEVICE_PREFERENCES_KEY)
-    ),
-    write: async (preferences) => {
-      await createMobileAppStorageRuntime().repositories.chatPreferences.write(
-        DEVICE_PREFERENCES_KEY,
-        preferences as unknown as Record<string, unknown>,
-      );
-    },
-  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

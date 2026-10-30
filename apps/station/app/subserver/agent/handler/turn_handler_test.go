@@ -1078,3 +1078,32 @@ func TestRevisionAttemptReadbackProjectsStoredRuntimeSnapshot(t *testing.T) {
 		t.Fatalf("attempt readback lost runtime snapshot: %+v", projected)
 	}
 }
+
+// TestTruncateForTitleKeepsUTF8Valid guards conversation auto-titling: the
+// title is persisted to Postgres, where a byte-boundary cut through multibyte
+// input produced invalid UTF-8 (SQLSTATE 22021) and aborted the first turn.
+func TestTruncateForTitleKeepsUTF8Valid(t *testing.T) {
+	// Reproduces the CJK turn whose 50th byte split the rune for "伴".
+	cjkTurn := "这是《Nausea》正文一页的照片。请按伴读流程处理：先输出【OCR】原文转写，再输出【译文】逐段中文翻译，最后给一句讲解钩子。"
+	title := truncateForTitle(cjkTurn)
+	if title != strings.ToValidUTF8(title, "") {
+		t.Fatalf("title contains invalid UTF-8 after truncation: %q", title)
+	}
+	if runes := len([]rune(title)); runes > 50 {
+		t.Fatalf("title exceeds 50 runes: %d", runes)
+	}
+
+	allCJK := strings.Repeat("读", 60)
+	if got := truncateForTitle(allCJK); got != strings.Repeat("读", 50) {
+		t.Fatalf("cjk rune limit = %q (%d runes)", got, len([]rune(got)))
+	}
+
+	ascii := strings.Repeat("a", 100)
+	if got := truncateForTitle(ascii); got != strings.Repeat("a", 50) {
+		t.Fatalf("ascii limit = %d chars", len(got))
+	}
+
+	if got := truncateForTitle("  hello  "); got != "hello" {
+		t.Fatalf("trim = %q", got)
+	}
+}

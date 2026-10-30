@@ -204,9 +204,12 @@ logout must:
 3. stop ingress;
 4. drain or classify accepted work;
 5. tear down runtimes in reverse order;
-6. clear or quarantine scoped credentials, ledgers, drafts, caches, and native
-   resources according to owner policy;
-7. start the next gate flow only after cleanup completes.
+6. clear or quarantine scoped credentials, ledgers, drafts, caches, L2
+   identity-scoped personalization (`config.preference`), and native
+   resources according to owner policy; L3 device/install state (Station
+   registry, permission grants, cache maintenance metadata) is preserved;
+7. start the next gate flow only after cleanup completes, with OS-default
+   language/theme and no previous actor's personalized value visible.
 
 No old-scope callback may enter the new generation.
 
@@ -232,7 +235,7 @@ unsupported or unknown states.
 | Station unreachable | remain before access; offer retry/change |
 | Station identity mismatch | block credentials and require explicit replacement |
 | Access pending or denied | remain in gate chain with Station-provided state |
-| Session revoked | fence generation, clear actor projection, return to access |
+| Session revoked | fence generation, clear actor projection and L2 personalization, return to access with OS defaults |
 | Runtime dependency failure | expose owner-specific unavailable/retry projection |
 | Secure storage unavailable | fail closed for protected session/write capability |
 | Background interruption | reconcile before write admission reopens |

@@ -50,6 +50,10 @@ type subServer struct {
 	deliveryRuntime *federationruntime.Runtime
 	deliveryCancel  context.CancelFunc
 	deliveryWait    sync.WaitGroup
+
+	// defaultFedMu serializes first-use materialization of the station-local
+	// default federation so concurrent authenticated reads cannot create two.
+	defaultFedMu sync.Mutex
 }
 
 func NewFederationSubServer(_ ...option.Option) server.Subserver {

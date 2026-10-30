@@ -27,7 +27,7 @@ Runtime-backed state must be owned by the runtime/store, not by incidental page 
 - `messagingRuntime` owns Chat command lifecycle, projection events, scoped reset, and reconciliation.
 - `socialRealtime` (wrapped by `runtimes/socialRuntime.ts`) owns friendship, contact, profile, presence, and Social notification freshness.
 - `runtimes/searchRuntime.ts` owns the search source list (app-scope).
-- `runtimes/settingsRuntime.ts` owns the active-account snapshot and agents list.
+- `runtimes/settingsRuntime.ts` is `session`-scoped: it owns the active-account snapshot and agents list (L1 Station projections) and applies L2 personalization (language, chat shortcut, provider list filter) from the identity-scoped `config.preference` of the active actor, resetting to identity-independent defaults on teardown. Personalization never goes through an app-global or Rust settings KV.
 - `notification` store owns notification list and counters.
 - `navigationBadges` owns cross-surface badge projection.
 - Components render state and dispatch user actions; they are not the primary sync mechanism.

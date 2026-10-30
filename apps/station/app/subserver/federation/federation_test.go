@@ -213,6 +213,61 @@ func containsStation(stations []string, stationPeerID string) bool {
 	return false
 }
 
+func TestEnsureDefaultFederationIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	federationService, _, _ := setupTestServices(t)
+	creator := defaultTestnetSeedConfig().Stations[0]
+
+	input := func() *application.EnsureDefaultFederationInput {
+		return &application.EnsureDefaultFederationInput{
+			StationPeerID:    creator.PeerID,
+			StationName:      creator.Name,
+			StationURL:       creator.URL,
+			FounderActorPTID: creator.ActorPTID,
+		}
+	}
+
+	first, created, err := federationService.EnsureDefaultFederation(ctx, input())
+	if err != nil {
+		t.Fatalf("first ensure: %v", err)
+	}
+	if !created {
+		t.Fatal("first ensure must create the default federation")
+	}
+	if first == nil || first.Status != "active" {
+		t.Fatalf("default federation must be active, got %+v", first)
+	}
+	if first.Name != application.DefaultFederationName {
+		t.Fatalf("default federation name = %q, want %q", first.Name, application.DefaultFederationName)
+	}
+	if first.SequencerStationPeerID != creator.PeerID {
+		t.Fatalf("sequencer = %q, want local station %q", first.SequencerStationPeerID, creator.PeerID)
+	}
+	if first.CreatedByActorPTID != creator.ActorPTID {
+		t.Fatalf("founder = %q, want %q", first.CreatedByActorPTID, creator.ActorPTID)
+	}
+
+	second, createdAgain, err := federationService.EnsureDefaultFederation(ctx, input())
+	if err != nil {
+		t.Fatalf("second ensure: %v", err)
+	}
+	if createdAgain {
+		t.Fatal("second ensure must not create another federation")
+	}
+	if second == nil || second.FederationID != first.FederationID {
+		t.Fatalf("idempotent ensure must return the same federation: first=%v second=%v", first, second)
+	}
+
+	if _, _, err := federationService.EnsureDefaultFederation(ctx, &application.EnsureDefaultFederationInput{
+		StationPeerID:    creator.PeerID,
+		StationName:      creator.Name,
+		StationURL:       creator.URL,
+		FounderActorPTID: " ",
+	}); err == nil {
+		t.Fatal("empty founder must be rejected")
+	}
+}
+
 func TestGenesisSeparatesActorAndStationSigningKeys(t *testing.T) {
 	ctx := context.Background()
 	federationService, ledgerService, _ := setupTestServices(t)

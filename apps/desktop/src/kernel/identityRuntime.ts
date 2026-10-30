@@ -4,6 +4,7 @@ import { useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
 import { clearLocalIdentityAction, markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
+import { sessionIdentityScope } from './sessionIdentity';
 import {
   accessDecisionMessage,
   currentGate,
@@ -462,8 +463,9 @@ class IdentityRuntime {
       reason: 'switch',
       actorPtid: restored.actor_ptid ?? null,
       loginMethod: restored.login_method ?? null,
-    });
-    useSessionStore.getState().activateAuthenticatedSession(restored);
+    }, sessionIdentityScope(useSessionStore.getState()));
+    const binding = await api.stationBindingComplete();
+    useSessionStore.getState().activateAuthenticatedSession(restored, binding.station_peer_id ?? null);
     await useAccountIdentityStore.getState().load();
     await this.acceptAuthenticatedEdgeFromCurrentSession('account_switch');
   };
@@ -483,8 +485,9 @@ class IdentityRuntime {
       reason: 'unlock',
       actorPtid: resp.actor_ptid ?? null,
       loginMethod: resp.login_method ?? null,
-    });
-    useSessionStore.getState().activateAuthenticatedSession(resp);
+    }, sessionIdentityScope(useSessionStore.getState()));
+    const binding = await api.stationBindingComplete();
+    useSessionStore.getState().activateAuthenticatedSession(resp, binding.station_peer_id ?? null);
     await useAccountIdentityStore.getState().load();
     await this.acceptAuthenticatedEdgeFromCurrentSession('pin_unlock');
   };
@@ -554,7 +557,7 @@ class IdentityRuntime {
       reason: 'revoked',
       actorPtid,
       loginMethod: null,
-    });
+    }, sessionIdentityScope(useSessionStore.getState()));
     await this.loadAuthGate('revoked', false);
   };
 

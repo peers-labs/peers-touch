@@ -36,7 +36,7 @@ src-tauri/src/
 ├── model/                  # Proto 生成的 Rust 类型（通过 prost）
 │   └── mod.rs              # include!("peers_touch.model.<domain>.v1.rs") 覆盖 20 个域
 ├── state/                  # 全局应用状态（Mutex 包裹）
-│   └── mod.rs              # AppState { SessionState, SettingsState, RealtimeState, StorageLayout }
+│   └── mod.rs              # AppState { identity_transition, event_streams, storage, i18n, meta, x_config, station, messaging_engines, secure_content, sessions, search_* }
 ```
 
 ## 分层依赖规则
@@ -86,12 +86,27 @@ domain → application                     (禁止)
 // state/mod.rs
 
 pub struct AppState {
-    pub session: Mutex<SessionState>,
-    pub settings: Mutex<SettingsState>,
-    pub realtime: Mutex<RealtimeState>,
+    /// Tauri 与 HTTP gateway 共享的身份提交串行点
+    pub identity_transition: Mutex<()>,
+    pub event_streams: EventStreamRuntime,
     pub storage: StorageLayout,
+    pub i18n: I18nService,
+    pub meta: ClientMeta,
+    pub x_config: XConfigRuntime,
+    pub station: StationRuntime,
+    pub messaging_engines: EngineRegistry,
+    pub secure_content: SecureContentSupervisor,
+    pub sessions: WindowSessionRegistry,
+    pub search_requests: Arc<SearchRequests>,
+    pub search_runtime: Arc<SearchRuntime<DesktopSearchExecutor>>,
+    pub search_cursors: Arc<AuthenticatedCursorCodec>,
 }
 ```
+
+> 个性化（语言、快捷键、列表过滤等）不属于 `AppState`：它们是 L2
+> 设备-actor 数据，保存在 Web 身份作用域的 `config.preference`，登出即硬删。
+> 历史上的 OS 用户级 `SettingsState` / `config/settings.json` 通用 KV 已删除，
+> 见 [Client Settings Ownership](../../../architecture/platform/client/settings-ownership.md)。
 
 在 Tauri Command 中通过托管状态获取：
 

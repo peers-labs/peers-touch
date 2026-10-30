@@ -67,7 +67,6 @@ let criticalInstallInFlight: {
 
 function deferredAppRuntimeIds(): string[] {
   return [
-    settingsRuntime.id,
     deviceLinkRuntime.id,
     federationRuntime.id,
     ...(getDesktopHostPolicy().nativeSocialEnabled ? [momentsRuntime.id] : []),

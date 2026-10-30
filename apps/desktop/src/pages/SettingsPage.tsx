@@ -18,6 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useProviderStore } from '../store/provider';
 import { api, type Agent, type AppletInfo, type HelpCategoryGroup, type StatisticsData } from '../services/desktop_api';
+import { useSessionStore } from '../store/session';
 import { SEARCH_FUNCTIONS } from '../components/search/functions';
 import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
@@ -872,7 +873,7 @@ export function StatisticsTab() {
   ];
 
   return (
-    <SettingsContainer fullHeight maxWidth={900}>
+    <SettingsContainer fullHeight tier="standard">
       <Flexbox gap={4}>
         <Flexbox horizontal align="center" gap={8}>
           <span style={{ fontSize: 16, fontWeight: 600 }}
@@ -1549,7 +1550,7 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
   }, [highlightId, groups]);
 
   return (
-    <SettingsContainer maxWidth={800}>
+    <SettingsContainer>
       <SettingsSection
         icon={<Sparkles size={18} />}
         title={t('settings.help.aboutTitle')}
@@ -1684,7 +1685,7 @@ function DangerZoneResetOnboarding() {
       onOk: async () => {
         setLoading(true);
         try {
-          await api.authLogout();
+          await useSessionStore.getState().logout();
           await api.resetOnboarding();
           const { clearWarmResume } = await import('../hooks/useAppLifecycle');
           clearWarmResume();

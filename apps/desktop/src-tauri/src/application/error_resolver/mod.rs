@@ -144,6 +144,22 @@ pub fn resolve_cli_error(cli_command: &str, raw_message: &str) -> ResolvedError 
     resolve_error(cli_command, raw_message)
 }
 
+/// Token-aware auth match. A bare `contains("auth")` fired on unrelated
+/// Station text such as "failed to persist runtime authority" (the word
+/// "authority" contains "auth"), which mislabeled an orchestration conflict
+/// as an expired Trae session. Match "auth" as a standalone token, as the
+/// start of "authentication", or in underscore/hyphen compounds.
+fn mentions_auth_token(lower_message: &str) -> bool {
+    lower_message
+        .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+        .any(|token| {
+            token == "auth"
+                || token == "authentication"
+                || token.starts_with("auth-")
+                || token.starts_with("auth_")
+        })
+}
+
 fn resolve_trae_cli_error(_provider: &str, msg: &str) -> Option<ResolvedError> {
     let lower = msg.to_lowercase();
     if lower.contains("access token has expired")
@@ -153,7 +169,7 @@ fn resolve_trae_cli_error(_provider: &str, msg: &str) -> Option<ResolvedError> {
         || lower.contains("please login")
         || lower.contains("please sign in")
         || lower.contains("unauthorized")
-        || (lower.contains("auth") && lower.contains("failed"))
+        || (mentions_auth_token(&lower) && lower.contains("failed"))
     {
         return Some(ResolvedError {
             message: "Your Trae session has expired. Please sign in again.".to_string(),
@@ -564,6 +580,29 @@ mod tests {
         );
         assert!(
             matches!(resolved.action, Some(ErrorAction::ReauthCli { cli_id: ref id, .. }) if id == "trae-cli")
+        );
+    }
+
+    #[test]
+    fn test_trae_runtime_authority_failure_is_not_session_expired() {
+        // Station orchestration errors ("failed to persist runtime authority")
+        // are not CLI authentication failures and must not surface a reauth
+        // prompt: "authority" must not match the "auth" token.
+        let resolved = resolve_error(
+            "trae-cli",
+            "failed to persist runtime authority",
+        );
+        assert_ne!(
+            resolved.message,
+            "Your Trae session has expired. Please sign in again."
+        );
+        assert!(matches!(resolved.action, None));
+
+        // Genuine provider auth failures still resolve to the reauth card.
+        let expired = resolve_cli_error("traecli", "auth failed: upstream returned 401");
+        assert_eq!(
+            expired.message,
+            "Your Trae session has expired. Please sign in again."
         );
     }
 

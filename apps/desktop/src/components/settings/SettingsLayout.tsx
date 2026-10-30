@@ -1,35 +1,47 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Typography, theme } from 'antd';
+import {
+  pageColumnWidth,
+  type PageWidthTier,
+} from '../../layout/pageWidth';
 
 const { Text, Title } = Typography;
 
-const MAX_WIDTH = 720;
 const CONTAINER_PADDING = 24;
 const SECTION_PADDING = 24;
 const SECTION_BORDER_RADIUS = 12;
 
 interface SettingsContainerProps {
   children: ReactNode;
-  maxWidth?: number;
+  /**
+   * Responsive width tier. Forms default to `narrow`; management consoles use
+   * `standard`/`wide`. The column is always centered with edge gutters.
+   */
+  tier?: PageWidthTier;
   style?: CSSProperties;
   fullHeight?: boolean;
 }
 
 export function SettingsContainer({
   children,
-  maxWidth = MAX_WIDTH,
+  tier = 'narrow',
   style,
   fullHeight,
 }: SettingsContainerProps) {
   return (
     <Flexbox
       gap={24}
+      data-pt-settings-column={tier}
       style={{
         padding: CONTAINER_PADDING,
-        maxWidth,
+        width: pageColumnWidth(tier),
+        maxWidth: '100%',
+        minWidth: 0,
+        marginInline: 'auto',
         height: fullHeight ? '100%' : undefined,
         overflow: fullHeight ? 'auto' : undefined,
+        boxSizing: 'border-box',
         ...style,
       }}
     >

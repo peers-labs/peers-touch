@@ -31,6 +31,9 @@ func (s *subServer) handleListFederationContexts(
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
+	// Materialize the station-local social domain on first authenticated need
+	// so existing sessions discover it without re-login or manual setup.
+	s.ensureDefaultFederation(ctx)
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
 		return nil, server.InternalError("local Station peer identity unavailable")

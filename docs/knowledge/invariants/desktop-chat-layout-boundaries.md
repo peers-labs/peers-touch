@@ -7,7 +7,6 @@ owns:
   - apps/desktop/src/pages/SocialChatPage.tsx
   - apps/desktop/src/pages/ChatPage.tsx
   - apps/desktop/src/components/MessageBubble.tsx
-  - apps/desktop/src/components/MessageComposer.tsx
   - apps/desktop/src/components/ChatInput.tsx
 referenced-by:
   - docs/knowledge/invariants/chat-message-boundaries.md
@@ -33,8 +32,8 @@ The invariant also protects accessibility. If actions only appear on hover and h
 
 ## How to verify
 
-- `rg "ContextMenu|Dropdown|Popover|hover|onMouseEnter|onContextMenu|right-click|rightClick" apps/desktop/src/components/chat apps/desktop/src/pages/SocialChatPage.tsx apps/desktop/src/pages/ChatPage.tsx apps/desktop/src/components/MessageBubble.tsx apps/desktop/src/components/MessageComposer.tsx apps/desktop/src/components/ChatInput.tsx` — review every action surface for pane-aware collision handling and keyboard access.
-- `rg "window\\.innerWidth|innerWidth|clientWidth|getBoundingClientRect|ResizeObserver" apps/desktop/src/components/chat apps/desktop/src/pages/SocialChatPage.tsx apps/desktop/src/pages/ChatPage.tsx apps/desktop/src/components/MessageBubble.tsx apps/desktop/src/components/MessageComposer.tsx apps/desktop/src/components/ChatInput.tsx` — confirm measurements use the owning pane where needed.
+- `rg "ContextMenu|Dropdown|Popover|hover|onMouseEnter|onContextMenu|right-click|rightClick" apps/desktop/src/components/chat apps/desktop/src/pages/SocialChatPage.tsx apps/desktop/src/pages/ChatPage.tsx apps/desktop/src/components/MessageBubble.tsx apps/desktop/src/components/ChatInput.tsx` — review every action surface for pane-aware collision handling and keyboard access.
+- `rg "window\\.innerWidth|innerWidth|clientWidth|getBoundingClientRect|ResizeObserver" apps/desktop/src/components/chat apps/desktop/src/pages/SocialChatPage.tsx apps/desktop/src/pages/ChatPage.tsx apps/desktop/src/components/MessageBubble.tsx apps/desktop/src/components/ChatInput.tsx` — confirm measurements use the owning pane where needed.
 - Manual acceptance: verify hover actions, right-click menu, selected text, image messages, failed sends, detail panel open, narrow window, and virtualized history loading.
 
 ## Crosswalks

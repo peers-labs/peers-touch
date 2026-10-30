@@ -139,6 +139,21 @@ func TestMCPOwnerChangeRetiresPinnedManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create Station MCP server: %v", err)
 	}
+	// A Station-enabled create binds a manifest only after the live stdio
+	// probe reaches READY; a failed probe intentionally persists FAILED with
+	// zero manifests (see TestMCPUnreadyServerRegistersNothing). Assert the
+	// precondition so a probe failure reports status and error instead of
+	// panicking while indexing the empty manifest slice.
+	if created.GetServer().GetStatus() !=
+		model.McpServerStatus_MCP_SERVER_STATUS_READY ||
+		len(created.GetManifests()) == 0 {
+		t.Fatalf(
+			"create Station MCP server did not pin a READY manifest: status=%s lastError=%q manifests=%d",
+			created.GetServer().GetStatus(),
+			created.GetServer().GetLastError(),
+			len(created.GetManifests()),
+		)
+	}
 	oldManifest := created.GetManifests()[0]
 	changed, err := service.Upsert(
 		context.Background(),
@@ -165,11 +180,22 @@ func TestMCPOwnerChangeRetiresPinnedManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("change MCP owner: %v", err)
 	}
-	if changed.GetManifests()[0].GetExecutionOwner() !=
+	if changed.GetServer().GetStatus() !=
+		model.McpServerStatus_MCP_SERVER_STATUS_READY ||
+		len(changed.GetManifests()) == 0 {
+		t.Fatalf(
+			"owner change did not re-pin a READY manifest: status=%s lastError=%q manifests=%d",
+			changed.GetServer().GetStatus(),
+			changed.GetServer().GetLastError(),
+			len(changed.GetManifests()),
+		)
+	}
+	newManifest := changed.GetManifests()[0]
+	if newManifest.GetExecutionOwner() !=
 		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY {
 		t.Fatal("new MCP manifest did not pin CLIENT_CAPABILITY owner")
 	}
-	if changed.GetManifests()[0].GetSourceInstanceId() ==
+	if newManifest.GetSourceInstanceId() ==
 		oldManifest.GetSourceInstanceId() {
 		t.Fatal("MCP owner change reused the old provider tool identity")
 	}

@@ -9,18 +9,11 @@ use crate::messaging::EngineRegistry;
 use crate::secure_content::SecureContentSupervisor;
 use std::sync::Mutex;
 
-#[derive(Default)]
-pub struct SettingsState {
-    pub locale: Option<String>,
-    pub theme: Option<String>,
-}
-
 pub struct AppState {
     /// Serializes process-wide identity commits across Tauri and HTTP gateway
     /// entry points so account, window session, and messaging profile cannot
     /// expose different actors.
     pub identity_transition: Mutex<()>,
-    pub settings: Mutex<SettingsState>,
     pub event_streams: EventStreamRuntime,
     pub storage: StorageLayout,
     pub i18n: I18nService,
@@ -60,7 +53,6 @@ impl AppState {
         let search_identity = search_runtime.clone();
         Self {
             identity_transition: Mutex::new(()),
-            settings: Mutex::new(SettingsState::default()),
             event_streams: EventStreamRuntime::new(),
             storage: layout,
             i18n,

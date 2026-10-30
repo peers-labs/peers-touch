@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/internal/identity"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
@@ -50,6 +51,65 @@ type CreateFederationInput struct {
 	StationPeerID        string
 	StationName          string
 	StationURL           string
+}
+
+// DefaultFederationName is the station-local social domain materialized
+// automatically so a single Station is usable for local social actions
+// (friend requests, local catalog) without manual federation setup.
+const DefaultFederationName = "Peers"
+
+const defaultFederationDescription = "Default single-Station federation"
+
+const defaultFederationPolicyType = "single_admin"
+
+type EnsureDefaultFederationInput struct {
+	StationPeerID string
+	StationName   string
+	StationURL    string
+	// FounderActorPTID becomes the federation owner when the default has to
+	// be created. Resolve it from the Station initial-owner assignment.
+	FounderActorPTID string
+}
+
+// EnsureDefaultFederation returns the Station's active local social federation,
+// materializing one on first use. It is idempotent: an existing active
+// federation for the Station is returned unchanged and no second federation is
+// created. Callers serialize concurrent first-use attempts.
+func (s *FederationService) EnsureDefaultFederation(
+	ctx context.Context,
+	input *EnsureDefaultFederationInput,
+) (*domain.FederationRecord, bool, error) {
+	if input == nil || strings.TrimSpace(input.StationPeerID) == "" {
+		return nil, false, fmt.Errorf("station peer id is required")
+	}
+	if strings.TrimSpace(input.FounderActorPTID) == "" {
+		return nil, false, fmt.Errorf("founder actor ptid is required")
+	}
+
+	existing, err := s.federationRepo.ListByStation(ctx, input.StationPeerID)
+	if err != nil {
+		return nil, false, fmt.Errorf("list station federations: %w", err)
+	}
+	for _, federation := range existing {
+		if federation != nil && federation.Status == "active" {
+			return federation, false, nil
+		}
+	}
+
+	created, err := s.CreateFederation(ctx, &CreateFederationInput{
+		Name:                 DefaultFederationName,
+		Description:          defaultFederationDescription,
+		PolicyType:           defaultFederationPolicyType,
+		ActorPTID:            input.FounderActorPTID,
+		ActorFederatedHandle: input.FounderActorPTID,
+		StationPeerID:        input.StationPeerID,
+		StationName:          input.StationName,
+		StationURL:           input.StationURL,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return created, true, nil
 }
 
 func (s *FederationService) CreateFederation(ctx context.Context, input *CreateFederationInput) (*domain.FederationRecord, error) {

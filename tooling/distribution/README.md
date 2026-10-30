@@ -51,3 +51,18 @@ Desktop 一期输出 universal macOS dmg、Windows x64 NSIS、Linux x64 AppImage
 稳定清单入口为 GitHub `/releases/latest/download/latest.json`，包地址固定 tag。候选或公开但验收未通过的版本不会晋级 latest。
 
 维护者参见 [架构设计](../../docs/architecture/engineering/release-distribution/design.md) 与 [执行计划](../../docs/architecture/engineering/release-distribution/execution-plans/20261021-release-distribution-review/plan.md)。Station Suite 已实现真实 A/B 资产、产品数据、兼容回滚和新卷恢复；尚无 Docker/Release 运行报告。Desktop native updater 的跨平台 install/apply/restart 仍未实现，candidate/public workflow 会以 `RD_NATIVE_UPDATER_RUNTIME_UNPROVEN` 明确失败，因此当前不可发版。
+
+## 试用闭环（非正式发布）
+
+规范操作流程见技能 `pt-desktop-trial-packaging`。`publish-trial.sh` 把一次本地 `make package PRODUCT=desktop ... TARGET=dmg` 的产物发布到目标部署机的 profile 专属目录，并以最小只读 HTTP 服务（systemd 单元 `pt-distribution-<profile>.service`，独立端口）对外提供下载。它不触碰 Station 容器与数据卷，不产出 updater 资产，也不晋级任何 Release。
+
+```sh
+make package PRODUCT=desktop FLAVOR=geek CHANNEL=corpstable TARGET=dmg
+sh tooling/distribution/publish-trial.sh \
+  --profile=corpstable --host=shuxian@10.37.195.98 --port=18380 \
+  --dmg=Peers-0.1.0-mac-aarch64.dmg --version=0.1.0 --commit=<sha>
+```
+
+远端布局为 `~/.peers-touch/distribution/<profile>/releases/<id>/` 加原子切换的 `current` 软链；安装脚本由 `desktop-install.template.sh` 渲染（SHA-256 校验、拷入 /Applications、清除下载隔离属性）。
+
+试用路径的已知边界：安装包无代码签名；tauri-cli 2.0.1 不会把 `--config` 覆盖的顶层 `identifier` 落到 Info.plist（OS 身份仍取已提交 tauri.conf.json 的值），发布前必须核对构建身份；当 channel 快照不含 `network.default_station` 指令时，使用者需要在首次运行的 StationPicker 手动填入 Station 地址。

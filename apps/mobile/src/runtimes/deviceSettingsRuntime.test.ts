@@ -188,4 +188,37 @@ describe('deviceSettingsRuntime', () => {
       preferences: null,
     });
   });
+
+  it('clears the cached snapshot and fences delayed reads on teardown', async () => {
+    let resolve!: (value: unknown) => void;
+    const read = vi.fn()
+      .mockImplementationOnce(() => new Promise((done) => { resolve = done; }))
+      .mockResolvedValueOnce(null);
+    const apply = vi.fn();
+    const runtime = createDeviceSettingsRuntime({ read, write: vi.fn() }, apply);
+    const old = runtime.bootstrap();
+    await Promise.resolve();
+    runtime.reset();
+    await runtime.bootstrap();
+    resolve(storedPreferences);
+    await old;
+    expect(runtime.getSnapshot()).toMatchObject({ status: 'ready', preferences: defaultDevicePreferences() });
+    expect(apply).not.toHaveBeenCalledWith(storedPreferences);
+  });
+
+  it('discards queued writes and retry state across identity teardown', async () => {
+    let finish!: () => void;
+    const write = vi.fn().mockImplementationOnce(() => new Promise<void>((done) => { finish = done; }));
+    const runtime = createDeviceSettingsRuntime({ read: vi.fn(async () => storedPreferences), write });
+    await runtime.bootstrap();
+    const first = runtime.replace(storedPreferences);
+    await Promise.resolve();
+    const queued = runtime.replace({ ...storedPreferences, theme: 'light' });
+    const settled = Promise.allSettled([first, queued]);
+    runtime.reset();
+    finish();
+    expect((await settled).map((result) => result.status)).toEqual(['rejected', 'rejected']);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(runtime.getSnapshot()).toMatchObject({ status: 'loading', writeFailure: null });
+  });
 });

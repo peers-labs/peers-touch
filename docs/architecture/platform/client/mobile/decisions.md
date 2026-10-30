@@ -1123,6 +1123,13 @@ Settings composes owners without a generic settings store:
 - `deviceSettingsRuntime` owns theme, font size, compact density, device-local
   language, cache controls, permission state, and app metadata.
 
+> **Superseded in part (2026-10-28):** theme, font size, compact density,
+> media auto-download, and language are identity-scoped personalization
+> (layer L2), not device-global. Cache controls, permission state, and app
+> metadata remain device layer (L3). See the cross-client contract
+> `docs/architecture/platform/client/settings-ownership.md`; the Station-owned
+> owner split in this decision remains in force.
+
 Every Station-owned save uses authoritative readback and explicit conflict
 state. An unavailable owner disables its section without retained defaults.
 Local device settings never claim cross-device synchronization.

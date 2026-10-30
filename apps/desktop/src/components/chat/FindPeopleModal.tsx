@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input } from '@lobehub/ui';
@@ -90,10 +90,21 @@ export function FindPeopleModal({ open, onClose }: Props) {
     friendRequestsError: s.friendRequestsError,
   }));
   const currentUserPtid = useActiveSocialChatStore((s) => s.currentUserPtid);
-  const { federations, rememberCatalogEntries } = useActiveChatFederationSlice((s) => ({
-    federations: s.federations,
-    rememberCatalogEntries: s.rememberCatalogEntries,
-  }));
+  const { federations, rememberCatalogEntries, refreshFederationContexts } =
+    useActiveChatFederationSlice((s) => ({
+      federations: s.federations,
+      rememberCatalogEntries: s.rememberCatalogEntries,
+      refreshFederationContexts: s.refreshFederationContexts,
+    }));
+
+  // Federation contexts are session-scoped and fetched at bootstrap. The
+  // Station can materialize its default social federation after this session
+  // started, so reconcile on open instead of forcing a re-login to see it.
+  useEffect(() => {
+    if (!open) return;
+    void refreshFederationContexts();
+  }, [open, refreshFederationContexts]);
+
   const federationOptions = useMemo(
     () => federations.map((f) => ({ federationId: f.federationId, federationName: f.name })),
     [federations],

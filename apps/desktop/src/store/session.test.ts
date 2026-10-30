@@ -224,4 +224,68 @@ describe('session authentication convergence', () => {
     expect(useSessionStore.getState().authenticated).toBe(false);
     expect(useSessionStore.getState().currentUser).toBeNull();
   });
+
+  it('delegates the outgoing scope to the identity pipeline and keeps L3 state', async () => {
+    class MemoryStorage {
+      private entries = new Map<string, string>();
+
+      get length(): number {
+        return this.entries.size;
+      }
+
+      key(index: number): string | null {
+        return Array.from(this.entries.keys())[index] ?? null;
+      }
+
+      getItem(key: string): string | null {
+        return this.entries.has(key) ? this.entries.get(key)! : null;
+      }
+
+      setItem(key: string, value: string): void {
+        this.entries.set(key, value);
+      }
+
+      removeItem(key: string): void {
+        this.entries.delete(key);
+      }
+    }
+
+    vi.stubGlobal('window', { localStorage: new MemoryStorage() });
+    try {
+      mocks.authLogout.mockReset();
+      mocks.authLogout.mockResolvedValue(undefined);
+      const { createDesktopClientStorageRuntime } = await import(
+        '../storage/desktopClientStorage'
+      );
+      const actorPtid = 'ptid:person:alice';
+      useSessionStore.setState({ stationPeerId: 'station-peer' });
+      const epoch = useSessionStore.getState().sessionEpoch;
+      const actorRuntime = createDesktopClientStorageRuntime({ ptid: actorPtid, stationPeerId: 'station-peer' });
+      await actorRuntime.repositories.chatPreferences.write(
+        'peers-touch-lang',
+        'zh-CN',
+      );
+      await actorRuntime.repositories.chatPreferences.write(
+        'settings.providers.showUsableOnly',
+        false,
+      );
+      const appRuntime = createDesktopClientStorageRuntime({});
+      await appRuntime.repositories.stationRegistry.write(
+        'active-station',
+        { station_peer_id: 'station-peer' },
+      );
+
+      await useSessionStore.getState().logout();
+
+      expect(mocks.runIdentityPipeline).toHaveBeenCalledWith(
+        { reason: 'logout', actorPtid: null, loginMethod: null },
+        { actorPtid, stationPeerId: 'station-peer', sessionEpoch: epoch },
+      );
+      await expect(
+        appRuntime.repositories.stationRegistry.readValue('active-station'),
+      ).resolves.toEqual({ station_peer_id: 'station-peer' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
