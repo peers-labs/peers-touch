@@ -32,7 +32,7 @@
         { "id": "no-composer", "type": "missing", "target": ".sk-composer" },
         { "id": "no-topo", "type": "missing", "target": ".sk-topo" },
         { "id": "no-moments", "type": "missing", "target": ".sk-moment" },
-        { "id": "rail-buttons", "type": "count", "target": ".sk-rail .sk-rail-icon", "gte": 6 },
+        { "id": "rail-buttons", "type": "count", "target": ".sk-rail .sk-rail-icon", "equals": 5 },
         { "id": "rail-width", "type": "computedStyle", "target": ".sk-rail", "prop": "width", "equals": "60px" },
         { "id": "contract-present", "type": "exists", "target": ".sk-contract" },
         { "id": "five-state-rows", "type": "count", "target": ".sf-state-list > li", "equals": 5 },
@@ -277,6 +277,61 @@
       "oracles": [
         { "id": "dialog-closed", "type": "missing", "scope": "global", "target": ".pt-dialog[role='dialog']" },
         { "id": "still-eight", "type": "count", "target": ".sk-conv-row", "equals": 8 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-feed",
+      "title": "增量4：动态轨由 peers-ui Card/Avatar/Tag/Toggle 组合，3 条动态、头像方圆、圈子标签、赞为真实控件",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" }
+      ],
+      "oracles": [
+        { "id": "moments-tab-current", "type": "attr", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)", "attr": "aria-current", "equals": "page" },
+        { "id": "feed-title", "type": "textContains", "target": ".sk-feed-head h1", "contains": "朋友圈动态" },
+        { "id": "three-cards", "type": "count", "target": ".sk-moment-card", "equals": 3 },
+        { "id": "three-avatars", "type": "count", "target": ".sk-moments .pt-avatar", "equals": 3 },
+        { "id": "avatars-rounded-square", "type": "roundedSquareAll", "target": ".sk-moments .pt-avatar" },
+        { "id": "circle-tags", "type": "count", "target": ".sk-moment-circle.pt-tag", "equals": 3 },
+        { "id": "three-bodies", "type": "count", "target": ".sk-moment-text", "equals": 3 },
+        { "id": "like-toggles-unpressed", "type": "count", "target": ".sk-moment-actions .pt-button[aria-pressed='false']", "equals": 3 },
+        { "id": "like-count-initial", "type": "textContains", "target": ".sk-moment-card:first-of-type .pt-button", "contains": "24 赞" },
+        { "id": "replies-meta-not-control", "type": "count", "target": ".sk-moment-replies", "equals": 3 },
+        { "id": "no-conversation-rail", "type": "count", "scope": "global", "target": ".sk-conv-rail", "equals": 0 },
+        { "id": "craft-clean", "type": "craftBattery" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-like-on",
+      "title": "点赞：Toggle 翻转 aria-pressed 与琥珀选中态，计数 24→25，其余两条保持未赞",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button" }
+      ],
+      "oracles": [
+        { "id": "pressed", "type": "attr", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button", "attr": "aria-pressed", "equals": "true" },
+        { "id": "count-25", "type": "textContains", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button", "contains": "25 赞" },
+        { "id": "amber-class", "type": "exists", "target": ".sk-moment-card:first-of-type .pt-button.is-liked" },
+        { "id": "others-unpressed", "type": "count", "target": ".sk-moment-actions .pt-button[aria-pressed='false']", "equals": 2 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-like-off",
+      "title": "取消赞：再点一次翻转回来，计数恢复 24，无选中态",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)" },
+        { "op": "click", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button" },
+        { "op": "click", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button" }
+      ],
+      "oracles": [
+        { "id": "unpressed", "type": "attr", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button", "attr": "aria-pressed", "equals": "false" },
+        { "id": "count-24", "type": "textContains", "target": ".sk-moment-card:first-of-type .sk-moment-actions .pt-button", "contains": "24 赞" },
+        { "id": "amber-class-gone", "type": "missing", "target": ".sk-moment-card:first-of-type .pt-button.is-liked" }
       ],
       "finalizers": []
     }

@@ -347,6 +347,43 @@
 .sk-picker-row:hover { background: var(--sk-tile); }
 .pt-dialog { border-radius: var(--sk-r-card); }
 
+/* Increment 4: MomentsFeed.
+   peers-ui Card keeps its own hairline/radius/shadow tokens; restate them with
+   frame material tokens so the feed matches the floating-card grammar instead
+   of the library's default admin seam. */
+.sk-moments {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 20px 22px; display: flex; flex-direction: column; gap: 16px;
+}
+.sk-moment-card {
+  padding: 0;
+  border: 1px solid var(--sk-card-border);
+  border-radius: var(--sk-r-card);
+  box-shadow: var(--sk-card-shadow);
+  backdrop-filter: blur(var(--sk-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+}
+.sk-moment-card .pt-card-header { padding: 16px 18px 0; border: 0; }
+.sk-moment-card .pt-card-body { padding: 12px 18px 4px; }
+.sk-moment-card footer { padding: 4px 12px 10px; }
+.sk-moment-head { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; }
+.sk-moment-id { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sk-moment-id strong { font-size: 13.5px; color: var(--sk-text); }
+.sk-moment-id span { font-size: 11px; color: var(--sk-text-3); }
+.sk-moment-circle {
+  margin-left: auto; flex-shrink: 0;
+  color: var(--sk-text-2); border-color: var(--sk-card-border);
+}
+.sk-moment-text { margin: 0; font-size: 14px; line-height: 1.75; color: var(--sk-text); }
+.sk-moment-actions { display: flex; align-items: center; gap: 12px; }
+/* Liked is the single amber accent: quiet ghost keeps no box, the selected
+   wash tints amber instead of the library primary. */
+.sk-moment-actions .pt-button.is-liked {
+  color: var(--sk-accent);
+  background: color-mix(in srgb, var(--sk-accent) 12%, transparent);
+}
+.sk-moment-replies { font-size: 11.5px; color: var(--sk-text-3); }
+
 @media (max-width: 1040px) {
   .sk-conv-rail { display: none; }
 }

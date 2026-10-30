@@ -61,7 +61,10 @@
 - [x] 3 发起会话/联系人选择（peers-ui Dialog + SearchField + Avatar + Empty；
       新联系人创建/已有打开、过滤空态、portal 弹层同皮肤令牌；合同
       components/contact-picker.md；门禁 18/18）
-- [ ] 4 动态流 MomentsFeed（Card/Avatar/Badge/IconButton/Tag/Empty/InfiniteList）
+- [x] 4 动态流 MomentsFeed（本轮纵切：peers-ui Card flat/Avatar/Tag/Toggle 文本流 +
+      真实本地点赞；图片/定位、回复详情、发布器、圈子与受众、多反应、分页、真实数据源
+      延后增量 5；卡片以窗框材质令牌重述边框/圆角/阴影，赞选中态走琥珀强调；合同
+      components/moments-feed.md；门禁 21/21，1360/390 双宽度）
 - [ ] 5 动态详情 / 发动态 / 圈友管理（+ TextArea/Dialog/AvatarGroup）
 - [ ] 6 设置框架 SettingsFrame（SectionNav/Accordion/Card/PageHeader）
 - [ ] 7 通用设置行 SettingsRow（Switch/Select/TextField/Button/InlineAlert）
