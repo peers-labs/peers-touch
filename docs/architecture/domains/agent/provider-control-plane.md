@@ -48,6 +48,13 @@ the existing Station secret envelope and KEK provider. Agent owns persistence
 of its encrypted envelopes. Neither administrator read projections nor actor
 APIs return decrypted shared credentials. Missing or unusable KEK fails closed.
 
+Container deployments explicitly pass `PT_SECRET_KEK` or `PT_SECRET_KEK_FILE`
+through the Station Compose service. The deployment secret store owns stable
+key material outside source control; a configured file must be available in a
+persistent or secret mount. Preserve the same key across recreation and database
+restoration. Startup migrates legacy Provider credentials to encrypted envelopes
+and refuses to start if that migration requires an unavailable key.
+
 ## CLI ownership
 
 One Station installation owns the managed Node runtime, tool packages and

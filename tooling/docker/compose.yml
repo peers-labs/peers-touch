@@ -66,6 +66,10 @@ services:
     logging: *json-logging
     environment:
       PEERS_NODE_ROLE: station
+      # Stable envelope key supplied by the deployment secret store.
+      # File paths must point inside an existing persistent or secret mount.
+      PT_SECRET_KEK: ${PT_SECRET_KEK:-}
+      PT_SECRET_KEK_FILE: ${PT_SECRET_KEK_FILE:-}
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
       PEERS_OAUTH_BRIDGE_SECRET: ${PEERS_OAUTH_BRIDGE_SECRET:-}
       # Canonical Station-owned durable files, including Messaging attachment
