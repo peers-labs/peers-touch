@@ -75,10 +75,24 @@
   --sk-rail-bg: #efe8da;
   --sk-r-card: 18px;
   --sk-radius-soft: 16px;
+  --sk-radius-control: 10px;
+  --sk-avatar-radius: 11px;
   --sk-font: "Inter", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   --sk-display-font: "SF Pro Display", "Inter", -apple-system, "PingFang SC", sans-serif;
   --sk-glass-blur: 0px;
   --sk-glass-border: rgba(42, 37, 29, .12);
+  /* Component roles — every button/control consumes these; a skin only
+     reassigns values, never rewrites component rules. */
+  --sk-btn-primary-bg: var(--sk-primary);
+  --sk-btn-primary-ink: var(--sk-primary-ink);
+  --sk-btn-primary-shadow: 0 8px 20px -12px rgba(58,46,28,.5);
+  --sk-btn-quiet-bg: transparent;
+  --sk-btn-quiet-ink: var(--sk-text-2);
+  --sk-btn-quiet-bg-hover: color-mix(in srgb, var(--sk-text) 7%, transparent);
+  --sk-btn-accent-bg: var(--sk-accent);
+  --sk-btn-accent-ink: var(--sk-on-accent);
+  --sk-focus-ring: color-mix(in srgb, var(--sk-primary) 34%, transparent);
+  --sk-raised: var(--sk-card-bg);
   /* Flat hierarchy: recessed canvas floor + raised card tone; hairline seals
      the edge and a whisper shadow only lifts. */
   --sk-shell-bg: var(--sk-canvas);
@@ -119,6 +133,8 @@
   --sk-primary: #6b5bd6; --sk-primary-ink: #ffffff;
   --sk-accent: #f4a63b; --sk-on-accent: #4a3200;
   --sk-rail-bg: #f2f4f7; --sk-r-card: 16px; --sk-radius-soft: 12px;
+  --sk-radius-control: 9px; --sk-avatar-radius: 10px;
+  --sk-btn-primary-shadow: 0 8px 20px -12px rgba(16,24,40,.5);
   --sk-font: "Inter", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   --sk-display-font: "Inter", -apple-system, "PingFang SC", sans-serif;
   --sk-glass-blur: 0px; --sk-glass-border: rgba(20,26,33,.10);
@@ -137,6 +153,8 @@
   --sk-primary: #0d100d; --sk-primary-ink: #f3f8f4;
   --sk-accent: #e8a117; --sk-on-accent: #3a2a02;
   --sk-rail-bg: rgba(255,255,255,.45); --sk-r-card: 20px; --sk-radius-soft: 22px;
+  --sk-radius-control: 12px; --sk-avatar-radius: 11px;
+  --sk-btn-primary-shadow: 0 10px 24px -14px rgba(10,30,24,.7);
   --sk-font: Manrope, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
   --sk-display-font: Manrope, -apple-system, "PingFang SC", sans-serif;
   --sk-glass-blur: 22px; --sk-glass-border: rgba(255,255,255,.7);
@@ -164,20 +182,23 @@
   -webkit-backdrop-filter: blur(var(--sk-glass-blur));
 }
 .sk-rail-avatar {
-  width: 34px; height: 34px; border-radius: 10px; margin-bottom: 18px;
+  width: 34px; height: 34px; border-radius: var(--sk-avatar-radius, 11px); margin-bottom: 18px;
   display: grid; place-items: center; font-size: 14px; font-weight: 700;
-  color: var(--sk-primary-ink); background: var(--sk-primary);
+  color: var(--sk-btn-primary-ink); background: var(--sk-btn-primary-bg);
   box-shadow: 0 8px 20px -12px rgba(16,52,44,.5);
 }
 .sk-rail-group { display: flex; flex-direction: column; gap: 4px; }
 .sk-rail-spacer { flex: 1; }
 .sk-rail-icon {
-  width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
-  color: var(--sk-text-3);
+  width: 38px; height: 38px; padding: 0; border: 0; border-radius: var(--sk-radius-control);
+  display: grid; place-items: center; cursor: pointer;
+  color: var(--sk-btn-quiet-ink); background: var(--sk-btn-quiet-bg); font-family: inherit;
+  transition: background .15s, color .15s;
 }
+.sk-rail-icon:hover { color: var(--sk-text); background: var(--sk-btn-quiet-bg-hover); }
 .sk-rail-icon.is-active {
-  color: var(--sk-primary-ink); background: var(--sk-primary);
-  box-shadow: 0 8px 20px -12px rgba(16,52,44,.5);
+  color: var(--sk-btn-primary-ink); background: var(--sk-btn-primary-bg);
+  box-shadow: var(--sk-btn-primary-shadow);
 }
 
 /* feed */
@@ -370,6 +391,43 @@
 }
 .sk-feed-divider span { font-size: 9.5px; font-weight: 600; letter-spacing: .08em; color: var(--sk-text-3); }
 
+/* connection assistant (dark card) */
+.sk-assistant {
+  padding: 15px 18px;
+  background: linear-gradient(160deg, #17221b, #0c1410);
+  color: #dce7e0;
+}
+.sk-assistant-head { display: flex; align-items: center; gap: 9px; }
+.sk-assistant-head strong { font-size: 13.5px; font-weight: 600; color: #f2f8f4; }
+.sk-assistant-bot {
+  width: 28px; height: 28px; border-radius: 9px; flex-shrink: 0;
+  display: grid; place-items: center; background: #f2f8f4; color: var(--sk-primary);
+}
+.sk-online {
+  margin-left: auto; width: 7px; height: 7px; border-radius: 50%;
+  background: #3cc57f; box-shadow: 0 0 0 3px rgba(60,197,127,.18);
+}
+.sk-assistant-log { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.sk-bubble {
+  margin: 0; max-width: 86%; padding: 9px 12px; border-radius: 14px;
+  font-size: 12.5px; line-height: 1.55;
+}
+.sk-bubble-bot { background: #f3f8f5; color: #27332c; border-bottom-left-radius: 5px; align-self: flex-start; }
+.sk-bubble-me { background: #e7f0ea; color: #1d2a23; border-bottom-right-radius: 5px; align-self: flex-end; }
+.sk-assistant-log { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.sk-assistant-input {
+  display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 6px 0 14px;
+  border-radius: 13px; background: #f3f8f5; color: var(--sk-text-3);
+}
+.sk-assistant-input input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  font-family: inherit; font-size: 12.5px; color: #1d2a23;
+}
+.sk-assistant-input button {
+  width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+  display: grid; place-items: center; background: var(--sk-primary); color: #eef7f0;
+}
+
 .sk-moment {
   display: flex; gap: 12px; padding: 16px;
   border: 1px solid var(--sk-card-border); border-radius: var(--sk-r-card);
@@ -379,7 +437,7 @@
   -webkit-backdrop-filter: blur(var(--sk-glass-blur));
 }
 .sk-moment-avatar {
-  width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+  width: 42px; height: 42px; border-radius: var(--sk-avatar-radius, 12px); flex-shrink: 0;
   display: grid; place-items: center; color: #fff; font-size: 15px; font-weight: 600;
 }
 .sk-moment-body { flex: 1; min-width: 0; }
@@ -390,8 +448,26 @@
   margin: 0 0 10px; font-size: 14px; line-height: 1.7; color: var(--sk-text);
   font-family: var(--sk-display-font);
 }
-.sk-moment-actions { display: flex; gap: 18px; color: var(--sk-text-3); }
-.sk-moment-actions span { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+.sk-reply-box { display: flex; gap: 8px; margin: 0 0 10px; }
+.sk-reply-box input {
+  flex: 1; min-width: 0; height: 34px; padding: 0 12px;
+  border: 0; border-radius: 10px; outline: 0; background: var(--sk-tile);
+  font-family: inherit; font-size: 12.5px; color: var(--sk-text);
+}
+.sk-reply-box input:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-primary) 28%, transparent); }
+.sk-reply-box button {
+  height: 34px; padding: 0 14px; border: 0; border-radius: 10px; cursor: pointer;
+  background: var(--sk-primary); color: var(--sk-primary-ink);
+  font-family: inherit; font-size: 12.5px; font-weight: 600;
+}
+.sk-moment-actions { display: flex; gap: 10px; color: var(--sk-text-3); }
+.sk-moment-action {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; margin: -4px 0 -4px -8px;
+  border: 0; border-radius: 8px; cursor: pointer; background: transparent;
+  color: var(--sk-text-3); font-family: inherit; font-size: 12px;
+}
+.sk-moment-action:hover { background: color-mix(in srgb, var(--sk-text-3) 10%, transparent); color: var(--sk-text-2); }
+.sk-moment-action.is-on { color: var(--sk-accent); }
 
 /* conversation rail */
 .sk-chats {
@@ -406,11 +482,12 @@
   border-radius: 12px; background: var(--sk-tile); color: var(--sk-text-3);
 }
 .sk-chat-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-family: inherit; font-size: 12.5px; color: var(--sk-text); }
-/* Keyboard focus belongs to the rounded HOST: the embedded native control must
-   not paint the global square :focus-visible outline through the glass frame.
-   The ring follows the host's 12px radius via :focus-within. */
-.sk-shell .sk-chat-search input:focus-visible { outline: none; }
-.sk-chat-search:focus-within {
+/* Keyboard focus belongs to the rounded HOST: embedded native controls must
+   not paint the global square :focus-visible outline through glass frames. */
+.sk-shell .sk-chat-search input:focus-visible,
+.sk-shell .sk-assistant-input input:focus-visible { outline: none; }
+.sk-chat-search:focus-within,
+.sk-assistant-input:focus-within {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-primary) 38%, transparent);
 }
 .sk-shell .sk-slider input[type=range]:focus-visible {
@@ -420,16 +497,23 @@
 .sk-tenants { padding: 12px 2px 14px; border-bottom: 1px solid var(--sk-glass-border); }
 .sk-tenants h3 { margin: 0 0 3px; font-size: 14px; font-weight: 600; }
 .sk-tenants .sk-eyebrow { display: block; }
-.sk-stack { display: flex; margin: 10px 0 12px; }
+.sk-stack { display: flex; flex-wrap: wrap; row-gap: 6px; margin: 10px 0 12px; }
+/* Identity is rounded-square by contract (roundedSquareAll battery): avatars,
+   stack chips and the rail mark share one radius token, never circles. */
 .sk-stack-item, .sk-stack-more {
-  width: 34px; height: 34px; border-radius: 50%; border: 2.5px solid var(--sk-card-bg); margin-left: -9px;
-  display: grid; place-items: center; color: #f3f8f4; font-size: 12px; font-weight: 600;
-  box-shadow: 0 8px 20px -12px rgba(16,52,44,.4);
+  width: 36px; height: 36px; padding: 0; border-radius: var(--sk-avatar-radius, 11px);
+  border: 2px solid var(--sk-card-bg); margin-left: -8px;
+  display: grid; place-items: center; color: #f3f8f4; font-size: 12px; font-weight: 600; font-family: inherit;
+  cursor: pointer; box-shadow: 0 6px 16px -10px rgba(16,52,44,.45);
 }
 .sk-stack-item:first-child { margin-left: 0; }
-.sk-stack-more { background: var(--sk-tile); color: var(--sk-text-2); border-color: var(--sk-card-bg); }
+.sk-stack-item:hover { transform: translateY(-2px); }
+.sk-stack-item.is-selected { box-shadow: 0 0 0 2px var(--sk-accent); }
+.sk-stack-more {
+  background: var(--sk-tile); color: var(--sk-text-2); border-color: var(--sk-card-bg);
+}
 .sk-request {
-  width: 100%; height: 42px; border: 0; border-radius: 12px; cursor: pointer;
+  width: 100%; height: 42px; border: 0; border-radius: var(--sk-radius-control, 12px); cursor: pointer;
   background: var(--sk-primary); color: var(--sk-primary-ink);
   font-family: inherit; font-size: 13px; font-weight: 600;
   display: flex; align-items: center; justify-content: center; gap: 8px;
@@ -437,10 +521,16 @@
 }
 .sk-chats-title { margin: 13px 4px 8px !important; font-size: 13px; color: var(--sk-text-2); }
 .sk-chat-list { display: flex; flex-direction: column; gap: 2px; }
-.sk-chat { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 10px; }
+.sk-chat {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 8px;
+  border: 0; border-radius: var(--sk-radius-control, 12px); cursor: pointer; background: transparent;
+  font-family: inherit; text-align: left;
+}
 .sk-chat:hover { background: color-mix(in srgb, var(--sk-surface) 60%, transparent); }
+.sk-chat.is-selected { background: color-mix(in srgb, var(--sk-surface) 85%, transparent); box-shadow: inset 2.5px 0 0 var(--sk-accent); }
+.sk-chat-empty { margin: 6px 4px; font-size: 12px; color: var(--sk-text-3); }
 .sk-chat-avatar {
-  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+  width: 38px; height: 38px; border-radius: var(--sk-avatar-radius, 11px); flex-shrink: 0;
   display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 600;
 }
 .sk-chat-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

@@ -32,10 +32,13 @@
         { "id": "type-cards", "type": "count", "target": ".sk-type", "equals": 3 },
         { "id": "setting-tiles", "type": "count", "target": ".sk-setting", "equals": 3 },
         { "id": "moments", "type": "count", "target": ".sk-moment", "equals": 3 },
-        { "id": "chats-rows", "type": "count", "target": ".sk-chat", "equals": 3 },
+        { "id": "chats-rows", "type": "count", "target": ".sk-chat", "equals": 8 },
+        { "id": "assistant-present", "type": "exists", "target": ".sk-assistant" },
+        { "id": "rail-buttons", "type": "count", "target": ".sk-rail .sk-rail-icon", "gte": 6 },
         { "id": "range-present", "type": "exists", "target": "input[type='range']" },
         { "id": "rail-width", "type": "computedStyle", "target": ".sk-rail", "prop": "width", "equals": "60px" },
-        { "id": "head-height", "type": "computedStyle", "target": ".sk-feed-head", "prop": "height", "equals": "62px" }
+        { "id": "head-height", "type": "computedStyle", "target": ".sk-feed-head", "prop": "height", "equals": "62px" },
+        { "id": "identity-rounded-square", "type": "roundedSquareAll", "target": ".sk-rail-avatar, .sk-stack-item, .sk-stack-more, .sk-chat-avatar, .sk-moment-avatar" }
       ],
       "finalizers": []
     },
@@ -106,6 +109,91 @@
       "oracles": [
         { "id": "input-outline-off", "type": "computedStyle", "target": ".sk-chat-search input", "prop": "outlineStyle", "equals": "none" },
         { "id": "host-focus-ring", "type": "computedStyle", "target": ".sk-chat-search", "prop": "boxShadow", "contains": "0px 0px 0px 2px" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.rail-nav-live",
+      "title": "左轨图标是真按钮，点击切换激活态",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(1)" }
+      ],
+      "oracles": [
+        { "id": "search-active", "type": "attr", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(1)", "attr": "aria-current", "equals": "page" },
+        { "id": "single-active", "type": "count", "target": ".sk-rail .sk-rail-icon.is-active", "equals": 1 },
+        { "id": "search-focused", "type": "focusable", "target": ".sk-chat-search input" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.stack-expand",
+      "title": "头像叠默认 5 枚 + 更多，点击 +3 展开为 8 枚并可收起",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-stack-more" }
+      ],
+      "oracles": [
+        { "id": "expanded-eight", "type": "count", "target": ".sk-stack-item", "equals": 8 },
+        { "id": "more-becomes-collapse", "type": "textEquals", "target": ".sk-stack-more", "equals": "−" },
+        { "id": "aria-expanded", "type": "attr", "target": ".sk-stack-more", "attr": "aria-expanded", "equals": "true" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.chat-select-and-read",
+      "title": "点击会话行/头像选中该连接并清除未读角标",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-chat .sk-badge" }
+      ],
+      "oracles": [
+        { "id": "row-selected", "type": "count", "target": ".sk-chat.is-selected", "equals": 1 },
+        { "id": "badge-cleared-row", "type": "missing", "target": ".sk-chat.is-selected .sk-badge" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.search-filters-connections",
+      "title": "搜索实时过滤右栏会话",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "type", "target": ".sk-chat-search input", "value": "林晚" }
+      ],
+      "oracles": [
+        { "id": "one-match", "type": "count", "target": ".sk-chat", "equals": 1 },
+        { "id": "match-copy", "type": "textContains", "target": ".sk-chat", "contains": "林晚" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.publish-feedback",
+      "title": "发布按钮点击有真实本地反馈，选择器可循环切换",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-select" },
+        { "op": "click", "target": ".sk-publish" }
+      ],
+      "oracles": [
+        { "id": "from-cycled", "type": "textContains", "target": ".sk-selectors > .sk-select strong", "contains": "garden" },
+        { "id": "publish-ack", "type": "textContains", "target": ".sk-publish", "contains": "已发布" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moment-actions-live",
+      "title": "动态点赞真实切换并改变计数；助手发送追加消息",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-moment:first-of-type .sk-moment-action:first-child" },
+        { "op": "click", "target": ".sk-assistant-input input" },
+        { "op": "type", "target": ".sk-assistant-input input", "value": "你好" },
+        { "op": "click", "target": ".sk-assistant-input button" }
+      ],
+      "oracles": [
+        { "id": "like-pressed", "type": "attr", "target": ".sk-moment:first-of-type .sk-moment-action:first-child", "attr": "aria-pressed", "equals": "true" },
+        { "id": "like-count-25", "type": "textContains", "target": ".sk-moment:first-of-type .sk-moment-action:first-child", "contains": "25" },
+        { "id": "assistant-echo", "type": "count", "target": ".sk-bubble", "gte": 4 }
       ],
       "finalizers": []
     }
