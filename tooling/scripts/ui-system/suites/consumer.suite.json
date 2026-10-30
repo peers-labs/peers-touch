@@ -1,0 +1,296 @@
+{
+  "kind": "peers-ui-specimen-suite",
+  "capabilityId": "ui.foundation.consumer-breadth",
+  "specRef": "docs/architecture/platform/client/ui-system/specs/runtime.md",
+  "specimen": {
+    "url": "/?site=frontend-eles&eles=consumer",
+    "anchor": ".cf-review",
+    "implementationRefs": [
+      "packages/prototypes/shared/ui-system/ConsumerFoundationKit.tsx",
+      "packages/prototypes/shared/ui-system/consumer-foundation.css",
+      "packages/ui/web/src/form.tsx",
+      "packages/ui/web/src/fields.tsx",
+      "packages/ui/web/src/selection.tsx",
+      "packages/ui/web/src/actions.tsx",
+      "packages/ui/web/src/overlays.tsx",
+      "packages/ui/web/src/feedback.tsx",
+      "packages/ui/web/src/data.tsx",
+      "packages/ui/web/src/advanced-fields.tsx",
+      "tooling/scripts/ui-system/craft-battery.mjs"
+    ]
+  },
+  "entryGate": {
+    "url": "/?site=frontend-eles",
+    "button": "[data-action-id='view.consumer']",
+    "target": ".cf-review",
+    "urlParam": "consumer"
+  },
+  "scenarios": [
+    {
+      "id": "ui.foundation.consumer.breadth-structure",
+      "title": "五个分区 46 张卡全部渲染，高频基础控件真实挂载",
+      "level": "L4_RUNTIME",
+      "operations": [],
+      "oracles": [
+        { "id": "five-sections", "type": "count", "target": "[data-cf-section]", "equals": 5 },
+        { "id": "forty-six-cards", "type": "count", "target": "[data-cf-card]", "equals": 46 },
+        { "id": "alerts-present", "type": "count", "target": ".pt-alert", "gte": 3 },
+        { "id": "progress-present", "type": "count", "target": ".pt-progress", "gte": 2 },
+        { "id": "table-present", "type": "exists", "target": ".pt-table" },
+        { "id": "select-present", "type": "exists", "target": ".pt-select-trigger" },
+        { "id": "toast-host-present", "type": "exists", "target": ".pt-toast-host" },
+        { "id": "tags-present", "type": "count", "target": "[data-cf-section='reading'] .pt-tag", "gte": 6 },
+        { "id": "avatars-present", "type": "count", "target": "[data-cf-section='reading'] .pt-avatar", "gte": 7 },
+        { "id": "badge-counts-present", "type": "count", "target": ".pt-badge-count", "equals": 2 },
+        { "id": "range-present", "type": "exists", "target": "input[type='range']" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.foundation.consumer.toast-real-publish",
+      "title": "Toast 由真实 channel 发布并出现在浮层宿主",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='cf.toast.success']" },
+        { "op": "waitFor", "scope": "global", "target": ".pt-toast" }
+      ],
+      "oracles": [
+        { "id": "toast-visible", "type": "exists", "scope": "global", "target": ".pt-toast" },
+        { "id": "toast-copy", "type": "textContains", "scope": "global", "target": ".pt-toast", "contains": "已保存" }
+      ],
+      "finalizers": [{ "op": "wait", "ms": 3100 }]
+    },
+    {
+      "id": "ui.foundation.consumer.dialog-open-close",
+      "title": "Dialog 真实打开，语义与标题正确，取消后归还",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='cf.dialog.open']" },
+        { "op": "waitFor", "scope": "global", "target": ".pt-overlay.pt-dialog" }
+      ],
+      "oracles": [
+        { "id": "dialog-present", "type": "exists", "scope": "global", "target": ".pt-overlay.pt-dialog[role='dialog']" },
+        { "id": "dialog-title", "type": "textContains", "scope": "global", "target": ".pt-dialog-header h2", "contains": "新建站点连接" }
+      ],
+      "finalizers": [{ "op": "clickGlobal", "target": "[data-action-id='cf.dialog.cancel']" }]
+    },
+    {
+      "id": "ui.foundation.consumer.drawer-open-close",
+      "title": "Drawer 真实打开/关闭",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='cf.drawer.open']" },
+        { "op": "waitFor", "scope": "global", "target": ".pt-overlay.pt-drawer" }
+      ],
+      "oracles": [
+        { "id": "drawer-present", "type": "exists", "scope": "global", "target": ".pt-overlay.pt-drawer" },
+        { "id": "drawer-title", "type": "textContains", "scope": "global", "target": ".pt-dialog-header h2", "contains": "会话详情" }
+      ],
+      "finalizers": [{ "op": "clickGlobal", "target": "[data-action-id='cf.drawer.close']" }]
+    },
+    {
+      "id": "ui.foundation.consumer.menu-structure",
+      "title": "Menu 三个动作项 + 分隔线 + 危险项",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='cf.menu.trigger']" },
+        { "op": "waitFor", "scope": "global", "target": ".pt-overlay.pt-menu" }
+      ],
+      "oracles": [
+        { "id": "three-items", "type": "count", "scope": "global", "target": ".pt-overlay.pt-menu [role='menuitem']", "equals": 3 },
+        { "id": "separator", "type": "exists", "scope": "global", "target": ".pt-menu-separator" },
+        { "id": "danger-item", "type": "exists", "scope": "global", "target": ".pt-menu-item[data-tone='danger']" }
+      ],
+      "finalizers": [{ "op": "press", "key": "Escape" }]
+    },
+    {
+      "id": "ui.foundation.consumer.popover-open",
+      "title": "Popover 真实展开内容",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='cf.popover.trigger']" },
+        { "op": "waitFor", "scope": "global", "target": ".pt-overlay.pt-popover" }
+      ],
+      "oracles": [
+        { "id": "popover-present", "type": "exists", "scope": "global", "target": ".pt-overlay.pt-popover" }
+      ],
+      "finalizers": [{ "op": "press", "key": "Escape" }]
+    },
+    {
+      "id": "ui.foundation.consumer.tooltip-on-focus",
+      "title": "Tooltip 键盘聚焦可达",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "focus", "target": "[data-action-id='cf.tooltip.target']" },
+        { "op": "waitFor", "scope": "global", "target": ".pt-overlay.pt-tooltip" }
+      ],
+      "oracles": [
+        { "id": "tooltip-copy", "type": "textContains", "scope": "global", "target": ".pt-overlay.pt-tooltip", "contains": "只有你能看到" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.foundation.consumer.select-options",
+      "title": "Select 四个选项（含禁用项），选择后触发器文案更新",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".pt-select-trigger" },
+        { "op": "waitFor", "scope": "global", "target": ".pt-select-options" }
+      ],
+      "oracles": [
+        { "id": "four-options", "type": "count", "scope": "global", "target": ".pt-select-option", "equals": 4 },
+        { "id": "one-disabled-option", "type": "count", "scope": "global", "target": ".pt-select-option:disabled", "equals": 1 }
+      ],
+      "finalizers": [
+        { "op": "clickGlobal", "target": ".pt-select-option:has-text('轻透')" },
+        { "op": "wait", "ms": 150 }
+      ]
+    },
+    {
+      "id": "ui.foundation.consumer.tabs-switch",
+      "title": "Tabs 切换更新 aria-selected",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".pt-tab:has-text('对话')" }
+      ],
+      "oracles": [
+        { "id": "chats-selected", "type": "attr", "target": ".pt-tab:has-text('对话')", "attr": "aria-selected", "equals": "true" }
+      ],
+      "finalizers": [{ "op": "click", "target": ".pt-tab:has-text('动态')" }]
+    },
+    {
+      "id": "ui.foundation.consumer.table-sort",
+      "title": "DataTable 列表头排序设置 aria-sort",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='table.sort.unread']" },
+        { "op": "wait", "ms": 150 }
+      ],
+      "oracles": [
+        { "id": "aria-sort-set", "type": "exists", "target": "th[aria-sort='ascending'], th[aria-sort='descending']" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.foundation.consumer.form-validation",
+      "title": "空标题提交触发合同校验错误，不产生提交结果",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "type", "target": "input[placeholder='例如：设计评审']", "value": "" },
+        { "op": "click", "target": "[data-action-id='cf.form.submit']" },
+        { "op": "waitFor", "target": "#title-error" }
+      ],
+      "oracles": [
+        { "id": "title-error-shown", "type": "textContains", "target": "#title-error", "contains": "请填写标题" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.foundation.consumer.tag-dismiss-restore",
+      "title": "Tag 可移除且可恢复（真实本地状态）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-cf-section='reading'] .pt-tag [data-action-id='tag.dismiss']" },
+        { "op": "expect", "id": "mid-tag-count-five", "oracle": { "id": "five-tags", "type": "count", "target": "[data-cf-section='reading'] .pt-tag", "equals": 5 } },
+        { "op": "click", "target": "[data-action-id='cf.tag.restore']" },
+        { "op": "wait", "ms": 100 }
+      ],
+      "oracles": [
+        { "id": "six-tags-restored", "type": "count", "target": "[data-cf-section='reading'] .pt-tag", "equals": 6 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.foundation.consumer.autocomplete-filter",
+      "title": "Autocomplete 按查询过滤并回填选择",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "type", "target": "[data-cf-section='reading'] input[role='combobox']", "value": "relay" },
+        { "op": "wait", "ms": 200 },
+        { "op": "waitFor", "scope": "global", "target": ".pt-autocomplete-results [role='option']" },
+        { "op": "clickGlobal", "target": ".pt-autocomplete-results [role='option']" },
+        { "op": "wait", "ms": 150 }
+      ],
+      "oracles": [
+        { "id": "picked-relay", "type": "textContains", "target": "[data-cf-section='reading'] [role='status']", "contains": "remote-relay" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.foundation.consumer.disabled-condition",
+      "title": "禁用态：按钮 aria-disabled 且不使用原生 disabled（B19 可聚焦）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='segment.disabled']" },
+        { "op": "wait", "ms": 200 }
+      ],
+      "oracles": [
+        { "id": "many-aria-disabled", "type": "count", "target": "[aria-disabled='true']", "gte": 12 },
+        { "id": "no-native-disabled-dialog-button", "type": "nativeDisabledAbsent", "target": "[data-action-id='cf.dialog.open']" }
+      ],
+      "finalizers": [{ "op": "click", "target": "[data-action-id='segment.normal']" }]
+    },
+    {
+      "id": "ui.foundation.consumer.action-ink-physics",
+      "title": "主操作系统是中性墨而非品牌紫：CTA/选中/控件计算色全部解析为 ink，板内无紫色残留",
+      "level": "L4_RUNTIME",
+      "operations": [],
+      "oracles": [
+        { "id": "primary-cta-fills-ink", "type": "computedStyle", "target": "[data-action-id='cf.dialog.open']", "prop": "backgroundColor", "equals": "rgb(32, 36, 49)" },
+        { "id": "primary-cta-white-text", "type": "computedStyle", "target": "[data-action-id='cf.dialog.open']", "prop": "color", "equals": "rgb(255, 255, 255)" },
+        { "id": "switch-checked-ink", "type": "computedStyle", "target": ".pt-switch[aria-checked='true']", "prop": "backgroundColor", "equals": "rgb(32, 36, 49)" },
+        { "id": "checkbox-accent-ink", "type": "computedStyle", "all": true, "target": ".pt-check-label input", "prop": "accentColor", "equals": "rgb(32, 36, 49)" },
+        { "id": "range-accent-ink", "type": "computedStyle", "target": "input[type='range']", "prop": "accentColor", "equals": "rgb(32, 36, 49)" },
+        { "id": "progress-neutral-ink", "type": "computedStyle", "target": ":nth-match(.pt-progress progress, 1)", "prop": "accentColor", "equals": "rgb(32, 36, 49)" },
+        { "id": "progress-danger-still-red", "type": "computedStyle", "target": ":nth-match(.pt-progress progress, 2)", "prop": "accentColor", "equals": "rgb(198, 57, 57)" },
+        { "id": "selected-tab-ink", "type": "computedStyle", "target": ".pt-tab[aria-selected='true']", "prop": "color", "equals": "rgb(32, 36, 49)" },
+        { "id": "avatar-subtle-fill", "type": "computedStyle", "all": true, "target": "[data-cf-section='reading'] .pt-avatar", "prop": "backgroundColor", "equals": "rgb(233, 236, 242)" },
+        { "id": "avatar-ink-text", "type": "computedStyle", "all": true, "target": "[data-cf-section='reading'] .pt-avatar", "prop": "color", "equals": "rgb(32, 36, 49)" },
+        { "id": "link-ink", "type": "computedStyle", "all": true, "target": ".pt-link", "prop": "color", "equals": "rgb(32, 36, 49)" },
+        { "id": "badge-count-ink-not-danger", "type": "computedStyle", "all": true, "target": ".pt-badge-count", "prop": "backgroundColor", "equals": "rgb(32, 36, 49)" },
+        { "id": "danger-dot-still-red", "type": "computedStyle", "target": ".pt-badge-indicator[data-tone='danger']", "prop": "backgroundColor", "equals": "rgb(198, 57, 57)" },
+        { "id": "success-foreground-aa", "type": "computedStyle", "all": true, "target": ".pt-tag[data-tone='success']", "prop": "color", "equals": "rgb(31, 125, 82)" },
+        { "id": "canvas-paints-light", "type": "computedStyle", "scope": "global", "target": ".cf-review", "prop": "backgroundColor", "equals": "rgb(243, 245, 248)" },
+        { "id": "no-saas-purple-residue", "type": "computedStyleNone",
+          "props": ["backgroundColor", "color", "borderTopColor", "borderBottomColor", "outlineColor", "accentColor"],
+          "banned": ["107,91,214", "91,75,196", "240,237,252"] }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.foundation.consumer.action-ink-physics-dark",
+      "title": "深色态反相：CTA/选中/控件为近白墨底墨字，语义 danger 点仍红，板内无旧紫色族残留",
+      "level": "L4_RUNTIME",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='segment.dark']" },
+        { "op": "wait", "ms": 200 }
+      ],
+      "oracles": [
+        { "id": "dark-canvas", "type": "computedStyle", "scope": "global", "target": ".cf-review", "prop": "backgroundColor", "equals": "rgb(17, 19, 24)" },
+        { "id": "dark-primary-fills-near-white", "type": "computedStyle", "target": "[data-action-id='cf.dialog.open']", "prop": "backgroundColor", "equals": "rgb(241, 243, 248)" },
+        { "id": "dark-primary-ink-text", "type": "computedStyle", "target": "[data-action-id='cf.dialog.open']", "prop": "color", "equals": "rgb(32, 36, 49)" },
+        { "id": "dark-switch-checked", "type": "computedStyle", "target": ".pt-switch[aria-checked='true']", "prop": "backgroundColor", "equals": "rgb(241, 243, 248)" },
+        { "id": "dark-checkbox-accent", "type": "computedStyle", "all": true, "target": ".pt-check-label input", "prop": "accentColor", "equals": "rgb(241, 243, 248)" },
+        { "id": "dark-range-accent", "type": "computedStyle", "target": "input[type='range']", "prop": "accentColor", "equals": "rgb(241, 243, 248)" },
+        { "id": "dark-avatar-subtle", "type": "computedStyle", "all": true, "target": "[data-cf-section='reading'] .pt-avatar", "prop": "backgroundColor", "equals": "rgb(44, 50, 61)" },
+        { "id": "dark-avatar-text", "type": "computedStyle", "all": true, "target": "[data-cf-section='reading'] .pt-avatar", "prop": "color", "equals": "rgb(241, 243, 248)" },
+        { "id": "dark-badge-count", "type": "computedStyle", "all": true, "target": ".pt-badge-count", "prop": "backgroundColor", "equals": "rgb(241, 243, 248)" },
+        { "id": "dark-danger-dot-red", "type": "computedStyle", "target": ".pt-badge-indicator[data-tone='danger']", "prop": "backgroundColor", "equals": "rgb(240, 123, 123)" },
+        { "id": "no-purple-residue-dark", "type": "computedStyleNone",
+          "props": ["backgroundColor", "color", "borderTopColor", "borderBottomColor", "outlineColor", "accentColor"],
+          "banned": ["162,152,242", "180,171,255", "48,42,73", "76,66,140"] }
+      ],
+      "finalizers": [{ "op": "click", "target": "[data-action-id='segment.light']" }]
+    },
+    {
+      "id": "ui.foundation.consumer.craft-geometry",
+      "title": "工艺几何门：无原生控件裸露、开关固有几何、计数不换行不撞拖柄、内嵌按钮不出框、命中尺寸达标、卡片无横向溢出",
+      "level": "L4_RUNTIME",
+      "operations": [],
+      "oracles": [
+        { "id": "craft-battery-clean", "type": "craftBattery" }
+      ],
+      "finalizers": []
+    }
+  ]
+}

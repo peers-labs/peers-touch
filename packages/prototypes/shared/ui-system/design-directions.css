@@ -1,0 +1,238 @@
+/* DesignDirections — framework-level SKIN + WALLPAPER switcher.
+   Key scope rule: skin variables live on .sk-shell[data-skin], so themes only
+   affect the INSIDE of the app frame. The external page/control bar is neutral.
+   Wallpaper is a second, independent dimension: it paints a layer inside the
+   shell; translucent panels (glass) float above it. */
+
+/* ---- external page: always neutral, never themed ---- */
+.sk-page {
+  min-height: 100vh; box-sizing: border-box; padding: 22px 26px;
+  background: #eceef1;
+  color: #1d2420;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+.sk-page * { box-sizing: border-box; }
+
+/* ---- skin switcher / controls (outside frame, neutral) ---- */
+.sk-switcher {
+  max-width: 1180px; margin: 0 auto 16px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.sk-switcher-label { display: flex; flex-direction: column; gap: 2px; }
+.sk-switcher-label strong { font-size: 14px; }
+.sk-switcher-label span { font-size: 11.5px; color: #6b7279; }
+.sk-tabs {
+  display: inline-flex; padding: 4px; gap: 2px;
+  background: #e2e5e9; border-radius: 12px; border: 1px solid rgba(16,20,18,.12);
+}
+.sk-tab {
+  height: 32px; padding: 0 16px; border: 0; border-radius: 9px; cursor: pointer;
+  background: transparent; color: #5b6460; font-size: 13px; font-weight: 500;
+  font-family: inherit; white-space: nowrap;
+}
+.sk-tab.is-active {
+  background: #fff; color: #1d2420; font-weight: 600;
+  box-shadow: 0 2px 8px rgba(20,25,20,.12);
+}
+.sk-skin-desc { width: 100%; margin: 0; font-size: 12px; color: #6b7279; }
+
+/* wallpaper controls */
+.sk-wall { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sk-wall-label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600; color: #3f4742;
+}
+.sk-wall-presets { display: inline-flex; gap: 4px; }
+.sk-wall-chip {
+  height: 28px; padding: 0 11px; border: 1px solid rgba(16,20,18,.14);
+  border-radius: 8px; background: #fff; color: #4a524d; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.sk-wall-chip.is-active { outline: 2px solid #1d2420; outline-offset: -1px; font-weight: 600; }
+.sk-wall-upload {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
+  border: 1px dashed rgba(16,20,18,.28); border-radius: 8px; background: transparent;
+  color: #4a524d; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.sk-wall-current { font-size: 11px; color: #8a918b; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- shell: shared geometry; skin vars scoped here ---- */
+.sk-shell {
+  --sk-canvas: #f4efe6;
+  --sk-surface: #fbf8f1;
+  --sk-subtle: #f0e9dc;
+  --sk-text: #2a251d;
+  --sk-text-2: #635b4d;
+  --sk-text-3: #9a9080;
+  --sk-primary: #3f5a4a;
+  --sk-primary-ink: #fbf8f1;
+  --sk-accent: #d98e5b;
+  --sk-on-accent: #43260f;
+  --sk-rail-bg: #efe8da;
+  --sk-radius-soft: 16px;
+  --sk-display-font: "SF Pro Display", "Inter", -apple-system, "PingFang SC", sans-serif;
+  --sk-glass-blur: 0px;
+  --sk-glass-border: rgba(42, 37, 29, .12);
+  /* Flat hierarchy without gradients: a recessed canvas floor and a raised
+     card tone carry separation (iOS grouped / Material surface-container
+     pattern); a hairline seals the edge and a whisper shadow only lifts. */
+  --sk-shell-bg: var(--sk-canvas);
+  --sk-card-bg: #fdfaf4;
+  --sk-card-border: rgba(58, 46, 28, .09);
+  --sk-card-shadow: 0 1px 2px rgba(58, 46, 28, .04), 0 8px 24px -16px rgba(58, 46, 28, .14);
+  --sk-chat-bg: color-mix(in srgb, var(--sk-subtle) 55%, transparent);
+  --sk-head-bg: transparent;
+  --sk-shell-glow:
+    radial-gradient(720px 420px at 96% -8%, color-mix(in srgb, var(--sk-accent) 14%, transparent), transparent 60%);
+
+  position: relative;
+  max-width: 1180px; margin: 0 auto;
+  display: flex; height: calc(100vh - 150px); min-height: 620px;
+  border-radius: var(--sk-radius-soft); overflow: hidden;
+  background: var(--sk-shell-bg);
+  border: 1px solid var(--sk-glass-border);
+  box-shadow: 0 18px 44px rgba(35, 30, 18, .12);
+  color: var(--sk-text);
+}
+
+/* shell-internal independent backdrop (glow + uploaded wallpaper) */
+.sk-shell-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+.sk-shell-glow { position: absolute; inset: 0; background: var(--sk-shell-glow); }
+.sk-shell-wall {
+  position: absolute; inset: 0;
+  background: var(--sk-wallpaper, none);
+  /* keep uploaded photos readable under panels: a soft white scrim */
+  background-color: transparent;
+}
+/* rail / feed / chats sit above the internal backdrop */
+.sk-rail, .sk-feed, .sk-chats { position: relative; z-index: 1; }
+
+/* skins */
+.sk-shell[data-skin="default"] {
+  --sk-canvas: #f7f8fa; --sk-surface: #ffffff; --sk-subtle: #f2f4f7;
+  --sk-text: #1f2329; --sk-text-2: #5a616b; --sk-text-3: #8a9099;
+  --sk-primary: #6b5bd6; --sk-primary-ink: #ffffff;
+  --sk-accent: #f4a63b; --sk-on-accent: #4a3200;
+  --sk-rail-bg: #f2f4f7; --sk-radius-soft: 12px;
+  --sk-display-font: "Inter", -apple-system, "PingFang SC", sans-serif;
+  --sk-glass-blur: 0px; --sk-glass-border: rgba(20,26,33,.10);
+  --sk-shell-bg: var(--sk-canvas); --sk-card-bg: #ffffff;
+  --sk-card-border: rgba(16, 24, 40, .08);
+  --sk-card-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px -16px rgba(16, 24, 40, .12);
+  --sk-chat-bg: color-mix(in srgb, var(--sk-subtle) 60%, transparent);
+  --sk-shell-glow: none;
+}
+.sk-shell[data-skin="glass"] {
+  --sk-canvas: #e7f0ec; --sk-surface: rgba(255,255,255,.62); --sk-subtle: rgba(255,255,255,.5);
+  --sk-text: #1d2a25; --sk-text-2: #55635b; --sk-text-3: #73807a;
+  --sk-primary: #2f6f5c; --sk-primary-ink: #ffffff;
+  --sk-accent: #eeb24a; --sk-on-accent: #43300a;
+  --sk-rail-bg: rgba(255,255,255,.45); --sk-radius-soft: 18px;
+  --sk-glass-blur: 22px; --sk-glass-border: rgba(255,255,255,.7);
+  --sk-shell-bg: var(--sk-canvas); --sk-card-bg: rgba(255,255,255,.62);
+  --sk-card-border: rgba(255,255,255,.75);
+  --sk-card-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 10px 30px -18px rgba(28,60,48,.35);
+  --sk-chat-bg: rgba(255,255,255,.38); --sk-head-bg: rgba(255,255,255,.45);
+  --sk-shell-glow:
+    radial-gradient(700px 460px at 8% -8%, color-mix(in srgb, var(--sk-accent) 30%, transparent), transparent 62%),
+    radial-gradient(880px 580px at 100% 6%, rgba(122,196,178,.5), transparent 62%),
+    radial-gradient(720px 600px at 56% 112%, rgba(178,150,226,.3), transparent 60%);
+}
+/* Gate the legibility scrim on the real wallpaper state.
+   Wallpaper presence is driven by the shell CSS vars, so it is signalled via
+   data-wallpaper; "无背景" renders the flat shell base with no ambient layer. */
+.sk-shell[data-wallpaper="image"] .sk-shell-wall::after {
+  content: ""; position: absolute; inset: 0;
+  background: color-mix(in srgb, var(--sk-shell-bg) 28%, transparent);
+}
+
+/* rail: identical to real desktop SideNav (60px, same icons/order) */
+.sk-rail {
+  width: 60px; flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center; padding: 14px 0;
+  background: var(--sk-rail-bg);
+  border-right: 1px solid var(--sk-glass-border);
+  backdrop-filter: blur(var(--sk-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+}
+.sk-rail-avatar {
+  width: 34px; height: 34px; border-radius: 9px; margin-bottom: 18px;
+  display: grid; place-items: center; font-size: 14px; font-weight: 700;
+  color: var(--sk-primary-ink); background: var(--sk-primary);
+}
+.sk-rail-group { display: flex; flex-direction: column; gap: 4px; }
+.sk-rail-spacer { flex: 1; }
+.sk-rail-icon {
+  width: 38px; height: 38px; border-radius: 8px; display: grid; place-items: center;
+  color: var(--sk-text-3);
+}
+.sk-rail-icon.is-active {
+  color: var(--sk-text); background: var(--sk-surface);
+  box-shadow: inset 0 0 0 1px var(--sk-glass-border), 0 4px 12px rgba(30,25,15,.07);
+}
+
+/* feed */
+.sk-feed { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sk-feed-head {
+  height: 60px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 22px; border-bottom: 1px solid var(--sk-glass-border);
+  background: var(--sk-head-bg);
+  backdrop-filter: blur(var(--sk-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+}
+.sk-feed-head h1 { margin: 0; font-size: 20px; font-family: var(--sk-display-font); letter-spacing: -0.01em; }
+.sk-compose {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px;
+  border: 0; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600;
+  background: var(--sk-primary); color: var(--sk-primary-ink);
+}
+.sk-feed-list { flex: 1; min-height: 0; overflow: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; }
+
+.sk-moment {
+  display: flex; gap: 12px; padding: 16px;
+  border: 1px solid var(--sk-card-border); border-radius: var(--sk-radius-soft);
+  background: var(--sk-card-bg);
+  box-shadow: var(--sk-card-shadow);
+  backdrop-filter: blur(var(--sk-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+}
+.sk-moment-avatar {
+  width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+  display: grid; place-items: center; color: #fff; font-size: 15px; font-weight: 600;
+}
+.sk-moment-body { flex: 1; min-width: 0; }
+.sk-moment-meta { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.sk-moment-meta strong { font-size: 14px; }
+.sk-moment-meta span { font-size: 11.5px; color: var(--sk-text-3); }
+.sk-moment-text {
+  margin: 0 0 10px; font-size: 14px; line-height: 1.7; color: var(--sk-text);
+  font-family: var(--sk-display-font);
+}
+.sk-moment-actions { display: flex; gap: 18px; color: var(--sk-text-3); }
+.sk-moment-actions span { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+
+/* chats rail */
+.sk-chats {
+  width: 268px; flex-shrink: 0; padding: 18px 14px;
+  border-left: 1px solid var(--sk-glass-border); background: var(--sk-chat-bg);
+  backdrop-filter: blur(var(--sk-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+}
+.sk-chats h2 { margin: 0 4px 12px; font-size: 13px; color: var(--sk-text-2); }
+.sk-chat-list { display: flex; flex-direction: column; gap: 2px; }
+.sk-chat { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 10px; }
+.sk-chat-avatar {
+  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+  display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 600;
+}
+.sk-chat-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sk-chat-text strong { font-size: 13px; }
+.sk-chat-text span { font-size: 11.5px; color: var(--sk-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sk-badge {
+  min-width: 19px; height: 19px; padding: 0 6px; border-radius: 999px;
+  display: grid; place-items: center; background: var(--sk-accent); color: var(--sk-on-accent);
+  font-size: 11px; font-weight: 700;
+}
+
+@media (max-width: 980px) {
+  .sk-chats { display: none; }
+}

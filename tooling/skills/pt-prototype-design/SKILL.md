@@ -248,6 +248,37 @@ L2 可直接判定的问题：
 - L2 Visual 截图时，需要对比 Tab 切换前后两帧，确认容器高度像素一致。
 - L3 Dynamic 时，若存在高度跳动超过 2px，判定为 **layout-shift defect**，阻断 `pending-review`。
 
+#### 3.7.1 横向溢出/裁切门禁（Overflow & Clipping Gate）
+
+“渲染成功 + console 无错”不等于布局合格。卡片内 token、色值、长文案、数字被右边缘裁掉时，console 不会报错，单看缩略截图也容易漏。每个 material 原型在 L2 必须用真实浏览器做一次**横向溢出断言**，而不是只凭肉眼：
+
+- 对页面主滚动容器及其内部的 grid/flex 容器、specimen/row，断言 `scrollWidth <= clientWidth + 1`；任一元素超出即判 **horizontal-overflow defect**，阻断进入 `pending-review`。
+- 同时检查 `document.documentElement.scrollWidth <= window.innerWidth + 1`（页面级不能出现横向滚动条）。
+- 必须在 desktop 常规宽度和一个窄宽度（如 390/1280）下各跑一次。
+
+Playwright 最小断言（在目标原型页执行）：
+
+```js
+const bad = await page.evaluate(() => {
+  const out = [];
+  document.querySelectorAll('main *, .app-main *, .bk-window-body *').forEach((el) => {
+    if (el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1) {
+      out.push({ cls: String(el.className).slice(0, 60), cw: el.clientWidth, sw: el.scrollWidth });
+    }
+  });
+  return out;
+});
+console.log(bad); // 必须为空数组
+```
+
+常见根因与正确修法（不要靠外层 `overflow:hidden` 把内容“藏掉”）：
+
+- grid 列用了固定/过大 `minmax(<px>,1fr)`，子项内容更宽被撑破 → 降低最小列宽、改自适应列数，并给 grid 及其子项 `min-width:0`。
+- flex/grid 子项默认 `min-width:auto` 不收缩 → 在中间层显式 `min-width:0`。
+- 长 hex/token/URL/数字不换行被裁切 → `overflow-wrap:anywhere`，或允许该行 `flex-wrap:wrap`，不要让信息出框。
+- 父容器 `overflow:hidden` 会把溢出“静音”，视觉上是被裁掉而非报错——修内容收缩，不要只加裁切。
+
+
 实现优先级：
 
 1. **同级容器统一 `min-height`**——最简单、最可预测。
@@ -434,6 +465,7 @@ Prototype Portal 支持 worktree / branch 切换：
 - [ ] 原型登记在正确一级站点下（`desktop` / `mobile` / `dashboard`），没有把 applet 或局部能力登记成一级模块
 - [ ] 跨 worktree / branch 预览使用 registry + iframe，没有直接引用其他 worktree 源码
 - [ ] Tab / Segment 切换无布局跳动：所有 tab-content 面板有统一 `min-height` 或使用叠层方案，切换前后容器高度像素一致
+- [ ] 已跑横向溢出断言（desktop + 一个窄宽度）：主滚动容器与内部 grid/flex/row 全部 `scrollWidth <= clientWidth + 1`，页面无横向滚动条；色值/token/长文案/数字未被右缘裁切
 - [ ] 列表 / 空态 / 媒体加载无重排：骨架屏和占位区域已预留正确尺寸
 
 ---

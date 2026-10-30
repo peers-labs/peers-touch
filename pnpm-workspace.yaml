@@ -12,7 +12,7 @@ packages:
   - packages/client-media-security
   - packages/client-storage
   - packages/sdk/ts
-  - packages/ui/desktop
+  - packages/ui/*
   - packages/applet-sdk
   - packages/applet-contract
   - packages/applet-kernel

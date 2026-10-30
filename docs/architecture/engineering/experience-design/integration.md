@@ -60,6 +60,11 @@ The prototype README records the case path, findings artifact and exact
 
 ## 4. UI Identity Integration
 
+UI System 的 [Quiet Internet 风格北极星](../../platform/client/ui-system/prototype/README.md)
+为当前 Draft V2：统一 Shell 下的风格指导、主入口、内容/对话和设置样板。
+它只作为高保真设计输入；未获用户确认前，不修改 active token、不替换生产消费者。
+130项目录、使用合同、可运行样本和证据边界见 [UI System](../../platform/client/ui-system/README.md)。
+
 The JSON grammar binding is reviewed with the human-readable UI Identity
 documents. Its roles are stable semantic names, not library component names.
 

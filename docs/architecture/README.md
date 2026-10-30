@@ -58,6 +58,7 @@
 | `x-config` | platform | Client Platform | [design.md](./platform/client/control-plane/design.md) | [12](./engineering/architecture-governance/architecture-modules.json) |
 | `cross-client-runtime` | platform | Client Platform Team | [cross-client-runtime.reuse-topology](./platform/client/cross-client-runtime/architecture.svg) | [20](./engineering/architecture-governance/architecture-modules.json) |
 | `mobile-social-parity` | platform | Mobile / Social / Client Architecture | [design.md](./platform/client/mobile/social-parity/design.md) | [9](./engineering/architecture-governance/architecture-modules.json) |
+| `ui-system` | platform | Client Platform / UI System | [design.md](./platform/client/ui-system/design.md) | [2](./engineering/architecture-governance/architecture-modules.json) |
 | `node-connectivity` | platform | Architecture Team | [design.md](./platform/runtime/node-connectivity/design.md) | [15](./engineering/architecture-governance/architecture-modules.json) |
 | `station-access-lifecycle` | platform | Identity and Access | [design.md](./platform/station/access/design.md) | [24](./engineering/architecture-governance/architecture-modules.json) |
 | `shared-schema` | shared | Shared Client Interaction | [design.md](./shared/schema/design.md) | [4](./engineering/architecture-governance/architecture-modules.json) |
