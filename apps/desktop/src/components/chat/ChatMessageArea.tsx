@@ -2,10 +2,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Tooltip, toast } from '@lobehub/ui';
-import { Empty, Spin, theme, Typography } from 'antd';
+import { Empty, Input, Spin, theme, Typography } from 'antd';
 import {
   Inbox, Phone, Server, RefreshCw, Video, MoreHorizontal,
-  Lock, ShieldAlert, Bot,
+  Lock, ShieldAlert, Bot, Pencil,
 } from 'lucide-react';
 import {
   socialThreadKey,
@@ -55,6 +55,10 @@ import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 import type { DirectConversationOpenIntent } from './contactSelection';
 import { resolveFederationStationName } from '../../store/federation';
+import {
+  resolveConversationStationChip,
+  useStationConnectionStore,
+} from '../../store/stationConnection';
 
 const { Text } = Typography;
 const REACTION_PROJECTION_TIMEOUT_MS = 8_000;
@@ -166,6 +170,13 @@ export function ChatMessageArea({
   const actorStationEntries = useActiveChatFederationSlice(
     (state) => state.actorStationEntries,
   );
+  const groups = useActiveSocialChatSlice((s) => s.groups);
+  const groupMembers = useActiveSocialChatSlice((s) => s.groupMembers);
+  const renameGroupConversation = useActiveSocialChatSlice((s) => s.renameGroupConversation);
+  const [editingGroupName, setEditingGroupName] = useState(false);
+  const [groupNameDraft, setGroupNameDraft] = useState('');
+  const [groupNameSaving, setGroupNameSaving] = useState(false);
+  const [groupNameHovered, setGroupNameHovered] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const draftsRef = useRef<Record<string, string>>({});
   const prevActiveRef = useRef<string | null>(null);
@@ -222,12 +233,70 @@ export function ChatMessageArea({
     : undefined;
 
   const currentName = activeConversation?.title || '';
+  const activeGroup = activeTab === 'group' && activeUlid
+    ? groups.find((group) => group.ulid === activeUlid)
+    : undefined;
+  const activeGroupMembers = activeTab === 'group' && activeUlid
+    ? (groupMembers[activeUlid] ?? [])
+    : [];
+  const canRenameGroup = activeTab === 'group'
+    && Boolean(activeUlid)
+    && (
+      (activeGroup?.ownerPtid && activeGroup.ownerPtid === currentUserPtid)
+      || (activeGroupMembers.find((member) => member.ptid === currentUserPtid)?.role ?? 0) >= 2
+    );
+
+  const startGroupRename = () => {
+    setGroupNameDraft(activeGroup?.name || currentName || '');
+    setEditingGroupName(true);
+  };
+  const cancelGroupRename = () => {
+    setEditingGroupName(false);
+    setGroupNameDraft('');
+  };
+  const saveGroupRename = async () => {
+    const next = groupNameDraft.trim();
+    if (!activeUlid || !next || groupNameSaving) return;
+    if (next === (activeGroup?.name || currentName).trim()) {
+      cancelGroupRename();
+      return;
+    }
+    setGroupNameSaving(true);
+    try {
+      await renameGroupConversation(activeUlid, next);
+      setEditingGroupName(false);
+      setGroupNameDraft('');
+    } catch (error) {
+      log.error('chat', 'header group rename failed', { groupUlid: activeUlid, error });
+      presentError(error, {
+        mapper: mapChatError,
+        context: { operation: 'conversationAction' },
+      });
+    } finally {
+      setGroupNameSaving(false);
+    }
+  };
+
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
   const authorityStationName = resolveFederationStationName({
     actorPtid: activeConversation?.peerPtid,
     stationPeerId: authorityStationId,
     actorStationEntries,
   });
+  const localStation = useStationConnectionStore((state) => ({
+    initialized: state.initialized,
+    peerId: state.activeStationPeerId,
+    name: state.activeStationName,
+    realtimeConnected: state.realtimeConnected,
+  }));
+  const stationChip = activeConversation && !isAutomatedConversation
+    ? resolveConversationStationChip({
+      kind: activeTab === 'group' ? 'group' : 'friend',
+      authorityStationId,
+      authorityStationName,
+      localStation,
+    })
+    : null;
 
   const subtitle = (() => {
     if (activeTab === 'friend') return '';
@@ -343,6 +412,9 @@ export function ChatMessageArea({
     setDeleteTarget(null);
     setDeletingMessage(false);
     setComposerError(null);
+    setEditingGroupName(false);
+    setGroupNameDraft('');
+    setGroupNameHovered(false);
   }, [activeUlid]);
 
   useEffect(() => {
@@ -977,7 +1049,52 @@ export function ChatMessageArea({
           <Flexbox horizontal align="center" gap={6}>
             <Flexbox>
               <Flexbox horizontal align="center" gap={6}>
-                <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
+                {activeTab === 'group' && editingGroupName ? (
+                  <Input
+                    autoFocus
+                    size="small"
+                    value={groupNameDraft}
+                    disabled={groupNameSaving}
+                    aria-label={t('chat.social.detail.groupName')}
+                    onChange={(event) => setGroupNameDraft(event.target.value)}
+                    onPressEnter={() => void saveGroupRename()}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') cancelGroupRename();
+                    }}
+                    onBlur={() => void saveGroupRename()}
+                    style={{ width: 220, fontWeight: 600 }}
+                    data-chat-group-name-editor
+                  />
+                ) : (
+                  <Flexbox
+                    horizontal
+                    align="center"
+                    gap={3}
+                    onMouseEnter={() => setGroupNameHovered(true)}
+                    onMouseLeave={() => setGroupNameHovered(false)}
+                  >
+                    <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
+                    {canRenameGroup && (
+                      <Tooltip title={t('chat.social.detail.editGroupName')}>
+                        <Button
+                          type="text"
+                          size="small"
+                          aria-label={t('chat.social.detail.editGroupName')}
+                          data-chat-group-rename
+                          icon={<Pencil size={12} />}
+                          onClick={startGroupRename}
+                          style={{
+                            width: 20,
+                            height: 20,
+                            padding: 0,
+                            opacity: groupNameHovered ? 1 : 0,
+                            transition: 'opacity 0.12s',
+                          }}
+                        />
+                      </Tooltip>
+                    )}
+                  </Flexbox>
+                )}
                 {!isAutomatedConversation && peerOnlineIndicator}
                 {isAutomatedConversation ? (
                   <Tooltip title={t('chat.automation.stationManagedTip', {
@@ -995,17 +1112,23 @@ export function ChatMessageArea({
                     </Tooltip>
                   )
                 )}
-                {/* Automated conversations are always Station-resident: the amber
-                    shield + managed subtitle already state that, so the
-                    authority-station chip (which reads as an "unavailable"
-                    error when the id is empty) is hidden. */}
-                {!isAutomatedConversation && (
+                {/* Station chip: local groups bind to the user's own Station
+                    with live realtime connectivity; federated chats show the
+                    peer authority name only when known. Unknown renders
+                    nothing — never a fake "unavailable" badge. Automated
+                    conversations already express Station residency via the
+                    amber shield + subtitle. */}
+                {stationChip && (
                 <span
-                  data-chat-station="authority"
-                  data-chat-station-id={authorityStationId}
-                  data-chat-station-name={authorityStationName}
-                  data-chat-station-state={authorityStationId ? 'available' : 'unavailable'}
-                  title={authorityStationName || t('chat.social.detail.authorityStationUnavailable')}
+                  data-chat-station={activeTab === 'group' ? 'local' : 'authority'}
+                  data-chat-station-id={stationChip.stationId}
+                  data-chat-station-name={stationChip.label}
+                  data-chat-station-state={stationChip.state}
+                  title={stationChip.state === 'connected'
+                    ? t('chat.social.detail.stationConnected', { station: stationChip.label })
+                    : stationChip.state === 'disconnected'
+                      ? t('chat.social.detail.stationDisconnected', { station: stationChip.label })
+                      : stationChip.label}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -1021,7 +1144,22 @@ export function ChatMessageArea({
                     flexShrink: 1,
                   }}
                 >
-                  <Server aria-hidden="true" size={11} style={{ flexShrink: 0 }} />
+                  {stationChip.state === 'neutral' ? (
+                    <Server aria-hidden="true" size={11} style={{ flexShrink: 0 }} />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 999,
+                        flexShrink: 0,
+                        background: stationChip.state === 'connected'
+                          ? token.colorSuccess
+                          : token.colorTextQuaternary,
+                      }}
+                    />
+                  )}
                   <span
                     style={{
                       minWidth: 0,
@@ -1030,9 +1168,9 @@ export function ChatMessageArea({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {authorityStationName
-                      ? `${t('chat.social.findPeople.scopeStation')} · ${authorityStationName}`
-                      : t('chat.social.detail.authorityStationUnavailable')}
+                    {activeTab === 'group'
+                      ? stationChip.label
+                      : `${t('chat.social.findPeople.scopeStation')} · ${stationChip.label}`}
                   </span>
                 </span>
                 )}

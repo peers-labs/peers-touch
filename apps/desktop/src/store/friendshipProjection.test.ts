@@ -289,7 +289,7 @@ describe('projectChatFriendContacts', () => {
     })).toEqual([]);
   });
 
-  it('derives the Station domain from the canonical handle when needed', () => {
+  it('keeps only the federation label when the Station has no human name', () => {
     expect(chatActorIdentityMetadataParts({
       federatedHandle: '@bob@remote.station.example',
       homeStationDomain: '',
@@ -298,8 +298,32 @@ describe('projectChatFriendContacts', () => {
       federationName: 'Friends Federation',
     })).toEqual({
       federation: 'Friends Federation',
-      station: 'remote.station.example',
+      // A raw host domain is routing data, never a user-visible station label.
+      station: '',
     });
+  });
+
+  it('exposes a human Station name but rejects raw authorities', () => {
+    expect(chatActorIdentityMetadataParts({
+      federatedHandle: '@bob@remote.station.example',
+      homeStationDomain: 'remote.station.example',
+      homeStationName: 'Aspen Station',
+      homeStationPeerId: '12D3KooW-remote',
+      federationId: 'federation-current',
+      federationName: 'Friends Federation',
+    })).toEqual({
+      federation: 'Friends Federation',
+      station: 'Aspen Station',
+    });
+
+    expect(chatActorIdentityMetadataParts({
+      federatedHandle: '@bob@10.0.0.5:18280',
+      homeStationDomain: '10.0.0.5:18280',
+      homeStationName: '10.0.0.5:18280',
+      homeStationPeerId: '12D3KooW-remote',
+      federationId: 'federation-current',
+      federationName: '',
+    })).toEqual({ federation: 'federation-current', station: '' });
   });
 });
 

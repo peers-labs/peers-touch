@@ -347,6 +347,13 @@ interface SocialChatState {
   lastPreviews: Record<string, MessagePreview>;
   conversationLocalState: Record<string, ConversationLocalState>;
   conversationBackgroundPreviews: Record<string, string>;
+  /**
+   * Ephemeral optimistic group display overrides keyed by conversationKey.
+   * `name` shows instantly after a rename until the server projection
+   * confirms; `avatarPreview` is a local asset URL shown while a picked
+   * group avatar uploads. Neither is persisted; failure clears them.
+   */
+  conversationDisplayOverrides: Record<string, { name?: string; avatarPreview?: string }>;
   sendOutcomes: Record<string, MessagingSendOutcomeRecord>;
 
   /**
@@ -617,6 +624,21 @@ interface SocialChatState {
     ulid: string,
     previewUrl: string | null,
   ) => void;
+  /**
+   * Apply a pending local group name immediately, persist through the
+   * messaging command in the background, and reconcile with the server
+   * projection. Rolls back on failure.
+   */
+  renameGroupConversation: (ulid: string, name: string) => Promise<void>;
+  /**
+   * Show a locally-picked group avatar immediately while its upload and
+   * server commit run in the background; null clears the optimistic image.
+   */
+  setConversationAvatarPreview: (
+    kind: 'friend' | 'group',
+    ulid: string,
+    previewUrl: string | null,
+  ) => void;
   hideConversation: (kind: 'friend' | 'group', ulid: string) => Promise<void>;
   restoreConversation: (kind: 'friend' | 'group', ulid: string) => void;
   deleteGroupContact: (groupUlid: string) => Promise<void>;
@@ -861,6 +883,7 @@ const initialSocialState: Pick<
   | 'peerProfileLoading'
   | 'conversationLocalState'
   | 'conversationBackgroundPreviews'
+  | 'conversationDisplayOverrides'
   | 'searchQuery'
   | 'searchResults'
   | 'searchLoading'
@@ -917,6 +940,7 @@ const initialSocialState: Pick<
   peerProfileLoading: {},
   conversationLocalState: {},
   conversationBackgroundPreviews: {},
+  conversationDisplayOverrides: {},
   searchQuery: '',
   searchResults: [],
   searchLoading: false,
@@ -992,6 +1016,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       lastPreviews: {},
       conversationLocalState: {},
       conversationBackgroundPreviews: {},
+      conversationDisplayOverrides: {},
       searchQuery: '',
       searchResults: [],
       searchLoading: false,
@@ -2325,6 +2350,64 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     });
   },
 
+  setConversationAvatarPreview: (kind, ulid, previewUrl) => {
+    const key = conversationKey(kind, ulid);
+    set((state) => {
+      const current = state.conversationDisplayOverrides[key];
+      if (!current && !previewUrl) return {};
+      const next = { ...state.conversationDisplayOverrides };
+      if (previewUrl) {
+        next[key] = { ...current, avatarPreview: previewUrl };
+      } else {
+        const entry = current ? { ...current } : {};
+        delete entry.avatarPreview;
+        if (Object.keys(entry).length === 0) delete next[key];
+        else next[key] = entry;
+      }
+      return { conversationDisplayOverrides: next };
+    });
+  },
+
+  renameGroupConversation: async (ulid, name) => {
+    const trimmed = name.trim();
+    if (!ulid || !trimmed) return;
+    const key = conversationKey('group', ulid);
+    const patchOverride = (field: 'name' | 'avatarPreview', value?: string) => {
+      set((state) => {
+        const next = { ...state.conversationDisplayOverrides };
+        const entry = { ...(next[key] || {}) };
+        if (value !== undefined) {
+          entry[field] = value;
+          next[key] = entry;
+        } else {
+          delete entry[field];
+          if (Object.keys(entry).length === 0) delete next[key];
+          else next[key] = entry;
+        }
+        return { conversationDisplayOverrides: next };
+      });
+    };
+
+    // Optimistic: the new title renders immediately, before the wire commit.
+    patchOverride('name', trimmed);
+    try {
+      await imServiceV1.messaging.updateConversation(ulid, { name: trimmed });
+      await get().loadSessions();
+      // Drop the override once the server projection carries the new name.
+      const state = get();
+      const serverName = state.groups.find((group) => group.ulid === ulid)?.name
+        || state.conversations.find((conversation) => conversation.conversationId === ulid)?.name
+        || '';
+      if (!serverName || serverName === trimmed) {
+        patchOverride('name');
+      }
+    } catch (error) {
+      patchOverride('name');
+      log.error('socialChat', 'optimistic group rename failed', { ulid, error });
+      throw error;
+    }
+  },
+
   hideConversation: async (kind, ulid) => {
     const key = conversationKey(kind, ulid);
     const nextEntry: ConversationLocalState = {
@@ -2407,11 +2490,12 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const groupPreview = loadedMainGroupMsgs && loadedMainGroupMsgs.length > 0
         ? previewFromMessage(loadedMainGroupMsgs[loadedMainGroupMsgs.length - 1])
         : state.lastPreviews[g.ulid];
+      const displayOverride = state.conversationDisplayOverrides[conversationKey('group', g.ulid)];
       out.push({
         type: 'group',
         ulid: g.ulid,
-        name: g.name || 'Group',
-        avatar: groupAvatarRemoteUrl(g),
+        name: displayOverride?.name || g.name || 'Group',
+        avatar: displayOverride?.avatarPreview || groupAvatarRemoteUrl(g),
         lastActivity: activityFromGroup(g),
         unread: visibleConversationUnread(
           state.groupUnreadCounts[g.ulid] ?? 0,
@@ -2487,13 +2571,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         const memberCount = (state.conversationMembers[convId] || []).length
           || (state.groupMembers[convId] || []).length
           || Number(conv.maxMembers || 0);
+        const displayOverride = state.conversationDisplayOverrides[conversationKey('group', convId)];
         out.push(projectDesktopIMConversation({
           type: 'group',
           ulid: convId,
           authorityStationId: conv.authorityStationPeerId,
           federationId: conv.federationId,
-          name: conv.name || 'Group',
-          avatar: groupAvatarRemoteUrl({ avatarCid: conv.avatarCid || '' }),
+          name: displayOverride?.name || conv.name || 'Group',
+          avatar: displayOverride?.avatarPreview
+            || groupAvatarRemoteUrl({ avatarCid: conv.avatarCid || '' }),
           memberCount,
           lastActivity,
           unread: state.groupUnreadCounts[convId] ?? 0,

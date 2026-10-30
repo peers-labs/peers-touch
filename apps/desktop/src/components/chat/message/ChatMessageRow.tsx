@@ -39,6 +39,7 @@ import {
   type ChatSurfaceKind,
 } from './chatMessageModel';
 import { blocksMessageActionOverlay } from './messageReactionState';
+import { MessageSenderProfileCard } from './MessageSenderProfileCard';
 import type { ServiceEventAggregation } from './serviceEventAggregation';
 
 const { Text } = Typography;
@@ -679,16 +680,16 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     >
       {!isOwn && (
         <Popover
-          content={
-            <Flexbox gap={4} style={{ minWidth: 120 }}>
-              <Text strong style={{ fontSize: 13 }}>{senderName}</Text>
-              <Text type="secondary" ellipsis style={{ fontSize: 11, maxWidth: 180 }}>
-                {message.senderPtid}
-              </Text>
-            </Flexbox>
-          }
+          content={(
+            <MessageSenderProfileCard
+              senderPtid={message.senderPtid}
+              fallbackName={senderName}
+              fallbackAvatar={senderAvatar}
+            />
+          )}
           trigger="click"
           placement="rightTop"
+          destroyTooltipOnHide
         >
           <div
             data-chat-avatar-ptid={message.senderPtid}

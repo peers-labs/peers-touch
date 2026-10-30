@@ -99,6 +99,35 @@ describe('social chat conversation projection', () => {
     useSocialChatStore.getState().reset();
   });
 
+  it('applies optimistic group name and avatar preview overrides to the projection', () => {
+    const state = useSocialChatStore.getState();
+    state.setConversationAvatarPreview('group', 'group-conversation', 'tauri://localhost/local-picked.png');
+    useSocialChatStore.setState((current) => ({
+      conversationDisplayOverrides: {
+        ...current.conversationDisplayOverrides,
+        'group:group-conversation': {
+          ...current.conversationDisplayOverrides['group:group-conversation'],
+          name: 'Renamed Group',
+        },
+      },
+    }));
+
+    let group = useSocialChatStore.getState()
+      .getIMConversations()
+      .find((conversation) => conversation.id === 'group-conversation');
+    expect(group?.title).toBe('Renamed Group');
+    expect(group?.avatar).toBe('tauri://localhost/local-picked.png');
+
+    // Clearing the avatar preview falls back to the server-projected avatar.
+    useSocialChatStore.getState()
+      .setConversationAvatarPreview('group', 'group-conversation', null);
+    group = useSocialChatStore.getState()
+      .getIMConversations()
+      .find((conversation) => conversation.id === 'group-conversation');
+    expect(group?.title).toBe('Renamed Group');
+    expect(group?.avatar).toBe('');
+  });
+
   it('retains Conversation authority for Direct and Group UI projections', () => {
     const conversations = useSocialChatStore.getState().getIMConversations();
 

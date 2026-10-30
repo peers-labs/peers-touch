@@ -4,6 +4,7 @@ import { installEventStreamBridge, teardownEventStreamBridge } from './eventStre
 import { installSessionKickBridge, teardownSessionKickBridge } from './sessionKick';
 import { installMediaRuntime, teardownMediaRuntime } from './mediaRuntime';
 import { installNavigationBadgeProjection, teardownNavigationBadgeProjection } from '../store/navigationBadges';
+import { initStationConnectionStore } from '../store/stationConnection';
 import { bootstrapRuntime, installRuntime, registerRuntime, teardownRuntime } from '../kernel/runtime';
 import { searchRuntime } from '../runtimes/searchRuntime';
 import { settingsRuntime } from '../runtimes/settingsRuntime';
@@ -109,6 +110,8 @@ export function installAppRuntime(): void {
   void installPresenceBridge();
   void installEventStreamBridge();
   void installSessionKickBridge();
+
+  initStationConnectionStore();
 
   log.info('appRuntime', 'early runtime installed');
 }

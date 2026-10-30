@@ -6,6 +6,7 @@ import type { AccountProfile } from '../services/desktop_api';
 import type { DesktopIMConversationProjection } from './socialProjection';
 import type { FriendRequestData } from './socialNormalizers';
 import { actorDisplayName, remoteProfileHandle } from './socialProfileProjection';
+import { isRawStationAuthority } from './federation';
 
 export interface MutualFriendProjection {
   actorPtid: string;
@@ -287,10 +288,12 @@ export function chatActorIdentityMetadataParts(
 ): ChatActorIdentityMetadataParts {
   const federation = identity.federationName.trim()
     || identity.federationId.trim();
-  const station = identity.homeStationName?.trim()
-    || identity.homeStationDomain.trim()
-    || homeStationDomainFromHandle(identity.federatedHandle)
-    || '';
+  // Only human station names are user-visible identity metadata. Raw
+  // endpoints (IP/host/domain) are routing details, never labels.
+  const stationCandidate = identity.homeStationName?.trim() || '';
+  const station = stationCandidate && !isRawStationAuthority(stationCandidate)
+    ? stationCandidate
+    : '';
   return { federation, station };
 }
 

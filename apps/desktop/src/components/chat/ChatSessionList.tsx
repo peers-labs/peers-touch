@@ -599,13 +599,11 @@ export function ChatSessionList({
               const timeStr = relativeTime(new Date(c.lastActivityMs), t);
               const unread = c.visibleUnread;
               const localState = conversationLocalState[`${c.kind}:${c.id}`];
-              const identityMetadata = c.kind === 'friend'
-                ? [
-                    c.homeStationName || c.homeStationDomain,
-                    c.federationName,
-                  ].filter(Boolean).join(' · ')
-                : '';
 
+              // The conversation row subtitle is always the latest message.
+              // Station/identity metadata never falls back here: human station
+              // names live on the contact profile, while raw endpoints (IP/domain)
+              // must never be exposed as a conversation description.
               let subtitle = '';
               if (c.preview) {
                 const p = c.preview;
@@ -640,9 +638,6 @@ export function ChatSessionList({
                 } else {
                   subtitle = text;
                 }
-              }
-              if (identityMetadata) {
-                subtitle = [identityMetadata, subtitle].filter(Boolean).join(' · ');
               }
 
               const contextMenuTarget = `context-menu:chat:${c.kind}:${c.id}`;

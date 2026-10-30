@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
-import { Modal, Select, Tag, theme, Tooltip, Typography } from 'antd';
+import { Modal, Select, Spin, Tag, theme, Tooltip, Typography } from 'antd';
 import {
   type ChatAttachmentLike,
   chatMediaKindForAttachment,
@@ -60,6 +60,10 @@ import {
 } from '../../messaging/runtime';
 import { setCachedOssAttachmentUrl } from '../../services/ossAttachmentUrlCache';
 import { resolveFederationStationName } from '../../store/federation';
+import {
+  resolveConversationStationChip,
+  useStationConnectionStore,
+} from '../../store/stationConnection';
 import {
   chatStorageProjectionRuntime,
   chatStorageReleasedBytes,
@@ -615,6 +619,7 @@ export function ChatDetailPanel() {
     loadConversationPreviews, clearConversationProjection,
     conversationLocalState, updateConversationLocalState,
     setConversationBackgroundPreview,
+    setConversationAvatarPreview,
     getIMConversations,
     messages,
     encryptionEnabled,
@@ -642,6 +647,7 @@ export function ChatDetailPanel() {
     conversationLocalState: s.conversationLocalState,
     updateConversationLocalState: s.updateConversationLocalState,
     setConversationBackgroundPreview: s.setConversationBackgroundPreview,
+    setConversationAvatarPreview: s.setConversationAvatarPreview,
     getIMConversations: s.getIMConversations,
     messages: s.messages,
     encryptionEnabled: s.encryptionEnabled,
@@ -673,14 +679,30 @@ export function ChatDetailPanel() {
   const activeGroup: Group | undefined = isGroup
     ? groups.find((g) => g.ulid === activeUlid)
     : undefined;
-  const groupAvatarUrl = groupAvatarRemoteUrl(activeGroup)
-    || (activeConversation?.avatar || '');
+  // The active conversation projection already carries the optimistic local
+  // avatar preview while an upload is in flight, so prefer it.
+  const groupAvatarUrl = activeConversation?.avatar
+    || groupAvatarRemoteUrl(activeGroup);
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
+  const localStation = useStationConnectionStore((state) => ({
+    initialized: state.initialized,
+    peerId: state.activeStationPeerId,
+    name: state.activeStationName,
+    realtimeConnected: state.realtimeConnected,
+  }));
   const authorityStationName = resolveFederationStationName({
     actorPtid: activeConversation?.peerPtid,
     stationPeerId: authorityStationId,
     actorStationEntries,
   });
+  const stationChip = activeConversation
+    ? resolveConversationStationChip({
+      kind: isGroup ? 'group' : 'friend',
+      authorityStationId,
+      authorityStationName,
+      localStation,
+    })
+    : null;
 
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showAllMembers, setShowAllMembers] = useState(false);
@@ -690,6 +712,7 @@ export function ChatDetailPanel() {
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
+  const [groupAvatarUploading, setGroupAvatarUploading] = useState(false);
   const [editingMyNickname, setEditingMyNickname] = useState(false);
   const [editMyNicknameValue, setEditMyNicknameValue] = useState('');
   const [historyActionPending, setHistoryActionPending] = useState(false);
@@ -923,24 +946,41 @@ export function ChatDetailPanel() {
   };
 
   const handleGroupAvatarClick = async () => {
-    if (!activeUlid) return;
+    if (!activeUlid || groupAvatarUploading) return;
     let filePath: string;
     try {
       filePath = await api.pickImageFile();
     } catch {
       return;
     }
+    // Show the picked image immediately; upload and server commit continue
+    // in the background, matching profile avatar/header behavior.
+    const previewUrl = convertFileSrc(filePath);
+    setGroupAvatarUploading(true);
+    setConversationAvatarPreview('group', activeUlid, previewUrl);
     try {
       const uploaded = await api.ossUploadAttachmentSocial(filePath);
       const avatarPath = `/sub-oss/file?key=${encodeURIComponent(uploaded.key)}`;
       await messagingCommands.updateConversation(activeUlid, {
         avatarObjectId: avatarPath,
       });
+      await loadSessions();
+      // Warm the committed remote URL before dropping the local preview so
+      // the swap does not flash to a cold download.
+      await new Promise((resolve) => {
+        const image = new Image();
+        image.onload = resolve;
+        image.onerror = resolve;
+        image.src = avatarPath;
+      });
+      setConversationAvatarPreview('group', activeUlid, null);
       toast.success(t('chat.social.detail.groupAvatarUpdated'));
-      loadSessions();
     } catch (error) {
+      setConversationAvatarPreview('group', activeUlid, null);
       log.error('chat', 'update group avatar failed', { groupUlid: activeUlid, error });
       toast.error(t('chat.social.detail.groupAvatarUpdateFailed'));
+    } finally {
+      setGroupAvatarUploading(false);
     }
   };
 
@@ -1307,8 +1347,11 @@ export function ChatDetailPanel() {
           <Flexbox align="center" gap={12} style={{ padding: '20px 16px 12px' }}>
             {/* Avatar with edit overlay */}
             <div
-              style={{ position: 'relative', cursor: 'pointer' }}
-              onClick={handleGroupAvatarClick}
+              data-chat-group-avatar={groupAvatarUploading ? 'uploading' : 'idle'}
+              style={{ position: 'relative', cursor: groupAvatarUploading ? 'wait' : 'pointer' }}
+              onClick={() => {
+                if (!groupAvatarUploading) void handleGroupAvatarClick();
+              }}
             >
               <Flexbox
                 align="center"
@@ -1349,7 +1392,7 @@ export function ChatDetailPanel() {
                     border: `2px solid ${token.colorBgContainer}`,
                   }}
                 >
-                  <Camera size={12} />
+                  {groupAvatarUploading ? <Spin size="small" /> : <Camera size={12} />}
                 </Flexbox>
               )}
             </div>
@@ -1420,25 +1463,40 @@ export function ChatDetailPanel() {
           </Flexbox>
         )}
 
-        {!isAutomatedConversation && (
+        {stationChip && (
         <Flexbox
-          data-chat-station="authority"
-          data-chat-station-id={authorityStationId}
-          data-chat-station-name={authorityStationName}
-          data-chat-station-state={authorityStationId ? 'available' : 'unavailable'}
+          data-chat-station={isGroup ? 'local' : 'authority'}
+          data-chat-station-id={stationChip.stationId}
+          data-chat-station-name={stationChip.label}
+          data-chat-station-state={stationChip.state}
           horizontal
           align="center"
           justify="center"
+          gap={5}
           style={{ padding: '0 16px 10px', minWidth: 0 }}
         >
+          {stationChip.state !== 'neutral' && (
+            <span
+              aria-hidden="true"
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 999,
+                flexShrink: 0,
+                background: stationChip.state === 'connected'
+                  ? token.colorSuccess
+                  : token.colorTextQuaternary,
+              }}
+            />
+          )}
           <Text
             type="secondary"
-            ellipsis={authorityStationName ? { tooltip: authorityStationName } : false}
+            ellipsis={{ tooltip: stationChip.label }}
             style={{ maxWidth: '100%', fontSize: 11 }}
           >
-            {authorityStationName
-              ? t('chat.social.detail.authorityStation', { station: authorityStationName })
-              : t('chat.social.detail.authorityStationUnavailable')}
+            {isGroup
+              ? stationChip.label
+              : t('chat.social.detail.authorityStation', { station: stationChip.label })}
           </Text>
         </Flexbox>
         )}
