@@ -37,7 +37,9 @@ escapes or writes through symlinks. Downloads may use the npmmirror binary
 mirror; npm tries the configured registry, npmmirror and npmjs.
 
 Installers receive an explicit environment without Station credentials or
-shell initialization hooks. They prepare a staging tree, run a version probe,
+shell initialization hooks. npm user and global configuration resolve to
+distinct private files; assigning both layers to `/dev/null` prevents npm
+from starting. They prepare a staging tree, run a version probe,
 then switch the activation pointer atomically. Wrapper preparation happens
 before activation. Failed final verification restores the previous pointer
 and wrapper; older versions remain available to already running processes.

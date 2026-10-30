@@ -1,11 +1,34 @@
 package environment
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestPrivateEnvironmentLoadsRealNPMConfiguration(t *testing.T) {
+	npm, err := exec.LookPath("npm")
+	if err != nil {
+		t.Skip("npm is not installed")
+	}
+	entries, err := Build(t.TempDir(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, npm, "--version")
+	cmd.Env = entries
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("real npm cannot load private configuration: %v: %s", err, output)
+	} else if strings.TrimSpace(string(output)) == "" {
+		t.Fatal("npm did not report its version")
+	}
+}
 
 func TestPrivateEnvironmentRejectsOverridesAndDoesNotInheritAuthentication(t *testing.T) {
 	root := t.TempDir()

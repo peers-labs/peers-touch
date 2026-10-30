@@ -99,7 +99,10 @@ func Build(root string, pathEntries []string, configured map[string]string) ([]s
 	values["TEMP"], values["TMP"] = values["TMPDIR"], values["TMPDIR"]
 	values["GIT_CONFIG_NOSYSTEM"], values["GIT_CONFIG_GLOBAL"] = "1", os.DevNull
 	values["NO_COLOR"] = "1"
-	values["NPM_CONFIG_USERCONFIG"], values["NPM_CONFIG_GLOBALCONFIG"] = os.DevNull, os.DevNull
+	// npm rejects loading the same file for user and global configuration.
+	// Distinct private paths keep both layers isolated from Station settings.
+	values["NPM_CONFIG_USERCONFIG"] = filepath.Join(dirs["XDG_CONFIG_HOME"], "npm-user.npmrc")
+	values["NPM_CONFIG_GLOBALCONFIG"] = filepath.Join(dirs["XDG_CONFIG_HOME"], "npm-global.npmrc")
 	paths := append([]string{}, pathEntries...)
 	if systemPath := os.Getenv("PATH"); systemPath != "" {
 		paths = append(paths, systemPath)
