@@ -2,6 +2,7 @@
 
 实现已提交，定向源码检查、Dashboard 管理操作以及原生 Desktop 的授权展示、
 账号默认隔离和撤权功能检查通过。Codex、Claude 的真实托管安装可用。
+Station 容器的孤儿进程回收已通过定向运行验证。
 供应商成功调用、Applet 成功调用、Cursor 安装及正式 Acceptance 仍未完成证明，
 不能据此声明整个任务交付完成。
 
@@ -10,9 +11,11 @@
 - 工作树：`worktrees/agent-usability-shared-base-20261027`。
 - 分支：`feat/agent-usability-shared-base-20261027`。
 - 基准提交：`d946b6aec8a24b286e3d8e4f3119b91ef5b70e93`。
-- 实现 checkpoint：`f53331497`、`efbfe0264`、`c25558795`、`83789c278`。
-- 本轮部署、原生构建与功能检查的源码：
+- 实现 checkpoint：`f53331497`、`efbfe0264`、`c25558795`、`83789c278`、`a809c1072`。
+- Dashboard 和原生 Desktop 功能检查的源码：
   `83789c278dffd6ea9ca86df4bb00dc1e5aef8b82`。
+- 容器回收修复的 Station 部署和生命周期检查源码：
+  `a809c107222f170b01a1e7a8299a54653ae93a44`。
 - 授权范围：Provider 管理与消费边界、CLI 托管安装及隔离、个人默认、
   Federation 管理迁往 Dashboard；只验证改动功能。
 - 接受合同：[Provider Control Plane](../../architecture/domains/agent/provider-control-plane.md)、
@@ -34,6 +37,10 @@ Dashboard 使用独立管理员认证入口，通过管理 Port 调用 Agent 和
 Station 托管 Node 与适配器安装，按适配器去重，分阶段报告进度，并原子切换
 已验证版本。失败升级保留原版本。调用和发现共用显式环境构造器，隔离 HOME、
 XDG、工具配置、缓存和临时状态，避免继承 Station 登录态。目录隔离不构成 OS 沙箱。
+
+取消逻辑终止 CLI 自有进程组，Go 等待直接子进程。Station Compose 启用标准
+Docker init，负责回收取消后被收养的后代进程；不在应用内增加全局 wait/reaper。
+持久卷继续承载共享安装和账号私有调用状态。
 
 TRAE CLI、Codex、Cursor 和 Claude Code 均保留管理入口。Codex、Claude 使用
 官方 npm 包，Cursor 使用官方安装脚本；TRAE 当前为 `manual_required`，
@@ -66,6 +73,10 @@ Federation Settings 管理入口已移除，保留 Chat 查找好友的联邦上
 模型校验在 Agent 配置所有者完成，UI 校验承担输入反馈；运行准入继续拒绝非法
 上下文。此次修复未引入平行配置所有者或额外调用入口。
 
+容器修复仅改变 Station 的宿主生命周期配置，进程组、业务权限和激活逻辑保持
+既有所有者。结构准备器将 Compose 与 Markdown 标为不支持的文件类型，
+没有生成新增源码 PASS；配置职责和运行验证由本次审阅直接核对。
+
 操作约束已进入
 [Provider Execution Owner Boundary](../../knowledge/invariants/provider-execution-owner-boundary.md)，
 并登记到知识索引。架构合同与用户文档独立。
@@ -92,6 +103,12 @@ Federation Settings 管理入口已移除，保留 Chat 查找好友的联邦上
   `cargo check --features acceptance-webdriver --locked --offline`。
   本轮未重复未受新增改动影响的检查。
 - **PASS**：差异格式、相关知识归属、API 能力注册及受影响 Feature 结构校验。
+- **PASS**：4 项 CLI 进程生命周期回归：
+  `TestExecutorCancellationTerminatesProcessGroup`、
+  `TestAuxiliaryCommandCancellationTerminatesPipeHoldingChild`、
+  `TestExecutorNormalExitTerminatesRemainingProcessGroup`、
+  `TestSuperviseProcessStopsGraceWaitWhenProcessCompletes`。
+  Compose YAML 及知识归属检查通过。
 - **FUNCTIONAL CHECK**：Dashboard 945px 界面保留四个 CLI 管理入口，真实进度
   可见；创建共享 Provider、模型及全部用户/模型授权，并经管理 API 读回。
   个人策略连续开关 CAS 成功，旧修订返回 409。
@@ -108,6 +125,13 @@ Federation Settings 管理入口已移除，保留 Chat 查找好友的联邦上
 - **FUNCTIONAL CHECK**：共享 Node v24.22.2、Codex 0.166.0、Claude Code 2.1.314
   安装后可用，重部署后仍识别为 ready。TRAE 宿主 PATH 二进制可用，
   自动安装能力仍为 false。
+- **FUNCTIONAL CHECK**：`a809c1072` 经同一 `one-slave` Profile 的 `make station`
+  重部署，版本接口与 checkpoint 一致，容器 `HostConfig.Init=true`，
+  PID 1 为 `docker-init`。旧的 curl/tar/gzip 僵尸随容器重建清除。
+  在 OS-held lease 下创建自有进程组，强制取消后 4 个进程消失；
+  正常父进程退出后清理进程组，2 个进程消失，检查均无僵尸残留。
+  此为受控宿主生命周期检查，没有重新发起耗时的 Cursor 下载。
+  Codex 和 Claude 保持 ready；Cursor 无激活指针，重启后状态为 missing。
 - **FAILED / UNPROVEN**：Cursor 官方安装重试最终返回
   `context deadline exceeded`，没有激活安装版本。脚本和安装包地址从 Station
   返回 HTTP 200；安装包大小为 184859176 字节，下载未在 8 分钟预算内完成。
@@ -124,6 +148,8 @@ Federation Settings 管理入口已移除，保留 Chat 查找好友的联邦上
 测试 Actor 和 Provider 的清理恢复；Bob 的默认未修改。隔离客户端与 GUI 已停止。
 清理期间使用非 stable Profile 的精确 reset scope 和 OS-held lease，
 结束后恢复原工作树能力绑定。已安装的 Station 托管工具保留供后续使用。
+容器生命周期检查仅使用自有 `/tmp` 临时目录和进程组，结束时已清理，
+部署与检查 lease 均已释放。
 
 Profile 和部署环境尚未提供供应商密钥。当前无法证明共享模型或 Applet 成功
 完成真实供应商请求；必须配置授权供应商凭据，再执行成功调用及下一次分发撤权
