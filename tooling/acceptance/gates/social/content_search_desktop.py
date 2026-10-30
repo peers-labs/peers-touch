@@ -135,38 +135,17 @@ return [...document.querySelectorAll('.pt-search-row')].map(row => row.dataset.r
         self.assert_condition("return_target_present", resource_id in rows)
         # Real keyboard selection also establishes a non-default list position
         # where the target requires it; no store or scroll mutation substitutes.
-        self.receiver.execute_script(
-            "document.querySelector('.pt-search-field input')?.focus();"
-        )
+        # Arrow keys must go through the semantic keyboard channel: element
+        # send_keys inserts the WebDriver PUA key codes as literal characters
+        # into the WKWebView input, corrupting the query and emptying results.
+        target_index = rows.index(resource_id)
+        roving_keys = [Keys.ARROW_UP] * len(rows) + [Keys.ARROW_DOWN] * target_index
+        self.receiver.semantic_key_sequence(self.field(), *roving_keys)
         self.wait_js(
-            "document.activeElement === document.querySelector('.pt-search-field input')",
-            "Search input focused for roving keys",
+            "document.querySelector('.pt-search-row[aria-selected=\"true\"]')"
+            f"?.dataset.resourceId === {json.dumps(resource_id)}",
+            "selected original resource before Open",
         )
-        field = self.field()
-        for _ in rows:
-            field.send_keys(Keys.ARROW_UP)
-        for _ in range(rows.index(resource_id)):
-            field.send_keys(Keys.ARROW_DOWN)
-        try:
-            self.wait_js(
-                "document.querySelector('.pt-search-row[aria-selected=\"true\"]')"
-                f"?.dataset.resourceId === {json.dumps(resource_id)}",
-                "selected original resource before Open",
-            )
-        except Exception:
-            self.report.runtime["search"]["rovingFailure"] = self.receiver.execute_script("""
-const active = document.activeElement;
-return {
-  activeTag: active?.tagName || '',
-  activeClass: active?.className || '',
-  activeValue: active?.value || '',
-  rows: [...document.querySelectorAll('.pt-search-row')].map(row => ({
-    resourceId: row.dataset.resourceId,
-    ariaSelected: row.getAttribute('aria-selected'),
-  })),
-};
-""")
-            raise
         return self.receiver.execute_script(RETURN_CONTEXT_JS)
 
     @staticmethod
