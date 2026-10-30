@@ -6,7 +6,7 @@ import {
   ArrowUpRight, CircleSlash, Copy, Hash, HelpCircle, Loader2, Lock, MessageCircle,
   Newspaper, Search, Wrench, X,
 } from 'lucide-react';
-import { SearchKind, SearchZone, type ResultItem, type SourceCoverage } from '../../gen/proto/domain/search/search_pb';
+import { SearchKind, SearchZone, type ResultItem } from '../../gen/proto/domain/search/search_pb';
 import { useSearchStore } from '../../store/search';
 import { searchActions } from '../../runtimes/searchRuntime';
 import { searchRowKey } from '../../services/search';
@@ -279,11 +279,6 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   // that actually delivered are shown as coverage; outstanding sources are
   // listed as pending rather than implied complete.
   const claimedCoverage = deliveredCoverage(presentation, view.progressiveSources);
-  const coverageLabel = (source: SourceCoverage) => {
-    if (source.detailKey) return t(source.detailKey);
-    const kind = coverageStatus(source);
-    return kind ? t(`search.status.${kind}`) : '';
-  };
   const hasStation = (observation?.sources ?? []).some(source => source.sourceId === 'station.social.public');
   const coveragePopover = (
     <div className="pt-search-popover">
@@ -401,7 +396,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
           {claimedCoverage.map(source => {
             const kind = coverageStatus(source);
             return kind ? <span key={source.sourceId} className={`pt-search-status-${kind}`}>
-              {coverageLabel(source)}
+              {t(`search.status.${kind}`)}
             </span> : null;
           })}
         </div>
