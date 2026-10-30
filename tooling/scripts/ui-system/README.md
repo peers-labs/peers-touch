@@ -48,8 +48,15 @@ Rules (C1–C8):
     `.sk-feed-head`, `.sk-chats`) separate by material, never by borders.
 11. `ua-button-chrome` — a visible custom `<button>` must not keep the UA
     `outset` border.
+12. `dead-affordance-not-a-control` — interactive-looking frame elements
+    (rail icons, stacked identities, conversation rows, moment actions) must
+    be real controls (button/a/input or wrapped by one).
+13. `focus-ring-transitioned` — a field that paints its focus ring via
+    box-shadow must not transition box-shadow with a non-zero duration; the
+    keyboard focus indicator must be present immediately (a delayed ring
+    also reads as zero-spread right after focus).
 
-C9–C11 govern the evolving desktop-prototype frame
+C9–C13 govern the evolving desktop-prototype frame
 (`suites/north-star.suite.json`, anchor `.sk-shell`); they are no-ops on
 boards without those elements.
 

@@ -174,6 +174,39 @@ export function craftBatterySource(rootSelector) {
       if (s.borderStyle === 'outset') flag('ua-button-chrome', describe(el));
     });
 
+    // C12 — No dead affordances in the app frame: every element styled/named
+    // as interactive (rail icons, stacked avatars, conversation rows, moment
+    // actions) must be a real control (button/a/input itself or nested inside
+    // one), or expose role=button with a tabindex. A clickable-looking span
+    // silently swallows clicks, which the owner reported repeatedly.
+    const AFFORDANCE_SELECTOR = [
+      '.sk-rail-icon', '.sk-stack-item', '.sk-stack-more',
+      '.sk-chat', '.sk-moment-action',
+    ].join(',');
+    root.querySelectorAll(AFFORDANCE_SELECTOR).forEach(el => {
+      const tag = el.tagName.toLowerCase();
+      const nativeControl = tag === 'button' || tag === 'a' || tag === 'input' || tag === 'textarea' || tag === 'select';
+      const wrapped = !!el.closest('button,a,input,textarea,select');
+      const a11yControl = el.getAttribute('role') === 'button' && el.hasAttribute('tabindex');
+      if (!(nativeControl || wrapped || a11yControl)) {
+        flag('dead-affordance-not-a-control', describe(el));
+      }
+    });
+
+    // C13 — The keyboard focus indicator must be instant. When the focus ring
+    // is painted via box-shadow (north-star fields use :focus-within shadows),
+    // a non-zero box-shadow transition delays the ring and makes its
+    // immediately-read computed value interpolate at zero spread/alpha. Only
+    // fields whose ring channel is box-shadow are scoped here; outline-ring
+    // controls may transition other properties.
+    root.querySelectorAll('.sf-field').forEach(el => {
+      const s = cs(el);
+      const durations = (s.transitionDuration || '').split(',').map(d => parseFloat(d) || 0);
+      const props = (s.transitionProperty || '').split(',').map(p => p.trim());
+      const shadowAnimates = props.some((p, i) => (p === 'box-shadow' || p === 'all') && (durations[i] ?? durations[0]) > 0);
+      if (shadowAnimates) flag('focus-ring-transitioned', describe(el), { transitionProperty: s.transitionProperty, transitionDuration: s.transitionDuration });
+    });
+
     return {
       pass: offenders.length === 0,
       offenders: offenders.slice(0, 30),

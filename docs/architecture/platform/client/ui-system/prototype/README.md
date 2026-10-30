@@ -88,7 +88,10 @@ EDX独立准入没有完成，候选不晋升高保真准入、pending-review或
 （单窗框：60px 图标轨 + 滚动信息流 + 会话轨），未来收敛为 Desktop 原型，
 验证过的模式回流元素集。窗框语法（材质分区、圆角归属、焦点环、近黑胶囊/
 单琥珀/大数值）与其机器门禁见
-[北极星窗框语法](./north-star-frame.md)；相关缺陷经验见
+[北极星窗框语法](./north-star-frame.md)；组件逐个训练，合同放
+[`components/`](./components/)，首个为
+[SearchField](./components/search-field.md)。
+缺陷经验见
 `docs/knowledge/pitfalls/prototype-embedded-control-chrome-leak.md`。
 旧入口 `eles=northstar` 兼容指向同一视图，不再存在平行窗框。
 

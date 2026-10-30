@@ -1,7 +1,7 @@
 {
   "kind": "peers-ui-specimen-suite",
   "capabilityId": "ui.prototype.north-star-frame",
-  "specRef": "docs/architecture/platform/client/ui-system/prototype/north-star-frame.md",
+  "specRef": "docs/architecture/platform/client/ui-system/prototype/components/search-field.md",
   "specimen": {
     "url": "/?site=frontend-eles&eles=directions",
     "anchor": ".sk-shell",
@@ -19,181 +19,116 @@
   },
   "scenarios": [
     {
-      "id": "ui.prototype.north-star.frame-structure",
-      "title": "单扇应用窗框：60px 图标轨、滚动信息流、右会话轨与区块数量完整",
+      "id": "ui.prototype.north-star.frame-and-contract",
+      "title": "单扇窗框与 SearchField 训练台结构完整，无业务拼装残留",
       "level": "L4_RUNTIME",
       "operations": [],
       "oracles": [
         { "id": "one-shell", "type": "count", "scope": "global", "target": ".sk-shell", "equals": 1 },
         { "id": "one-rail", "type": "count", "scope": "global", "target": ".sk-rail", "equals": 1 },
         { "id": "one-feed", "type": "count", "scope": "global", "target": ".sk-feed", "equals": 1 },
-        { "id": "one-chats", "type": "count", "scope": "global", "target": ".sk-chats", "equals": 1 },
-        { "id": "stat-tiles", "type": "count", "target": ".sk-stat", "equals": 3 },
-        { "id": "type-cards", "type": "count", "target": ".sk-type", "equals": 3 },
-        { "id": "setting-tiles", "type": "count", "target": ".sk-setting", "equals": 3 },
-        { "id": "moments", "type": "count", "target": ".sk-moment", "equals": 3 },
-        { "id": "chats-rows", "type": "count", "target": ".sk-chat", "equals": 8 },
-        { "id": "assistant-present", "type": "exists", "target": ".sk-assistant" },
+        { "id": "no-conversation-rail", "type": "count", "scope": "global", "target": ".sk-chats", "equals": 0 },
+        { "id": "no-station-card", "type": "missing", "target": ".sk-station" },
+        { "id": "no-composer", "type": "missing", "target": ".sk-composer" },
+        { "id": "no-topo", "type": "missing", "target": ".sk-topo" },
+        { "id": "no-moments", "type": "missing", "target": ".sk-moment" },
         { "id": "rail-buttons", "type": "count", "target": ".sk-rail .sk-rail-icon", "gte": 6 },
-        { "id": "range-present", "type": "exists", "target": "input[type='range']" },
         { "id": "rail-width", "type": "computedStyle", "target": ".sk-rail", "prop": "width", "equals": "60px" },
-        { "id": "head-height", "type": "computedStyle", "target": ".sk-feed-head", "prop": "height", "equals": "62px" },
-        { "id": "identity-rounded-square", "type": "roundedSquareAll", "target": ".sk-rail-avatar, .sk-stack-item, .sk-stack-more, .sk-chat-avatar, .sk-moment-avatar" }
+        { "id": "contract-present", "type": "exists", "target": ".sk-contract" },
+        { "id": "five-state-rows", "type": "count", "target": ".sf-state-list > li", "equals": 5 },
+        { "id": "six-search-fields", "type": "count", "target": ".sf-field", "equals": 6 },
+        { "id": "identity-rounded-square", "type": "roundedSquareAll", "target": ".sk-rail-avatar" }
       ],
       "finalizers": []
     },
     {
       "id": "ui.prototype.north-star.craft-geometry",
-      "title": "窗框工艺门禁：无直角聚焦框、chrome 分区无发丝描边、按钮无 UA 外观",
+      "title": "窗框工艺门禁：无直角聚焦框、chrome 分区无发丝描边、按钮无 UA 外观、无死按钮",
       "level": "L4_RUNTIME",
       "operations": [],
       "oracles": [
         { "id": "craft-battery-clean", "type": "craftBattery" },
         { "id": "rail-no-right-border", "type": "computedStyle", "target": ".sk-rail", "prop": "borderRightWidth", "equals": "0px" },
-        { "id": "head-no-bottom-border", "type": "computedStyle", "target": ".sk-feed-head", "prop": "borderBottomWidth", "equals": "0px" },
-        { "id": "chats-no-left-border", "type": "computedStyle", "target": ".sk-chats", "prop": "borderLeftWidth", "equals": "0px" },
-        { "id": "no-horizontal-overflow", "type": "overflow", "anchor": ".sk-shell" }
+        { "id": "head-no-bottom-border", "type": "computedStyle", "target": ".sk-feed-head", "prop": "borderBottomWidth", "equals": "0px" }
       ],
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.scope-switch",
-      "title": "投递范围胶囊真实切换且仅一项选中",
+      "id": "ui.prototype.north-star.searchfield-empty",
+      "title": "空态：前导图标 + placeholder，无清除按钮，宿主无描边",
       "level": "L3_DYNAMIC",
-      "operations": [
-        { "op": "click", "target": ".sk-seg button:nth-child(3)" }
-      ],
+      "operations": [],
       "oracles": [
-        { "id": "relay-selected", "type": "attr", "target": ".sk-seg button:nth-child(3)", "attr": "aria-selected", "equals": "true" },
-        { "id": "local-not-selected", "type": "attr", "target": ".sk-seg button:nth-child(1)", "attr": "aria-selected", "equals": "false" },
-        { "id": "single-active", "type": "count", "target": ".sk-seg button.is-on", "equals": 1 }
+        { "id": "empty-no-clear", "type": "missing", "target": ".sf-state-list li:nth-child(1) .sf-clear" },
+        { "id": "empty-has-leading", "type": "exists", "target": ".sf-state-list li:nth-child(1) .sf-leading" },
+        { "id": "host-no-border", "type": "computedStyle", "target": ".sf-state-list li:nth-child(1) .sf-field", "prop": "borderTopWidth", "equals": "0px" }
       ],
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.target-type-select",
-      "title": "对象类型卡真实选中，琥珀标签跟随",
+      "id": "ui.prototype.north-star.searchfield-focus",
+      "title": "聚焦态：焦点环在圆角宿主，内嵌 input 不画方形 UA outline",
       "level": "L3_DYNAMIC",
       "operations": [
-        { "op": "click", "target": ".sk-type:nth-child(2)" }
+        { "op": "focus", "target": ".sf-state-list li:nth-child(2) .sf-field input" }
       ],
       "oracles": [
-        { "id": "group-pressed", "type": "attr", "target": ".sk-type:nth-child(2)", "attr": "aria-pressed", "equals": "true" },
-        { "id": "single-type-on", "type": "count", "target": ".sk-type.is-on", "equals": 1 }
+        { "id": "input-outline-off", "type": "computedStyle", "target": ".sf-state-list li:nth-child(2) .sf-field input", "prop": "outlineStyle", "equals": "none" },
+        { "id": "host-focus-ring", "type": "computedStyle", "target": ".sf-state-list li:nth-child(2) .sf-field", "prop": "boxShadow", "contains": "0px 0px 0px 2px" },
+        { "id": "host-radius", "type": "computedStyle", "target": ".sf-state-list li:nth-child(2) .sf-field", "prop": "borderTopLeftRadius", "contains": "px" }
       ],
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.hops-slider",
-      "title": "最大跳数键盘移动，琥珀填充与值气泡同步",
+      "id": "ui.prototype.north-star.searchfield-clear",
+      "title": "filled 态清除按钮：点击清空并归还焦点",
       "level": "L3_DYNAMIC",
       "operations": [
-        { "op": "focus", "target": ".sk-slider input[type='range']" },
-        { "op": "press", "key": "ArrowLeft" },
-        { "op": "press", "key": "ArrowLeft" }
+        { "op": "click", "target": ".sf-state-list li:nth-child(3) .sf-clear" }
       ],
       "oracles": [
-        { "id": "value-three", "type": "attr", "target": ".sk-slider input[type='range']", "attr": "value", "equals": "3" },
-        { "id": "fill-linked", "type": "attr", "target": ".sk-slider input[type='range']", "attr": "style", "contains": "42.8" },
-        { "id": "bubble-three", "type": "textEquals", "target": ".sk-slider-bubble", "equals": "3" }
+        { "id": "value-cleared", "type": "attr", "target": ".sf-state-list li:nth-child(3) .sf-field input", "attr": "value", "equals": "" },
+        { "id": "clear-gone", "type": "missing", "target": ".sf-state-list li:nth-child(3) .sf-clear" },
+        { "id": "focus-returned", "type": "focusable", "target": ".sf-state-list li:nth-child(3) .sf-field input" }
       ],
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.embedded-search-focus",
-      "title": "内嵌搜索框键盘聚焦不出现方形 UA 焦点框，焦点环在圆角宿主上",
+      "id": "ui.prototype.north-star.searchfield-disabled",
+      "title": "禁用态：disabled、不可聚焦、无清除按钮",
+      "level": "L3_DYNAMIC",
+      "operations": [],
+      "oracles": [
+        { "id": "input-disabled", "type": "disabled", "target": ".sf-state-list li:nth-child(4) .sf-field input" },
+        { "id": "disabled-no-clear", "type": "missing", "target": ".sf-state-list li:nth-child(4) .sf-clear" },
+        { "id": "host-dimmed", "type": "exists", "target": ".sf-field.is-disabled" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.searchfield-live-controlled",
+      "title": "活样本受控输入实时回显，长占位不产生横向溢出",
       "level": "L3_DYNAMIC",
       "operations": [
-        { "op": "focus", "target": ".sk-chat-search input" }
+        { "op": "type", "target": ".sf-live-bar .sf-field input", "value": "林晚" }
       ],
       "oracles": [
-        { "id": "input-outline-off", "type": "computedStyle", "target": ".sk-chat-search input", "prop": "outlineStyle", "equals": "none" },
-        { "id": "host-focus-ring", "type": "computedStyle", "target": ".sk-chat-search", "prop": "boxShadow", "contains": "0px 0px 0px 2px" }
+        { "id": "echo-updates", "type": "textContains", "target": ".sf-live-echo", "contains": "林晚" },
+        { "id": "clear-appears", "type": "exists", "target": ".sf-live-bar .sf-clear" },
+        { "id": "long-row-present", "type": "exists", "target": ".sf-state-list li:nth-child(5)" }
       ],
       "finalizers": []
     },
     {
       "id": "ui.prototype.north-star.rail-nav-live",
-      "title": "左轨图标是真按钮，点击切换激活态",
+      "title": "左轨图标是真按钮，点击切换激活态且仅一个激活",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(1)" }
       ],
       "oracles": [
-        { "id": "search-active", "type": "attr", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(1)", "attr": "aria-current", "equals": "page" },
-        { "id": "single-active", "type": "count", "target": ".sk-rail .sk-rail-icon.is-active", "equals": 1 },
-        { "id": "search-focused", "type": "focusable", "target": ".sk-chat-search input" }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.stack-expand",
-      "title": "头像叠默认 5 枚 + 更多，点击 +3 展开为 8 枚并可收起",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        { "op": "click", "target": ".sk-stack-more" }
-      ],
-      "oracles": [
-        { "id": "expanded-eight", "type": "count", "target": ".sk-stack-item", "equals": 8 },
-        { "id": "more-becomes-collapse", "type": "textEquals", "target": ".sk-stack-more", "equals": "−" },
-        { "id": "aria-expanded", "type": "attr", "target": ".sk-stack-more", "attr": "aria-expanded", "equals": "true" }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.chat-select-and-read",
-      "title": "点击会话行/头像选中该连接并清除未读角标",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        { "op": "click", "target": ".sk-chat .sk-badge" }
-      ],
-      "oracles": [
-        { "id": "row-selected", "type": "count", "target": ".sk-chat.is-selected", "equals": 1 },
-        { "id": "badge-cleared-row", "type": "missing", "target": ".sk-chat.is-selected .sk-badge" }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.search-filters-connections",
-      "title": "搜索实时过滤右栏会话",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        { "op": "type", "target": ".sk-chat-search input", "value": "林晚" }
-      ],
-      "oracles": [
-        { "id": "one-match", "type": "count", "target": ".sk-chat", "equals": 1 },
-        { "id": "match-copy", "type": "textContains", "target": ".sk-chat", "contains": "林晚" }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.publish-feedback",
-      "title": "发布按钮点击有真实本地反馈，选择器可循环切换",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        { "op": "click", "target": ".sk-select" },
-        { "op": "click", "target": ".sk-publish" }
-      ],
-      "oracles": [
-        { "id": "from-cycled", "type": "textContains", "target": ".sk-selectors > .sk-select strong", "contains": "garden" },
-        { "id": "publish-ack", "type": "textContains", "target": ".sk-publish", "contains": "已发布" }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.moment-actions-live",
-      "title": "动态点赞真实切换并改变计数；助手发送追加消息",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        { "op": "click", "target": ".sk-moment:first-of-type .sk-moment-action:first-child" },
-        { "op": "click", "target": ".sk-assistant-input input" },
-        { "op": "type", "target": ".sk-assistant-input input", "value": "你好" },
-        { "op": "click", "target": ".sk-assistant-input button" }
-      ],
-      "oracles": [
-        { "id": "like-pressed", "type": "attr", "target": ".sk-moment:first-of-type .sk-moment-action:first-child", "attr": "aria-pressed", "equals": "true" },
-        { "id": "like-count-25", "type": "textContains", "target": ".sk-moment:first-of-type .sk-moment-action:first-child", "contains": "25" },
-        { "id": "assistant-echo", "type": "count", "target": ".sk-bubble", "gte": 4 }
+        { "id": "search-current", "type": "attr", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(1)", "attr": "aria-current", "equals": "page" },
+        { "id": "single-active", "type": "count", "target": ".sk-rail .sk-rail-icon.is-active", "equals": 1 }
       ],
       "finalizers": []
     }
