@@ -112,6 +112,9 @@ type ActorRoleRepository interface {
 
 type StationRoleRepository interface {
 	EnsureInitialOwner(ctx context.Context) error
+	// InitialOwnerPTID ensures an initial Station owner exists and returns
+	// its actor PTID. It is the founder identity for the default federation.
+	InitialOwnerPTID(ctx context.Context) (string, error)
 	HasAnyRole(
 		ctx context.Context,
 		actorPTID string,

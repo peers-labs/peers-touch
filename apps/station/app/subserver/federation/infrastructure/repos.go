@@ -685,6 +685,23 @@ func (r *stationRoleRepo) EnsureInitialOwner(ctx context.Context) error {
 	})
 }
 
+func (r *stationRoleRepo) InitialOwnerPTID(ctx context.Context) (string, error) {
+	if err := r.EnsureInitialOwner(ctx); err != nil {
+		return "", err
+	}
+	var assignment stationRoleAssignmentModel
+	if err := r.db.WithContext(ctx).
+		Where("role = ? AND revoked_at IS NULL", domain.StationRoleOwner).
+		Order("id ASC").
+		First(&assignment).Error; err != nil {
+		return "", fmt.Errorf("resolve initial Station owner: %w", err)
+	}
+	if assignment.ActorPTID == "" {
+		return "", fmt.Errorf("resolve initial Station owner: actor PTID is empty")
+	}
+	return assignment.ActorPTID, nil
+}
+
 func (r *stationRoleRepo) HasAnyRole(
 	ctx context.Context,
 	actorPTID string,

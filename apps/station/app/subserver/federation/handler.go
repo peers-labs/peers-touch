@@ -57,11 +57,42 @@ func (s *subServer) requireStationGovernance(
 	return subject, nil
 }
 
+// ensureDefaultFederation materializes the Station's local social domain on
+// first authenticated need, so a single Station supports local friend requests
+// and catalog lookup without manual federation setup. It is idempotent and
+// best-effort: provisioning problems must not break the context read path; the
+// caller simply returns whatever (possibly empty) projection exists.
+func (s *subServer) ensureDefaultFederation(ctx context.Context) {
+	if s.federationSvc == nil || s.stationRoleRepo == nil {
+		return
+	}
+	stationPeerID := localStationPeerID()
+	if stationPeerID == "" {
+		return
+	}
+	s.defaultFedMu.Lock()
+	defer s.defaultFedMu.Unlock()
+	founderPTID, err := s.stationRoleRepo.InitialOwnerPTID(ctx)
+	if err != nil {
+		log.Warnf(ctx, "[federation] resolve default federation founder: %v", err)
+		return
+	}
+	if _, _, err := s.federationSvc.EnsureDefaultFederation(ctx, &application.EnsureDefaultFederationInput{
+		StationPeerID:    stationPeerID,
+		StationName:      node.GetService().Name(),
+		StationURL:       localStationURL(),
+		FounderActorPTID: founderPTID,
+	}); err != nil {
+		log.Warnf(ctx, "[federation] ensure default federation: %v", err)
+	}
+}
+
 func (s *subServer) handleListFederations(ctx context.Context, _ *ListFederationsRequest) (*pb.ListFederationsResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
+	s.ensureDefaultFederation(ctx)
 	actorPTID := subject.ID
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
