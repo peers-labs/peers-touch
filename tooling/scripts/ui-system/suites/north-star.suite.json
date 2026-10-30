@@ -177,6 +177,44 @@
         { "id": "title-reflects-query", "type": "textContains", "target": ".sk-conv-title", "contains": "群" }
       ],
       "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.conversation-view-seed",
+      "title": "增量2：选中会话展示消息流，peer/me 气泡与头像方圆正确，输入区用 peers-ui",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" }
+      ],
+      "oracles": [
+        { "id": "view-present", "type": "exists", "target": ".sk-conv-view" },
+        { "id": "three-messages", "type": "count", "target": ".sk-msg", "equals": 3 },
+        { "id": "two-peer", "type": "count", "target": ".sk-msg-peer", "equals": 2 },
+        { "id": "one-me", "type": "count", "target": ".sk-msg-me", "equals": 1 },
+        { "id": "peer-avatars-square", "type": "roundedSquareAll", "target": ".sk-msg-avatar" },
+        { "id": "composer-textarea", "type": "exists", "target": ".sk-composer textarea" },
+        { "id": "send-disabled-when-empty", "type": "attr", "target": ".sk-composer .pt-icon-button", "attr": "aria-disabled", "equals": "true" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.conversation-send",
+      "title": "输入并发送：追加本人气泡、清空输入、发送键回禁用态",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "type", "target": ".sk-composer textarea", "value": "晚上七点书架见" },
+        { "op": "click", "target": ".sk-composer .pt-icon-button" }
+      ],
+      "oracles": [
+        { "id": "four-messages", "type": "count", "target": ".sk-msg", "equals": 4 },
+        { "id": "last-is-mine", "type": "exists", "target": ".sk-msg-me:last-child" },
+        { "id": "last-text", "type": "textContains", "target": ".sk-msg-me:last-child .sk-msg-bubble p", "contains": "七点" },
+        { "id": "composer-cleared", "type": "attr", "target": ".sk-composer textarea", "attr": "data-composer-value", "equals": "" },
+        { "id": "send-redisabled", "type": "attr", "target": ".sk-composer .pt-icon-button", "attr": "aria-disabled", "equals": "true" }
+      ],
+      "finalizers": []
     }
   ]
 }

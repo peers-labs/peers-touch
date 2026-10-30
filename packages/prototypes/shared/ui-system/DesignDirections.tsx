@@ -12,13 +12,13 @@
  * Skins are CSS-variable token sets (data-skin); wallpapers are a second
  * independent dimension. Draft values; nothing is promoted until accepted.
  */
-import { useState, type CSSProperties, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent, type KeyboardEvent } from 'react';
 import {
   Search, MessageCircle, Bot, Sparkles, Bell, Settings,
   Upload, ImageIcon, X, UserPlus, MessagesSquare,
   type LucideIcon,
 } from 'lucide-react';
-import { Avatar, Badge, Button, Empty } from '@peers-touch/ui';
+import { Avatar, Badge, Button, Empty, IconButton, TextArea } from '@peers-touch/ui';
 import './design-directions.css';
 
 type Skin = { id: string; name: string; desc: string };
@@ -163,6 +163,80 @@ function ConversationRail({
   );
 }
 
+/* Increment 2 — ConversationView: message stream + composer, composed from
+   peers-ui. Calls/attachments/thread/detail panels from the legacy
+   SocialChatPage are explicitly deferred; this is human 1:1/group text only. */
+type ChatMessage = { id: string; from: 'me' | 'peer'; text: string; at: string };
+
+const SEED_MESSAGES: Record<string, ChatMessage[]> = {
+  'cv-chenyu': [
+    { id: 'm1', from: 'peer', text: '周末种子交换你要来吗？我带了上次说的番茄籽。', at: '09:21' },
+    { id: 'm2', from: 'me', text: '来，我把薄荷分一盆给你。', at: '09:24' },
+    { id: 'm3', from: 'peer', text: '[图片]', at: '09:25' },
+  ],
+  'cv-qun': [
+    { id: 'm1', from: 'peer', text: '周禾：周末书架见，记得带想交换的书。', at: '昨天' },
+  ],
+  'cv-linwan': [
+    { id: 'm1', from: 'peer', text: '诗集散会我帮你留了位置。', at: '08:40' },
+  ],
+};
+
+function ConversationView({ conversation, messages, onSend }: {
+  conversation: Conversation;
+  messages: ChatMessage[];
+  onSend: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length, conversation.id]);
+
+  const send = () => {
+    const text = draft.trim();
+    if (!text) return;
+    onSend(text);
+    setDraft('');
+  };
+  const onEnter = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    send();
+  };
+
+  return (
+    <section className="sk-conv-view" aria-label={`与 ${conversation.name} 的对话`}>
+      <div className="sk-msg-stream" ref={scrollRef}>
+        {messages.map(m => (
+          <div key={m.id} className={`sk-msg sk-msg-${m.from}`}>
+            {m.from === 'peer' && (
+              <Avatar name={conversation.name} background={conversation.tone} size={32}
+                className="sk-msg-avatar" style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+            )}
+            <div className="sk-msg-bubble">
+              <p>{m.text}</p>
+              <time>{m.at}</time>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="sk-composer">
+        <TextArea framing="embedded" minimumRows={1} maximumRows={4}
+          className="sk-composer-input" value={draft} aria-label="输入消息"
+          data-composer-value={draft}
+          placeholder={`发消息给 ${conversation.name}`}
+          onValueChange={setDraft} onEnter={onEnter} />
+        <IconButton iconId="send" iconSize={16} label="发送消息"
+          actionId="sk.send-message" emphasis="primary"
+          availability={draft.trim() ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入消息' }}
+          onActivate={send} />
+      </div>
+    </section>
+  );
+}
+
 export function DesignDirections() {
   const [skinId, setSkinId] = useState('glass');
   const [wallpaper, setWallpaper] = useState<string>('none');
@@ -171,6 +245,7 @@ export function DesignDirections() {
   const [liveQuery, setLiveQuery] = useState('');
   const [conversations, setConversations] = useState<Conversation[]>(CONVERSATIONS);
   const [selectedConv, setSelectedConv] = useState<string | null>(null);
+  const [messagesByConv, setMessagesByConv] = useState<Record<string, ChatMessage[]>>(SEED_MESSAGES);
 
   const selectedConversation = conversations.find(c => c.id === selectedConv) ?? null;
 
@@ -182,6 +257,15 @@ export function DesignDirections() {
   const newConversation = () => {
     setRailTab('chat');
     setSelectedConv(null);
+  };
+  const sendMessage = (text: string) => {
+    if (!selectedConv) return;
+    const now = new Date();
+    const at = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const msg: ChatMessage = {
+      id: `local-${Date.now()}`, from: 'me', text, at,
+    };
+    setMessagesByConv(map => ({ ...map, [selectedConv]: [...(map[selectedConv] ?? []), msg] }));
   };
   const isChat = railTab === 'chat';
 
@@ -275,17 +359,18 @@ export function DesignDirections() {
           </header>
 
           {isChat ? (
-            <div className="sk-conversation">
-              {selectedConversation ? (
+            selectedConversation ? (
+              <ConversationView
+                conversation={selectedConversation}
+                messages={messagesByConv[selectedConversation.id] ?? []}
+                onSend={sendMessage} />
+            ) : (
+              <div className="sk-conversation">
                 <Empty className="sk-conversation-empty"
                   icon={<MessagesSquare size={28} strokeWidth={1.5} />}
-                  description={`与「${selectedConversation.name}」的对话窗为迁移增量 2（ConversationView）`} />
-              ) : (
-                <Empty className="sk-conversation-empty"
-                  icon={<MessagesSquare size={28} strokeWidth={1.5} />}
-                  description="从左侧选择一个会话，或新建会话（对话窗将在增量 2 落地）" />
-              )}
-            </div>
+                  description="从左侧选择一个会话，或新建会话" />
+              </div>
+            )
           ) : (
             <div className="sk-feed-list">
               <section className="sk-card sk-contract">

@@ -55,5 +55,8 @@
 - [x] 0 SearchField 训练（既有）
 - [x] 1 ConversationRail（peers-ui Avatar/Badge/Button/Empty + 已训练 SearchField；
       8 会话、未读角标、选中清未读、轨内过滤、双皮肤令牌桥接；门禁 12/12）
-- [ ] 2 ConversationView（消息流 + 输入区）
-- [ ] 3 …9
+- [x] 2 ConversationView（peers-ui TextArea embedded / IconButton send / Avatar；
+      peer/me 气泡、时间、本地发送、Enter 发送、空禁发、焦点环归属；合同见
+      components/conversation-view.md；门禁 14/14）
+- [ ] 3 发起会话/联系人选择（Autocomplete 或 List+SearchField、Avatar、Button、Dialog）
+- [ ] 4 …9
