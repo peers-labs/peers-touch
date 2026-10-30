@@ -68,7 +68,88 @@
       个人页 72；合同 components/moments-feature.md；门禁 31/31，1360/390 双宽度）
 - [x] 5 动态详情 / 发动态 / 圈友管理（并入增量 4；私密动态 native 状态机、视频/投票/
       定位/转发等内容种类、真实图床与持久化保持 UNPROVEN）
-- [ ] 6 设置框架 SettingsFrame（SectionNav/Accordion/Card/PageHeader）
-- [ ] 7 通用设置行 SettingsRow（Switch/Select/TextField/Button/InlineAlert）
+- [x] 6 设置框架 SettingsFrame（6 分组材质药丸 + 多分区分区导航 + Section/Row/ItemCard
+      原语 + 语言 Select + 截图快捷键录制；未建分区为诚实 Empty；合同
+      components/settings-frame.md；门禁 35/35）
+- [ ] 7 账号/安全/帮助内容
 - [ ] 8 数据/存储设置（Switch/Button/Progress/Alert/Table）
-- [ ] 9 工具/通道/小程序/帮助分组（Select/TextField/Tag/Accordion）
+- [ ] 9 工具/通道/小程序（Select/TextField/Tag/Accordion；Bots 继续挂起）
+
+## 5. 全功能点审计与执行计划（2026-10-31 临时计划）
+
+> 方法：逐文件审计 `apps/desktop/src/pages/*` + `components/{chat,settings,moments}`，
+> 每个功能点标注 ✅ 已迁入 / ◐ 部分 / ✗ 未迁；排除 AI、Federation 两大分组。
+> 所有迁移只用 peers-ui 组合，本地真实状态，不允许死控件。
+
+### 5.1 Chat / Social 功能点审计
+
+会话与联系人（SocialChatPage 左两层）：
+- [x] ✅ 会话轨：列表/未读角标/过滤/选中清未读/新建会话（增量 1/3）
+- [ ] ◐ 群会话：fixture 有群数据但未用 GroupAvatar，无群名/群预览层级
+- [ ] ✗ 会话行状态：置顶（Pin）、免打扰（BellOff）标记
+- [ ] ✗ 新建菜单：找人（已有）+ 创建群（CreateGroupModal：多选成员、群名、创建失败重试）
+- [ ] ✗ 会话搜索下拉：联系人/群/会话联合结果（ChatSearchDropdown），区别于当前轨内过滤
+- [ ] ✗ chats/contacts 子导航 + 联系人面板：好友请求（接受/拒绝/待处理·已同意·已拒绝状态/行内错误）、
+      联系人列表
+- [ ] ✗ 联系人详情面板（ChatContactsDetailPanel：资料、发消息、建群 opening 态）
+- [ ] ✗ 会话列表错误态（blocking/stale）与重试
+
+对话窗（ChatMessageArea）：
+- [x] ✅ 文本消息流 + 输入区 + Enter 发送 + 空态禁发（增量 2）
+- [ ] ✗ 1:1 音视频通话（CallSurface：振铃/接听/挂断/静音/摄像头/状态）
+- [ ] ✗ 群通话（GroupCallSurface）
+- [ ] ✗ 会话详情面板（ChatDetailPanel：成员、置顶/免打扰等开关）
+- [ ] ✗ 会话内消息搜索（SearchMessagesModal）
+- [ ] ✗ Thread 话题面板（ChatThreadPanel）
+- [ ] ✗ 消息行操作：消息反应、回复/进 Thread、转发（ForwardPickerModal）、复制、
+      删除确认（ChatDeleteConfirmOverlay）、操作 overlay 几何
+- [ ] ✗ 服务/系统消息（ServiceMessageCard：入群等事件聚合）
+- [ ] ✗ 链接预览卡（LinkPreviewCard）
+- [ ] ✗ @提及（MentionPopup + MentionTag + 触发）
+- [ ] ✗ 输入区：emoji、文件/图片附件（草稿、重试/移除、上传态）、截图捕获、
+      语音消息（录制/取消/完成/试听/发送、气泡内播放与进度）、输入框展开/收起
+- [ ] ✗ 附件详情宿主（AttachmentDetailHost/AttachmentItem：图片/文件/语音）
+- [ ] ✗ 只读分享页（SharePage：token 查看共享会话，登录外只读态）
+
+Social / Moments：
+- [x] ✅ 动态子系统全功能面（增量 4：四范围/卡片解剖/16 反应/图片灯箱/评论/发布/
+      个人页/找人/圈友/分页）
+- [ ] ✗（UNPROVEN 延后）视频/投票/定位/外链/转发内容种类、私密动态 native 状态、
+      真实图床、@提及与话题、删除/举报
+
+### 5.2 Settings 功能点审计（排除 AI 7 项与 Federation）
+
+- [x] ✅ S0 框架：6 分组材质药丸（AI·联邦不出现）、多分区分区导航、
+      SettingsSection/ItemCard/Row 原语（深链高亮不适用原型层）
+- [x] ✅ S1 通用：语言切换；截图快捷键录制/重置/默认值（增量 6）
+- [ ] ✗ S2 账号（AccountTab）：身份卡（头像/头图更换）、动态/关注/粉丝统计、
+      @username 与 PTID 可复制字段、资料编辑、资料链接增删、设备关联（DeviceLinkPanel）
+- [ ] ✗ S3 安全（RecoverySettings）：恢复密钥查看/复制/重新生成、恢复对话框
+- [ ] ✗ S4 工具：工具表（名称/分类/需审批标签/错误 Alert）、定时任务（CronJobsSettings）、
+      命令面板设置（CommandPaletteSettings）
+- [ ] ✗ S5 通道：飞书通道管理与开通面板（LarkChannels/ChannelManagement/Provisioning）；
+      Bots 归属待人工决策
+- [ ] ✗ S6 小程序：说明 + 小程序行 + 带设置面板的二级钻取
+- [ ] ✗ S7 数据：聊天留存设置、清缓存、会话存储表（多选/批量删除进度/单项删除重试）、
+      文件管理（MyFilesSettings）、日志查看（logs）
+- [ ] ✗ S8 帮助：关于卡 + 内置搜索功能折叠表（快捷键、来源标记）
+
+### 5.3 执行分组（每增量独立门禁 + 截图人判）
+
+- [x] 6 SettingsFrame + SettingsRow 原语（S0 + 通用分区语言/快捷键；门禁 35/35）
+- [ ] 7 通用/账号/安全/帮助（S1 已在 6 落语言+快捷键；补 S2/S3/S8）
+- [ ] 8 数据：存储/文件/日志（S7）
+- [ ] 9 工具/通道/小程序（S4/S5/S6；bots 继续挂起）
+- [ ] 10 聊天目录层：子导航、联系人+好友请求+详情、建群、群会话、置顶/免打扰、
+      联合搜索、错误重试
+- [ ] 11 对话框架：头部通话入口与详情/搜索、ChatDetailPanel、Thread 面板、服务消息
+- [ ] 12 消息解剖：反应/回复/转发/复制/删除确认/链接预览/@提及
+- [ ] 13 富输入：emoji、附件、图片渲染、语音消息、截图、附件详情、只读分享页
+- [ ] 14 通话面：1:1 与群通话本地状态机（是否纳入见决策点）
+- [ ] 15 跨模块设计哲学总评：样式/边界/对齐/对称全量走查 + craft battery 加固
+
+### 5.4 决策（2026-10-31 已确认）
+
+- 通话纳入：增量 14 做 1:1 与群通话本地状态机（振铃/接通/静音/摄像头/挂断），不接 P2P。
+- Bots 设置继续挂起，等归属决策；增量 9 不含 Bots。
+- 执行顺序：先 Settings（6→9），再深 Chat（10→14），最后增量 15 跨模块设计哲学总评。

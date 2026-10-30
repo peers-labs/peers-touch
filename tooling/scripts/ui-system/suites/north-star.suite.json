@@ -32,7 +32,7 @@
         { "id": "no-composer", "type": "missing", "target": ".sk-composer" },
         { "id": "no-topo", "type": "missing", "target": ".sk-topo" },
         { "id": "no-moments", "type": "missing", "target": ".sk-moment" },
-        { "id": "rail-buttons", "type": "count", "target": ".sk-rail .sk-rail-icon", "equals": 5 },
+        { "id": "rail-buttons", "type": "count", "target": ".sk-rail .sk-rail-icon", "equals": 4 },
         { "id": "rail-width", "type": "computedStyle", "target": ".sk-rail", "prop": "width", "equals": "60px" },
         { "id": "contract-present", "type": "exists", "target": ".sk-contract" },
         { "id": "five-state-rows", "type": "count", "target": ".sf-state-list > li", "equals": 5 },
@@ -499,6 +499,75 @@
         { "id": "profile-avatar-radius", "type": "computedStyle", "target": ".sk-profile .pt-avatar", "prop": "borderTopLeftRadius", "equals": "20px" },
         { "id": "profile-name", "type": "textContains", "target": ".sk-profile-id h2", "contains": "林晚" },
         { "id": "profile-posts", "type": "count", "target": ".sk-profile-posts .sk-post", "equals": 1 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-frame",
+      "title": "增量6：齿轮进入设置——6 分组材质药丸、通用组 3 分区导航、账号分区诚实空态、无发丝 chrome、工艺电池全清",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" }
+      ],
+      "oracles": [
+        { "id": "settings-current", "type": "attr", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon", "attr": "aria-current", "equals": "page" },
+        { "id": "title", "type": "textContains", "target": ".sk-feed-head h1", "contains": "设置" },
+        { "id": "six-groups", "type": "count", "target": ".sk-settings-group", "equals": 6 },
+        { "id": "general-active", "type": "count", "target": ".sk-settings-group.is-active", "equals": 1 },
+        { "id": "three-sections", "type": "count", "target": ".sk-settings-nav-item", "equals": 3 },
+        { "id": "account-pending", "type": "textContains", "target": ".sk-settings-scroll", "contains": "增量 7" },
+        { "id": "no-conversation-rail", "type": "count", "scope": "global", "target": ".sk-conv-rail", "equals": 0 },
+        { "id": "groups-no-hairline", "type": "computedStyle", "target": ".sk-settings-subbar", "prop": "borderBottomWidth", "equals": "0px" },
+        { "id": "craft-clean", "type": "craftBattery" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-general-section",
+      "title": "通用分区：语言 Select 与截图快捷键两行真实控件，默认快捷键 Mod+Shift+A，重置键初始禁用",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(3)" }
+      ],
+      "oracles": [
+        { "id": "section-open", "type": "exists", "target": ".sk-settings-section .sk-shortcut-input" },
+        { "id": "two-rows", "type": "count", "target": ".sk-settings-row", "equals": 2 },
+        { "id": "language-select", "type": "exists", "target": ".sk-settings-row .pt-select" },
+        { "id": "default-shortcut", "type": "attr", "target": ".sk-shortcut-input", "attr": "data-shortcut", "equals": "Mod+Shift+A" },
+        { "id": "reset-disabled", "type": "attr", "target": "[data-action-id='settings.shortcut.reset']", "attr": "aria-disabled", "equals": "true" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-shortcut-record",
+      "title": "录制快捷键：进入聆听后按 ⌘/Ctrl+Shift+S 落值，重置恢复默认",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(3)" },
+        { "op": "click", "target": "[data-action-id='settings.shortcut.record']" },
+        { "op": "press", "key": "Meta+Shift+S" },
+        { "op": "click", "target": "[data-action-id='settings.shortcut.reset']" }
+      ],
+      "oracles": [
+        { "id": "restored-default", "type": "attr", "target": ".sk-shortcut-input", "attr": "data-shortcut", "equals": "Mod+Shift+A" },
+        { "id": "reset-redisabled", "type": "attr", "target": "[data-action-id='settings.shortcut.reset']", "attr": "aria-disabled", "equals": "true" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-group-switch",
+      "title": "切到数据组：分区导航变 3 项且空态标增量 8；单分区的小程序组隐藏分区导航",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(5)" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(4)" }
+      ],
+      "oracles": [
+        { "id": "applets-no-nav", "type": "missing", "target": ".sk-settings-nav" },
+        { "id": "applets-pending", "type": "textContains", "target": ".sk-settings-scroll", "contains": "增量 9" }
       ],
       "finalizers": []
     }

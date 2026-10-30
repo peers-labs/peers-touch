@@ -14,12 +14,13 @@
  */
 import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent, type KeyboardEvent } from 'react';
 import {
-  Search, MessageCircle, Sparkles, Bell, Settings,
+  Search, MessageCircle, Sparkles, Settings,
   Upload, ImageIcon, X, UserPlus, MessagesSquare,
   type LucideIcon,
 } from 'lucide-react';
 import { Avatar, Badge, Button, Dialog, Empty, IconButton, TextArea, UIProvider } from '@peers-touch/ui';
 import { MomentsFeature } from './moments/MomentsFeature';
+import { SettingsFeature } from './settings/SettingsFeature';
 import './design-directions.css';
 
 type Skin = { id: string; name: string; desc: string };
@@ -56,7 +57,7 @@ const WALLPAPERS: { id: string; name: string; value: string }[] = [
   { id: 'night', name: '夜航', value: 'radial-gradient(120% 120% at 20% 0%,#3a4a63,#1c2536 70%)' },
 ];
 
-type RailTab = 'moments' | 'search' | 'chat';
+type RailTab = 'moments' | 'search' | 'chat' | 'settings';
 const RAIL_NAV: { icon: LucideIcon; key: RailTab; label: string }[] = [
   { icon: Search, key: 'search', label: '搜索' },
   { icon: MessageCircle, key: 'chat', label: '消息' },
@@ -418,8 +419,12 @@ export function DesignDirections() {
           </div>
           <span className="sk-rail-spacer" />
           <div className="sk-rail-group">
-            <button type="button" className="sk-rail-icon" aria-label="通知"><Bell size={19} strokeWidth={1.7} /></button>
-            <button type="button" className="sk-rail-icon" aria-label="设置"><Settings size={19} strokeWidth={1.7} /></button>
+            <button type="button"
+              className={`sk-rail-icon${railTab === 'settings' ? ' is-active' : ''}`}
+              aria-label="设置" aria-current={railTab === 'settings' ? 'page' : undefined}
+              onClick={() => setRailTab('settings')}>
+              <Settings size={19} strokeWidth={1.7} />
+            </button>
           </div>
         </nav>
 
@@ -427,12 +432,15 @@ export function DesignDirections() {
           <header className="sk-feed-head">
             <div className="sk-head-title">
               <span className="sk-eyebrow">
-                {isChat ? '消息' : railTab === 'moments' ? '社交 · 动态' : '组件训练'}
+                {isChat ? '消息'
+                  : railTab === 'moments' ? '社交 · 动态'
+                    : railTab === 'settings' ? '偏好与配置' : '组件训练'}
               </span>
               <h1>
                 {isChat
                   ? (selectedConversation ? selectedConversation.name : '消息')
-                  : railTab === 'moments' ? '朋友圈动态' : 'SearchField · 搜索框'}
+                  : railTab === 'moments' ? '朋友圈动态'
+                    : railTab === 'settings' ? '设置' : 'SearchField · 搜索框'}
               </h1>
             </div>
           </header>
@@ -452,6 +460,8 @@ export function DesignDirections() {
             )
           ) : railTab === 'moments' ? (
             <MomentsFeature />
+          ) : railTab === 'settings' ? (
+            <SettingsFeature />
           ) : (
             <div className="sk-feed-list">
               <section className="sk-card sk-contract">
