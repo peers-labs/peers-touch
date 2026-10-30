@@ -1,4 +1,5 @@
 // Settings renders the account default owned by Station and the Provider store.
+import { useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Alert, Button, toast } from '@lobehub/ui';
 import { Typography, theme } from 'antd';
@@ -22,7 +23,10 @@ export function ModelServiceTab() {
   }));
   const config = { default: runtimeDefault
     ? { provider: runtimeDefault.providerId, model: runtimeDefault.modelId } : undefined };
-  const models = useAgentStore((state) => state.availableModels);
+  const availableModels = useAgentStore((state) => state.availableModels);
+  const models = useMemo(() => availableModels.filter(
+    (model) => model.enabled && (!model.type || model.type === 'chat'),
+  ), [availableModels]);
   const modelsLoading = useAgentStore((state) => state.loading);
 
   const handleDefaultChange = async (ref: ModelRef) => {
@@ -102,6 +106,7 @@ export function ModelServiceTab() {
                     if (next) void handleDefaultChange(next);
                   }}
                   models={models}
+                  allowClear={false}
                   showWarning={!!isInvalid}
                   style={{ width: 280, maxWidth: '100%' }}
                   disabled={noModels || defaultSaving || defaultStatus !== 'ready'}
@@ -110,7 +115,7 @@ export function ModelServiceTab() {
 
               {isInvalid && (
                 <Text type="warning" style={{ fontSize: 12, marginTop: 4 }}>
-                  ⚠ {t('provider.modelService.modelInvalid', { model: ref?.model, provider: ref?.provider })}
+                  {t('provider.modelService.modelInvalid')}
                 </Text>
               )}
             </Flexbox>

@@ -23,16 +23,19 @@ export function AuthorizedProviderDetail({ detail }: { detail: ProviderDetail })
         <Button onClick={() => void loadRuntimeDefault()}>{t('provider.menu.retry')}</Button>
       </Flexbox>}
       {defaultSaving && <Typography.Text role="status" type="secondary">{t('provider.modelService.saving')}</Typography.Text>}
+      <div data-ui-rows="authorized-models" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) max-content', columnGap: token.marginSM }}>
       {detail.models.map((model) => {
         const selected = runtimeDefault?.providerId === detail.id && runtimeDefault.modelId === model.id;
         return (
-          <Flexbox key={model.id} data-authorized-model={model.id} horizontal align="center" gap={12}
-            style={{ paddingBlock: token.paddingSM, flexWrap: 'wrap', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
-            <Flexbox flex={1} gap={4} style={{ minWidth: 0 }}>
-              <Typography.Text strong ellipsis>{model.display_name || model.id}</Typography.Text>
-            </Flexbox>
-            {(!model.type || model.type === 'chat') && <Button size="small" type={selected ? 'primary' : 'default'} icon={<Star size={14} />}
+          <div key={model.id} data-authorized-model={model.id} data-ui-row
+            style={{ display: 'grid', gridTemplateColumns: 'subgrid', gridColumn: '1 / -1',
+              alignItems: 'center', paddingBlock: token.paddingSM, borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+            <Typography.Text data-ui-column="model" data-ui-column-align="start" strong
+              style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{model.display_name || model.id}</Typography.Text>
+            <div data-ui-column="default" data-ui-column-align="stretch">
+            {(!model.type || model.type === 'chat') && <Button type={selected ? 'primary' : 'default'} icon={<Star size={14} />}
               data-default-model={model.id}
+              block
               disabled={selected || defaultSaving || defaultStatus !== 'ready' || detailLoading}
               aria-label={t('provider.detail.defaultForModel', { model: model.display_name || model.id })}
               onClick={() => void setRuntimeDefault(detail.id, model.id)
@@ -40,9 +43,11 @@ export function AuthorizedProviderDetail({ detail }: { detail: ProviderDetail })
                 .catch(() => toast.error(t('provider.modelService.failedToSave')))}>
               {t(selected ? 'provider.menu.defaultCurrent' : 'provider.menu.setDefault')}
             </Button>}
-          </Flexbox>
+            </div>
+          </div>
         );
       })}
+      </div>
     </Flexbox>
   );
 }

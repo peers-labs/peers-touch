@@ -121,8 +121,8 @@ export function ProviderMenu() {
         ) : (
           <ProviderIcon providerId={p.id} providerName={p.name} size={28} />
         )}
-        <Flexbox flex={1} gap={4} style={{ minWidth: 0 }}>
-          <Text strong ellipsis style={{ fontSize: 14 }}>{p.name}</Text>
+        <Flexbox flex={1} align="flex-start" gap={4} style={{ minWidth: 0, textAlign: 'left' }}>
+          <Text strong ellipsis style={{ fontSize: 14, maxWidth: '100%' }}>{p.name}</Text>
           {managementMode === 'personal' && <Flexbox horizontal gap={4} style={{ flexWrap: 'wrap' }}>
             <Tag
               color={p.runtime_kind === 'cli' ? 'purple' : 'blue'}

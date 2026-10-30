@@ -114,6 +114,8 @@ def authorized_provider_surface(
             .filter(visible).filter(e => /api.?key|base.?url/i.test([e.id,e.placeholder].join(' '))).length,
           filters: [...document.querySelectorAll('[role="switch"]')].filter(visible).length,
           runtimeTags: [...document.querySelectorAll('[data-item-id] .ant-tag')].filter(visible).length,
+          healthClaims: [...document.querySelectorAll('[data-item-id] [title]')].filter(visible)
+            .filter(e => /verified|checked|credential/i.test(e.title)).length,
           federation: [...document.querySelectorAll('[data-pt-section-item="federation"]')].filter(visible).length,
           providerSelectors: [...document.querySelectorAll('[data-item-id] button[aria-pressed]')]
             .filter(visible).length,
@@ -126,7 +128,55 @@ def authorized_provider_surface(
             "consumer Settings exposes a management control")
     require(surface["providerSelectors"] > 0 and not surface["overflow"],
             "consumer model surface is inaccessible or clipped")
+    require(surface["healthClaims"] == 0, "authorization is presented as a health check")
     return surface
+
+
+def authorized_model_geometry(runner: AgentNativeJourney) -> dict[str, Any]:
+    return runner.driver.execute_script(
+        """
+        const pane = document.querySelector('[data-authorized-provider-detail]');
+        if (!pane) return null;
+        const models = [...pane.querySelectorAll('[data-authorized-model]')];
+        const bounds = e => {
+          const r=e.getBoundingClientRect();
+          return {left:r.left, right:r.right, top:r.top, bottom:r.bottom, width:r.width, height:r.height};
+        };
+        const rows = models.map(row => ({
+          name: bounds(row.querySelector('[data-ui-column="model"]')),
+          action: bounds(row.querySelector('[data-ui-column="default"]')),
+          button: bounds(row.querySelector('button')),
+        }));
+        const directions = [...pane.parentElement.parentElement.children].map(bounds);
+        return {viewport:innerWidth, pane:bounds(pane), rows,
+          direction:getComputedStyle(pane.parentElement.parentElement).flexDirection,
+          list:directions[0], overflow:pane.scrollWidth>pane.clientWidth};
+        """
+    )
+
+
+def require_authorized_model_geometry(geometry: dict[str, Any]) -> None:
+    require(bool(geometry) and bool(geometry["rows"]), "authorized model geometry is absent")
+    require(not geometry["overflow"], "authorized models overflow their pane")
+    rows = geometry["rows"]
+    for row in rows:
+        require(row["name"]["width"] >= 80, "model name is compressed below a readable width")
+        require(row["button"]["width"] >= 28 and row["button"]["height"] >= 28,
+                "default action target is too small")
+        require(row["name"]["right"] <= row["action"]["left"],
+                "model name overlaps its default action")
+        require(abs(row["name"]["left"] - rows[0]["name"]["left"]) <= 1
+                and abs(row["action"]["left"] - rows[0]["action"]["left"]) <= 1
+                and abs(row["action"]["right"] - rows[0]["action"]["right"]) <= 1,
+                "model rows do not share content and action tracks")
+    if geometry["viewport"] < 992:
+        require(geometry["direction"] == "column"
+                and geometry["list"]["bottom"] <= geometry["pane"]["top"] + 1,
+                "narrow Provider list does not stack above its detail")
+    else:
+        require(geometry["direction"] == "row"
+                and geometry["list"]["right"] <= geometry["pane"]["left"] + 1,
+                "wide Provider list does not sit beside its detail")
 
 
 def settings_default(
