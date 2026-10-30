@@ -8,7 +8,6 @@ import { AgentStyleStudy } from './AgentStyleStudy';
 import { FoundationSpecimens, FoundationSpecimen, foundationIds } from './FoundationSpecimens';
 import { BaseElementKit } from './BaseElementKit';
 import { ConsumerFoundationKit } from './ConsumerFoundationKit';
-import { EditorialFeed } from './EditorialFeed';
 import { DesignDirections } from './DesignDirections';
 import './gallery.css';
 import './view-bar.css';
@@ -19,10 +18,13 @@ const categories: Record<string, string> = {
   overlay: '浮层', media: '媒体', code: '代码与图表', runtime: '运行时', domain: '业务组合',
 };
 type Stage = 'foundation' | 'advanced' | 'composition';
-type NorthStarView = 'northstar' | 'directions' | 'elements' | 'consumer' | 'expression' | 'basics' | 'foundations' | 'catalogue';
-const VIEW_IDS: NorthStarView[] = ['northstar', 'directions', 'elements', 'consumer', 'expression', 'basics', 'foundations', 'catalogue'];
+type NorthStarView = 'directions' | 'elements' | 'consumer' | 'expression' | 'basics' | 'foundations' | 'catalogue';
+const VIEW_IDS: NorthStarView[] = ['directions', 'elements', 'consumer', 'expression', 'basics', 'foundations', 'catalogue'];
 function initialView(): NorthStarView {
   const requested = new URLSearchParams(window.location.search).get('eles');
+  // The former standalone northstar board was merged into the directions view,
+  // which is now the desktop-prototype north star itself.
+  if (requested === 'northstar') return 'directions';
   return (VIEW_IDS as string[]).includes(requested ?? '') ? requested as NorthStarView : 'directions';
 }
 const stageLabels: Record<Stage, string> = { foundation: '基础', advanced: '高级', composition: '业务组合' };
@@ -54,14 +56,13 @@ export function UISystemGallery() {
     foundation: capabilityCatalogue.filter(entry => stageOf(entry) === 'foundation').length,
   };
   const views: { id: NorthStarView; label: string }[] = [
-    { id: 'northstar', label: '北极星 · 往来' },
+    { id: 'directions', label: '北极星 · 桌面原型' },
     { id: 'elements', label: '基础元素' },
     { id: 'consumer', label: '消费端全集' },
     { id: 'basics', label: `基础组件 ${counts.foundation}` },
     { id: 'expression', label: '表达样本' },
     { id: 'foundations', label: '基础拆解' },
     { id: 'catalogue', label: `元素全集 ${counts.all}` },
-    { id: 'directions', label: '皮肤与背景' },
   ];
 
   return (
@@ -74,11 +75,10 @@ export function UISystemGallery() {
           ))}
         </nav>
         <div className="ui-view-body">
-          {view === 'northstar' && <EditorialFeed onExit={() => setView('elements')} />}
           {view === 'directions' && <DesignDirections />}
           {view === 'elements' && <BaseElementKit />}
           {view === 'consumer' && <ConsumerFoundationKit />}
-          {view !== 'directions' && view !== 'elements' && view !== 'consumer' && view !== 'northstar' && (
+          {view !== 'directions' && view !== 'elements' && view !== 'consumer' && (
             <UIProvider theme={theme} className="ui-gallery-provider pt-expression-candidate"
               style={expressionCandidateVariables(theme === 'dark' ? 'dark' : 'light')}>
               <Gallery theme={theme} setTheme={setTheme} view={view} setView={setView} />
