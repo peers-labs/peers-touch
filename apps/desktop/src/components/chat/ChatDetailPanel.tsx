@@ -62,7 +62,7 @@ import { setCachedOssAttachmentUrl } from '../../services/ossAttachmentUrlCache'
 import { resolveFederationStationName } from '../../store/federation';
 import {
   resolveConversationStationChip,
-  useStationConnectionStore,
+  useLocalStationConnection,
 } from '../../store/stationConnection';
 import {
   chatStorageProjectionRuntime,
@@ -684,18 +684,15 @@ export function ChatDetailPanel() {
   const groupAvatarUrl = activeConversation?.avatar
     || groupAvatarRemoteUrl(activeGroup);
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
-  const localStation = useStationConnectionStore((state) => ({
-    initialized: state.initialized,
-    peerId: state.activeStationPeerId,
-    name: state.activeStationName,
-    realtimeConnected: state.realtimeConnected,
-  }));
+  const localStation = useLocalStationConnection();
   const authorityStationName = resolveFederationStationName({
     actorPtid: activeConversation?.peerPtid,
     stationPeerId: authorityStationId,
     actorStationEntries,
   });
-  const stationChip = activeConversation
+  // Keep parity with the header chip: automated conversations already express
+  // Station residency through the profile card, never a second station badge.
+  const stationChip = activeConversation && !isAutomatedConversation
     ? resolveConversationStationChip({
       kind: isGroup ? 'group' : 'friend',
       authorityStationId,

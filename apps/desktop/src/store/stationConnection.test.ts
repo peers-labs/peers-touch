@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { shallow } from 'zustand/shallow';
 
-import { resolveConversationStationChip } from './stationConnection';
+import {
+  resolveConversationStationChip,
+  selectLocalStationConnection,
+  useStationConnectionStore,
+} from './stationConnection';
 
 const localReady = {
   initialized: true,
@@ -69,5 +74,26 @@ describe('resolveConversationStationChip', () => {
       authorityStationName: '',
       localStation: localReady,
     })).toBeNull();
+  });
+});
+
+// The selector projects a fresh object on every store read. The consuming
+// hook MUST pair it with zustand `shallow`; a raw Object.is snapshot differs
+// each render and React aborts with an infinite re-render crash.
+describe('selectLocalStationConnection', () => {
+  it('stays shallow-equal across repeated reads of unchanged state', () => {
+    const first = selectLocalStationConnection(useStationConnectionStore.getState());
+    const second = selectLocalStationConnection(useStationConnectionStore.getState());
+    expect(first).not.toBe(second);
+    expect(shallow(first, second)).toBe(true);
+  });
+
+  it('turns shallow-unequal only when a projected field changes', () => {
+    useStationConnectionStore.setState({ realtimeConnected: false });
+    const before = selectLocalStationConnection(useStationConnectionStore.getState());
+    useStationConnectionStore.setState({ realtimeConnected: true });
+    const after = selectLocalStationConnection(useStationConnectionStore.getState());
+    expect(shallow(before, after)).toBe(false);
+    expect(after.realtimeConnected).toBe(true);
   });
 });

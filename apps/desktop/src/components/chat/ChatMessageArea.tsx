@@ -57,7 +57,7 @@ import type { DirectConversationOpenIntent } from './contactSelection';
 import { resolveFederationStationName } from '../../store/federation';
 import {
   resolveConversationStationChip,
-  useStationConnectionStore,
+  useLocalStationConnection,
 } from '../../store/stationConnection';
 
 const { Text } = Typography;
@@ -283,12 +283,7 @@ export function ChatMessageArea({
     stationPeerId: authorityStationId,
     actorStationEntries,
   });
-  const localStation = useStationConnectionStore((state) => ({
-    initialized: state.initialized,
-    peerId: state.activeStationPeerId,
-    name: state.activeStationName,
-    realtimeConnected: state.realtimeConnected,
-  }));
+  const localStation = useLocalStationConnection();
   const stationChip = activeConversation && !isAutomatedConversation
     ? resolveConversationStationChip({
       kind: activeTab === 'group' ? 'group' : 'friend',

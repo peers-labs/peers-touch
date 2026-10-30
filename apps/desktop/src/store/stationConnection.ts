@@ -10,12 +10,15 @@
 // render from this store instead of faking an "unavailable" state from a
 // missing conversation field.
 
-import { createDesktopStore } from './createDesktopStore';
-import { api } from '../services/desktop_api';
-import { isRawStationAuthority } from './federation';
+import { shallow } from 'zustand/shallow';
+
+import { usePageActiveStoreSelector } from '../kernel/PageActivityContext';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
+import { api } from '../services/desktop_api';
 import { log } from '../utils/logger';
+import { createDesktopStore } from './createDesktopStore';
+import { isRawStationAuthority } from './federation';
 
 export interface StationConnectionState {
   /** True after the first station_list hydration. */
@@ -118,6 +121,43 @@ export const useStationConnectionStore = createDesktopStore<StationConnectionSta
     },
   }),
 );
+
+/**
+ * Local-Station slice consumed by the conversation station chip.
+ */
+export interface LocalStationSlice {
+  initialized: boolean;
+  peerId: string;
+  name: string;
+  realtimeConnected: boolean;
+}
+
+export function selectLocalStationConnection(state: StationConnectionState): LocalStationSlice {
+  return {
+    initialized: state.initialized,
+    peerId: state.activeStationPeerId,
+    name: state.activeStationName,
+    realtimeConnected: state.realtimeConnected,
+  };
+}
+
+/**
+ * Subscribe to the local-Station slice consumed by the conversation station
+ * chip, using the page-active store selector so hidden pages never fan out.
+ *
+ * Centralized here because the selector projects a fresh object: zustand v5
+ * removed the equality argument on the raw hook, so reading this slice
+ * without `shallow` makes the snapshot differ on every render and React
+ * aborts with an infinite re-render crash (white window). Call sites must
+ * not re-declare the object selector themselves.
+ */
+export function useLocalStationConnection(): LocalStationSlice {
+  return usePageActiveStoreSelector(
+    useStationConnectionStore,
+    selectLocalStationConnection,
+    shallow,
+  );
+}
 
 let subscribed = false;
 
