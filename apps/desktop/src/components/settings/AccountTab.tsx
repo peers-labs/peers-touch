@@ -733,6 +733,8 @@ export function AccountTab() {
         setProfile((current) => applyProfileMutationRevision(current, result));
         if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
           toast.error(t('provider.account.failedToUpdate'));
+        } else {
+          toast.success(t('provider.account.saved'));
         }
         // Do not setProfile here — local state is already up-to-date.
         // Overwriting with the server response causes controlled inputs
