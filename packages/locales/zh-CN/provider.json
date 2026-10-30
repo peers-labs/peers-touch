@@ -479,6 +479,7 @@
   "provider.account.reset": "重置",
   "provider.account.save": "保存",
   "provider.account.saved": "账户资料已更新",
+  "provider.account.autoSaving": "保存中…",
   "provider.account.failedToLoad": "加载账户资料失败",
   "provider.account.failedToUpdate": "更新账户资料失败",
   "provider.account.noProfile": "无可用账户资料",

@@ -387,9 +387,15 @@ export function LoginPage({
       }
 
       if (details?.remaining_secs) {
-        setPinError(t('auth.pin.lockedOut', { defaultValue: `Account locked. Retry in ${details.remaining_secs}s` }));
+        setPinError(t('auth.pin.lockedOut', {
+          defaultValue: 'Account locked. Retry in {{remainingSecs}}s',
+          remainingSecs: details.remaining_secs,
+        }));
       } else if (details?.attempts_remaining !== undefined) {
-        setPinError(t('auth.pin.wrongPin', { defaultValue: `Wrong PIN. ${details.attempts_remaining} attempts left` }));
+        setPinError(t('auth.pin.wrongPin', {
+          defaultValue: 'Wrong PIN. {{attemptsRemaining}} attempts left',
+          attemptsRemaining: details.attempts_remaining,
+        }));
       } else {
         setPinError(err.message || t('auth.pin.error', { defaultValue: 'PIN verification failed' }));
       }

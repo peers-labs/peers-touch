@@ -41,6 +41,26 @@ unnormalized native focus outline instead of emphasizing retry.
 
 - Release i18n deployment compares both metadata version and built-in pack
   content before taking the fast path.
+- Debug direct-read of `packages/locales/` is enabled only when the running
+  executable lives inside the cargo `target/` tree (`tauri dev` / cargo run).
+  A debug build installed as an app bundle keeps `dev_source = None`: the
+  compile-time `CARGO_MANIFEST_DIR` points back at a source tree that is not
+  guaranteed readable from the installed context. In the observed incident
+  the direct-read call stalled for ~7.4 minutes (exact OS mechanism
+  unconfirmed; TCC authorization on the protected Documents tree was a
+  hypothesis, not proven), and the frontend fell back to empty resources so
+  every string rendered as its raw key. `load_resources()` additionally falls
+  back to the deployed `config/i18n/` packs when a dev-source scan errors.
+- `i18n_load_resources` is an `async` command whose directory scan runs in
+  `spawn_blocking`. A synchronous Tauri command executes on the main thread,
+  so the same slow filesystem call froze the entire IPC queue (frontend logs
+  included) — not just i18n. Any command that touches the filesystem or does
+  unbounded work must be async plus `spawn_blocking`.
+- Missing keys can no longer ship silently:
+  `tooling/scripts/check-desktop-locales.mjs` runs in the Desktop `check`
+  chain and verifies every literal `t()` key against the bound namespace
+  (including per-call `{ ns }` options), plural variants, and en/zh-CN parity.
+  English `defaultValue`s were what concealed the original missing keys.
 - Access scope resumes a persisted `Connecting` or retryable `Failed` Station
   binding before creating an Access Attempt.
 - OAuth failure restores focus to the retry action, and global actionable
@@ -56,3 +76,9 @@ unnormalized native focus outline instead of emphasizing retry.
    URL rather than `Station identity has not been verified`.
 4. Force OAuth failure/retry and verify focus is on the provider retry action;
    no control may display the browser's thick default focus outline.
+5. Build a debug bundle (`tauri build --debug --bundles app`), install and
+   launch it through LaunchServices on a machine where the source tree sits
+   under `~/Documents`. The login gate must render translated text, never raw
+   `auth.*` keys; the app log must show no `i18n_load_resources timed out`
+   fallback event. This catches installed-bundle direct-read regressions that
+   `tauri dev` cannot reproduce.

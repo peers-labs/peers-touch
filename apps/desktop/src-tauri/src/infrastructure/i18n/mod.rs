@@ -68,10 +68,26 @@ impl I18nService {
     }
 
     /// In debug builds, resolve packages/locales/ from the monorepo layout.
-    /// Returns None in release builds or if the path doesn't exist.
+    /// Returns None in release builds, for installed app bundles, or if the
+    /// path doesn't exist.
+    ///
+    /// `debug_assertions` alone cannot identify an in-tree dev run: a debug
+    /// bundle installed to ~/Applications still bakes CARGO_MANIFEST_DIR in,
+    /// and that source path can point into a TCC-protected Documents tree;
+    /// probing it from a LaunchServices-launched bundle blocks the IPC
+    /// command (and, without a fallback, bricks every translated string).
+    /// Only a binary executing from inside the cargo `target/` tree is a
+    /// real `tauri dev` / cargo run session.
     fn detect_dev_source() -> Option<PathBuf> {
         #[cfg(debug_assertions)]
         {
+            let running_in_target = std::env::current_exe()
+                .ok()
+                .is_some_and(|exe| Self::is_cargo_target_executable(&exe));
+            if !running_in_target {
+                return None;
+            }
+
             let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             let project_root = manifest_dir
                 .parent() // desktop
@@ -90,6 +106,15 @@ impl I18nService {
         {
             None
         }
+    }
+
+    /// True when the executable runs from inside a cargo `target/` tree
+    /// (`target/debug/...`, `target/release/...`), i.e. an in-tree dev run
+    /// rather than an installed app bundle.
+    fn is_cargo_target_executable(executable: &Path) -> bool {
+        executable
+            .components()
+            .any(|component| component.as_os_str() == "target")
     }
 
     /// Deploy built-in language packs to config/i18n/.
@@ -170,14 +195,25 @@ impl I18nService {
     /// Scan language directories, discover all available languages
     /// and load their translation resources.
     ///
-    /// In dev mode (debug build with packages/locales/ available),
-    /// reads from the source tree directly for instant changes.
-    /// In production, reads from the deployed config/i18n/ directory,
-    /// which also includes community packs.
+    /// For an in-tree debug run (`tauri dev` / cargo run) with
+    /// packages/locales/ available, reads the source tree directly for
+    /// instant changes. Installed debug bundles and release builds read the
+    /// deployed config/i18n/ directory, which also includes community packs.
     pub fn load_resources(&self) -> Result<I18nResources, String> {
         if let Some(ref source) = self.dev_source {
             tracing::debug!("Loading i18n resources from dev source");
-            return self.scan_and_load(source);
+            match self.scan_and_load(source) {
+                Ok(resources) => return Ok(resources),
+                // The source tree is a dev convenience, never an authority:
+                // config/i18n packs are deployed from the same content at
+                // startup. A permission failure or stale CARGO_MANIFEST_DIR
+                // must degrade to those packs, not to an empty UI.
+                Err(error) => tracing::warn!(
+                    error = %error,
+                    source = %source.display(),
+                    "Dev i18n source unreadable; falling back to deployed packs"
+                ),
+            }
         }
         self.scan_and_load(&self.i18n_root)
     }
@@ -493,6 +529,29 @@ mod tests {
         }
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn in_tree_target_binary_is_dev_run() {
+        let cargo_run = PathBuf::from(
+            "/home/dev/peers-touch/apps/desktop/src-tauri/target/debug/peers-touch-desktop",
+        );
+        let cargo_test = PathBuf::from(
+            "/home/dev/peers-touch/apps/desktop/src-tauri/target/debug/deps/peers_touch_desktop-x",
+        );
+        assert!(I18nService::is_cargo_target_executable(&cargo_run));
+        assert!(I18nService::is_cargo_target_executable(&cargo_test));
+    }
+
+    #[test]
+    fn installed_bundle_and_out_of_tree_binary_are_not_dev_runs() {
+        let macos_bundle = PathBuf::from(
+            "/Users/dev/Applications/Peers Dev.app/Contents/MacOS/peers-touch-desktop",
+        );
+        let acceptance_binary =
+            PathBuf::from("/home/dev/.peers-touch/.local/acceptance/bin/peers-touch-desktop");
+        assert!(!I18nService::is_cargo_target_executable(&macos_bundle));
+        assert!(!I18nService::is_cargo_target_executable(&acceptance_binary));
     }
 
     #[test]

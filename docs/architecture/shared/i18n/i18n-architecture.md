@@ -381,34 +381,37 @@ Chinese error catalogs before the SC-D20 routes become active.
 ```rust
 pub struct I18nService {
     i18n_root: PathBuf,            // config_dir/i18n/ (deployed copy)
-    dev_source: Option<PathBuf>,   // packages/locales/ (debug builds only)
+    dev_source: Option<PathBuf>,   // packages/locales/ (in-tree debug runs only)
 }
 ```
 
 #### Dev-mode Direct-Read
 
-在 debug 构建中，`I18nService::new()` 自动探测 monorepo 的 `packages/locales/` 源目录。若存在，则 `load_resources()` 和 `resolve_key()` 直接从源目录读取 — **编辑 locale JSON 后刷新页面即可生效，无需手动 bump metadata.json 版本号**。
+在从 cargo `target/` 树运行的 debug 构建（`tauri dev`、`cargo run`）中，`I18nService::new()` 自动探测 monorepo 的 `packages/locales/` 源目录。若存在，则 `load_resources()` 和 `resolve_key()` 直接从源目录读取 — **编辑 locale JSON 后刷新页面即可生效，无需手动 bump metadata.json 版本号**。
 
-在 release 构建中，`dev_source` 始终为 `None`，所有读取走 `config/i18n/`（版本化部署的副本）。
+`debug_assertions` 本身不能标识开发态：debug 构建同样可能被装进 app bundle。安装后的 bundle（含 acceptance 出树二进制）即使编译期仍 bake 了 `CARGO_MANIFEST_DIR`，也必须禁用直读——该路径指向的源码树在安装上下文中不保证可读，曾观测到直读调用挂起数分钟（精确 OS 机制未证实），而 `config/i18n/` 中已有启动时部署的同内容包。判定条件是可执行文件路径含 cargo `target/` 组件。该 IPC 命令本身为 `async` + `spawn_blocking`，文件扫描不得占用主线程（同步命令会冻结整个 IPC 队列）。
+
+在 release 构建与安装/出树运行中，`dev_source` 为 `None`，所有读取走 `config/i18n/`（版本化部署的副本）。`load_resources()` 读 dev_source 失败时记录告警并回退到已部署包，源目录只是开发便利，不是权威来源。
 
 #### 核心方法
 
 | 方法 | 职责 |
 |------|------|
-| `new(config_dir)` | 初始化，解析 `{config_dir}/i18n/` 路径；debug 构建自动探测 dev_source |
+| `new(config_dir)` | 初始化，解析 `{config_dir}/i18n/` 路径；树内 debug 运行自动探测 dev_source |
 | `deploy_builtin_packs(resource_dir)` | 版本与内容一致性部署：source/deployed 的 metadata version 和 en/、zh-CN/ 内容都一致才跳过；任一不一致则重新部署内置包。Production 路径必需 |
-| `load_resources()` | dev_source 存在 → 直接读源目录；否则 → 扫描 config/i18n/ 所有子目录（含社区包），返回 `I18nResources` |
+| `load_resources()` | 树内 debug 运行 → 直接读源目录（失败回退已部署包）；否则 → 扫描 config/i18n/ 所有子目录（含社区包），返回 `I18nResources` |
 | `resolve_key(lang, ns, key)` | Rust 侧文本解析，优先读 dev_source，fallback 读 i18n_root |
 
 #### 源目录解析
 
 ```
-Production:  Tauri resource_dir/i18n/        ← bundled resources → deploy → config/i18n/
-Dev mode:    detect_dev_source()             ← CARGO_MANIFEST_DIR → ../../.. → packages/locales/
-             load_resources() 直接读 packages/locales/，跳过 config/i18n/
+Production / installed:  Tauri resource_dir/i18n/  ← bundled resources → deploy → config/i18n/
+In-tree debug run:       detect_dev_source()       ← current_exe 位于 cargo target/ 树
+                                                    + CARGO_MANIFEST_DIR → ../../.. → packages/locales/
+                         load_resources() 直接读 packages/locales/，失败回退 config/i18n/
 ```
 
-`detect_dev_source()` 在 `I18nService::new()` 时通过 `CARGO_MANIFEST_DIR` 逆向查找 monorepo 根目录下的 `packages/locales/`。`deploy_builtin_packs()` 仍然用于 production 路径的版本化部署。
+`detect_dev_source()` 先确认 `current_exe()` 位于 cargo `target/` 树，再通过 `CARGO_MANIFEST_DIR` 逆向查找 monorepo 根目录下的 `packages/locales/`。`deploy_builtin_packs()` 仍然用于 production 路径的版本化部署。
 
 #### 社区语言包
 

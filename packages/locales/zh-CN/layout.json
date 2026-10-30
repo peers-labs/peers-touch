@@ -21,6 +21,10 @@
   "layout.splash.peers": "Peers",
 
   "layout.user.defaultName": "用户",
+  "layout.user.posts": "帖子",
+  "layout.user.following": "关注",
+  "layout.user.followers": "粉丝",
+  "layout.user.joined": "加入于",
   "layout.user.accountsAvailable": "{{count}} 个可用账户",
   "layout.user.noAccount": "未连接账户",
   "layout.user.chooseActive": "选择当前账户",
