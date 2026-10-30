@@ -513,6 +513,7 @@ Current project skills:
 | `pt-defect-closure` | Close the defect loop: debug → fix → acceptance injection; ensures every behavioral bug fix leaves behind a regression Gate |
 | `pt-frontend-component-tree-review` | Review frontend component tree structure, boundaries, and UI implementation quality |
 | `pt-debug-space-clean` | Audit and clean generated artifacts by current task, product surface, platform, and rebuild cost |
+| `pt-desktop-trial-packaging` | Build an unsigned Desktop trial DMG with `make package` and publish it to a minimal read-only HTTP service on the same host as a profile's Station via `publish-trial.sh`; never a signed release, updater path, or Mobile |
 | `pt-small-fix-discipline` | Govern small fixes so agents locate the governing spec, fix the correct architectural layer, keep changes surgical, and self-grade before claiming done |
 | `pt-skill-author` | Govern creation, naming, cleanup, and verification of Peers-Touch `pt-*` project skills |
 
