@@ -515,7 +515,7 @@
         { "id": "six-groups", "type": "count", "target": ".sk-settings-group", "equals": 6 },
         { "id": "general-active", "type": "count", "target": ".sk-settings-group.is-active", "equals": 1 },
         { "id": "three-sections", "type": "count", "target": ".sk-settings-nav-item", "equals": 3 },
-        { "id": "account-pending", "type": "textContains", "target": ".sk-settings-scroll", "contains": "增量 7" },
+        { "id": "account-built", "type": "exists", "target": ".sk-identity-row" },
         { "id": "no-conversation-rail", "type": "count", "scope": "global", "target": ".sk-conv-rail", "equals": 0 },
         { "id": "groups-no-hairline", "type": "computedStyle", "target": ".sk-settings-subbar", "prop": "borderBottomWidth", "equals": "0px" },
         { "id": "craft-clean", "type": "craftBattery" }
@@ -568,6 +568,120 @@
       "oracles": [
         { "id": "applets-no-nav", "type": "missing", "target": ".sk-settings-nav" },
         { "id": "applets-pending", "type": "textContains", "target": ".sk-settings-scroll", "contains": "增量 9" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-account",
+      "title": "增量7 账号：身份卡（80 头像/头图/统计/可复制 ID）、标签回车添加、链接增删均为真实本地状态",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "type", "target": ".sk-tag-input", "value": "夜跑" },
+        { "op": "press", "key": "Enter" },
+        { "op": "click", "target": "[data-action-id='account.link-add']" },
+        { "op": "click", "target": ".sk-link-row:nth-child(2) [aria-label='删除链接']" }
+      ],
+      "oracles": [
+        { "id": "banner", "type": "exists", "target": ".sk-banner" },
+        { "id": "avatar-80", "type": "computedStyle", "target": ".sk-identity-avatar .pt-avatar", "prop": "width", "equals": "80px" },
+        { "id": "stats", "type": "textContains", "target": ".sk-identity-stats", "contains": "粉丝" },
+        { "id": "copy-fields", "type": "count", "target": ".sk-identity-field .pt-button", "equals": 2 },
+        { "id": "ptid", "type": "textContains", "target": ".sk-identity-fields", "contains": "ptid:3f9a7c21" },
+        { "id": "tag-added", "type": "count", "target": ".sk-tag-editor .pt-tag", "equals": 3 },
+        { "id": "link-restored", "type": "count", "target": ".sk-link-row", "equals": 1 },
+        { "id": "craft-clean", "type": "craftBattery" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-device-link",
+      "title": "设备关联：二维码 → 模拟请求 → 核对码允许 → 完成，拒绝走过期态",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": "[data-action-id='device.link-start']" },
+        { "op": "clickGlobal", "target": "[data-action-id='device.link-simulate']" },
+        { "op": "clickGlobal", "target": "[data-action-id='device.link-allow']" },
+        { "op": "wait", "ms": 1000 }
+      ],
+      "oracles": [
+        { "id": "complete", "type": "textContains", "scope": "global", "target": ".sk-device-stage", "contains": "设备已关联" },
+        { "id": "stage-complete", "type": "attr", "scope": "global", "target": ".sk-device-stage", "attr": "data-stage", "equals": "complete" }
+      ],
+      "finalizers": [
+        { "op": "clickGlobal", "target": "[data-action-id='device.link-done']" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-security",
+      "title": "安全：生成 24 词助记词后才能创建备份；恢复对话框 24 词门槛与完成 Alert",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(2)" },
+        { "op": "click", "target": "[data-action-id='security.generate']" },
+        { "op": "wait", "ms": 700 },
+        { "op": "click", "target": "[data-action-id='security.backup-create']" },
+        { "op": "wait", "ms": 800 },
+        { "op": "click", "target": "[data-action-id='security.restore-open']" },
+        { "op": "type", "scope": "global", "target": "textarea.sk-restore-input", "value": "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree twentyfour" },
+        { "op": "clickGlobal", "target": "[data-action-id='security.restore-confirm']" },
+        { "op": "wait", "ms": 900 }
+      ],
+      "oracles": [
+        { "id": "phrase-24", "type": "count", "target": ".sk-recovery-phrase ol li", "equals": 24 },
+        { "id": "backup-exists", "type": "textContains", "target": ".sk-recovery-status", "contains": "最近备份" },
+        { "id": "restore-done", "type": "textContains", "target": ".sk-settings-scroll", "contains": "恢复已完成" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-security-gate",
+      "title": "恢复门槛：不足 24 词时确认按钮禁用（填 3 词）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(2)" },
+        { "op": "click", "target": "[data-action-id='security.restore-open']" },
+        { "op": "type", "scope": "global", "target": "textarea.sk-restore-input", "value": "a b c" }
+      ],
+      "oracles": [
+        { "id": "confirm-disabled", "type": "attr", "scope": "global", "target": "[data-action-id='security.restore-confirm']", "attr": "aria-disabled", "equals": "true" }
+      ],
+      "finalizers": [
+        { "op": "clickGlobal", "target": "[data-action-id='security.restore-cancel']" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-help",
+      "title": "帮助：关于卡与 4 个可搜索功能项（联邦/AI 入口已排除）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(6)" }
+      ],
+      "oracles": [
+        { "id": "about", "type": "textContains", "target": ".sk-settings-scroll", "contains": "Peers Touch" },
+        { "id": "four-entries", "type": "count", "target": ".sk-help-item", "equals": 4 },
+        { "id": "no-nav", "type": "missing", "target": ".sk-settings-nav" },
+        { "id": "craft-clean", "type": "craftBattery" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-help-nav",
+      "title": "帮助跳转：点击「聊天存储」真实跳到数据组存储分区的诚实空态",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(6)" },
+        { "op": "click", "target": "[data-help-target='storage']" }
+      ],
+      "oracles": [
+        { "id": "jumped-to-data", "type": "textContains", "target": ".sk-settings-scroll", "contains": "增量 8" },
+        { "id": "data-group-active", "type": "count", "target": ".sk-settings-group.is-active", "equals": 1 },
+        { "id": "storage-section-active", "type": "attr", "target": ".sk-settings-nav-item:nth-child(1)", "attr": "aria-current", "equals": "page" }
       ],
       "finalizers": []
     }

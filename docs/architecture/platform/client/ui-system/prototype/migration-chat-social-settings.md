@@ -71,7 +71,9 @@
 - [x] 6 设置框架 SettingsFrame（6 分组材质药丸 + 多分区分区导航 + Section/Row/ItemCard
       原语 + 语言 Select + 截图快捷键录制；未建分区为诚实 Empty；合同
       components/settings-frame.md；门禁 35/35）
-- [ ] 7 账号/安全/帮助内容
+- [x] 7 账号/安全/帮助内容（身份卡/可复制 ID/资料编辑/标签链接/设备关联二维码状态机/
+      恢复密钥与备份/24 词恢复/帮助折叠跳转；合同
+      components/settings-account-security-help.md；门禁 40/40）
 - [ ] 8 数据/存储设置（Switch/Button/Progress/Alert/Table）
 - [ ] 9 工具/通道/小程序（Select/TextField/Tag/Accordion；Bots 继续挂起）
 
@@ -122,9 +124,10 @@ Social / Moments：
 - [x] ✅ S0 框架：6 分组材质药丸（AI·联邦不出现）、多分区分区导航、
       SettingsSection/ItemCard/Row 原语（深链高亮不适用原型层）
 - [x] ✅ S1 通用：语言切换；截图快捷键录制/重置/默认值（增量 6）
-- [ ] ✗ S2 账号（AccountTab）：身份卡（头像/头图更换）、动态/关注/粉丝统计、
-      @username 与 PTID 可复制字段、资料编辑、资料链接增删、设备关联（DeviceLinkPanel）
-- [ ] ✗ S3 安全（RecoverySettings）：恢复密钥查看/复制/重新生成、恢复对话框
+- [x] ✅ S2 账号（AccountTab）：身份卡（头像/头图本地选图）、统计、
+      @username 与 PTID 可复制、资料编辑、标签、链接增删、设备关联状态机（增量 7）
+- [x] ✅ S3 安全（RecoverySettings）：24 词密钥生成/复制、创建备份门禁、
+      恢复对话框 24 词门槛（增量 7）
 - [ ] ✗ S4 工具：工具表（名称/分类/需审批标签/错误 Alert）、定时任务（CronJobsSettings）、
       命令面板设置（CommandPaletteSettings）
 - [ ] ✗ S5 通道：飞书通道管理与开通面板（LarkChannels/ChannelManagement/Provisioning）；
@@ -132,12 +135,12 @@ Social / Moments：
 - [ ] ✗ S6 小程序：说明 + 小程序行 + 带设置面板的二级钻取
 - [ ] ✗ S7 数据：聊天留存设置、清缓存、会话存储表（多选/批量删除进度/单项删除重试）、
       文件管理（MyFilesSettings）、日志查看（logs）
-- [ ] ✗ S8 帮助：关于卡 + 内置搜索功能折叠表（快捷键、来源标记）
+- [x] ✅ S8 帮助：关于卡 + 内置搜索功能折叠表（4 项，点击真实跳转；增量 7）
 
 ### 5.3 执行分组（每增量独立门禁 + 截图人判）
 
 - [x] 6 SettingsFrame + SettingsRow 原语（S0 + 通用分区语言/快捷键；门禁 35/35）
-- [ ] 7 通用/账号/安全/帮助（S1 已在 6 落语言+快捷键；补 S2/S3/S8）
+- [x] 7 通用/账号/安全/帮助（S1 在 6 落语言+快捷键；S2/S3/S8 在 7；门禁 40/40）
 - [ ] 8 数据：存储/文件/日志（S7）
 - [ ] 9 工具/通道/小程序（S4/S5/S6；bots 继续挂起）
 - [ ] 10 聊天目录层：子导航、联系人+好友请求+详情、建群、群会话、置顶/免打扰、

@@ -14,10 +14,13 @@ import {
 } from 'lucide-react';
 import { Button, Empty, Select } from '@peers-touch/ui';
 import { SettingsRow, SettingsSection } from './SettingsPrimitives';
+import { AccountSection } from './sections/AccountSection';
+import { SecuritySection } from './sections/SecuritySection';
+import { HelpSection } from './sections/HelpSection';
 import './settings.css';
 
-type SettingsGroup = 'general' | 'tools' | 'channels' | 'applets' | 'data' | 'help';
-type SectionKey =
+export type SettingsGroup = 'general' | 'tools' | 'channels' | 'applets' | 'data' | 'help';
+export type SectionKey =
   | 'account' | 'security' | 'general'
   | 'cron' | 'command-menu' | 'tools'
   | 'channels'
@@ -172,14 +175,20 @@ export function SettingsFeature() {
         )}
 
         <div className="sk-settings-scroll">
-          {activeSection.key === 'general' ? (
-            <GeneralSection />
-          ) : (
-            <section className="sk-settings-section sk-settings-pending" aria-label={activeSection.label}>
-              <Empty className="sk-settings-empty"
-                description={`「${activeSection.label}」在增量 ${activeSection.increment} 迁入（peers-ui 组合，本地真实状态）`} />
-            </section>
-          )}
+          {activeSection.key === 'general' ? <GeneralSection />
+            : activeSection.key === 'account' ? <AccountSection />
+              : activeSection.key === 'security' ? <SecuritySection />
+                : activeSection.key === 'help' ? (
+                  <HelpSection onNavigate={(targetGroup, targetSection) => {
+                    setGroup(targetGroup);
+                    setSection(targetSection);
+                  }} />
+                ) : (
+                  <section className="sk-settings-section sk-settings-pending" aria-label={activeSection.label}>
+                    <Empty className="sk-settings-empty"
+                      description={`「${activeSection.label}」在增量 ${activeSection.increment} 迁入（peers-ui 组合，本地真实状态）`} />
+                  </section>
+                )}
         </div>
       </div>
     </div>
