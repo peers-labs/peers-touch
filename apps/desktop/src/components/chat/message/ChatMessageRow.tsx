@@ -1,8 +1,9 @@
-import { memo, useRef, type CSSProperties } from 'react';
+import { memo, useRef, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Tooltip } from '@lobehub/ui';
 import { Popover, Spin, theme, Typography } from 'antd';
 import { Flexbox } from 'react-layout-kit';
+import { countHiddenEarlierChatThreadReplies } from '@peers-touch/client-chat-core';
 import {
   Check,
   CheckCheck,
@@ -76,6 +77,7 @@ interface ChatMessageRowProps {
   showThreadSummary?: boolean;
   threadReplyCount: number;
   threadReplyIds: string[];
+  threadPreviewMessages: ChatMessage[];
   threadUnreadCount: number;
   timelineGap: boolean;
 }
@@ -151,7 +153,6 @@ function ReplyBlock({
 function MessageInteractionRail({
   isOwn,
   message,
-  onOpenThread,
   onPin,
   onReact,
   onRetryReaction,
@@ -159,13 +160,9 @@ function MessageInteractionRail({
   reactionMutationEmoji,
   reactionMutationPhase,
   reactions,
-  showThreadSummary,
-  threadReplyCount,
-  threadUnreadCount,
 }: {
   isOwn: boolean;
   message: ChatMessage;
-  onOpenThread: () => void;
   onPin: () => void;
   onReact: (emoji: string) => void;
   onRetryReaction: () => void;
@@ -173,9 +170,6 @@ function MessageInteractionRail({
   reactionMutationEmoji?: string;
   reactionMutationPhase?: 'pending' | 'awaiting-projection' | 'error';
   reactions: { actorPtid: string; emoji: string }[];
-  showThreadSummary: boolean;
-  threadReplyCount: number;
-  threadUnreadCount: number;
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -189,17 +183,9 @@ function MessageInteractionRail({
   const hiddenReactionCount = reactionCounts
     .slice(visibleReactions.length)
     .reduce((total, [, count]) => total + count, 0);
-  const threadVisible = showThreadSummary && threadReplyCount > 0;
   const hasContent = pinned
     || reactionCounts.length > 0
-    || Boolean(reactionMutationPhase)
-    || threadVisible;
-  const openLabel = threadUnreadCount > 0
-    ? t('chat.social.thread.summaryUnread', {
-        count: threadReplyCount,
-        unread: threadUnreadCount,
-      })
-    : t('chat.social.thread.summary', { count: threadReplyCount });
+    || Boolean(reactionMutationPhase);
 
   if (!hasContent) return null;
   return (
@@ -298,39 +284,6 @@ function MessageInteractionRail({
             </span>
           </Tooltip>
         )}
-        {threadVisible && (
-          <button
-            type="button"
-            data-message-thread-summary={threadReplyCount}
-            aria-label={openLabel}
-            title={openLabel}
-            onClick={onOpenThread}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              boxSizing: 'border-box',
-              flexShrink: 0,
-              height: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
-              padding: '0 6px',
-              border: 0,
-              borderRadius: 8,
-              background: threadUnreadCount > 0
-                ? token.colorErrorBg
-                : token.colorFillQuaternary,
-              color: threadUnreadCount > 0
-                ? token.colorError
-                : token.colorTextTertiary,
-              cursor: 'pointer',
-              fontSize: 11,
-              lineHeight: `${CHAT_MESSAGE_REACTION_CHIP_HEIGHT}px`,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <MessagesSquare size={11} aria-hidden />
-            <span>{threadReplyCount}</span>
-          </button>
-        )}
       </Flexbox>
       <span
         data-message-reaction-state={reactionMutationPhase || 'idle'}
@@ -368,6 +321,192 @@ function MessageInteractionRail({
           />
         )}
       </span>
+    </Flexbox>
+  );
+}
+
+/**
+ * Feishu-style inline thread summary rendered directly under the root
+ * bubble. Shows the latest locally-known replies without opening the
+ * thread panel; degrades to a count affordance when only the projected
+ * reply count is known.
+ */
+function ThreadReplyPreviewList({
+  activeConversationId,
+  activeKind,
+  currentUserPtid,
+  getSenderProfile,
+  isOwnRoot,
+  messages,
+  onOpenThread,
+  totalCount,
+  unreadCount,
+}: {
+  activeConversationId: string;
+  activeKind: ChatSurfaceKind;
+  currentUserPtid: string | null;
+  getSenderProfile: (
+    kind: ChatSurfaceKind,
+    conversationUlid: string,
+    senderPtid: string,
+  ) => DesktopIMSenderProfileProjection;
+  isOwnRoot: boolean;
+  messages: ChatMessage[];
+  onOpenThread: () => void;
+  totalCount: number;
+  unreadCount: number;
+}) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const hiddenEarlierCount = countHiddenEarlierChatThreadReplies(totalCount, messages.length);
+  const hasHiddenEarlierReplies = messages.length > 0 && hiddenEarlierCount > 0;
+  const openLabel = unreadCount > 0
+    ? t('chat.social.thread.summaryUnread', { count: totalCount, unread: unreadCount })
+    : t('chat.social.thread.summary', { count: totalCount });
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onOpenThread();
+  };
+
+  return (
+    <Flexbox
+      data-message-thread-summary={totalCount}
+      align="flex-start"
+      style={{
+        alignSelf: isOwnRoot ? 'flex-end' : 'flex-start',
+        marginTop: 5,
+        maxWidth: '100%',
+        paddingLeft: isOwnRoot ? 0 : 4,
+        paddingRight: isOwnRoot ? 4 : 0,
+      }}
+    >
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onOpenThread}
+        onKeyDown={handleKeyDown}
+        aria-label={openLabel}
+        title={openLabel}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '9px minmax(0, 1fr)',
+          columnGap: 7,
+          maxWidth: 'min(320px, 100%)',
+          padding: '1px 0 0',
+          border: 0,
+          outline: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            width: 1,
+            minHeight: messages.length > 0 ? '100%' : 18,
+            marginLeft: 4,
+            background: unreadCount > 0 ? token.colorErrorBorder : token.colorBorderSecondary,
+            opacity: unreadCount > 0 ? 0.9 : 0.72,
+          }}
+        />
+        <Flexbox
+          gap={3}
+          style={{
+            maxWidth: '100%',
+            minWidth: 0,
+          }}
+        >
+          {messages.length === 0 ? (
+            <Flexbox
+              horizontal
+              align="center"
+              gap={5}
+              style={{
+                height: 18,
+                color: token.colorTextQuaternary,
+                fontSize: 11,
+                lineHeight: '18px',
+              }}
+            >
+              <MessagesSquare size={11} />
+              <Text
+                ellipsis
+                style={{
+                  color: unreadCount > 0 ? token.colorError : token.colorTextTertiary,
+                  fontSize: 11,
+                  lineHeight: '18px',
+                  maxWidth: 220,
+                }}
+              >
+                {openLabel}
+              </Text>
+            </Flexbox>
+          ) : (
+            <>
+              {hasHiddenEarlierReplies && (
+                <Text
+                  ellipsis
+                  style={{
+                    maxWidth: '100%',
+                    color: unreadCount > 0 ? token.colorError : token.colorTextTertiary,
+                    fontSize: 11,
+                    lineHeight: '18px',
+                  }}
+                >
+                  {t('chat.social.thread.loadEarlierPreview', { count: hiddenEarlierCount })}
+                </Text>
+              )}
+              {messages.map((reply) => {
+                const profile = getSenderProfile(activeKind, activeConversationId, reply.senderPtid);
+                const ownReply = isOwnMessage(reply, currentUserPtid);
+                const replySenderName = actorDisplayName(
+                  profile.name,
+                  t('chat.social.detail.unknownMember'),
+                );
+                return (
+                  <div
+                    key={reply.ulid}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'max-content minmax(0, 1fr)',
+                      alignItems: 'baseline',
+                      columnGap: 5,
+                      width: '100%',
+                      minHeight: 18,
+                      color: token.colorTextSecondary,
+                      textAlign: 'left',
+                    }}
+                  >
+                    <Text
+                      ellipsis
+                      style={{
+                        maxWidth: 92,
+                        fontSize: 11,
+                        color: token.colorTextTertiary,
+                        fontWeight: 500,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      {ownReply ? t('chat.social.thread.you') : replySenderName}
+                    </Text>
+                    <Text
+                      ellipsis
+                      style={{
+                        minWidth: 0,
+                        fontSize: 11,
+                        color: token.colorTextSecondary,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      {reply.content || reply.attachments?.[0]?.filename || t('chat.social.thread.attachment')}
+                    </Text>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </Flexbox>
+      </div>
     </Flexbox>
   );
 }
@@ -415,6 +554,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   showThreadSummary = true,
   threadReplyCount,
   threadReplyIds,
+  threadPreviewMessages,
   threadUnreadCount,
   timelineGap,
 }: ChatMessageRowProps) {
@@ -625,6 +765,20 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           />
         </Flexbox>
 
+        {showThreadSummary && threadReplyCount > 0 && !isRecalled && (
+          <ThreadReplyPreviewList
+            activeConversationId={activeConversationId}
+            activeKind={activeKind}
+            currentUserPtid={currentUserPtid}
+            getSenderProfile={getSenderProfile}
+            isOwnRoot={isOwn}
+            messages={threadPreviewMessages}
+            onOpenThread={() => onOpenThread(threadRootUlid)}
+            totalCount={threadReplyCount}
+            unreadCount={threadUnreadCount}
+          />
+        )}
+
         <Flexbox
           data-message-meta={message.ulid}
           horizontal
@@ -713,7 +867,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         <MessageInteractionRail
           isOwn={isOwn}
           message={message}
-          onOpenThread={() => onOpenThread(threadRootUlid)}
           onPin={() => onPin(message)}
           onReact={(emoji) => onReact(message, emoji)}
           onRetryReaction={() => onRetryReaction(message)}
@@ -721,9 +874,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           reactionMutationEmoji={reactionMutationEmoji}
           reactionMutationPhase={reactionMutationPhase}
           reactions={reactions ?? []}
-          showThreadSummary={showThreadSummary && !isRecalled}
-          threadReplyCount={threadReplyCount}
-          threadUnreadCount={threadUnreadCount}
         />
       </Flexbox>
 
