@@ -15,8 +15,10 @@
 import { useState, type CSSProperties, type ChangeEvent } from 'react';
 import {
   Search, MessageCircle, Bot, Sparkles, Bell, Settings,
-  Upload, ImageIcon, X, type LucideIcon,
+  Upload, ImageIcon, X, UserPlus, MessagesSquare,
+  type LucideIcon,
 } from 'lucide-react';
+import { Avatar, Badge, Button, Empty } from '@peers-touch/ui';
 import './design-directions.css';
 
 type Skin = { id: string; name: string; desc: string };
@@ -94,12 +96,94 @@ const SEARCHFIELD_STATES: { id: string; name: string; expect: string }[] = [
   { id: 'long', name: '长占位', expect: '超长文本省略号截断，不撑破宿主、无横向溢出' },
 ];
 
+/* Increment 1 — ConversationRail (chat/social), composed from peers-ui.
+   Real desktop source: pages/SocialChatPage.tsx. AI chat is explicitly out
+   of scope. Fixtures are local; no station/runtime wiring. */
+type Conversation = {
+  id: string; name: string; last: string; unread: number; tone: string; kind: 'person' | 'group';
+};
+const CONVERSATIONS: Conversation[] = [
+  { id: 'cv-chenyu', name: '陈屿', last: '[图片]', unread: 1, tone: '#3f6550', kind: 'person' },
+  { id: 'cv-qun', name: '小区生活群', last: '周禾：周末书架见', unread: 0, tone: '#a1824b', kind: 'group' },
+  { id: 'cv-linwan', name: '林晚', last: '诗集散会我帮你留了位置', unread: 2, tone: '#4a6170', kind: 'person' },
+  { id: 'cv-suhe', name: '苏禾', last: '薄荷分盆成功了，谢谢你', unread: 0, tone: '#5d5a44', kind: 'person' },
+  { id: 'cv-zhouhe', name: '周禾', last: '共享书架今日开放', unread: 0, tone: '#3f6550', kind: 'person' },
+  { id: 'cv-linnan', name: 'lin · 连南', last: '两跳外的连接已建立', unread: 0, tone: '#4a6170', kind: 'person' },
+  { id: 'cv-seed', name: '种子交换群', last: '本周日种子交换，记得来', unread: 0, tone: '#a1824b', kind: 'group' },
+  { id: 'cv-ops', name: '联邦运维', last: '关注站点已可互发动态', unread: 0, tone: '#6f8fa6', kind: 'group' },
+];
+
+function ConversationRail({
+  conversations, selectedId, onSelect, onNew,
+}: {
+  conversations: Conversation[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const filtered = conversations.filter(c =>
+    `${c.name} ${c.last}`.toLowerCase().includes(query.trim().toLowerCase()));
+  return (
+    <aside className="sk-conv-rail" aria-label="会话列表">
+      <div className="sk-conv-search">
+        <SearchField value={query} onValueChange={setQuery} placeholder="搜索联系人、站点" />
+      </div>
+      <div className="sk-conv-new">
+        <Button actionId="sk.new-conversation" emphasis="primary" fullWidth
+          leading={<UserPlus size={15} />} label="新建会话" onActivate={onNew} />
+      </div>
+      <h2 className="sk-conv-title">最近对话{query ? ` · 筛选“${query}”` : ''}</h2>
+      <ul className="sk-conv-list">
+        {filtered.map(c => (
+          <li key={c.id}>
+            <button type="button"
+              className={`sk-conv-row${selectedId === c.id ? ' is-selected' : ''}`}
+              aria-current={selectedId === c.id ? 'true' : undefined}
+              onClick={() => onSelect(c.id)}>
+              <Badge count={c.unread} label={`${c.unread} 条未读`}>
+                <Avatar name={c.name} background={c.tone} size={38}
+                  style={{ borderRadius: 'var(--sk-avatar-radius)' }}
+                  aria-label={c.kind === 'group' ? `群 ${c.name}` : c.name} />
+              </Badge>
+              <span className="sk-conv-meta">
+                <strong>{c.name}</strong>
+                <span>{c.last}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+        {filtered.length === 0 && (
+          <li className="sk-conv-empty">
+            <Empty description="没有匹配的会话" />
+          </li>
+        )}
+      </ul>
+    </aside>
+  );
+}
+
 export function DesignDirections() {
   const [skinId, setSkinId] = useState('glass');
   const [wallpaper, setWallpaper] = useState<string>('none');
   const [wallName, setWallName] = useState<string>('无背景');
   const [railTab, setRailTab] = useState<RailTab>('search');
   const [liveQuery, setLiveQuery] = useState('');
+  const [conversations, setConversations] = useState<Conversation[]>(CONVERSATIONS);
+  const [selectedConv, setSelectedConv] = useState<string | null>(null);
+
+  const selectedConversation = conversations.find(c => c.id === selectedConv) ?? null;
+
+  const openConversation = (id: string) => {
+    setRailTab('chat');
+    setSelectedConv(id);
+    setConversations(list => list.map(c => (c.id === id ? { ...c, unread: 0 } : c)));
+  };
+  const newConversation = () => {
+    setRailTab('chat');
+    setSelectedConv(null);
+  };
+  const isChat = railTab === 'chat';
 
   const skin = SKINS.find(s => s.id === skinId) ?? SKINS[0];
 
@@ -185,56 +269,75 @@ export function DesignDirections() {
         <main className="sk-feed">
           <header className="sk-feed-head">
             <div className="sk-head-title">
-              <span className="sk-eyebrow">组件训练</span>
-              <h1>SearchField · 搜索框</h1>
+              <span className="sk-eyebrow">{isChat ? '消息' : '组件训练'}</span>
+              <h1>{isChat ? (selectedConversation ? selectedConversation.name : '消息') : 'SearchField · 搜索框'}</h1>
             </div>
           </header>
 
-          <div className="sk-feed-list">
-            <section className="sk-card sk-contract">
-              <span className="sk-eyebrow">产品边界</span>
-              <h2>什么时候用 / 什么时候不用</h2>
-              <p>
-                用于在当前范围内按名称、站点或连接即时过滤；输入只改变本地视图，不发起业务写请求。
-                不承担导航跳转、命令执行或全局设置——那些属于命令面板与设置页。空查询必须回到完整列表。
-              </p>
-              <div className="sk-contract-grid">
-                <div><strong>几何</strong><span>方圆宿主，控件圆角取 <code>--sk-radius-control</code>；高 40，内边距 13。</span></div>
-                <div><strong>表面</strong><span>松绿/材质填充砖（<code>--sk-tile</code>），无 1px 描边，靠材质分层。</span></div>
-                <div><strong>色彩</strong><span>前导图标与占位用三级文字；聚焦环取 <code>--sk-focus-ring</code>。</span></div>
-                <div><strong>状态</strong><span>empty / focus / filled(+清除) / disabled / 长文本，共 5 态。</span></div>
-              </div>
-            </section>
+          {isChat ? (
+            <div className="sk-conversation">
+              {selectedConversation ? (
+                <Empty className="sk-conversation-empty"
+                  icon={<MessagesSquare size={28} strokeWidth={1.5} />}
+                  description={`与「${selectedConversation.name}」的对话窗为迁移增量 2（ConversationView）`} />
+              ) : (
+                <Empty className="sk-conversation-empty"
+                  icon={<MessagesSquare size={28} strokeWidth={1.5} />}
+                  description="从左侧选择一个会话，或新建会话（对话窗将在增量 2 落地）" />
+              )}
+            </div>
+          ) : (
+            <div className="sk-feed-list">
+              <section className="sk-card sk-contract">
+                <span className="sk-eyebrow">产品边界</span>
+                <h2>什么时候用 / 什么时候不用</h2>
+                <p>
+                  用于在当前范围内按名称、站点或连接即时过滤；输入只改变本地视图，不发起业务写请求。
+                  不承担导航跳转、命令执行或全局设置——那些属于命令面板与设置页。空查询必须回到完整列表。
+                </p>
+                <div className="sk-contract-grid">
+                  <div><strong>几何</strong><span>方圆宿主，控件圆角取 <code>--sk-radius-control</code>；高 40，内边距 13。</span></div>
+                  <div><strong>表面</strong><span>松绿/材质填充砖（<code>--sk-tile</code>），无 1px 描边，靠材质分层。</span></div>
+                  <div><strong>色彩</strong><span>前导图标与占位用三级文字；聚焦环取 <code>--sk-focus-ring</code>。</span></div>
+                  <div><strong>状态</strong><span>empty / focus / filled(+清除) / disabled / 长文本，共 5 态。</span></div>
+                </div>
+              </section>
 
-            <section className="sk-card sk-specimens">
-              <span className="sk-eyebrow">样本 · 同一 renderer 跨皮肤</span>
-              <h2>状态矩阵</h2>
-              <ul className="sf-state-list">
-                {SEARCHFIELD_STATES.map(s => (
-                  <li key={s.id}>
-                    <div className="sf-state-head"><strong>{s.name}</strong><span>{s.expect}</span></div>
-                    {s.id === 'empty' && <SearchField placeholder="搜索联系人、站点" />}
-                    {s.id === 'focus' && <SearchField placeholder="聚焦态：Tab 键查看焦点环" />}
-                    {s.id === 'filled' && <SearchField defaultValue="林晚" placeholder="搜索联系人、站点" />}
-                    {s.id === 'disabled' && <SearchField placeholder="当前不可搜索" disabled />}
-                    {s.id === 'long' && <SearchField placeholder="搜索联系人、站点、群组、中继节点、联邦范围内的全部可达对象与往来记录" />}
-                  </li>
-                ))}
-              </ul>
-            </section>
+              <section className="sk-card sk-specimens">
+                <span className="sk-eyebrow">样本 · 同一 renderer 跨皮肤</span>
+                <h2>状态矩阵</h2>
+                <ul className="sf-state-list">
+                  {SEARCHFIELD_STATES.map(s => (
+                    <li key={s.id}>
+                      <div className="sf-state-head"><strong>{s.name}</strong><span>{s.expect}</span></div>
+                      {s.id === 'empty' && <SearchField placeholder="搜索联系人、站点" />}
+                      {s.id === 'focus' && <SearchField placeholder="聚焦态：Tab 键查看焦点环" />}
+                      {s.id === 'filled' && <SearchField defaultValue="林晚" placeholder="搜索联系人、站点" />}
+                      {s.id === 'disabled' && <SearchField placeholder="当前不可搜索" disabled />}
+                      {s.id === 'long' && <SearchField placeholder="搜索联系人、站点、群组、中继节点、联邦范围内的全部可达对象与往来记录" />}
+                    </li>
+                  ))}
+                </ul>
+              </section>
 
-            <section className="sk-card sk-live">
-              <span className="sk-eyebrow">活样本 · 真实受控状态</span>
-              <h2>在窗框顶栏中的实际形态</h2>
-              <div className="sf-live-bar">
-                <SearchField value={liveQuery} onValueChange={setLiveQuery} placeholder="搜索联系人、站点" />
-                <span className="sf-live-echo" aria-live="polite">
-                  {liveQuery ? `正在按“${liveQuery}”过滤（本地示例）` : '输入以查看实时值回显'}
-                </span>
-              </div>
-            </section>
-          </div>
+              <section className="sk-card sk-live">
+                <span className="sk-eyebrow">活样本 · 真实受控状态</span>
+                <h2>在会话轨中的实际形态见「消息」轨</h2>
+                <div className="sf-live-bar">
+                  <SearchField value={liveQuery} onValueChange={setLiveQuery} placeholder="搜索联系人、站点" />
+                  <span className="sf-live-echo" aria-live="polite">
+                    {liveQuery ? `正在按“${liveQuery}”过滤（本地示例）` : '输入以查看实时值回显'}
+                  </span>
+                </div>
+              </section>
+            </div>
+          )}
         </main>
+
+        {isChat && (
+          <ConversationRail conversations={conversations}
+            selectedId={selectedConv} onSelect={openConversation} onNew={newConversation} />
+        )}
       </div>
     </div>
   );

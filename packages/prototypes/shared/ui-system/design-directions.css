@@ -88,6 +88,17 @@
   --sk-shell-glow:
     radial-gradient(720px 420px at 96% -8%, color-mix(in srgb, var(--sk-accent) 14%, transparent), transparent 60%);
 
+  /* Bridge: peers-ui components inside the frame follow the active skin. */
+  --pt-primary: var(--sk-primary);
+  --pt-onPrimary: var(--sk-primary-ink);
+  --pt-text: var(--sk-text);
+  --pt-text-secondary: var(--sk-text-2);
+  --pt-text-tertiary: var(--sk-text-3);
+  --pt-surface: var(--sk-raised);
+  --pt-subtle: var(--sk-tile);
+  --pt-radius-md: var(--sk-avatar-radius);
+  --pt-focus-ring: var(--sk-focus-ring);
+
   position: relative;
   max-width: 1180px; margin: 0 auto;
   display: flex; height: calc(100vh - 150px); min-height: 620px;
@@ -244,6 +255,47 @@
 .sf-live-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .sf-live-bar .sf-field { flex: 1; min-width: 240px; }
 .sf-live-echo { font-size: 12px; color: var(--sk-text-3); white-space: nowrap; }
+
+/* ---- Increment 1: ConversationRail (peers-ui composed) ---- */
+.sk-conv-rail {
+  position: relative; z-index: 1;
+  width: 296px; flex-shrink: 0; padding: 14px;
+  display: flex; flex-direction: column; overflow: auto;
+  background: var(--sk-chat-bg, transparent);
+  backdrop-filter: blur(var(--sk-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+}
+.sk-conv-search .sf-field { width: 100%; }
+.sk-conv-new { margin: 10px 0 6px; }
+.sk-conv-title { margin: 8px 4px; font-size: 13px; color: var(--sk-text-2); font-weight: 600; }
+.sk-conv-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.sk-conv-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px;
+  border: 0; border-radius: var(--sk-radius-control); cursor: pointer;
+  background: transparent; font-family: inherit; text-align: left;
+}
+.sk-conv-row:hover { background: color-mix(in srgb, var(--sk-surface) 60%, transparent); }
+.sk-conv-row.is-selected {
+  background: color-mix(in srgb, var(--sk-surface) 85%, transparent);
+  box-shadow: inset 2.5px 0 0 var(--sk-accent);
+}
+.sk-conv-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sk-conv-meta strong { font-size: 13px; color: var(--sk-text); }
+.sk-conv-meta span {
+  font-size: 11.5px; color: var(--sk-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* peers-ui Badge count must read as the single accent, not the primary pill */
+.sk-conv-row .pt-badge-count { background: var(--sk-accent); color: var(--sk-on-accent); }
+.sk-conv-empty .pt-empty { padding: 24px 8px; color: var(--sk-text-3); font-size: 12px; }
+
+.sk-conversation { flex: 1; min-height: 0; display: grid; place-items: center; padding: 24px; }
+.sk-conversation-empty { text-align: center; color: var(--sk-text-3); }
+.sk-conversation-empty .pt-empty > div { font-size: 13px; }
+
+@media (max-width: 1040px) {
+  .sk-conv-rail { display: none; }
+}
 
 @media (max-width: 760px) {
   .sk-page { padding: 0; }

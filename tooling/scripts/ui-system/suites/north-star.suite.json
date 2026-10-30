@@ -131,6 +131,52 @@
         { "id": "single-active", "type": "count", "target": ".sk-rail .sk-rail-icon.is-active", "equals": 1 }
       ],
       "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.conversation-rail",
+      "title": "增量1：消息轨由 peers-ui 组合，8 会话/头像方圆/未读角标/真实选中清未读/搜索过滤",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" }
+      ],
+      "oracles": [
+        { "id": "rail-present", "type": "exists", "target": ".sk-conv-rail" },
+        { "id": "eight-rows", "type": "count", "target": ".sk-conv-row", "equals": 8 },
+        { "id": "peers-avatars", "type": "count", "target": ".sk-conv-rail .pt-avatar", "equals": 8 },
+        { "id": "avatars-rounded-square", "type": "roundedSquareAll", "target": ".sk-conv-rail .pt-avatar" },
+        { "id": "unread-badges", "type": "count", "target": ".sk-conv-rail .pt-badge-count", "equals": 2 },
+        { "id": "uses-peers-button", "type": "exists", "target": ".sk-conv-new .pt-button" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.conversation-select",
+      "title": "点会话行：中栏切换标题、行选中、未读角标清除",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row .pt-badge-count" }
+      ],
+      "oracles": [
+        { "id": "row-selected", "type": "count", "target": ".sk-conv-row.is-selected", "equals": 1 },
+        { "id": "selected-badge-cleared", "type": "missing", "target": ".sk-conv-row.is-selected .pt-badge-count" },
+        { "id": "center-title", "type": "textContains", "target": ".sk-feed-head h1", "contains": "陈屿" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.conversation-filter",
+      "title": "轨内 SearchField 实时过滤会话",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "type", "target": ".sk-conv-search input", "value": "群" }
+      ],
+      "oracles": [
+        { "id": "filtered-rows", "type": "count", "target": ".sk-conv-row", "equals": 2 },
+        { "id": "title-reflects-query", "type": "textContains", "target": ".sk-conv-title", "contains": "群" }
+      ],
+      "finalizers": []
     }
   ]
 }
