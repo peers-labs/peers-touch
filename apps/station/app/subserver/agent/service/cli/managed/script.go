@@ -2,6 +2,7 @@ package managed
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -15,7 +16,9 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli/environment"
 )
 
-const scriptInstallTimeout = 8 * time.Minute
+// Vendor packages include their own runtime and can exceed 180 MB. Keep a
+// finite installation deadline without treating normal slow links as failures.
+const scriptInstallTimeout = 30 * time.Minute
 
 // installScriptTool installs a vendor-script-distributed adapter (Cursor CLI)
 // by running the vendor's official installer against a private staging HOME.
@@ -80,7 +83,11 @@ func installScriptTool(
 	ticks := 0
 	scanner := bufio.NewScanner(stderr)
 	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
+	scanner.Split(scanInstallerProgress)
 	for scanner.Scan() {
+		if strings.TrimSpace(scanner.Text()) == "" {
+			continue
+		}
 		ticks++
 		if percent := 10 + ticks*3; percent <= 82 {
 			reporter.report(phaseInstall, percent, "installing CLI runtime")
@@ -125,6 +132,18 @@ func installScriptTool(
 	_ = os.RemoveAll(staging)
 
 	return nil
+}
+
+// curl's progress bar terminates updates with carriage returns. ScanLines
+// buffers them until exit and can exhaust the token limit during a download.
+func scanInstallerProgress(data []byte, atEOF bool) (int, []byte, error) {
+	if index := bytes.IndexAny(data, "\r\n"); index >= 0 {
+		return index + 1, data[:index], nil
+	}
+	if atEOF && len(data) > 0 {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 // canonicalizeScriptBinary ensures the catalog command name exists in

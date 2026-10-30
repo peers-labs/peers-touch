@@ -145,6 +145,50 @@ func TestScriptInstallationActivatesRelocatableVendorBinary(t *testing.T) {
 	}
 }
 
+func TestScriptInstallationReportsCarriageReturnProgressWhileRunning(t *testing.T) {
+	manager := newManagerForTest(t.TempDir(), "")
+	spec, _ := FindSpec("cursor-cli")
+	release := filepath.Join(t.TempDir(), "release")
+	stub := "#!/bin/sh\n" +
+		"for step in 1 2 3 4 5 6 7 8 9 10; do printf '\\rdownloading %s' \"$step\" >&2; done\n" +
+		"while [ ! -f " + shellQuote(release) + " ]; do sleep 0.01; done\n" +
+		"mkdir -p \"$HOME/.local/bin\"\n" +
+		"printf '#!/bin/sh\\necho cursor-0.1.0\\n' > \"$HOME/.local/bin/agent\"\n" +
+		"chmod +x \"$HOME/.local/bin/agent\"\n"
+	original := downloadText
+	downloadText = func(context.Context, string) (string, error) { return stub, nil }
+	t.Cleanup(func() { downloadText = original })
+	ctx, cancel := context.WithCancel(context.Background())
+	job := manager.startJobForTest(spec)
+	done := make(chan struct{})
+	go func() {
+		manager.runInstall(ctx, job, spec)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for manager.Snapshot(spec.ProviderID, "").Percent < 45 {
+		if time.Now().After(deadline) {
+			t.Fatal("vendor download progress remained buffered until installer exit")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if snapshot := manager.Snapshot(spec.ProviderID, ""); snapshot.State != StateInstalling {
+		t.Fatalf("progress was reported only after completion: %+v", snapshot)
+	}
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if snapshot := manager.Snapshot(spec.ProviderID, ""); snapshot.State != StateReady {
+		t.Fatalf("progress reporting interrupted activation: %+v", snapshot)
+	}
+}
+
 func TestFailedUpgradePreservesPriorActivationAndExposesFailure(t *testing.T) {
 	manager := newManagerForTest(t.TempDir(), "")
 	spec, _ := FindSpec("codex-cli")

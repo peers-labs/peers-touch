@@ -44,6 +44,12 @@ then switch the activation pointer atomically. Wrapper preparation happens
 before activation. Failed final verification restores the previous pointer
 and wrapper; older versions remain available to already running processes.
 
+Vendor script installations have a bounded 30-minute deadline for packages
+that include their own runtime. Carriage-return download updates are consumed
+while the job runs, so terminal progress bars cannot remain buffered until exit
+or exhaust a line buffer. Installation phases remain distinct from measured
+download percentages. Invocation and model-discovery deadlines are separate.
+
 Jobs are process-local. After restart, executable and version facts determine
 the installation state. A failed upgrade reports `failed` while retaining the
 previous installed version for recovery.
