@@ -128,6 +128,44 @@ describe('social chat conversation projection', () => {
     expect(group?.avatar).toBe('');
   });
 
+  it('projects server description, owner and canonical name for a group', () => {
+    useSocialChatStore.setState({
+      conversations: [
+        create(ConversationSchema, {
+          conversationId: 'group-conversation',
+          kind: ConversationKind.GROUP,
+          status: ConversationStatus.ACTIVE,
+          name: 'Server Group',
+          description: 'Quarterly planning',
+          ownerPtid: 'ptid:peer:alice',
+        }),
+      ],
+    });
+
+    const group = useSocialChatStore.getState()
+      .getIMConversations()
+      .find((conversation) => conversation.id === 'group-conversation');
+
+    expect(group?.canonicalName).toBe('Server Group');
+    expect(group?.description).toBe('Quarterly planning');
+    expect(group?.ownerPtid).toBe('ptid:peer:alice');
+  });
+
+  it('applies the local remark to the title while exposing the canonical name', () => {
+    useSocialChatStore.setState({
+      conversationLocalState: {
+        'group:group-conversation': { remark: 'My private alias' },
+      },
+    });
+
+    const group = useSocialChatStore.getState()
+      .getIMConversations()
+      .find((conversation) => conversation.id === 'group-conversation');
+
+    expect(group?.title).toBe('My private alias');
+    expect(group?.canonicalName).toBe('Group');
+  });
+
   it('retains Conversation authority for Direct and Group UI projections', () => {
     const conversations = useSocialChatStore.getState().getIMConversations();
 

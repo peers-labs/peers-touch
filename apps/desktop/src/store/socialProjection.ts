@@ -33,6 +33,9 @@ export interface DesktopUnifiedConversationLike {
   federationId?: string;
   name: string;
   avatar?: string;
+  description?: string;
+  ownerPtid?: string;
+  canonicalName?: string;
   lastActivity: Date;
   unread: number;
   peerPtid?: string;
@@ -56,6 +59,13 @@ export interface ConversationLocalState {
   alertEnabled?: boolean;
   background?: ChatBackgroundId;
   backgroundImage?: string;
+  /**
+   * Local-only display alias for this conversation on this device. Never
+   * synced; when set it overrides the server-provided title in every
+   * conversation surface while `canonicalName` keeps the wire truth
+   * available for rename editors and ownership checks.
+   */
+  remark?: string;
 }
 
 export type GroupSecurityState =
@@ -271,6 +281,16 @@ export type DesktopIMConversationProjection = IMConversationProjection & {
   homeStationName?: string;
   federationName?: string;
   memberCount?: number;
+  /** Server-owned group description/announcement; empty for directs. */
+  description?: string;
+  /** Owner actor PTID for group conversations; drives edit permissions. */
+  ownerPtid?: string;
+  /**
+   * Server-provided conversation title without the local remark override.
+   * Rename editors seed from this so opening an alias for editing does not
+   * accidentally rename the group to the alias text.
+   */
+  canonicalName?: string;
 };
 
 export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike> & {
@@ -446,6 +466,9 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
     homeStationName: conversation.homeStationName,
     federationName: conversation.federationName,
     memberCount: conversation.memberCount,
+    description: conversation.description,
+    ownerPtid: conversation.ownerPtid,
+    canonicalName: conversation.canonicalName,
   };
 }
 

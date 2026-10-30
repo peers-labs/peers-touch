@@ -247,7 +247,7 @@ export function ChatMessageArea({
     );
 
   const startGroupRename = () => {
-    setGroupNameDraft(currentName || activeGroup?.name || '');
+    setGroupNameDraft(activeConversation?.canonicalName || activeGroup?.name || currentName || '');
     setEditingGroupName(true);
   };
   const cancelGroupRename = () => {
@@ -256,8 +256,12 @@ export function ChatMessageArea({
   };
   const saveGroupRename = async () => {
     const next = groupNameDraft.trim();
-    if (!activeUlid || !next || groupNameSaving) return;
-    if (next === (activeGroup?.name || currentName).trim()) {
+    if (!activeUlid || !next || groupNameSaving) {
+      cancelGroupRename();
+      return;
+    }
+    const canonical = (activeConversation?.canonicalName || activeGroup?.name || currentName).trim();
+    if (next === canonical) {
       cancelGroupRename();
       return;
     }

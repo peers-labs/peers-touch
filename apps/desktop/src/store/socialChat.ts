@@ -2572,12 +2572,17 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           || (state.groupMembers[convId] || []).length
           || Number(conv.maxMembers || 0);
         const displayOverride = state.conversationDisplayOverrides[conversationKey('group', convId)];
+        const localRemark = localState?.remark?.trim() || '';
+        const canonicalName = conv.name || 'Group';
         out.push(projectDesktopIMConversation({
           type: 'group',
           ulid: convId,
           authorityStationId: conv.authorityStationPeerId,
           federationId: conv.federationId,
-          name: displayOverride?.name || conv.name || 'Group',
+          name: localRemark || displayOverride?.name || canonicalName,
+          canonicalName,
+          description: conv.description || '',
+          ownerPtid: conv.ownerPtid || '',
           avatar: displayOverride?.avatarPreview
             || groupAvatarRemoteUrl({ avatarCid: conv.avatarCid || '' }),
           memberCount,

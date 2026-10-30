@@ -20,6 +20,7 @@ import {
   Lock,
   LogOut,
   Paperclip,
+  Pencil,
   Pin,
   Search,
   ShieldCheck,
@@ -245,6 +246,14 @@ function MemberItem({ member, action, lockedReason }: { member: GroupMemberDispl
       ) : null}
     </Flexbox>
   );
+}
+
+function deterministicBannerHue(seed: string): number {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+  return hash % 360;
 }
 
 function DetailSection({ title, children, gap = 8 }: { title?: string; children: ReactNode; gap?: number }) {
@@ -712,6 +721,11 @@ export function ChatDetailPanel() {
   const [groupAvatarUploading, setGroupAvatarUploading] = useState(false);
   const [editingMyNickname, setEditingMyNickname] = useState(false);
   const [editMyNicknameValue, setEditMyNicknameValue] = useState('');
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [editDescriptionValue, setEditDescriptionValue] = useState('');
+  const [descriptionSaving, setDescriptionSaving] = useState(false);
+  const [editingRemark, setEditingRemark] = useState(false);
+  const [editRemarkValue, setEditRemarkValue] = useState('');
   const [historyActionPending, setHistoryActionPending] = useState(false);
   const [conversationActionPending, setConversationActionPending] = useState<string | null>(null);
   const [backgroundRetryPath, setBackgroundRetryPath] = useState<string | null>(null);
@@ -906,13 +920,16 @@ export function ChatDetailPanel() {
   };
 
   const handleSaveGroupName = async () => {
-    if (!activeUlid || !editNameValue.trim()) {
-      setEditingName(false);
-      return;
-    }
+    // Closing the editor on blur/Escape must never hit the wire: compare
+    // against the canonical server name (not a local remark), and cancel
+    // silently when the value is empty or unchanged.
+    const next = editNameValue.trim();
+    setEditingName(false);
+    if (!activeUlid || !next) return;
+    if (next === (activeConversation?.canonicalName || currentName).trim()) return;
     try {
       await messagingCommands.updateConversation(activeUlid, {
-        name: editNameValue.trim(),
+        name: next,
       });
       await loadSessions();
       toast.success(t('chat.social.detail.groupNameUpdated'));
@@ -920,7 +937,6 @@ export function ChatDetailPanel() {
       log.error('chat', 'update group name failed', { groupUlid: activeUlid, error });
       toast.error(t('chat.social.detail.groupNameUpdateFailed'));
     }
-    setEditingName(false);
   };
 
   const handleSaveMyNickname = async () => {
@@ -929,6 +945,9 @@ export function ChatDetailPanel() {
       return;
     }
     const nextNickname = editMyNicknameValue.trim();
+    setEditingMyNickname(false);
+    // Unchanged open-and-close is a cancel, not a member-settings write.
+    if (nextNickname === myGroupNickname) return;
     try {
       await messagingCommands.updateMemberSettings(activeUlid, {
         nickname: nextNickname,
@@ -939,7 +958,49 @@ export function ChatDetailPanel() {
       log.error('chat', 'update group nickname failed', { groupUlid: activeUlid, error });
       toast.error(t('chat.social.detail.myNicknameUpdateFailed'));
     }
-    setEditingMyNickname(false);
+  };
+
+  const startDescriptionEdit = () => {
+    setEditDescriptionValue(activeConversation?.description?.trim() || '');
+    setEditingDescription(true);
+  };
+
+  const handleSaveDescription = async () => {
+    const next = editDescriptionValue.trim();
+    setEditingDescription(false);
+    if (!activeUlid || !canManageGroupMembers) return;
+    if (next === (activeConversation?.description || '').trim()) return;
+    setDescriptionSaving(true);
+    try {
+      await messagingCommands.updateConversation(activeUlid, { description: next });
+      await loadSessions();
+      toast.success(t('chat.social.detail.groupDescriptionUpdated'));
+    } catch (error) {
+      log.error('chat', 'update group description failed', { groupUlid: activeUlid, error });
+      toast.error(t('chat.social.detail.groupDescriptionUpdateFailed'));
+    } finally {
+      setDescriptionSaving(false);
+    }
+  };
+
+  const startRemarkEdit = () => {
+    setEditRemarkValue(activeLocalState?.remark?.trim() || '');
+    setEditingRemark(true);
+  };
+
+  const handleSaveRemark = async () => {
+    const next = editRemarkValue.trim();
+    setEditingRemark(false);
+    if (!activeUlid) return;
+    if (next === (activeLocalState?.remark || '').trim()) return;
+    try {
+      await updateConversationLocalState(activeTab, activeUlid, {
+        remark: next || undefined,
+      });
+    } catch (error) {
+      log.error('chat', 'save group remark failed', { groupUlid: activeUlid, error });
+      toast.error(t('chat.social.detail.groupRemarkUpdateFailed'));
+    }
   };
 
   const handleGroupAvatarClick = async () => {
@@ -1280,6 +1341,9 @@ export function ChatDetailPanel() {
     setConversationActionPending(null);
     setBackgroundRetryPath(null);
     setEditingMyNickname(false);
+    setEditingDescription(false);
+    setDescriptionSaving(false);
+    setEditingRemark(false);
   }, [activeUlid]);
 
   useEffect(() => {
@@ -1341,39 +1405,85 @@ export function ChatDetailPanel() {
       <Flexbox style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
         {/* Identity section */}
         {isGroup ? (
-          <Flexbox align="center" gap={12} style={{ padding: '20px 16px 12px' }}>
-            {/* Avatar with edit overlay */}
-            <div
-              data-chat-group-avatar={groupAvatarUploading ? 'uploading' : 'idle'}
-              style={{ position: 'relative', cursor: groupAvatarUploading ? 'wait' : 'pointer' }}
-              onClick={() => {
-                if (!groupAvatarUploading) void handleGroupAvatarClick();
-              }}
-            >
-              <Flexbox
-                align="center"
-                justify="center"
+          <Flexbox style={{ padding: 0, minWidth: 0 }}>
+            {/* Banner: blurred group avatar over a deterministic hue, so each
+                group profile has a recognizable, non-empty cover. */}
+            {(() => {
+              const hue = deterministicBannerHue(activeUlid || displayName);
+              return (
+                <div
+                  aria-hidden="true"
+                  data-chat-group-banner
+                  style={{
+                    position: 'relative',
+                    height: 88,
+                    margin: '0 0 30px',
+                    overflow: 'hidden',
+                    background: `linear-gradient(135deg, hsl(${hue} 62% 62%), hsl(${(hue + 42) % 360} 58% 48%))`,
+                  }}
+                >
+                  {groupAvatarUrl.startsWith('http') ? (
+                    <img
+                      src={groupAvatarUrl}
+                      alt=""
+                      style={{
+                        position: 'absolute',
+                        inset: -24,
+                        width: 'calc(100% + 48px)',
+                        height: 'calc(100% + 48px)',
+                        objectFit: 'cover',
+                        filter: 'blur(18px) saturate(1.2)',
+                        transform: 'scale(1.12)',
+                      }}
+                    />
+                  ) : null}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: `linear-gradient(180deg, hsl(${hue} 55% 45% / 0.28), hsl(${hue} 60% 30% / 0.55))`,
+                    }}
+                  />
+                </div>
+              );
+            })()}
+            <Flexbox align="center" gap={8} style={{ padding: '0 16px', marginTop: -66 }}>
+              {/* Avatar with edit overlay */}
+              <div
+                data-chat-group-avatar={groupAvatarUploading ? 'uploading' : 'idle'}
                 style={{
-                  width: 72,
-                  height: 72,
+                  position: 'relative',
+                  cursor: groupAvatarUploading ? 'wait' : 'pointer',
                   borderRadius: 18,
-                  background: token.colorFillSecondary,
-                  color: token.colorTextSecondary,
-                  overflow: 'hidden',
+                  boxShadow: `0 0 0 3px ${token.colorBgContainer}, 0 4px 12px rgba(0,0,0,0.18)`,
+                }}
+                onClick={() => {
+                  if (!groupAvatarUploading) void handleGroupAvatarClick();
                 }}
               >
-                <GroupSquareAvatar
-                  remoteUrl={groupAvatarUrl || undefined}
-                  members={members.slice(0, 4).map((m) => {
-                    const p = memberProfiles.get(m.ptid);
-                    return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
-                  })}
-                  name={displayName}
-                  size={72}
-                  radius={18}
-                />
-              </Flexbox>
-              {isGroup && (
+                <Flexbox
+                  align="center"
+                  justify="center"
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 18,
+                    background: token.colorFillSecondary,
+                    color: token.colorTextSecondary,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <GroupSquareAvatar
+                    remoteUrl={groupAvatarUrl || undefined}
+                    members={members.slice(0, 4).map((m) => {
+                      const p = memberProfiles.get(m.ptid);
+                      return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
+                    })}
+                    name={displayName}
+                    size={72}
+                    radius={18}
+                  />
+                </Flexbox>
                 <Flexbox
                   align="center"
                   justify="center"
@@ -1391,11 +1501,11 @@ export function ChatDetailPanel() {
                 >
                   {groupAvatarUploading ? <Spin size="small" /> : <Camera size={12} />}
                 </Flexbox>
-              )}
-            </div>
+              </div>
+            </Flexbox>
             {/* Editable group name */}
-            {editingName ? (
-              <Flexbox horizontal align="center" gap={8}>
+            <Flexbox align="center" style={{ padding: '10px 16px 2px' }}>
+              {editingName ? (
                 <input
                   autoFocus
                   value={editNameValue}
@@ -1413,29 +1523,52 @@ export function ChatDetailPanel() {
                     fontWeight: 600,
                     textAlign: 'center',
                     outline: 'none',
-                    width: 180,
+                    width: 220,
+                    maxWidth: '100%',
                     padding: '2px 4px',
                     color: token.colorText,
                   }}
                 />
-              </Flexbox>
-            ) : (
+              ) : (
+                <Flexbox horizontal align="center" gap={4}>
+                  <Text strong style={{ fontSize: 16 }}>
+                    {displayName}
+                  </Text>
+                  {canManageGroupMembers ? (
+                    <Tooltip title={t('chat.social.detail.editGroupName')}>
+                      <Button
+                        data-chat-group-name-edit
+                        type="text"
+                        size="small"
+                        aria-label={t('chat.social.detail.editGroupName')}
+                        icon={<Pencil size={13} />}
+                        style={{ width: 24, height: 24 }}
+                        onClick={() => {
+                          setEditNameValue(activeConversation?.canonicalName || currentName || '');
+                          setEditingName(true);
+                        }}
+                      />
+                    </Tooltip>
+                  ) : null}
+                </Flexbox>
+              )}
+            </Flexbox>
+            {/* When a local remark is set, keep the canonical name readable. */}
+            {!editingName
+              && (activeLocalState?.remark || '').trim()
+              && (activeConversation?.canonicalName || '').trim()
+              && (activeLocalState!.remark!.trim() !== activeConversation!.canonicalName!.trim()) ? (
               <Text
-                strong
-                style={{ fontSize: 16, cursor: canManageGroupMembers ? 'pointer' : 'default' }}
-                onClick={canManageGroupMembers ? () => {
-                  // Seed from the displayed projection: the legacy
-                  // `groups` array is empty after the conversation-list
-                  // projection moved onto `conversations`, so reading only
-                  // activeGroup.name opened an empty editor.
-                  setEditNameValue(currentName || '');
-                  setEditingName(true);
-                } : undefined}
+                type="secondary"
+                ellipsis
+                style={{ display: 'block', textAlign: 'center', fontSize: 11, padding: '0 16px' }}
               >
-                {displayName}
+                {t('chat.social.detail.canonicalGroupName', {
+                  name: activeConversation!.canonicalName!,
+                })}
               </Text>
-            )}
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            ) : null}
+            <Text type="secondary" style={{ fontSize: 12, textAlign: 'center', padding: '4px 16px 2px' }}>
               {t('chat.social.detail.membersCount', { count: groupMemberCount })}
             </Text>
           </Flexbox>
@@ -1501,6 +1634,81 @@ export function ChatDetailPanel() {
           </Text>
         </Flexbox>
         )}
+
+        {isGroup ? (
+          <DetailSection gap={8}>
+            {editingDescription ? (
+              <Flexbox gap={8}>
+                <textarea
+                  autoFocus
+                  data-chat-group-description-editor
+                  value={editDescriptionValue}
+                  maxLength={300}
+                  rows={3}
+                  placeholder={t('chat.social.detail.groupDescriptionPlaceholder')}
+                  onChange={(event) => setEditDescriptionValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                      void handleSaveDescription();
+                    }
+                    if (event.key === 'Escape') setEditingDescription(false);
+                  }}
+                  onBlur={() => void handleSaveDescription()}
+                  style={{
+                    width: '100%',
+                    resize: 'none',
+                    border: `1px solid ${token.colorBorder}`,
+                    borderRadius: 8,
+                    padding: '6px 8px',
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    outline: 'none',
+                    background: token.colorBgContainer,
+                    color: token.colorText,
+                  }}
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {t('chat.social.detail.groupDescriptionHint')}
+                </Text>
+              </Flexbox>
+            ) : (
+              <Flexbox horizontal align="flex-start" justify="space-between" gap={8}>
+                <Flexbox horizontal gap={8} style={{ minWidth: 0, flex: 1 }}>
+                  <FileText size={15} style={{ color: token.colorTextSecondary, marginTop: 2, flexShrink: 0 }} />
+                  {activeConversation?.description?.trim() ? (
+                    <Text
+                      style={{ fontSize: 12, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                    >
+                      {activeConversation.description.trim()}
+                    </Text>
+                  ) : canManageGroupMembers ? (
+                    <Text
+                      type="secondary"
+                      style={{ fontSize: 12 }}
+                      data-chat-group-description-empty
+                    >
+                      {descriptionSaving
+                        ? t('chat.social.detail.groupDescriptionSaving')
+                        : t('chat.social.detail.groupDescriptionAdd')}
+                    </Text>
+                  ) : null}
+                </Flexbox>
+                {canManageGroupMembers && !descriptionSaving ? (
+                  <Tooltip title={t('chat.social.detail.groupDescriptionEdit')}>
+                    <Button
+                      type="text"
+                      size="small"
+                      aria-label={t('chat.social.detail.groupDescriptionEdit')}
+                      icon={<Pencil size={13} />}
+                      style={{ width: 24, height: 24, flexShrink: 0 }}
+                      onClick={startDescriptionEdit}
+                    />
+                  </Tooltip>
+                ) : null}
+              </Flexbox>
+            )}
+          </DetailSection>
+        ) : null}
 
         {isGroup ? (
           <DetailSection title={t('chat.social.detail.permissionLabel')} gap={10}>
@@ -1575,6 +1783,57 @@ export function ChatDetailPanel() {
 
         {/* Settings section */}
         <DetailSection title={t('chat.social.detail.settings')}>
+          {isGroup ? (
+            <Flexbox horizontal align="center" justify="space-between" gap={10}>
+              <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
+                <Pencil size={15} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
+                <Flexbox gap={1} style={{ minWidth: 0, flex: 1 }}>
+                  <Text style={{ fontSize: 13 }}>{t('chat.social.detail.groupRemark')}</Text>
+                  {editingRemark ? (
+                    <input
+                      autoFocus
+                      data-chat-group-remark-editor
+                      value={editRemarkValue}
+                      maxLength={60}
+                      placeholder={t('chat.social.detail.groupRemarkPlaceholder')}
+                      onChange={(event) => setEditRemarkValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') void handleSaveRemark();
+                        if (event.key === 'Escape') setEditingRemark(false);
+                      }}
+                      onBlur={() => void handleSaveRemark()}
+                      style={{
+                        border: 'none',
+                        borderBottom: `1px solid ${token.colorPrimary}`,
+                        background: 'transparent',
+                        color: token.colorText,
+                        fontSize: 12,
+                        outline: 'none',
+                        padding: '2px 0',
+                      }}
+                    />
+                  ) : (
+                    <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+                      {(activeLocalState?.remark || '').trim()
+                        || t('chat.social.detail.groupRemarkUnset')}
+                    </Text>
+                  )}
+                  <Text type="secondary" style={{ fontSize: 10 }}>
+                    {t('chat.social.detail.groupRemarkHint')}
+                  </Text>
+                </Flexbox>
+              </Flexbox>
+              {!editingRemark ? (
+                <Button
+                  size="small"
+                  type="text"
+                  onClick={startRemarkEdit}
+                >
+                  {t('chat.social.detail.edit')}
+                </Button>
+              ) : null}
+            </Flexbox>
+          ) : null}
           {isGroup ? (
             <Flexbox horizontal align="center" justify="space-between" gap={10}>
               <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
