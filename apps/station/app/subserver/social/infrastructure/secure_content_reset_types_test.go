@@ -86,6 +86,7 @@ func TestResetTaskAllowlistMatchesIntentAndProfile(t *testing.T) {
 		{"unknown plan denied", "OTHER-PLAN", ResetIntentSchemaActivation, "four", CrossStationSocialActivationTask, true},
 		{"planless three", "", ResetIntentSchemaActivation, "three", "social-search-suite", false},
 		{"planless four", "", ResetIntentSchemaActivation, "four", "social-search-suite", false},
+		{"planless corpdebug", "", ResetIntentSchemaActivation, "corpdebug", "social-search-suite", false},
 		{"planless final cut denied", "", ResetIntentFinalCut, "three", "social-search-suite", true},
 		{"planless empty audit task denied", "", ResetIntentSchemaActivation, "three", "", true},
 		{"planless unknown profile denied", "", ResetIntentSchemaActivation, "unknown", "social-search-suite", true},
@@ -105,6 +106,9 @@ func TestResetTaskAllowlistMatchesIntentAndProfile(t *testing.T) {
 			} else if test.profileID == "fiveArm" {
 				deployment = "station-five-arm"
 				scope = "station-five-arm-social-private"
+			} else if test.profileID == "corpdebug" {
+				deployment = "corpdebug-station"
+				scope = "corpdebug-station-social-private"
 			}
 			request := SecureContentResetAuditRequestV1{
 				SchemaVersion:         SecureContentResetSchemaVersion,

@@ -37,6 +37,12 @@ RUNTIME_TARGETS = {
     "three": RuntimeSchemaTarget(
         "three", "station-three", "station-three", "station-three-social-private",
     ),
+    "corpdebug": RuntimeSchemaTarget(
+        "corpdebug",
+        "corpdebug-station",
+        "corpdebug-station",
+        "corpdebug-station-social-private",
+    ),
 }
 
 
