@@ -58,5 +58,12 @@
 - [x] 2 ConversationView（peers-ui TextArea embedded / IconButton send / Avatar；
       peer/me 气泡、时间、本地发送、Enter 发送、空禁发、焦点环归属；合同见
       components/conversation-view.md；门禁 14/14）
-- [ ] 3 发起会话/联系人选择（Autocomplete 或 List+SearchField、Avatar、Button、Dialog）
-- [ ] 4 …9
+- [x] 3 发起会话/联系人选择（peers-ui Dialog + SearchField + Avatar + Empty；
+      新联系人创建/已有打开、过滤空态、portal 弹层同皮肤令牌；合同
+      components/contact-picker.md；门禁 18/18）
+- [ ] 4 动态流 MomentsFeed（Card/Avatar/Badge/IconButton/Tag/Empty/InfiniteList）
+- [ ] 5 动态详情 / 发动态 / 圈友管理（+ TextArea/Dialog/AvatarGroup）
+- [ ] 6 设置框架 SettingsFrame（SectionNav/Accordion/Card/PageHeader）
+- [ ] 7 通用设置行 SettingsRow（Switch/Select/TextField/Button/InlineAlert）
+- [ ] 8 数据/存储设置（Switch/Button/Progress/Alert/Table）
+- [ ] 9 工具/通道/小程序/帮助分组（Select/TextField/Tag/Accordion）

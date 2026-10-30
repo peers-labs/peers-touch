@@ -18,10 +18,25 @@ import {
   Upload, ImageIcon, X, UserPlus, MessagesSquare,
   type LucideIcon,
 } from 'lucide-react';
-import { Avatar, Badge, Button, Empty, IconButton, TextArea } from '@peers-touch/ui';
+import { Avatar, Badge, Button, Dialog, Empty, IconButton, TextArea, UIProvider } from '@peers-touch/ui';
 import './design-directions.css';
 
 type Skin = { id: string; name: string; desc: string };
+
+/* UIProvider injects its own --pt-* tokens inline on the same root; pass this
+   bridge via style (which merges after them) so peers-ui components follow the
+   active skin both in the frame and in portaled overlays. */
+const PT_BRIDGE = {
+  '--pt-primary': 'var(--sk-primary)',
+  '--pt-onPrimary': 'var(--sk-primary-ink)',
+  '--pt-text': 'var(--sk-text)',
+  '--pt-text-secondary': 'var(--sk-text-2)',
+  '--pt-text-tertiary': 'var(--sk-text-3)',
+  '--pt-surface': 'var(--sk-raised)',
+  '--pt-subtle': 'var(--sk-tile)',
+  '--pt-radius-md': 'var(--sk-avatar-radius)',
+  '--pt-focus-ring': 'var(--sk-focus-ring)',
+} as CSSProperties;
 
 const SKINS: Skin[] = [
   { id: 'default', name: '当前默认', desc: '现有产品基线，用于对照' },
@@ -237,6 +252,52 @@ function ConversationView({ conversation, messages, onSend }: {
   );
 }
 
+/* Increment 3 — start conversation / contact picker (peers-ui Dialog). */
+const EXTRA_PEOPLE: Conversation[] = [
+  { id: 'cv-ayan', name: '阿砚', last: '还没聊过', unread: 0, tone: '#7a6a92', kind: 'person' },
+  { id: 'cv-laozhou', name: '老周', last: '还没聊过', unread: 0, tone: '#8a7a55', kind: 'person' },
+];
+
+function ContactPickerDialog({ open, people, existingIds, onDismiss, onPick }: {
+  open: boolean;
+  people: Conversation[];
+  existingIds: Set<string>;
+  onDismiss: () => void;
+  onPick: (person: Conversation) => void;
+}) {
+  const [query, setQuery] = useState('');
+  useEffect(() => { if (open) setQuery(''); }, [open]);
+  const filtered = people.filter(p => p.name.toLowerCase().includes(query.trim().toLowerCase()));
+
+  return (
+    <Dialog open={open} onDismiss={onDismiss} title="新建会话"
+      description="选择一位联系人开始对话（本地示例）" width={420}
+      closeLabel="关闭"
+      footer={<Button actionId="sk.picker-cancel" emphasis="quiet" label="取消" onActivate={onDismiss} />}>
+      <div className="sk-picker">
+        <SearchField value={query} onValueChange={setQuery} placeholder="搜索联系人" />
+        <ul className="sk-picker-list">
+          {filtered.map(p => (
+            <li key={p.id}>
+              <button type="button" className="sk-picker-row" onClick={() => onPick(p)}>
+                <Avatar name={p.name} background={p.tone} size={36}
+                  style={{ borderRadius: 'var(--sk-avatar-radius)' }} aria-label={p.name} />
+                <span className="sk-conv-meta">
+                  <strong>{p.name}</strong>
+                  <span>{existingIds.has(p.id) ? '最近对话' : '新联系人'}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+          {filtered.length === 0 && (
+            <li className="sk-conv-empty"><Empty description="没有匹配的联系人" /></li>
+          )}
+        </ul>
+      </div>
+    </Dialog>
+  );
+}
+
 export function DesignDirections() {
   const [skinId, setSkinId] = useState('glass');
   const [wallpaper, setWallpaper] = useState<string>('none');
@@ -246,6 +307,7 @@ export function DesignDirections() {
   const [conversations, setConversations] = useState<Conversation[]>(CONVERSATIONS);
   const [selectedConv, setSelectedConv] = useState<string | null>(null);
   const [messagesByConv, setMessagesByConv] = useState<Record<string, ChatMessage[]>>(SEED_MESSAGES);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const selectedConversation = conversations.find(c => c.id === selectedConv) ?? null;
 
@@ -257,6 +319,14 @@ export function DesignDirections() {
   const newConversation = () => {
     setRailTab('chat');
     setSelectedConv(null);
+    setPickerOpen(true);
+  };
+  const pickPerson = (person: Conversation) => {
+    setPickerOpen(false);
+    setConversations(list => (list.some(c => c.id === person.id)
+      ? list
+      : [person, ...list]));
+    openConversation(person.id);
   };
   const sendMessage = (text: string) => {
     if (!selectedConv) return;
@@ -270,6 +340,8 @@ export function DesignDirections() {
   const isChat = railTab === 'chat';
 
   const skin = SKINS.find(s => s.id === skinId) ?? SKINS[0];
+  const peoplePool = [...EXTRA_PEOPLE, ...conversations];
+  const existingIds = new Set(conversations.map(c => c.id));
 
   const onUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -322,7 +394,8 @@ export function DesignDirections() {
         <p className="sk-skin-desc">{skin.desc}</p>
       </div>
 
-      <div className="sk-shell" data-skin={skin.id}
+      <UIProvider theme="light" className={`sk-theme sk-skin-${skinId}`} style={PT_BRIDGE}>
+      <div className="sk-shell"
         data-wallpaper={noWallpaper ? 'none' : 'image'} style={shellStyle}>
         <div className="sk-shell-bg" aria-hidden="true">
           <div className="sk-shell-glow" />
@@ -424,6 +497,9 @@ export function DesignDirections() {
             selectedId={selectedConv} onSelect={openConversation} onNew={newConversation} />
         )}
       </div>
+      <ContactPickerDialog open={pickerOpen} people={peoplePool} existingIds={existingIds}
+        onDismiss={() => setPickerOpen(false)} onPick={pickPerson} />
+      </UIProvider>
     </div>
   );
 }

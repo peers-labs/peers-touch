@@ -215,6 +215,70 @@
         { "id": "send-redisabled", "type": "attr", "target": ".sk-composer .pt-icon-button", "attr": "aria-disabled", "equals": "true" }
       ],
       "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.picker-open",
+      "title": "增量3：新建会话打开 peers-ui Dialog，列出 10 位联系人（含 2 位新联系人）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-new .pt-button" }
+      ],
+      "oracles": [
+        { "id": "dialog-open", "type": "exists", "scope": "global", "target": ".pt-dialog[role='dialog']" },
+        { "id": "ten-people", "type": "count", "scope": "global", "target": ".sk-picker-row", "equals": 10 },
+        { "id": "picker-avatars-square", "type": "roundedSquareAll", "scope": "global", "target": ".sk-picker .pt-avatar" },
+        { "id": "new-contact-listed", "type": "textContains", "scope": "global", "target": ".sk-picker-list", "contains": "阿砚" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.picker-create",
+      "title": "选择新联系人：创建并选中会话、轨行数 +1、弹窗关闭",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-new .pt-button" },
+        { "op": "clickGlobal", "target": ".sk-picker-row" }
+      ],
+      "oracles": [
+        { "id": "dialog-closed", "type": "missing", "scope": "global", "target": ".pt-dialog[role='dialog']" },
+        { "id": "nine-conversations", "type": "count", "target": ".sk-conv-row", "equals": 9 },
+        { "id": "new-selected", "type": "count", "target": ".sk-conv-row.is-selected", "equals": 1 },
+        { "id": "title-new-contact", "type": "textContains", "target": ".sk-feed-head h1", "contains": "阿砚" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.picker-filter-empty",
+      "title": "弹窗内搜索无结果时显示 peers-ui 空态",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-new .pt-button" },
+        { "op": "type", "scope": "global", "target": ".sk-picker input", "value": "zzzz不存在" }
+      ],
+      "oracles": [
+        { "id": "zero-rows", "type": "count", "scope": "global", "target": ".sk-picker-row", "equals": 0 },
+        { "id": "empty-state", "type": "exists", "scope": "global", "target": ".sk-picker .pt-empty" },
+        { "id": "dialog-input-no-square-outline", "type": "computedStyle", "scope": "global", "target": ".sk-picker input", "prop": "outlineStyle", "equals": "none" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.picker-cancel",
+      "title": "取消关闭弹窗，不改变会话列表",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-new .pt-button" },
+        { "op": "clickGlobal", "target": ".pt-dialog-footer .pt-button" }
+      ],
+      "oracles": [
+        { "id": "dialog-closed", "type": "missing", "scope": "global", "target": ".pt-dialog[role='dialog']" },
+        { "id": "still-eight", "type": "count", "target": ".sk-conv-row", "equals": 8 }
+      ],
+      "finalizers": []
     }
   ]
 }

@@ -52,7 +52,9 @@
 .sk-wall-current { font-size: 11px; color: #8a918b; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- shell tokens: baseline + component roles ---- */
-.sk-shell {
+/* Skin tokens live on the UIProvider root (.sk-theme) so both the frame and
+   portaled overlays (Dialog/Popover) inherit the active skin. */
+.sk-theme {
   --sk-canvas: #f4efe6;
   --sk-surface: #fbf8f1;
   --sk-subtle: #f0e9dc;
@@ -88,17 +90,11 @@
   --sk-shell-glow:
     radial-gradient(720px 420px at 96% -8%, color-mix(in srgb, var(--sk-accent) 14%, transparent), transparent 60%);
 
-  /* Bridge: peers-ui components inside the frame follow the active skin. */
-  --pt-primary: var(--sk-primary);
-  --pt-onPrimary: var(--sk-primary-ink);
-  --pt-text: var(--sk-text);
-  --pt-text-secondary: var(--sk-text-2);
-  --pt-text-tertiary: var(--sk-text-3);
-  --pt-surface: var(--sk-raised);
-  --pt-subtle: var(--sk-tile);
-  --pt-radius-md: var(--sk-avatar-radius);
-  --pt-focus-ring: var(--sk-focus-ring);
+  /* Raised surface used by the peers-ui token bridge (PT_BRIDGE in TSX). */
+  --sk-raised: var(--sk-card-bg);
+}
 
+.sk-shell {
   position: relative;
   max-width: 1180px; margin: 0 auto;
   display: flex; height: calc(100vh - 150px); min-height: 620px;
@@ -116,7 +112,7 @@
 .sk-rail, .sk-feed { position: relative; z-index: 1; }
 
 /* skins */
-.sk-shell[data-skin="default"] {
+.sk-theme.sk-skin-default {
   --sk-canvas: #f7f8fa; --sk-surface: #ffffff; --sk-subtle: #f2f4f7; --sk-tile: #f2f4f7;
   --sk-text: #1f2329; --sk-text-2: #5a616b; --sk-text-3: #8a9099;
   --sk-primary: #6b5bd6; --sk-primary-ink: #ffffff;
@@ -132,7 +128,7 @@
   --sk-card-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px -16px rgba(16, 24, 40, .12);
   --sk-shell-glow: none;
 }
-.sk-shell[data-skin="glass"] {
+.sk-theme.sk-skin-glass {
   --sk-canvas: #dceade; --sk-surface: rgba(255,255,255,.62); --sk-subtle: rgba(255,255,255,.5);
   --sk-tile: rgba(255,255,255,.52);
   --sk-text: #11201a; --sk-text-2: #52605a; --sk-text-3: #7e8d85;
@@ -245,7 +241,7 @@
 .sf-field.is-disabled input { cursor: not-allowed; }
 /* The global .pt-ui :focus-visible outline must not paint a square ring on
    the radius-0 embedded control; focus belongs to the rounded host. */
-.sk-shell .sf-field input:focus-visible { outline: none; }
+.sk-theme .sf-field input:focus-visible { outline: none; }
 .sf-clear {
   flex-shrink: 0; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
   display: grid; place-items: center; background: var(--sk-btn-quiet-bg-hover); color: var(--sk-text-2);
@@ -334,8 +330,22 @@
   font-family: inherit; font-size: 13.5px; line-height: 1.55; color: var(--sk-text);
   max-height: 6em; padding: 7px 0;
 }
-.sk-shell .sk-composer textarea:focus-visible { outline: none; }
+.sk-theme .sk-composer textarea:focus-visible { outline: none; }
 .sk-composer .pt-icon-button { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; }
+
+/* Increment 3: contact picker dialog (portaled, inherits .sk-theme tokens) */
+.sk-picker { display: flex; flex-direction: column; gap: 12px; }
+.sk-picker-list {
+  list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sk-picker-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px;
+  border: 0; border-radius: var(--sk-radius-control); cursor: pointer;
+  background: transparent; font-family: inherit; text-align: left;
+}
+.sk-picker-row:hover { background: var(--sk-tile); }
+.pt-dialog { border-radius: var(--sk-r-card); }
 
 @media (max-width: 1040px) {
   .sk-conv-rail { display: none; }
