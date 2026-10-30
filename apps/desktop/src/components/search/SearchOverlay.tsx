@@ -353,6 +353,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
           onClick={() => searchActions.mode('functions')}>{t('search.tab.functions')}</button>
       </div>
       <div ref={bodyRef} className="pt-search-body" data-displayed-query={displayedQuery}
+        aria-busy={presentation.isProgressive || view.status === 'loading'}
         onScroll={event => {
           searchActions.scroll(event.currentTarget.scrollTop);
         }}>
