@@ -11,6 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 
@@ -246,15 +247,23 @@ class DeviceSearchGate(NativeTwoClientGate):
                               f"painted Search geometry across {len(samples)} observations")
 
     def settled(self) -> None:
-        self.wait_js(
-            "document.querySelector('.pt-search-field input')"
-            " && document.querySelector('.pt-search-body')?.getAttribute('aria-busy') === 'false'"
-            " && (document.querySelector('.pt-search-error')"
-            " || document.querySelector('[data-search-filter=\"functions\"]')?.getAttribute('aria-selected') === 'true'"
-            " || document.querySelector('.pt-search-body')?.dataset.displayedQuery"
-            " === document.querySelector('.pt-search-field input')?.value.trim())",
-            "settled Search UI",
-        )
+        try:
+            self.wait_js(
+                "document.querySelector('.pt-search-field input')"
+                " && document.querySelector('.pt-search-body')?.getAttribute('aria-busy') === 'false'"
+                " && (document.querySelector('.pt-search-error')"
+                " || document.querySelector('[data-search-filter=\"functions\"]')?.getAttribute('aria-selected') === 'true'"
+                " || document.querySelector('.pt-search-body')?.dataset.displayedQuery"
+                " === document.querySelector('.pt-search-field input')?.value.trim())",
+                "settled Search UI",
+            )
+        except (TimeoutException, GateError):
+            self.report.runtime["search"]["settlementFailure"] = {
+                **self.surface(),
+                "screenshot": self.save_screenshot(self.receiver, "settlement-failure"),
+                "dom": self.save_dom(self.receiver, "settlement-failure"),
+            }
+            raise
 
     def fill(self, query: str) -> None:
         field = self.field()
