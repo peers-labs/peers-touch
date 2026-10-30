@@ -50,6 +50,13 @@ revalidated separately so revocation does not depend on a client refresh.
 Queries by storage UUID must verify both the logical Provider identity and
 the authorized owner.
 
+Provider default selection and quick completion preserve domain rejection
+statuses through Agent's existing HTTP error mapper. Their error envelopes are
+JSON independently of the successful protobuf response type. Dashboard's
+private-response wrapper serializes authentication failures before they reach
+the server adapter; a revoked administrator session returns 401 with a readable
+body. New Dashboard logins revoke that administrator's earlier sessions.
+
 Credentials are write only in the control plane and encrypted at rest using
 the existing Station secret envelope and KEK provider. Agent owns persistence
 of its encrypted envelopes. Neither administrator read projections nor actor

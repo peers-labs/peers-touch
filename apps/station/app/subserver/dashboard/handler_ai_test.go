@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"testing"
@@ -81,6 +82,15 @@ func TestAIControlPlaneRequiresLiveAdministratorJWT(t *testing.T) {
 		err := endpoint(context.Background(), req, resp)
 		if resp.headers["Cache-Control"] != "no-store" {
 			t.Fatal("AI management response can be cached")
+		}
+		if token == "" || resp.status == 401 {
+			if err != nil || resp.status != 401 {
+				t.Fatalf("authentication failure escaped the response boundary: %d %v", resp.status, err)
+			}
+			var body map[string]any
+			if err := json.Unmarshal(resp.body.Bytes(), &body); err != nil || body["error"] == nil {
+				t.Fatalf("authentication failure has no JSON body: %q %v", resp.body.String(), err)
+			}
 		}
 		var handlerErr *server.HandlerError
 		if errors.As(err, &handlerErr) {

@@ -11,7 +11,11 @@ owns:
   - apps/station/app/subserver/agent/service/runtime_admission_service.go
   - apps/station/app/subserver/agent/service/cli/
   - apps/station/app/subserver/agent/handler/provider_handler.go
+  - apps/station/app/subserver/agent/handler/runtime_default_handler.go
+  - apps/station/app/subserver/agent/handler/turn_handler.go
+  - apps/station/app/subserver/agent/handler/error_mapper.go
   - apps/station/app/subserver/dashboard/handler_ai.go
+  - apps/station/app/subserver/dashboard/handler_federation.go
   - apps/station/app/subserver/dashboard/web/src/api/client.ts
   - apps/station/app/subserver/dashboard/web/src/hooks/useControlPlaneAction.ts
   - apps/desktop/src/store/provider.ts
@@ -56,6 +60,10 @@ Machine PATH and managed binaries MUST use the same private environment.
 Availability checks MUST resolve structured catalog argv through the same
 managed PATH as execution; formatted display commands are not executable names.
 Installation success MUST NOT be interpreted as authentication or task success.
+Domain rejection statuses and readable error envelopes must reach the client;
+the successful protobuf response serializer must not erase JSON errors.
+Revoked administrator sessions return a serialized 401 through Dashboard's
+existing private-response boundary.
 The runtime host MUST satisfy the managed CLI contract's orphan-reaping
 boundary. Process-group cancellation alone does not reap descendants; the
 Station container requires its standard init process.

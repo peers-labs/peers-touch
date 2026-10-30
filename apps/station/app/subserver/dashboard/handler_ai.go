@@ -39,11 +39,7 @@ func aiEndpoint[Q, R any](h *dashboardHandler,
 
 func (h *dashboardHandler) aiHandlers() []server.Handler {
 	auth := func(next server.EndpointHandler) server.EndpointHandler {
-		validated := h.authWrapper()(next)
-		return func(ctx context.Context, req server.Request, resp server.Response) error {
-			resp.SetHeader("Cache-Control", "no-store")
-			return validated(ctx, req, resp)
-		}
+		return h.connectionMaterialResponseWrapper()(h.authWrapper()(next))
 	}
 	owner := agentservice.StationProviderOwner()
 	return []server.Handler{

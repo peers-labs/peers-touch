@@ -28,11 +28,7 @@ func federationEndpoint[Q, R any](h *dashboardHandler,
 
 func (h *dashboardHandler) federationHandlers() []server.Handler {
 	auth := func(next server.EndpointHandler) server.EndpointHandler {
-		validated := h.authWrapper()(next)
-		return func(ctx context.Context, req server.Request, resp server.Response) error {
-			resp.SetHeader("Cache-Control", "no-store")
-			return validated(ctx, req, resp)
-		}
+		return h.connectionMaterialResponseWrapper()(h.authWrapper()(next))
 	}
 	return []server.Handler{
 		server.NewTypedHandler("dashboard-federation-list", "/dashboard/api/federation/list", server.POST,
