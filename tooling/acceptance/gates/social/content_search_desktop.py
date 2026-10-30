@@ -135,6 +135,7 @@ return [...document.querySelectorAll('.pt-search-row')].map(row => row.dataset.r
         self.assert_condition("return_target_present", resource_id in rows)
         # Real keyboard selection also establishes a non-default list position
         # where the target requires it; no store or scroll mutation substitutes.
+        self.field().click()
         for _ in rows:
             self.press(Keys.ARROW_UP)
         for _ in range(rows.index(resource_id)):
