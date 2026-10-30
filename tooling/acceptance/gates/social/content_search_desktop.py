@@ -138,14 +138,32 @@ return [...document.querySelectorAll('.pt-search-row')].map(row => row.dataset.r
         # Arrow keys must go through the semantic keyboard channel: element
         # send_keys inserts the WebDriver PUA key codes as literal characters
         # into the WKWebView input, corrupting the query and emptying results.
+        # ArrowUp for every row guarantees selection starts before the list
+        # (null focus); reaching index i from there needs i + 1 ArrowDowns.
         target_index = rows.index(resource_id)
-        roving_keys = [Keys.ARROW_UP] * len(rows) + [Keys.ARROW_DOWN] * target_index
+        roving_keys = [Keys.ARROW_UP] * len(rows) + [Keys.ARROW_DOWN] * (target_index + 1)
         self.receiver.semantic_key_sequence(self.field(), *roving_keys)
-        self.wait_js(
-            "document.querySelector('.pt-search-row[aria-selected=\"true\"]')"
-            f"?.dataset.resourceId === {json.dumps(resource_id)}",
-            "selected original resource before Open",
-        )
+        try:
+            self.wait_js(
+                "document.querySelector('.pt-search-row[aria-selected=\"true\"]')"
+                f"?.dataset.resourceId === {json.dumps(resource_id)}",
+                "selected original resource before Open",
+            )
+        except Exception:
+            self.report.runtime["search"]["rovingFailure"] = self.receiver.execute_script("""
+const active = document.activeElement;
+return {
+  activeTag: active?.tagName || '',
+  activeId: active?.id || '',
+  activeValue: active?.value || '',
+  inputValue: document.querySelector('.pt-search-field input')?.value || '',
+  rows: [...document.querySelectorAll('.pt-search-row')].map(row => ({
+    resourceId: row.dataset.resourceId,
+    ariaSelected: row.getAttribute('aria-selected'),
+  })),
+};
+""")
+            raise
         return self.receiver.execute_script(RETURN_CONTEXT_JS)
 
     @staticmethod
