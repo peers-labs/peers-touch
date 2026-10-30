@@ -68,6 +68,12 @@ Machine PATH binaries follow the same state isolation. Model discovery uses
 the same environment builder, with either the requesting actor's private
 root or Station control-plane state.
 
+Runtime admission and the consumer model list receive the same managed binary
+directory as execution and discovery. Structured executable lookup precedes
+the system PATH; no second system-only availability check may filter an
+otherwise configured managed adapter. Credentials and actor grants remain
+independent admission requirements.
+
 The executor refuses runtime configuration that overrides private directories,
 PATH, shell hooks, loader settings or credentials. Selected model and effort
 are passed as adapter arguments, independent of administrator startup options.

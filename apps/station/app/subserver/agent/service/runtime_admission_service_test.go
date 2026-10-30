@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -889,6 +890,61 @@ func TestRuntimeAdmissionConsumesActorScopedDiscoveredCatalog(t *testing.T) {
 		admission.ModelID != "discovered-model" ||
 		admission.Capabilities.GetLimits().GetContextTokens() != 200000 {
 		t.Fatalf("discovered model admission = %+v", admission)
+	}
+}
+
+func TestRuntimeAdmissionUsesManagedCLIWithoutSystemPATH(t *testing.T) {
+	showAPIKey := true
+	catalog.SetForTesting([]catalog.CatalogProvider{{
+		ID: "managed-cli", Name: "Managed CLI", Enabled: true, ShowAPIKey: &showAPIKey,
+		RuntimeKind: "cli", Protocol: "cli", CLIArgv: []string{"managed-agent", "exec", "-"},
+		Models: []catalog.CatalogModel{{ID: "default", Type: "chat", Enabled: true, ContextWindow: 200000}},
+	}})
+	defer catalog.RestoreForTesting()
+	openAdmissionTestDB(t, "managed_cli_admission")
+	t.Setenv("PATH", "")
+	providers := NewProviderConfigService()
+	ctx := context.Background()
+	if _, err := providers.Create(ctx, ProviderCreateRequest{
+		Scope: ProviderScopeStation, ProviderID: "managed-cli",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := providers.SetAccess(ctx, "managed-cli", 0,
+		[]persistence.ProviderAccessGrant{{ActorPTID: "actor-a", ModelID: "default"}}); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	executable := filepath.Join(bin, "managed-agent")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewRuntimeAdmissionResolver(providers, NewModelConfigService())
+	resolver.SetManagedBin(func() string { return bin })
+	assertCount := func(actor string, expected int) {
+		t.Helper()
+		models, err := resolver.ListAvailableModels(ctx, actor)
+		if err != nil || len(models) != expected {
+			t.Fatalf("available models for %s = %+v, %v", actor, models, err)
+		}
+	}
+	assertCount("actor-a", 0)
+	if _, err := NewCredentialConfigService().Set(ctx, CredentialSetRequest{
+		Scope: ProviderScopeStation, ProviderID: "managed-cli", APIKey: "managed-test-key",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertCount("actor-a", 1)
+	assertCount("actor-b", 0)
+	if _, err := resolver.Resolve(ctx, "actor-a", "managed-cli", "default"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(executable); err != nil {
+		t.Fatal(err)
+	}
+	assertCount("actor-a", 0)
+	if _, err := resolver.Resolve(ctx, "actor-a", "managed-cli", "default"); err == nil {
+		t.Fatal("missing managed binary was admitted")
 	}
 }
 

@@ -346,6 +346,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	providerSvc.CLIExecutor().SetManagedRuntime(managedCLIManager)
 	providerModelDiscoverySvc.SetManagedBin(managedCLIManager.BinDir)
 	admissionResolver := service.NewRuntimeAdmissionResolver(providerConfigSvc, modelConfigSvc)
+	admissionResolver.SetManagedBin(managedCLIManager.BinDir)
 	admissionResolver.SetRuntimeModelCatalog(runtimeModelCatalog)
 	providerSvc.SetAdmissionResolver(admissionResolver)
 	runtimeEvidenceSvc := service.NewRuntimeEvidenceService()

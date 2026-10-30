@@ -24,6 +24,11 @@ type RuntimeAdmissionResolver struct {
 	runtimeModels *RuntimeModelCatalog
 	now           func() time.Time
 	externalReady func() bool
+	managedBin    func() string
+}
+
+func (r *RuntimeAdmissionResolver) SetManagedBin(resolve func() string) {
+	r.managedBin = resolve
 }
 
 func (r *RuntimeAdmissionResolver) SetRuntimeModelCatalog(
@@ -270,9 +275,7 @@ func (r *RuntimeAdmissionResolver) Resolve(
 			"runtime_not_advertised",
 		)
 	}
-	if cp != nil &&
-		isExternalRuntime(cp.RuntimeKind, cp.Protocol) &&
-		!r.CatalogProviderAvailable(*cp) {
+	if cp != nil && !r.CatalogProviderAvailable(*cp) {
 		return nil, errcode.NewRuntimeUnavailable(
 			runtimeKindForUnavailableProvider(cp.RuntimeKind),
 			"adapter_unavailable",
@@ -787,9 +790,13 @@ func catalogProviderAdvertised(cp catalog.CatalogProvider) bool {
 }
 
 func CatalogProviderAvailable(cp catalog.CatalogProvider) bool {
+	return catalogProviderAvailable(cp, nil)
+}
+
+func catalogProviderAvailable(cp catalog.CatalogProvider, pathEntries []string) bool {
 	if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) ||
 		strings.EqualFold(strings.TrimSpace(cp.Protocol), providerRuntimeCLI) {
-		return providercli.VerifyCliBinary(cp.CLIArgv).Available
+		return providercli.VerifyCliBinaryFor(cp.CLIArgv, pathEntries).Available
 	}
 	return true
 }
@@ -800,7 +807,11 @@ func (r *RuntimeAdmissionResolver) CatalogProviderAvailable(
 	if isExternalRuntime(cp.RuntimeKind, cp.Protocol) {
 		return r != nil && r.externalReady != nil && r.externalReady()
 	}
-	return CatalogProviderAvailable(cp)
+	var pathEntries []string
+	if r != nil && r.managedBin != nil {
+		pathEntries = append(pathEntries, r.managedBin())
+	}
+	return catalogProviderAvailable(cp, pathEntries)
 }
 
 func (r *RuntimeAdmissionResolver) ProviderRuntimeAvailable(
@@ -882,9 +893,6 @@ func resolvedRuntimeKind(
 }
 
 func admitProvider(cp catalog.CatalogProvider, userMatch *persistence.AgentProvider) bool {
-	if !catalogProviderAdvertised(cp) || !CatalogProviderAvailable(cp) {
-		return false
-	}
 	enabled := cp.Enabled
 	if userMatch != nil {
 		enabled = userMatch.Enabled

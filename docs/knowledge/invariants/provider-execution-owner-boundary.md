@@ -3,6 +3,7 @@ kind: invariant
 title: Provider execution preserves resource and actor ownership
 status: active
 owns:
+  - apps/station/app/subserver/agent/agent.go
   - apps/station/app/subserver/agent/service/provider_authority.go
   - apps/station/app/subserver/agent/service/provider_management_service.go
   - apps/station/app/subserver/agent/service/provider_service.go
