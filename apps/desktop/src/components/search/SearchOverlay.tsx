@@ -247,6 +247,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     const copyLabelId = `pt-search-copy-label-${index}`;
     return (
       <li key={rowKey(row)} role="listitem" className={`pt-search-row${selected ? ' active' : ''}`}
+        aria-selected={selected}
         data-resource-id={content?.resource?.id} data-source-id={content?.sourceId}
         data-resource-kind={content?.resource?.kind}>
         <div role="button" tabIndex={selected ? 0 : -1}
