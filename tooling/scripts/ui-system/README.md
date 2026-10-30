@@ -41,6 +41,17 @@ Rules (C1–C8):
 7. `hit-target-too-small` — interactive controls ≥ 24 CSS px (WCAG 2.5.8 AA;
    coarse pointer raises to 44 via CSS); inline text actions are exempt.
 8. `card-horizontal-overflow` — nothing escapes card horizontal bounds.
+9. `embedded-control-square-focus` — a radius-0 text-like control inside a
+   radius-≥8 host must not paint a visible `:focus-visible` outline; focus
+   feedback belongs on the rounded host (`:focus-within`).
+10. `chrome-zone-hairline` — app-frame chrome zones (`.sk-rail`,
+    `.sk-feed-head`, `.sk-chats`) separate by material, never by borders.
+11. `ua-button-chrome` — a visible custom `<button>` must not keep the UA
+    `outset` border.
+
+C9–C11 govern the evolving desktop-prototype frame
+(`suites/north-star.suite.json`, anchor `.sk-shell`); they are no-ops on
+boards without those elements.
 
 The battery is mutation-tested: injecting a stretched switch or a raw file
 input must fail the gate.
@@ -60,6 +71,10 @@ into Gate ③ battery rules so the same defect class cannot regress.
 # Evidence-envelope run (all suites + 60-condition baseline)
 node tooling/scripts/ui-system/evaluate-specimens.mjs \
   --suite tooling/scripts/ui-system/suites/consumer.suite.json
+
+# Desktop-prototype north-star frame gate
+node tooling/scripts/ui-system/evaluate-specimens.mjs \
+  --suite tooling/scripts/ui-system/suites/north-star.suite.json
 
 # Geometry craft gate alone (CI-friendly, JSON to stdout)
 node tooling/scripts/ui-system/craft-gate.mjs

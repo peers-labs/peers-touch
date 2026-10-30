@@ -123,6 +123,57 @@ export function craftBatterySource(rootSelector) {
       });
     });
 
+    // C9 — Embedded native controls inside rounded hosts must not paint the
+    // global square focus outline. The recurring defect: a rounded search/field
+    // host wraps a radius-0 native input whose :focus-visible outline (>=2px)
+    // renders with square corners. Keyboard focus MUST be shown on the rounded
+    // host (:focus-within) or on a control that carries the radius itself.
+    const TEXT_INPUTS = "input:not([type]),input[type='text'],input[type='search'],input[type='email'],input[type='url'],input[type='tel'],input[type='password'],textarea,select";
+    root.querySelectorAll(TEXT_INPUTS).forEach(el => {
+      if (!visible(el) || screenReaderOnly(el)) return;
+      const host = el.parentElement;
+      if (!host) return;
+      const ownRadius = parseFloat(cs(el).borderTopLeftRadius) || 0;
+      const hostRadius = parseFloat(cs(host).borderTopLeftRadius) || 0;
+      const previouslyFocused = document.activeElement;
+      el.focus({ focusVisible: true });
+      const focused = cs(el);
+      const outlineWidth = parseFloat(focused.outlineWidth) || 0;
+      // outline-style none means the width is a non-painted residue; only a
+      // real stroke (solid/dashed/dotted/...) is a visible square ring.
+      const painted = !['none', 'hidden', ''].includes(focused.outlineStyle);
+      if (hostRadius >= 8 && ownRadius < 4 && outlineWidth >= 2 && painted) {
+        flag('embedded-control-square-focus', describe(el), { outlineWidth, outlineStyle: focused.outlineStyle, hostRadius });
+      }
+      el.blur();
+      if (previouslyFocused && previouslyFocused !== el && previouslyFocused.focus) {
+        previouslyFocused.focus({ preventScroll: true });
+      }
+    });
+
+    // C10 — App-frame chrome zones (icon rail, top bar, side rail) separate by
+    // material surfaces + blur, never by hairline border strokes. A border on
+    // these zones regresses to the tiled admin-frame seam the owner rejected.
+    ['.sk-rail', '.sk-feed-head', '.sk-chats'].forEach(sel => {
+      root.querySelectorAll(sel).forEach(el => {
+        const s = cs(el);
+        const widths = [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth]
+          .map(w => parseFloat(w) || 0);
+        if (Math.max(...widths) > 0) {
+          flag('chrome-zone-hairline', describe(el), { borderWidths: widths.join('/') });
+        }
+      });
+    });
+
+    // C11 — Buttons must never keep UA chrome. The recurring defect: a custom
+    // <button> without border/background/appearance reset inherits the system
+    // outset border (and gray face on some engines), producing a stray box.
+    root.querySelectorAll('button').forEach(el => {
+      if (!visible(el)) return;
+      const s = cs(el);
+      if (s.borderStyle === 'outset') flag('ua-button-chrome', describe(el));
+    });
+
     return {
       pass: offenders.length === 0,
       offenders: offenders.slice(0, 30),

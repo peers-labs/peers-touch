@@ -1,0 +1,113 @@
+{
+  "kind": "peers-ui-specimen-suite",
+  "capabilityId": "ui.prototype.north-star-frame",
+  "specRef": "docs/architecture/platform/client/ui-system/prototype/north-star-frame.md",
+  "specimen": {
+    "url": "/?site=frontend-eles&eles=directions",
+    "anchor": ".sk-shell",
+    "implementationRefs": [
+      "packages/prototypes/shared/ui-system/DesignDirections.tsx",
+      "packages/prototypes/shared/ui-system/design-directions.css",
+      "tooling/scripts/ui-system/craft-battery.mjs"
+    ]
+  },
+  "entryGate": {
+    "url": "/?site=frontend-eles",
+    "button": "[data-action-id='view.directions']",
+    "target": ".sk-shell",
+    "urlParam": "directions"
+  },
+  "scenarios": [
+    {
+      "id": "ui.prototype.north-star.frame-structure",
+      "title": "单扇应用窗框：60px 图标轨、滚动信息流、右会话轨与区块数量完整",
+      "level": "L4_RUNTIME",
+      "operations": [],
+      "oracles": [
+        { "id": "one-shell", "type": "count", "scope": "global", "target": ".sk-shell", "equals": 1 },
+        { "id": "one-rail", "type": "count", "scope": "global", "target": ".sk-rail", "equals": 1 },
+        { "id": "one-feed", "type": "count", "scope": "global", "target": ".sk-feed", "equals": 1 },
+        { "id": "one-chats", "type": "count", "scope": "global", "target": ".sk-chats", "equals": 1 },
+        { "id": "stat-tiles", "type": "count", "target": ".sk-stat", "equals": 3 },
+        { "id": "type-cards", "type": "count", "target": ".sk-type", "equals": 3 },
+        { "id": "setting-tiles", "type": "count", "target": ".sk-setting", "equals": 3 },
+        { "id": "moments", "type": "count", "target": ".sk-moment", "equals": 3 },
+        { "id": "chats-rows", "type": "count", "target": ".sk-chat", "equals": 3 },
+        { "id": "range-present", "type": "exists", "target": "input[type='range']" },
+        { "id": "rail-width", "type": "computedStyle", "target": ".sk-rail", "prop": "width", "equals": "60px" },
+        { "id": "head-height", "type": "computedStyle", "target": ".sk-feed-head", "prop": "height", "equals": "62px" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.craft-geometry",
+      "title": "窗框工艺门禁：无直角聚焦框、chrome 分区无发丝描边、按钮无 UA 外观",
+      "level": "L4_RUNTIME",
+      "operations": [],
+      "oracles": [
+        { "id": "craft-battery-clean", "type": "craftBattery" },
+        { "id": "rail-no-right-border", "type": "computedStyle", "target": ".sk-rail", "prop": "borderRightWidth", "equals": "0px" },
+        { "id": "head-no-bottom-border", "type": "computedStyle", "target": ".sk-feed-head", "prop": "borderBottomWidth", "equals": "0px" },
+        { "id": "chats-no-left-border", "type": "computedStyle", "target": ".sk-chats", "prop": "borderLeftWidth", "equals": "0px" },
+        { "id": "no-horizontal-overflow", "type": "overflow", "anchor": ".sk-shell" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.scope-switch",
+      "title": "投递范围胶囊真实切换且仅一项选中",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-seg button:nth-child(3)" }
+      ],
+      "oracles": [
+        { "id": "relay-selected", "type": "attr", "target": ".sk-seg button:nth-child(3)", "attr": "aria-selected", "equals": "true" },
+        { "id": "local-not-selected", "type": "attr", "target": ".sk-seg button:nth-child(1)", "attr": "aria-selected", "equals": "false" },
+        { "id": "single-active", "type": "count", "target": ".sk-seg button.is-on", "equals": 1 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.target-type-select",
+      "title": "对象类型卡真实选中，琥珀标签跟随",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-type:nth-child(2)" }
+      ],
+      "oracles": [
+        { "id": "group-pressed", "type": "attr", "target": ".sk-type:nth-child(2)", "attr": "aria-pressed", "equals": "true" },
+        { "id": "single-type-on", "type": "count", "target": ".sk-type.is-on", "equals": 1 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.hops-slider",
+      "title": "最大跳数键盘移动，琥珀填充与值气泡同步",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "focus", "target": ".sk-slider input[type='range']" },
+        { "op": "press", "key": "ArrowLeft" },
+        { "op": "press", "key": "ArrowLeft" }
+      ],
+      "oracles": [
+        { "id": "value-three", "type": "attr", "target": ".sk-slider input[type='range']", "attr": "value", "equals": "3" },
+        { "id": "fill-linked", "type": "attr", "target": ".sk-slider input[type='range']", "attr": "style", "contains": "42.8" },
+        { "id": "bubble-three", "type": "textEquals", "target": ".sk-slider-bubble", "equals": "3" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.embedded-search-focus",
+      "title": "内嵌搜索框键盘聚焦不出现方形 UA 焦点框，焦点环在圆角宿主上",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "focus", "target": ".sk-chat-search input" }
+      ],
+      "oracles": [
+        { "id": "input-outline-off", "type": "computedStyle", "target": ".sk-chat-search input", "prop": "outlineStyle", "equals": "none" },
+        { "id": "host-focus-ring", "type": "computedStyle", "target": ".sk-chat-search", "prop": "boxShadow", "contains": "0px 0px 0px 2px" }
+      ],
+      "finalizers": []
+    }
+  ]
+}

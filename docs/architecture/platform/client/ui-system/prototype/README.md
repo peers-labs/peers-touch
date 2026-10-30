@@ -82,6 +82,16 @@ EDX独立准入没有完成，候选不晋升高保真准入、pending-review或
 待补：高级样本、业务组合样本、组件完整交互、独立 Experience Review、
 真实读屏、真实触摸设备、性能分布、原生与接收端证明均为 `UNPROVEN`。
 
+## 桌面原型北极星
+
+`?site=frontend-eles&eles=directions` 是唯一持续演进的桌面应用窗框原型
+（单窗框：60px 图标轨 + 滚动信息流 + 会话轨），未来收敛为 Desktop 原型，
+验证过的模式回流元素集。窗框语法（材质分区、圆角归属、焦点环、近黑胶囊/
+单琥珀/大数值）与其机器门禁见
+[北极星窗框语法](./north-star-frame.md)；相关缺陷经验见
+`docs/knowledge/pitfalls/prototype-embedded-control-chrome-leak.md`。
+旧入口 `eles=northstar` 兼容指向同一视图，不再存在平行窗框。
+
 ## 外部参考材质校准
 
 外部 UI 参考只作为离线、脱敏的视觉机制输入，不在仓库中保存其名称、

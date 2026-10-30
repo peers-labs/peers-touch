@@ -406,6 +406,17 @@
   border-radius: 12px; background: var(--sk-tile); color: var(--sk-text-3);
 }
 .sk-chat-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-family: inherit; font-size: 12.5px; color: var(--sk-text); }
+/* Keyboard focus belongs to the rounded HOST: the embedded native control must
+   not paint the global square :focus-visible outline through the glass frame.
+   The ring follows the host's 12px radius via :focus-within. */
+.sk-shell .sk-chat-search input:focus-visible { outline: none; }
+.sk-chat-search:focus-within {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-primary) 38%, transparent);
+}
+.sk-shell .sk-slider input[type=range]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--sk-primary) 16%, transparent);
+}
 .sk-tenants { padding: 12px 2px 14px; border-bottom: 1px solid var(--sk-glass-border); }
 .sk-tenants h3 { margin: 0 0 3px; font-size: 14px; font-weight: 600; }
 .sk-tenants .sk-eyebrow { display: block; }
