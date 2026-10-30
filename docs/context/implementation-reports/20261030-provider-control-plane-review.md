@@ -1,14 +1,18 @@
 # Provider 控制平面交付前审阅
 
-源码已落地，改动功能的定向检查通过。当前未达到交付完成：
-真实 CLI 安装、Dashboard 操作、原生 Desktop 账号切换及共享调用 Journey
-仍为 **UNPROVEN**。
+实现已提交，定向源码检查、Dashboard 管理操作以及原生 Desktop 的授权展示、
+账号默认隔离和撤权功能检查通过。Codex、Claude 的真实托管安装可用。
+供应商成功调用、Applet 成功调用、Cursor 安装及正式 Acceptance 仍未完成证明，
+不能据此声明整个任务交付完成。
 
 ## 目标与来源
 
 - 工作树：`worktrees/agent-usability-shared-base-20261027`。
 - 分支：`feat/agent-usability-shared-base-20261027`。
-- 基准提交：`d946b6aec8a24b286e3d8e4f3119b91ef5b70e93`，任务修改尚未提交。
+- 基准提交：`d946b6aec8a24b286e3d8e4f3119b91ef5b70e93`。
+- 实现 checkpoint：`f53331497`、`efbfe0264`、`c25558795`、`83789c278`。
+- 本轮部署、原生构建与功能检查的源码：
+  `83789c278dffd6ea9ca86df4bb00dc1e5aef8b82`。
 - 授权范围：Provider 管理与消费边界、CLI 托管安装及隔离、个人默认、
   Federation 管理迁往 Dashboard；只验证改动功能。
 - 接受合同：[Provider Control Plane](../../architecture/domains/agent/provider-control-plane.md)、
@@ -40,6 +44,10 @@ TRAE CLI、Codex、Cursor 和 Claude Code 均保留管理入口。Codex、Claude
 检查仅证明配置或二进制可用，不能证明上游调用成功。策略更新响应返回已持久化的
 修订，连续操作可使用上次响应进行 CAS。
 
+自定义模型必须声明大于 1 的上下文窗口。0 只允许用于继承同名内置模型的有效
+目录值；非法创建和更新在持久化前拒绝，部分更新不要求重交上下文。
+Dashboard 要求管理员填写模型支持的整数 token 数，不再默认为 0。
+
 Desktop 默认选择改为 Station 账号所属的 Provider/model 组合。
 本地模型注册表及本地 Provider 推理路径已删除；Applet 的一次性调用经 Station。
 Federation Settings 管理入口已移除，保留 Chat 查找好友的联邦上下文。
@@ -49,12 +57,14 @@ Federation Settings 管理入口已移除，保留 Chat 查找好友的联邦上
 重点检查所有者解析、凭据密文、授权替换、执行再准入、CLI 安装与回滚、
 管理会话竞争、首次配置、个人默认、Federation 原生 fixture 和旧入口残留。
 精确结构审阅覆盖 `service/cli/managed` 的 8 个文件、
-`provider_authority.go` 和 `provider_management_service.go`；机器记录只代表这些
-路径，不能扩大为整个分支或产品验收通过。
+`provider_authority.go`、`provider_management_service.go`，以及本轮模型配置服务、
+回归、编辑器与对应嵌入资源。模型修复的源码绑定结构决策为 PASS，绑定
+`c25558795..83789c278`；这些记录不能扩大为整个分支或产品验收通过。
 
 安装模块的两项 import fan-out 信号分别来自归档/下载和 npm/进程边界；
 均服务于同一安装所有者，未形成依赖环或重复业务规则。
-这些重点审阅路径未留下已确认、未处理的源码阻断问题。
+模型校验在 Agent 配置所有者完成，UI 校验承担输入反馈；运行准入继续拒绝非法
+上下文。此次修复未引入平行配置所有者或额外调用入口。
 
 操作约束已进入
 [Provider Execution Owner Boundary](../../knowledge/invariants/provider-execution-owner-boundary.md)，
@@ -62,44 +72,66 @@ Federation Settings 管理入口已移除，保留 Chat 查找好友的联邦上
 
 ## 定向验证
 
-以下为源码检查与测试结果，不代替真实产品 Journey。
+源码检查与真实功能观察分别记录。
 
 - **PASS**：Provider 管理、首次配置读模型、CLI 托管路径检查、策略连续 CAS、
   共享调用与撤权、凭据所有者绑定、QuickCompletion 及账号默认回归。
-  最新命令：
-  `go test ./subserver/agent/service -run 'Test(ProviderManagement|ProviderControlPlane|QuickCompletion|RuntimeDefaultCAS)' -count=1`
+  命令：
+  `go test ./subserver/agent/service -run 'Test(ModelConfig|ProviderManagement|ProviderControlPlane|QuickCompletion|RuntimeDefaultCAS)' -count=1`
   （从 `apps/station/app` 运行）。
+- **PASS**：自定义模型非法窗口拒绝、拒绝后版本和数据不变、部分更新、
+  目录上下文继承；CLI 私有 npm 配置使用不同文件，真实 npm 启动回归通过。
 - **PASS**：改动 Provider handler 与 Dashboard 管理认证测试；
   `Test(ProviderManagement|ProviderConsumer|CatalogModelToggle)`、
   `TestAIControlPlane`。
 - **PASS**：Dashboard `pnpm run check`、9 项会话/表单定向测试及 `pnpm run build`。
-  已更新嵌入资源：`index-5yWl6QHA.js`、`index-B0lCsSVq.css`。
+  本轮重跑类型检查与构建；嵌入资源为
+  `index-r5DDr4as.js`、`index-B0lCsSVq.css`。
 - **PASS，前序定向结果**：CLI 子包、Dashboard Auth、Desktop 6 个文件的
   56 项测试及类型检查、Federation 边界回归、原生
   `cargo check --features acceptance-webdriver --locked --offline`。
   本轮未重复未受新增改动影响的检查。
 - **PASS**：差异格式、相关知识归属、API 能力注册及受影响 Feature 结构校验。
+- **FUNCTIONAL CHECK**：Dashboard 945px 界面保留四个 CLI 管理入口，真实进度
+  可见；创建共享 Provider、模型及全部用户/模型授权，并经管理 API 读回。
+  个人策略连续开关 CAS 成功，旧修订返回 409。
+- **FUNCTIONAL CHECK**：`one-slave` 经 `make station` 部署后健康，版本接口报告
+  `83789c278`；原生 Desktop 由既有构建所有者生成相同提交的构建 receipt。
+  使用隔离 Linux GUI、D-Bus 和密钥环，复用原生驱动及登录所有者。
+- **FUNCTIONAL CHECK**：真实 Alice/Bob 账号依次登录同一原生客户端。
+  授权模型在 Settings 可见，没有 Add Provider、密钥输入或 Federation 管理入口。
+  Alice 经可见默认按钮保存模型，Bob 保持空默认，切回 Alice 保留其选择。
+  限定 Alice 授权后 Bob 不再显示该 Provider，原生读取返回 404；
+  清空授权后 Alice 同样被拒绝。
+- **FUNCTIONAL CHECK**：管理 API 拒绝自定义模型上下文 0，返回 400。
+  Journey 使用显式测试输入 131072；这不是供应商容量或调用成功的证明。
+- **FUNCTIONAL CHECK**：共享 Node v24.22.2、Codex 0.166.0、Claude Code 2.1.314
+  安装后可用，重部署后仍识别为 ready。TRAE 宿主 PATH 二进制可用，
+  自动安装能力仍为 false。
+- **FAILED / UNPROVEN**：Cursor 官方安装重试最终返回
+  `context deadline exceeded`，没有激活安装版本。脚本和安装包地址从 Station
+  返回 HTTP 200；安装包大小为 184859176 字节，下载未在 8 分钟预算内完成。
+  失败状态可经管理接口读取，Cursor 成功安装仍未证明。
 - **NOT RUN**：全量测试；按用户限定保留定向验证。
-- **UNPROVEN**：真实安装进度与重试、宽窄界面、真实账号隔离、
-  原生 Applet/默认模型操作及当前源码的共享模型调用和撤权 Journey。
+- **UNPROVEN**：供应商成功调用及原生 Applet 完成、真实 CLI 对话中的
+  HOME/缓存隔离、Cursor 安装完成、窄屏布局和完整 Federation 管理 UI 流程。
+- **UNPROVEN**：正式 Acceptance。Gap detector 未获得 `acceptance-plan`
+  的有效 latest pointer；不能把 Development 检查转换成正式 Gate 证据。
 
-## 剩余验证与部署前提
+## 资源与剩余条件
 
-当前 Profile 的源码同步器只传输 HEAD 提交与 Git tree，
-`require_clean=false` 也不会传输未提交修改。用当前 HEAD 部署不能验证本任务修改。
-必须先获准创建本地 checkpoint，再经 `make station` 和既有原生启动入口
-验证当前源码。尚未启动验证 runtime，尚未提交或发布协作分支。
+临时共享 Provider 已删除。Alice 的原始空默认已通过当前 Profile 下、精确限定
+测试 Actor 和 Provider 的清理恢复；Bob 的默认未修改。隔离客户端与 GUI 已停止。
+清理期间使用非 stable Profile 的精确 reset scope 和 OS-held lease，
+结束后恢复原工作树能力绑定。已安装的 Station 托管工具保留供后续使用。
 
-依据：[pt-local-dev-env](../../../.trae/skills/pt-local-dev-env/SKILL.md) § Source Sync Boundary：
-“Remote exact-source verification requires a commit because uncommitted changes
-are not deployable.”
-实现依据：`tooling/acceptance/core/source_sync.py` 的
-`RemoteSourceSynchronizer.preflight()` 返回 HEAD 与该提交的 tree digest。
+Profile 和部署环境尚未提供供应商密钥。当前无法证明共享模型或 Applet 成功
+完成真实供应商请求；必须配置授权供应商凭据，再执行成功调用及下一次分发撤权
+检查。单元测试的协议服务器不属于供应商成功调用证据。
 
-部署后仅覆盖本任务 Journey：管理员首次配置、授权与撤权、共享调用、
-个人策略和账号默认、四个 CLI 入口及支持的安装/失败重试、
-HOME/缓存隔离、宽窄布局、Federation 管理与普通用户上下文。
+Cursor 下载超时，成功安装尚未证实。窄屏及完整 Federation
+管理流程仍需产品操作检查。正式证明需由 Acceptance 所有者生成有效计划与
+当前源码的 Gate 证据，不手写或改标运行 manifest。
 
-Federation fixture 登录沿用 Dashboard 的单会话策略，会撤销同一管理员的旧会话；
-先完成 fixture 准备，再登录 Dashboard 做 UI 验证。缺少供应商凭据的成功调用
-必须保留为 UNPROVEN，不能用伪造响应替代。
+验证结论仅覆盖上述部署源码和操作范围。本地 checkpoint 不表示协作分支已发布；
+尚未创建 PR、合并或发布。
