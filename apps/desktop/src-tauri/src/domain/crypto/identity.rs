@@ -36,9 +36,11 @@ fn identity_file_root() -> &'static OnceLock<PathBuf> {
 
 /// Configure the directory for file-backed identity seeds. Called by the
 /// composition root (which can resolve the OS data dir) so this domain module
-/// never has to depend on the infrastructure layer. Debug builds use it to keep
-/// identity keys in a 0600 file instead of the OS keychain, avoiding repeated
-/// keychain prompts caused by recompilation changing the code signature.
+/// never has to depend on the infrastructure layer. The file store is the
+/// canonical, upgrade-portable identity store in every build profile: the
+/// macOS Keychain ACL is bound to the ad-hoc code signature, so relying on it
+/// would lock a rebuilt or re-signed binary out of its own seed. Seeds not yet
+/// present in the file store are migrated from the Keychain once on read.
 pub fn set_identity_file_root(root: PathBuf) -> Result<(), CryptoError> {
     identity_file_root()
         .set(root)
