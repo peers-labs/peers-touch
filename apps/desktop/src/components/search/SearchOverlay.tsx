@@ -347,12 +347,6 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
           onClick={() => searchActions.filter(filter)}>{t(`search.tab.${filter}`)}</button>)}
         <button role="tab" data-search-filter="functions" aria-selected={view.mode === 'functions'} className={view.mode === 'functions' ? 'active' : ''}
           onClick={() => searchActions.mode('functions')}>{t('search.tab.functions')}</button>
-        <Popover trigger={['hover', 'click', 'focus']} placement="bottomRight"
-          title={t('search.popover.title')} content={coveragePopover}>
-          <button type="button" className="pt-search-info" aria-label={t('search.moreInfo')}>
-            <HelpCircle size={14} aria-hidden="true" />
-          </button>
-        </Popover>
       </div>
       <div ref={bodyRef} className="pt-search-body" data-displayed-query={displayedQuery}
         onScroll={event => {
@@ -390,7 +384,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
           disabled={view.status === 'loading' || !draftMatches} onClick={searchActions.more}>{t('search.more')}</button>}
       </div>
       <div className="pt-search-footer">
-        <div className="pt-search-statusline" aria-live="polite">
+        <div className="pt-search-statusline pt-search-coverage" aria-live="polite">
           <span className="pt-search-zone-chip"><Lock size={10} aria-hidden="true" />{t('search.status.device')}</span>
           {hasStation && <span className="pt-search-zone-chip"><Lock size={10} aria-hidden="true" />{t('search.status.station')}</span>}
           {pending.length > 0 && <span className="pt-search-status-pending">{t('search.coverage.pending')}</span>}
@@ -405,6 +399,12 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
           {view.mode === 'submit' && <button type="button" disabled={view.status === 'loading' || view.opening}
             onClick={() => searchActions.submit(true)}>{t('search.refresh')}</button>}
           {view.opening && <span className="pt-search-opening"><Loader2 size={12} className="pt-search-spin" /> {t('search.opening')}</span>}
+          <Popover trigger={['hover', 'click', 'focus']} placement="bottomRight"
+            title={t('search.popover.title')} content={coveragePopover}>
+            <button type="button" className="pt-search-info" aria-label={t('search.moreInfo')}>
+              <HelpCircle size={14} aria-hidden="true" />
+            </button>
+          </Popover>
         </div>
       </div>
     </Modal>
