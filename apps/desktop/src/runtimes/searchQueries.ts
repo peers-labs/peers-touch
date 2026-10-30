@@ -10,6 +10,7 @@ import { useSearchStore, type SearchContentFilter, type SearchMode, type SearchT
 import {
   isSameProgressiveItem, mergeProgressiveFrame,
 } from './searchFrames';
+import { log } from '../utils/logger';
 
 const MAX_FRAMES = 32;
 const MAX_ITEMS = 640;
@@ -384,7 +385,11 @@ export async function runSearchQuery(locale: string, refresh = false, more = fal
     if (current()) useSearchStore.setState({ stalled: true });
   }, STALLED_SEARCH_DELAY);
   try {
+    const readStateStartedAt = performance.now();
     await Promise.race([readState(), expired]);
+    log.info('searchDiagnostic', 'read-state complete', {
+      ms: Math.round(performance.now() - readStateStartedAt),
+    });
     if (!current()) return;
     if (view.response && !valid(view.response)) {
       conceal(concealChangedSearchSources(view.response, ownerState!));
@@ -416,10 +421,44 @@ export async function runSearchQuery(locale: string, refresh = false, more = fal
           if (timedOut || Date.now() >= until) failure(SearchErrorCode.SOURCE_TIMEOUT);
           if (signal.aborted || !current()) throw new Error('search_cancelled');
           id = requestId ?? crypto.randomUUID();
+          const findStartedAt = performance.now();
           const response = await Promise.race([expired, mode === 'suggest'
             ? searchService.suggest(query, id, kinds(view.contentFilter), view.contentFilter === 'attachments')
             : searchService.submit(query, id, locale, nextCursor, force, kinds(view.contentFilter), view.contentFilter === 'attachments')]);
+          log.info('searchDiagnostic', 'find complete', {
+            ms: Math.round(performance.now() - findStartedAt),
+            sources: response.sources.map(source => ({
+              sourceId: source.sourceId,
+              state: source.state,
+              noStore: source.noStore,
+            })),
+            itemCount: response.items.length,
+          });
+          const postReadStartedAt = performance.now();
           await Promise.race([readState(), expired]);
+          log.info('searchDiagnostic', 'post-read-state complete', {
+            ms: Math.round(performance.now() - postReadStartedAt),
+            current: valid(response),
+            responseSources: response.sources.map(source => ({
+              sourceId: source.sourceId,
+              bindingId: source.bindingId,
+              sourceRevision: source.sourceRevision,
+              policyRevision: source.policyRevision,
+              readScope: source.readScope,
+              state: source.state,
+              noStore: source.noStore,
+            })),
+            stateSources: ownerState?.sources.map(source => ({
+              sourceId: source.sourceId,
+              bindingId: source.bindingId,
+              sourceRevision: source.sourceRevision,
+              policyRevision: source.policyRevision,
+              readScope: source.readScope,
+              state: source.state,
+              extent: source.extent,
+              noStore: source.noStore,
+            })),
+          });
           if (signal.aborted || !current()) throw new Error('search_cancelled');
           if (timedOut || Date.now() >= until) failure(SearchErrorCode.SOURCE_TIMEOUT);
           if (!valid(response)) failure(SearchErrorCode.SOURCE_CHANGED);
@@ -470,8 +509,24 @@ export async function runSearchQuery(locale: string, refresh = false, more = fal
     if (observer) observer.setOptions(options);
     else observer = new QueryObserver<Frame>(client, options);
     const project = (result: QueryObserverResult<Frame>) => {
+      log.info('searchDiagnostic', 'observer project', {
+        current: current(),
+        open: useSearchStore.getState().open,
+        opening: useSearchStore.getState().opening,
+        status: result.status,
+        fetchStatus: result.fetchStatus,
+        isFetching: result.isFetching,
+        hasData: !!result.data,
+        currentData: result.data ? valid(result.data.response) : null,
+      });
       if (!current()) return;
-      if (result.data && valid(result.data.response)) publish(result.data);
+      if (result.data && valid(result.data.response)) {
+        publish(result.data);
+        log.info('searchDiagnostic', 'frame published', {
+          query: result.data.query,
+          itemCount: result.data.response.items.length,
+        });
+      }
       if (!current()) return;
       if (!result.isFetching && !result.isPlaceholderData && result.status !== 'pending') {
         clearTimeout(timeout);
