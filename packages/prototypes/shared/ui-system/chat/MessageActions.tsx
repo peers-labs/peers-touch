@@ -1,27 +1,80 @@
 /**
- * Increment 12 — per-message action anatomy: hover action bar with quick
- * reaction picker, reply, thread, forward, copy and delete-with-confirm.
- * Link-preview cards and @mention highlighting render in the bubble.
+ * Message action anatomy (increments 12 + 16). The hover toolbar follows the
+ * desktop product contract: four quick actions (react / reply / forward /
+ * more) and an overflow menu carrying the long tail (thread / pin / copy /
+ * edit / recall / delete). Edit and recall exist only inside the 4m30s
+ * mutation window; instead of silently disappearing they render disabled
+ * with an explanatory reason.
  */
-import { useState } from 'react';
-import { MessageCircle, Reply, Smile, Copy, Forward, Trash2 } from 'lucide-react';
-import { Button, Dialog, Empty, Popover, Tag } from '@peers-touch/ui';
-import type { ChatMessage, Conversation } from './chat-data';
+import {
+  Check, CheckCheck, Copy, CornerUpLeft, Forward, Loader2, MessageCircle,
+  MoreHorizontal, Pencil, Pin, RotateCcw, Smile, Trash2, Undo2,
+} from 'lucide-react';
+import { Button, Dialog, Empty, Menu, Popover, Tag } from '@peers-touch/ui';
+import type { ChatMessage, Conversation, DeliveryStatus } from './chat-data';
 
-const REACTION_KINDS = ['like', 'love', 'laugh', 'wow'] as const;
-const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮'];
+// 24 reactions, same order as the desktop prototype.
+export const REACTION_EMOJIS = [
+  '👍', '❤️', '😂', '😮', '😢', '🙏', '👏', '🎉',
+  '🔥', '💯', '🤔', '👀', '🙌', '✨', '✅', '💪',
+  '🤝', '🥳', '😍', '😊', '😅', '🤯', '😎', '💡',
+] as const;
+
+const MUTATION_WINDOW_MS = 4 * 60_000 + 30_000;
+const WINDOW_REASON = '仅发送后 4 分 30 秒内可用';
+
+export function withinMutationWindow(message: ChatMessage, now = Date.now()): boolean {
+  return message.from === 'me' && !!message.ts && now - message.ts <= MUTATION_WINDOW_MS;
+}
+
+const EMOJI_ONLY_RE = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}\s]+$/u;
+export function isEmojiOnly(text: string): boolean {
+  const t = text.trim();
+  return t.length > 0 && t.length <= 24 && EMOJI_ONLY_RE.test(t);
+}
+
+/* ── Delivery meta ────────────────────────────────────── */
+
+export function DeliveryMeta({ message, onRetry }: {
+  message: ChatMessage;
+  onRetry?: () => void;
+}) {
+  if (message.from !== 'me' || !message.status) return null;
+  const status = message.status;
+  if (status === 'failed') {
+    return onRetry ? (
+      <button type="button" className="sk-msg-retry" data-msg-retry
+        aria-label="发送失败，点击重试" title="发送失败，点击重试"
+        onClick={event => { event.stopPropagation(); onRetry(); }}>
+        <RotateCcw size={11} /> 失败，点击重试
+      </button>
+    ) : <span className="sk-msg-status is-failed"><RotateCcw size={11} /> 失败</span>;
+  }
+  const map: Record<Exclude<DeliveryStatus, 'failed'>, { node: React.ReactNode; label: string }> = {
+    sending: { node: <Loader2 size={11} className="sk-spin" />, label: '发送中' },
+    sent: { node: <Check size={11} />, label: '已发送' },
+    delivered: { node: <CheckCheck size={11} />, label: '已送达' },
+    read: { node: <CheckCheck size={11} />, label: '已读' },
+  };
+  const item = map[status as Exclude<DeliveryStatus, 'failed'>];
+  return (
+    <span className={`sk-msg-status is-${status}`} data-msg-status={status} aria-label={item.label}>
+      {item.node} {item.label}
+    </span>
+  );
+}
 
 /* ── Reaction pill + picker ───────────────────────────── */
 
-function ReactionControl({ onReact }: { onReact: (kind: string) => void }) {
+function ReactionControl({ onReact }: { onReact: (emoji: string) => void }) {
   return (
     <Popover placement="top"
       content={
         <div className="sk-react-pop" data-message-react>
-          {QUICK_EMOJIS.map((emoji, index) => (
+          {REACTION_EMOJIS.map(emoji => (
             <button key={emoji} type="button" className="sk-react-emoji"
-              data-react-kind={REACTION_KINDS[index]}
-              aria-label={`回应 ${emoji}`} onClick={() => onReact(REACTION_KINDS[index])}>
+              data-react-emoji={emoji}
+              aria-label={`回应 ${emoji}`} onClick={() => onReact(emoji)}>
               {emoji}
             </button>
           ))}
@@ -37,10 +90,10 @@ export function MessageReactions({ message }: { message: ChatMessage }) {
   if (!entries.length) return null;
   return (
     <div className="sk-msg-reactions">
-      {entries.map(([kind, who]) => (
-        <span key={kind} className="sk-msg-reaction is-liked"
-          data-reaction={kind} data-mine={(who ?? []).includes('me') ? '1' : '0'}>
-          {QUICK_EMOJIS[REACTION_KINDS.indexOf(kind as typeof REACTION_KINDS[number])] ?? '👍'} {who?.length}
+      {entries.map(([emoji, who]) => (
+        <span key={emoji} className="sk-msg-reaction"
+          data-reaction={emoji} data-mine={(who ?? []).includes('me') ? '1' : '0'}>
+          {emoji} {who?.length}
         </span>
       ))}
     </div>
@@ -76,7 +129,7 @@ export function ForwardDialog({ open, message, conversations, onClose, onForward
   );
 }
 
-/* ── Delete confirm ───────────────────────────────────── */
+/* ── Delete confirm ──────────────────────────────────── */
 
 export function DeleteConfirm({ open, onCancel, onConfirm }: {
   open: boolean;
@@ -98,35 +151,63 @@ export function DeleteConfirm({ open, onCancel, onConfirm }: {
   );
 }
 
-/* ── Action bar (hover) ───────────────────────────────── */
+/* ── Action bar: 4 quick actions + overflow menu ─────── */
 
-export function MessageActionBar({ onReact, onReply, onThread, onCopy, onForwardOpen, onDeleteOpen, canDelete, copied }: {
-  onReact: (kind: string) => void;
+export type MessageActionTarget = 'thread' | 'pin' | 'copy' | 'edit' | 'recall' | 'delete';
+
+export function MessageActionBar({ message, canDelete, copied, onReact, onReply, onThread,
+  onCopy, onForwardOpen, onMenuAction }: {
+  message: ChatMessage;
+  canDelete: boolean;
+  copied: boolean;
+  onReact: (emoji: string) => void;
   onReply: () => void;
   onThread: () => void;
   onCopy: () => void;
   onForwardOpen: () => void;
-  onDeleteOpen: () => void;
-  canDelete: boolean;
-  copied: boolean;
+  onMenuAction: (action: MessageActionTarget) => void;
 }) {
-  const [, force] = useState(0);
+  const inWindow = withinMutationWindow(message);
+  const hasText = !!message.text.trim();
+  const disabledReason = (kind: 'edit' | 'recall') =>
+    (message.from !== 'me' ? '仅可对自己发送的消息操作'
+      : !inWindow ? WINDOW_REASON
+        : kind === 'edit' && !hasText ? '仅可编辑文字消息' : null);
+
+  const editReason = disabledReason('edit');
+  const recallReason = disabledReason('recall');
+
   return (
     <div className="sk-msg-actions-bar" data-message-actions>
       <ReactionControl onReact={onReact} />
       <button type="button" className="sk-msg-action" data-action="reply" aria-label="回复"
-        onClick={onReply}><Reply size={14} /></button>
-      <button type="button" className="sk-msg-action" data-action="thread" aria-label="查看话题"
-        onClick={onThread}><MessageCircle size={14} /></button>
-      <button type="button" className="sk-msg-action" data-action="copy"
-        aria-label={copied ? '已复制' : '复制'} data-copied={copied ? '1' : '0'}
-        onClick={() => { onCopy(); force(v => v + 1); }}><Copy size={14} /></button>
+        onClick={onReply}><CornerUpLeft size={14} /></button>
       <button type="button" className="sk-msg-action" data-action="forward" aria-label="转发"
         onClick={onForwardOpen}><Forward size={14} /></button>
-      {canDelete && (
-        <button type="button" className="sk-msg-action is-danger" data-action="delete" aria-label="删除"
-          onClick={onDeleteOpen}><Trash2 size={14} /></button>
-      )}
+      <Menu
+        placement="top"
+        onAction={id => onMenuAction(id as MessageActionTarget)}
+        actions={[
+          { id: 'thread', label: '在话题中回复', leading: <MessageCircle size={14} /> },
+          { id: 'pin', label: message.pinned ? '取消置顶' : '置顶消息', leading: <Pin size={14} /> },
+          { id: 'copy', label: '复制文本', leading: <Copy size={14} />,
+            availability: hasText ? undefined : { kind: 'disabled', reason: '该消息没有文本' } },
+          { id: 'edit', label: '编辑', leading: <Pencil size={14} />,
+            availability: editReason ? { kind: 'disabled', reason: editReason } : undefined },
+          { id: 'recall', label: '撤回', leading: <Undo2 size={14} />,
+            availability: recallReason ? { kind: 'disabled', reason: recallReason } : undefined },
+          ...(canDelete ? [
+            { id: 'sep-delete', kind: 'separator' as const, label: '' },
+            { id: 'delete', label: '删除', leading: <Trash2 size={14} /> },
+          ] : []),
+        ]}
+      >
+        <button type="button" className="sk-msg-action" data-action="more"
+          aria-label="更多消息操作" aria-haspopup="menu">
+          <MoreHorizontal size={14} />
+        </button>
+      </Menu>
+      {copied && <span className="sk-copy-flash" data-copied-flash>已复制</span>}
     </div>
   );
 }

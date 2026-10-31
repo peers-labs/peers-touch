@@ -14,6 +14,8 @@ export type MessageAttachment = {
   previewUrl: string | null;
 };
 
+export type DeliveryStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+
 export type ChatMessage = {
   id: string;
   from: 'me' | 'peer';
@@ -21,7 +23,13 @@ export type ChatMessage = {
   senderTone?: string;
   text: string;
   at: string;
+  /** Epoch ms; drives the 4m30s edit/recall window and relative times. */
+  ts?: number;
   kind?: 'text' | 'service' | 'image' | 'voice' | 'link';
+  status?: DeliveryStatus;
+  edited?: boolean;
+  recalled?: boolean;
+  pinned?: boolean;
   image?: string;
   voiceSeconds?: number;
   /** Runtime blob URL for a locally recorded voice note; seed notes without a
@@ -29,7 +37,7 @@ export type ChatMessage = {
   voiceUrl?: string | null;
   attachments?: MessageAttachment[];
   link?: { title: string; url: string; desc: string };
-  reactions?: Partial<Record<string, string[]>>;
+  reactions?: Record<string, string[]>;
   replyTo?: { who: string; text: string };
   threadCount?: number;
 };
@@ -39,29 +47,34 @@ export type Conversation = {
   name: string;
   last: string;
   lastAt: string;
+  lastTs?: number;
   unread: number;
   tone: string;
   kind: 'person' | 'group';
+  online?: boolean;
   pinned?: boolean;
   muted?: boolean;
   members?: { name: string; tone: string }[];
 };
 
+const NOW = Date.now();
+const MIN = 60_000;
+
 export const CONVERSATIONS: Conversation[] = [
-  { id: 'cv-qun', name: '小区生活群', last: '周禾：周末书架见', lastAt: '09:32', unread: 4, tone: '#a1824b', kind: 'group',
+  { id: 'cv-qun', name: '小区生活群', last: '周禾：周末书架见', lastAt: '09:32', lastTs: NOW - 32 * MIN, unread: 4, tone: '#a1824b', kind: 'group',
     pinned: true, members: [
       { name: '周禾', tone: '#3f6550' }, { name: '苏禾', tone: '#5d5a44' }, { name: '林晚', tone: '#c98a5a' },
       { name: '陈屿', tone: '#3f6550' },
     ] },
-  { id: 'cv-chenyu', name: '陈屿', last: '[图片]', lastAt: '09:25', unread: 1, tone: '#3f6550', kind: 'person' },
-  { id: 'cv-linwan', name: '林晚', last: '诗集散会我帮你留了位置', lastAt: '08:40', unread: 2, tone: '#4a6170', kind: 'person' },
-  { id: 'cv-suhe', name: '苏禾', last: '薄荷分盆成功了，谢谢你', lastAt: '昨天', unread: 0, tone: '#5d5a44', kind: 'person', muted: true },
-  { id: 'cv-seed', name: '种子交换群', last: '本周日种子交换，记得来', lastAt: '昨天', unread: 0, tone: '#7d8c4a', kind: 'group',
+  { id: 'cv-chenyu', name: '陈屿', last: '[图片]', lastAt: '09:25', lastTs: NOW - 39 * MIN, unread: 1, tone: '#3f6550', kind: 'person', online: true },
+  { id: 'cv-linwan', name: '林晚', last: '诗集散会我帮你留了位置', lastAt: '08:40', lastTs: NOW - 84 * MIN, unread: 2, tone: '#4a6170', kind: 'person', online: true },
+  { id: 'cv-suhe', name: '苏禾', last: '薄荷分盆成功了，谢谢你', lastAt: '昨天', lastTs: NOW - 26 * 3600_000, unread: 0, tone: '#5d5a44', kind: 'person', muted: true, online: false },
+  { id: 'cv-seed', name: '种子交换群', last: '本周日种子交换，记得来', lastAt: '昨天', lastTs: NOW - 30 * 3600_000, unread: 0, tone: '#7d8c4a', kind: 'group',
     members: [
       { name: '苏禾', tone: '#5d5a44' }, { name: '老周', tone: '#8a7a55' }, { name: '陈屿', tone: '#3f6550' },
     ] },
-  { id: 'cv-zhouhe', name: '周禾', last: '共享书架今日开放', lastAt: '周一', unread: 0, tone: '#3f6550', kind: 'person' },
-  { id: 'cv-linnan', name: 'lin · 连南', last: '两跳外的连接已建立', lastAt: '10-26', unread: 0, tone: '#6f8fa6', kind: 'person' },
+  { id: 'cv-zhouhe', name: '周禾', last: '共享书架今日开放', lastAt: '周一', lastTs: NOW - 3 * 86400_000, unread: 0, tone: '#3f6550', kind: 'person', online: true },
+  { id: 'cv-linnan', name: 'lin · 连南', last: '两跳外的连接已建立', lastAt: '10-26', lastTs: NOW - 5 * 86400_000, unread: 0, tone: '#6f8fa6', kind: 'person', online: false },
 ];
 
 export type Person = {
@@ -109,21 +122,23 @@ export const SEED_THREADS: Record<string, ThreadReply[]> = {
 
 export const SEED_MESSAGES: Record<string, ChatMessage[]> = {
   'cv-chenyu': [
-    { id: 'm1', from: 'peer', text: '周末种子交换你要来吗？我带了上次说的番茄籽。', at: '09:21' },
-    { id: 'm2', from: 'me', text: '来，我把薄荷分一盆给你。', at: '09:24' },
+    { id: 'm1', from: 'peer', text: '周末种子交换你要来吗？我带了上次说的番茄籽。', at: '09:21', ts: NOW - 43 * MIN },
+    { id: 'm2', from: 'me', text: '来，我把薄荷分一盆给你。', at: '09:24', ts: NOW - 40 * MIN, status: 'failed' },
     {
-      id: 'm3', from: 'peer', at: '09:25', kind: 'image',
+      id: 'm3', from: 'peer', at: '09:25', ts: NOW - 39 * MIN, kind: 'image',
       image: undefined, text: '[图片] 番茄育苗盘',
       link: { title: '番茄育苗注意事项', url: 'https://songshelf.local/tomato', desc: '催芽温度 25–28℃，出芽前保持基质湿润' },
     },
+    { id: 'm4', from: 'peer', kind: 'service', text: '已保存在本机，等待发送。', at: '09:26', ts: NOW - 38 * MIN },
   ],
   'cv-qun': [
-    { id: 's1', from: 'peer', kind: 'service', text: '林晚 通过 苏禾 的邀请加入了群聊', at: '周二' },
-    { id: 'm1', from: 'peer', senderName: '周禾', senderTone: '#3f6550', text: '周末书架见，记得带想交换的书。', at: '昨天 20:11', threadCount: 3 },
-    { id: 'm2', from: 'peer', senderName: '苏禾', senderTone: '#5d5a44', text: '我带两盆罗勒苗，先到先得。', at: '昨天 20:14' },
-    { id: 'm3', from: 'me', text: '我整理了一批绘本，周六搬到架上。', at: '昨天 20:20' },
+    { id: 's1', from: 'peer', kind: 'service', text: '林晚 通过 苏禾 的邀请加入了群聊', at: '周二', ts: NOW - 3 * 86400_000 },
+    { id: 'm1', from: 'peer', senderName: '周禾', senderTone: '#3f6550', text: '周末书架见，记得带想交换的书。', at: '昨天 20:11', ts: NOW - 38 * 3600_000, threadCount: 3 },
+    { id: 'm2', from: 'peer', senderName: '苏禾', senderTone: '#5d5a44', text: '我带两盆罗勒苗，先到先得。', at: '昨天 20:14', ts: NOW - 38 * 3600_000 + 180_000 },
+    { id: 'm3', from: 'me', text: '我整理了一批绘本，周六搬到架上。', at: '昨天 20:20', ts: NOW - 38 * 3600_000 + 540_000, status: 'read', edited: true },
   ],
   'cv-linwan': [
-    { id: 'm1', from: 'peer', text: '诗集散会我帮你留了位置。', at: '08:40' },
+    { id: 'm1', from: 'peer', text: '诗集散会我帮你留了位置。', at: '08:40', ts: NOW - 84 * MIN },
+    { id: 'm2', from: 'me', text: '好，散会直接过来。', at: '08:42', ts: NOW - 82 * MIN, status: 'delivered' },
   ],
 };

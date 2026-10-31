@@ -163,6 +163,10 @@ Social / Moments：
 - [x] 15 跨模块设计哲学总评：材质/强调色/方圆/死控件/双宽不变量复核；
       craft battery 加固至 C1–C15（浮层不透明度、图标钮可访问名称、热区与死控件扩面），
       深态场景接线电池断言；合同 cross-module-review.md；门禁 78/78（consumer 18/18）
+- [x] 16 消息生命周期补齐（对照 desktop social-chat 原型复审）：投递状态/内联重试/离线胶囊/
+      编辑（4m30s 窗口+编辑态 composer+已编辑标记）/撤回墓碑/消息置顶/typing/纯 emoji 大字/
+      操作条收敛为 4 快捷+⋯菜单/24 反应；超时项禁用带原因（改进于真身的隐藏策略）；
+      合同 components/chat-message-lifecycle.md；门禁 85/85（consumer 18/18）
 
 ### 5.4 决策（2026-10-31 已确认）
 

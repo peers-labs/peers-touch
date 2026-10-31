@@ -5,7 +5,7 @@
  * desktop shell captures the screen; the browser shell selects an image
  * file), real MediaRecorder voice notes, and input expand/collapse.
  */
-import { useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import {
   FolderOpen, Maximize2, Mic, Minimize2, Scissors, Smile, Square, Trash2, X,
 } from 'lucide-react';
@@ -37,13 +37,16 @@ export type ComposerPayload = {
   attachments: MessageAttachment[];
   voice: RecordedVoice | null;
   replyTo?: { who: string; text: string };
+  editId?: string;
 };
 
-export function ChatComposer({ groupMembers, replyTarget, placeholder, onCancelReply, onSend }: {
+export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholder, onCancelReply, onCancelEdit, onSend }: {
   groupMembers?: { name: string }[];
   replyTarget?: { who: string; text: string } | null;
+  editTarget?: { id: string; text: string } | null;
   placeholder: string;
   onCancelReply?: () => void;
+  onCancelEdit?: () => void;
   onSend: (payload: ComposerPayload) => void;
 }) {
   const [draft, setDraft] = useState('');
@@ -58,6 +61,18 @@ export function ChatComposer({ groupMembers, replyTarget, placeholder, onCancelR
 
   const { drafts, ready, uploading, failed, addFiles, removeDraft, retryDraft, clearDrafts } =
     useAttachmentDrafts();
+
+  // Seed the textarea when entering edit mode (parent owns the target).
+  useEffect(() => {
+    if (editTarget) {
+      setDraft(editTarget.text);
+      window.requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        const el = textareaRef.current;
+        if (el) el.setSelectionRange(el.value.length, el.value.length);
+      });
+    }
+  }, [editTarget]);
 
   const recorder = useVoiceRecorder(
     voice => {
@@ -109,10 +124,17 @@ export function ChatComposer({ groupMembers, replyTarget, placeholder, onCancelR
 
   const canSendText = draft.trim().length > 0 || ready.length > 0;
   const textBusy = uploading || failed;
-  const sendEnabled = canSendText && !textBusy && !recorder.recording && !recordedVoice;
+  const sendEnabled = editTarget
+    ? draft.trim().length > 0 && draft.trim() !== editTarget.text
+    : canSendText && !textBusy && !recorder.recording && !recordedVoice;
 
   const submitText = () => {
     if (!sendEnabled) return;
+    if (editTarget) {
+      onSend({ text: draft.trim(), attachments: [], voice: null, editId: editTarget.id });
+      setDraft('');
+      return;
+    }
     onSend({
       text: draft.trim(),
       attachments: ready.map(({ id, kind, name, mime, size, previewUrl }) => ({
@@ -178,7 +200,16 @@ export function ChatComposer({ groupMembers, replyTarget, placeholder, onCancelR
       onDragOver={event => { event.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}>
-      {replyTarget && (
+      {editTarget ? (
+        <div className="sk-reply-bar sk-edit-bar" data-edit-banner>
+          <div>
+            <span>编辑消息</span>
+            <p>{editTarget.text}</p>
+          </div>
+          <button type="button" className="sk-reply-cancel" aria-label="取消编辑"
+            onClick={() => { setDraft(''); onCancelEdit?.(); }}><X size={14} /></button>
+        </div>
+      ) : replyTarget && (
         <div className="sk-reply-bar" data-reply-bar>
           <div>
             <span>回复 {replyTarget.who}</span>
@@ -226,25 +257,25 @@ export function ChatComposer({ groupMembers, replyTarget, placeholder, onCancelR
       )}
       {failed && <Alert tone="danger" title="附件上传失败" description="请重试或移除失败的附件（本地示例）。" />}
 
-      <div className="sk-composer">
+      <div className="sk-composer" data-composer-mode={editTarget ? 'editing' : 'compose'}>
         <div className="sk-composer-tools">
           <Popover placement="top" content={emojiPanel}>
             <button type="button" className="sk-composer-tool" aria-label="表情"
-              data-composer-tool="emoji" disabled={!!recordedVoice}><Smile size={18} /></button>
+              data-composer-tool="emoji" disabled={!!recordedVoice || !!editTarget}><Smile size={18} /></button>
           </Popover>
           <button type="button" className="sk-composer-tool" aria-label="添加文件附件"
             data-composer-tool="file"
-            disabled={recorder.recording || !!recordedVoice}
+            disabled={recorder.recording || !!recordedVoice || !!editTarget}
             onClick={() => fileInputRef.current?.click()}><FolderOpen size={18} /></button>
           <button type="button" className="sk-composer-tool" aria-label="截图（浏览器原型选择图片文件）"
             title="桌面壳为屏幕捕获；浏览器原型选择图片文件"
             data-composer-tool="screenshot"
-            disabled={recorder.recording || !!recordedVoice}
+            disabled={recorder.recording || !!recordedVoice || !!editTarget}
             onClick={() => shotInputRef.current?.click()}><Scissors size={18} /></button>
           <button type="button" className={`sk-composer-tool${recorder.recording ? ' is-recording' : ''}`}
             aria-label={recorder.recording ? '结束录音' : '语音消息'}
             data-composer-tool="voice" aria-pressed={recorder.recording}
-            disabled={!!recordedVoice}
+            disabled={!!recordedVoice || !!editTarget}
             onClick={() => {
               setVoiceError(null);
               if (recorder.recording) recorder.finish();
@@ -284,19 +315,25 @@ export function ChatComposer({ groupMembers, replyTarget, placeholder, onCancelR
             }}
             onPaste={onPaste}
             disabled={recorder.recording || !!recordedVoice}
-            placeholder={placeholder} />
+            placeholder={editTarget ? '修改后发送…' : placeholder} />
         </div>
 
-        <button type="button" className="sk-composer-tool sk-composer-expand"
-          aria-label={expanded ? '收起输入框' : '展开输入框'} aria-pressed={expanded}
-          data-composer-expand onClick={() => setExpanded(value => !value)}>
-          {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-        </button>
-        <IconButton iconId="send" iconSize={16} label="发送消息" actionId="sk.send-message"
+        {!editTarget && (
+          <button type="button" className="sk-composer-tool sk-composer-expand"
+            aria-label={expanded ? '收起输入框' : '展开输入框'} aria-pressed={expanded}
+            data-composer-expand onClick={() => setExpanded(value => !value)}>
+            {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        )}
+        <IconButton iconId="send" iconSize={16} label={editTarget ? '保存修改' : '发送消息'}
+          actionId="sk.send-message"
           emphasis="primary"
+          data-edit-send={editTarget ? 'true' : undefined}
           availability={sendEnabled
             ? { kind: 'enabled' }
-            : { kind: 'disabled', reason: uploading ? '附件上传中' : failed ? '存在失败附件' : '请输入消息或添加附件' }}
+            : { kind: 'disabled',
+                reason: editTarget ? '内容未修改'
+                  : uploading ? '附件上传中' : failed ? '存在失败附件' : '请输入消息或添加附件' } }
           onActivate={submitText} />
       </div>
 

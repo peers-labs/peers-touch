@@ -346,7 +346,10 @@
 .sk-msg-action.is-danger:hover { color: #b0413a; }
 
 /* quick-reaction picker (peers-ui Popover owns the panel surface) */
-.sk-react-pop { display: flex; gap: 1px; }
+.sk-react-pop {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px;
+  padding: 5px;
+}
 .sk-react-emoji {
   width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%;
   background: transparent; font-size: 18px; line-height: 1; cursor: pointer;
@@ -614,3 +617,60 @@
   padding: 18px 8px; color: var(--sk-text-3); text-align: center;
 }
 .sk-file-detail p { margin: 0; font-size: 12.5px; line-height: 1.6; max-width: 320px; }
+
+/* ── Increment 16: message lifecycle ─────────────────── */
+.sk-msg-under {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin-top: 3px;
+}
+.sk-msg-under .sk-thread-entry { margin-top: 0; }
+.sk-msg-under .sk-msg-reactions { margin-top: 0; }
+.sk-msg-status {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; color: var(--sk-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.sk-msg-status.is-read { color: var(--sk-primary); }
+.sk-msg-status.is-failed { color: #b0413a; }
+.sk-msg-retry {
+  display: inline-flex; align-items: center; gap: 3px;
+  border: 0; background: transparent; padding: 0; cursor: pointer;
+  font: inherit; font-size: 11px; color: #b0413a;
+}
+.sk-msg-retry:hover { text-decoration: underline; }
+.sk-msg-pinned-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 600; color: var(--sk-primary);
+  background: color-mix(in srgb, var(--sk-primary) 10%, transparent);
+  padding: 1px 7px; border-radius: 999px;
+}
+.sk-msg-edited { font-size: 10.5px; color: var(--sk-text-3); font-weight: 600; }
+.sk-recalled-tombstone {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-style: italic; color: var(--sk-text-3);
+  background: var(--sk-tile); border-radius: 10px; padding: 5px 11px;
+  white-space: nowrap;
+}
+.sk-msg.is-emoji-only .sk-msg-bubble { display: none; }
+.sk-emoji-only-bubble { font-size: 34px; line-height: 42px; }
+.sk-emoji-only-time { font-size: 10.5px; color: var(--sk-text-3); margin-left: 2px; }
+.sk-typing-row { display: flex; align-items: flex-end; gap: 9px; padding: 4px 0; }
+.sk-typing-bubble {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--sk-tile); border-radius: 16px; border-bottom-left-radius: 6px;
+  padding: 11px 14px;
+}
+.sk-typing-bubble i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--sk-text-3);
+  animation: sk-typing-dot 1.2s ease-in-out infinite;
+}
+.sk-typing-bubble i:nth-child(2) { animation-delay: .18s; }
+.sk-typing-bubble i:nth-child(3) { animation-delay: .36s; }
+@keyframes sk-typing-dot { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-3px); opacity: 1; } }
+.sk-edit-bar span { color: var(--sk-primary); font-weight: 600; }
+.sk-copy-flash {
+  position: absolute; bottom: calc(100% + 6px); right: 0;
+  font-size: 10.5px; color: var(--sk-text-3); white-space: nowrap;
+  pointer-events: none;
+}
