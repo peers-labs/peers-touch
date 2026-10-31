@@ -8,7 +8,7 @@ const require = createRequire(`${root}/apps/desktop/package.json`);
 const { chromium, expect } = require('@playwright/test');
 const labels = JSON.parse(fs.readFileSync(`${root}/packages/locales/en/dashboard.json`));
 const t = key => key.split('.').reduce((value, part) => value[part], labels);
-let browser, page, stationUrl, token;
+let browser, page, stationUrl, token, actionStep;
 
 async function api(route, body = {}) {
   const response = await page.request.post(`${stationUrl}/dashboard/api/ai/${route}`, {
@@ -18,6 +18,7 @@ async function api(route, body = {}) {
   return response.json();
 }
 async function mutation(route, operation) {
+  actionStep = route;
   const pending = page.waitForResponse(r => r.url().endsWith(`/ai/${route}`));
   await operation();
   const response = await pending;
@@ -25,6 +26,7 @@ async function mutation(route, operation) {
   return response.json();
 }
 async function choose(label, value) {
+  actionStep = label;
   await page.getByRole('combobox', { name: label, exact: true }).click();
   await page.locator('.ant-select-dropdown:visible').getByText(value, { exact: true }).click();
   await page.keyboard.press('Escape');
@@ -68,15 +70,23 @@ async function createDirect(input) {
     provider_id: input.providerId, display_name: input.name, base_url: input.endpoint,
   })) await dialog.locator(`input#${field}`).fill(value);
   await mutation('provider/create', () => dialog.getByRole('button', { name: 'OK', exact: true }).click());
+  actionStep = 'credential-input';
   await page.getByRole('heading', { name: input.name, exact: true }).waitFor();
   await page.getByLabel(t('ai.apiKey'), { exact: true }).fill(input.key);
   await mutation('credential/set', () => page.getByRole('button', { name: t('ai.saveCredential'), exact: true }).click());
   await expect(page.getByLabel(t('ai.apiKey'), { exact: true })).toHaveValue('');
   await page.getByRole('button', { name: t('ai.addModel'), exact: true }).click();
+  actionStep = 'model-id';
   await dialog.locator('input#id').fill(input.modelId);
+  actionStep = 'model-name';
   await dialog.locator('input#display_name').fill(input.modelName);
+  actionStep = 'model-context-window';
   await dialog.locator('input#context_window').fill('8192');
-  await dialog.getByLabel(t('ai.flags.streaming'), { exact: true }).check();
+  actionStep = 'model-streaming';
+  await dialog.getByText(t('ai.flags.streaming'), { exact: true }).click();
+  await expect(dialog.getByRole('checkbox', {
+    name: t('ai.flags.streaming'), exact: true,
+  })).toBeChecked();
   await mutation('model/create', () => dialog.getByRole('button', { name: 'OK', exact: true }).click());
   await page.getByRole('button', { name: t('ai.addGrant'), exact: true }).click();
   await choose(t('ai.grantUsers').replace('{{index}}', '1'), t('ai.specificUser'));
@@ -133,6 +143,7 @@ const commands = readline.createInterface({ input: process.stdin });
 try {
   for await (const line of commands) {
     const { action, payload } = JSON.parse(line);
+    actionStep = action;
     try {
       let value;
       if (action === 'start') {
@@ -165,9 +176,11 @@ try {
       console.log(JSON.stringify({ ok: true, value }));
     } catch {
       // Neither Playwright input dumps nor vendor errors enter evidence.
-      console.log(JSON.stringify({ ok: false, error: `Dashboard ${action} failed` }));
+      console.log(JSON.stringify({ ok: false, error: `Dashboard ${action} failed at ${actionStep}` }));
     }
   }
 } finally {
+  commands.close();
+  process.stdin.pause();
   await browser?.close();
 }

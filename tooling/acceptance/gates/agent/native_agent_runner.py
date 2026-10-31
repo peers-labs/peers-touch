@@ -3366,16 +3366,25 @@ class AgentNativeJourney:
                 current = self.dashboard.api(
                     "provider/get", {"provider_id": provider_id},
                 )["provider"]
-                self.dashboard.api("provider/update", {
-                    "provider_id": provider_id, "enabled": original["enabled"],
-                    "version": int(current["version"]),
-                    "runtime_config": original["runtime_config"],
-                })
+                require(int(current["version"]) == original["last_mutation_version"],
+                        "CLI fixture changed after discovery; cleanup refused")
+                if original["version"] == 0:
+                    if int(current["version"]) != 0:
+                        self.dashboard.api("provider/delete", {
+                            "provider_id": provider_id, "version": int(current["version"]),
+                        })
+                elif int(current["version"]) != original["version"]:
+                    self.dashboard.api("provider/update", {
+                        "provider_id": provider_id, "enabled": original["enabled"],
+                        "version": int(current["version"]),
+                        "runtime_config": original["runtime_config"],
+                    })
                 restored = self.dashboard.api(
                     "provider/get", {"provider_id": provider_id},
                 )["provider"]
                 require(restored["runtime_config"] == original["runtime_config"]
-                        and restored["enabled"] == original["enabled"],
+                        and restored["enabled"] == original["enabled"]
+                        and (original["version"] != 0 or int(restored["version"]) == 0),
                         "CLI fixture configuration was not restored")
                 del self.chat_provider_restore[provider_id]
             except Exception as error:

@@ -52,10 +52,18 @@ def create_direct(runner: AgentNativeJourney, fixture: dict[str, str]) -> dict[s
 
 def cli_discovery(runner: AgentNativeJourney, provider_id: str) -> dict[str, Any]:
     before = runner.dashboard.api("provider/get", {"provider_id": provider_id})["provider"]
-    runner.chat_provider_restore.setdefault(provider_id, {
+    original = runner.chat_provider_restore.setdefault(provider_id, {
         "enabled": before["enabled"], "runtime_config": before["runtime_config"],
+        "version": int(before["version"]), "last_mutation_version": int(before["version"]),
     })
-    result = runner.dashboard.call("discovery", {"providerId": provider_id})
+    try:
+        result = runner.dashboard.call("discovery", {"providerId": provider_id})
+    finally:
+        current = runner.dashboard.api("provider/get", {"provider_id": provider_id})["provider"]
+        require(int(current["version"]) in (
+            original["last_mutation_version"], original["last_mutation_version"] + 1,
+        ), "CLI fixture version changed outside discovery")
+        original["last_mutation_version"] = int(current["version"])
     return {
         "stationReadback": result,
         "uiAction": "save CLI runtime defaults and discover models through the selected Dashboard Provider",
