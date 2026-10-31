@@ -16,7 +16,9 @@ import {
 import { MessageAttachments } from './MessageAttachments';
 import { VoicePlayer } from './VoiceNote';
 import { ChatComposer, type ComposerPayload } from './ChatComposer';
-import type { CallKind } from './CallOverlay';
+import { CallOverlay, type CallDirection, type CallKind } from './CallOverlay';
+
+type ActiveCall = { conversationId: string; kind: CallKind; direction: CallDirection };
 
 const MENTION_RE = new RegExp('(@[\\u4e00-\\u9fa5\\w·]+)', 'g');
 
@@ -27,10 +29,14 @@ function renderRichText(text: string) {
   });
 }
 
-export function ConversationView({ conversation, messages, onSend, onTogglePin, onToggleMute,
+export function ConversationView({ conversation, messages, call, onEndCall, onSimulateIncoming,
+  onSend, onTogglePin, onToggleMute,
   onReact, onDelete, onForward, onStartCall, onBack, conversations }: {
   conversation: Conversation;
   messages: ChatMessage[];
+  call: ActiveCall | null;
+  onEndCall: () => void;
+  onSimulateIncoming: (kind: CallKind) => void;
   onSend: (payload: ComposerPayload) => void;
   onTogglePin: (id: string) => void;
   onToggleMute: (id: string) => void;
@@ -190,7 +196,8 @@ export function ConversationView({ conversation, messages, onSend, onTogglePin, 
         <DetailSheet conversation={conversation}
           onClose={() => setInfoOpen(false)}
           onTogglePin={() => onTogglePin(conversation.id)}
-          onToggleMute={() => onToggleMute(conversation.id)} />
+          onToggleMute={() => onToggleMute(conversation.id)}
+          onSimulateIncoming={conversation.kind === 'person' ? onSimulateIncoming : undefined} />
       )}
       {threadId && threadMessage && (
         <ThreadSheet root={threadMessage}
@@ -219,6 +226,11 @@ export function ConversationView({ conversation, messages, onSend, onTogglePin, 
           if (deleteTarget) onDelete(deleteTarget.id);
           setDeleteTarget(null);
         }} />
+
+      {call && (
+        <CallOverlay conversation={conversation} kind={call.kind}
+          direction={call.direction} onEnd={onEndCall} />
+      )}
     </section>
   );
 }

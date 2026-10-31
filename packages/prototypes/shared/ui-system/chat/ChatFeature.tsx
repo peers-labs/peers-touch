@@ -10,7 +10,7 @@ import { Empty } from '@peers-touch/ui';
 import { ChatRail } from './ChatRail';
 import { ConversationView } from './ConversationView';
 import { ContactDetailPane, CreateGroupDialog, PickPersonDialog } from './ChatDialogs';
-import { CallOverlay, type CallKind } from './CallOverlay';
+import type { CallDirection, CallKind } from './CallOverlay';
 import {
   CONVERSATIONS, FRIEND_REQUESTS, PEOPLE, SEED_MESSAGES,
   type ChatMessage, type Conversation, type FriendRequest, type Person,
@@ -27,7 +27,7 @@ export function ChatFeature() {
   const [selectedContact, setSelectedContact] = useState<Person | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
-  const [call, setCall] = useState<{ kind: CallKind } | null>(null);
+  const [call, setCall] = useState<{ conversationId: string; kind: CallKind; direction: CallDirection } | null>(null);
 
   const selectedConversation = sessions.find(c => c.id === selectedId) ?? null;
   const peoplePool = useMemo(() => [...PEOPLE, ...sessions
@@ -172,6 +172,9 @@ export function ChatFeature() {
             conversation={selectedConversation}
             messages={messagesByConv[selectedConversation.id] ?? []}
             conversations={sessions}
+            call={call && call.conversationId === selectedConversation.id ? call : null}
+            onEndCall={() => setCall(null)}
+            onSimulateIncoming={kind => setCall({ conversationId: selectedConversation.id, kind, direction: 'in' })}
             onBack={backToList}
             onSend={sendMessage}
             onTogglePin={togglePin}
@@ -179,7 +182,7 @@ export function ChatFeature() {
             onReact={reactToMessage}
             onDelete={deleteMessage}
             onForward={forwardMessage}
-            onStartCall={kind => setCall({ kind })} />
+            onStartCall={kind => setCall({ conversationId: selectedConversation.id, kind, direction: 'out' })} />
         ) : (
           <div className="sk-chat-placeholder">
             <Empty icon={<MessagesSquare size={28} strokeWidth={1.5} />}
@@ -192,11 +195,6 @@ export function ChatFeature() {
         onDismiss={() => setPickerOpen(false)} onPick={person => { setPickerOpen(false); openPerson(person); }} />
       <CreateGroupDialog open={groupOpen} people={friends} onDismiss={() => setGroupOpen(false)}
         onCreate={createGroup} />
-
-      {call && selectedConversation && (
-        <CallOverlay conversation={selectedConversation} kind={call.kind}
-          onEnd={() => setCall(null)} />
-      )}
     </div>
   );
 }

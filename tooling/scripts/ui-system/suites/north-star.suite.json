@@ -392,21 +392,84 @@
     },
     {
       "id": "ui.prototype.north-star.call-audio",
-      "title": "语音通话：呼叫→接通计时；挂断后浮层消失",
+      "title": "1:1 语音通话：呼叫→接通计时；挂断后浮层消失",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
-        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
         { "op": "click", "target": "[data-action-id='chat.call-audio']" },
         { "op": "wait", "ms": 2800 }
       ],
       "oracles": [
         { "id": "reached-active", "type": "attr", "target": ".sk-call-overlay", "attr": "data-call-phase", "equals": "active" },
+        { "id": "one-to-one-scope", "type": "attr", "target": ".sk-call-overlay", "attr": "data-call-scope", "equals": "one" },
         { "id": "audio-no-video-ctl", "type": "count", "target": ".sk-call-ctl", "equals": 2 },
         { "id": "timer-shown", "type": "textContains", "target": ".sk-call-phase", "contains": ":" }
       ],
       "finalizers": [
         { "op": "click", "target": ".sk-call-ctl.is-hangup" },
+        { "op": "wait", "ms": 800 }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.call-incoming-accept",
+      "title": "来电：详情面板模拟来电，接听后进入通话",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
+        { "op": "click", "target": "[data-action-id='chat.open-info']" },
+        { "op": "click", "target": "[data-action-id='chat.simulate-incoming-audio']" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "target": "[data-call-accept]" },
+        { "op": "wait", "ms": 1300 }
+      ],
+      "oracles": [
+        { "id": "incoming-was-inbound", "type": "attr", "target": ".sk-call-overlay", "attr": "data-call-direction", "equals": "in" },
+        { "id": "accepted-active", "type": "attr", "target": ".sk-call-overlay", "attr": "data-call-phase", "equals": "active" }
+      ],
+      "finalizers": [
+        { "op": "click", "target": "[data-call-hangup]" },
+        { "op": "wait", "ms": 800 }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.call-incoming-decline",
+      "title": "来电：拒接后面板消失",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
+        { "op": "click", "target": "[data-action-id='chat.open-info']" },
+        { "op": "click", "target": "[data-action-id='chat.simulate-incoming-video']" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "target": "[data-call-decline]" },
+        { "op": "wait", "ms": 900 }
+      ],
+      "oracles": [
+        { "id": "declined-gone", "type": "missing", "target": ".sk-call-overlay" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.call-group-active",
+      "title": "群通话：加入后参与者网格到齐，本地静音联动；有人发言高亮",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-action-id='chat.call-audio']" },
+        { "op": "wait", "ms": 6000 },
+        { "op": "click", "target": "[data-call-mute]" }
+      ],
+      "oracles": [
+        { "id": "group-scope", "type": "attr", "target": ".sk-call-overlay", "attr": "data-call-scope", "equals": "group" },
+        { "id": "all-joined", "type": "attr", "target": ".sk-call-grid", "attr": "data-participant-count", "equals": "5" },
+        { "id": "speaking-highlight", "type": "count", "target": ".sk-call-tile.is-speaking", "gte": 1 },
+        { "id": "local-muted", "type": "attr", "target": "[data-participant-local='true']", "attr": "data-mic", "equals": "off" }
+      ],
+      "finalizers": [
+        { "op": "click", "target": "[data-call-hangup]" },
         { "op": "wait", "ms": 800 }
       ]
     },

@@ -5,9 +5,10 @@
  * (increment 14 extends it with incoming and group calls).
  */
 import { useMemo, useState, type KeyboardEvent } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Phone, Video } from 'lucide-react';
 import { Avatar, AvatarGroup, Button, Dialog, Empty, IconButton, Switch, Tag, TextArea } from '@peers-touch/ui';
 import { artwork } from '../moments/moments-data';
+import type { CallKind } from './CallOverlay';
 import type { ChatMessage, Conversation, ThreadReply } from './chat-data';
 
 /* ── Header ───────────────────────────────────────────── */
@@ -64,11 +65,12 @@ export function ConversationHeader({ conversation, pinned, muted,
 
 const SHARED_MEDIA = ['mint', 'olive'];
 
-export function DetailSheet({ conversation, onClose, onTogglePin, onToggleMute }: {
+export function DetailSheet({ conversation, onClose, onTogglePin, onToggleMute, onSimulateIncoming }: {
   conversation: Conversation;
   onClose: () => void;
   onTogglePin: () => void;
   onToggleMute: () => void;
+  onSimulateIncoming?: (kind: CallKind) => void;
 }) {
   return (
     <aside className="sk-side-sheet" aria-label="会话详情" data-detail-panel="true">
@@ -102,6 +104,20 @@ export function DetailSheet({ conversation, onClose, onTogglePin, onToggleMute }
             </>
           )}
         </section>
+
+        {conversation.kind === 'person' && onSimulateIncoming && (
+          <section className="sk-side-section sk-side-call-demo">
+            <span className="sk-side-title">来电演示（本地原型）</span>
+            <div className="sk-side-call-demo-row">
+              <Button emphasis="quiet" leading={<Phone size={14} />} label="模拟语音来电"
+                actionId="chat.simulate-incoming-audio"
+                onActivate={() => { onSimulateIncoming('audio'); onClose(); }} />
+              <Button emphasis="quiet" leading={<Video size={14} />} label="模拟视频来电"
+                actionId="chat.simulate-incoming-video"
+                onActivate={() => { onSimulateIncoming('video'); onClose(); }} />
+            </div>
+          </section>
+        )}
 
         <section className="sk-side-section sk-side-switches">
           <Switch checked={!!conversation.muted} label="消息免打扰"
