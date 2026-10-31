@@ -83,6 +83,7 @@ def idle_stability(
           conversation:id(document.querySelector('[data-pt-agent-conversation]')),
           composer:id(input),focused:document.activeElement===input,
           draftIntact:input?.value==='unsent idle regression draft',
+          readiness:root.querySelector('[data-pt-agent-readiness-state]')?.dataset.ptAgentReadinessState,
           rows:[...document.querySelectorAll('[data-pt-agent-message-id]')].filter(visible).map(id),
           actions:[...root.querySelectorAll(
             '[data-pt-agent-topic-search],[data-pt-agent-topic-batch-select]')].filter(visible).map(id),
@@ -103,20 +104,25 @@ def idle_stability(
         samples = observed["samples"]
         first = samples[0]
         require(len(first["actions"]) == 2, "Accepted Topic actions are missing")
+        require(first["readiness"] not in (None, "checking"),
+                "Idle Composer readiness is not settled")
         for item in samples:
             require(all(item[key] == first[key] for key in (
                 "timeOrigin", "root", "conversation", "composer", "rows", "actions", "scroll",
             )), "Idle reconciliation replaced accepted Native nodes")
+            require(item["readiness"] == first["readiness"],
+                    "Idle reconciliation changed settled Composer readiness")
             require(item["focused"] and item["draftIntact"], "Idle reconciliation lost composer state")
             require(not item["syncing"], "Idle reconciliation replayed Topic entry loading")
             require(abs(item["scrollTop"] - first["scrollTop"]) <= 1,
                     "Idle reconciliation changed conversation scroll")
         return {
             "uiAction": "type unsent text, focus composer and leave the real Native Topic idle",
-            "receiverAssertion": "message/action nodes, focus, draft and scroll survive two timer cycles",
+            "receiverAssertion": "message/action nodes, readiness, focus, draft and scroll survive two timer cycles",
             "durationSeconds": samples[-1]["at"] / 1000, "sampleCount": len(samples),
             "messageRowCount": len(first["rows"]), "scrollExercised": first["scroll"] is not None,
             "mutationRecords": observed["mutations"], "nodeReplacements": 0, "syncingSamples": 0,
+            "readinessTransitions": 0,
         }
     finally:
         runner.driver.execute_script("""

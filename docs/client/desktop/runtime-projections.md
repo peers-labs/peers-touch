@@ -63,6 +63,11 @@ rejection or composer state. Selection changes refresh affected capability
 authority without reloading global directories. Periodic and event recovery
 remain active and must publish actual changes.
 
+Composer readiness feedback follows its admission projection. An Agent with
+no enabled capability bindings remains ready during capability-session warmup;
+an unrelated background request cannot replace that state with checking.
+Saving and unresolved required capabilities retain their checking feedback.
+
 Atelier is temporarily withheld pending product design. Shell navigation and
 both applet launcher sections omit it; restored/direct Atelier or orchestration
 routes return to Agent Chat. Its package, installation and user data remain

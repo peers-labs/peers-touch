@@ -9,6 +9,7 @@ owns:
   - apps/desktop/src/store/agentTopics.ts
   - apps/desktop/src/store/chat.ts
   - apps/desktop/src/components/AgentSidebar.tsx
+  - apps/desktop/src/components/ChatInput.tsx
 referenced-by:
   - docs/client/desktop/runtime-projections.md
 related:
@@ -33,6 +34,10 @@ bootstrap, background history sync and authoritative message refresh. Equal
 Topic/message arrays invalidate renderer selectors, and the loading flag
 replaces the established Topic action strip.
 
+Composer feedback also overrode the ready admission state with checking while
+warmup read capabilities for an Agent with no enabled bindings. Missing
+readiness snapshots made each background request toggle the badge color.
+
 ## Mitigation
 
 Use TanStack Query structural sharing at JSON projection commit boundaries.
@@ -43,6 +48,10 @@ capability authority without reloading global directories. Draft reconciliation
 must preserve local rejection and composer state. Retain periodic/event recovery
 and publish actual authoritative changes.
 
+Checking feedback applies only when admission is unresolved or a save is in
+progress. A ready model-only composer retains its admission state while
+capability discovery runs.
+
 ## How to detect a recurrence
 
 Run the Agent native Topic Journey across at least two real reconciliation
@@ -50,6 +59,9 @@ periods without invoking Harness reconciliation during observation. Compare
 document/page/message/action identity, reading position, focused composer and
 draft; observe a real changed Topic after background refresh. Capture Native
 screenshots and command names/counts without prompts, credentials or arguments.
+Assert settled composer readiness across warmup and periodic requests, including
+the no-enabled-bindings case; attribute-only color changes can flash without
+replacing a node or changing its geometry.
 Check `agentTopicRuntime.test.ts`, `agent.test.ts`, `agentTopics.test.ts` and
 `chatMerge.test.ts` for duplicate reads and unchanged projection identity.
 Source checks alone do not prove Native continuity.
