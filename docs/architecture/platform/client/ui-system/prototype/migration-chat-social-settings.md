@@ -167,6 +167,9 @@ Social / Moments：
       编辑（4m30s 窗口+编辑态 composer+已编辑标记）/撤回墓碑/消息置顶/typing/纯 emoji 大字/
       操作条收敛为 4 快捷+⋯菜单/24 反应；超时项禁用带原因（改进于真身的隐藏策略）；
       合同 components/chat-message-lifecycle.md；门禁 85/85（consumer 18/18）
+- [x] 17 会话列表对齐（对照 SessionList.tsx）：在线点/相对时间/9 宫格群头像/99+ 角标（主色与免打扰灰）/
+      5 项会话菜单（置顶/免打扰/标记已读/隐藏/删除）/hover+⋯+右键三路径等价/置顶排序与底色/打开即已读；
+      删除两段确认为相对真身的改进；合同 components/chat-session-list.md；门禁 88/88（consumer 18/18）
 
 ### 5.4 决策（2026-10-31 已确认）
 

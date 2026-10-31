@@ -5,75 +5,169 @@
  * pin/mute state or the contacts pane.
  */
 import { useMemo, useState } from 'react';
-import { BellOff, MessageCircle, Pin, Search, UserPlus, Users } from 'lucide-react';
+import { BellOff, CheckCheck, EyeOff, MessageCircle, MoreHorizontal, Pin, Search, Trash2, UserPlus, Users } from 'lucide-react';
 import {
-  Alert, Avatar, AvatarGroup, Badge, Button, Empty, Menu, Popover, Segmented, Tag,
+  Alert, Avatar, AvatarGroup, Button, Dialog, Empty, Menu, Popover, Segmented, Tag,
 } from '@peers-touch/ui';
 import type { Conversation, Person } from './chat-data';
 
 /* ── Session list ──────────────────────────────────────── */
 
-function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute }: {
+function relativeTime(ts?: number): string {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} 天前`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/** Up to 9 members as a 3×3 rounded-square composite (desktop parity). */
+function GroupAvatar9({ members, label }: { members: { name: string; tone: string }[]; label: string }) {
+  const tiles = members.slice(0, 9);
+  return (
+    <span className="sk-group-avatar9" data-member-count={members.length} aria-label={label}>
+      {tiles.map(m => (
+        <span key={m.name} className="sk-group-avatar9-tile" style={{ background: m.tone }}>
+          {m.name.slice(0, 1)}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute, onMarkRead, onHide, onDelete }: {
   sessions: Conversation[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onTogglePin: (id: string) => void;
   onToggleMute: (id: string) => void;
+  onMarkRead: (id: string) => void;
+  onHide: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
+  // The single open context/overflow menu: { id, point? }. Right-click sets a
+  // pointer position; the ⋯ button anchors the menu to itself.
+  const [openMenu, setOpenMenu] = useState<{ id: string; point?: { x: number; y: number } } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
+
+  const menuFor = (c: Conversation) => [
+    { id: 'pin', label: c.pinned ? '取消置顶' : '置顶', leading: <Pin size={14} /> },
+    { id: 'mute', label: c.muted ? '取消免打扰' : '免打扰', leading: <BellOff size={14} /> },
+    { id: 'read', label: '标记已读', leading: <CheckCheck size={14} />,
+      availability: c.unread > 0 ? undefined : { kind: 'disabled' as const, reason: '没有未读消息' } },
+    { id: 'sep-1', kind: 'separator' as const, label: '' },
+    { id: 'hide', label: '隐藏会话', leading: <EyeOff size={14} /> },
+    { id: 'delete', label: '删除会话', leading: <Trash2 size={14} /> },
+  ];
+
+  const invoke = (c: Conversation, id: string) => {
+    setOpenMenu(null);
+    switch (id) {
+      case 'pin': onTogglePin(c.id); break;
+      case 'mute': onToggleMute(c.id); break;
+      case 'read': onMarkRead(c.id); break;
+      case 'hide': onHide(c.id); break;
+      case 'delete': setDeleteTarget(c); break;
+    }
+  };
+
   return (
-    <ul className="sk-conv-list" data-session-count={sessions.length}>
-      {sessions.map(c => (
-        <li key={c.id} className="sk-conv-item"
-          data-conversation-kind={c.kind}
-          data-pinned={c.pinned ? 'true' : 'false'}
-          data-muted={c.muted ? 'true' : 'false'}>
-          <button type="button"
-            className={`sk-conv-row${selectedId === c.id ? ' is-selected' : ''}`}
-            aria-current={selectedId === c.id ? 'true' : undefined}
-            onClick={() => onSelect(c.id)}>
-            <Badge count={c.unread} label={`${c.unread} 条未读`}>
-              {c.kind === 'group'
-                ? <AvatarGroup className="sk-rail-avatars" aria-label={c.name}>
-                    {(c.members ?? []).slice(0, 3).map(m => (
-                      <Avatar key={m.name} name={m.name} background={m.tone} size={38}
-                        style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
-                    ))}
-                  </AvatarGroup>
-                : <Avatar name={c.name} background={c.tone} size={38}
-                    style={{ borderRadius: 'var(--sk-avatar-radius)' }} aria-label={c.name} />}
-            </Badge>
-            <span className="sk-conv-meta">
-              <span className="sk-conv-name-line">
-                <strong>{c.name}</strong>
-                <span className="sk-conv-flags">
-                  {c.pinned && <Pin size={11} aria-label="已置顶" />}
-                  {c.muted && <BellOff size={11} aria-label="已免打扰" />}
+    <>
+      <ul className="sk-conv-list" data-session-count={sessions.length}>
+        {sessions.map(c => (
+          <li key={c.id} className="sk-conv-item"
+            data-conversation-kind={c.kind}
+            data-pinned={c.pinned ? 'true' : 'false'}
+            data-muted={c.muted ? 'true' : 'false'}
+            onContextMenu={event => {
+              event.preventDefault();
+              setOpenMenu({ id: c.id, point: { x: event.clientX, y: event.clientY } });
+            }}>
+            <button type="button"
+              className={`sk-conv-row${selectedId === c.id ? ' is-selected' : ''}${c.pinned ? ' is-pinned-row' : ''}`}
+              aria-current={selectedId === c.id ? 'true' : undefined}
+              onClick={() => onSelect(c.id)}>
+              <span className="sk-conv-avatar">
+                {c.kind === 'group'
+                  ? <GroupAvatar9 members={c.members ?? []} label={c.name} />
+                  : <Avatar name={c.name} background={c.tone} size={40}
+                      style={{ borderRadius: 'var(--sk-avatar-radius)' }} aria-label={c.name} />}
+                {c.kind === 'person' && (
+                  <span className={`sk-presence-dot ${c.online ? 'is-online' : 'is-offline'}`}
+                    data-presence={c.online ? 'online' : 'offline'} aria-hidden />
+                )}
+                {c.unread > 0 && (
+                  <span className={`sk-unread-badge${c.muted ? ' is-muted' : ''}`} data-unread={c.unread}>
+                    {c.unread > 99 ? '99+' : c.unread}
+                  </span>
+                )}
+              </span>
+              <span className="sk-conv-meta">
+                <span className="sk-conv-name-line">
+                  <strong>{c.name}</strong>
+                  <span className="sk-conv-flags">
+                    {c.pinned && <Pin size={11} aria-label="已置顶" />}
+                    {c.muted && <BellOff size={11} aria-label="已免打扰" />}
+                  </span>
+                </span>
+                <span className="sk-conv-preview">
+                  <span className="sk-conv-last">{c.last}</span>
+                  <time>{relativeTime(c.lastTs) || c.lastAt}</time>
                 </span>
               </span>
-              <span className="sk-conv-preview">
-                <span className="sk-conv-last">{c.last}</span>
-                <time>{c.lastAt}</time>
-              </span>
+            </button>
+            <span className="sk-conv-actions">
+              <button type="button" className="sk-conv-state"
+                aria-label={c.muted ? '取消免打扰' : '免打扰'}
+                data-row-action="mute"
+                onClick={() => onToggleMute(c.id)}>
+                <BellOff size={11} />
+              </button>
+              <button type="button" className="sk-conv-state"
+                aria-label={c.pinned ? '取消置顶' : '置顶'}
+                data-row-action="pin"
+                onClick={() => onTogglePin(c.id)}>
+                <Pin size={11} />
+              </button>
+              <Menu
+                open={openMenu?.id === c.id}
+                onOpenChange={open => { if (!open) setOpenMenu(null); }}
+                anchorPoint={openMenu?.id === c.id ? openMenu.point : undefined}
+                placement="bottom"
+                onAction={id => invoke(c, id)}
+                actions={menuFor(c)}>
+                <button type="button" className="sk-conv-state"
+                  aria-label="更多会话操作" aria-haspopup="menu"
+                  data-row-action="more"
+                  onClick={() => setOpenMenu({ id: c.id })}>
+                  <MoreHorizontal size={12} />
+                </button>
+              </Menu>
             </span>
-          </button>
-          <span className="sk-conv-actions">
-            <button type="button" className="sk-conv-state"
-              aria-label={c.muted ? '取消免打扰' : '免打扰'}
-              onClick={() => onToggleMute(c.id)}>
-              <BellOff size={11} />
-            </button>
-            <button type="button" className="sk-conv-state"
-              aria-label={c.pinned ? '取消置顶' : '置顶'}
-              onClick={() => onTogglePin(c.id)}>
-              <Pin size={11} />
-            </button>
-          </span>
-        </li>
-      ))}
-      {sessions.length === 0 && (
-        <li className="sk-conv-empty"><Empty description="没有匹配的会话" /></li>
-      )}
-    </ul>
+          </li>
+        ))}
+        {sessions.length === 0 && (
+          <li className="sk-conv-empty"><Empty description="没有匹配的会话" /></li>
+        )}
+      </ul>
+
+      <Dialog open={!!deleteTarget} onDismiss={() => setDeleteTarget(null)}
+        title={`删除会话「${deleteTarget?.name ?? ''}」？`} width={380} closeLabel="取消"
+        description="将从本机的会话列表移除（本地示例，不影响对方与 Station 记录）。"
+        footer={
+          <>
+            <Button actionId="session.delete-cancel" emphasis="quiet" label="取消"
+              onActivate={() => setDeleteTarget(null)} />
+            <Button actionId="session.delete-confirm" emphasis="primary" tone="danger" label="删除"
+              onActivate={() => { if (deleteTarget) onDelete(deleteTarget.id); setDeleteTarget(null); }} />
+          </>
+        }>
+        <span data-session-delete-confirm />
+      </Dialog>
+    </>
   );
 }
 
@@ -145,6 +239,7 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
 /* ── Rail shell ────────────────────────────────────────── */
 
 export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onTogglePin, onToggleMute,
+  onMarkRead, onHide, onDelete,
   requests, friends, selectedContactId, failedRequestIds, onAccept, onReject, onSelectContact,
   onFindPeople, onCreateGroup, onPickSearchPerson }: {
   tab: 'chats' | 'contacts';
@@ -154,6 +249,9 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
   onSelect: (id: string) => void;
   onTogglePin: (id: string) => void;
   onToggleMute: (id: string) => void;
+  onMarkRead: (id: string) => void;
+  onHide: (id: string) => void;
+  onDelete: (id: string) => void;
   requests: FriendRequest[];
   friends: Person[];
   selectedContactId: string | null;
@@ -168,8 +266,11 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
   const [query, setQuery] = useState('');
 
   const filteredSessions = useMemo(() => {
+    const list = [...sessions].sort((a, b) => {
+      if (Number(b.pinned ?? false) !== Number(a.pinned ?? false)) return Number(b.pinned ?? false) - Number(a.pinned ?? false);
+      return (b.lastTs ?? 0) - (a.lastTs ?? 0);
+    });
     const q = query.trim().toLowerCase();
-    const list = [...sessions].sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false));
     return q ? list.filter(c => `${c.name} ${c.last}`.toLowerCase().includes(q)) : list;
   }, [sessions, query]);
 
@@ -267,7 +368,8 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
         <>
           <h2 className="sk-conv-title">{query ? `搜索“${query}”` : '最近对话'}</h2>
           <SessionRows sessions={filteredSessions} selectedId={selectedId} onSelect={onSelect}
-            onTogglePin={onTogglePin} onToggleMute={onToggleMute} />
+            onTogglePin={onTogglePin} onToggleMute={onToggleMute}
+            onMarkRead={onMarkRead} onHide={onHide} onDelete={onDelete} />
         </>
       ) : (
         <ContactsPane requests={requests} friends={friends} selectedContactId={selectedContactId}

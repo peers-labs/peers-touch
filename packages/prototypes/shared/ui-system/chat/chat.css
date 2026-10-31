@@ -20,14 +20,7 @@
 .sk-subnav-label { display: inline-flex; align-items: center; gap: 5px; }
 
 /* session row extensions */
-.sk-conv-row .pt-badge,
-.sk-conv-row .sk-rail-avatars { flex-shrink: 0; }
-.sk-rail-avatars { gap: 0 !important; }
-.sk-rail-avatars .pt-avatar {
-  margin-left: -10px;
-  box-shadow: 0 0 0 2px var(--sk-card-bg);
-}
-.sk-rail-avatars .pt-avatar:first-child { margin-left: 0; }
+.sk-conv-row .sk-conv-avatar { flex-shrink: 0; position: relative; }
 .sk-conv-name-line {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
@@ -38,10 +31,42 @@
 .sk-conv-last {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1;
 }
+.sk-conv-row.is-pinned-row { background: color-mix(in srgb, var(--sk-tile) 55%, transparent); }
+
+/* 3×3 group composite (up to 9 members, owner-first ordering upstream) */
+.sk-group-avatar9 {
+  width: 40px; height: 40px; flex-shrink: 0;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  border-radius: var(--sk-avatar-radius); overflow: hidden;
+  background: var(--sk-card-border);
+}
+.sk-group-avatar9-tile {
+  display: grid; place-items: center;
+  color: rgba(255,255,255,.9); font-size: 9.5px; font-weight: 650;
+  min-width: 0;
+}
+
+/* presence dot + unread badge on the row avatar */
+.sk-presence-dot {
+  position: absolute; right: -1px; bottom: -1px;
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--sk-card-bg);
+}
+.sk-presence-dot.is-online { background: #3f9142; }
+.sk-presence-dot.is-offline { background: var(--sk-text-3); opacity: .55; }
+.sk-unread-badge {
+  position: absolute; right: -6px; top: -6px;
+  min-width: 17px; height: 17px; padding: 0 4.5px; box-sizing: border-box;
+  border-radius: 999px; background: var(--sk-primary); color: var(--sk-primary-ink);
+  font-size: 10px; font-weight: 650; line-height: 17px; text-align: center;
+  border: 1.5px solid var(--sk-card-bg);
+}
+.sk-unread-badge.is-muted { background: var(--sk-text-3); }
+
 .sk-conv-item { position: relative; }
 .sk-conv-actions {
   position: absolute; right: 10px; bottom: 8px; display: flex; gap: 2px;
-  background: color-mix(in srgb, var(--sk-card-bg) 88%, transparent);
+  background: color-mix(in srgb, var(--sk-overlay) 92%, transparent);
   border-radius: 8px; padding: 2px; opacity: 0; transition: opacity .12s;
 }
 .sk-conv-item:hover .sk-conv-actions,
@@ -49,6 +74,7 @@
 .sk-conv-state {
   border: 0; background: transparent; padding: 3px; line-height: 0; cursor: pointer;
   color: var(--sk-text-3); border-radius: 6px; flex-shrink: 0;
+  width: 24px; height: 24px; display: grid; place-items: center;
 }
 .sk-conv-state:hover { color: var(--sk-primary); background: color-mix(in srgb, var(--sk-primary) 10%, transparent); }
 .sk-conv-preview time { font-size: 10.5px; color: var(--sk-text-3); flex-shrink: 0; }

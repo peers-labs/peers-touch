@@ -57,6 +57,23 @@ export function ChatFeature() {
   const toggleMute = (id: string) => setSessions(list =>
     list.map(c => c.id === id ? { ...c, muted: !c.muted } : c));
 
+  const markAsRead = (id: string) => setSessions(list =>
+    list.map(c => c.id === id ? { ...c, unread: 0 } : c));
+
+  const hideConversation = (id: string) => {
+    setSessions(list => list.filter(c => c.id !== id));
+    if (selectedId === id) setSelectedId(null);
+  };
+  const deleteConversation = (id: string) => {
+    setSessions(list => list.filter(c => c.id !== id));
+    setMessagesByConv(map => {
+      const next = { ...map };
+      delete next[id];
+      return next;
+    });
+    if (selectedId === id) setSelectedId(null);
+  };
+
   const sendMessage = (payload: {
     text: string;
     attachments: ChatMessage['attachments'];
@@ -221,8 +238,10 @@ export function ChatFeature() {
     <div className={`sk-chat-feature${narrowOpen ? ' sk-narrow-open' : ''}`}>
       <ChatRail
         tab={tab} onTabChange={setTab}
-        sessions={sessions} selectedId={selectedId} onSelect={id => { setSelectedId(id); setSelectedContact(null); }}
+        sessions={sessions} selectedId={selectedId}
+        onSelect={id => { setSelectedId(id); markAsRead(id); setSelectedContact(null); }}
         onTogglePin={togglePin} onToggleMute={toggleMute}
+        onMarkRead={markAsRead} onHide={hideConversation} onDelete={deleteConversation}
         requests={requests} friends={friends} selectedContactId={selectedContact?.id ?? null}
         failedRequestIds={failedRequests}
         onAccept={acceptRequest} onReject={rejectRequest}

@@ -354,7 +354,7 @@
         {
           "id": "unread-badges",
           "type": "count",
-          "target": ".sk-conv-rail .pt-badge-count",
+          "target": ".sk-conv-rail .sk-unread-badge",
           "equals": 3
         },
         {
@@ -923,7 +923,7 @@
         {
           "id": "group-selected",
           "type": "exists",
-          "target": ".sk-conv-row.is-selected .sk-rail-avatars"
+          "target": ".sk-conv-row.is-selected .sk-group-avatar9"
         },
         {
           "id": "service-message",
@@ -2015,6 +2015,133 @@
           "type": "ariaPressed",
           "target": "[data-composer-expand]",
           "equals": true
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.session-presence-time",
+      "title": "会话行：在线点（仅单聊）与相对时间；群聊 3×3 九宫格头像",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "online-dot",
+          "type": "exists",
+          "target": ".sk-conv-list li:nth-child(2) [data-presence=\"online\"]"
+        },
+        {
+          "id": "group-no-dot",
+          "type": "missing",
+          "target": ".sk-conv-list li:nth-child(1) .sk-presence-dot"
+        },
+        {
+          "id": "group-9tiles",
+          "type": "exists",
+          "target": ".sk-conv-list li:nth-child(1) .sk-group-avatar9"
+        },
+        {
+          "id": "relative-time",
+          "type": "textContains",
+          "target": ".sk-conv-list li:nth-child(1) time",
+          "contains": "分钟前"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.session-context-menu",
+      "title": "会话⋯菜单：置顶/免打扰/标记已读/隐藏/删除五项；标记已读清角标",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "hover",
+          "target": ".sk-conv-list li:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) [data-row-action=\"more\"]"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='read']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "unread-cleared",
+          "type": "missing",
+          "target": ".sk-conv-list li:nth-child(2) [data-unread]"
+        },
+        {
+          "id": "craft",
+          "type": "craftBattery"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.session-delete-confirm",
+      "title": "删除会话：两段确认后才从列表移除（隐藏即时、删除有确认）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "hover",
+          "target": ".sk-conv-list li:nth-child(3)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(3) [data-row-action=\"more\"]"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='delete']"
+        },
+        {
+          "op": "wait",
+          "ms": 400
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='session.delete-confirm']"
+        },
+        {
+          "op": "wait",
+          "ms": 250
+        }
+      ],
+      "oracles": [
+        {
+          "id": "count-dropped",
+          "type": "attr",
+          "target": ".sk-conv-list",
+          "attr": "data-session-count",
+          "equals": "6"
         }
       ],
       "finalizers": []
