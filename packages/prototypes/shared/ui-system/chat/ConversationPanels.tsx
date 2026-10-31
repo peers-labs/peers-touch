@@ -5,7 +5,7 @@
  * (increment 14 extends it with incoming and group calls).
  */
 import { useMemo, useState, type KeyboardEvent } from 'react';
-import { ChevronLeft, Phone, Video } from 'lucide-react';
+import { ChevronLeft, Phone, Smartphone, Video } from 'lucide-react';
 import { Avatar, AvatarGroup, Button, Dialog, Empty, IconButton, Switch, Tag, TextArea } from '@peers-touch/ui';
 import { artwork } from '../moments/moments-data';
 import type { CallKind } from './CallOverlay';
@@ -70,7 +70,7 @@ export function DetailSheet({ conversation, onClose, onTogglePin, onToggleMute, 
   onClose: () => void;
   onTogglePin: () => void;
   onToggleMute: () => void;
-  onSimulateIncoming?: (kind: CallKind) => void;
+  onSimulateIncoming?: (kind: CallKind, multiDevice?: boolean) => void;
 }) {
   return (
     <aside className="sk-side-sheet" aria-label="会话详情" data-detail-panel="true">
@@ -111,10 +111,13 @@ export function DetailSheet({ conversation, onClose, onTogglePin, onToggleMute, 
             <div className="sk-side-call-demo-row">
               <Button emphasis="quiet" leading={<Phone size={14} />} label="模拟语音来电"
                 actionId="chat.simulate-incoming-audio"
-                onActivate={() => { onSimulateIncoming('audio'); onClose(); }} />
+                onActivate={() => { onSimulateIncoming!('audio'); onClose(); }} />
               <Button emphasis="quiet" leading={<Video size={14} />} label="模拟视频来电"
                 actionId="chat.simulate-incoming-video"
-                onActivate={() => { onSimulateIncoming('video'); onClose(); }} />
+                onActivate={() => { onSimulateIncoming!('video'); onClose(); }} />
+              <Button emphasis="quiet" leading={<Smartphone size={14} />} label="多设备同响"
+                actionId="chat.simulate-incoming-multi"
+                onActivate={() => { onSimulateIncoming!('audio', true); onClose(); }} />
             </div>
           </section>
         )}

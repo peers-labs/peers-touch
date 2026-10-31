@@ -729,7 +729,7 @@
     },
     {
       "id": "ui.prototype.north-star.contact-requests",
-      "title": "增量10 联系人：3 请求卡，接受首次失败显示错误，重试后变已同意；拒绝变已拒绝",
+      "title": "增量10/19 联系人：入站接受（首次失败重试）与拒绝后沉入历史；出站请求独立分区计数",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -739,6 +739,26 @@
         {
           "op": "click",
           "target": ".sk-chat-subnav .pt-button:nth-child(2)"
+        },
+        {
+          "op": "expect",
+          "id": "initial-pending-two",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-contacts",
+            "attr": "data-pending-count",
+            "equals": "2"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "initial-outgoing-one",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-contacts",
+            "attr": "data-outgoing-count",
+            "equals": "1"
+          }
         },
         {
           "op": "click",
@@ -755,9 +775,23 @@
       ],
       "oracles": [
         {
-          "id": "three-requests",
+          "id": "incoming-cleared",
+          "type": "attr",
+          "target": ".sk-contacts",
+          "attr": "data-pending-count",
+          "equals": "0"
+        },
+        {
+          "id": "outgoing-untouched",
+          "type": "attr",
+          "target": ".sk-contacts",
+          "attr": "data-outgoing-count",
+          "equals": "1"
+        },
+        {
+          "id": "three-history-cards",
           "type": "count",
-          "target": ".sk-request-card",
+          "target": ".sk-request-card.is-history",
           "equals": 3
         },
         {
@@ -1035,34 +1069,39 @@
         {
           "id": "reached-active",
           "type": "attr",
-          "target": ".sk-call-overlay",
+          "target": ".sk-call-hud-layer",
           "attr": "data-call-phase",
           "equals": "active"
         },
         {
           "id": "one-to-one-scope",
           "type": "attr",
-          "target": ".sk-call-overlay",
+          "target": ".sk-call-hud-layer",
           "attr": "data-call-scope",
           "equals": "one"
         },
         {
+          "id": "hud-tray-present",
+          "type": "exists",
+          "target": "[data-call-hud]"
+        },
+        {
           "id": "audio-no-video-ctl",
           "type": "count",
-          "target": ".sk-call-ctl",
+          "target": ".sk-call-hud .sk-call-ctl",
           "equals": 2
         },
         {
           "id": "timer-shown",
           "type": "textContains",
-          "target": ".sk-call-phase",
+          "target": "[data-call-hud-status]",
           "contains": ":"
         }
       ],
       "finalizers": [
         {
           "op": "click",
-          "target": ".sk-call-ctl.is-hangup"
+          "target": ".sk-call-hud [data-call-hangup]"
         },
         {
           "op": "wait",
@@ -1096,6 +1135,24 @@
           "ms": 300
         },
         {
+          "op": "expect",
+          "id": "incoming-centered",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-call-overlay",
+            "attr": "data-call-phase",
+            "equals": "incoming"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "single-device-no-elsewhere",
+          "oracle": {
+            "type": "missing",
+            "target": "[data-call-elsewhere]"
+          }
+        },
+        {
           "op": "click",
           "target": "[data-call-accept]"
         },
@@ -1108,14 +1165,14 @@
         {
           "id": "incoming-was-inbound",
           "type": "attr",
-          "target": ".sk-call-overlay",
+          "target": ".sk-call-hud-layer",
           "attr": "data-call-direction",
           "equals": "in"
         },
         {
           "id": "accepted-active",
           "type": "attr",
-          "target": ".sk-call-overlay",
+          "target": ".sk-call-hud-layer",
           "attr": "data-call-phase",
           "equals": "active"
         }
@@ -1123,7 +1180,7 @@
       "finalizers": [
         {
           "op": "click",
-          "target": "[data-call-hangup]"
+          "target": ".sk-call-hud [data-call-hangup]"
         },
         {
           "op": "wait",
@@ -1162,7 +1219,20 @@
         },
         {
           "op": "wait",
-          "ms": 900
+          "ms": 350
+        },
+        {
+          "op": "expect",
+          "id": "declined-notice",
+          "oracle": {
+            "type": "textContains",
+            "target": "[data-call-notice]",
+            "contains": "拒绝"
+          }
+        },
+        {
+          "op": "wait",
+          "ms": 2600
         }
       ],
       "oracles": [
@@ -1241,6 +1311,597 @@
         {
           "op": "wait",
           "ms": 800
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.call-hud-nonblocking",
+      "title": "增量19 1:1 HUD：右下托盘不拦截会话层，通话中仍可输入并发送消息",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.call-audio']"
+        },
+        {
+          "op": "wait",
+          "ms": 2800
+        },
+        {
+          "op": "expect",
+          "id": "hud-active",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-call-hud-layer",
+            "attr": "data-call-phase",
+            "equals": "active"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "no-fullscreen-scrim",
+          "oracle": {
+            "type": "missing",
+            "target": ".sk-call-overlay"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "layer-click-through",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-call-hud-layer",
+            "prop": "pointer-events",
+            "equals": "none"
+          }
+        },
+        {
+          "op": "type",
+          "target": ".sk-composer-input",
+          "value": "通话中也能打字"
+        },
+        {
+          "op": "press",
+          "key": "Enter"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        }
+      ],
+      "oracles": [
+        {
+          "id": "message-sent-during-call",
+          "type": "textContains",
+          "target": ".sk-msg-stream",
+          "contains": "通话中也能打字"
+        },
+        {
+          "id": "call-still-active",
+          "type": "attr",
+          "target": ".sk-call-hud-layer",
+          "attr": "data-call-phase",
+          "equals": "active"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": ".sk-call-hud [data-call-hangup]"
+        },
+        {
+          "op": "wait",
+          "ms": 800
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.call-reconnect",
+      "title": "增量19 HUD：模拟器触发弱网重连，状态文案与计时面切换，可恢复到通话中",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.call-audio']"
+        },
+        {
+          "op": "wait",
+          "ms": 2800
+        },
+        {
+          "op": "click",
+          "target": "[data-call-simulator]"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "sim-panel-open",
+          "oracle": {
+            "type": "exists",
+            "target": "[data-call-sim-panel]"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-sim-reconnect]"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "id": "phase-reconnecting",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-call-hud-layer",
+            "attr": "data-call-phase",
+            "equals": "reconnecting"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "reconnecting-copy",
+          "oracle": {
+            "type": "textContains",
+            "target": "[data-call-hud-status]",
+            "contains": "重连"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-sim-reconnect]"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "recovered-active",
+          "type": "attr",
+          "target": ".sk-call-hud-layer",
+          "attr": "data-call-phase",
+          "equals": "active"
+        },
+        {
+          "id": "devices-kept",
+          "type": "exists",
+          "target": "[data-call-devices]"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": ".sk-call-hud [data-call-hangup]"
+        },
+        {
+          "op": "wait",
+          "ms": 800
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.call-end-reasons",
+      "title": "增量19 结束原因：模拟器列全 6 种；坏原因红色胶囊，普通原因中性，通知后自动消失并可重新发起",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.call-audio']"
+        },
+        {
+          "op": "wait",
+          "ms": 2800
+        },
+        {
+          "op": "click",
+          "target": "[data-call-simulator]"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "six-reasons",
+          "oracle": {
+            "type": "count",
+            "target": "[data-sim-reason]",
+            "equals": 6
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-sim-reason='network']"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        },
+        {
+          "op": "expect",
+          "id": "bad-reason-copy",
+          "oracle": {
+            "type": "textContains",
+            "target": "[data-call-notice]",
+            "contains": "连接失败"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "bad-reason-tone",
+          "oracle": {
+            "type": "exists",
+            "target": ".sk-call-notice.is-bad"
+          }
+        },
+        {
+          "op": "wait",
+          "ms": 2700
+        },
+        {
+          "op": "expect",
+          "id": "notice-auto-dismissed",
+          "oracle": {
+            "type": "missing",
+            "target": ".sk-call-overlay"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.call-audio']"
+        },
+        {
+          "op": "wait",
+          "ms": 2800
+        },
+        {
+          "op": "click",
+          "target": "[data-call-simulator]"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-sim-reason='canceled']"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        }
+      ],
+      "oracles": [
+        {
+          "id": "neutral-reason-copy",
+          "type": "textContains",
+          "target": "[data-call-notice]",
+          "contains": "已取消"
+        },
+        {
+          "id": "neutral-reason-tone",
+          "type": "missing",
+          "target": ".sk-call-notice.is-bad"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "wait",
+          "ms": 2700
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.call-incoming-multi",
+      "title": "增量19 多设备来电：同响说明与「手机已接」入口，选择后通知并自动收场",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.simulate-incoming-multi']"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        },
+        {
+          "op": "expect",
+          "id": "multi-marker",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-call-incoming",
+            "attr": "data-call-incoming",
+            "equals": "multi"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "multi-copy",
+          "oracle": {
+            "type": "textContains",
+            "target": "[data-call-incoming-text]",
+            "contains": "手机"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "elsewhere-entry",
+          "oracle": {
+            "type": "exists",
+            "target": "[data-call-elsewhere]"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-call-elsewhere]"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        },
+        {
+          "op": "expect",
+          "id": "handled-elsewhere-phase",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-call-overlay",
+            "attr": "data-call-phase",
+            "equals": "handled-elsewhere"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "handled-elsewhere-copy",
+          "oracle": {
+            "type": "textContains",
+            "target": "[data-call-notice]",
+            "contains": "其他设备"
+          }
+        },
+        {
+          "op": "wait",
+          "ms": 1800
+        }
+      ],
+      "oracles": [
+        {
+          "id": "auto-closed",
+          "type": "missing",
+          "target": ".sk-call-overlay"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.contact-outgoing-cancel",
+      "title": "增量19 出站请求：已发出分区与撤回，撤回后出站计数归零，入站与历史不受影响",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-chat-subnav .pt-button:nth-child(2)"
+        },
+        {
+          "op": "expect",
+          "id": "outgoing-count-one",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-contacts",
+            "attr": "data-outgoing-count",
+            "equals": "1"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "incoming-count-two",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-contacts",
+            "attr": "data-pending-count",
+            "equals": "2"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "outgoing-card-sent-copy",
+          "oracle": {
+            "type": "textContains",
+            "target": ".sk-request-card.is-outgoing",
+            "contains": "已发送"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='request.cancel-fr-4']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "outgoing-cleared",
+          "type": "attr",
+          "target": ".sk-contacts",
+          "attr": "data-outgoing-count",
+          "equals": "0"
+        },
+        {
+          "id": "outgoing-card-gone",
+          "type": "missing",
+          "target": "[data-request-direction='outgoing']"
+        },
+        {
+          "id": "incoming-intact",
+          "type": "attr",
+          "target": ".sk-contacts",
+          "attr": "data-pending-count",
+          "equals": "2"
+        },
+        {
+          "id": "history-intact",
+          "type": "attr",
+          "target": "[data-request-id='fr-3']",
+          "attr": "data-request-state",
+          "equals": "accepted"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.create-group-federation-block",
+      "title": "增量19 建群联邦阻断：选联邦成员出警示且提交禁用；改选本站成员后恢复可提交",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.new-menu']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='sk.new-group']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "id": "federated-candidates-listed",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": ".sk-group-member[data-federated='true']",
+            "equals": 2
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": ".sk-group-member[data-federated='true'] input"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "blocked-flag",
+          "oracle": {
+            "type": "attr",
+            "scope": "global",
+            "target": ".sk-group-dialog",
+            "attr": "data-federation-blocked",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "blocked-alert",
+          "oracle": {
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-federation-alert]"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "submit-disabled",
+          "oracle": {
+            "type": "disabled",
+            "scope": "global",
+            "target": "[data-action-id='group.submit']"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": ".sk-group-member[data-federated='true'] input"
+        },
+        {
+          "op": "clickGlobal",
+          "target": ".sk-group-member[data-federated='false'] input"
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "input[data-group-name]",
+          "value": "邻里拼菜群"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "block-cleared",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-group-dialog",
+          "attr": "data-federation-blocked",
+          "equals": "false"
+        },
+        {
+          "id": "submit-reenabled",
+          "type": "enabled",
+          "scope": "global",
+          "target": "[data-action-id='group.submit']"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='group.cancel']"
         }
       ]
     },

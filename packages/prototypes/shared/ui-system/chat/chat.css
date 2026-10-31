@@ -121,6 +121,12 @@
 .sk-request-name strong { font-size: 13px; color: var(--sk-text); }
 .sk-request-greeting { font-size: 11.5px; color: var(--sk-text-3); line-height: 1.5; }
 .sk-request-actions { display: flex; gap: 8px; margin-top: 2px; }
+.sk-request-sent { color: var(--sk-text-3); }
+.sk-request-card.is-outgoing { background: color-mix(in srgb, var(--sk-primary) 5%, transparent); }
+.sk-request-card.is-history { opacity: .72; }
+.sk-request-card.is-history:hover { opacity: 1; }
+h2.sk-conv-title + .sk-request-card.is-outgoing,
+h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
 
 /* contact detail */
 .sk-contact-detail {
@@ -146,6 +152,17 @@
   font-size: 12.5px; color: var(--sk-text);
 }
 .sk-group-member:hover { background: var(--sk-tile); }
+.sk-member-federation {
+  margin-left: auto; font-size: 10px; color: var(--sk-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 92px;
+}
+.sk-group-member[data-federated="true"] { color: var(--sk-text-2); }
+@media (max-width: 480px) {
+  /* Two-column dialog: let the federated station wrap under the name
+     instead of squeezing the member name into a vertical column. */
+  .sk-group-member { flex-wrap: wrap; row-gap: 2px; }
+  .sk-member-federation { margin-left: 44px; max-width: none; white-space: normal; }
+}
 
 /* stream: group sender + service messages */
 .sk-msg-col { display: flex; flex-direction: column; gap: 3px; max-width: 76%; }
@@ -286,7 +303,139 @@
 }
 .sk-thread-composer .pt-field-frame { flex: 1; }
 
-/* call overlay */
+/* ── Increment 19: 1:1 call HUD tray + states ─────────── */
+.sk-call-hud-layer {
+  position: absolute; inset: 0; z-index: 30; pointer-events: none;
+}
+.sk-call-hud {
+  position: absolute; right: 22px; bottom: 22px;
+  width: 264px; pointer-events: auto;
+  background: var(--sk-overlay);
+  border: 1px solid var(--sk-card-border);
+  border-radius: 16px;
+  box-shadow: 0 12px 48px rgba(15,23,42,.24);
+  /* Visible overflow: the simulator popover opens above the tray edge.
+     Rounded corners are owned by the video/audio panes, not hidden here. */
+  overflow: visible;
+}
+.sk-call-hud.is-video { width: 340px; }
+.sk-call-audio-pane { display: flex; align-items: center; gap: 11px; padding: 13px 14px 10px; }
+.sk-call-audio-id { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sk-call-audio-id strong { font-size: 13.5px; color: var(--sk-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sk-call-audio-id span {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; color: var(--sk-text-3); font-variant-numeric: tabular-nums;
+}
+.sk-call-audio-id span.is-warn { color: #b97f1f; font-weight: 650; }
+.sk-call-video-pane {
+  position: relative; height: 188px; background: #0f172a;
+  border-radius: 15px 15px 0 0; overflow: hidden;
+}
+.sk-call-video-remote {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: #fff; font-weight: 750; font-size: 16px;
+  background: linear-gradient(135deg, #312e81, #6d28d9);
+}
+.sk-call-video-remote.is-reconnecting { filter: blur(1px) brightness(.8); background: linear-gradient(135deg, #111827, #312e81); }
+.sk-call-video-self {
+  position: absolute; top: 8px; right: 8px; width: 76px; height: 56px;
+  border-radius: 8px; border: 1px solid rgba(255,255,255,.28);
+  background: linear-gradient(135deg, var(--sk-primary), #9a8df0);
+  color: #fff; font-size: 11px; display: grid; place-items: center;
+}
+.sk-call-video-self:not(.is-on) { background: #111827; color: var(--sk-text-3); }
+.sk-call-e2e {
+  position: absolute; top: 8px; left: 8px;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; color: #fff; padding: 2px 7px; border-radius: 999px;
+  background: rgba(0,0,0,.45);
+}
+.sk-call-devices { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 0 14px 8px; }
+.sk-call-hud.is-video .sk-call-devices { grid-template-columns: 1fr 1fr; }
+.sk-call-device { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--sk-text-3); }
+.sk-call-device select {
+  width: 100%; min-width: 0; height: 26px;
+  border: 1px solid var(--sk-card-border); border-radius: 7px;
+  background: var(--sk-card-bg); color: var(--sk-text);
+  font: inherit; font-size: 10.5px; padding: 0 6px;
+}
+.sk-call-controls-row {
+  position: relative;
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  padding: 10px 0 13px;
+}
+.sk-call-sim-toggle {
+  position: absolute; right: 10px; top: 8px;
+  width: 24px; height: 24px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--sk-text-3); cursor: pointer;
+  display: grid; place-items: center;
+}
+.sk-call-sim-toggle:hover { background: var(--sk-tile); }
+.sk-call-sim {
+  /* Anchor above the whole controls row so the panel never covers its own
+     toggle (otherwise the bug button becomes unreachable while open). */
+  position: absolute; right: 10px; bottom: calc(100% + 8px); z-index: 4;
+  width: 210px; max-height: 260px; overflow: auto;
+  display: flex; flex-direction: column; gap: 3px; padding: 9px;
+  background: var(--sk-overlay); border: 1px solid var(--sk-card-border);
+  border-radius: 12px; box-shadow: 0 18px 48px rgba(15,23,42,.2);
+}
+.sk-call-sim-title { font-size: 10px; font-weight: 750; letter-spacing: .06em; color: var(--sk-text-3); padding: 3px 2px; }
+.sk-call-sim button {
+  border: 0; border-radius: 7px; background: transparent;
+  color: var(--sk-text-2); font: inherit; font-size: 11.5px;
+  text-align: left; padding: 6px 8px; cursor: pointer;
+}
+.sk-call-sim button:hover { background: var(--sk-tile); color: var(--sk-text); }
+.sk-call-overlay.is-notice {
+  background: transparent; display: block; pointer-events: none;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.sk-call-notice {
+  position: absolute; left: 22px; bottom: 22px;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 14px; border-radius: 999px;
+  background: var(--sk-overlay); border: 1px solid var(--sk-card-border);
+  box-shadow: 0 10px 30px rgba(15,23,42,.2);
+  font-size: 12.5px; color: var(--sk-text-2);
+}
+.sk-call-notice.is-bad { color: #b0413a; }
+.sk-call-incoming {
+  width: 320px; border-radius: 18px; padding: 30px 26px;
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
+  background: var(--sk-overlay); box-shadow: 0 20px 60px rgba(0,0,0,.28);
+}
+.sk-call-incoming-avatar { position: relative; margin-bottom: 8px; }
+.sk-call-incoming-group {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;
+  width: 72px; height: 72px; border-radius: 18px; overflow: hidden;
+}
+.sk-call-incoming-group span { display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 650; }
+.sk-call-incoming h2 { margin: 0; font-size: 18px; color: var(--sk-text); }
+.sk-call-incoming p { margin: 0 0 14px; font-size: 12.5px; color: var(--sk-text-3); }
+.sk-call-incoming-actions { display: flex; gap: 30px; }
+.sk-call-ctl-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.sk-call-ctl-wrap span { font-size: 11px; color: var(--sk-text-3); }
+.sk-call-ctl.is-accept { background: #3f9142; color: #fff; }
+.sk-call-ctl.is-decline,
+.sk-call-ctl.is-hangup { background: #b0413a; color: #fff; }
+.sk-call-ctl.is-elsewhere { background: var(--sk-primary); color: var(--sk-primary-ink); }
+.sk-call-avatar {
+  display: grid; place-items: center; border-radius: var(--sk-avatar-radius);
+  color: rgba(255,255,255,.92); font-weight: 700; flex-shrink: 0;
+}
+/* Base .sk-call-ctl is a white glyph on the dark scrim; on the light HUD
+   tray it needs a neutral surface, with a visible pressed state. */
+.sk-call-hud .sk-call-ctl { background: var(--sk-tile); color: var(--sk-text-2); }
+.sk-call-hud .sk-call-ctl:hover {
+  background: color-mix(in srgb, var(--sk-primary) 14%, var(--sk-tile));
+  color: var(--sk-primary);
+}
+.sk-call-hud .sk-call-ctl[aria-pressed="true"] { background: #e4e7ec; color: var(--sk-text); }
+.sk-call-hud .sk-call-ctl.is-hangup,
+.sk-call-hud .sk-call-ctl.is-hangup:hover { background: #b0413a; color: #fff; }
+
+/* call overlay (group + incoming centered) */
 .sk-call-overlay {
   position: absolute; inset: 0; z-index: 30;
   background: color-mix(in srgb, #102018 72%, transparent);
@@ -299,22 +448,11 @@
 }
 .sk-call-card h2 { margin: 4px 0 0; font-size: 20px; color: #f3f8f4; }
 .sk-call-phase { font-size: 13px; color: rgba(243, 248, 244, .65); font-variant-numeric: tabular-nums; }
-.sk-call-video {
-  width: 220px; height: 140px; border-radius: 18px; margin-top: 6px;
-  background: rgba(255,255,255,.1); display: grid; place-items: center;
-}
-.sk-call-controls { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
 .sk-call-ctl {
   width: 46px; height: 46px; border-radius: 50%;
   border: 0; cursor: pointer; display: grid; place-items: center;
   background: rgba(255,255,255,.16); color: #fff;
 }
-.sk-call-ctl.is-off { background: rgba(255,255,255,.32); color: #102018; }
-.sk-call-ctl.is-hangup { background: #b0413a; }
-.sk-call-ctl.is-accept { background: #3f9142; }
-.sk-call-ctl.is-decline { background: #b0413a; }
-.sk-call-ctl-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.sk-call-ctl-label { font-size: 11px; color: rgba(243,248,244,.72); }
 
 /* incoming/group additions (increment 14) */
 .sk-call-group-badge {
@@ -326,12 +464,14 @@
   padding: 22px 26px; gap: 10px;
   width: min(560px, 94%); max-height: 88%; overflow: hidden;
 }
+/* 92px floor + 10px gaps keeps five participants on one 508px desktop row
+   (5*92+4*10=500); the narrow frame (<=480px) naturally wraps to two. */
 .sk-call-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   gap: 10px; width: 100%; max-height: 40vh; overflow-y: auto; margin-top: 6px; padding: 2px;
 }
 .sk-call-tile {
-  position: relative; min-height: 116px;
+  position: relative; min-height: 108px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
   padding: 12px 8px; border-radius: 16px; color: #f3f8f4;
   background: rgba(255,255,255,.09); border: 1px solid transparent;
@@ -341,13 +481,10 @@
   border-color: var(--sk-accent);
   box-shadow: inset 0 0 0 1px var(--sk-accent);
 }
-.sk-call-tile .pt-avatar { box-shadow: none; }
 .sk-call-tile-name { font-size: 12px; opacity: .9; }
 .sk-call-tile-muted { position: absolute; top: 8px; left: 9px; color: rgba(243,248,244,.62); }
-.sk-call-tile-camoff { position: absolute; top: 8px; right: 9px; color: rgba(243,248,244,.62); }
 
 .sk-side-call-demo-row { display: flex; gap: 6px; flex-wrap: wrap; }
-.sk-call-card .pt-button { margin-top: 4px; }
 
 /* ── Increment 12: message anatomy ─────────────────────── */
 .sk-msg { position: relative; }

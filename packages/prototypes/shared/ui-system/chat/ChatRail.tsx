@@ -175,32 +175,35 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
 
 import type { FriendRequest } from './chat-data';
 
-export function ContactsPane({ requests, friends, selectedContactId, failedIds, onAccept, onReject, onSelectContact }: {
+export function ContactsPane({ requests, friends, selectedContactId, failedIds, onAccept, onReject, onCancelRequest, onSelectContact }: {
   requests: FriendRequest[];
   friends: Person[];
   selectedContactId: string | null;
   failedIds: Set<string>;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
+  onCancelRequest: (id: string) => void;
   onSelectContact: (person: Person) => void;
 }) {
-  const pending = requests.filter(request => request.state === 'pending');
+  const incoming = requests.filter(request => request.state === 'pending' && request.direction !== 'out');
+  const outgoing = requests.filter(request => request.state === 'pending' && request.direction === 'out');
+  // Accepted/rejected incoming requests stay visible as history, but carry
+  // no decision actions (desktop ContactsBook renders them with status tags).
+  const history = requests.filter(request => request.direction !== 'out' && request.state !== 'pending');
   return (
-    <div className="sk-contacts" data-pending-count={pending.length}>
-      {requests.map(request => (
+    <div className="sk-contacts" data-pending-count={incoming.length} data-outgoing-count={outgoing.length}>
+      {incoming.map(request => (
         <div className="sk-request-card" key={request.id} data-request-id={request.id}
-          data-request-state={request.state}>
+          data-request-state={request.state} data-request-direction="in">
           <Avatar name={request.name} background={request.tone} size={40}
             style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
           <div className="sk-request-id">
             <div className="sk-request-name">
               <strong>{request.name}</strong>
               <Tag tone="neutral">{request.station}</Tag>
-              {request.state === 'accepted' && <Tag tone="success">已同意</Tag>}
-              {request.state === 'rejected' && <Tag>已拒绝</Tag>}
             </div>
             <span className="sk-request-greeting">{request.greeting}</span>
-            {request.state === 'pending' && failedIds.has(request.id) && (
+            {failedIds.has(request.id) && (
               <Alert tone="danger" className="sk-request-error" title="操作失败" description="网络异常，请重试。" />
             )}
             {request.state === 'pending' && (
@@ -212,6 +215,46 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
                   label="拒绝" onActivate={() => onReject(request.id)} />
               </div>
             )}
+          </div>
+        </div>
+      ))}
+      {outgoing.length > 0 && (
+        <h2 className="sk-conv-title">已发出 · {outgoing.length}</h2>
+      )}
+      {outgoing.map(request => (
+        <div className="sk-request-card is-outgoing" key={request.id} data-request-id={request.id}
+          data-request-state={request.state} data-request-direction="outgoing">
+          <Avatar name={request.name} background={request.tone} size={40}
+            style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+          <div className="sk-request-id">
+            <div className="sk-request-name">
+              <strong>{request.name}</strong>
+              <Tag tone="neutral">{request.station}</Tag>
+            </div>
+            <span className="sk-request-greeting sk-request-sent">· 已发送，等待对方接受</span>
+            <div className="sk-request-actions">
+              <Button actionId={`request.cancel-${request.id}`} emphasis="quiet" density="compact"
+                label="撤回请求" onActivate={() => onCancelRequest(request.id)} />
+            </div>
+          </div>
+        </div>
+      ))}
+      {history.length > 0 && (
+        <h2 className="sk-conv-title">历史请求 · {history.length}</h2>
+      )}
+      {history.map(request => (
+        <div className="sk-request-card is-history" key={request.id} data-request-id={request.id}
+          data-request-state={request.state} data-request-direction="in">
+          <Avatar name={request.name} background={request.tone} size={40}
+            style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+          <div className="sk-request-id">
+            <div className="sk-request-name">
+              <strong>{request.name}</strong>
+              <Tag tone="neutral">{request.station}</Tag>
+              {request.state === 'accepted' && <Tag tone="success">已同意</Tag>}
+              {request.state === 'rejected' && <Tag>已拒绝</Tag>}
+            </div>
+            <span className="sk-request-greeting">{request.greeting}</span>
           </div>
         </div>
       ))}
@@ -240,7 +283,7 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
 
 export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onTogglePin, onToggleMute,
   onMarkRead, onHide, onDelete,
-  requests, friends, selectedContactId, failedRequestIds, onAccept, onReject, onSelectContact,
+  requests, friends, selectedContactId, failedRequestIds, onAccept, onReject, onCancelRequest, onSelectContact,
   onFindPeople, onCreateGroup, onPickSearchPerson }: {
   tab: 'chats' | 'contacts';
   onTabChange: (tab: 'chats' | 'contacts') => void;
@@ -258,6 +301,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
   failedRequestIds: Set<string>;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
+  onCancelRequest: (id: string) => void;
   onSelectContact: (person: Person) => void;
   onFindPeople: () => void;
   onCreateGroup: () => void;
@@ -374,7 +418,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
       ) : (
         <ContactsPane requests={requests} friends={friends} selectedContactId={selectedContactId}
           failedIds={failedRequestIds}
-          onAccept={onAccept} onReject={onReject} onSelectContact={onSelectContact} />
+          onAccept={onAccept} onReject={onReject} onCancelRequest={onCancelRequest} onSelectContact={onSelectContact} />
       )}
     </aside>
   );

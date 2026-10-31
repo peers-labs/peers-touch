@@ -102,12 +102,15 @@ export type FriendRequest = {
   station: string;
   greeting: string;
   state: 'pending' | 'accepted' | 'rejected';
+  /** Outgoing requests were sent by the local user; they render as "sent". */
+  direction?: 'in' | 'out';
 };
 
 export const FRIEND_REQUESTS: FriendRequest[] = [
   { id: 'fr-1', name: '阿砚', tone: '#7a6a92', station: '松绿书屋站', greeting: '在植物医院帖里聊过，想加个邻居', state: 'pending' },
   { id: 'fr-2', name: '河埠头', tone: '#6f8fa6', station: '河埠头站', greeting: '修补摊想加入小区生活圈', state: 'pending' },
   { id: 'fr-3', name: '老周', tone: '#8a7a55', station: '本站', greeting: '交换个联系方式', state: 'accepted' },
+  { id: 'fr-4', name: '林野', tone: '#4a6170', station: '夜跑小队 · 松绿书屋站', greeting: '', state: 'pending', direction: 'out' },
 ];
 
 export type ThreadReply = { id: string; from: 'me' | 'peer'; senderName?: string; text: string; at: string };

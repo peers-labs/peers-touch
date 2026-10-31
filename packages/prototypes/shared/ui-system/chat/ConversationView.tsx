@@ -34,10 +34,10 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   onRetryMessage, onDelete, onForward, onStartCall, onBack, conversations }: {
   conversation: Conversation;
   messages: ChatMessage[];
-  call: { conversationId: string; kind: CallKind; direction: 'in' | 'out' } | null;
+  call: { conversationId: string; kind: CallKind; direction: 'in' | 'out'; multi?: boolean } | null;
   peerTyping?: boolean;
   onEndCall: () => void;
-  onSimulateIncoming: (kind: CallKind) => void;
+  onSimulateIncoming: (kind: CallKind, multiDevice?: boolean) => void;
   onSend: (payload: ComposerPayload) => void;
   onTogglePin: (id: string) => void;
   onToggleMute: (id: string) => void;
@@ -294,7 +294,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
 
       {call && (
         <CallOverlay conversation={conversation} kind={call.kind}
-          direction={call.direction} onEnd={onEndCall} />
+          direction={call.direction} multi={call.multi} onEnd={onEndCall} />
       )}
     </section>
   );

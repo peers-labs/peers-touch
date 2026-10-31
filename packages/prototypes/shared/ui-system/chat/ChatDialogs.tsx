@@ -77,8 +77,15 @@ export function CreateGroupDialog({ open, people, onDismiss, onCreate }: {
     return next;
   });
 
+  // Encrypted group chats are station-local until federated MLS groups ship;
+  // selecting a federated contact blocks creation with a specific reason
+  // (desktop parity: a network member can't be added to a group chat yet).
+  const federatedSelected = people
+    .filter(p => selected.has(p.id) && p.station !== '本站');
+  const blocked = federatedSelected.length > 0;
+
   const submit = () => {
-    if (!name.trim() || selected.size === 0) return;
+    if (!name.trim() || selected.size === 0 || blocked) return;
     if (!failed) {
       setFailed(true);
       return;
@@ -88,7 +95,8 @@ export function CreateGroupDialog({ open, people, onDismiss, onCreate }: {
       const members = people.filter(p => selected.has(p.id)).map(p => ({ name: p.name, tone: p.tone }));
       onCreate({
         id: `local-${Date.now()}`, name: name.trim(), last: '群聊已创建', lastAt: '刚刚',
-        unread: 0, tone: '#7d8c4a', kind: 'group', members: [{ name: '林野', tone: '#22302a' }, ...members],
+        lastTs: Date.now(), unread: 0, tone: '#7d8c4a', kind: 'group',
+        members: [{ name: '林野', tone: '#22302a' }, ...members],
       });
       close();
     }, 600);
@@ -96,29 +104,42 @@ export function CreateGroupDialog({ open, people, onDismiss, onCreate }: {
 
   return (
     <Dialog open={open} onDismiss={close} title="创建群聊" width={460} closeLabel="关闭"
-      description="选择成员并命名群聊"
+      description="选择成员并命名群聊（仅本站成员可加入加密群）"
       footer={
         <>
           <Button actionId="group.cancel" emphasis="quiet" label="取消" onActivate={close} />
           <Button actionId="group.submit" emphasis="primary" label={failed ? '重试创建' : '创建'}
             execution={submitting ? 'pending' : 'idle'}
             availability={!name.trim() || selected.size === 0
-              ? { kind: 'disabled', reason: '需要群名与至少 1 名成员' } : undefined}
+              ? { kind: 'disabled', reason: '需要群名与至少 1 名成员' }
+              : blocked
+                ? { kind: 'disabled', reason: '联邦成员暂不能加入加密群' }
+                : undefined}
             onActivate={submit} />
         </>
       }>
-      <div className="sk-group-dialog" data-create-group data-create-group-error={failed ? 'true' : 'false'}>
-        {failed && <Alert tone="danger" title="创建失败" description="网络异常（模拟），请重试。" />}
+      <div className="sk-group-dialog" data-create-group data-create-group-error={failed ? 'true' : 'false'}
+        data-federation-blocked={blocked ? 'true' : 'false'}>
+        {blocked && (
+          <Alert tone="danger" title="无法加入联邦成员" data-federation-alert
+            description={`${federatedSelected.map(p => p.name).join('、')} 在其他网络，加密群聊暂不支持跨站成员（本地示例）。`} />
+        )}
+        {!blocked && failed && <Alert tone="danger" title="创建失败" description="网络异常（模拟），请重试。" />}
         <TextField aria-label="群名称" placeholder="群名称，如：夜跑小队" value={name}
           onValueChange={setName} data-group-name={name} />
         <div className="sk-group-members">
-          {people.map(person => (
-            <label key={person.id} className="sk-group-member" data-contact-ptid={person.id}>
-              <Checkbox checked={selected.has(person.id)} onCheckedChange={() => toggle(person.id)} />
-              <Avatar name={person.name} background={person.tone} size={28} style={{ borderRadius: 8 }} />
-              <span>{person.name}</span>
-            </label>
-          ))}
+          {people.map(person => {
+            const federated = person.station !== '本站';
+            return (
+              <label key={person.id} className="sk-group-member" data-contact-ptid={person.id}
+                data-federated={federated ? 'true' : 'false'}>
+                <Checkbox checked={selected.has(person.id)} onCheckedChange={() => toggle(person.id)} />
+                <Avatar name={person.name} background={person.tone} size={28} style={{ borderRadius: 8 }} />
+                <span>{person.name}</span>
+                {federated && <span className="sk-member-federation">{person.station}</span>}
+              </label>
+            );
+          })}
         </div>
       </div>
     </Dialog>

@@ -31,7 +31,7 @@ export function ChatFeature() {
   const [selectedContact, setSelectedContact] = useState<Person | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
-  const [call, setCall] = useState<{ conversationId: string; kind: CallKind; direction: CallDirection } | null>(null);
+  const [call, setCall] = useState<{ conversationId: string; kind: CallKind; direction: CallDirection; multi?: boolean } | null>(null);
   const [typingConvId, setTypingConvId] = useState<string | null>(null);
   const timersRef = useRef<number[]>([]);
 
@@ -161,6 +161,9 @@ export function ChatFeature() {
   const rejectRequest = (id: string) =>
     setRequests(list => list.map(r => r.id === id ? { ...r, state: 'rejected' } : r));
 
+  const cancelRequest = (id: string) =>
+    setRequests(list => list.filter(r => r.id !== id));
+
   const reactToMessage = (messageId: string, emoji: string) => {
     if (!selectedId) return;
     setMessagesByConv(map => ({ ...map, [selectedId]: (map[selectedId] ?? []).map(message => {
@@ -244,7 +247,7 @@ export function ChatFeature() {
         onMarkRead={markAsRead} onHide={hideConversation} onDelete={deleteConversation}
         requests={requests} friends={friends} selectedContactId={selectedContact?.id ?? null}
         failedRequestIds={failedRequests}
-        onAccept={acceptRequest} onReject={rejectRequest}
+        onAccept={acceptRequest} onReject={rejectRequest} onCancelRequest={cancelRequest}
         onSelectContact={setSelectedContact}
         onFindPeople={() => setPickerOpen(true)}
         onCreateGroup={() => setGroupOpen(true)}
@@ -262,7 +265,7 @@ export function ChatFeature() {
             call={call && call.conversationId === selectedConversation.id ? call : null}
             peerTyping={typingConvId === selectedConversation.id}
             onEndCall={() => setCall(null)}
-            onSimulateIncoming={kind => setCall({ conversationId: selectedConversation.id, kind, direction: 'in' })}
+            onSimulateIncoming={(kind, multi) => setCall({ conversationId: selectedConversation.id, kind, direction: 'in', multi })}
             onBack={backToList}
             onSend={sendMessage}
             onTogglePin={togglePin}
@@ -285,7 +288,9 @@ export function ChatFeature() {
 
       <PickPersonDialog open={pickerOpen} people={peoplePool} existingIds={existingIds}
         onDismiss={() => setPickerOpen(false)} onPick={person => { setPickerOpen(false); openPerson(person); }} />
-      <CreateGroupDialog open={groupOpen} people={friends} onDismiss={() => setGroupOpen(false)}
+      {/* Candidate pool includes federated contacts: selecting one must hit
+          the encrypted-group boundary instead of silently creating a group. */}
+      <CreateGroupDialog open={groupOpen} people={PEOPLE} onDismiss={() => setGroupOpen(false)}
         onCreate={createGroup} />
     </div>
   );
