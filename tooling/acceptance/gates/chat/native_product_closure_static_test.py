@@ -77,6 +77,9 @@ NATIVE_FILE_PICKER = (
 CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
+CHAT_CONTACTS_PANEL = (
+    ROOT / "apps/desktop/src/components/chat/ChatContactsPanel.tsx"
+)
 HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
 
 
@@ -1471,6 +1474,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("function HoverActions(", self.message_row)
         self.assertNotIn("msg-hover-actions", self.message_row)
 
+    def test_saved_messages_self_direct_is_a_single_member_direct(self) -> None:
+        contacts_panel = CHAT_CONTACTS_PANEL.read_text(encoding="utf-8")
+        # Fixed entry opens through the canonical Direct create path.
+        self.assertIn("onClick={openSelfConversation}", contacts_panel)
+        self.assertIn(
+            "onStartChat(friendContactSelection(selfIdentity, friendConversations))",
+            contacts_panel,
+        )
+
     def test_acceptance_window_preserves_native_document_layering(self) -> None:
         self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)
         self.assertIn("target_os = \"macos\"", self.desktop_main)
@@ -1738,7 +1750,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("projectDesktopIMMessages(", details)
         self.assertNotIn("getIMMessages: s.getIMMessages", details)
         self.assertIn("fn allow_attachment_preview(", messaging)
-        self.assertIn(".asset_protocol_scope()", messaging)
+        # The visible asset scope lives in the shared asset-preview module
+        # introduced by the compact preview chrome refactor.
+        asset_preview = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/asset_preview.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn(".asset_protocol_scope()", asset_preview)
+        self.assertIn("fn allow_selected_file_preview(", asset_preview)
         self.assertEqual(
             messaging.count("allow_attachment_preview(&window,"),
             3,
@@ -1751,18 +1770,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'register_uri_scheme_protocol("chat-file"',
             (ROOT / "apps/desktop/src-tauri/src/main.rs").read_text(encoding="utf-8"),
         )
+        # After the compact preview chrome refactor the auditable grant
+        # lives in the shared asset-preview module; messaging only delegates.
         preview_scope = messaging[
             messaging.index("fn allow_attachment_preview("):
             messaging.index(
                 "#[tauri::command]\npub async fn messaging_pick_attachment_source",
             )
         ]
-        self.assertIn(".allow_file(path)", preview_scope)
+        self.assertIn(
+            "super::asset_preview::allow_selected_file_preview(window, path)",
+            preview_scope,
+        )
         self.assertIn("allow messaging attachment preview", preview_scope)
         self.assertNotIn("tauri::async_runtime::spawn", preview_scope)
         self.assertNotIn("reqwest::Client", preview_scope)
         self.assertNotIn("127.0.0.1", preview_scope)
         self.assertNotIn("reqwest::blocking::Client", preview_scope)
+        self.assertIn(".allow_file(path)", asset_preview)
         self.assertIn("previous_outcome_revision", self.source)
         self.assertIn("revision <= previous_outcome_revision", self.source)
         self.assertIn("data-messaging-attachment-open-state", attachment_item)
@@ -2212,7 +2237,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             message_row,
         )
         self.assertIn(
-            "data-message-thread-summary={threadReplyCount}",
+            "data-message-thread-summary={totalCount}",
             message_row,
         )
         self.assertIn("data-message-metadata-rail={message.ulid}", message_row)

@@ -79,7 +79,8 @@
       "Create Group remains open with its selected PTIDs, typed inline error, and Retry action when preparation fails",
       "an accepted Group may render as establishing until the creator Device Inbox projects it, then becomes visible with the exact member set on all three clients",
       "a restarted member restores the same device identity, ready MLS state, Group projection, and decrypted message",
-      "Find People renders an existing mutual friend as Friends and disables duplicate friend-request submission"
+      "Find People renders an existing mutual friend as Friends and disables duplicate friend-request submission",
+      "the fixed Saved Messages entry is a one-member self Direct conversation and opens through the same canonical Direct create path as peers"
     ]
   },
   "negative": [
