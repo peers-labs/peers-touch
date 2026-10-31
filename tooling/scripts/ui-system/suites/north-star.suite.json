@@ -1776,8 +1776,291 @@
       ],
       "finalizers": [
         {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.attachment-transfer-cancel-retry",
+      "title": "附件详情：自动下载可取消，取消后可重试，重试完成进入已下载",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "setFiles",
+          "target": "input[data-file-kind='file']",
+          "files": [
+            {
+              "name": "design-review.pdf",
+              "kind": "text",
+              "text": "pdf"
+            }
+          ]
+        },
+        {
+          "op": "waitFor",
+          "target": ".sk-draft-card[data-draft-status=\"ready\"]",
+          "state": "visible",
+          "timeout": 6000
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.send-message']"
+        },
+        {
+          "op": "wait",
+          "ms": 400
+        },
+        {
+          "op": "click",
+          "target": ".sk-msg-me:last-child [data-attach-file]"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "id": "cancel-mid",
           "op": "clickGlobal",
-          "target": "[data-action-id='attach.file-close']"
+          "target": "[data-action-id='attach.download-cancel']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "id": "cancelled-state",
+          "op": "expect",
+          "oracle": {
+            "id": "cancelled",
+            "type": "attr",
+            "scope": "global",
+            "target": "[data-attach-detail]",
+            "attr": "data-transfer-state",
+            "equals": "cancelled"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='attach.download-retry']"
+        },
+        {
+          "op": "wait",
+          "ms": 1700
+        }
+      ],
+      "oracles": [
+        {
+          "id": "ready",
+          "type": "attr",
+          "scope": "global",
+          "target": "[data-attach-detail]",
+          "attr": "data-transfer-state",
+          "equals": "ready"
+        },
+        {
+          "id": "document-preview",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-document-preview]"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.attachment-doc-paging",
+      "title": "PDF 详情：下载后分页/缩放，末页下一页禁用",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "setFiles",
+          "target": "input[data-file-kind='file']",
+          "files": [
+            {
+              "name": "design-review.pdf",
+              "kind": "text",
+              "text": "pdf"
+            }
+          ]
+        },
+        {
+          "op": "waitFor",
+          "target": ".sk-draft-card[data-draft-status=\"ready\"]",
+          "state": "visible",
+          "timeout": 6000
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.send-message']"
+        },
+        {
+          "op": "wait",
+          "ms": 400
+        },
+        {
+          "op": "click",
+          "target": ".sk-msg-me:last-child [data-attach-file]"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "wait",
+          "ms": 1700
+        },
+        {
+          "id": "page1",
+          "op": "expect",
+          "oracle": {
+            "id": "page-1",
+            "type": "textContains",
+            "scope": "global",
+            "target": "[data-doc-page]",
+            "contains": "第 1 / 2 页"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='attach.doc-next']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "page2",
+          "type": "textContains",
+          "scope": "global",
+          "target": "[data-doc-page]",
+          "contains": "第 2 / 2 页"
+        },
+        {
+          "id": "next-disabled",
+          "type": "disabled",
+          "scope": "global",
+          "target": "[data-action-id='attach.doc-next']"
+        },
+        {
+          "id": "zoom-present",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-doc-zoom]"
+        },
+        {
+          "id": "craft",
+          "type": "craftBattery"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.attachment-workbook",
+      "title": "xlsx 详情：worksheet 切换、表格预览；保存副本在就绪后可用",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "setFiles",
+          "target": "input[data-file-kind='file']",
+          "files": [
+            {
+              "name": "release.xlsx",
+              "kind": "text",
+              "text": "workbook"
+            }
+          ]
+        },
+        {
+          "op": "waitFor",
+          "target": ".sk-draft-card[data-draft-status=\"ready\"]",
+          "state": "visible",
+          "timeout": 6000
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.send-message']"
+        },
+        {
+          "op": "wait",
+          "ms": 400
+        },
+        {
+          "op": "click",
+          "target": ".sk-msg-me:last-child [data-attach-file]"
+        },
+        {
+          "op": "wait",
+          "ms": 1700
+        }
+      ],
+      "oracles": [
+        {
+          "id": "workbook-flag",
+          "type": "attr",
+          "scope": "global",
+          "target": "[data-document-preview]",
+          "attr": "data-workbook",
+          "equals": "true"
+        },
+        {
+          "id": "sheet-select",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-doc-sheet]"
+        },
+        {
+          "id": "table",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-doc-canvas] table"
+        },
+        {
+          "id": "save-enabled",
+          "type": "enabled",
+          "scope": "global",
+          "target": "[data-action-id='attach.save-copy']"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
         }
       ]
     },

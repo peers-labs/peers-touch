@@ -170,6 +170,9 @@ Social / Moments：
 - [x] 17 会话列表对齐（对照 SessionList.tsx）：在线点/相对时间/9 宫格群头像/99+ 角标（主色与免打扰灰）/
       5 项会话菜单（置顶/免打扰/标记已读/隐藏/删除）/hover+⋯+右键三路径等价/置顶排序与底色/打开即已读；
       删除两段确认为相对真身的改进；合同 components/chat-session-list.md；门禁 88/88（consumer 18/18）
+- [x] 18 附件详情下载流（对照 FileAttachmentCard/AttachmentDetailHost）：remote→downloading(进度/取消)→
+      cancelled(重试)→ready；PDF/docx 翻页+缩放、xlsx worksheet+表格预览；系统预览/另应用/保存副本
+      三动作的禁用与诚实反馈；非文档空态；合同 components/chat-attachment-transfer.md；门禁 91/91（consumer 18/18）
 
 ### 5.4 决策（2026-10-31 已确认）
 

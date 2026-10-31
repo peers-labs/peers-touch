@@ -644,6 +644,42 @@
 }
 .sk-file-detail p { margin: 0; font-size: 12.5px; line-height: 1.6; max-width: 320px; }
 
+/* attachment transfer lifecycle + document preview (increment 18) */
+.sk-file-progress { width: 100%; display: flex; align-items: center; gap: 10px; }
+.sk-file-progress progress { flex: 1; height: 8px; accent-color: var(--sk-primary); }
+.sk-file-progress span { font-size: 11.5px; color: var(--sk-text-3); font-variant-numeric: tabular-nums; }
+.sk-file-detail-footer { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.sk-doc-preview {
+  width: 100%; display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid var(--sk-card-border); border-radius: 12px; overflow: hidden;
+}
+.sk-doc-toolbar { display: flex; gap: 12px; padding: 10px 12px; background: var(--sk-tile); flex-wrap: wrap; }
+.sk-doc-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sk-text-2); }
+.sk-doc-field select {
+  height: 28px; border: 1px solid var(--sk-card-border); border-radius: 8px;
+  background: var(--sk-card-bg); color: var(--sk-text); padding: 0 8px; font: inherit; font-size: 12px;
+}
+.sk-doc-pager {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 12px; border-top: 1px solid var(--sk-card-border); border-bottom: 1px solid var(--sk-card-border);
+}
+.sk-doc-pager [role="status"] { font-size: 12px; color: var(--sk-text-3); font-variant-numeric: tabular-nums; }
+.sk-doc-canvas {
+  min-height: 200px; max-height: 38vh; overflow: auto; padding: 16px 18px;
+  background: color-mix(in srgb, var(--sk-tile) 40%, transparent);
+  text-align: left; color: var(--sk-text);
+}
+.sk-doc-canvas h3 { margin: 0 0 10px; font-size: 14px; }
+.sk-doc-canvas p { margin: 0 0 8px; font-size: 13px; line-height: 1.7; }
+.sk-doc-canvas.sk-doc-zoom-page { font-size: 11px; }
+.sk-doc-canvas.sk-doc-zoom-actual { font-size: 15px; }
+.sk-doc-canvas table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.sk-doc-canvas caption { text-align: left; color: var(--sk-text-3); padding-bottom: 6px; }
+.sk-doc-canvas th, .sk-doc-canvas td { border: 1px solid var(--sk-card-border); padding: 6px 9px; text-align: left; }
+.sk-doc-canvas thead th { background: var(--sk-tile); }
+.sk-file-feedback { font-size: 12px; color: #b0413a; }
+.sk-file-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 0; }
+
 /* ── Increment 16: message lifecycle ─────────────────── */
 .sk-msg-under {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
