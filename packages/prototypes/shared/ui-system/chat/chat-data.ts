@@ -54,7 +54,7 @@ export type Conversation = {
   online?: boolean;
   pinned?: boolean;
   muted?: boolean;
-  members?: { name: string; tone: string }[];
+  members?: { name: string; tone: string; role?: 'owner' | 'admin' | 'member' }[];
 };
 
 const NOW = Date.now();
@@ -63,7 +63,9 @@ const MIN = 60_000;
 export const CONVERSATIONS: Conversation[] = [
   { id: 'cv-qun', name: '小区生活群', last: '周禾：周末书架见', lastAt: '09:32', lastTs: NOW - 32 * MIN, unread: 4, tone: '#a1824b', kind: 'group',
     pinned: true, members: [
-      { name: '周禾', tone: '#3f6550' }, { name: '苏禾', tone: '#5d5a44' }, { name: '林晚', tone: '#c98a5a' },
+      { name: '周禾', tone: '#3f6550', role: 'owner' },
+      { name: '苏禾', tone: '#5d5a44', role: 'admin' },
+      { name: '林晚', tone: '#c98a5a' },
       { name: '陈屿', tone: '#3f6550' },
     ] },
   { id: 'cv-chenyu', name: '陈屿', last: '[图片]', lastAt: '09:25', lastTs: NOW - 39 * MIN, unread: 1, tone: '#3f6550', kind: 'person', online: true },
@@ -71,7 +73,9 @@ export const CONVERSATIONS: Conversation[] = [
   { id: 'cv-suhe', name: '苏禾', last: '薄荷分盆成功了，谢谢你', lastAt: '昨天', lastTs: NOW - 26 * 3600_000, unread: 0, tone: '#5d5a44', kind: 'person', muted: true, online: false },
   { id: 'cv-seed', name: '种子交换群', last: '本周日种子交换，记得来', lastAt: '昨天', lastTs: NOW - 30 * 3600_000, unread: 0, tone: '#7d8c4a', kind: 'group',
     members: [
-      { name: '苏禾', tone: '#5d5a44' }, { name: '老周', tone: '#8a7a55' }, { name: '陈屿', tone: '#3f6550' },
+      { name: '苏禾', tone: '#5d5a44', role: 'owner' },
+      { name: '老周', tone: '#8a7a55' },
+      { name: '陈屿', tone: '#3f6550' },
     ] },
   { id: 'cv-zhouhe', name: '周禾', last: '共享书架今日开放', lastAt: '周一', lastTs: NOW - 3 * 86400_000, unread: 0, tone: '#3f6550', kind: 'person', online: true },
   { id: 'cv-linnan', name: 'lin · 连南', last: '两跳外的连接已建立', lastAt: '10-26', lastTs: NOW - 5 * 86400_000, unread: 0, tone: '#6f8fa6', kind: 'person', online: false },

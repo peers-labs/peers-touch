@@ -31,7 +31,8 @@ function renderRichText(text: string) {
 
 export function ConversationView({ conversation, messages, call, peerTyping, onEndCall, onSimulateIncoming,
   onSend, onTogglePin, onToggleMute, onReact, onEditMessage, onRecallMessage, onPinMessage,
-  onRetryMessage, onDelete, onForward, onStartCall, onBack, conversations }: {
+  onRetryMessage, onDelete, onForward, onStartCall, onBack, conversations,
+  onClearHistory, onDeleteConversation }: {
   conversation: Conversation;
   messages: ChatMessage[];
   call: { conversationId: string; kind: CallKind; direction: 'in' | 'out'; multi?: boolean } | null;
@@ -51,6 +52,8 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   onStartCall: (kind: CallKind) => void;
   onBack: () => void;
   conversations: Conversation[];
+  onClearHistory: (conversationId: string) => void;
+  onDeleteConversation: (conversationId: string) => void;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -257,10 +260,13 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
       {toast && <div className="sk-chat-toast" role="status">{toast}</div>}
 
       {infoOpen && (
-        <DetailSheet conversation={conversation}
+        <DetailSheet conversation={conversation} messages={messages}
           onClose={() => setInfoOpen(false)}
           onTogglePin={() => onTogglePin(conversation.id)}
           onToggleMute={() => onToggleMute(conversation.id)}
+          onSearchMessages={() => { setInfoOpen(false); setSearchOpen(true); }}
+          onClearHistory={() => onClearHistory(conversation.id)}
+          onDeleteConversation={() => onDeleteConversation(conversation.id)}
           onSimulateIncoming={conversation.kind === 'person' ? onSimulateIncoming : undefined} />
       )}
       {threadId && threadMessage && (

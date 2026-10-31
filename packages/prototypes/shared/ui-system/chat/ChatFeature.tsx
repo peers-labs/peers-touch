@@ -9,7 +9,7 @@ import { MessagesSquare } from 'lucide-react';
 import { Empty } from '@peers-touch/ui';
 import { ChatRail } from './ChatRail';
 import { ConversationView } from './ConversationView';
-import { ContactDetailPane, CreateGroupDialog, PickPersonDialog } from './ChatDialogs';
+import { CreateGroupDialog, PickPersonDialog } from './ChatDialogs';
 import type { CallDirection, CallKind } from './CallOverlay';
 import {
   CONVERSATIONS, FRIEND_REQUESTS, PEOPLE, SEED_MESSAGES,
@@ -28,7 +28,7 @@ export function ChatFeature() {
   const [messagesByConv, setMessagesByConv] = useState<Record<string, ChatMessage[]>>(SEED_MESSAGES);
   const [requests, setRequests] = useState<FriendRequest[]>(FRIEND_REQUESTS);
   const [failedRequests, setFailedRequests] = useState<Set<string>>(new Set());
-  const [selectedContact, setSelectedContact] = useState<Person | null>(null);
+
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
   const [call, setCall] = useState<{ conversationId: string; kind: CallKind; direction: CallDirection; multi?: boolean } | null>(null);
@@ -73,6 +73,9 @@ export function ChatFeature() {
     });
     if (selectedId === id) setSelectedId(null);
   };
+
+  const clearMessages = (id: string) =>
+    setMessagesByConv(map => ({ ...map, [id]: [] }));
 
   const sendMessage = (payload: {
     text: string;
@@ -141,7 +144,6 @@ export function ChatFeature() {
       setSelectedId(id);
     }
     setTab('chats');
-    setSelectedContact(null);
   };
 
   const acceptRequest = (id: string) => {
@@ -229,35 +231,34 @@ export function ChatFeature() {
       { id: 's1', from: 'peer', kind: 'service', text: `群聊「${group.name}」已创建`, at: '刚刚' },
     ] }));
     setTab('chats');
-    setSelectedContact(null);
   };
 
   // Narrow single-pane swap: the catalog rail owns the screen until a
   // conversation or contact surface opens; the header back control returns.
-  const narrowOpen = !!selectedConversation || (tab === 'contacts' && !!selectedContact);
-  const backToList = () => { setSelectedId(null); setSelectedContact(null); };
+  const narrowOpen = !!selectedConversation;
+  const backToList = () => { setSelectedId(null); };
 
   return (
     <div className={`sk-chat-feature${narrowOpen ? ' sk-narrow-open' : ''}`}>
       <ChatRail
         tab={tab} onTabChange={setTab}
         sessions={sessions} selectedId={selectedId}
-        onSelect={id => { setSelectedId(id); markAsRead(id); setSelectedContact(null); }}
+        onSelect={id => { setSelectedId(id); markAsRead(id); }}
         onTogglePin={togglePin} onToggleMute={toggleMute}
         onMarkRead={markAsRead} onHide={hideConversation} onDelete={deleteConversation}
-        requests={requests} friends={friends} selectedContactId={selectedContact?.id ?? null}
+        requests={requests} friends={friends} selectedContactId={null}
         failedRequestIds={failedRequests}
         onAccept={acceptRequest} onReject={rejectRequest} onCancelRequest={cancelRequest}
-        onSelectContact={setSelectedContact}
+        // WeChat parity: tapping a person anywhere (contacts tab, search)
+        // opens their conversation directly — no intermediate profile pane.
+        onSelectContact={openPerson}
         onFindPeople={() => setPickerOpen(true)}
         onCreateGroup={() => setGroupOpen(true)}
         onPickSearchPerson={openPerson}
       />
 
       <div className="sk-chat-main">
-        {tab === 'contacts' && selectedContact ? (
-          <ContactDetailPane person={selectedContact} onMessage={openPerson} onBack={backToList} />
-        ) : selectedConversation ? (
+        {selectedConversation ? (
           <ConversationView
             conversation={selectedConversation}
             messages={messagesByConv[selectedConversation.id] ?? []}
@@ -276,12 +277,14 @@ export function ChatFeature() {
             onPinMessage={pinMessage}
             onRetryMessage={retryMessage}
             onDelete={deleteMessage}
+            onClearHistory={clearMessages}
+            onDeleteConversation={deleteConversation}
             onForward={forwardMessage}
             onStartCall={kind => setCall({ conversationId: selectedConversation.id, kind, direction: 'out' })} />
         ) : (
           <div className="sk-chat-placeholder">
             <Empty icon={<MessagesSquare size={28} strokeWidth={1.5} />}
-              description={tab === 'contacts' ? '选择一位联系人查看资料' : '选择一个会话，或新建对话'} />
+              description={tab === 'contacts' ? '选择一位联系人，直接开始聊天' : '选择一个会话，或新建对话'} />
           </div>
         )}
       </div>

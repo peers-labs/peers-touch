@@ -1105,8 +1105,8 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.contact-detail",
-      "title": "联系人详情：点联系人在中栏显示资料卡",
+      "id": "ui.prototype.north-star.contact-direct-open",
+      "title": "增量21：联系人轨点人直接打开聊天（微信式），无中间资料卡/返回",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -1124,27 +1124,40 @@
       ],
       "oracles": [
         {
-          "id": "detail-open",
+          "id": "view-open-directly",
           "type": "exists",
+          "target": ".sk-conv-view"
+        },
+        {
+          "id": "chats-tab-active",
+          "type": "attr",
+          "target": ".sk-chat-subnav .pt-button:nth-child(1)",
+          "attr": "aria-pressed",
+          "equals": "true"
+        },
+        {
+          "id": "no-intermediate-profile-pane",
+          "type": "missing",
           "target": ".sk-contact-detail"
         },
         {
-          "id": "detail-name",
-          "type": "textContains",
-          "target": ".sk-contact-detail",
-          "contains": "陈屿"
+          "id": "no-back-chevron-on-desktop",
+          "type": "computedStyle",
+          "target": ".sk-chat-back",
+          "prop": "display",
+          "equals": "none"
         },
         {
-          "id": "narrow-back-entry",
+          "id": "rail-stays-visible",
           "type": "exists",
-          "target": "[data-action-id='contact.back']"
+          "target": ".sk-conv-rail"
         }
       ],
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.contact-message",
-      "title": "联系人发消息：详情卡点发消息切回消息轨并打开对话",
+      "id": "ui.prototype.north-star.header-name-only",
+      "title": "增量21：对话头部不重复头像（头像只在气泡侧），名字左置",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -1153,29 +1166,25 @@
         },
         {
           "op": "click",
-          "target": ".sk-chat-subnav .pt-button:nth-child(2)"
-        },
-        {
-          "op": "click",
-          "target": ".sk-contacts .sk-conv-list li:first-child .sk-conv-row"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='contact.message']"
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
         }
       ],
       "oracles": [
         {
-          "id": "view-open",
-          "type": "exists",
-          "target": ".sk-conv-view"
+          "id": "no-header-avatar",
+          "type": "missing",
+          "target": ".sk-chat-head .pt-avatar"
         },
         {
-          "id": "chats-tab",
-          "type": "attr",
-          "target": ".sk-chat-subnav .pt-button:nth-child(1)",
-          "attr": "aria-pressed",
-          "equals": "true"
+          "id": "name-present",
+          "type": "textContains",
+          "target": ".sk-chat-head-name strong",
+          "contains": "陈屿"
+        },
+        {
+          "id": "subtitle",
+          "type": "exists",
+          "target": "[data-head-subtitle]"
         }
       ],
       "finalizers": []
@@ -2190,7 +2199,7 @@
     },
     {
       "id": "ui.prototype.north-star.detail-panel",
-      "title": "会话详情：成员/开关/共享媒体；面板内切免打扰联动行标记",
+      "title": "增量21：聊天资料卡——身份区/成员角色/开关/媒体文件/危险区；免打扰联动行标记",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -2217,10 +2226,20 @@
           "target": "[data-detail-panel]"
         },
         {
-          "id": "member-rows",
+          "id": "identity-hero",
+          "type": "exists",
+          "target": "[data-profile-identity]"
+        },
+        {
+          "id": "member-chips",
           "type": "count",
-          "target": ".sk-member-row",
+          "target": "[data-profile-members] .sk-member-row",
           "equals": 4
+        },
+        {
+          "id": "owner-badge",
+          "type": "exists",
+          "target": ".sk-role-badge.is-owner"
         },
         {
           "id": "two-switches",
@@ -2229,10 +2248,14 @@
           "equals": 2
         },
         {
-          "id": "shared-media",
-          "type": "count",
-          "target": ".sk-side-thumb",
-          "equals": 2
+          "id": "media-from-real-messages-empty-hint",
+          "type": "exists",
+          "target": "[data-profile-media] .sk-profile-empty"
+        },
+        {
+          "id": "danger-zone",
+          "type": "exists",
+          "target": "[data-profile-danger] [data-action-id='profile.delete-conversation']"
         },
         {
           "id": "muted-synced",
@@ -2248,6 +2271,103 @@
           "target": "[data-action-id='chat.info-close']"
         }
       ]
+    },
+    {
+      "id": "ui.prototype.north-star.profile-search-entry",
+      "title": "增量21：资料卡「查找聊天记录」打开会话内搜索",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "click",
+          "target": "[data-profile-search]"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "sheet-closed",
+          "type": "missing",
+          "target": "[data-detail-panel]"
+        },
+        {
+          "id": "search-dialog-open",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-message-search]"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='search-messages.close']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.profile-clear-history",
+      "title": "增量21：资料卡清空记录两段确认后清空消息流，会话仍在列表",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='profile.clear-history']"
+        },
+        {
+          "op": "expect",
+          "id": "confirm-dialog",
+          "oracle": {
+            "type": "attr",
+            "scope": "global",
+            "target": "[data-profile-confirm]",
+            "attr": "data-profile-confirm",
+            "equals": "clear"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='profile.confirm-ok']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "stream-empty",
+          "type": "exists",
+          "target": ".sk-conversation-empty"
+        },
+        {
+          "id": "conversation-still-selected",
+          "type": "exists",
+          "target": ".sk-conv-view"
+        }
+      ],
+      "finalizers": []
     },
     {
       "id": "ui.prototype.north-star.message-search",

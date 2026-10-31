@@ -185,6 +185,10 @@ Social / Moments：
       结果联系人在前聊天在后、两组空态虚线 tips；消息行头像与气泡顶对齐（修 flex-end 错位）、
       时间移到气泡外 meta 行；行尾钮全图标单钮双态（收起 ＋新建 / 展开 ✕取消搜索，Esc 同效）；
       合同 chat-catalog.md/chat-conversation-frame.md 增补；门禁 101/101 动态场景（consumer 18/18）
+- [x] 21 微信式导航与资料卡重设计：≥720px 左列表/右聊天常驻不收起（断点 1040→720）、头部去重头像仅留名字、
+      点人/群即开聊（删除中间 ContactDetailPane 与「发消息」二次点击）；ⓘ 资料卡卡片化重设计
+      （身份 hero/成员角色徽标/设置卡/真实附件驱动的媒体文件/查找记录入口/清空与删除两段确认）；
+      合同 chat-catalog.md/chat-conversation-frame.md 增补；门禁 103/103 动态场景（consumer 18/18）
 
 ### 5.4 决策（2026-10-31 已确认）
 
@@ -198,8 +202,8 @@ Social / Moments：
 ### 5.5 收尾状态（2026-10-31）
 
 功能点审计（§5.1/§5.2）除「会话列表 blocking/stale 错误态」外全部落地；
-增量 1–20 全部独立提交、独立门禁。最终证据：north-star 101 个动态场景
-（评估报告含入口探针共 102 项）全 OBSERVED、consumer 18/18、
+增量 1–21 全部独立提交、独立门禁。最终证据：north-star 103 个动态场景
+（评估报告含入口探针共 104 项）全 OBSERVED、consumer 18/18、
 1360/390 双宽溢出与 craft battery 通过、tsc 干净、0 console error。
 所有状态均为窗内本地真实状态机，无 mocks；非快乐路径用显式模拟器/演示入口，不假造后端。
 

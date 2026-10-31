@@ -183,18 +183,6 @@
 h2.sk-conv-title + .sk-request-card.is-outgoing,
 h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
 
-/* contact detail */
-.sk-contact-detail {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  justify-content: center; padding: 32px; text-align: center;
-}
-.sk-contact-detail h2 { margin: 4px 0 0; font-size: 20px; color: var(--sk-text); }
-.sk-contact-station {
-  font-size: 12px; color: var(--sk-text-3);
-  background: var(--sk-tile); border-radius: 999px; padding: 3px 12px;
-}
-.sk-contact-bio { margin: 0 0 8px; font-size: 13px; color: var(--sk-text-2); }
-
 /* create group dialog */
 .sk-group-dialog { display: flex; flex-direction: column; gap: 12px; }
 .sk-group-members {
@@ -230,12 +218,13 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
   border-radius: 999px; padding: 3px 12px;
 }
 
-/* Narrow single-pane swap: the catalog rail owns the screen until a
-   conversation/contact opens; the header back control returns to it.
-   Overrides the frame-level `.sk-conv-rail { display:none }` rule. */
+/* WeChat-style persistent two-pane: rail + chat stay side by side down to
+   tablet width; only below 720px (phones) does the rail swap to single-pane
+   with a back control in the header. The back chevron is CSS-hidden above
+   that breakpoint (desktop sessions never leave the list). */
 .sk-chat-back { display: none; }
 
-@media (max-width: 1040px) {
+@media (max-width: 720px) {
   .sk-chat-feature { grid-template-columns: minmax(0, 1fr); }
   .sk-chat-feature > .sk-conv-rail { display: flex; width: auto; border-right: 0; }
   .sk-chat-feature > .sk-chat-main { display: none; }
@@ -248,8 +237,6 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
     background: transparent; color: var(--sk-text-2);
   }
   .sk-chat-back:hover { background: var(--sk-btn-quiet-bg-hover); color: var(--sk-text); }
-  .sk-contact-detail { position: relative; }
-  .sk-contact-back { position: absolute; top: 12px; left: 12px; }
 }
 
 /* Phone-narrow header: keep back, title, audio and search; video/info
@@ -268,19 +255,20 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
 }
 .sk-chat-head-id { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
 .sk-chat-head-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.sk-chat-head-name strong { font-size: 14px; color: var(--sk-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-chat-head-name strong { font-size: 15px; font-weight: 650; color: var(--sk-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sk-chat-head-name span {
   font-size: 11.5px; color: var(--sk-text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sk-chat-head-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
-.sk-head-avatars { gap: 0 !important; flex-shrink: 0; }
-.sk-head-avatars .pt-avatar { margin-left: -8px; box-shadow: 0 0 0 2px var(--sk-card-bg); }
-.sk-head-avatars .pt-avatar:first-child { margin-left: 0; }
+@media (min-width: 721px) {
+  /* Persistent two-pane: name starts flush without a back slot */
+  .sk-chat-head { padding-left: 20px; }
+}
 
 /* side sheets (detail + thread) */
 .sk-side-sheet {
-  position: absolute; top: 0; bottom: 0; right: 0; width: 288px; z-index: 8;
+  position: absolute; top: 0; bottom: 0; right: 0; width: 300px; z-index: 8;
   background: var(--sk-overlay);
   border-left: 1px solid var(--sk-card-border);
   box-shadow: -10px 0 30px -18px rgba(28, 46, 32, .35);
@@ -292,19 +280,98 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent);
 }
 .sk-side-head strong { font-size: 13.5px; color: var(--sk-text); }
-.sk-side-body { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 16px; }
-.sk-side-section { display: flex; flex-direction: column; gap: 10px; }
-.sk-side-section.is-center, .sk-side-section:has(> .pt-avatar) { align-items: flex-start; }
-.sk-side-title { font-size: 11.5px; font-weight: 650; letter-spacing: .06em; color: var(--sk-text-3); }
-.sk-member-list { display: flex; flex-direction: column; gap: 8px; }
-.sk-member-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--sk-text-2); }
-.sk-side-switches { padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
-.sk-side-media { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sk-side-body { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+/* ── Profile sheet (desktop DetailPanel parity, card system) ── */
+.sk-profile-sheet .sk-side-body { gap: 12px; }
+.sk-profile-hero {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 12px 16px;
+}
+.sk-profile-hero strong { font-size: 15px; font-weight: 650; color: var(--sk-text); margin-top: 2px; }
+.sk-profile-sub { font-size: 11.5px; color: var(--sk-text-3); }
+.sk-profile-group-avatar {
+  width: 64px; height: 64px; border-radius: 18px; overflow: hidden;
+  display: grid; grid-template-columns: 1fr 1fr;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sk-text) 8%, transparent);
+}
+.sk-profile-group-avatar span { display: block; }
+.sk-profile-group-avatar span:nth-child(1),
+.sk-profile-group-avatar span:nth-child(4) { background: var(--sk-tile); }
+
+.sk-profile-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--sk-text) 3.5%, transparent);
+}
+.sk-profile-card-title {
+  font-size: 11px; font-weight: 650; letter-spacing: .06em;
+  color: var(--sk-text-3);
+}
+.sk-profile-members {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px 4px;
+}
+.sk-profile-member { flex-direction: column; gap: 4px; }
+.sk-profile-member-avatar { position: relative; }
+.sk-profile-member-name {
+  font-size: 10.5px; color: var(--sk-text-3); text-align: center;
+  max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sk-role-badge {
+  position: absolute; right: -3px; top: -3px;
+  width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center;
+  color: #fff; border: 2px solid var(--sk-card-bg);
+}
+.sk-role-badge.is-owner { background: #b8860b; }
+.sk-role-badge.is-admin { background: var(--sk-primary); }
+
+/* Labeled Switch renders .pt-switch-row (track + label); give the row the
+   full card width with the label on the left, intrinsic track on the right. */
+.sk-profile-card .pt-switch-row {
+  width: 100%; min-height: 38px;
+  display: flex; flex-direction: row-reverse; align-items: center;
+  gap: 10px; padding: 5px 4px;
+}
+.sk-profile-card .pt-switch-label { flex: 1; font-size: 13px; }
+.sk-setting-row {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 8px 4px; border: 0; background: transparent;
+  font-family: inherit; font-size: 13px; color: var(--sk-text);
+  cursor: pointer; text-align: left; border-radius: 10px;
+}
+.sk-setting-row:hover { background: color-mix(in srgb, var(--sk-text) 5%, transparent); }
+.sk-setting-icon {
+  width: 30px; height: 30px; flex-shrink: 0; border-radius: 9px;
+  display: grid; place-items: center;
+  background: var(--sk-tile); color: var(--sk-text-2);
+}
+.sk-setting-chevron { margin-left: auto; color: var(--sk-text-3); }
+.sk-setting-row.is-danger { color: #b0413a; }
+.sk-setting-row.is-danger .sk-setting-icon { background: color-mix(in srgb, #b0413a 10%, transparent); color: #b0413a; }
+.sk-profile-danger { background: transparent; padding: 0 12px; gap: 2px; }
+
+.sk-profile-media-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .sk-side-thumb {
-  border: 0; padding: 0; border-radius: 12px; overflow: hidden; cursor: pointer;
-  aspect-ratio: 16 / 10; background: var(--sk-tile);
+  border: 0; padding: 0; border-radius: 10px; overflow: hidden; cursor: pointer;
+  aspect-ratio: 1 / 1; background: var(--sk-tile);
 }
 .sk-side-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sk-profile-files-title { margin-top: 4px; }
+.sk-profile-files { display: flex; flex-direction: column; gap: 4px; }
+.sk-profile-file-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--sk-text-2);
+  padding: 6px 8px; border-radius: 8px; background: var(--sk-tile);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sk-profile-empty {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--sk-text-3);
+  padding: 6px 2px;
+}
+.sk-side-call-demo-row { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* in-conversation search */
 .sk-msg-search { display: flex; flex-direction: column; gap: 10px; }
@@ -538,8 +605,6 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
 }
 .sk-call-tile-name { font-size: 12px; opacity: .9; }
 .sk-call-tile-muted { position: absolute; top: 8px; left: 9px; color: rgba(243,248,244,.62); }
-
-.sk-side-call-demo-row { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* ── Increment 12: message anatomy ─────────────────────── */
 .sk-msg { position: relative; }

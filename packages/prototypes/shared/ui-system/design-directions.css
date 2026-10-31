@@ -358,7 +358,8 @@
 .sk-picker-row:hover { background: var(--sk-tile); }
 .pt-dialog { border-radius: var(--sk-r-card); }
 
-@media (max-width: 1040px) {
+/* Persistent two-pane down to tablet; chat.css owns the <720 swap. */
+@media (max-width: 720px) {
   .sk-conv-rail { display: none; }
 }
 

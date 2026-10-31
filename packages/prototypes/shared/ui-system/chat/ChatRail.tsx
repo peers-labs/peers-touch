@@ -330,11 +330,10 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
     return needle ? friends.filter(p => p.name.toLowerCase().includes(needle)) : [];
   }, [friends, q]);
 
-  // Shared header search works in both tabs; contacts tab opens the profile
-  // pane, chats tab starts/opens the conversation (desktop SessionList parity).
+  // Tapping a person opens/creates the conversation directly from either tab
+  // (WeChat / desktop SessionList parity — no intermediate profile pane).
   const pickPerson = (person: Person) => {
-    if (tab === 'contacts') onSelectContact(person);
-    else onPickSearchPerson(person);
+    onPickSearchPerson(person);
     setQuery('');
   };
   const searchOpen = q.length > 0;

@@ -5,7 +5,6 @@
  * an inline retry path like the desktop modal.
  */
 import { useMemo, useState } from 'react';
-import { ChevronLeft } from 'lucide-react';
 import { Alert, Avatar, Button, Checkbox, Dialog, Empty, TextField } from '@peers-touch/ui';
 import type { Conversation, Person } from './chat-data';
 
@@ -144,29 +143,4 @@ export function CreateGroupDialog({ open, people, onDismiss, onCreate }: {
       </div>
     </Dialog>
   );
-}
-
-/* ── Contact detail (center pane) ─────────────────────── */
-
-export function ContactDetailPane({ person, onMessage, onBack }: {
-  person: Person;
-  onMessage: (person: Person) => void;
-  onBack: () => void;
-}) {
-  return (
-    <div className="sk-contact-detail" data-contact-detail-kind="person">
-      <button type="button" className="sk-chat-back sk-contact-back" aria-label="返回联系人列表"
-        data-action-id="contact.back" onClick={onBack}><ChevronLeft size={18} /></button>
-      <Avatar name={person.name} background={person.tone} size={72} style={{ borderRadius: 20 }} />
-      <h2>{person.name}</h2>
-      <Tag2 station={person.station} />
-      <p className="sk-contact-bio">{person.bio}</p>
-      <Button actionId="contact.message" emphasis="primary"
-        label="发消息" onActivate={() => onMessage(person)} />
-    </div>
-  );
-}
-
-function Tag2({ station }: { station?: string }) {
-  return <span className="sk-contact-station">{station ?? '本站'}</span>;
 }
