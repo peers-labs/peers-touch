@@ -355,7 +355,10 @@ export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMes
     timestamp: new Date(message.createdAt).getTime(),
     model: message.modelName,
     turnId: message.turnId,
-    error: isCancelledAssistant ? undefined : typedError?.locale_key,
+    error: isCancelledAssistant ? undefined : typedError?.locale_key
+      ?? (message.role === 'assistant' && persistedStatus === 'failed'
+        ? 'chat.message.diagnostics.failedTitle'
+        : undefined),
     typedError,
     resolution,
     providerId: typedError?.details.provider_id,
