@@ -163,6 +163,7 @@ Pick one based on intent:
 - [`invariants/relay-runtime-role-is-minimal.md`](invariants/relay-runtime-role-is-minimal.md) — Relay composition is deny-by-default and fails closed on missing transport/operator security.
 - [`invariants/circuit-relay-control-plane-boundary.md`](invariants/circuit-relay-control-plane-boundary.md) — Circuit Relay stays an opaque standard data plane with fenced admission and independent reservations.
 - [`invariants/chat-message-boundaries.md`](invariants/chat-message-boundaries.md) — Chat message content must not be covered by actions, metadata, composers, safe areas, or floating layers.
+- [`invariants/self-direct-is-one-member-direct.md`](invariants/self-direct-is-one-member-direct.md) — Saved Messages is a one-member Direct on the existing pipeline, never a new conversation kind or local-only store.
 - [`invariants/mobile-chat-layout-boundaries.md`](invariants/mobile-chat-layout-boundaries.md) — Mobile Chat bottom layers must participate in one bottom clearance model.
 - [`invariants/desktop-chat-layout-boundaries.md`](invariants/desktop-chat-layout-boundaries.md) — Desktop Chat actions must respect conversation pane bounds and collision handling.
 - [`invariants/composite-form-control-boundaries.md`](invariants/composite-form-control-boundaries.md) — composite form controls that represent one semantic input must share one parent frame and state model.

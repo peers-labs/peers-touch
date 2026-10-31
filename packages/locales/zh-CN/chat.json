@@ -854,6 +854,8 @@
   "chat.social.contacts.savedGroupsCount": "保存的群聊 ({{count}})",
   "chat.social.contacts.friends": "联系人",
   "chat.social.contacts.contactsCount": "联系人 ({{count}})",
+  "chat.social.contacts.savedMessages": "收藏夹",
+  "chat.social.contacts.savedMessagesHint": "仅自己可见的备忘与文件",
   "chat.social.contacts.receivedTab": "收到的",
   "chat.social.contacts.sentTab": "发出的",
   "chat.social.contacts.direction.incoming": "收到",

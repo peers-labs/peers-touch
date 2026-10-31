@@ -84,6 +84,25 @@ func (e *ConversationGateEvaluator) Evaluate(ctx context.Context, op social_gate
 func (e *ConversationGateEvaluator) evaluateCreateDirect(ctx context.Context, subjectPtid string, op social_gate.Operation) error {
 	targetPtid := op.TargetPtid
 
+	// Self-direct (Saved Messages): an actor always has the relationship to
+	// themselves; skip block/follow/shared-conversation checks that assume
+	// two distinct actors. Scope is enforced as local below.
+	if targetPtid == subjectPtid {
+		if op.SameStation() {
+			if op.ScopeKind != "" && op.ScopeKind != social_gate.ScopeKindLocal {
+				return &social_gate.PolicyDeniedError{
+					Code:   "SCOPE_STATION_MISMATCH",
+					Reason: "self-direct conversation must use the local scope",
+				}
+			}
+			return nil
+		}
+		return &social_gate.PolicyDeniedError{
+			Code:   "SCOPE_STATION_MISMATCH",
+			Reason: "self-direct conversation must use the local scope",
+		}
+	}
+
 	if e.rel != nil {
 		blocked, err := e.rel.IsBlocked(ctx, targetPtid, subjectPtid)
 		if err != nil {

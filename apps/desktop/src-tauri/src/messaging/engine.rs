@@ -3032,9 +3032,13 @@ impl MessagingEngine {
         token: &str,
         peer_ptid: &str,
     ) -> Result<String, String> {
-        if peer_ptid.trim().is_empty() || peer_ptid == self.endpoint.ptid {
+        if peer_ptid.trim().is_empty() {
             return Err("messaging direct peer identity is invalid".to_string());
         }
+        // peer_ptid == self.endpoint.ptid is the self-direct (Saved Messages)
+        // conversation: a one-member Local Direct handled by the same command
+        // pipeline, with the sender's own public event as the sole delivery on
+        // a single-device actor.
         let command_id = Ulid::new().to_string();
         let result = self.try_create_direct_conversation(token, peer_ptid, &command_id);
         match result {

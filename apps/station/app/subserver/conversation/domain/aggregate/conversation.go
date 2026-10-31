@@ -159,12 +159,19 @@ func CreateDirect(input CreateInput) (*Conversation, Transition, error) {
 	if input.Kind == "" {
 		input.Kind = valueobject.ConversationKindDirect
 	}
-	if input.Kind != valueobject.ConversationKindDirect || len(input.Participants) != 2 {
-		return nil, Transition{}, invalid("aggregate.create_direct", "participants", "direct conversation requires two participants")
+	if input.Kind != valueobject.ConversationKindDirect {
+		return nil, Transition{}, invalid("aggregate.create_direct", "kind", "direct conversation requires direct kind")
 	}
-	computedID, err := valueobject.DirectConversationID(
+	isSelfDirect := len(input.Participants) == 1
+	if !isSelfDirect && len(input.Participants) != 2 {
+		return nil, Transition{}, invalid("aggregate.create_direct", "participants", "direct conversation requires one (self) or two participants")
+	}
+	if isSelfDirect && input.Participants[0].Actor != input.Creator.Actor {
+		return nil, Transition{}, invalid("aggregate.create_direct", "participants", "self-direct sole participant must be the creator")
+	}
+	computedID, err := valueobject.DirectConversationIDForActors(
 		input.Participants[0].Actor,
-		input.Participants[1].Actor,
+		input.Participants[len(input.Participants)-1].Actor,
 	)
 	if err != nil {
 		return nil, Transition{}, err
@@ -176,7 +183,7 @@ func CreateDirect(input CreateInput) (*Conversation, Transition, error) {
 		return nil, Transition{}, invalid("aggregate.create_direct", "conversation_id", "does not match the participant pair")
 	}
 	input.Owner = input.Participants[0].Actor
-	if input.Participants[1].Actor < input.Owner {
+	if !isSelfDirect && input.Participants[1].Actor < input.Owner {
 		input.Owner = input.Participants[1].Actor
 	}
 	for index := range input.Participants {
@@ -1847,12 +1854,12 @@ func (c *Conversation) validateDirectInvariant() error {
 			"direct conversation epochs must remain membership one and MLS zero",
 		)
 	}
-	if len(c.members) != 2 {
+	if len(c.members) != 1 && len(c.members) != 2 {
 		return conversationdomain.NewError(
 			conversationdomain.ErrorCodeMembershipConflict,
 			"aggregate.validate_direct",
 			"members",
-			"direct conversation must contain exactly two active members",
+			"direct conversation must contain one (self) or two active members",
 		)
 	}
 	actors := make([]valueobject.PTID, 0, len(c.members))
@@ -1867,9 +1874,24 @@ func (c *Conversation) validateDirectInvariant() error {
 		}
 		actors = append(actors, member.Actor)
 	}
-	expectedID, err := valueobject.DirectConversationID(actors[0], actors[1])
-	if err != nil {
-		return err
+	var expectedID valueobject.ConversationID
+	var expectedOwner valueobject.PTID
+	var err error
+	if len(actors) == 1 {
+		expectedID, err = valueobject.SelfDirectConversationID(actors[0])
+		if err != nil {
+			return err
+		}
+		expectedOwner = actors[0]
+	} else {
+		expectedID, err = valueobject.DirectConversationID(actors[0], actors[1])
+		if err != nil {
+			return err
+		}
+		expectedOwner = actors[0]
+		if actors[1] < expectedOwner {
+			expectedOwner = actors[1]
+		}
 	}
 	if c.id != expectedID {
 		return conversationdomain.NewError(
@@ -1878,10 +1900,6 @@ func (c *Conversation) validateDirectInvariant() error {
 			"conversation_id",
 			"does not match the deterministic participant pair",
 		)
-	}
-	expectedOwner := actors[0]
-	if actors[1] < expectedOwner {
-		expectedOwner = actors[1]
 	}
 	if c.owner != expectedOwner {
 		return conversationdomain.NewError(

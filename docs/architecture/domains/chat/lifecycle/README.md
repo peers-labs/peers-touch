@@ -65,6 +65,7 @@ receiver, durable-readback, and cleanup evidence.
 | [acceptance-matrix.md](./acceptance-matrix.md) | Receiver-perspective evidence contract |
 | [current-capability-audit.md](./current-capability-audit.md) | Current source and evidence classification |
 | [design.md](./design.md) | Cross-domain ownership and runtime composition |
+| [self-direct.md](./self-direct.md) | Self-direct (Saved Messages): one-member Direct semantics, identity, delivery and client surfaces |
 | [decisions.md](./decisions.md) | Accepted lifecycle integration decisions |
 | [data-model.md](./data-model.md) | Canonical cross-client type hierarchy and projection invalidation |
 | [module-layout.md](./module-layout.md) | Model, Messaging Core, Station, Desktop, Mobile, and Gate ownership |

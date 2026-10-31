@@ -59,6 +59,46 @@ func TestCreateDirectRejectsActorsWithoutRelationship(t *testing.T) {
 	}
 }
 
+// Self-direct needs no relationship and never invokes the cross-station
+// authorizer; it is allowed for every authenticated local actor.
+func TestCreateDirectAllowsSelfLocalScope(t *testing.T) {
+	cross := &crossAuthorizerStub{}
+	evaluator := NewConversationGateEvaluator(nil, nil, cross)
+
+	err := evaluator.Evaluate(gateSubject(), social_gate.Operation{
+		Action:               "create_direct",
+		TargetPtid:           "alice",
+		ScopeKind:            social_gate.ScopeKindLocal,
+		SubjectStationPeerID: "12D3KooWStation",
+		TargetStationPeerID:  "12D3KooWStation",
+	})
+	if err != nil {
+		t.Fatalf("self-direct local scope must be allowed without relationship: %v", err)
+	}
+	if cross.called {
+		t.Fatal("cross-station authorizer must not be called for self-direct")
+	}
+}
+
+// Self-direct is forced onto local scope even when a federation scope leaks
+// into the operation.
+func TestCreateDirectSelfRejectsFederationScope(t *testing.T) {
+	evaluator := NewConversationGateEvaluator(nil, nil, nil)
+
+	err := evaluator.Evaluate(gateSubject(), social_gate.Operation{
+		Action:     "create_direct",
+		TargetPtid: "alice",
+		ScopeKind:  social_gate.ScopeKindFederation,
+	})
+	if err == nil {
+		t.Fatal("self-direct with federation scope must be rejected")
+	}
+	denied, ok := err.(*social_gate.PolicyDeniedError)
+	if !ok || denied.Code != "SCOPE_STATION_MISMATCH" {
+		t.Fatalf("unexpected policy error: %v", err)
+	}
+}
+
 type crossAuthorizerStub struct {
 	called bool
 	deny   bool

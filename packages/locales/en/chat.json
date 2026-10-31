@@ -854,6 +854,8 @@
   "chat.social.contacts.savedGroupsCount": "Saved Groups ({{count}})",
   "chat.social.contacts.friends": "Contacts",
   "chat.social.contacts.contactsCount": "Contacts ({{count}})",
+  "chat.social.contacts.savedMessages": "Saved Messages",
+  "chat.social.contacts.savedMessagesHint": "Notes and files only you can see",
   "chat.social.contacts.receivedTab": "Received",
   "chat.social.contacts.sentTab": "Sent",
   "chat.social.contacts.direction.incoming": "Incoming",

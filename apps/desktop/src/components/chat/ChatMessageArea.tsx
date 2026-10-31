@@ -11,7 +11,10 @@ import {
   socialThreadKey,
   useSocialChatStore,
 } from '../../store/socialChat';
-import { projectDesktopIMMessages } from '../../store/socialProjection';
+import {
+  directConversationDisplayName,
+  projectDesktopIMMessages,
+} from '../../store/socialProjection';
 import { useCryptoStore } from '../../store/cryptoStore';
 import {
   useActiveChatFederationSlice,
@@ -232,7 +235,16 @@ export function ChatMessageArea({
     ? conversationBackgroundPreviews[`${activeTab}:${activeUlid}`]
     : undefined;
 
-  const currentName = activeConversation?.title || '';
+  // Self-direct (Saved Messages): no peer presence or calls; the header
+  // title resolves from the authenticated profile with a localized fallback.
+  const isSelfDirect = activeTab === 'friend' && activeConversation?.selfDirect === true;
+  const currentName = activeTab === 'group'
+    ? (activeConversation?.title || '')
+    : directConversationDisplayName(
+      activeConversation ?? { title: '' },
+      t('chat.social.contacts.savedMessages'),
+      '',
+    );
   const activeGroup = activeTab === 'group' && activeUlid
     ? groups.find((group) => group.ulid === activeUlid)
     : undefined;
@@ -1104,7 +1116,7 @@ export function ChatMessageArea({
                     )}
                   </Flexbox>
                 )}
-                {!isAutomatedConversation && peerOnlineIndicator}
+                {!isAutomatedConversation && !isSelfDirect && peerOnlineIndicator}
                 {isAutomatedConversation ? (
                   <Tooltip title={t('chat.automation.stationManagedTip', {
                     defaultValue: 'Automated service · Station-resident, not end-to-end encrypted',
@@ -1195,8 +1207,9 @@ export function ChatMessageArea({
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
-          {/* Automated conversations are one-way publishing channels: no calls. */}
-          {!isAutomatedConversation && (
+          {/* Automated conversations are one-way publishing channels and
+              self-direct has no peer: no calls. */}
+          {!isAutomatedConversation && !isSelfDirect && (
           <Tooltip
             title={
               callAvailable
@@ -1213,7 +1226,7 @@ export function ChatMessageArea({
             />
           </Tooltip>
           )}
-          {!isAutomatedConversation && (
+          {!isAutomatedConversation && !isSelfDirect && (
           <Tooltip
             title={
               callAvailable

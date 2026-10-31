@@ -34,6 +34,7 @@ import { actorDisplayName } from '../../store/socialProfileProjection';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import {
   CHAT_BACKGROUND_OPTIONS,
+  directConversationDisplayName,
   projectDesktopIMMessages,
   type DesktopIMMessageProjection,
   type FriendChatSession,
@@ -682,6 +683,9 @@ export function ChatDetailPanel() {
   const activeConversation = activeUlid
     ? getIMConversations().find((conversation) => conversation.kind === activeTab && conversation.id === activeUlid)
     : undefined;
+  // Self-direct (Saved Messages): the authenticated profile is already in
+  // memory, so no peer fetch; presence and safety-number UI are hidden.
+  const isSelfDirect = !isGroup && activeConversation?.selfDirect === true;
   const activeFriendSession = activeTab === 'friend'
     ? sessions.find((s) => s.ulid === activeUlid)
     : undefined;
@@ -825,7 +829,11 @@ export function ChatDetailPanel() {
       : t('chat.social.detail.permissionMemberBody');
   const currentName = isGroup
     ? (activeConversation?.title || activeGroup?.name || t('chat.social.sessionList.unnamedGroup'))
-    : activeConversation?.title || getFriendPeerName(activeFriendSession, currentUserPtid);
+    : directConversationDisplayName(
+      activeConversation ?? { title: '' },
+      t('chat.social.contacts.savedMessages'),
+      getFriendPeerName(activeFriendSession, currentUserPtid),
+    );
   const displayName = currentName || t('chat.social.sessionList.unknown');
   const peerAvatar = activeConversation?.avatar || getFriendPeerAvatar(activeFriendSession, currentUserPtid);
   const peerPresenceKnown = peerPtid ? peerPtid in peerOnline : false;
@@ -1347,10 +1355,10 @@ export function ChatDetailPanel() {
   }, [activeUlid]);
 
   useEffect(() => {
-    if (!isGroup && peerPtid) {
+    if (!isGroup && !isSelfDirect && peerPtid) {
       void loadPeerProfile(peerPtid);
     }
-  }, [isGroup, peerPtid, loadPeerProfile]);
+  }, [isGroup, isSelfDirect, peerPtid, loadPeerProfile]);
 
   const cachedPeerProfile = !isGroup && peerPtid ? peerProfiles[peerPtid] : undefined;
 
@@ -1578,6 +1586,8 @@ export function ChatDetailPanel() {
               compact
               profile={buildChatDetailProfile({
                 isGroup,
+                isSelfDirect,
+                selfLabel: t('chat.social.contacts.savedMessages'),
                 displayName,
                 peerAvatar,
                 peerPtid,
@@ -1957,8 +1967,9 @@ export function ChatDetailPanel() {
           />
         </DetailSection>
 
-        {/* Security section */}
-        {encryptionEnabled && !isGroup && (
+        {/* Security section: safety numbers are a peer concept; self-direct
+            carries no peer to verify. */}
+        {encryptionEnabled && !isGroup && !isSelfDirect && (
           <DetailSection title={t('chat.social.encryption.title')}>
             <Flexbox horizontal align="center" gap={6}>
               <Lock size={14} style={{ color: token.colorSuccess }} />
@@ -2141,6 +2152,8 @@ export function ChatDetailPanel() {
 
 interface BuildChatDetailProfileArgs {
   isGroup: boolean;
+  isSelfDirect: boolean;
+  selfLabel: string;
   displayName: string;
   peerAvatar: string;
   peerPtid: string;
@@ -2164,6 +2177,8 @@ interface BuildChatDetailProfileArgs {
 // the brief network round-trip.
 function buildChatDetailProfile({
   isGroup,
+  isSelfDirect,
+  selfLabel,
   displayName,
   peerAvatar,
   peerPtid,
@@ -2179,17 +2194,19 @@ function buildChatDetailProfile({
   federationId,
   t,
 }: BuildChatDetailProfileArgs): PublicProfileModel {
-  // Bots have no presence concept; show the Station-managed relation instead
-  // of an "Offline" state derived from missing presence.
+  // Bots have no presence concept and self-direct has no peer; show their
+  // stable relation label instead of an "Offline" state.
   const presenceLabel = isGroup
     ? t('chat.social.detail.membersCount', { count: groupMemberCount })
-    : isAutomatedConversation
-      ? t('chat.automation.stationManaged', { defaultValue: 'Automated service · Station resident' })
-      : peerPresenceKnown
-        ? peerIsOnline
-          ? t('chat.social.detail.online')
-          : t('chat.social.detail.offline')
-        : t('chat.social.detail.presenceUnavailable');
+    : isSelfDirect
+      ? selfLabel
+      : isAutomatedConversation
+        ? t('chat.automation.stationManaged', { defaultValue: 'Automated service · Station resident' })
+        : peerPresenceKnown
+          ? peerIsOnline
+            ? t('chat.social.detail.online')
+            : t('chat.social.detail.offline')
+          : t('chat.social.detail.presenceUnavailable');
   const encryptionBadge = {
     label: encryptionEnabled
       ? t('chat.social.detail.encrypted')
@@ -2248,7 +2265,7 @@ function buildChatDetailProfile({
     tags: (cachedPeerProfile?.tags ?? []).filter(Boolean),
     links: (cachedPeerProfile?.links ?? []).filter((l) => l && (l.label || l.url)),
     relationLabel: presenceLabel,
-    relationTone: peerIsOnline ? 'success' : 'default',
+    relationTone: !isSelfDirect && peerIsOnline ? 'success' : 'default',
     identityMetadata: authorityStationName
       ? [t('chat.social.identity.station', { station: authorityStationName })]
       : undefined,

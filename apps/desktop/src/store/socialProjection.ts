@@ -46,6 +46,7 @@ export interface DesktopUnifiedConversationLike {
   homeStationName?: string;
   federationName?: string;
   memberCount?: number;
+  selfDirect?: boolean;
   muted?: boolean;
   alertEnabled?: boolean;
   hidden?: boolean;
@@ -281,6 +282,12 @@ export type DesktopIMConversationProjection = IMConversationProjection & {
   homeStationName?: string;
   federationName?: string;
   memberCount?: number;
+  /**
+   * One-member Direct whose sole member is the current actor (Saved
+   * Messages / self-direct). The UI renders the authenticated profile and
+   * localizes the title instead of treating the self row as a friend.
+   */
+  selfDirect?: boolean;
   /** Server-owned group description/announcement; empty for directs. */
   description?: string;
   /** Owner actor PTID for group conversations; drives edit permissions. */
@@ -466,10 +473,26 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
     homeStationName: conversation.homeStationName,
     federationName: conversation.federationName,
     memberCount: conversation.memberCount,
+    selfDirect: conversation.selfDirect,
     description: conversation.description,
     ownerPtid: conversation.ownerPtid,
     canonicalName: conversation.canonicalName,
   };
+}
+
+/**
+ * UI-facing Direct conversation title. A self-direct resolves its name from
+ * the authenticated profile; callers MUST pass the localized "Saved
+ * Messages" label for the nameless case — never an unknown/friend heuristic.
+ */
+export function directConversationDisplayName(
+  conversation: Pick<DesktopIMConversationProjection, 'title' | 'selfDirect'>,
+  selfLabel: string,
+  unknownLabel: string,
+): string {
+  const title = conversation.title?.trim() ?? '';
+  if (title) return title;
+  return conversation.selfDirect ? selfLabel : unknownLabel;
 }
 
 export function projectDesktopIMMessage(

@@ -2541,25 +2541,36 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
       if (isDirect) {
         const members = state.conversationMembers[convId] || [];
-        const peer = members.find((m) => m.ptid && !isOwnPtid(m.ptid)) || members[0];
+        // A self-direct (Saved Messages) conversation has the current actor
+        // as its sole member; there is no foreign peer member.
+        const foreignPeer = members.find((m) => m.ptid && !isOwnPtid(m.ptid));
+        const isSelfDirect = members.length > 0 && !foreignPeer;
+        const peer = foreignPeer || members[0];
         const peerPtid = peer?.ptid || '';
         const profile = state.peerProfiles[peerPtid];
-        const friendReq = peerPtid
+        const friendReq = !isSelfDirect && peerPtid
           ? state.friendRequests.find((r) => r.senderPtid === peerPtid || r.receiverPtid === peerPtid)
           : undefined;
-        const peerName = actorDisplayName(peer?.nickname)
-          || actorDisplayName(profile?.display_name)
-          || actorDisplayName(profile?.username)
-          || actorDisplayName(friendReq ? (friendReq.senderPtid === peerPtid ? friendReq.senderDisplayName : friendReq.receiverDisplayName) : '')
-          || 'Friend';
+        const selfName = actorDisplayName(state.currentUserProfile?.displayName)
+          || actorDisplayName(state.currentUserProfile?.username)
+          || '';
+        const peerName = isSelfDirect
+          ? selfName
+          : actorDisplayName(peer?.nickname)
+            || actorDisplayName(profile?.display_name)
+            || actorDisplayName(profile?.username)
+            || actorDisplayName(friendReq ? (friendReq.senderPtid === peerPtid ? friendReq.senderDisplayName : friendReq.receiverDisplayName) : '')
+            || 'Friend';
+        const avatar = (isSelfDirect ? state.currentUserProfile?.avatar : profile?.avatar) || '';
         out.push(projectDesktopIMConversation({
           type: 'friend',
           ulid: convId,
           authorityStationId: conv.authorityStationPeerId,
           federationId: conv.federationId,
           name: peerName,
-          avatar: profile?.avatar || '',
+          avatar,
           peerPtid,
+          selfDirect: isSelfDirect,
           lastActivity,
           unread: state.groupUnreadCounts[convId] ?? 0,
           muted: localState?.muted ?? (peer?.muted || false),

@@ -466,7 +466,12 @@ func (s *Service) createDirect(
 		request.CommandID == "" || len(request.ExactCommandBytes) == 0 {
 		return Result{}, invalid("application.create_direct", "request", "complete creation input is required")
 	}
-	conversationID, err := valueobject.DirectConversationID(request.Creator.Actor, request.Peer)
+	// A self-direct (Saved Messages) conversation is always Local scope:
+	// the only member and authority live on the creator's Home Station.
+	if request.Peer == request.Creator.Actor && !request.Scope.IsLocal() {
+		return Result{}, invalid("application.create_direct", "scope", "self-direct conversation must be local scope")
+	}
+	conversationID, err := valueobject.DirectConversationIDForActors(request.Creator.Actor, request.Peer)
 	if err != nil {
 		return Result{}, err
 	}
@@ -708,16 +713,35 @@ func validateExistingDirect(
 		}
 	}
 	_, hasCreator := activeActors[request.Creator.Actor]
-	_, hasPeer := activeActors[request.Peer]
 	if snapshot.Kind != valueobject.ConversationKindDirect ||
 		snapshot.Status != valueobject.ConversationStatusActive ||
 		!snapshot.Scope.Equal(request.Scope) ||
 		snapshot.AuthorityStation == "" ||
 		snapshot.AuthorityEpoch != request.AuthorityEpoch ||
-		len(snapshot.Members) != 2 ||
-		len(activeActors) != 2 ||
-		!hasCreator ||
-		!hasPeer {
+		len(activeActors) > 2 ||
+		len(snapshot.Members) != len(activeActors) ||
+		!hasCreator {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeCommandConflict,
+			"application.ensure_direct",
+			"conversation",
+			"does not match the requested Direct Conversation",
+		)
+	}
+	if request.Peer == request.Creator.Actor {
+		// Self-direct: the creator is the sole active member.
+		if len(activeActors) != 1 {
+			return conversationdomain.NewError(
+				conversationdomain.ErrorCodeCommandConflict,
+				"application.ensure_direct",
+				"conversation",
+				"self-direct conversation requires exactly one active member",
+			)
+		}
+		return nil
+	}
+	_, hasPeer := activeActors[request.Peer]
+	if len(activeActors) != 2 || !hasPeer {
 		return conversationdomain.NewError(
 			conversationdomain.ErrorCodeCommandConflict,
 			"application.ensure_direct",

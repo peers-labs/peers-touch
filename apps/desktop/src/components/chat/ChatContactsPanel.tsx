@@ -54,6 +54,7 @@ export function ChatContactsPanel({
     friendRequestsError,
     peerProfiles,
     currentUserPtid,
+    currentUserProfile,
     conversationRecords,
     conversationMembers,
     groupMembers,
@@ -69,6 +70,7 @@ export function ChatContactsPanel({
     friendRequestsError: s.friendRequestsError,
     peerProfiles: s.peerProfiles,
     currentUserPtid: s.currentUserPtid,
+    currentUserProfile: s.currentUserProfile,
     conversationRecords: s.conversations,
     conversationMembers: s.conversationMembers,
     groupMembers: s.groupMembers,
@@ -85,6 +87,7 @@ export function ChatContactsPanel({
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
   const [requestActionErrors, setRequestActionErrors] = useState<Record<string, PresentedError>>({});
+  const myDid = currentUserPtid || currentAuthenticatedActorPtid() || '';
   const conversations = useMemo(
     () => {
       // getIMConversations reads the store imperatively. Referencing its
@@ -94,6 +97,7 @@ export function ChatContactsPanel({
       void conversationMembers;
       void groupMembers;
       void currentUserPtid;
+      void currentUserProfile;
       void friendRequests;
       void peerProfiles;
       return getIMConversations();
@@ -101,6 +105,7 @@ export function ChatContactsPanel({
     [
       conversationMembers,
       conversationRecords,
+      currentUserProfile,
       currentUserPtid,
       friendRequests,
       getIMConversations,
@@ -110,8 +115,6 @@ export function ChatContactsPanel({
   );
   const groupConversations = conversations.filter((conversation) => conversation.kind === 'group');
   const friendConversations = conversations.filter((conversation) => conversation.kind === 'friend');
-
-  const myDid = currentUserPtid || currentAuthenticatedActorPtid() || '';
   const friendshipReady = Boolean(
     myDid
     && friendRequestsLoadedAt,
@@ -231,45 +234,30 @@ export function ChatContactsPanel({
     onSelectContact(selection);
   };
 
+  // Self-direct (Saved Messages) is a one-member Direct with the current
+  // actor. The identity feeds the canonical friend-contact selection, so
+  // open/create reuse the single openDirectConversation path.
+  const selfIdentity = useMemo<ChatActorIdentityProjection>(() => ({
+    actorPtid: myDid,
+    username: currentUserProfile?.username?.trim() ?? '',
+    displayName: t('chat.social.contacts.savedMessages'),
+    avatarUrl: currentUserProfile?.avatar ?? '',
+    federatedHandle: '',
+    homeStationDomain: '',
+    homeStationPeerId: '',
+    federationId: '',
+    federationName: '',
+  }), [currentUserProfile, myDid, t]);
+
+  const openSelfConversation = () => {
+    if (!myDid || !onStartChat) return;
+    onStartChat(friendContactSelection(selfIdentity, friendConversations));
+  };
+
   const runRequestAction = async (
     request: FriendRequestData,
     action: 'accept' | 'reject',
   ) => {
-    // #region debug-point B-C:friend-request-accept-handler
-    void fetch('http://127.0.0.1:7782/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'friend-request-accept',
-        runId: 'pre-fix',
-        hypothesisId: 'B-C',
-        location: 'ChatContactsPanel.tsx:runRequestAction:entry',
-        msg: '[DEBUG] Friend request decision handler entered',
-        data: {
-          action,
-          currentUserPtid: myDid,
-          request: {
-            id: request.id,
-            senderPtid: request.senderPtid,
-            receiverPtid: request.receiverPtid,
-            senderHomeStationPeerId: request.senderHomeStationPeerId,
-            receiverHomeStationPeerId: request.receiverHomeStationPeerId,
-            federationId: request.federationId,
-            status: request.status,
-          },
-          matchingRequests: friendRequests
-            .filter((candidate) => (
-              candidate.senderPtid === request.senderPtid
-              && candidate.receiverPtid === request.receiverPtid
-            ))
-            .map((candidate) => ({
-              id: candidate.id,
-              status: candidate.status,
-              federationId: candidate.federationId,
-            })),
-        },
-      }),
-    }).catch(() => {});
-    // #endregion
     setBusyAction({ id: request.id, kind: action });
     setRequestActionErrors((current) => {
       if (!(request.id in current)) return current;
@@ -283,38 +271,7 @@ export function ChatContactsPanel({
       } else {
         await rejectFriendRequest(request);
       }
-      // #region debug-point B-D:friend-request-accept-handler-success
-      void fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-accept',
-          runId: 'pre-fix',
-          hypothesisId: 'B-D',
-          location: 'ChatContactsPanel.tsx:runRequestAction:success',
-          msg: '[DEBUG] Friend request decision handler succeeded',
-          data: { action, requestId: request.id, currentUserPtid: myDid },
-        }),
-      }).catch(() => {});
-      // #endregion
     } catch (error) {
-      // #region debug-point B-D:friend-request-accept-handler-error
-      void fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-accept',
-          runId: 'pre-fix',
-          hypothesisId: 'B-D',
-          location: 'ChatContactsPanel.tsx:runRequestAction:error',
-          msg: '[DEBUG] Friend request decision handler failed',
-          data: {
-            action,
-            requestId: request.id,
-            currentUserPtid: myDid,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        }),
-      }).catch(() => {});
-      // #endregion
       log.error('contacts', `${action}FriendRequest failed`, error);
       setRequestActionErrors((current) => ({
         ...current,
@@ -469,25 +426,6 @@ export function ChatContactsPanel({
                     loading={busyAction?.id === request.id && busyAction?.kind === 'accept'}
                     onClick={(event) => {
                       event.stopPropagation();
-                      // #region debug-point A-B:friend-request-accept-click
-                      void fetch('http://127.0.0.1:7782/event', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                          sessionId: 'friend-request-accept',
-                          runId: 'pre-fix',
-                          hypothesisId: 'A-B',
-                          location: 'ChatContactsPanel.tsx:accept:onClick',
-                          msg: '[DEBUG] Friend request accept clicked',
-                          data: {
-                            requestId: request.id,
-                            senderPtid: request.senderPtid,
-                            receiverPtid: request.receiverPtid,
-                            status: request.status,
-                            currentUserPtid: myDid,
-                          },
-                        }),
-                      }).catch(() => {});
-                      // #endregion
                       void runRequestAction(request, 'accept');
                     }}
                   >
@@ -525,6 +463,58 @@ export function ChatContactsPanel({
           </Flexbox>
         );
       })}
+    </Flexbox>
+  );
+
+  const selfRow = !myDid ? null : (
+    <Flexbox
+      data-chat-contact-self
+      horizontal
+      align="center"
+      gap={9}
+      role="button"
+      tabIndex={0}
+      onClick={openSelfConversation}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openSelfConversation();
+      }}
+      style={{
+        ...rowBaseStyle,
+        ...(selectedContact?.kind === 'friend' && selectedContact.peerPtid === myDid
+          ? selectedRowStyle
+          : {}),
+      }}
+      onMouseEnter={(e) => {
+        if (!(selectedContact?.kind === 'friend' && selectedContact.peerPtid === myDid)) {
+          e.currentTarget.style.background = token.colorFillQuaternary;
+        }
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background =
+          selectedContact?.kind === 'friend' && selectedContact.peerPtid === myDid
+            ? token.colorPrimaryBg
+            : 'transparent';
+      }}
+    >
+      <UserSquareAvatar
+        remoteUrl={selfIdentity.avatarUrl}
+        name={t('chat.social.contacts.savedMessages')}
+        size={avatarSize}
+      />
+      <Flexbox flex={1} style={{ minWidth: 0 }}>
+        <Text strong ellipsis style={{ fontSize: 13 }}>
+          {t('chat.social.contacts.savedMessages')}
+        </Text>
+        <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
+          {t('chat.social.contacts.savedMessagesHint')}
+        </Text>
+      </Flexbox>
+      <ChevronRight
+        size={14}
+        style={{ color: token.colorTextQuaternary, flexShrink: 0 }}
+      />
     </Flexbox>
   );
 
@@ -726,7 +716,15 @@ export function ChatContactsPanel({
         overflow: 'hidden',
       }}
     >
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 6px' }}>
+      <Flexbox
+        flex={1}
+        style={{ overflow: 'auto', padding: '8px 6px', flexDirection: 'column' }}
+      >
+        {/* Saved Messages is a fixed always-present self-direct entry, not a
+            collapsible contact category. */}
+        {selfRow ? (
+          <Flexbox gap={3} style={rowListStyle}>{selfRow}</Flexbox>
+        ) : null}
         <Collapse
           bordered={false}
           defaultActiveKey={['saved-groups', 'friends']}

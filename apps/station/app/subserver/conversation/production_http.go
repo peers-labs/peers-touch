@@ -137,44 +137,55 @@ func (s *subServer) handleCreateDirectConversation(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
-	conversationID, err := valueobject.DirectConversationID(endpoint.Actor, peer)
+	conversationID, err := valueobject.DirectConversationIDForActors(endpoint.Actor, peer)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
+	isSelfDirect := peer == endpoint.Actor
 	// Same-station Direct conversations are Local scope: derived from Actor
 	// home-station ownership, no Federation membership. A cross-station peer
 	// resolves the unique shared Federation server-side from the station pair;
 	// the client never supplies a federation id for Direct creation.
-	peerHomeStation, homeErr := s.composition.ActorCapabilities.
-		ResolveActorHomeStationPeerID(ctx, string(peer))
-	sameStation := homeErr == nil && peerHomeStation == string(s.localStation)
 	var scope valueobject.Scope
-	if sameStation {
+	var peerHomeStation string
+	if isSelfDirect {
 		scope, err = valueobject.LocalScope(s.localStation)
 		if err != nil {
 			return nil, mapProductionConversationError(ctx, err)
 		}
+		peerHomeStation = string(s.localStation)
 	} else {
-		if homeErr != nil {
-			return nil, mapProductionConversationError(
+		var homeErr error
+		peerHomeStation, homeErr = s.composition.ActorCapabilities.
+			ResolveActorHomeStationPeerID(ctx, string(peer))
+		sameStation := homeErr == nil && peerHomeStation == string(s.localStation)
+		if sameStation {
+			scope, err = valueobject.LocalScope(s.localStation)
+			if err != nil {
+				return nil, mapProductionConversationError(ctx, err)
+			}
+		} else {
+			if homeErr != nil {
+				return nil, mapProductionConversationError(
+					ctx,
+					productionStage(operation, "resolve_peer_home_station", homeErr),
+				)
+			}
+			federationID, federationErr := s.federations.ResolveSharedFederation(
 				ctx,
-				productionStage(operation, "resolve_peer_home_station", homeErr),
+				s.localStation,
+				valueobject.StationID(peerHomeStation),
 			)
-		}
-		federationID, federationErr := s.federations.ResolveSharedFederation(
-			ctx,
-			s.localStation,
-			valueobject.StationID(peerHomeStation),
-		)
-		if federationErr != nil {
-			return nil, mapProductionConversationError(
-				ctx,
-				productionStage(operation, "resolve_scope", federationErr),
-			)
-		}
-		scope, err = valueobject.FederationScope(federationID)
-		if err != nil {
-			return nil, mapProductionConversationError(ctx, err)
+			if federationErr != nil {
+				return nil, mapProductionConversationError(
+					ctx,
+					productionStage(operation, "resolve_scope", federationErr),
+				)
+			}
+			scope, err = valueobject.FederationScope(federationID)
+			if err != nil {
+				return nil, mapProductionConversationError(ctx, err)
+			}
 		}
 	}
 	requiresVerifiedRoutes := false

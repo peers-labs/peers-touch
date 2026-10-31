@@ -15,6 +15,7 @@ import { resolveMessageSearchTargets, useSocialChatStore } from './socialChat';
 import { useSessionStore } from './session';
 import type { AccountProfile } from '../services/desktop_api';
 import {
+  directConversationDisplayName,
   projectDesktopIMMessage,
   visibleConversationUnread,
   type DesktopServiceMessage,
@@ -460,6 +461,73 @@ describe('social chat conversation projection', () => {
       title: 'Build completed',
       taskState: { revision: '2', state: 4 },
     });
+  });
+
+  it('projects a one-member direct as self-direct from the authenticated profile', () => {
+    useSocialChatStore.setState({
+      currentUserProfile: {
+        actorPtid: 'ptid:peer:alice',
+        username: 'alice',
+        displayName: 'Alice Self',
+        avatar: 'tauri://localhost/self.png',
+      },
+      conversations: [
+        create(ConversationSchema, {
+          conversationId: 'self-direct-conversation',
+          kind: ConversationKind.DIRECT,
+          authorityStationPeerId: 'station-four',
+          status: ConversationStatus.ACTIVE,
+        }),
+      ],
+      conversationMembers: {
+        'self-direct-conversation': [
+          create(ConversationMemberSchema, {
+            conversationId: 'self-direct-conversation',
+            ptid: 'ptid:peer:alice',
+            role: MemberRole.OWNER,
+            memberStatus: MemberStatus.ACTIVE,
+          }),
+        ],
+      },
+    });
+
+    const self = useSocialChatStore.getState()
+      .getIMConversations()
+      .find((conversation) => conversation.id === 'self-direct-conversation');
+
+    expect(self).toMatchObject({
+      kind: 'friend',
+      peerPtid: 'ptid:peer:alice',
+      selfDirect: true,
+      title: 'Alice Self',
+      avatar: 'tauri://localhost/self.png',
+    });
+  });
+
+  it('leaves a two-member direct unmarked as self-direct', () => {
+    const pair = useSocialChatStore.getState()
+      .getIMConversations()
+      .find((conversation) => conversation.id === 'direct-conversation');
+    expect(pair?.selfDirect).toBe(false);
+    expect(pair?.peerPtid).toBe('ptid:peer:bob');
+  });
+
+  it('resolves the Direct display name with a localized self fallback', () => {
+    expect(directConversationDisplayName(
+      { title: 'Alice', selfDirect: true },
+      'Saved Messages',
+      'Unknown',
+    )).toBe('Alice');
+    expect(directConversationDisplayName(
+      { title: '  ', selfDirect: true },
+      'Saved Messages',
+      'Unknown',
+    )).toBe('Saved Messages');
+    expect(directConversationDisplayName(
+      { title: '', selfDirect: false },
+      'Saved Messages',
+      'Unknown',
+    )).toBe('Unknown');
   });
 
   it('keeps unread truth while suppressing visible alerts by local preference', () => {
