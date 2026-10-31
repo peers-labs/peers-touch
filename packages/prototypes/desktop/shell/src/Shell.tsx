@@ -32,7 +32,6 @@ import {
   Globe,
   Wrench,
   ChevronRight,
-  Zap,
   type LucideIcon,
 } from 'lucide-react';
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
@@ -120,7 +119,6 @@ const COMMANDS: { id: string; label: string; desc: string; shortcut: string; tar
   { id: 'search', label: '搜索', desc: '全局搜索', shortcut: '⌘K', target: 'search' },
   { id: 'chat', label: '聊天', desc: '打开 Social Chat', shortcut: '⌘⇧C', target: 'chat' },
   { id: 'agent', label: 'Agent', desc: '打开 Agent', shortcut: '⌘J', target: 'agent' },
-  { id: 'agent-atelier', label: 'Atelier', desc: '打开 Agent 工作台', shortcut: '⌘⇧A', target: 'agent-atelier' },
   { id: 'moments', label: '动态', desc: '打开 Social', shortcut: '⌘⇧M', target: 'moments' },
   { id: 'settings', label: '设置', desc: '打开设置', shortcut: '⌘,', target: 'settings' },
 ];
@@ -375,7 +373,7 @@ function AppletsCenter({ onOpen }: { onOpen: (id: string) => void }) {
           alignContent: 'start',
         }}
       >
-        {APPLETS.map((a) => (
+        {APPLETS.filter((a) => a.id !== 'atelier').map((a) => (
           <AppletCard key={a.id} applet={a} onOpen={() => onOpen(a.id)} />
         ))}
       </div>
@@ -631,6 +629,10 @@ export interface DesktopShellProps {
 
 type AgentSurfaceId = 'agent' | 'agent-atelier';
 
+function availableShellPage(page: string): string {
+  return page === 'agent-atelier' || page === 'applet:atelier' ? 'agent' : page;
+}
+
 function getAgentSurfaceId(page: string): AgentSurfaceId | null {
   if (page === 'agent' || page === 'agent-profile') return 'agent';
   if (page === 'agent-atelier') return 'agent-atelier';
@@ -655,7 +657,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
     : showModernChatReview || showV2ProductReview || showAgentChatReview
     ? 'agent'
     : initialPage ?? (requestedSurface === 'search' ? 'search-placeholder' : 'chat');
-  const [page, setPage] = useState(defaultPage === 'search-placeholder' ? 'chat' : defaultPage);
+  const [page, setPage] = useState(availableShellPage(defaultPage === 'search-placeholder' ? 'chat' : defaultPage));
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Search 是按需唤起的覆盖层，不是页面（S-01：Chat 默认落点）。
   const [searchOpen, setSearchOpen] = useState(requestedSurface === 'search');
@@ -671,11 +673,12 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   const [authPrototypeComplete, setAuthPrototypeComplete] = useState(false);
   const unreadCount = notifications.filter((n) => !n.read).length;
   const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {
-    const initialSurface = getAgentSurfaceId(defaultPage);
+    const initialSurface = getAgentSurfaceId(availableShellPage(defaultPage));
     return initialSurface ? new Set([initialSurface]) : new Set();
   });
 
-  const navigate = (p: string) => {
+  const navigate = (requestedPage: string) => {
+    const p = availableShellPage(requestedPage);
     // 搜索是覆盖层而不是路由页：点击搜索图标只唤起 Search，保留当前页面。
     if (p === 'search') {
       setSearchOpen(true);
@@ -745,7 +748,6 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   } else if (page === 'agent') {
     body = (
       <AgentChatPage
-        onOpenOrchestration={() => navigate('agent-atelier')}
         profileOpen={false}
         onOpenProfile={() => navigate('agent-profile')}
         onCloseProfile={() => navigate('agent')}
@@ -754,7 +756,6 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   } else if (page === 'agent-profile') {
     body = (
       <AgentChatPage
-        onOpenOrchestration={() => navigate('agent-atelier')}
         profileOpen
         onOpenProfile={() => navigate('agent-profile')}
         onCloseProfile={() => navigate('agent')}
@@ -826,7 +827,6 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
             <div style={{ height: 42, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '0 10px', borderBottom: `1px solid ${T.border}`, background: T.bg }}>
               {[
                 { id: 'agent', label: 'Agent', icon: Bot },
-                { id: 'agent-atelier', label: 'Atelier', icon: Zap },
               ].map((item) => {
                 const Icon = item.icon;
                 const active = item.id === 'agent'
@@ -873,7 +873,6 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
                       <ModernChatReview initialState={modernChatState} withTopicRail />
                     ) : (
                       <AgentChatPage
-                        onOpenOrchestration={() => navigate('agent-atelier')}
                         profileOpen={page === 'agent-profile'}
                         onOpenProfile={() => navigate('agent-profile')}
                         onCloseProfile={() => navigate('agent')}

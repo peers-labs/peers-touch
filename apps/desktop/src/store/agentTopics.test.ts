@@ -55,6 +55,14 @@ describe('agentTopics authoritative load failure', () => {
     });
   });
 
+  it('retains accepted Topic rows and array on an unchanged background read', async () => {
+    listAgentSessions.mockResolvedValue([structuredClone(acceptedTopic)]);
+    const accepted = await useAgentTopicStore.getState().loadTopicsForAgent('agent-1', 'bootstrap');
+    const reloaded = await useAgentTopicStore.getState().loadTopicsForAgent('agent-1', 'periodic');
+    expect(reloaded).toBe(accepted);
+    expect(reloaded[0]).toBe(accepted[0]);
+  });
+
   it('preserves all topics on batch rejection and preserves concurrent unrelated changes', async () => {
     let reject!: (error: Error) => void;
     deleteSessions.mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));

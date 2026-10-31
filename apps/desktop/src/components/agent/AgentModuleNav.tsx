@@ -1,5 +1,5 @@
 import { Segmented, theme } from 'antd';
-import { Bot, Zap } from 'lucide-react';
+import { Bot } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Navigation, Page } from '../../types/navigation';
 
@@ -12,15 +12,9 @@ export function AgentModuleNav({ navigation, page }: AgentModuleNavProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const inAgentModule = page === 'agent'
-    || page === 'agent-profile'
-    || page === 'agent-orchestration'
-    || page === 'applet:peers.atelier';
+    || page === 'agent-profile';
 
   if (!inAgentModule) return null;
-
-  const activeSurface = page === 'applet:peers.atelier' || page === 'agent-orchestration'
-    ? 'atelier'
-    : 'chat';
 
   return (
     <div
@@ -37,22 +31,15 @@ export function AgentModuleNav({ navigation, page }: AgentModuleNavProps) {
     >
       <Segmented
         size="small"
-        value={activeSurface}
+        value="chat"
         options={[
           {
             value: 'chat',
             icon: <Bot size={14} />,
             label: <span data-pt-agent-module-item="chat">{t('agent.module.chat')}</span>,
           },
-          {
-            value: 'atelier',
-            icon: <Zap size={14} />,
-            label: <span data-pt-agent-module-item="atelier">{t('agent.module.atelier')}</span>,
-          },
         ]}
-        onChange={(value) => {
-          navigation.navigateTo(value === 'atelier' ? 'applet:peers.atelier' : 'agent');
-        }}
+        onChange={() => navigation.navigateTo('agent')}
       />
     </div>
   );

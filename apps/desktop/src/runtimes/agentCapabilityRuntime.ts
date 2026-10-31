@@ -34,6 +34,12 @@ const SESSION_WARMUP_INTERVAL_MS = 1_000;
 const SESSION_WARMUP_ATTEMPTS = 20;
 const AGENT_PROJECTION_CONCURRENCY = 2;
 const MAX_AUTHORITY_STREAMS = 4;
+const AUTHORITY_ONLY_REASONS = new Set([
+  'capability-session-warmup',
+  'agent-or-default-model-selection',
+  'topic-model-selection',
+  'topic-selection',
+]);
 
 let installed = false;
 let runtimeGeneration = 0;
@@ -206,7 +212,7 @@ async function loadAgentCapabilities(reason: string): Promise<void> {
   log.info('agentCapabilityRuntime', 'loading agent capability projections', { reason });
   const [listedCapabilitySessions] = await Promise.all([
     api.listAgentCapabilitySessions(),
-    reason === 'capability-session-warmup' ? Promise.resolve() : Promise.all([
+    AUTHORITY_ONLY_REASONS.has(reason) ? Promise.resolve() : Promise.all([
       useProviderStore.getState().loadProviders(),
       useAgentStore.getState().loadModels(),
       useAgentStore.getState().loadAgents(),

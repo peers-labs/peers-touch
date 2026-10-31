@@ -42,6 +42,7 @@ from tooling.acceptance.gates.agent.chat_conversation_scenarios import (
 from tooling.acceptance.gates.agent.chat_topic_scenarios import (
     prepare_topics, navigation, rename_and_drafts, agent_drafts,
     first_send_and_delete, pin, batch_delete, delete_agent,
+    idle_stability,
 )
 from tooling.acceptance.gates.agent.chat_profile_scenarios import (
     create_profile,
@@ -504,6 +505,7 @@ def main() -> int:
                 def topic_navigation() -> dict[str, Any]:
                     navigation_result.update(navigation(runner, agent_id, ids))
                     result = rename_and_drafts(runner, agent_id, ids)
+                    result["emptyIdleStability"] = idle_stability(runner)
                     result["navigation"] = navigation_result
                     result["agentDrafts"] = agent_drafts(runner, agent_id, ids[0])
                     result["firstSend"] = first_send_and_delete(runner, agent_id, fixture)

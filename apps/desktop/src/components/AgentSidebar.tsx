@@ -186,6 +186,8 @@ export function AgentSidebar({
   const loading = currentAgent
     ? Boolean(loadingAgentIds[currentAgent.id])
     : false;
+  const initialLoading = loading && currentAgent
+    && topicsByAgentId[currentAgent.id] === undefined;
   const loadError = currentAgent
     ? loadErrorsByAgentId[currentAgent.id]
     : undefined;
@@ -388,7 +390,7 @@ export function AgentSidebar({
         >
           {t('agent.sidebar.topicsCount', { count: topics.length })}
         </span>
-        {loading ? (
+        {initialLoading ? (
           <span style={{ marginLeft: 'auto', color: token.colorTextTertiary, fontSize: 11 }}>
             {t('agent.sidebar.topicSyncing')}
           </span>

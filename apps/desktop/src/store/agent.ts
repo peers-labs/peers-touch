@@ -1,4 +1,5 @@
 import { createDesktopStore } from './createDesktopStore';
+import { replaceEqualDeep } from '@tanstack/query-core';
 import { log } from '../utils/logger';
 import { resolveI18nValue } from '../i18n/index';
 import {
@@ -248,12 +249,12 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         configuredDefault,
         configuredDefaultProvider,
       );
-      set({
-        availableModels: enabledModels,
+      set((state) => ({
+        availableModels: replaceEqualDeep(state.availableModels, enabledModels),
         defaultModel: defaultSelection.modelId,
         defaultProviderId: defaultSelection.providerId,
         lastLoadedAt: Date.now(),
-      });
+      }));
     } catch (error) {
       if (epoch !== useSessionStore.getState().sessionEpoch) return;
       const message = toStoreError(error);
@@ -303,7 +304,13 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         selectedCandidates,
         defaultCandidate,
       );
-      set({ ...roster, lastLoadedAt: Date.now() });
+      // An unchanged Station read is not a new roster. Keep selector and
+      // selected-Agent identity stable through background reconciliation.
+      set((state) => ({
+        ...roster,
+        agents: replaceEqualDeep(state.agents, roster.agents),
+        lastLoadedAt: Date.now(),
+      }));
       const nextSelected = roster.selectedAgent;
       if (nextSelected && nextSelected !== persistedSelected) {
         void api.setSelectedAgent(nextSelected).catch((error) => {
@@ -333,7 +340,11 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         const idx = activeIds.indexOf('web-search');
         if (idx >= 0) activeIds.splice(idx, 1);
       }
-      set({ applets, enabledAppletIds: activeIds, lastLoadedAt: Date.now() });
+      set((state) => ({
+        applets: replaceEqualDeep(state.applets, applets),
+        enabledAppletIds: replaceEqualDeep(state.enabledAppletIds, activeIds),
+        lastLoadedAt: Date.now(),
+      }));
     } catch (error) {
       const message = toStoreError(error);
       log.error('agent', 'Failed to load applets', { error: message });

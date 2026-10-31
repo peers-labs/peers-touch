@@ -109,6 +109,23 @@ describe('Agent profile capability reconciliation', () => {
     api.setSelectedAgent.mockResolvedValue(undefined);
   });
 
+  it('retains the roster on identical reconciliation and publishes real changes', async () => {
+    await useAgentStore.getState().loadAgents();
+    const accepted = useAgentStore.getState().agents;
+    api.listAgentsWithMeta.mockResolvedValueOnce({
+      agents: structuredClone(accepted), defaultAgent: agent.name, selectedAgent: agent.name,
+    });
+    await useAgentStore.getState().loadAgents();
+    expect(useAgentStore.getState().agents).toBe(accepted);
+    api.listAgentsWithMeta.mockResolvedValueOnce({
+      agents: [{ ...agent, title: 'Changed by Station', version: 8 }],
+      defaultAgent: agent.name, selectedAgent: agent.name,
+    });
+    await useAgentStore.getState().loadAgents();
+    expect(useAgentStore.getState().agents).not.toBe(accepted);
+    expect(useAgentStore.getState().agents[0].title).toBe('Changed by Station');
+  });
+
   it('falls back when the selected model is no longer available', () => {
     expect(resolveAvailableModelSelection([
       {
@@ -242,6 +259,21 @@ describe('Agent profile capability reconciliation', () => {
       defaultModel: 'model-ready',
       defaultProviderId: 'provider-2',
     });
+  });
+
+  it('preserves the accepted model catalog on identical background reads', async () => {
+    const model = {
+      id: 'model-1', display_name: 'Model 1', provider_id: 'provider-1',
+      provider_name: 'Provider 1', type: 'chat', context_window: 128000, enabled: true,
+    };
+    api.listAvailableModels.mockResolvedValue({ models: [model], default: model.id });
+    await useAgentStore.getState().loadModels();
+    const accepted = useAgentStore.getState().availableModels;
+    api.listAvailableModels.mockResolvedValueOnce({
+      models: structuredClone(accepted), default: model.id,
+    });
+    await useAgentStore.getState().loadModels();
+    expect(useAgentStore.getState().availableModels).toBe(accepted);
   });
 
   it('loads the account default model owned by Station when it is available', async () => {
