@@ -2,159 +2,63 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Popover, Typography, Divider, Spin, theme } from 'antd';
-import { Button } from '@lobehub/ui';
-import { Globe } from 'lucide-react';
+import { Popover, Spin } from 'antd';
 import { useSessionStore } from '../store/session';
-import { UserSquareAvatar } from './common/UserSquareAvatar';
-import { FederatedHandle } from './FederatedHandle';
 import { api, type AccountProfile } from '../services/desktop_api';
-import { EVENT, eventBus } from '../kernel/events';
-
-const { Text } = Typography;
-
-function formatDate(date?: string) {
-  if (!date) return '';
-  const value = new Date(date);
-  if (Number.isNaN(value.getTime())) return '';
-  return value.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
+import { PublicProfileCard, type PublicProfileModel } from './profile/PublicProfileCard';
+import { ProfilePrimaryAction } from './profile/ProfilePrimaryAction';
+import { mergeAccountProfile } from './profile/profileModel';
 
 interface Props {
   children: ReactNode;
 }
 
+/**
+ * Self profile popover. Reuses PublicProfileCard — the only differences from
+ * a peer card are the self profile fetch and the management primary action,
+ * both supplied as props by this owner.
+ */
 export function UserProfilePopover({ children }: Props) {
   const [open, setOpen] = useState(false);
   const { t } = useTranslation('layout');
-  const { token } = theme.useToken();
   const currentUser = useSessionStore((s) => s.currentUser);
 
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const userName = currentUser?.name || t('layout.user.defaultName');
-  const userAvatar = currentUser?.avatarUrl || undefined;
-
-  const displayName = profile?.display_name || userName;
-  const username = profile?.username || '';
-  const homeStation = profile?.home_station_domain || '';
-  const headerSrc = profile?.header || undefined;
-  const avatarSrc = profile?.avatar || userAvatar;
-  const bio = profile?.note || '';
-  const createdAt = formatDate(profile?.created_at);
+  const model = useMemo<PublicProfileModel>(() => {
+    const fallback: PublicProfileModel = {
+      displayName: currentUser?.name || t('layout.user.defaultName'),
+      avatar: currentUser?.avatarUrl,
+      did: currentUser?.actorPtid,
+    };
+    if (!profile) return fallback;
+    return mergeAccountProfile(
+      fallback,
+      profile,
+      {
+        posts: t('layout.user.posts'),
+        followers: t('layout.user.followers'),
+        following: t('layout.user.following'),
+      },
+      t('layout.user.joined'),
+    );
+  }, [currentUser, profile, t]);
 
   const content = (
-    <Flexbox gap={0} style={{ width: 320, overflow: 'hidden' }}>
-      {/* Banner */}
-      <div
-        style={{
-          width: '100%',
-          height: 80,
-          background: headerSrc
-            ? `url(${headerSrc}) center/cover no-repeat`
-            : `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`,
-        }}
-      />
-
-      {/* Profile body */}
-      <Flexbox gap={12} style={{ padding: '0 16px 16px' }}>
-        {/* Avatar overlaps the banner; the name block stays on the body
-            background. Pulling the whole row up previously dragged the
-            two-line name/handle block onto the banner image. */}
-        <Flexbox horizontal gap={12} align="flex-start" style={{ marginTop: 4 }}>
-          <div style={{ marginTop: -20 }}>
-            <UserSquareAvatar
-              remoteUrl={avatarSrc}
-              name={displayName}
-              size={56}
-              radius={12}
-              border={`2px solid ${token.colorBgContainer}`}
-            />
-          </div>
-
-          <Flexbox gap={2} style={{ paddingTop: 2, minWidth: 0 }}>
-            <Text strong style={{ fontSize: 15, lineHeight: 1.3 }} ellipsis>
-              {displayName}
-            </Text>
-            {username && (
-              <FederatedHandle
-                localPart={username}
-                home={homeStation}
-                fontSize={12}
-              />
-            )}
-          </Flexbox>
+    <Flexbox style={{ width: 320 }}>
+      {loading && !profile ? (
+        <Flexbox align="center" justify="center" style={{ height: 120 }}>
+          <Spin size="small" />
         </Flexbox>
-
-        {/* Bio */}
-        {bio && (
-          <Text
-            style={{ fontSize: 13, lineHeight: 1.5, color: token.colorText }}
-            ellipsis={{ tooltip: bio }}
-          >
-            {bio}
-          </Text>
-        )}
-
-        {/* Stats + created date */}
-        {profile && (
-          <Flexbox horizontal gap={16} align="center" style={{ flexWrap: 'wrap' }}>
-            <Text style={{ fontSize: 12 }}>
-              <Text strong>{profile.statuses_count}</Text>{' '}
-              <Text type="secondary">{t('layout.user.posts', { defaultValue: 'posts' })}</Text>
-            </Text>
-            <Text style={{ fontSize: 12 }}>
-              <Text strong>{profile.following_count}</Text>{' '}
-              <Text type="secondary">
-                {t('layout.user.following', { defaultValue: 'following' })}
-              </Text>
-            </Text>
-            <Text style={{ fontSize: 12 }}>
-              <Text strong>{profile.followers_count}</Text>{' '}
-              <Text type="secondary">
-                {t('layout.user.followers', { defaultValue: 'followers' })}
-              </Text>
-            </Text>
-          </Flexbox>
-        )}
-
-        {createdAt && (
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            {t('layout.user.joined', { defaultValue: 'Joined' })} {createdAt}
-          </Text>
-        )}
-
-        {/* Loading indicator while fetching profile */}
-        {loading && !profile && (
-          <Flexbox align="center" style={{ padding: 8 }}>
-            <Spin size="small" />
-          </Flexbox>
-        )}
-
-        <Divider style={{ margin: 0 }} />
-
-        <Button
-          block
-          icon={<Globe size={14} />}
-          onClick={() => {
-            setOpen(false);
-            window.location.hash = '#/settings';
-            setTimeout(() => {
-              eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
-                resource: 'settings',
-                id: 'account',
-              });
-            }, 100);
-          }}
-        >
-          {t('layout.user.manageAccount')}
-        </Button>
-      </Flexbox>
+      ) : (
+        <PublicProfileCard
+          profile={model}
+          actions={currentUser?.actorPtid ? (
+            <ProfilePrimaryAction actorPtid={currentUser.actorPtid} />
+          ) : null}
+        />
+      )}
     </Flexbox>
   );
 

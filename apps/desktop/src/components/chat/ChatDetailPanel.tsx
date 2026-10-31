@@ -44,6 +44,7 @@ import {
   type Group,
   type GroupMember,
 } from '../../store/socialProjection';
+import { formatJoinedDate } from '../profile/profileModel';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { MemberRole } from '../../gen/proto/domain/chat/conversation_pb';
@@ -51,6 +52,8 @@ import { ChatStorageOperationState } from '../../gen/proto/domain/chat/storage_p
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useAttachmentAccess } from './useAttachmentAccess';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
+import { ProfilePrimaryAction } from '../profile/ProfilePrimaryAction';
+import { useProfileRelationship } from '../profile/useProfileRelationship';
 import { SquareAvatar } from '../common/SquareAvatar';
 import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
@@ -740,6 +743,9 @@ export function ChatDetailPanel() {
   const peerPtid = !isGroup
     ? activeConversation?.peerPtid || getFriendPeerDid(activeFriendSession, currentUserPtid)
     : '';
+  // Inside the conversation the Message action would be redundant; the card
+  // still shows Add/Accept for strangers and Manage for self-direct.
+  const profileRelationshipKind = useProfileRelationship(isGroup ? '' : peerPtid);
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
   const myGroupMember = currentUserPtid ? members.find((member) => member.ptid === currentUserPtid) : undefined;
   const myGroupNickname = myGroupMember?.nickname?.trim() || '';
@@ -1610,6 +1616,9 @@ export function ChatDetailPanel() {
                 federationId: activeConversation?.federationId || '',
                 t,
               })}
+              actions={!isGroup && profileRelationshipKind && profileRelationshipKind !== 'friend' ? (
+                <ProfilePrimaryAction actorPtid={peerPtid} />
+              ) : undefined}
             />
           </Flexbox>
         )}
@@ -2265,9 +2274,13 @@ function buildChatDetailProfile({
     avatar: cachedPeerProfile?.avatar?.trim() || peerAvatar,
     header: cachedPeerProfile?.header?.trim() || undefined,
     username: cachedPeerProfile?.username?.trim() || undefined,
+    homeStationDomain: cachedPeerProfile?.home_station_domain?.trim() || undefined,
     bio: cachedPeerProfile?.note?.trim() || undefined,
     did: cachedPeerProfile?.id?.trim() || peerPtid,
-    createdAt: cachedPeerProfile?.created_at?.trim() || undefined,
+    joined: formatJoinedDate(
+      cachedPeerProfile?.created_at,
+      t('chat.social.profile.joined'),
+    ),
     region: cachedPeerProfile?.region?.trim() || undefined,
     tags: (cachedPeerProfile?.tags ?? []).filter(Boolean),
     links: (cachedPeerProfile?.links ?? []).filter((l) => l && (l.label || l.url)),

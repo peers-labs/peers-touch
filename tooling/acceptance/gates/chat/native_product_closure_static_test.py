@@ -77,9 +77,6 @@ NATIVE_FILE_PICKER = (
 CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
-CHAT_CONTACTS_PANEL = (
-    ROOT / "apps/desktop/src/components/chat/ChatContactsPanel.tsx"
-)
 AVATAR_ASSETS = ROOT / "apps/desktop/src/services/avatarAssets.ts"
 USE_AVATAR_ASSET = (
     ROOT / "apps/desktop/src/components/common/useAvatarAsset.ts"
@@ -90,6 +87,16 @@ GROUP_COMPOSITE_AVATAR = (
 CHAT_CONTACTS_PANEL = (
     ROOT / "apps/desktop/src/components/chat/ChatContactsPanel.tsx"
 )
+PUBLIC_PROFILE_CARD = (
+    ROOT / "apps/desktop/src/components/profile/PublicProfileCard.tsx"
+)
+PROFILE_PRIMARY_ACTION = (
+    ROOT / "apps/desktop/src/components/profile/ProfilePrimaryAction.tsx"
+)
+PROFILE_RELATIONSHIP = (
+    ROOT / "apps/desktop/src/components/profile/profileRelationship.ts"
+)
+HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
 PROFILE_APPLICATION = (
     ROOT / "apps/desktop/src-tauri/src/application/profile/mod.rs"
 )
@@ -123,7 +130,6 @@ RECOVERY_COMMAND = (
     / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_recovery.rs"
 )
 CHAT_HARNESS = ROOT / "apps/desktop/src/acceptance/chat/harness.ts"
-HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
 
 
 class NativeProductCleanupTests(unittest.TestCase):
@@ -1517,15 +1523,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("function HoverActions(", self.message_row)
         self.assertNotIn("msg-hover-actions", self.message_row)
 
-    def test_saved_messages_self_direct_is_a_single_member_direct(self) -> None:
-        contacts_panel = CHAT_CONTACTS_PANEL.read_text(encoding="utf-8")
-        # Fixed entry opens through the canonical Direct create path.
-        self.assertIn("onClick={openSelfConversation}", contacts_panel)
-        self.assertIn(
-            "onStartChat(friendContactSelection(selfIdentity, friendConversations))",
-            contacts_panel,
-        )
-
     def test_avatar_surfaces_attribute_owner_ptid_for_flicker_free_assets(self) -> None:
         # Regression: already-friend avatars flashed to a letter/Bot placeholder
         # whenever the ephemeral station-resource projection token rotated.
@@ -1609,7 +1606,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("canonicalProfileAvatar(cachedProfile)", contacts)
 
         sender_card = MESSAGE_SENDER_CARD.read_text(encoding="utf-8")
-        self.assertIn("canonicalProfileAvatar(peerProfile)", sender_card)
+        self.assertIn("canonicalProfileAvatar(rich)", sender_card)
 
         bots = BOTS_SETTINGS.read_text(encoding="utf-8")
         self.assertIn("canonicalProfileAvatar(profile)", bots)
@@ -1655,6 +1652,38 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         harness = CHAT_HARNESS.read_text(encoding="utf-8")
         self.assertIn("async messagingReadiness()", harness)
         self.assertIn("readiness: recovery.readiness", harness)
+
+    def test_profile_card_is_declarative_and_action_owner_drives_relationship(self) -> None:
+        card = PUBLIC_PROFILE_CARD.read_text(encoding="utf-8")
+        actions = PROFILE_PRIMARY_ACTION.read_text(encoding="utf-8")
+        relationship = PROFILE_RELATIONSHIP.read_text(encoding="utf-8")
+        # The card renders only its data bag + action slot; it must never read
+        # stores or branch on self/friend/stranger.
+        self.assertNotIn("useSocialChatStore", card)
+        self.assertNotIn("useSessionStore", card)
+        self.assertNotIn("classifyProfileRelationship", card)
+        self.assertIn("actions?: ReactNode", card)
+        # One declarative action per relationship state.
+        for marker in (
+            "data-chat-profile-manage",
+            "data-chat-contact-message",
+            "data-chat-profile-add-friend",
+            "data-chat-profile-accept",
+            "data-chat-profile-requested",
+        ):
+            self.assertIn(marker, actions)
+        # Friendship truth covers self/friend/outgoing/incoming/stranger.
+        for kind in ("'self'", "'friend'", "'requested'", "'incoming-request'", "'stranger'"):
+            self.assertIn(kind, relationship)
+
+    def test_saved_messages_self_direct_is_a_single_member_direct(self) -> None:
+        contacts_panel = CHAT_CONTACTS_PANEL.read_text(encoding="utf-8")
+        # Fixed entry opens through the canonical Direct create path.
+        self.assertIn("onClick={openSelfConversation}", contacts_panel)
+        self.assertIn(
+            "onStartChat(friendContactSelection(selfIdentity, friendConversations))",
+            contacts_panel,
+        )
 
     def test_acceptance_window_preserves_native_document_layering(self) -> None:
         self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)

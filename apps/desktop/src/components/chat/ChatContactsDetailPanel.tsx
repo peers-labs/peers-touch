@@ -6,6 +6,8 @@ import { Empty, theme } from 'antd';
 import { MessageCircle, Users } from 'lucide-react';
 
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
+import { ProfilePrimaryAction } from '../profile/ProfilePrimaryAction';
+import { mergeAccountProfile } from '../profile/profileModel';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import {
   findContactConversation,
@@ -20,7 +22,6 @@ interface ChatContactsDetailPanelProps {
 
 export function ChatContactsDetailPanel({
   selectedContact,
-  openingPeerPtid,
   onMessage,
 }: ChatContactsDetailPanelProps) {
   const { token } = theme.useToken();
@@ -106,6 +107,7 @@ export function ChatContactsDetailPanel({
       displayName: selectedContact.displayName,
       avatar: selectedContact.avatar || '',
       username: selectedContact.username || undefined,
+      homeStationDomain: selectedContact.homeStationDomain || undefined,
       did: peerPtid,
       identityMetadata: [
         selectedContact.federationName || selectedContact.federationId
@@ -137,7 +139,16 @@ export function ChatContactsDetailPanel({
           : 'default',
     };
     if (!cachedPeer) return sessionFallback;
-    return mergePeerProfile(sessionFallback, cachedPeer, t);
+    return mergeAccountProfile(
+      sessionFallback,
+      cachedPeer,
+      {
+        posts: t('chat.social.detail.posts'),
+        followers: t('chat.social.detail.followers'),
+        following: t('chat.social.detail.following'),
+      },
+      t('chat.social.profile.joined'),
+    );
   }, [activeConversation, cachedPeer, peerPtid, selectedContact, t]);
 
   if (!selectedContact) {
@@ -192,32 +203,32 @@ export function ChatContactsDetailPanel({
             align="center"
             justify="center"
             style={{
-              width: 72,
-              height: 72,
+              width: 64,
+              height: 64,
               borderRadius: 18,
               background: token.colorFillSecondary,
               color: token.colorTextSecondary,
             }}
           >
-            <Users size={34} />
+            <Users size={30} />
           </Flexbox>
         ) : undefined}
-        actions={selectedContact.kind !== 'person' ? (
+        actions={isGroup ? (
           <Button
             data-chat-contact-message
             block
-            size="large"
             type="primary"
             icon={<MessageCircle size={16} />}
-            loading={
-              selectedContact.kind === 'friend'
-              && openingPeerPtid === selectedContact.peerPtid
-            }
             onClick={() => onMessage(selectedContact)}
           >
             {t('chat.social.contacts.sendMessage')}
           </Button>
-        ) : undefined}
+        ) : (
+          <ProfilePrimaryAction
+            actorPtid={selectedContact.peerPtid}
+            onMessage={() => onMessage(selectedContact)}
+          />
+        )}
       />
     </Flexbox>
   );
@@ -227,56 +238,4 @@ function requestStateKey(state: number): 'pending' | 'accepted' | 'rejected' {
   if (state === 2) return 'accepted';
   if (state === 3) return 'rejected';
   return 'pending';
-}
-
-// Merge a session-derived fallback with the rich Station profile. Station
-// values win when present so freshly-edited bios/regions show through, while
-// the session row keeps the avatar/displayName visible during the brief
-// network round-trip.
-function mergePeerProfile(
-  fallback: PublicProfileModel,
-  remote: import('../../services/desktop_api').AccountProfile,
-  t: (key: string, opts?: Record<string, unknown>) => string,
-): PublicProfileModel {
-  const stats = buildStats(remote, t);
-  return {
-    ...fallback,
-    displayName: remote.display_name?.trim() || fallback.displayName,
-    username: remote.username?.trim() || undefined,
-    avatar: remote.avatar?.trim() || fallback.avatar,
-    header: remote.header?.trim() || undefined,
-    bio: remote.note?.trim() || undefined,
-    did: remote.id?.trim() || fallback.did,
-    createdAt: remote.created_at?.trim() || undefined,
-    region: remote.region?.trim() || undefined,
-    tags: (remote.tags ?? []).filter(Boolean),
-    links: (remote.links ?? []).filter((l) => l && (l.label || l.url)),
-    stats: stats.length > 0 ? stats : fallback.stats,
-  };
-}
-
-function buildStats(
-  remote: import('../../services/desktop_api').AccountProfile,
-  t: (key: string, opts?: Record<string, unknown>) => string,
-): { label: string; value: number }[] {
-  const stats: { label: string; value: number }[] = [];
-  if (typeof remote.statuses_count === 'number') {
-    stats.push({
-      label: t('chat.social.detail.posts'),
-      value: remote.statuses_count,
-    });
-  }
-  if (typeof remote.followers_count === 'number') {
-    stats.push({
-      label: t('chat.social.detail.followers'),
-      value: remote.followers_count,
-    });
-  }
-  if (typeof remote.following_count === 'number') {
-    stats.push({
-      label: t('chat.social.detail.following'),
-      value: remote.following_count,
-    });
-  }
-  return stats;
 }
